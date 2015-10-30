@@ -29,7 +29,7 @@ from rmgpy.solver.simple import SimpleReactor
 program = 'dot'                 # The program to use to lay out the nodes and edges
 maximumNodeCount = 50           # The maximum number of nodes to show in the diagram
 maximumEdgeCount = 50           # The maximum number of edges to show in the diagram
-concentrationTolerance = 1e-6   # The lowest fractional concentration to show (values below this will appear as zero)
+concentrationTolerance = 1e-5   # The lowest fractional concentration to show (values below this will appear as zero)
 speciesRateTolerance = 1e-6     # The lowest fractional species rate to show (values below this will appear as zero)
 maximumNodePenWidth = 10.0      # The thickness of the border around a node at maximum concentration
 maximumEdgePenWidth = 10.0      # The thickness of the edge at maximum species rate
