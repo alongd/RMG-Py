@@ -1572,7 +1572,7 @@ class CoreEdgeReactionModel:
             products = newReaction.products[:]
         else:
             reactants = newReaction.products[:]
-            products = newReaction.products[:]
+            products = newReaction.reactants[:] 
         reactants.sort()
         products.sort()
         
