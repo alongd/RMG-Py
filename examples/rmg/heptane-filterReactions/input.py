@@ -58,8 +58,9 @@ simulator(
 )
 
 model(
-    toleranceMoveToCore=0.1,
-    toleranceInterruptSimulation=0.1
+    toleranceMoveToCore=0.01,
+    toleranceInterruptSimulation=0.01,
+    filterReactions=True,
 )
 
 pressureDependence(
