@@ -309,10 +309,14 @@ def pressureDependence(
 def options(units='si', saveRestartPeriod=None, generateOutputHTML=False, generatePlots=False, saveSimulationProfiles=False, verboseComments=False, saveEdgeSpecies=False):
     rmg.units = units
     rmg.saveRestartPeriod = Quantity(saveRestartPeriod) if saveRestartPeriod else None
+    if generateOutputHTML:
+        logging.warning('Generate Output HTML option was turned on. Note that this will slow down model generation.')
     rmg.generateOutputHTML = generateOutputHTML 
     rmg.generatePlots = generatePlots
     rmg.saveSimulationProfiles = saveSimulationProfiles
     rmg.verboseComments = verboseComments
+    if saveEdgeSpecies:
+        logging.warning('Edge species saving was turned on.  This will slow down model generation for large simulations.')
     rmg.saveEdgeSpecies = saveEdgeSpecies
 
 def generatedSpeciesConstraints(**kwargs):
@@ -401,6 +405,11 @@ def readInputFile(path, rmg0):
     for reactionSystem in rmg.reactionSystems:
         reactionSystem.convertInitialKeysToSpeciesObjects(speciesDict)
 
+    if rmg.quantumMechanics:
+        rmg.quantumMechanics.setDefaultOutputDirectory(rmg.outputDirectory)
+        rmg.quantumMechanics.initialize()
+    broadcast(rmg.quantumMechanics, 'quantumMechanics')
+
     logging.info('')
     
 ################################################################################
@@ -453,6 +462,11 @@ def readThermoInputFile(path, rmg0):
     finally:
         f.close()
 
+    if rmg.quantumMechanics:
+        rmg.quantumMechanics.setDefaultOutputDirectory(rmg.outputDirectory)
+        rmg.quantumMechanics.initialize()
+    broadcast(rmg.quantumMechanics, 'quantumMechanics')
+    
     logging.info('')    
 
 ################################################################################
@@ -627,6 +641,8 @@ def getInput(name):
     if rmg:
         if name == 'speciesConstraints':
             return rmg.speciesConstraints
+        elif name == 'quantumMechanics':
+            return rmg.quantumMechanics
         else:
             raise Exception('Unrecognized keyword: {}'.format(name))
     else:
