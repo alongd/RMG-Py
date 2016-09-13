@@ -284,31 +284,36 @@ atomTypes['CS'  ] = AtomType('CS',   generic=['R','R!H','C','Val4'],  specific=[
 
 atomTypes['N'   ] = AtomType('N',    generic=['R','R!H','Val5'],      specific=['N1d','N3s','N3d','N3t','N3b','N5s','N5d','N5dd','N5t','N5b'],
                              single=[], allDouble=[], rDouble=[], oDouble=[], sDouble=[], triple=[], benzene=[])
-#Eg: [N-]=[N+]=N terminal nitrogen on azide (two lone pairs)
+#'N1d' eg: [N-]=[N+]=N terminal nitrogen on azide (two lone pairs)
 atomTypes['N1d' ] = AtomType('N1d',  generic=['R','R!H','N','Val5'],  specific=[],
                              single=[0], allDouble=[1], rDouble=[1], oDouble=[], sDouble=[], triple=[0], benzene=[0], lonePairs=[2])
+#'N3s' eg: NH3, NH2, NH, N, CH3NH2...
 atomTypes['N3s' ] = AtomType('N3s',  generic=['R','R!H','N','Val5'],  specific=[],
-                             single=[0,1,2,3], allDouble=[0], rDouble=[], oDouble=[], sDouble=[], triple=[0], benzene=[0])
+                             single=[0,1,2,3], allDouble=[0], rDouble=[], oDouble=[], sDouble=[], triple=[0], benzene=[0], lonePairs=[1])
+#'N3d' eg: HNO {smiles: N=O}, CH2NH {smiles: C=N}, N2H2 {smiles: N=N}, NO2 {smiles: [O]N=O, resonance}, NO {smiles: [N]=O}...
 atomTypes['N3d' ] = AtomType('N3d',  generic=['R','R!H','N','Val5'],  specific=[],
-                             single=[0,1], allDouble=[1], rDouble=[], oDouble=[], sDouble=[], triple=[], benzene=[])
+                             single=[0,1], allDouble=[1], rDouble=[], oDouble=[], sDouble=[], triple=[], benzene=[], lonePairs=[1])
+#'N3t' eg: N2 {smiles: N#N}, HCN {smiles: N#C}, N#CC...
 atomTypes['N3t' ] = AtomType('N3t',  generic=['R','R!H','N','Val5'],  specific=[],
-                             single=[0], allDouble=[0], rDouble=[], oDouble=[], sDouble=[], triple=[1], benzene=[0])
+                             single=[0], allDouble=[0], rDouble=[], oDouble=[], sDouble=[], triple=[1], benzene=[0], lonePairs=[1])
+#'N3b' eg: oxazole {smiles: C1=COC=N1}, pyradine {smiles: c1ccncc1}, pyrazine {smiles: c1cnccn1}, 1,3,5-triazine {smiles: n1cncnc1}; in this case N has a lone pair (which doesn't participate in the benzene bond), and is sp hybradized
 atomTypes['N3b' ] = AtomType('N3b',  generic=['R','R!H','N','Val5'],  specific=[],
-                             single=[0], allDouble=[0], rDouble=[], oDouble=[], sDouble=[], triple=[0], benzene=[2])
-#Eg [NH4+]
+                             single=[0], allDouble=[0], rDouble=[], oDouble=[], sDouble=[], triple=[0], benzene=[2], lonePairs=[1])
+#'N5s' eg: ammonium {smiles: [NH4+]}
 atomTypes['N5s' ] = AtomType('N5s',  generic=['R','R!H','N','Val5'],  specific=[],
-                             single=[4], allDouble=[0], rDouble=[], oDouble=[], sDouble=[], triple=[0], benzene=[0])
-#Eg O[N+](=O)(O-) nitrate group
+                             single=[4], allDouble=[0], rDouble=[], oDouble=[], sDouble=[], triple=[0], benzene=[0], lonePairs=[0])
+#'N5d' eg: nitric acid {smiles: [N+](=O)(O)[O-]}, NO2 {smiles: [N+](=O)[O-], resonance}, nitric acid nitro ester {smiles: [N+](=O)(O[N+](=O)[O-])[O-]}
 atomTypes['N5d' ] = AtomType('N5d',  generic=['R','R!H','N','Val5'],  specific=[],
-                             single=[2], allDouble=[1], rDouble=[], oDouble=[], sDouble=[], triple=[0], benzene=[0])
-#Eg N=[N+]=[N-] center nitrogen on azide
+                             single=[1,2], allDouble=[1], rDouble=[], oDouble=[], sDouble=[], triple=[0], benzene=[0], lonePairs=[0])
+#'N5dd' eg: N2O {smiles: [N-]=[N+]=O, resonance}, center nitrogen on azide {smiles: N=[N+]=[N-]}
 atomTypes['N5dd'] = AtomType('N5dd', generic=['R','R!H','N','Val5'],  specific=[],
-                             single=[0], allDouble=[2], rDouble=[], oDouble=[], sDouble=[], triple=[0], benzene=[0])
-#Eg C[N+]#[C-] isocyano group
+                             single=[0], allDouble=[2], rDouble=[], oDouble=[], sDouble=[], triple=[0], benzene=[0], lonePairs=[0])
+#'N5t' eg: N2O {smiles: [N-]=[N+]=O, resonance}, HNC {smiles: [NH+]#[C-], C has p1}, isocyano group {smiles: C[N+]#[C-], C has p1}, HCNO {smiles: C#[N+][O-]}
 atomTypes['N5t' ] = AtomType('N5t',  generic=['R','R!H','N','Val5'],  specific=[],
-                             single=[1], allDouble=[0], rDouble=[], oDouble=[], sDouble=[], triple=[1], benzene=[0])
+                             single=[0,1], allDouble=[0], rDouble=[], oDouble=[], sDouble=[], triple=[1], benzene=[0], lonePairs=[0])
+#'N5b' eg: pyrrole {smiles: N1C=CC=C1}, indole {smiles: C12=C(C=CN2)C=CC=C1}; in this case the "lone pair" of N is part of the conjugated system, and is sp2 hybradized
 atomTypes['N5b' ] = AtomType('N5b',  generic=['R','R!H','N','Val5'],  specific=[],
-                             single=[1], allDouble=[0], rDouble=[], oDouble=[], sDouble=[], triple=[0], benzene=[2])
+                             single=[1], allDouble=[0], rDouble=[], oDouble=[], sDouble=[], triple=[0], benzene=[2], lonePairs=[0])
 
 atomTypes['O'   ] = AtomType('O',    generic=['R','R!H','Val6'],      specific=['Os','Od','Oa','Ot'])
 atomTypes['Os'  ] = AtomType('Os',   generic=['R','R!H','O','Val6'],  specific=[],
