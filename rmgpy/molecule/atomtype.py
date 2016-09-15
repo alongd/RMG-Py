@@ -33,7 +33,6 @@ molecular functional groups and substructure patterns. Each available atom type
 is defined as an instance of the :class:`AtomType` class. The atom types 
 themselves are available in the ``atomTypes`` module-level variable, or as
 the return value from the :meth:`getAtomType()` method.
-
 If you want to change which atom types are available in RMG and/or what they
 represent, this should be the only module you need to change to do so.
 """
@@ -60,7 +59,6 @@ class AtomType:
     we store metadata describing the atom type's hierarchy with regard to other
     atom types, and the atom types that can result when various actions
     involving this atom type are taken. The attributes are:
-
     =================== =================== ====================================
     Attribute           Type                Description
     =================== =================== ====================================
@@ -75,7 +73,6 @@ class AtomType:
     `decrementRadical`  ``list``            The atom type(s) that result when the number of radical electrons is decremented
     `incrementLonePair` ``list``            The atom type(s) that result when the number of lone electron pairs is incremented
     `decrementLonePair` ``list``            The atom type(s) that result when the number of lone electron pairs is decremented
-
     The following features are what are required in a given atomtype. Any int in the list is acceptable.
     An empty list is a wildcard
     'single'            ''list''            The total number of single bonds on the atom
@@ -87,7 +84,6 @@ class AtomType:
     'benzene'           ''list''            The total number of benzene bonds on the atom
     'lonePairs'         ''list''            The number of lone pairs on the atom
     =================== =================== ====================================
-
     """
     
 
@@ -270,7 +266,7 @@ atomTypes['Cs'  ] = AtomType('Cs',   generic=['R','R!H','C','Val4'],  specific=[
 atomTypes['Cd'  ] = AtomType('Cd',   generic=['R','R!H','C','Val4'],  specific=[],
                              single=[], allDouble=[1], rDouble=[1], oDouble=[0], sDouble=[0], triple=[0], benzene=[0])
 atomTypes['Cdd' ] = AtomType('Cdd',  generic=['R','R!H','C','Val4'],  specific=[],
-                             single=[0], allDouble=[2], rDouble=[0,1,2], oDouble=[0,1,2], sDouble=[0,1,2], triple=[0], benzene=[0])
+                             single=[0], allDouble=[2], rDouble=[], oDouble=[], sDouble=[], triple=[0], benzene=[0])
 atomTypes['Ct'  ] = AtomType('Ct',   generic=['R','R!H','C','Val4'],  specific=[],
                              single=[], allDouble=[0], rDouble=[], oDouble=[], sDouble=[], triple=[1], benzene=[0])
 atomTypes['CO'  ] = AtomType('CO',   generic=['R','R!H','C','Val4'],  specific=[],
@@ -284,9 +280,12 @@ atomTypes['CS'  ] = AtomType('CS',   generic=['R','R!H','C','Val4'],  specific=[
 
 atomTypes['N'   ] = AtomType('N',    generic=['R','R!H','Val5'],      specific=['N1d','N3s','N3d','N3t','N3b','N5s','N5d','N5dd','N5t','N5b'],
                              single=[], allDouble=[], rDouble=[], oDouble=[], sDouble=[], triple=[], benzene=[])
-#'N1d' eg: [N-]=[N+]=N terminal nitrogen on azide (two lone pairs)
+#'N1d' eg: [N-]=[N+]=N terminal nitrogen on azide (two lone pairs), NNH2 {smiles: [N-]=[NH2+]}
 atomTypes['N1d' ] = AtomType('N1d',  generic=['R','R!H','N','Val5'],  specific=[],
-                             single=[0], allDouble=[1], rDouble=[1], oDouble=[], sDouble=[], triple=[0], benzene=[0], lonePairs=[2])
+                             single=[0], allDouble=[1], rDouble=[], oDouble=[], sDouble=[], triple=[0], benzene=[0], lonePairs=[2])
+#'N1s' eg: N(D) [adjList: 1 N u1 p2 c0], NH(S) [adjList: 1 N u0 p2 c0 {2,S}; 2 H u0 p0 c0 {1,S}], N-N [adjList: 1 N u0 p2 c0 {2,S}; 2 N u0 p2 c0 {1,S}], NO2(D) [adjList: 1 O u0 p2 c0 {2,S} {3,S}; 2 O u1 p2 c0 {1,S}; 3 N u0 p2 c0 {1,S}]
+#atomTypes['N1s' ] = AtomType('N1s',  generic=['R','R!H','N','Val5'],  specific=[],
+#                             single=[0,1], allDouble=[0], rDouble=[], oDouble=[], sDouble=[], triple=[0], benzene=[0], lonePairs=[2])
 #'N3s' eg: NH3, NH2, NH, N, CH3NH2...
 atomTypes['N3s' ] = AtomType('N3s',  generic=['R','R!H','N','Val5'],  specific=[],
                              single=[0,1,2,3], allDouble=[0], rDouble=[], oDouble=[], sDouble=[], triple=[0], benzene=[0], lonePairs=[1])
@@ -376,17 +375,19 @@ atomTypes['CS'  ].setActions(incrementBond=['Cdd'],          decrementBond=['Cs'
 atomTypes['Cb'  ].setActions(incrementBond=[],               decrementBond=[],               formBond=['Cb'],        breakBond=['Cb'],        incrementRadical=['Cb'],   decrementRadical=['Cb'],   incrementLonePair=[],      decrementLonePair=[])
 atomTypes['Cbf' ].setActions(incrementBond=[],               decrementBond=[],               formBond=[],            breakBond=[],            incrementRadical=[],       decrementRadical=[],       incrementLonePair=[],      decrementLonePair=[])
 
-atomTypes['N'   ].setActions(incrementBond=['N'],            decrementBond=['N'],            formBond=['N'],         breakBond=['N'],         incrementRadical=['N'],    decrementRadical=['N'],    incrementLonePair=['N'],   decrementLonePair=['N'])
-atomTypes['N1d' ].setActions(incrementBond=[],               decrementBond=['N3s'],          formBond=[],            breakBond=['N3s'],       incrementRadical=['N1d'],  decrementRadical=['N1d'],  incrementLonePair=['N1d'], decrementLonePair=['N1d'])
-atomTypes['N3s' ].setActions(incrementBond=['N3d','N3s'],    decrementBond=[],               formBond=['N3s','N5s'], breakBond=['N3s'],       incrementRadical=['N3s'],  decrementRadical=['N3s'],  incrementLonePair=['N3s'], decrementLonePair=['N3s'])
-atomTypes['N3d' ].setActions(incrementBond=['N3t'],          decrementBond=['N3s'],          formBond=['N3d','N5d'], breakBond=['N3d'],       incrementRadical=['N3d'],  decrementRadical=['N3d'],  incrementLonePair=['N3d'], decrementLonePair=['N3d'])
-atomTypes['N3t' ].setActions(incrementBond=[],               decrementBond=['N3d'],          formBond=['N5t'],       breakBond=[],            incrementRadical=['N3t'],  decrementRadical=['N3t'],  incrementLonePair=['N3t'], decrementLonePair=['N3t'])
-atomTypes['N3b' ].setActions(incrementBond=[],               decrementBond=[],               formBond=['N3b'],       breakBond=['N3b'],       incrementRadical=['N3b'],  decrementRadical=['N3b'],  incrementLonePair=['N3b'], decrementLonePair=['N3b'])
-atomTypes['N5s' ].setActions(incrementBond=['N5d'],          decrementBond=['N3s'],          formBond=['N5s'],       breakBond=['N3s'],       incrementRadical=['N5s'],  decrementRadical=['N5s'],  incrementLonePair=['N5s'], decrementLonePair=['N5s'])
-atomTypes['N5d' ].setActions(incrementBond=['N5dd','N5t'],   decrementBond=['N5s'],          formBond=[],            breakBond=['N3d'],       incrementRadical=['N5d'],  decrementRadical=['N5d'],  incrementLonePair=['N5d'], decrementLonePair=['N5d'])
-atomTypes['N5dd'].setActions(incrementBond=[],               decrementBond=['N3d'],          formBond=[],            breakBond=[],            incrementRadical=['N5dd'], decrementRadical=['N5dd'], incrementLonePair=['N5d'], decrementLonePair=['N5d'])
-atomTypes['N5t' ].setActions(incrementBond=[],               decrementBond=['N3d','N3t'],    formBond=[],            breakBond=['N3d','N3t'], incrementRadical=['N5t'],  decrementRadical=['N5t'],  incrementLonePair=['N5t'], decrementLonePair=['N5t'])
-atomTypes['N5b' ].setActions(incrementBond=[],               decrementBond=[],               formBond=['N5b'],       breakBond=['N5b'],       incrementRadical=['N5b'],  decrementRadical=['N5b'],  incrementLonePair=['N5b'], decrementLonePair=['N5b'])
+atomTypes['N'   ].setActions(incrementBond=['N'],            decrementBond=['N'],            formBond=['N'],         breakBond=['N'],         incrementRadical=['N'],         decrementRadical=['N'],    incrementLonePair=['N'],   decrementLonePair=['N'])
+#atomTypes['N1d' ].setActions(incrementBond=['N3t'],          decrementBond=['N1s'],          formBond=['N3d'],       breakBond=['N1s', 'N3s'],incrementRadical=['N3d'],       decrementRadical=[],       incrementLonePair=[],      decrementLonePair=['N3d'])
+atomTypes['N1d' ].setActions(incrementBond=['N3t'],          decrementBond=[],               formBond=['N3d'],       breakBond=['N3s'],       incrementRadical=['N3d'],       decrementRadical=[],       incrementLonePair=[],      decrementLonePair=['N3d'])
+#atomTypes['N3s' ].setActions(incrementBond=['N3d'],          decrementBond=[],               formBond=['N3s','N5s'], breakBond=['N3s'],       incrementRadical=['N3s'],       decrementRadical=['N3s'],  incrementLonePair=['N1s'], decrementLonePair=['N5s'])
+atomTypes['N3s' ].setActions(incrementBond=['N3d'],          decrementBond=[],               formBond=['N3s','N5s'], breakBond=['N3s'],       incrementRadical=['N3s'],       decrementRadical=['N3s'],  incrementLonePair=[],      decrementLonePair=['N5s'])
+atomTypes['N3d' ].setActions(incrementBond=['N3t'],          decrementBond=['N3s'],          formBond=['N3d','N5d'], breakBond=['N3s','N3d'], incrementRadical=['N3d','N5d'], decrementRadical=['N3d'],  incrementLonePair=['N1d'], decrementLonePair=['N5d'])
+atomTypes['N3t' ].setActions(incrementBond=[],               decrementBond=['N3d'],          formBond=['N5t'],       breakBond=['N3s'],       incrementRadical=['N5t'],       decrementRadical=[],       incrementLonePair=[],      decrementLonePair=['N5t'])
+atomTypes['N3b' ].setActions(incrementBond=[],               decrementBond=['N3d', 'N3s'],   formBond=[],            breakBond=['N3d','N3s'], incrementRadical=['N3b'],       decrementRadical=['N3b'],  incrementLonePair=['N3b'], decrementLonePair=['N3b'])
+atomTypes['N5s' ].setActions(incrementBond=['N5d'],          decrementBond=[],               formBond=['N5s'],       breakBond=['N3s'],       incrementRadical=['N5s'],       decrementRadical=['N5s'],  incrementLonePair=['N3s'], decrementLonePair=[])
+atomTypes['N5d' ].setActions(incrementBond=['N5dd','N5t'],   decrementBond=['N5s'],          formBond=[],            breakBond=['N3d'],       incrementRadical=['N5d'],       decrementRadical=['N5d'],  incrementLonePair=['N5d'], decrementLonePair=['N5d'])
+atomTypes['N5dd'].setActions(incrementBond=[],               decrementBond=['N3d'],          formBond=[],            breakBond=[],            incrementRadical=['N5dd'],      decrementRadical=['N5dd'], incrementLonePair=['N5d'], decrementLonePair=['N5d'])
+atomTypes['N5t' ].setActions(incrementBond=[],               decrementBond=['N3d','N3t'],    formBond=[],            breakBond=['N3d','N3t'], incrementRadical=['N5t'],       decrementRadical=['N5t'],  incrementLonePair=['N5t'], decrementLonePair=['N5t'])
+atomTypes['N5b' ].setActions(incrementBond=[],               decrementBond=[],               formBond=['N5b'],       breakBond=['N5b'],       incrementRadical=['N5b'],       decrementRadical=['N5b'],  incrementLonePair=['N5b'], decrementLonePair=['N5b'])
 
 atomTypes['O'   ].setActions(incrementBond=['O'],            decrementBond=['O'],            formBond=['O'],         breakBond=['O'],         incrementRadical=['O'],    decrementRadical=['O'],    incrementLonePair=['Os'],  decrementLonePair=['Os'])
 atomTypes['Os'  ].setActions(incrementBond=['Od'],           decrementBond=[],               formBond=['Os'],        breakBond=['Os'],        incrementRadical=['Os'],   decrementRadical=['Os'],   incrementLonePair=['Os'],  decrementLonePair=['Os'])
@@ -430,7 +431,6 @@ def getFeatures(atom, bonds):
     Returns a list of features needed to determine atomType for :class:'Atom'
     or :class:'GroupAtom' object 'atom and with local bond structure `bonds`,
     a ``dict`` containing atom-bond pairs.
-
     """
     cython.declare(single=cython.int, allDouble=cython.int, rDouble=cython.int,
                    sDouble=cython.int, oDouble=cython.int, triple=cython.int,
@@ -491,4 +491,3 @@ def getAtomType(atom, bonds):
         benzene = molFeatureList[6]
 
         raise AtomTypeError('Unable to determine atom type for atom {0}, which has {1:d} double bonds to C, {2:d} double bonds to O, {3:d} double bonds to S, {4:d} triple bonds, and {5:d} benzene bonds.'.format(atom, rDouble, oDouble, sDouble, triple, benzene))
-
