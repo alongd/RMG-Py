@@ -2099,7 +2099,7 @@ class KineticsFamily(Database):
         trainingEntries = None
         degeneracy = 1
 
-        regex = "\((.*)\)" # only hit outermost parentheses
+        regex = "\[(.*)\]" # only hit outermost brackets
         for line in lines:
             if line.startswith('Matched'):
                 # Source of the kinetics is from training reaction
