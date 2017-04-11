@@ -609,6 +609,6 @@ def getAtomType(atom, bonds):
         charge = molFeatureList[8]
 
         raise AtomTypeError(
-            'Unable to determine atom type for atom {0}, which has {1:d} single bonds, {2:d} double bonds to C, {3:d} double bonds to O, {4:d} double bonds to S, {5:d} triple bonds, {6:d} benzene bonds, and {7:d} lone pairs, and a {8:d} charge.'.format(
+            'Unable to determine atom type for atom {0}, which has {1:d} single bonds, {2:d} double bonds to C, {3:d} double bonds to O, {4:d} double bonds to S, {5:d} triple bonds, {6:d} benzene bonds, {7:d} lone pairs, and {8:d} charge.'.format(
                 atom, single, rDouble, oDouble, sDouble, triple, benzene, lonePairs, charge))
 

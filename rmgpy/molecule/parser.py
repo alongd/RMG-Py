@@ -445,9 +445,10 @@ def fromOBMol(mol, obmol):
     
     # Set atom types and connectivity values
     mol.updateConnectivityValues()
+    mol.updateLonePairs()
     mol.updateAtomTypes()
     mol.updateMultiplicity()
-    mol.updateLonePairs()
+
     
     # Assume this is always true
     # There are cases where 2 radicalElectrons is a singlet, but

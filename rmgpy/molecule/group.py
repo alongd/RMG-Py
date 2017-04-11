@@ -563,10 +563,25 @@ class GroupAtom(Vertex):
         #dummy defaultAtom to get default values
         defaultAtom = mol.Atom()
 
+        #Three possible values for charge and lonePairs
+        if self.charge:
+            newCharge = self.charge[0]
+        elif atomtype.charge:
+            newCharge = atomtype.charge[0]
+        else:
+            newCharge = defaultAtom.charge
+
+        if self.lonePairs:
+            newLonePairs = self.lonePairs[0]
+        elif atomtype.lonePairs:
+            newLonePairs = atomtype.lonePairs[0]
+        else:
+            newLonePairs = defaultAtom.lonePairs
+
         newAtom = mol.Atom(element = element,
                            radicalElectrons = self.radicalElectrons[0] if self.radicalElectrons else defaultAtom.radicalElectrons,
-                           charge = self.charge[0] if self.charge else defaultAtom.charge,
-                           lonePairs = self.lonePairs[0] if self.lonePairs else defaultAtom.lonePairs,
+                           charge = newCharge,
+                           lonePairs = newLonePairs,
                            label = self.label if self.label else defaultAtom.label)
 
         #For some reason the default when no lone pairs is set to -100,
@@ -574,12 +589,15 @@ class GroupAtom(Vertex):
         #Instead we will set it to 0 here
 
         #Hard code charge for a few atomtypes
-        if atomtype in [atomTypes[x] for x in ['N5d', 'N5dd', 'N5t', 'N5b', 'N5s']]:
-            newAtom.lonePairs = 0
-            newAtom.charge = 1
-        elif atomtype in [atomTypes[x] for x in ['N1d']]:
-            newAtom.charge = -1
-        elif newAtom.lonePairs == -100:
+        # if atomtype in [atomTypes[x] for x in ['N5d', 'N5dd', 'N5t', 'N5b', 'N5s']]:
+        #     newAtom.lonePairs = 0
+        #     newAtom.charge = 1
+        # elif atomtype in [atomTypes[x] for x in ['N1d']]:
+        #     newAtom.charge = -1
+        # elif newAtom.lonePairs == -100:
+        #     newAtom.lonePairs = defaultLonePairs[newAtom.symbol]
+
+        if newAtom.lonePairs == -100:
             newAtom.lonePairs = defaultLonePairs[newAtom.symbol]
 
         return newAtom
@@ -1975,12 +1993,9 @@ class Group(Graph):
 
         #Saturate up to expected valency
         for molAtom in newMolecule.atoms:
-            #Group atom had a explicit charge
-            if molAtom in molToGroup and molToGroup[molAtom].charge:
-                statedCharge = molToGroup[molAtom].charge[0]
+            if molAtom.charge: statedCharge = molAtom.charge
             #otherwise assume no charge (or implicit atoms we assume hvae no charge)
-            else:
-                statedCharge = 0
+            else: statedCharge = 0
             molAtom.updateCharge()
             if molAtom.charge - statedCharge:
                 hydrogenNeeded = molAtom.charge - statedCharge
@@ -1995,8 +2010,6 @@ class Group(Graph):
                     newMolecule.addAtom(newH)
                     newMolecule.addBond(newBond)
                 molAtom.updateCharge()
-
-
 
         newMolecule.update()
 
