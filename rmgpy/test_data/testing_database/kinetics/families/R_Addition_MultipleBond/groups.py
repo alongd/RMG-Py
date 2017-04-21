@@ -128,7 +128,7 @@ entry(
     label = "Sd_R",
     group = 
 """
-1 *1 Sd u0 {2,D}
+1 *1 S2d u0 {2,D}
 2 *2 R!H  u0 {1,D}
 """,
     kinetics = None,
@@ -278,8 +278,8 @@ entry(
     label = "SsJ",
     group = 
 """
-1 *3 Ss u1 {2,S}
-2    R  u0 {1,S}
+1 *3 S2s u1 {2,S}
+2    R   u0 {1,S}
 """,
     kinetics = None,
 )
