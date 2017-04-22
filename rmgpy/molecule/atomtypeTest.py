@@ -220,15 +220,15 @@ class TestGetAtomType(unittest.TestCase):
                                                      2 S u0 p1 c+1 {1,S} {3,D}
                                                      3 O u0 p2 c0 {2,D}''')
 
-        self.mol27 = Molecule().fromAdjacencyList('''1 S u0 p1 c0 {2,B} {5,B}
-                                                     2 C u0 p0 c0 {1,B} {3,B} {6,S}
-                                                     3 C u0 p0 c0 {2,B} {4,B} {7,S}
-                                                     4 C u0 p0 c0 {3,B} {5,B} {8,S}
-                                                     5 C u0 p0 c0 {1,B} {4,B} {9,S}
-                                                     6 H u0 p0 c0 {2,S}
-                                                     7 H u0 p0 c0 {3,S}
-                                                     8 H u0 p0 c0 {4,S}
-                                                     9 H u0 p0 c0 {5,S}''')
+        #self.mol27 = Molecule().fromAdjacencyList('''1 S u0 p1 c0 {2,B} {5,B}
+        #                                             2 C u0 p0 c0 {1,B} {3,B} {6,S}
+        #                                             3 C u0 p0 c0 {2,B} {4,B} {7,S}
+        #                                             4 C u0 p0 c0 {3,B} {5,B} {8,S}
+        #                                             5 C u0 p0 c0 {1,B} {4,B} {9,S}
+        #                                             6 H u0 p0 c0 {2,S}
+        #                                             7 H u0 p0 c0 {3,S}
+        #                                             8 H u0 p0 c0 {4,S}
+        #                                             9 H u0 p0 c0 {5,S}''')
 
         self.mol28 = Molecule().fromAdjacencyList('''1  O u0 p2 c0 {2,D}
                                                      2  S u0 p1 c0 {1,D} {3,D}
@@ -380,25 +380,25 @@ class TestGetAtomType(unittest.TestCase):
         Test that getAtomType() returns appropriate sulfur atom types.
         """
         self.assertEqual(self.atomType(self.mol21, 0), 'S0s')
-        self.assertEqual(self.atomType(self.mol21, 1), 'S2sc')
+        #self.assertEqual(self.atomType(self.mol21, 1), 'S2sc')
         self.assertEqual(self.atomType(self.mol22, 0), 'Sa')
         self.assertEqual(self.atomType(self.mol23, 0), 'S2s')
         self.assertEqual(self.atomType(self.mol19, 1), 'S2d')
-        self.assertEqual(self.atomType(self.mol24, 1), 'S2dc')
+        #self.assertEqual(self.atomType(self.mol24, 1), 'S2dc')
         self.assertEqual(self.atomType(self.mol25, 0), 'S4s')
-        self.assertEqual(self.atomType(self.mol23, 1), 'S4sc')
+        #self.assertEqual(self.atomType(self.mol23, 1), 'S4sc')
         self.assertEqual(self.atomType(self.mol25, 2), 'S4d')
-        self.assertEqual(self.atomType(self.mol26, 1), 'S4dc')
+        #self.assertEqual(self.atomType(self.mol26, 1), 'S4dc')
         # self.assertEqual(self.atomType(self.mol27, 0), 'S4b') # RMG correctly can't represent heteroatoms in aromatics. See RMG-Py issue #982 
         self.assertEqual(self.atomType(self.mol28, 1), 'S4dd')
         self.assertEqual(self.atomType(self.mol38, 1), 'S4dd')
         self.assertEqual(self.atomType(self.mol28, 4), 'S4t')
-        self.assertEqual(self.atomType(self.mol29, 1), 'S4tc')
+        #self.assertEqual(self.atomType(self.mol29, 1), 'S4tc')
         self.assertEqual(self.atomType(self.mol28, 5), 'S6s')
         self.assertEqual(self.atomType(self.mol30, 0), 'S6d')
-        self.assertEqual(self.atomType(self.mol31, 1), 'S6dc')
+        #self.assertEqual(self.atomType(self.mol31, 1), 'S6dc')
         self.assertEqual(self.atomType(self.mol32, 1), 'S6dd')
-        self.assertEqual(self.atomType(self.mol33, 1), 'S6ddc')
+        #self.assertEqual(self.atomType(self.mol33, 1), 'S6ddc')
         self.assertEqual(self.atomType(self.mol34, 1), 'S6ddd')
         self.assertEqual(self.atomType(self.mol35, 0), 'S6t')
         self.assertEqual(self.atomType(self.mol36, 0), 'S6td')
