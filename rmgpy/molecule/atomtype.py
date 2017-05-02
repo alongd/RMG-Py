@@ -235,7 +235,7 @@ atomTypes['R']    = AtomType(label='R', generic=[], specific=[
     'O','Os','Od','Oa','Ot',
     'Ne',
     'Si','Sis','Sid','Sidd','Sit','SiO','Sib','Sibf',
-    'S','S0s','S2sc','Sa','S2s','S2d','S2dc','S4s','S4sc','S4d','S4dc','S4b','S4dd','S4t','S4tc','S6s','S6d','S6dc','S6dd','S6ddc','S6ddd','S6t','S6td','S6tt',
+    'S','S0s','S2s','Sa','S2sc','S2d','S2dc','S4s','S4sc','S4d','S4dc','S4b','S4dd','S4t','S4tc','S6s','S6d','S6dc','S6dd','S6ddc','S6ddd','S6t','S6td','S6tt',
     'Cl','Ar']
 )
 atomTypes['R!H']  = AtomType(label='R!H', generic=['R'], specific=[
@@ -246,7 +246,7 @@ atomTypes['R!H']  = AtomType(label='R!H', generic=['R'], specific=[
     'O','Os','Od','Oa','Ot',
     'Ne',
     'Si','Sis','Sid','Sidd','Sit','SiO','Sib','Sibf',
-    'S','S0s','S2sc','Sa','S2s','S2d','S2dc','S4s','S4sc','S4d','S4dc','S4b','S4dd','S4t','S4tc','S6s','S6d','S6dc','S6dd','S6ddc','S6ddd','S6t','S6td','S6tt',
+    'S','S0s','S2s','Sa','S2sc','S2d','S2dc','S4s','S4sc','S4d','S4dc','S4b','S4dd','S4t','S4tc','S6s','S6d','S6dc','S6dd','S6ddc','S6ddd','S6t','S6td','S6tt',
     'Cl','Ar'])
 
 atomTypes['Val4'] = AtomType(label='Val4', generic=['R','R!H'], specific=[
@@ -258,7 +258,7 @@ atomTypes['Val5'] = AtomType(label='Val5', generic=['R','R!H'], specific=[
 
 atomTypes['Val6'] = AtomType(label='Val6', generic=['R','R!H'], specific=[
     'O','Os','Od','Oa','Ot',
-    'S','S0s','S2sc','Sa','S2s','S2d','S2dc','S4s','S4sc','S4d','S4dc','S4b','S4dd','S4t','S4tc','S6s','S6d','S6dc','S6dd','S6ddc','S6ddd','S6t','S6td','S6tt'])
+    'S','S0s','S2s','Sa','S2sc','S2d','S2dc','S4s','S4sc','S4d','S4dc','S4b','S4dd','S4t','S4tc','S6s','S6d','S6dc','S6dd','S6ddc','S6ddd','S6t','S6td','S6tt'])
 
 atomTypes['Val7'] = AtomType(label='Val7', generic=['R','R!H'], specific=[
     'Cl'])
@@ -355,7 +355,7 @@ atomTypes['Sib' ] = AtomType('Sib',  generic=['R','R!H','Si','Val4'], specific=[
 atomTypes['Sibf'] = AtomType('Sibf', generic=['R','R!H','Si','Val4'], specific=[],
                              single=[], allDouble=[0], rDouble=[], oDouble=[], sDouble=[], triple=[0], benzene=[3])
 
-atomTypes['S'   ] = AtomType('S',    generic=['R','R!H','Val6'],      specific=['S0s','S2sc','Sa','S2s','S2d','S2dc','S4s','S4sc','S4d','S4dc','S4b','S4dd','S4t','S4tc','S6s','S6d','S6dc','S6dd','S6ddc','S6ddd','S6t','S6td','S6tt'],
+atomTypes['S'   ] = AtomType('S',    generic=['R','R!H','Val6'],      specific=['S0s','S2s','Sa','S2sc','S2d','S2dc','S4s','S4sc','S4d','S4dc','S4b','S4dd','S4t','S4tc','S6s','S6d','S6dc','S6dd','S6ddc','S6ddd','S6t','S6td','S6tt'],
                              single=[], allDouble=[], rDouble=[], oDouble=[], sDouble=[], triple=[], benzene=[], lonePairs=[])
 atomTypes['S0s' ] = AtomType('S0s',  generic=['R','R!H','S','Val6'],  specific=[],
                              single=[1], allDouble=[0], rDouble=[0], oDouble=[0], sDouble=[0], triple=[0], benzene=[0], lonePairs=[3])
