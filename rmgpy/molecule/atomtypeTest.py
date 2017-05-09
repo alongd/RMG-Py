@@ -266,7 +266,7 @@ class TestGetAtomType(unittest.TestCase):
                                                      6 H u0 p0 c0 {4,S}
                                                      7 H u0 p0 c0 {5,S}''')
 
-        self.mol33 = Molecule().fromAdjacencyList('''1 O u0 p2 c-1 {2,S}
+        self.mol33 = Molecule().fromAdjacencyList('''1 O u0 p3 c-1 {2,S}
                                                      2 S u0 p0 c+1 {1,S} {3,D} {4,D}
                                                      3 O u0 p2 c0 {2,D}
                                                      4 O u0 p2 c0 {2,D}''')
