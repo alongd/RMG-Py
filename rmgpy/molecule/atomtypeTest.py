@@ -315,6 +315,13 @@ class TestGetAtomType(unittest.TestCase):
                                                      4 O u1 p2 c0 {3,S}
                                                      5 O u1 p2 c0 {3,S}''')
 
+        self.mol43 = Molecule().fromAdjacencyList('''1 C u0 p0 c-1 {2,D} {3,S}
+                                                     2 S u1 p0 c+1 {1,D} {4,S} {5,S}
+                                                     3 H u0 p0 c0 {1,S}
+                                                     4 H u0 p0 c0 {2,S}
+                                                     5 H u0 p0 c0 {2,S}''')
+
+
 
     def atomType(self, mol, atomID):
         atom = mol.atoms[atomID]
@@ -389,24 +396,25 @@ class TestGetAtomType(unittest.TestCase):
         self.assertEqual(self.atomType(self.mol21, 0), 'S0s')
         self.assertEqual(self.atomType(self.mol22, 0), 'Sa')
         self.assertEqual(self.atomType(self.mol23, 0), 'S2s')
-        #self.assertEqual(self.atomType(self.mol21, 1), 'S2sp')
-        #self.assertEqual(self.atomType(self.mol42, 2), 'S2sn')
+        self.assertEqual(self.atomType(self.mol21, 1), 'S2sp')
+        self.assertEqual(self.atomType(self.mol42, 2), 'S2sn')
         self.assertEqual(self.atomType(self.mol19, 1), 'S2d')
-        #self.assertEqual(self.atomType(self.mol24, 1), 'S2dc')
+        self.assertEqual(self.atomType(self.mol24, 1), 'S2dc')
         self.assertEqual(self.atomType(self.mol25, 0), 'S4s')
-        #self.assertEqual(self.atomType(self.mol23, 1), 'S4sc')
+        self.assertEqual(self.atomType(self.mol23, 1), 'S4sc')
         self.assertEqual(self.atomType(self.mol25, 2), 'S4d')
-        #self.assertEqual(self.atomType(self.mol26, 1), 'S4dc')
+        self.assertEqual(self.atomType(self.mol26, 1), 'S4dc')
         #self.assertEqual(self.atomType(self.mol27, 0), 'S4b') # RMG correctly can't represent heteroatoms in aromatics. See RMG-Py issue #982 
         self.assertEqual(self.atomType(self.mol28, 1), 'S4dd')
         self.assertEqual(self.atomType(self.mol38, 1), 'S4dd')
         self.assertEqual(self.atomType(self.mol28, 4), 'S4t')
-        #self.assertEqual(self.atomType(self.mol29, 1), 'S4tc')
+        self.assertEqual(self.atomType(self.mol29, 1), 'S4tc')
         self.assertEqual(self.atomType(self.mol28, 5), 'S6s')
         self.assertEqual(self.atomType(self.mol30, 0), 'S6d')
-        #self.assertEqual(self.atomType(self.mol31, 1), 'S6dc')
+        self.assertEqual(self.atomType(self.mol43, 1), 'S6dc') # S6dc with c+1
+        self.assertEqual(self.atomType(self.mol31, 1), 'S6dc') # S6dc with c+2
         self.assertEqual(self.atomType(self.mol32, 1), 'S6dd')
-        #self.assertEqual(self.atomType(self.mol33, 1), 'S6ddc')
+        self.assertEqual(self.atomType(self.mol33, 1), 'S6ddc')
         self.assertEqual(self.atomType(self.mol34, 1), 'S6ddd')
         self.assertEqual(self.atomType(self.mol35, 0), 'S6t')
         self.assertEqual(self.atomType(self.mol36, 0), 'S6td')
