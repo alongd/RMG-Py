@@ -14,7 +14,8 @@ from external.wip import work_in_progress
 from rmgpy.molecule.molecule import Molecule
 from rmgpy.molecule.group import Group
 
-molecule_atom_types           = [ 'C', 'O', 'N', 'S', 'Si', 'Cl']
+# molecule_atom_types           = [ 'C', 'O', 'N', 'S', 'Si', 'Cl']
+molecule_atom_types           = [ 'C', 'O', 'Si', 'Cl']
 group_atomtypes = {}
 
 for item in create_atom_types() :

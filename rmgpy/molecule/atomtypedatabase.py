@@ -79,28 +79,28 @@ def create_atom_types():
     #bivalent:
     bivalent = []
     for type in [Xs, Xd]:
-        #bivalent.extend(create_types(type, ['O', 'S']))
+        # bivalent.extend(create_types(type, ['O', 'S']))
         bivalent.extend(create_types(type, ['O']))
     
     for at in bivalent: at.lp = 2
     
     atomtypes.extend(bivalent)
     
-    #trivalent nitrogen:
-    trivalent_N = []
-    for type in [Xs, Xd, Xt, Xb]:
-        trivalent_N.extend(create_types(type, ['N'], ['N3']))
-    
-    for at in trivalent_N: at.lp = 1
-    atomtypes.extend(trivalent_N)
-    
-    #pentavalent nitrogen:
-    pentavalent_N = []
-    for type in [Xs, Xd, Xdd, Xt, Xb]:
-        pentavalent_N.extend(create_types(type, ['N'], ['N5']))
-    
-    for at in pentavalent_N: at.lp = 0
-    atomtypes.extend(pentavalent_N)
+    # #trivalent nitrogen:
+    # trivalent_N = []
+    # for type in [Xs, Xd, Xt, Xb]:
+    #     trivalent_N.extend(create_types(type, ['N'], ['N3']))
+    #
+    # for at in trivalent_N: at.lp = 1
+    # atomtypes.extend(trivalent_N)
+    #
+    # #pentavalent nitrogen:
+    # pentavalent_N = []
+    # for type in [Xs, Xd, Xdd, Xt, Xb]:
+    #     pentavalent_N.extend(create_types(type, ['N'], ['N5']))
+    #
+    # for at in pentavalent_N: at.lp = 0
+    # atomtypes.extend(pentavalent_N)
     
     return atomtypes
     
