@@ -2027,7 +2027,7 @@ class Group(Graph):
                 else:
                     raise UnexpectedChargeError(graph = newMolecule)
                 #check hardcoded atomtypes
-                if groupAtom.atomType[0] in [atomTypes[x] for x in ['N5d', 'N5dd', 'N5t', 'N5b', 'N5s', 'Ot']] and atom.charge == 1:
+                if groupAtom.atomType[0] in [atomTypes[x] for x in ['N5d', 'N5dd', 'N5t', 'N5b', 'N5s', 'O3t']] and atom.charge == 1:
                     pass
                 elif groupAtom.atomType[0] in [atomTypes[x] for x in ['N1d', 'N2s']] and atom.charge == -1:
                     pass
