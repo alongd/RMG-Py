@@ -330,13 +330,24 @@ def _readKineticsReaction(line, speciesDict, Aunits, Eunits):
     elif '=>' in reaction:
         products = products[1:]
         reversible = False
-    if '(+M)' in reactants: reactants = reactants.replace('(+M)','')
-    if '(+m)' in reactants: reactants = reactants.replace('(+m)','')
-    if '(+M)' in products:  products = products.replace('(+M)','')
-    if '(+m)' in products:  products = products.replace('(+m)','')
-    
+    specificCollider = None
+    # search for a third body collider, e.g., '(+M)', '(+m)', or a specific species like '(+N2)', matching `(+anythingOtherThanEndingParenthesis)`:
+    collider = re.search('\(\+[^\)]+\)',reactants)
+    if collider is not None:
+        collider = collider.group(0) # save string value rather than the object
+        assert collider == re.search('\(\+[^\)]+\)',products).group(0), "Third body colliders in reactants and products of reaction {0} are not identical!".format(reaction)
+        extraParenthesis = collider.count('(') -1
+        for i in xrange(extraParenthesis):
+            collider += ')' # allow for species like N2(5) or CH2(T)(15) to be read as specific colliders, although currently not implemented in Chemkin. See RMG-Py #1070
+        reactants = reactants.replace(collider,'')
+        products = products.replace(collider,'')
+        if collider.upper().strip() != "(+M)": # the collider is a specific species, not (+M) or (+m)
+            if collider.strip()[2:-1] not in speciesDict: # stripping spaces, '(+' and ')'
+                raise ChemkinError('Unexpected third body collider "{0}" in reaction {1}.'.format(collider.strip()[2:-1], reaction))
+            specificCollider = speciesDict[collider.strip()[2:-1]]
+
     # Create a new Reaction object for this reaction
-    reaction = Reaction(reactants=[], products=[], reversible=reversible)
+    reaction = Reaction(reactants=[], products=[], specificCollider=specificCollider, reversible=reversible)
     
     # Convert the reactants and products to Species objects using the speciesDict
     for reactant in reactants.split('+'):
@@ -347,7 +358,7 @@ def _readKineticsReaction(line, speciesDict, Aunits, Eunits):
             # The implementation below assumes an integer between 0 and 9, inclusive
             stoichiometry = int(reactant[0])
             reactant = reactant[1:]               
-        if reactant.upper() == 'M':
+        if reactant.upper() == 'M': # this identifies reactions like 'H+H+M=H2+M' as opposed to 'H+H(+M)=H2(+M)' that was identified above
             thirdBody = True
         elif reactant not in speciesDict:
             raise ChemkinError('Unexpected reactant "{0}" in reaction {1}.'.format(reactant, reaction))
@@ -374,11 +385,16 @@ def _readKineticsReaction(line, speciesDict, Aunits, Eunits):
             raise ChemkinError('Unexpected product "{0}" in reaction {1}.'.format(product, reaction))
         else:
             productSpecies = speciesDict[product]
-            if not productSpecies.reactive:
-                productSpecies.reactive = True
-            for i in range(stoichiometry):
-                reaction.products.append(productSpecies)
-    
+            if productSpecies in reaction.reactants:
+                assert collider is None, "Found TWO specific colliders {0}, {1} in reaction {2}, expecting no more than one".format(collider, productSpecies, reaction)
+                reaction.specificCollider = productSpecies
+                reaction.reactants.remove(productSpecies)
+            else:
+                if not productSpecies.reactive:
+                    productSpecies.reactive = True
+                for i in range(stoichiometry):
+                    reaction.products.append(productSpecies)
+
     # Determine the appropriate units for k(T) and k(T,P) based on the number of reactants
     # This assumes elementary kinetics for all reactions
     try:
@@ -549,6 +565,7 @@ def readReactionComments(reaction, comments, read = True):
             index = reaction.index,
             reactants = reaction.reactants, 
             products = reaction.products, 
+            specificCollider = reaction.specificCollider, 
             kinetics = reaction.kinetics,
             reversible = reaction.reversible,
             duplicate = reaction.duplicate,
@@ -573,6 +590,7 @@ def readReactionComments(reaction, comments, read = True):
                 index = reaction.index,
                 reactants = reaction.reactants, 
                 products = reaction.products, 
+                specificCollider = reaction.specificCollider, 
                 kinetics = reaction.kinetics,
                 reversible = reaction.reversible,
                 duplicate = reaction.duplicate,
@@ -585,6 +603,7 @@ def readReactionComments(reaction, comments, read = True):
                 index = reaction.index,
                 reactants = reaction.reactants, 
                 products = reaction.products, 
+                specificCollider = reaction.specificCollider, 
                 kinetics = reaction.kinetics,
                 reversible = reaction.reversible,
                 duplicate = reaction.duplicate,
@@ -597,6 +616,7 @@ def readReactionComments(reaction, comments, read = True):
                 index = reaction.index,
                 reactants = reaction.reactants, 
                 products = reaction.products, 
+                specificCollider = reaction.specificCollider, 
                 kinetics = reaction.kinetics, 
                 reversible = reaction.reversible,
                 duplicate = reaction.duplicate,
@@ -633,6 +653,7 @@ def readReactionComments(reaction, comments, read = True):
                 index = reaction.index,
                 reactants = reaction.reactants, 
                 products = reaction.products,
+                specificCollider = reaction.specificCollider, 
                 kinetics = reaction.kinetics,
                 reversible = reaction.reversible,
                 duplicate = reaction.duplicate,
@@ -646,6 +667,7 @@ def readReactionComments(reaction, comments, read = True):
                 index = reaction.index,
                 reactants = reaction.reactants, 
                 products = reaction.products, 
+                specificCollider = reaction.specificCollider, 
                 kinetics = reaction.kinetics,
                 reversible = reaction.reversible,
                 duplicate = reaction.duplicate,
@@ -662,6 +684,7 @@ def readReactionComments(reaction, comments, read = True):
                 index = reaction.index,
                 reactants = reaction.reactants, 
                 products = reaction.products, 
+                specificCollider = reaction.specificCollider, 
                 kinetics = reaction.kinetics,
                 reversible = reaction.reversible,
                 duplicate = reaction.duplicate,
@@ -675,6 +698,7 @@ def readReactionComments(reaction, comments, read = True):
             index = reaction.index,
             reactants = reaction.reactants, 
             products = reaction.products, 
+            specificCollider = reaction.specificCollider, 
             kinetics = reaction.kinetics,
             reversible = reaction.reversible,
             duplicate = reaction.duplicate,
@@ -864,7 +888,7 @@ def loadChemkinFile(path, dictionaryPath=None, transportPath=None, readComments 
 
         for index2 in range(index1+1, len(reactionList)):
             reaction2 = reactionList[index2]
-            if reaction1.reactants == reaction2.reactants and reaction1.products == reaction2.products:
+            if reaction1.reactants == reaction2.reactants and reaction1.products == reaction2.products and reaction1.specificCollider == reaction2.specificCollider:
                 if reaction1.duplicate and reaction2.duplicate:
                     
                     if isinstance(reaction1, LibraryReaction) and isinstance(reaction2, LibraryReaction):
@@ -884,6 +908,7 @@ def loadChemkinFile(path, dictionaryPath=None, transportPath=None, readComments 
                                 index = reaction1.index,
                                 reactants = reaction1.reactants,
                                 products = reaction1.products,
+                                specificCollider = reaction1.specificCollider,
                                 kinetics = kinetics,
                                 library = reaction1.library,
                                 duplicate = False,
@@ -1433,17 +1458,17 @@ def writeReactionString(reaction, javaLibrary = False):
             if (isinstance(kinetics, _kinetics.ThirdBody) and
                     not isinstance(kinetics, _kinetics.Lindemann) and
                     not isinstance(kinetics, _kinetics.Troe)):
-                thirdBody = ' + M'
+                thirdBody = (' +' + getSpeciesIdentifier(reaction.specificCollider)) if reaction.specificCollider else ' + M'
             elif isinstance(kinetics, _kinetics.PDepArrhenius):
                 thirdBody = ''
             elif isinstance(kinetics, _kinetics.Chebyshev):
                 thirdBody = ''
             else:
-                thirdBody = ' (+M)'
+                thirdBody = (' (+' + getSpeciesIdentifier(reaction.specificCollider) + ')') if reaction.specificCollider else ' (+M)'
         
         reaction_string = ' + '.join([getSpeciesIdentifier(reactant) for reactant in reaction.reactants])
         reaction_string += thirdBody
-        reaction_string += ' => ' if not reaction.reversible else ' = '
+        reaction_string += ' = ' if  reaction.reversible else ' => '
         reaction_string += ' + '.join([getSpeciesIdentifier(product) for product in reaction.products])
         reaction_string += thirdBody
     
@@ -1453,15 +1478,15 @@ def writeReactionString(reaction, javaLibrary = False):
             if (isinstance(kinetics, _kinetics.ThirdBody) and
                     not isinstance(kinetics,
                                    (_kinetics.Lindemann, _kinetics.Troe))):
-                thirdBody = '+M'
+                thirdBody = ('+' + getSpeciesIdentifier(reaction.specificCollider)) if reaction.specificCollider else '+M'
             elif isinstance(kinetics, _kinetics.PDepArrhenius):
                 thirdBody = ''
             else:
-                thirdBody = '(+M)'
+                thirdBody = ('(+' + getSpeciesIdentifier(reaction.specificCollider) + ')') if reaction.specificCollider else '(+M)'
         
         reaction_string = '+'.join([getSpeciesIdentifier(reactant) for reactant in reaction.reactants])
         reaction_string += thirdBody
-        reaction_string += '=>' if not reaction.reversible else '='
+        reaction_string += '=' if reaction.reversible else '=>'
         reaction_string += '+'.join([getSpeciesIdentifier(product) for product in reaction.products])
         reaction_string += thirdBody
 
@@ -1490,6 +1515,7 @@ def writeKineticsEntry(reaction, speciesList, verbose = True, javaLibrary = Fals
                 new_reaction = LibraryReaction( index=reaction.index,
                      reactants=reaction.reactants,
                      products=reaction.products,
+                     specificCollider=reaction.specificCollider,
                      reversible=reaction.reversible,
                      kinetics=kinetics,
                      library=reaction.library
@@ -1498,6 +1524,7 @@ def writeKineticsEntry(reaction, speciesList, verbose = True, javaLibrary = Fals
                 new_reaction = Reaction( index=reaction.index,
                          reactants=reaction.reactants,
                          products=reaction.products,
+                         specificCollider=reaction.specificCollider,
                          reversible=reaction.reversible,
                          kinetics=kinetics)
             string += writeKineticsEntry(new_reaction, speciesList, verbose, javaLibrary)
@@ -1528,7 +1555,9 @@ def writeKineticsEntry(reaction, speciesList, verbose = True, javaLibrary = Fals
                         string += '! High-P limit: {0} (Library reaction: {1!s})\n'.format(rxn, rxn.library)
                     else:
                         string += '! High-P limit: {0} (Template reaction: {1!s})\n'.format(rxn, rxn.family)   
-    
+        
+        if reaction.specificCollider is not None:
+            string += "! Specific third body collider: {0}\n".format(reaction.specificCollider.label)
         # Next line of comment contains information about the pairs of reaction
         pairs =[]
         if reaction.pairs:
@@ -1675,8 +1704,9 @@ def markDuplicateReaction(test_reaction, reaction_list):
             # duplicates of one another.
             # RHW question: why can't TemplateReaction be duplicate of LibraryReaction, in Chemkin terms? I guess it shouldn't happen in RMG.
             continue
-        if (reaction1.reactants == reaction2.reactants and reaction1.products == reaction2.products) \
-        or (reaction1.products == reaction2.reactants and reaction1.reactants == reaction2.products):
+        if ((reaction1.reactants == reaction2.reactants and reaction1.products == reaction2.products) \
+            or (reaction1.products == reaction2.reactants and reaction1.reactants == reaction2.products)) \
+            and  (reaction1.specificCollider == reaction2.specificCollider):
             if reaction1.duplicate and reaction2.duplicate:                
                 if reaction1.kinetics.isPressureDependent() != reaction2.kinetics.isPressureDependent():
                     logging.warning('Marked reaction {0} as not duplicate because of mixed pressure dependence for saving to Chemkin file.'.format(reaction1))
