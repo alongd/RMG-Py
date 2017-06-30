@@ -29,7 +29,7 @@
 ################################################################################
 
 """
-This module contains functionality for working with kinetics families.
+This module contains functionality for working with kinetics libraries.
 """
 
 import os.path
