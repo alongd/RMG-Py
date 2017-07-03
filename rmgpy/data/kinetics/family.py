@@ -84,6 +84,7 @@ class TemplateReaction(Reaction):
                 index=-1,
                 reactants=None,
                 products=None,
+                specificCollider=None,
                 kinetics=None,
                 reversible=True,
                 transitionState=None,
@@ -99,6 +100,7 @@ class TemplateReaction(Reaction):
                           index=index,
                           reactants=reactants,
                           products=products,
+                          specificCollider=specificCollider,
                           kinetics=kinetics,
                           reversible=reversible,
                           transitionState=transitionState,
@@ -118,6 +120,7 @@ class TemplateReaction(Reaction):
         return (TemplateReaction, (self.index,
                                    self.reactants,
                                    self.products,
+                                   self.specificCollider,
                                    self.kinetics,
                                    self.reversible,
                                    self.transitionState,
@@ -152,6 +155,7 @@ class TemplateReaction(Reaction):
         other.products = []
         for product in self.products:
             other.products.append(product.copy(deep=True))
+        other.specificCollider = self.specificCollider
         other.degeneracy = self.degeneracy
         other.kinetics = deepcopy(self.kinetics)
         other.reversible = self.reversible
