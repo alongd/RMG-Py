@@ -1394,6 +1394,7 @@ class CoreEdgeReactionModel:
         network containing the new reaction.
         """
 
+        if newSpecies == None: return
         assert isinstance(newSpecies, Species)
 
         # Put the reaction in the direction in which the new species is in the reactants
