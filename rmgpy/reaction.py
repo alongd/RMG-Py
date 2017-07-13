@@ -87,6 +87,7 @@ class Reaction:
     `duplicate`         ``bool``                    ``True`` if the reaction is known to be a duplicate, ``False`` if not
     `degeneracy`        :class:`double`             The reaction path degeneracy for the reaction
     `pairs`             ``list``                    Reactant-product pairings to use in converting reaction flux to species flux
+    `comment`           ``str``                     A description of the reaction source (optional)
     =================== =========================== ============================
     
     """
@@ -101,7 +102,8 @@ class Reaction:
                  transitionState=None,
                  duplicate=False,
                  degeneracy=1,
-                 pairs=None
+                 pairs=None,
+                 comment=''
                  ):
         self.index = index
         self.label = label
@@ -113,6 +115,7 @@ class Reaction:
         self.duplicate = duplicate
         self.degeneracy = degeneracy
         self.pairs = pairs
+        self.comment = comment
         
         if diffusionLimiter.enabled:
             self.k_effective_cache = {}
@@ -133,6 +136,7 @@ class Reaction:
         if self.duplicate: string += 'duplicate={0}, '.format(self.duplicate)
         if self.degeneracy != 1: string += 'degeneracy={0:d}, '.format(self.degeneracy)
         if self.pairs is not None: string += 'pairs={0}, '.format(self.pairs)
+        if self.comment != '': string += 'comment={0!r}, '.format(self.comment)
         string = string[:-2] + ')'
         return string
 
@@ -157,7 +161,8 @@ class Reaction:
                            self.transitionState,
                            self.duplicate,
                            self.degeneracy,
-                           self.pairs
+                           self.pairs,
+                           self.comment
                            ))
 
     def toChemkin(self, speciesList=None, kinetics=True):
@@ -1095,6 +1100,7 @@ class Reaction:
         other.duplicate = self.duplicate
         other.degeneracy = self.degeneracy
         other.pairs = deepcopy(self.pairs)
+        other.comment = deepcopy(self.comment)
         
         return other
 
