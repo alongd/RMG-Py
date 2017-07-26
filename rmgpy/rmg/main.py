@@ -706,11 +706,11 @@ class RMG(util.Subject):
                 plotSensitivity(self.outputDirectory, index, reactionSystem.sensitiveSpecies)
 
         # generate Cantera files chem.cti & chem_annotated.cti in a designated `cantera` output folder
-        try:
-            self.generateCanteraFiles(os.path.join(self.outputDirectory, 'chemkin', 'chem.inp'))
-            self.generateCanteraFiles(os.path.join(self.outputDirectory, 'chemkin', 'chem_annotated.inp'))
-        except EnvironmentError:
-            logging.error('Could not generate Cantera files due to EnvironmentError. Check read\write privileges in output directory.')
+        #try:
+        #    self.generateCanteraFiles(os.path.join(self.outputDirectory, 'chemkin', 'chem.inp'))
+        #    self.generateCanteraFiles(os.path.join(self.outputDirectory, 'chemkin', 'chem_annotated.inp'))
+        #except EnvironmentError:
+        #    logging.error('Could not generate Cantera files due to EnvironmentError. Check read\write privileges in output directory.')
                 
         # Write output file
         logging.info('')
