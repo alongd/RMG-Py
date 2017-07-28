@@ -921,7 +921,7 @@ class CoreEdgeReactionModel:
         coreSpeciesCount, coreReactionCount, edgeSpeciesCount, edgeReactionCount = self.getModelSize()
 
 
-        numSpeciesInSeed = 350 #NG_HTP-Oxy
+        numSpeciesInSeed = 835 #NG_HTP-nonOxy
         if coreSpeciesCount -4 > numSpeciesInSeed: # species in seed + Ar, He, Ne, N2
             logging.info('')
             logging.info('')
