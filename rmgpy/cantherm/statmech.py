@@ -357,14 +357,14 @@ class StatMechJob:
                                     applyAtomEnergyCorrections=self.applyAtomEnergyCorrections,
                                     applyBondEnergyCorrections=self.applyBondEnergyCorrections)
         ZPE = statmechLog.loadZeroPointEnergy() * self.frequencyScaleFactor
-        
+
         # The E0_withZPE at this stage contains the ZPE
         E0_withZPE = E0 + ZPE
         
         logging.debug('         Scaling factor used = {0:g}'.format(self.frequencyScaleFactor))
         logging.debug('         ZPE (0 K) = {0:g} kcal/mol'.format(ZPE / 4184.))
         logging.debug('         E0 (0 K) = {0:g} kcal/mol'.format(E0_withZPE / 4184.))
-       
+
         conformer.E0 = (E0_withZPE*0.001,"kJ/mol")
         
         # If loading a transition state, also read the imaginary frequency
@@ -565,7 +565,7 @@ def applyEnergyCorrections(E0, modelChemistry, atoms, bonds,
         # Spin orbit correction (SOC) in Hartrees
         # Values taken from ref 22 of http://dx.doi.org/10.1063/1.477794 and converted to hartrees
         # Values in millihartree are also available (with fewer significant figures) from table VII of http://dx.doi.org/10.1063/1.473182
-        SOC = {'H':0.0, 'N':0.0, 'O': -0.000355, 'C': -0.000135, 'S':  -0.000893, 'P': 0.0}
+        SOC = {'H':0.0, 'N':0.0, 'O': -0.000355, 'C': -0.000135, 'S':  -0.000893, 'P': 0.0, 'I':-0.011547226}
 
         # Step 1: Reference all energies to a model chemistry-independent basis
         # by subtracting out that model chemistry's atomic energies
