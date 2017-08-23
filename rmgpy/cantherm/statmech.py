@@ -239,9 +239,11 @@ class StatMechJob:
         
         try:
             externalSymmetry = local_context['externalSymmetry']
+            symfromlog = False
         except KeyError:
-            raise InputError('Required attribute "externalSymmetry" not found in species file {0!r}.'.format(path))
-        
+            externalSymmetry = None
+            symfromlog = True
+            
         try:
             spinMultiplicity = local_context['spinMultiplicity']
         except KeyError:
@@ -317,7 +319,7 @@ class StatMechJob:
                                     'Please verify that the geometry and Hessian of {0!r} are defined in the same coordinate system'.format(self.species.label))
 
         logging.debug('    Reading molecular degrees of freedom...')
-        conformer = statmechLog.loadConformer(symmetry=externalSymmetry, spinMultiplicity=spinMultiplicity, opticalIsomers=opticalIsomers)
+        conformer = statmechLog.loadConformer(symmetry=externalSymmetry, spinMultiplicity=spinMultiplicity, opticalIsomers=opticalIsomers, symfromlog = symfromlog)
         
         logging.debug('    Reading optimized geometry...')
         coordinates, number, mass = geomLog.loadGeometry()
