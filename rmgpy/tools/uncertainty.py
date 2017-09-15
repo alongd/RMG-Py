@@ -38,7 +38,7 @@ def retrieveSaturatedSpeciesFromList(species, speciesList):
     molecule = species.molecule[0]
     assert molecule.isRadical(), "Method only valid for radicals."
     saturatedStruct = molecule.copy(deep=True)
-    saturatedStruct.saturate()
+    saturatedStruct.saturateRadicals()
     for otherSpecies in speciesList:
         if otherSpecies.isIsomorphic(saturatedStruct):
             return otherSpecies
