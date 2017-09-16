@@ -51,7 +51,7 @@ class ResonanceTest(unittest.TestCase):
     def testAzide(self):
         """Test resonance structure generation for ethyl azide
 
-        Simple case for N5dd <=> N5t resonance"""
+        Simple case for N5dd <=> N5tc resonance"""
         molList = generateResonanceStructures(Molecule(SMILES="CCN=[N+]=[N-]"))
         self.assertEqual(len(molList), 3)
         self.assertTrue(all([any([atom.charge != 0 for atom in mol.vertices]) for mol in molList]))
@@ -104,7 +104,7 @@ class ResonanceTest(unittest.TestCase):
         self.assertEqual(len(molList), 6)
 
     def testAromaticWithNResonance(self):
-        """Test resonance structure generation for aromatic species with N5dd <=> N5t resonance"""
+        """Test resonance structure generation for aromatic species with N5dd <=> N5tc resonance"""
         molList = generateResonanceStructures(Molecule(SMILES="c1ccccc1CCN=[N+]=[N-]"))
         self.assertEqual(len(molList), 6)
 
