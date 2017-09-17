@@ -745,7 +745,7 @@ class SolvationDatabase(object):
 
         saturatedStruct.update()
         saturatedStruct.updateLonePairs()
-        
+
         return saturatedStruct, addedToPairs
 
     def removeHBonding(self, saturatedStruct, addedToRadicals, addedToPairs, soluteData):  
@@ -801,12 +801,6 @@ class SolvationDatabase(object):
         addedToRadicals = {} # Dictionary of key = atom, value = dictionary of {H atom: bond}
         addedToPairs = {} # Dictionary of key = atom, value = # lone pairs changed
         saturatedStruct = molecule.copy(deep=True)
-
-        # Convert lone pairs to radicals, then saturate with H.
-       
-        # Change lone pairs to radicals based on valency
-        if sum([atom.lonePairs for atom in saturatedStruct.atoms]) > 0: # molecule contains lone pairs
-            saturatedStruct, addedToPairs = self.transformLonePairs(saturatedStruct)
 
         # Now saturate radicals with H
         if sum([atom.radicalElectrons for atom in saturatedStruct.atoms]) > 0: # radical species
