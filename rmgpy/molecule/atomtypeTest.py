@@ -461,7 +461,7 @@ class TestGetAtomType(unittest.TestCase):
         self.assertEqual(self.atomType(self.mol23, 1), 'S4sc')
         self.assertEqual(self.atomType(self.mol25, 2), 'S4d')
         self.assertEqual(self.atomType(self.mol26, 1), 'S4dc')
-        #self.assertEqual(self.atomType(self.mol27, 0), 'S4b') # RMG correctly can't represent heteroatoms in aromatics. See RMG-Py issue #982 
+        #self.assertEqual(self.atomType(self.mol27, 0), 'S4b') # RMG correctly can't represent heteroatoms in aromatics. See RMG-Py issue #982
         self.assertEqual(self.atomType(self.mol28, 1), 'S4dd')
         self.assertEqual(self.atomType(self.mol38, 1), 'S4dd')
         self.assertEqual(self.atomType(self.mol28, 4), 'S4t')
