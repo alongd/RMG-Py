@@ -48,6 +48,14 @@ class ResonanceTest(unittest.TestCase):
         self.assertEqual(len(molList), 3)
         self.assertTrue(any([any([atom.charge != 0 for atom in mol.vertices]) for mol in molList]))
 
+    def testHSO3(self):
+        """Test resonance structure generation for OS(=O)[O] radical
+
+        A case for lone pair <=> radical resonance involving sulfur"""
+        molList = generateResonanceStructures(Molecule(SMILES="OS(=O)[O]"))
+        self.assertEqual(len(molList), 4)
+        self.assertTrue(any([any([atom.charge != 0 for atom in mol.vertices]) for mol in molList]))
+
     def testAzide(self):
         """Test resonance structure generation for ethyl azide
 

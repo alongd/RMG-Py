@@ -271,9 +271,11 @@ def findAllDelocalizationPathsLonePairRadical(atom1):
     # No paths if atom1 is not a radical
     if atom1.radicalElectrons <= 0:
         return []
-    
-    # In a first step we only consider nitrogen and oxygen atoms as possible radical centers
-    if not ((atom1.lonePairs == 0 and atom1.isNitrogen()) or(atom1.lonePairs == 2 and atom1.isOxygen())):
+
+    # Currently we only consider N, O, S atoms as possible radical centers
+    if not ((atom1.isNitrogen() and atom1.lonePairs == 0)\
+            or (atom1.isOxygen() and atom1.lonePairs == 2)\
+            or (atom1.isSulfur())):
         return []
     
     # Find all delocalization paths
@@ -282,7 +284,12 @@ def findAllDelocalizationPathsLonePairRadical(atom1):
         # Only single bonds are considered
         if bond12.isSingle():
             # Neighboring atom must posses a lone electron pair to loose it
-            if ((atom2.lonePairs == 1 and atom2.isNitrogen()) or (atom2.lonePairs == 3 and atom2.isOxygen())) and (atom2.radicalElectrons == 0):
+            #if ((atom2.lonePairs == 1 and atom2.isNitrogen()) or (atom2.lonePairs == 3 and atom2.isOxygen())) and (
+            #    atom2.radicalElectrons == 0):
+            if ((atom2.isNitrogen() and atom2.lonePairs == 1)\
+                or (atom2.isOxygen() and atom2.lonePairs == 3)\
+                or (atom2.isSulfur() and atom2.lonePairs > 0)\
+                and (atom2.radicalElectrons == 0)):
                 paths.append([atom1, atom2])
                 
     return paths
