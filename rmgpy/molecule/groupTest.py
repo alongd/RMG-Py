@@ -1235,7 +1235,7 @@ class TestGroup(unittest.TestCase):
         adjlist = """
 1  *1 N1sc u0
         """
-        answer_smiles = '[NH2-]'
+        answer_smiles = '[NH4-3]'
         self.assertTrue(performSampMoleComparison(adjlist, answer_smiles))
 
         #test creation of charged species when some single bonds present
