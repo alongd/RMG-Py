@@ -9,9 +9,13 @@ cpdef list generateResonanceStructures(Molecule mol, bint clarStructures=?, bint
 
 cpdef list _generateResonanceStructures(list molList, list methodList, bint keepIsomorphic=?, bint copy=?)
 
+cpdef list filterIsomers(list molList)
+
 cpdef list generateAdjacentResonanceStructures(Molecule mol)
 
-cpdef list generateLonePairRadicalResonanceStructures(Molecule mol)
+cpdef list generateLonePairRadicalResonanceChargeStructures(Molecule mol)
+
+cpdef list generateLonePairResonanceMultipleBondStructures(Molecule mol)
 
 cpdef list generateN5dd_N5tsResonanceStructures(Molecule mol)
 

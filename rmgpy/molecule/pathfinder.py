@@ -234,7 +234,7 @@ def compute_atom_distance(atom_indices, mol):
         path = find_shortest_path(start, end)
         distances[(i1, i2)] = len(path) - 1  
 
-    return distances  
+    return distances
 
 
 def findAllDelocalizationPaths(atom1):
@@ -244,9 +244,9 @@ def findAllDelocalizationPaths(atom1):
     """
     cython.declare(paths=list)
     cython.declare(atom2=Atom, atom3=Atom, bond12=Bond, bond23=Bond)
-    
+
     # No paths if atom1 is not a radical
-    if atom1.radicalElectrons <= 0:
+    if atom1.radicalElectrons <= 0:  # No paths if atom1 is not a radical
         return []
 
     # Find all delocalization paths
@@ -260,32 +260,77 @@ def findAllDelocalizationPaths(atom1):
                     paths.append([atom1, atom2, atom3, bond12, bond23])
     return paths
 
-def findAllDelocalizationPathsLonePairRadical(atom1):
+def findAllDelocalizationPathsLonePairRadicalCharge(atom1):
     """
-    Find all the delocalization paths of lone electron pairs next to the radical center indicated
-    by `atom1`. Used to generate resonance isomers.
+    Find all the delocalization paths of lone electron pairs next to the radical center indicated by `atom1`.
+    Used to generate resonance isomers. Example: NO2
+    We currently only consider N/S/O atoms in this path as all participating atoms either loose or gain a lone pair.
+    Only single bonds are considered.
     """
     cython.declare(paths=list)
     cython.declare(atom2=Atom, bond12=Bond)
-    
-    # No paths if atom1 is not a radical
-    if atom1.radicalElectrons <= 0:
+
+    if atom1.radicalElectrons <= 0:  # No paths if atom1 is not a radical
         return []
-    
-    # In a first step we only consider nitrogen and oxygen atoms as possible radical centers
-    if not ((atom1.lonePairs == 0 and atom1.isNitrogen()) or(atom1.lonePairs == 2 and atom1.isOxygen())):
-        return []
-    
-    # Find all delocalization paths
+
+    paths = []
+    # atom1 gains a lone pair
+    if ((atom1.isNitrogen() and atom1.lonePairs in [0,1])  # Eg: [N+](=O)[O-], HO[NH]
+            or (atom1.isOxygen() and atom1.lonePairs in [1,2])      # Eg: N(=O)[O], HOS
+            or (atom1.isSulfur() and atom1.lonePairs in [0,1,2])):  # Eg: HOSO2, HOSO, HOS
+        for atom2, bond12 in atom1.edges.items():
+            if bond12.isSingle() and (abs(atom1.charge) + abs(atom2.charge) <= 2):
+                # atom2 must posses a lone electron pair to loose it
+                if ((atom2.isNitrogen() and atom2.lonePairs in [1,2])   # NO2 vs. N2H3
+                    or (atom2.isOxygen() and atom2.lonePairs in [2,3])  # Eg: NO2, HOS
+                    or (atom2.isSulfur() and atom2.lonePairs in [1,2,3]))\
+                        and (atom2.radicalElectrons == 0):
+                    paths.append([atom1, atom2])
+    return paths
+
+def findAllDelocalizationPathsLonePairMultipleBond(atom1):
+    """
+    Find all the delocalization paths of a lone electron pair on `atom1`,
+    or an atom that can gain a lone pair and has a multiple bond.
+    Used to generate resonance isomers. Example: S#N, N#[S], O=S([O])=O, [N]=C, N=C
+    """
+    cython.declare(paths=list)
+    cython.declare(atom2=Atom, bond12=Bond)
+
     paths = []
     for atom2, bond12 in atom1.edges.items():
-        # Only single bonds are considered
-        if bond12.isSingle():
-            # Neighboring atom must posses a lone electron pair to loose it
-            if ((atom2.lonePairs == 1 and atom2.isNitrogen()) or (atom2.lonePairs == 3 and atom2.isOxygen())) and (atom2.radicalElectrons == 0):
-                paths.append([atom1, atom2])
-                
+        if (not (atom2.radicalElectrons * atom1.radicalElectrons)  # not allowing both atom1 and atom2 to be radicals
+                and (abs(atom1.charge) + abs(atom2.charge) <= 2)   # pre-screen by charge to save time
+                and atom2.isNonHydrogen()):
+            if bond12.isSingle():
+                # Find paths in the direction <forming> the multiple bond
+                # atom1 must posses at least one lone pair to loose it
+                if ((atom1.isNitrogen() and atom1.lonePairs in [1,2,3])
+                        or (atom1.isOxygen() and atom1.lonePairs in [2,3])  # not allowing O with no lonePairs
+                        or (atom1.isSulfur() and atom1.lonePairs in [1,2,3])):
+                    paths.append([atom1, atom2, bond12, 1])
+            elif bond12.isDouble():
+                # Find paths in the direction <increasing> the multiple bond
+                # atom1 must posses at least one lone pair to loose it
+                if ((atom1.isNitrogen() and atom1.lonePairs in [1,2,3])
+                        or (atom1.isOxygen() and atom1.lonePairs in [2,3])
+                        or (atom1.isSulfur() and atom1.lonePairs in [1,2,3])):
+                    paths.append([atom1, atom2, bond12, 1])
+                # Find paths in the direction <decreasing> the multiple bond
+                # atom1 gains a lone pair, hence cannot have more than two lone pairs
+                if ((atom1.isNitrogen() and atom1.lonePairs in [0,1,2])
+                        or (atom1.isOxygen() and atom1.lonePairs in [1,2])
+                        or (atom1.isSulfur() and atom1.lonePairs in [0,1,2])):
+                    paths.append([atom1, atom2, bond12, 2])
+            elif bond12.isTriple():
+                # Find paths in the direction <decreasing> the multiple bond
+                # atom1 gains a lone pair, hence cannot have more than two lone pairs
+                if ((atom1.isNitrogen() and atom1.lonePairs in [0,1,2])
+                        or (atom1.isOxygen() and atom1.lonePairs in [1,2])
+                        or (atom1.isSulfur() and atom1.lonePairs in [0,1,2])):
+                    paths.append([atom1, atom2, bond12, 2])
     return paths
+
 
 def findAllDelocalizationPathsN5dd_N5ts(atom1):
     """
@@ -294,16 +339,16 @@ def findAllDelocalizationPathsN5dd_N5ts(atom1):
     """
     cython.declare(paths=list)
     cython.declare(atom2=Atom, bond12=Bond)
-    
+
     # No paths if atom1 is not nitrogen
     if not (atom1.isNitrogen()):
         return []
-    
+
     # Find all delocalization paths
     paths = []
     index_atom_2 = 0
     index_atom_3 = 0
-    
+
     for atom2, bond12 in atom1.edges.items():
         index_atom_2 = index_atom_2 + 1
         # Only double bonds are considered
@@ -311,15 +356,17 @@ def findAllDelocalizationPathsN5dd_N5ts(atom1):
             for atom3, bond13 in atom1.edges.items():
                 index_atom_3 = index_atom_3 + 1
                 # Only double bonds are considered, at the moment we only consider non-radical nitrogen and oxygen atoms
-                if (bond13.isDouble() and atom3.radicalElectrons == 0 and atom3.lonePairs > 0 and not atom3.isOxygen() and not atom3.isCarbon() and (index_atom_2 != index_atom_3)):
+                if (
+                                    bond13.isDouble() and atom3.radicalElectrons == 0 and atom3.lonePairs > 0 and not atom3.isOxygen() and not atom3.isCarbon() and (
+                    index_atom_2 != index_atom_3)):
                     paths.append([atom1, atom2, atom3, bond12, bond13, 1])
-    
+
     for atom2, bond12 in atom1.edges.items():
         # Only triple bonds are considered
         if bond12.isTriple():
             for atom3, bond13 in atom1.edges.items():
                 # Only single bonds are considered, at the moment we only consider negatively charged nitrogen and oxygen
-                if (bond13.isSingle() and ((atom3.isNitrogen() and atom3.lonePairs >= 2) or (atom3.isOxygen() and atom3.lonePairs >= 3))):
+                if (bond13.isSingle() and (
+                    (atom3.isNitrogen() and atom3.lonePairs >= 2) or (atom3.isOxygen() and atom3.lonePairs >= 3))):
                     paths.append([atom1, atom2, atom3, bond12, bond13, 2])
-    
-    return paths    
+    return paths

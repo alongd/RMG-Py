@@ -45,8 +45,28 @@ class ResonanceTest(unittest.TestCase):
 
         Simple case for lone pair <=> radical resonance"""
         molList = generateResonanceStructures(Molecule(SMILES="CC=N[O]"))
-        self.assertEqual(len(molList), 3)
+        self.assertEqual(len(molList), 3) # 7?
         self.assertTrue(any([any([atom.charge != 0 for atom in mol.vertices]) for mol in molList]))
+
+    def testN2H3(self): #new
+        """Test resonance structure generation for N[NH] radical
+        Tests lone pair <=> radical resonance involving nitrogen with two lone pairs,
+        as well as formation of double and triple bonds"""
+        molList = generateResonanceStructures(Molecule(SMILES="N[NH]"))
+        self.assertEqual(len(molList), 5)
+
+    def testHOS(self): #new
+        """Test resonance structure generation for O[S] radical
+        Tests lone pair <=> radical resonance involving sulfur and oxigen with just one lone pair,
+        as well as formation of a double bond"""
+        molList = generateResonanceStructures(Molecule(SMILES="O[S]"))
+        self.assertEqual(len(molList), 3)
+
+    def testHSO3(self): #new
+        """Test resonance structure generation for OS(=O)[O] radical
+        A very interesting case for resonance involving sulfur with many possible combinations"""
+        molList = generateResonanceStructures(Molecule(SMILES="OS(=O)[O]"))
+        self.assertEqual(len(molList), 21)
 
     def testAzide(self):
         """Test resonance structure generation for ethyl azide
@@ -101,7 +121,7 @@ class ResonanceTest(unittest.TestCase):
     def testAromaticWithLonePairResonance(self):
         """Test resonance structure generation for aromatic species with lone pair <=> radical resonance"""
         molList = generateResonanceStructures(Molecule(SMILES="c1ccccc1CC=N[O]"))
-        self.assertEqual(len(molList), 6)
+        self.assertEqual(len(molList), 6) #12 ?
 
     def testAromaticWithNResonance(self):
         """Test resonance structure generation for aromatic species with N5dd <=> N5tc resonance"""
