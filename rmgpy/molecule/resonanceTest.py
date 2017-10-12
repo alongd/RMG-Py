@@ -40,13 +40,19 @@ class ResonanceTest(unittest.TestCase):
         molList = generateResonanceStructures(Molecule(SMILES="C=C[CH]C=CC"))
         self.assertEqual(len(molList), 3)
 
-    def testOxime(self):
-        """Test resonance structure generation for CC=N[O] radical
+    def testLonePairRadical(self):
+        """Test resonance structure generation for CC=N[O], ROO, RN[NH] radicals
 
-        Simple case for lone pair <=> radical resonance"""
+        Selected cases for lone pair <=> radical resonance"""
         molList = generateResonanceStructures(Molecule(SMILES="CC=N[O]"))
         self.assertEqual(len(molList), 3)
         self.assertTrue(any([any([atom.charge != 0 for atom in mol.vertices]) for mol in molList]))
+
+        molList = generateResonanceStructures(Molecule(SMILES="CO[O]"))
+        self.assertEqual(len(molList), 2)
+
+        molList = generateResonanceStructures(Molecule(SMILES="CN[NH]"))
+        self.assertEqual(len(molList), 2)
 
     def testAzide(self):
         """Test resonance structure generation for ethyl azide
