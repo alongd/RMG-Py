@@ -237,6 +237,7 @@ def _generateResonanceStructures(molList, methodList, keepIsomorphic=False, copy
         # Make a copy of the list so we don't modify the input list
         molList = molList[:]
 
+    lonePairMethods = [generateLonePairRadicalResonanceChargeStructures,generateLonePairResonanceMultipleBondStructures]
     # Iterate over resonance isomers
     index = 0
     while index < len(molList):
@@ -245,6 +246,7 @@ def _generateResonanceStructures(molList, methodList, keepIsomorphic=False, copy
 
         for method in methodList:
             newMolList.extend(method(molecule))
+            if method in lonePairMethods:
 
         for newMol in newMolList:
             # Append to isomer list if unique
