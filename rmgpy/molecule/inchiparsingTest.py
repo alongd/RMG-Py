@@ -52,7 +52,6 @@ class InChIParsingTest(unittest.TestCase):
             ConsistencyChecker.check_partial_charge(at)
         
         spc = Species(molecule=[mol])
-        spc.generateResonanceIsomers()
 
         ignore_prefix = r"(InChI=1+)(S*)/"
         aug_inchi_expected = re.split(ignore_prefix, aug_inchi)[-1]
