@@ -236,7 +236,8 @@ def check(mol, aug_inchi) :
                    at=Atom
                    )
 
-    ConsistencyChecker.check_multiplicity(mol.getRadicalCount(), mol.multiplicity)
+    inchi, u_indices, p_indices = inchiutil.decompose(str(aug_inchi))
+    ConsistencyChecker.check_multiplicity(mol.getRadicalCount(), len(u_indices) + 1)
     
     for at in mol.atoms:
         ConsistencyChecker.check_partial_charge(at)
