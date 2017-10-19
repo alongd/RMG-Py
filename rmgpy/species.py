@@ -46,6 +46,7 @@ transition states (first-order saddle points on a potential energy surface).
 import numpy
 import cython
 import logging
+from operator import itemgetter
 
 import rmgpy.quantity as quantity
 
@@ -519,19 +520,22 @@ class Species(object):
     def getAugmentedInChI(self):
         if self.aug_inchi is None:
             self.aug_inchi = self.generate_aug_inchi()
-            return self.aug_inchi
-        else:
-            return self.aug_inchi
+        return self.aug_inchi
 
     def generate_aug_inchi(self):
         candidates = []
         self.generateResonanceIsomers()
         for mol in self.molecule:
-            cand = mol.toAugmentedInChI()
-            candidates.append(cand)
-
-        candidates.sort()
-        return candidates[0] 
+            try:
+                cand = [mol.toAugmentedInChI(),mol]
+                candidates.append(cand)
+            except:
+                pass  # not all resonance isomers can be parsed into InChI (e.g. if containing a hypervalance atom)
+        candidates = sorted(candidates, key=itemgetter(0))
+        for cand in candidates:
+            if not any(atom.charge != 0 for atom in cand[1].vertices):
+                return cand[0]
+        return candidates[0][0]
 
     def getThermoData(self):
         """
