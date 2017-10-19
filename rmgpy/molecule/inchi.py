@@ -272,7 +272,7 @@ def parse_N_layer(auxinfo):
     /N:4,3,2,1
 
     The original number of an atom with identification number n is given as the
-    n-th member of this list for a component; the lists are separated with “;”. 
+    n-th member of this list for a component; the lists are separated with ";".
 
     Raises an exception when the N-layer could not be found.
     """
