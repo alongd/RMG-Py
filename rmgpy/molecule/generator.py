@@ -140,7 +140,6 @@ def create_U_layer(mol, auxinfo):
     elif mol.getFormula() == 'H':
         return inchiutil.U_LAYER_PREFIX + '1'
 
-
     # find the resonance isomer with the lowest u index:
     minmol = generate_minimum_resonance_isomer(mol)
     
@@ -157,7 +156,6 @@ def create_U_layer(mol, auxinfo):
 
     return (inchiutil.U_LAYER_PREFIX + ','.join(map(str, u_layer)))
 
-
 def toAugmentedInChI(mol):
     """
     This function generates the augmented InChI canonical identifier, and that allows for the differentiation
@@ -165,7 +163,6 @@ def toAugmentedInChI(mol):
 
     Two additional layers are added to the InChI:
     - unpaired electrons layer: the position of the unpaired electrons in the molecule
-
     """
 
     cython.declare(
@@ -174,11 +171,8 @@ def toAugmentedInChI(mol):
                 aug_inchi=str,
                )
     inchi = toInChI(mol)
-
     ulayer, player = create_augmented_layers(mol)
-
     aug_inchi = inchiutil.compose_aug_inchi(inchi, ulayer, player)
-
     return aug_inchi
 
 def toInChIKey(mol):
@@ -201,7 +195,6 @@ def toInChIKey(mol):
         return Chem.inchi.InchiToInchiKey(inchi)[:-2]
     except:
         pass
-    
 
 #        for atom in mol.vertices:
 #           if atom.isNitrogen():
@@ -530,7 +523,6 @@ def generate_minimum_resonance_isomer(mol):
                 charge_sel = charge_cand
     return sel
 
-
 def get_unpaired_electrons(mol):
     """
     Returns a sorted list of the indices of the atoms that bear one or more 
@@ -542,6 +534,7 @@ def get_unpaired_electrons(mol):
         index=int,
         at=Atom,
         )
+
     locations = []
     for index, at in enumerate(mol.atoms):
         if at.radicalElectrons >= 1:
@@ -595,7 +588,6 @@ def has_unexpected_lone_pairs(mol):
 
 def create_augmented_layers(mol):
     """
-
     The indices in the string refer to the atom indices in the molecule, according to the atom order
     obtained by sorting the atoms using the InChI canonicalization algorithm.
 
@@ -607,7 +599,6 @@ def create_augmented_layers(mol):
     to the order in the InChI. In case, the molecule contains atoms that cannot be distinguished
     with the InChI algorithm ('equivalent atoms'), the position of the unpaired electrons is changed
     as to ensure the atoms with the lowest indices are used to compose the string.
-
     """
 
     if mol.getRadicalCount() == 0 and not has_unexpected_lone_pairs(mol):
@@ -624,7 +615,7 @@ def create_augmented_layers(mol):
         _, auxinfo = Chem.MolToInchiAndAuxInfo(rdkitmol, options='-SNon')# suppress stereo warnings
         
         # extract the atom numbers from N-layer of auxiliary info:
-        atom_indices = inchiutil.parse_N_layer(auxinfo)    
+        atom_indices = inchiutil.parse_N_layer(auxinfo)
         atom_indices = [atom_indices.index(i + 1) for i, atom in enumerate(molcopy.atoms)]
 
         # sort the atoms based on the order of the atom indices
@@ -651,8 +642,6 @@ def create_P_layer(mol, auxinfo):
 
     When the molecule does not bear any atoms with an unexpected number of lone pairs,
     None is returned.
-
-
     """
 
     # TODO: find the resonance isomer with the lowest p index:

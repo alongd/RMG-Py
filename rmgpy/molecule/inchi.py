@@ -193,7 +193,6 @@ def parse_H_layer(inchi):
             mobile_h_atoms=list,
         )
 
-
     pieces = inchi.split('/')
     h_layer = None
     for piece in pieces:
@@ -257,7 +256,6 @@ def parse_E_layer(auxinfo):
         equivalent_atoms.append(indices)
 
     return equivalent_atoms
-
  
 def parse_N_layer(auxinfo):
     """

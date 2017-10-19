@@ -39,7 +39,7 @@ from .parser import *
 
 class InChIParsingTest(unittest.TestCase):
 
-    def compare(self, inchi, u_indices=None, p_indices = None):        
+    def compare(self, inchi, u_indices=None, p_indices = None):
         u_layer = U_LAYER_PREFIX + U_LAYER_SEPARATOR.join(map(str, u_indices)) if u_indices else None
         p_layer = P_LAYER_PREFIX + P_LAYER_SEPARATOR.join(map(str, p_indices)) if p_indices else None
 
@@ -270,7 +270,6 @@ class InChIParsingTest(unittest.TestCase):
         self.compare(inchi, u_indices)
 
     def test_C3H2O3(self):
-
         inchi = 'InChI=1S/C3H2O3/c1-2-3(4)6-5/h1H2'
         u_indices = [2,5]
 

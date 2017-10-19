@@ -221,7 +221,7 @@ def __lookup(mol, identifier, type_identifier):
         except KeyError:
             return None
 
-def check(mol, aug_inchi) :
+def check(mol, aug_inchi):
     """
     Check if the molecular structure is correct.
 
@@ -555,7 +555,7 @@ def fix_adjacent_charges(mol):
 
 def convert_charge_to_unpaired_electron(mol, u_indices):
     """
-    Iterates over the atoms foundin the parameter list and
+    Iterates over the atoms found in the parameter list and
     converts a unit of charge on atoms into an unpaired electron.
 
     Removes treated atoms from the parameter list.
@@ -565,7 +565,7 @@ def convert_charge_to_unpaired_electron(mol, u_indices):
         if at.charge != 0 and at_index in u_indices:
             at.charge += 1 if at.charge < 0 else -1
             at.radicalElectrons += 1
-            u_indices.remove(at_index)                    
+            u_indices.remove(at_index)
 
 def convert_delocalized_charge_to_unpaired_electron(mol, u_indices):
     """
@@ -698,12 +698,12 @@ def fix(mol, aug_inchi):
     # ignore atoms that bear already unpaired electrons:
     for i in set(u_indices[:]):
         atom = mol.atoms[i - 1]
-        [u_indices.remove(i) for _ in range(atom.radicalElectrons)]        
+        [u_indices.remove(i) for _ in range(atom.radicalElectrons)]
 
     # ignore atoms that bear already lone pairs:
     for i in set(p_indices[:]):
         atom = mol.atoms[i - 1]
-        [p_indices.remove(i) for _ in range(atom.lonePairs)]   
+        [p_indices.remove(i) for _ in range(atom.lonePairs)]
 
 
     fix_triplet_to_singlet(mol, p_indices)
@@ -716,7 +716,7 @@ def fix(mol, aug_inchi):
 
     fix_unsaturated_bond(mol, u_indices, aug_inchi)
 
-    check(mol, aug_inchi)    
+    check(mol, aug_inchi)
 
 
 def fix_triplet_to_singlet(mol, p_indices):
