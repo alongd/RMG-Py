@@ -244,16 +244,6 @@ class CoreEdgeReactionModel:
         # object if it has a match
         obj = molecule
 
-        # For cyclic molecules, obj is `Species` object and aromatic resonance
-        # isomers are generated.  This is due to the hysteresis of isomer generation
-        # for aromatic/polyaromatic compounds: not all kekulized forms can be found
-        # within the list of isomers for a species object describing a unique aromatic compound
-        if molecule.isCyclic():
-            obj = Species(molecule=[molecule])
-            from rmgpy.molecule.resonance import generateAromaticResonanceStructures
-            aromaticIsomers = generateAromaticResonanceStructures(molecule)
-            obj.molecule.extend(aromaticIsomers)
-
         # First check cache and return if species is found
         for i, spec in enumerate(self.speciesCache):
             if spec is not None:
