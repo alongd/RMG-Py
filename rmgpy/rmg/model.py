@@ -759,6 +759,36 @@ class CoreEdgeReactionModel:
         
         Makes a reaction and decides where to put it: core, edge, or PDepNetwork.
         """
+
+        # Check whether RONO or ROONO participate in the reaction
+        #
+        # ROO + NO = ROONO      ROONO = RO + NO2
+        # R + NO2 = RONO        RONO = RO + NO
+        # RH + NO2 = R + HONO   (HONO can be captured as RONO)
+
+        RONO = False
+        ROONO = False
+        for rxn in newReactions:
+            for spc in [rxn.reactants, rxn.products]:
+                try:
+                    if len(spc.molecule[0].vertices) > 3:  # don't bother with small species
+                        for mol in spc.molecue:
+                            for atom1 in mol.vertices:
+                                if atom1.isOxygen() and atom1.radicalElectrons == 0:  # O
+                                    for atom2, bond12 in atom1.edges.items():
+                                        if atom2.isNitrogen() and bond12.isDouble():  # -N=O
+                                            for atom3, bond23 in atom2.edges.items():
+                                                if atom3.isOxygen() and bond23.isSingle():  # -ON=O
+                                                    for atom4, bond34 in atom3.edges.items():
+                                                        if atom4.isOxygen() and atom4.radicalElectrons == 0:  # ROON=O
+                                                            ROONO = True
+                                                            logging.info("Found ROONO: {0}".format(rxn))
+                                                        if not atom4.isOxygen():  # RON=O / HON=O
+                                                            RONO = True
+                                                            logging.info("Found RONO: {0}".format(rxn))
+                except:
+                    pass
+
         for rxn in newReactions:
             rxn, isNew = self.makeNewReaction(rxn)
             if rxn is None:
@@ -783,6 +813,11 @@ class CoreEdgeReactionModel:
                         if spec not in self.edge.species:
                             spcs.append(spec)
                             self.addSpeciesToEdge(spec)
+                if RONO or ROONO:
+                    for spec in [rxn.reactants, rxn.products]:
+                        if spec not in self.core.species:
+                            self.addSpeciesToCore(spec)
+                            allSpeciesInCore = True
                     
             isomerAtoms = sum([len(spec.molecule[0].atoms) for spec in rxn.reactants])
             
