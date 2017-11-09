@@ -499,7 +499,7 @@ def bicyclicDecompositionForPolyring(polyring):
                     pass
                 else:
                     aromaticBond_inA.setOrderNum(1)
-        mergedRing.update()#
+        mergedRing.saturate_unfilled_valence(update = True)
         bicyclicsMergedFromRingPair.append(mergedRing)
 
     return bicyclicsMergedFromRingPair, ringOccurancesDict
@@ -1681,7 +1681,6 @@ class ThermoDatabase(object):
                         aromaticBond.setOrderNum(1)
 
                     submol.saturate_unfilled_valence()
-                    submol.update
                     singleRingThermodata = self.__addRingCorrectionThermoDataFromTree(None, \
                                                 self.groups['ring'], submol, submol.atoms)[0]
                     
@@ -1738,7 +1737,6 @@ class ThermoDatabase(object):
                     aromaticBond.setOrderNum(1)
 
                 submol.saturate_unfilled_valence()
-                submol.update
                 single_ring_thermoData = self.__addRingCorrectionThermoDataFromTree(None,
                                             self.groups['ring'], submol, submol.atoms)[0]
                 
@@ -1757,7 +1755,6 @@ class ThermoDatabase(object):
                     aromaticBond.setOrderNum(1)
 
                 submol.saturate_unfilled_valence()
-                submol.update
                 single_ring_thermoData = self.__addRingCorrectionThermoDataFromTree(None,
                                             self.groups['ring'], submol, submol.atoms)[0]
                 
