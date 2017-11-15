@@ -265,7 +265,7 @@ def filter_resonance_structures(molList):
     """
     cython.declare(octetDeviation=cython.int, minOctetDeviation=cython.int, val_el=cython.int, i=cython.int)
     cython.declare(octetDeviationList=list, filteredList=list, chargeSpanList=list, minChargeSpan=cython.int)
-    cython.declare(mol=Molecule, atom=Atom, atom2=Atom, bond12=Bond)
+    cython.declare(mol=Molecule, atom=Atom, atom2=Atom, bond12=Bond, num_heavy_atoms=cython.int)
 
     minOctetDeviation = 0  # minOctetDeviation is initialized below, so this value (0) has no effect
     octetDeviationList = []
@@ -323,9 +323,9 @@ def filter_resonance_structures(molList):
             minOctetDeviation = octetDeviation
     filteredList = []
     chargeSpanList = []  # filtering using the octet deviation criterion rules out most unrepresentative structures,
-    # however some charged strained species are still kept, e.g.: C[NH] <-> [CH3-2]=[NH+2]. Here we only allow
+    # however some charged strained species are still kept, e.g.: [NH]N=S=O <-> [NH+]#[N+][S-][O-]. Here we only allow
     # one level of charge separation. E.g., a +2/-2 charge will only be allowed if the species cannot be represented
-    # by a structure with no charge separation.
+    # by a structure with no charge separation, and the number of charge separation instances per structure is limited.
     minChargeSpan = 0
     for i in xrange(len(molList)):
         if octetDeviationList[i] == minOctetDeviation:
@@ -334,6 +334,22 @@ def filter_resonance_structures(molList):
             if chargeSpanList[-1] < minChargeSpan or len(chargeSpanList) == 1:
                 minChargeSpan = chargeSpanList[-1]
     filteredList = [filteredList[i] for i in xrange(len(filteredList)) if chargeSpanList[i] <= minChargeSpan + 1]
+
+    num_heavy_atoms = 0  # If we still get too many resonance structures (as a rule of thumb, more than the number of
+    # heavy atom in the molecule) use other measures. This applies, for example, in [N]=S, CSS(C)=O, [NH]N=S=O.
+    for atom in mol.atoms:
+        if atom.isNonHydrogen():
+            num_heavy_atoms += 1
+    if len(filteredList) > num_heavy_atoms:
+
+
+
+
+
+
+
+        filteredList = filteredList[:num_heavy_atoms]
+
     return filteredList
 
 
