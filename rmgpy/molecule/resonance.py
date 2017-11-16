@@ -264,8 +264,8 @@ def filter_resonance_structures(molList):
     vs. only 3 resonance structures after filtering.
     """
     cython.declare(octetDeviation=cython.int, minOctetDeviation=cython.int, val_el=cython.int, i=cython.int)
-    cython.declare(octetDeviationList=list, filteredList=list, chargeSpanList=list, minChargeSpan=cython.int)
-    cython.declare(mol=Molecule, atom=Atom, atom2=Atom, bond12=Bond, num_heavy_atoms=cython.int)
+    cython.declare(octetDeviationList=list, filteredList=list, spanList=list, minSpan=cython.int)
+    cython.declare(mol=Molecule, atom=Atom, atom2=Atom, bond12=Bond, num_heavy_atoms=cython.int, j=cython.int)
 
     minOctetDeviation = 0  # minOctetDeviation is initialized below, so this value (0) has no effect
     octetDeviationList = []
@@ -321,34 +321,54 @@ def filter_resonance_structures(molList):
         octetDeviationList.append(octetDeviation)
         if octetDeviation < minOctetDeviation or len(octetDeviationList) == 1:
             minOctetDeviation = octetDeviation
-    filteredList = []
-    chargeSpanList = []  # filtering using the octet deviation criterion rules out most unrepresentative structures,
-    # however some charged strained species are still kept, e.g.: [NH]N=S=O <-> [NH+]#[N+][S-][O-]. Here we only allow
+
+    # Filtering using the octet deviation criterion rules out most unrepresentative structures,
+    # however some charge-strained species are still kept, e.g.: [NH]N=S=O <-> [NH+]#[N+][S-][O-]. Here we only allow
     # one level of charge separation. E.g., a +2/-2 charge will only be allowed if the species cannot be represented
     # by a structure with no charge separation, and the number of charge separation instances per structure is limited.
-    minChargeSpan = 0
+    filteredList = []
+    spanList = [[],[]]  # spanList[0] uses for charge span, spanList[1] uses for bond span
+    minSpan = 0
     for i in xrange(len(molList)):
         if octetDeviationList[i] == minOctetDeviation:
             filteredList.append(molList[i])
-            chargeSpanList.append(sum([abs(atom.charge) for atom in molList[i].vertices]) / 2)
-            if chargeSpanList[-1] < minChargeSpan or len(chargeSpanList) == 1:
-                minChargeSpan = chargeSpanList[-1]
-    filteredList = [filteredList[i] for i in xrange(len(filteredList)) if chargeSpanList[i] <= minChargeSpan + 1]
+            spanList[0].append(sum([abs(atom.charge) for atom in molList[i].vertices]) / 2)
+            if spanList[0][-1] < minSpan or len(spanList[0]) == 1:
+                minSpan = spanList[0][-1]
+            spanList[1].append(2 * mol.toSMILES().count('=') + 3 * mol.toSMILES().count('#'))
 
-    num_heavy_atoms = 0  # If we still get too many resonance structures (as a rule of thumb, more than the number of
-    # heavy atom in the molecule) use other measures. This applies, for example, in [N]=S, CSS(C)=O, [NH]N=S=O.
+    # Sort filteredList by bond span, the secondary sort criterion, useful for filtering by num_heavy_atoms
+    filteredList = [mol for i,mol in sorted(zip(spanList[1], filteredList), key=lambda list1__: list1__[0])]
+
+    # Only keep structures with the minimum charge span or one above
+    # Also sort by charge span, the primary sort criterion, useful for filtering by num_heavy_atoms
+    filteredList = [filteredList[i] for i in xrange(len(filteredList)) if spanList[0][i] == minSpan] + \
+                   [filteredList[i] for i in xrange(len(filteredList)) if spanList[0][i] == minSpan + 1]
+
+    # count heavy atoms
+    num_heavy_atoms = 0
     for atom in mol.atoms:
         if atom.isNonHydrogen():
             num_heavy_atoms += 1
+
+    # If we still get too many resonance structures (as a rule of thumb, more than the number of the heavy atom in the
+    # species) use other measures. This applies, for example, for [N]=S, CSS(C)=O, [NH]N=S=O.
     if len(filteredList) > num_heavy_atoms:
-
-
-
-
-
-
-
-        filteredList = filteredList[:num_heavy_atoms]
+        for i in xrange(len(filteredList)):
+            if ((sum([abs(atom.charge) for atom in filteredList[i].vertices]) == sum(
+                    [abs(atom.charge) for atom in filteredList[0].vertices])) and
+                    ((2 * filteredList[i].toSMILES().count('=') + 3 * filteredList[i].toSMILES().count('#')) == (
+                    2 * filteredList[0].toSMILES().count('=') + 3 * filteredList[0].toSMILES().count('#')))):
+                j = i  # always include the molecules with the combination of minimal charge and bond spans
+                continue
+            elif i >= num_heavy_atoms:
+                break
+            elif ((sum([abs(atom.charge) for atom in filteredList[i].vertices]) != sum(
+                    [abs(atom.charge) for atom in filteredList[i-1].vertices])) or
+                    ((2 * filteredList[i].toSMILES().count('=') + 3 * filteredList[i].toSMILES().count('#')) != (
+                    2 * filteredList[i-1].toSMILES().count('=') + 3 * filteredList[i-1].toSMILES().count('#')))):
+                j = i - 1  # if at least one of the spans increases but i <= num_heavy_atoms, keep these structures
+        filteredList = filteredList[:j]
 
     return filteredList
 
