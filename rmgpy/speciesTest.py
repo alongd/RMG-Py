@@ -220,13 +220,19 @@ class TestSpecies(unittest.TestCase):
                                                                 6 H u0 p0 c0 {1,S}
                                                                 7 O u0 p2 c0 {2,D}
                                                                 8 H u0 p0 c0 {3,S}""")
+        spc6_correct = Species().fromSMILES('[NH]N=S=O')
+        spc6_nonrepresentative = Species().fromAdjacencyList("""1 N u0 p0 c0 {2,D} {3,T}
+                                                                2 N u1 p1 c-1 {1,D} {4,S}
+                                                                3 S u0 p0 c+1 {1,T} {5,D}
+                                                                4 H u0 p0 c0 {2,S}
+                                                                5 O u0 p2 c0 {3,D}""")
 
         self.assertTrue(spc1_correct.isIsomorphic(spc1_nonrepresentative, generateRes=True))
-        self.assertTrue(spc1_nonrepresentative.isIsomorphic(spc1_correct, generateRes=True))  # check this works both ways
         self.assertTrue(spc2_correct.isIsomorphic(spc2_nonrepresentative, generateRes=True))
         self.assertTrue(spc3_correct.isIsomorphic(spc3_nonrepresentative, generateRes=True))
         self.assertTrue(spc4_correct.isIsomorphic(spc4_nonrepresentative, generateRes=True))
         self.assertTrue(spc5_correct.isIsomorphic(spc5_nonrepresentative, generateRes=True))
+        self.assertTrue(spc6_correct.isIsomorphic(spc6_nonrepresentative, generateRes=True))
 
     def testGetResonanceHybrid(self):
         """
