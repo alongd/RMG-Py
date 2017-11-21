@@ -1538,7 +1538,7 @@ class KineticsFamily(Database):
         if isinstance(reaction.reactants[0], Molecule):
             for mol in reaction.reactants:
                 spec = Species(molecule=[mol])
-                spec.generateResonanceIsomers(keepIsomorphic=True)
+                spec.generateResonanceIsomers(keepIsomorphic=True, filterStructures=False)
                 specReactants.append(spec)
         elif isinstance(reaction.reactants[0], Species):
             specReactants = reaction.reactants
