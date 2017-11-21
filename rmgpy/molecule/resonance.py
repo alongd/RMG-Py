@@ -208,7 +208,7 @@ def generateResonanceStructures(mol, clarStructures=True, keepIsomorphic=False, 
     _generateResonanceStructures(molList, methodList, keepIsomorphic)
 
     if filterStructures:
-        return filter_resonance_structures(molList, keepIsomorphic)
+        return filter_resonance_structures(molList)
     else:
         return molList
 
@@ -256,7 +256,7 @@ def _generateResonanceStructures(molList, methodList, keepIsomorphic=False, copy
     return molList
 
 
-def filter_resonance_structures(molList, keepIsomorphic=False):
+def filter_resonance_structures(molList):
     """
     We often get too many resonance structures from the combination of all rules for species containing lonePairs.
     Here we filter them out by minimizing the number of N/S/O atoms without a full octet.
@@ -266,7 +266,7 @@ def filter_resonance_structures(molList, keepIsomorphic=False):
     resonance structures, and we don't apply the secondary num_heavy_atoms filtration.
     """
     cython.declare(octetDeviation=cython.int, minOctetDeviation=cython.int, val_el=cython.int, i=cython.int)
-    cython.declare(octetDeviationList=list, filteredList=list, spanList=list, minSpan=cython.int)
+    cython.declare(octetDeviationList=list, filteredList=list, chargeSpanList=list, minChargeSpan=cython.int)
     cython.declare(mol=Molecule, atom=Atom, atom2=Atom, bond12=Bond, num_heavy_atoms=cython.int, j=cython.int)
 
     minOctetDeviation = 0  # minOctetDeviation is initialized below, so this value (0) has no effect
@@ -329,61 +329,39 @@ def filter_resonance_structures(molList, keepIsomorphic=False):
     # one level of charge separation. E.g., a +2/-2 charge will only be allowed if the species cannot be represented
     # by a structure with no charge separation, and the number of charge separation instances per structure is limited.
     filteredList = []
-    spanList = [[],[]]  # spanList[0] uses for charge span, spanList[1] uses for bond span
-    minSpan = 0
+    chargeSpanList = []
+    minChargeSpan = 0
     for i in xrange(len(molList)):
         if octetDeviationList[i] == minOctetDeviation:  # legacy octet filtration
             filteredList.append(molList[i])
-            spanList[0].append(sum([abs(atom.charge) for atom in molList[i].vertices]) / 2)  # determine charge span
-            if spanList[0][-1] < minSpan or len(spanList[0]) == 1:
-                minSpan = spanList[0][-1]
-            spanList[1].append(2 * mol.toSMILES().count('=') + 3 * mol.toSMILES().count('#'))  # determine bond span
+            chargeSpanList.append(sum([abs(atom.charge) for atom in molList[i].vertices]) / 2)  # determine charge span
+            if chargeSpanList[-1] < minChargeSpan or len(chargeSpanList) == 1:
+                minChargeSpan = chargeSpanList[-1]
 
-    # Sort filteredList by bond span, the secondary sort criterion, useful for filtering by num_heavy_atoms
-    filteredList = [mol for i,mol in sorted(zip(spanList[1], filteredList), key=lambda list1__: list1__[0])]  # !! rename & cythonize list1__
-
-    # Only keep structures with the minimum charge span or one above
-    # Also sort by charge span, the primary sort criterion, useful for filtering by num_heavy_atoms
-    filteredList = [filteredList[i] for i in xrange(len(filteredList)) if spanList[0][i] == minSpan] + \
-                   [filteredList[i] for i in xrange(len(filteredList)) if spanList[0][i] == minSpan + 1]
-
-    # Count N/O/S atoms and carbons adjacent to N/O/S atoms as a secondary resonance structures filtering.
-    # If instead we were to limit by counting ALL C/N/O/S atoms, then having a carbon chain on a molecule will increase
-    # the number of allowed structure of the resonating functional group. Here we count C atoms only if they are
-    # adjacent to N/O/S, e.g. may participate in these types of transitions. Still, we may think of cases where having
-    # additional N/O/S atoms in a species will increase the allowed transitions of the resonating functional group.
-    # However, since N/O/S atoms are less likely to form chains this isn't anticipated to be problematic.
-    # For this reason filter_resonance_structures() should be called before aromatic resonance structures are generated.
+    # Count N/O/S atoms and carbons adjacent to N/O/S atoms (if instead we were to limit by counting ALL C/N/O/S atoms,
+    # then having a carbon chain on a molecule will increase its allowed structures; here we count C atoms only if they
+    # are adjacent to N/O/S, e.g. may participate in AdjacentResonanceStructures transitions.) Still, we may think of
+    # cases where having additional N/O/S atoms in a species will increase the allowed transitions of the resonating
+    # group. However, since N/O/S atoms are less likely to form chains this isn't anticipated to be problematic.
     num_heavy_atoms = 0
-    for atom in mol.atoms:
+    for atom in mol.vertices:
         if atom.isNOS():
             num_heavy_atoms += 1
         elif atom.isCarbon():
             for atom2, bond12 in atom.edges.items():
                 if atom2.isNOS():
                     num_heavy_atoms += 1
-                    continue  # count the C only once if it is adjacent to at least one N/O/S
+                    break  # Don't double count C atoms if they're adjacent to more than one N/O/S
 
-    # If we still get too many resonance structures (as a rule of thumb, more than the number of the heavy atom in the
-    # species) use other measures. This applies, for example, for [N]=S, CSS(C)=O, [NH]N=S=O.
-    if len(filteredList) > num_heavy_atoms and num_heavy_atoms > 0 and not keepIsomorphic:
-        # don't apply if mol has no N/O/S atoms or keepIsomorphic=True
-        for i in xrange(len(filteredList)):
-            if ((sum([abs(atom.charge) for atom in filteredList[i].vertices]) == sum(
-                    [abs(atom.charge) for atom in filteredList[0].vertices])) and
-                    ((2 * filteredList[i].toSMILES().count('=') + 3 * filteredList[i].toSMILES().count('#')) == (
-                    2 * filteredList[0].toSMILES().count('=') + 3 * filteredList[0].toSMILES().count('#')))):
-                j = i + 1 # include structures with a minimal charge & bond spans combination regardless of
-                # num_heavy_atoms (filteredList is sorted, so we know filteredList[0] has minimal spans)
-                continue
-            elif ((sum([abs(atom.charge) for atom in filteredList[i].vertices]) != sum(
-                    [abs(atom.charge) for atom in filteredList[i-1].vertices])) or
-                    ((2 * filteredList[i].toSMILES().count('=') + 3 * filteredList[i].toSMILES().count('#')) != (
-                    2 * filteredList[i-1].toSMILES().count('=') + 3 * filteredList[i-1].toSMILES().count('#')))):
-                j = i  # if at least one of the spans increases but i < num_heavy_atoms, keep the preceding structures
-            if i == num_heavy_atoms:
-                break
-        filteredList = filteredList[:j]
+    # Only keep structures with the minimum charge span or one above it.
+    # If we still get too many resonance structures (as a rule of thumb, more than the number of the heavy atoms in the
+    # species), then only keep structures with the minimum charge span (and not one above it).
+    # This applies, for example, for [N]=S, CSS(C)=O, [NH]N=S=O.
+    # We also consider keepIsomorphic, if it is `True` we do expect to get plenty of resonance structure
+    if len(filteredList) <= num_heavy_atoms and num_heavy_atoms > 1:
+        filteredList = [filteredList[i] for i in xrange(len(filteredList)) if chargeSpanList[i] <= minChargeSpan +1]
+    else:
+        filteredList = [filteredList[i] for i in xrange(len(filteredList)) if chargeSpanList[i] == minChargeSpan]
 
     # make sure that the first original structure is also first in the list (unless it was filtered out).
     # Important whenever Species.molecule[0] is expected to be used.
