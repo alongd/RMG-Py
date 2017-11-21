@@ -101,9 +101,11 @@ class ResonanceTest(unittest.TestCase):
 
         Compare that these iso-electronic strctures have a different (!) number of resonance structures"""
         molList1 = generateResonanceStructures(Molecule(SMILES="[O-][O+]=O"))
-        self.assertEqual(len(molList1), 1)
-        molList2 = generateResonanceStructures(Molecule(SMILES="[S-][S+]=S"))
-        self.assertEqual(len(molList2), 3)
+        self.assertEqual(len(molList1), 1)  # expected: [O-][O+]=O
+        molList2 = generateResonanceStructures(Molecule(SMILES="[O-][S+]=O"))
+        self.assertEqual(len(molList2), 2)  # expected: [O-][S+]=O, O=S=O
+        molList3 = generateResonanceStructures(Molecule(SMILES="[S-][S+]=S"))
+        self.assertEqual(len(molList3), 3)  # expected: [S-][S+]=S, S=S=S, [S-]S#[S+]
 
     def testHCOvsHCS(self):
         """Test resonance structure generation for [CH]=O and [CH]=S
@@ -166,7 +168,7 @@ class ResonanceTest(unittest.TestCase):
 
     def testAromaticWithLonePairResonance(self):
         """Test resonance structure generation for aromatic species with lone pair <=> radical resonance"""
-        molList = generateResonanceStructures(Molecule(SMILES="c1ccccc1CC=N[O]"))
+        molList = generateResonanceStructures(Molecule(SMILES="c1ccccc1CC=N[O]"))    # missing the charged NO with benzene ring
         self.assertEqual(len(molList), 6)
 
     def testAromaticWithNResonance(self):
