@@ -208,7 +208,7 @@ def generateResonanceStructures(mol, clarStructures=True, keepIsomorphic=False, 
     _generateResonanceStructures(molList, methodList, keepIsomorphic)
 
     if filterStructures:
-        return filter_resonance_structures(molList)
+        return filter_resonance_structures(molList, keepIsomorphic)
     else:
         return molList
 
@@ -256,12 +256,14 @@ def _generateResonanceStructures(molList, methodList, keepIsomorphic=False, copy
     return molList
 
 
-def filter_resonance_structures(molList):
+def filter_resonance_structures(molList, keepIsomorphic=False):
     """
     We often get too many resonance structures from the combination of all rules for species containing lonePairs.
     Here we filter them out by minimizing the number of N/S/O atoms without a full octet.
     For example, w/o filtering we may generate 3,000+ resonance structures for [N]=NON=O,
     vs. only 3 resonance structures after filtering.
+    If keepIsomorphic=True, then we have no expectations for the ratio of number of heavy atoms to the number of
+    resonance structures, and we don't apply the secondary num_heavy_atoms filtration.
     """
     cython.declare(octetDeviation=cython.int, minOctetDeviation=cython.int, val_el=cython.int, i=cython.int)
     cython.declare(octetDeviationList=list, filteredList=list, spanList=list, minSpan=cython.int)
@@ -345,14 +347,13 @@ def filter_resonance_structures(molList):
     filteredList = [filteredList[i] for i in xrange(len(filteredList)) if spanList[0][i] == minSpan] + \
                    [filteredList[i] for i in xrange(len(filteredList)) if spanList[0][i] == minSpan + 1]
 
-    # Count N/O/S atoms and carbons in proximity to N/O/S atoms. This will limit the number of resonance structures.
-    # If we limit by counting all C/N/O/S atoms, then having a carbon chain on a molecule that we'd like to filter its
-    # transitions by this criterion will increase the number of allowed structure on the resonating functional group.
-    # Here we count C only if it is adjacent to N/O/S, e.g. may participate in these types of transitions. Still, we may
-    # think of cases where having some additional N/O/S atoms in a species will increase the allowed transitions of the
-    # resonating functional group. However, since N/O/S atoms are less likely to form chains this isn't anticipated to
-    # be problematic. For this reason filter_resonance_structures() should be called before aromatic resonance
-    # structures are generated.
+    # Count N/O/S atoms and carbons adjacent to N/O/S atoms as a secondary resonance structures filtering.
+    # If instead we were to limit by counting ALL C/N/O/S atoms, then having a carbon chain on a molecule will increase
+    # the number of allowed structure of the resonating functional group. Here we count C atoms only if they are
+    # adjacent to N/O/S, e.g. may participate in these types of transitions. Still, we may think of cases where having
+    # additional N/O/S atoms in a species will increase the allowed transitions of the resonating functional group.
+    # However, since N/O/S atoms are less likely to form chains this isn't anticipated to be problematic.
+    # For this reason filter_resonance_structures() should be called before aromatic resonance structures are generated.
     num_heavy_atoms = 0
     for atom in mol.atoms:
         if atom.isNOS():
@@ -365,7 +366,8 @@ def filter_resonance_structures(molList):
 
     # If we still get too many resonance structures (as a rule of thumb, more than the number of the heavy atom in the
     # species) use other measures. This applies, for example, for [N]=S, CSS(C)=O, [NH]N=S=O.
-    if len(filteredList) > num_heavy_atoms and num_heavy_atoms > 0:  # don't apply if mol has no N/O/S atoms
+    if len(filteredList) > num_heavy_atoms and num_heavy_atoms > 0 and not keepIsomorphic:
+        # don't apply if mol has no N/O/S atoms or keepIsomorphic=True
         for i in xrange(len(filteredList)):
             if ((sum([abs(atom.charge) for atom in filteredList[i].vertices]) == sum(
                     [abs(atom.charge) for atom in filteredList[0].vertices])) and
