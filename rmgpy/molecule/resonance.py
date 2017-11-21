@@ -384,7 +384,7 @@ def filter_resonance_structures(molList):
         filteredList = filteredList[:j]
 
     # make sure that the first original structure is also first in the list (unless it was filtered out).
-    # Important whenever Species.molecule[0] is expected to be used (e.g., training reactions).
+    # Important whenever Species.molecule[0] is expected to be used.
     for i in xrange(len(filteredList)):
         if filteredList[i].isIsomorphic(molList[0]):
             filteredList.insert(0, filteredList.pop(i))
