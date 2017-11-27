@@ -174,19 +174,33 @@ class Species(object):
                 self.molecule[0].assignAtomIDs()
             self.molecule = self.molecule[0].generate_resonance_structures(keepIsomorphic)
     
-    def isIsomorphic(self, other):
+    def isIsomorphic(self, other, generate_res=False):
         """
         Return ``True`` if the species is isomorphic to `other`, which can be
         either a :class:`Molecule` object or a :class:`Species` object.
+        If generateRes is ``True`` and other is a :class:`Species` object,
+        the resonance structures of other will be generated.
         """
         if isinstance(other, Molecule):
             for molecule in self.molecule:
                 if molecule.isIsomorphic(other):
                     return True
         elif isinstance(other, Species):
+            for molecule1 in self.molecule:
+                for molecule2 in other.molecule:
+                    if molecule1.isIsomorphic(molecule2):
+                        return True
+            if generate_res:
+                other_copy = other.copy(deep=True)
+                other_copy.generate_resonance_structures(keepIsomorphic=False)
                 for molecule1 in self.molecule:
-                    for molecule2 in other.molecule:
+                    for molecule2 in other_copy.molecule:
                         if molecule1.isIsomorphic(molecule2):
+                            # If they are isomorphic and this was found only by generating resonance structures, append
+                            # the structure in other to self.molecule as unreactive, since it is a non-representative
+                            # resonance structure of it, and return `True`.
+                            other_copy.molecule[0].reactive = False
+                            self.molecule.append(other_copy.molecule[0])
                             return True
         else:
             raise ValueError('Unexpected value "{0!r}" for other parameter; should be a Molecule or Species object.'.format(other))
@@ -202,12 +216,13 @@ class Species(object):
                 if molecule.isIdentical(other):
                     return True
         elif isinstance(other, Species):
-                for molecule1 in self.molecule:
-                    for molecule2 in other.molecule:
-                        if molecule1.isIdentical(molecule2):
-                            return True
+            for molecule1 in self.molecule:
+                for molecule2 in other.molecule:
+                    if molecule1.isIdentical(molecule2):
+                        return True
         else:
-            raise ValueError('Unexpected value "{0!r}" for other parameter; should be a Molecule or Species object.'.format(other))
+            raise ValueError('Unexpected value "{0!r}" for other parameter;'
+                             ' should be a Molecule or Species object.'.format(other))
         return False
 
     
