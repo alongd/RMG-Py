@@ -282,7 +282,7 @@ class Database:
                 if line.strip() == '' and adjlist.strip() != '':
                     # Finish this adjacency list
                     species = Species().fromAdjacencyList(adjlist)
-                    species.generate_resonance_structures()
+                    species.generate_resonance_structures(keep_isomorphic=False)  # isomorphic res structures may have wrong labeling
                     label = species.label
                     if label in speciesDict:
                         raise DatabaseError('Species label "{0}" used for multiple species in {1}.'.format(label, str(self)))
@@ -294,7 +294,7 @@ class Database:
                 if adjlist.strip() != '':
                     # Finish this adjacency list
                     species = Species().fromAdjacencyList(adjlist)
-                    species.generate_resonance_structures()
+                    species.generate_resonance_structures(keep_isomorphic=False)
                     label = species.label
                     if label in speciesDict:
                         raise DatabaseError('Species label "{0}" used for multiple species in {1}.'.format(label, str(self)))
