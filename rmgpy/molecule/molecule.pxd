@@ -60,7 +60,11 @@ cdef class Atom(Vertex):
 
     cpdef bint isOxygen(self)
 
+    cpdef bint isSilicon(self)
+
     cpdef bint isSulfur(self)
+
+    cpdef bint isNOS(self)
     
     cpdef incrementRadical(self)
 
