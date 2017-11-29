@@ -385,18 +385,121 @@ class DistanceComputingTest(unittest.TestCase):
         self.assertEquals(distances, expected)
 
 
-class FindAllDelocalizationPathsTest(unittest.TestCase):
+class FindAllylDelocalizationPathsTest(unittest.TestCase):
     """
-    test the findAllDelocalizationPaths method
+    test the find_allyl_delocalization_paths method
     """
     def test_allyl_radical(self):
-        smi = "[CH2]C=C"
-        mol = Molecule().fromSMILES(smi)
-        paths = findAllDelocalizationPaths(mol.atoms[0])
-        self.assertIsNotNone(paths)
+        smiles = "[CH2]C=C"
+        mol = Molecule().fromSMILES(smiles)
+        paths = find_allyl_delocalization_paths(mol.atoms[0])
+        self.assertTrue(paths)
 
     def test_nitrogenated_birad(self):
-        smi = '[CH]=C[N]'
-        mol = Molecule().fromSMILES(smi)
-        paths = findAllDelocalizationPaths(mol.atoms[0])
-        self.assertIsNotNone(paths)
+        smiles = '[CH]=C[N]'
+        mol = Molecule().fromSMILES(smiles)
+        paths = find_allyl_delocalization_paths(mol.atoms[3])
+        self.assertTrue(paths)
+
+
+class FindLonePairRadicalDelocalizationPaths(unittest.TestCase):
+    """
+    test the find_lone_pair_radical_delocalization_paths method
+    """
+    def test_NO2a(self):
+        smiles = "[O]N=O"
+        mol = Molecule().fromSMILES(smiles)
+        paths = find_lone_pair_radical_delocalization_paths(mol.atoms[0])
+        self.assertTrue(paths)
+
+    def test_NO2b(self):
+        smiles = "[O-][N+]=O"
+        mol = Molecule().fromSMILES(smiles)
+        paths = find_lone_pair_radical_delocalization_paths(mol.atoms[1])
+        self.assertTrue(paths)
+
+    def test_HOSO(self):
+        smiles = "[O]SO"
+        mol = Molecule().fromSMILES(smiles)
+        paths = find_lone_pair_radical_delocalization_paths(mol.atoms[0])
+        self.assertTrue(paths)
+
+
+class FindLonePairMultipleBondDelocalizationPaths(unittest.TestCase):
+    """
+    test the find_lone_pair_multiple_bond_delocalization_paths method
+    """
+    def test_SHO3(self):
+        smiles = "O=[SH](=O)[O]"
+        mol = Molecule().fromSMILES(smiles)
+        paths = find_lone_pair_multiple_bond_delocalization_paths(mol.atoms[0])
+        self.assertTrue(paths)
+
+
+class FindLonePairRadicalMultipleBondDelocalizationPaths(unittest.TestCase):
+    """
+    test the find_lone_pair_radical_multiple_bond_delocalization_paths method
+    """
+    def test_NS(self):
+        smiles = "N#[S]"
+        mol = Molecule().fromSMILES(smiles)
+        paths = find_lone_pair_radical_multiple_bond_delocalization_paths(mol.atoms[1])
+        self.assertTrue(paths)
+
+    def test_HSO3(self):
+        smiles = "O[S](=O)=O"
+        mol = Molecule().fromSMILES(smiles)
+        paths = find_lone_pair_radical_multiple_bond_delocalization_paths(mol.atoms[1])
+        self.assertTrue(paths)
+
+
+class FindN5ddcN5tcDelocalizationPaths(unittest.TestCase):
+    """
+    test the find_N5ddc_N5tc_delocalization_paths method
+    """
+    def test_N2Oa(self):
+        smiles = "[N-]=[N+]=O"
+        mol = Molecule().fromSMILES(smiles)
+        paths = find_N5ddc_N5tc_delocalization_paths(mol.atoms[1])
+        self.assertTrue(paths)
+
+    def test_N2Ob(self):
+        smiles = "N#[N+][O-]"
+        mol = Molecule().fromSMILES(smiles)
+        paths = find_N5ddc_N5tc_delocalization_paths(mol.atoms[1])
+        self.assertTrue(paths)
+
+    def test_HN3(self):
+        smiles = "[NH-][N+]#N"
+        mol = Molecule().fromSMILES(smiles)
+        paths = find_N5ddc_N5tc_delocalization_paths(mol.atoms[2])
+        self.assertTrue(paths)
+
+    def test_SN2(self):
+        smiles = "OS(O)=[N+]=[N-]"
+        mol = Molecule().fromSMILES(smiles)
+        paths = find_N5ddc_N5tc_delocalization_paths(mol.atoms[3])
+        self.assertTrue(paths)
+
+
+class FindBiradMultipleBondDelocalizationPaths(unittest.TestCase):
+    """
+    test the find_birad_multiple_bond_delocalization_paths method
+    """
+    def test_SO2(self):
+        smiles = "[O][S]=O"
+        mol = Molecule().fromSMILES(smiles)
+        paths = find_birad_multiple_bond_delocalization_paths(mol.atoms[0])
+        self.assertTrue(paths)
+
+    def test_N2(self):
+        smiles = "[N]=[N]"
+        mol = Molecule().fromSMILES(smiles)
+        paths = find_birad_multiple_bond_delocalization_paths(mol.atoms[0])
+        self.assertTrue(paths)
+
+    def test_C3H4O(self):
+        smiles = "C[CH][C]=O"
+        mol = Molecule().fromSMILES(smiles)
+        paths = find_birad_multiple_bond_delocalization_paths(mol.atoms[1])
+        self.assertTrue(paths)
