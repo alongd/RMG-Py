@@ -392,11 +392,11 @@ class FindAllDelocalizationPathsTest(unittest.TestCase):
     def test_allyl_radical(self):
         smi = "[CH2]C=C"
         mol = Molecule().fromSMILES(smi)
-        paths = findAllDelocalizationPaths(mol.atoms[0])
+        paths = find_allyl_delocalization_paths(mol.atoms[0])
         self.assertIsNotNone(paths)
 
     def test_nitrogenated_birad(self):
         smi = '[CH]=C[N]'
         mol = Molecule().fromSMILES(smi)
-        paths = findAllDelocalizationPaths(mol.atoms[0])
+        paths = find_allyl_delocalization_paths(mol.atoms[0])
         self.assertIsNotNone(paths)
