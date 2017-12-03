@@ -135,7 +135,7 @@ def reactAll(coreSpcList, numOldCoreSpecies, unimolecularReact, bimolecularReact
 
 def deflateReaction(rxn, molDict):
     """
-    This function deflates a single reaction holding speices objects, and uses the provided 
+    This function deflates a single reaction holding species objects, and uses the provided
     dictionary to populate reactants/products/pairs with integer indices,
     if possible.
 
@@ -147,6 +147,7 @@ def deflateReaction(rxn, molDict):
     object are populated with the value of the dictionary, either an
     integer index, or either a Species object.
     """
+    rxn.generatePairs()
     for spec in itertools.chain(rxn.reactants, rxn.products):
         if not spec.molecule[0] in molDict:
             molDict[spec.molecule[0]] = spec
