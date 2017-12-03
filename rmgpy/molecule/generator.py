@@ -286,7 +286,7 @@ def toSMILES(mol):
         # It wasn't in the above list.
         pass
     for atom in mol.vertices:
-        if atom.isNitrogen():
+        if atom.isNitrogen() or atom.isSulfur():
             obmol = toOBMol(mol)
             try:
                 SMILEwriter = openbabel.OBConversion()
