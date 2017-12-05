@@ -1483,7 +1483,7 @@ class KineticsFamily(Database):
                 sameReactants = True
 
             reactionList = self.__generateReactions([spc.molecule for spc in rxn.products],
-                                                    products=rxn.reactants, forward=True)
+                                                    products=rxn.reactants, forward=True, react_non_reactive=True)
             reactions = find_degenerate_reactions(reactionList, sameReactants, kinetics_family=self)
             if len(reactions) == 0:
                 logging.error("Expecting one matching reverse reaction, not zero in reaction family {0} for forward reaction {1}.\n".format(self.label, str(rxn)))
@@ -1503,7 +1503,8 @@ class KineticsFamily(Database):
                 self.forbidden = ForbiddenStructures()  # Initialize with empty one
                 try:
                     reactionList = self.__generateReactions([spc.molecule for spc in rxn.products],
-                                                            products=rxn.reactants, forward=True)
+                                                            products=rxn.reactants, forward=True,
+                                                            react_non_reactive=True)
                     reactions = find_degenerate_reactions(reactionList, sameReactants, kinetics_family=self)
                 finally:
                     self.forbidden = tempObject
@@ -1548,7 +1549,8 @@ class KineticsFamily(Database):
 
         reactions = []
         for combo in molecule_combos:
-            reactions.extend(self.__generateReactions(combo, products=reaction.products, forward=True))
+            reactions.extend(self.__generateReactions(combo, products=reaction.products, forward=True,
+                                                      react_non_reactive=True))
 
         # Check if the reactants are the same
         sameReactants = False
@@ -1579,8 +1581,9 @@ class KineticsFamily(Database):
                                  'in reaction family {1}. Expected 1 reaction '
                                  'but generated {2}').format(reaction, self.label, len(reactions)))
         return reactions[0].degeneracy
-        
-    def __generateReactions(self, reactants, products=None, forward=True, prod_resonance=True):
+
+    def __generateReactions(self, reactants, products=None, forward=True, prod_resonance=True,
+                            react_non_reactive=False):
         """
         Generate a list of all of the possible reactions of this family between
         the list of `reactants`. The number of reactants provided must match
@@ -1627,18 +1630,19 @@ class KineticsFamily(Database):
 
             # Iterate over all resonance isomers of the reactant
             for molecule in reactants[0]:
-
-                mappings = self.__matchReactantToTemplate(molecule, template.reactants[0])
-                for map in mappings:
-                    reactantStructures = [molecule]
-                    try:
-                        productStructures = self.__generateProductStructures(reactantStructures, [map], forward)
-                    except ForbiddenStructureException:
-                        pass
-                    else:
-                        if productStructures is not None:
-                            rxn = self.__createReaction(reactantStructures, productStructures, forward)
-                            if rxn: rxnList.append(rxn)
+                if molecule.reactive or react_non_reactive:  # don't react non representative resonance isomers unless
+                    # explicitly desired (e.g., when called from calculateDegeneracy)
+                    mappings = self.__matchReactantToTemplate(molecule, template.reactants[0])
+                    for map in mappings:
+                        reactantStructures = [molecule]
+                        try:
+                            productStructures = self.__generateProductStructures(reactantStructures, [map], forward)
+                        except ForbiddenStructureException:
+                            pass
+                        else:
+                            if productStructures is not None:
+                                rxn = self.__createReaction(reactantStructures, productStructures, forward)
+                                if rxn: rxnList.append(rxn)
 
         # Bimolecular reactants: A + B --> products
         elif len(reactants) == 2 and len(template.reactants) == 2:
@@ -1649,30 +1653,11 @@ class KineticsFamily(Database):
             # Iterate over all resonance isomers of the reactant
             for moleculeA in moleculesA:
                 for moleculeB in moleculesB:
+                    if (moleculeA.reactive and moleculeB.reactive) or  react_non_reactive:
 
-                    # Reactants stored as A + B
-                    mappingsA = self.__matchReactantToTemplate(moleculeA, template.reactants[0])
-                    mappingsB = self.__matchReactantToTemplate(moleculeB, template.reactants[1])
-
-                    # Iterate over each pair of matches (A, B)
-                    for mapA in mappingsA:
-                        for mapB in mappingsB:
-                            reactantStructures = [moleculeA, moleculeB]
-                            try:
-                                productStructures = self.__generateProductStructures(reactantStructures, [mapA, mapB], forward)
-                            except ForbiddenStructureException:
-                                pass
-                            else:
-                                if productStructures is not None:
-                                    rxn = self.__createReaction(reactantStructures, productStructures, forward)
-                                    if rxn: rxnList.append(rxn)
-
-                    # Only check for swapped reactants if they are different
-                    if reactants[0] is not reactants[1]:
-
-                        # Reactants stored as B + A
-                        mappingsA = self.__matchReactantToTemplate(moleculeA, template.reactants[1])
-                        mappingsB = self.__matchReactantToTemplate(moleculeB, template.reactants[0])
+                        # Reactants stored as A + B
+                        mappingsA = self.__matchReactantToTemplate(moleculeA, template.reactants[0])
+                        mappingsB = self.__matchReactantToTemplate(moleculeB, template.reactants[1])
 
                         # Iterate over each pair of matches (A, B)
                         for mapA in mappingsA:
@@ -1686,6 +1671,26 @@ class KineticsFamily(Database):
                                     if productStructures is not None:
                                         rxn = self.__createReaction(reactantStructures, productStructures, forward)
                                         if rxn: rxnList.append(rxn)
+
+                        # Only check for swapped reactants if they are different
+                        if reactants[0] is not reactants[1]:
+
+                            # Reactants stored as B + A
+                            mappingsA = self.__matchReactantToTemplate(moleculeA, template.reactants[1])
+                            mappingsB = self.__matchReactantToTemplate(moleculeB, template.reactants[0])
+
+                            # Iterate over each pair of matches (A, B)
+                            for mapA in mappingsA:
+                                for mapB in mappingsB:
+                                    reactantStructures = [moleculeA, moleculeB]
+                                    try:
+                                        productStructures = self.__generateProductStructures(reactantStructures, [mapA, mapB], forward)
+                                    except ForbiddenStructureException:
+                                        pass
+                                    else:
+                                        if productStructures is not None:
+                                            rxn = self.__createReaction(reactantStructures, productStructures, forward)
+                                            if rxn: rxnList.append(rxn)
         # If products is given, remove reactions from the reaction list that
         # don't generate the given products
         if products is not None:
