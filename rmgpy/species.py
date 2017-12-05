@@ -162,17 +162,18 @@ class Species(object):
         self._molecularWeight = quantity.Mass(value)
     molecularWeight = property(getMolecularWeight, setMolecularWeight, """The molecular weight of the species. (Note: value_si is in kg/molecule not kg/mole)""")
 
-    def generate_resonance_structures(self, keepIsomorphic=True):
+    def generate_resonance_structures(self, keepIsomorphic=True, filterStructures=True):
         """
         Generate all of the resonance structures of this species. The isomers are
         stored as a list in the `molecule` attribute. If the length of
         `molecule` is already greater than one, it is assumed that all of the
         resonance structures have already been generated.
         """
-        if len(self.molecule) == 1:
+        if all([molecule.reactive for molecule in self.molecule]):
             if not self.molecule[0].atomIDValid():
                 self.molecule[0].assignAtomIDs()
-            self.molecule = self.molecule[0].generate_resonance_structures(keepIsomorphic)
+            self.molecule = self.molecule[0].generate_resonance_structures(keepIsomorphic=keepIsomorphic,
+                                                                           filterStructures=filterStructures)
     
     def isIsomorphic(self, other, generate_res=False):
         """
