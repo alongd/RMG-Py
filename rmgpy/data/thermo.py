@@ -1156,17 +1156,21 @@ class ThermoDatabase(object):
                 
         if thermo0 is None:
             # Use group additivity methods to determine thermo for molecule (or if QM fails completely)
-            original_molecule = species.molecule[0]
+            for mol in species.molecule:
+                if mol.reactive:
+                    original_molecule = mol
+                    break
             if original_molecule.getRadicalCount() > 0:
                 # If the molecule is a radical, check if any of the saturated forms are in the libraries
                 # first and perform an HBI correction on them
                 thermo = []
                 for molecule in species.molecule:
-                    molecule.clearLabeledAtoms()
-                    # First see if the saturated molecule is in the libaries
-                    tdata = self.estimateRadicalThermoViaHBI(molecule, self.getThermoDataFromLibraries)
-                    if tdata:
-                        thermo.append((tdata.getEnthalpy(298.), molecule, tdata))
+                    if molecule.reactive:
+                        molecule.clearLabeledAtoms()
+                        # First see if the saturated molecule is in the libaries
+                        tdata = self.estimateRadicalThermoViaHBI(molecule, self.getThermoDataFromLibraries)
+                        if tdata:
+                            thermo.append((tdata.getEnthalpy(298.), molecule, tdata))
                 
                 if thermo:
                     # Sort thermo by the most stable H298 value when choosing between thermoLibrary values
