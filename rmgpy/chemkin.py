@@ -1348,7 +1348,7 @@ def getSpeciesIdentifier(species):
         # No index present -- probably not in RMG job
         # In this case just return the label (if the right size)
         if len(label) > 0 and not re.search(r'[^A-Za-z0-9\-_,\(\)\*#]+', label):
-            if len(label) <= 10:
+            if len(label) <= 16:
                 return label
             elif len(label) <= 15:
                 #logging.warning('Species label {0} is longer than 10 characters and may exceed chemkin string limit'.format(label))
@@ -1369,21 +1369,21 @@ def getSpeciesIdentifier(species):
         # First try to use the label and index
         # The label can only contain alphanumeric characters, and -()*#_,
         if len(label) > 0 and species.index >= 0 and not re.search(r'[^A-Za-z0-9\-_,\(\)\*#]+', label):
-            name = '{0}({1:d})'.format(label, species.index)
-            if len(name) <= 10:
+            name = '{0})'.format(label)
+            if len(name) <= 16:
                 return name
     
         # Next try the chemical formula
         if len(species.molecule) > 0:
             # Try the chemical formula
             name = '{0}({1:d})'.format(species.molecule[0].getFormula(), species.index)
-            if len(name) <= 10:
+            if len(name) <= 16:
                 return name
     
         # As a last resort, just use the index
         if species.index >= 0:
             name = 'S({0:d})'.format(species.index)
-            if len(name) <= 10:
+            if len(name) <= 16:
                 return name
 
     # If we're here then we just can't come up with a valid Chemkin name
