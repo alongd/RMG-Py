@@ -868,7 +868,7 @@ class Molecule(Graph):
         for index, vertex in enumerate(self.vertices):
             vertex.sortingLabel = index
 
-    def update(self):
+    def update(self, log_species_while_updating_atom_types=True):
         """
         Update connectivity values, atom types of atoms.
         Update multiplicity, and sort atoms using the new
@@ -878,7 +878,7 @@ class Molecule(Graph):
         for atom in self.atoms:
             atom.updateCharge()
 
-        self.updateAtomTypes()
+        self.updateAtomTypes(logSpecies=log_species_while_updating_atom_types)
         self.updateMultiplicity()
         self.sortAtoms()
 
