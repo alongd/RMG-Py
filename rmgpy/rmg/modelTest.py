@@ -213,6 +213,36 @@ class TestCoreEdgeReactionModel(unittest.TestCase):
         self.assertEquals(len(cerm.speciesDict), len(spcs) - 1)    
         self.assertEquals(len(cerm.indexSpeciesDict), len(spcs) - 1)
 
+    def testAppendNonReactiveStructure(self):
+        """
+        Test that CoreEdgeReactionModel.makeNewSpecies method correctly appends a non-representative resonance structure
+        that was generated to the correct Species containing the representative resonance structures.
+        The non-representative structure should be marked as `.reactive=False`.
+        """
+
+        cerm = CoreEdgeReactionModel()
+
+        spcs = [Species().fromSMILES('CCO'),
+                Species().fromSMILES('O=S=O'),
+                Species().fromSMILES('[O][S]=O'),        # non-representative structure of 'O=S=O'
+                Species().fromSMILES('[O][O]'),
+                Species().fromSMILES('O=O'),             # non-representative structure of '[O][O]'
+                Species().fromSMILES('[O+]#S(=O)[O-]'),  # non-representative structure of 'O=S(=O)=O'
+                Species().fromSMILES('O=S(=O)=O'),
+                Species().fromSMILES('[N]=O'),
+                Species().fromAdjacencyList("""1 O u1 p2 c0 {2,S}
+                                               2 N u0 p2 c0 {1,S}"""),  # non-representative structure of '[N]=O'
+                ]
+
+        for spc in spcs:
+            cerm.makeNewSpecies(spc)
+
+        self.assertEquals(len(cerm.speciesDict), 5)
+        self.assertEquals(len(cerm.indexSpeciesDict), 5)
+        for index in list(range(2, 6)):  # 'list' isn't necessary in Py2, but in Py3 it is where range() is an iterator
+            self.assertNotEquals(cerm.indexSpeciesDict[index].molecule[0].reactive,
+                                 cerm.indexSpeciesDict[index].molecule[1].reactive)  # only one should be reactive
+
     def testMakeNewReaction(self):
         """
         Test that CoreEdgeReactionModel.makeNewReaction method correctly works.
