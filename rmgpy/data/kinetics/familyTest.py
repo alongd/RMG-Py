@@ -616,8 +616,8 @@ class TestGenerateReactions(unittest.TestCase):
         self.assertFalse(successful)
 
         mock_logging.error.assert_has_calls([
-            mock.call('Expecting one matching reverse reaction, not zero in reaction family H_Abstraction for forward reaction CC + [CH2]C=C[CH2] <=> C[CH2] + [CH2]C=CC.\n'),
-        ])
+            mock.call('Expecting one matching reverse reaction, not zero in reaction family H_Abstraction for forward reaction CC + C=CC=C <=> C[CH2] + [CH2]C=CC.\n'),
+        ])  # Once resonance structures are generated, '[CH2]C=C[CH2]' is kept as unreactive, while the ground state form 'C=CC=C' becomes the representative (reactive) structure of the species
 
         mock_logging.error.assert_has_calls([
             mock.call('Error was fixed, the product is a forbidden structure when used as a reactant in the reverse direction.'),
