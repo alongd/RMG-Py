@@ -79,16 +79,6 @@ class InChIParsingTest(unittest.TestCase):
         inchi = 'H2/h1H'
         self.compare(inchi)
 
-    def test_C2H4_biradical_parsing(self):
-        inchi = 'C2H4/c1-2/h1-2H2'
-        u_indices = [1,2]
-        self.compare(inchi, u_indices)
-
-    def test_C2H3_triradical_parsing(self):
-        inchi = 'C2H3/c1-2/h1H,2H2'
-        u_indices = [1,1,2]
-        self.compare(inchi, u_indices)
-
     def test_C3H6_biradical_parsing(self):
         inchi = 'C3H6/c1-3-2/h1-3H2'
         u_indices = [1,2]
@@ -109,11 +99,6 @@ class InChIParsingTest(unittest.TestCase):
         u_indices = [1]
         self.compare(inchi, u_indices)
 
-    def testC2H2(self):
-        inchi = 'C2H2/c1-2/h1-2H'
-        u_indices = [1,2]
-        mol = self.compare(inchi, u_indices)
-
     def testO2(self):
         inchi = 'O2/c1-2'
         u_indices = [1,2]
@@ -129,20 +114,10 @@ class InChIParsingTest(unittest.TestCase):
         u_indices = [1,2,3]
         self.compare(inchi, u_indices)
 
-    def testTriRadical2DoubleBondMult4(self):
-        inchi = 'C6H9/c1-4-6(3)5-2/h1,4-6H,2H2,3H3'
-        u_indices = [1, 2, 5]
-        self.compare(inchi, u_indices)
-
     def testQuadriRadicalDoubleBondZwitterMult5(self):
         inchi = 'C8H14/c1-4-6-7-8(3)5-2/h5-6,8H,1-2,4,7H2,3H3'
         u_indices = [1, 2, 5, 6]
         mol = self.compare(inchi, u_indices)
-
-    def testQuadri2DoubleBondMult5(self):
-        inchi = 'C8H14/c1-5-7(3)8(4)6-2/h5-8H,1-2H2,3-4H3'
-        u_indices = [1, 2, 5, 6]
-        self.compare(inchi, u_indices)
 
     def testC5H6O(self):
         inchi = 'C5H6O/c6-5-3-1-2-4-5/h1-3,5H,4H2'
@@ -190,16 +165,6 @@ class InChIParsingTest(unittest.TestCase):
         for at in mol.atoms:
             if at.isOxygen():
                 self.assertTrue(at.lonePairs == 2)
-    
-    def testC6H6(self):
-        inchi = 'C6H6/c1-3-5-6-4-2/h1,6H,2,5H2'
-        u_indices = [1, 3]
-        mol = self.compare(inchi, u_indices)
-
-    def testC4H6O_2(self):
-        inchi = 'C4H6O/c1-2-3-4-5/h2,4H,1,3H2'
-        u_indices = [4, 5]
-        mol = self.compare(inchi, u_indices)
 
     def test_CO_triplet(self):
 
@@ -250,11 +215,6 @@ class InChIParsingTest(unittest.TestCase):
         u_indices = [1,3,4]
         self.compare(inchi, u_indices)
 
-    def test_CH2O2(self):
-        inchi = 'CH2O2/c2-1-3/h1H,(H,2,3)'
-        u_indices = [1,2]
-        self.compare(inchi, u_indices)
-
     def test_C2H2O3(self):
         inchi = 'C2H2O3/c1-5-2(3)4/h1H2'
         u_indices = [1,3]
@@ -290,16 +250,6 @@ class InChIParsingTest(unittest.TestCase):
     def test_C3H4(self):
         inchi = 'InChI=1S/C3H4/c1-3-2/h1,3H,2H2'
         u_indices = [1,1]
-        self.compare(inchi, u_indices)
-    
-    def test_C6H8(self):
-        inchi = 'InChI=1S/C6H8/c1-3-5-6-4-2/h1,4H,2,5-6H2'
-        u_indices = [1,1,3,3]
-        self.compare(inchi, u_indices)
-
-    def test_C6H10(self):
-        inchi = 'InChI=1S/C6H10/c1-3-5-6-4-2/h3-4H,1-2,5-6H2'
-        u_indices = [1,3]
         self.compare(inchi, u_indices)
 
     def test_ammonia(self):
