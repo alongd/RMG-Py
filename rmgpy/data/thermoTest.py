@@ -463,7 +463,7 @@ class TestThermoAccuracyAromatics(TestThermoAccuracy):
         """
         Test long distance interaction is properly caculated for aromatic biradical.
         """
-        spec = Species().fromSMILES('c([O])1c([C]=O)cc(C=O)cc1')
+        spec = Species().fromSMILES('c(N)1c([C]=O)cc(C=O)cc1')
         spec.generate_resonance_structures()
         thermo = self.database.getThermoDataFromGroups(spec)
 
