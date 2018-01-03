@@ -1218,10 +1218,11 @@ class TestMolecule(unittest.TestCase):
         """
         mol = Molecule().fromAdjacencyList("""
             1     C     u1 p0 c0 {2,S}
-            2     C     u1 p0 c0 {1,S}
+            2     C     u0 p0 c0 {1,S} {3,S}
+            3     C     u1 p0 c0 {2,S}
         """, saturateH=True)
         
-        self.assertEqual(mol.toAugmentedInChI(), 'InChI=1S/C2H4/c1-2/h1-2H2/u1,2')
+        self.assertEqual(mol.toAugmentedInChI(), 'InChI=1S/C3H6/c1-3-2/h1-3H2/u1,2')
         
     def testAugmentedInChIKey(self):
         """
@@ -1229,10 +1230,11 @@ class TestMolecule(unittest.TestCase):
         """
         mol = Molecule().fromAdjacencyList("""
             1     C     u1 p0 c0 {2,S}
-            2     C     u1 p0 c0 {1,S}
+            2     C     u0 p0 c0 {1,S} {3,S}
+            3     C     u1 p0 c0 {2,S}
         """, saturateH=True)
         
-        self.assertEqual(mol.toAugmentedInChIKey(), 'VGGSQFUCUMXWEO-UHFFFAOYSA-u1,2')
+        self.assertEqual(mol.toAugmentedInChIKey(), 'CUJPFPXNDSIBPG-UHFFFAOYSA-u1,2')
 
     def testLinearMethane(self):
         """
