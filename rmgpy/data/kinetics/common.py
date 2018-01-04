@@ -195,7 +195,7 @@ def filter_reactions(reactants, products, reactionList):
     return reactions
 
 
-def ensure_species(input_list, resonance=False, keepIsomorphic=False):
+def ensure_species(input_list, resonance=False, keep_isomorphic=False):
     """
     Given an input list of molecules or species, return a list with only
     species objects.
@@ -208,8 +208,8 @@ def ensure_species(input_list, resonance=False, keepIsomorphic=False):
             new_item = item
         else:
             raise TypeError('Only Molecule or Species objects can be handled.')
-        if resonance:
-            new_item.generate_resonance_structures(keepIsomorphic=keepIsomorphic)
+        if resonance and all([molecule.reactive for molecule in new_item.molecule]):
+            new_item.generate_resonance_structures(keep_isomorphic=keep_isomorphic)
         output_list.append(new_item)
 
     return output_list
@@ -252,16 +252,18 @@ def ensure_independent_atom_ids(input_species, resonance=True):
     if not independent_ids():
         logging.debug('identical atom ids found between species. regenerating')
         for species in input_species:
-            mol = species.molecule[0]
-            mol.assignAtomIDs()
-            species.molecule = [mol]
-            # Remake resonance structures with new labels
-            if resonance:
-                species.generate_resonance_structures(keepIsomorphic=True)
+            if all([mol.reactive for mol in species.molecule]):
+                mol = species.molecule[0]
+                mol.assignAtomIDs()
+                species.molecule = [mol]
+                # Remake resonance structures with new labels
+                if resonance:
+                    species.generate_resonance_structures(keep_isomorphic=True)
     elif resonance:
         # IDs are already independent, generate resonance structures if needed
         for species in input_species:
-            species.generate_resonance_structures(keepIsomorphic=True)
+            if len(species.molecule) == 1:
+                species.generate_resonance_structures(keep_isomorphic=True)
 
 
 def find_degenerate_reactions(rxnList, same_reactants=None, kinetics_database=None, kinetics_family=None):
@@ -348,6 +350,44 @@ def find_degenerate_reactions(rxnList, same_reactants=None, kinetics_database=No
 
     return rxnList
 
+
+def ensure_species_in_reaction(reaction):
+    """
+    Modifies a reaction holding Molecule objects to a reaction holding
+    Species objects. Generates resonance structures for reaction products.
+    """
+    # if already species' objects, return none
+    if isinstance(reaction.reactants[0], Species):
+        return None
+    # obtain species with all resonance isomers
+    if reaction.isForward:
+        reaction.reactants = ensure_species(reaction.reactants, resonance=False)
+        reaction.products = ensure_species(reaction.products, resonance=True, keep_isomorphic=True)
+    else:
+        reaction.reactants = ensure_species(reaction.reactants, resonance=True, keep_isomorphic=True)
+        reaction.products = ensure_species(reaction.products, resonance=False)
+
+    # convert reaction.pairs object to species
+    new_pairs = []
+    for reactant, product in reaction.pairs:
+        new_pair = []
+        for reactant0 in reaction.reactants:
+            if reactant0.isIsomorphic(reactant):
+                new_pair.append(reactant0)
+                break
+        for product0 in reaction.products:
+            if product0.isIsomorphic(product):
+                new_pair.append(product0)
+                break
+        new_pairs.append(new_pair)
+    reaction.pairs = new_pairs
+
+    try:
+        ensure_species_in_reaction(reaction.reverse)
+    except AttributeError:
+        pass
+
+
 def reduce_same_reactant_degeneracy(reaction, same_reactants=None):
     """
     This method reduces the degeneracy of reactions with identical reactants,
@@ -362,4 +402,3 @@ def reduce_same_reactant_degeneracy(reaction, same_reactants=None):
             ):
         reaction.degeneracy *= 0.5
         logging.debug('Degeneracy of reaction {} was decreased by 50% to {} since the reactants are identical'.format(reaction, reaction.degeneracy))
-
