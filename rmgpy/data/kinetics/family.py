@@ -1083,7 +1083,7 @@ class KineticsFamily(Database):
                              products=[Species(molecule=[m.molecule[0].copy(deep=True)], label=m.label) for m in entry.item.products])
             for reactant in item.reactants:
                 reactant.generate_resonance_structures()
-                reactant.thermo = thermoDatabase.getThermoData(reactant, trainingSet=True) 
+                reactant.thermo = thermoDatabase.getThermoData(reactant, trainingSet=True)
             for product in item.products:
                 product.generate_resonance_structures()
                 product.thermo = thermoDatabase.getThermoData(product,trainingSet=True)
@@ -1285,10 +1285,52 @@ class KineticsFamily(Database):
             # reaction templates
             return None
 
+        # Make sure we don't create a different net charge between reactants and products
+        reactantNetCharge = productNetCharge = 0
+        for struc in reactantStructures:
+            struc.update()
+            if isinstance(struc, Molecule):
+                reactantNetCharge += struc.getNetCharge()
+            elif isinstance(struc, Group):
+                reactantNetCharge += sum([atom.charge[0] for atom in struc.atoms if atom.charge != []])
+        for struc in productStructures:
+            struc.update()
+            if isinstance(struc, Molecule):
+                productNetCharge += struc.getNetCharge()
+            elif isinstance(struc, Group):
+                productNetCharge += sum([atom.charge[0] for atom in struc.atoms if atom.charge != []])
+        if reactantNetCharge != productNetCharge:
+            logging.info('\n\n')
+            logging.error('The net charge of the reactants {0} differs from the net charge of the products {1} in'
+                          ' reaction family {2}.'.format(reactantNetCharge,productNetCharge,self.label))
+            logging.info('Reactants:')
+            for struc in reactantStructures:
+                logging.info(struc.toAdjacencyList())
+                logging.info('\n')
+            logging.info('Products:')
+            for struc in productStructures:
+                logging.info(struc.toAdjacencyList())
+                logging.info('\n')
+            raise AssertionError('The net charge is not being conserved!')
+        # The following check should be removed once RMG can process charged species
+        if isinstance(struc, Molecule) and (reactantNetCharge != 0 or productNetCharge != 0):
+            logging.info('\n\n')
+            logging.error('Either the reactants (charge {0}) or products (charge {1}) in reaction family {2} have a net'
+                          ' charge.'.format(reactantNetCharge,productNetCharge,self.label))
+            logging.info('Reactants:')
+            for struc in reactantStructures:
+                logging.info(struc.toAdjacencyList())
+                logging.info('\n')
+            logging.info('Products:')
+            for struc in productStructures:
+                logging.info(struc.toAdjacencyList())
+                logging.info('\n')
+            raise AssertionError('RMG cannot handel charged species')
+
         # If there are two product structures, place the one containing '*1' first
         if len(productStructures) == 2:
-            if not productStructures[0].containsLabeledAtom('*1') and \
-                productStructures[1].containsLabeledAtom('*1'):
+            if not productStructures[0].containsLabeledAtom('*1') and\
+                    productStructures[1].containsLabeledAtom('*1'):
                 productStructures.reverse()
 
         # If product structures are Molecule objects, update their atom types
