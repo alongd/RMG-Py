@@ -1090,7 +1090,7 @@ class KineticsFamily(Database):
                              products=[Species(molecule=[m.molecule[0].copy(deep=True)], label=m.label) for m in entry.item.products])
             for reactant in item.reactants:
                 reactant.generate_resonance_structures()
-                reactant.thermo = thermoDatabase.getThermoData(reactant, trainingSet=True) 
+                reactant.thermo = thermoDatabase.getThermoData(reactant, trainingSet=True)
             for product in item.products:
                 product.generate_resonance_structures()
                 product.thermo = thermoDatabase.getThermoData(product,trainingSet=True)
@@ -1290,10 +1290,50 @@ class KineticsFamily(Database):
             # reaction templates
             return None
 
+        # Make sure we don't create a different net charge between reactants and products
+        reactant_net_charge = product_net_charge = 0
+        for struc in reactantStructures:
+            struc.update()
+            reactant_net_charge += struc.getNetCharge()
+        for struc in productStructures:
+            struc.update()
+            product_net_charge += struc.getNetCharge()
+        if reactant_net_charge != product_net_charge:
+            logging.info('\n\n')
+            logging.error('The net charge of the reactants {0} differs from the net charge of the products {1} in'
+                          ' reaction family {2}.'.format(reactant_net_charge,product_net_charge,self.label))
+            logging.info('Reactants:')
+            for struc in reactantStructures:
+                logging.info(struc.toAdjacencyList())
+                logging.info('\n')
+            logging.info('Products:')
+            for struc in productStructures:
+                logging.info(struc.toAdjacencyList())
+                logging.info('\n')
+            raise AssertionError('The net charge is not being conserved!')
+        # The following check should be removed once RMG can process charged species
+        # This is applied only for :class:Molecule (not for :class:Group which is allowed to have a nonzero net charge)
+        if any([structure.getNetCharge() for structure in reactantStructures + productStructures])\
+                and isinstance(struc, Molecule):
+            logging.info('\n\n')
+            logging.error('One of the reactants or products in reaction family {0} have a nonzero net charge.'.format(
+                self.label))
+            logging.info('Reactants:')
+            for struc in reactantStructures:
+                logging.info(struc.toAdjacencyList())
+                logging.info("Net charge: {0}".format(struc.getNetCharge()))
+                logging.info('\n')
+            logging.info('Products:')
+            for struc in productStructures:
+                logging.info(struc.toAdjacencyList())
+                logging.info("Net charge: {0}".format(struc.getNetCharge()))
+                logging.info('\n')
+            raise AssertionError('RMG currently cannot handel net charged species')
+
         # If there are two product structures, place the one containing '*1' first
         if len(productStructures) == 2:
-            if not productStructures[0].containsLabeledAtom('*1') and \
-                productStructures[1].containsLabeledAtom('*1'):
+            if not productStructures[0].containsLabeledAtom('*1') and\
+                    productStructures[1].containsLabeledAtom('*1'):
                 productStructures.reverse()
 
         # If product structures are Molecule objects, update their atom types
