@@ -314,6 +314,24 @@ multiplicity 2
 
         self.assertAlmostEqual(previous_enthalpy, latter_enthalpy, 2)
 
+    def testLowestH298forResonanceStructures(self):
+        """Test that the thermo entry with the lowest H298 is selected for a species with resonance structurers"""
+
+        smiles = '[C]#C[O]'  # has H298 ~= 640 kJ/mol; has resonance structure `[C]=C=O` with H298 ~= 380 kJ/mol
+        spec = Species().fromSMILES(smiles)
+        thermo_gav1 = self.database.getThermoDataFromGroups(spec)
+        spec.generate_resonance_structures()
+        thermo_gav2 = self.database.getThermoDataFromGroups(spec)
+        self.assertTrue(thermo_gav2.getEnthalpy(298) < thermo_gav1.getEnthalpy(298),
+                        msg="Did not select the molecule with the lowest H298 as a the thermo entry for [C]#C[O] / [C]=C=O")
+
+        smiles = 'C=C[CH][O]'  # has H298 ~= 209 kJ/mol; has (a reactive) resonance structure `C=CC=O` with H298 ~= -67 kJ/mol
+        spec = Species().fromSMILES(smiles)
+        thermo_gav1 = self.database.getThermoDataFromGroups(spec)
+        spec.generate_resonance_structures()
+        thermo_gav2 = self.database.getThermoDataFromGroups(spec)
+        self.assertTrue(thermo_gav2.getEnthalpy(298) < thermo_gav1.getEnthalpy(298),
+                        msg="Did not select the molecule with the lowest H298 as a the thermo entry for C=C[CH][O] / C=CC=O")
 
 class TestThermoAccuracy(unittest.TestCase):
     """
