@@ -1162,7 +1162,7 @@ class ThermoDatabase(object):
                     if len(thermo) > 1:
                         # Sort thermo first by the priority, then by the most stable H298 value
                         thermo = sorted(thermo, key=lambda x: (x[0], x[1])) 
-                        for i in range(len(thermo)): 
+                        for i in xrange(len(thermo)):
                             logging.debug("Resonance isomer {0} {1} gives H298={2:.0f} J/mol".format(i+1, thermo[i][2].toSMILES(), thermo[i][1]))
                         # Save resonance isomers reordered by their thermo
                         species.molecule = [item[2] for item in thermo]
@@ -1202,8 +1202,15 @@ class ThermoDatabase(object):
                 if thermo:
                     # Sort thermo by the most stable H298 value when choosing between thermoLibrary values
                     thermo = sorted(thermo, key=lambda x: x[0])
-                    for i in range(len(thermo)): 
-                        logging.debug("Resonance isomer {0} {1} gives H298={2:.0f} J/mol".format(i+1, thermo[i][1].toSMILES(), thermo[i][0]))
+                    # Sort thermo by the structure reactive attribute, with `reactive=True` structures first
+                    thermo.sort(key=lambda x: x[1].reactive, reverse=True)
+                    for i in xrange(len(thermo)):
+                        if thermo[i][1].reactive:
+                            logging.debug("Resonance isomer {0} {1} gives H298={2:.0f} J/mol".format(i+1,
+                                            thermo[i][1].toSMILES(), thermo[i][0]))
+                        else:
+                            logging.debug("Non-reactive resonance isomer {0} {1} gives H298={2:.0f} J/mol".format(i+1,
+                                            thermo[i][1].toSMILES(), thermo[i][0]))
                     # Save resonance isomers reordered by their thermo
                     newMolList = [item[1] for item in thermo]
                     if len(newMolList) < len(species.molecule):
@@ -1417,15 +1424,15 @@ class ThermoDatabase(object):
                 # Sort first by rank, then by enthalpy at 298 K
                 entries = sorted(entries, key=lambda entry: (entry[1], entry[0].getEnthalpy(298.)))
                 indices = [thermoDataList.index(entry[0]) for entry in entries]
-                
             else:
                 # For noncyclics, default to original algorithm of ordering thermo based on the most stable enthalpy
                 H298 = numpy.array([t.getEnthalpy(298.) for t in thermoDataList])
                 indices = H298.argsort()
+            indices = numpy.array([indices[i] for i in xrange(len(indices)) if species.molecule[indices[i]].reactive] +\
+                        [indices[i] for i in xrange(len(indices)) if not species.molecule[indices[i]].reactive])
+            return indices
         else:
-            indices = [0]
-
-        return indices
+            return [0]
 
     def estimateRadicalThermoViaHBI(self, molecule, stableThermoEstimator ):
         """
