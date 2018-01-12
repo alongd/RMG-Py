@@ -548,6 +548,57 @@ class Network:
                 reac = products.index(rxn.reactants) + Nisom + Nreac
                 prod = isomers.index(rxn.products[0])
             else:
+                # try resurrecting the network for cases were unreactive structures interfere with the
+                # 'Species in SpeciesList' conditions above using the Species.is_structure_in_list() function. This
+                # should be a less efficient check, so it is not implemented by default.
+                logging.info('\nUnexpected type of path reaction.')
+                logging.info('\nnetwork reactants:')
+                index = 1
+                for reacts in reactants:
+                    logging.info('reactants {0}:'.format(index))
+                    subindex = 1
+                    for react in reacts:
+                        logging.info('reactant {0}:'.format(subindex))
+                        for mol in react.molecule:
+                            logging.info(mol.toAdjacencyList())
+                            logging.info('reactive = {0}\n'.format(mol.reactive))
+                        subindex += 1
+                    index += 1
+                index = 1
+                logging.info('network products:')
+                for prods in products:
+                    logging.info('products {0}:'.format(index))
+                    subindex = 1
+                    for pro in prods:
+                        for mol in pro.molecule:
+                            logging.info(mol.toAdjacencyList())
+                            logging.info('reactive = {0}\n'.format(mol.reactive))
+                        subindex += 1
+                    index += 1
+                logging.info('network isomers:')
+                index = 1
+                for iso in isomers:
+                    logging.info('isomer {0}:'.format(index))
+                    for mol in iso.molecule:
+                        logging.info(mol.toAdjacencyList())
+                        logging.info('reactive = {0}\n'.format(mol.reactive))
+                    index += 1
+                logging.info('rxn reactants:')
+                index = 1
+                for react in rxn.reactants:
+                    logging.info('reactant {0}:'.format(index))
+                    for mol in react.molecule:
+                        logging.info(mol.toAdjacencyList())
+                        logging.info('reactive = {0}\n'.format(mol.reactive))
+                    index += 1
+                logging.info('rxn products:')
+                index = 1
+                for pro in rxn.products:
+                    logging.info('product {0}:'.format(index))
+                    for mol in pro.molecule:
+                        logging.info(mol.toAdjacencyList())
+                        logging.info('reactive = {0}\n'.format(mol.reactive))
+                    index += 1
                 raise NetworkError('Unexpected type of path reaction "{0}"'.format(rxn))
         
             # Compute the microcanonical rate coefficient k(E)
