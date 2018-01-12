@@ -34,6 +34,8 @@ from rmgpy.data.kinetics.library import LibraryReaction
 from rmgpy.kinetics.model import PDepKineticsModel
 from rmgpy.data.kinetics.database import KineticsDatabase
 from rmgpy.data.kinetics.family import TemplateReaction
+from rmgpy.rmg import input as inp
+from rmgpy.rmg.main import RMG
 ###################################################
 
 class TestLibrary(unittest.TestCase):
@@ -43,11 +45,22 @@ class TestLibrary(unittest.TestCase):
         """
         A function run ONCE before all unit tests in this class.
         """
+        global rmg  # set-up RMG object and get global rmg object in input.py file so methods can be tested
+        rmg = RMG()
+        inp.setGlobalRMG(rmg)
         # Set up a dummy database
         cls.database = KineticsDatabase()
         cls.database.loadLibraries(os.path.join(settings['test_data.directory'], 'testing_database','kinetics','libraries'),
                                   libraries=None) #this loads all of them: ['GRI-Mech3.0', 'ethane-oxidation'])
         cls.libraries = cls.database.libraries
+
+    @classmethod
+    def tearDownClass(cls):
+        """
+        A function run ONCE after all unit tests in this class.
+        """
+        global rmg  # remove the RMG object
+        rmg = None
 
     def testGetLibraryReactions(self):
         """

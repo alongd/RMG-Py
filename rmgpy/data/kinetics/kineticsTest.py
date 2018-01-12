@@ -40,12 +40,17 @@ from rmgpy.data.kinetics.family import TemplateReaction
 from rmgpy.data.rmg import RMGDatabase
 from rmgpy.molecule.molecule import Molecule
 from rmgpy.species import Species
+from rmgpy.rmg import input as inp
+from rmgpy.rmg.main import RMG
 
 
 ###################################################
 
 def setUpModule():
     """A function that is run ONCE before all unit tests in this module."""
+    global rmg  # set-up RMG object and get global rmg object in input.py file so methods can be tested
+    rmg = RMG()
+    inp.setGlobalRMG(rmg)
     global database
     database = RMGDatabase()
     database.load(
@@ -73,11 +78,12 @@ def setUpModule():
         family.addKineticsRulesFromTrainingSet(thermoDatabase=database.thermo)
         family.fillKineticsRulesByAveragingUp(verbose=True)
 
-
 def tearDownModule():
     """A function that is run ONCE after all unit tests in this module."""
     from rmgpy.data import rmg
     rmg.database = None
+    global rmg  # remove the RMG object
+    rmg = None
 
 #####################################################
 

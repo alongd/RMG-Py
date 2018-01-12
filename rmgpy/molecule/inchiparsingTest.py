@@ -36,6 +36,24 @@ from .util import retrieveElementCount
 from .inchi import compose_aug_inchi, P_LAYER_PREFIX, P_LAYER_SEPARATOR, U_LAYER_PREFIX, U_LAYER_SEPARATOR
 
 from .parser import *
+from rmgpy.rmg import input as inp
+from rmgpy.rmg.main import RMG
+################################################################################
+
+def setUpModule():
+    """
+    A function that is run ONCE before all unit tests in this module.
+    """
+    global rmg  # set-up RMG object and get global rmg object in input.py file so methods can be tested
+    rmg = RMG()
+    inp.setGlobalRMG(rmg)
+
+def tearDownModule():
+    """
+    A function that is run ONCE after all unit tests in this module.
+    """
+    global rmg  # remove the RMG object
+    rmg = None
 
 class InChIParsingTest(unittest.TestCase):
 

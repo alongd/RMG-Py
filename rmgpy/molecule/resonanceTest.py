@@ -32,6 +32,26 @@ from .molecule import Molecule
 
 from .resonance import *
 from .resonance import _clar_optimization, _clar_transformation
+from rmgpy.rmg import input as inp
+from rmgpy.rmg.main import RMG
+################################################################################
+
+def setUpModule():
+    """
+    A function that is run ONCE before all unit tests in this module.
+    """
+    global rmg  # set-up RMG object and get global rmg object in input.py file so methods can be tested
+    rmg = RMG()
+    inp.setGlobalRMG(rmg)
+
+def tearDownModule():
+    """
+    A function that is run ONCE after all unit tests in this module.
+    """
+    global rmg  # remove the RMG object
+    rmg = None
+
+################################################################################
 
 class ResonanceTest(unittest.TestCase):
 
