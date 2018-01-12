@@ -34,12 +34,33 @@ import rmgpy
 from rmgpy.species import Species
 from rmgpy.reaction import Reaction
 from rmgpy.kinetics.arrhenius import Arrhenius
+from rmgpy.rmg import input as inp
+from rmgpy.rmg.main import RMG
 
 
 ###################################################
 
 class ChemkinTest(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        """
+        set-up RMG object and get global rmg object in input.py file so methods can be tested
+        """
+        global rmg
+        rmg = RMG()
+        inp.setGlobalRMG(rmg)
+
+    @classmethod
+    def tearDownClass(cls):
+        """
+        A function that is run ONCE after this test.
+        """
+        global rmg  # remove the RMG object
+        rmg = None
+
     @mock.patch('rmgpy.chemkin.logging')
+
     def test_readThermoEntry_BadElementCount(self, mock_logging):
         """
         Test that invalid element count logs the appropriate warning.

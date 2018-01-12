@@ -39,12 +39,31 @@ import os.path
 from rmgpy.molecule import  Molecule
 from rmgpy.molecule.draw import MoleculeDrawer
 from rmgpy.species import Species
+from rmgpy.rmg import input as inp
+from rmgpy.rmg.main import RMG
 ################################################################################
 
 class TestMoleculeDrawer(unittest.TestCase):
     """
     Contains unit tests of the MoleculeDrawer class.
     """
+
+    @classmethod
+    def setUpClass(cls):
+        """
+        A function run ONCE before all unit tests in this class.
+        """
+        global rmg  # set-up RMG object and get global rmg object in input.py file so methods can be tested
+        rmg = RMG()
+        inp.setGlobalRMG(rmg)
+
+    @classmethod
+    def tearDownClass(cls):
+        """
+        A function run ONCE after all unit tests in this class.
+        """
+        global rmg  # remove the RMG object
+        rmg = None
     
     def setUp(self):
         """

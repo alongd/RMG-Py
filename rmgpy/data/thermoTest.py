@@ -40,11 +40,14 @@ from rmgpy.rmg.model import Species
 from rmgpy.data.thermo import *
 from rmgpy.molecule.molecule import Molecule
 import rmgpy
-
+from rmgpy.rmg import input as inp
 ################################################################################
 
 def setUpModule():
     """A function that is run ONCE before all unit tests in this module."""
+    global rmg  # set-up RMG object and get global rmg object in input.py file so methods can be tested
+    rmg = RMG()
+    inp.setGlobalRMG(rmg)
     global database
     database = RMGDatabase()
     database.loadThermo(os.path.join(settings['database.directory'], 'thermo'))
@@ -53,6 +56,11 @@ def tearDownModule():
     """A function that is run ONCE after all unit tests in this module."""
     from rmgpy.data import rmg
     rmg.database = None
+    # remove the RMG object
+    global rmg
+    rmg = None
+
+################################################################################
 
 class TestThermoDatabaseLoading(unittest.TestCase):
 

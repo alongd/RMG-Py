@@ -8,6 +8,8 @@ from rmgpy.data.base import LogicOr
 from rmgpy.molecule import Group, ImplicitBenzeneError, UnexpectedChargeError
 from rmgpy.molecule.atomtype import atomTypes
 from rmgpy.molecule.pathfinder import find_shortest_path
+from rmgpy.rmg import input as inp
+from rmgpy.rmg.main import RMG
 
 import nose
 import nose.tools
@@ -20,11 +22,22 @@ class TestDatabase():  # cannot inherit from unittest.TestCase if we want to use
     @classmethod
     def setUpClass(cls):
         """
-        Load the database before running the tests.
+        A function that is run ONCE before this test.
         """
-        databaseDirectory = settings['database.directory']
+        global rmg  # set-up RMG object and get global rmg object in input.py file so methods can be tested
+        rmg = RMG()
+        inp.setGlobalRMG(rmg)
+        databaseDirectory = settings['database.directory']  # Load the database before running the tests.
         cls.database = RMGDatabase()
         cls.database.load(databaseDirectory, kineticsFamilies='all')
+
+    @classmethod
+    def tearDownClass(cls):
+        """
+        A function that is run ONCE after this test.
+        """
+        global rmg  # remove the RMG object
+        rmg = None
 
     # These are generators, that call the methods below.
     def test_kinetics(self):
