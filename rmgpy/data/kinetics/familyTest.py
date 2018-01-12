@@ -37,6 +37,8 @@ from rmgpy.data.kinetics.family import TemplateReaction
 from rmgpy.data.rmg import RMGDatabase
 from rmgpy.molecule import Molecule
 from rmgpy.species import Species
+from rmgpy.rmg import input as inp
+from rmgpy.rmg.main import RMG
 
 
 ###################################################
@@ -48,6 +50,10 @@ class TestFamily(unittest.TestCase):
         """
         A function run ONCE before all unit tests in this class.
         """
+        global rmg  # set-up RMG object and get global rmg object in input.py file so methods can be tested
+        rmg = RMG()
+        inp.setGlobalRMG(rmg)
+
         # Set up a dummy database
         cls.database = KineticsDatabase()
         cls.database.loadFamilies(
@@ -64,6 +70,14 @@ class TestFamily(unittest.TestCase):
             ],
         )
         cls.family = cls.database.families['intra_H_migration']
+
+    @classmethod
+    def tearDownClass(cls):
+        """
+        A function run ONCE after all unit tests in this class.
+        """
+        global rmg  # remove the RMG object
+        rmg = None
 
     def testGetBackboneRoots(self):
         """
@@ -578,7 +592,6 @@ multiplicity 2
         finally:
             shutil.rmtree(os.path.join(settings['test_data.directory'], 'testing_database/kinetics/families/intra_H_copy'))
 
-
 class TestGenerateReactions(unittest.TestCase):
 
     @classmethod
@@ -602,6 +615,9 @@ class TestGenerateReactions(unittest.TestCase):
         """A function run ONCE after all unit tests in this class."""
         import rmgpy.data.rmg
         rmgpy.data.rmg.database = None
+        # remove the RMG object
+        global rmg
+        rmg = None
 
     @mock.patch('rmgpy.data.kinetics.family.logging')
     def test_debug_forbidden_reverse_rxn(self, mock_logging):

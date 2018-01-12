@@ -35,6 +35,8 @@ from rmgpy.molecule.molecule import Molecule
 from rmgpy.molecule.symmetry import calculateAtomSymmetryNumber, calculateAxisSymmetryNumber, calculateBondSymmetryNumber, calculateCyclicSymmetryNumber
 from rmgpy.species import Species
 from rmgpy.molecule.resonance import generate_aromatic_resonance_structures
+from rmgpy.rmg import input as inp
+from rmgpy.rmg.main import RMG
 ################################################################################
 
 class TestMoleculeSymmetry(unittest.TestCase):
@@ -42,6 +44,22 @@ class TestMoleculeSymmetry(unittest.TestCase):
     Contains unit tests of the methods for computing symmetry numbers for a
     given Molecule object.
     """
+    @classmethod
+    def setUpClass(cls):
+        """
+        set-up RMG object and get global rmg object in input.py file so methods can be tested
+        """
+        global rmg
+        rmg = RMG()
+        inp.setGlobalRMG(rmg)
+
+    @classmethod
+    def tearDownClass(cls):
+        """
+        A function that is run ONCE after this test.
+        """
+        global rmg  # remove the RMG object
+        rmg = None
         
     def testAtomSymmetryNumberMethane(self):
         """
