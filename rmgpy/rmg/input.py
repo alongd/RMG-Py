@@ -35,12 +35,11 @@ import numpy
 
 from rmgpy import settings
 
-from rmgpy.molecule import Molecule
 from rmgpy.quantity import Quantity
 from rmgpy.solver.base import TerminationTime, TerminationConversion
 from rmgpy.solver.simple import SimpleReactor
 from rmgpy.solver.liquid import LiquidReactor
-from rmgpy.rmg.settings import ModelSettings, SimulatorSettings
+from rmgpy.rmg.settings import ModelSettings, SimulatorSettings, SpeciesSettings
 from model import CoreEdgeReactionModel
 
 from rmgpy.scoop_framework.util import broadcast, get
@@ -114,15 +113,19 @@ def species(label, structure, reactive=True):
     speciesDict[label] = spec
     
 def SMARTS(string):
+    from rmgpy.molecule import Molecule
     return Molecule().fromSMARTS(string)
 
 def SMILES(string):
+    from rmgpy.molecule import Molecule
     return Molecule().fromSMILES(string)
 
 def InChI(string):
+    from rmgpy.molecule import Molecule
     return Molecule().fromInChI(string)
 
 def adjacencyList(string):
+    from rmgpy.molecule import Molecule
     return Molecule().fromAdjacencyList(string)
 
 # Reaction systems
@@ -356,6 +359,7 @@ def generatedSpeciesConstraints(**kwargs):
         'maximumSingletCarbenes',
         'maximumCarbeneRadicals',
         'allowSingletO2',
+        'allowAdjacentRadicals',
         'maximumIsotopicAtoms'
     ]
 
@@ -364,6 +368,14 @@ def generatedSpeciesConstraints(**kwargs):
             raise InputError('Invalid generated species constraint {0!r}.'.format(key))
         
         rmg.speciesConstraints[key] = value
+
+    #allowSingletO2 = rmg.speciesConstraints['allowSingletO2']\
+    #    if rmg.speciesConstraints['allowSingletO2'] else False
+    #allowAdjacentRadicals = rmg.speciesConstraints['allowAdjacentRadicals']\
+    #    if rmg.speciesConstraints['allowAdjacentRadicals'] else False
+
+    #rmg.modelSettingsList.append(
+    #    SpeciesSettings(allowSingletO2,allowAdjacentRadicals))
 
 def thermoCentralDatabase(host,
                         port,
@@ -709,3 +721,19 @@ def getInput(name):
             raise e
 
     raise Exception('Could not get variable with name: {}'.format(name))
+
+# def get_species_constraints(constraint):
+#     """
+#     Returns the RMG input object that corresponds
+#     to the parameter name.
+#     """
+#     rmg.speciesConstraints[key] = value
+#
+#     if constraint == 'allowSingletO2':
+#         logging.debug("rmg.speciesConstraints['allowSingletO2']: {0}".format(rmg.speciesConstraints['allowSingletO2']))
+#         return rmg.speciesConstraints['allowSingletO2'] if 'allowSingletO2' in rmg.speciesConstraints\
+#             else False
+#     elif constraint == 'allowAdjacentRadicals':
+#         logging.debug("rmg.speciesConstraints['allowAdjacentRadicals']: {0}".format(rmg.speciesConstraints['allowAdjacentRadicals']))
+#         return rmg.speciesConstraints['allowAdjacentRadicals'] if 'allowAdjacentRadicals' in rmg.speciesConstraints\
+#             else False
