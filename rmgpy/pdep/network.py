@@ -548,6 +548,22 @@ class Network:
                 reac = products.index(rxn.reactants) + Nisom + Nreac
                 prod = isomers.index(rxn.products[0])
             else:
+                logging.info('\nUnexpected type of path reaction.')
+                logging.info('\nnetwork reactants:')
+                for react in reactants:
+                    logging.info(react[0].molecule[0].toAdjacencyList())
+                logging.info('network products:')
+                for pro in products:
+                    logging.info(pro[0].molecule[0].toAdjacencyList())
+                logging.info('network isomers:')
+                for iso in isomers:
+                    logging.info(iso.molecule[0].toAdjacencyList())
+                    logging.info(iso.molecule[0].reactive)
+                    logging.info(len(iso.molecule))
+                    for i in iso.molecule:
+                        logging.info(i.toAdjacencyList())
+                        logging.info(i.reactive)
+                        logging.info('\n')
                 raise NetworkError('Unexpected type of path reaction "{0}"'.format(rxn))
         
             # Compute the microcanonical rate coefficient k(E)
