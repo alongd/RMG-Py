@@ -117,3 +117,11 @@ class SimulatorSettings(object):
         self.rtol = rtol
         self.sens_atol = sens_atol
         self.sens_rtol = sens_rtol
+
+class SpeciesSettings(object):
+    """
+    class for holding the parameters affecting species generation
+    """
+    def __init__(self,allowSingletO2=False,allowAdjacentRadicals=False):
+        self.allowSingletO2 = allowSingletO2
+        self.allowAdjacentRadicals = allowAdjacentRadicals
