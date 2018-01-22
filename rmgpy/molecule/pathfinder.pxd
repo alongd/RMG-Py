@@ -28,5 +28,3 @@ cpdef list find_lone_pair_radical_multiple_bond_delocalization_paths(Atom atom1)
 cpdef list find_N5ddc_N5tc_delocalization_paths(Atom atom1)
 
 cpdef list find_birad_multiple_bond_delocalization_paths(Atom atom1)
-
-cpdef int is_OS(Molecule mol)
