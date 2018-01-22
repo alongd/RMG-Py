@@ -81,7 +81,7 @@ class ResonanceTest(unittest.TestCase):
     def testRadBirad(self):
         """Test resonance transitions on a species with both radical and biradical atoms
 
-        It should be converted into a species with multiplicity 2 with the original structure marked as non-reactive"""
+        It should be converted into a species with multiplicity 2 with the original structure marked as unreactive"""
         molList = generate_resonance_structures(Molecule(SMILES="[CH]=N[N]"))
         self.assertEqual(len(molList), 3)
         self.assertFalse(molList[2].reactive)
@@ -90,7 +90,7 @@ class ResonanceTest(unittest.TestCase):
         """Test resonance structure generation for C=C[CH][O] bi-radical
 
         Test case for allyl bi-radical resonance
-        It should be converted into a species with multiplicity 0 with the original structure marked as non-reactive"""
+        It should be converted into a species with multiplicity 0 with the original structure marked as unreactive"""
         molList = generate_resonance_structures(Molecule(SMILES="C=C[CH][O]"))
         self.assertEqual(len(molList), 2)
         self.assertFalse(molList[1].reactive)
@@ -187,7 +187,7 @@ class ResonanceTest(unittest.TestCase):
     def testO2(self):
         """Test resonance structure generation for O=O, O=S, and S=S
 
-        We expect to get the triplet ground state, and keep the original singlet excited state as non-reactive.
+        We expect to get the triplet ground state, and keep the original singlet excited state as unreactive.
         Also, check that the ground state [O][O] does not generate the excited state O=O."""
         mol_list_1 = generate_resonance_structures(Molecule(SMILES="O=O"))
         self.assertEqual(len(mol_list_1), 2)
@@ -215,7 +215,7 @@ class ResonanceTest(unittest.TestCase):
     def testSO2(self):
         """Test resonance structure generation for SO2
 
-        We expect to get a singlet O=S=O, and keep the original [O][S]=O structure as non-reactive (appended at the end
+        We expect to get a singlet O=S=O, and keep the original [O][S]=O structure as unreactive (appended at the end
         of the molecule list). Also, check that the ground state O=S=O does not generate an excited state"""
         mol_list_1 = generate_resonance_structures(Molecule(SMILES="[O][S]=O"))
         self.assertEqual(len(mol_list_1), 2)
@@ -231,7 +231,7 @@ class ResonanceTest(unittest.TestCase):
     def testC2H4(self):
         """Test resonance structure generation for C2H4
 
-        We expect to get a singlet C=C, and keep the original [CH2][CH2] structure as non-reactive (appended at the end
+        We expect to get a singlet C=C, and keep the original [CH2][CH2] structure as unreactive (appended at the end
         of the molecule list). Also, check that the ground state C=C does not generate the excited state"""
         mol_list_1 = generate_resonance_structures(Molecule(SMILES="[CH2][CH2]"))
         self.assertEqual(len(mol_list_1), 2)
@@ -248,7 +248,7 @@ class ResonanceTest(unittest.TestCase):
         """Test that an incorrect NO structure [::N][::O.] is correctly identified as [:N.]=[::O]
 
         The incorrect structure could be generated from HON (O[::N]) during an RMG run, and should be identified as NO.
-        The original structure should be kept as non-reactive (appended at the end of the molecule list)"""
+        The original structure should be kept as unreactive (appended at the end of the molecule list)"""
         mol_list = generate_resonance_structures(Molecule().fromAdjacencyList("""multiplicity 2
                                                                                  1 N u0 p2 c0 {2,S}
                                                                                  2 O u1 p2 c0 {1,S}"""))
