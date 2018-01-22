@@ -113,7 +113,7 @@ class FiltrationTest(unittest.TestCase):
         self.assertEqual(octet_deviation, 1)
 
     def penalty_for_fake_SO_test(self):
-        """Test that an SO structure wich has a multiplicity 3 and two radicals as the correct [S][O] structure, yet has
+        """Test that an SO structure which has a multiplicity 3 and two radicals as the correct [S][O] structure, yet has
         both radicals on the same site gets penalized in the octet deviation score"""
         adj = """
         multiplicity 3
@@ -123,3 +123,25 @@ class FiltrationTest(unittest.TestCase):
         mol = molecule.Molecule().fromAdjacencyList(adj)
         octet_deviation = get_octet_deviation(mol)
         self.assertEqual(octet_deviation, 3)
+
+    def is_OS_test(self):
+        """Test that the is_OS() function works as expected"""
+        smiles = "[O][S]=O"
+        mol = Molecule().fromSMILES(smiles)
+        self.assertEqual(is_OS(mol), 0)  # 0 - neither O2, S2, or SO
+
+        smiles = "[S][S]"
+        mol = Molecule().fromSMILES(smiles)
+        self.assertEqual(is_OS(mol), 1)  # 1 - triplet ground state ([O.][O.], [S.][S.], or [S.][O.])
+
+        smiles = "O=O"
+        mol = Molecule().fromSMILES(smiles)
+        self.assertEqual(is_OS(mol), 2)  # 2 - singlet excited state (O=O, S=S, or S=O)
+
+        adj = """
+        multiplicity 3
+        1 O u0 p2 c0 {2,D}
+        2 S u2 p1 c0 {1,D}
+        """
+        mol = molecule.Molecule().fromAdjacencyList(adj)
+        self.assertEqual(is_OS(mol), 3)  # 3 - a O2/S2/SO structure which is neither case `1` or `2`
