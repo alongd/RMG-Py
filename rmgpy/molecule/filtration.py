@@ -33,11 +33,8 @@ This module contains methods for filtering a list of Molecules representing a si
 keeping only the representative structures. Relevant for filtration of resonance structures.
 """
 
-import cython
 import logging
-
 from .molecule import Molecule
-import pathfinder
 
 
 def filter_structures(mol_list, mark_unreactive=True):
@@ -125,7 +122,7 @@ def get_octet_deviation(mol):
                     # is 0.5 since S#S substructures are captured twice (once for each S atom).
                     # Examples: CS(=O)SC <=> CS(=O)#SC;
                     # [O.]OSS[O.] <=> [O.]OS#S[O.] <=> [O.]OS#[S.]=O; N#[N+]SS[O-] <=> N#[N+]C#S[O-]
-        if pathfinder.is_OS(mol) and atom.radicalElectrons >= 2:
+        if is_OS(mol) and atom.radicalElectrons >= 2:
             octet_deviation += atom.radicalElectrons + 1  # This helps to distinguish between a birad site and two
             # adjacent radicals on S2 or SO structures, e.g., [::O.][::S.] vs. [::O]=[:S..]
 
@@ -204,18 +201,18 @@ def mark_unreactive_structures(filtered_list, mol_list):
 
     # Special treatment for O=O, S=S, S=O, where the correct ground state structure is being filtered out due to a
     # higher octet deviation
-    if pathfinder.is_OS(filtered_list[0]):
+    if is_OS(filtered_list[0]):
         # TODO: should depend on allowSingletO2 option from the input file, in which case the function should work for
         # all OS structures but the singlet
         for mol in filtered_list:
-            if pathfinder.is_OS(mol) != 1:  # This is not the triplet ground state [O][O], [S][S], or [S][O]
+            if is_OS(mol) != 1:  # This is not the triplet ground state [O][O], [S][S], or [S][O]
                 mol.reactive = False
         for mol in filtered_list:
-            if pathfinder.is_OS(mol) == 1:  # Check whether filtered_list already contains the ground state
+            if is_OS(mol) == 1:  # Check whether filtered_list already contains the ground state
                 break
         else:  # the ground state was filtered out, append it to filtered_list
             for mol in mol_list:
-                if pathfinder.is_OS(mol) == 1:  # Check if mol is the ground state structure, e.g., [O][O] etc.
+                if is_OS(mol) == 1:  # Check if mol is the ground state structure, e.g., [O][O] etc.
                     filtered_list.append(mol)   # If so, append mol (as the reactive structure)
                     break
             else:  # could not find the ground state in mol_list
@@ -278,3 +275,29 @@ def check_reactive(filtered_list):
             logging.info('\n')
         raise AssertionError('Each species must have at least one reactive structure. Something went wrong'
                              ' when processing species {0}'.format(filtered_list[0].toSMILES()))
+
+
+def is_OS(mol):
+    """
+    This is a helper function that decides whether a molecule is either O2, S2, or SO,
+    and whether it is the ground ([O.][O.], [S.][S.], or [S.][O.]) or the excited (O=O, S=S, or S=O) state.
+    returns an integer:
+    0 - neither O2, S2, or SO
+    1 - triplet ground state ([O.][O.], [S.][S.], or [S.][O.])
+    2 - singlet excited state (O=O, S=S, or S=O)
+    3 - a O2/S2/SO structure which is neither case `1` or `2` (e.g., [:S..][:S]), and will eventually be filtered out
+    """
+    if (len(mol.vertices) == 2 and
+            ((mol.vertices[0].isOxygen() or mol.vertices[0].isSulfur()) and
+            (mol.vertices[1].isOxygen() or mol.vertices[1].isSulfur()))):
+        # This is O2/S2/SO
+        if (mol.vertices[0].bonds[mol.vertices[1]].isSingle() and
+                mol.vertices[0].radicalElectrons == mol.vertices[1].radicalElectrons == 1):
+            # This is the ground state
+            return 1
+        if mol.vertices[0].bonds[mol.vertices[1]].isDouble() and mol.multiplicity == 1:
+            # This is the excited state
+            return 2
+        # this is another O2/S2/SO structure, which will eventually be filtered out
+        return 3
+    return 0
