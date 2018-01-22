@@ -93,7 +93,7 @@ def get_octet_deviation(mol):
             if atom.lonePairs:
                 octet_deviation += abs(8 - val_electrons)  # expecting N p1/2/3 to be near octet
             else:
-                octet_deviation += min(abs(10 - val_electrons), abs(8 - val_electrons))  # N p0 could be near octed or
+                octet_deviation += min(abs(10 - val_electrons), abs(8 - val_electrons))  # N p0 could be near octet or
                 # dectet. N p0 could be closer to an octet rather than a dectet such as in O=[N+][O-]
             if val_electrons > 8:
                 octet_deviation += 1  # penalty for N with valance greater than 8 (as in O=[N.]=O,
@@ -118,10 +118,11 @@ def get_octet_deviation(mol):
                 octet_deviation += abs(8 - val_electrons)  # octet on S p3, eg [S-][O+]=O
             for atom2, bond in atom.bonds.iteritems():
                 if atom2.isSulfur() and bond.isTriple():
-                    octet_deviation += 1  # penalty for S#S substructures. Often times sulfur can have a triple
+                    octet_deviation += 0.5  # penalty for S#S substructures. Often times sulfur can have a triple
                     # bond to another sulfur in a structure that obeys the octet rule, but probably shouldn't be a
                     # correct resonance structure. This adds to the combinatorial effect of resonance structures
-                    # when generating reactions, yet probably isn't too important for reactivity.
+                    # when generating reactions, yet probably isn't too important for reactivity. The penalty value
+                    # is 0.5 since S#S substructures are captured twice (once for each S atom).
                     # Examples: CS(=O)SC <=> CS(=O)#SC;
                     # [O.]OSS[O.] <=> [O.]OS#S[O.] <=> [O.]OS#[S.]=O; N#[N+]SS[O-] <=> N#[N+]C#S[O-]
         if pathfinder.is_OS(mol) and atom.radicalElectrons >= 2:
@@ -262,8 +263,6 @@ def mark_unreactive_structures(filtered_list, mol_list):
         mol.reactive = False
         filtered_list.append(mol)
 
-    return
-
 
 def check_reactive(filtered_list):
     """
@@ -279,5 +278,3 @@ def check_reactive(filtered_list):
             logging.info('\n')
         raise AssertionError('Each species must have at least one reactive structure. Something went wrong'
                              ' when processing species {0}'.format(filtered_list[0].toSMILES()))
-
-    return
