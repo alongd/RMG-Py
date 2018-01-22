@@ -226,6 +226,21 @@ class Species(object):
                              ' should be a Molecule or Species object.'.format(other))
         return False
 
+    def is_structure_in_list(self, species_list):
+        """
+        Return ``True`` if at least one molecule of the species is isomorphic with at least one molecule in at least
+        one spesies in 'species_list', which is a list of :class:`Species` objects.
+        """
+        for species in species_list:
+            if isinstance(species, Species):
+                for molecule1 in self.molecule:
+                    for molecule2 in species.molecule:
+                        if molecule1.isIsomorphic(molecule2):
+                            return True
+            else:
+                raise ValueError('Unexpected value "{0!r}" for species_list parameter;'
+                                 ' should be a List of Species objects.'.format(species))
+        return False
     
     def fromAdjacencyList(self, adjlist):
         """
