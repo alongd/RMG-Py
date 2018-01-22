@@ -81,6 +81,7 @@ def getMainExtensionModules():
         Extension('rmgpy.molecule.util', ['rmgpy/molecule/util.py'], include_dirs=['.']),
         Extension('rmgpy.molecule.inchi', ['rmgpy/molecule/inchi.py'], include_dirs=['.']),
         Extension('rmgpy.molecule.resonance', ['rmgpy/molecule/resonance.py'], include_dirs=['.']),
+        Extension('rmgpy.molecule.unidirectional', ['rmgpy/molecule/unidirectional.py'], include_dirs=['.']),
         Extension('rmgpy.molecule.pathfinder', ['rmgpy/molecule/pathfinder.py'], include_dirs=['.']),
         Extension('rmgpy.molecule.kekulize', ['rmgpy/molecule/kekulize.pyx'], include_dirs=['.']),
         # Pressure dependence
