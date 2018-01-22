@@ -432,33 +432,8 @@ def find_birad_multiple_bond_delocalization_paths(atom1):
     cython.declare(paths=list, atom2=Atom, bond12=Bond)
 
     paths = []
-    for atom2, bond12 in atom1.edges.items():
-        if atom2.radicalElectrons and (bond12.isSingle() or bond12.isDouble()):
-            paths.append([atom1, atom2, bond12])
+    if atom1.radicalElectrons:
+        for atom2, bond12 in atom1.edges.items():
+            if atom2.radicalElectrons and (bond12.isSingle() or bond12.isDouble()):
+                paths.append([atom1, atom2, bond12])
     return paths
-
-
-def is_OS(mol):
-    """
-    This is a helper function that decides whether a molecule is either O2, S2, or SO,
-    and whether it is the ground ([O.][O.], [S.][S.], or [S.][O.]) or the excited (O=O, S=S, or S=O) state.
-    returns an integer:
-    0 - neither O2, S2, or SO
-    1 - triplet ground state ([O.][O.], [S.][S.], or [S.][O.])
-    2 - singlet excited state (O=O, S=S, or S=O)
-    3 - a O2/S2/SO structure which is neither case `1` or `2` (e.g., [:S..][:S]), and will eventually be filtered out
-    """
-    if (len(mol.vertices) == 2 and
-            ((mol.vertices[0].isOxygen() or mol.vertices[0].isSulfur()) and
-            (mol.vertices[1].isOxygen() or mol.vertices[1].isSulfur()))):
-        # This is O2/S2/SO
-        if (mol.vertices[0].bonds[mol.vertices[1]].isSingle() and
-                mol.vertices[0].radicalElectrons == mol.vertices[1].radicalElectrons == 1):
-            # This is the ground state
-            return 1
-        if mol.vertices[0].bonds[mol.vertices[1]].isDouble() and mol.multiplicity == 1:
-            # This is the excited state
-            return 2
-        # this is another O2/S2/SO structure, which will eventually be filtered out
-        return 3
-    return 0
