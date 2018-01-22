@@ -314,7 +314,7 @@ class CoreEdgeReactionModel:
         if checkForExisting:
             if isinstance(object, rmgpy.species.Species) and len(object.molecule) > 1:
                 # If resonance structures were already generated (e.g., if object came from a reaction library), object
-                # may contain non-reactive resonance structures. Make sure a reactive structure is sent to
+                # may contain unreactive resonance structures. Make sure a reactive structure is sent to
                 # checkForExistingSpecies()
                 for mol in object.molecule:
                     if mol.reactive:
@@ -346,7 +346,7 @@ class CoreEdgeReactionModel:
         spec.creationIteration = self.iterationNum
         if isinstance(object, rmgpy.species.Species) and len(object.molecule) > 1:
             # If resonance structures were already generated (e.g., if object came from a reaction library), object may
-            # contain non-reactive resonance structures that we'd like to keep. In this case, don't re-generate the
+            # contain unreactive resonance structures that we'd like to keep. In this case, don't re-generate the
             # resonance structures, just keep the original ones.
             spec.molecule = object.molecule
         else:
