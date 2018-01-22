@@ -42,13 +42,16 @@ Currently supported resonance types:
     - ``generate_lone_pair_multiple_bond_resonance_structures``: multiple bond shift with lone pair
     - ``generate_lone_pair_radical_multiple_bond_resonance_structures``: multiple bond and radical shift with lone pair and radical
     - ``generate_N5ddc_N5tc_resonance_structures``: shift between nitrogen with two double bonds and single + triple bond
-    - ``generate_birad_multiple_bond_resonance_structures``: two adjacent radicals shift with a multiple bond (unidirectional)
-    - ``generate_OS_resonance_structures``: transitions of excited O=O (or its sulfur-containing isoelectronic structures) into the ground [O][O] state (unidirectional)
+    - ``generate_birad_multiple_bond_unidirectional_transitions``: two adjacent radicals shift with a multiple bond (unidirectional)
+    - ``generate_OS_unidirectional_transitions``: transitions of excited O=O (or its sulfur-containing isoelectronic structures) into the ground [O][O] state (unidirectional)
 - Aromatic species only:
     - ``generate_aromatic_resonance_structures``: fully delocalized structure, where all aromatic rings have benzene bonds
     - ``generate_kekule_structure``: generate a single Kekule structure for an aromatic compound (single/double bond form)
     - ``generate_opposite_kekule_structure``: for monocyclic aromatic species, rotate the double bond assignment
     - ``generate_clar_structures``: generate all structures with the maximum number of pi-sextet assignments
+- All species unidirectional transitions:
+    - ``generate_birad_multiple_bond_unidirectional_transitions``: two adjacent radicals shift with a multiple bond (unidirectional)
+    - ``generate_OS_unidirectional_transitions``: transitions of excited O=O (or its sulfur-containing isoelectronic structures) into the ground [O][O] state (unidirectional)
 """
 
 import cython
@@ -60,6 +63,10 @@ from .molecule import Atom, Bond, Molecule
 from .kekulize import kekulize
 import rmgpy.molecule.pathfinder as pathfinder
 from rmgpy.exceptions import ILPSolutionError, KekulizationError, AtomTypeError
+from .element import PeriodicSystem
+import rmgpy.molecule.filtration as filtration
+from unidirectional import generate_birad_multiple_bond_unidirectional_transitions, generate_OS_unidirectional_transitions
+
 
 def populate_resonance_algorithms(features=None):
     """
@@ -78,7 +85,7 @@ def populate_resonance_algorithms(features=None):
             generate_lone_pair_multiple_bond_resonance_structures,
             generate_lone_pair_radical_multiple_bond_resonance_structures,
             generate_N5ddc_N5tc_resonance_structures,
-            generate_birad_multiple_bond_resonance_structures,
+            generate_birad_multiple_bond_unidirectional_transitions,
             generate_aromatic_resonance_structures,
             generate_kekule_structure,
             generate_opposite_kekule_structure,
@@ -97,9 +104,9 @@ def populate_resonance_algorithms(features=None):
             methodList.append(generate_lone_pair_multiple_bond_resonance_structures)
             methodList.append(generate_lone_pair_radical_multiple_bond_resonance_structures)
         if features['isBirad']:
-            methodList.append(generate_birad_multiple_bond_resonance_structures)
+            methodList.append(generate_birad_multiple_bond_unidirectional_transitions)
         if features['isDiatomic']:
-            methodList.append(generate_OS_resonance_structures)
+            methodList.append(generate_OS_unidirectional_transitions)
 
     return methodList
 
@@ -280,8 +287,18 @@ def _generate_resonance_structures(molList, methodList, keepIsomorphic=False, co
         molecule = molList[index]
         newMolList = []
 
-        for method in methodList:
-            newMolList.extend(method(molecule))
+        # Extend methods for molecule only if it is relatively close to the octet rule
+        # (don't explore structures that will certainly be filtered out)
+        # Since the ground state of the O2/S2/SO species have a higher deviation from the octet rule than some of their
+        # excited states, and are not expected to generate an overwhelming amount of resonance structures, they are
+        # exempt from this condition.
+        octetDeviation = filtration.get_octet_deviation(molecule)
+        if octetDeviation <= minOctetDeviation or filtration.is_OS(molecule):
+            for method in methodList:
+                newMolList.extend(method(molecule))
+            if octetDeviation < minOctetDeviation:
+                # update minOctetDeviation to make this criterion tighter
+                minOctetDeviation = octetDeviation
 
         for newMol in newMolList:
             # Append to structure list if unique
@@ -753,119 +770,6 @@ def generate_N5ddc_N5tc_resonance_structures(mol):
                 else:
                     structures.append(structure)
     return structures
-
-
-def generate_birad_multiple_bond_resonance_structures(mol):
-    """
-    Generate all of the resonance structures formed by relaxation of an excited two adjacent radicals state to a
-    multiple bond state. This is a unidirectional transition (i.e., if the [O.][S.]=O structure is present in the system
-    it should be marked as `.reactive=False` and the reactive structure O=S=O is added to the molecule list. However, if
-    O=S=O is present is the system, this doesn't necessarily mean that the excited [O.][S.]=O structure is generated.
-    This function should NOT convert ground state [O.][O.] into an excited O=O state (or its isoelectronic structures
-    [S.][S.] and [S.][O.]).
-    This should target the following transitions:
-    - [:N.]=[:N.] => N#N
-    - [O.][S.](=O)=O => O=S(=O)=O
-    - [O.][:S.]=O => O=S=O
-    - C=[S+][C.]([O.])[S-] => C=[S+]C(=O)[S-]
-    - [CH2.][CH2.] => C=C
-    (where ':' denotes a lone pair, '.' denotes a radical, '-' not in [] denotes a single bond, '-'/'+' denote charge)
-    * This is treated as a resonance structure and not a family since: (a) otherwise the excited species and all of its
-    resonance structures will still be reactive and contribute to the combinatorial complexity of the system; (b) each
-    model that involves [O][O] will have (at least in the edge) the excited O=O state due to the reverse reaction in the
-    family.
-    """
-    cython.declare(structures=list, paths=list, index=cython.int, structure=Molecule)
-    cython.declare(atom=Atom, atom1=Atom, atom2=Atom, bond12=Bond)
-    cython.declare(v1=Vertex, v2=Vertex)
-
-    # from rmgpy.rmg.input import get_species_constaints
-
-    structures = []
-    # if mol.isRadical() and pathfinder.is_OS(mol) == 0 and not get_species_constaints('allowAdjacentRadicals'):
-    if mol.isRadical() and pathfinder.is_OS(mol) == 0:
-        # This is neither O2, S2, SO, and the user did not specify "allowAdjacentRadicals=True" in the input file
-        for atom in mol.vertices:
-            if atom.radicalElectrons:
-                paths = pathfinder.find_birad_multiple_bond_delocalization_paths(atom)
-                for atom1, atom2, bond12 in paths:
-                    atom1.decrementRadical()
-                    atom2.decrementRadical()
-                    bond12.incrementOrder()
-                    atom1.updateCharge()
-                    atom2.updateCharge()
-                    # Make a copy of structure
-                    structure = mol.copy(deep=True)
-                    # Also copy the connectivity values, since they are the same
-                    # for all resonance structures
-                    for index in xrange(len(mol.vertices)):
-                        v1 = mol.vertices[index]
-                        v2 = structure.vertices[index]
-                        v2.connectivity1 = v1.connectivity1
-                        v2.connectivity2 = v1.connectivity2
-                        v2.connectivity3 = v1.connectivity3
-                        v2.sortingLabel = v1.sortingLabel
-                    # Restore current structure
-                    atom1.incrementRadical()
-                    atom2.incrementRadical()
-                    bond12.decrementOrder()
-                    atom1.updateCharge()
-                    atom2.updateCharge()
-                    try:
-                        # update both atomTypes and multiplicity
-                        structure.update(log_species_while_updating_atom_types=False)
-                    except AtomTypeError:
-                        pass  # Don't append resonance structure if it creates an undefined atomType
-                    else:
-                        structures.append(structure)
-    return structures
-
-
-def generate_OS_resonance_structures(mol):
-    """
-    This is a complementary function to generate_birad_multiple_bond_resonance_structures(), and deals with the opposite
-    case of three specific isoelectronic structures: O=O, S=S, and S=O. Here the transition is from a double bond
-    structure into a single bond structure with two adjacent radicals. This is also a unidirectional transition (i.e.,
-    if the O=O structure is present in the system it should be marked as `.reactive=False` and the reactive structure
-    [O.][O.] is added to the molecule list.
-    This function assumes that mol consists of two atoms only, which should be checked by the calling function.
-    This transition function is disabled if the user chooses to allow singlet oxygen in the input file (in which case,
-    the user is responsible to rates for the transition in the form of a family or a library).
-    """
-    cython.declare(index=cython.int, structure=Molecule)
-    cython.declare(atom=Atom, atom1=Atom, atom2=Atom, bond12=Bond)
-    cython.declare(v1=Vertex, v2=Vertex)
-
-    # from rmgpy.rmg.input import get_species_constaints
-
-    # if pathfinder.is_OS(mol) == 2 and not get_species_constaints('allowSingletO2'):  # check if mol is the excited state, e.g., O=O
-    if pathfinder.is_OS(mol) == 2:  # check if mol is the excited state, e.g., O=O
-        # This is either O=O, S=S, or S=O, and the user did not specify "allowSingletO2=True" in the input file
-        mol.vertices[0].incrementRadical()
-        mol.vertices[1].incrementRadical()
-        mol.vertices[0].bonds[mol.vertices[1]].decrementOrder()
-        # Make a copy of structure
-        structure = mol.copy(deep=True)
-        # Also copy the connectivity values, since they are the same
-        # for all resonance structures
-        for index in xrange(len(mol.vertices)):
-            v1 = mol.vertices[index]
-            v2 = structure.vertices[index]
-            v2.connectivity1 = v1.connectivity1
-            v2.connectivity2 = v1.connectivity2
-            v2.connectivity3 = v1.connectivity3
-            v2.sortingLabel = v1.sortingLabel
-        # Restore current structure
-        mol.vertices[0].decrementRadical()
-        mol.vertices[1].decrementRadical()
-        mol.vertices[0].bonds[mol.vertices[1]].incrementOrder()
-        try:
-            structure.update(log_species_while_updating_atom_types=False)  # update both atomTypes and multiplicity
-        except AtomTypeError:
-            pass  # Don't append resonance structure if it creates an undefined atomType
-        else:
-            return [structure]
-    return []
 
 
 def generate_aromatic_resonance_structures(mol, features=None):
