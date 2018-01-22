@@ -9,8 +9,6 @@ cpdef list generate_resonance_structures(Molecule mol, bint clarStructures=?, bi
 
 cpdef list _generate_resonance_structures(list molList, list methodList, bint keepIsomorphic=?, bint copy=?)
 
-cpdef list filter_resonance_structures(list molList, bint markNonReactive=?)
-
 cpdef list generate_ally_delocalization_resonance_structures(Molecule mol)
 
 cpdef list generate_lone_pair_radical_resonance_structures(Molecule mol)

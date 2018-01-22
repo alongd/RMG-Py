@@ -61,6 +61,7 @@ from .kekulize import kekulize
 import rmgpy.molecule.pathfinder as pathfinder
 from rmgpy.exceptions import ILPSolutionError, KekulizationError, AtomTypeError
 from .element import PeriodicSystem
+import rmgpy.molecule.filtration as filtration
 
 
 def populate_resonance_algorithms(features=None):
@@ -254,7 +255,7 @@ def generate_resonance_structures(mol, clarStructures=True, keepIsomorphic=False
     _generate_resonance_structures(molList, methodList, keepIsomorphic)
 
     if filterStructures:
-        return filter_resonance_structures(molList)
+        return filtration.filter_structures(molList)
 
     return molList
 
@@ -277,13 +278,24 @@ def _generate_resonance_structures(molList, methodList, keepIsomorphic=False, co
         molList = molList[:]
 
     # Iterate over resonance structures
+    minOctetDeviation = min(filtration.get_octet_deviation_list(molList))
     index = 0
     while index < len(molList):
         molecule = molList[index]
         newMolList = []
 
-        for method in methodList:
-            newMolList.extend(method(molecule))
+        # Extend methods for molecule only if it is relatively close to the octet rule
+        # (don't explore structures that will certainly be filtered out)
+        # Since the ground state of the O2/S2/SO species have a higher deviation from the octet rule than some of their
+        # excited states, and are not expected to generate an overwhelming amount of resonance structures, they are
+        # exempt from this condition.
+        octetDeviation = filtration.get_octet_deviation(molecule)
+        if octetDeviation <= minOctetDeviation or pathfinder.is_OS(molecule):
+            for method in methodList:
+                newMolList.extend(method(molecule))
+            if octetDeviation < minOctetDeviation:
+                # update minOctetDeviation to make this criterion tighter
+                minOctetDeviation = octetDeviation
 
         for newMol in newMolList:
             # Append to structure list if unique
@@ -294,197 +306,11 @@ def _generate_resonance_structures(molList, methodList, keepIsomorphic=False, co
                     break
             else:
                 molList.append(newMol)
-        if index % 100 == 0 and index != 0:  # While this condition is not expected to be triggered frequently, it is
-            # important in order to avoid near infinite looping in systems involving many adjacent heteroatoms.
-            # Here we apply filtering to `molList` (even if filterStructures=False) per 100 entries starting at
-            # index = 100 , to speed up the resonance structure generation and to avoid potential slowdowns.
-            # An example that triggers is S(=O)(S(=O)[O])[O] where the correct reactive structure is S(=S(=O)=O)(=O)=O.
-            logging.info('Reached {0} resonance structures for {1}, applying filtration for {2} remaining unexplored'
-                          ' structures'.format(index, molList[0].toSMILES(), len(molList) - index))
-            molList = molList[:index] + filter_resonance_structures(molList[index:], markNonReactive=False)
 
-        # Move to next resonance isomer
+        # Move to the next resonance structure
         index += 1
 
     return molList
-
-
-def filter_resonance_structures(molList, markNonReactive=True):
-    """
-    We often get too many resonance structures from the combination of all rules for species containing lonePairs.
-    Here we filter them out by minimizing the number of N/S/O atoms without a full octet.
-    For example, w/o filtering we may generate >80 resonance structures for [N]=NON=O,
-    vs. only 3 resonance structures after filtering.
-    """
-    cython.declare(octetDeviation=cython.int, octetDeviationList=list, minOctetDeviation=cython.int,
-                   filteredList=list, chargedList=list, chargeSpanList=list, minChargeSpan=cython.int,
-                   minNumRads=cython.int, maxNumRads=cython.int, sortingList=list, valElectrons=cython.int,
-                   index=cython.int, mol=Molecule, atom=Atom, atom2=Atom, bond=Bond)
-
-    # from rmgpy.rmg.input import get_species_constaints
-
-    octetDeviationList = []
-    for mol in molList:
-        octetDeviation = 0  # This is the accumulated "score" for each molecule
-        for atom in mol.vertices:
-            valElectrons = 2 * (int(atom.getBondOrdersForAtom()) + atom.lonePairs) + atom.radicalElectrons  # val. electrons
-            if atom.isCarbon():
-                octetDeviation += abs(8 - valElectrons)  # expecting C to be near octet
-            elif atom.isNitrogen():
-                if atom.lonePairs:
-                    octetDeviation += abs(8 - valElectrons)  # expecting N p1/2/3 to be near octet
-                else:
-                    octetDeviation += min(abs(10 - valElectrons), abs(8 - valElectrons))  # N p0 could be near octed or dectet
-                    # N p0 could in fact be close to an octet rather than a dectet such as in O=[N+][O-]
-                if valElectrons > 8:
-                    octetDeviation += 1  # penalty for N with valance greater than 8 (as in O=[N.]=O,
-                    # [NH2.]=[:NH.], N#[N.]O, CCN=N#N)
-            elif atom.isOxygen():
-                octetDeviation += abs(8 - valElectrons)  # expecting O to be near octet
-                if atom.atomType.label in ['O4sc', 'O4dc', 'O4tc']:
-                    octetDeviation += 1  # penalty for O p1 c+1
-                    # as in [N-2][N+]#[O+], [O-]S#[O+], OS(S)([O-])#[O+], [OH+]=S(O)(=O)[O-], [OH.+][S-]=O.
-                    # [C-]#[O+] and [O-][O+]=O which are correct structures also get penalized here, but that's OK
-                    # since they are still eventually selected as representative structures according to the rules here.
-            elif atom.isSulfur():
-                if atom.lonePairs == 0:
-                    octetDeviation += abs(12 - valElectrons)  # duodectet on S p0, eg O=S(=O)(O)O val 12, O[S](=O)=O val 11
-                elif atom.lonePairs == 1:
-                    octetDeviation += min(abs(8 - valElectrons), abs(10 - valElectrons))  # octet/dectet on S p1,
-                    # eg [O-][S+]=O val 8, O[S]=O val 9, OS([O])=O val 10
-                elif atom.lonePairs == 2:
-                    octetDeviation += min(abs(8 - valElectrons), abs(10 - valElectrons))  # octet/dectet on S p2,
-                    # eg [S][S] val 7, OS[O] val 8, [NH+]#[N+][S-][O-] val 9, O[S-](O)[N+]#N val 10
-                elif atom.lonePairs == 3:
-                    octetDeviation += abs(8 - valElectrons)  # octet on S p3, eg [S-][O+]=O
-                for atom2, bond in atom.bonds.iteritems():
-                    if atom2.isSulfur() and bond.isTriple():
-                        octetDeviation += 1  # penalty for S#S substructures. Often times sulfur can have a triple
-                        # bond to another sulfur in a structure that obeys the octet rule, but probably shouldn't be a
-                        # correct resonance structure. This adds to the combinatorial effect of resonance structures
-                        # when generating reactions, yet probably isn't too important for reactivity.
-                        # Examples: CS(=O)SC <=> CS(=O)#SC;
-                        # [O.]OSS[O.] <=> [O.]OS#S[O.] <=> [O.]OS#[S.]=O; N#[N+]SS[O-] <=> N#[N+]C#S[O-]
-            if pathfinder.is_OS(mol) and atom.radicalElectrons >= 2:
-                octetDeviation += atom.radicalElectrons + 1  # This helps to distinguish between a birad site and two
-                # adjacent radicals on S2 or SO structures, e.g., [::O.][::S.] vs. [::O]=[:S..]
-        octetDeviationList.append(octetDeviation)
-        if len(octetDeviationList) == 1 or (minOctetDeviation and octetDeviation < minOctetDeviation):
-            minOctetDeviation = octetDeviation
-
-    # Filtering using the octet deviation criterion rules out most unrepresentative structures. However, since some
-    # charge-strained species are still kept (e.g., [NH]N=S=O <-> [NH+]#[N+][S-][O-]) we also generate during the same
-    # loop a chargeSpanList to keep track of the charge spans. This will be used downstream for further filtering.
-    # This loop is also used to find the minimal multiplicity value in the filtered list
-    filteredList = []
-    chargeSpanList = []
-    for index in xrange(len(molList)):
-        if octetDeviationList[index] == minOctetDeviation:  # legacy octet filtration
-            filteredList.append(molList[index])
-            chargeSpanList.append(molList[index].getChargeSpan())
-            if len(chargeSpanList) == 1 or (minChargeSpan and chargeSpanList[-1] < minChargeSpan):
-                minChargeSpan = chargeSpanList[-1]
-
-    # Filter by charge span.
-    #
-    # If the species is a radical we first check whether keeping an extra charge span separation might be important for
-    # reactivity by relocating the radical site. If so, wee keep it.
-    # For example:
-    # - Both of NO2's resonance structures will be kept: [O]N=O <=> O=[N+.][O-]
-    # - NCO will only have two resonance structures [N.]=C=O <=> N#C[O.], and will loose the third structure which has
-    #   the same octet deviation, has a charge separation, but the radical site has already been considered: [N+.]#C[O-]
-    # - CH2NO keeps all three structures, since a new radical site is introduced: [CH2.]N=O <=> C=N[O.] <=> C=[N+.][O-]
-    #
-    # However, if the species is not a radical we only keep the structures with the minimal charge span.
-    # For example:
-    # - NSH will only keep N#S and not [N-]=[SH+]
-    # - The following species will loose two thirds of its resonance structures, which are charged: CS(=O)SC <=>
-    #   CS(=O)#SC <=> C[S+]([O-]SC <=> CS([O-])=[S+]C <=> C[S+]([O-])#SC <=> C[S+](=O)=[S-]C
-    # - The azide structure is know to have three resonance structures: [NH-][N+]#N <=> N=[N+]=[N-] <=> [NH+]#[N+][N-2];
-    #   here we'll lose the third one, which is theoretically "true", but doesn't contribute to reactivity.
-    if len(set(chargeSpanList)) > 1 and molList[0].isRadical():
-        # Proceed only if there are structures with different charge spans and the species is a radical.
-        chargedList = [filteredList[index] for index in xrange(len(filteredList)) if
-                        chargeSpanList[index] == minChargeSpan + 1]  # save the 2nd charge span layer in a temp list
-        filteredList = [filteredList[index] for index in xrange(len(filteredList)) if
-                        chargeSpanList[index] == minChargeSpan]  # keep at least one charge span layer
-        # Find the radical sites in all filteredList structures:
-        sortingList = []
-        for mol in filteredList:
-            for atom in mol.vertices:
-                if atom.radicalElectrons:
-                    sortingList.append(int(atom.sortingLabel))
-        # Find unique radical sites in chargedList and append these structures to filteredList:
-        for mol in chargedList:
-            for atom in mol.vertices:
-                if atom.radicalElectrons and int(atom.sortingLabel) not in sortingList:
-                    filteredList.append(mol)
-    else:
-        filteredList = [filteredList[index] for index in xrange(len(filteredList)) if
-                        chargeSpanList[index] == minChargeSpan]  # keep one charge span layer for non-rads
-
-    if markNonReactive:
-        # Special treatment for O=O, S=S, S=O, where the correct ground state structure is being filtered out due to a
-        # higher octet deviation
-        if (pathfinder.is_OS(filteredList[0])):
-            # if not (pathfinder.is_OS(filteredList[0]) == 2 and get_species_constaints('allowSingletO2')):
-            if not (pathfinder.is_OS(filteredList[0]) == 2):
-                # This is either O2, S2, or SO. If the user chose to allowSingletO2, then this is not the singlet state.
-                for mol in filteredList:
-                    if pathfinder.is_OS(mol) != 1:  # This is not the triplet ground state [O][O], [S][S], or [S][O]
-                        mol.reactive = False
-                for mol in filteredList:
-                    if pathfinder.is_OS(mol) == 1:  # Check whether filteredList already contains the ground state
-                        break
-                else:  # the ground state was filtered out, append it to filteredList
-                    for mol in molList:
-                        if pathfinder.is_OS(mol) == 1:  # Check if mol is the ground state structure, e.g., [O][O] etc.
-                            filteredList.append(mol)   # If so, append mol (as the reactive structure)
-        # Special treatment for generate_birad_multiple_bond_resonance_structures, where excited states should be marked
-        # as non-reactive
-        else:
-            minNumRads = maxNumRads = filteredList[0].getRadicalCount()
-            for mol in filteredList:
-                if mol.getRadicalCount() < minNumRads:
-                    minNumRads = mol.getRadicalCount()
-                elif mol.getRadicalCount() > maxNumRads:
-                    maxNumRads = mol.getRadicalCount()
-            if maxNumRads != minNumRads:  # mark as non-reactive only if the species contains structures with
-                # different number of radicals
-                for mol in filteredList:
-                    if mol.getRadicalCount() > minNumRads:
-                        mol.reactive = False
-                        logging.debug('marked structure {0} as non-reactive'.format(mol))
-
-        # sort all structures in filteredList so that the reactive ones are first
-        filteredList.sort(key=lambda mol: mol.reactive, reverse=True)
-
-        # Make sure that the first original structure is also first in the list (unless it was filtered out).
-        # Important whenever Species.molecule[0] is expected to be used (e.g., training reactions) after generating the
-        # resonance structures.
-        for index in xrange(len(filteredList)):
-            if filteredList[index].isIsomorphic(molList[0]):
-                filteredList.insert(0, filteredList.pop(index))
-                break
-        else:
-            # Append the original structure to molList and set `reactive` to `False`.
-            # This structure may very well deviate from the octet rule or have other attributes by which it should have
-            # been filtered out. However, for processing reactions (e.g., degeneracy calculations) it should be kept
-            # (e.g., [::N]O <=> [::N][::O.] + [H.], where [::N][::O.] should be recognized as [:N.]=[::O]).
-            molList[0].reactive = False
-            filteredList.append(molList[0])
-
-    # Check that there's at least one reactive structure in the returned list
-    if any([mol.reactive for mol in filteredList]):
-        return filteredList
-    else:
-        logging.error('No reactive structures were attributed to species {0}'.format(filteredList[0].toSMILES()))
-        for mol in filteredList:
-            logging.info('Structure: {0}\n{1}Reactive: {2}'.format(mol.toSMILES(),mol.toAdjacencyList(),mol.reactive))
-            logging.info('\n')
-        raise AssertionError('Each species must have at least one reactive structure. Something went wrong'
-                             ' when processing species {0}'.format(filteredList[0].toSMILES()))
-
 
 def generate_ally_delocalization_resonance_structures(mol):
     """
