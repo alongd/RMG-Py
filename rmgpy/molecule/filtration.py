@@ -125,6 +125,9 @@ def get_octet_deviation(mol):
         if is_OS(mol) and atom.radicalElectrons >= 2:
             octet_deviation += atom.radicalElectrons + 1  # This helps to distinguish between a birad site and two
             # adjacent radicals on S2 or SO structures, e.g., [::O.][::S.] vs. [::O]=[:S..]
+        # otherwise birads wil be treated as a lone pair:
+        if atom.radicalElectrons == 2:
+            octet_deviation += 2
 
     return octet_deviation
 
