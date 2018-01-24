@@ -1679,7 +1679,13 @@ class Molecule(Graph):
         on the overall molecule.
         The charge span is a measure of the number of charge separations in a net uncharged molecule.
         """
-        return (sum([abs(atom.charge) for atom in self.vertices]) / 2)
+        return sum([abs(atom.charge) for atom in self.vertices]) / 2
+
+    def has_N_plus_2(self):
+        """
+        Iterate through the atoms in the structure and return whether or not one of the atoms is a +2 charged nitrogen.
+        """
+        return any([(atom.isNitrogen() and atom.charge == 2) for atom in self.vertices])
 
     def saturate_unfilled_valence(self, update = True):
         """
