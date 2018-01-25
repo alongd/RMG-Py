@@ -920,7 +920,9 @@ def loadChemkinFile(path, dictionaryPath=None, transportPath=None, readComments 
                 if reaction1.duplicate and reaction2.duplicate:
                     
                     if isinstance(reaction1, LibraryReaction) and isinstance(reaction2, LibraryReaction):
-                        assert reaction1.library == reaction2.library
+                        assert reaction1.library == reaction2.library, "Identical reactions {0} and {1} taken from different libraries: {2}, {3}".format(
+                            reaction1,reaction2,reaction1.library,reaction2.library
+                        )
                         if reaction1 not in duplicateReactionsToRemove:
                             # already created duplicate reaction, move on to appending any additional duplicate kinetics
                             if isinstance(reaction1.kinetics,
