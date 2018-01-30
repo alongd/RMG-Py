@@ -1042,6 +1042,11 @@ class Group(Graph):
         self.updateConnectivityValues()
         self.updateFingerprint()
 
+    def getNetCharge(self):
+        """
+        Iterate through the atoms in the group and calculate the net charge
+        """
+        return sum([atom.charge[0] for atom in self.vertices if atom.charge != []])
 
     def merge(self, other):
         """
