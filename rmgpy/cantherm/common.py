@@ -39,7 +39,9 @@ def checkConformerEnergy(Vlist,path):
     Check to see that the starting energy of the species in the potential energy scan calculation
     is not 0.5 kcal/mol (or more) higher than any other energies in the scan. If so, print and 
     log a warning message.  
-    """    
+    """
+    if Vlist == []:
+        raise ValueError, "Error reading rotor, Vlist is empty."
     Vlist = numpy.array(Vlist, numpy.float64)
     Vdiff = (Vlist[0] - numpy.min(Vlist))*constants.E_h*constants.Na/1000
     if Vdiff >= 2: #we choose 2 kJ/mol to be the critical energy
