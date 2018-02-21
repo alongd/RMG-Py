@@ -554,7 +554,6 @@ class TestGetAtomType(unittest.TestCase):
         self.assertEqual(self.atomType(self.mol45, 2), 'O0sc')
         self.assertEqual(self.atomType(self.mol49, 0), 'O0sc')
         self.assertEqual(self.atomType(self.mol1, 1),  'O2s')
-        self.assertEqual(self.atomType(self.mol24, 2), 'O2sc')
         self.assertEqual(self.atomType(self.mol1, 3),  'O2d')
         self.assertEqual(self.atomType(self.mol49, 1), 'O4sc')
         self.assertEqual(self.atomType(self.mol50, 1), 'O4dc')
@@ -581,7 +580,7 @@ class TestGetAtomType(unittest.TestCase):
         self.assertEqual(self.atomType(self.mol21, 1), 'S2sc')
         self.assertEqual(self.atomType(self.mol42, 2), 'S2sc')
         self.assertEqual(self.atomType(self.mol19, 1), 'S2d')
-        self.assertEqual(self.atomType(self.mol24, 1), 'S2dc')
+        self.assertEqual(self.atomType(self.mol24, 1), 'S2dc')  # change mol24, O2sc was deleted
         self.assertEqual(self.atomType(self.mol69, 1), 'S2tc')
         self.assertEqual(self.atomType(self.mol25, 0), 'S4s')
         self.assertEqual(self.atomType(self.mol23, 1), 'S4sc')
