@@ -71,7 +71,6 @@ Atom type       Description
 ``O0sc``        charged oxygen with three lone pairs (valance 0) and up to one single bond
 ``O0dc``        charged oxygen atom with three lone pairs (valance 0) and one double bond
 ``O2s``         oxygen atom with two lone pairs (valance 2) and up to two single bonds
-``O2sc``        charged oxygen atom with two lone pairs (valance 2) and up to one single bond
 ``O2d``         oxygen atom with two lone pairs (valance 2) and one doubel bond
 ``O4sc``        charged oxygen atom with one one pair (valance 4) and up to three single bonds
 ``O4dc``        charged oxygen atom with one one pair (valance 4), one double bond and up to one single bond
