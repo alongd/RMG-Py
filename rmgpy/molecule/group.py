@@ -1991,7 +1991,7 @@ class Group(Graph):
                 #check hardcoded atomtypes
                 positiveCharged = ['Csc','Cdc',
                                    'N3sc','N5sc','N5dc','N5ddc','N5tc','N5b',
-                                   'O2sc','O4sc','O4dc','O4tc',
+                                   'O4sc','O4dc','O4tc',
                                    'S2sc','S4sc','S4dc','S4tdc','S6sc','S6dc','S6tdc']
                 negativeCharged = ['C2sc','C2dc','C2tc',
                                    'N0sc','N1sc','N1dc','N5dddc',
