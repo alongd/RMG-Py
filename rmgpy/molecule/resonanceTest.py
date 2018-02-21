@@ -43,6 +43,12 @@ class ResonanceTest(unittest.TestCase):
         molList = generate_resonance_structures(Molecule(SMILES="C=C[CH]C=CC"))
         self.assertEqual(len(molList), 3)
 
+    def testTriradAllylShift(self):
+        """Test allyl shift for a tri-rad carbon"""
+        molList = generate_resonance_structures(Molecule(SMILES="[C]N=N"))
+        self.assertEqual(len(molList), 3)
+        self.assertTrue(any([any([atom.charge != 0 for atom in mol.vertices]) for mol in molList]))  # expecting [C]=[N+.][NH-]
+
     def testOxime(self):
         """Test resonance structure generation for CC=N[O] radical
 
