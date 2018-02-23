@@ -281,7 +281,7 @@ def _generate_resonance_structures(mol_list, method_list, keep_isomorphic=False,
         octet_deviation = filtration.get_octet_deviation(molecule)
         charge_span = molecule.getChargeSpan()
         if octet_deviation <= min_octet_deviation and charge_span <= min_charge_span + 1:
-            logging.debug('Extending resonance structures for {0}...'.format(molecule.toSMILES()))
+            # logging.debug('Extending resonance structures for {0}...'.format(molecule.toSMILES()))
             for method in method_list:
                 new_mol_list.extend(method(molecule))
             if octet_deviation < min_octet_deviation:
