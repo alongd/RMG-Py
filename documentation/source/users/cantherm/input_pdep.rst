@@ -144,7 +144,7 @@ Option #1: Automatically Parse Quantum Chemistry Calculation Output
 
 For this option, the ``species()`` function only requires two parameters in addition to the four parameters in the table above, as shown in the example below::
 
-    species('acetylperoxy',''acetylperoxy.py',
+    species('acetylperoxy','acetylperoxy.py',
             structure = SMILES('CC(=O)O[O]'),
             molecularWeight = (75.04,"g/mol"),
             collisionModel = TransportData(sigma=(5.09,'angstrom'), epsilon=(473,'K')),
