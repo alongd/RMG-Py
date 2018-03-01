@@ -48,6 +48,10 @@ cpdef list generate_N5ddc_N5tc_resonance_structures(Molecule mol)
 
 cpdef list generate_isomorphic_resonance_structures(Molecule mol)
 
+cpdef list generate_N5dc_resonance_structures(Molecule mol)
+
+cpdef list generate_isomorphic_resonance_structures(Molecule mol, bint saturateH=?)
+
 cpdef list generate_aromatic_resonance_structures(Molecule mol, dict features=?)
 
 cpdef list generate_kekule_structure(Molecule mol)
