@@ -806,7 +806,6 @@ def generate_isomorphic_resonance_structures(mol):
 
     We generate over all resonance isomers (non-isomorphic as well as isomorphic) and retain isomorphic
     isomers.
-
     WIP: do not generate aromatic resonance isomers.
     """
 
