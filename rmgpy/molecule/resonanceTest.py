@@ -143,7 +143,9 @@ class ResonanceTest(unittest.TestCase):
     def testAzide(self):
         """Test resonance structure generation for ethyl azide
 
-        Simple case for N5ddc <=> N5tc resonance"""
+        Simple case for N5ddc <=> N5tc resonance
+        Azides are described by three resonance structures: N=[N+]=[N-] <=> [NH-][N+]#N <=> [NH+]#[N+][N-2]
+        However, since the third does not contribute to reactivity and has a higher charge span, it is filtered out"""
         molList = generate_resonance_structures(Molecule(SMILES="CCN=[N+]=[N-]"))
         self.assertEqual(len(molList), 2)
         self.assertTrue(all([any([atom.charge != 0 for atom in mol.vertices]) for mol in molList]))
@@ -181,6 +183,19 @@ class ResonanceTest(unittest.TestCase):
         self.assertFalse(mol_list[1].reactive)
         self.assertEqual(mol_list[0].vertices[0].lonePairs + mol_list[0].vertices[1].lonePairs, 3)
         self.assertEqual(mol_list[1].vertices[0].lonePairs + mol_list[1].vertices[1].lonePairs, 4)
+
+    def testN5dc(self):
+        """Test the N5dc resonance transformation
+
+        Two isomorphic structures should be included in molList: N=[N+]([O])([O-]) <=> N=[N+]([O-])([O])"""
+        mol = Molecule(SMILES="N=[N+]([O-])[O]")
+        mol_list = generate_resonance_structures(mol, keep_isomorphic=True)
+        self.assertEqual(len(mol_list), 6)
+        isomorphic_counter = 0
+        for mol1 in mol_list:
+            if mol1.isIsomorphic(mol):
+                isomorphic_counter += 1
+        self.assertEquals(isomorphic_counter, 2)
 
     def testStyryl1(self):
         """Test resonance structure generation for styryl, with radical on branch
