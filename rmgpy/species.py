@@ -170,7 +170,7 @@ class Species(object):
         `molecule` is already greater than one, it is assumed that all of the
         resonance structures have already been generated.
         """
-        if all([molecule.reactive for molecule in self.molecule]):
+        if len(self.molecule) == 1:
             if not self.molecule[0].atomIDValid():
                 self.molecule[0].assignAtomIDs()
             self.molecule = self.molecule[0].generate_resonance_structures(keep_isomorphic=keep_isomorphic,
