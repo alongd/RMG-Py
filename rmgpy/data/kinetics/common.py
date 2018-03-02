@@ -208,7 +208,7 @@ def ensure_species(input_list, resonance=False, keep_isomorphic=False):
             new_item = item
         else:
             raise TypeError('Only Molecule or Species objects can be handled.')
-        if resonance and all([molecule.reactive for molecule in new_item.molecule]):
+        if resonance:
             new_item.generate_resonance_structures(keep_isomorphic=keep_isomorphic)
         output_list.append(new_item)
 
