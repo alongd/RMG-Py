@@ -1499,13 +1499,14 @@ class KineticsFamily(Database):
             Degenerate reactions are returned as separate reactions.
         """
         reactionList = []
-        
-        # Forward direction (the direction in which kinetics is defined)
-        reactionList.extend(self.__generateReactions(reactants, products=products, forward=True, prod_resonance=prod_resonance))
-        
-        if not self.ownReverse and self.reversible:
-            # Reverse direction (the direction in which kinetics is not defined)
-            reactionList.extend(self.__generateReactions(reactants, products=products, forward=False, prod_resonance=prod_resonance))
+
+        if all([mol.reactive for mol in reactants]):
+            # Forward direction (the direction in which kinetics is defined)
+            reactionList.extend(self.__generateReactions(reactants, products=products, forward=True, prod_resonance=prod_resonance))
+
+            if not self.ownReverse and self.reversible:
+                # Reverse direction (the direction in which kinetics is not defined)
+                reactionList.extend(self.__generateReactions(reactants, products=products, forward=False, prod_resonance=prod_resonance))
 
         return reactionList
 
@@ -1517,7 +1518,7 @@ class KineticsFamily(Database):
         Returns `True` if successful and `False` if the reverse reaction is forbidden.
         Will raise a `KineticsError` if unsuccessful for other reasons.
         """
-        if self.ownReverse:
+        if self.ownReverse and all([spc.has_reactive_molecule() for spc in rxn.products]):
             # Check if the reactants are the same
             sameReactants = False
             if len(rxn.products) == 2 and rxn.products[0].isIsomorphic(rxn.products[1]):
