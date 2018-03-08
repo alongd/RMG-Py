@@ -31,7 +31,7 @@
 This module contains classes and functions for working with collision models.
 """
 
-import numpy
+import numpy, logging
 cimport cython
 
 cimport rmgpy.constants as constants
