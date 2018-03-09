@@ -308,6 +308,10 @@ def mark_unreactive_structures(filtered_list, mol_list):
         # been filtered out. However, for processing reactions (e.g., degeneracy calculations) it should be kept
         # (e.g., [::N]O <=> [::N][::O.] + [H.], where [::N][::O.] should be recognized as [:N.]=[::O]).
         mol = mol_list[0]
+        logging.info("Setting the unrepresentative resonance structure {0} as unreactive in  species {1}.".format(
+            mol.toSMILES(),filtered_list[0].toSMILES()))
+        logging.debug("Unreactive structure:\n{0}\nA representative reactive structure in this species:\n{1}".format(
+            mol.toAdjacencyList(),filtered_list[0].toAdjacencyList()))
         mol.reactive = False
         filtered_list.append(mol)
 
@@ -324,5 +328,5 @@ def check_reactive(filtered_list):
         for mol in filtered_list:
             logging.info('Structure: {0}\n{1}Reactive: {2}'.format(mol.toSMILES(),mol.toAdjacencyList(),mol.reactive))
             logging.info('\n')
-        raise AssertionError('Each species must have at least one reactive structure. Something went wrong'
-                             ' when processing species {0}'.format(filtered_list[0].toSMILES()))
+        raise AssertionError('Each species must have at least one reactive structure. Something probably went wrong'
+                             ' when exploring resonance structures for species {0}'.format(filtered_list[0].toSMILES()))
