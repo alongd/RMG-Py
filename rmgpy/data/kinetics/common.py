@@ -203,6 +203,7 @@ def ensure_species(input_list, resonance=False, keep_isomorphic=False):
     output_list = []
     for item in input_list:
         if isinstance(item, Molecule):
+            item.reactive = True
             new_item = Species(molecule=[item])
         elif isinstance(item, Species):
             new_item = item
