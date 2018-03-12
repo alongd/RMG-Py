@@ -1525,7 +1525,7 @@ class KineticsFamily(Database):
                 sameReactants = True
 
             reactionList = self.__generateReactions([spc.molecule for spc in rxn.products],
-                                                    products=rxn.reactants, forward=True, react_non_reactive=True)
+                                                    products=rxn.reactants, forward=True)
             reactions = find_degenerate_reactions(reactionList, sameReactants, kinetics_family=self)
             if len(reactions) == 0:
                 logging.error("Expecting one matching reverse reaction, not zero in reaction family {0} for forward reaction {1}.\n".format(self.label, str(rxn)))
