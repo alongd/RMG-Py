@@ -1510,7 +1510,7 @@ class KineticsFamily(Database):
 
         return reactionList
 
-    def addReverseAttribute(self, rxn):
+    def addReverseAttribute(self, rxn, react_non_reactive=True):
         """
         For rxn (with species' objects) from families with ownReverse, this method adds a `reverse`
         attribute that contains the reverse reaction information (like degeneracy)
@@ -1525,7 +1525,7 @@ class KineticsFamily(Database):
                 sameReactants = True
 
             reactionList = self.__generateReactions([spc.molecule for spc in rxn.products],
-                                                    products=rxn.reactants, forward=True)
+                                                    products=rxn.reactants, forward=True, react_non_reactive=react_non_reactive)
             reactions = find_degenerate_reactions(reactionList, sameReactants, kinetics_family=self)
             if len(reactions) == 0:
                 logging.error("Expecting one matching reverse reaction, not zero in reaction family {0} for forward reaction {1}.\n".format(self.label, str(rxn)))
@@ -1546,7 +1546,7 @@ class KineticsFamily(Database):
                 try:
                     reactionList = self.__generateReactions([spc.molecule for spc in rxn.products],
                                                             products=rxn.reactants, forward=True,
-                                                            react_non_reactive=True)
+                                                            react_non_reactive=react_non_reactive)
                     reactions = find_degenerate_reactions(reactionList, sameReactants, kinetics_family=self)
                 finally:
                     self.forbidden = tempObject
