@@ -203,13 +203,14 @@ def ensure_species(input_list, resonance=False, keep_isomorphic=False):
     output_list = []
     for item in input_list:
         if isinstance(item, Molecule):
-            item.reactive = True
             new_item = Species(molecule=[item])
         elif isinstance(item, Species):
             new_item = item
         else:
             raise TypeError('Only Molecule or Species objects can be handled.')
         if resonance:
+            if not any([mol.reactive for mol in new_item.molecule]):
+                new_item.molecule[0].reactive = True
             new_item.generate_resonance_structures(keep_isomorphic=keep_isomorphic)
         output_list.append(new_item)
 
