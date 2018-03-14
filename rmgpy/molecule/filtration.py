@@ -308,7 +308,7 @@ def mark_unreactive_structures(filtered_list, mol_list):
         # been filtered out. However, for processing reactions (e.g., degeneracy calculations) it should be kept
         # (e.g., [::N]O <=> [::N][::O.] + [H.], where [::N][::O.] should be recognized as [:N.]=[::O]).
         mol = mol_list[0]
-        logging.debug("Setting the unrepresentative resonance structure {0} as unreactive in  species {1}.".format(
+        logging.debug("Setting the unrepresentative resonance structure {0} as unreactive in species {1}.".format(
             mol.toSMILES(),filtered_list[0].toSMILES()))
         logging.debug("Unreactive structure:\n{0}\nA representative reactive structure in this species:\n{1}\n".format(
             mol.toAdjacencyList(),filtered_list[0].toAdjacencyList()))
