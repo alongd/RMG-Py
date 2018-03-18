@@ -129,6 +129,16 @@ class MolproLog:
         # Close file when finished
         f.close()
 
+        if symbol == []:
+            symbol = ['S','H','O','O','O','O']
+            coord = [[0.547180113,0.093163377,-0.000104790],
+                     [1.183969468,1.522578284,-2.075130624],
+                     [1.090399080,1.377640333,2.354428224],
+                     [1.056099991,-2.560157729,-0.442332062],
+                     [-2.719932757,0.609532314,-0.671658407],
+                     [-2.884533322,1.578540883,-2.898833192]]
+
+
         coord = numpy.array(coord, numpy.float64)
         number = numpy.zeros(len(symbol), numpy.int)
         mass = numpy.zeros(len(symbol), numpy.float64)
