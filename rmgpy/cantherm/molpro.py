@@ -124,7 +124,17 @@ class MolproLog:
                         symbol.append(str(data[0]))
                         coord.append([float(data[1]), float(data[2]), float(data[3])])
                         line = f.readline()
+            elif 'Atomic Coordinates' in line:
                 line = f.readline()
+                line = f.readline()
+                line = f.readline()
+                line = f.readline()
+                symbol = []; coord = []
+                while line != '\n':
+                    data = line.split()
+                    symbol.append(str(data[1]))
+                    coord.append([float(data[3]), float(data[4]), float(data[5])])
+                    line = f.readline()
             line = f.readline()
         # Close file when finished
         f.close()
