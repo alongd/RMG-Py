@@ -800,7 +800,7 @@ def generate_opposite_kekule_structure(mol):
     else:
         return [molecule]
 
-def generate_isomorphic_resonance_structures(mol):
+def generate_isomorphic_resonance_structures(mol, saturate_h=False):
     """
     Select the resonance isomer that is isomorphic to the parameter isomer, with the lowest unpaired
     electrons descriptor.
@@ -808,21 +808,32 @@ def generate_isomorphic_resonance_structures(mol):
     We generate over all resonance isomers (non-isomorphic as well as isomorphic) and retain isomorphic
     isomers.
 
+    If `saturate_h` is `True`, then saturate `mol` with hydrogens before generating the resonance structures,
+    and remove the hydrogens before returning `isomorphic_isomers`. This is useful when resonance structures are
+    generated for molecules in which all hydrogens were intentionally removed as in generating augInChI. Otherwise,
+    RMG will probably get many of the lonePairs and partial charges in a molecule wrong.
+
     WIP: do not generate aromatic resonance isomers.
     """
 
-    cython.declare(isomorphic_isomers=list,\
-                   isomers=list,
-                    )
+    cython.declare(isomorphic_isomers=list, isomers=list, index=int, max_val_e=int, order=float, num_h_to_add=int,
+                   isomer=Molecule, newIsomer=Molecule, isom=Molecule, atom=Atom, a=Atom, b=Bond, newAtoms=list)
 
-    cython.declare(isomer=Molecule,\
-                   newIsomer=Molecule,\
-                   isom=Molecule
-                   )
+    if saturate_h:  # Add explicit hydrogen atoms to complete structure if desired
+        newAtoms = []
+        for atom in mol.vertices:
+            max_val_e = PeriodicSystem.valence_electrons[atom.symbol]
+            order = atom.getBondOrdersForAtom()
+            num_h_to_add = max_val_e - atom.radicalElectrons - 2 * atom.lonePairs - int(order) - atom.charge
+            for index in xrange(num_h_to_add):
+                a = Atom(element='H', radicalElectrons=0, charge=0, label='', lonePairs=0)
+                b = Bond(atom, a, 'S')
+                newAtoms.append(a)
+                atom.bonds[a] = b
+                a.bonds[atom] = b
+        mol.vertices.extend(newAtoms)
 
-    cython.declare(index=int)
-
-    isomorphic_isomers = [mol]# resonance isomers that are isomorphic to the parameter isomer.
+    isomorphic_isomers = [mol]  # resonance isomers that are isomorphic to the parameter isomer.
 
     isomers = [mol]
 
@@ -842,10 +853,15 @@ def generate_isomorphic_resonance_structures(mol):
                     isomorphic_isomers.append(newIsomer)
                     break
             else:
-                isomers.append(newIsomer)        
-                    
+                isomers.append(newIsomer)
+
         # Move to next resonance isomer
         index += 1
+
+    if saturate_h:  # remove hydrogens before returning isomorphic_isomers
+        for isomer in isomorphic_isomers:
+            hydrogens = filter(lambda at: at.number == 1, isomer.atoms)
+            [isomer.removeAtom(h) for h in hydrogens]
 
     return isomorphic_isomers
 
