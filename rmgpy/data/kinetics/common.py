@@ -212,6 +212,10 @@ def ensure_species(input_list, resonance=False, keep_isomorphic=False):
         else:
             raise TypeError('Only Molecule or Species objects can be handled.')
         if resonance:
+            if not any([mol.reactive for mol in new_item.molecule]):
+                # if generating a reaction containing a Molecule with a reactive=False flag (e.g., for degeneracy
+                # calculations), that was now converted into a Species, first mark as reactive=True
+                new_item.molecule[0].reactive = True
             new_item.generate_resonance_structures(keep_isomorphic=keep_isomorphic)
         input_list[index] = new_item
 
@@ -255,16 +259,18 @@ def ensure_independent_atom_ids(input_species, resonance=True):
     if not independent_ids():
         logging.debug('identical atom ids found between species. regenerating')
         for species in input_species:
-            mol = species.molecule[0]
-            mol.assignAtomIDs()
-            species.molecule = [mol]
-            # Remake resonance structures with new labels
-            if resonance:
-                species.generate_resonance_structures(keep_isomorphic=True)
+            if all([mol.reactive for mol in species.molecule]):
+                mol = species.molecule[0]
+                mol.assignAtomIDs()
+                species.molecule = [mol]
+                # Remake resonance structures with new labels
+                if resonance:
+                    species.generate_resonance_structures(keep_isomorphic=True)
     elif resonance:
         # IDs are already independent, generate resonance structures if needed
         for species in input_species:
-            species.generate_resonance_structures(keep_isomorphic=True)
+            if len(species.molecule) == 1:
+                species.generate_resonance_structures(keep_isomorphic=True)
 
 
 def find_degenerate_reactions(rxnList, same_reactants=None, kinetics_database=None, kinetics_family=None):
@@ -365,4 +371,3 @@ def reduce_same_reactant_degeneracy(reaction, same_reactants=None):
             ):
         reaction.degeneracy *= 0.5
         logging.debug('Degeneracy of reaction {} was decreased by 50% to {} since the reactants are identical'.format(reaction, reaction.degeneracy))
-
