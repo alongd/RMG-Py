@@ -644,6 +644,7 @@ multiplicity 3
         """
         self.assertEqual(Species().fromSMILES('C=[CH]').getSymmetryNumber(), 1)
     
+    @work_in_progress
     def testSymmetryNumberCyclic(self):
         """
         Test the Molecule.calculateSymmetryNumber() on C1=C=C=1
