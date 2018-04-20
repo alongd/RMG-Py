@@ -272,18 +272,17 @@ multiplicity 1
         self.assertTrue(not ulayer)
         self.assertEquals(P_LAYER_PREFIX + '1', player)
 
-    @work_in_progress
-    def test_TripletMethylene(self):
-        adjlist = """
-multiplicity 3
-1 C u2 p0 c0 {2,S} {3,S}
-2 H u0 p0 c0 {1,S}
-3 H u0 p0 c0 {1,S}
-"""
-        mol = Molecule().fromAdjacencyList(adjlist)
-        ulayer, player = create_augmented_layers(mol)
-        self.assertEquals(U_LAYER_PREFIX + '1,1', ulayer)
-        self.assertTrue(not player)
+#     def test_TripletMethylene(self):
+#         adjlist = """
+# multiplicity 3
+# 1 C u2 p0 c0 {2,S} {3,S}
+# 2 H u0 p0 c0 {1,S}
+# 3 H u0 p0 c0 {1,S}
+# """
+#         mol = Molecule().fromAdjacencyList(adjlist)
+#         ulayer, player = create_augmented_layers(mol)
+#         self.assertEquals(U_LAYER_PREFIX + '1,1', ulayer)
+#         self.assertTrue(not player)
 
     @work_in_progress
     def test_Nitrate(self):
