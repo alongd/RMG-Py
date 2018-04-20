@@ -272,6 +272,7 @@ multiplicity 1
         self.assertTrue(not ulayer)
         self.assertEquals(P_LAYER_PREFIX + '1', player)
 
+    @work_in_progress
     def test_TripletMethylene(self):
         adjlist = """
 multiplicity 3
