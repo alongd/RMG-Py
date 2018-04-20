@@ -648,6 +648,8 @@ multiplicity 3
     def testSymmetryNumberCyclic(self):
         """
         Test the Molecule.calculateSymmetryNumber() on C1=C=C=1
+
+        Marked as WIP, see issue #1344
         """
         self.assertEqual(Species().fromSMILES('C1=C=C=1').getSymmetryNumber(), 6)
     
