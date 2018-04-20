@@ -185,49 +185,49 @@ class DecomposeTest(unittest.TestCase):
         _, _, p_indices = decompose_aug_inchi(string)
         self.assertEquals([(1,0)], p_indices)
 
-class CreateULayerTest(unittest.TestCase):
-    def testC4H6(self):
-        """
-        Test that 3-butene-1,2-diyl biradical is always resulting in the
-        same u-layer, regardless of the original order.
-        """
-
-        # radical positions 3 and 4
-        adjlist1 = """
-1  C u0 p0 c0 {2,D} {5,S} {6,S}
-2  C u0 p0 c0 {1,D} {3,S} {7,S}
-3  C u1 p0 c0 {2,S} {4,S} {8,S}
-4  C u1 p0 c0 {3,S} {9,S} {10,S}
-5  H u0 p0 c0 {1,S}
-6  H u0 p0 c0 {1,S}
-7  H u0 p0 c0 {2,S}
-8  H u0 p0 c0 {3,S}
-9  H u0 p0 c0 {4,S}
-10 H u0 p0 c0 {4,S}
-
-        """
-
-        # radical positions 1 and 2
-        adjlist2 = """
-1  C u1 p0 c0 {2,S} {5,S} {6,S}
-2  C u1 p0 c0 {1,S} {3,S} {7,S}
-3  C u0 p0 c0 {2,S} {4,D} {8,S}
-4  C u0 p0 c0 {3,D} {9,S} {10,S}
-5  H u0 p0 c0 {1,S}
-6  H u0 p0 c0 {1,S}
-7  H u0 p0 c0 {2,S}
-8  H u0 p0 c0 {3,S}
-9  H u0 p0 c0 {4,S}
-10 H u0 p0 c0 {4,S}
-        """
-
-        u_layers = []
-        for adjlist in [adjlist1, adjlist2]:
-            mol = Molecule().fromAdjacencyList(adjlist)
-            u_layer = create_augmented_layers(mol)[0]
-            u_layers.append(u_layer)
-
-        self.assertEquals(u_layers[0], u_layers[1])
+# class CreateULayerTest(unittest.TestCase):
+#     def testC4H6(self):
+#         """
+#         Test that 3-butene-1,2-diyl biradical is always resulting in the
+#         same u-layer, regardless of the original order.
+#         """
+#
+#         # radical positions 3 and 4
+#         adjlist1 = """
+# 1  C u0 p0 c0 {2,D} {5,S} {6,S}
+# 2  C u0 p0 c0 {1,D} {3,S} {7,S}
+# 3  C u1 p0 c0 {2,S} {4,S} {8,S}
+# 4  C u1 p0 c0 {3,S} {9,S} {10,S}
+# 5  H u0 p0 c0 {1,S}
+# 6  H u0 p0 c0 {1,S}
+# 7  H u0 p0 c0 {2,S}
+# 8  H u0 p0 c0 {3,S}
+# 9  H u0 p0 c0 {4,S}
+# 10 H u0 p0 c0 {4,S}
+#
+#         """
+#
+#         # radical positions 1 and 2
+#         adjlist2 = """
+# 1  C u1 p0 c0 {2,S} {5,S} {6,S}
+# 2  C u1 p0 c0 {1,S} {3,S} {7,S}
+# 3  C u0 p0 c0 {2,S} {4,D} {8,S}
+# 4  C u0 p0 c0 {3,D} {9,S} {10,S}
+# 5  H u0 p0 c0 {1,S}
+# 6  H u0 p0 c0 {1,S}
+# 7  H u0 p0 c0 {2,S}
+# 8  H u0 p0 c0 {3,S}
+# 9  H u0 p0 c0 {4,S}
+# 10 H u0 p0 c0 {4,S}
+#         """
+#
+#         u_layers = []
+#         for adjlist in [adjlist1, adjlist2]:
+#             mol = Molecule().fromAdjacencyList(adjlist)
+#             u_layer = create_augmented_layers(mol)[0]
+#             u_layers.append(u_layer)
+#
+#         self.assertEquals(u_layers[0], u_layers[1])
 
 
 class ExpectedLonePairsTest(unittest.TestCase):
