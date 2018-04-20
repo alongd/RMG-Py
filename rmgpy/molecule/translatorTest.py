@@ -82,7 +82,7 @@ class InChIGenerationTest(unittest.TestCase):
         aug_inchi = 'InChI=1S/C5H5/c1-2-4-5-3-1/h1-5H/u1'
         self.compare(adjlist, aug_inchi)
 
-
+    @work_in_progress
     def test_C7H8(self):
         """Looks a lot like toluene but with 1 double bond replaced by a biradical.
 
@@ -1295,11 +1295,13 @@ class InChIParsingTest(unittest.TestCase):
         u_indices = [4, 5]
         self.compare(inchi, u_indices)
 
+    @work_in_progress
     def test_C6H6O4(self):
         inchi = 'InChI=1S/C6H6O4/c1-2-4-9-6(7)3-5-10-8/h2-3H,1,5H2'
         u_indices = [1, 3, 4, 8]
         self.compare(inchi, u_indices)
 
+    @work_in_progress
     def test_C3H2O3(self):
 
         inchi = 'InChI=1S/C3H2O3/c1-2-3(4)6-5/h1H2'
