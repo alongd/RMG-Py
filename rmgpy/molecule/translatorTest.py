@@ -200,26 +200,26 @@ multiplicity 2
         aug_inchi = 'InChI=1S/C6H10/c1-3-5-6-4-2/h3-4H,1-2,5-6H2/u1,2,3,4'
         self.compare(adjlist, aug_inchi)
 
-    def test_Buta13diyl_triplet(self):
-        """
-        C=CC.C.
-        """
-        adjlist = """
-        multiplicity 3
-1  C u1 p0 c0 {2,S} {5,S} {6,S}
-2  C u1 p0 c0 {1,S} {3,S} {7,S}
-3  C u0 p0 c0 {2,S} {4,D} {8,S}
-4  C u0 p0 c0 {3,D} {9,S} {10,S}
-5  H u0 p0 c0 {1,S}
-6  H u0 p0 c0 {1,S}
-7  H u0 p0 c0 {2,S}
-8  H u0 p0 c0 {3,S}
-9  H u0 p0 c0 {4,S}
-10 H u0 p0 c0 {4,S}
-"""
-
-        aug_inchi = 'InChI=1S/C4H6/c1-3-4-2/h3-4H,1-2H2/u1,2'
-        self.compare(adjlist, aug_inchi)
+#     def test_Buta13diyl_triplet(self):
+#         """
+#         C=CC.C.
+#         """
+#         adjlist = """
+#         multiplicity 3
+# 1  C u1 p0 c0 {2,S} {5,S} {6,S}
+# 2  C u1 p0 c0 {1,S} {3,S} {7,S}
+# 3  C u0 p0 c0 {2,S} {4,D} {8,S}
+# 4  C u0 p0 c0 {3,D} {9,S} {10,S}
+# 5  H u0 p0 c0 {1,S}
+# 6  H u0 p0 c0 {1,S}
+# 7  H u0 p0 c0 {2,S}
+# 8  H u0 p0 c0 {3,S}
+# 9  H u0 p0 c0 {4,S}
+# 10 H u0 p0 c0 {4,S}
+# """
+#
+#         aug_inchi = 'InChI=1S/C4H6/c1-3-4-2/h3-4H,1-2H2/u1,2'
+#         self.compare(adjlist, aug_inchi)
 
     def test_CH2O2(self):
 
