@@ -376,6 +376,8 @@ def _generate_minimum_resonance_isomer(mol):
     Next, we return the candidate with the lowest unpaired electrons metric.
 
     The metric is a sorted list with indices of the atoms that bear an unpaired electron
+
+    This function is currently depreciated
     """
 
     cython.declare(
