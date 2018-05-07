@@ -126,6 +126,59 @@ class LibraryReaction(Reaction):
         """
         return self.library
 
+    def generate_high_p_limit_kinetics(self):
+        """
+        If the LibraryReactions represented by `self` has pressure dependent kinetics,
+        try extracting the high pressure limit rate from it.
+        Used for incorporating library reactions with pressure-dependent kinetics in PDep networks.
+        Only reactions flagged as `elementary_high_p=True` should be processed here.
+        If the kinetics is a :class:Lindemann or a :class:Troe, simply get the high pressure limit rate.
+        If the kinetics is a :class:PDepArrhenius or a :class:Chebyshev, generate a :class:Arrhenius kinetics entry
+        that represents the high pressure limit if Pmax >= 90 bar .
+        This high pressure limit Arrhenius kinetics is assigned to the reaction network_kinetics attribute.
+        If this method sucsessfully generated the high pressure limit kinetics, return ``True``, otherwise ``False``.
+        """
+        if not self.isUnimolecular():
+            return False
+        if isinstance(self.kinetics, Arrhenius):
+            return self.high_p_limit
+        if isinstance(self.kinetics, (Lindemann, Troe)):
+            self.network_kinetics = self.kinetics.arrheniusHigh
+            self.network_kinetics.comment = self.kinetics.comment
+            self.network_kinetics.comment = "Kinetics taken from the arrheniusHigh attribute of a" \
+                " Troe/Lindemann exprssion. Originally from reaction library {0}".format(self.library)
+            return True
+        if isinstance(self.kinetics, PDepArrhenius):
+            if self.kinetics.pressures.value_si[-1] >= 9000000:  # Pa units
+                self.network_kinetics = self.kinetics.arrhenius[len(self.kinetics.pressures) - 1]
+                return True
+        if isinstance(self.kinetics, Chebyshev):
+            if self.kinetics.Pmax.value_si >= 9000000:  # Pa units
+                if len(self.reactants) == 1:
+                    kunits = 's^-1'
+                elif len(self.reactants) == 2:
+                    kunits = 'm^3/(mol*s)'
+                elif len(self.reactants) == 3:
+                    kunits = 'm^6/(mol^2*s)'
+                else:
+                    kunits = ''
+                t_step = (self.kinetics.Tmax.value_si - self.kinetics.Tmin.value_si) / 20
+                t_list = np.arange(int(self.kinetics.Tmin.value_si), int(self.kinetics.Tmax.value_si), int(t_step))
+                if t_list[-1] < int(self.kinetics.Tmax.value_si):
+                    t_list = np.insert(t_list,-1,[int(self.kinetics.Tmax.value_si)])
+                k_list = []
+                for t in t_list:
+                    k_list.append(self.kinetics.getRateCoefficient(t, self.kinetics.Pmax.value_si))
+                k_list = np.array(k_list)
+                self.network_kinetics = Arrhenius().fitToData(Tlist=t_list, klist=k_list, kunits=kunits)
+                return True
+        logging.info("NOT processing reaction {0} in a pressure-dependent reaction network.\n"
+                     "Although it is marked with the `elementary_high_p=True` flag,"
+                     " it doesn't answer either of the following criteria: 1. Has a Lindemann or Troe"
+                     " kinetics type; 2. Has a PDepArrhenius or Chebyshev kinetics type and has valid"
+                     " kinetics at P >= 100 bar".format(self))
+        return False
+
 ################################################################################
 
 class KineticsLibrary(Database):
