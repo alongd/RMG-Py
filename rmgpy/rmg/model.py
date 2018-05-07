@@ -506,7 +506,16 @@ class CoreEdgeReactionModel:
             logging.debug('Creating new library reaction {0}'.format(forward))
         else:
             raise Exception("Unrecognized reaction type {0!s}".format(forward.__class__))
-        
+
+        # Generate pressure dependent kinetics for elementary library reactions with high pressure limit rates
+        if (self.pressureDependence and forward.isUnimolecular() and isinstance(forward, LibraryReaction)
+                and forward.elementary_high_p and isinstance(forward.kinetics, Arrhenius)):
+            logging.debug('Generating PDep kinetics for elementary library reaction {0}'.format(forward))
+            if len(forward.reactants) == 1:
+                self.processNewReactions([forward],forward.reactants[0])
+            else:
+                self.processNewReactions([forward],forward.products[0])
+
         self.registerReaction(forward)
 
         forward.index = self.reactionCounter + 1
@@ -1507,7 +1516,7 @@ class CoreEdgeReactionModel:
                  library=reactionLibrary.name, specificCollider=rxn.specificCollider, kinetics=rxn.kinetics, duplicate=rxn.duplicate,
                  reversible=rxn.reversible
                  )
-            if self.pressureDependence and rxn.elementary and isinstance(rxn, LibraryReaction)\
+            if self.pressureDependence and rxn.elementary_high_p and isinstance(rxn, LibraryReaction)\
                     and isinstance(rxn.kinetics, Arrhenius):
                 # This is an elementary library reaction with high pressure limit kinetics.
                 # It must be explored in a PDep network before considering it in the model.
@@ -1725,18 +1734,6 @@ class CoreEdgeReactionModel:
                     reaction.reversible = True
             # Move to the next core reaction
             index += 1
-
-    def add_elementary_library_rxns_to_unimolecular_networks(self):
-        """
-        Library reactions that are marked with an `elementary` flag are elementary reactions with high pressure limit
-        kinetics. These reactions are stored in self.elementary_library_pdep. Here we generate the respective pressure
-        dependent kinetics for these reactions.
-        """
-        logging.info('Generating pressure-dependent kinetics for elementary library reactions for which high-pressure'
-                     ' limit kinetics are given...')
-        for rxn in self.elementary_library_pdep:
-            logging.debug('Generating PDep kinetics for elementary library reaction {0}'.format(rxn))
-            self.addReactionToUnimolecularNetworks(newReaction=rxn, newSpecies=rxn.reactants[0])
 
     def markChemkinDuplicates(self):
         """
