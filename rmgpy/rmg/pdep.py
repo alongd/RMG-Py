@@ -634,17 +634,23 @@ class PDepNetwork(rmgpy.pdep.network.Network):
                         # k(T,P) values potentially contain both direct and
                         # well-skipping contributions, and therefore could be
                         # significantly larger than the direct k(T) value
-                        # (This can also happen for association/dissocation
+                        # (This can also happen for association/dissociation
                         # reactions, but the effect is generally not too large)
                         continue
                     if pathReaction.reactants == netReaction.reactants and pathReaction.products == netReaction.products:
-                        kinf = pathReaction.kinetics.getRateCoefficient(Tlist[t])
+                        if pathReaction.network_kinetics is not None:
+                            kinf = pathReaction.network_kinetics.getRateCoefficient(Tlist[t])
+                        else:
+                            kinf = pathReaction.kinetics.getRateCoefficient(Tlist[t])
                         if K[t,p,i,j] > 2 * kinf: # To allow for a small discretization error
                             logging.warning('k(T,P) for net reaction {0} exceeds high-P k(T) by {1:g} at {2:g} K, {3:g} bar'.format(netReaction, K[t,p,i,j] / kinf, Tlist[t], Plist[p]/1e5))
                             logging.info('    k(T,P) = {0:9.2e}    k(T) = {1:9.2e}'.format(K[t,p,i,j], kinf))
                         break
                     elif pathReaction.products == netReaction.reactants and pathReaction.reactants == netReaction.products:
-                        kinf = pathReaction.kinetics.getRateCoefficient(Tlist[t]) / pathReaction.getEquilibriumConstant(Tlist[t])
+                        if pathReaction.network_kinetics is not None:
+                            kinf = pathReaction.network_kinetics.getRateCoefficient(Tlist[t]) / pathReaction.getEquilibriumConstant(Tlist[t])
+                        else:
+                            kinf = pathReaction.kinetics.getRateCoefficient(Tlist[t]) / pathReaction.getEquilibriumConstant(Tlist[t])
                         if K[t,p,i,j] > 2 * kinf: # To allow for a small discretization error
                             logging.warning('k(T,P) for net reaction {0} exceeds high-P k(T) by {1:g} at {2:g} K, {3:g} bar'.format(netReaction, K[t,p,i,j] / kinf, Tlist[t], Plist[p]/1e5))           
                             logging.info('    k(T,P) = {0:9.2e}    k(T) = {1:9.2e}'.format(K[t,p,i,j], kinf))
