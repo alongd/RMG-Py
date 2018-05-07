@@ -811,9 +811,10 @@ class CoreEdgeReactionModel:
                 # The reaction is not unimolecular in either direction, so it cannot be pressure-dependent
                 pdep = False
             elif rxn.kinetics is not None and rxn.kinetics.isPressureDependent():
-                # The reaction already has pressure-dependent kinetics (e.g. from a reaction library)
-                pdep = False
-                
+                # The reaction already has pressure-dependent kinetics (e.g. from a reaction library).
+                # Try generating the high pressure limit kinetics. If successful, set pdep to `True`, and vice versa.
+                pdep = rxn.generate_high_p_limit_kinetics()
+
             # If pressure dependence is on, we only add reactions that are not unimolecular;
             # unimolecular reactions will be added after processing the associated networks
             if not pdep:
