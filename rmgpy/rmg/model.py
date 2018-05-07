@@ -52,7 +52,7 @@ from rmgpy.data.kinetics.depository import DepositoryReaction
 from rmgpy.data.kinetics.family import KineticsFamily, TemplateReaction
 from rmgpy.data.kinetics.library import KineticsLibrary, LibraryReaction
 
-from rmgpy.kinetics import KineticsData
+from rmgpy.kinetics import KineticsData, Arrhenius
 import rmgpy.data.rmg
 from .react import reactAll
 
@@ -173,6 +173,7 @@ class CoreEdgeReactionModel:
     `networkDict`              A dictionary of pressure-dependent reaction networks (:class:`Network` objects) indexed by source.
     `networkList`              A list of pressure-dependent reaction networks (:class:`Network` objects)
     `networkCount`             A counter for the number of pressure-dependent networks created
+    `elementary_library_pdep`  A list of elementary unimolecular PDep reactions to be explored in PDep networks
     `indexSpeciesDict`         A dictionary with a unique index pointing to the species objects
     `solventName`              String describing solvent name for liquid reactions. Empty for non-liquid estimation
     =========================  ==============================================================
@@ -200,6 +201,7 @@ class CoreEdgeReactionModel:
         self.networkDict = {}
         self.networkList = []
         self.networkCount = 0
+        self.elementary_library_pdep = []
         self.speciesDict = {}
         self.reactionDict = {}
         self.speciesCache = [None for i in range(4)]
@@ -1422,8 +1424,13 @@ class CoreEdgeReactionModel:
                  library=seedMechanism.name, specificCollider=rxn.specificCollider, kinetics=rxn.kinetics, duplicate=rxn.duplicate,
                  reversible=rxn.reversible
                  )
-            r, isNew = self.makeNewReaction(rxn) # updates self.newSpeciesList and self.newReactionlist
-            if not isNew: logging.info("This library reaction was not new: {0}".format(rxn))
+            if rxn.elementary and isinstance(rxn, LibraryReaction) and isinstance(rxn.kinetics, Arrhenius):
+                # This is an elementary library reaction with high pressure limit kinetics.
+                # It must be explored in a PDep network before considering it in the model.
+                self.elementary_library_pdep.append(rxn)
+            else:
+                r, isNew = self.makeNewReaction(rxn) # updates self.newSpeciesList and self.newReactionlist
+                if not isNew: logging.info("This library reaction was not new: {0}".format(rxn))
             
         # Perform species constraints and forbidden species checks
         
@@ -1466,8 +1473,6 @@ class CoreEdgeReactionModel:
             newEdgeReactions=[],
         )
 
-
-
     def addReactionLibraryToEdge(self, reactionLibrary):
         """
         Add all species and reactions from `reactionLibrary`, a
@@ -1502,8 +1507,14 @@ class CoreEdgeReactionModel:
                  library=reactionLibrary.name, specificCollider=rxn.specificCollider, kinetics=rxn.kinetics, duplicate=rxn.duplicate,
                  reversible=rxn.reversible
                  )
-            r, isNew = self.makeNewReaction(rxn) # updates self.newSpeciesList and self.newReactionlist
-            if not isNew: logging.info("This library reaction was not new: {0}".format(rxn))
+            if self.pressureDependence and rxn.elementary and isinstance(rxn, LibraryReaction)\
+                    and isinstance(rxn.kinetics, Arrhenius):
+                # This is an elementary library reaction with high pressure limit kinetics.
+                # It must be explored in a PDep network before considering it in the model.
+                self.elementary_library_pdep.append(rxn)
+            else:
+                r, isNew = self.makeNewReaction(rxn) # updates self.newSpeciesList and self.newReactionlist
+                if not isNew: logging.info("This library reaction was not new: {0}".format(rxn))
 
         # Perform species constraints and forbidden species checks
         for spec in self.newSpeciesList:
@@ -1715,6 +1726,17 @@ class CoreEdgeReactionModel:
             # Move to the next core reaction
             index += 1
 
+    def add_elementary_library_rxns_to_unimolecular_networks(self):
+        """
+        Library reactions that are marked with an `elementary` flag are elementary reactions with high pressure limit
+        kinetics. These reactions are stored in self.elementary_library_pdep. Here we generate the respective pressure
+        dependent kinetics for these reactions.
+        """
+        logging.info('Generating pressure-dependent kinetics for elementary library reactions for which high-pressure'
+                     ' limit kinetics are given...')
+        for rxn in self.elementary_library_pdep:
+            logging.debug('Generating PDep kinetics for elementary library reaction {0}'.format(rxn))
+            self.addReactionToUnimolecularNetworks(newReaction=rxn, newSpecies=rxn.reactants[0])
 
     def markChemkinDuplicates(self):
         """
