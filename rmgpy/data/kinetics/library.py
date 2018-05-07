@@ -136,12 +136,13 @@ class LibraryReaction(Reaction):
         If the kinetics is a :class:PDepArrhenius or a :class:Chebyshev, generate a :class:Arrhenius kinetics entry
         that represents the high pressure limit if Pmax >= 90 bar .
         This high pressure limit Arrhenius kinetics is assigned to the reaction network_kinetics attribute.
-        If this method sucsessfully generated the high pressure limit kinetics, return ``True``, otherwise ``False``.
+        If this method successfully generated the high pressure limit kinetics, return ``True``, otherwise ``False``.
         """
+        logging.debug("Generating high pressure limit kinetics for {0}...".format(self))
         if not self.isUnimolecular():
             return False
         if isinstance(self.kinetics, Arrhenius):
-            return self.high_p_limit
+            return self.elementary_high_p
         if isinstance(self.kinetics, (Lindemann, Troe)):
             self.network_kinetics = self.kinetics.arrheniusHigh
             self.network_kinetics.comment = self.kinetics.comment
@@ -150,8 +151,12 @@ class LibraryReaction(Reaction):
             return True
         if isinstance(self.kinetics, PDepArrhenius):
             if self.kinetics.pressures.value_si[-1] >= 9000000:  # Pa units
-                self.network_kinetics = self.kinetics.arrhenius[len(self.kinetics.pressures) - 1]
-                return True
+                if isinstance(self.kinetics.arrhenius[-1], Arrhenius):
+                    self.network_kinetics = self.kinetics.arrhenius[-1]
+                    return True
+                else:
+                    # This is probably MultiArrhenius entries inside a PDepArrhenius kinetics entry. Don't process
+                    return False
         if isinstance(self.kinetics, Chebyshev):
             if self.kinetics.Pmax.value_si >= 9000000:  # Pa units
                 if len(self.reactants) == 1:
