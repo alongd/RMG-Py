@@ -428,9 +428,6 @@ class RMG(util.Subject):
             # that RMG can find them if their rates are large enough
             for library, option in self.reactionLibraries:
                 self.reactionModel.addReactionLibraryToEdge(library)
-
-            # Generate pressure dependent kinetics for elementary library reactions with high pressure limit rates
-            self.reactionModel.add_elementary_library_rxns_to_unimolecular_networks()
                 
             # Also always add in a few bath gases (since RMG-Java does)
             for label, smiles in [('Ar','[Ar]'), ('He','[He]'), ('Ne','[Ne]'), ('N2','N#N')]:
