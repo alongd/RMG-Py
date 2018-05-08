@@ -143,6 +143,8 @@ class LibraryReaction(Reaction):
             return False
         if isinstance(self.kinetics, Arrhenius):
             return self.elementary_high_p
+        if self.network_kinetics is not None:
+            return True
         if isinstance(self.kinetics, (Lindemann, Troe)):
             self.network_kinetics = self.kinetics.arrheniusHigh
             self.network_kinetics.comment = self.kinetics.comment
@@ -177,11 +179,12 @@ class LibraryReaction(Reaction):
                 k_list = np.array(k_list)
                 self.network_kinetics = Arrhenius().fitToData(Tlist=t_list, klist=k_list, kunits=kunits)
                 return True
-        logging.info("NOT processing reaction {0} in a pressure-dependent reaction network.\n"
-                     "Although it is marked with the `elementary_high_p=True` flag,"
-                     " it doesn't answer either of the following criteria: 1. Has a Lindemann or Troe"
-                     " kinetics type; 2. Has a PDepArrhenius or Chebyshev kinetics type and has valid"
-                     " kinetics at P >= 100 bar".format(self))
+        if self.elementary_high_p:
+            logging.info("NOT processing reaction {0} in a pressure-dependent reaction network.\n"
+                         "Although it is marked with the `elementary_high_p=True` flag,"
+                         " it doesn't answer either of the following criteria:\n1. Has a Lindemann or Troe"
+                         " kinetics type; 2. Has a PDepArrhenius or Chebyshev kinetics type and has valid"
+                         " kinetics at P >= 100 bar.\n".format(self))
         return False
 
 ################################################################################
