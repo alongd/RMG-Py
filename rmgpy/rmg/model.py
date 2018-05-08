@@ -507,14 +507,14 @@ class CoreEdgeReactionModel:
         else:
             raise Exception("Unrecognized reaction type {0!s}".format(forward.__class__))
 
-        # Generate pressure dependent kinetics for elementary library reactions with high pressure limit rates
-        if (self.pressureDependence and forward.isUnimolecular() and isinstance(forward, LibraryReaction)
-                and forward.elementary_high_p and isinstance(forward.kinetics, Arrhenius)):
-            logging.debug('Generating PDep kinetics for elementary library reaction {0}'.format(forward))
-            if len(forward.reactants) == 1:
-                self.processNewReactions([forward],forward.reactants[0])
-            else:
-                self.processNewReactions([forward],forward.products[0])
+        # # Generate pressure dependent kinetics for elementary library reactions with high pressure limit rates
+        # if (self.pressureDependence and forward.isUnimolecular() and isinstance(forward, LibraryReaction)
+        #         and forward.elementary_high_p and isinstance(forward.kinetics, Arrhenius)):
+        #     logging.debug('Generating PDep kinetics for elementary library reaction {0}'.format(forward))
+        #     if len(forward.reactants) == 1:
+        #         self.processNewReactions([forward],forward.reactants[0])
+        #     else:
+        #         self.processNewReactions([forward],forward.products[0])
 
         self.registerReaction(forward)
 
@@ -1516,14 +1516,14 @@ class CoreEdgeReactionModel:
                  library=reactionLibrary.name, specificCollider=rxn.specificCollider, kinetics=rxn.kinetics, duplicate=rxn.duplicate,
                  reversible=rxn.reversible
                  )
-            if self.pressureDependence and rxn.elementary_high_p and isinstance(rxn, LibraryReaction)\
-                    and isinstance(rxn.kinetics, Arrhenius):
-                # This is an elementary library reaction with high pressure limit kinetics.
-                # It must be explored in a PDep network before considering it in the model.
-                self.elementary_library_pdep.append(rxn)
-            else:
-                r, isNew = self.makeNewReaction(rxn) # updates self.newSpeciesList and self.newReactionlist
-                if not isNew: logging.info("This library reaction was not new: {0}".format(rxn))
+            r, isNew = self.makeNewReaction(rxn) # updates self.newSpeciesList and self.newReactionlist
+            if not isNew:
+                logging.info("This library reaction was not new: {0}".format(rxn))
+            # else:
+            #     # Generate PDep kinetics for new reactions with high-P limit rates flagged with `elementary_high_p`
+            #     if self.pressureDependence and rxn.elementary_high_p and isinstance(rxn, LibraryReaction)
+            #         and isinstance(rxn.kinetics, Arrhenius):
+            #         ??
 
         # Perform species constraints and forbidden species checks
         for spec in self.newSpeciesList:
