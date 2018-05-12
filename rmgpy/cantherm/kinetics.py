@@ -46,7 +46,7 @@ import rmgpy.constants as constants
 
 ################################################################################
 
-class KineticsJob:
+class KineticsJob(object):
     """
     A representation of a CanTherm kinetics job. This job is used to compute 
     and save the high-pressure-limit kinetics information for a single reaction.
@@ -116,8 +116,7 @@ class KineticsJob:
         
     def execute(self, outputFile=None, plot=True):
         """
-        Execute the kinetics job, saving the results to the given `outputFile`
-        on disk.
+        Execute the kinetics job, saving the results to the given `outputFile` on disk.
         """
         if self.Tlist is not None:
             self.generateKinetics(self.Tlist.value_si)
@@ -132,8 +131,7 @@ class KineticsJob:
     
     def generateKinetics(self,Tlist=None):
         """
-        Generate the kinetics data for the reaction and fit it to a modified
-        Arrhenius model.
+        Generate the kinetics data for the reaction and fit it to a modified Arrhenius model.
         """
         kineticsClass = 'Arrhenius'
         

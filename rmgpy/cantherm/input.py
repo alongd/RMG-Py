@@ -374,6 +374,8 @@ def loadInputFile(path):
         'statmech': statmech,
         'thermo': thermo,
         'pressureDependence': pressureDependence,
+        # Sensitivity
+        'sensitivity': sensitivity,
         # Miscellaneous
         'SMILES': SMILES,
         'adjacencyList': adjacencyList,
