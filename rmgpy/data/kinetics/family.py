@@ -1304,12 +1304,19 @@ class KineticsFamily(Database):
         for struc in reactantStructures:
             struc.update()
             reactant_net_charge += struc.getNetCharge()
-        for struc in productStructures:
+        for struct in productStructures:
             # If product structures are Molecule objects, update their atom types
-            if isinstance(struc, Molecule):
-                struc.update()
+            # If product structures are Group objects and the reaction is in certain families
+            # (families with charged substances), the charge of structures will be updated
+            if isinstance(struct, Molecule):
+                struct.update()
+            elif isinstance(struct, Group):
+                struct.resetRingMembership()
+                if label in ['1,2_insertion_co', 'r_addition_com', 'co_disproportionation',
+                             'intra_no2_ono_conversion', 'lone_electron_pair_bond']:
+                    struct.update_charge()
             else:
-                struc.resetRingMembership()
+                raise TypeError('Expecting Molecule or Group object, not {0}'.format(struct.__class__.__name__))
             product_net_charge += struc.getNetCharge()
         if reactant_net_charge != product_net_charge:
             logging.debug('The net charge of the reactants {0} differs from the net charge of the products {1} in'
@@ -1330,20 +1337,6 @@ class KineticsFamily(Database):
             if not productStructures[0].containsLabeledAtom('*1') and\
                     productStructures[1].containsLabeledAtom('*1'):
                 productStructures.reverse()
-
-        # If product structures are Molecule objects, update their atom types
-        # If product structures are Group objects and the reaction is in certain families
-        # (families with charged substances), the charge of structures will be updated
-        for struct in productStructures:
-            if isinstance(struct, Molecule):
-                struct.update()
-            elif isinstance(struct, Group):
-                struct.resetRingMembership()
-                if label in ['1,2_insertion_co', 'r_addition_com', 'co_disproportionation',
-                             'intra_no2_ono_conversion', 'lone_electron_pair_bond']:
-                    struct.update_charge()
-            else:
-                raise TypeError('Expecting Molecule or Group object, not {0}'.format(struct.__class__.__name__))
             
         # Return the product structures
         return productStructures
@@ -1534,7 +1527,8 @@ class KineticsFamily(Database):
                 sameReactants = True
 
             reactionList = self.__generateReactions([spc.molecule for spc in rxn.products],
-                                            products=rxn.reactants, forward=True, react_non_reactive=react_non_reactive)
+                                                    products=rxn.reactants, forward=True,
+                                                    react_non_reactive=react_non_reactive)
             reactions = find_degenerate_reactions(reactionList, sameReactants, kinetics_family=self)
             if len(reactions) == 0:
                 logging.error("Expecting one matching reverse reaction, not zero in reaction family {0} for forward reaction {1}.\n".format(self.label, str(rxn)))
@@ -1554,7 +1548,8 @@ class KineticsFamily(Database):
                 self.forbidden = ForbiddenStructures()  # Initialize with empty one
                 try:
                     reactionList = self.__generateReactions([spc.molecule for spc in rxn.products],
-                                            products=rxn.reactants, forward=True, react_non_reactive=react_non_reactive)
+                                                            products=rxn.reactants, forward=True,
+                                                            react_non_reactive=react_non_reactive)
                     reactions = find_degenerate_reactions(reactionList, sameReactants, kinetics_family=self)
                 finally:
                     self.forbidden = tempObject
