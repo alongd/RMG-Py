@@ -1619,7 +1619,10 @@ class KineticsFamily(Database):
             # raise KineticsError(('Unable to calculate degeneracy for reaction {0} '
             #                      'in reaction family {1}. Expected 1 reaction '
             #                      'but generated {2}').format(reaction, self.label, len(reactions)))
-        return reactions[0].degeneracy
+        try:
+            return reactions[0].degeneracy
+        except:
+            return 1
         
     def __generateReactions(self, reactants, products=None, forward=True, prod_resonance=True,
                             react_non_reactive=False):
