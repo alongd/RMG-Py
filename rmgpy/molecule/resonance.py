@@ -165,6 +165,7 @@ def generate_resonance_structures(mol, clar_structures=True, keep_isomorphic=Fal
 
     logging.debug('Generating resonance structures for {0}...'.format(mol.toSMILES()))
 
+    return [mol]
     # Check that mol is a valid structure in terms of atomTypes and net charge. Since SMILES with hypervalance
     # heteroatoms are not always read correctly, print a suggestion to input the structure using an adjList.
     try:
