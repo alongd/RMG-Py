@@ -34,7 +34,7 @@ thermodynamics information for a single species.
 """
 
 import os.path
-import numpy.linalg
+import numpy as np
 import logging
 import string
 
@@ -91,8 +91,8 @@ class ThermoJob(object):
     
         logging.info('Generating {0} thermo model for {1}...'.format(self.thermoClass, species))
         
-        Tlist = numpy.arange(10.0, 3001.0, 10.0, numpy.float64)
-        Cplist = numpy.zeros_like(Tlist)
+        Tlist = np.arange(10.0, 3001.0, 10.0, np.float64)
+        Cplist = np.zeros_like(Tlist)
         H298 = 0.0
         S298 = 0.0
         conformer = self.species.conformer
@@ -202,15 +202,15 @@ class ThermoJob(object):
         except ImportError:
             return
         
-        Tlist = numpy.arange(10.0, 2501.0, 10.0)
-        Cplist = numpy.zeros_like(Tlist)
-        Cplist1 = numpy.zeros_like(Tlist)
-        Hlist = numpy.zeros_like(Tlist)
-        Hlist1 = numpy.zeros_like(Tlist)
-        Slist = numpy.zeros_like(Tlist)
-        Slist1 = numpy.zeros_like(Tlist)
-        Glist = numpy.zeros_like(Tlist)
-        Glist1 = numpy.zeros_like(Tlist)
+        Tlist = np.arange(10.0, 2501.0, 10.0)
+        Cplist = np.zeros_like(Tlist)
+        Cplist1 = np.zeros_like(Tlist)
+        Hlist = np.zeros_like(Tlist)
+        Hlist1 = np.zeros_like(Tlist)
+        Slist = np.zeros_like(Tlist)
+        Slist1 = np.zeros_like(Tlist)
+        Glist = np.zeros_like(Tlist)
+        Glist1 = np.zeros_like(Tlist)
         
         conformer = self.species.conformer
         thermo = self.species.getThermoData()
