@@ -35,6 +35,8 @@ import rmgpy.constants as constants
 
 from rmgpy.statmech import IdealGasTranslation, NonlinearRotor, LinearRotor, HarmonicOscillator, Conformer
 
+################################################################################
+
 class MolproLog:
     """
     Represents a Molpro log file. The attribute `path` refers to the
