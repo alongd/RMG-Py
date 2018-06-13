@@ -44,8 +44,8 @@ Component                   Description
 =========================== ======================================================================================
 
 Note that many of the functions in the table above overlap with the functions available for
-`thermodynamics and high-pressure limit kinetics computations <input.html#syntax>`_. For most of these overlapping functions, the input is identical.
-Important differences are mentioned in the sections below.
+`thermodynamics and high-pressure limit kinetics computations <input.html#syntax>`_. For most of these overlapping
+functions, the input is identical. Important differences are mentioned in the sections below.
 
 Model Chemistry
 ===============
@@ -79,8 +79,12 @@ under `High-Pressure Limit: Model Chemistry <input.html#model-chemistry>`_
 Frequency Scale Factor
 ======================
 
-Frequency scale factors are empirically fit to experiment for different ``modelChemistry``. Refer to NIST website for values (http://cccbdb.nist.gov/vibscalejust.asp).
-For CBS-QB3, which is not included  in the link above, ``frequencyScaleFactor = 0.99`` according to Montgomery et al. (*J. Chem. Phys. 1999, 110, 2822–2827*).
+Frequency scale factors are empirically fit to experiment for different ``modelChemistry``.
+Refer to NIST website for values (http://cccbdb.nist.gov/vibscalejust.asp).
+For CBS-QB3, which is not included in the link above, ``frequencyScaleFactor = 0.99`` according to Montgomery et al.
+(*J. Chem. Phys. 1999, 110, 2822–2827*).
+The frequency scale factor is automatically assigned according to the supplied ``modelChemistry``, if available
+(see above table). If not available automatically and not specified by the user, it will be assumed a unity value.
 
 Species Parameters
 ==================
@@ -90,10 +94,13 @@ This includes all unimolecular isomers, bimolecular reactants and products,
 and the bath gas(es). A species that appears in multiple bimolecular channels
 need only be specified with a single ``species()`` function.
 
-The input to the ``species()`` function for a pressure-dependent calculation is the same as for a `thermodynamic or high-pressure limit kinetics calculation <input.html#species>`_,
-with the addition of a few extra parameters needed to describe collisional energy transfer. There are three options for providing input to the ``species()`` function, which are described in the subsections below:
+The input to the ``species()`` function for a pressure-dependent calculation is the same as for a
+`thermodynamic or high-pressure limit kinetics calculation <input.html#species>`_, with the addition of a few extra
+parameters needed to describe collisional energy transfer. There are three options for providing input to the
+``species()`` function, which are described in the subsections below:
 
-1. By pointing to the output files of quantum chemistry calculations, which CanTherm will parse for the necessary molecular properties
+1. By pointing to the output files of quantum chemistry calculations, which CanTherm will parse for the necessary
+   molecular properties
 2. By directly entering the molecular properties
 3. By pointing to a ``CanthermSpecies`` file.
 
@@ -143,7 +150,8 @@ The ``collisionModel`` is defined for unimolecular isomers with the transport da
 
     collisionModel = TransportData(sigma=(3.70,'angstrom'), epsilon=(94.9,'K'))
 
-``sigma`` and ``epsilon`` are Lennard-Jones parameters, which can be estimated using the Joback method on the `RMG website <http://rmg.mit.edu/molecule_search>`_.
+``sigma`` and ``epsilon`` are Lennard-Jones parameters, which can be estimated using the Joback method on the
+`RMG website <http://rmg.mit.edu/molecule_search>`_.
 
 The ``energyTransferModel`` model available is a ``SingleExponentialDown``.
 
@@ -160,10 +168,11 @@ An example of a typical ``energyTransferModel`` function is: ::
             n = 0.85,
         )
 
-Parameters for the single exponential down model of collisional energy transfer are usually obtained from analogous systems in literature.
-For example, if the user is interested in a pressure-dependent network with overall molecular formula  C7H8,
-the single exponential down parameters for toluene in helium availabe from literature could be used for all unimolecular isomers in the network
-(assuming helium is the bath gas). One helpful literature source for calculated exponential down parameters is the following paper:
+Parameters for the single exponential down model of collisional energy transfer are usually obtained from analogous
+systems in literature. For example, if the user is interested in a pressure-dependent network with overall molecular
+formula  C7H8, the single exponential down parameters for toluene in helium availabe from literature could be used for
+all unimolecular isomers in the network (assuming helium is the bath gas). One helpful literature source for calculated
+exponential down parameters is the following paper:
 http://www.sciencedirect.com/science/article/pii/S1540748914001084#s0060
 
 The following subsections describe how the remaining molecular properties can be input to the ``species()`` function
@@ -172,7 +181,8 @@ using the above mentioned options.
 Option #1: Automatically Parse Quantum Chemistry Calculation Output
 -------------------------------------------------------------------
 
-For this option, the ``species()`` function only requires two parameters in addition to the four parameters in the table above, as shown in the example below::
+For this option, the ``species()`` function only requires two parameters in addition to the four parameters in the table
+above, as shown in the example below::
 
     species('acetylperoxy',''acetylperoxy.py',
             structure = SMILES('CC(=O)O[O]'),
@@ -185,9 +195,9 @@ For this option, the ``species()`` function only requires two parameters in addi
             ),
     )
 
-The first parameter (``'acetylperoxy'`` above) is the species label, which can be referenced later in the input file. The second
-parameter (``'acetylperoxy.py'`` above) points to the location of another python file containing details of the species. This file
-will be referred to as the species input file.
+The first parameter (``'acetylperoxy'`` above) is the species label, which can be referenced later in the input file.
+The second parameter (``'acetylperoxy.py'`` above) points to the location of another python file containing details of
+the species. This file will be referred to as the species input file.
 
 The species input file accepts the following parameters:
 
@@ -214,19 +224,21 @@ atom corrections can be turned off by setting ``useAtomCorrections`` to ``False`
 
 The ``bond`` parameter is used to apply bond corrections (BC) for a given ``modelChemistry``.
 
-Allowed bond types for the ``bonds`` parameter are, e.g., ``'C-H'``, ``'C-C'``, ``'C=C'``, ``'N-O'``, ``'C=S'``, ``'O=O'``, ``'C#N'``...
+Allowed bond types for the ``bonds`` parameter are, e.g., ``'C-H'``, ``'C-C'``, ``'C=C'``, ``'N-O'``, ``'C=S'``,
+``'O=O'``, ``'C#N'``...
 
 ``'O=S=O'`` is also allowed.
 
-The order of elements in for the bond correction is not important. Use ``-``/``=``/``#`` to denote a single/double/triple bond, respectively. For example, for acetylperoxy radical we would write::
+The order of elements in for the bond correction is not important. Use ``-``/``=``/``#`` to denote a
+single/double/triple bond, respectively. For example, for acetylperoxy radical we would write::
 
     bonds = {'C-C': 1, 'C=O': 1, 'C-O': 1, 'O-O': 1, 'C-H': 3}
 
 The parameter ``linear`` only needs to be specified as either ``True`` or ``False``. The parameters ``externalSymmetry``,
 ``spinMultiplicity`` and ``opticalIsomers`` only accept integer values.
-Note that ``externalSymmetry`` corresponds to the number of unique ways in which the species may be rotated about an axis (or multiple axes)
-and still be indistinguishable from its starting orientation (reflection across a mirror plane does not count as rotation about an axis).
-For acetylperoxy radical, we would write::
+Note that ``externalSymmetry`` corresponds to the number of unique ways in which the species may be rotated about an
+axis (or multiple axes) and still be indistinguishable from its starting orientation (reflection across a mirror plane
+does not count as rotation about an axis). For acetylperoxy radical, we would write::
 
     linear = False
 
@@ -236,21 +248,22 @@ For acetylperoxy radical, we would write::
 
     opticalIsomers = 1
 
-The ``energy`` parameter is a dictionary with entries for different ``modelChemistry``. The entries can consist of either
-floating point numbers corresponding to the 0 K atomization energy in Hartree (without zero-point energy correction), or
-they can specify the path to a quantum chemistry calculation output file that contains the species's energy. For example::
+The ``energy`` parameter is a dictionary with entries for different ``modelChemistry``. The entries can consist of
+either floating point numbers corresponding to the 0 K atomization energy in Hartree (without zero-point energy
+correction), or they can specify the path to a quantum chemistry calculation output file that contains the species's
+energy. For example::
 
     energy = {
     'CBS-QB3': Log('acetylperoxy_cbsqb3.log'),
     'Klip_2': -79.64199436,
     }
 
-In this example, the ``CBS-QB3`` energy is obtained from a Gaussian log file, while the ``Klip_2`` energy is specified directly.
-The energy used will depend on what ``modelChemistry`` was specified in the input file. CanTherm can parse the energy from
-a Gaussian, Molpro, or QChem log file, all using the same ``Log`` class, as shown below.
+In this example, the ``CBS-QB3`` energy is obtained from a Gaussian log file, while the ``Klip_2`` energy is specified
+directly. The energy used will depend on what ``modelChemistry`` was specified in the input file. CanTherm can parse
+the energy from a Gaussian, Molpro, or QChem log file, all using the same ``Log`` class, as shown below.
 
-The input to the remaining parameters, ``geometry``, ``frequencies`` and ``rotors``, will depend on if hindered/free rotors are included.
-Both cases are described below.
+The input to the remaining parameters, ``geometry``, ``frequencies`` and ``rotors``, will depend on if hindered/free
+rotors are included. Both cases are described below.
 
 Without Hindered/Free Rotors
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -263,8 +276,9 @@ For example::
 
     frequencies = Log('acetylperoxy_freq.log')
 
-In summary, in order to specify the molecular properties of a species by parsing the output of quantum chemistry calculations, without any hindered/free rotors,
-the species input file should look like the following (using acetylperoxy as an example)::
+In summary, in order to specify the molecular properties of a species by parsing the output of quantum chemistry
+calculations, without any hindered/free rotors, the species input file should look like the following (using
+acetylperoxy as an example)::
 
     bonds = {
     'C-C': 1,
@@ -301,19 +315,23 @@ For example::
 
     frequencies = Log('acetylperoxy_freq.log')
 
-The ``geometry/frequencies`` log file must contain both the optimized geometry and the Hessian (matrix of partial second derivatives of potential energy surface,
-also referred to as the force constant matrix), which is used to calculate the harmonic oscillator frequencies. If Gaussian is used
-to generate the ``geometry/frequencies`` log file, the Gaussian input file must contain the keyword ``iop(7/33=1)``, which forces Gaussian to
-output the complete Hessian. Because the ``iop(7/33=1)`` option is only applied to the first part of the Gaussian job, the job
-must be a ``freq`` job only (as opposed to an ``opt freq`` job or a composite method job like ``cbs-qb3``, which only do the ``freq`` calculation after the optimization).
-Therefore, the proper workflow for generating the ``geometry/frequencies`` log file using Gaussian is:
+The ``geometry/frequencies`` log file must contain both the optimized geometry and the Hessian (matrix of partial
+second derivatives of potential energy surface, also referred to as the force constant matrix), which is used to
+calculate the harmonic oscillator frequencies. If Gaussian is used to generate the ``geometry/frequencies`` log file,
+the Gaussian input file must contain the keyword ``iop(7/33=1)``, which forces Gaussian to output the complete Hessian.
+Because the ``iop(7/33=1)`` option is only applied to the first part of the Gaussian job, the job must be a ``freq``
+job only (as opposed to an ``opt freq`` job or a composite method job like ``cbs-qb3``, which only do the ``freq``
+calculation after the optimization). Therefore, the proper workflow for generating the ``geometry/frequencies``
+log file using Gaussian is:
 
 1. Perform a geometry optimization.
-2. Take the optimized geometry from step 1, and use it as the input to a ``freq`` job with the following input keywords: ``#method basis-set freq iop(7/33=1)``
+2. Take the optimized geometry from step 1, and use it as the input to a ``freq`` job with the following input keywords:
+   ``#method basis-set freq iop(7/33=1)``
 
 The output of step 2 is the correct log file to use for ``geometry/frequencies``.
 
-``rotors`` is a list of :class:`HinderedRotor()` and/or :class:`FreeRotor()` objects. Each :class:`HinderedRotor()` object requires the following parameters:
+``rotors`` is a list of :class:`HinderedRotor()` and/or :class:`FreeRotor()` objects. Each :class:`HinderedRotor()`
+object requires the following parameters:
 
 ====================== =========================================================
 Parameter              Description
@@ -339,23 +357,29 @@ scan in the following format::
 
 The ``Energy`` can be in units of ``kJ/mol``, ``J/mol``, ``cal/mol``, ``kcal/mol``, ``cm^-1`` or ``hartree``.
 
-The ``symmetry`` parameter will usually equal either 1, 2 or 3. Below are examples of internal rotor scans with these commonly encountered symmetry numbers. First, ``symmetry = 3``:
+The ``symmetry`` parameter will usually equal either 1, 2 or 3. Below are examples of internal rotor scans with these
+commonly encountered symmetry numbers. First, ``symmetry = 3``:
 
 .. image:: symmetry_3_example.png
 
-Internal rotation of a methyl group is a common example of a hindered rotor with ``symmetry = 3``, such as the one above. As shown, all three minima (and maxima) have identical energies, hence ``symmetry = 3``.
+Internal rotation of a methyl group is a common example of a hindered rotor with ``symmetry = 3``, such as the one
+above. As shown, all three minima (and maxima) have identical energies, hence ``symmetry = 3``.
 
-Similarly, if there are only two minima along the internal rotor scan, and both have identical energy, then ``symmetry = 2``, as in the example below: 
+Similarly, if there are only two minima along the internal rotor scan, and both have identical energy, then
+``symmetry = 2``, as in the example below:
 
 .. image:: symmetry_2_example.png
 
-If any of the energy minima in an internal rotor scan are not identical, then the rotor has no symmetry (``symmetry = 1``), as in the example below:
+If any of the energy minima in an internal rotor scan are not identical, then the rotor has no symmetry
+(``symmetry = 1``), as in the example below:
 
 .. image:: symmetry_1_example.png
 
-For the example above there are 3 local energy minima, 2 of which are identical to each other. However, the 3rd minima is different from the other 2, therefore this internal rotor has no symmetry. 
+For the example above there are 3 local energy minima, 2 of which are identical to each other. However, the 3rd minima
+is different from the other 2, therefore this internal rotor has no symmetry.
 
-For practical purposes, when determining the symmetry number for a given hindered rotor simply check if the internal rotor scan looks like the ``symmetry = 2`` or ``3`` examples above. If it doesn’t, then most likely ``symmetry = 1``.
+For practical purposes, when determining the symmetry number for a given hindered rotor simply check if the internal
+rotor scan looks like the ``symmetry = 2`` or ``3`` examples above. If it doesn’t, then most likely ``symmetry = 1``.
 
 Each :class:`FreeRotor()` object requires the following parameters:
 
@@ -367,13 +391,15 @@ Parameter              Description
 ``symmetry``           The symmetry number for the torsional rotation (number of indistinguishable energy minima)
 ====================== =========================================================
 
-Note that a ``scanLog`` is not needed for :class:`FreeRotor()` because it is assumed that there is no barrier to internal rotation.
-Modeling an internal rotation as a :class:`FreeRotor()` puts an upper bound on the impact of that rotor on the species's overall partition function.
-Modeling the same internal rotation as a Harmonic Oscillator (default if it is not specifed as either a :class:`FreeRotor()` or  :class:`HinderedRotor()`)
-puts a lower bound on the impact of that rotor on the species's overall partition function. Modeling the internal rotation as a :class:`HinderedRotor()` should fall
-in between these two extremes.
+Note that a ``scanLog`` is not needed for :class:`FreeRotor()` because it is assumed that there is no barrier to
+internal rotation. Modeling an internal rotation as a :class:`FreeRotor()` puts an upper bound on the impact of that
+rotor on the species's overall partition function. Modeling the same internal rotation as a Harmonic Oscillator
+(default if it is not specifed as either a :class:`FreeRotor()` or  :class:`HinderedRotor()`) puts a lower bound on the
+impact of that rotor on the species's overall partition function. Modeling the internal rotation as a
+:class:`HinderedRotor()` should fall in between these two extremes.
 
-To summarize, the species input file with hindered/free rotors should look like the following example (different options for specifying the same ``rotors`` entry are commented out)::
+To summarize, the species input file with hindered/free rotors should look like the following example (different
+options for specifying the same ``rotors`` entry are commented out)::
 
     bonds = {
     'C-C': 1,
@@ -411,11 +437,12 @@ Note that the atom labels identified within the rotor section should correspond 
 
 Option #2: Directly Enter Molecular Properties
 ----------------------------------------------
-While it is usually more convenient to have CanTherm parse molecular properties from the output of quantum chemistry calculations
-(see `Option #1: Automatically Parse Quantum Chemistry Calculation Output`_) there are instances where an output file is not available
-and it is more convenient for the user to directly enter the molecular properties. This is the case,  for example, if the user would like to use
-calculations from literature, where the final calculated molecular properties are often reported in a table (e.g., vibrational frequencies, rotational constants),
-but the actual output file of the underlying quantum chemistry calculation is rarely provided.
+While it is usually more convenient to have CanTherm parse molecular properties from the output of quantum chemistry
+calculations (see `Option #1: Automatically Parse Quantum Chemistry Calculation Output`_) there are instances where an
+output file is not available and it is more convenient for the user to directly enter the molecular properties. This is
+the case,  for example, if the user would like to use calculations from literature, where the final calculated molecular
+properties are often reported in a table (e.g., vibrational frequencies, rotational constants), but the actual output
+file of the underlying quantum chemistry calculation is rarely provided.
 
 For this option, there are a number of required and optional parameters associated with a ``species()``
 function:
@@ -435,21 +462,25 @@ Parameter               Required?                           Description
 ``thermo``              optional                            Thermo data for the species
 ======================= =================================== ====================================
 
-The parameters ``structure``, ``molecularWeight``, ``collisionModel`` and ``energyTransferModel`` were already discussed above in `Species Parameters`_.
+The parameters ``structure``, ``molecularWeight``, ``collisionModel`` and ``energyTransferModel`` were already
+discussed above in `Species Parameters`_.
 
-The ``label`` parameter should be set to a string with the desired name for the species, which can be reference later in the input file. ::
+The ``label`` parameter should be set to a string with the desired name for the species, which can be reference later
+in the input file. ::
 
     label = 'acetylperoxy'
 
-The ``E0`` ground state 0 K enthalpy of formation (including zero-point energy) should be given in the quantity format ``(value, 'units')``, using units of either ``kJ/mol``, ``kcal/mol``, ``J/mol``, or ``cal/mol``: ::
+The ``E0`` ground state 0 K enthalpy of formation (including zero-point energy) should be given in the quantity format
+``(value, 'units')``, using units of either ``kJ/mol``, ``kcal/mol``, ``J/mol``, or ``cal/mol``: ::
 
     E0 = (-34.6,'kcal/mol')
 
-Note that if CanTherm is being used to calculate the thermochemistry of the species, it is critical that the value of ``E0`` is consistent with the
-definition above (0 K enthalpy of formation with zero-point energy). However, if the user is only interested in kinetics, ``E0`` can be defined on any
-arbitrary absolute energy scale, as long as the correct relative energies between various ``species()`` and ``transitionState()`` are maintained. For example,
-it is common in literature for the energy of some reactant(s) to be arbitrarily defined as zero, and the energies of all transition states, intermediates and products
-are reported relative to that.
+Note that if CanTherm is being used to calculate the thermochemistry of the species, it is critical that the value of
+``E0`` is consistent with the definition above (0 K enthalpy of formation with zero-point energy). However, if the user
+is only interested in kinetics, ``E0`` can be defined on any arbitrary absolute energy scale, as long as the correct
+relative energies between various ``species()`` and ``transitionState()`` are maintained. For example, it is common in
+literature for the energy of some reactant(s) to be arbitrarily defined as zero, and the energies of all transition
+states, intermediates and products are reported relative to that.
 
 Also note that the value of ``E0`` provided here will be used directly, i.e., no atom or bond corrections will be applied.
 
@@ -543,11 +574,11 @@ radical :math:`\ce{CH3C(=O)OO.}` (different options for specifying the same inte
         ),
     )
 
-Note that the format of the ``species()`` function above is identical to the ``conformer()`` function output by CanTherm in ``output.py``.
-Therefore, the user could directly copy the ``conformer()`` output of a CanTherm job to another CanTherm input file, change the name of the function to
-``species()`` (or ``transitionState()``, if appropriate, see next section) and run a new CanTherm job in this manner.
-This can be useful if the user wants to easily switch a ``species()`` function from
-`Option #1: Automatically Parse Quantum Chemistry Calculation Output`_ to
+Note that the format of the ``species()`` function above is identical to the ``conformer()`` function output by
+CanTherm in ``output.py``. Therefore, the user could directly copy the ``conformer()`` output of a CanTherm job to
+another CanTherm input file, change the name of the function to ``species()`` (or ``transitionState()``, if appropriate,
+see next section) and run a new CanTherm job in this manner. This can be useful if the user wants to easily switch a
+``species()`` function from `Option #1: Automatically Parse Quantum Chemistry Calculation Output`_ to
 `Option #2: Directly Enter Molecular Properties`_.
 
 Option #3: Automatically Parse CanthermSpecies Output
@@ -564,19 +595,21 @@ Transition States
 =================
 
 Transition states for reactions in the pressure dependent network should be defined very similarly to ``species``
-using a ``transitionState()`` function, however it has less parameters (``structure``, ``molecularWeight``, ``collisionModel`` and ``energyTransferModel`` aren't specified for a transition state).
-Like the ``species()`` function, the ``transitionState()`` function may also be specified in two ways: `Option #1: Automatically Parse Quantum Chemistry Calculation Output`_ and
-`Option #2: Directly Enter Molecular Properties`_.  Note that currently a transitions state cannot be specified
-using a CanthermSpecies file (Option #3).
+using a ``transitionState()`` function, however it has less parameters (``structure``, ``molecularWeight``,
+``collisionModel`` and ``energyTransferModel`` aren't specified for a transition state). Like the ``species()``
+function, the ``transitionState()`` function may also be specified in two ways:
+`Option #1: Automatically Parse Quantum Chemistry Calculation Output`_ and
+`Option #2: Directly Enter Molecular Properties`_.  Note that currently a transitions state cannot be specified using a
+CanthermSpecies file (Option #3).
 
 The following is an example of a typical ``transitionState()`` function using Option #1::
 
     transitionState('isom1', 'isom1.py')
 
-Just as for a ``species()`` function, the first parameter is the label for that transition state, and the second parameter
-points to the location of another python file containing details of the transition state. This file
-will be referred to as the transition state input file, and it accepts the same parameters as the species input file described in
-`Option #1: Automatically Parse Quantum Chemistry Calculation Output`_.
+Just as for a ``species()`` function, the first parameter is the label for that transition state, and the second
+parameter points to the location of another python file containing details of the transition state. This file will be
+referred to as the transition state input file, and it accepts the same parameters as the species input file described
+in `Option #1: Automatically Parse Quantum Chemistry Calculation Output`_.
 
 The following is an example of a typical ``transitionState()`` function using Option #2::
 
@@ -593,9 +626,9 @@ The following is an example of a typical ``transitionState()`` function using Op
         frequency = (-1679.04,'cm^-1'),
     )
 
-The only additional parameter required for a ``transitionState()`` function as compared to a ``species()`` function is ``frequency``,
-which is the imaginary frequency of the transition state needed to account for tunneling. Refer to `Option #2: Directly Enter Molecular Properties`_
-for a more detailed description of the other parameters.
+The only additional parameter required for a ``transitionState()`` function as compared to a ``species()`` function is
+``frequency``, which is the imaginary frequency of the transition state needed to account for tunneling. Refer to
+`Option #2: Directly Enter Molecular Properties`_ for a more detailed description of the other parameters.
 
 Path Reactions
 ==============
@@ -615,9 +648,12 @@ Parameter              Required?            Description
 ``tunneling``          Optional             The type of tunneling model (either 'Eckhart' or 'Wigner') to use for tunneling through the reaction barrier
 ====================== ==================== ============================================================================================================
 
-If the optional ``kinetics`` parameter is specified, CanTherm will perform an inverse Laplace transform (ILT) on the high pressure-limit kinetics provided to estimate the microcanonical rate coefficients,
-:math:`k(E)`, needed for the master equation (refer to Theory manual for more detail). This feature is useful for barrierless reactions, such as radical recombinations, which don't
-have an obvious transition state. If the ILT approach to calculating :math:`k(E)` is taken, a placeholder ``transitionState`` must still be defined with an ``E0`` equal to the energy of the higher energy species it is connecting.
+If the optional ``kinetics`` parameter is specified, CanTherm will perform an inverse Laplace transform (ILT) on the
+high pressure-limit kinetics provided to estimate the microcanonical rate coefficients, :math:`k(E)`, needed for the
+master equation (refer to Theory manual for more detail). This feature is useful for barrierless reactions, such as
+radical recombinations, which don't have an obvious transition state. If the ILT approach to calculating :math:`k(E)`
+is taken, a placeholder ``transitionState`` must still be defined with an ``E0`` equal to the energy of the higher
+energy species it is connecting.
 
 A typical ``reaction()`` function might look like this. ::
 
@@ -638,8 +674,8 @@ If the optional ``kinetics`` entry is not specified, CanTherm will calculate the
 coefficients on its own. The ``kinetics`` entry is particularly useful to specify rates of barrierless
 reactions (for which CanTherm cannot yet calculate high-pressure limit rates).
 
-Currently, the ``reaction()`` function for a pressure-dependent job cannot connect bimolecular reactants to bimolecular products
-(e.g., as in a hydrogen abstraction or disproportionation reaction).
+Currently, the ``reaction()`` function for a pressure-dependent job cannot connect bimolecular reactants to bimolecular
+products (e.g., as in a hydrogen abstraction or disproportionation reaction).
 
 Network
 =======
@@ -719,9 +755,9 @@ Parameter                                          Description
 **Temperature and Pressure Ranges**
 
 CanTherm will compute the :math:`k(T,P)` values on a grid of temperature and
-pressure points. ``Tmin``, ``Tmax``, and ``Tcount`` values, as well as ``Pmin``, ``Pmax``, and ``Pcount`` parameter values must be provided.  
-CanTherm will automatically choose the intermediate temperatures based on the
-interpolation model you wish to fit. This is the recommended approach.
+pressure points. ``Tmin``, ``Tmax``, and ``Tcount`` values, as well as ``Pmin``, ``Pmax``, and ``Pcount`` parameter
+values must be provided. CanTherm will automatically choose the intermediate temperatures based on the interpolation
+model you wish to fit. This is the recommended approach.
 
 Alternatively, the grid of temperature and pressure points can be specified explicitly using ``Tlist`` and/or ``Plist``.
 
@@ -776,10 +812,11 @@ Below is a typical ``thermo()`` execution function::
 Kinetics Computations
 =====================
 
-The input to the ``kinetics()`` function is identical to that of `a non-pressure-dependent job <input.html#kinetics-computations>`_. Note, however, that because currently
-the ``reaction()`` function for a pressure-dependent job cannot connect bimolecular reactants to bimolecular products
-(e.g., as in a hydrogen abstraction or disproportionation reaction), it is also not possible to use ``kinetics()`` on such a reaction either.
-The kinetics of such a reaction can only be calculated as part of a non-pressure-dependent job.
+The input to the ``kinetics()`` function is identical to that of
+`a non-pressure-dependent job <input.html#kinetics-computations>`_. Note, however, that because currently the
+``reaction()`` function for a pressure-dependent job cannot connect bimolecular reactants to bimolecular products
+(e.g., as in a hydrogen abstraction or disproportionation reaction), it is also not possible to use ``kinetics()`` on
+such a reaction either. The kinetics of such a reaction can only be calculated as part of a non-pressure-dependent job.
 
 Use a ``kinetics()`` function to make CanTherm execute the high-pressure limit kinetic
 parameters computation for a reaction. The ``'label'`` string must correspond to that of
@@ -809,7 +846,3 @@ Perhaps the best way to learn the input file syntax is by example. To that end,
 a number of example input files and their corresponding output have been given
 in the ``examples/cantherm/networks`` directory, which includes both an `acetyl+O2`
 and `n-butanol` example.
-
-
-
-
