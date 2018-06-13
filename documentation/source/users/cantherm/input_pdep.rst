@@ -21,10 +21,13 @@ either single or double quotes.
 
 The following is a list of all the components of a CanTherm input file for pressure-dependent calculations:
 
-=========================== ================================================================
+=========================== ======================================================================================
 Component                   Description
-=========================== ================================================================
+=========================== ======================================================================================
 ``modelChemistry``          Level of theory from quantum chemical calculations
+``levelOfTheory``           Level of theory, free text format (only used for archiving). Suggested format:
+                            ``energy_level/basis_set//geometry_level/basis_set, rotors at rotor_level/bais_set``
+``author``                  Author's name. Used when saving statistical mechanics properties as a CanthermSpecies file.
 ``atomEnergies``            Dictionary of atomic energies at ``modelChemistry`` level
 ``frequencyScaleFactor``    A factor by which to scale all frequencies
 ``useHinderedRotors``       ``True`` if hindered rotors are used, ``False`` if not
@@ -38,7 +41,7 @@ Component                   Description
 ``statmech``                Loads statistical mechanics parameters
 ``thermo``                  Performs a thermodynamics computation
 ``kinetics``                Performs a high-pressure limit kinetic computation
-=========================== ================================================================
+=========================== ======================================================================================
 
 Note that many of the functions in the table above overlap with the functions available for
 `thermodynamics and high-pressure limit kinetics computations <input.html#syntax>`_. For most of these overlapping functions, the input is identical.
@@ -88,15 +91,17 @@ and the bath gas(es). A species that appears in multiple bimolecular channels
 need only be specified with a single ``species()`` function.
 
 The input to the ``species()`` function for a pressure-dependent calculation is the same as for a `thermodynamic or high-pressure limit kinetics calculation <input.html#species>`_,
-with the addition of a few extra parameters needed to describe collisional energy transfer. There are two options for providing input to the ``species()`` function, which are described in the subsections below:
+with the addition of a few extra parameters needed to describe collisional energy transfer. There are three options for providing input to the ``species()`` function, which are described in the subsections below:
 
 1. By pointing to the output files of quantum chemistry calculations, which CanTherm will parse for the necessary molecular properties
 2. By directly entering the molecular properties
+3. By pointing to a ``CanthermSpecies`` file.
 
-Within a single input file, both Option #1 and #2 may be used.
+Within a single input file, any of the above options may be used for different species.
 
-Regardless of which option is used to specify molecular properties (e.g., vibrational frequencies, rotational constants) in the ``species()`` function, the four parameters
-listed below (mostly relating to the collisional energy transfer model) are always specified in the same way.
+Unless Option #3 (pointing to a ``CanthermSpecies`` file) was used to specify molecular properties (e.g., vibrational
+frequencies, rotational constants) in the ``species()`` function, the four parameters listed below (mostly relating to
+the collisional energy transfer model) are always specified in the same way:
 
 ======================= =================================== ====================================
 Parameter               Required?                           Description
@@ -161,8 +166,8 @@ the single exponential down parameters for toluene in helium availabe from liter
 (assuming helium is the bath gas). One helpful literature source for calculated exponential down parameters is the following paper:
 http://www.sciencedirect.com/science/article/pii/S1540748914001084#s0060
 
-The following subsections describe how the remaining molecular properties can be input to the ``species()`` function using either
-Option #1 or #2 mentioned above.
+The following subsections describe how the remaining molecular properties can be input to the ``species()`` function
+using the above mentioned options.
 
 Option #1: Automatically Parse Quantum Chemistry Calculation Output
 -------------------------------------------------------------------
@@ -541,8 +546,19 @@ radical :math:`\ce{CH3C(=O)OO.}` (different options for specifying the same inte
 Note that the format of the ``species()`` function above is identical to the ``conformer()`` function output by CanTherm in ``output.py``.
 Therefore, the user could directly copy the ``conformer()`` output of a CanTherm job to another CanTherm input file, change the name of the function to
 ``species()`` (or ``transitionState()``, if appropriate, see next section) and run a new CanTherm job in this manner.
-This can be useful if the user wants to easily switch a ``species()`` function from  Option #1 (parsing  quantum chemistry calculation output)
-to Option #2 (directly enter molecular properties).
+This can be useful if the user wants to easily switch a ``species()`` function from
+`Option #1: Automatically Parse Quantum Chemistry Calculation Output`_ to
+`Option #2: Directly Enter Molecular Properties`_.
+
+Option #3: Automatically Parse CanthermSpecies Output
+-----------------------------------------------------
+Cantherm automatically saves a CanthermSpecies file in a ``SpeciesDatabase`` folder under the run directory with
+the required statistical mechanics properties of a species along with additional useful metadata. This process is
+triggered whenever a ``thermo`` calculation is ran. To generate these files in the first place, a species needs to be
+defined using one of the other options. Soon an online repository of such files will be available, from which users
+would be able to hand pick the desired species calculated at an appropriate level of theory (if available), and
+directly use it for kinetic or pressure dependent calculations. Once such repository becomes available, a full
+description will be added to these pages.
 
 Transition States
 =================
@@ -550,7 +566,8 @@ Transition States
 Transition states for reactions in the pressure dependent network should be defined very similarly to ``species``
 using a ``transitionState()`` function, however it has less parameters (``structure``, ``molecularWeight``, ``collisionModel`` and ``energyTransferModel`` aren't specified for a transition state).
 Like the ``species()`` function, the ``transitionState()`` function may also be specified in two ways: `Option #1: Automatically Parse Quantum Chemistry Calculation Output`_ and
-`Option #2: Directly Enter Molecular Properties`_
+`Option #2: Directly Enter Molecular Properties`_.  Note that currently a transitions state cannot be specified
+using a CanthermSpecies file (Option #3).
 
 The following is an example of a typical ``transitionState()`` function using Option #1::
 
