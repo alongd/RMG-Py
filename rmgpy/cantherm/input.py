@@ -34,7 +34,10 @@ This module contains functionality for parsing CanTherm input files.
 
 import os.path
 import logging
+import yaml
+import numpy as np
 
+from rmgpy.quantity import Quantity
 from rmgpy.species import Species, TransitionState
 
 from rmgpy.statmech.translation import Translation, IdealGasTranslation
@@ -65,6 +68,9 @@ from rmgpy.cantherm.kinetics import KineticsJob
 from rmgpy.cantherm.statmech import StatMechJob, assign_frequency_scale_factor
 from rmgpy.cantherm.thermo import ThermoJob
 from rmgpy.cantherm.pdep import PressureDependenceJob
+from rmgpy.cantherm.common import determine_molecular_weight, yaml_registers
+
+from rmgpy.exceptions import InvalidAdjacencyListError
 
 ################################################################################
 
@@ -405,27 +411,110 @@ def loadInputFile(path):
             logging.error('The input file {0!r} was invalid:'.format(path))
             raise
 
-    modelChemistry = local_context.get('modelChemistry', '')
+    model_chemistry = local_context.get('modelChemistry', '')
+    level_of_theory = local_context.get('levelOfTheory', '')
+    author = local_context.get('author', '')
     if 'frequencyScaleFactor' not in local_context:
         logging.debug('Assigning a frequencyScaleFactor according to the modelChemistry...')
-        frequencyScaleFactor = assign_frequency_scale_factor(modelChemistry)
+        frequency_scale_factor = assign_frequency_scale_factor(model_chemistry)
     else:
-        frequencyScaleFactor = local_context.get('frequencyScaleFactor')
-    useHinderedRotors = local_context.get('useHinderedRotors', True)
-    useAtomCorrections = local_context.get('useAtomCorrections', True)
-    useBondCorrections = local_context.get('useBondCorrections', False)
-    atomEnergies = local_context.get('atomEnergies', None)
+        frequency_scale_factor = local_context.get('frequencyScaleFactor')
+    use_hindered_rotors = local_context.get('useHinderedRotors', True)
+    use_atom_corrections = local_context.get('useAtomCorrections', True)
+    use_bond_corrections = local_context.get('useBondCorrections', False)
+    atom_energies = local_context.get('atomEnergies', None)
     
     directory = os.path.dirname(path)
     
     for job in jobList:
         if isinstance(job, StatMechJob):
             job.path = os.path.join(directory, job.path)
-            job.modelChemistry = modelChemistry.lower()
-            job.frequencyScaleFactor = frequencyScaleFactor
-            job.includeHinderedRotors = useHinderedRotors
-            job.applyAtomEnergyCorrections = useAtomCorrections
-            job.applyBondEnergyCorrections = useBondCorrections
-            job.atomEnergies = atomEnergies
+            job.modelChemistry = model_chemistry.lower()
+            job.frequencyScaleFactor = frequency_scale_factor
+            job.includeHinderedRotors = use_hindered_rotors
+            job.applyAtomEnergyCorrections = use_atom_corrections
+            job.applyBondEnergyCorrections = use_bond_corrections
+            job.atomEnergies = atom_energies
+        if isinstance(job, ThermoJob):
+            job.cantherm_species.species_dictionary['author'] = author
+            job.cantherm_species.species_dictionary['level_of_theory'] = level_of_theory
+            job.cantherm_species.species_dictionary['model_chemistry'] = model_chemistry
+            job.cantherm_species.species_dictionary['frequency_scale_factor'] = frequency_scale_factor
+            job.cantherm_species.species_dictionary['use_hindered_rotors'] = use_hindered_rotors
+            job.cantherm_species.species_dictionary['use_atom_corrections'] = use_atom_corrections
+            job.cantherm_species.species_dictionary['use_bond_corrections'] = use_bond_corrections
+            job.cantherm_species.species_dictionary['atom_energies'] = atom_energies
     
     return jobList
+
+
+def load_species_from_database_file(job):
+    """
+    Load the species with all statMech data from the .yml file
+    """
+    global jobList
+    logging.info('Loading statistical mechanics parameters for {0} from .yml file...'.format(job.species.label))
+    yaml_registers()
+    with open(job.path, 'r') as f:
+        data = yaml.safe_load(stream=f)
+
+    try:
+        if job.species.label != data['label']:
+            logging.warning('Found different labels for species: {0} in input file, and {1} in .yml file. '
+                            'Using {0}.'.format(job.species.label, data['label']))
+    except KeyError:
+            logging.debug('Did not find label for species {0} in .yml file.'.format(job.species.label))
+
+    try:
+        job.species.conformer = data['conformer']
+    except KeyError:
+        raise ValueError('Could not determine Conformer for species {0} imported from .yml file'.format(
+            job.species.label))
+
+    try:
+        job.species.symmetryNumber = data['symmetryNumber']
+    except KeyError:
+        logging.debug('Could not determine symmetryNumber for species {0} imported from .yml file'.format(
+            job.species.label))
+
+    try:
+        job.species.transportData = data['transport_data']
+    except KeyError:
+        if is_pdep():
+            raise ValueError('Could not determine transportData for species {0} imported from .yml file'.format(
+                job.species.label))
+
+    try:
+        job.species.energyTransferModel = data['energy_transfer_model']
+    except KeyError:
+        if is_pdep():
+            raise ValueError('Could not determine energyTransferModel for species {0} imported from .yml file'.format(
+                job.species.label))
+
+    try:
+        job.species.molecularWeight = Quantity(data['molecularWeight'][0], data['molecularWeight'][1])
+    except KeyError:
+        job.species.molecularWeight = determine_molecular_weight(job.species)
+
+    mol = None
+    try:
+        mol = Molecule().fromAdjacencyList(data['adjacencyList'])
+    except InvalidAdjacencyListError:
+        try:
+            mol = Molecule(SMILES=data['SMILES'])
+        except ValueError:
+            try:
+                mol = Molecule().fromInChI(data['InChI'])
+            except ValueError:
+                try:
+                    number = np.ndarray(shape=(len(job.species.conformer.number.value_si)))
+                    number[:] = [num for num in job.species.conformer.number.value_si]
+                    coordinates = np.ndarray(shape=(len(number), 3))
+                    for i, coorlist in enumerate(job.species.conformer.coordinates.value_si):
+                        coordinates[i] = [coor for coor in coorlist]
+                    mol = Molecule().fromXYZ(atomicNums=number, coordinates=coordinates)
+                except TypeError:
+                    logging.warning('Could not determine structure for species {0} imported from .yml file'.format(
+                        job.species.label))
+    if mol is not None:
+        job.species.molecule = [mol]
