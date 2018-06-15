@@ -46,7 +46,8 @@ import rmgpy.constants as constants
 from rmgpy.cantherm.output import prettify
 from rmgpy.cantherm.gaussian import GaussianLog
 from rmgpy.cantherm.molpro import MolproLog
-from rmgpy.cantherm.qchem import QchemLog 
+from rmgpy.cantherm.qchem import QchemLog
+from rmgpy.cantherm.common import CanthermSpecies
 
 from rmgpy.species import TransitionState, Species
 
@@ -181,6 +182,10 @@ class StatMechJob(object):
         self.applyAtomEnergyCorrections = True
         self.applyBondEnergyCorrections = True
         self.atomEnergies = None
+        self.load_species_from_database = False
+        if isinstance(species, Species):
+            # do not consider transition states
+            self.cantherm_species = CanthermSpecies(species=species)
     
     def execute(self, outputFile=None, plot=False):
         """
@@ -188,10 +193,11 @@ class StatMechJob(object):
         given `outputFile` on disk.
         """
         self.load()
-        if outputFile is not None:
-            self.save(outputFile=outputFile)
-        logging.debug('Finished statmech job for species {0}.'.format(self.species))
-        logging.debug(repr(self.species))
+        if not self.load_species_from_database:
+            if outputFile is not None:
+                self.save(outputFile=outputFile)
+            logging.debug('Finished statmech job for species {0}.'.format(self.species))
+            logging.debug(repr(self.species))
     
     def load(self):
         """
@@ -200,6 +206,12 @@ class StatMechJob(object):
         each conformer and appends them to the list of conformers on the
         species object.
         """
+
+        filename, file_extension = os.path.splitext(self.path)
+        if 'yml' in file_extension or 'yaml' in file_extension:
+                self.load_species_from_database = True
+                return
+
         logging.info('Loading statistical mechanics parameters for {0}...'.format(self.species.label))
         
         path = self.path
@@ -497,7 +509,7 @@ class StatMechJob(object):
         at `path` on disk.
         """
         
-        logging.info('Saving statistical mechanics parameters for {0}...'.format(self.species.label))
+        logging.debug('Saving statistical mechanics parameters for {0}...'.format(self.species.label))
         f = open(outputFile, 'a')
 
         conformer = self.species.conformer
