@@ -41,3 +41,4 @@ dependencies:
   - mock
   - muq
   - pymongo
+  - pyyaml
