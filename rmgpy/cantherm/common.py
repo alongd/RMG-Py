@@ -32,6 +32,8 @@ import numpy
 import os.path
 import logging
 import rmgpy.constants as constants
+from rmgpy.quantity import Quantity
+from rmgpy.molecule.element import getElement
 ################################################################################
 
 
@@ -48,4 +50,12 @@ def check_conformer_energy(Vlist,path):
                         ' is different in energy from the lowest energy conformer by ' + "%0.2f" % Vdiff +
                         ' kJ/mol. This can cause significant errors in your computed rate constants. ')
 
+
+def determine_molecular_weight(species):
+    """
+    Determine Species.molecularWeight
+    """
+    if species.molecule is None or len(species.molecule) == 0:
+        raise ValueError('Cannot determine molecularWeight for structureless species')
+    return Quantity(sum([getElement(int(atom.number)).mass for atom in species.molecule[0].atoms]), 'kg/mol')
 
