@@ -76,6 +76,15 @@ jobList = []
 
 ################################################################################
 
+
+def is_pdep():
+    global jobList
+    for job in jobList:
+        if isinstance(job, PressureDependenceJob):
+            return True
+    return False
+
+
 def species(label, *args, **kwargs):
     global speciesDict, jobList
     if label in speciesDict:
@@ -124,8 +133,16 @@ def species(label, *args, **kwargs):
             else:
                 raise TypeError('species() got an unexpected keyword argument {0!r}.'.format(key))
             
-        if structure: spec.molecule = [structure]
+        if structure:
+            spec.molecule = [structure]
         spec.conformer = Conformer(E0=E0, modes=modes, spinMultiplicity=spinMultiplicity, opticalIsomers=opticalIsomers)
+        if molecularWeight is None:
+            if is_pdep():
+                if structure is None:
+                    raise ValueError("No molecularWeight was entered for species {0}. Since the structure wasn't given"
+                                     " as well, the molecularWeight cannot be reconstructed!".format(spec.label))
+                else:
+                    molecularWeight = determine_molecular_weight(spec)
         spec.molecularWeight = molecularWeight
         spec.transportData = collisionModel
         spec.energyTransferModel = energyTransferModel
