@@ -37,18 +37,13 @@ import os.path
 import numpy as np
 import logging
 import string
+import yaml
 
 import rmgpy.constants as constants
 from rmgpy.cantherm.output import prettify
+from rmgpy.cantherm.common import CanthermSpecies, yaml_registers
 
-from rmgpy.statmech.translation import Translation, IdealGasTranslation
 from rmgpy.statmech.rotation import Rotation, LinearRotor, NonlinearRotor, KRotor, SphericalTopRotor
-from rmgpy.statmech.vibration import Vibration, HarmonicOscillator
-from rmgpy.statmech.torsion import Torsion, HinderedRotor
-from rmgpy.statmech.conformer import Conformer
-
-from rmgpy.thermo.thermodata import ThermoData
-from rmgpy.thermo.nasa import NASAPolynomial, NASA
 from rmgpy.thermo.wilhoit import Wilhoit
 from rmgpy.chemkin import writeThermoEntry
 from rmgpy.species import Species
@@ -66,6 +61,7 @@ class ThermoJob(object):
     def __init__(self, species, thermoClass):
         self.species = species
         self.thermoClass = thermoClass
+        self.cantherm_species = CanthermSpecies(species=species)
     
     def execute(self, outputFile=None, plot=False):
         """
@@ -74,7 +70,11 @@ class ThermoJob(object):
         """
         self.generateThermo()
         if outputFile is not None:
-            self.save(outputFile)
+            chemkin_thermo_string = self.save(outputFile)
+            if isinstance(self.species, Species):
+                # Save the .yml file for the species. Don't generate this file for TransitionStates.
+                self.cantherm_species.species_dictionary['chemkin_thermo_string'] = chemkin_thermo_string
+                self.save_species_to_database_file(path=os.path.dirname(outputFile))
             if plot:
                 self.plot(os.path.dirname(outputFile))
     
@@ -139,7 +139,7 @@ class ThermoJob(object):
         at `path` on disk.
         """
         species = self.species
-        logging.info('Saving thermo for {0}...'.format(species.label))
+        logging.debug('Saving thermo for {0}...'.format(species.label))
         
         f = open(outputFile, 'a')
     
@@ -160,8 +160,8 @@ class ThermoJob(object):
             f.write('#    {0:11g} {1:11.3f} {2:11.3f} {3:11.3f} {4:11.3f}\n'.format(T, Cp, H, S, G))
         f.write('#    =========== =========== =========== =========== ===========\n')
         
-        string = 'thermo(label={0!r}, thermo={1!r})'.format(species.label, species.getThermoData())
-        f.write('{0}\n\n'.format(prettify(string)))
+        result = 'thermo(label={0!r}, thermo={1!r})'.format(species.label, species.getThermoData())
+        f.write('{0}\n\n'.format(prettify(result)))
         
         f.close()
         # write chemkin file
@@ -176,8 +176,8 @@ class ThermoJob(object):
                     elementCounts = {'C': 0, 'H': 0}
         else:
             elementCounts = {'C': 0, 'H': 0}
-        string = writeThermoEntry(species, elementCounts=elementCounts, verbose=False)
-        f.write('{0}\n'.format(string))
+        chem_string = writeThermoEntry(species, elementCounts=elementCounts, verbose=False)
+        f.write('{0}\n'.format(chem_string))
         f.close()
 
         # write species dictionary
@@ -187,6 +187,31 @@ class ThermoJob(object):
                 f.write(species.molecule[0].toAdjacencyList(removeH=False,label=species.label))
                 f.write('\n')
         f.close()
+
+        return chem_string
+
+    def save_species_to_database_file(self, path):
+        """
+        Save the species with all statMech data to a database .yml file
+        """
+        if self.species.molecule is None or len(self.species.molecule) == 0:
+            logging.debug("Not generating database file for species {0}, since its structure wasn't"
+                         " specified".format(self.species.label))
+        else:
+            self.cantherm_species.update(self.species)
+
+            # yaml_constructors(self.cantherm_species)
+            yaml_registers()
+
+            if not os.path.exists(os.path.join(os.path.abspath(path),'SpeciesDatabase','')):
+                os.mkdir(os.path.join(os.path.abspath(path),'SpeciesDatabase',''))
+            valid_chars = "-_.()<=>+ %s%s" % (string.ascii_letters, string.digits)
+            filename = os.path.join('SpeciesDatabase',
+                                    ''.join(c for c in self.species.label if c in valid_chars) + '.yml')
+            full_path = os.path.join(path, filename)
+            with open(full_path, 'w') as f:
+                yaml.dump(data=self.cantherm_species.species_dictionary, stream=f, canonical=False)
+            logging.debug('Saved species .yml file for {0}'.format(self.species.label))
 
     def plot(self, outputDirectory):
         """
