@@ -257,7 +257,7 @@ class CanTherm:
             if isinstance(job,ThermoJob) or isinstance(job, StatMechJob):
                 job.execute(outputFile=outputFile, plot=self.plot)
                 if isinstance(job, StatMechJob) and job.load_species_from_database:
-                    # load the species from the database file
+                    # load the species from the .yml database file
                     load_species_from_database_file(job)
 
         with open(chemkinFile, 'a') as f:

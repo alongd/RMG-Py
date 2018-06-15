@@ -38,6 +38,10 @@ cimport rmgpy.constants as constants
 import rmgpy.quantity as quantity
 from libc.math cimport exp, sqrt
 from rmgpy.exceptions import CollisionError
+try:
+    from yaml import CDumper as Dumper
+except ImportError:
+    from yaml import Dumper
 
 ################################################################################
 
@@ -88,6 +92,12 @@ cdef class SingleExponentialDown:
         A helper function used when pickling an object.
         """
         return (SingleExponentialDown, (self.alpha0, self.T0, self.n))
+
+    def single_exponential_down_representer(self, Dumper, data):
+        """
+        A helper function for YAML parsing of the SingleExponentialDown object
+        """
+        return Dumper.represent_scalar(u'!single_exponential_down', self.__repr__())
 
     property alpha0:
         """The average energy transferred in a deactivating collision at the reference temperature."""

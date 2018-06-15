@@ -34,6 +34,7 @@ This module contains functionality for parsing CanTherm input files.
 
 import os.path
 import logging
+import yaml
 
 from rmgpy.quantity import Quantity
 import rmgpy.constants as constants
@@ -68,6 +69,12 @@ from rmgpy.cantherm.kinetics import KineticsJob
 from rmgpy.cantherm.statmech import StatMechJob, assign_frequency_scale_factor
 from rmgpy.cantherm.thermo import ThermoJob
 from rmgpy.cantherm.pdep import PressureDependenceJob
+from rmgpy.cantherm.common import yaml_constructors
+
+# try:
+#     from yaml import CLoader as Loader, CDumper as Dumper
+# except ImportError:
+#     from yaml import Loader, Dumper
 
 ################################################################################
 
@@ -399,120 +406,125 @@ def loadInputFile(path):
             logging.error('The input file {0!r} was invalid:'.format(path))
             raise
 
-    modelChemistry = local_context.get('modelChemistry', '')
-    levelOfTheory = local_context.get('levelOfTheory', '')
+    model_chemistry = local_context.get('modelChemistry', '')
+    level_of_theory = local_context.get('levelOfTheory', '')
     author = local_context.get('author', '')
     if 'frequencyScaleFactor' not in local_context:
         logging.debug('Assigning a frequencyScaleFactor according to the modelChemistry...')
-        frequencyScaleFactor = assign_frequency_scale_factor(modelChemistry)
+        frequency_scale_factor = assign_frequency_scale_factor(model_chemistry)
     else:
-        frequencyScaleFactor = local_context.get('frequencyScaleFactor')
-    useHinderedRotors = local_context.get('useHinderedRotors', True)
-    useAtomCorrections = local_context.get('useAtomCorrections', True)
-    useBondCorrections = local_context.get('useBondCorrections', False)
-    atomEnergies = local_context.get('atomEnergies', None)
+        frequency_scale_factor = local_context.get('frequencyScaleFactor')
+    use_hindered_rotors = local_context.get('useHinderedRotors', True)
+    use_atom_corrections = local_context.get('useAtomCorrections', True)
+    use_bond_corrections = local_context.get('useBondCorrections', False)
+    atom_energies = local_context.get('atomEnergies', None)
     
     directory = os.path.dirname(path)
     
     for job in jobList:
         if isinstance(job, StatMechJob):
             job.path = os.path.join(directory, job.path)
-            job.modelChemistry = modelChemistry.lower()
-            job.frequencyScaleFactor = frequencyScaleFactor
-            job.includeHinderedRotors = useHinderedRotors
-            job.applyAtomEnergyCorrections = useAtomCorrections
-            job.applyBondEnergyCorrections = useBondCorrections
-            job.atomEnergies = atomEnergies
+            job.modelChemistry = model_chemistry.lower()
+            job.frequencyScaleFactor = frequency_scale_factor
+            job.includeHinderedRotors = use_hindered_rotors
+            job.applyAtomEnergyCorrections = use_atom_corrections
+            job.applyBondEnergyCorrections = use_bond_corrections
+            job.atomEnergies = atom_energies
         if isinstance(job, ThermoJob):
-            job.modelChemistry = modelChemistry
-            job.frequencyScaleFactor = frequencyScaleFactor
-            job.levelOfTheory = levelOfTheory
-            job.author = author
-            job.useHinderedRotors = useHinderedRotors
-            job.useAtomCorrections = useAtomCorrections
-            job.useBondCorrections = useBondCorrections
-            job.atomEnergies = atomEnergies
+            job.cantherm_species.species_data['author'] = author
+            job.cantherm_species.species_data['level_of_theory'] = level_of_theory
+            job.cantherm_species.species_data['model_chemistry'] = model_chemistry
+            job.cantherm_species.species_data['frequency_scale_factor'] = frequency_scale_factor
+            job.cantherm_species.species_data['use_hindered_rotors'] = use_hindered_rotors
+            job.cantherm_species.species_data['use_atom_corrections'] = use_atom_corrections
+            job.cantherm_species.species_data['use_bond_corrections'] = use_bond_corrections
+            job.cantherm_species.species_data['atom_energies'] = atom_energies
     
     return jobList
 
 
 def load_species_from_database_file(job):
     """
-    Load the species with all statMech data from a database file
+    Load the species with all statMech data from a .yml database file
     """
     global speciesDict
-
+    logging.info('Loading statistical mechanics parameters for {0} from .yml file...'.format(job.species.label))
+    yaml_constructors(job.cantherm_species)
     with open(job.path, 'r') as f:
-        line = f.readline()
-        source = 'spc = '
-        read = False
-        while line:
-            if 'CanthermSpecies' in line:
-                read = True
-            if read:
-                source += str(line)
-            line = f.readline()
+        data = yaml.safe_load(stream=f)
 
-    spc = CanthermSpecies()  # this is done only to satisfy automatic code checking tools, it is meaningless
-    codeobj = compile(source, str(f), 'exec')
-    exec(codeobj)  # this created an CanthermSpecies object instance named spc
+    logging.info(data)
 
-    if spc.label is None:
-        raise ValueError('No label entered for species')
-    if spc.label != job.species.label:
-        logging.debug('ignoring CanthermSpecies label {0} from database input file, using the user supplied'
-                      ' label {1} instead'.format(spc.label, job.species.label))
-        spc.label = job.species.label
-    if spc.conformer is None:
-        raise ValueError('No conformer entered for species {0}'.format(spc.label))
-    if spc.conformer.E0 is None:
-        raise ValueError('No E0 entered for conformer of species {0}'.format(spc.label))
-    if spc.conformer.modes is None:
-        raise ValueError('No modes entered for conformer of species {0}'.format(spc.label))
-    if spc.molecularWeight is None:
-        if spc.conformer.number is None:
-            raise ValueError('No molecularWeight entered for species {0}, and it cannot be reconstructed from'
-                             ' conformer.number'.format(spc.label))
-        else:
-            spc.molecularWeight = Quantity(sum([getElement(int(element)).mass
-                                                for element in spc.conformer.number.value_si]), 'kg/mol')
-    else:
-        # convert molecularWeight to a Quantity object
-        spc.molecularWeight = Quantity(float(spc.molecularWeight[0] * constants.Na), spc.molecularWeight[1])
-    if spc.collisionModel is None:
-        raise ValueError('No collisionModel entered for species {0}'.format(spc.label))
-    if spc.energyTransferModel is None:
-        raise ValueError('No energyTransferModel entered for species {0}'.format(spc.label))
-    if spc.thermo is None:
-        raise ValueError('No thermo entered for species {0}'.format(spc.label))
-
-    structure = None
-    if spc.SMILES is not None:
-        structure = SMILES(spc.SMILES)
-    elif spc.adjacencyList is not None:
-        structure = adjacencyList(spc.adjacencyList)
-    elif spc.InChI is not None:
-        structure = InChI(spc.adjacencyList)
-    else:
-        logging.info('Cannot resolve structure for species {0}'.format(spc.label))
-
-    try:
-        dict_spc = speciesDict[spc.label]
-    except KeyError:
-        speciesDict[spc.label] = spc
-        dict_spc = speciesDict[spc.label]
-
-    if structure:
-        dict_spc.molecule = [structure]
-        dict_spc.conformer = spc.conformer
-    dict_spc.molecularWeight = spc.molecularWeight
-    dict_spc.transportData = spc.collisionModel
-    dict_spc.energyTransferModel = spc.energyTransferModel
-    dict_spc.thermo = spc.thermo
-    job.species = dict_spc
-
-    logging.info('Successfully read statistical mechanics parameters for species {0} from database file'.format(
-        spc.label))
+    #     line = f.readline()
+    #     source = 'spc = '
+    #     read = False
+    #     while line:
+    #         if 'CanthermSpecies' in line:
+    #             read = True
+    #         if read:
+    #             source += str(line)
+    #         line = f.readline()
+    #
+    # spc = CanthermSpecies()  # this is done only to satisfy automatic code checking tools, it is meaningless
+    # codeobj = compile(source, str(f), 'exec')
+    # exec(codeobj)  # this created an CanthermSpecies object instance named spc
+    #
+    # if spc.label is None:
+    #     raise ValueError('No label entered for species')
+    # if spc.label != job.species.label:
+    #     logging.debug('ignoring CanthermSpecies label {0} from database input file, using the user supplied'
+    #                   ' label {1} instead'.format(spc.label, job.species.label))
+    #     spc.label = job.species.label
+    # if spc.conformer is None:
+    #     raise ValueError('No conformer entered for species {0}'.format(spc.label))
+    # if spc.conformer.E0 is None:
+    #     raise ValueError('No E0 entered for conformer of species {0}'.format(spc.label))
+    # if spc.conformer.modes is None:
+    #     raise ValueError('No modes entered for conformer of species {0}'.format(spc.label))
+    # if spc.molecularWeight is None:
+    #     if spc.conformer.number is None:
+    #         raise ValueError('No molecularWeight entered for species {0}, and it cannot be reconstructed from'
+    #                          ' conformer.number'.format(spc.label))
+    #     else:
+    #         spc.molecularWeight = Quantity(sum([getElement(int(element)).mass
+    #                                             for element in spc.conformer.number.value_si]), 'kg/mol')
+    # else:
+    #     # convert molecularWeight to a Quantity object
+    #     spc.molecularWeight = Quantity(float(spc.molecularWeight[0] * constants.Na), spc.molecularWeight[1])
+    # if spc.collisionModel is None:
+    #     raise ValueError('No collisionModel entered for species {0}'.format(spc.label))
+    # if spc.energyTransferModel is None:
+    #     raise ValueError('No energyTransferModel entered for species {0}'.format(spc.label))
+    # if spc.thermo is None:
+    #     raise ValueError('No thermo entered for species {0}'.format(spc.label))
+    #
+    # structure = None
+    # if spc.SMILES is not None:
+    #     structure = SMILES(spc.SMILES)
+    # elif spc.adjacencyList is not None:
+    #     structure = adjacencyList(spc.adjacencyList)
+    # elif spc.InChI is not None:
+    #     structure = InChI(spc.adjacencyList)
+    # else:
+    #     logging.info('Cannot resolve structure for species {0}'.format(spc.label))
+    #
+    # try:
+    #     dict_spc = speciesDict[spc.label]
+    # except KeyError:
+    #     speciesDict[spc.label] = spc
+    #     dict_spc = speciesDict[spc.label]
+    #
+    # if structure:
+    #     dict_spc.molecule = [structure]
+    #     dict_spc.conformer = spc.conformer
+    # dict_spc.molecularWeight = spc.molecularWeight
+    # dict_spc.transportData = spc.collisionModel
+    # dict_spc.energyTransferModel = spc.energyTransferModel
+    # dict_spc.thermo = spc.thermo
+    # job.species = dict_spc
+    #
+    # logging.info('Successfully read statistical mechanics parameters for species {0} from database file'.format(
+    #     spc.label))
 
 
 class CanthermSpecies(object):

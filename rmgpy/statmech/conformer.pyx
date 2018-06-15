@@ -46,10 +46,14 @@ from rmgpy.statmech.rotation cimport *
 from rmgpy.statmech.vibration cimport *
 from rmgpy.statmech.torsion cimport *
 import logging
+try:
+    from yaml import CDumper as Dumper
+except ImportError:
+    from yaml import Dumper
 
 ################################################################################
 
-cdef class Conformer:
+cdef class Conformer():
     """
     A representation of an individual molecular conformation. The attributes 
     are:
@@ -69,7 +73,7 @@ cdef class Conformer:
     Note that the `spinMultiplicity` reflects the electronic mode of the
     molecular system.    
     """
-    
+
     def __init__(self, E0=None, modes=None, spinMultiplicity=1, opticalIsomers=1, number=None, mass=None, coordinates=None):
         self.E0 = E0
         self.modes = modes or []
@@ -95,7 +99,7 @@ cdef class Conformer:
         A helper function used when pickling a Conformer object.
         """
         return (Conformer, (self.E0, self.modes, self.spinMultiplicity, self.opticalIsomers, self.number, self.mass, self.coordinates))
-    
+
     property E0:
         """The ground-state energy (including zero-point energy) of the conformer."""
         def __get__(self):

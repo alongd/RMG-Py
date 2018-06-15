@@ -178,7 +178,7 @@ class ScalarQuantity(Units):
                 result += ',{0!r},{1:g}'.format(self.uncertaintyType, self.uncertainty)
             result += ')'
             return result
-    
+
     def copy(self):
         """
         Return a copy of the quantity.
