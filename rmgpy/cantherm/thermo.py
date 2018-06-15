@@ -200,7 +200,6 @@ class ThermoJob(object):
         else:
             self.cantherm_species.update(self.species)
 
-            # yaml_constructors(self.cantherm_species)
             yaml_registers()
 
             if not os.path.exists(os.path.join(os.path.abspath(path),'SpeciesDatabase','')):
