@@ -34,7 +34,8 @@ import logging
 import rmgpy.constants as constants
 ################################################################################
 
-def checkConformerEnergy(Vlist,path):
+
+def check_conformer_energy(Vlist,path):
     """
     Check to see that the starting energy of the species in the potential energy scan calculation
     is not 0.5 kcal/mol (or more) higher than any other energies in the scan. If so, print and 
@@ -43,6 +44,8 @@ def checkConformerEnergy(Vlist,path):
     Vlist = numpy.array(Vlist, numpy.float64)
     Vdiff = (Vlist[0] - numpy.min(Vlist))*constants.E_h*constants.Na/1000
     if Vdiff >= 2: #we choose 2 kJ/mol to be the critical energy
-        logging.warning('the species corresponding to ' + str(os.path.basename(path)) + ' is different in energy from the lowest energy conformer by ' + "%0.2f" % Vdiff + ' kJ/mol. This can cause significant errors in your computed rate constants. ')
+        logging.warning('the species corresponding to ' + str(os.path.basename(path)) +
+                        ' is different in energy from the lowest energy conformer by ' + "%0.2f" % Vdiff +
+                        ' kJ/mol. This can cause significant errors in your computed rate constants. ')
 
 
