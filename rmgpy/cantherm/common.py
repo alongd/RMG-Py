@@ -37,7 +37,7 @@ import re
 
 import rmgpy.constants as constants
 from rmgpy.molecule.translator import toInChI, toInChIKey
-from rmgpy.thermo import NASA, NASAPolynomial, Wilhoit
+from rmgpy.thermo import NASA, NASAPolynomial, Wilhoit, ThermoData
 from rmgpy.statmech.conformer import Conformer
 from rmgpy.statmech import IdealGasTranslation, LinearRotor, NonlinearRotor, HarmonicOscillator
 from rmgpy.statmech.torsion import HinderedRotor, FreeRotor
@@ -97,6 +97,7 @@ def yaml_representers():
     yaml.add_representer(SingleExponentialDown, single_exponential_down_representer)
     yaml.add_representer(NASA, nasa_representer)
     yaml.add_representer(Wilhoit, wilhoit_representer)
+    yaml.add_representer(ThermoData, thermodata_representer)
     yaml.add_representer(TransportData, transport_data_representer)
 
 
@@ -109,6 +110,7 @@ def yaml_constructors():
     yaml.SafeLoader.add_constructor(u'!single_exponential_down', single_exponential_down_constructor)
     yaml.SafeLoader.add_constructor(u'!nasa', nasa_constructor)
     yaml.SafeLoader.add_constructor(u'!wilhoit', wilhoit_constructor)
+    yaml.SafeLoader.add_constructor(u'!thermodata', thermodata_constructor)
     yaml.SafeLoader.add_constructor(u'!transport_data', transport_data_constructor)
 
 
@@ -130,6 +132,9 @@ def yaml_implicit_resolvers():
     pattern = re.compile(r'Wilhoit.*')
     yaml.add_implicit_resolver(u'!wilhoit', pattern)
     yaml.SafeLoader.add_implicit_resolver(u'!wilhoit', pattern, first='Wilhoit')
+    pattern = re.compile(r'ThermoData.*')
+    yaml.add_implicit_resolver(u'!thermodata', pattern)
+    yaml.SafeLoader.add_implicit_resolver(u'!thermodata', pattern, first='ThermoData')
     pattern = re.compile(r'TransportData.*')
     yaml.add_implicit_resolver(u'!transport_data', pattern)
     yaml.SafeLoader.add_implicit_resolver(u'!transport_data', pattern, first='TransportData')
@@ -162,7 +167,7 @@ def single_exponential_down_representer(dumper, data):
 
 def single_exponential_down_constructor(loader, node):
     """
-    A helper function for YAML parsing of Conformer objects
+    A helper function for YAML parsing of SingleExponentialDown objects
     """
     value = loader.construct_scalar(node)
     if value.startswith('SingleExponentialDown(alpha0=('):
@@ -173,14 +178,14 @@ def single_exponential_down_constructor(loader, node):
 
 def nasa_representer(dumper, data):
     """
-    A helper function for YAML parsing of Conformer objects
+    A helper function for YAML parsing of NASA objects
     """
     return dumper.represent_scalar(u'!nasa', data.__repr__())
 
 
 def nasa_constructor(loader, node):
     """
-    A helper function for YAML parsing of Conformer objects
+    A helper function for YAML parsing of NASA objects
     """
     value = loader.construct_scalar(node)
     if value.startswith('NASA(polynomials=['):
@@ -191,14 +196,14 @@ def nasa_constructor(loader, node):
 
 def wilhoit_representer(dumper, data):
     """
-    A helper function for YAML parsing of Conformer objects
+    A helper function for YAML parsing of Wilhoit objects
     """
     return dumper.represent_scalar(u'!nasa', data.__repr__())
 
 
 def wilhoit_constructor(loader, node):
     """
-    A helper function for YAML parsing of Conformer objects
+    A helper function for YAML parsing of Wilhoit objects
     """
     value = loader.construct_scalar(node)
     if value.startswith('Wilhoit(Cp0=('):
@@ -207,19 +212,37 @@ def wilhoit_constructor(loader, node):
         raise ValueError('Could not interpret Wilhoit object')
 
 
+def thermodata_representer(dumper, data):
+    """
+    A helper function for YAML parsing of ThermoData objects
+    """
+    return dumper.represent_scalar(u'!thermodata', data.__repr__())
+
+
+def thermodata_constructor(loader, node):
+    """
+    A helper function for YAML parsing of ThermoData objects
+    """
+    value = loader.construct_scalar(node)
+    if value.startswith('ThermoData('):
+        return eval(value)
+    else:
+        raise ValueError('Could not interpret ThermoData object')
+
+
 def transport_data_representer(dumper, data):
     """
-    A helper function for YAML parsing of Conformer objects
+    A helper function for YAML parsing of TransportData objects
     """
     return dumper.represent_scalar(u'!transport_data', data.__repr__())
 
 
 def transport_data_constructor(loader, node):
     """
-    A helper function for YAML parsing of Conformer objects
+    A helper function for YAML parsing of TransportData objects
     """
     value = loader.construct_scalar(node)
-    if value.startswith('TransportData(epsilon=('):
+    if value.startswith('TransportData('):
         return eval(value)
     else:
         raise ValueError('Could not interpret TransportData object')
