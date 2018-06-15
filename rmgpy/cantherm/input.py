@@ -494,7 +494,8 @@ def load_species_from_database_file(job):
     try:
         job.species.molecularWeight = Quantity(data['molecularWeight'][0], data['molecularWeight'][1])
     except KeyError:
-        job.species.molecularWeight = determine_molecular_weight(job.species)
+        if is_pdep():
+            job.species.molecularWeight = determine_molecular_weight(job.species)
 
     mol = None
     try:
