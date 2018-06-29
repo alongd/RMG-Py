@@ -32,12 +32,17 @@
 This module contains the TransportData class for storing transport properties.
 """
 
+import numpy
+
+from rmgpy.rmgpyobject import RMGPYObject
 from rmgpy import quantity
 from rmgpy.quantity import DipoleMoment, Energy, Length, Volume
 import rmgpy.constants as constants
-import numpy
 
-class TransportData:
+###############################################################################
+
+
+class TransportData(RMGPYObject):
     """
     A set of transport properties.
     
@@ -52,10 +57,10 @@ class TransportData:
     `polarizability`    Polarizability Volume
     `rotrelaxcollnum`   Rotational relaxation number at 298 K, saved as a double.
     =================  ============================================================
-    
     """
 
-    def __init__(self, shapeIndex=None, epsilon=None, sigma=None, dipoleMoment=None, polarizability=None, rotrelaxcollnum=None, comment = ''):
+    def __init__(self, shapeIndex=None, epsilon=None, sigma=None, dipoleMoment=None, polarizability=None,
+                 rotrelaxcollnum=None, comment = ''):
         self.shapeIndex = shapeIndex
         try:
             self.epsilon = Energy(epsilon)
@@ -69,7 +74,6 @@ class TransportData:
         self.rotrelaxcollnum = rotrelaxcollnum
         self.comment = comment
 
-    
     def __repr__(self):
         """
         Return a string representation that can be used to reconstruct the
