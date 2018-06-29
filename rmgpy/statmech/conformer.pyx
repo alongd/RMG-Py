@@ -35,21 +35,20 @@ of freedom.
 
 import numpy
 import cython
+import logging
 
 from libc.math cimport log, exp, sqrt
 
 cimport rmgpy.constants as constants
 import rmgpy.quantity as quantity
-
 from rmgpy.statmech.translation cimport *
 from rmgpy.statmech.rotation cimport *
 from rmgpy.statmech.vibration cimport *
 from rmgpy.statmech.torsion cimport *
-import logging
 
 ################################################################################
 
-cdef class Conformer:
+cdef class Conformer(RMGObject):
     """
     A representation of an individual molecular conformation. The attributes 
     are:
@@ -97,7 +96,7 @@ cdef class Conformer:
         A helper function used when pickling a Conformer object.
         """
         return (Conformer, (self.E0, self.modes, self.spinMultiplicity, self.opticalIsomers, self.number, self.mass, self.coordinates))
-    
+
     property E0:
         """The ground-state energy (including zero-point energy) of the conformer."""
         def __get__(self):
