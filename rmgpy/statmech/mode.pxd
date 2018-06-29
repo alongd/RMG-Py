@@ -26,8 +26,9 @@
 ###############################################################################
 
 cimport numpy
+from rmgpy.rmgobject cimport RMGObject
 
-cdef class Mode:
+cdef class Mode(RMGObject):
 
     cdef public bint quantum
 
