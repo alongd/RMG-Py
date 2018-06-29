@@ -61,6 +61,8 @@ Cython.Compiler.Options.annotate = True
 
 def getMainExtensionModules():
     return [
+        # RMG
+        Extension('rmgpy.rmgobject', ['rmgpy/rmgobject.pyx']),
         # Kinetics
         Extension('rmgpy.kinetics.arrhenius', ['rmgpy/kinetics/arrhenius.pyx']),
         Extension('rmgpy.kinetics.chebyshev', ['rmgpy/kinetics/chebyshev.pyx']),
@@ -121,6 +123,8 @@ def getSolverExtensionModules():
 
 def getCanthermExtensionModules():
     return [
+        # RMG
+        Extension('rmgpy.rmgobject', ['rmgpy/rmgobject.pyx']),
         # Kinetics
         Extension('rmgpy.kinetics.arrhenius', ['rmgpy/kinetics/arrhenius.pyx']),
         Extension('rmgpy.kinetics.chebyshev', ['rmgpy/kinetics/chebyshev.pyx']),
