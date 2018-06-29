@@ -28,8 +28,8 @@
 #                                                                             #
 ###############################################################################
 
-from .main import CanTherm
-from .statmech import StatMechJob
-from .thermo import ThermoJob
-from .kinetics import KineticsJob
-from .pdep import PressureDependenceJob
+from rmgpy.cantherm.main import CanTherm
+from rmgpy.cantherm.statmech import StatMechJob
+from rmgpy.cantherm.thermo import ThermoJob
+from rmgpy.cantherm.kinetics import KineticsJob
+from rmgpy.cantherm.pdep import PressureDependenceJob

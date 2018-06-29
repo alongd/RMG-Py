@@ -34,11 +34,11 @@ CanTherm.
 """
 
 import os
-import os.path
 import sys
 import logging
 import argparse
 import time
+
 try:
     import matplotlib
     matplotlib.rc('mathtext', default='regular')
@@ -46,9 +46,7 @@ except ImportError:
     pass
 
 from rmgpy.chemkin import writeElementsSection, writeThermoEntry, writeKineticsEntry
-
 from rmgpy.cantherm.input import loadInputFile
-
 from rmgpy.cantherm.kinetics import KineticsJob
 from rmgpy.cantherm.statmech import StatMechJob
 from rmgpy.cantherm.thermo import ThermoJob

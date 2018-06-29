@@ -29,9 +29,11 @@
 ###############################################################################
 
 import math
-import numpy
 import logging
 import os.path
+
+import numpy
+
 from rmgpy.cantherm.common import check_conformer_energy
 import rmgpy.constants as constants
 from rmgpy.statmech import IdealGasTranslation, NonlinearRotor, LinearRotor, HarmonicOscillator, Conformer

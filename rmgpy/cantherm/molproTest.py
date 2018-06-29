@@ -28,9 +28,10 @@
 #                                                                             #
 ###############################################################################
 
-import numpy
 import unittest
 import os
+
+import numpy
 
 from rmgpy.cantherm.molpro import MolproLog
 from rmgpy.statmech import IdealGasTranslation, LinearRotor, NonlinearRotor, HarmonicOscillator, HinderedRotor

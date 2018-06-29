@@ -28,14 +28,16 @@
 #                                                                             #
 ###############################################################################
 
-import numpy
 import unittest
 import os
+
+import numpy
 
 from rmgpy.cantherm.gaussian import GaussianLog
 from rmgpy.statmech import IdealGasTranslation, LinearRotor, NonlinearRotor, HarmonicOscillator, HinderedRotor
 import rmgpy.constants as constants
 from external.wip import work_in_progress
+
 ################################################################################
 
 class GaussianTest(unittest.TestCase):

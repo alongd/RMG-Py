@@ -36,8 +36,10 @@ reaction network.
 
 import os.path
 import math
-import numpy
 import logging
+
+import numpy
+
 import rmgpy.quantity as quantity
 from rmgpy.kinetics import Chebyshev, PDepArrhenius
 from rmgpy.reaction import Reaction

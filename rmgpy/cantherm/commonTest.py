@@ -32,14 +32,18 @@
 This script contains unit tests of the :mod:`rmgpy.quantity` module.
 """
 import unittest
-import numpy
 import os
+
+import numpy
+
 import rmgpy
 from rmgpy.cantherm import CanTherm, input
-from input import jobList
+from rmgpy.cantherm.input import jobList
 import rmgpy.constants as constants
 from rmgpy.cantherm.statmech import InputError
+
 ################################################################################
+
 
 class CommonTest(unittest.TestCase):
     """
