@@ -29,10 +29,11 @@
 ###############################################################################
 
 import math
-import numpy
 import logging
-import rmgpy.constants as constants
 
+import numpy
+
+import rmgpy.constants as constants
 from rmgpy.statmech import IdealGasTranslation, NonlinearRotor, LinearRotor, HarmonicOscillator, Conformer
 
 ################################################################################

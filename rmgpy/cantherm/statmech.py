@@ -36,26 +36,25 @@ information for a single species or transition state.
 
 import os.path
 import math
-import numpy
 import logging
 
+import numpy
 from rdkit.Chem import GetPeriodicTable
 
 import rmgpy.constants as constants
-
 from rmgpy.cantherm.output import prettify
 from rmgpy.cantherm.gaussian import GaussianLog
 from rmgpy.cantherm.molpro import MolproLog
-from rmgpy.cantherm.qchem import QchemLog 
-
+from rmgpy.cantherm.qchem import QchemLog
 from rmgpy.species import TransitionState, Species
-
 from rmgpy.statmech.translation import Translation, IdealGasTranslation
 from rmgpy.statmech.rotation import Rotation, LinearRotor, NonlinearRotor, KRotor, SphericalTopRotor
 from rmgpy.statmech.vibration import Vibration, HarmonicOscillator
 from rmgpy.statmech.torsion import Torsion, HinderedRotor, FreeRotor
 from rmgpy.statmech.conformer import Conformer
 from rmgpy.exceptions import InputError
+
+################################################################################
 
 # These are the atoms we currently have enthalpies of formation for
 atom_num_dict = {1: 'H',

@@ -29,19 +29,18 @@
 ###############################################################################
 
 import os.path
-import numpy
 import string
 import logging
-from sensitivity import KineticsSensitivity as sa
 
+import numpy
+
+from rmgpy.cantherm.sensitivity import KineticsSensitivity as sa
 from rmgpy.cantherm.output import prettify
-
 from rmgpy.kinetics.arrhenius import Arrhenius, ArrheniusEP, PDepArrhenius, MultiArrhenius, MultiPDepArrhenius 
 from rmgpy.kinetics.chebyshev import Chebyshev
 from rmgpy.kinetics.falloff import ThirdBody, Lindemann, Troe
 from rmgpy.kinetics.kineticsdata import KineticsData, PDepKineticsData
 from rmgpy.kinetics.tunneling import Wigner, Eckart
-
 import rmgpy.quantity as quantity
 import rmgpy.constants as constants
 from rmgpy.molecule.draw import MoleculeDrawer, createNewSurface

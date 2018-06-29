@@ -32,7 +32,9 @@ import os
 import unittest
 import shutil
 import logging
+
 from nose.plugins.attrib import attr
+
 from rmgpy.cantherm.main import CanTherm
 from rmgpy import settings
 from rmgpy.chemkin import readReactionsBlock
