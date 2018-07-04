@@ -53,8 +53,10 @@ from rmgpy.chemkin import writeThermoEntry
 from rmgpy.species import Species
 from rmgpy.molecule import Molecule
 from rmgpy.molecule.util import retrieveElementCount
+from rmgpy.cantherm.common import CanthermSpecies
 
 ################################################################################
+
 
 class ThermoJob(object):
     """
@@ -65,6 +67,7 @@ class ThermoJob(object):
     def __init__(self, species, thermoClass):
         self.species = species
         self.thermoClass = thermoClass
+        self.cantherm_species = CanthermSpecies(species=species)
     
     def execute(self, outputFile=None, plot=False):
         """
@@ -73,7 +76,13 @@ class ThermoJob(object):
         """
         self.generateThermo()
         if outputFile is not None:
-            self.save(outputFile)
+            self.cantherm_species.chemkin_thermo_string = self.save(outputFile)
+            if self.species.molecule is None or len(self.species.molecule) == 0:
+                logging.debug("Not generating database file for species {0}, since its structure wasn't"
+                              " specified".format(self.species.label))
+            else:
+                self.cantherm_species.update_species_attributes(self.species)
+                self.cantherm_species.save_yaml(path=os.path.dirname(outputFile))
             if plot:
                 self.plot(os.path.dirname(outputFile))
     
@@ -88,8 +97,8 @@ class ThermoJob(object):
     
         species = self.species
     
-        logging.info('Generating {0} thermo model for {1}...'.format(self.thermoClass, species))
-        
+        logging.debug('Generating {0} thermo model for {1}...'.format(self.thermoClass, species))
+
         Tlist = np.arange(10.0, 3001.0, 10.0, np.float64)
         Cplist = np.zeros_like(Tlist)
         H298 = 0.0
@@ -186,6 +195,7 @@ class ThermoJob(object):
                 f.write(species.molecule[0].toAdjacencyList(removeH=False,label=species.label))
                 f.write('\n')
         f.close()
+        return chemkin_thermo_string
 
     def plot(self, outputDirectory):
         """
