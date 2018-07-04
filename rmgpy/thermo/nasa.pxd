@@ -36,7 +36,7 @@ from rmgpy.thermo.wilhoit cimport Wilhoit
 cdef class NASAPolynomial(HeatCapacityModel):
 
     cdef public double cm2, cm1, c0, c1, c2, c3, c4, c5, c6
-    
+
     cpdef double getHeatCapacity(self, double T) except -1000000000
 
     cpdef double getEnthalpy(self, double T) except 1000000000
@@ -58,6 +58,10 @@ cdef class NASA(HeatCapacityModel):
     cdef public NASAPolynomial poly1, poly2, poly3
     
     cpdef NASAPolynomial selectPolynomial(self, double T)
+
+    cpdef dict as_dict(self)
+
+    cpdef make_object(self, dict data, dict class_dict)
 
     cpdef double getHeatCapacity(self, double T) except -1000000000
 
