@@ -51,6 +51,7 @@ from rmgpy.kinetics.arrhenius import Arrhenius, ArrheniusEP, PDepArrhenius, Mult
 from rmgpy.kinetics.chebyshev import Chebyshev
 from rmgpy.kinetics.falloff import ThirdBody, Lindemann, Troe
 from rmgpy.kinetics.kineticsdata import KineticsData, PDepKineticsData
+from rmgpy.kinetics.model import TunnelingModel
 from rmgpy.kinetics.tunneling import Wigner, Eckart
 
 from rmgpy.pdep.configuration import Configuration
@@ -65,6 +66,7 @@ from rmgpy.cantherm.kinetics import KineticsJob
 from rmgpy.cantherm.statmech import StatMechJob, assign_frequency_scale_factor
 from rmgpy.cantherm.thermo import ThermoJob
 from rmgpy.cantherm.pdep import PressureDependenceJob
+from rmgpy.cantherm.common import is_pdep
 
 ################################################################################
 
@@ -75,6 +77,7 @@ networkDict = {}
 jobList = []
 
 ################################################################################
+
 
 def species(label, *args, **kwargs):
     global speciesDict, jobList
@@ -124,14 +127,25 @@ def species(label, *args, **kwargs):
             else:
                 raise TypeError('species() got an unexpected keyword argument {0!r}.'.format(key))
             
-        if structure: spec.molecule = [structure]
+        if structure:
+            spec.molecule = [structure]
         spec.conformer = Conformer(E0=E0, modes=modes, spinMultiplicity=spinMultiplicity, opticalIsomers=opticalIsomers)
-        spec.molecularWeight = molecularWeight
+        if molecularWeight is not None:
+            spec.molecularWeight = molecularWeight
+        else:
+            if structure:
+                # If a structure was given, simply calling spec.molecularWeight will calculate the molecular weight
+                spec.molecularWeight = spec.molecularWeight
+            elif is_pdep(jobList):
+                # If one of the jobs is pdep and no molecular weight is given or calculated, raise an error
+                raise ValueError("No molecularWeight was entered for species {0}. Since a structure wasn't given"
+                                 " as well, the molecularWeight cannot be reconstructed.".format(spec.label))
         spec.transportData = collisionModel
         spec.energyTransferModel = energyTransferModel
         spec.thermo = thermo
         
     return spec
+
 
 def transitionState(label, *args, **kwargs):
     global transitionStateDict
@@ -173,9 +187,9 @@ def transitionState(label, *args, **kwargs):
         
     return ts
 
+
 def reaction(label, reactants, products, transitionState, kinetics=None, tunneling=''):
     global reactionDict, speciesDict, transitionStateDict
-    #label = 'reaction'+transitionState
     if label in reactionDict:
         label = label+transitionState
         if label in reactionDict:
@@ -194,8 +208,8 @@ def reaction(label, reactants, products, transitionState, kinetics=None, tunneli
         raise ValueError('Unknown tunneling model {0!r}.'.format(tunneling))
     rxn = Reaction(label=label, reactants=reactants, products=products, transitionState=transitionState, kinetics=kinetics)
     reactionDict[label] = rxn
-    
     return rxn
+
 
 def network(label, isomers=None, reactants=None, products=None, pathReactions=None, bathGas=None):
     global networkDict, speciesDict, reactionDict
@@ -266,6 +280,7 @@ def network(label, isomers=None, reactants=None, products=None, pathReactions=No
     )
     networkDict[label] = network
 
+
 def kinetics(label, Tmin=None, Tmax=None, Tlist=None, Tcount=0, sensitivity_conditions=None):
     global jobList, reactionDict
     try:
@@ -275,6 +290,7 @@ def kinetics(label, Tmin=None, Tmax=None, Tlist=None, Tcount=0, sensitivity_cond
     job = KineticsJob(reaction=rxn, Tmin=Tmin, Tmax=Tmax, Tcount=Tcount, Tlist=Tlist,
                       sensitivity_conditions=sensitivity_conditions)
     jobList.append(job)
+
 
 def statmech(label):
     global jobList, speciesDict, transitionStateDict
@@ -287,6 +303,7 @@ def statmech(label):
     else:
         raise ValueError('Unknown species or transition state label {0!r} for statmech() job.'.format(label))
 
+
 def thermo(label, thermoClass):
     global jobList, speciesDict
     try:
@@ -295,6 +312,7 @@ def thermo(label, thermoClass):
         raise ValueError('Unknown species label {0!r} for thermo() job.'.format(label))
     job = ThermoJob(species=spec, thermoClass=thermoClass)
     jobList.append(job)
+
 
 def pressureDependence(label, 
                        Tmin=None, Tmax=None, Tcount=0, Tlist=None,
@@ -315,16 +333,21 @@ def pressureDependence(label,
         rmgmode=rmgmode, sensitivity_conditions=sensitivity_conditions)
     jobList.append(job)
 
+
 def SMILES(smiles):
     return Molecule().fromSMILES(smiles)
+
 
 def adjacencyList(adj):
     return Molecule().fromAdjacencyList(adj)
 
+
 def InChI(inchi):
     return Molecule().fromInChI(inchi)
 
+
 ################################################################################
+
 
 def loadInputFile(path):
     """
@@ -388,27 +411,41 @@ def loadInputFile(path):
             logging.error('The input file {0!r} was invalid:'.format(path))
             raise
 
-    modelChemistry = local_context.get('modelChemistry', '')
+    model_chemistry = local_context.get('modelChemistry', '')
+    level_of_theory = local_context.get('levelOfTheory', '')
+    author = local_context.get('author', '')
     if 'frequencyScaleFactor' not in local_context:
         logging.debug('Assigning a frequencyScaleFactor according to the modelChemistry...')
-        frequencyScaleFactor = assign_frequency_scale_factor(modelChemistry)
+        frequency_scale_factor = assign_frequency_scale_factor(model_chemistry)
     else:
-        frequencyScaleFactor = local_context.get('frequencyScaleFactor')
-    useHinderedRotors = local_context.get('useHinderedRotors', True)
-    useAtomCorrections = local_context.get('useAtomCorrections', True)
-    useBondCorrections = local_context.get('useBondCorrections', False)
-    atomEnergies = local_context.get('atomEnergies', None)
+        frequency_scale_factor = local_context.get('frequencyScaleFactor')
+    use_hindered_rotors = local_context.get('useHinderedRotors', True)
+    use_atom_corrections = local_context.get('useAtomCorrections', True)
+    use_bond_corrections = local_context.get('useBondCorrections', False)
+    atom_energies = local_context.get('atomEnergies', None)
     
     directory = os.path.dirname(path)
     
     for job in jobList:
         if isinstance(job, StatMechJob):
             job.path = os.path.join(directory, job.path)
-            job.modelChemistry = modelChemistry.lower()
-            job.frequencyScaleFactor = frequencyScaleFactor
-            job.includeHinderedRotors = useHinderedRotors
-            job.applyAtomEnergyCorrections = useAtomCorrections
-            job.applyBondEnergyCorrections = useBondCorrections
-            job.atomEnergies = atomEnergies
+            job.modelChemistry = model_chemistry.lower()
+            job.frequencyScaleFactor = frequency_scale_factor
+            job.includeHinderedRotors = use_hindered_rotors
+            job.applyAtomEnergyCorrections = use_atom_corrections
+            job.applyBondEnergyCorrections = use_bond_corrections
+            job.atomEnergies = atom_energies
+        if isinstance(job, ThermoJob):
+            job.cantherm_species.author = author
+            job.cantherm_species.level_of_theory = level_of_theory
+            level_of_theory_energy = level_of_theory.split('//')[0]
+            if level_of_theory_energy != model_chemistry:
+                # Only log the model chemistry if it isn't identical to the first part of level_of_theory
+                job.cantherm_species.model_chemistry = model_chemistry
+            job.cantherm_species.frequency_scale_factor = frequency_scale_factor
+            job.cantherm_species.use_hindered_rotors = use_hindered_rotors
+            job.cantherm_species.use_bond_corrections = use_bond_corrections
+            if atom_energies is not None:
+                job.cantherm_species.atom_energies = atom_energies
     
     return jobList

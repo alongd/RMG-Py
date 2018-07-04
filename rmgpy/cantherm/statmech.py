@@ -53,6 +53,7 @@ from rmgpy.statmech.vibration import Vibration, HarmonicOscillator
 from rmgpy.statmech.torsion import Torsion, HinderedRotor, FreeRotor
 from rmgpy.statmech.conformer import Conformer
 from rmgpy.exceptions import InputError
+from rmgpy.cantherm.common import CanthermSpecies
 
 ################################################################################
 
@@ -65,6 +66,7 @@ atom_num_dict = {1: 'H',
 _rdkit_periodic_table = GetPeriodicTable()
 
 ################################################################################
+
 
 class ScanLog(object):
     """
@@ -180,29 +182,43 @@ class StatMechJob(object):
         self.applyAtomEnergyCorrections = True
         self.applyBondEnergyCorrections = True
         self.atomEnergies = None
+        if isinstance(species, Species):
+            # Currently we do not dump and load transition states in YAML form
+            self.cantherm_species = CanthermSpecies(species=species)
     
-    def execute(self, outputFile=None, plot=False):
+    def execute(self, outputFile=None, plot=False, pdep=False):
         """
         Execute the statistical mechanics job, saving the results to the
         given `outputFile` on disk.
+        `pdep` passed to load()  and is used to distinguish between necessary and unnecessary
+        species attributes when loading a YAML file.
         """
-        self.load()
+        self.load(pdep)
         if outputFile is not None:
             self.save(outputFile=outputFile)
         logging.debug('Finished statmech job for species {0}.'.format(self.species))
         logging.debug(repr(self.species))
     
-    def load(self):
+    def load(self, pdep):
         """
         Load the statistical mechanics parameters for each conformer from
         the associated files on disk. Creates :class:`Conformer` objects for
         each conformer and appends them to the list of conformers on the
         species object.
         """
-        logging.info('Loading statistical mechanics parameters for {0}...'.format(self.species.label))
-        
         path = self.path
         TS = isinstance(self.species, TransitionState)
+        filename, file_extension = os.path.splitext(path)
+        if file_extension in ['.yml', '.yaml']:
+            if TS:
+                raise ValueError('Loading transition states from a YAML file is still unsupported.')
+            self.cantherm_species.load_yaml(path=path, species=self.species, pdep=pdep)
+            self.species.conformer = self.cantherm_species.conformer
+            self.species.transportData = self.cantherm_species.transport_data
+            self.species.energyTransferModel = self.cantherm_species.energy_transfer_model
+            return
+
+        logging.info('Loading statistical mechanics parameters for {0}...'.format(self.species.label))
     
         global_context = {
             '__builtins__': None,
@@ -489,7 +505,6 @@ class StatMechJob(object):
         
         self.species.conformer = conformer
 
-        
     def save(self, outputFile):
         """
         Save the results of the statistical mechanics job to the file located
@@ -566,6 +581,7 @@ class StatMechJob(object):
         pylab.close()
 
 ################################################################################
+
 
 def applyEnergyCorrections(E0, modelChemistry, atoms, bonds,
                            atomEnergies=None, applyAtomEnergyCorrections=True, applyBondEnergyCorrections=False):
@@ -789,6 +805,7 @@ def applyEnergyCorrections(E0, modelChemistry, atoms, bonds,
                 logging.warning('Ignored unknown bond type {0!r}.'.format(symbol))
 
     return E0
+
 
 class Log(object):
     """
@@ -1045,6 +1062,7 @@ def projectRotors(conformer, F, rotors, linear, TS):
             logging.debug(numpy.sqrt(eig[i])/(2 * math.pi * constants.c * 100))
         
     return numpy.sqrt(eig[-Nvib:]) / (2 * math.pi * constants.c * 100)
+
 
 def assign_frequency_scale_factor(model_chemistry):
     """
