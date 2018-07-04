@@ -141,6 +141,7 @@ class ThermoJob(object):
         else:
             species.thermo = wilhoit
 
+
     def save(self, outputFile):
         """
         Save the results of the thermodynamics job to the file located
@@ -168,11 +169,11 @@ class ThermoJob(object):
             f.write('#    {0:11g} {1:11.3f} {2:11.3f} {3:11.3f} {4:11.3f}\n'.format(T, Cp, H, S, G))
         f.write('#    =========== =========== =========== =========== ===========\n')
         
-        string = 'thermo(label={0!r}, thermo={1!r})'.format(species.label, species.getThermoData())
-        f.write('{0}\n\n'.format(prettify(string)))
+        thermo_string = 'thermo(label={0!r}, thermo={1!r})'.format(species.label, species.getThermoData())
+        f.write('{0}\n\n'.format(prettify(thermo_string)))
         
         f.close()
-        # write chemkin file
+        # write Chemkin file
         f = open(os.path.join(os.path.dirname(outputFile), 'chem.inp'), 'a')
         if isinstance(species, Species):
             if species.molecule and isinstance(species.molecule[0], Molecule):
@@ -184,17 +185,17 @@ class ThermoJob(object):
                     elementCounts = {'C': 0, 'H': 0}
         else:
             elementCounts = {'C': 0, 'H': 0}
-        string = writeThermoEntry(species, elementCounts=elementCounts, verbose=False)
-        f.write('{0}\n'.format(string))
+        chemkin_thermo_string = writeThermoEntry(species, elementCounts=elementCounts, verbose=False)
+        f.write('{0}\n'.format(chemkin_thermo_string))
         f.close()
 
         # write species dictionary
-        f = open(os.path.join(os.path.dirname(outputFile), 'species_dictionary.txt'), 'a')
         if isinstance(species, Species):
             if species.molecule and isinstance(species.molecule[0], Molecule):
+                f = open(os.path.join(os.path.dirname(outputFile), 'species_dictionary.txt'), 'a')
                 f.write(species.molecule[0].toAdjacencyList(removeH=False,label=species.label))
                 f.write('\n')
-        f.close()
+                f.close()
         return chemkin_thermo_string
 
     def plot(self, outputDirectory):
