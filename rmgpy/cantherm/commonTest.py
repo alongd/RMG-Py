@@ -34,13 +34,16 @@ This script contains unit tests of the :mod:`rmgpy.quantity` module.
 import unittest
 import os
 
+import shutil
 import numpy
 
 import rmgpy
-from rmgpy.cantherm import CanTherm, input
+from rmgpy.cantherm import CanTherm, CanthermSpecies, input
 from rmgpy.cantherm.input import jobList
 import rmgpy.constants as constants
 from rmgpy.cantherm.statmech import InputError
+from rmgpy.quantity import ScalarQuantity
+from rmgpy.thermo import NASA
 
 ################################################################################
 
@@ -60,7 +63,7 @@ class CommonTest(unittest.TestCase):
         self.assertAlmostEqual(Vdiff / 2.7805169838282797, 1, 5)
 
 
-class testCanthermJob(unittest.TestCase):
+class TestCanthermJob(unittest.TestCase):
     """
     Contains unit tests of the Cantherm module and its interactions with other RMG modules.
     """
@@ -204,7 +207,7 @@ class testCanthermJob(unittest.TestCase):
         self.assertEqual(self.kineticsjob.reaction.transitionState.tunneling, None, msg=None)
 
 
-class testCanthermInput(unittest.TestCase):
+class TestCanthermInput(unittest.TestCase):
     """
     Contains unit tests for loading and processing Cantherm input files.
     """
@@ -270,8 +273,9 @@ class testCanthermInput(unittest.TestCase):
         job.includeHinderedRotors = self.useHinderedRotors
         job.applyBondEnergyCorrections = self.useBondCorrections
         job.load()
-        
-class testStatmech(unittest.TestCase):
+
+
+class TestStatmech(unittest.TestCase):
     """
     Contains unit tests of statmech.py
     """
@@ -284,6 +288,63 @@ class testStatmech(unittest.TestCase):
         job = jobList[-1]
         self.assertTrue(isinstance(job, rmgpy.cantherm.statmech.StatMechJob))
         self.assertRaises(InputError,job.load())
-        
+
+
+class TestCanthermSpecies(unittest.TestCase):
+    """
+    Contains YAML dump and load unit tests for :class:CanthermSpecies
+    """
+
+    @classmethod
+    def setUpClass(self):
+        """
+        A method that is run before all unit tests in this class.
+        """
+        self.cantherm = CanTherm()
+        path = os.path.join(os.path.dirname(os.path.dirname(rmgpy.__file__)),
+                            'examples', 'cantherm', 'species', 'C2H6')
+        self.legacy_input_path = os.path.join(path, 'input.py')
+        self.yaml_input_path = os.path.join(path, 'input_load_from_YAML.py')
+        self.yaml_path = os.path.join(path, 'SpeciesDatabase', 'C2H6.yml')
+        self.output_file = os.path.join(path, 'output.py')
+        self.path_to_remove = os.path.join(path, 'SpeciesDatabase', '')
+
+    def test_dump_yaml(self):
+        """
+        Test properly dumping the CanthermSpecies object and respective sub-objects
+        """
+        jobList = self.cantherm.loadInputFile(self.legacy_input_path)
+        for job in jobList:
+            job.execute(outputFile=self.output_file)
+        self.assertTrue(os.path.exists(self.yaml_path))
+
+    def test_load_yaml(self):
+        """
+        Test properly loading the CanthermSpecies object and respective sub-objects
+        (note: a different input file is loaded here)
+        """
+        jobList = self.cantherm.loadInputFile(self.yaml_input_path)
+        for job in jobList:
+            job.execute(outputFile=self.output_file)
+        can_spc = jobList[0].cantherm_species
+        self.assertIsInstance(can_spc, CanthermSpecies)  # checks make_object
+        self.assertIsInstance(can_spc.molecular_weight, ScalarQuantity)  # checks make_object
+        self.assertIsInstance(can_spc.thermo, NASA)  # checks make_object
+        self.assertNotEqual(can_spc.author, '')
+        self.assertEqual(can_spc.InChI, 'InChI=1S/C2H6/c1-2/h1-2H3')
+        self.assertEqual(can_spc.SMILES, 'CC')
+        self.assertTrue('8 H u0 p0 c0 {2,S}' in can_spc.adjacency_list)
+        self.assertEqual(can_spc.label, 'C2H6')
+        self.assertEqual(can_spc.frequency_scale_factor, 0.99)  # checks float conversion
+        self.assertFalse(can_spc.use_bond_corrections)
+        self.assertAlmostEqual(can_spc.conformer.modes[2].frequencies.value_si[0], 818.91718, 4)  # HarmonicOscillator
+
+    @classmethod
+    def tearDownClass(self):
+        """
+        A method that is run after all unit tests in this class.
+        """
+        shutil.rmtree(self.path_to_remove)
+
 if __name__ == '__main__':
     unittest.main(testRunner=unittest.TextTestRunner(verbosity=2))
