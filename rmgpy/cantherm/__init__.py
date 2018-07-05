@@ -33,3 +33,4 @@ from rmgpy.cantherm.statmech import StatMechJob
 from rmgpy.cantherm.thermo import ThermoJob
 from rmgpy.cantherm.kinetics import KineticsJob
 from rmgpy.cantherm.pdep import PressureDependenceJob
+from rmgpy.cantherm.common import CanthermSpecies
