@@ -1,5 +1,5 @@
 ************************
-rmgpy.cantherm.ThermoJob
+rmgpy.arkane.ThermoJob
 ************************
 
-.. autoclass:: rmgpy.cantherm.ThermoJob
+.. autoclass:: rmgpy.arkane.ThermoJob

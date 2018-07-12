@@ -1,5 +1,5 @@
 **************************
-rmgpy.cantherm.KineticsJob
+rmgpy.arkane.KineticsJob
 **************************
 
-.. autoclass:: rmgpy.cantherm.KineticsJob
+.. autoclass:: rmgpy.arkane.KineticsJob

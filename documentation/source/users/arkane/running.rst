@@ -1,23 +1,23 @@
-****************
-Running CanTherm
-****************
+**************
+Running Arkane
+**************
 
-To execute a CanTherm job, invoke the command ::
+To execute an Arkane job, invoke the command ::
 
-    $ python cantherm.py INPUTFILE
+    $ python arkane.py INPUTFILE
 
-The absolute or relative paths to the cantherm.py file as well as to the input file must be given.
+The absolute or relative paths to the arkane.py file as well as to the input file must be given.
 
 The job will run and the results will be saved to ``output.py`` in the same
 directory as the input file. If you wish to save the output elsewhere, use
 the ``-o``/``--output`` option, e.g. ::
 
-    $ python cantherm.py INPUTFILE -o OUTPUTFILE
+    $ python arkane.py INPUTFILE -o OUTPUTFILE
 
 Drawing Potential Energy Surface
 ================================
 
-CanTherm contains functionality for automatically generating an image of the
+Arkane contains functionality for automatically generating an image of the
 potential energy surface for a reaction network. This is done automatically 
 and outputted in pdf format to a file called ``network.pdf``.
 
@@ -36,4 +36,4 @@ Help
 To view help information and all available options, use the ``-h``/``--help`` 
 flag, e.g. ::
 
-    $ python cantherm.py -h
+    $ python arkane.py -h

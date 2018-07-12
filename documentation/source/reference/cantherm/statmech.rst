@@ -1,5 +1,5 @@
 **************************
-rmgpy.cantherm.StatMechJob
+rmgpy.arkane.StatMechJob
 **************************
 
-.. autoclass:: rmgpy.cantherm.StatMechJob
+.. autoclass:: rmgpy.arkane.StatMechJob

@@ -1,7 +1,7 @@
-**********************
-Saving CanTherm output
-**********************
+********************
+Saving Arkane output
+********************
 
-.. autofunction:: rmgpy.cantherm.output.prettify
+.. autofunction:: rmgpy.arkane.output.prettify
 
-.. autoclass:: rmgpy.cantherm.output.PrettifyVisitor
+.. autoclass:: rmgpy.arkane.output.PrettifyVisitor

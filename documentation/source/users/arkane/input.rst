@@ -5,7 +5,7 @@ Creating Input Files for Thermodynamics and High-Pressure Limit Kinetics Computa
 Syntax
 ======
 
-The format of CanTherm input files is based on Python syntax. In fact, CanTherm
+The format of Arkane input files is based on Python syntax. In fact, Arkane
 input files are valid Python source code, and this is used to facilitate 
 reading of the file. 
 
@@ -13,7 +13,7 @@ Each section is made up of one or more function calls, where parameters are
 specified as text strings, numbers, or objects. Text strings must be wrapped in
 either single or double quotes.
 
-The following is a list of all the components of a CanTherm input file for thermodynamics and high-pressure limit kinetics computations:
+The following is a list of all the components of a Arkane input file for thermodynamics and high-pressure limit kinetics computations:
 
 =========================== ====================================================================
 Component                   Description
@@ -38,10 +38,10 @@ Model Chemistry
 The first item in the input file should be a ``modelChemistry`` assignment
 with a string describing the model chemistry.
 
-CanTherm uses this information to adjust the computed energies to the usual gas-phase reference
+Arkane uses this information to adjust the computed energies to the usual gas-phase reference
 states by applying atom, bond and spin-orbit coupling energy corrections. This is particularly
 important for ``thermo()`` calculations (see below). Note that the user must specify under the
-``species()`` function the type and number of bonds for CanTherm to apply these corrections.
+``species()`` function the type and number of bonds for Arkane to apply these corrections.
 The example below specifies CBS-QB3 as the model chemistry::
 
     modelChemistry = "CBS-QB3"
@@ -104,7 +104,7 @@ the corresponding atomic energies (using ``atomEnergies``) to get meaningful res
 corrections would not be applied in this case.
 
 If a model chemistry or atomic energies are not available, then a kinetics job can still be run by
-setting ``useAtomCorrections`` to ``False``, in which case Cantherm will not raise an error for
+setting ``useAtomCorrections`` to ``False``, in which case Arkane will not raise an error for
 unknown elements. The user should be aware that the resulting energies and thermodynamic quantities
 in the output file will not be meaningful, but kinetics and equilibrium constants will still be
 correct.
@@ -125,7 +125,7 @@ Species
 Each species of interest must be specified using a ``species()`` function, which can be input in two different ways,
 discussed in the separate subsections below:
 
-1. By pointing to the output files of quantum chemistry calculations, which CanTherm will parse for the necessary molecular properties
+1. By pointing to the output files of quantum chemistry calculations, which Arkane will parse for the necessary molecular properties
 2. By directly entering the molecular properties
 
 Within a single input file, both Option #1 and #2 may be used for different species.
@@ -198,7 +198,7 @@ they can specify the path to a quantum chemistry calculation output file that co
     }
 
 In this example, the ``CBS-QB3`` energy is obtained from a Gaussian log file, while the ``Klip_2`` energy is specified directly.
-The energy used will depend on what ``modelChemistry`` was specified in the input file. CanTherm can parse the energy from
+The energy used will depend on what ``modelChemistry`` was specified in the input file. Arkane can parse the energy from
 a Gaussian, Molpro, or QChem log file, all using the same ``Log`` class, as shown below.
 
 The input to the remaining parameters, ``geometry``, ``frequencies`` and ``rotors``, will depend on if hindered/free rotors are included.
@@ -361,7 +361,7 @@ Note that the atom labels identified within the rotor section should correspond 
 
 Option #2: Directly Enter Molecular Properties
 ----------------------------------------------
-While it is usually more convenient to have CanTherm parse molecular properties from the output of quantum chemistry calculations
+While it is usually more convenient to have Arkane parse molecular properties from the output of quantum chemistry calculations
 (see `Option #1: Automatically Parse Quantum Chemistry Calculation Output`_) there are instances where an output file is not available
 and it is more convenient for the user to directly enter the molecular properties. This is the case,  for example, if the user would like to use
 calculations from literature, where the final calculated molecular properties are often reported in a table (e.g., vibrational frequencies, rotational constants),
@@ -388,7 +388,7 @@ The ``E0`` ground state 0 K enthalpy of formation (including zero-point energy) 
 
     E0 = (100.725, 'kJ/mol')
 
-Note that if CanTherm is being used to calculate the thermochemistry of the species, it is critical that the value of ``E0`` is consistent with the
+Note that if Arkane is being used to calculate the thermochemistry of the species, it is critical that the value of ``E0`` is consistent with the
 definition above (0 K enthalpy of formation with zero-point energy). However, if the user is only interested in kinetics, ``E0`` can be defined on any
 arbitrary absolute energy scale, as long as the correct relative energies between various ``species()`` and ``transitionState()`` are maintained. For example,
 it is common in literature for the energy of some reactant(s) to be arbitrarily defined as zero, and the energies of all transition states, intermediates and products
@@ -509,9 +509,9 @@ The following is an example of a typical ``species()`` function, based on ethane
         opticalIsomers = 1,
     )
 
-Note that the format of the ``species()`` function above is identical to the ``conformer()`` function output by CanTherm in ``output.py``.
-Therefore, the user could directly copy the ``conformer()`` output of a CanTherm job to another CanTherm input file, change the name of the function to
-``species()`` (or ``transitionState()``, if appropriate, see next section) and run a new CanTherm job in this manner.
+Note that the format of the ``species()`` function above is identical to the ``conformer()`` function output by Arkane in ``output.py``.
+Therefore, the user could directly copy the ``conformer()`` output of an Arkane job to another Arkane input file, change the name of the function to
+``species()`` (or ``transitionState()``, if appropriate, see next section) and run a new Arkane job in this manner.
 This can be useful if the user wants to easily switch a ``species()`` function from  Option #1 (parsing  quantum chemistry calculation output)
 to Option #2 (directly enter molecular properties).
 
@@ -589,7 +589,7 @@ Note: the quantum tunneling factor method that may be assigned is either ``'Ecka
 Thermodynamics Computations
 ===========================
 
-Use a ``thermo()`` function to make CanTherm execute the thermodynamic
+Use a ``thermo()`` function to make Arkane execute the thermodynamic
 parameters computatiom for a species. Pass the string label of the species
 you wish to compute the  thermodynamic parameters for and the type of
 thermodynamics polynomial to generate (either ``'Wilhoit'`` or ``'NASA'``).
@@ -603,7 +603,7 @@ Below is a typical ``thermo()`` execution function::
 Kinetics Computations
 =====================
 
-Use a ``kinetics()`` function to make CanTherm execute the high-pressure limit kinetic
+Use a ``kinetics()`` function to make Arkane execute the high-pressure limit kinetic
 parameters computation for a reaction. The ``'label'`` string must correspond to that of
 a defined ``reaction()`` function. If desired, define a temperature range and number
 of temperatures at which the high-pressure rate coefficient will be tabulated and saved to 
@@ -648,17 +648,20 @@ in the ``examples`` directory.
 Troubleshooting and FAQs
 ========================
 
-1) The network that CanTherm generated and the resulting pdf file show abnormally large
+1) The network that Arkane generated and the resulting pdf file show abnormally large
 absolute values. What's going on?
 
     This can happen if the number of atoms and atom types is not properly defined or consistent in your input file(s).
 
-CanTherm User Checklist
-========================
+Arkane User Checklist
+=====================
 
-Using cantherm, or any rate theory package for that matter, requires careful consideration and management of a large amount of data, files, and input parameters. As a result, it is easy to make a mistake somewhere. This checklist was made to minimize such mistakes for users:
+Using Arkane, or any rate theory package for that matter, requires careful consideration and management of a large
+amount of data, files, and input parameters. As a result, it is easy to make a mistake somewhere. This checklist was
+made to minimize such mistakes for users:
 
-- Do correct paths exist for pointing to the files containing the electronic energies, molecular geometries and vibrational frequencies?
+- Do correct paths exist for pointing to the files containing the electronic energies, molecular geometries and
+  vibrational frequencies?
 
 For calculations involving pressure dependence:
 
@@ -666,7 +669,11 @@ For calculations involving pressure dependence:
 
 For calculations using internal hindered rotors:
 
-- Did you check to make sure the rotor has a reasonable potential (e.g., visually inspect the automatically generated rotor pdf files)?
+- Did you check to make sure the rotor has a reasonable potential (e.g., visually inspect the automatically generated
+  rotor pdf files)?
 - Within your input files, do all specified rotors point to the correct files?
 - Do all of the atom label indices correspond to those in the file that is read by ``Log``?
-- Why do the fourier fits look so much different than the results of the ab initio potential energy scan calculations? This is likely because the initial scan energy is not at a minimum. One solution is to simply shift the potential with respect to angle so that it starts at zero and, instead of having CanTherm read a Qchem or Gaussian output file, have CanTherm point to a 'ScanLog' file. Another problem can arise when the potential at 2*pi is also not [close] to zero.
+- Why do the fourier fits look so much different than the results of the ab initio potential energy scan calculations?
+  This is likely because the initial scan energy is not at a minimum. One solution is to simply shift the potential with
+  respect to angle so that it starts at zero and, instead of having Arkane read a Qchem or Gaussian output file, have
+  Arkane point to a 'ScanLog' file. Another problem can arise when the potential at 2*pi is also not [close] to zero.

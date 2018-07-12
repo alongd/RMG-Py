@@ -1,5 +1,5 @@
 *******************************
-rmgpy.cantherm.molpro.MolproLog
+rmgpy.arkane.molpro.MolproLog
 *******************************
 
-.. autoclass:: rmgpy.cantherm.molpro.MolproLog
+.. autoclass:: rmgpy.arkane.molpro.MolproLog

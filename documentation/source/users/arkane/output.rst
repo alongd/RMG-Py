@@ -5,7 +5,7 @@ Parsing Output Files
 Thermodynamic and High-pressure Limit Kinetics Calculations
 ===========================================================
 
-The syntax of CanTherm output files closely mirrors that of the input files.
+The syntax of Arkane output files closely mirrors that of the input files.
 For each ``thermo()`` function in the input file, there will be a corresponding
 ``thermo()`` function in the output file containing the computed thermodynamic
 model. Similarly, For each ``kinetics()`` function in the input file, there will 
@@ -30,7 +30,7 @@ Chemkin Output File
 ===================
 
 In addition to the ``output.py`` which contains the thermodynamic,
-kinetic, and pressure dependent results from a cantherm run, a Chemkin 
+kinetic, and pressure dependent results from an Arkane run, a Chemkin
 input file, ``chem.inp`` is also returned. This file contains species and their 
 thermodynamic parameters for each species that has the ``thermo()`` in the 
 input file. The file also contains kinetics, both pressure dependent and high 
@@ -49,19 +49,19 @@ Log File
 ========
 
 A log file containing similar information to that displayed on the console
-during CanTherm execution is also automatically saved. This file has the name
-``cantherm.log`` and is found in the same directory as the output file. The
+during Arkane execution is also automatically saved. This file has the name
+``Arkane.log`` and is found in the same directory as the output file. The
 log file accepts logging messages at an equal or greater level of detail than
 the console; thus, it is often useful (and recommended) to examine both if
 something unexpected has occurred.
 
-The ``examples/cantherm`` directory contains both CanTherm input files and the resulting
+The ``examples/arkane`` directory contains both Arkane input files and the resulting
 output files.
 
 Species Dictionary
 ==================
 
-Any species that had the ``thermo()`` method called and had the structure defined in the cantherm
+Any species that had the ``thermo()`` method called and had the structure defined in the Arkane
 input file will also have an RMG style adjacency list representation in ``species_dictionary.txt``.
 This allows the user to input the corresponding thermo and kinetics into RMG in various ways
 described in the RMG user guide.

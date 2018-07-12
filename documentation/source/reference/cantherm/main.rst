@@ -1,5 +1,5 @@
 ***********************
-rmgpy.cantherm.CanTherm
+rmgpy.arkane.Arkane
 ***********************
 
-.. autoclass:: rmgpy.cantherm.CanTherm
+.. autoclass:: rmgpy.arkane.Arkane

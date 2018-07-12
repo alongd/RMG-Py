@@ -1,5 +1,5 @@
-************************************
-rmgpy.cantherm.PressureDependenceJob
-************************************
+**********************************
+rmgpy.arkane.PressureDependenceJob
+**********************************
 
-.. autoclass:: rmgpy.cantherm.PressureDependenceJob
+.. autoclass:: rmgpy.arkane.PressureDependenceJob

@@ -1,5 +1,5 @@
 ***********************************
-rmgpy.cantherm.gaussian.GaussianLog
+rmgpy.arkane.gaussian.GaussianLog
 ***********************************
 
-.. autoclass:: rmgpy.cantherm.gaussian.GaussianLog
+.. autoclass:: rmgpy.arkane.gaussian.GaussianLog

@@ -1,5 +1,5 @@
 *****************************
-rmgpy.cantherm.qchem.QchemLog
+rmgpy.arkane.qchem.QchemLog
 *****************************
 
-.. autoclass:: rmgpy.cantherm.qchem.QchemLog
+.. autoclass:: rmgpy.arkane.qchem.QchemLog

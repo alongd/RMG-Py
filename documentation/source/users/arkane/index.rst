@@ -1,8 +1,8 @@
-.. _canthermusersguide:
+.. _arkaneusersguide:
 
-*********************
-CanTherm User's Guide
-*********************
+*******************
+Arkane User's Guide
+*******************
 
 .. toctree::
     :maxdepth: 2

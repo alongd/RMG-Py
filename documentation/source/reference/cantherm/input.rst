@@ -1,5 +1,5 @@
-********************
-CanTherm input files
-********************
+******************
+Arkane input files
+******************
 
-.. autofunction:: rmgpy.cantherm.input.loadInputFile
+.. autofunction:: rmgpy.arkane.input.loadInputFile

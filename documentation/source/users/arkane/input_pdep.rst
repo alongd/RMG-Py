@@ -11,7 +11,7 @@ parameters. The species section must come before the reaction section. Before
 discussing each of these sections, a brief word on the general input file
 syntax will be given.
 
-The format of CanTherm input files is based on Python syntax. In fact, CanTherm
+The format of Arkane input files is based on Python syntax. In fact, Arkane
 input files are valid Python source code, and this is used to facilitate
 reading of the file.
 
@@ -19,7 +19,7 @@ Each section is made up of one or more function calls, where parameters are
 specified as text strings, numbers, or objects. Text strings must be wrapped in
 either single or double quotes.
 
-The following is a list of all the components of a CanTherm input file for pressure-dependent calculations:
+The following is a list of all the components of a Arkane input file for pressure-dependent calculations:
 
 =========================== ================================================================
 Component                   Description
@@ -50,10 +50,10 @@ Model Chemistry
 The first item in the input file should be a ``modelChemistry`` assignment
 with a string describing the model chemistry.
 
-CanTherm uses this information to adjust the computed energies to the usual gas-phase reference
+Arkane uses this information to adjust the computed energies to the usual gas-phase reference
 states by applying atom, bond and spin-orbit coupling energy corrections. This is particularly
 important for ``thermo()`` calculations (see below). Note that the user must specify under the
-``species()`` function the type and number of bonds for CanTherm to apply these corrections.
+``species()`` function the type and number of bonds for Arkane to apply these corrections.
 The example below specifies CBS-QB3 as the model chemistry::
 
     modelChemistry = "CBS-QB3"
@@ -90,7 +90,7 @@ need only be specified with a single ``species()`` function.
 The input to the ``species()`` function for a pressure-dependent calculation is the same as for a `thermodynamic or high-pressure limit kinetics calculation <input.html#species>`_,
 with the addition of a few extra parameters needed to describe collisional energy transfer. There are two options for providing input to the ``species()`` function, which are described in the subsections below:
 
-1. By pointing to the output files of quantum chemistry calculations, which CanTherm will parse for the necessary molecular properties
+1. By pointing to the output files of quantum chemistry calculations, which Arkane will parse for the necessary molecular properties
 2. By directly entering the molecular properties
 
 Within a single input file, both Option #1 and #2 may be used.
@@ -131,7 +131,7 @@ The ``molecularWeight`` parameter should be defined in the quantity format ``(va
 
     molecularWeight = (44.04, 'g/mol')
 
-If the ``molecularWeight`` parameter is not given, it is calculated by CanTherm based
+If the ``molecularWeight`` parameter is not given, it is calculated by Arkane based
 on the chemical structure.
 
 The ``collisionModel`` is defined for unimolecular isomers with the transport data using a
@@ -242,7 +242,7 @@ they can specify the path to a quantum chemistry calculation output file that co
     }
 
 In this example, the ``CBS-QB3`` energy is obtained from a Gaussian log file, while the ``Klip_2`` energy is specified directly.
-The energy used will depend on what ``modelChemistry`` was specified in the input file. CanTherm can parse the energy from
+The energy used will depend on what ``modelChemistry`` was specified in the input file. Arkane can parse the energy from
 a Gaussian, Molpro, or QChem log file, all using the same ``Log`` class, as shown below.
 
 The input to the remaining parameters, ``geometry``, ``frequencies`` and ``rotors``, will depend on if hindered/free rotors are included.
@@ -407,7 +407,7 @@ Note that the atom labels identified within the rotor section should correspond 
 
 Option #2: Directly Enter Molecular Properties
 ----------------------------------------------
-While it is usually more convenient to have CanTherm parse molecular properties from the output of quantum chemistry calculations
+While it is usually more convenient to have Arkane parse molecular properties from the output of quantum chemistry calculations
 (see `Option #1: Automatically Parse Quantum Chemistry Calculation Output`_) there are instances where an output file is not available
 and it is more convenient for the user to directly enter the molecular properties. This is the case,  for example, if the user would like to use
 calculations from literature, where the final calculated molecular properties are often reported in a table (e.g., vibrational frequencies, rotational constants),
@@ -441,7 +441,7 @@ The ``E0`` ground state 0 K enthalpy of formation (including zero-point energy) 
 
     E0 = (-34.6,'kcal/mol')
 
-Note that if CanTherm is being used to calculate the thermochemistry of the species, it is critical that the value of ``E0`` is consistent with the
+Note that if Arkane is being used to calculate the thermochemistry of the species, it is critical that the value of ``E0`` is consistent with the
 definition above (0 K enthalpy of formation with zero-point energy). However, if the user is only interested in kinetics, ``E0`` can be defined on any
 arbitrary absolute energy scale, as long as the correct relative energies between various ``species()`` and ``transitionState()`` are maintained. For example,
 it is common in literature for the energy of some reactant(s) to be arbitrarily defined as zero, and the energies of all transition states, intermediates and products
@@ -539,9 +539,9 @@ radical :math:`\ce{CH3C(=O)OO.}` (different options for specifying the same inte
         ),
     )
 
-Note that the format of the ``species()`` function above is identical to the ``conformer()`` function output by CanTherm in ``output.py``.
-Therefore, the user could directly copy the ``conformer()`` output of a CanTherm job to another CanTherm input file, change the name of the function to
-``species()`` (or ``transitionState()``, if appropriate, see next section) and run a new CanTherm job in this manner.
+Note that the format of the ``species()`` function above is identical to the ``conformer()`` function output by Arkane in ``output.py``.
+Therefore, the user could directly copy the ``conformer()`` output of an Arkane job to another Arkane input file, change the name of the function to
+``species()`` (or ``transitionState()``, if appropriate, see next section) and run a new Arkane job in this manner.
 This can be useful if the user wants to easily switch a ``species()`` function from  Option #1 (parsing  quantum chemistry calculation output)
 to Option #2 (directly enter molecular properties).
 
@@ -599,7 +599,7 @@ Parameter              Required?            Description
 ``tunneling``          Optional             The type of tunneling model (either 'Eckhart' or 'Wigner') to use for tunneling through the reaction barrier
 ====================== ==================== ============================================================================================================
 
-If the optional ``kinetics`` parameter is specified, CanTherm will perform an inverse Laplace transform (ILT) on the high pressure-limit kinetics provided to estimate the microcanonical rate coefficients,
+If the optional ``kinetics`` parameter is specified, Arkane will perform an inverse Laplace transform (ILT) on the high pressure-limit kinetics provided to estimate the microcanonical rate coefficients,
 :math:`k(E)`, needed for the master equation (refer to Theory manual for more detail). This feature is useful for barrierless reactions, such as radical recombinations, which don't
 have an obvious transition state. If the ILT approach to calculating :math:`k(E)` is taken, a placeholder ``transitionState`` must still be defined with an ``E0`` equal to the energy of the higher energy species it is connecting.
 
@@ -618,9 +618,9 @@ Note that the reactants and products must have been previously declared using a 
 using the same name labels. Transition states must also be previously declared using a
 ``transitionState()`` function.
 
-If the optional ``kinetics`` entry is not specified, CanTherm will calculate the required kinetic
+If the optional ``kinetics`` entry is not specified, Arkane will calculate the required kinetic
 coefficients on its own. The ``kinetics`` entry is particularly useful to specify rates of barrierless
-reactions (for which CanTherm cannot yet calculate high-pressure limit rates).
+reactions (for which Arkane cannot yet calculate high-pressure limit rates).
 
 Currently, the ``reaction()`` function for a pressure-dependent job cannot connect bimolecular reactants to bimolecular products
 (e.g., as in a hydrogen abstraction or disproportionation reaction).
@@ -641,7 +641,7 @@ Parameter              Description
 ``bathGas``            A dictionary of bath gases and their respective mole fractions, adding up to 1.0
 ====================== ================================================================================
 
-CanTherm is largely able to determine the molecular configurations that define
+Arkane is largely able to determine the molecular configurations that define
 the potential energy surface for your reaction network simply by inspecting the
 path reactions. However, you must indicate which unimolecular and bimolecular
 configurations you wish to include in the master equation formulation; all
@@ -702,9 +702,9 @@ Parameter                                          Description
 
 **Temperature and Pressure Ranges**
 
-CanTherm will compute the :math:`k(T,P)` values on a grid of temperature and
+Arkane will compute the :math:`k(T,P)` values on a grid of temperature and
 pressure points. ``Tmin``, ``Tmax``, and ``Tcount`` values, as well as ``Pmin``, ``Pmax``, and ``Pcount`` parameter values must be provided.  
-CanTherm will automatically choose the intermediate temperatures based on the
+Arkane will automatically choose the intermediate temperatures based on the
 interpolation model you wish to fit. This is the recommended approach.
 
 Alternatively, the grid of temperature and pressure points can be specified explicitly using ``Tlist`` and/or ``Plist``.
@@ -746,7 +746,7 @@ Thermodynamics Computations
 
 The input to the ``thermo()`` function is identical to that of a `non-pressure-dependent job <input.html#thermodynamics-computations>`_.
 
-Use a ``thermo()`` function to make CanTherm execute the thermodynamic
+Use a ``thermo()`` function to make Arkane execute the thermodynamic
 parameters computatiom for a species. Pass the string label of the species
 you wish to compute the  thermodynamic parameters for and the type of
 thermodynamics polynomial to generate (either ``'Wilhoit'`` or ``'NASA'``).
@@ -765,7 +765,7 @@ the ``reaction()`` function for a pressure-dependent job cannot connect bimolecu
 (e.g., as in a hydrogen abstraction or disproportionation reaction), it is also not possible to use ``kinetics()`` on such a reaction either.
 The kinetics of such a reaction can only be calculated as part of a non-pressure-dependent job.
 
-Use a ``kinetics()`` function to make CanTherm execute the high-pressure limit kinetic
+Use a ``kinetics()`` function to make Arkane execute the high-pressure limit kinetic
 parameters computation for a reaction. The ``'label'`` string must correspond to that of
 a defined ``reaction()`` function. If desired, define a temperature range and number
 of temperatures at which the high-pressure rate coefficient will be tabulated and saved to
@@ -791,7 +791,7 @@ Examples
 
 Perhaps the best way to learn the input file syntax is by example. To that end,
 a number of example input files and their corresponding output have been given
-in the ``examples/cantherm/networks`` directory, which includes both an `acetyl+O2`
+in the ``examples/arkane/networks`` directory, which includes both an `acetyl+O2`
 and `n-butanol` example.
 
 
