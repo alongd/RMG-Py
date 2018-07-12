@@ -34,7 +34,7 @@ This module contains the TransportData class for storing transport properties.
 
 import numpy
 
-from rmgpy.rmgpyobject import RMGPYObject
+from rmgpy.rmgobject import RMGObject
 from rmgpy import quantity
 from rmgpy.quantity import DipoleMoment, Energy, Length, Volume
 import rmgpy.constants as constants
@@ -42,7 +42,7 @@ import rmgpy.constants as constants
 ###############################################################################
 
 
-class TransportData(RMGPYObject):
+class TransportData(RMGObject):
     """
     A set of transport properties.
     
