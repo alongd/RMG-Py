@@ -40,7 +40,7 @@ try:
 except ImportError:
     from yaml import Dumper, Loader, SafeLoader
 
-from rmgpy.rmgpyobject import RMGPYObject
+from rmgpy.rmgobject import RMGObject
 from rmgpy import __version__ as version
 import rmgpy.constants as constants
 from rmgpy.quantity import ScalarQuantity, ArrayQuantity
@@ -83,7 +83,7 @@ def is_pdep(jobList):
 ################################################################################
 
 
-class CanthermSpecies(RMGPYObject):
+class CanthermSpecies(RMGObject):
     """
     A class for parsing Cantherm species with statMech data into .yml files
     """
@@ -202,7 +202,7 @@ class CanthermSpecies(RMGPYObject):
         full_path = os.path.join(path, filename)
         with open(full_path, 'w') as f:
             yaml.dump(data=self.as_dict(), stream=f, canonical=False)
-        # remove empty lines from the file (multiline strings are have excess new line brakes for some reason):
+        # remove empty lines from the file (multi-line strings have excess new line brakes for some reason):
         with open(full_path, 'r') as f:
             lines = f.readlines()
         with open(full_path, 'w') as f:
