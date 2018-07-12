@@ -119,7 +119,7 @@ def getSolverExtensionModules():
         Extension('rmgpy.solver.liquid', ['rmgpy/solver/liquid.pyx'], include_dirs=['.']),
     ]
 
-def getCanthermExtensionModules():
+def getArkaneExtensionModules():
     return [
         # Kinetics
         Extension('rmgpy.kinetics.arrhenius', ['rmgpy/kinetics/arrhenius.pyx']),
@@ -169,11 +169,11 @@ if 'solver' in sys.argv:
     # This is for `python setup.py build_ext solver`
     sys.argv.remove('solver')
     ext_modules.extend(getSolverExtensionModules())
-if 'cantherm' in sys.argv:
-    # This is for `python setup.py build_ext cantherm`
-    sys.argv.remove('cantherm')
+if 'arkane' in sys.argv:
+    # This is for `python setup.py build_ext arkane`
+    sys.argv.remove('arkane')
     ext_modules.extend(getMainExtensionModules())
-    ext_modules.extend(getCanthermExtensionModules())
+    ext_modules.extend(getArkaneExtensionModules())
 if 'minimal' in sys.argv:
     # This starts with the full install list, but removes anything that has a pure python mode
     # i.e. in only includes things whose source is .pyx
@@ -186,7 +186,7 @@ if 'minimal' in sys.argv:
             if os.path.splitext(source)[1] == '.pyx':
                 ext_modules.append(module)
 
-scripts=['cantherm.py',
+scripts=['arkane.py',
          'rmg.py',
          'scripts/checkModels.py',
          'scripts/convertFAME.py',
@@ -208,7 +208,7 @@ for root, dirs, files in os.walk('rmgpy'):
     for file in files:
         if file.endswith('.py') or file.endswith('.pyx'):
             if 'Test' not in file and '__init__' not in file:
-                if not root.endswith('rmgpy/cantherm/files'):
+                if not root.endswith('rmgpy/arkane/files'):
                     module = 'rmgpy' + root.partition('rmgpy')[-1].replace('/','.') + '.' + file.partition('.py')[0]
                     modules.append(module)       
 
