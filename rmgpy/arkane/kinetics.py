@@ -34,7 +34,7 @@ import string
 import logging
 from sensitivity import KineticsSensitivity as sa
 
-from rmgpy.cantherm.output import prettify
+from rmgpy.arkane.output import prettify
 
 from rmgpy.kinetics.arrhenius import Arrhenius, ArrheniusEP, PDepArrhenius, MultiArrhenius, MultiPDepArrhenius 
 from rmgpy.kinetics.chebyshev import Chebyshev
@@ -52,7 +52,7 @@ from rmgpy.exceptions import SpeciesError
 
 class KineticsJob(object):
     """
-    A representation of a CanTherm kinetics job. This job is used to compute 
+    A representation of an Arkane kinetics job. This job is used to compute
     and save the high-pressure-limit kinetics information for a single reaction.
 
     `usedTST` - a boolean representing if TST was used to calculate the kinetics

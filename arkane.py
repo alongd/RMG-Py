@@ -29,19 +29,19 @@
 ###############################################################################
 
 """
-This is the main executable script for CanTherm, a tool for computing chemical
+This is the main executable script for Arkane, a tool for computing chemical
 reaction rates and other properties used in detailed kinetics models using
-various methodologies and theories. To run CanTherm, use the command ::
+various methodologies and theories. To run Arkane, use the command ::
 
-    $ python cantherm.py FILE
+    $ python arkane.py FILE
 
-where ``FILE`` is the path to a CanTherm input file describing the job to
-execute. CanTherm will run the specified job, writing the output to
-``output.py`` and a log to both the console and to ``cantherm.log``, with both
+where ``FILE`` is the path to an Arkane input file describing the job to
+execute. Arkane will run the specified job, writing the output to
+``output.py`` and a log to both the console and to ``Arkane.log``, with both
 files appearing in the same directory as the input file. Some additional
 command-line arguments are available; run the command ::
 
-    $ python cantherm.py -h
+    $ python arkane.py -h
 
 for more information.
 """
@@ -49,15 +49,15 @@ for more information.
 import os
 import logging
 
-from rmgpy.cantherm.main import *
+from rmgpy.arkane.main import *
 
-cantherm = CanTherm()
+arkane = Arkane()
 
 # Parse and validate the command-line arguments
-cantherm.parseCommandLineArguments()
+arkane.parseCommandLineArguments()
 
 # Execute the job
-cantherm.execute()
+arkane.execute()
 
 try:
     import psutil

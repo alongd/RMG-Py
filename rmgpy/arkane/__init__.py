@@ -28,7 +28,7 @@
 #                                                                             #
 ###############################################################################
 
-from .main import CanTherm
+from .main import Arkane
 from .statmech import StatMechJob
 from .thermo import ThermoJob
 from .kinetics import KineticsJob

@@ -39,7 +39,7 @@ import logging
 import string
 
 import rmgpy.constants as constants
-from rmgpy.cantherm.output import prettify
+from rmgpy.arkane.output import prettify
 
 from rmgpy.statmech.translation import Translation, IdealGasTranslation
 from rmgpy.statmech.rotation import Rotation, LinearRotor, NonlinearRotor, KRotor, SphericalTopRotor
@@ -59,7 +59,7 @@ from rmgpy.molecule.util import retrieveElementCount
 
 class ThermoJob(object):
     """
-    A representation of a CanTherm thermodynamics job. This job is used to
+    A representation of an Arkane thermodynamics job. This job is used to
     compute and save the thermodynamics information for a single species.
     """
     

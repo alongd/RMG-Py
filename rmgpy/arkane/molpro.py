@@ -40,7 +40,7 @@ class MolproLog:
     """
     Represents a Molpro log file. The attribute `path` refers to the
     location on disk of the Molpro log file of interest. Methods are provided
-    to extract a variety of information into CanTherm classes and/or NumPy
+    to extract a variety of information into Arkane classes and/or NumPy
     arrays. 
     """
     

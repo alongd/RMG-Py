@@ -32,7 +32,7 @@ import numpy
 import unittest
 import os
 
-from rmgpy.cantherm.molpro import MolproLog
+from rmgpy.arkane.molpro import MolproLog
 from rmgpy.statmech import IdealGasTranslation, LinearRotor, NonlinearRotor, HarmonicOscillator, HinderedRotor
 import rmgpy.constants as constants
 

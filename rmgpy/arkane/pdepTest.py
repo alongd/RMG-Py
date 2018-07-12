@@ -33,7 +33,7 @@ import unittest
 import shutil
 import logging
 from nose.plugins.attrib import attr
-from rmgpy.cantherm.main import CanTherm
+from rmgpy.arkane.main import Arkane
 from rmgpy import settings
 from rmgpy.chemkin import readReactionsBlock
 from rmgpy.species import Species
@@ -43,31 +43,31 @@ from rmgpy.kinetics.chebyshev import Chebyshev
 
 
 @attr('functional')
-class CanthermTest(unittest.TestCase):
+class ARKANETest(unittest.TestCase):
     """
-    Contains unit tests for the sensitivity module in Cantherm
+    Contains unit tests for the sensitivity module in Arkane
     """
 
     @classmethod
     def setUp(self):
         """A function that is run ONCE before all unit tests in this class."""
-        self.directory = os.path.join(settings['test_data.directory'], 'Cantherm', 'tst1', '')
+        self.directory = os.path.join(settings['test_data.directory'], 'arkane', 'tst1', '')
         self.input_file = os.path.join(self.directory, 'pdep_sa.py')
 
         # clean working folder from all previous test output
         dirs = [d for d in os.listdir(self.directory) if not os.path.isfile(os.path.join(self.directory, d))]
         for d in dirs:
-            shutil.rmtree(os.path.join(settings['test_data.directory'], 'Cantherm', 'tst1', d, ''))
+            shutil.rmtree(os.path.join(settings['test_data.directory'], 'arkane', 'tst1', d, ''))
         files = [f for f in os.listdir(self.directory) if os.path.isfile(os.path.join(self.directory, f))]
         for f in files:
             if not 'pdep_sa' in f:
-                os.remove(os.path.join(settings['test_data.directory'], 'Cantherm', 'tst1', f))
+                os.remove(os.path.join(settings['test_data.directory'], 'arkane', 'tst1', f))
 
     def testPDepJob(self):
         """
-        A general test for a PDep job in Cantherm
+        A general test for a PDep job in Arkane
         """
-        self.tst1 = CanTherm()
+        self.tst1 = Arkane()
         self.tst1.inputFile = self.input_file
         self.tst1.outputDirectory = self.directory
         self.tst1.verbose = logging.WARN
@@ -115,14 +115,14 @@ class CanthermTest(unittest.TestCase):
     @classmethod
     def tearDown(self):
         """A function that is run ONCE after all unit tests in this class."""
-        self.directory = os.path.join(settings['test_data.directory'], 'Cantherm', 'tst1', '')
+        self.directory = os.path.join(settings['test_data.directory'], 'arkane', 'tst1', '')
         self.input_file = os.path.join(self.directory, 'pdep_sa.py')
 
         # clean working folder from all previous test output
         dirs = [d for d in os.listdir(self.directory) if not os.path.isfile(os.path.join(self.directory, d))]
         for d in dirs:
-            shutil.rmtree(os.path.join(settings['test_data.directory'], 'Cantherm', 'tst1', d, ''))
+            shutil.rmtree(os.path.join(settings['test_data.directory'], 'arkane', 'tst1', d, ''))
         files = [f for f in os.listdir(self.directory) if os.path.isfile(os.path.join(self.directory, f))]
         for f in files:
             if not 'pdep_sa' in f:
-                os.remove(os.path.join(settings['test_data.directory'], 'Cantherm', 'tst1', f))
+                os.remove(os.path.join(settings['test_data.directory'], 'arkane', 'tst1', f))

@@ -43,13 +43,11 @@ from rdkit.Chem import GetPeriodicTable
 
 import rmgpy.constants as constants
 from rmgpy.quantity import Quantity
-from rmgpy.cantherm.output import prettify
-from rmgpy.cantherm.gaussian import GaussianLog
-from rmgpy.cantherm.molpro import MolproLog
-from rmgpy.cantherm.qchem import QchemLog 
-
+from rmgpy.arkane.output import prettify
+from rmgpy.arkane.gaussian import GaussianLog
+from rmgpy.arkane.molpro import MolproLog
+from rmgpy.arkane.qchem import QchemLog
 from rmgpy.species import TransitionState, Species
-
 from rmgpy.statmech.translation import Translation, IdealGasTranslation
 from rmgpy.statmech.rotation import Rotation, LinearRotor, NonlinearRotor, KRotor, SphericalTopRotor
 from rmgpy.statmech.vibration import Vibration, HarmonicOscillator
@@ -167,7 +165,7 @@ def freeRotor(pivots,top,symmetry):
 
 class StatMechJob(object):
     """
-    A representation of a CanTherm statistical mechanics job. This job is used
+    A representation of a Arkane statistical mechanics job. This job is used
     to compute and save the statistical mechanics information for a single
     species or transition state.
     """
