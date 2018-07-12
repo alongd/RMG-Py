@@ -31,8 +31,6 @@ import logging
 
 import numpy as np
 
-from rmgpy.statmech.mode import Mode
-
 ################################################################################
 
 
@@ -48,12 +46,17 @@ cdef class RMGObject(object):
         """
         A helper function for YAML dumping cytonized objects
         """
+        cdef dict output_dict
+        cdef list all_attributes
+        cdef str attr
+
         output_dict = dict()
         output_dict['class'] = self.__class__.__name__
-        for key in self.__class__.__dict__:
-            val = getattr(self, key)
-            if val is not None and not callable(val) and not key.startswith('_') and val != '':
-                output_dict[key] = val
+        all_attributes = [attr for attr in dir(self) if not attr.startswith('_')]
+        for attr in all_attributes:
+            val = getattr(self, attr)
+            if val is not None and not callable(val) and val != '':
+                output_dict[attr] = val
         for key, val in output_dict.iteritems():
             if isinstance(val, list) and isinstance(val[0], RMGObject):
                 output_dict[key] = [v.as_dict() for v in val]
