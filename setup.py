@@ -59,6 +59,7 @@ Cython.Compiler.Options.annotate = True
 
 ################################################################################
 
+
 def getMainExtensionModules():
     return [
         # Kinetics
@@ -111,13 +112,15 @@ def getMainExtensionModules():
         Extension('rmgpy.species', ['rmgpy/species.py'], include_dirs=['.']),
         Extension('rmgpy.chemkin', ['rmgpy/chemkin.pyx'], include_dirs=['.']),
     ]
-    
+
+
 def getSolverExtensionModules():
     return [
         Extension('rmgpy.solver.base', ['rmgpy/solver/base.pyx'], include_dirs=['.']),
         Extension('rmgpy.solver.simple', ['rmgpy/solver/simple.pyx'], include_dirs=['.']),
         Extension('rmgpy.solver.liquid', ['rmgpy/solver/liquid.pyx'], include_dirs=['.']),
     ]
+
 
 def getArkaneExtensionModules():
     return [
