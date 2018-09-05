@@ -2,4 +2,4 @@
 Arkane input files
 ******************
 
-.. autofunction:: rmgpy.arkane.input.loadInputFile
+.. autofunction:: arkane.input.loadInputFile

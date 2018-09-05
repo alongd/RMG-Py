@@ -1,10 +1,10 @@
 ****************************
-Arkane (:mod:`rmgpy.arkane`)
+Arkane (:mod:`arkane`)
 ****************************
 
-.. module:: rmgpy.arkane
+.. module:: arkane
 
-The :mod:`rmgpy.arkane` subpackage contains the main functionality for
+The :mod:`arkane` subpackage contains the main functionality for
 Arkane, a tool for computing thermodynamic and kinetic properties of chemical
 species and reactions.
 
@@ -13,7 +13,7 @@ species and reactions.
 Reading Gaussian log files
 ==========================
 
-.. currentmodule:: rmgpy.arkane.gaussian
+.. currentmodule:: arkane.gaussian
 
 =============================== ================================================
 Class                           Description
@@ -26,7 +26,7 @@ Class                           Description
 Reading Q-Chem log files
 ========================
 
-.. currentmodule:: rmgpy.arkane.qchem
+.. currentmodule:: arkane.qchem
 
 =============================== ================================================
 Class                           Description
@@ -39,7 +39,7 @@ Class                           Description
 Reading Molpro log files
 ========================
 
-.. currentmodule:: rmgpy.arkane.molpro
+.. currentmodule:: arkane.molpro
 
 =============================== ================================================
 Class                           Description
@@ -52,7 +52,7 @@ Class                           Description
 Input
 =====
 
-.. currentmodule:: rmgpy.arkane.input
+.. currentmodule:: arkane.input
 
 =============================== ================================================
 Function                        Description
@@ -65,7 +65,7 @@ Function                        Description
 Job classes
 ===========
 
-.. currentmodule:: rmgpy.arkane
+.. currentmodule:: arkane
 
 =============================== ================================================
 Class                           Description
