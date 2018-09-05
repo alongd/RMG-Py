@@ -223,7 +223,7 @@ class Arkane:
         
         # Initialize the logging system (both to the console and to a file in the
         # output directory)
-        self.initializeLog(self.verbose, os.path.join(self.outputDirectory, 'Arkane.log'))
+        self.initializeLog(self.verbose, os.path.join(self.outputDirectory, 'arkane.log'))
         
         # Print some information to the beginning of the log
         self.logHeader()

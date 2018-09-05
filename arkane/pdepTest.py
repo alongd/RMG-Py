@@ -43,7 +43,7 @@ from arkane.main import Arkane
 
 
 @attr('functional')
-class ARKANETest(unittest.TestCase):
+class ArkaneTest(unittest.TestCase):
     """
     Contains unit tests for the sensitivity module in Arkane
     """
