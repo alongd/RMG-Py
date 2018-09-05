@@ -32,16 +32,15 @@ import os.path
 import numpy
 import string
 import logging
-from sensitivity import KineticsSensitivity as sa
 
-from rmgpy.arkane.output import prettify
+from arkane.sensitivity import KineticsSensitivity as sa
+from arkane.output import prettify
 
 from rmgpy.kinetics.arrhenius import Arrhenius, ArrheniusEP, PDepArrhenius, MultiArrhenius, MultiPDepArrhenius 
 from rmgpy.kinetics.chebyshev import Chebyshev
 from rmgpy.kinetics.falloff import ThirdBody, Lindemann, Troe
 from rmgpy.kinetics.kineticsdata import KineticsData, PDepKineticsData
 from rmgpy.kinetics.tunneling import Wigner, Eckart
-
 import rmgpy.quantity as quantity
 import rmgpy.constants as constants
 from rmgpy.molecule.draw import MoleculeDrawer, createNewSurface
@@ -49,6 +48,7 @@ from rmgpy.molecule.draw import MoleculeDrawer, createNewSurface
 from rmgpy.exceptions import SpeciesError
 
 ################################################################################
+
 
 class KineticsJob(object):
     """

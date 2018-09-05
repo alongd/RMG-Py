@@ -31,10 +31,15 @@
 import math
 import numpy
 import logging
+
 import rmgpy.constants as constants
-from rmgpy.cantherm.common import get_element_mass
 from rmgpy.exceptions import InputError
 from rmgpy.statmech import IdealGasTranslation, NonlinearRotor, LinearRotor, HarmonicOscillator, Conformer
+
+from arkane.common import get_element_mass
+
+################################################################################
+
 
 class MolproLog:
     """

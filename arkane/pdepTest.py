@@ -33,11 +33,11 @@ import unittest
 import shutil
 import logging
 from nose.plugins.attrib import attr
-from rmgpy.arkane.main import Arkane
 from rmgpy import settings
 from rmgpy.chemkin import readReactionsBlock
 from rmgpy.species import Species
 from rmgpy.kinetics.chebyshev import Chebyshev
+from arkane.main import Arkane
 
 ################################################################################
 

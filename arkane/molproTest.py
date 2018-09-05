@@ -31,12 +31,12 @@
 import numpy
 import unittest
 import os
-
-from rmgpy.arkane.molpro import MolproLog
 from rmgpy.statmech import IdealGasTranslation, LinearRotor, NonlinearRotor, HarmonicOscillator, HinderedRotor
 import rmgpy.constants as constants
+from arkane.molpro import MolproLog
 
 ################################################################################
+
 
 class MolproTest(unittest.TestCase):
     """

@@ -36,6 +36,7 @@ import ast
     
 ################################################################################
 
+
 class PrettifyVisitor(ast.NodeVisitor):
     """
     A class for traversing an abstract syntax tree to assemble a prettier

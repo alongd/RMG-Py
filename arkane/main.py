@@ -44,20 +44,20 @@ try:
     matplotlib.rc('mathtext', default='regular')
 except ImportError:
     pass
-
+from arkane.input import loadInputFile
+from arkane.kinetics import KineticsJob
+from arkane.statmech import StatMechJob
+from arkane.thermo import ThermoJob
+from arkane.pdep import PressureDependenceJob
+from arkane.explorer import ExplorerJob
 from rmgpy.chemkin import writeElementsSection
-from rmgpy.arkane.input import loadInputFile
-from rmgpy.arkane.kinetics import KineticsJob
-from rmgpy.arkane.statmech import StatMechJob
-from rmgpy.arkane.thermo import ThermoJob
-from rmgpy.arkane.pdep import PressureDependenceJob
-from rmgpy.arkane.explorer import ExplorerJob
 from rmgpy.data.thermo import ThermoLibrary
 from rmgpy.data.base import Entry
 from rmgpy.data.kinetics.library import KineticsLibrary
 from rmgpy.exceptions import InputError
 
 ################################################################################
+
 
 class Arkane:
     """

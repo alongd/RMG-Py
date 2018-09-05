@@ -49,7 +49,7 @@ for more information.
 import os
 import logging
 
-from rmgpy.arkane.main import *
+from arkane.main import *
 
 arkane = Arkane()
 

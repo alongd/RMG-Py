@@ -28,64 +28,8 @@
 #                                                                             #
 ###############################################################################
 
-import unittest
-import os
-from nose.plugins.attrib import attr
-
-from rmgpy.arkane import Arkane
-from rmgpy.arkane.explorer import ExplorerJob
-################################################################################
-
-@attr('functional')
-class testExplorerJob(unittest.TestCase):
-    """
-    Contains tests for ExplorerJob class execute method
-    """
-    @classmethod
-    def setUpClass(cls):
-
-        arkane = Arkane()
-        
-        cls.jobList = arkane.loadInputFile(os.path.join(os.path.dirname(os.path.abspath(__file__)),'data','methoxy_explore.py'))
-        for job in cls.jobList:
-            if not isinstance(job,ExplorerJob):
-                job.execute(outputFile=None, plot=None)
-            else:
-                thermoLibrary,kineticsLibrary,speciesList = arkane.getLibraries()
-                job.execute(outputFile=None, plot=None, speciesList=speciesList, thermoLibrary=thermoLibrary, kineticsLibrary=kineticsLibrary)
-
-        cls.thermoLibrary = thermoLibrary
-        cls.kineticsLibrary = kineticsLibrary
-        cls.explorerjob = cls.jobList[-1]
-        cls.pdepjob = cls.jobList[-2]
-    
-    @classmethod
-    def tearDownClass(cls):
-        """A function that is run ONCE after all unit tests in this class."""
-        # Reset module level database
-        import rmgpy.data.rmg
-        rmgpy.data.rmg.database.kinetics = None
-        
-    def test_reactions(self):
-        """
-        test that the right number of reactions are in output network
-        """
-        self.assertEqual(len(self.explorerjob.network.pathReactions),6)
-    
-    def test_isomers(self):
-        """
-        test that the right number of isomers are in the output network
-        """
-        self.assertEqual(len(self.explorerjob.network.isomers),2)
-    
-    def test_job_rxns(self):
-        """
-        test that in this case all the reactions in the job
-        ended up in the final network
-        """
-        for rxn in self.explorerjob.jobRxns:
-            self.assertIn(rxn,self.explorerjob.network.pathReactions)
-
-
-if __name__ == '__main__':
-    unittest.main(testRunner=unittest.TextTestRunner(verbosity=2))
+from arkane.main import Arkane
+from arkane.statmech import StatMechJob
+from arkane.thermo import ThermoJob
+from arkane.kinetics import KineticsJob
+from arkane.pdep import PressureDependenceJob

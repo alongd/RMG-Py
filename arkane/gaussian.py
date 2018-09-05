@@ -37,7 +37,7 @@ import rmgpy.constants as constants
 from rmgpy.statmech import IdealGasTranslation, NonlinearRotor, LinearRotor, HarmonicOscillator, Conformer
 from rmgpy.exceptions import InputError
 
-from rmgpy.arkane.common import checkConformerEnergy, get_element_mass
+from arkane.common import checkConformerEnergy, get_element_mass
 
 ################################################################################
 

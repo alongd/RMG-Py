@@ -71,11 +71,11 @@ from rmgpy.molecule import Molecule
 from rmgpy.reaction import Reaction
 from rmgpy.transport import TransportData
 
-from rmgpy.arkane.kinetics import KineticsJob
-from rmgpy.arkane.statmech import StatMechJob, assign_frequency_scale_factor
-from rmgpy.arkane.thermo import ThermoJob
-from rmgpy.arkane.pdep import PressureDependenceJob
-from rmgpy.arkane.explorer import ExplorerJob
+from arkane.kinetics import KineticsJob
+from arkane.statmech import StatMechJob, assign_frequency_scale_factor
+from arkane.thermo import ThermoJob
+from arkane.pdep import PressureDependenceJob
+from arkane.explorer import ExplorerJob
 
 ################################################################################
 

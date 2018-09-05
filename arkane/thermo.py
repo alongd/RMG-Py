@@ -37,16 +37,12 @@ import os.path
 import numpy.linalg
 import logging
 import string
-
 import rmgpy.constants as constants
-from rmgpy.arkane.output import prettify
-
 from rmgpy.statmech.translation import Translation, IdealGasTranslation
 from rmgpy.statmech.rotation import Rotation, LinearRotor, NonlinearRotor, KRotor, SphericalTopRotor
 from rmgpy.statmech.vibration import Vibration, HarmonicOscillator
 from rmgpy.statmech.torsion import Torsion, HinderedRotor
 from rmgpy.statmech.conformer import Conformer
-
 from rmgpy.thermo.thermodata import ThermoData
 from rmgpy.thermo.nasa import NASAPolynomial, NASA
 from rmgpy.thermo.wilhoit import Wilhoit
@@ -54,8 +50,10 @@ from rmgpy.chemkin import writeThermoEntry
 from rmgpy.species import Species
 from rmgpy.molecule import Molecule
 from rmgpy.molecule.util import retrieveElementCount
+from arkane.output import prettify
 
 ################################################################################
+
 
 class ThermoJob(object):
     """

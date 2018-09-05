@@ -42,7 +42,7 @@ from rmgpy.molecule import Molecule
 import rmgpy.constants as constants
 from rmgpy.quantity import Quantity, Energy
 
-from rmgpy.arkane.pdep import PressureDependenceJob
+from arkane.pdep import PressureDependenceJob
 
 from rmgpy.pdep import Network, Configuration, SingleExponentialDown
 from rmgpy.species import Species, TransitionState

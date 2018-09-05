@@ -33,12 +33,14 @@ import numpy as np
 import logging
 import shutil
 from copy import deepcopy
-
 import rmgpy
 from rmgpy.rmg.main import RMG
 from rmgpy.rmg.model import CoreEdgeReactionModel
 from rmgpy.data.rmg import getDB
 from rmgpy.exceptions import InputError
+
+################################################################################
+
 
 class ExplorerJob(object):
     def __init__(self, source, pdepjob, explore_tol, energy_tol=np.inf, flux_tol=0.0, 

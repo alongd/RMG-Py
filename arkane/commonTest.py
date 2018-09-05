@@ -31,16 +31,18 @@
 """
 This script contains unit tests of the :mod:`rmgpy.quantity` module.
 """
+
 import unittest
 import numpy
 import os
 
 import rmgpy
 import rmgpy.constants as constants
-from rmgpy.arkane import Arkane, input
-from rmgpy.arkane.input import jobList
-from rmgpy.arkane.common import get_element_mass
-from rmgpy.arkane.statmech import InputError
+
+from arkane.common import get_element_mass
+from arkane import Arkane, input
+from arkane.statmech import InputError
+from arkane.input import jobList
 
 ################################################################################
 
@@ -227,7 +229,7 @@ class testArkaneInput(unittest.TestCase):
         """Test loading of statmech job from species input file."""
         job = jobList[-1]
 
-        self.assertTrue(isinstance(job, rmgpy.arkane.statmech.StatMechJob))
+        self.assertTrue(isinstance(job, arkane.statmech.StatMechJob))
 
         job.modelChemistry = self.modelChemistry
         job.frequencyScaleFactor = self.frequencyScaleFactor
@@ -263,7 +265,7 @@ class testArkaneInput(unittest.TestCase):
         """Test loading of statmech job from transition state input file."""
         job = jobList[-1]
 
-        self.assertTrue(isinstance(job, rmgpy.arkane.statmech.StatMechJob))
+        self.assertTrue(isinstance(job, arkane.statmech.StatMechJob))
 
         job.modelChemistry = self.modelChemistry
         job.frequencyScaleFactor = self.frequencyScaleFactor
@@ -282,7 +284,7 @@ class testStatmech(unittest.TestCase):
     def testGaussianLogFileError(self):
         """Test that the proper error is raised if gaussian geometry and frequency file paths are the same"""
         job = jobList[-1]
-        self.assertTrue(isinstance(job, rmgpy.arkane.statmech.StatMechJob))
+        self.assertTrue(isinstance(job, arkane.statmech.StatMechJob))
         self.assertRaises(InputError,job.load())
 
 class testGetMass(unittest.TestCase):
