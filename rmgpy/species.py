@@ -665,17 +665,24 @@ class Species(object):
         self.conformer.modes = conformer.modes
         self.conformer.spinMultiplicity = conformer.spinMultiplicity
         
-    def generateEnergyTransferModel(self):
+    def generate_energy_transfer_model(self, bathgas=None):
         """
-        Generate the collisional energy transfer model parameters for the
-        species. This "algorithm" is *very* much in need of improvement.
+        Generate the collisional energy transfer model parameters for the species.
+        The energy transfer model highly depends on the nature of the colliding gas (ref: doi 10.1021/jp0566820)
+        This method assigns a literature value used for N2 as the bath gas by default,
+        unless `bathgas` is a noble gas, in which case a literature value for Ar is assigned.
+        N2 data is taken from doi: 10.1021/jp0566820 and doi: 10.1021/jp058041a (both give nearly the same parameters)
+        Ar data is taken from doi: 10.1021/jp067585p
+        A further improvement of this function could incorporate dependence on species chemistry / size.
         """
-        self.energyTransferModel = SingleExponentialDown(
-            alpha0 = (300*0.011962,"kJ/mol"),
-            T0 = (300,"K"),
-            n = 0.85,
-        ) 
+        if bathgas is None:
+            self.energyTransferModel = SingleExponentialDown(alpha0=(200,'cm-1'), T0=(300,'K'), n=0.85)
+        elif isinstance(bathgas, Species) and len(bathgas.molecule[0].atoms) == 1\
+                and bathgas.molecule[0].atoms[0].atomType.lable in ['He','Ne','Ar']:
+            self.energyTransferModel = SingleExponentialDown(alpha0=(133,'cm-1'), T0=(300,'K'), n=0.80)
+
 ################################################################################
+
 
 class TransitionState():
     """

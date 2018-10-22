@@ -385,7 +385,7 @@ class CoreEdgeReactionModel:
                 
         logging.debug('Creating new species {0}'.format(label))
         
-        spec.generateEnergyTransferModel()
+        spec.generate_energy_transfer_model(bathgas=bathgas)
         formula = molecule.getFormula()
         if formula in self.speciesDict:
             self.speciesDict[formula].append(spec)
