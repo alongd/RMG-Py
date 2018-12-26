@@ -530,8 +530,8 @@ class StatMechJob(object):
             y = coordinates[i,1]
             z = coordinates[i,2]
             f.write('#   {0} {1:9.4f} {2:9.4f} {3:9.4f}\n'.format(symbol_by_number[number[i]], x, y, z))
-        
-        string = 'conformer(label={0!r}, E0={1!r}, modes={2!r}, spinMultiplicity={3:d}, opticalIsomers={4:d}'.format(
+
+        result = 'conformer(label={0!r}, E0={1!r}, modes={2!r}, spinMultiplicity={3:d}, opticalIsomers={4:d}'.format(
             self.species.label, 
             conformer.E0,
             conformer.modes,
@@ -539,11 +539,11 @@ class StatMechJob(object):
             conformer.opticalIsomers,
         )
         try:
-            string += ', frequency={0!r}'.format(self.species.frequency)
+            result += ', frequency={0!r}'.format(self.species.frequency)
         except AttributeError: pass
-        string += ')'
+        result += ')'
         
-        f.write('{0}\n\n'.format(prettify(string)))
+        f.write('{0}\n\n'.format(prettify(result)))
         
         f.close()
 
