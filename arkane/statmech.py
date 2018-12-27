@@ -200,7 +200,7 @@ class StatMechJob(object):
         """
         path = self.path
         TS = isinstance(self.species, TransitionState)
-        filename, file_extension = os.path.splitext(path)
+        _, file_extension = os.path.splitext(path)
         if file_extension in ['.yml', '.yaml']:
             if TS:
                 raise ValueError('Loading transition states from a YAML file is still unsupported.')
