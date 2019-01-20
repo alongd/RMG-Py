@@ -273,12 +273,13 @@ class QChemLog:
         """
         E0 = None
         with open(self.path, 'r') as f:
-            for line in f:
+            lines = f.readlines()
+            for line in lines:
                 if 'Final energy is' in line:
                     E0 = float(line.split()[3]) * constants.E_h * constants.Na
                     logging.debug('energy is {}'.format(str(E0)))
             if E0 is None:
-                for line in f:
+                for line in lines:
                     if 'Total energy in the final basis set' in line:
                         E0 = float(line.split()[8]) * constants.E_h * constants.Na
                         logging.debug('energy is {}'.format(str(E0)))
