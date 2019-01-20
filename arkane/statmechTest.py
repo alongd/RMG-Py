@@ -34,7 +34,6 @@ This script contains unit tests of the :mod:`arkane.main` module.
 
 import unittest
 import os
-import shutil
 
 from rmgpy.exceptions import InputError
 
