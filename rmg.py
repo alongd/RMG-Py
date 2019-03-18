@@ -38,6 +38,14 @@ import logging
 import rmgpy
 
 from rmgpy.rmg.main import RMG, initializeLog, processProfileStats, makeProfileGraph
+import rmg_arc
+
+try:
+    from arc import ARC
+except ImportError:
+    is_arc_available = False
+else:
+    is_arc_available = True
 
 ################################################################################
 
@@ -160,11 +168,14 @@ def main():
         log_file = os.path.join(args.output_directory, 'RMG.log')
         processProfileStats(stats_file, log_file)
         makeProfileGraph(stats_file)
-
     else:
-
-        rmg = RMG(inputFile=args.file, outputDirectory=args.output_directory)
-        rmg.execute(**kwargs)
+        with open(args.file, 'r') as f:
+            lines = f.readlines()
+        if is_arc_available and any(['arc(' in line for line in lines]):
+            rmg_arc.main(args)
+        else:
+            rmg = RMG(inputFile=args.file, outputDirectory=args.output_directory)
+            rmg.execute(**kwargs)
 
 
 ################################################################################
