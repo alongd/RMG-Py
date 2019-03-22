@@ -93,7 +93,6 @@ def main(args):
             f.write(rmg_input_file)
         print('\n\n\n    Running RMG, iteration {0}:\n\n\n'.format(i))
         run_rmg(input_file=new_rmg_input_path, output_directory=run_directory, args=args, kwargs=kwargs)
-        clear_rmg_database()
 
         # determine species to calculate
         species_to_calc, additional_calcs_required = determine_species_to_calculate(run_directory, arc_arguments,
@@ -105,7 +104,6 @@ def main(args):
                 print('{0}: {1}'.format(spc.label, spc.molecule[0].toSMILES()))
             print('\n\n\n')
             run_arc(arc_arguments['kwargs'], run_directory, species_to_calc)
-            clear_rmg_database()
             # add the calculated RMG libraries to the database and input file
             unconverged_species.extend(get_unconverged_species(run_directory))
             rmg_input_file, library_name = add_rmg_libraries(run_directory, rmg_input_file, library_name)
@@ -416,7 +414,7 @@ def add_rmg_libraries(run_directory, rmg_input_file, library_name=None):
     """
     arc_thermo_lib_path = os.path.join(run_directory, 'ARC', 'output', 'RMG libraries', 'thermo', 'rmg_arc.py')
     if library_name is None:
-        rmg_thermo_lib_path = os.path.join(settings['database.directory'], 'thermo', 'libraries')
+        rmg_thermo_lib_base_path = os.path.join(settings['database.directory'], 'thermo', 'libraries')
         unique_library_name, j = False, 0
         while not unique_library_name:
             # make sure each rmg_arc run ends up in a different thermo library, and use the same one throughout the run
@@ -424,9 +422,10 @@ def add_rmg_libraries(run_directory, rmg_input_file, library_name=None):
                 library_name = 'arc_thermo'
             else:
                 library_name = 'arc_thermo' + '_' + str(j)
-            rmg_thermo_lib_path = os.path.join(rmg_thermo_lib_path, '{0}.py'.format(library_name))
+            rmg_thermo_lib_path = os.path.join(rmg_thermo_lib_base_path, '{0}.py'.format(library_name))
             if not os.path.isfile(rmg_thermo_lib_path):
                 unique_library_name = True
+            j += 1
     else:
         rmg_thermo_lib_path = os.path.join(settings['database.directory'], 'thermo', 'libraries',
                                            '{0}.py'.format(library_name))
