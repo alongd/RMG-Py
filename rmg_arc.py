@@ -47,6 +47,7 @@ from rmgpy.chemkin import loadChemkinFile
 from rmgpy import settings
 from rmgpy.data.rmg import getDB
 from rmgpy.data.thermo import ThermoLibrary
+from rmgpy.data.base import ForbiddenStructures
 from rmgpy.thermo import NASAPolynomial, NASA, ThermoData, Wilhoit
 
 try:
@@ -74,9 +75,14 @@ def main(args):
     unconverged_species = list()
     # extract ARC's part of the input file:
     rmg_input_file, arc_arguments = parse_input_file(input_file)
+    # clear the RMG log files in the parent directory - they don't contain actual info
+    for item in os.listdir(output_directory):
+        if item.endswith('.log'):
+            os.remove(os.path.join(output_directory, item))
     additional_calcs_required = True
     max_iterations = 100
     i = 0
+    library_name = None
     while additional_calcs_required or i == max_iterations:
         run_directory = os.path.join(output_directory, 'iteration_{0}'.format(i))
         if not os.path.exists(run_directory):
@@ -87,6 +93,7 @@ def main(args):
             f.write(rmg_input_file)
         print('\n\n\n    Running RMG, iteration {0}:\n\n\n'.format(i))
         run_rmg(input_file=new_rmg_input_path, output_directory=run_directory, args=args, kwargs=kwargs)
+        clear_rmg_database()
 
         # determine species to calculate
         species_to_calc, additional_calcs_required = determine_species_to_calculate(run_directory, arc_arguments,
@@ -98,14 +105,11 @@ def main(args):
                 print('{0}: {1}'.format(spc.label, spc.molecule[0].toSMILES()))
             print('\n\n\n')
             run_arc(arc_arguments['kwargs'], run_directory, species_to_calc)
+            clear_rmg_database()
             # add the calculated RMG libraries to the database and input file
             unconverged_species.extend(get_unconverged_species(run_directory))
-            rmg_input_file = add_rmg_libraries(run_directory, rmg_input_file, i)
+            rmg_input_file, library_name = add_rmg_libraries(run_directory, rmg_input_file, library_name)
         i += 1
-    # clear the RMG log files in the parent directory - they don't contain actual info
-    for item in os.listdir(output_directory):
-        if item.endswith('.log'):
-            os.remove(os.path.join(output_directory, item))
 
 
 def run_rmg(input_file, output_directory, args, kwargs):
@@ -166,6 +170,8 @@ def run_arc(kwargs, run_directory, species_to_calc):
     for spc in species_to_calc:
         for char in spc.label:
             if char not in valid_chars:
+                print('Renaming species {0} as {1} due to an illegal character present in the species name '
+                      '("{2}")'.format(spc.label, 'unique_ARC_label_{0}'.format(i), char))
                 spc.label = 'unique_ARC_label_{0}'.format(i)
                 i += 1
     kwargs['arc_species_list'] = species_to_calc  # ARC accepts RMG Species objects
@@ -174,15 +180,15 @@ def run_arc(kwargs, run_directory, species_to_calc):
     arc0.execute()
 
 
-# def clear_rmg_database():
-#     """Set the RMG database object instant to None"""
-#     rmg_db = getDB()
-#     rmg_db.thermo = None
-#     rmg_db.transport = None
-#     rmg_db.forbiddenStructures = None
-#     rmg_db.kinetics = None
-#     rmg_db.statmech = None
-#     rmg_db.solvation = None
+def clear_rmg_database():
+    """Set the RMG database object instant to None"""
+    rmg_db = getDB()
+    rmg_db.thermo = None
+    rmg_db.transport = None
+    rmg_db.forbiddenStructures = ForbiddenStructures()
+    rmg_db.kinetics = None
+    rmg_db.statmech = None
+    rmg_db.solvation = None
 
 
 def parse_input_file(input_file):
@@ -246,7 +252,7 @@ def determine_species_to_calculate(run_directory, arc_arguments, unconverged_spe
         for spc in rmg_species:
             if calc_based_on_thermo_comment(spc) and spc.label not in unconverged_species:
                 species_to_calc.append(spc)
-        print_summary(run_directory, species_to_calc, header='All core species:')
+        log_species_to_calculate(run_directory, species_to_calc, header='All core species:')
     else:
         if 'SA species' in arc_arguments or 'SA reactions' in arc_arguments\
                 or 'SA pdep' in arc_arguments or 'SA observables' in arc_arguments:
@@ -279,7 +285,7 @@ def determine_species_to_calculate(run_directory, arc_arguments, unconverged_spe
                             if observable not in spcs_labels_to_calc and observable not in unconverged_species\
                                     and 'SA observables' in arc_arguments and arc_arguments['SA observables']:
                                 spcs_labels_to_calc.append(observable)
-                                print_summary(run_directory, observable, header='observable')
+                                log_species_to_calculate(run_directory, observable, header='observable')
                             if observable not in sa_dict[sa_type]:
                                 sa_dict[sa_type][observable] = list()
                             # parameter extraction examples:
@@ -304,7 +310,7 @@ def determine_species_to_calculate(run_directory, arc_arguments, unconverged_spe
                                     + rmg_reactions[sa_list_sorted[i]['parameter']].products:
                                 if spc.label not in sa_spcs_to_calc and calc_based_on_thermo_comment(spc):
                                     sa_spcs_to_calc.append(spc)
-                                    print_summary(run_directory, spc, header='from sensitive reactions')
+                                    log_species_to_calculate(run_directory, spc, header='from sensitive reactions')
                             if sa_list_sorted[i]['is_pdep']\
                                     and rmg_reactions[sa_list_sorted[i]['parameter']] not in pdep_rxns_to_explore\
                                     and 'SA pdep' in arc_arguments and arc_arguments['SA pdep']:
@@ -315,7 +321,7 @@ def determine_species_to_calculate(run_directory, arc_arguments, unconverged_spe
                             if sa_list_sorted[i]['parameter'] not in spcs_labels_to_calc\
                                     and sa_list_sorted[i]['parameter'] not in unconverged_species:
                                 spcs_labels_to_calc.append(sa_list_sorted[i]['parameter'])
-                                print_summary(run_directory, sa_list_sorted[i]['parameter'],
+                                log_species_to_calculate(run_directory, sa_list_sorted[i]['parameter'],
                                               header='from sensitive species')
 
         for rxn in pdep_rxns_to_explore:
@@ -323,7 +329,7 @@ def determine_species_to_calculate(run_directory, arc_arguments, unconverged_spe
                 if spc not in sa_spcs_to_calc and calc_based_on_thermo_comment(spc)\
                         and spc.label not in unconverged_species:
                     species_to_calc.append(spc)
-                    print_summary(run_directory, spc, header='from sensitive reaction networks')
+                    log_species_to_calculate(run_directory, spc, header='from sensitive reaction networks')
 
         coll_violators_path = os.path.join(run_directory, 'collision_rate_violators.log')
         with open(coll_violators_path, 'r') as f:
@@ -334,10 +340,10 @@ def determine_species_to_calculate(run_directory, arc_arguments, unconverged_spe
                 for label in labels:
                     if label != '<=>' and label not in spcs_labels_to_calc and label not in unconverged_species:
                         spcs_labels_to_calc.append(label)
-                        print_summary(run_directory, label, header='from collision violators')
+                        log_species_to_calculate(run_directory, label, header='from collision violators')
 
         # convert labels to RMG Species objects
-        for label in spcs_labels_to_calc::
+        for label in spcs_labels_to_calc:
             for spc in rmg_species:
                 if spc.label == label:
                     if spc not in sa_spcs_to_calc and calc_based_on_thermo_comment(spc):
@@ -355,16 +361,16 @@ def calc_based_on_thermo_comment(spc):
     return False
 
 
-def print_summary(run_directory, species, header):
+def log_species_to_calculate(run_directory, species, header):
     """
     Report the species to be calculated
-    The report will be saved as `species_to_calculate_in_ARC.log` in `run_directory`, the RMG run folder
+    The report will be saved as `ARC.log` in `run_directory`, the RMG run folder
     `species_list` could be either a list or one instance of either RMG Species or labels corresponding to RMG Species
     `header` is the reason these species were chosen for calculation
     """
-    path = os.path.join(run_directory, 'species_to_calculate_in_ARC.log')
+    path = os.path.join(run_directory, 'ARC.log')
     with open(path, 'w'):
-        # create the file if it doesn't exist, overwrite the file if it exists
+        # create the file if it doesn't exist, overwrite the file if it does exist
         pass
     if isinstance(species, list):
         species_labels = list()
@@ -381,31 +387,49 @@ def print_summary(run_directory, species, header):
             f.write('{0} ({1})\n'.format(label, header))
 
 
-def add_rmg_libraries(run_directory, rmg_input_file, i):
+def log_unconverged_species(run_directory, species):
+    """
+    Report unconverged species
+    The report will be saved as `ARC.log` in `run_directory`, the RMG run folder
+    `species_list` could be either a list or one instance of either RMG Species or labels corresponding to RMG Species
+    """
+    path = os.path.join(run_directory, 'ARC.log')
+    if isinstance(species, list):
+        species_labels = list()
+        for spc in species:
+            label = spc if isinstance(spc, (str, unicode)) else spc.label
+            species_labels.append(label)
+    else:
+        species_labels = [species if isinstance(species, (str, unicode)) else species.label]
+    with open(path, 'a') as f:
+        f.write('\n\nUnconverged species:\n')
+        for label in species_labels:
+            f.write(label + '\n')
+
+
+def add_rmg_libraries(run_directory, rmg_input_file, library_name=None):
     """
     Copy the RMG libraries generated by ARC (located in `run_directory`/ARC/output/RMG libraries/)
     to the RMG database, and add them to the RMG input file to be used in the next RMG run.
     A single library, `rmg_arc`, is used to which the ARC output is appended
     `i` is the RMG/ARC iteration number
     """
-    new_rmg_input_file = ''
     arc_thermo_lib_path = os.path.join(run_directory, 'ARC', 'output', 'RMG libraries', 'thermo', 'rmg_arc.py')
-    rmg_thermo_lib_path = os.path.join(settings['database.directory'], 'thermo', 'libraries')
-    unique_library_name = False
-    j = 0
-    while not unique_library_name:
-        if j:
-            library_name = 'arc_thermo' + '_' + str(j) + '.py'
-        else:
-            library_name = 'arc_thermo.py'
-        if not os.path.isfile(os.path.join(rmg_thermo_lib_path, library_name):
-            unique_library_name = True
-
-
-
-
-
-            
+    if library_name is None:
+        rmg_thermo_lib_path = os.path.join(settings['database.directory'], 'thermo', 'libraries')
+        unique_library_name, j = False, 0
+        while not unique_library_name:
+            # make sure each rmg_arc run ends up in a different thermo library, and use the same one throughout the run
+            if not j:
+                library_name = 'arc_thermo'
+            else:
+                library_name = 'arc_thermo' + '_' + str(j)
+            rmg_thermo_lib_path = os.path.join(rmg_thermo_lib_path, '{0}.py'.format(library_name))
+            if not os.path.isfile(rmg_thermo_lib_path):
+                unique_library_name = True
+    else:
+        rmg_thermo_lib_path = os.path.join(settings['database.directory'], 'thermo', 'libraries',
+                                           '{0}.py'.format(library_name))
     local_context = {
         'ThermoData': ThermoData,
         'Wilhoit': Wilhoit,
@@ -414,18 +438,19 @@ def add_rmg_libraries(run_directory, rmg_input_file, i):
     }
     if os.path.isfile(rmg_thermo_lib_path):
         # the rmg_arc thermo library already exists. load it, append, and save
-        thermo_lib, arc_thermo_lib = ThermoLibrary(), ThermoLibrary()
-        thermo_lib.load(path=rmg_thermo_lib_path, local_context=local_context, global_context=dict())
+        rmg_thermo_lib, arc_thermo_lib = ThermoLibrary(), ThermoLibrary()
+        rmg_thermo_lib.load(path=rmg_thermo_lib_path, local_context=local_context, global_context=dict())
         arc_thermo_lib.load(path=arc_thermo_lib_path, local_context=local_context, global_context=dict())
         for entry in arc_thermo_lib.entries.itervalues():
-            thermo_lib.entries[entry.label] = entry
-        thermo_lib.save(path=rmg_thermo_lib_path)
-        # TODO: if same label: check not isomorphic. Anyway, check not isomeprhpic with all other entries. different levels? so per project, add an index
+            rmg_thermo_lib.entries[entry.label] = entry
+            rmg_thermo_lib.save(path=rmg_thermo_lib_path)
     else:
-        # the rmg_arc thermo library doesn't exist. just copy the lobrary generated by ARC
+        # the rmg_arc thermo library doesn't exist. just copy the library generated by ARC
         shutil.copy(arc_thermo_lib_path, rmg_thermo_lib_path)
+    # now, add the library to RMG's input file, if not already there
+    new_rmg_input_file = ''
     for line in rmg_input_file.splitlines():
-        if 'arc_thermo' in line:
+        if library_name in line:
             break
     else:
         # the arc_thermo library isn't present in the RMG input file, add it appropriately
@@ -434,7 +459,7 @@ def add_rmg_libraries(run_directory, rmg_input_file, i):
         for line in rmg_input_file.splitlines():
             if 'thermoLibraries' in line:
                 if ']' in line.split('thermoLibraries')[1]:
-                    new_rmg_input_file += add_new_library_to_line(line, 'arc_thermo') + '\n'
+                    new_rmg_input_file += add_new_library_to_line(line, library_name) + '\n'
                 else:
                     combine_lines = True
                     combined_lines.append(line)
@@ -444,8 +469,8 @@ def add_rmg_libraries(run_directory, rmg_input_file, i):
                     combine_lines = False
             else:
                 new_rmg_input_file += line + '\n'
-
-    return new_rmg_input_file or rmg_input_file
+    input_file = new_rmg_input_file or rmg_input_file
+    return input_file, library_name
 
 
 def add_new_library_to_line(line, library_name):
@@ -476,4 +501,5 @@ def get_unconverged_species(run_directory):
         with open(unconverged_path, 'r') as f:
             for line in f:
                 unconverged_species.append(line.split('\n')[0])
+    log_unconverged_species(run_directory, unconverged_species)
     return unconverged_species
