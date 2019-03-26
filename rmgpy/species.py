@@ -635,7 +635,7 @@ class Species(object):
         try:
             transportDB = getDB('transport')        
             if not transportDB: raise Exception
-        except Exception, e:
+        except Exception as e:
             logging.debug('Could not obtain the transport database. Not generating transport...')
             raise e
 
@@ -665,7 +665,7 @@ class Species(object):
         try:
             statmechDB = getDB('statmech')        
             if not statmechDB: raise Exception
-        except Exception, e:
+        except Exception as e:
             logging.debug('Could not obtain the stat. mech database. Not generating stat. mech...')
             raise e
 

@@ -58,7 +58,7 @@ def readInputFile(path):
     full_path = os.path.abspath(os.path.expandvars(path))
     try:
         f = open(full_path)
-    except IOError, e:
+    except IOError as e:
         logging.error('The input file "{0}" could not be opened.'.format(full_path))
         logging.info('Check that the file exists and that you have read access.')
         raise e
@@ -82,7 +82,7 @@ def readInputFile(path):
 
     try:
         exec f in global_context, local_context
-    except (NameError, TypeError, SyntaxError), e:
+    except (NameError, TypeError, SyntaxError) as e:
         logging.error('The input file "{0}" was invalid:'.format(full_path))
         logging.exception(e)
         raise

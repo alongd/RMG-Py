@@ -354,7 +354,7 @@ class CoreEdgeReactionModel:
         try:
             spec = Species(index=speciesIndex, label=label, molecule=[molecule], reactive=reactive,
                  thermo=object.thermo, transportData=object.transportData)
-        except AttributeError, e:
+        except AttributeErro:
             spec = Species(index=speciesIndex, label=label, molecule=[molecule], reactive=reactive)
         
         spec.creationIteration = self.iterationNum
@@ -629,7 +629,7 @@ class CoreEdgeReactionModel:
                     rxn = self.inflate(rxn)
                     try:
                         rxn.reverse = self.inflate(rxn.reverse)
-                    except AttributeError, e:
+                    except AttributeError:
                         pass
                     
                 self.processNewReactions(newReactions, newSpecies, pdepNetwork)
@@ -656,7 +656,7 @@ class CoreEdgeReactionModel:
                                 rxn = self.inflate(rxn)
                                 try:
                                     rxn.reverse = self.inflate(rxn.reverse)
-                                except AttributeError, e:
+                                except AttributeError:
                                     pass
 
                             self.processNewReactions(newReactions, species, network)
@@ -683,7 +683,7 @@ class CoreEdgeReactionModel:
                 rxn = self.inflate(rxn) 
                 try:
                     rxn.reverse = self.inflate(rxn.reverse)
-                except AttributeError, e:
+                except AttributeError:
                     pass
                 self.processNewReactions([rxn], spc)
 
@@ -1952,7 +1952,7 @@ class CoreEdgeReactionModel:
             try:
                 spc = self.indexSpeciesDict[obj]
                 return spc
-            except KeyError, e:
+            except KeyError as e:
                 raise e
 
         return obj
@@ -2023,13 +2023,13 @@ def getFamilyLibraryObject(label):
     try:
         fam = kinetics.families[label]
         return fam
-    except KeyError, e:
+    except KeyError:
         pass
 
     try:
         lib = kinetics.libraries[label]
         return lib
-    except KeyError, e:
+    except KeyError:
         pass
 
     raise Exception('Could not retrieve the family/library: {}'.format(label))
