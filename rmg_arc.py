@@ -55,6 +55,8 @@ import shutil
 import time
 import datetime
 import pandas as pd
+import re
+import inspect
 
 from rmgpy.rmg.main import RMG
 from rmgpy.chemkin import loadChemkinFile
@@ -239,6 +241,11 @@ def parse_arc_input_file(input_file_path):
     for argument in arguments.iterkeys():
         if argument in input_dict:
             del input_dict[argument]
+    for argument in input_dict.keys():
+        if argument not in inspect.getargspec(ARC.__init__).args:
+            # This argument was not extracted above, and it's not an ARC argument, remove so ARC doesn't crush
+            log('Argument "{0}" passed to ARC is not allowed. Not using it.'.format(argument), 'error')
+            del input_dict[argument]
     return arguments, input_dict
 
 
@@ -322,9 +329,6 @@ def should_species_be_calculated(species, unconverged_species, species_to_calc):
     `species_to_calc` is a dictionary of RMG Species to calculate thermo for in the current iteration
       keys are labels, values are dicts of {'spc': RMG Species objects, 'reason': ``str``}
     """
-    print('*should_species_be_calculated*')
-    print(species)
-    print(species.label)
     if calc_based_on_thermo_comment(species)\
             and species_not_in_list(species, unconverged_species)\
             and species_not_in_list(species, [spc['spc'] for spc in species_to_calc.itervalues()]):
@@ -446,7 +450,20 @@ def determine_species_to_calculate(run_directory, arc_arguments, unconverged_spe
                 lines = f.readlines()
             for line in lines:
                 if '=' in line and '!' not in line:
-                    labels = line.split()[0].split('=')
+                    # `line` might look like one of these:
+                    # C2H3O(66)+O(T)(14)=C2H2O(60)+OH(D)(33)              1.500000e+09  1.500  -0.890
+                    # C2H2O(60)+CH2(T)(9)(+M)=C3H4O(383)(+M)              1.000e+00     0.000   0.000
+                    # C2H2O(60)+CH2(T)(9)(+N2)=C3H4O(383)(+N2)            1.000e+00     0.000   0.000
+                    # C2H2O(60)+CH2(T)(9)(+N2(32))=C3H4O(383)(+N2(32))    1.000e+00     0.000   0.000
+                    rxn_to_log = line.split()[0]
+                    collider = re.search(r'\(\+[^)]+\)', line)
+                    if collider is not None:
+                        collider = collider.group(0)
+                        if collider.count('(') == 2 and collider.count(')') == 1:
+                            collider += ')'
+                        line = line.replace(collider, '')
+                    modified_rxn_string = line.split()[0].replace('+M', '')
+                    labels = modified_rxn_string.split('=')
                     if '+' in labels[0]:
                         reactants = labels[0].split('+')
                     else:
@@ -458,11 +475,9 @@ def determine_species_to_calculate(run_directory, arc_arguments, unconverged_spe
                     labels = reactants + products
                     for label in labels:
                         species = get_species_by_label(label, rmg_species)
-                        print('*collision violators*')
-                        print(species)
-                        print(species.label)
                         if should_species_be_calculated(species, unconverged_species, species_to_calc):
-                            reason = 'species participates in a collision rate violating reaction, {0}'.format(line)
+                            reason = 'species participates in a collision rate violating reaction, {0}'.format(
+                                rxn_to_log)
                             species_to_calc[species.toChemkin()] = {'spc': species, 'reason': reason}
 
     species_list_to_calc = [spc['spc'] for spc in species_to_calc.itervalues()]
@@ -478,9 +493,6 @@ def calc_based_on_thermo_comment(spc):
     """
     A helper function for reading the Species `spc` thermo comment and determining whether to calculate it in ARC
     """
-    print('*calc_based_on_thermo_comment*')
-    print(spc)
-    print(spc.label)
     if 'group additivity' in spc.thermo.comment or '+ radical(' in spc.thermo.comment:
         return True
     return False
@@ -501,9 +513,21 @@ def log_species_to_calculate(species_dict):
     Report the species to be calculated in the next iteration.
     `species_dict` is a dictionary of RMG Species containing the reason for calculating them
     """
-    log('Species to calculate thermodynamic data for (label, SMILES, and reason):')
+    log('Species to calculate thermodynamic data for:')
+    max_label_length = max([len(label) for label in species_dict.iterkeys()])
+    max_smiles_length = max([len(spc_dict['spc'].molecule[0].toSMILES()) for spc_dict in species_dict.itervalues()])
+    space1 = ' ' * (max_label_length - len('label') + 1)
+    space2 = ' ' * (max_smiles_length - len('SMILES') + 1)
+    log('Label{space1} SMILES{space2} Reason for calculating thermo for this species'.format(
+        space1=space1, space2=space2))
+    log('-----{space1} ------{space2} ----------------------------------------------'.format(
+        space1=space1, space2=space2))
     for label, spc_dict in species_dict.iteritems():
-        log('{0}, {1}, {2}'.format(label, spc_dict['spc'].molecule[0].toSMILES(), spc_dict['reason']))
+        smiles = spc_dict['spc'].molecule[0].toSMILES()
+        space1 = ' ' * (max_label_length - len(label) + 1)
+        space2 = ' ' * (max_smiles_length - len(smiles) + 1)
+        log('{label}{space1} {smiles}{space2} {reason}'.format(
+            label=label, space1=space1, smiles=smiles, space2=space2, reason=spc_dict['reason']))
 
 
 def log_species_summary(species_dict, unconverged_species):
@@ -515,17 +539,41 @@ def log_species_summary(species_dict, unconverged_species):
     """
     global species_labels
     log('SPECIES SUMMARY')
-    log('Species for which thermodynamic data was calculate by ARC (label, SMILES, and reason):')
-    print(species_dict)  # debug, delete
+    log('Species for which thermodynamic data was calculate by ARC:')
+    max_label_length = max([len(label) for label in species_dict.iterkeys()] + [6])
+    max_smiles_length = max([len(spc_dict['spc'].molecule[0].toSMILES()) for spc_dict in species_dict.itervalues()]
+                            + [6])
+    space1 = ' ' * (max_label_length - len('label') + 1)
+    space2 = ' ' * (max_smiles_length - len('SMILES') + 1)
+    log('Label{space1} SMILES{space2} Reason for calculating thermo for this species'.format(
+        space1=space1, space2=space2))
+    log('-----{space1} ------{space2} ----------------------------------------------'.format(
+        space1=space1, space2=space2))
     for label, spc_dict in species_dict.iteritems():
-        if all([label != species_labels(spc.label) for spc in unconverged_species]):
-            log('{0}, {1}, {2}'.format(label, spc_dict['spc'].molecule[0].toSMILES(), spc_dict['reason']))
+        smiles = spc_dict['spc'].molecule[0].toSMILES()
+        space1 = ' ' * (max_label_length - len(label) + 1)
+        space2 = ' ' * (max_smiles_length - len(smiles) + 1)
+        if all([label != species_labels[spc.label] for spc in unconverged_species]):
+            log('{label}{space1} {smiles}{space2} {reason}'.format(
+                label=label, space1=space1, smiles=smiles, space2=space2, reason=spc_dict['reason']))
     if unconverged_species:
-        log('Species for which thermodynamic data did not converge (label, SMILES, and reason):')
+        log('\nSpecies for which thermodynamic data did not converge:')
+        space1 = ' ' * (max_label_length - len('label') + 1)
+        space2 = ' ' * (max_smiles_length - len('SMILES') + 1)
+        log('         Label{space1} SMILES{space2} Reason for attempting to calculate thermo for this species'.format(
+            space1=space1, space2=space2))
+        log('         -----{space1} ------{space2} ----------------------------------------------------------'.format(
+            space1=space1, space2=space2))
         for uc_spc in unconverged_species:
             for label, spc_dict in species_dict.iteritems():
-                if label == species_labels(uc_spc.label):
-                    log('(FAILED) {0}, {1}, {2}'.format(label, spc_dict['spc'].molecule[0].toSMILES(), spc_dict['reason']))
+                if label == species_labels[uc_spc.label]:
+                    smiles = spc_dict['spc'].molecule[0].toSMILES()
+                    space1 = ' ' * (max_label_length - len(label) + 1)
+                    space2 = ' ' * (max_smiles_length - len(smiles) + 1)
+                    log('(FAILED) {label}{space1} {smiles}{space2} {reason}'.format(
+                        label=label, space1=space1, smiles=smiles, space2=space2, reason=spc_dict['reason']))
+    else:
+        log('\nAll species calculated in ARC successfully converged')
 
 
 def log_unconverged_species(unconverged_species):
@@ -535,9 +583,16 @@ def log_unconverged_species(unconverged_species):
     """
     global species_labels
     if unconverged_species:
-        log('\nThermodynamic calculations for the following species DID NOT converge (label, SMILES):')
+        log('\nThermodynamic calculations for the following species dit NOT converge:')
+        max_label_length = max([len(species_labels[spc.label]) for spc in unconverged_species] + [6])
+        space1 = ' ' * (max_label_length - len('label') + 1)
+        log('Label{space1} SMILES'.format(space1=space1))
+        log('-----{space1} ------'.format(space1=space1))
         for spc in unconverged_species:
-            log('{0}, {1}'.format(species_labels[spc.label], spc.molecule[0].toSMILES()))
+            label = species_labels[spc.label]
+            space1 = ' ' * (max_label_length - len(label))
+            log('{label}{space1} {smiles}'.format(label=label, space1=space1,
+                                                  smiles=spc.molecule[0].toSMILES()))
         log('\n')
     else:
         log('\nAll species thermodynamic calculations in this RMG-ARC iteration successfully converged.')
