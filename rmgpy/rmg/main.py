@@ -1178,27 +1178,14 @@ class RMG(util.Subject):
                                   ' rate at the relevant conditions\n\n')
                 for violator in violators:
                     rxn_string = violator[0].toChemkin()
-                    # kinetics = violator[0].kinetics
-                    kinetics = ''
-                    comment=''
-                    # if isinstance(violator[0], TemplateReaction):
-                    #     comment = violator[0].kinetics.comment
-                    #     violator[0].kinetics.comment = ''  # the comment is printed better when outside of the object
-                    # if isinstance(violator[0], LibraryReaction):
-                    #     comment = 'Kinetic library: {0}'.format(violator[0].library)
-                    # if isinstance(violator[0], PDepReaction):
-                    #     comment = 'Network #{0}'.format(violator[0].network)
                     direction = violator[1]
                     ratio = violator[2]
                     condition = violator[3]
-                    violators_f.write('{0}\n{1}\n{2}\nDirection: {3}\nViolation factor: {4:.2f}\n'
-                                      'Violation condition: {5}\n\n'.format(
-                                        rxn_string, kinetics, comment, direction, ratio, condition))
-                    if isinstance(violator[0], TemplateReaction):
-                        # although this is the end of the run, restore the original comment
-                        violator[0].kinetics.comment = comment
+                    violators_f.write('{rxn}\nDirection: {dir}\nViolation factor: {factor:.2f}\n'
+                                      'Violation condition: {cond}\n\n\n'.format(
+                                       rxn=rxn_string, dir=direction, factor=ratio, cond=condition))
         else:
-            logging.info("No collision rate violators found.")
+            logging.info("No collision rate violators found in the core.")
 
     def makeSeedMech(self,firstTime=False):
         """
