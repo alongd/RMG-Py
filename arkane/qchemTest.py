@@ -53,7 +53,7 @@ class QChemTest(unittest.TestCase):
         """
         log = QChemLog(os.path.join(os.path.dirname(__file__), 'data', 'npropyl.out'))
         self.assertEqual(log.getNumberOfAtoms(), 10)
-        log = QChemLog(os.path.join(os.path.dirname(__file__), 'data', 'co.out'))
+        log = QChemLog(os.path.join(os.path.dirname(__file__), 'data', 'co.out')) 
         self.assertEqual(log.getNumberOfAtoms(), 2)
 
     def testEnergyFromQChemLog(self):
