@@ -707,7 +707,27 @@ class RMG(util.Subject):
 
             # Main RMG loop
             while not self.done:
-                
+
+                all_species = True  # True to check all species, False to break if even just one made it into the core
+                species_list = [Species(SMILES='OO'), Species(SMILES='[OH]')]
+
+                if all_species and all([any([spc.isIsomorphic(core_spc)
+                                             for core_spc in self.reactionModel.core.species])
+                                        for spc in species_list]):
+                    all_smiles = [s.molecule[0].toSMILES() for s in species_list]
+                    logging.info('Fount all species in the core:\n{0}\n\nTerminating!'.format(all_smiles))
+                    break
+                if not all_species:
+                    smiles_list = list()
+                    for spc in species_list:
+                        if any([spc.isIsomorphic(core_spc) for core_spc in self.reactionModel.core.species]):
+                            smiles_list.append(spc.molecule[0].toSMILES())
+                    if smiles_list:
+                        logging.info('Fount the following species in the core:\n{0}\n\nTerminating!'.format(
+                            smiles_list))
+                        break
+
+
                 self.reactionModel.iterationNum += 1
                 self.done = True
                 
