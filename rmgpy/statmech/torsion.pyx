@@ -326,9 +326,8 @@ cdef class HinderedRotor(Torsion):
                 self.solveSchrodingerEquation()
             return numpy.sum(numpy.exp(-self.energies / constants.R / T)) / self.symmetry
         elif self._fourier is not None:
-            # Fourier series data found, so use it
-            # Numerically evaluate the configuration integral
-            dphi = constants.pi/32.
+            # Fourier series data found, so use it numerically to evaluate the configuration integral
+            dphi = constants.pi / 36.
             Q = 0.0
             for phi in numpy.arange(0, 2 * constants.pi, dphi):
                 Q += exp(-beta * self.getPotential(phi)) * dphi
