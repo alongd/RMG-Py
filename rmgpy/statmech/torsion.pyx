@@ -68,7 +68,7 @@ cdef class Torsion(Mode):
     torsional motion well-approximated by a semiclassical treatment. 
     """
 
-    def __init__(self, symmetry=1, quantum=False):
+    def __init__(self, symmetry=1, quantum=True):
         Mode.__init__(self, quantum)
         self.symmetry = symmetry
 
