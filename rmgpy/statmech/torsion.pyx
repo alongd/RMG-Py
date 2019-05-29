@@ -187,7 +187,7 @@ cdef class HinderedRotor(Torsion):
         """
         Return the value of the rotational constant in J/mol.
         """
-        return constants.hbar * constants.hbar / (2 * self._inertia.value_si) * constants.Na
+        return constants.hbar ** 2 / (2 * self._inertia.value_si) * constants.Na
 
     cpdef double getFrequency(self) except -1:
         """
@@ -204,7 +204,7 @@ cdef class HinderedRotor(Torsion):
             fourier = self._fourier.value_si
             V0 = 0.0
             for k in range(fourier.shape[1]):
-                V0 -= fourier[0,k] * (k+1) * (k+1)
+                V0 -= fourier[0, k] * (k + 1) ** 2
             V0 /= constants.Na
             if V0 < 0:
                 raise NegativeBarrierException("Hindered rotor barrier height is less than 0 \n     Try running Arkane"
@@ -275,18 +275,18 @@ cdef class HinderedRotor(Torsion):
             coeffs = self._fourier.value_si
             V0 = -numpy.sum(coeffs[0,:])
         else:
-            coeffs = numpy.zeros((2,self.symmetry), numpy.float64)
+            coeffs = numpy.zeros((2, self.symmetry), numpy.float64)
             V0 = 0.5 * self._barrier.value_si
-            coeffs[0,self.symmetry-1] = -V0
+            coeffs[0, self.symmetry-1] = -V0
             
         # Populate Hamiltonian matrix (banded in lower triangular form)
-        H = numpy.zeros((coeffs.shape[1]+1,2*M+1), numpy.complex64)
+        H = numpy.zeros((coeffs.shape[1] + 1, 2 * M + 1), numpy.complex64)
         B = self.getRotationalConstantEnergy()
         col = 0
-        for m in range(-M, M+1):
-            H[0,col] = B * m * m + V0
+        for m in range(-M, M + 1):
+            H[0, col] = B * m ** 2 + V0
             for n in range(coeffs.shape[1]):
-                H[n+1,col] = 0.5 * coeffs[0,n] - 0.5j * coeffs[1,n]
+                H[n + 1, col] = 0.5 * coeffs[0, n] - 0.5j * coeffs[1, n]
             col += 1
 
         return H
@@ -318,18 +318,19 @@ cdef class HinderedRotor(Torsion):
         cdef double beta = 1. / (constants.R * T), V, phi, dphi
         cdef int k
         
-        frequency = self.getFrequency() * constants.c * 100
+        frequency = self.getFrequency() * constants.c * 100.0
         x = constants.h * frequency / (constants.kB * T)
         
         if self.quantum:
-            if self.energies is None: self.solveSchrodingerEquation()
+            if self.energies is None:
+                self.solveSchrodingerEquation()
             return numpy.sum(numpy.exp(-self.energies / constants.R / T)) / self.symmetry
         elif self._fourier is not None:
             # Fourier series data found, so use it
             # Numerically evaluate the configuration integral
             dphi = constants.pi/32.
             Q = 0.0
-            for phi in numpy.arange(0, 2*constants.pi, dphi):
+            for phi in numpy.arange(0, 2 * constants.pi, dphi):
                 Q += exp(-beta * self.getPotential(phi)) * dphi
             Q *= sqrt(constants.R * T / (4 * constants.pi * self.getRotationalConstantEnergy())) / self.symmetry
         else:
@@ -344,8 +345,8 @@ cdef class HinderedRotor(Torsion):
         # Semiclassical correction
         if self.semiclassical:
             Q *= x / (1 - exp(-x))
-        
-        return Q 
+
+        return Q
   
     cpdef double getHeatCapacity(self, double T) except -100000000:
         """
