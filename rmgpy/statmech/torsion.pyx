@@ -95,24 +95,24 @@ cdef class HinderedRotor(Torsion):
     A statistical mechanical model of a one-dimensional hindered rotor.
     The attributes are:
     
-    ======================== ===================================================
+    ======================== ==========================================================================================
     Attribute                Description
-    ======================== ===================================================
+    ======================== ==========================================================================================
     `inertia`                The moment of inertia of the rotor
     `rotationalConstant`     The rotational constant of the rotor
     `symmetry`               The symmetry number of the rotor
     `fourier`                The :math:`2 x N` array of Fourier series coefficients
     `barrier`                The barrier height of the cosine potential
     `quantum`                ``True`` to use the quantum mechanical model, ``False`` to use the classical model
-    `semiclassical`          ``True`` to use the semiclassical correction, ``False`` otherwise
-    ======================== ===================================================
+    `semiclassical`          ``True`` to use the semiclassical correction when not using `quantum`, ``False`` otherwise
+    ======================== ==========================================================================================
 
     Note that the moment of inertia and the rotational constant are simply two
     ways of representing the same quantity; only one of these can be specified
     independently.
     """
     
-    def __init__(self, inertia=None, symmetry=1, barrier=None, fourier=None, rotationalConstant=None, quantum=False,
+    def __init__(self, inertia=None, symmetry=1, barrier=None, fourier=None, rotationalConstant=None, quantum=True,
                  semiclassical=True, frequency=None):
         Torsion.__init__(self, symmetry, quantum)
         if inertia is not None and rotationalConstant is not None:
