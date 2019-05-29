@@ -51,6 +51,7 @@ import logging
 
 ################################################################################
 
+
 cdef class Torsion(Mode):
     """
     A base class for all torsional degrees of freedom. The attributes are:
@@ -90,6 +91,7 @@ cdef class Torsion(Mode):
 
 ################################################################################
 
+
 cdef class HinderedRotor(Torsion):
     """
     A statistical mechanical model of a one-dimensional hindered rotor.
@@ -111,7 +113,7 @@ cdef class HinderedRotor(Torsion):
     ways of representing the same quantity; only one of these can be specified
     independently.
     """
-    
+
     def __init__(self, inertia=None, symmetry=1, barrier=None, fourier=None, rotationalConstant=None, quantum=True,
                  semiclassical=True, frequency=None):
         Torsion.__init__(self, symmetry, quantum)
@@ -126,7 +128,7 @@ cdef class HinderedRotor(Torsion):
         self.semiclassical = False if quantum else semiclassical
         self.quantum = quantum
         self.frequency = frequency if frequency is not None else 0.0
-        
+
     def __repr__(self):
         """
         Return a string representation that can be used to reconstruct the
@@ -143,20 +145,20 @@ cdef class HinderedRotor(Torsion):
             result += ', semiclassical=False'
         result += ')'
         return result
-            
+
     def __reduce__(self):
         """
         A helper function used when pickling a HinderedRotor object.
         """
         return (HinderedRotor, (self.inertia, self.symmetry, self.barrier, self.fourier, None, self.quantum, self.semiclassical))
-    
+
     property inertia:
         """The moment of inertia of the rotor."""
         def __get__(self):
             return self._inertia
         def __set__(self, value):
             self._inertia = quantity.Inertia(value)
-    
+
     property rotationalConstant:
         """The rotational constant of the rotor."""
         def __get__(self):
@@ -175,14 +177,14 @@ cdef class HinderedRotor(Torsion):
             return self._fourier
         def __set__(self, value):
             self._fourier = quantity.Energy(value)
-    
+
     property barrier:
         """The barrier height of the cosine potential."""
         def __get__(self):
             return self._barrier
         def __set__(self, value):
             self._barrier = quantity.Energy(value)
-    
+
     cdef double getRotationalConstantEnergy(self):
         """
         Return the value of the rotational constant in J/mol.
@@ -224,13 +226,13 @@ cdef class HinderedRotor(Torsion):
         Return the energy of level `J` in J.
         """
         return self.energies[J] if J < self.energies.shape[0] else 0.0
-    
+
     cpdef int getLevelDegeneracy(self, int J) except -1:
         """
         Return the degeneracy of level `J`.
         """
         return 1
-    
+
     cpdef numpy.ndarray solveSchrodingerEquation(self, int Nbasis=401):
         """
         Solves the one-dimensional time-independent Schrodinger equation to 
@@ -308,7 +310,7 @@ cdef class HinderedRotor(Torsion):
         else:
             V = 0.5 * self._barrier.value_si * (1 - cos(self.symmetry * phi))
         return V
-    
+
     cpdef double getPartitionFunction(self, double T) except -1:
         """
         Return the value of the partition function :math:`Q(T)` at the
@@ -346,7 +348,7 @@ cdef class HinderedRotor(Torsion):
             Q *= x / (1 - exp(-x))
 
         return Q
-  
+
     cpdef double getHeatCapacity(self, double T) except -100000000:
         """
         Return the heat capacity in J/mol*K for the degree of freedom at the
@@ -378,7 +380,7 @@ cdef class HinderedRotor(Torsion):
             BB = i1(z) / i0(z)
             Cv = (x * x * exp_x / one_minus_exp_x / one_minus_exp_x - 0.5 + z * (z - BB - z * BB * BB))
         return Cv * constants.R
-    
+
     cpdef double getEnthalpy(self, double T) except 100000000:
         """
         Return the enthalpy in J/mol for the degree of freedom at the
@@ -458,7 +460,7 @@ cdef class HinderedRotor(Torsion):
                 elif _Elist[i] > V0:
                     sumStates[i] = pre * sqrt(_Elist[i] / V0) * ellipe(V0 / _Elist[i])
         return sumStates
-    
+
     @cython.boundscheck(False)
     @cython.wraparound(False)
     cpdef numpy.ndarray getDensityOfStates(self, numpy.ndarray Elist, numpy.ndarray densStates0=None):
@@ -582,12 +584,15 @@ cdef class HinderedRotor(Torsion):
         
         return self
 
+
 cdef class FreeRotor(Torsion):
     """
     A statistical mechanical model of a one-dimensional hindered rotor.  
-    Based on Pfaendtner et al. 2007.  
+    Based on J. Pfaendtner, X. Yu, L.J. Broadbelt, Theoretical Chemistry Accounts 2007, 118, 881,
+    DOI: 10.1007/s00214-007-0376-5
+
     The attributes are:
-    
+
     ======================== ===================================================
     Attribute                Description
     ======================== ===================================================
@@ -599,7 +604,7 @@ cdef class FreeRotor(Torsion):
     ways of representing the same quantity; only one of these can be specified
     independently.
     """
-    def __init__(self,inertia=None,symmetry=1,rotationalConstant=None):
+    def __init__(self, inertia=None, symmetry=1, rotationalConstant=None):
         Torsion.__init__(self, symmetry, False)
         if inertia is not None and rotationalConstant is not None:
             raise ValueError('Only one of moment of inertia and rotational constant can be specified.')
@@ -607,29 +612,28 @@ cdef class FreeRotor(Torsion):
             self.rotationalConstant = rotationalConstant
         else:
             self.inertia = inertia
-        
+
     def __repr__(self):
         """
-        Return a string representation that can be used to reconstruct the
-        FreeRotor object.
+        Return a string representation that can be used to reconstruct the FreeRotor object.
         """
         result = 'FreeRotor(inertia={0!r}, symmetry={1:d}'.format(self.inertia, self.symmetry)
         result += ')'
         return result
-            
+
     def __reduce__(self):
         """
         A helper function used when pickling a FreeRotor object.
         """
         return (FreeRotor, (self.inertia, self.symmetry))
-    
+
     property inertia:
         """The moment of inertia of the rotor."""
         def __get__(self):
             return self._inertia
         def __set__(self, value):
             self._inertia = quantity.Inertia(value)
-    
+
     property rotationalConstant:
         """The rotational constant of the rotor."""
         def __get__(self):
@@ -641,37 +645,33 @@ cdef class FreeRotor(Torsion):
             B = quantity.Frequency(B)
             I = constants.h / (8 * constants.pi * constants.pi * (B.value_si * constants.c * 100.))
             self._inertia = quantity.ScalarQuantity(I / (constants.amu * 1e-20), "amu*angstrom^2")
-    
+
     cdef double getRotationalConstantEnergy(self):
         """
         Return the value of the rotational constant in J/mol.
         """
         return constants.hbar * constants.hbar / (2 * self._inertia.value_si) * constants.Na
-    
+
     cpdef double getPartitionFunction(self, double T) except -1:
         """
         Return the value of the partition function :math:`Q(T)` at the
         specified temperature `T` in K.
         """
-        return numpy.sqrt(8*numpy.pi**3*constants.kB*T*self._inertia.value_si)/(self.symmetry*constants.h)
+        return numpy.sqrt(8 * numpy.pi ** 3 * constants.kB * T * self._inertia.value_si) / (self.symmetry * constants.h)
 
-        
-  
     cpdef double getHeatCapacity(self, double T) except -100000000:
         """
         Return the heat capacity in J/mol*K for the degree of freedom at the
         specified temperature `T` in K.
         """
-        return constants.R/2.0
-       
-    
+        return constants.R / 2.0
+
     cpdef double getEnthalpy(self, double T) except 100000000:
         """
         Return the enthalpy in J/mol for the degree of freedom at the
         specified temperature `T` in K.
         """
-        return constants.R*T/2.0
-        
+        return constants.R * T / 2.0
 
     cpdef double getEntropy(self, double T) except -100000000:
         """
@@ -680,7 +680,7 @@ cdef class FreeRotor(Torsion):
         """
         cdef double Q
         Q = self.getPartitionFunction(T)
-        return constants.R*(numpy.log(Q)+.5)
+        return constants.R * (numpy.log(Q) + .5)
 
     @cython.boundscheck(False)
     @cython.wraparound(False)  
@@ -688,12 +688,10 @@ cdef class FreeRotor(Torsion):
         """
         Return the sum of states :math:`N(E)` at the specified energies `Elist`
         in J/mol above the ground state. 
-        formula from
+        formula from:
         Forst 1995 Journal of Computational Chemistry, Vol. 17, No. 8 954-961 (1996)
         """  
         if sumStates0:
             raise NotImplementedError
-            
-        A = constants.hbar/(2.0*self.inertia.value_si)
-        return 2.0/self.symmetry*numpy.sqrt(Elist/A)
-
+        a = constants.hbar / (2.0 * self.inertia.value_si)
+        return 2.0 / self.symmetry * numpy.sqrt(Elist / a)
