@@ -188,7 +188,7 @@ class ThermoJob(object):
                     logging.debug("Valid thermo for {0} is outside range for temperature {1}".format(species, T))
             f.write('#    =========== =========== =========== =========== ===========\n')
 
-            thermo_string = 'thermo(label={0!r}, thermo={1!r})'.format(species.label, species.get_thermo_data())
+            thermo_string = 'thermo(label={0!r},\n       thermo={1!r})'.format(species.label, species.get_thermo_data())
             f.write('{0}\n\n'.format(prettify(thermo_string)))
 
     def write_chemkin(self, output_directory):

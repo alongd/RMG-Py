@@ -694,20 +694,7 @@ class StatMechJob(object):
             y = coordinates[i, 1]
             z = coordinates[i, 2]
             f.write('#   {0} {1:9.4f} {2:9.4f} {3:9.4f}\n'.format(symbol_by_number[number[i]], x, y, z))
-
-        result = 'conformer(label={0!r}, E0={1!r}, modes={2!r}, spin_multiplicity={3:d}, optical_isomers={4:d}'.format(
-            self.species.label,
-            conformer.E0,
-            conformer.modes,
-            conformer.spin_multiplicity,
-            conformer.optical_isomers,
-        )
-        try:
-            result += ', frequency={0!r}'.format(self.species.frequency)
-        except AttributeError:
-            pass
-        result += ')'
-        f.write('{0}\n\n'.format(prettify(result)))
+        f.write(f'\n\n# Conformer for {self.species.label}:\n{prettify(self.species.conformer.as_dict())}\n\n\n')
         f.close()
 
     def create_hindered_rotor_figure(self, angle, v_list, cosine_rotor, fourier_rotor, rotor, rotor_index):

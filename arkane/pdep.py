@@ -527,12 +527,11 @@ class PressureDependenceJob(object):
                 f.write('=========== ' * Pcount)
                 f.write('\n')
 
-                string = 'pdepreaction(reactants={0!r}, products={1!r}, kinetics={2!r})'.format(
-                    [reactant.label for reactant in reaction.reactants],
-                    [product.label for product in reaction.products],
-                    reaction.kinetics,
-                )
-                pdep_function = '{0}\n\n'.format(prettify(string))
+                string = 'pdepreaction(reactants={0!r},\n             products={1!r},' \
+                         '\n             kinetics={2!r})'.format([reactant.label for reactant in reaction.reactants],
+                                                                 [product.label for product in reaction.products],
+                                                                 reaction.kinetics)
+                pdep_function = prettify(string) + '\n\n'
                 if duplicate:
                     # add comments to the start of the string
                     pdep_function = '#   ' + pdep_function.replace('\n', '\n#   ')

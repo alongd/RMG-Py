@@ -268,7 +268,7 @@ class KineticsJob(object):
             f.write('# k_rev (TST) = {0} \n'.format(kinetics_0_rev))
             f.write('# k_rev (TST+T) = {0} \n\n'.format(kinetics_rev))
         # Reaction path degeneracy is INCLUDED in the kinetics itself!
-        rxn_str = 'kinetics(label={0!r}, kinetics={1!r})'.format(reaction.label, reaction.kinetics)
+        rxn_str = 'kinetics(label={0!r},\n         kinetics={1!r})'.format(reaction.label, reaction.kinetics)
         f.write('{0}\n\n'.format(prettify(rxn_str)))
 
         f.close()
