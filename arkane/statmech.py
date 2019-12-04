@@ -62,8 +62,7 @@ from arkane.util import determine_qm_software
 
 class ScanLog(object):
     """
-    Represent a text file containing a table of angles and corresponding
-    scan energies.
+    Represent a text file containing a table of angles and corresponding scan energies.
     """
 
     angleFactors = {
@@ -86,8 +85,10 @@ class ScanLog(object):
 
     def load(self):
         """
-        Load the scan energies from the file. Returns arrays containing the
-        angles (in radians) and energies (in J/mol).
+        Load the scan energies from the file.
+
+        Returns:
+             list: Entries are lists of the angles (in radians) and energies (in J/mol).
         """
         angles, energies = [], []
         angle_units, energy_units, angle_factor, energy_factor = None, None, None, None
@@ -559,12 +560,15 @@ class StatMechJob(object):
                     elif len(q) == 4:
                         # the symmetry number will be derived from the scan
                         scan_log, pivots, top, fit = q
+                    else:
+                        raise InputError(f'Could not interpret the following rotor for {self.species.label}:\n{q}')
                     # Load the hindered rotor scan energies
-                    if not os.path.isfile(scan_log.path):
+                    if (isinstance(scan_log, str) and not os.path.isfile(scan_log)) \
+                            or (isinstance(scan_log, Log) and not os.path.isfile(scan_log.path)):
                         modified_scan_path = os.path.join(directory, scan_log.path)
                         if not os.path.isfile(modified_scan_path):
-                            raise InputError('Could not find scan energy file for species {0} '
-                                             'in the specified path {1}'.format(self.species.label, scan_log.path))
+                            raise InputError(f'Could not find scan energy file for species {self.species.label} '
+                                             f'in the specified path {scan_log.path}')
                         else:
                             scan_log.path = modified_scan_path
                     if isinstance(scan_log, Log) and type(scan_log).__name__ == 'Log':
@@ -574,12 +578,12 @@ class StatMechJob(object):
                         try:
                             pivot_atoms = scan_log.load_scan_pivot_atoms()
                         except Exception as e:
-                            logging.warning("Unable to find pivot atoms in scan due to error: {}".format(e))
+                            logging.warning(f'Unable to find pivot atoms in scan due to error: {e}')
                             pivot_atoms = 'N/A'
                         try:
                             frozen_atoms = scan_log.load_scan_frozen_atoms()
                         except Exception as e:
-                            logging.warning("Unable to find pivot atoms in scan due to error: {}".format(e))
+                            logging.warning(f'Unable to find pivot atoms in scan due to error: {e}')
                             frozen_atoms = 'N/A'
                     elif isinstance(scan_log, ScanLog):
                         angle, v_list = scan_log.load()
@@ -587,7 +591,7 @@ class StatMechJob(object):
                         pivot_atoms = 'N/A'
                         frozen_atoms = 'N/A'
                     else:
-                        raise InputError('Invalid log file type {0} for scan log.'.format(scan_log.__class__))
+                        raise InputError(f'Invalid log file type {scan_log.__class__} for scan log.')
 
                     if symmetry is None:
                         symmetry = determine_rotor_symmetry(v_list, self.species.label, pivots)
