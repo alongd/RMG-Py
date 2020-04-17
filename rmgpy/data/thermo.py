@@ -1975,7 +1975,11 @@ class ThermoDatabase(object):
                     logging.error(molecule.to_adjacency_list())
                     raise
                 if not data_added:
-                    neighbors = ''.join(sorted([atom2.atomtype.label for atom2 in atom.edges.keys()]))
+                    neighbors = ''.join(sorted([atom2.atomtype.label for atom2 in atom.edges.keys()
+                                                if atom2.atomtype.label != 'H']))
+                    neighbors += 'H' * len(['H' for atom2 in atom.edges.keys() if atom2.atomtype.label == 'H'])
+                    if atom.atomtype.label == 'Cb':
+                        neighbors.replace('Cb', '')
                     if thermo_data.comment:
                         thermo_data.comment += f' + missing({atom.atomtype.label}-{neighbors})'
                     else:
