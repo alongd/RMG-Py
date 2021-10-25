@@ -34,8 +34,10 @@ Arkane kinetics module
 import logging
 import os.path
 import string
+from typing import Union
 
 import numpy as np
+import yaml
 
 import rmgpy.quantity as quantity
 from rmgpy.exceptions import SpeciesError, InputError
@@ -130,6 +132,7 @@ class KineticsJob(object):
             except Exception as e:
                 logging.warning("Could not write kinetics output file due to error: "
                                 "{0} in reaction {1}".format(e, self.reaction.label))
+                raise
             try:
                 self.write_chemkin(output_directory)
             except Exception as e:
@@ -196,6 +199,8 @@ class KineticsJob(object):
         Save the results of the kinetics job to the `output.py` file located
         in `output_directory`.
         """
+        yml_path = os.path.join(output_directory, f'high_p_rates.yml')
+        yml_content = read_yaml_file(yml_path)
         reaction = self.reaction
 
         ks, k0s, k0_revs, k_revs = [], [], [], []
@@ -286,6 +291,18 @@ class KineticsJob(object):
         f.write('{0}\n\n'.format(prettify(rxn_str)))
 
         f.close()
+
+        reaction_label = '<=>'.join(['+'.join([reactant.label for reactant in reaction.reactants]),
+                                     '+'.join([product.label for product in reaction.products])])
+        yml_content[reaction_label] = dict()
+        for i, t in enumerate(t_list):
+            yml_content[reaction_label][float(t)] = ks[i]
+        reaction_label_rev = '<=>'.join(['+'.join([product.label for product in reaction.products]),
+                                         '+'.join([reactant.label for reactant in reaction.reactants])])
+        yml_content[reaction_label_rev] = dict()
+        for i, t in enumerate(t_list):
+            yml_content[reaction_label_rev][float(t)] = k_revs[i]
+        save_yaml_file(yml_path, yml_content)
 
     def write_chemkin(self, output_directory):
         """
@@ -804,3 +821,31 @@ class Well(object):
     def __init__(self, species_list):
         self.species_list = species_list
         self.E0 = sum([species.conformer.E0.value_si for species in species_list])
+
+
+def save_yaml_file(path: str,
+                   content: list or dict,
+                   ) -> None:
+    """
+    Save a YAML file (usually an input / restart file, but also conformers file)
+
+    Args:
+        path (str): The YAML file path to save.
+        content (list, dict): The content to save.
+    """
+    content = yaml.dump(data=content)
+    if os.path.dirname(path) and not os.path.exists(os.path.dirname(path)):
+        os.makedirs(os.path.dirname(path))
+    with open(path, 'w') as f:
+        f.write(content)
+
+
+def read_yaml_file(path: str) -> Union[dict, list]:
+    """
+    Read a YAML file and return its content.
+    """
+    content = dict()
+    if os.path.isfile(path):
+        with open(path, 'r') as f:
+            content = yaml.load(stream=f, Loader=yaml.FullLoader)
+    return content
