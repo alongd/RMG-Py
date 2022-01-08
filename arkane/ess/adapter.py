@@ -47,6 +47,7 @@ class ESSAdapter(ABC):
 
     def __init__(self, path, check_for_errors=True):
         self.path = path
+        self.negative_frequencies = None
         if check_for_errors:
             self.check_for_errors()
 
