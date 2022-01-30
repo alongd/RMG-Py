@@ -716,7 +716,6 @@ class ModelMatcher():
                                 ]
         rmg.kinetics_families = ['default','fake_for_importer']
         rmg.reaction_libraries = [('BurkeH2O2inN2', False),
-                                  ('KlippensteinH2O2', False),
                                   ('FFCM1(-)', False),
                                   ('JetSurF2.0', False),
                                   ('CurranPentane', False),
