@@ -1338,8 +1338,11 @@ cdef class ReactionSystem(DASx):
         num_core_reactions = len(self.core_reaction_rates)
         num_core_species = len(self.core_species_concentrations)
 
-        # Use stored volume, since this function is only called from residual function. 
-        RT_inverse = 1 / (constants.R * self.T.value_si)
+        # Use stored volume, since this function is only called from residual function.
+        try:
+            RT_inverse = 1 / (constants.R * self.T.value_si)
+        except AttributeError:
+            RT_inverse = 1 / (constants.R * 1000)
         V = self.V
 
         C = self.core_species_concentrations

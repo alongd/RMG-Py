@@ -588,6 +588,7 @@ cdef class SimpleReactor(ReactionSystem):
         V = constants.R * self.T.value_si * np.sum(y[:num_core_species]) / self.P.value_si
 
         Ctot = self.P.value_si / (constants.R * self.T.value_si)
+        print(self.P.value_si, constants.R, self.T.value_si, Ctot)
 
         C = np.zeros_like(self.core_species_concentrations)
         for j in range(num_core_species):
