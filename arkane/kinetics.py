@@ -168,6 +168,12 @@ class KineticsJob(object):
         if isinstance(tunneling, Wigner) and tunneling.frequency is None:
             tunneling.frequency = (self.reaction.transition_state.frequency.value_si, "cm^-1")
         elif isinstance(tunneling, Eckart) and tunneling.frequency is None:
+            print('Eckart tunneling')
+            print([reactant.conformer.E0.value_si
+                                      for reactant in self.reaction.reactants])
+            print(self.reaction.transition_state.conformer.E0.value_si)
+            print([product.conformer.E0.value_si
+                                      for product in self.reaction.products])
             tunneling.frequency = (self.reaction.transition_state.frequency.value_si, "cm^-1")
             tunneling.E0_reac = (sum([reactant.conformer.E0.value_si
                                       for reactant in self.reaction.reactants]) * 0.001, "kJ/mol")
