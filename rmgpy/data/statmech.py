@@ -381,6 +381,9 @@ class StatmechGroups(Database):
             return conformer, None, None
 
         linear = molecule.is_linear()
+        logging.info(f'calling count_internal_rotors()')
+        logging.info(f'on type {type(molecule)}')
+        logging.info(f'object: {molecule}')
         num_rotors = molecule.count_internal_rotors()
         num_vibrations = 3 * len(molecule.atoms) - (5 if linear else 6) - num_rotors
 
