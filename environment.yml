@@ -1,4 +1,4 @@
-name: rmg_env
+name: rmg_importer
 channels:
   - defaults
   - rmg
