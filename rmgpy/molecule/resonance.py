@@ -182,7 +182,7 @@ def generate_resonance_structures(mol, clar_structures=True, keep_isomorphic=Fal
                       " definition.".format(mol.to_adjacency_list()))
         raise
     if mol.get_net_charge() != 0:
-        raise ValueError("Got the following structure:\nSMILES: {0}\nAdjacencyList:\n{1}\nNet charge: {2}\n\n"
+        logging.warning("Got the following structure:\nSMILES: {0}\nAdjacencyList:\n{1}\nNet charge: {2}\n\n"
                          "Currently RMG cannot process charged species correctly."
                          "\nIf this structure was entered in SMILES, try using the adjacencyList format for an"
                          " unambiguous definition.".format(mol.to_smiles(), mol.to_adjacency_list(), mol.get_net_charge()))
@@ -301,7 +301,7 @@ def _generate_resonance_structures(mol_list, method_list, keep_isomorphic=False,
     # check net charge
     for mol in mol_list:
         if mol.get_net_charge() != 0:
-            raise ResonanceError('Resonance generation gave a net charged molecule:\n{0}'
+            logging.warning('Resonance generation gave a net charged molecule:\n{0}'
                                  'Ions are not yet supported in RMG.'.format(
                 mol.to_adjacency_list()))
 
