@@ -714,7 +714,7 @@ class ModelMatcher():
                                'JetSurF2.0',
                                'CurranPentane',
                                 ]
-        rmg.kinetics_families = ['default','fake_for_importer']
+        rmg.kinetics_families = ['default',]
         rmg.reaction_libraries = [('BurkeH2O2inN2', False),
                                   ('FFCM1(-)', False),
                                   ('JetSurF2.0', False),
