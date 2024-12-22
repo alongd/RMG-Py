@@ -439,12 +439,12 @@ def _read_kinetics_reaction(line, species_dict, Aunits, Aunits_surf, Eunits):
 
     key = 'arrhenius low' if third_body else 'arrhenius high'
 
-    # check if any reactants are surface species
+    # # check if any reactants are surface species
     surf_rxn = False
-    if any(reactant.molecule[0].contains_surface_site() for reactant in reaction.reactants):
-        surf_rxn = True
-    elif any(product.molecule[0].contains_surface_site() for product in reaction.products):
-        surf_rxn = True
+    # if any(reactant.molecule[0].contains_surface_site() for reactant in reaction.reactants):
+    #     surf_rxn = True
+    # elif any(product.molecule[0].contains_surface_site() for product in reaction.products):
+    #     surf_rxn = True
     
     # check that reaction is a surface rxn. use surf arrhenius, but correct in following section 
     # if "STICK' is specified
