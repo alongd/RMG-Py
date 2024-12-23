@@ -409,30 +409,30 @@ def execute(chemkin1, species_dict1, thermo1, chemkin2, species_dict2, thermo2, 
             logging.info('    {0!s}'.format(spec1))
             if spec1.thermo and spec2.thermo:
                 spec1.molecule[0].get_symmetry_number()
-                logging.info(
-                    '        {0:7.2f} {1:7.2f} {2:7.2f} {3:7.2f} {4:7.2f} {5:7.2f} {6:7.2f} {7:7.2f} {8:7.2f}'.format(
-                        spec1.thermo.get_enthalpy(300) / 4184.,
-                        spec1.thermo.get_entropy(300) / 4.184,
-                        spec1.thermo.get_heat_capacity(300) / 4.184,
-                        spec1.thermo.get_heat_capacity(400) / 4.184,
-                        spec1.thermo.get_heat_capacity(500) / 4.184,
-                        spec1.thermo.get_heat_capacity(600) / 4.184,
-                        spec1.thermo.get_heat_capacity(800) / 4.184,
-                        spec1.thermo.get_heat_capacity(1000) / 4.184,
-                        spec1.thermo.get_heat_capacity(1500) / 4.184,
-                    ))
-                logging.info(
-                    '        {0:7.2f} {1:7.2f} {2:7.2f} {3:7.2f} {4:7.2f} {5:7.2f} {6:7.2f} {7:7.2f} {8:7.2f}'.format(
-                        spec2.thermo.get_enthalpy(300) / 4184.,
-                        spec2.thermo.get_entropy(300) / 4.184,
-                        spec2.thermo.get_heat_capacity(300) / 4.184,
-                        spec2.thermo.get_heat_capacity(400) / 4.184,
-                        spec2.thermo.get_heat_capacity(500) / 4.184,
-                        spec2.thermo.get_heat_capacity(600) / 4.184,
-                        spec2.thermo.get_heat_capacity(800) / 4.184,
-                        spec2.thermo.get_heat_capacity(1000) / 4.184,
-                        spec2.thermo.get_heat_capacity(1500) / 4.184,
-                    ))
+                # logging.info(
+                #     '        {0:7.2f} {1:7.2f} {2:7.2f} {3:7.2f} {4:7.2f} {5:7.2f} {6:7.2f} {7:7.2f} {8:7.2f}'.format(
+                #         spec1.thermo.get_enthalpy(300) / 4184.,
+                #         spec1.thermo.get_entropy(300) / 4.184,
+                #         spec1.thermo.get_heat_capacity(300) / 4.184,
+                #         spec1.thermo.get_heat_capacity(400) / 4.184,
+                #         spec1.thermo.get_heat_capacity(500) / 4.184,
+                #         spec1.thermo.get_heat_capacity(600) / 4.184,
+                #         spec1.thermo.get_heat_capacity(800) / 4.184,
+                #         spec1.thermo.get_heat_capacity(1000) / 4.184,
+                #         spec1.thermo.get_heat_capacity(1500) / 4.184,
+                #     ))
+                # logging.info(
+                #     '        {0:7.2f} {1:7.2f} {2:7.2f} {3:7.2f} {4:7.2f} {5:7.2f} {6:7.2f} {7:7.2f} {8:7.2f}'.format(
+                #         spec2.thermo.get_enthalpy(300) / 4184.,
+                #         spec2.thermo.get_entropy(300) / 4.184,
+                #         spec2.thermo.get_heat_capacity(300) / 4.184,
+                #         spec2.thermo.get_heat_capacity(400) / 4.184,
+                #         spec2.thermo.get_heat_capacity(500) / 4.184,
+                #         spec2.thermo.get_heat_capacity(600) / 4.184,
+                #         spec2.thermo.get_heat_capacity(800) / 4.184,
+                #         spec2.thermo.get_heat_capacity(1000) / 4.184,
+                #         spec2.thermo.get_heat_capacity(1500) / 4.184,
+                #     ))
         logging.info('{0:d} species were only found in the first model:'.format(len(unique_species1)))
         for spec in unique_species1:
             logging.info('    {0!s}'.format(spec))
