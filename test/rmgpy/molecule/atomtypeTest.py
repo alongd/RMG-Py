@@ -157,7 +157,10 @@ class TestAtomType:
         for name, atom_type in rmgpy.molecule.atomtype.ATOMTYPES.items():
             if name in self.EXPECTED_FAILING_ATOMTYPES:
                 continue  # These are known to fail. See next WIP test
-            adjlist = f"1 {name} ux"
+            if name == 'Ar+':
+                adjlist = f"1 {name} u1"  # Define strictly with 1 radical
+            else:
+                adjlist = f"1 {name} ux"  # Default behavior
             group = rmgpy.molecule.Group().from_adjacency_list(adjlist)
             try:
                 result = group.make_sample_molecule()
@@ -828,6 +831,18 @@ class TestGetAtomType:
         self.mol96 = Molecule().from_adjacency_list('''1 Li u0 p0 c+1''')
         self.mol97 = Molecule().from_adjacency_list('''1 Li u1 p0 c0''')
 
+        self.mol98 = Molecule().from_adjacency_list('''1 Na u0 p0 c+1''')
+        self.mol99 = Molecule().from_adjacency_list('''1 Na u1 p0 c0''')
+        self.mol100 = Molecule().from_adjacency_list('''1 Na u0 p0 c0 {2,S}
+                                                        2 O  u1 p2 c0 {1,S}''')  # NaO
+        self.mol101 = Molecule().from_adjacency_list('''1 Na u0 p0 c+1
+                                                        2 O  u1 p2 c-1 {3,D}
+                                                        3 O  u0 p2 c0 {2,D}''')  # NaO2
+        self.mol102 = Molecule().from_adjacency_list('''1 Na u0 p0 c+1
+                                                        2 Na u0 p0 c+1
+                                                        3 O  u0 p3 c-1 {4,S}
+                                                        4 O  u0 p3 c-1 {3,S}''')  # Na2O2
+
         self.electron = Molecule().from_adjacency_list('''1 e u1 p0 c-1''')
         self.proton = Molecule().from_adjacency_list('''1 H u0 p0 c+1''')
 
@@ -1002,11 +1017,27 @@ class TestGetAtomType:
         assert self.atom_type(self.mol96, 0) == "Li+"
         assert self.atom_type(self.mol97, 0) == "Li0"
 
+    def test_sodium_types(self):
+        """
+        Test that get_atomtype() returns appropriate sodium atom types.
+        """
+        assert self.atom_type(self.mol98, 0) == "Na+"
+        assert self.atom_type(self.mol99, 0) == "Na0"
+        assert self.atom_type(self.mol100, 0) == "Na0"
+        assert self.atom_type(self.mol100, 1) == "O2s"
+        assert self.atom_type(self.mol101, 0) == "Na+"
+        assert self.atom_type(self.mol101, 1) == "Om1"
+        assert self.atom_type(self.mol101, 2) == "O2d"
+        assert self.atom_type(self.mol102, 0) == "Na+"
+        assert self.atom_type(self.mol102, 1) == "Na+"
+        assert self.atom_type(self.mol102, 2) == "O0sc"
+        assert self.atom_type(self.mol102, 3) == "O0sc"
+
     def test_other_types(self):
         """
         Test that get_atomtype() returns appropriate types for other misc inerts.
         """
-        assert self.atom_type(self.mol6, 0) == "Ar"
+        assert self.atom_type(self.mol6, 0) == "Ar0"
         assert self.atom_type(self.mol7, 0) == "He"
         assert self.atom_type(self.mol8, 0) == "Ne"
 
