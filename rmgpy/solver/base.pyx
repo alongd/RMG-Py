@@ -43,12 +43,8 @@ cimport numpy as np
 from cpython cimport bool
 
 include "settings.pxi"
-if DASPK == 1:
-    from pydas.daspk cimport DASPK as DASx
-    from pydas.daspk import DASPKError as DASxError
-else:
-    from pydas.dassl cimport DASSL as DASx
-    from pydas.dassl import DASSLError as DASxError
+from pydas.dassl cimport DASSL as DASx
+from pydas.dassl import DASSLError as DASxError
 
 import rmgpy.constants as constants
 cimport rmgpy.constants as constants
