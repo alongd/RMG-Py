@@ -199,12 +199,7 @@ def check_pydas():
     """
     print('\nChecking for solvers before compiling...\n')
 
-    try:
-        import pydas.daspk
-    except ImportError:
-        daspk = False
-    else:
-        daspk = True
+    daspk = False
 
     try:
         import pydas.dassl

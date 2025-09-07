@@ -28,10 +28,7 @@
 cimport numpy as np
 from cpython cimport bool
 include "settings.pxi"
-if DASPK == 1:
-    from pydas.daspk cimport DASPK as DASx
-else:
-    from pydas.dassl cimport DASSL as DASx
+from pydas.dassl cimport DASSL as DASx
 
 ################################################################################
 
