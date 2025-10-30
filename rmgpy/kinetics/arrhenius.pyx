@@ -29,10 +29,12 @@
 
 import numpy as np
 cimport numpy as np
+import os
 from libc.math cimport exp, sqrt, log10
 from scipy.optimize import curve_fit, fsolve
 
 cimport rmgpy.constants as constants
+from rmgpy import settings
 import rmgpy.quantity as quantity
 from rmgpy.exceptions import KineticsError
 from rmgpy.kinetics.uncertainties import rank_accuracy_map
@@ -309,8 +311,355 @@ cdef class Arrhenius(KineticsModel):
                           solute=self.solute,
                           comment=self.comment)
         return aep
+
 ################################################################################
 
+
+cdef class BadnellRRArrhenius(KineticsModel):
+    """
+    Radiative recombination kinetics using the Badnell (2006) fit, evaluated at electron temperature Te.
+
+    Rate expression (per-particle form in the paper):
+        alpha_RR(Te) = A * [ sqrt(Te/T0) * (1 + sqrt(Te/T0))^(1 - B*)
+                              * (1 + sqrt(Te/T1))^(1 + B*) ]^(-1)
+        with B* = B + C * exp(-T2 / Te)  (use B* = B if C/T2 are not provided)
+
+    This class returns the **per-mole** rate coefficient expected by RMG:
+        k(Te) = alpha_RR(Te) * N_A        (for bimolecular RR)
+    and in SI units according to the stored A units.
+
+    Attributes (ScalarQuantity unless noted):
+        A   : pre-exponential (supports 'cm^3/(molecule*s)', 'cm^3/(mol*s)', 'm^3/(mol*s)', etc.)
+        B   : dimensionless Badnell parameter
+        T0  : temperature in K
+        T1  : temperature in K
+        C   : (optional) dimensionless Badnell parameter
+        T2  : (optional) temperature in K
+        Z   : (optional) nuclear charge (int)
+        N   : (optional) electron count before recombination (int)
+        yaml_path_or_obj : (optional) source YAML file to populate this object
+        comment, Tmin, Tmax, Pmin, Pmax (inherited)
+    """
+
+    def __init__(self,
+                 A=None,
+                 B=0.0,
+                 T0=(1.0, "K"),
+                 T1=(1.0, "K"),
+                 C=None,
+                 T2=None,
+                 Z=None, N=None, yaml_path_or_obj=None,
+                 Tmin=None, Tmax=None, Pmin=None, Pmax=None,
+                 uncertainty=None, solute=None, comment=''):
+        KineticsModel.__init__(self, Tmin=Tmin, Tmax=Tmax, Pmin=Pmin, Pmax=Pmax,
+                               uncertainty=uncertainty, solute=solute, comment=comment)
+
+        # If Z/N are given, load from YAML and return early
+        if Z is not None and N is not None:
+            yaml_path_or_obj = yaml_path_or_obj or os.path.join(settings['database.directory'], 'kinetics', 'badnell_rr.yaml')
+            try:
+                Zi = int(Z)
+                Ni = int(N)
+            except Exception:
+                raise TypeError("Z and N must be integers.")
+            self.populate_from_yaml(yaml_path_or_obj, Zi, Ni,
+                                    Tmin=Tmin, Tmax=Tmax, comment=comment)
+            return
+
+        self.A = A
+        self.B = B
+        self.T0 = T0
+        self.T1 = T1
+        self.C = C
+        self.T2 = T2
+
+    def __repr__(self):
+        string = 'BadnellRRArrhenius(A={0!r}, B={1!r}, T0={2!r}, T1={3!r}'.format(self.A, self.B, self.T0, self.T1)
+        if self.C is not None: string += ', C={0!r}'.format(self.C)
+        if self.T2 is not None: string += ', T2={0!r}'.format(self.T2)
+        if self.Tmin is not None: string += ', Tmin={0!r}'.format(self.Tmin)
+        if self.Tmax is not None: string += ', Tmax={0!r}'.format(self.Tmax)
+        if self.Pmin is not None: string += ', Pmin={0!r}'.format(self.Pmin)
+        if self.Pmax is not None: string += ', Pmax={0!r}'.format(self.Pmax)
+        if self.uncertainty: string += ', uncertainty={0!r}'.format(self.uncertainty)
+        if self.solute: string += ', solute={0!r}'.format(self.solute)
+        if self.comment != '': string += ', comment="""{0}"""'.format(self.comment)
+        string += ')'
+        return string
+
+    def __reduce__(self):
+        return (BadnellRRArrhenius,
+                (self.A, self.B, self.T0, self.T1, self.C, self.T2,
+                 self.Tmin, self.Tmax, self.Pmin, self.Pmax,
+                 self.uncertainty, self.solute, self.comment))
+
+    # -------- properties --------
+
+    property A:
+        """Pre-exponential factor (Badnell A)."""
+        def __get__(self):
+            return self._A
+        def __set__(self, value):
+            # Allow per-molecule or per-mole units; quantity.RateCoefficient handles units.
+            self._A = quantity.RateCoefficient(value)
+
+    property B:
+        """Badnell B parameter (dimensionless)."""
+        def __get__(self):
+            return self._B
+        def __set__(self, value):
+            self._B = quantity.Dimensionless(value)
+
+    property T0:
+        """Badnell T0 parameter (K)."""
+        def __get__(self):
+            return self._T0
+        def __set__(self, value):
+            self._T0 = quantity.Temperature(value)
+
+    property T1:
+        """Badnell T1 parameter (K)."""
+        def __get__(self):
+            return self._T1
+        def __set__(self, value):
+            self._T1 = quantity.Temperature(value)
+
+    property C:
+        """Badnell C parameter (dimensionless, optional)."""
+        def __get__(self):
+            return self._C
+        def __set__(self, value):
+            if value is None:
+                self._C = None
+            else:
+                self._C = quantity.Dimensionless(value)
+
+    property T2:
+        """Badnell T2 parameter (K, optional)."""
+        def __get__(self):
+            return self._T2
+        def __set__(self, value):
+            if value is None:
+                self._T2 = None
+            else:
+                self._T2 = quantity.Temperature(value)
+
+    # -------- core API --------
+
+    cpdef double get_rate_coefficient(self, double T, double P=0.0) except -1:
+        """
+        Return the **molar** rate coefficient at electron temperature T (in K).
+        - If A was given per-molecule, this method converts to per-mole (× N_A).
+        - Units follow A's base length: value_si already in SI (m^3/(mol*s) if molar).
+        """
+        cdef double A_si, Bval, T0_si, T1_si, Bstar, s0, s1, denom, alpha_si
+        A_si  = self._A.value_si           # SI: m^3/(mol*s) OR m^3/(molecule*s)
+        Bval  = self._B.value_si
+        T0_si = self._T0.value_si
+        T1_si = self._T1.value_si
+
+        if T <= 0.0 or T0_si <= 0.0 or T1_si <= 0.0:
+            raise ValueError("BadnellRRArrhenius: T, T0, and T1 must be > 0 K.")
+
+        # B* = B + C*exp(-T2/T) if provided
+        if self._C is not None and self._T2 is not None:
+            Bstar = Bval + self._C.value_si * exp(- self._T2.value_si / T)
+        else:
+            Bstar = Bval
+
+        s0 = sqrt(T / T0_si)
+        s1 = sqrt(T / T1_si)
+        denom = s0 * (1.0 + s0)**(1.0 - Bstar) * (1.0 + s1)**(1.0 + Bstar)
+
+        # alpha_si has same base units as A_si
+        # NOTE: quantity.RateCoefficient already converts input units to SI per-mole (m^3/(mol*s)),
+        # even when A was provided per molecule. Do NOT multiply by Avogadro here.
+        alpha_si = A_si / denom
+
+        return alpha_si
+
+    cpdef bint is_identical_to(self, KineticsModel other_kinetics) except -2:
+        if not isinstance(other_kinetics, BadnellRRArrhenius):
+            return False
+        if not KineticsModel.is_identical_to(self, other_kinetics):
+            return False
+
+        # Compare all params (handle optional C/T2)
+        if not self.A.equals(other_kinetics.A): return False
+        if not self.B.equals(other_kinetics.B): return False
+        if not self.T0.equals(other_kinetics.T0): return False
+        if not self.T1.equals(other_kinetics.T1): return False
+
+        if (self.C is None) ^ (other_kinetics.C is None): return False
+        if (self.T2 is None) ^ (other_kinetics.T2 is None): return False
+        if self.C is not None and not self.C.equals(other_kinetics.C): return False
+        if self.T2 is not None and not self.T2.equals(other_kinetics.T2): return False
+        return True
+
+    cpdef change_rate(self, double factor):
+        """
+        Multiply the Badnell A factor by 'factor'.
+        (This scales the entire alpha_RR, analogous to Arrhenius.change_rate.)
+        """
+        self._A.value_si *= factor
+
+    def _brra__extract_row(self, obj, int Z, int N):
+        """
+        Internal: find a (Z,N) row in a few common YAML layouts.
+        Returns a Python dict with keys A,B,T0,T1 and optional C,T2.
+        Raises KeyError if not found.
+        """
+        cdef object units = obj.get("units", {})
+        # Try list-of-blocks schema
+        coeffs = obj.get("coefficients")
+        if isinstance(coeffs, list):
+            for blk in coeffs:
+                zblk = blk.get("Z")
+                if zblk is not None and int(zblk) == Z:
+                    entries = blk.get("entries")
+                    if isinstance(entries, list):
+                        for e in entries:
+                            if int(e.get("N", -999)) == N:
+                                return e
+                    elif isinstance(entries, dict):
+                        # entries: { "N": {A:...,B:...}, ... }
+                        if str(N) in entries:
+                            return entries[str(N)]
+                        if N in entries:
+                            return entries[N]
+        # Try nested map schema under "data"
+        data = obj.get("data")
+        if isinstance(data, dict):
+            znode = data.get(str(Z)) if str(Z) in data else data.get(Z)
+            if isinstance(znode, dict):
+                node = znode.get(str(N)) if str(N) in znode else znode.get(N)
+                if isinstance(node, dict):
+                    return node
+        # Try top-level Z map
+        znode = obj.get(str(Z)) if str(Z) in obj else obj.get(Z)
+        if isinstance(znode, dict):
+            node = znode.get(str(N)) if str(N) in znode else znode.get(N)
+            if isinstance(node, dict):
+                return node
+        raise KeyError(f"Badnell YAML: no entry for Z={Z}, N={N}")
+
+    def _brra__units(self, obj):
+        """Internal: return (a_units, t_units) with sensible defaults."""
+        units = obj.get("units", {}) if isinstance(obj, dict) else {}
+        a_units = units.get("A", "cm^3/(molecule*s)")
+        t_units = units.get("T", "K")
+        return a_units, t_units
+
+    def _brra__compute_default_T_window(self, int Z, int N):
+        """
+        Badnell fit validity spans ~ z^2 * [1e1, 1e7] K with z = Z-N (initial charge).
+        Use that for Tmin/Tmax if user left them unset.
+        """
+        cdef int z = Z - N
+        cdef double Tmin = 10.0 * z * z
+        cdef double Tmax = 1.0e7 * z * z
+        if z < 0:
+            z = 0  # defensive; but physically you shouldn't pass N>Z
+        # If z==0, fall back to a broad neutral window (let RMG handle validity checks)
+        if z == 0:
+            Tmin, Tmax = 1.0, 3.0e9
+        return Tmin, Tmax
+
+    cpdef populate_from_yaml(self, object yaml_path_or_obj, int Z, int N,
+                             bint allow_Z_gt36=False, Tmin=None, Tmax=None, comment=None):
+        """
+        Populate this BadnellRRArrhenius from a YAML dataset keyed by (Z,N).
+
+        Parameters
+        ----------
+        yaml_path_or_obj : str | pathlib.Path | file-like | dict
+            YAML filepath or already-loaded dict.
+        Z : int
+            Nuclear charge (1..36 supported by default).
+        N : int
+            Electron count BEFORE recombination (so z = Z-N).
+        allow_Z_gt36 : bool
+            If False, raise for Z>36.
+        Tmin, Tmax : optional
+            Override validity window (K). If None, uses ~z^2*[1e1,1e7] K.
+        comment : optional
+            Override/append comment.
+
+        Notes
+        -----
+        - A is interpreted with units from YAML (default 'cm^3/(molecule*s)').
+        - T0,T1,(T2) are in K.
+        - Sets C,T2 only if BOTH are present; else uses B* = B.
+        """
+        if not allow_Z_gt36 and Z > 36:
+            raise ValueError(f"Badnell YAML: Z={Z} exceeds 36 (this loader is restricted to Z<=36).")
+
+        # Load YAML if needed
+        cdef dict data
+        if isinstance(yaml_path_or_obj, dict):
+            data = yaml_path_or_obj
+        else:
+            import yaml as _yaml
+            with open(yaml_path_or_obj, "r") as f:
+                data = _yaml.safe_load(f)
+
+        row = self._brra__extract_row(data, Z, N)
+        a_units, t_units = self._brra__units(data)
+
+        # Required
+        A = float(row["A"])
+        B = float(row["B"])
+        T0 = float(row["T0"])
+        T1 = float(row["T1"])
+
+        # Optional C,T2 (use only if both provided)
+        C = row.get("C", None)
+        T2 = row.get("T2", None)
+        if C is not None:
+            C = float(C)
+        if T2 is not None:
+            T2 = float(T2)
+
+        # Assign to this object
+        self.A  = (A, a_units)
+        self.B  = B
+        self.T0 = (T0, t_units)
+        self.T1 = (T1, t_units)
+        if C is not None and T2 is not None:
+            self.C  = C
+            self.T2 = (T2, t_units)
+        else:
+            self.C  = None
+            self.T2 = None
+
+        # Validity window (unless user overrides)
+        if Tmin is None or Tmax is None:
+            dTmin, dTmax = self._brra__compute_default_T_window(Z, N)
+            if Tmin is None: Tmin = dTmin
+            if Tmax is None: Tmax = dTmax
+        self.Tmin = (Tmin, "K")
+        self.Tmax = (Tmax, "K")
+
+        # Comment
+        base = f"Badnell (2006) RR fit, Z={Z}, N={N}"
+        self.comment = f"{base}; {comment}" if comment else base
+
+        return self
+
+    @classmethod
+    def from_yaml(cls, object yaml_path_or_obj, int Z, int N,
+                  bint allow_Z_gt36=False, Tmin=None, Tmax=None, comment=None):
+        """
+        Construct and return a new BadnellRRArrhenius populated from YAML.
+        """
+        obj = cls(A=(1.0e-12, "cm^3/(molecule*s)"), B=0.0, T0=(1.0, "K"), T1=(1.0, "K"))
+        obj.populate_from_yaml(yaml_path_or_obj, Z, N,
+                               allow_Z_gt36=allow_Z_gt36,
+                               Tmin=Tmin, Tmax=Tmax, comment=comment)
+        return obj
+
+
+################################################################################
 
 cdef class ArrheniusEP(KineticsModel):
     """

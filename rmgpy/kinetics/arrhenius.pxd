@@ -53,6 +53,23 @@ cdef class Arrhenius(KineticsModel):
 
 ################################################################################
 
+cdef class BadnellRRArrhenius(KineticsModel):
+
+    cdef public ScalarQuantity _A
+    cdef public ScalarQuantity _B
+    cdef public ScalarQuantity _T0
+    cdef public ScalarQuantity _T1
+    cdef public object _C      # ScalarQuantity or None (dimensionless)
+    cdef public object _T2     # ScalarQuantity or None (temperature)
+
+    cpdef double get_rate_coefficient(self, double T, double P=*) except -1
+    cpdef bint is_identical_to(self, KineticsModel other_kinetics) except -2
+    cpdef change_rate(self, double factor)
+    cpdef populate_from_yaml(self, object yaml_path_or_obj, int Z, int N,
+                             bint allow_Z_gt36=*, Tmin=*, Tmax=*, comment=*)
+
+################################################################################
+
 cdef class ArrheniusEP(KineticsModel):
     
     cdef public ScalarQuantity _A
