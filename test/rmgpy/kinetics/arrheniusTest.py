@@ -39,6 +39,7 @@ import numpy as np
 import rmgpy.constants as constants
 from rmgpy.kinetics.arrhenius import (
     Arrhenius,
+    BadnellRRArrhenius,
     ArrheniusEP,
     ArrheniusBM,
     PDepArrhenius,
@@ -279,6 +280,283 @@ class TestArrhenius:
     def test_to_arrhenius_ep_throws_error_with_just_alpha(self):
         with pytest.raises(Exception):
             self.arrhenius.to_arrhenius_ep(alpha=1)
+
+
+def _alpha_rr_cm3_per_molecule_s(Te, A_cms_per_molecule, B, T0, T1, C=None, T2=None):
+    """
+    Helper: compute the Badnell alpha_RR in cm^3/(molecule*s) directly from parameters, for test expectations.
+    """
+    if Te <= 0 or T0 <= 0 or T1 <= 0:
+        raise ValueError("Te, T0, T1 must be > 0")
+    Bstar = B + (C * np.exp(-T2 / Te) if (C is not None and T2 is not None) else 0.0)
+    s0 = np.sqrt(Te / T0)
+    s1 = np.sqrt(Te / T1)
+    denom = s0 * (1.0 + s0) ** (1.0 - Bstar) * (1.0 + s1) ** (1.0 + Bstar)
+    return A_cms_per_molecule / denom  # cm^3/(molecule*s)
+
+
+class TestBadnellRRArrhenius:
+    """
+    Contains unit tests of the :class:`BadnellRRArrhenius` class.
+    """
+
+    def setup_method(self):
+        # Primary test object uses per-molecule A and includes the C/T2 correction
+        self.A_cms_per_molecule = 5.0e-12
+        self.B = 0.10
+        self.T0 = 350.0
+        self.T1 = 2.30e6
+        self.C = 0.50
+        self.T2 = 5.00e4
+        self.Tmin = 300.0
+        self.Tmax = 5.0e4
+        self.comment = "Na+ + e- -> Na + hv (test)"
+
+        self.rr = BadnellRRArrhenius(
+            A=(self.A_cms_per_molecule, "cm^3/(molecule*s)"),
+            B=self.B,
+            T0=(self.T0, "K"),
+            T1=(self.T1, "K"),
+            C=self.C,
+            T2=(self.T2, "K"),
+            Tmin=(self.Tmin, "K"),
+            Tmax=(self.Tmax, "K"),
+            comment=self.comment,
+        )
+
+        # Secondary object: no C/T2, A provided per-mole
+        self.A_cms_per_mol = 1.2e-7
+        self.rr_molar = BadnellRRArrhenius(
+            A=(self.A_cms_per_mol, "cm^3/(mol*s)"),
+            B=self.B,
+            T0=(self.T0, "K"),
+            T1=(self.T1, "K"),
+            Tmin=(self.Tmin, "K"),
+            Tmax=(self.Tmax, "K"),
+            comment="per-mole variant",
+        )
+
+    # -------- property tests --------
+
+    def test_a_factor_per_molecule_units(self):
+        """
+        RateCoefficient converts 'cm^3/(molecule*s)' → 'm^3/(mol*s)' via (× 1e-6) and (× N_A).
+        """
+        expected_SI = self.A_cms_per_molecule * 1e-6 * constants.Na  # m^3/(mol*s)
+        assert abs(self.rr.A.value_si - expected_SI) <= 1e-12 * max(1.0, expected_SI)
+
+    def test_b_parameter(self):
+        assert round(abs(self.rr.B.value_si - self.B), 12) == 0
+
+    def test_t_params(self):
+        assert round(abs(self.rr.T0.value_si - self.T0), 12) == 0
+        assert round(abs(self.rr.T1.value_si - self.T1), 6) == 0
+
+    def test_optional_cterms_present(self):
+        assert self.rr.C is not None
+        assert self.rr.T2 is not None
+        assert round(abs(self.rr.C.value_si - self.C), 12) == 0
+        assert round(abs(self.rr.T2.value_si - self.T2), 6) == 0
+
+    def test_temperature_min_max(self):
+        assert round(abs(self.rr.Tmin.value_si - self.Tmin), 6) == 0
+        assert round(abs(self.rr.Tmax.value_si - self.Tmax), 6) == 0
+
+    def test_comment(self):
+        assert self.rr.comment == self.comment
+
+    def test_is_temperature_valid(self):
+        Tdata = np.array([200, 400, 6000, 12000, 30000, 60000])
+        validdata = np.array([False, True, True, True, True, False], dtype=bool)
+        for T, valid in zip(Tdata, validdata):
+            assert self.rr.is_temperature_valid(T) == valid
+
+    # -------- evaluator tests --------
+
+    def test_get_rate_coefficient_matches_formula_per_molecule_input(self):
+        """
+        Compare get_rate_coefficient (returns SI m^3/(mol*s)) to an independently computed expectation
+        from the Badnell formula using per-molecule A, then converting with N_A and cm->m.
+        """
+        Tlist = np.array([800, 2000, 5000, 11600, 20000, 40000], dtype=float)
+        for T in Tlist:
+            alpha_cm = _alpha_rr_cm3_per_molecule_s(
+                T, self.A_cms_per_molecule, self.B, self.T0, self.T1, self.C, self.T2
+            )
+            kexp_SI = alpha_cm * constants.Na * 1e-6  # m^3/(mol*s)
+            kact = self.rr.get_rate_coefficient(T)
+            assert abs(kexp_SI - kact) <= 1e-12 * max(1.0, kexp_SI)
+
+    def test_get_rate_coefficient_matches_formula_per_mole_input(self):
+        """
+        When A is per-mole, the returned k should *not* multiply by N_A.
+        """
+        Tlist = np.array([800, 2000, 5000, 11600, 20000, 40000], dtype=float)
+        for T in Tlist:
+            # Expected: alpha_molar = (A_molar / denom). Convert cm^3->m^3 at end.
+            B = self.B
+            s0 = np.sqrt(T / self.T0)
+            s1 = np.sqrt(T / self.T1)
+            Bstar = B  # no C/T2 in this object
+            denom = s0 * (1.0 + s0) ** (1.0 - Bstar) * (1.0 + s1) ** (1.0 + Bstar)
+            alpha_molar_cm = self.A_cms_per_mol / denom  # cm^3/(mol*s)
+            kexp_SI = alpha_molar_cm * 1e-6  # m^3/(mol*s)
+            kact = self.rr_molar.get_rate_coefficient(T)
+            assert abs(kexp_SI - kact) <= 1e-12 * max(1.0, kexp_SI)
+
+    def test_change_rate(self):
+        Tlist = np.array([1000, 5000, 15000, 30000], dtype=float)
+        k0 = np.array([self.rr.get_rate_coefficient(T) for T in Tlist])
+        self.rr.change_rate(2.0)
+        k1 = np.array([self.rr.get_rate_coefficient(T) for T in Tlist])
+        assert np.allclose(k1, 2.0 * k0, rtol=1e-12, atol=0.0)
+
+    def test_repr(self):
+        namespace = {}
+        exec("rr_obj = {0!r}".format(self.rr), globals(), namespace)
+        assert "rr_obj" in namespace
+        rr2 = namespace["rr_obj"]
+        # spot-check a few fields
+        assert self.rr.A.units == rr2.A.units
+        assert round(abs(self.rr.B.value - rr2.B.value), 12) == 0
+        assert round(abs(self.rr.T0.value - rr2.T0.value), 12) == 0
+        assert round(abs(self.rr.T1.value - rr2.T1.value), 6) == 0
+        assert self.rr.comment == rr2.comment
+
+    # -------- compatibility test against Arrhenius (power-law fit) --------
+
+    def test_match_power_law_fit_over_narrow_window(self):
+        """
+        Over a narrow Te window, Badnell can be approximated by k = Apl * Te^n (Ea=0).
+        Fit Arrhenius to a small set of points and verify reconstruction error is small.
+        """
+        # sample Te window
+        Tdata = np.array([6000, 8000, 10000, 12000, 15000], dtype=float)
+        kdata = np.array([self.rr.get_rate_coefficient(T) for T in Tdata])  # SI m^3/(mol*s)
+
+        # Fit plain Arrhenius with Ea=0 (two-parameter fit): emulate by setting three_params=False
+        arr = Arrhenius().fit_to_data(Tdata, kdata, kunits="m^3/(mol*s)", T0=1.0, three_params=True)
+
+        # Reproduce rates within small error over the window
+        for T, kexp in zip(Tdata, kdata):
+            kfit = arr.get_rate_coefficient(T)
+            assert abs(kfit - kexp) <= 5e-3 * kexp  # ~0.5% is plenty strict here
+
+
+def _expected_rate_SI_per_mol(entry, T):
+    """
+    Compute expected SI m^3/(mol*s) using Badnell (2006) form with:
+    A in cm^3/(molecule*s) -> m^3/(mol*s) via 1e-6 * N_A
+    """
+    A = float(entry["A"])
+    B = float(entry["B"])
+    T0 = float(entry["T0"])
+    T1 = float(entry["T1"])
+    C = float(entry["C"]) if "C" in entry and entry["C"] is not None else None
+    T2 = float(entry["T2"]) if "T2" in entry and entry["T2"] is not None else None
+
+    N_A = 6.02214076e23
+    A_SI = A * 1e-6 * N_A
+
+    s0 = math.sqrt(T / T0)
+    s1 = math.sqrt(T / T1)
+    Bstar = B + (C * math.exp(-T2 / T) if (C is not None and T2 is not None) else 0.0)
+    denom = s0 * (1.0 + s0) ** (1.0 - Bstar) * (1.0 + s1) ** (1.0 + Bstar)
+    return A_SI / denom
+
+
+def test_init_from_yaml_Z1_N0_basic_loads_and_sets_window_and_rate():
+    """
+    Uses well-known hydrogen entry Z=1, N=0 from the real YAML.
+    Asserts parameters, default Tmin/Tmax window, comment, and rate at a T.
+    """
+    m = BadnellRRArrhenius(Z=1, N=0)
+
+    # Parameters from file (Hydrogen Z=1,N=0)
+    assert pytest.approx(m.B.value_si, rel=0, abs=1e-12) == 0.7472
+    assert pytest.approx(m.T0.value_si, rel=0, abs=1e-12) == 2.965e0
+    assert pytest.approx(m.T1.value_si, rel=0, abs=1e-3) == 7.001e5
+    assert m.C is None
+    assert m.T2 is None
+
+    # Default validity window: z = Z - N = 1 -> [10, 1e7] K
+    assert pytest.approx(m.Tmin.value_si, rel=0, abs=1e-12) == 10.0
+    assert pytest.approx(m.Tmax.value_si, rel=0, abs=1e-3) == 1.0e7
+
+    # Comment includes the tag
+    assert "Z=1" in m.comment and "N=0" in m.comment
+
+    # Rate check (numbers from the paper entry)
+    T = 1.0e4
+    entry = {"A": 8.318e-11, "B": 0.7472, "T0": 2.965e0, "T1": 7.001e5}
+    k_expected = _expected_rate_SI_per_mol(entry, T)
+    assert m.get_rate_coefficient(T) == pytest.approx(k_expected, rel=1e-10)
+
+
+def test_init_from_yaml_Z2_N1_with_C_T2_and_rate():
+    """
+    Helium-like case that includes C and T2; verifies optional params and rate.
+    """
+    m = BadnellRRArrhenius(Z=2, N=1)
+
+    # Params present
+    assert pytest.approx(m.B.value_si, abs=1e-12) == 0.6988
+    assert m.C is not None and pytest.approx(m.C.value_si, abs=1e-12) == 8.29e-2
+    assert m.T2 is not None and pytest.approx(m.T2.value_si, abs=1e-3) == 1.682e5
+
+    # Rate at a temperature that exercises exp(-T2/T)
+    T = 2.0e5
+    entry = {"A": 5.235e-11, "B": 0.6988, "T0": 7.301e0, "T1": 4.475e6, "C": 8.29e-2, "T2": 1.682e5}
+    k_expected = _expected_rate_SI_per_mol(entry, T)
+    assert m.get_rate_coefficient(T) == pytest.approx(k_expected, rel=1e-10)
+
+
+def test_init_from_yaml_comment_override_is_appended():
+    m = BadnellRRArrhenius(Z=1, N=0, comment="custom note")
+    assert "Badnell (2006)" in m.comment
+    assert "Z=1" in m.comment and "N=0" in m.comment
+    assert "custom note" in m.comment
+
+
+def test_init_from_yaml_default_path_resolution_works():
+    """
+    Ensure that omitting yaml_path_or_obj uses the default path via settings.
+    """
+    # This will skip earlier if the default path is missing.
+    m = BadnellRRArrhenius(Z=1, N=0)  # no yaml_path_or_obj
+    assert pytest.approx(m.B.value_si, abs=1e-12) == 0.7472
+
+
+def test_init_from_yaml_blocks_Z_gt36_by_default():
+    """
+    __init__ calls populate_from_yaml without allow_Z_gt36=True, so Z>36 should raise.
+    """
+    with pytest.raises(ValueError):
+        BadnellRRArrhenius(Z=80, N=6)
+
+
+def test_init_from_yaml_early_return_overrides_manual_values():
+    """
+    If Z/N are provided, __init__ should populate from YAML and ignore manual A/B/T*.
+    """
+    m = BadnellRRArrhenius(
+        A=(9.99e-10, "cm^3/(molecule*s)"),
+        B=9.99,
+        T0=(9.99, "K"),
+        T1=(9.99, "K"),
+        Z=1, N=0,
+    )
+    # Values should be from YAML, not the manual ones above
+    assert pytest.approx(m.B.value_si, abs=1e-12) == 0.7472
+    assert pytest.approx(m.T0.value_si, abs=1e-12) == 2.965e0
+    assert pytest.approx(m.T1.value_si, abs=1e-3) == 7.001e5
+
+
+def test_init_from_yaml_validates_integer_ZN():
+    with pytest.raises(TypeError):
+        BadnellRRArrhenius(Z="not-int", N=0)
+    with pytest.raises(TypeError):
+        BadnellRRArrhenius(Z=1, N="nope")
 
 
 class TestArrheniusEP:
