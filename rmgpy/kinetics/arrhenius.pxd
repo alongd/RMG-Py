@@ -53,6 +53,82 @@ cdef class Arrhenius(KineticsModel):
 
 ################################################################################
 
+cdef class TwoTemperaturePlasma(KineticsModel):
+
+    cdef public ScalarQuantity _A
+    cdef public ScalarQuantity _n
+    cdef public ScalarQuantity _Ea_g
+    cdef public ScalarQuantity _Ea_e
+    cdef public ScalarQuantity _T0
+    cdef public bint uses_electron_temperature
+
+    cpdef change_t0(self, double T0)
+    cpdef double get_rate_coefficient(self, double T, double P=?) except -1
+    cpdef double get_rate_coefficient_two_temp(self, double T, double Te) except -1
+    cpdef bint is_identical_to(self, KineticsModel other_kinetics) except -2
+    cpdef change_rate(self, double factor)
+    cpdef ArrheniusEP to_arrhenius_ep(self, double alpha=?, double dHrxn=?)
+
+################################################################################
+
+cdef class ElectronCollisionPlasma(KineticsModel):
+    """
+    Te-only plasma kinetics based on an electron–molecule
+    collision cross-section σ(E) tabulated on an energy grid.
+    """
+    cdef public ArrayQuantity _energies
+    cdef public ArrayQuantity _sigma
+    cdef public bint uses_electron_temperature
+
+    cpdef double get_rate_coefficient(self, double T, double P=*) except -1
+    cpdef double get_rate_coefficient_electron_temp(self, double Te) except -1
+    cpdef double integrate_rate_coefficient(self, double Te) except -1
+    cpdef TwoTemperaturePlasma to_two_temp_plasma(self)
+    cpdef bint is_identical_to(self, KineticsModel other_kinetics) except -2
+    cpdef change_rate(self, double factor)
+
+################################################################################
+
+cdef class BadnellRRArrhenius(KineticsModel):
+
+    cdef public ScalarQuantity _A
+    cdef public ScalarQuantity _B
+    cdef public ScalarQuantity _T0
+    cdef public ScalarQuantity _T1
+    cdef public ScalarQuantity _Ea
+    cdef public object _C      # ScalarQuantity or None (dimensionless)
+    cdef public object _T2     # ScalarQuantity or None (temperature)
+    cdef public bint uses_electron_temperature
+    cdef public bint uses_electron_density
+
+    cpdef double get_rate_coefficient(self, double T, double P=*) except -1
+    cpdef bint is_identical_to(self, KineticsModel other_kinetics) except -2
+    cpdef change_rate(self, double factor)
+    cpdef populate_from_yaml(self, object yaml_path_or_obj, int Z, int N,
+                             bint allow_Z_gt36=*, Tmin=*, Tmax=*, comment=*)
+    cpdef TwoTemperaturePlasma to_two_temp_plasma(self)
+
+################################################################################
+
+cdef class VoronovEIArrhenius(KineticsModel):
+    cdef public ScalarQuantity _A
+    cdef public ScalarQuantity _P
+    cdef public ScalarQuantity _X
+    cdef public ScalarQuantity _K
+    cdef public ScalarQuantity _Ea
+    cdef public double _dE_eV
+    cdef public bint uses_electron_temperature
+    cdef public bint uses_electron_density
+
+    cpdef double get_rate_coefficient(self, double T, double P=*) except -1
+    cpdef bint is_identical_to(self, KineticsModel other_kinetics) except -2
+    cpdef change_rate(self, double factor)
+    cpdef populate_from_yaml(self, object yaml_path_or_obj, int Z, int N,
+                             bint allow_Z_gt28=*, Tmin=*, Tmax=*, comment=*)
+    cpdef TwoTemperaturePlasma to_two_temp_plasma(self)
+
+################################################################################
+
 cdef class ArrheniusEP(KineticsModel):
     
     cdef public ScalarQuantity _A
