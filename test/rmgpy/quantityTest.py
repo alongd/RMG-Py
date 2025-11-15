@@ -808,6 +808,64 @@ class TestTemperature:
             quantity.Temperature(1.0, "degR")
 
 
+class TestElectronTemperature:
+    """
+    Contains unit tests of the ElectronTemperature unit type object.
+    """
+    def test_k(self):
+        """
+        Test the creation of an electron temperature quantity with units of K.
+        """
+        q = quantity.ElectronTemperature(1000.0, "K")
+        assert round(abs(q.value - 1000.0), 6) == 0
+        assert abs(q.value_si - 1000.0) < 1e-6
+        assert q.units == "K"
+
+    def test_ev(self):
+        """
+        Test the creation of an electron temperature quantity with units of eV.
+        Verifies correct storage of eV and conversion to SI (Kelvin).
+
+        Note: ElectronTemperature converts to K immediately upon initialization.
+        1 eV approx 11604.5 K
+        """
+        q = quantity.ElectronTemperature(1.0, "eV")
+
+        # Factor is e / kB
+        expected_k = 1.0 * constants.e / constants.kB  # ~11604.5
+
+        # 1. Check that the object converted to K immediately
+        assert q.units == "K"
+        assert abs(q.value - expected_k) < 1e-2
+
+        # 2. Check value_si is consistent
+        assert abs(q.value_si - expected_k) < 1e-2
+
+    def test_array_conversion(self):
+        """
+        Test that an array of eV values converts correctly to an array of K.
+        """
+        # 1 eV and 2 eV
+        q = quantity.ElectronTemperature([1.0, 2.0], "eV")
+
+        # Check immediate conversion to K
+        assert q.units == "K"
+
+        # 1.0 eV -> ~11604 K
+        assert q.value[0] > 11600
+
+        # 2.0 eV -> ~23209 K
+        assert q.value[1] > 23200
+
+    def test_deg_c(self):
+        """
+        Test that standard exclusion units (like degC) still raise errors
+        for ElectronTemperature if not supported.
+        """
+        with pytest.raises(Exception):
+            quantity.ElectronTemperature(1.0, "degC")
+
+
 class TestTime:
     """
     Contains unit tests of the Time unit type object.
