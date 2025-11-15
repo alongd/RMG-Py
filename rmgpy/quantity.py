@@ -784,6 +784,15 @@ Pressure = UnitType('Pa', common_units=['bar', 'atm', 'torr', 'psi', 'mbar'])
 
 Temperature = UnitType('K', common_units=[])
 
+ElectronTemperature = UnitType(
+    'K',
+    common_units=['K'],
+    extra_dimensionality={
+        'eV': 1.0 / constants.kB,
+        'J': 1.0 / constants.kB,
+    }
+)
+
 Time = UnitType('s')
 
 Velocity = UnitType('m/s')
