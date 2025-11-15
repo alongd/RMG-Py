@@ -70,6 +70,21 @@ cdef class BadnellRRArrhenius(KineticsModel):
 
 ################################################################################
 
+cdef class VoronovEIArrhenius(KineticsModel):
+    cdef public ScalarQuantity _A
+    cdef public ScalarQuantity _P
+    cdef public ScalarQuantity _X
+    cdef public ScalarQuantity _K
+    cdef public double _dE_eV
+
+    cpdef double get_rate_coefficient(self, double T, double P=*) except -1
+    cpdef bint is_identical_to(self, KineticsModel other_kinetics) except -2
+    cpdef change_rate(self, double factor)
+    cpdef populate_from_yaml(self, object yaml_path_or_obj, int Z, int N,
+                             bint allow_Z_gt28=*, Tmin=*, Tmax=*, comment=*)
+
+################################################################################
+
 cdef class ArrheniusEP(KineticsModel):
     
     cdef public ScalarQuantity _A

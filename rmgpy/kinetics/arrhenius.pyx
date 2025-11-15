@@ -448,11 +448,12 @@ cdef class BadnellRRArrhenius(KineticsModel):
 
     cpdef double get_rate_coefficient(self, double T, double P=0.0) except -1:
         """
-        Return the **molar** rate coefficient at electron temperature T (in K).
-        - If A was given per-molecule, this method converts to per-mole (× N_A).
-        - Units follow A's base length: value_si already in SI (m^3/(mol*s) if molar).
+        Return the **molar** rate coefficient k(T_e) in SI (m^3/(mol*s)) at electron temperature T (K).
+        - If A was provided per molecule, convert to per mole (× N_A) here.
+        - T, T0, T1, T2 are in Kelvin.
         """
         cdef double A_si, Bval, T0_si, T1_si, Bstar, s0, s1, denom, alpha_si
+        cdef object A_units = getattr(self._A, "units", None)
         A_si  = self._A.value_si           # SI: m^3/(mol*s) OR m^3/(molecule*s)
         Bval  = self._B.value_si
         T0_si = self._T0.value_si
@@ -460,6 +461,11 @@ cdef class BadnellRRArrhenius(KineticsModel):
 
         if T <= 0.0 or T0_si <= 0.0 or T1_si <= 0.0:
             raise ValueError("BadnellRRArrhenius: T, T0, and T1 must be > 0 K.")
+
+        # --- Build A in SI molar units (m^3/(mol*s)) ---
+        # If RateCoefficient kept 'molecule' in its unit string, promote to per-mole:
+        if A_units is not None and isinstance(A_units, str) and "molecule" in A_units:
+            A_si *= constants.Na
 
         # B* = B + C*exp(-T2/T) if provided
         if self._C is not None and self._T2 is not None:
@@ -656,6 +662,278 @@ cdef class BadnellRRArrhenius(KineticsModel):
         obj.populate_from_yaml(yaml_path_or_obj, Z, N,
                                allow_Z_gt36=allow_Z_gt36,
                                Tmin=Tmin, Tmax=Tmax, comment=comment)
+        return obj
+
+
+################################################################################
+
+
+cdef class VoronovEIArrhenius(KineticsModel):
+    """
+    Electron-impact ionization (Voronov, 1997, https://doi.org/10.1006/adnd.1997.0732) for ground-state atoms/ions.
+
+    Per-particle fit (Table I in Voronov 1997):
+        <sigma v>(Te_eV) = A * [ U^K * exp(-U) ] / [ (1 + P*sqrt(U)) * (X + U) ]
+        where U = dE / Te_eV, Te_eV = (8.617333262e-5 eV/K) * Te_K
+        Here, (Te_eV) means "function of", not multiplication.
+
+    This class returns **molar** k in SI:
+        k(Te) = <sigma v>(Te) * N_A   [m^3/(mol*s)]
+
+    YAML schema (voronov.yaml):
+      units:
+        A:  "cm^3/(molecule*s)"
+        dE: "eV"
+        T:  "K"
+        Tmin: "eV"
+        Tmax: "eV"
+      coefficients:
+        - Z: <int>
+          element: "<sym>"
+          entries:
+            - N: <int>
+              dE, P, A, X, K, Tmin, Tmax
+
+    Attributes:
+        A : RateCoefficient (accepts per-molecule or per-mole units)
+        P,X,K: Dimensionless
+        dE: ionization threshold in eV (stored as double)
+        Z,N: integers identifying the stage (N = electrons before ionization)
+    """
+
+    def __init__(self,
+                 A=None,
+                 P=0.0,
+                 X=0.0,
+                 K=0.0,
+                 dE=None,
+                 Z=None, N=None, yaml_path_or_obj=None,
+                 Tmin=None, Tmax=None, Pmin=None, Pmax=None,
+                 uncertainty=None, solute=None, comment=''):
+        KineticsModel.__init__(self, Tmin=Tmin, Tmax=Tmax, Pmin=Pmin, Pmax=Pmax,
+                               uncertainty=uncertainty, solute=solute, comment=comment)
+
+        # If Z/N are provided, load from YAML now
+        if Z is not None and N is not None:
+            yaml_path_or_obj = yaml_path_or_obj or os.path.join(settings['database.directory'], 'kinetics', 'voronov.yaml')
+            try:
+                Zi = int(Z); Ni = int(N)
+            except Exception:
+                raise TypeError("Z and N must be integers.")
+            self.populate_from_yaml(yaml_path_or_obj, Zi, Ni, Tmin=Tmin, Tmax=Tmax, comment=comment)
+            return
+
+        # direct-parameter construction
+        self.A = A if A is not None else (1.0e-12, "cm^3/(molecule*s)")
+        self.P = P
+        self.X = X
+        self.K = K
+        self.dE = dE if dE is not None else 10.0  # eV, harmless placeholder
+
+    def __repr__(self):
+        string = 'VoronovEIArrhenius(A={0!r}, P={1!r}, X={2!r}, K={3!r}, dE={4:.4g} eV'.format(
+            self.A, self.P, self.X, self.K, self._dE_eV)
+        if self.Tmin is not None: string += ', Tmin={0!r}'.format(self.Tmin)
+        if self.Tmax is not None: string += ', Tmax={0!r}'.format(self.Tmax)
+        if self.Pmin is not None: string += ', Pmin={0!r}'.format(self.Pmin)
+        if self.Pmax is not None: string += ', Pmax={0!r}'.format(self.Pmax)
+        if self.uncertainty: string += ', uncertainty={0!r}'.format(self.uncertainty)
+        if self.solute: string += ', solute={0!r}'.format(self.solute)
+        if self.comment != '': string += ', comment="""{0}"""'.format(self.comment)
+        string += ')'
+        return string
+
+    def __reduce__(self):
+        return (VoronovEIArrhenius, (
+            self.A, self.P, self.X, self.K, self._dE_eV,  # dE
+            None, None, None,                             # Z, N, yaml_path_or_obj
+            self.Tmin, self.Tmax,                         # Tmin, Tmax
+            self.Pmin, self.Pmax,                         # Pmin, Pmax
+            self.uncertainty, self.solute, self.comment
+        ))
+
+    # ---- properties ----
+    property A:
+        def __get__(self): return self._A
+        def __set__(self, value):
+            self._A = quantity.RateCoefficient(value)
+
+    property P:
+        def __get__(self): return self._P
+        def __set__(self, value): self._P = quantity.Dimensionless(value)
+
+    property X:
+        def __get__(self): return self._X
+        def __set__(self, value): self._X = quantity.Dimensionless(value)
+
+    property K:
+        def __get__(self): return self._K
+        def __set__(self, value): self._K = quantity.Dimensionless(value)
+
+    property dE:
+        """Ionization threshold in eV (stored as a plain double in eV)."""
+        def __get__(self): return self._dE_eV
+        def __set__(self, value):
+            if isinstance(value, tuple) or isinstance(value, list):
+                # Accept (val, "eV")
+                self._dE_eV = float(value[0])
+            else:
+                self._dE_eV = float(value)
+
+    property dE_eV:
+        def __get__(self):
+            return self._dE_eV
+        def __set__(self, val):
+            self._dE_eV = float(val)
+
+    # ---- core API ----
+    cpdef double get_rate_coefficient(self, double T, double P=0.0) except -1:
+        """
+        Return bimolecular **molar** rate coefficient k(Te) in SI (m^3/(mol*s)) at electron temperature T [K].
+        Uses Voronov (1997) Eq. (1):  <σv> = A * U^K * exp(-U) / [ (1 + P*sqrt(U)) * (X + U) ],
+        with U = dE / (kB_eVperK * T).  Then k = <σv> * N_A (if A was per-molecule).
+        """
+        cdef double A_si, Pval, Xval, Kval, Te_eV, U, denom
+
+        if T <= 0.0:
+            raise ValueError("VoronovEIArrhenius: T must be > 0 K.")
+
+        # Boltzmann constant in eV/K
+        cdef double kB_eVperK = 8.617333262e-5
+        Te_eV = kB_eVperK * T
+        if Te_eV <= 0.0:
+            raise ValueError("VoronovEIArrhenius: Te_eV computed non-positive.")
+
+        U = self._dE_eV / Te_eV
+        if U <= 0.0:
+            # At extremely high Te, U→0; keep numerical stability
+            U = 1.0e-300
+
+        A_si = self._A.value_si
+        Pval = self._P.value_si
+        Xval = self._X.value_si
+        Kval = self._K.value_si
+
+        denom = (1.0 + Pval * sqrt(U)) * (Xval + U)
+        if denom <= 0.0:
+            raise ZeroDivisionError("VoronovEIArrhenius: non-positive denominator.")
+
+        # <σv> in SI base from A_si; return molar units
+        return A_si * pow(U, Kval) * exp(-U) / denom
+
+    cpdef bint is_identical_to(self, KineticsModel other_kinetics) except -2:
+        if not isinstance(other_kinetics, VoronovEIArrhenius):
+            return False
+        if not KineticsModel.is_identical_to(self, other_kinetics):
+            return False
+        if not self.A.equals(other_kinetics.A): return False
+        if not self.P.equals(other_kinetics.P): return False
+        if not self.X.equals(other_kinetics.X): return False
+        if not self.K.equals(other_kinetics.K): return False
+        if self._dE_eV != other_kinetics._dE_eV: return False
+        return True
+
+    cpdef change_rate(self, double factor):
+        """Scale A by `factor`."""
+        self._A.value_si *= factor
+
+    # ---- YAML helpers ----
+    def _vor__extract_row(self, obj, int Z, int N):
+        """
+        Return the dict row for (Z,N) from a voronov.yaml-like object.
+        """
+        coeffs = obj.get("coefficients")
+        if isinstance(coeffs, list):
+            for blk in coeffs:
+                zblk = blk.get("Z")
+                if zblk is not None and int(zblk) == Z:
+                    entries = blk.get("entries")
+                    if isinstance(entries, list):
+                        for e in entries:
+                            if int(e.get("N", -999)) == N:
+                                return e
+        # Also allow top-level {Z:{N:{...}}} if ever used
+        znode = obj.get(str(Z)) if isinstance(obj, dict) and str(Z) in obj else obj.get(Z) if isinstance(obj, dict) else None
+        if isinstance(znode, dict):
+            node = znode.get(str(N)) if str(N) in znode else znode.get(N)
+            if isinstance(node, dict):
+                return node
+        raise KeyError(f"Voronov YAML: no entry for Z={Z}, N={N}")
+
+    def _vor__units(self, obj):
+        """
+        Return (a_units, t_units, de_units, te_min_units, te_max_units).
+        Defaults mirror the schema.
+        """
+        units = obj.get("units", {}) if isinstance(obj, dict) else {}
+        a_units   = units.get("A",   "cm^3/(molecule*s)")
+        t_units   = units.get("T",   "K")     # reactor Te units (K)
+        de_units  = units.get("dE",  "eV")
+        tmin_unit = units.get("Tmin","eV")
+        tmax_unit = units.get("Tmax","eV")
+        return a_units, t_units, de_units, tmin_unit, tmax_unit
+
+    cpdef populate_from_yaml(self, object yaml_path_or_obj, int Z, int N,
+                             bint allow_Z_gt28=False, Tmin=None, Tmax=None, comment=None):
+        """
+        Populate from voronov.yaml for the (Z,N) stage (N = electrons before ionization).
+        Stores Tmin/Tmax internally in K (converted from eV in the YAML).
+        """
+        if not allow_Z_gt28 and Z > 28:
+            raise ValueError(f"Voronov YAML: Z={Z} exceeds 28 (dataset covers H..Ni).")
+
+        # Load YAML
+        cdef dict data
+        if isinstance(yaml_path_or_obj, dict):
+            data = yaml_path_or_obj
+        else:
+            import yaml as _yaml
+            with open(yaml_path_or_obj, "r") as f:
+                data = _yaml.safe_load(f)
+
+        row = self._vor__extract_row(data, Z, N)
+        a_units, t_units, de_units, tmin_unit, tmax_unit = self._vor__units(data)
+
+        # Required fields
+        A  = float(row["A"])
+        P  = float(row["P"])
+        X  = float(row["X"])
+        Kp = float(row["K"])
+        dE = float(row["dE"])
+
+        # Assign
+        self.A = (A, a_units)
+        self.P = P
+        self.X = X
+        self.K = Kp
+        self.dE = dE  # eV
+
+        # Temperature validity window: YAML gives eV; store in K
+        cdef double kB_eVperK = 8.617333262e-5
+        cdef double Tmin_eV = float(row.get("Tmin", 1.0))
+        cdef double Tmax_eV = float(row.get("Tmax", 2.0e4))
+
+        if Tmin is None:
+            Tmin = Tmin_eV / kB_eVperK
+        if Tmax is None:
+            Tmax = Tmax_eV / kB_eVperK
+        self.Tmin = Tmin
+        self.Tmax = Tmax
+
+        base = f"Voronov (1997) e-impact ionization fit, Z={Z}, N={N}"
+        self.comment = f"{base}; {comment}" if comment else base
+        return self
+
+    @classmethod
+    def from_yaml(cls, object yaml_path_or_obj, int Z, int N,
+                  Tmin=None, Tmax=None, comment=None, bint allow_Z_gt28=False):
+        """
+        Construct a new VoronovEIArrhenius from voronov.yaml.
+        """
+        obj = cls(A=(1.0e-12, "cm^3/(molecule*s)"), P=0.0, X=0.1, K=0.3, dE=10.0)
+        obj.populate_from_yaml(yaml_path_or_obj, Z, N,
+                               Tmin=Tmin, Tmax=Tmax, comment=comment,
+                               allow_Z_gt28=allow_Z_gt28)
         return obj
 
 
