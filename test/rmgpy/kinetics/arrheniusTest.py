@@ -40,6 +40,7 @@ import rmgpy.constants as constants
 from rmgpy.kinetics.arrhenius import (
     Arrhenius,
     BadnellRRArrhenius,
+    VoronovEIArrhenius,
     ArrheniusEP,
     ArrheniusBM,
     PDepArrhenius,
@@ -557,6 +558,281 @@ def test_init_from_yaml_validates_integer_ZN():
         BadnellRRArrhenius(Z="not-int", N=0)
     with pytest.raises(TypeError):
         BadnellRRArrhenius(Z=1, N="nope")
+
+# ---- helper (formula expectation in cm^3/(molecule*s)) ----
+def _alpha_ei_cm3_per_molecule_s(T, A, P, X, K, dE_eV):
+    """
+    Voronov (1997) per-particle rate coefficient:
+        <σv>(Te_eV) = A * [ U^K * exp(-U) ] / [ (1 + P*sqrt(U)) * (X + U) ]
+    with U = dE_eV / Te_eV, and Te_eV = k_B_eV_per_K * T.
+    """
+    kB_eV_per_K = 8.617333262145e-5  # eV/K
+    Te_eV = kB_eV_per_K * float(T)
+    U = dE_eV / Te_eV
+    return A * (U ** K) * np.exp(-U) / ((1.0 + P * np.sqrt(U)) * (X + U))
+
+
+class TestVoronovEIArrhenius:
+    """
+    Contains unit tests of the :class:`VoronovEIArrhenius` class.
+    """
+
+    def setup_method(self):
+        # Primary test object uses per-molecule A (constructed directly; no YAML).
+        self.A_cms_per_molecule = 3.0e-8
+        self.P = 0.25
+        self.X = 1.80
+        self.K = 0.42
+        self.dE_eV = 5.14   # ~Na I first ionization (arbitrary for tests)
+        self.Z = 11
+        self.N = 11  # electrons before ionization (neutral Na)
+        self.Tmin = 300.0
+        self.Tmax = 2.0e5
+        self.comment = "Na (I) -> Na+ + e- (test, per-molecule A)"
+
+        self.ei = VoronovEIArrhenius(
+            A=(self.A_cms_per_molecule, "cm^3/(molecule*s)"),
+            P=self.P,
+            X=self.X,
+            K=self.K,
+            dE=self.dE_eV,
+            Tmin=(self.Tmin, "K"),
+            Tmax=(self.Tmax, "K"),
+            comment=self.comment,
+        )
+
+        # Secondary object: A provided per-mole (constructed directly; no YAML).
+        self.A_cms_per_mol = 1.0e-6
+        self.ei_molar = VoronovEIArrhenius(
+            A=(self.A_cms_per_mol, "cm^3/(mol*s)"),
+            P=self.P,
+            X=self.X,
+            K=self.K,
+            dE=self.dE_eV,
+            Tmin=(self.Tmin, "K"),
+            Tmax=(self.Tmax, "K"),
+            comment="per-mole variant",
+        )
+
+        # YAML fixtures as dictionaries (schema-compatible)
+        # Per-molecule A entry (Z=11, N=11)
+        self.yaml_per_molecule = {
+            "units": {"A": "cm^3/(molecule*s)", "dE": "eV", "Tmin": "eV", "Tmax": "eV"},
+            "coefficients": [
+                {
+                    "Z": 11,
+                    "entries": [
+                        {
+                            "N": 11,
+                            "A": 3.0e-8,
+                            "P": 0.25,
+                            "X": 1.80,
+                            "K": 0.42,
+                            "dE": 5.14,
+                            "Tmin": 0.010,   # eV
+                            "Tmax": 12.0,    # eV
+                            "species": "Na I",
+                            "comment": "Na (I) -> Na+ + e- (YAML test)"
+                        }
+                    ]
+                }
+            ],
+        }
+
+        # Per-mole A entry (Z=11, N=10)
+        self.yaml_per_mole = {
+            "units": {"A": "cm^3/(mol*s)", "dE": "eV", "Tmin": "eV", "Tmax": "eV"},
+            "coefficients": [
+                {
+                    "Z": 11,
+                    "entries": [
+                        {
+                            "N": 10,
+                            "A": 1.0e-6,
+                            "P": 0.25,
+                            "X": 1.80,
+                            "K": 0.42,
+                            "dE": 47.3,
+                            "Tmin": 0.020,  # eV
+                            "Tmax": 10.0,   # eV
+                            "species": "Na II",
+                            "comment": "Na (II) -> Na2+ + e- (YAML test)"
+                        }
+                    ]
+                }
+            ],
+        }
+
+    # -------- property tests --------
+
+    def test_a_factor_per_molecule_units(self):
+        """
+        RateCoefficient converts 'cm^3/(molecule*s)' → SI m^3/(mol*s) via (× 1e-6) and (× N_A).
+        """
+        expected_SI = self.A_cms_per_molecule * 1e-6 * constants.Na  # m^3/(mol*s)
+        assert np.isclose(self.ei.A.value_si, expected_SI, rtol=0, atol=1e-12 * max(1.0, expected_SI))
+
+    def test_dimensionless_params(self):
+        assert round(abs(self.ei.P.value_si - self.P), 12) == 0
+        assert round(abs(self.ei.X.value_si - self.X), 12) == 0
+        assert round(abs(self.ei.K.value_si - self.K), 12) == 0
+
+    def test_threshold_energy_stored_as_double(self):
+        # dE_eV is stored as a plain double; accessor returns the numeric eV.
+        assert round(abs(self.ei.dE_eV - self.dE_eV), 12) == 0
+
+    def test_temperature_min_max(self):
+        assert np.isclose(self.ei.Tmin.value_si, self.Tmin, rtol=0, atol=1e-9)
+        assert np.isclose(self.ei.Tmax.value_si, self.Tmax, rtol=0, atol=1e-9)
+
+    def test_comment_and_stage(self):
+        # When constructed directly, comment should be preserved verbatim.
+        assert self.comment in self.ei.comment
+
+    def test_is_temperature_valid(self):
+        Tdata = np.array([200, 400, 1.0e4, 5.0e4, 2.1e5])
+        validdata = np.array([False, True, True, True, False], dtype=bool)
+        for T, valid in zip(Tdata, validdata):
+            assert self.ei.is_temperature_valid(T) == valid
+
+    # -------- evaluator tests --------
+
+    def test_get_rate_coefficient_matches_formula_per_molecule_input(self):
+        """
+        Compare get_rate_coefficient (SI m^3/(mol*s)) with independent Voronov formula,
+        using per-molecule A then converting with N_A and cm→m.
+        """
+        Tlist = np.array([800, 2000, 5000, 10000, 20000, 80000], dtype=float)
+        for T in Tlist:
+            alpha_cm = _alpha_ei_cm3_per_molecule_s(
+                T, self.A_cms_per_molecule, self.P, self.X, self.K, self.dE_eV
+            )  # cm^3/(molecule*s)
+            kexp_SI = alpha_cm * constants.Na * 1e-6  # m^3/(mol*s)
+            kact = self.ei.get_rate_coefficient(T)
+            assert np.isclose(kact, kexp_SI, rtol=5e-7, atol=0.0)
+
+    def test_get_rate_coefficient_matches_formula_per_mole_input(self):
+        """
+        When A is per-mole, the returned k should *not* multiply by N_A.
+        """
+        Tlist = np.array([800, 2000, 5000, 10000, 20000, 80000], dtype=float)
+        for T in Tlist:
+            # Same functional form, but A already per mole → only cm^3→m^3 at the end.
+            alpha_molar_cm = _alpha_ei_cm3_per_molecule_s(
+                T, self.A_cms_per_mol, self.P, self.X, self.K, self.dE_eV
+            )  # cm^3/(mol*s)
+            kexp_SI = alpha_molar_cm * 1e-6  # m^3/(mol*s)
+            kact = self.ei_molar.get_rate_coefficient(T)
+            assert np.isclose(kact, kexp_SI, rtol=5e-7, atol=0.0)
+
+    def test_change_rate(self):
+        Tlist = np.array([1000, 5000, 15000, 30000], dtype=float)
+        k0 = np.array([self.ei.get_rate_coefficient(T) for T in Tlist])
+        self.ei.change_rate(2.5)
+        k1 = np.array([self.ei.get_rate_coefficient(T) for T in Tlist])
+        assert np.allclose(k1, 2.5 * k0, rtol=1e-12, atol=0.0)
+
+    def test_repr_roundtrip(self):
+        # The repr should contain key fields; we don't require eval roundtrip here.
+        r = repr(self.ei)
+        assert "VoronovEIArrhenius(" in r
+        assert "dE=" in r and "eV" in r
+        assert "comment" in r
+
+    # -------- YAML-driven tests (selection/queries & units) --------
+
+    def test_populate_from_yaml_selects_correct_entry_by_ZN_per_molecule(self):
+        obj = VoronovEIArrhenius()
+
+        # YAML lists Tmin/Tmax in eV; compute the Kelvin values and pass with units
+        kB = 8.617333262e-5  # eV/K
+        expected_Tmin_K = 0.010 / kB
+        expected_Tmax_K = 12.0 / kB
+
+        # Pass explicit K-units to satisfy Quantity setter
+        obj.populate_from_yaml(
+            self.yaml_per_molecule,
+            Z=11,
+            N=11,
+            Tmin=(expected_Tmin_K, "K"),
+            Tmax=(expected_Tmax_K, "K"),
+        )
+
+        # A: cm^3/(molecule*s) → m^3/(mol*s)
+        expected_SI_A = 3.0e-8 * 1e-6 * constants.Na  # m^3/(mol*s)
+        assert np.isclose(obj.A.value_si, expected_SI_A, rtol=0, atol=1e-12 * max(1.0, expected_SI_A))
+        assert round(abs(obj.P.value_si - 0.25), 12) == 0
+        assert round(abs(obj.X.value_si - 1.80), 12) == 0
+        assert round(abs(obj.K.value_si - 0.42), 12) == 0
+        assert round(abs(obj.dE_eV - 5.14), 12) == 0
+
+        # Comment currently built as "Voronov ... Z=..., N=..."; ensure it reflects selection
+        assert "Z=11" in obj.comment and "N=11" in obj.comment
+
+        # Tmin/Tmax were provided in K; verify they’re stored as Kelvin and match
+        assert np.isclose(obj.Tmin.value_si, expected_Tmin_K, rtol=0, atol=1e-8 * expected_Tmin_K)
+        assert np.isclose(obj.Tmax.value_si, expected_Tmax_K, rtol=0, atol=1e-8 * expected_Tmax_K)
+
+    def test_populate_from_yaml_selects_correct_entry_by_ZN_per_mole(self):
+        obj = VoronovEIArrhenius()
+
+        # YAML lists Tmin/Tmax in eV; convert to K and pass with units
+        kB = 8.617333262e-5  # eV/K
+        expected_Tmin_K = 0.020 / kB
+        expected_Tmax_K = 10.0 / kB
+
+        obj.populate_from_yaml(
+            self.yaml_per_mole,
+            Z=11,
+            N=10,
+            Tmin=(expected_Tmin_K, "K"),
+            Tmax=(expected_Tmax_K, "K"),
+        )
+
+        # A per mole: only cm^3→m^3
+        expected_SI_A = 1.0e-6 * 1e-6  # m^3/(mol*s)
+        assert np.isclose(obj.A.value_si, expected_SI_A, rtol=0, atol=1e-12 * max(1.0, expected_SI_A))
+        assert round(abs(obj.dE_eV - 47.3), 12) == 0
+
+        # Comment contains selected stage
+        assert "Z=11" in obj.comment and "N=10" in obj.comment
+
+        # Tmin/Tmax were provided in K; verify stored values
+        assert np.isclose(obj.Tmin.value_si, expected_Tmin_K, rtol=0, atol=1e-8 * expected_Tmin_K)
+        assert np.isclose(obj.Tmax.value_si, expected_Tmax_K, rtol=0, atol=1e-8 * expected_Tmax_K)
+
+    def test_populate_from_yaml_rate_matches_formula(self):
+        """
+        After populate_from_yaml, the evaluator should match a direct Voronov computation
+        for the selected (Z,N) tuple across several temperatures.
+        """
+        obj = VoronovEIArrhenius()
+
+        # YAML lists Tmin/Tmax in eV; convert to K and pass with units
+        kB = 8.617333262e-5  # eV/K
+        expected_Tmin_K = 0.010 / kB
+        expected_Tmax_K = 12.0 / kB
+
+        obj.populate_from_yaml(
+            self.yaml_per_molecule,
+            Z=11,
+            N=11,  # per-molecule case
+            Tmin=(expected_Tmin_K, "K"),
+            Tmax=(expected_Tmax_K, "K"),
+        )
+
+        A = 3.0e-8
+        P = 0.25
+        X = 1.80
+        K = 0.42
+        dE = 5.14
+        Tlist = np.array([500, 2000, 10000, 40000, 120000], dtype=float)
+
+        for T in Tlist:
+            alpha_cm = _alpha_ei_cm3_per_molecule_s(T, A, P, X, K, dE)  # cm^3/(molecule*s)
+            kexp_SI = alpha_cm * constants.Na * 1e-6  # m^3/(mol*s)
+            kact = obj.get_rate_coefficient(T)
+            assert np.isclose(kact, kexp_SI, rtol=5e-7, atol=0.0)
 
 
 class TestArrheniusEP:
