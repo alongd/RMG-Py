@@ -208,6 +208,8 @@ cdef class ReactionSystem(DASx):
             keys = conditions.keys()
             if 'T' in keys and hasattr(self, 'T'):
                 self.T = Quantity(conditions['T'], 'K')
+            if 'Te' in keys and hasattr(self, 'Te'):
+                self.Te = Quantity(conditions['Te'])
             if 'P' in keys and hasattr(self, 'P'):
                 self.P = Quantity(conditions['P'], 'Pa')
             for k in keys:
