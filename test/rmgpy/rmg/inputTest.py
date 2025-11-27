@@ -183,10 +183,12 @@ class TestInputReactors:
         global rmg
         rmg.reaction_systems = []
 
-    def test_simple_reactor_mole_fractions(self):
+    def test_plasma_reactor_mole_fractions(self):
         """Test that SimpleReactor mole fractions are set properly"""
-        inp.simple_reactor(
+        inp.plasma_reactor(
             temperature=(1000, "K"),
+            electronTemperature=(1000, "eV"),
+            electronDensity=[(1e10, "cm^-3"), (1e12, "cm^-3")],
             pressure=(1, "atm"),
             initialMoleFractions={
                 "A": 0.5,
@@ -227,8 +229,10 @@ class TestInputReactors:
     @patch("rmgpy.rmg.input.logging")
     def test_simple_reactor_mole_fractions_normalize_2(self, mock_logging):
         """Test that SimpleReactor mole fractions are normalized properly"""
-        inp.simple_reactor(
+        inp.plasma_reactor(
             temperature=[(1000, "K"), (2000, "K")],
+            electronTemperature=[(1000, "K"), (2000, "K")],
+            electronDensity=[(1e10, "cm^-3"), (1e12, "cm^-3")],
             pressure=[(1, "atm"), (10, "atm")],
             initialMoleFractions={
                 "A": 5,
@@ -248,8 +252,10 @@ class TestInputReactors:
 
     def test_simple_reactor_mole_fractions_ranged(self):
         """Test that SimpleReactor ranged mole fractions are not normalized"""
-        inp.simple_reactor(
+        inp.plasma_reactor(
             temperature=[(1000, "K"), (2000, "K")],
+            electronTemperature=[(1000, "eV"), (2000, "eV")],
+            electronDensity=[(1e10, "cm^-3"), (1e12, "cm^-3")],
             pressure=[(1, "atm"), (10, "atm")],
             initialMoleFractions={
                 "A": [5, 8],
