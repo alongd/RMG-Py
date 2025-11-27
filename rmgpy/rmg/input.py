@@ -57,6 +57,7 @@ from rmgpy.rmg.settings import ModelSettings, SimulatorSettings
 from rmgpy.solver.liquid import LiquidReactor
 from rmgpy.solver.mbSampled import MBSampledReactor
 from rmgpy.solver.simple import SimpleReactor
+from rmgpy.solver.plasma import PlasmaReactor
 from rmgpy.solver.surface import SurfaceReactor
 from rmgpy.solver.termination import (
     TerminationConversion,
@@ -421,6 +422,180 @@ def simple_reactor(temperature,
         sens_conditions['P'] = Quantity(sensitivityPressure).value_si
 
     system = SimpleReactor(T, P, initialMoleFractions, nSims, termination, sensitive_species, sensitivityThreshold, sens_conditions, constantSpecies)
+    rmg.reaction_systems.append(system)
+
+    assert balanceSpecies is None or isinstance(balanceSpecies, str), 'balanceSpecies should be the string corresponding to a single species'
+    rmg.balance_species = balanceSpecies
+    if balanceSpecies:  # check that the balanceSpecies can't be taken to zero
+        total = 0.0
+        for key, item in initialMoleFractions.items():
+            if key == balanceSpecies:
+                assert not isinstance(item, list), 'balanceSpecies must not have a defined range'
+                xbspcs = item
+            if isinstance(item, list):
+                total += item[1] - item[0]
+
+        if total > xbspcs:
+            raise ValueError('The sum of the differences in the ranged mole fractions is greater than the mole '
+                             'fraction of the balance species, this would require the balanceSpecies mole fraction to '
+                             'be negative in some cases which is not allowed, either reduce the maximum mole fractions '
+                             'or dont use balanceSpecies')
+def plasma_reactor(temperature,
+                   pressure,
+                   initialMoleFractions,
+                   electronTemperature=None,
+                   nSims=6,
+                   terminationConversion=None,
+                   terminationTime=None,
+                   terminationRateRatio=None,
+                   balanceSpecies=None,
+                   sensitivity=None,
+                   sensitivityThreshold=1e-3,
+                   sensitivityTemperature=None,
+                   sensitivityPressure=None,
+                   sensitivityMoleFractions=None,
+                   constantSpecies=None):
+    logging.debug('Found PlasmaReactor reaction system')
+
+    try:
+        if mol_to_frag:
+            # calculate total as denominator
+            total = float(0)
+            for initial_mol, value in initialMoleFractions.items():
+                if initial_mol not in mol_to_frag: # there might be other species which set cut to be False but in initialMoleFractions
+                    mol_to_frag[initial_mol] = {initial_mol: 1}
+                total += value * sum(mol_to_frag[initial_mol].values())
+            for key, frag_dict in mol_to_frag.items():
+                # if not perform cutting, no need to modify initialMoleFractions
+                # only 1 species in system and it does not get cut, then no need to modify initialMoleFractions
+                if len(mol_to_frag.keys())==1 and len(frag_dict.keys()) == 1 and key == list(frag_dict)[0]:
+                    continue
+                # probably this species does not get cut but other speceis are cut,
+                # so it still requires to re-calculate and normalize molar fraction
+                elif len(frag_dict.keys()) == 1 and key == list(frag_dict)[0]:
+                    initialMoleFractions[key] = initialMoleFractions[key] * frag_dict[key] / total
+                    continue
+                for frag_label, number in frag_dict.items():
+                    if frag_label in initialMoleFractions:
+                        initialMoleFractions[frag_label] += initialMoleFractions[key] * number / total
+                    else:
+                        initialMoleFractions[frag_label] = initialMoleFractions[key] * number / total
+                del initialMoleFractions[key]
+            logging.info('After cutting, new compositions:')
+            for spec, molfrac in initialMoleFractions.items():
+                logging.info('{0} = {1}'.format(spec, molfrac))
+    except NameError:
+        pass
+
+    for key, value in initialMoleFractions.items():
+        if not isinstance(value, list):
+            initialMoleFractions[key] = float(value)
+            if value < 0:
+                raise InputError('Initial mole fractions cannot be negative.')
+        else:
+            if len(value) != 2:
+                raise InputError("Initial mole fraction values must either be a number or a list with 2 entries")
+            initialMoleFractions[key] = [float(value[0]), float(value[1])]
+            if value[0] < 0 or value[1] < 0:
+                raise InputError('Initial mole fractions cannot be negative.')
+            elif value[1] < value[0]:
+                raise InputError('Initial mole fraction range out of order: {0}'.format(key))
+
+    if not isinstance(temperature, list):
+        T = Quantity(temperature)
+    else:
+        if len(temperature) != 2:
+            raise InputError('Temperature and pressure ranges can either be in the form of (number,units) or a list '
+                             'with 2 entries of the same format')
+        T = [Quantity(t) for t in temperature]
+
+    if not isinstance(electronTemperature, list):
+        Te = Quantity(electronTemperature)
+    else:
+        if len(electronTemperature) != 2:
+            raise InputError('Temperature and pressure ranges can either be in the form of (number,units) or a list '
+                             'with 2 entries of the same format')
+        Te = [Quantity(te) for te in electronTemperature]
+
+    if not isinstance(pressure, list):
+        P = Quantity(pressure)
+    else:
+        if len(pressure) != 2:
+            raise InputError('Temperature and pressure ranges can either be in the form of (number,units) or a list '
+                             'with 2 entries of the same format')
+        P = [Quantity(p) for p in pressure]
+
+    if not isinstance(temperature, list) and not isinstance(pressure, list) and all(
+            [not isinstance(x, list) for x in initialMoleFractions.values()]):
+        nSims = 1
+
+    # normalize mole fractions if not using a mole fraction range
+    if all([not isinstance(x, list) for x in initialMoleFractions.values()]):
+        total_initial_moles = sum(initialMoleFractions.values())
+        if total_initial_moles != 1:
+            logging.warning('Initial mole fractions do not sum to one; normalizing.')
+            logging.info('')
+            logging.info('Original composition:')
+            for spec, molfrac in initialMoleFractions.items():
+                logging.info('{0} = {1}'.format(spec, molfrac))
+            for spec in initialMoleFractions:
+                initialMoleFractions[spec] /= total_initial_moles
+            logging.info('')
+            logging.info('Normalized mole fractions:')
+            for spec, molfrac in initialMoleFractions.items():
+                logging.info('{0} = {1}'.format(spec, molfrac))
+            logging.info('')
+
+    termination = []
+    if terminationConversion is not None:
+        for spec, conv in terminationConversion.items():
+            # check whether key is in species_dict (not if molecule cut provided)
+            if spec not in species_dict:
+                # select first fragment as species used for terminationConversion
+                repr_frag = sorted(mol_to_frag[spec].keys())[0]
+                termination.append(TerminationConversion(species_dict[repr_frag], conv))
+            else:
+                termination.append(TerminationConversion(species_dict[spec], conv))
+    if terminationTime is not None:
+        termination.append(TerminationTime(Quantity(terminationTime)))
+    if terminationRateRatio is not None:
+        termination.append(TerminationRateRatio(terminationRateRatio))
+    if len(termination) == 0:
+        raise InputError('No termination conditions specified for reaction system #{0}.'.format(len(rmg.reaction_systems) + 2))
+
+    sensitive_species = []
+    if sensitivity:
+        if sensitivity != 'all':
+            if isinstance(sensitivity, str):
+                sensitivity = [sensitivity]
+            for spec in sensitivity:
+                sensitive_species.append(species_dict[spec])
+
+        else:
+            sensitive_species.append('all')
+
+    #Check the constant species exist
+    if constantSpecies is not None:
+        logging.debug('  Generation with constant species:')
+        for const_spc in constantSpecies:
+            logging.debug("  {0}".format(const_spc))
+            if const_spc not in species_dict:
+                raise InputError('Species {0} not found in the input file'.format(const_spc))
+
+    if not isinstance(T, list):
+        sensitivityTemperature = T
+    if not isinstance(P, list):
+        sensitivityPressure = P
+    if not any([isinstance(x, list) for x in initialMoleFractions.values()]):
+        sensitivityMoleFractions = deepcopy(initialMoleFractions)
+    if sensitivityMoleFractions is None or sensitivityTemperature is None or sensitivityPressure is None:
+        sens_conditions = None
+    else:
+        sens_conditions = sensitivityMoleFractions
+        sens_conditions['T'] = Quantity(sensitivityTemperature).value_si
+        sens_conditions['P'] = Quantity(sensitivityPressure).value_si
+
+    system = PlasmaReactor(T, P, initialMoleFractions, nSims, termination, sensitive_species, sensitivityThreshold, sens_conditions, constantSpecies, Te)
     rmg.reaction_systems.append(system)
 
     assert balanceSpecies is None or isinstance(balanceSpecies, str), 'balanceSpecies should be the string corresponding to a single species'
@@ -1568,6 +1743,7 @@ def read_input_file(path, rmg0):
         'adjacencyListGroup': adjacency_list_group,
         'react': react,
         'simpleReactor': simple_reactor,
+        'plasmaReactor': plasma_reactor,
         'constantVIdealGasReactor' : constant_V_ideal_gas_reactor,
         'constantTPIdealGasReactor' : constant_TP_ideal_gas_reactor,
         'liquidSurfaceReactor' : liquid_cat_reactor,
