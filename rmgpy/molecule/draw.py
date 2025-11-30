@@ -1263,6 +1263,7 @@ class MoleculeDrawer(object):
         radical electrons and charges to be drawn adjacent to the rendered symbol.
         """
 
+        orig_symbol = symbol
         atoms = self.molecule.atoms
 
         if symbol != '':
@@ -1275,12 +1276,18 @@ class MoleculeDrawer(object):
             if 'C' not in symbol and 'O' not in symbol and len(atoms) == 1:
                 labels.sort()
             symbol = ''.join(labels)
+            # Special-case lone electron pseudo-atom: render as "e-"
+            if symbol == '' and orig_symbol == 'e' and len(atoms) == 1:
+                symbol = 'e'
+                labels = ['e']
 
             # Determine positions of each character in the symbol
             coordinates = []
 
             cr.set_font_size(self.options['fontSizeNormal'])
-            y0 += max([cr.text_extents(char)[3] for char in symbol if char.isalpha()]) / 2
+            alpha_heights = [cr.text_extents(char)[3] for char in symbol if char.isalpha()]
+            if len(alpha_heights) == 0:
+                y0 += max([cr.text_extents(char)[3] for char in symbol if char.isalpha()]) / 2
 
             for i, label in enumerate(labels):
                 for j, char in enumerate(label):
