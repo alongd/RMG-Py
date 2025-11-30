@@ -383,11 +383,13 @@ ATOMTYPES['alkali'] = AtomType(label='alkali', generic=['R', 'R!H', 'R!H!Val7'],
 ATOMTYPES['alkaline'] = AtomType(label='alkaline', generic=['R', 'R!H', 'R!H!Val7'], specific=['Mg', 'Mg0s', 'Mg0d', 'Mg+', 'Mg+2', 'Ca', 'Ca0s', 'Ca0d', 'Ca+', 'Ca+2'])
 
 
-ATOMTYPES['H'] = AtomType('H', generic=['Rx','R'], specific=['H0','H+'], charge=[0,+1])
+ATOMTYPES['H'] = AtomType('H', generic=['Rx','R'], specific=['H0','H+','H-'], charge=[0,+1,-1])
 ATOMTYPES['H0'] = AtomType('H0', generic=['R','H'], specific=[], single=[0,1], all_double=[0], r_double=[0], o_double=[0], s_double=[0], triple=[0],
                             quadruple=[0], benzene=[0], lone_pairs=[0], charge=[0])
 ATOMTYPES['H+'] = AtomType('H+', generic=['R','H'], specific=[], single=[0], all_double=[0], r_double=[0], o_double=[0], s_double=[0], triple=[0],
                             quadruple=[0], benzene=[0], lone_pairs=[0], charge=[+1])
+ATOMTYPES['H-'] = AtomType('H-', generic=['R','H'], specific=[], single=[0,1], all_double=[0], r_double=[0], o_double=[0], s_double=[0], triple=[0],
+                            quadruple=[0], benzene=[0], lone_pairs=[0,1], charge=[-1])
 
 ATOMTYPES['Li'] = AtomType('Li', generic=['R', 'R!H', 'R!H!Val7', 'metal', 'alkali'], specific=['Li0', 'Li+'],
                             single=[0,1], all_double=[0], r_double=[0], o_double=[0], s_double=[0], triple=[0], quadruple=[0], benzene=[0], lone_pairs=[0], charge=[0,1])
@@ -482,7 +484,7 @@ ATOMTYPES['C2s'] = AtomType('C2s', generic=['R', 'R!H', 'R!H!Val7', 'C', 'Val4',
                             single=[0,1,2], all_double=[0], r_double=[], o_double=[], s_double=[], triple=[0], quadruple=[], benzene=[0], lone_pairs=[1], charge=[0])
 # examples for C2s: singlet[CH2]
 ATOMTYPES['C2sc'] = AtomType('C2sc', generic=['R', 'R!H', 'R!H!Val7', 'C', 'Val4', 'Rx', 'Rx!H'], specific=[],  # (shared electrons = 5-8)
-                             single=[0,1,2,3], all_double=[0], r_double=[], o_double=[], s_double=[], triple=[0], quadruple=[], benzene=[0], lone_pairs=[1], charge=[-1])
+                             single=[0,1,2,3], all_double=[0], r_double=[], o_double=[], s_double=[], triple=[0], quadruple=[], benzene=[0], lone_pairs=[1,2], charge=[-1,+1])
 # examples for C2sc: [CH2-][N+]#N
 ATOMTYPES['C2d'] = AtomType('C2d', generic=['R', 'R!H', 'R!H!Val7', 'C', 'Val4', 'Rx', 'Rx!H'], specific=[],  # (shared electrons = 6)
                             single=[0], all_double=[1], r_double=[], o_double=[], s_double=[], triple=[0], quadruple=[], benzene=[0], lone_pairs=[1], charge=[0])
@@ -567,7 +569,7 @@ ATOMTYPES['O2s'] = AtomType('O2s', generic=['R', 'R!H', 'R!H!Val7', 'O', 'Val6',
                             single=[0,1,2], all_double=[0], r_double=[], o_double=[], s_double=[], triple=[0], quadruple=[], benzene=[0], lone_pairs=[2], charge=[0])
 # examples for O2s: H2O, OH, CH3OH
 ATOMTYPES['O2sc'] = AtomType('O2sc', generic=['R', 'R!H', 'R!H!Val7', 'O', 'Val6', 'Rx', 'Rx!H'], specific=[],  # (shared electrons = 6)
-                             single=[0,1], all_double=[0], r_double=[], o_double=[], s_double=[], triple=[0], quadruple=[], benzene=[0], lone_pairs=[2], charge=[+1])
+                             single=[0,1], all_double=[0], r_double=[], o_double=[], s_double=[], triple=[0], quadruple=[], benzene=[0], lone_pairs=[0,1,2], charge=[+1,+2,+3,+4,+5])
 # examples for O2sc: C=[S-][O+]
 ATOMTYPES['O2d'] = AtomType('O2d', generic=['R', 'R!H', 'R!H!Val7', 'O', 'Val6', 'Rx', 'Rx!H'], specific=[],  # (shared electrons = 8)
                             single=[0], all_double=[1], r_double=[], o_double=[], s_double=[], triple=[0], quadruple=[], benzene=[0], lone_pairs=[2], charge=[0])
