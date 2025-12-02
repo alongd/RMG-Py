@@ -745,7 +745,7 @@ class PDepNetwork(rmgpy.pdep.network.Network):
         Regenerate the :math:`k(T,P)` values for this partial network if the
         network is marked as invalid.
         """
-        from rmgpy.kinetics import Arrhenius, KineticsData, MultiArrhenius
+        from rmgpy.kinetics import Arrhenius, KineticsData, MultiArrhenius, BadnellRRArrhenius, VoronovEIArrhenius
 
         # Get the parameters for the pressure dependence calculation
         job = pdep_settings
@@ -850,7 +850,7 @@ class PDepNetwork(rmgpy.pdep.network.Network):
                 logging.info('Converting multiple kinetics to a single Arrhenius expression for reaction {rxn}'.format(
                     rxn=rxn))
                 rxn.kinetics = rxn.kinetics.to_arrhenius(Tmin=Tmin, Tmax=Tmax)
-            elif not isinstance(rxn.kinetics, Arrhenius) and rxn.network_kinetics is None:
+            elif not isinstance(rxn.kinetics, (Arrhenius, BadnellRRArrhenius, VoronovEIArrhenius)) and rxn.network_kinetics is None:
                 raise Exception('Path reaction "{0}" in PDepNetwork #{1:d} has invalid kinetics '
                                 'type "{2!s}".'.format(rxn, self.index, rxn.kinetics.__class__))
             rxn.fix_barrier_height(force_positive=True)
