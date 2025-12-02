@@ -38,10 +38,12 @@ import numpy as np
 
 from rmgpy import settings
 import rmgpy.data.kinetics.family
+from rmgpy.constants import Na
 from rmgpy.data.kinetics.database import KineticsDatabase
 from rmgpy.data.kinetics.family import TemplateReaction
 from rmgpy.data.rmg import RMGDatabase
 from rmgpy.data.thermo import ThermoDatabase
+from rmgpy.kinetics.arrhenius import BadnellRRArrhenius
 from rmgpy.molecule import Molecule
 from rmgpy.species import Species
 from rmgpy.reaction import Reaction
@@ -72,6 +74,7 @@ class TestFamily:
                 "R_Addition_COm",
                 "R_Recombination",
                 'Surface_Proton_Electron_Reduction_Alpha',
+                'Plasma_Radiative_Recombination',
             ],
         )
         cls.family = cls.database.families["intra_H_migration"]
@@ -102,6 +105,47 @@ class TestFamily:
         assert self.family.groups.entries["R6Hall"] in top_groups
         assert self.family.groups.entries["R2Hall"] in top_groups
         assert self.family.groups.entries["R3Hall"] in top_groups
+
+    def test_plasma_family(self):
+        """
+        Test that Plasma_Radiative_Recombination works.
+        """
+        family = self.database.families["Plasma_Radiative_Recombination"]
+        reactants = [
+            Molecule().from_adjacency_list("""1 *1 H u0 p0 c+1"""),
+            Molecule().from_adjacency_list("""1 *2 e u1 p0 c-1"""),
+        ]
+        expected_product = Molecule().from_adjacency_list("""1 H u1 p0 c0""")
+        products = family.apply_recipe(reactants)
+
+        assert len(products) == 1
+        assert expected_product.is_isomorphic(products[0])
+
+    def test_assign_kinetics_to_plasma_family(self):
+        """
+        Test that Plasma_Radiative_Recombination works and triggers custom kinetics.
+        """
+        family = self.database.families["Plasma_Radiative_Recombination"]
+
+        assert family.custom_kinetics is True
+
+        reactants = [
+            Molecule().from_adjacency_list("""1 *1 H u0 p0 c+1"""),
+            Molecule().from_adjacency_list("""1 *2 e u1 p0 c-1"""),
+        ]
+
+        reactions = family.generate_reactions(reactants)
+
+        assert len(reactions) == 1
+        reaction = reactions[0]
+
+        expected_product = Molecule().from_adjacency_list("""1 H u1 p0 c0""")
+        assert expected_product.is_isomorphic(reaction.products[0])
+
+        assert isinstance(reaction.kinetics, BadnellRRArrhenius)
+        assert np.isclose(reaction.kinetics.A.value_si, 8.318e-11 * Na / 1e6)
+        assert np.isclose(reaction.kinetics.B.value_si, 0.7472)
+        assert reaction.kinetics.comment == 'Badnell (2006) RR fit, Z=1, N=0'
 
     def test_react_benzene_bond(self):
         """
