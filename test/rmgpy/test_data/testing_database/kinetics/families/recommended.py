@@ -15,6 +15,7 @@ default = {
     "H_Abstraction",
     "R_Addition_MultipleBond",
     "R_Recombination",
+    "Plasma_Radiative_Recombination",
 }
 
 pah = {
