@@ -243,8 +243,9 @@ def obj_to_dict(obj, spcs, names=None, label="solvent"):
     elif obj is None:
         return None
     else:
-        raise ValueError("Object of type {} does not have a defined conversion to "
-                         "ReactionMechanismSimulator format".format(type(obj)))
+        return None
+        # raise ValueError("Object of type {} does not have a defined conversion to "
+        #                  "ReactionMechanismSimulator format".format(type(obj)))
     return result_dict
 
 
