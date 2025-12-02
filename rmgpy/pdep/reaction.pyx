@@ -124,10 +124,14 @@ def calculate_microcanonical_rate_coefficient(reaction,
         logging.debug('Calculating microcanonical rate coefficient using ILT method for %s...', reaction)
         if reactant_states_known:
             kinetics = reaction.kinetics if reaction.network_kinetics is None else reaction.network_kinetics
+            if not isinstance(kinetics, Arrhenius) and hasattr(kinetics, 'to_arrhenius'):
+                kinetics = kinetics.to_arrhenius()
             kf = apply_inverse_laplace_transform_method(reaction.transition_state, kinetics, e_list, j_list, reac_dens_states, T)
             forward = True
         elif product_states_known:
             kinetics = reaction.generate_reverse_rate_coefficient(network_kinetics=True)
+            if not isinstance(kinetics, Arrhenius) and hasattr(kinetics, 'to_arrhenius'):
+                kinetics = kinetics.to_arrhenius()
             kr = apply_inverse_laplace_transform_method(reaction.transition_state, kinetics, e_list, j_list, prod_dens_states, T)
             forward = False
         else:
