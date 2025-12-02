@@ -48,7 +48,7 @@ from rmgpy.data.kinetics.library import KineticsLibrary, LibraryReaction
 from rmgpy.data.rmg import get_db
 from rmgpy.data.vaporLiquidMassTransfer import vapor_liquid_mass_transfer
 from rmgpy.display import display
-from rmgpy.exceptions import ForbiddenStructureException
+from rmgpy.exceptions import ForbiddenStructureException, AtomTypeError
 from rmgpy.kinetics import Arrhenius, KineticsData
 from rmgpy.molecule.fragment import Fragment
 from rmgpy.molecule.group import Group
