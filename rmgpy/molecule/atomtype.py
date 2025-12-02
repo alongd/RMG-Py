@@ -544,7 +544,7 @@ ATOMTYPES['N5dddc'] = AtomType('N5dddc', generic=['R', 'R!H', 'R!H!Val7', 'N', '
                                single=[0], all_double=[3], r_double=[], o_double=[], s_double=[], triple=[0], quadruple=[], benzene=[0], lone_pairs=[0], charge=[-1])
 # examples for N5dddc: C=[N-](=C)=[NH2+]
 ATOMTYPES['N5tc'] = AtomType('N5tc', generic=['R', 'R!H', 'R!H!Val7', 'N', 'Val5', 'Rx', 'Rx!H'], specific=[],  # (shared electrons = 7-8)
-                             single=[0,1], all_double=[0], r_double=[0], o_double=[0], s_double=[0], triple=[1], quadruple=[], benzene=[0], lone_pairs=[0], charge=[+1])
+                             single=[0,1], all_double=[0], r_double=[0], o_double=[0], s_double=[0], triple=[1], quadruple=[], benzene=[0], lone_pairs=[0,1], charge=[-1, +1])
 # examples for N5tc: C[N+]#[C-] isocyano group, N#[N+][O-], [NH+]#[C-] (note that C- has p1 here), [N+]#[C-] (note that C- has p1 here), [O-][N+]#C (one of the res structures of Fulminic acid), C[N+]#[C-] (note that C- has p1 here)
 ATOMTYPES['N5b'] = AtomType('N5b', generic=['R', 'R!H', 'R!H!Val7', 'N', 'Val5', 'Rx', 'Rx!H'], specific=[],
                             single=[0,1], all_double=[0], r_double=[0], o_double=[0], s_double=[0], triple=[0], quadruple=[], benzene=[2], lone_pairs=[0], charge=[0, +1])
@@ -572,7 +572,7 @@ ATOMTYPES['O2sc'] = AtomType('O2sc', generic=['R', 'R!H', 'R!H!Val7', 'O', 'Val6
                              single=[0,1], all_double=[0], r_double=[], o_double=[], s_double=[], triple=[0], quadruple=[], benzene=[0], lone_pairs=[0,1,2], charge=[+1,+2,+3,+4,+5])
 # examples for O2sc: C=[S-][O+]
 ATOMTYPES['O2d'] = AtomType('O2d', generic=['R', 'R!H', 'R!H!Val7', 'O', 'Val6', 'Rx', 'Rx!H'], specific=[],  # (shared electrons = 8)
-                            single=[0], all_double=[1], r_double=[], o_double=[], s_double=[], triple=[0], quadruple=[], benzene=[0], lone_pairs=[2], charge=[0])
+                            single=[0], all_double=[1], r_double=[], o_double=[], s_double=[], triple=[0], quadruple=[], benzene=[0], lone_pairs=[1,2], charge=[0])
 # examples for O2d: CO2, CH2O
 ATOMTYPES['O4sc'] = AtomType('O4sc', generic=['R', 'R!H', 'R!H!Val7', 'O', 'Val6', 'Rx', 'Rx!H'], specific=[],  # (shared electrons = 5-8)
                              single=[0,1,2,3], all_double=[0], r_double=[], o_double=[], s_double=[], triple=[0], quadruple=[], benzene=[0], lone_pairs=[1], charge=[+1])
