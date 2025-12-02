@@ -373,6 +373,8 @@ cdef class BadnellRRArrhenius(KineticsModel):
         self.T1 = T1
         self.C = C
         self.T2 = T2
+        self.uses_electron_temperature = True
+        self.uses_electron_density = True
 
     property Ea:
         """
@@ -884,6 +886,8 @@ cdef class VoronovEIArrhenius(KineticsModel):
         self.X = X
         self.K = K
         self.dE = dE if dE is not None else 10.0  # eV, harmless placeholder
+        self.uses_electron_temperature = True
+        self.uses_electron_density = True
 
     def __repr__(self):
         string = 'VoronovEIArrhenius(A={0!r}, P={1!r}, X={2!r}, K={3!r}, dE={4:.4g} eV'.format(
