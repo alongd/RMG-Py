@@ -53,11 +53,11 @@ from rmgpy.data.kinetics.common import save_entry, find_degenerate_reactions, ge
 from rmgpy.data.kinetics.depository import KineticsDepository
 from rmgpy.data.kinetics.groups import KineticsGroups
 from rmgpy.data.kinetics.rules import KineticsRules
-from rmgpy.exceptions import ActionError, DatabaseError, InvalidActionError, KekulizationError, KineticsError, \
+from rmgpy.exceptions import ActionError, AtomTypeError, DatabaseError, InvalidActionError, KekulizationError, KineticsError, \
                              ForbiddenStructureException, UndeterminableKineticsError
 from rmgpy.kinetics import Arrhenius, SurfaceArrhenius, SurfaceArrheniusBEP, StickingCoefficient, \
                            StickingCoefficientBEP, ArrheniusBM, SurfaceChargeTransfer, ArrheniusChargeTransfer, \
-                           ArrheniusChargeTransferBM, KineticsModel, Marcus
+                           ArrheniusChargeTransferBM, KineticsModel, Marcus, BadnellRRArrhenius, VoronovEIArrhenius
 from rmgpy.kinetics.uncertainties import RateUncertainty, rank_accuracy_map
 from rmgpy.molecule import Bond, GroupBond, Group, Molecule
 from rmgpy.molecule.atomtype import ATOMTYPES
@@ -69,6 +69,11 @@ import rmgpy.constants as constants
 from rmgpy.data.solvation import SoluteData, add_solute_data, SoluteTSData, to_soluteTSdata
 
 ################################################################################
+
+
+CUSTOM_KINETICS_DICT = {'Plasma_Radiative_Recombination': BadnellRRArrhenius,
+                        'Plasma_Electron_Impact_Ionization': VoronovEIArrhenius,
+                        }
 
 
 class TemplateReaction(Reaction):
@@ -97,6 +102,8 @@ class TemplateReaction(Reaction):
                  specific_collider=None,
                  kinetics=None,
                  reversible=True,
+                 custom_kinetics=False,
+                 product_electrons=0,
                  transition_state=None,
                  duplicate=False,
                  degeneracy=1,
@@ -126,7 +133,12 @@ class TemplateReaction(Reaction):
         self.template = template
         self.estimator = estimator
         self.reverse = reverse
+        self.custom_kinetics = custom_kinetics
+        self.product_electrons = product_electrons
         self.labeled_atoms = {'reactants': dict(), 'products': dict()}
+
+        if self.custom_kinetics:
+            self.assign_custom_kinetics()
 
     def __reduce__(self):
         """
@@ -138,6 +150,8 @@ class TemplateReaction(Reaction):
                                    self.specific_collider,
                                    self.kinetics,
                                    self.reversible,
+                                   self.custom_kinetics,
+                                   self.product_electrons,
                                    self.transition_state,
                                    self.duplicate,
                                    self.degeneracy,
@@ -200,6 +214,8 @@ class TemplateReaction(Reaction):
         other.degeneracy = self.degeneracy
         other.kinetics = deepcopy(self.kinetics)
         other.reversible = self.reversible
+        other.custom_kinetics = self.custom_kinetics
+        other.product_electrons = self.product_electrons
         other.transition_state = deepcopy(self.transition_state)
         other.duplicate = self.duplicate
         other.pairs = deepcopy(self.pairs)
@@ -295,7 +311,29 @@ class TemplateReaction(Reaction):
         self.kinetics.A.value_si *= dA
         self.kinetics.comment += "\nsolvation correction raised barrier by {0} kcal/mol and prefactor by factor of {1}".format(dH/4184.0,dA)
 
+    def assign_custom_kinetics(self):
+        """
+        Assign custom kinetics to the reaction if it has been marked as having custom kinetics.
+        """
+        if self.custom_kinetics and self.family in CUSTOM_KINETICS_DICT:
+            start_1_atom = None
+            for reactant in self.reactants:
+                for atom in reactant.atoms:
+                    if atom.label == "*1":
+                        start_1_atom = atom
+                        break
+                if start_1_atom is not None:
+                    break
+            if start_1_atom is None:
+                raise KineticsError(f"Could not find labeled atom *1 in reactants of reaction {self} to assign custom kinetics.")
+            #  is the nuclear charge
+            Z = start_1_atom.number
+            N = start_1_atom.radical_electrons + 2 * start_1_atom.lone_pairs
+            self.kinetics = CUSTOM_KINETICS_DICT[self.family](N=N, Z=Z)
+
+
 ################################################################################
+
 
 class ReactionRecipe(object):
     """
@@ -367,7 +405,6 @@ class ReactionRecipe(object):
         whether the forward or reverse recipe should be applied. The atoms in
         the structure should be labeled with the appropriate atom centers.
         """
-
         pattern = isinstance(struct, Group)
         struct.props['validAromatic'] = True
 
@@ -551,6 +588,8 @@ class KineticsFamily(Database):
     =================== =============================== ========================
     `reverse`           ``string``                      The name of the reverse reaction family
     `reversible`        ``Boolean``                     Is family reversible? (True by default)
+    `custom_kinetics`   ``Boolean``                     Whether to determine the kinetics using a non-arrhenius kinetics object, e.g., for plasma (False by default)
+    `product_electrons`   ``int``                       The number of electrons in the products for plasma reactions.
     `forward_template`  :class:`Reaction`               The forward reaction template
     `forward_recipe`    :class:`ReactionRecipe`         The steps to take when applying the forward reaction to a set of reactants
     `reverse_template`  :class:`Reaction`               The reverse reaction template
@@ -578,6 +617,8 @@ class KineticsFamily(Database):
                  name='',
                  reverse='',
                  reversible=True,
+                 custom_kinetics=False,
+                 product_electrons=0,
                  short_desc='',
                  long_desc='',
                  forward_template=None,
@@ -592,6 +633,8 @@ class KineticsFamily(Database):
         Database.__init__(self, entries, top, label, name, short_desc, long_desc)
         self.reverse = reverse
         self.reversible = reversible
+        self.custom_kinetics = custom_kinetics
+        self.product_electrons = product_electrons
         self.forward_template = forward_template
         self.forward_recipe = forward_recipe
         self.reverse_template = reverse_template
@@ -649,6 +692,8 @@ class KineticsFamily(Database):
         local_context['False'] = False
         local_context['reverse'] = None
         local_context['reversible'] = None
+        local_context['custom_kinetics'] = None
+        local_context['product_electrons'] = None
         local_context['boundaryAtoms'] = None
         local_context['treeDistances'] = None
         local_context['reverseMap'] = None
@@ -686,6 +731,8 @@ class KineticsFamily(Database):
         else:
             self.reverse = local_context.get('reverse', None)
             self.reversible = True if local_context.get('reversible', None) is None else local_context.get('reversible', None)
+            self.custom_kinetics = False if local_context.get('custom_kinetics', None) is None else local_context.get('custom_kinetics', None)
+            self.product_electrons = 0 if local_context.get('product_electrons', None) is None else local_context.get('product_electrons', None)
             self.forward_template.products = self.generate_product_template(self.forward_template.reactants)
             for entry in self.forward_template.products:
                 if isinstance(entry.item,Group):
@@ -958,6 +1005,8 @@ class KineticsFamily(Database):
                 f.write('reverse = None\n')
 
         f.write('reversible = {0}\n\n'.format(self.reversible))
+        f.write('custom_kinetics = {0}\n\n'.format(self.custom_kinetics))
+        f.write('product_electrons = {0}\n\n'.format(self.product_electrons))
 
         if self.reverse_map is not None:
             f.write('reverseMap = {0}\n\n'.format(self.reverse_map))
@@ -1255,15 +1304,18 @@ class KineticsFamily(Database):
             else:
                 metal = entry.metal + entry.facet
 
-            for reactant in item.reactants:
-                # Clear atom labels to avoid effects on thermo generation, ok because this is a deepcopy
-                reactant.molecule[0].clear_labeled_atoms()
-                reactant.generate_resonance_structures()
-                reactant.thermo = thermo_database.get_thermo_data(reactant, training_set=True, metal_to_scale_to=metal)
-            for product in item.products:
-                product.molecule[0].clear_labeled_atoms()
-                product.generate_resonance_structures()
-                product.thermo = thermo_database.get_thermo_data(product, training_set=True, metal_to_scale_to=metal)
+            try:
+                for reactant in item.reactants:
+                    # Clear atom labels to avoid effects on thermo generation, ok because this is a deepcopy
+                    reactant.molecule[0].clear_labeled_atoms()
+                    reactant.generate_resonance_structures()
+                    reactant.thermo = thermo_database.get_thermo_data(reactant, training_set=True, metal_to_scale_to=metal)
+                for product in item.products:
+                    product.molecule[0].clear_labeled_atoms()
+                    product.generate_resonance_structures()
+                    product.thermo = thermo_database.get_thermo_data(product, training_set=True, metal_to_scale_to=metal)
+            except AtomTypeError:
+                continue
             # Now that we have the thermo, we can get the reverse k(T)
             item.kinetics = data
             data = item.generate_reverse_rate_coefficient()
@@ -1273,7 +1325,10 @@ class KineticsFamily(Database):
             template = self.get_reaction_template(item)
 
             item.template = self.get_reaction_template_labels(item)
-            new_degeneracy = self.calculate_degeneracy(item)
+            try:
+                new_degeneracy = self.calculate_degeneracy(item)
+            except AtomTypeError:
+                new_degeneracy = entry.item.degeneracy
 
             if isinstance(entry.data, SurfaceArrhenius):
                 data = SurfaceArrheniusBEP(
@@ -1350,6 +1405,12 @@ class KineticsFamily(Database):
         # we need the label of the reaction family for this
         label = self.label.lower()
 
+        num_reactant_electrons = 0
+        for reactant_structure in reactant_structures:
+            if len(reactant_structure.atoms) == 1 and reactant_structure.atoms[0].is_electron():
+                num_reactant_electrons += 1
+        num_product_electrons = self.product_electrons or 0
+
         # Merge reactant structures into single structure
         # Also copy structures so we don't modify the originals
         # Since the tagging has already occurred, both the reactants and the
@@ -1361,7 +1422,8 @@ class KineticsFamily(Database):
         elif isinstance(reactant_structures[0], Molecule):
             reactant_structure = Molecule()
         for s in reactant_structures:
-            reactant_structure = reactant_structure.merge(s.copy(deep=True))
+            if not (len(s.atoms) == 1 and s.atoms[0].is_electron()):
+                reactant_structure = reactant_structure.merge(s.copy(deep=True))
 
         if forward:
             # Generate the product structure by applying the recipe
@@ -1483,6 +1545,24 @@ class KineticsFamily(Database):
         else:
             product_structures = product_structure.split()
 
+        e_to_remove = num_reactant_electrons - num_product_electrons
+        e_removed = 0
+        # Filter out reactant electrons from the product list
+        if e_to_remove > 0:
+            new_product_structures = []
+            for struct in product_structures:
+                # Check if the structure is a single electron atom
+                if e_removed < e_to_remove and len(struct.atoms) == 1 and struct.atoms[0].is_electron():
+                    e_removed += 1
+                else:
+                    new_product_structures.append(struct)
+            product_structures = new_product_structures
+        # Add product electrons if needed
+        e_to_add = num_product_electrons
+        if e_to_add > 0:
+            for i in range(e_to_add):
+                product_structures.append(Molecule().from_adjacency_list('1 e u1 p0 c-1'))
+
         # Make sure we've made the expected number of products
         if product_num != len(product_structures):
             # We have a different number of products than expected by the template.
@@ -1566,7 +1646,14 @@ class KineticsFamily(Database):
                 labels = [''.join(c for c in label if c.isdigit()) for label in struct.get_all_labeled_atoms().keys()]
                 # Convert digits to integers and remove empty strings
                 labels = [int(label) for label in labels if label]
-                lowest_labels.append(min(labels))
+
+                # lowest_labels.append(min(labels))
+                # Handle cases with no labels (e.g. generated electrons)
+                if len(labels) > 0:
+                    lowest_labels.append(min(labels))
+                else:
+                    # Assign infinity to unlabeled species so they appear last in the list
+                    lowest_labels.append(float('inf'))
             product_structures = [s for _, s in sorted(zip(lowest_labels, product_structures))]
 
         # If the template restricts multiplicity, we need to make sure that
@@ -1695,6 +1782,8 @@ class KineticsFamily(Database):
             products=products if is_forward else reactants,
             degeneracy=1,
             reversible=self.reversible,
+            custom_kinetics=self.custom_kinetics,
+            product_electrons=self.product_electrons,
             family=self.label,
             is_forward=is_forward,
             electrons = self.electrons
@@ -1778,26 +1867,31 @@ class KineticsFamily(Database):
         """
         reaction_list = []
 
-        # Forward direction (the direction in which kinetics is defined)
-        reaction_list.extend(
-            self._generate_reactions(reactants=reactants,
-                                     products=products,
-                                     forward=True,
-                                     prod_resonance=prod_resonance,
-                                     delete_labels=delete_labels,
-                                     relabel_atoms=relabel_atoms,
-                                     ))
-
-        if not self.own_reverse and self.reversible:
-            # Reverse direction (the direction in which kinetics is not defined)
+        try:
+            # Forward direction (the direction in which kinetics is defined)
             reaction_list.extend(
                 self._generate_reactions(reactants=reactants,
                                          products=products,
-                                         forward=False,
+                                         forward=True,
                                          prod_resonance=prod_resonance,
                                          delete_labels=delete_labels,
                                          relabel_atoms=relabel_atoms,
                                          ))
+        except AtomTypeError:
+            pass
+        try:
+            if not self.own_reverse and self.reversible:
+                # Reverse direction (the direction in which kinetics is not defined)
+                reaction_list.extend(
+                    self._generate_reactions(reactants=reactants,
+                                             products=products,
+                                             forward=False,
+                                             prod_resonance=prod_resonance,
+                                             delete_labels=delete_labels,
+                                             relabel_atoms=relabel_atoms,
+                                             ))
+        except AtomTypeError:
+            pass
         return reaction_list
 
     def add_reverse_attribute(self, rxn, react_non_reactive=True):
@@ -2341,6 +2435,8 @@ class KineticsFamily(Database):
 
             # Mark reaction reversibility
             reaction.reversible = self.reversible
+            reaction.custom_kinetics = self.custom_kinetics
+            reaction.product_electrons = self.product_electrons
 
         # This reaction list has only checked for duplicates within itself, not
         # with the global list of reactions
