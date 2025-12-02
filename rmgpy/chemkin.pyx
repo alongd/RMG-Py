@@ -1919,25 +1919,34 @@ def write_kinetics_entry(reaction, species_list, verbose=True, java_library=Fals
                     arrhenius.n.value_si,
                     arrhenius.Ea.value_si / 4184.
                 )
-    elif isinstance(kinetics, _kinetics.Chebyshev):
-        string += '    TCHEB/ {0:<9.3f} {1:<9.3f}/\n'.format(kinetics.Tmin.value_si, kinetics.Tmax.value_si)
-        string += '    PCHEB/ {0:<9.3f} {1:<9.3f}/\n'.format(kinetics.Pmin.value_si / 101325.,
-                                                             kinetics.Pmax.value_si / 101325.)
-        string += '    CHEB/ {0:d} {1:d}/\n'.format(kinetics.degreeT, kinetics.degreeP)
+
+    elif isinstance(kinetics, (_kinetics.Chebyshev, _kinetics.BadnellRRArrhenius, _kinetics.VoronovEIArrhenius)):
+        # Handle Chebyshev, and Plasma kinetics objects
+        if isinstance(kinetics, (_kinetics.BadnellRRArrhenius, _kinetics.VoronovEIArrhenius)):
+            # Convert to Chebyshev on the fly
+            cheb = kinetics.to_chebyshev()
+        else:
+            cheb = kinetics
+
+        string += '    TCHEB/ {0:<9.3f} {1:<9.3f}/\n'.format(cheb.Tmin.value_si, cheb.Tmax.value_si)
+        string += '    PCHEB/ {0:<9.3f} {1:<9.3f}/\n'.format(cheb.Pmin.value_si / 101325.,
+                                                             cheb.Pmax.value_si / 101325.)
+        string += '    CHEB/ {0:d} {1:d}/\n'.format(cheb.degreeT, cheb.degreeP)
+
         # rwest: bypassing the Units.get_conversion_factor_from_si_to_cm_mol_s() because it's in log10 space?
-        if kinetics.degreeP < 6:
-            coeffs = kinetics.coeffs.value_si.copy()
+        if cheb.degreeP < 6:
+            coeffs = cheb.coeffs.value_si.copy()
             coeffs[0, 0] += 6 * (num_reactants - 1)
-            for i in range(kinetics.degreeT):
+            for i in range(cheb.degreeT):
                 string += '    CHEB/'
-                for j in range(kinetics.degreeP):
+                for j in range(cheb.degreeP):
                     string += ' {0:<12.3e}'.format(coeffs[i, j])
                 string += '/\n'
         else:
             coeffs = []
-            for i in range(kinetics.degreeT):
-                for j in range(kinetics.degreeP):
-                    coeffs.append(kinetics.coeffs.value_si[i, j])
+            for i in range(cheb.degreeT):
+                for j in range(cheb.degreeP):
+                    coeffs.append(cheb.coeffs.value_si[i, j])
             coeffs[0] += 6 * (num_reactants - 1)
             for i in range(len(coeffs)):
                 if i % 5 == 0: string += '    CHEB/'
