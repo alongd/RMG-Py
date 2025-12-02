@@ -443,6 +443,7 @@ def simple_reactor(temperature,
 def plasma_reactor(temperature,
                    pressure,
                    initialMoleFractions,
+                   electronDensity,
                    electronTemperature=None,
                    nSims=6,
                    terminationConversion=None,
@@ -457,36 +458,6 @@ def plasma_reactor(temperature,
                    constantSpecies=None):
     logging.debug('Found PlasmaReactor reaction system')
 
-    try:
-        if mol_to_frag:
-            # calculate total as denominator
-            total = float(0)
-            for initial_mol, value in initialMoleFractions.items():
-                if initial_mol not in mol_to_frag: # there might be other species which set cut to be False but in initialMoleFractions
-                    mol_to_frag[initial_mol] = {initial_mol: 1}
-                total += value * sum(mol_to_frag[initial_mol].values())
-            for key, frag_dict in mol_to_frag.items():
-                # if not perform cutting, no need to modify initialMoleFractions
-                # only 1 species in system and it does not get cut, then no need to modify initialMoleFractions
-                if len(mol_to_frag.keys())==1 and len(frag_dict.keys()) == 1 and key == list(frag_dict)[0]:
-                    continue
-                # probably this species does not get cut but other speceis are cut,
-                # so it still requires to re-calculate and normalize molar fraction
-                elif len(frag_dict.keys()) == 1 and key == list(frag_dict)[0]:
-                    initialMoleFractions[key] = initialMoleFractions[key] * frag_dict[key] / total
-                    continue
-                for frag_label, number in frag_dict.items():
-                    if frag_label in initialMoleFractions:
-                        initialMoleFractions[frag_label] += initialMoleFractions[key] * number / total
-                    else:
-                        initialMoleFractions[frag_label] = initialMoleFractions[key] * number / total
-                del initialMoleFractions[key]
-            logging.info('After cutting, new compositions:')
-            for spec, molfrac in initialMoleFractions.items():
-                logging.info('{0} = {1}'.format(spec, molfrac))
-    except NameError:
-        pass
-
     for key, value in initialMoleFractions.items():
         if not isinstance(value, list):
             initialMoleFractions[key] = float(value)
@@ -500,6 +471,19 @@ def plasma_reactor(temperature,
                 raise InputError('Initial mole fractions cannot be negative.')
             elif value[1] < value[0]:
                 raise InputError('Initial mole fraction range out of order: {0}'.format(key))
+
+    if not isinstance(electronDensity, list):
+        electronDensity = float(electronDensity)
+        if electronDensity < 0:
+            raise InputError(f'Electron density cannot be negative, got {electronDensity}.')
+    else:
+        if len(electronDensity) != 2:
+            raise InputError("Electron density values must either be a number or a list with 2 entries")
+        electronDensity = [float(electronDensity[0]), float(electronDensity[1])]
+        if electronDensity[0] < 0 or electronDensity[1] < 0:
+            raise InputError(f'Electron density cannot be negative, got {electronDensity}.')
+        elif electronDensity[1] < electronDensity[0]:
+            raise InputError(f'Electron density range out of order: {electronDensity}')
 
     if not isinstance(temperature, list):
         T = Quantity(temperature)
@@ -526,7 +510,7 @@ def plasma_reactor(temperature,
         P = [Quantity(p) for p in pressure]
 
     if not isinstance(temperature, list) and not isinstance(pressure, list) and all(
-            [not isinstance(x, list) for x in initialMoleFractions.values()]):
+            [not isinstance(x, list) for x in initialMoleFractions.values()]) and not isinstance(electronDensity, list):
         nSims = 1
 
     # normalize mole fractions if not using a mole fraction range
@@ -595,7 +579,8 @@ def plasma_reactor(temperature,
         sens_conditions['T'] = Quantity(sensitivityTemperature).value_si
         sens_conditions['P'] = Quantity(sensitivityPressure).value_si
 
-    system = PlasmaReactor(T, P, initialMoleFractions, nSims, termination, sensitive_species, sensitivityThreshold, sens_conditions, constantSpecies, Te)
+    system = PlasmaReactor(T, P, initialMoleFractions, electronDensity, nSims, termination, sensitive_species,
+                           sensitivityThreshold, sens_conditions, constantSpecies, Te)
     rmg.reaction_systems.append(system)
 
     assert balanceSpecies is None or isinstance(balanceSpecies, str), 'balanceSpecies should be the string corresponding to a single species'
