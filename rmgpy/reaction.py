@@ -1492,6 +1492,8 @@ class Reaction:
                     product_elements[atom.element] += 1
 
         for element in element_list:
+            if element.symbol == 'e':
+                continue
             if reactant_elements[element] != product_elements[element]:
                 return False
 
