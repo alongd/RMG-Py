@@ -59,6 +59,7 @@ cdef class BadnellRRArrhenius(KineticsModel):
     cdef public ScalarQuantity _B
     cdef public ScalarQuantity _T0
     cdef public ScalarQuantity _T1
+    cdef public ScalarQuantity _Ea
     cdef public object _C      # ScalarQuantity or None (dimensionless)
     cdef public object _T2     # ScalarQuantity or None (temperature)
 
@@ -75,6 +76,7 @@ cdef class VoronovEIArrhenius(KineticsModel):
     cdef public ScalarQuantity _P
     cdef public ScalarQuantity _X
     cdef public ScalarQuantity _K
+    cdef public ScalarQuantity _Ea
     cdef public double _dE_eV
 
     cpdef double get_rate_coefficient(self, double T, double P=*) except -1

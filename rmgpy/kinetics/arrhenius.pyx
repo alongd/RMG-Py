@@ -353,10 +353,11 @@ cdef class BadnellRRArrhenius(KineticsModel):
                  uncertainty=None, solute=None, comment=''):
         KineticsModel.__init__(self, Tmin=Tmin, Tmax=Tmax, Pmin=Pmin, Pmax=Pmax,
                                uncertainty=uncertainty, solute=solute, comment=comment)
+        self._Ea = None
 
         # If Z/N are given, load from YAML and return early
         if Z is not None and N is not None:
-            yaml_path_or_obj = yaml_path_or_obj or os.path.join(settings['database.directory'], 'kinetics', 'badnell_rr.yaml')
+            yaml_path_or_obj = yaml_path_or_obj or os.path.join(settings['database.directory'], 'kinetics', 'badnell.yaml')
             try:
                 Zi = int(Z)
                 Ni = int(N)
@@ -372,6 +373,16 @@ cdef class BadnellRRArrhenius(KineticsModel):
         self.T1 = T1
         self.C = C
         self.T2 = T2
+
+    property Ea:
+        """
+        The activation energy, estimated by fitting the kinetics to an Arrhenius form.
+        Stored internally as _Ea.
+        """
+        def __get__(self):
+            if self._Ea is None:
+                self._Ea = self.to_arrhenius().Ea
+            return self._Ea
 
     def __repr__(self):
         string = 'BadnellRRArrhenius(A={0!r}, B={1!r}, T0={2!r}, T1={3!r}'.format(self.A, self.B, self.T0, self.T1)
@@ -664,6 +675,149 @@ cdef class BadnellRRArrhenius(KineticsModel):
                                Tmin=Tmin, Tmax=Tmax, comment=comment)
         return obj
 
+    def to_arrhenius(self, double Tmin=0.0, double Tmax=0.0):
+        """
+        Return an Arrhenius object that fits the Badnell kinetics over the specified temperature range.
+
+        The fit is performed by evaluating the Badnell rate at intervals linear in 1/T
+        (standard Arrhenius plot spacing) and fitting the modified Arrhenius equation to those points.
+
+        If Tmin or Tmax are not provided (or 0.0), the method defaults to self.Tmin/self.Tmax.
+        If those are also not set, it defaults to 800 K - 3000 K.
+        """
+        # Determine Temperature Boundaries
+        if Tmin == 0.0:
+            if self.Tmin is not None:
+                Tmin = self.Tmin.value_si
+            else:
+                Tmin = 800.0
+
+        if Tmax == 0.0:
+            if self.Tmax is not None:
+                Tmax = self.Tmax.value_si
+            else:
+                Tmax = 3000.0
+
+        if Tmin >= Tmax:
+            raise ValueError(f"Tmin ({Tmin}) must be less than Tmax ({Tmax}) for Arrhenius fitting.")
+
+        # Generate sampling points
+        # Linear in 1/T space gives better weighting for Arrhenius fits
+        # We use 50 points to ensure a smooth fit
+        cdef np.ndarray Tlist = 1.0 / np.linspace(1.0 / Tmax, 1.0 / Tmin, 50)
+        cdef np.ndarray klist = np.zeros_like(Tlist)
+
+        cdef int i
+        cdef double T_val
+
+        for i in range(len(Tlist)):
+            T_val = Tlist[i]
+            klist[i] = self.get_rate_coefficient(T_val)
+
+        # Determine units
+        # get_rate_coefficient returns SI Molar: m^3/(mol*s)
+        # We assume bimolecular for standard Badnell RR
+        cdef str kunits = "m^3/(mol*s)"
+
+        # Create and fit Arrhenius object
+        # T0=1.0 is standard for minimizing correlation between A and n
+        arr = Arrhenius()
+        arr.fit_to_data(Tlist, klist, kunits, T0=1.0)
+
+        # Carry over metadata
+        arr.Tmin = (Tmin, "K")
+        arr.Tmax = (Tmax, "K")
+        arr.comment = f"Fitted to BadnellRRArrhenius over range {Tmin}-{Tmax} K. Original comment: {self.comment}"
+
+        return arr
+
+    def to_chebyshev(self, double Tmin=0.0, double Tmax=0.0, int degree_t=10):
+        """
+        Convert the Badnell kinetics to a Chebyshev object.
+
+        Since standard Chemkin/Cantera formats do not support the Badnell function natively,
+        the most robust, high-accuracy way to export this kinetics model is to map it
+        to a Chebyshev polynomial. We use a Pressure-Independent Chebyshev fit (P_basis=1).
+
+        Parameters:
+            degree_t: Number of temperature coefficients (basis functions).
+                      Badnell curves can be complex, so a higher degree (default 10)
+                      is recommended compared to standard Arrhenius (typically 3-4).
+        """
+        from rmgpy.kinetics.chebyshev import Chebyshev
+
+        # 1. Determine Temperature Range
+        if Tmin == 0.0:
+            Tmin = self.Tmin.value_si if self.Tmin is not None else 10.0
+        if Tmax == 0.0:
+            Tmax = self.Tmax.value_si if self.Tmax is not None else 1.0e7
+
+        if Tmin >= Tmax:
+            raise KineticsError(
+                f"BadnellRRArrhenius.to_chebyshev: Tmin ({Tmin}) must be < Tmax ({Tmax})."
+            )
+
+        # 2. Define Dummy Pressure Range (Required for Chebyshev format)
+        # Since Badnell is P-independent, these values don't affect the rate
+        # as long as we fit with degree_p = 1.
+        cdef double Pmin = 100.0        # Pa  (≈ 0.001 bar)
+        cdef double Pmax = 1.0e7        # Pa  (≈ 100 bar)
+
+        # 3. Create the Chebyshev Object
+        cheb = Chebyshev(
+            Tmin=(Tmin, "K"), Tmax=(Tmax, "K"),
+            Pmin=(Pmin, "Pa"), Pmax=(Pmax, "Pa"),
+        )
+
+        # 4. Generate Grid and Fit
+        # We need MORE grid points than polynomial degrees in both T and P.
+        cdef int nT = degree_t + 1      # > degree_t
+        cdef int degree_p = 1
+        cdef int nP = 2                 # > degree_p
+
+        # Use Chebyshev roots in 1/T space for optimal interpolation node spacing
+        k_idx = np.arange(nT, dtype=float)
+
+        invT_mid = 0.5 * (1.0 / Tmax + 1.0 / Tmin)
+        invT_halfspan = 0.5 * (1.0 / Tmax - 1.0 / Tmin)
+
+        T_nodes = invT_mid + invT_halfspan * np.cos(
+            (2.0 * k_idx + 1.0) * np.pi / (2.0 * nT)
+        )
+        T_points = 1.0 / T_nodes  # Convert 1/T back to T
+
+        # P_points: two points, but the rate is P-independent
+        P_points = np.array([Pmin, Pmax], dtype=float)
+
+        # K_data: shape (nT, nP)
+        K_data = np.zeros((nT, nP), dtype=float)
+        for i, T in enumerate(T_points):
+            # Calculate Badnell rate at this T
+            k_val = self.get_rate_coefficient(T)
+            # Same k(T) for all pressures since the rate is P-independent
+            K_data[i, :] = k_val
+
+        # 5. Perform Fit
+        cheb.fit_to_data(
+            T_points,
+            P_points,
+            K_data,
+            "m^3/(mol*s)",
+            degree_t,
+            degree_p,
+            Tmin,
+            Tmax,
+            Pmin,
+            Pmax,
+        )
+
+        # Add original kinetics description to comment for traceability
+        cheb.comment = (
+            f"Chebyshev fit to BadnellRR (Z={getattr(self, 'Z', '?')}, "
+            f"N={getattr(self, 'N', '?')}). Original: {self}"
+        )
+        return cheb
+
 
 ################################################################################
 
@@ -712,6 +866,7 @@ cdef class VoronovEIArrhenius(KineticsModel):
                  uncertainty=None, solute=None, comment=''):
         KineticsModel.__init__(self, Tmin=Tmin, Tmax=Tmax, Pmin=Pmin, Pmax=Pmax,
                                uncertainty=uncertainty, solute=solute, comment=comment)
+        self._Ea = None
 
         # If Z/N are provided, load from YAML now
         if Z is not None and N is not None:
@@ -917,8 +1072,8 @@ cdef class VoronovEIArrhenius(KineticsModel):
             Tmin = Tmin_eV / kB_eVperK
         if Tmax is None:
             Tmax = Tmax_eV / kB_eVperK
-        self.Tmin = Tmin
-        self.Tmax = Tmax
+        self.Tmin = (Tmin, "K")
+        self.Tmax = (Tmax, "K")
 
         base = f"Voronov (1997) e-impact ionization fit, Z={Z}, N={N}"
         self.comment = f"{base}; {comment}" if comment else base
@@ -936,6 +1091,139 @@ cdef class VoronovEIArrhenius(KineticsModel):
                                allow_Z_gt28=allow_Z_gt28)
         return obj
 
+    def to_arrhenius(self, double Tmin=0.0, double Tmax=0.0):
+        """
+        Return an Arrhenius object that fits the Voronov kinetics over the specified temperature range.
+
+        The fit is performed by evaluating the Voronov rate at intervals linear in 1/T
+        (standard Arrhenius plot spacing) and fitting the modified Arrhenius equation to those points.
+
+        If Tmin or Tmax are not provided (or 0.0), the method defaults to self.Tmin/self.Tmax.
+        If those are also not set, it defaults to 10,000 K - 100,000 K (typical for ionization).
+        """
+        # Determine Temperature Boundaries
+        if Tmin == 0.0:
+            if self.Tmin is not None:
+                Tmin = self.Tmin.value_si
+            else:
+                Tmin = 800.0
+
+        if Tmax == 0.0:
+            if self.Tmax is not None:
+                Tmax = self.Tmax.value_si
+            else:
+                Tmax = 3000.0
+
+        if Tmin >= Tmax:
+            raise ValueError(f"Tmin ({Tmin}) must be less than Tmax ({Tmax}) for Arrhenius fitting.")
+
+        # Generate sampling points
+        # Linear in 1/T space gives better weighting for Arrhenius fits
+        # We use 50 points to ensure a smooth fit
+        cdef np.ndarray Tlist = 1.0 / np.linspace(1.0 / Tmax, 1.0 / Tmin, 50)
+        cdef np.ndarray klist = np.zeros_like(Tlist)
+
+        cdef int i
+        cdef double T_val
+
+        for i in range(len(Tlist)):
+            T_val = Tlist[i]
+            klist[i] = self.get_rate_coefficient(T_val)
+
+        # Determine units
+        # get_rate_coefficient returns SI Molar: m^3/(mol*s)
+        cdef str kunits = "m^3/(mol*s)"
+
+        # Create and fit Arrhenius object
+        # T0=1.0 is standard for minimizing correlation between A and n
+        arr = Arrhenius()
+        arr.fit_to_data(Tlist, klist, kunits, T0=1.0)
+
+        # Carry over metadata
+        arr.Tmin = (Tmin, "K")
+        arr.Tmax = (Tmax, "K")
+        arr.comment = f"Fitted to VoronovEIArrhenius over range {Tmin}-{Tmax} K. Original comment: {self.comment}"
+
+        return arr
+
+    def to_chebyshev(self, double Tmin=0.0, double Tmax=0.0, int degree_t=10):
+        """
+        Convert the Voronov kinetics to a Chebyshev object.
+
+        Uses a Pressure-Independent Chebyshev fit (P_basis=1).
+        Default temperature range: 10,000 K - 100,000 K (typical for ionization).
+        """
+        from rmgpy.kinetics.chebyshev import Chebyshev
+
+        # 1. Determine Temperature Range
+        if Tmin == 0.0:
+            Tmin = self.Tmin.value_si if self.Tmin is not None else 10000.0
+        if Tmax == 0.0:
+            Tmax = self.Tmax.value_si if self.Tmax is not None else 100000.0
+
+        if Tmin >= Tmax:
+            from rmgpy.exceptions import KineticsError
+            raise KineticsError(
+                f"VoronovEIArrhenius.to_chebyshev: Tmin ({Tmin}) must be < Tmax ({Tmax})."
+            )
+
+        # 2. Define Dummy Pressure Range (Required for Chebyshev format)
+        cdef double Pmin = 100.0       # Pa  (≈ 0.001 bar)
+        cdef double Pmax = 1.0e7       # Pa  (≈ 100 bar)
+
+        # 3. Create the Chebyshev Object
+        cheb = Chebyshev(
+            Tmin=(Tmin, "K"), Tmax=(Tmax, "K"),
+            Pmin=(Pmin, "Pa"), Pmax=(Pmax, "Pa"),
+        )
+
+        # 4. Generate Grid and Fit using Chebyshev roots
+        #    IMPORTANT: need MORE grid points than polynomial degrees.
+        cdef int nT = degree_t + 1      # > degree_t
+        cdef int nP = 2                 # > degree_p (degree_p = 1)
+
+        k_idx = np.arange(nT, dtype=float)
+
+        invT_mid = 0.5 * (1.0 / Tmax + 1.0 / Tmin)
+        invT_halfspan = 0.5 * (1.0 / Tmax - 1.0 / Tmin)
+
+        # Chebyshev nodes in 1/T space
+        T_nodes = invT_mid + invT_halfspan * np.cos(
+            (2.0 * k_idx + 1.0) * np.pi / (2.0 * nT)
+        )
+        T_points = 1.0 / T_nodes
+
+        # P_points: two points, but the rate is independent of P
+        P_points = np.array([Pmin, Pmax], dtype=float)
+
+        # K_data: shape (nT, nP)
+        K_data = np.zeros((nT, nP), dtype=float)
+        for i, T in enumerate(T_points):
+            k_val = self.get_rate_coefficient(T)
+            # Same k(T) for all pressures, since Voronov EI is P-independent
+            K_data[i, :] = k_val
+
+        # 5. Perform Fit
+        # degree_t and degree_p = 1 (pressure-independent Chebyshev)
+        cheb.fit_to_data(
+            T_points,
+            P_points,
+            K_data,
+            "m^3/(mol*s)",
+            degree_t,
+            1,          # degree_p
+            Tmin,
+            Tmax,
+            Pmin,
+            Pmax,
+        )
+
+        # Add original kinetics description to comment for traceability
+        cheb.comment = (
+            f"Chebyshev fit to VoronovEI (Z={getattr(self, 'Z', '?')}, "
+            f"N={getattr(self, 'N', '?')}). Original: {self}"
+        )
+        return cheb
 
 ################################################################################
 
