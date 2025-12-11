@@ -68,6 +68,7 @@ from rmgpy.kinetics import ThirdBody, Troe
 from rmgpy.kinetics.diffusionLimited import diffusion_limiter
 from rmgpy.molecule import Molecule
 from rmgpy.qm.main import QMDatabaseWriter
+from rmgpy.quantity import Quantity
 from rmgpy.reaction import Reaction
 from rmgpy.rmg.listener import SimulationProfilePlotter, SimulationProfileWriter
 from rmgpy.rmg.model import CoreEdgeReactionModel, Species
@@ -170,6 +171,8 @@ class RMG(util.Subject):
         self.max_iterations = None
         self.Tmin = 0.0
         self.Tmax = 0.0
+        self.Te_min = 0.0
+        self.Te_max = 0.0
         self.Pmin = 0.0
         self.Pmax = 0.0
         self.database = None
@@ -806,6 +809,20 @@ class RMG(util.Subject):
         # determine min and max values for T and P (don't determine P values for liquid reactors)
         self.Tmin = min([x.Trange[0].value_si if x.Trange else x.T.value_si for x in self.reaction_systems])
         self.Tmax = max([x.Trange[1].value_si if x.Trange else x.T.value_si for x in self.reaction_systems])
+        # Calculate Te min/max if any reactor uses Te
+        te_values_min = []
+        te_values_max = []
+        for x in self.reaction_systems:
+            if hasattr(x, 'Te_range') and x.Te_range:
+                te_values_min.append(x.Te_range[0].value_si)
+                te_values_max.append(x.Te_range[1].value_si)
+            elif hasattr(x, 'Te') and x.Te:
+                te_values_min.append(x.Te.value_si)
+                te_values_max.append(x.Te.value_si)
+
+        if te_values_min:
+            self.Te_min = min(te_values_min)
+            self.Te_max = max(te_values_max)
         try:
             self.Pmin = min([x.Prange[0].value_si if hasattr(x, "Prange") and x.Prange else x.P.value_si for x in self.reaction_systems])
             self.Pmax = max([x.Prange[1].value_si if hasattr(x, "Prange") and x.Prange else x.P.value_si for x in self.reaction_systems])
@@ -930,6 +947,10 @@ class RMG(util.Subject):
                         objects_to_enlarge = []
 
                         conditions = self.rmg_memories[index].get_cond()
+                        # If Te is in the generated conditions, explicitly update the reactor
+                        if conditions and "Te" in conditions:
+                            # conditions["Te"] is a float in Kelvin (SI) from RMG_Memory
+                            reaction_system.Te = Quantity((conditions["Te"], 'K'))
                         if conditions and self.solvent:
                             T = conditions["T"]
                             # Set solvent viscosity
@@ -2256,6 +2277,9 @@ class RMG_Memory(object):
         if hasattr(reaction_system, "Trange") and isinstance(reaction_system.Trange, list):
             Trange = reaction_system.Trange
             self.Ranges["T"] = [T.value_si for T in Trange]
+        if hasattr(reaction_system, "Te_range") and isinstance(reaction_system.Te_range, list):
+            Te_range = reaction_system.Te_range
+            self.Ranges["Te"] = [Te.value_si for Te in Te_range]
         if hasattr(reaction_system, "Prange") and isinstance(reaction_system.Prange, list):
             Prange = reaction_system.Prange
             self.Ranges["P"] = [np.log(P.value_si) for P in Prange]
@@ -2380,10 +2404,10 @@ class RMG_Memory(object):
                 for key in self.initial_mole_fractions.keys():
                     if not isinstance(self.initial_mole_fractions[key], list):
                         new_cond[key] = self.initial_mole_fractions[key]
-                total = sum([val for key, val in new_cond.items() if key != "T" and key != "P"])
+                total = sum([val for key, val in new_cond.items() if key != "T" and key != "P" and key != "Te"])
                 if self.balance_species is None:
                     for key, val in new_cond.items():
-                        if key != "T" and key != "P":
+                        if key != "T" and key != "P" and key != "Te":
                             new_cond[key] = val / total
                 else:
                     new_cond[self.balance_species] = self.initial_mole_fractions[self.balance_species] + 1.0 - total
@@ -2402,6 +2426,8 @@ def log_conditions(rmg_memories, index):
         for key, item in rmg_memories[index].get_cond().items():
             if key == "T":
                 s += "T = {0} K, ".format(item)
+            elif key == "Te":
+                s += "Te = {0} K, ".format(item)
             elif key == "P":
                 s += "P = {0} bar, ".format(item / 1.0e5)
             else:
