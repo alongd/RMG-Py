@@ -53,6 +53,7 @@ from scipy.optimize import brute
 import rmgpy.util as util
 from rmgpy import settings
 from rmgpy.chemkin import ChemkinWriter
+from rmgpy.constants import kB
 from rmgpy.constraints import fails_species_constraints
 from rmgpy.data.base import Entry
 from rmgpy.data.kinetics.library import KineticsLibrary
@@ -513,6 +514,7 @@ class RMG(util.Subject):
 
         # Read input file
         self.load_input(self.input_file)
+        self._initialize_electrons_from_density()
         
         # Check if ReactionMechanismSimulator reactors are being used
         # if RMS is not installed but the user attempted to use it, the load_input_file would have failed
@@ -763,6 +765,78 @@ class RMG(util.Subject):
 
         self.initialize_seed_mech()
         return requires_rms
+
+    def _initialize_electrons_from_density(self):
+        """
+        For reactors that define electron_density, convert the specified number-density
+        range into an electron mole-fraction range, and inject it into
+        initial_mole_fractions. Also ensure an 'electron' Species exists.
+        """
+        # Look for an existing electron species
+        electron_species = None
+        for spc in self.initial_species:
+            if spc.is_electron():
+                if electron_species is None:
+                    electron_species = spc
+                else:
+                    raise InputError("Multiple electron Species found in initial species.")
+
+        # We will create one if/when we actually see electron_density
+        for reaction_system in self.reaction_systems:
+            # Check for either scalar density OR density range
+            ne_data = None
+            if hasattr(reaction_system, "ne_range") and reaction_system.ne_range is not None:
+                ne_data = reaction_system.ne_range  # This is a list of Quantities
+            elif hasattr(reaction_system, "electron_density") and reaction_system.electron_density is not None:
+                ne_data = reaction_system.electron_density  # This is a ScalarQuantity
+
+            if ne_data is None:
+                # No electron density specified for this reactor
+                continue
+
+            # Create an electron Species if it doesn't exist yet
+            if electron_species is None:
+                electron_species = Species(label="electron", reactive=True,
+                                           molecule=[Molecule().from_adjacency_list('1 e u1 p0 c-1')])
+                self.initial_species.append(electron_species)
+
+            # Representative T [K]
+            if getattr(reaction_system, "T", None) is not None:
+                T_ref = reaction_system.T.value_si
+            elif getattr(reaction_system, "Trange", None):
+                T_ref = 0.5 * (reaction_system.Trange[0].value_si + reaction_system.Trange[1].value_si)
+            else:
+                raise InputError("Plasma reactor with electron_density requires either T or Trange.")
+
+            # Representative P [Pa]
+            if getattr(reaction_system, "P", None) is not None:
+                P_ref = reaction_system.P.value_si
+            elif getattr(reaction_system, "Prange", None):
+                P_ref = 0.5 * (reaction_system.Prange[0].value_si + reaction_system.Prange[1].value_si)
+            else:
+                raise InputError("Plasma reactor with electron_density requires either P or Prange.")
+
+            # Ideal-gas neutral number density [1/m^3]
+            n_gas = P_ref / (kB * T_ref)
+
+            if isinstance(reaction_system.ne_range, list):
+                ne_min = reaction_system.ne_range[0].value_si  # [1/m^3]
+                ne_max = reaction_system.ne_range[-1].value_si
+            else:
+                ne_min = ne_max = reaction_system.electron_density.value_si
+
+            Xe_min = ne_min / n_gas
+            Xe_max = ne_max / n_gas
+
+            logging.info(f"\n\nConverting electron density range [{ne_min*100:.3e}, {ne_max*100:.3e}] 1/cm^3 at "
+                         f"T ≈ {T_ref:.1f} K, P ≈ {P_ref:.3e} Pa to Xe range [{Xe_min:.3e}, {Xe_max:.3e}]\n\n")
+
+            # Ensure initial_mole_fractions exists
+            if not hasattr(reaction_system, "initial_mole_fractions") or reaction_system.initial_mole_fractions is None:
+                reaction_system.initial_mole_fractions = {}
+
+            # Store as a RANGE (list) so RMG_Memory will treat it like T/P/composition ranges
+            reaction_system.initial_mole_fractions[electron_species] = [Xe_min, Xe_max]
 
     def register_listeners(self, requires_rms=False):
         """
