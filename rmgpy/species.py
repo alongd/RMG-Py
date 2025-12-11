@@ -516,7 +516,7 @@ class Species(object):
     def is_electron(self):
         """Return ``True`` if the species is an electron"""
         
-        if len(self.molecule) == 0:
+        if len(self.molecule) == 0 or len(self.molecule[0].atoms) != 1:
             return False
         else:
             return self.molecule[0].is_electron()

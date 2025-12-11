@@ -365,7 +365,7 @@ class Atom(Vertex):
         Return ``True`` if the atom represents an electron or ``False`` if
         not.
         """
-        return self.element.number == -1
+        return self.element.number == -1 and self.charge == -1
     
     def is_proton(self):
         """
