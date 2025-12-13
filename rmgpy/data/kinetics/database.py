@@ -47,7 +47,8 @@ from rmgpy.kinetics import Arrhenius, ArrheniusEP, ThirdBody, Lindemann, Troe, \
                            Chebyshev, KineticsData, StickingCoefficient, \
                            StickingCoefficientBEP, SurfaceArrhenius, SurfaceArrheniusBEP, \
                            ArrheniusBM, SurfaceChargeTransfer, KineticsModel, Marcus, \
-                           ArrheniusChargeTransfer, ArrheniusChargeTransferBM
+                           ArrheniusChargeTransfer, ArrheniusChargeTransferBM, \
+                           TwoTemperaturePlasma, ElectronCollisionPlasma
 from rmgpy.kinetics.uncertainties import RateUncertainty
 from rmgpy.molecule import Molecule, Group
 from rmgpy.reaction import Reaction, same_species_lists
@@ -71,6 +72,8 @@ class KineticsDatabase(object):
         self.local_context = {
             'KineticsData': KineticsData,
             'Arrhenius': Arrhenius,
+            'TwoTemperaturePlasma': TwoTemperaturePlasma,
+            'ElectronCollisionPlasma': ElectronCollisionPlasma,
             'ArrheniusEP': ArrheniusEP,
             'ArrheniusChargeTransfer': ArrheniusChargeTransfer,
             'MultiArrhenius': MultiArrhenius,
