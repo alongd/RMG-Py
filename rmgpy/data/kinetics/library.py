@@ -544,13 +544,13 @@ class KineticsLibrary(Database):
                                     "kinetics library {3), expecting no more than one!"
                                     .format(rxn.specific_collider, collider.group(0), rxn_string, self.label))
 
-            for reactant in reactants.split('+'):
+            for reactant in reactants.split(' + '):
                 reactant = reactant.strip()
                 if reactant not in species_dict:
                     raise DatabaseError('Species {0} in kinetics library {1} is missing from its '
                                         'dictionary.'.format(reactant, self.label))
                 rxn.reactants.append(species_dict[reactant])
-            for product in products.split('+'):
+            for product in products.split(' + '):
                 product = product.strip()
                 if product not in species_dict:
                     raise DatabaseError('Species {0} in kinetics library {1} is missing from its '

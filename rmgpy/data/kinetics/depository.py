@@ -196,7 +196,7 @@ class KineticsDepository(Database):
                                             'dictionary.'.format(collider.strip()[2:-1], self.label))
                     specific_collider = species_dict[collider.strip()[2:-1]]
 
-            for reactant in reactants.split('+'):
+            for reactant in reactants.split(' + '):
                 reactant = reactant.strip()
                 if reactant not in species_dict:
                     raise DatabaseError('Species {0} in kinetics depository {1} is missing from its dictionary.'
@@ -205,7 +205,7 @@ class KineticsDepository(Database):
                 # tree using `get_reaction_template()` later, but species objects work because `get_reaction_template()`
                 # will simply pick the first molecule object in `Species().molecule`.
                 rxn.reactants.append(species_dict[reactant])
-            for product in products.split('+'):
+            for product in products.split(' + '):
                 product = product.strip()
                 if product not in species_dict:
                     raise DatabaseError('Species {0} in kinetics depository {1} is missing from its dictionary.'
