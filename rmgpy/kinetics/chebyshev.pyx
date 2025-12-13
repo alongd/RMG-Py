@@ -196,9 +196,10 @@ cdef class Chebyshev(PDepKineticsModel):
                                 "The data has {2} pressures and the polynomial is set to have {3}"
                                 "".format(nT, degreeT, nP, degreeP))
         elif nT < 1.25 * degreeT or nP < 1.25 * degreeP:
-            logging.warning('This Chebyshev fitting has few degrees of freedom and may not be '
-                            'accurate between data points. Consider increasing the number of '
-                            'temperature and pressure values in the fitting parameters.')
+            # logging.info('This Chebyshev fitting has few degrees of freedom and may not be '
+            #                 'accurate between data points. Consider increasing the number of '
+            #                 'temperature and pressure values in the fitting parameters.')
+            pass
         # Set temperature and pressure ranges
         self.Tmin = (Tmin, "K")
         self.Tmax = (Tmax, "K")
