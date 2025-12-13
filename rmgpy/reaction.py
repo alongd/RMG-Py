@@ -1365,8 +1365,11 @@ class Reaction:
             kr = Troe(krHigh, krLow, *parameters[2:])
             return kr
         else:
-            raise ReactionError("Unexpected kinetics type {0}; "
-                                "should be one of {1}".format(self.kinetics.__class__, supported_types))
+            # raise ReactionError("Unexpected kinetics type {0}; "
+            #                     "should be one of {1}".format(self.kinetics.__class__, supported_types))
+            logging.warning("Unable to reverse rate for reaction {0!s} with "
+                            "kinetics type {1}".format(self, self.kinetics.__class__))
+            return None
 
     def calculate_tst_rate_coefficients(self, Tlist):
         return np.array([self.calculate_tst_rate_coefficient(T) for T in Tlist], float)
