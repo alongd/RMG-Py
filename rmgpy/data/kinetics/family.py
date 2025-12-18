@@ -57,7 +57,8 @@ from rmgpy.exceptions import ActionError, AtomTypeError, DatabaseError, InvalidA
                              ForbiddenStructureException, UndeterminableKineticsError
 from rmgpy.kinetics import Arrhenius, SurfaceArrhenius, SurfaceArrheniusBEP, StickingCoefficient, \
                            StickingCoefficientBEP, ArrheniusBM, SurfaceChargeTransfer, ArrheniusChargeTransfer, \
-                           ArrheniusChargeTransferBM, KineticsModel, Marcus, BadnellRRArrhenius, VoronovEIArrhenius
+                           ArrheniusChargeTransferBM, KineticsModel, Marcus, BadnellRRArrhenius, VoronovEIArrhenius, \
+                           TwoTemperaturePlasma
 from rmgpy.kinetics.uncertainties import RateUncertainty, rank_accuracy_map
 from rmgpy.molecule import Bond, GroupBond, Group, Molecule
 from rmgpy.molecule.atomtype import ATOMTYPES
@@ -1211,6 +1212,8 @@ class KineticsFamily(Database):
 
             if type(data) is Arrhenius:
                 # more specific than isinstance(data,Arrhenius) because we want to exclude inherited subclasses!
+                data = data.to_arrhenius_ep()
+            elif type(data) is TwoTemperaturePlasma:
                 data = data.to_arrhenius_ep()
             elif isinstance(data, StickingCoefficient):
                 data = StickingCoefficientBEP(
