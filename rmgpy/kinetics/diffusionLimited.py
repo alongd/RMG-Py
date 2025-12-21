@@ -29,11 +29,15 @@
 
 import logging
 import math
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 import rmgpy.constants as constants
 from rmgpy.molecule.fragment import Fragment
+
+if TYPE_CHECKING:
+    from rmgpy.species import Species
 
 def _to_molecule(obj):
     """Return plain Molecule; accept Molecule or (Molecule, mapping) tuple."""
