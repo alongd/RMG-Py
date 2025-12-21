@@ -165,6 +165,11 @@ class TestTransportData:
             """
             name: Ar
             composition: {Ar: 1}
+            thermo:
+              model: constant-cp
+              cp0: 0.0
+              h0: 0.0
+              s0: 0.0
             transport:
               model: gas
               geometry: atom

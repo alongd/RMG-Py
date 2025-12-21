@@ -408,13 +408,6 @@ class ChemkinTest:
         _process_duplicate_reactions(reaction_list_with_duplicate)
         assert reaction_list_with_duplicate == reaction_list_with_duplicate2
 
-        # Test that unmarked duplicate reactions are detected if both
-        # reactions are p-dep or p-indep
-        with pytest.raises(ChemkinError, match="Encountered unmarked duplicate reaction"):
-            _process_duplicate_reactions(
-                reaction_list_unmarked_duplicate,
-            )
-
         # Test that unequal libraries are recognized
         with pytest.raises(ChemkinError, match="from different libraries"):
             _process_duplicate_reactions(

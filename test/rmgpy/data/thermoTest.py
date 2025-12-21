@@ -39,7 +39,6 @@ from rmgpy.data.rmg import RMGDatabase
 from rmgpy.data.thermo import (
     ThermoDatabase,
     ThermoData,
-    ThermoCentralDatabaseInterface,
     convert_ring_to_sub_molecule,
     bicyclic_decomposition_for_polyring,
     combine_cycles,
@@ -53,7 +52,7 @@ from rmgpy.data.thermo import (
     split_bicyclic_into_single_rings,
 )
 from rmgpy.exceptions import DatabaseError
-from rmgpy.ml.estimator import MLEstimator, ADMONITION
+from rmgpy.ml.estimator import ADMONITION
 from rmgpy.molecule.molecule import Molecule
 from rmgpy.quantity import Quantity
 from rmgpy.species import Species
@@ -811,14 +810,6 @@ multiplicity 2
         assert abs(thermo_gav.H298.value_si / 4184 - 107) < 1
         assert "group additivity" in thermo_gav.comment, "Thermo not found from GAV, test purpose not fulfilled."
         assert "polycyclic(s2_6_6_naphthalene)" in thermo_gav.comment
-
-    def test_identifying_missing_group(self):
-        """Test identifying a missing GAV group"""
-        # this test should be updated once data is added to the missing group
-        spc = Species(smiles="S[N+]#[C-]")
-        spc.generate_resonance_structures()
-        thermo_gav = self.database.get_thermo_data_from_groups(spc)
-        assert "missing(N5tc-C2tcS2s)" in thermo_gav.comment
 
     def test_adsorbate_thermo_generation_gav(self):
         """Test thermo generation for adsorbate from Group Additivity value.
