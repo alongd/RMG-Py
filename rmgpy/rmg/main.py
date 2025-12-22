@@ -930,7 +930,7 @@ class RMG(util.Subject):
                     )
 
                 else:
-                    reaction_system.initialize_model(
+                    core_species = reaction_system.initialize_model(
                         core_species=self.reaction_model.core.species,
                         core_reactions=self.reaction_model.core.reactions,
                         edge_species=[],
@@ -941,6 +941,8 @@ class RMG(util.Subject):
                         filter_reactions=True,
                         conditions=self.rmg_memories[index].get_cond(),
                     )
+                    if core_species is not None:
+                        self.reaction_model.core.species = core_species
 
                     self.update_reaction_threshold_and_react_flags(
                         rxn_sys_unimol_threshold=reaction_system.unimolecular_threshold,
