@@ -2206,7 +2206,7 @@ class KineticsFamily(Database):
             in which case, if one of the two reactants is an X
             then we have a match and can just use it twice.
             """
-            template_sites = [r for r in template_reactants if r.is_surface_site()]
+            template_sites = [r for r in template_reactants if hasattr(r, 'is_surface_site') and r.is_surface_site()]
             if len(template_sites) == 2:
                 # Two surface sites in template. If there's a site in the reactants, use it twice.
                 if reactants[0][0].is_surface_site() and not reactants[1][0].is_surface_site():
@@ -2263,7 +2263,7 @@ class KineticsFamily(Database):
                 A + B + C <=> stuff
             We check the two scenarios in that order.
             """
-            template_sites = [r for r in template_reactants if r.is_surface_site()]
+            template_sites = [r for r in template_reactants if hasattr(r, 'is_surface_site') and r.is_surface_site()]
             if len(template_sites) == 2:
                 """
                 Three reactants and a termolecular template.
