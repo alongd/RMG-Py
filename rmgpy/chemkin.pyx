@@ -35,7 +35,7 @@ import os.path
 import re
 import shutil
 import textwrap
-import warnings
+import copy
 
 import numpy as np
 
@@ -1572,13 +1572,17 @@ def write_thermo_entry(species, element_counts=None, verbose=True):
     model, and you must use the seven-coefficient forms for each.
     """
 
-    thermo = species.get_thermo_data()
+    thermo = copy.deepcopy(species.get_thermo_data())
 
     if not isinstance(thermo, NASA):
         raise ChemkinError('Cannot generate Chemkin string for species "{0}": '
                            'Thermodynamics data must be a NASA object.'.format(species))
 
-    assert len(thermo.polynomials) == 2
+    if len(thermo.polynomials) > 2:
+        thermo.Tmax = thermo.polynomials[1].Tmax
+        thermo.polynomials = thermo.polynomials[0:2]
+    thermo.polynomials[0].cm2 = thermo.polynomials[0].cm1 = 0
+    thermo.polynomials[1].cm2 = thermo.polynomials[1].cm1 = 0
     assert thermo.polynomials[0].Tmin.value_si < thermo.polynomials[1].Tmin.value_si
     assert thermo.polynomials[0].Tmax.value_si == thermo.polynomials[1].Tmin.value_si
     assert thermo.polynomials[0].cm2 == 0 and thermo.polynomials[0].cm1 == 0
