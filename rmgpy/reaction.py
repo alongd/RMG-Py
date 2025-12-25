@@ -1720,6 +1720,8 @@ class Reaction:
         at the relevant extreme T/P conditions. Assuming a monotonic behaviour of the kinetics.
         Returns a list with the reaction object and the direction in which the violation was detected.
         """
+        if any([s.is_electron() for s in self.reactants + self.products]):
+            return []
         conditions = [[t_min, p_min]]
         if t_min != t_max:
             conditions.append([t_max, p_min])
