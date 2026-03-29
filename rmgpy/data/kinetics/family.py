@@ -138,7 +138,7 @@ class TemplateReaction(Reaction):
         self.product_electrons = product_electrons
         self.labeled_atoms = {'reactants': dict(), 'products': dict()}
 
-        if self.custom_kinetics:
+        if self.custom_kinetics and self.kinetics is None:
             self.assign_custom_kinetics()
 
     def __reduce__(self):
