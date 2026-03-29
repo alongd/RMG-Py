@@ -867,6 +867,7 @@ cdef class BadnellRRArrhenius(KineticsModel):
     def __reduce__(self):
         return (BadnellRRArrhenius,
                 (self.A, self.B, self.T0, self.T1, self.C, self.T2,
+                 None, None, None,
                  self.Tmin, self.Tmax, self.Pmin, self.Pmax,
                  self.uncertainty, self.solute, self.comment))
 
