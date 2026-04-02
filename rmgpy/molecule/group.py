@@ -756,11 +756,33 @@ class GroupAtom(Vertex):
 
     def is_lithium(self):
         """
-        Return ``True`` if the atom represents a bromine atom or ``False`` if not.
+        Return ``True`` if the atom represents a lithium atom or ``False`` if not.
         """
         all_lithium = [ATOMTYPES['Li']] + ATOMTYPES['Li'].specific
         check_list = [x in all_lithium for x in self.atomtype]
         return all(check_list)
+
+    def is_alkali_metal(self):
+        """
+        Return ``True`` if the atom represents an alkali metal (Li, Na, K) or ``False`` if not.
+        """
+        all_alkali = set()
+        for sym in ('Li', 'Na', 'K'):
+            if sym in ATOMTYPES:
+                all_alkali.add(ATOMTYPES[sym])
+                all_alkali.update(ATOMTYPES[sym].specific)
+        return all(x in all_alkali for x in self.atomtype)
+
+    def is_alkaline_earth_metal(self):
+        """
+        Return ``True`` if the atom represents an alkaline earth metal (Mg, Ca) or ``False`` if not.
+        """
+        all_alkaline = set()
+        for sym in ('Mg', 'Ca'):
+            if sym in ATOMTYPES:
+                all_alkaline.add(ATOMTYPES[sym])
+                all_alkaline.update(ATOMTYPES[sym].specific)
+        return all(x in all_alkaline for x in self.atomtype)
 
     def has_wildcards(self):
         """

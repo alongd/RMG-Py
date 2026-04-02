@@ -86,6 +86,10 @@ cdef class Atom(Vertex):
 
     cpdef bint is_nos(self)
 
+    cpdef bint is_alkali_metal(self)
+
+    cpdef bint is_alkaline_earth_metal(self)
+
     cpdef bint is_surface_site(self)
 
     cpdef bint is_bonded_to_surface(self)

@@ -102,7 +102,7 @@ def ionic_bond_filteration(mol_list):
     filtered_list  = []
     for mol in mol_list:
         for atom in mol.atoms:
-            if atom.is_lithium() and atom.charge < 0:
+            if (atom.is_alkali_metal() or atom.is_alkaline_earth_metal()) and atom.charge < 0:
                 break
         else:
             filtered_list.append(mol)
@@ -131,7 +131,7 @@ def get_octet_deviation(mol, allow_expanded_octet=True):
 
     octet_deviation = 0  # This is the overall "score" for the molecule, summed across all non-H atoms
     for atom in mol.vertices:
-        if isinstance(atom, CuttingLabel) or atom.is_hydrogen() or atom.is_lithium():
+        if isinstance(atom, CuttingLabel) or atom.is_hydrogen() or atom.is_alkali_metal() or atom.is_alkaline_earth_metal():
             continue
         val_electrons = 2 * (int(atom.get_total_bond_order()) + atom.lone_pairs) + atom.radical_electrons
         if atom.is_carbon() or atom.is_nitrogen() or atom.is_oxygen():

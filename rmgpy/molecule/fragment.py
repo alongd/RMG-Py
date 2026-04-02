@@ -168,6 +168,12 @@ class Fragment(Molecule):
     def is_lithium(self):
         return False
 
+    def is_alkali_metal(self):
+        return False
+
+    def is_alkaline_earth_metal(self):
+        return False
+
     def copy(self, deep=False):
         """
         Create a copy of the current graph. If `deep` is ``True``, a deep copy

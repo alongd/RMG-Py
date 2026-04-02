@@ -407,10 +407,24 @@ class Atom(Vertex):
 
     def is_lithium(self):
         """
-        Return ``True`` if the atom represents a hydrogen atom or ``False`` if
+        Return ``True`` if the atom represents a lithium atom or ``False`` if
         not.
         """
         return self.element.number == 3
+
+    def is_alkali_metal(self):
+        """
+        Return ``True`` if the atom represents an alkali metal (Li, Na, K)
+        or ``False`` if not.
+        """
+        return self.element.number in (3, 11, 19)
+
+    def is_alkaline_earth_metal(self):
+        """
+        Return ``True`` if the atom represents an alkaline earth metal (Mg, Ca)
+        or ``False`` if not.
+        """
+        return self.element.number in (12, 20)
 
     def is_nitrogen(self):
         """
@@ -2396,7 +2410,7 @@ class Molecule(Graph):
         cython.declare(atom1=Atom, atom2=Atom, bond12=Bond, order=float)
         for atom1 in self.vertices:
             if (atom1.is_hydrogen() and atom1.charge >= 0) or atom1.is_surface_site() or atom1.is_electron() \
-                    or (atom1.is_lithium() and atom1.charge >= 0):
+                    or (atom1.is_alkali_metal() and atom1.charge >= 0):
                 atom1.lone_pairs = 0
             else:
                 order = atom1.get_total_bond_order()
