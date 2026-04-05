@@ -139,7 +139,10 @@ class TemplateReaction(Reaction):
         self.labeled_atoms = {'reactants': dict(), 'products': dict()}
 
         if self.custom_kinetics and self.kinetics is None:
-            self.assign_custom_kinetics()
+            try:
+                self.assign_custom_kinetics()
+            except (KeyError, ValueError):
+                pass  # no custom kinetics data for this Z,N combination
 
     def __reduce__(self):
         """
@@ -327,9 +330,9 @@ class TemplateReaction(Reaction):
                     break
             if start_1_atom is None:
                 raise KineticsError(f"Could not find labeled atom *1 in reactants of reaction {self} to assign custom kinetics.")
-            #  is the nuclear charge
+            # Z is the nuclear charge, N is the total electron count before ionization/recombination
             Z = start_1_atom.number
-            N = start_1_atom.radical_electrons + 2 * start_1_atom.lone_pairs
+            N = start_1_atom.number - start_1_atom.charge
             self.kinetics = CUSTOM_KINETICS_DICT[self.family](N=N, Z=Z)
 
 
@@ -1796,6 +1799,9 @@ class KineticsFamily(Database):
             is_forward=is_forward,
             electrons = self.electrons
         )
+
+        if self.custom_kinetics and reaction.kinetics is None:
+            return None
 
         if not self.allow_charged_species:
             for spc in (reaction.reactants + reaction.products):
