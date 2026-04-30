@@ -1742,14 +1742,37 @@ class Reaction:
                 except ValueError:
                     continue
                 else:
-                    kf_list.append(self.get_rate_coefficient(condition[0], condition[1]))
+                    try:
+                        kf_list.append(self.get_rate_coefficient(condition[0], condition[1]))
+                    except (TypeError, ValueError, OverflowError):
+                        # Forward rate evaluation can fail when the kinetics
+                        # type or its fit parameters produce non-finite or
+                        # complex values at the requested T/P (e.g. plasma
+                        # rate types extrapolated outside their intended
+                        # range). Skip the audit for this condition rather
+                        # than aborting the whole final-model check.
+                        collision_limit_f.pop()
+                        continue
             if len(self.products) >= 2:
                 try:
                     collision_limit_r.append(self.calculate_coll_limit(temp=condition[0], reverse=True))
                 except ValueError:
                     continue
                 else:
-                    kr_list.append(self.generate_reverse_rate_coefficient().get_rate_coefficient(condition[0], condition[1]))
+                    try:
+                        kr_list.append(self.generate_reverse_rate_coefficient().get_rate_coefficient(condition[0], condition[1]))
+                    except (TypeError, ValueError, OverflowError):
+                        # Reverse rate is fitted by sampling forward * Keq
+                        # at a discrete T grid and least-squares fitting
+                        # an Arrhenius. For some library/plasma forward
+                        # rates with extreme T-dependence the fit is
+                        # numerically degenerate (n outside ~[-5, +5] or
+                        # the resulting T**n overflows) and evaluating it
+                        # raises a TypeError on complex / NaN cast. Skip
+                        # this reaction's collision-limit audit rather
+                        # than killing check_model.
+                        collision_limit_r.pop()
+                        continue
         if len(self.reactants) >= 2:
             for i, k in enumerate(kf_list):
                 if k > collision_limit_f[i]:
