@@ -416,6 +416,15 @@ class TransportDatabase(object):
 
         if len(molecule.atoms) == 1:
             shape_index = 0
+        elif len(molecule.atoms) == 2:
+            # Two atoms are linear by geometry regardless of whether they
+            # are covalently bonded or represented as a disconnected
+            # ion-pair workaround (e.g. H2+ written as 'H· + H+' to dodge
+            # the 1-electron-bond representation problem). `is_linear()`
+            # returns False for the disconnected-pair case via its VDW
+            # short-circuit, which previously fell through to shape_index = 2
+            # ('nonlinear') and tripped Cantera's GasTransportData validator.
+            shape_index = 1
         elif molecule.is_linear():
             shape_index = 1
         else:
