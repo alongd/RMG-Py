@@ -421,11 +421,27 @@ def reaction_to_dict_list(reaction, species_list=None):
 
     elif isinstance(kin, TwoTemperaturePlasma):
         entry['type'] = 'two-temperature-plasma'
+        # Cantera's TwoTempPlasmaRate evaluates
+        #   k(T, Te) = A * Te^b * exp(-Ea_g / RT)
+        #                       * exp( Ea_e * (Te - T) / (R * T * Te) )
+        #            = A * Te^b * exp((Ea_e - Ea_g)/RT) * exp(-Ea_e/RTe).
+        # RMG libraries and ElectronCollisionPlasma->TwoTemperaturePlasma
+        # conversions encode pure-Te Arrhenius rates as
+        #   Ea_g = 0, Ea_e = Ea  ("no gas-T dependence; barrier in Te only").
+        # Plugged into the Cantera formula with Ea_g=0 that produces the
+        # spurious factor exp(Ea_e/RT), which blows up when Te >> T (e.g.
+        # Ea_e=13 eV, Tg=3750 K, Te=8000 K -> rate factor ~10^9 too high).
+        # Setting Ea_g=Ea_e makes (Ea_e - Ea_g)=0 and the formula collapses
+        # to k = A * Te^b * exp(-Ea_e/RTe), the intended pure-Te Arrhenius.
+        Ea_g_si = kin.Ea_g.value_si
+        Ea_e_si = kin.Ea_e.value_si
+        if Ea_g_si == 0.0 and Ea_e_si > 0.0:
+            Ea_g_si = Ea_e_si
         entry['rate-constant'] = {
             'A': kin.A.value_si,
             'b': kin.n.value_si,
-            'Ea-gas': kin.Ea_g.value_si,
-            'Ea-electron': kin.Ea_e.value_si
+            'Ea-gas': Ea_g_si,
+            'Ea-electron': Ea_e_si,
         }
 
     elif isinstance(kin, ElectronCollisionPlasma):
