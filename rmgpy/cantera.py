@@ -196,6 +196,26 @@ def generate_cantera_data(species_list, reaction_list, is_plasma=False, search_f
                     for elem in sp.molecule[0].get_element_count().keys():
                         elements_set.add(elem)
 
+    # --- Disambiguate colliding species labels ---
+    # RMG's chemkin format distinguishes same-base-name species with an index
+    # suffix (e.g. Na(7) vs Na(42)). The cantera writer writes species.label
+    # directly, so without disambiguation a label collision silently keeps
+    # only the last-written entry in the YAML, dropping reactions and
+    # composition data for the rest. Per project policy: leave the FIRST
+    # occurrence's label as-is and suffix subsequent occurrences with their
+    # RMG index using the chemkin "(NN)" convention so the names round-trip
+    # through chemkin <-> cantera (Cantera 3.x quotes such names on load).
+    seen_labels = set()
+    for sp in species_list:
+        if sp.label in seen_labels:
+            new_label = '{0}({1:d})'.format(sp.label, sp.index)
+            # In the unlikely event the (index)-suffixed name collides,
+            # keep extending the suffix until it's unique.
+            while new_label in seen_labels:
+                new_label += '_'
+            sp.label = new_label
+        seen_labels.add(sp.label)
+
     phase_def = {
         'name': 'gas',
         'thermo': 'plasma' if is_plasma else 'ideal-gas',
