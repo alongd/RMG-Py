@@ -253,6 +253,9 @@ def polymer(label: str,
             Mw: Optional[float] = None,
             moments: Optional[List[float]] = None,
             initial_mass: float = 1.0,
+            k_unzip: float = 0.0,
+            k_scission: float = 0.0,
+            monomer_product: Optional[Union[Molecule, str]] = None,
             ):
     """
     Helper function exposed in the input file to define a Polymer Pool.
@@ -267,6 +270,16 @@ def polymer(label: str,
         Mw (float): Weight average molecular weight (g/mol).
         moments (list): Optional list of raw moments [mu0, mu1, mu2].
         initial_mass (float): Initial mass in the reactor (kg).
+        k_unzip (float): Chain-end unzip (depropagation) rate coefficient [1/s].
+                         Drives the method-of-moments release of monomer/oligomer
+                         from the statistical tail. Default 0.0 (disabled).
+        k_scission (float): Random mid-chain scission rate coefficient [1/s] acting
+                            on the distribution moments. Default 0.0 (disabled).
+        monomer_product (str): SMILES of the real, reactive monomer released when the
+                               chain unzips (e.g. 'C=Cc1ccccc1' for styrene). Registered
+                               as a reactive core species in the polymer melt phase so the
+                               unzip flux feeds genuine downstream chemistry. Requires
+                               k_unzip > 0 to have any effect. Default None (no release).
     """
     poly_obj = Polymer(
         label=label,
@@ -276,7 +289,9 @@ def polymer(label: str,
         Mn=Mn,
         Mw=Mw,
         initial_mass=initial_mass,
-        moments=moments
+        moments=moments,
+        k_unzip=k_unzip,
+        k_scission=k_scission,
     )
 
     poly_obj.creation_iteration = rmg.reaction_model.iteration_num
@@ -306,6 +321,22 @@ def polymer(label: str,
                 rmg.initial_species.append(spc)
                 species_dict[m_label] = spc
                 break
+
+    # 4b. Register the released-monomer product species (e.g. styrene) so the
+    #     solver's unzip source term can deposit real, reactive monomer into the
+    #     polymer melt phase. It is a normal reactive species; the solver flags
+    #     its core index as polymer-phase via the pool's monomer_poly_index.
+    poly_obj.monomer_product_species = None
+    if monomer_product is not None:
+        if isinstance(monomer_product, str):
+            mp_mol = Molecule().from_smiles(monomer_product)
+        else:
+            mp_mol = monomer_product
+        mp_spc, _ = rmg.reaction_model.make_new_species(mp_mol, reactive=True)
+        if mp_spc not in rmg.initial_species:
+            rmg.initial_species.append(mp_spc)
+        species_dict[mp_spc.label] = mp_spc
+        poly_obj.monomer_product_species = mp_spc
 
     # 5. Generate Thermo for the Polymer (Delegates to the trimer proxy)
     rmg.reaction_model.generate_thermo(poly_obj)

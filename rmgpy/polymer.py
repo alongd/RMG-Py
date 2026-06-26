@@ -203,6 +203,8 @@ class Polymer(Species):
                  Mw: Optional[float] = None,
                  initial_mass: float = 1.0,
                  moments: Optional[List[float]] = None,
+                 k_unzip: float = 0.0,
+                 k_scission: float = 0.0,
                  **kwargs,
                  ):
         super(Polymer, self).__init__(label=label, **kwargs)
@@ -216,8 +218,8 @@ class Polymer(Species):
         self.cutoff = self._validate_cutoff(cutoff, label)
         self.Mn, self.Mw, self.moments = None, None, None
 
-        self.k_unzip = kwargs.get('k_unzip', 0.0)
-        self.k_scission = kwargs.get('k_scission', 0.0)
+        self.k_unzip = k_unzip
+        self.k_scission = k_scission
 
         self.initial_mass_g = initial_mass * 1000.0  # convert to grams
         self.monomer_mw_g_mol = self.monomer.get_molecular_weight() * 1000.0
