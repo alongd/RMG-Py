@@ -4960,10 +4960,22 @@ def test_impostor_threshold_spares_dp2_volatile_and_gas_only_rows():
     hexene = Species(molecule=[Molecule().from_smiles("C=CCCCC")])
     br2 = Species(molecule=[Molecule().from_smiles("BrBr")])
     # (a) 2.0 monomer-equivalents: below the 2.5 polymer-sized threshold.
-    rxn = Reaction(reactants=[br2, hexene], products=[pp], reversible=True)
+    #
+    # Orientation note (2026-07-27): this pin is written in the HOMOLYSIS
+    # orientation (Polymer among reactants). It used to ride on the
+    # association orientation (`br2 + hexene <=> pp`), which is now refused
+    # class-level because that orientation is unstampable by construction --
+    # for an orientation reason, not a size reason. The size conjunct this
+    # pin actually protects is unchanged and still governs here, which is why
+    # the row stays live; the direct predicate assertion below pins the size
+    # axis without depending on any orientation at all.
+    rxn = Reaction(reactants=[pp], products=[br2, hexene], reversible=True)
     stamp_gas_association_refusal(rxn)
     assert rxn.polymer_refused is False
     assert rxn.polymer_refused_accumulating is False
+    # Orientation-independent form of the same claim.
+    from rmgpy.polymer import _discrete_is_polymer_sized
+    assert _discrete_is_polymer_sized(hexene, pp) is False
     # (b) gas-only XY addition: Br2 + hexene -> 1,2-dibromohexane.
     dibromide = Species(molecule=[Molecule().from_smiles("CCCCC(Br)CBr")])
     gas_only = Reaction(reactants=[br2, hexene], products=[dibromide],
@@ -5019,18 +5031,19 @@ def test_impostor_undecidable_axis_never_degenerates_to_mass_only(caplog):
     # uncomputable (monomer stripped), so the predicate must NOT degenerate to
     # a mass-only refusal -- it announces the case undecidable instead.
     br2 = Species(molecule=[Molecule().from_smiles("BrC(Br)(Br)Br")])
-    rxn = Reaction(reactants=[br2], products=[pp], reversible=True)
+    # Orientation note (2026-07-27): the undecidable-axis claim is pinned in
+    # the HOMOLYSIS orientation (Polymer among reactants), where the impostor
+    # size conjunct is what decides. The association orientation is now
+    # refused class-level for a structural reason (it can never receive an
+    # archetype stamp), which would mask the axis behavior this pin exists to
+    # protect rather than test it.
+    rxn = Reaction(reactants=[pp], products=[br2], reversible=True)
     with caplog.at_level(logging.WARNING):
         stamp_gas_association_refusal(rxn)
     assert rxn.polymer_refused is False
     assert rxn.polymer_refused_accumulating is False
     assert any("IMPOSTOR AXIS UNDECIDABLE" in r.getMessage()
                for r in caplog.records)
-    # Reverse orientation: same undecidable shape, same non-refusal.
-    rxn_rev = Reaction(reactants=[pp], products=[br2], reversible=True)
-    stamp_gas_association_refusal(rxn_rev)
-    assert rxn_rev.polymer_refused is False
-    assert rxn_rev.polymer_refused_accumulating is False
 
 
 def test_impostor_undecidable_mass_axis_also_refuses_to_refuse():

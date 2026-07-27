@@ -4061,8 +4061,47 @@ def stamp_gas_association_refusal(forward, pool_registry=None) -> None:
                 return False
         return True
 
-    if ((p_condensed and _all_gas_radicals(reactants))
-            or (r_condensed and _all_gas_radicals(products))):
+    # ASSOCIATION-ORIENTATION COMPLETENESS (grounded in the EPDM/PE run,
+    # 2026-07-27): the association half of the r63 conjunct is widened from
+    # "all gas reactants are radicals" to the whole orientation, because the
+    # orientation is UNSTAMPABLE BY CONSTRUCTION and refusal is therefore its
+    # only lawful classification -- not a policy choice about which shapes we
+    # dislike.
+    #
+    # The argument is structural, not shape-based. Exactly one side carries a
+    # Polymer here (both-condensed and no-condensed returned above), so
+    # ``p_condensed`` means the row's ONLY Polymer participant is a PRODUCT.
+    # ``stamp_polymer_flux_archetype`` is reachable only under
+    # ``if polymer_reactants:`` (rmgpy/rmg/model.py:684 and :760), and
+    # ``restamp_flipped_polymer_archetype`` only re-derives an archetype for a
+    # row that already carries one. So no path in the engine can ever assign
+    # an archetype to a polymer-as-product-only row: it either gets refused
+    # here, or it reaches the solver rebuild unstamped and dies at the r71
+    # hard-fail. Leaving any such row unrefused is a guaranteed run kill.
+    #
+    # Grounding case: a pyrolysis deck whose pool proxy is a small SATURATED
+    # alkane (any polyolefin pool -- PE, PP, EPDM -- at a low cutoff) generates
+    # ``[CH2] + CCCCCC <=> <pool>``: CH2 inserting into hexane reconstitutes
+    # the C7H16 baseline proxy. The gas side is a radical PLUS a closed-shell
+    # partner, so the r63 all-radicals conjunct never fires; hexane is 86 g/mol
+    # against the r95 absolute chain-scale floor (ABS_CHAIN_SCALE_MW = 300), so
+    # the r82 impostor conjunct correctly declines too. The row fell through
+    # every enumerated shape and killed the run at r71 -- reproduced identically
+    # on a copolymer EPDM deck and on a plain PE homopolymer control, so it is
+    # a coverage gap in the refusal vocabulary, not a deck defect.
+    #
+    # This follows r93's own adjudicated conclusion that "shape enumeration
+    # loses to generation depth": prefer the class-level predicate that
+    # subsumes the enumerated members over adding a fifth, sixth, ... shape.
+    # Cost asymmetry backs it: an over-refused row is stamp-but-keep with its
+    # flux zeroed (chemistry retained, flux lost), while an under-refused row
+    # is a dead run.
+    #
+    # The HOMOLYSIS orientation (Polymer among reactants only) is deliberately
+    # NOT widened: that orientation IS reachable by the archetype stamping
+    # path, so volatile-ejection / chip / migration rows there must stay live
+    # and keep the narrow r63 all-gas-radicals conjunct.
+    if p_condensed or (r_condensed and _all_gas_radicals(products)):
         forward.polymer_refused = True
         forward.polymer_refused_accumulating = False  # -> "conduit-deferred"
         return
