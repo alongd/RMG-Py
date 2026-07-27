@@ -607,6 +607,18 @@ class Polymer(Species):
         The dominant homo-dyad [d, d, d] IS the baseline proxy and is skipped
         here, so it is never registered twice. Empty list on homopolymer pools.
 
+        SCOPE LIMIT (decided 2026-07-27, GRAPHS ONLY): these proxies deliver the
+        mixed-neighbour GRAPHS, not yet mixed-neighbour FLUX. Registered as
+        ordinary core species they are chain-scale proxy-derived discretes, so
+        the adjudicated policy defers their rows (stamp-but-keep, flux zeroed)
+        whenever they co-occur with a pool or eliminate a feature radical -- an
+        EPDM run generates the dyad chemistry and then applies none of it (1266
+        FEATURE-RADICAL + 124 r93 refusals; zero core reactions touching a dyad).
+        Do not read a dyad proxy's presence in the core as evidence that its
+        chemistry contributed. Revisiting this (own-pool per dyad,
+        ``feature_monomer`` routing, or conduit admission) is deliberately
+        deferred until TGA scoring can measure whether the missing flux matters.
+
         Returns:
             list: [{'flank': Molecule, 'center': Molecule, 'species': Species,
                     'pair': (i, j)}], deterministic in composition order.

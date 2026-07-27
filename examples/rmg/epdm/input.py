@@ -10,6 +10,13 @@
 # link is the allylic C--C beside an incorporated diene unit, and that bond only
 # exists where a diene unit meets a backbone unit.
 #
+# SCOPE LIMIT (2026-07-27, GRAPHS ONLY): this deck exercises the composition
+# mass physics and the dyad graphs. The dyad ROWS are currently deferred by the
+# adjudicated refusal policy (stamp-but-keep, flux zeroed), so the run completes
+# with the dyad proxies present as core SPECIES but no core reaction touching
+# them. Treat the mixed-neighbour chemistry as not-yet-contributing until that
+# is revisited against TGA scoring.
+#
 # ASSUMPTION OF RECORD -- COMPOSITION (2026-07-27, PROVISIONAL):
 #   The mole fractions below are converted from a mid-range EPDM SRM-insulation
 #   gum composition of 60 / 35 / 5 wt% ethylene / propylene / ENB:

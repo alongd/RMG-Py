@@ -304,6 +304,14 @@ def polymer(label: str,
                        generate chemistry. Mutually exclusive with ``monomer``;
                        a single-entry list at fraction 1.0 is equivalent to the
                        homopolymer declaration.
+
+                       SCOPE LIMIT (2026-07-27, GRAPHS ONLY): the composition
+                       mass physics is complete (repeat mass -> moments, Mn/Mw,
+                       condensed mass), but the dyad rows are currently DEFERRED
+                       by the adjudicated refusal policy, so mixed-neighbour
+                       chemistry is generated and then carries NO FLUX. See
+                       Polymer.dyad_proxies for the detail and the options left
+                       open.
         end_groups (list): List of 2 SMILES strings for the terminals.
         cutoff (int): The hybrid threshold (x_s).
         Mn (float): Number average molecular weight (g/mol).
