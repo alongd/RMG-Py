@@ -70,13 +70,13 @@ polymer(
     label='EPDM',
     monomers=[
         # Ethylene backbone unit (C2H4).
-        dict(monomer='[CH2][CH2]', fraction=0.7101, monomer_product='C=C'),
+        {'monomer': '[CH2][CH2]', 'fraction': 0.7101, 'monomer_product': 'C=C'},
         # Propylene backbone unit (C3H6); the tertiary C-H is the weak backbone
         # site in the diene-free stretches.
-        dict(monomer='[CH2][CH](C)', fraction=0.2761, monomer_product='C=CC'),
+        {'monomer': '[CH2][CH](C)', 'fraction': 0.2761, 'monomer_product': 'C=CC'},
         # 5-ethylidene-2-norbornene (ENB) unit (C9H12), polymerized through the
         # ring double bond, pendant ethylidene retained.
-        dict(monomer='CC=C1CC2[CH][CH]C1C2', fraction=0.0138),
+        {'monomer': 'CC=C1CC2[CH][CH]C1C2', 'fraction': 0.0138},
     ],
     end_groups=['[CH3]', '[H]'],
     cutoff=3,

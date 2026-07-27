@@ -651,3 +651,31 @@ class TestPolymerCopolymerDeck:
         # The example deck pins this threshold; if the proxy construction ever
         # shrinks the smallest dyad, examples/rmg/epdm/input.py must move too.
         assert threshold == 8
+
+    def test_composition_is_declarable_in_a_real_deck_context(self):
+        """
+        Input files are exec'd with ``__builtins__`` set to None, so a deck
+        cannot call ``dict(...)`` -- only dict LITERALS survive. Calling
+        inp.polymer() from Python (as the tests above do) hides that, which is
+        exactly how a deck that cannot be read got written; this test executes
+        the declaration the way read_input_file does.
+        """
+        deck = (
+            "polymer(label='EPDM',\n"
+            "        monomers=[{'monomer': '[CH2][CH2]', 'fraction': 0.7101},\n"
+            "                  {'monomer': '[CH2][CH](C)', 'fraction': 0.2761},\n"
+            "                  {'monomer': 'CC=C1CC2[CH][CH]C1C2', 'fraction': 0.0138}],\n"
+            "        end_groups=['[CH3]', '[H]'], cutoff=3,\n"
+            "        Mn=5000.0, Mw=10000.0, initial_mass=1.0)\n")
+        global_context = {'__builtins__': None}
+        local_context = {'__builtins__': None, 'True': True, 'False': False,
+                         'polymer': inp.polymer}
+        exec(deck, global_context, local_context)   # must not raise
+        pool = self.rmg.reaction_model.core.species  # deck path registered species
+        assert pool is not None
+        assert len(self.rmg.initial_species) >= 5   # 5 dyad proxies at minimum
+
+    def test_dict_builtin_is_not_available_to_decks(self):
+        """Negative control: pins WHY the literals above are required."""
+        with pytest.raises(TypeError):
+            exec("x = dict(a=1)", {'__builtins__': None}, {'__builtins__': None})

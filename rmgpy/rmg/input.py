@@ -286,9 +286,13 @@ def polymer(label: str,
                        sum to 1), and optionally ``monomer_product`` (the
                        volatile that unit releases on unzip), e.g.
 
-                           monomers=[dict(monomer='[CH2][CH2]', fraction=0.6),
-                                     dict(monomer='[CH2][CH](C)', fraction=0.35),
-                                     dict(monomer=ENB, fraction=0.05)]
+                           monomers=[{'monomer': '[CH2][CH2]', 'fraction': 0.6},
+                                     {'monomer': '[CH2][CH](C)', 'fraction': 0.35},
+                                     {'monomer': ENB, 'fraction': 0.05}]
+
+                       Note the dict LITERALS: input files are exec'd with
+                       ``__builtins__`` set to None, so ``dict(...)`` is not
+                       callable in a deck.
 
                        Units are assumed RANDOMLY distributed (Bernoullian):
                        no sequence, blockiness, or reactivity ratios are
