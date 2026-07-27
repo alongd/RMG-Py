@@ -252,8 +252,9 @@ def species(label, structure, reactive=True, cut=False, size_threshold=None):
 
 
 def polymer(label: str,
-            monomer: Union[Molecule, str],
-            end_groups: Optional[List[Union[str, Molecule]]],
+            monomer: Optional[Union[Molecule, str]] = None,
+            end_groups: Optional[List[Union[str, Molecule]]] = None,
+            monomers: Optional[List[dict]] = None,
             cutoff: int = 4,
             Mn: Optional[float] = None,
             Mw: Optional[float] = None,
@@ -276,7 +277,29 @@ def polymer(label: str,
     Args:
         label (str): Unique identifier.
         monomer (str): SMILES of the open repeating unit with labeled ends.
-                       Must have [*:1] (Head) and [*:2] (Tail).
+                       Must have [*:1] (Head) and [*:2] (Tail). Mutually
+                       exclusive with ``monomers``.
+        monomers (list): Copolymer composition -- a list of dicts, one per
+                       repeat unit, each with ``monomer`` (SMILES/Molecule,
+                       same labeling rules as above), ``fraction`` (mole
+                       fraction of that unit in the chain; all fractions must
+                       sum to 1), and optionally ``monomer_product`` (the
+                       volatile that unit releases on unzip), e.g.
+
+                           monomers=[dict(monomer='[CH2][CH2]', fraction=0.6),
+                                     dict(monomer='[CH2][CH](C)', fraction=0.35),
+                                     dict(monomer=ENB, fraction=0.05)]
+
+                       Units are assumed RANDOMLY distributed (Bernoullian):
+                       no sequence, blockiness, or reactivity ratios are
+                       claimed or used. The composition sets the
+                       composition-weighted repeat mass (<M> = sum_i f_i M_i),
+                       which propagates to the moments, Mn/Mw and every
+                       condensed-mass term, and the pool builds one dyad proxy
+                       per comonomer pair so mixed-neighbour backbone bonds
+                       generate chemistry. Mutually exclusive with ``monomer``;
+                       a single-entry list at fraction 1.0 is equivalent to the
+                       homopolymer declaration.
         end_groups (list): List of 2 SMILES strings for the terminals.
         cutoff (int): The hybrid threshold (x_s).
         Mn (float): Number average molecular weight (g/mol).
@@ -643,6 +666,7 @@ def polymer(label: str,
     poly_obj = Polymer(
         label=label,
         monomer=monomer,
+        monomers=monomers,
         end_groups=end_groups,
         cutoff=cutoff,
         Mn=Mn,
@@ -754,6 +778,53 @@ def polymer(label: str,
             rmg.initial_species.append(dp_spc)
         species_dict[dp_spc.label] = dp_spc
         poly_obj.explicit_dp_species = dp_spc
+
+    # 4c-bis. Copolymer dyad proxies: for a pool declared with a composition
+    #     (`monomers=[...]`), register ONE capped trimer per comonomer pair
+    #     [i, j, i] as a real, reactive core species, through the SAME path as
+    #     the explicit-DP oligomer above. Without this the pool would carry a
+    #     copolymer's mass on a homopolymer's chemistry: reaction families only
+    #     ever see the graphs that reach the core, and the dominant-unit
+    #     baseline proxy contains no mixed-neighbour backbone bond, so the
+    #     E--P and P--diene bonds (where EPDM's decomposition selectivity
+    #     actually lives) could never generate a reaction. The dominant
+    #     homo-dyad is the baseline proxy itself and is not re-registered.
+    poly_obj.dyad_proxy_species = []
+    if poly_obj.comonomers is not None:
+        try:
+            dyads = poly_obj.dyad_proxies
+        except ValueError as e:
+            raise InputError(str(e))
+        for dyad in dyads:
+            d_spc, _ = rmg.reaction_model.make_new_species(dyad['species'],
+                                                           reactive=True)
+            # Provenance marker (same mechanism as explicit_dp_origin): names
+            # the pool and the comonomer pair this proxy stands for, so a
+            # species-constraint refusal or an artifact reader can attribute it.
+            d_spc.props['copolymer_dyad_origin'] = (poly_obj.label,
+                                                    tuple(dyad['pair']))
+            if d_spc not in rmg.initial_species:
+                rmg.initial_species.append(d_spc)
+            species_dict[d_spc.label] = d_spc
+            poly_obj.dyad_proxy_species.append(d_spc)
+
+    # 4c-ter. Per-comonomer released-monomer products: same contract as the
+    #     pool-level monomer_product (step 4b) -- a unit that unzips must have
+    #     a live GAS destination for the released volatile, or the drained
+    #     condensed mass goes nowhere.
+    poly_obj.comonomer_product_species = []
+    if poly_obj.comonomers is not None:
+        for entry in poly_obj.comonomers:
+            product = entry.get('monomer_product')
+            if product is None:
+                continue
+            cp_mol = (Molecule().from_smiles(product)
+                      if isinstance(product, str) else product)
+            cp_spc, _ = rmg.reaction_model.make_new_species(cp_mol, reactive=True)
+            if cp_spc not in rmg.initial_species:
+                rmg.initial_species.append(cp_spc)
+            species_dict[cp_spc.label] = cp_spc
+            poly_obj.comonomer_product_species.append(cp_spc)
 
     # 4d. Radical-homolysis end-radical daughter pools (Stage 1, adjudicated
     #     round 66): when the k_homolysis kernel is enabled, BOTH daughter

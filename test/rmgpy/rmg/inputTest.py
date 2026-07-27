@@ -29,6 +29,7 @@
 
 from unittest.mock import patch
 
+import rmgpy.polymer
 import rmgpy.rmg.input
 import rmgpy.rmg.input as inp
 from rmgpy.exceptions import InputError
@@ -537,3 +538,93 @@ class TestPolymerConduitAdmissionParsing:
     def test_int_value_rejected(self):
         with pytest.raises(InputError, match="polymerConduitAdmission"):
             rmgpy.rmg.input.options(polymerConduitAdmission=1)
+
+
+class TestPolymerCopolymerDeck:
+    """
+    Deck-level tests for the copolymer composition (``polymer(monomers=[...])``).
+
+    The unit tests in polymerTest.py pin the composition maths and the dyad
+    proxy GRAPHS; these pin the thing only the deck path can establish -- that
+    the dyad proxies actually reach the core as reactive species. That is the
+    load-bearing step: reaction families only ever see species in the core, so
+    a dyad proxy that is built but never registered would leave the pool
+    carrying a copolymer's mass on a homopolymer's chemistry, silently.
+    """
+
+    ETHYLENE = '[CH2][CH2]'
+    PROPYLENE = '[CH2][CH](C)'
+    DIENE = '[CH2][CH](C=C)'
+
+    def setup_method(self):
+        self.rmg = RMG()
+        self.rmg.reaction_model = CoreEdgeReactionModel()
+        self.rmg.initial_species = []
+        inp.set_global_rmg(self.rmg)
+        inp.species_dict = {}
+
+    def teardown_method(self):
+        inp.set_global_rmg(None)
+        inp.species_dict = {}
+
+    def _declare(self, units, **kwargs):
+        params = dict(end_groups=['[CH3]', '[H]'], cutoff=3,
+                      Mn=5000.0, Mw=10000.0, initial_mass=1.0)
+        params.update(kwargs)
+        return inp.polymer(
+            label='EPDM',
+            monomers=[dict(monomer=m, fraction=f) for m, f in units],
+            **params)
+
+    def test_dyad_proxies_are_registered_as_core_species(self):
+        pool = self._declare([(self.ETHYLENE, 0.60), (self.PROPYLENE, 0.35),
+                              (self.DIENE, 0.05)])
+        # 3 units -> 6 unordered pairs, minus the dominant homo-dyad (which is
+        # the baseline proxy, already registered as the pool itself).
+        assert len(pool.dyad_proxy_species) == 5
+        for spc in pool.dyad_proxy_species:
+            assert spc in self.rmg.initial_species, \
+                'dyad proxy never reached initial_species; families cannot react it'
+            assert spc.reactive
+            assert spc.props['copolymer_dyad_origin'][0] == pool.label
+
+    def test_homopolymer_deck_registers_no_dyads(self):
+        """The legacy declaration must be untouched: no extra core species."""
+        pool = inp.polymer(label='PE', monomer=self.ETHYLENE,
+                           end_groups=['[CH3]', '[H]'], cutoff=3,
+                           Mn=5000.0, Mw=10000.0, initial_mass=1.0)
+        assert pool.dyad_proxy_species == []
+        assert pool.comonomers is None
+
+    def test_deck_rejects_monomer_and_monomers_together(self):
+        with pytest.raises(InputError, match='mutually exclusive'):
+            inp.polymer(label='both', monomer=self.ETHYLENE,
+                        monomers=[dict(monomer=self.PROPYLENE, fraction=1.0)],
+                        end_groups=['[CH3]', '[H]'], Mn=5000.0, Mw=10000.0)
+
+    def test_per_comonomer_monomer_product_is_registered(self):
+        """A unit that unzips needs a live gas destination for its volatile."""
+        pool = inp.polymer(
+            label='EPDM_products',
+            monomers=[dict(monomer=self.ETHYLENE, fraction=0.7,
+                           monomer_product='C=C'),
+                      dict(monomer=self.PROPYLENE, fraction=0.3,
+                           monomer_product='C=CC')],
+            end_groups=['[CH3]', '[H]'], cutoff=3, Mn=5000.0, Mw=10000.0)
+        assert len(pool.comonomer_product_species) == 2
+        for spc in pool.comonomer_product_species:
+            assert spc in self.rmg.initial_species
+            assert spc.reactive
+
+    def test_composition_reaches_the_sidecar_block(self):
+        """The artifact must carry the whole composition, not just the
+        dominant unit -- a consumer reconstructing condensed mass from
+        `monomer_smiles` alone would use the wrong repeat mass."""
+        pool = self._declare([(self.ETHYLENE, 0.60), (self.PROPYLENE, 0.35),
+                              (self.DIENE, 0.05)])
+        block = rmgpy.polymer._serialize_pool_for_sidecar(pool)
+        comp = block['composition']
+        assert comp['statistics'] == 'bernoullian_random'
+        assert len(comp['units']) == 3
+        assert sum(u['fraction'] for u in comp['units']) == pytest.approx(1.0)
+        assert comp['monomer_mw_g_mol'] == pytest.approx(pool.monomer_mw_g_mol)
