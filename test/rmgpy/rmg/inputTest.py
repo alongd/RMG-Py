@@ -554,7 +554,7 @@ class TestPolymerCopolymerDeck:
 
     ETHYLENE = '[CH2][CH2]'
     PROPYLENE = '[CH2][CH](C)'
-    DIENE = '[CH2][CH](C=C)'
+    DIENE = "CC=C1CC2[CH][CH]C1C2"
 
     def setup_method(self):
         self.rmg = RMG()
@@ -628,3 +628,26 @@ class TestPolymerCopolymerDeck:
         assert len(comp['units']) == 3
         assert sum(u['fraction'] for u in comp['units']) == pytest.approx(1.0)
         assert comp['monomer_mw_g_mol'] == pytest.approx(pool.monomer_mw_g_mol)
+
+    def test_dyad_proxies_route_to_the_polymer_constraint_tier(self):
+        """
+        Dyad proxies are much larger than any volatile the deck should generate
+        (an ENB--ENB dyad is C28), so they must be bounded by the POLYMER tier,
+        not the gas tier. Routing is by heavy-atom count, so the smallest dyad
+        proxy sets the usable polymerSizeThreshold -- a threshold above it would
+        drop that proxy onto the gas tier, where it would be refused (or force a
+        gas bound loose enough for RMG to generate C28 volatiles).
+        """
+        from rmgpy.constraints import is_polymer_constraint_member
+        pool = self._declare([(self.ETHYLENE, 0.7101), (self.PROPYLENE, 0.2761),
+                              (self.DIENE, 0.0138)])
+        heavy = [sum(1 for a in spc.molecule[0].atoms if a.symbol != 'H')
+                 for spc in pool.dyad_proxy_species]
+        threshold = min(heavy)
+        constraints = {'polymerSizeThreshold': threshold}
+        for spc in pool.dyad_proxy_species:
+            assert is_polymer_constraint_member(spc, polymer_constraints=constraints), \
+                'a dyad proxy fell through to the gas constraint tier'
+        # The example deck pins this threshold; if the proxy construction ever
+        # shrinks the smallest dyad, examples/rmg/epdm/input.py must move too.
+        assert threshold == 8

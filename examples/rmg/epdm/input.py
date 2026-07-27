@@ -147,19 +147,32 @@ options(
     saveSeedModulus=-1,
 )
 
-# The ENB dyad proxies are the largest graphs in the deck (two backbone units
-# plus a bicyclic diene unit plus end caps), so the carbon/heavy-atom bounds
-# must admit them or RMG will refuse the pool's own proxies at initialization.
+# Two constraint tiers, and the split matters here more than for a homopolymer.
+# The gas tier below bounds the volatile fragments. The dyad proxies are much
+# bigger than any of them -- ENB is a C9 bicyclic unit, so the diene--diene dyad
+# proxy is C28 -- and bounding them with the gas tier would either refuse the
+# pool's own proxies at initialization or force a gas bound so loose that RMG
+# would happily generate C28 volatiles. They are routed to the polymer tier
+# instead, by heavy-atom count: the SMALLEST dyad proxy here (ethylene-propylene,
+# C8H18) has 8 heavy atoms, so polymerSizeThreshold=8 puts every dyad proxy on
+# the polymer tier while leaving genuine pyrolysis fragments on the gas tier.
 generatedSpeciesConstraints(
     allowed=['input species', 'seed mechanisms', 'reaction libraries'],
-    maximumCarbonAtoms=10,
+    maximumCarbonAtoms=7,
     maximumOxygenAtoms=0,
     maximumNitrogenAtoms=0,
     maximumSiliconAtoms=0,
     maximumSulfurAtoms=0,
-    maximumHeavyAtoms=10,
+    maximumHeavyAtoms=7,
     maximumRadicalElectrons=2,
     maximumSingletCarbenes=1,
     maximumCarbeneRadicals=0,
     allowSingletO2=False,
+)
+
+generatePolymerConstraints(
+    maximumCarbonAtoms=30,
+    maximumHeavyAtoms=30,
+    maximumRadicalElectrons=2,
+    polymerSizeThreshold=8,
 )
