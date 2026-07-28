@@ -17,19 +17,29 @@
 # them. Treat the mixed-neighbour chemistry as not-yet-contributing until that
 # is revisited against TGA scoring.
 #
-# ASSUMPTION OF RECORD -- COMPOSITION (2026-07-27, PROVISIONAL):
-#   The mole fractions below are converted from a mid-range EPDM SRM-insulation
-#   gum composition of 60 / 35 / 5 wt% ethylene / propylene / ENB:
-#       x_E   = (60/28.05)  / 3.0123 = 0.7101
-#       x_P   = (35/42.08)  / 3.0123 = 0.2761
-#       x_ENB = (5/120.19)  / 3.0123 = 0.0138
-#   They are NOT yet taken from the validation paper's own gum: the intended
-#   reference (Perejon et al., Polym Degrad Stab 98 (2013) 1571-1577, which
-#   tabulates ethylene and diene wt% per sample alongside inert TGA) was not
-#   retrievable at the time of writing, and the open-access EPDM TGA papers
-#   surveyed report DTG peaks WITHOUT the gum composition. Replace these three
-#   fractions -- and only these -- once the reference of record is pinned; the
-#   deck needs no other change.
+# COMPOSITION OF RECORD -- Vistalon 5601 (pinned 2026-07-28):
+#   Perejon, Sanchez-Jimenez, Gil-Gonzalez, Perez-Maqueda and Criado,
+#   "Pyrolysis kinetics of ethylene-propylene (EPM) and ethylene-propylene-diene
+#   (EPDM)", Polym Degrad Stab 98 (2013) 1571-1577, Table 1
+#   (DOI 10.1016/j.polymdegradstab.2013.06.029).
+#
+#   Vistalon 5601 (ExxonMobil): 69.0 wt% ethylene, ENB 5.0 wt%, balance
+#   propylene (26.0 wt%). Chosen among that table's four ENB grades because it
+#   carries the ENB diene modeled here (not DCPD) at a typical 5 wt%, with the
+#   lowest ethylene content of the ENB set -- the least crystalline, most
+#   elastomeric grade, which is the character of SRM insulation gum. Swapping to
+#   Vistalon 7001 (73.0/5.0), 7800 (79.0/6.0) or EPDM 70C2 (70.0/ENB 4.6) is a
+#   three-number edit here and a one-line edit in the CKMG reference.
+#
+#   Mole fractions, converted from those weight percents:
+#       x_E   = (69/28.053)  / 3.1191 = 0.7886
+#       x_P   = (26/42.080)  / 3.1191 = 0.1981
+#       x_ENB = (5/120.191)  / 3.1191 = 0.0133
+#   giving a composition-weighted repeat mass of 32.061 g/mol.
+#
+#   The same paper supplies this sample's measured degradation temperatures at
+#   5 K/min (T_alpha=0.1 = 705.1 K, T_alpha=0.5 = 720.2 K) and its fitted
+#   kinetic triplet, which are the validation reference of record downstream.
 #
 # ASSUMPTIONS OF RECORD -- MATERIAL STATE:
 #   Neat, UNCURED, UNFILLED gum under an INERT atmosphere. Real SRM insulation
@@ -77,13 +87,13 @@ polymer(
     label='EPDM',
     monomers=[
         # Ethylene backbone unit (C2H4).
-        {'monomer': '[CH2][CH2]', 'fraction': 0.7101, 'monomer_product': 'C=C'},
+        {'monomer': '[CH2][CH2]', 'fraction': 0.7886, 'monomer_product': 'C=C'},
         # Propylene backbone unit (C3H6); the tertiary C-H is the weak backbone
         # site in the diene-free stretches.
-        {'monomer': '[CH2][CH](C)', 'fraction': 0.2761, 'monomer_product': 'C=CC'},
+        {'monomer': '[CH2][CH](C)', 'fraction': 0.1981, 'monomer_product': 'C=CC'},
         # 5-ethylidene-2-norbornene (ENB) unit (C9H12), polymerized through the
         # ring double bond, pendant ethylidene retained.
-        {'monomer': 'CC=C1CC2[CH][CH]C1C2', 'fraction': 0.0138},
+        {'monomer': 'CC=C1CC2[CH][CH]C1C2', 'fraction': 0.0133},
     ],
     end_groups=['[CH3]', '[H]'],
     cutoff=3,
