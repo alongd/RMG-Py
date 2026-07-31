@@ -2226,6 +2226,108 @@ class Polymer(Species):
         return self._born_at_zero_mod_daughter(feature,
                                                source="radical_feature_h_loss")
 
+    @staticmethod
+    def _is_single_h_loss_parent(unit_counts: dict, feature_counts: dict) -> bool:
+        """``True`` iff ``feature_counts`` is ``unit_counts`` with exactly one
+        fewer H and every other element count unchanged -- the element-count
+        signature of a single mid-chain H-abstraction. Used only to screen
+        candidate repeat units in :meth:`_resolve_atom_transfer_basis`."""
+        if unit_counts.get('H', 0) - feature_counts.get('H', 0) != 1:
+            return False
+        unit_heavy = {el: n for el, n in unit_counts.items() if el != 'H'}
+        feature_heavy = {el: n for el, n in feature_counts.items() if el != 'H'}
+        return unit_heavy == feature_heavy
+
+    @staticmethod
+    def _same_heavy_skeleton(mol_a: Molecule, mol_b: Molecule) -> bool:
+        """Heavy-atom-only structural equivalence, used ONLY to break formula
+        ties in :meth:`_resolve_atom_transfer_basis` (two isomeric candidate
+        units with identical element counts). The two sides legitimately
+        differ in radical/electron state (one is a repeat unit, the other its
+        H-loss product), so hydrogens are stripped and multiplicities
+        equalized on throwaway copies before the isomorphism check --
+        heavy-skeleton connectivity is all that discriminates isomers here.
+        Fails closed (``False``) on any structure-query error."""
+        try:
+            a = mol_a.copy(deep=True)
+            b = mol_b.copy(deep=True)
+            a.delete_hydrogens()
+            b.delete_hydrogens()
+            a.multiplicity = b.multiplicity = 1
+            return a.is_isomorphic(b, strict=False)
+        except Exception:
+            return False
+
+    def _resolve_atom_transfer_basis(self, feature_monomer: Optional[Molecule]
+                                     ) -> Optional[Molecule]:
+        """
+        Resolve the repeat unit that ``feature_monomer`` is a single-H-loss
+        product OF, for the atom-transfer mass-defect basis in
+        :meth:`_born_at_zero_mod_daughter` -- see the comment there for WHY a
+        fixed pool-level unit (``self.feature_monomer`` or ``self.monomer``)
+        is wrong for a copolymer pool (the -91.1 g/mol EPDM/ENB case).
+
+        Candidates: ``self.feature_monomer`` (precedence preserved -- it is
+        tried FIRST, so today's behavior survives whenever it is itself a
+        valid single-H-loss parent), ``self.monomer``, and every comonomer
+        unit in ``self.comonomers`` (de-duplicated; ``self.monomer`` IS
+        ``self.comonomers[0]['monomer']`` when comonomers exist). A candidate
+        qualifies when it has the same non-H element counts as
+        ``feature_monomer`` plus exactly one more H. Ties among isomeric
+        candidates break on heavy-atom-skeleton isomorphism
+        (:meth:`_same_heavy_skeleton`). If no candidate qualifies, or the tie
+        survives the skeleton check, this refuses to guess and falls back to
+        today's fixed basis unchanged -- a missing match must not become a
+        new failure mode.
+        """
+        default_basis = (self.feature_monomer if self.feature_monomer is not None
+                         else self.monomer)
+        if feature_monomer is None:
+            return default_basis
+
+        candidates = []
+        seen_ids = set()
+
+        def _add(unit):
+            if unit is None or id(unit) in seen_ids:
+                return
+            seen_ids.add(id(unit))
+            candidates.append(unit)
+
+        _add(self.feature_monomer)
+        _add(self.monomer)
+        for entry in (self.comonomers or []):
+            _add(entry.get('monomer'))
+
+        if not candidates:
+            return default_basis
+
+        try:
+            feature_counts = feature_monomer.get_element_count()
+        except Exception:
+            return default_basis
+
+        matches = []
+        for unit in candidates:
+            try:
+                unit_counts = unit.get_element_count()
+            except Exception:
+                continue
+            if self._is_single_h_loss_parent(unit_counts, feature_counts):
+                matches.append(unit)
+
+        if not matches:
+            return default_basis
+        if len(matches) == 1:
+            return matches[0]
+
+        skeleton_matches = [u for u in matches
+                            if self._same_heavy_skeleton(u, feature_monomer)]
+        if len(skeleton_matches) == 1:
+            return skeleton_matches[0]
+
+        return default_basis
+
     def _born_at_zero_mod_daughter(self, feature_monomer: Molecule,
                                    source: str) -> 'Polymer':
         """
@@ -2276,8 +2378,22 @@ class Polymer(Species):
         # atom transfer, and a mass-GAIN feature (delta < 0) keeps the
         # inherited defect (its conduit stays a growth leg, existing
         # behavior).
-        basis = self.feature_monomer if self.feature_monomer is not None \
-            else self.monomer
+        #
+        # `basis` MUST be the repeat unit the shed H actually came FROM, not
+        # a fixed pool-level unit -- a copolymer pool's dominant `self.monomer`
+        # (or `self.feature_monomer`) is only the right basis when the
+        # feature happens to derive from that SAME unit. Concretely, for an
+        # EPDM pool (monomer=ethylene, 28.053 g/mol) an ENB-derived H-loss
+        # feature (119.183 g/mol) measured against the fixed ethylene basis
+        # gives delta_g = 28.053 - 119.183 = -91.1 g/mol: negative, so the
+        # gate below silently refuses to book the shed hydrogen and the
+        # daughter inherits the parent's defect unchanged -- a silent
+        # per-chain mass leak. `_resolve_atom_transfer_basis` instead
+        # searches every candidate repeat unit of this pool (the dominant
+        # monomer, every comonomer, and `self.feature_monomer`) for the one
+        # `feature_monomer` is a single-H-loss product of, so ENB books
+        # against ENB and ethylene books against ethylene.
+        basis = self._resolve_atom_transfer_basis(feature_monomer)
         defect_src = float(getattr(self, "chain_mass_defect_g_mol", 0.0)
                            or 0.0)
         daughter.chain_mass_defect_g_mol = defect_src

@@ -10127,3 +10127,167 @@ class TestCopolymerComposition:
                                                  generate_thermo=False)
 
         assert is_new is False and second is first
+
+    # --- 8. THE ATOM-TRANSFER MASS-DEFECT BASIS MUST TRACK THE ORIGINATING --
+    # --- COMONOMER, NOT A FIXED POOL-LEVEL UNIT -----------------------------
+    #
+    # `_born_at_zero_mod_daughter` books the shed-hydrogen mass defect as
+    # `basis.get_molecular_weight() - feature_monomer.get_molecular_weight()`.
+    # `basis` used to be a FIXED pool-level unit (`self.feature_monomer` or
+    # `self.monomer`) regardless of which comonomer the feature actually came
+    # from. For an EPDM pool (monomer=ethylene, 28.053 g/mol) an ENB-derived
+    # H-loss feature (119.183 g/mol) measured against the fixed ethylene basis
+    # gives delta_g = 28.053 - 119.183 = -91.1 g/mol: the gate
+    # (`0 < delta_g < 0.5 * monomer_mw_g_mol`) refuses it and the shed
+    # hydrogen goes unbooked -- a silent per-chain mass leak. `basis` must
+    # instead resolve to the comonomer `feature_monomer` actually derives
+    # from.
+
+    @staticmethod
+    def _h_loss_unit_of(smiles):
+        """A real single-H-loss feature unit of the repeat unit ``smiles``,
+        built the same way the production H-loss producer builds one
+        (:meth:`Polymer._h_loss_feature_units`): one H removed from an
+        H-bearing heavy atom, one radical electron added. Wrapping the
+        SMILES in a throwaway homopolymer pool reuses the production
+        enumeration instead of hand-building the graph."""
+        probe = Polymer(label='probe', monomer=smiles,
+                        end_groups=['[CH3]', '[H]'], cutoff=3,
+                        Mn=5000.0, Mw=10000.0, initial_mass=1.0)
+        units = probe._h_loss_feature_units()
+        assert units, f'no H-loss unit generated for {smiles!r}'
+        return units[0]
+
+    def test_enb_derived_h_loss_feature_books_delta(self):
+        """The regression test: an ENB(diene)-derived H-loss feature must
+        book delta_g = MW(H) against the DIENE basis, not go unbooked
+        against the fixed ethylene/pool-level basis.
+
+        Deliberately does NOT reuse ``self._epdm()`` (which pins
+        ``feature_monomer=self.DIENE`` for its OWN, unrelated mass-inheritance
+        tests): with that override present the pre-fix fixed basis
+        (``self.feature_monomer``) already happens to equal DIENE, which
+        would make this regression test pass even on the broken code. The
+        production scenario this bug hits never sets ``feature_monomer`` at
+        the pool level, so this builds the same EPDM composition without it."""
+        parent = self._copolymer(
+            [(self.ETHYLENE, 0.7886), (self.PROPYLENE, 0.1981),
+             (self.DIENE, 0.0133)])
+        assert parent.feature_monomer is None
+        feature = self._h_loss_unit_of(self.DIENE)
+
+        daughter = parent._born_at_zero_mod_daughter(
+            feature, source='radical_feature_h_loss')
+
+        diene_mw = Molecule(smiles=self.DIENE).get_molecular_weight() * 1000.0
+        expected_delta = diene_mw - feature.get_molecular_weight() * 1000.0
+        assert expected_delta == pytest.approx(1.008, abs=1e-2)
+        assert daughter.chain_mass_defect_g_mol == pytest.approx(
+            expected_delta, abs=1e-2)
+        # ... and NOT left unbooked (the pre-fix defect: the ethylene-basis
+        # delta is deeply negative and fails the gate).
+        ethylene_mw = parent.monomer.get_molecular_weight() * 1000.0
+        broken_delta = ethylene_mw - feature.get_molecular_weight() * 1000.0
+        assert broken_delta < 0.0
+        assert daughter.chain_mass_defect_g_mol != pytest.approx(0.0, abs=1e-6)
+
+    def test_ethylene_derived_h_loss_feature_still_books_delta(self):
+        """Unchanged behavior: the dominant unit's own H-loss feature books
+        the same way it always did."""
+        parent = self._epdm()
+        feature = self._h_loss_unit_of(self.ETHYLENE)
+
+        daughter = parent._born_at_zero_mod_daughter(
+            feature, source='radical_feature_h_loss')
+
+        assert daughter.chain_mass_defect_g_mol == pytest.approx(1.008, abs=1e-2)
+
+    def test_propylene_derived_h_loss_feature_books_delta(self):
+        """A non-dominant, non-feature comonomer's H-loss feature must
+        likewise book against ITS OWN unit."""
+        parent = self._epdm()
+        feature = self._h_loss_unit_of(self.PROPYLENE)
+
+        daughter = parent._born_at_zero_mod_daughter(
+            feature, source='radical_feature_h_loss')
+
+        assert daughter.chain_mass_defect_g_mol == pytest.approx(1.008, abs=1e-2)
+
+    def test_homopolymer_basis_resolution_is_regression_identical(self):
+        """Invariant 1: for a homopolymer (comonomers is None) the resolved
+        basis must equal today's `self.feature_monomer or self.monomer`,
+        byte-identical (same object)."""
+        homo = Polymer(label='PE_homo', monomer=self.ETHYLENE,
+                       end_groups=['[CH3]', '[H]'], cutoff=3,
+                       Mn=5000.0, Mw=10000.0, initial_mass=1.0)
+        assert homo.comonomers is None
+        feature = self._h_loss_unit_of(self.ETHYLENE)
+
+        basis = homo._resolve_atom_transfer_basis(feature)
+
+        assert basis is homo.monomer
+        assert basis is (homo.feature_monomer
+                        if homo.feature_monomer is not None else homo.monomer)
+
+    def test_homopolymer_with_feature_monomer_basis_is_regression_identical(self):
+        """Invariant 1 variant: a homopolymer WITH `feature_monomer` set must
+        still resolve to `self.feature_monomer`, not `self.monomer` -- and
+        must still match today's fixed expression exactly."""
+        homo = Polymer(label='PE_homo', monomer=self.ETHYLENE,
+                       feature_monomer=self.PROPYLENE,
+                       end_groups=['[CH3]', '[H]'], cutoff=3,
+                       Mn=5000.0, Mw=10000.0, initial_mass=1.0)
+        feature = self._h_loss_unit_of(self.PROPYLENE)
+
+        basis = homo._resolve_atom_transfer_basis(feature)
+
+        assert basis is homo.feature_monomer
+        assert basis is (homo.feature_monomer
+                        if homo.feature_monomer is not None else homo.monomer)
+
+    def test_unmatchable_feature_falls_back_to_old_basis(self):
+        """Invariant 3: a feature that is nobody's single-H-loss product must
+        not raise, and must fall back to today's fixed basis rather than
+        guessing -- the delta computed off that stale basis is negative
+        here, so the gate refuses it and the defect stays unbooked, exactly
+        the pre-fix (safe) behavior for an unmatched shape."""
+        parent = self._epdm()
+        # A structurally unrelated feature unit (styrene repeat unit minus
+        # one H, built the same way as the real H-loss features so it still
+        # carries the '*1'/'*2' stitch labels a daughter's feature_monomer
+        # requires): not a single-H-loss product of ethylene, propylene, the
+        # diene, OR the pool's feature_monomer.
+        unrelated = self._h_loss_unit_of('[CH2][CH](c1ccccc1)')
+
+        basis = parent._resolve_atom_transfer_basis(unrelated)
+        assert basis is (parent.feature_monomer
+                         if parent.feature_monomer is not None
+                         else parent.monomer)
+
+        daughter = parent._born_at_zero_mod_daughter(
+            unrelated, source='radical_feature_h_loss')
+        # No exception, and the defect is left exactly as inherited (0.0 for
+        # this parent) because the stale-basis delta fails the gate.
+        assert daughter.chain_mass_defect_g_mol == pytest.approx(0.0, abs=1e-6)
+
+    def test_chained_daughters_accumulate_the_defect(self):
+        """defect_dst = defect_src + delta, and it ACCUMULATES across a
+        second generation of H-loss daughters."""
+        parent = self._epdm()
+        feature1 = self._h_loss_unit_of(self.ETHYLENE)
+        gen1 = parent._born_at_zero_mod_daughter(
+            feature1, source='radical_feature_h_loss')
+        assert gen1.chain_mass_defect_g_mol == pytest.approx(1.008, abs=1e-2)
+
+        # A second H-loss event on the (already-defected) gen1 daughter. gen1
+        # is a homopolymer-shaped pool (comonomers is None -- see
+        # test_daughters_do_not_become_copolymers), so the only candidate
+        # basis for a SECOND ethylene H-loss is gen1.monomer (== parent's
+        # dominant unit) itself.
+        feature2 = self._h_loss_unit_of(self.ETHYLENE)
+        gen2 = gen1._born_at_zero_mod_daughter(
+            feature2, source='radical_feature_h_loss')
+
+        assert gen2.chain_mass_defect_g_mol == pytest.approx(
+            gen1.chain_mass_defect_g_mol + 1.008, abs=1e-2)
+        assert gen2.chain_mass_defect_g_mol == pytest.approx(2.016, abs=2e-2)
