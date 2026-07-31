@@ -9870,7 +9870,16 @@ class TestCopolymerComposition:
     # Polymer._inherit_repeat_mass_to for the closure argument.
 
     def _epdm(self):
-        """The realistic 3-unit EPDM composition, with an ENB-like feature."""
+        """The 3-unit EPDM composition, with an ENB-like feature.
+
+        The FRACTIONS are the Vistalon 5601 deck's (examples/rmg/epdm/input.py:
+        0.7886 / 0.1981 / 0.0133). The diene is deliberately this class's small
+        stand-in unit, NOT the deck's real ENB graph (see the class docstring),
+        so the weighted repeat mass here is 31.178 g/mol against the deck's
+        32.057 -- an expected consequence of the lighter stand-in, not fixture
+        drift. Nothing in these tests depends on the absolute value; they pin
+        that the weighted mass is carried consistently.
+        """
         return self._copolymer(
             [(self.ETHYLENE, 0.7886),
              (self.PROPYLENE, 0.1981),
@@ -9960,3 +9969,161 @@ class TestCopolymerComposition:
         dominant_mw = parent.monomer.get_molecular_weight() * 1000.0
         would_have_minted = r * (dominant_mw - parent.monomer_mw_g_mol)
         assert abs(would_have_minted) > 1e-6
+
+    # --- 6. THE MASS BASIS SURVIVES THE SOLVER-CONFIG BOUNDARY --------------
+    #
+    # Inheriting the weighted mass onto the daughter Polymer objects is only
+    # half the closure: what the solver integrates is a PolymerPoolConfig, and
+    # the ROOT pool's config used to RECOMPUTE monomer_mw_g_mol structurally
+    # from PolymerPool.monomer -- the DOMINANT unit -- while
+    # derive_daughter_pool_configs read the daughter Polymer's (weighted)
+    # attribute. A root pool and its own daughters therefore reached the solver
+    # on different repeat masses (EPDM fixture: 28.053 vs 31.178), which is
+    # exactly the cross-pool mass mint the inheritance exists to prevent.
+
+    def _epdm_root_pool(self, parent, label=None):
+        """A deck-shaped root PolymerPool for ``parent`` (proxy_species set, as
+        read_polymer_phase sets it), plus the spc_map its config needs."""
+        from rmgpy.rmg.polymer_input import PolymerPool
+
+        label = label or parent.label
+        mu = [_moment_dummy(f'{label}_mu{k}') for k in (0, 1, 2)]
+        pool = PolymerPool(label=label, xs=parent.cutoff, monomer=parent.monomer,
+                           explicit_map={}, mu_species=mu, proxy_species=parent)
+        return pool, {s: i for i, s in enumerate(mu)}
+
+    def test_root_pool_config_carries_the_weighted_repeat_mass(self):
+        """The ROOT pool's config mass is the parent Polymer's weighted mean,
+        NOT the dominant unit's MW."""
+        parent = self._epdm()
+        pool, spc_map = self._epdm_root_pool(parent)
+
+        cfg = pool.to_config(spc_map)
+
+        assert cfg.monomer_mw_g_mol == pytest.approx(parent.monomer_mw_g_mol,
+                                                     rel=1e-12)
+        # ... and the two really are distinguishable, so this cannot pass on a
+        # dominant-unit recompute.
+        dominant_mw = parent.monomer.get_molecular_weight() * 1000.0
+        assert abs(cfg.monomer_mw_g_mol - dominant_mw) > 1.0
+
+    def test_root_and_daughter_pool_configs_agree_on_the_repeat_mass(self):
+        """The regression: one lineage, ONE repeat mass, all the way into the
+        configs the solver integrates.
+
+        A live cross-pool row between a root and its own daughter moves a raw
+        chain-unit COUNT (the FLUX_UNRESOLVED / legacy_mu1 arm), so a config-
+        level mass disagreement mints r*(MW_dst - MW_src) g/s booked by no
+        channel.
+        """
+        from rmgpy.rmg.polymer_input import derive_daughter_pool_configs
+
+        parent = self._epdm()
+        pool, spc_map = self._epdm_root_pool(parent)
+        root_cfg = pool.to_config(spc_map)
+
+        daughter = parent._born_at_zero_mod_daughter(
+            parent.feature_monomer.copy(deep=True),
+            source='radical_feature_h_loss')
+        core = [daughter] + [_moment_dummy(f'{daughter.label}_mu{k}')
+                             for k in (0, 1, 2)]
+        d_cfgs = derive_daughter_pool_configs(
+            core, {s: i for i, s in enumerate(core)},
+            existing_pool_labels={parent.label})
+
+        assert len(d_cfgs) == 1
+        assert d_cfgs[0].monomer_mw_g_mol == pytest.approx(
+            root_cfg.monomer_mw_g_mol, rel=1e-12)
+
+    def test_homopolymer_root_pool_config_mass_is_regression_identical(self):
+        """Axis-1: for a homopolymer the proxy read and the structural recompute
+        agree, so the legacy config value is untouched."""
+        homo = Polymer(label='PE_homo', monomer=self.ETHYLENE,
+                       end_groups=['[CH3]', '[H]'], cutoff=3,
+                       Mn=5000.0, Mw=10000.0, initial_mass=1.0)
+        pool, spc_map = self._epdm_root_pool(homo)
+
+        cfg = pool.to_config(spc_map)
+
+        assert cfg.monomer_mw_g_mol == pytest.approx(
+            homo.monomer.get_molecular_weight() * 1000.0, rel=1e-12)
+
+    # --- 7. THE MASS BASIS IS PART OF POOL IDENTITY -------------------------
+    #
+    # Daughters deliberately drop `comonomers`, so the `_Copoly-` fingerprint
+    # segment (emitted only when comonomers is not None) cannot separate a
+    # copolymer's daughter from a homopolymer's daughter over the same dominant
+    # unit. _register_polymer dedups BY FINGERPRINT and is first-writer-wins, so
+    # such a collision would silently hand one pool the other's repeat mass.
+
+    def test_homopolymer_fingerprint_is_byte_identical(self):
+        """Regression guard for the `_RepeatMW-` segment: a homopolymer's mass
+        is already implied by its monomer, so its fingerprint must not move."""
+        homo = Polymer(label='PE_homo', monomer=self.ETHYLENE,
+                       end_groups=['[CH3]', '[H]'], cutoff=3,
+                       Mn=5000.0, Mw=10000.0, initial_mass=1.0)
+
+        assert homo.fingerprint == (
+            'Polymer_C02H04N00O00S00'
+            '_EG-C01H03N00O00S00_C00H01N00O00S00_3')
+        assert '_RepeatMW-' not in homo.fingerprint
+
+    def test_copolymer_daughter_does_not_collide_with_a_homopolymer_daughter(self):
+        """Same dominant unit, same end groups, same cutoff, same feature unit,
+        no composition on either daughter -- only the repeat MASS differs. The
+        fingerprint must still separate them, or dedup swaps their mass bases."""
+        copo = self._epdm()
+        copo_daughter = copo._born_at_zero_mod_daughter(
+            copo.feature_monomer.copy(deep=True),
+            source='radical_feature_h_loss')
+        homo = Polymer(label='PE_homo', monomer=self.ETHYLENE,
+                       feature_monomer=self.DIENE,
+                       end_groups=['[CH3]', '[H]'], cutoff=3,
+                       Mn=5000.0, Mw=10000.0, initial_mass=1.0)
+        homo_daughter = homo._born_at_zero_mod_daughter(
+            homo.feature_monomer.copy(deep=True),
+            source='radical_feature_h_loss')
+
+        assert copo_daughter.comonomers is None
+        assert homo_daughter.comonomers is None
+        assert copo_daughter.monomer_mw_g_mol != pytest.approx(
+            homo_daughter.monomer_mw_g_mol)
+        assert copo_daughter.fingerprint != homo_daughter.fingerprint
+
+    def test_dedup_on_a_mismatched_mass_basis_hard_fails(self):
+        """If two pools ever DO fingerprint-identically on different repeat
+        masses, registration must refuse loudly instead of first-writer-wins
+        silently rewriting one pool's condensed-mass contract."""
+        from rmgpy.rmg.model import CoreEdgeReactionModel
+
+        model = CoreEdgeReactionModel()
+        first = Polymer(label='PE_a', monomer=self.ETHYLENE,
+                        end_groups=['[CH3]', '[H]'], cutoff=3,
+                        Mn=5000.0, Mw=10000.0, initial_mass=1.0)
+        model._register_polymer(first, generate_thermo=False)
+
+        second = Polymer(label='PE_b', monomer=self.ETHYLENE,
+                         end_groups=['[CH3]', '[H]'], cutoff=3,
+                         Mn=5000.0, Mw=10000.0, initial_mass=1.0)
+        # Pin the (identical) fingerprint FIRST, then move the mass basis: this
+        # manufactures exactly the collision the fingerprint segment is meant to
+        # make impossible, so the last-line refusal is tested on its own.
+        assert second.fingerprint == first.fingerprint
+        second.monomer_mw_g_mol = first.monomer_mw_g_mol * 1.5
+
+        with pytest.raises(ValueError, match='DIFFERENT repeat-mass'):
+            model._register_polymer(second, generate_thermo=False)
+
+    def test_dedup_of_equal_mass_bases_still_dedups(self):
+        """The refusal must not break ordinary fingerprint dedup."""
+        from rmgpy.rmg.model import CoreEdgeReactionModel
+
+        model = CoreEdgeReactionModel()
+        kwargs = dict(monomer=self.ETHYLENE, end_groups=['[CH3]', '[H]'],
+                      cutoff=3, Mn=5000.0, Mw=10000.0, initial_mass=1.0)
+        first, _ = model._register_polymer(Polymer(label='PE_a', **kwargs),
+                                           generate_thermo=False)
+        second, is_new = model._register_polymer(Polymer(label='PE_b', **kwargs),
+                                                 generate_thermo=False)
+
+        assert is_new is False and second is first

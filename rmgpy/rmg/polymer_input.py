@@ -1427,24 +1427,49 @@ class PolymerPool(object):
             sgh_gas_indices = tuple(resolved)
 
         # 4. Monomer (repeat-unit) MW [g/mol] for the spawn-gate snapshot AND the
-        #    reference-state tripwire chain_window (spec 2026-06-10 §3, same idiom
-        #    as Polymer.monomer_mw_g_mol). self.monomer is normally a Molecule (the
-        #    polymer() input helper / Polymer._validate_monomer), but may be a
-        #    Species when resolved from species_dict; handle BOTH. A Species carries
-        #    a .molecule list; a Molecule answers get_molecular_weight() directly.
-        #    Reading only the Species idiom left monomer_mw_g_mol=0 for Molecule
-        #    monomers, collapsing chain_window to the slack and leaking small gas
-        #    fragments into the melt reference-state sum. Best-effort: 0.0 (-> the
-        #    gate defers) when no resolvable structure.
+        #    reference-state tripwire chain_window (spec 2026-06-10 §3).
+        #
+        #    AUTHORITATIVE SOURCE: the pool's own Polymer (``self.proxy_species``,
+        #    set at construction in ``read_polymer_phase``). Its
+        #    ``monomer_mw_g_mol`` is the repeat mass the pool actually books mass
+        #    with -- for a homopolymer that is the single monomer's mass, but for
+        #    a random COPOLYMER it is the composition-weighted mean
+        #    ``sum_i f_i M_i`` while ``self.monomer`` is only the DOMINANT unit.
+        #    Recomputing structurally from ``self.monomer`` therefore put a
+        #    copolymer ROOT pool on the dominant unit's mass while
+        #    ``derive_daughter_pool_configs`` (which reads the daughter Polymer's
+        #    attribute) put its own DAUGHTERS on the weighted mean -- the root and
+        #    its lineage disagreeing on the exact condensed-mass contract
+        #    ``mu1*monomer_mw_g_mol - mu0*chain_mass_defect_g_mol``. Read the
+        #    proxy FIRST, exactly as derive_daughter_pool_configs does.
+        #
+        #    STRUCTURAL FALLBACK (pools built without a usable proxy -- unit tests
+        #    and any direct PolymerPool construction): self.monomer is normally a
+        #    Molecule (the polymer() input helper / Polymer._validate_monomer), but
+        #    may be a Species when resolved from species_dict; handle BOTH. A
+        #    Species carries a .molecule list; a Molecule answers
+        #    get_molecular_weight() directly. Reading only the Species idiom left
+        #    monomer_mw_g_mol=0 for Molecule monomers, collapsing chain_window to
+        #    the slack and leaking small gas fragments into the melt
+        #    reference-state sum. Best-effort: 0.0 (-> the gate defers) when no
+        #    resolvable structure.
         monomer_mw_g_mol = 0.0
-        mol_list = getattr(self.monomer, "molecule", None)
+        proxy_mw = getattr(self.proxy_species, "monomer_mw_g_mol", None)
         try:
-            if mol_list:
-                monomer_mw_g_mol = mol_list[0].get_molecular_weight() * 1000.0
-            elif self.monomer is not None and hasattr(self.monomer, "get_molecular_weight"):
-                monomer_mw_g_mol = self.monomer.get_molecular_weight() * 1000.0
-        except Exception:
-            monomer_mw_g_mol = 0.0
+            proxy_mw = float(proxy_mw) if proxy_mw is not None else None
+        except (TypeError, ValueError):
+            proxy_mw = None
+        if proxy_mw is not None and math.isfinite(proxy_mw) and proxy_mw > 0.0:
+            monomer_mw_g_mol = proxy_mw
+        else:
+            mol_list = getattr(self.monomer, "molecule", None)
+            try:
+                if mol_list:
+                    monomer_mw_g_mol = mol_list[0].get_molecular_weight() * 1000.0
+                elif self.monomer is not None and hasattr(self.monomer, "get_molecular_weight"):
+                    monomer_mw_g_mol = self.monomer.get_molecular_weight() * 1000.0
+            except Exception:
+                monomer_mw_g_mol = 0.0
         # 4b. Monomer heavy-atom (non-H) count -- the SECOND axis of the r89
         #     dual-axis melt gate in the solver's reference-state tripwire
         #     (mirrors rmgpy.polymer._discrete_is_polymer_sized: mass AND

@@ -5000,6 +5000,117 @@ class TestHybridPolymerReactor:
         rs2 = _two_pool_rs(rxn2, core, mask, mu_a, (2.0, 4.0, 10.0))
         assert float(rs2.reaction_eject_units_moment[0]) == 1.135
 
+    def test_copolymer_h_loss_conduit_moment_shift_is_exactly_zero(self):
+        """END-TO-END pin of the documented exact zero, on a COPOLYMER pool.
+
+        ``a_moment = a_mass - (defect_dst - defect_src)/monomer_mw`` is
+        documented (polymer.pyx, P1-2) to be EXACTLY zero for an H-loss
+        conduit -- chains transfer with UNCHANGED mu1. That cancellation is
+        an identity only while BOTH halves divide by the SAME repeat mass:
+
+        * ``a_mass`` comes from generation world --
+          ``compute_volatile_ejection_units`` divides the ejected gas mass by
+          the *Polymer*'s ``monomer_mw_g_mol``;
+        * the ``defect_delta`` conversion here divides by the src *config*'s
+          ``monomer_mw_g_mol``.
+
+        For a HOMOPOLYMER those two are trivially equal, which is why
+        ``test_atom_transfer_defect_zeroes_moment_shift`` above (hand-set
+        ``a`` and hand-built configs) could never see the seam. For a
+        COPOLYMER root pool they diverge the moment
+        ``PolymerPool.to_config`` recomputes the mass structurally from the
+        DOMINANT monomer (EPDM: 28.053) instead of reading the composition-
+        weighted mass off the proxy Polymer (31.178): the documented-exact
+        zero silently becomes ~-4.5e-3 monomer-equivalents of spurious mu1
+        transfer per event, three orders of magnitude past the 1e-9 relative
+        snap tolerance below.
+
+        This test therefore runs BOTH real code paths and hand-sets nothing:
+        ``stamp_polymer_flux_archetype`` produces ``a_mass``,
+        ``PolymerPool.to_config`` / ``derive_daughter_pool_configs`` produce
+        the two configs, and ``initialize_model`` performs the conversion.
+        """
+        from rmgpy.polymer import Polymer, stamp_polymer_flux_archetype
+        from rmgpy.rmg.polymer_input import (PolymerPool,
+                                             derive_daughter_pool_configs)
+
+        def _moment_dummy(label):
+            s = Species(label=label)
+            s.molecule = [Molecule().from_smiles("[Ne]")]
+            s.is_moment_dummy = True
+            return s
+
+        # Vistalon-5601-shaped EPDM composition (ethylene / propylene /
+        # ENB-stand-in diene). The weighted repeat mass (31.178) is a full
+        # 3.1 g/mol away from the dominant ethylene unit (28.053).
+        parent = Polymer(
+            label="EPDM",
+            monomers=[dict(monomer=m, fraction=f) for m, f in
+                      (("[CH2][CH2]", 0.7886),
+                       ("[CH2][CH](C)", 0.1981),
+                       ("[CH2][CH](C=C)", 0.0133))],
+            feature_monomer="[CH2][CH](C=C)",
+            end_groups=["[CH3]", "[H]"], cutoff=3,
+            Mn=5000.0, Mw=10000.0, initial_mass=1.0)
+        assert parent.monomer_mw_g_mol == pytest.approx(31.178, abs=1e-3)
+        assert abs(parent.monomer_mw_g_mol
+                   - parent.monomer.get_molecular_weight() * 1000.0) > 3.0
+
+        # The H-loss daughter: the feature unit MINUS one hydrogen, so the
+        # spawn helper pins chain_mass_defect_g_mol = M_H per chain.
+        daughter = parent._born_at_zero_mod_daughter(
+            Molecule().from_smiles("[CH2][C](C=C)"),
+            source="radical_feature_h_loss")
+
+        H = _spc("[H]", "H")
+        H2 = _spc("[H][H]", "H2")
+        p_mus = [_moment_dummy(f"{parent.label}_mu{k}") for k in (0, 1, 2)]
+        d_mus = [_moment_dummy(f"{daughter.label}_mu{k}") for k in (0, 1, 2)]
+        core = [parent] + p_mus + [daughter] + d_mus + [H, H2]
+        spc_map = {s: i for i, s in enumerate(core)}
+
+        # --- generation side, for real ---
+        root_pool = PolymerPool(label=parent.label, xs=parent.cutoff,
+                                monomer=parent.monomer, explicit_map={},
+                                mu_species=p_mus, proxy_species=parent)
+        root_cfg = root_pool.to_config(spc_map)
+        d_cfgs = derive_daughter_pool_configs(
+            core, spc_map, existing_pool_labels={parent.label})
+        assert len(d_cfgs) == 1
+        assert d_cfgs[0].chain_mass_defect_g_mol == pytest.approx(1.008,
+                                                                  abs=1e-3)
+
+        rxn = Reaction(reactants=[H, parent], products=[H2, daughter], **_KIN)
+        stamp_polymer_flux_archetype(rxn, rxn.reactants, [parent])
+        assert rxn.polymer_flux_archetype == 6      # VOLATILE_EJECTION
+        assert rxn.polymer_eject_units > 0.0        # not a vacuous zero
+
+        # --- solver side, for real ---
+        rs = HybridPolymerSystem(
+            T=800.0, P=1.0e5, initial_mole_fractions={H: 0.5, H2: 0.5},
+            V_poly=1.0, polymer_pools=[root_cfg] + list(d_cfgs),
+            mass_transfer=[],
+            gas_species_mask=np.array([False] * 8 + [True, True], dtype=bool),
+            constant_gas_volume=False,
+            initial_polymer_moments={parent.label: (1.0, 5.0, 30.0),
+                                     daughter.label: (0.0, 0.0, 0.0)},
+            termination=[])
+        rs.initialize_model(core, [rxn], [], [])
+
+        assert rs.reaction_src_pool[0] == 0 and rs.reaction_dst_pool[0] == 1
+        assert rs.reaction_flux_archetype[0] == 6
+        # The claim: exactly zero (the 1e-9 relative snap is the documented
+        # roundoff tolerance, and is the ONLY slack allowed here).
+        assert float(rs.reaction_eject_units_moment[0]) == 0.0
+        # ... and it is a CANCELLATION, not a dead row: the mass stamp is
+        # a full atom-transfer-scale a_mass that a mass-basis mismatch would
+        # have failed to cancel.
+        assert float(rs.reaction_eject_units[0]) == pytest.approx(
+            1.008 / parent.monomer_mw_g_mol, rel=1e-3)
+        # The seam itself: both halves divide by the SAME repeat mass.
+        assert root_cfg.monomer_mw_g_mol == pytest.approx(
+            parent.monomer_mw_g_mol, rel=1e-12)
+
     # ------------------------------------------------------------------
     # SAME-POOL volatile ejection (signed a, spec 2026-06-2x round-13):
     # unzip / depropagation write on ONE pool (src == dst). This is a
@@ -12901,6 +13012,97 @@ class TestTerminationPolymerConversion:
                 in src)
 
 
+class TestRepeatMassNeverFailsOpen:
+    """A pool's repeat mass may not fail open to 0.0.
+
+    ``condensed_mass_g == mu1*monomer_mw_g_mol - mu0*chain_mass_defect_g_mol``
+    is the ONLY channel through which the solver knows how much mass a pool
+    holds. A zero (or negative, or NaN) repeat mass does not degrade honestly
+    there -- it reports a pool of zero/negative condensed mass while mu0, mu1
+    and mu2 all stay perfectly healthy, so every downstream mass sensor reads
+    "fine" on a pool that has quietly stopped carrying mass. The frozen
+    dataclass's ``0.0`` default used to make an omission at any construction
+    site do exactly that, silently.
+    """
+
+    @staticmethod
+    def _cfg(**kw):
+        base = dict(label="P", xs=2, explicit_dp_to_species_index={},
+                    mu_indices=(1, 2, 3), monomer_poly_index=None,
+                    k_scission=0.0, k_unzip=0.0, tail_kinetics=None)
+        base.update(kw)
+        return PolymerPoolConfig(**base)
+
+    @pytest.mark.parametrize("mw", [float("nan"), float("inf"),
+                                    float("-inf"), -1.0, -1.0e-30])
+    def test_non_finite_or_negative_repeat_mass_rejected(self, mw):
+        with pytest.raises(ValueError, match=r"'P'.*monomer_mw_g_mol"):
+            self._cfg(monomer_mw_g_mol=mw)
+
+    @pytest.mark.parametrize("kernel", [
+        dict(chain_mass_defect_g_mol=1.00794),
+        dict(side_group_homolysis=[{"label": "ch", "A": 1.0, "n": 0.0,
+                                    "Ea": 0.0, "site_selector": "any",
+                                    "sites_per_unit": 1.0,
+                                    "gas_product": "[H]"}]),
+        dict(k_depropagation={"A": 1.0, "n": 0.0, "Ea": 0.0}),
+    ])
+    def test_zero_repeat_mass_rejected_on_a_mass_bearing_kernel(self, kernel):
+        """These three kernels book their whole ledger through
+        condensed_mass_g; with MW == 0 an X-loss pool's mass is -mu0*defect,
+        i.e. NEGATIVE, and the kernel's own mass-closure check would 'pass'
+        against it."""
+        with pytest.raises(ValueError, match=r"'P'.*mass-bearing"):
+            self._cfg(monomer_mw_g_mol=0.0, **kernel)
+
+    def test_mass_bearing_kernel_with_a_real_repeat_mass_is_fine(self):
+        """Positive control: the guard is about the ZERO, not the kernel."""
+        cfg = self._cfg(monomer_mw_g_mol=104.15,
+                        chain_mass_defect_g_mol=1.00794)
+        assert cfg.condensed_mass_g(1.0, 5.0) == pytest.approx(
+            5.0 * 104.15 - 1.0 * 1.00794)
+
+    def test_condensed_mass_refuses_to_weigh_chain_units_without_a_mass(self):
+        """The consumption-point guard: a pool holding real chain units
+        cannot answer 'zero grams' just because nobody configured its mass."""
+        cfg = self._cfg()                    # defaulted monomer_mw_g_mol
+        assert cfg.monomer_mw_g_mol == 0.0
+        with pytest.raises(ValueError, match=r"'P'.*condensed_mass_g"):
+            cfg.condensed_mass_g(1.0, 5.0)
+        # ... and on RATES too (the accessor is documented to take d(mu)/dt).
+        with pytest.raises(ValueError, match=r"'P'.*condensed_mass_g"):
+            cfg.condensed_mass_g(0.0, -1.0e-6)
+
+    def test_non_mass_bearing_placeholder_still_answers_zero(self):
+        """The reserved case: no chain units, no kernel -- 0.0 is a truthful
+        answer and stays legal (this is what the default is FOR)."""
+        cfg = self._cfg()
+        assert cfg.condensed_mass_g(0.0, 0.0) == 0.0
+
+    def test_real_producers_never_hand_the_solver_a_zero(self):
+        """End-to-end: the production config producer reads a real mass, so
+        the guard above is never in the live path."""
+        from rmgpy.polymer import Polymer
+        from rmgpy.rmg.polymer_input import PolymerPool
+
+        def _moment_dummy(label):
+            s = Species(label=label)
+            s.molecule = [Molecule().from_smiles("[Ne]")]
+            s.is_moment_dummy = True
+            return s
+
+        poly = Polymer(label="PS", monomer="[CH2][CH]c1ccccc1",
+                       end_groups=["[CH3]", "[H]"], cutoff=3,
+                       Mn=5000.0, Mw=6000.0, initial_mass=0.001)
+        mus = [_moment_dummy(f"PS_mu{k}") for k in (0, 1, 2)]
+        pool = PolymerPool(label="PS", xs=3, monomer=poly.monomer,
+                           explicit_map={}, mu_species=mus,
+                           proxy_species=poly)
+        cfg = pool.to_config({s: i for i, s in enumerate(mus)})
+        assert cfg.monomer_mw_g_mol > 0.0
+        assert cfg.condensed_mass_g(1.0, 5.0) > 0.0
+
+
 class TestSpawnedPoolDemotionRefusal:
     """r91 (PP run-10 death): a stamped pool-coupled row whose required pool
     endpoint resolves to -1 BECAUSE the endpoint is a mid-run-SPAWNED,
@@ -13062,7 +13264,17 @@ class TestSpawnedPoolDemotionRefusal:
         s = self._species()
         d = self._daughter()
         core = [s["Proxy"], s["Mu0"], s["Mu1"], s["Mu2"], d]
-        rxn = Reaction(reactants=[s["Proxy"]], products=[d], **_KIN)
+        # Orientation note (2026-07-28): this pin is written in the HOMOLYSIS
+        # orientation (Polymer among REACTANTS). It used to ride on the
+        # association orientation (``Proxy <=> poly_mod``), which
+        # ``stamp_gas_association_refusal`` now refuses class-level because
+        # that orientation is unstampable by construction -- an orientation
+        # refusal, which would set ``polymer_refused`` on the object and mask
+        # the NON-STICKINESS claim this pin exists to protect. The homolysis
+        # orientation is still generation-side non-refused (closed-shell gas
+        # product, monomer-scale discrete), so the row remains a live example
+        # of "solver refuses per rebuild, object stays unstamped".
+        rxn = Reaction(reactants=[d], products=[s["Proxy"]], **_KIN)
         rxn.polymer_flux_archetype = sp_mod.FLUX_MIGRATION
         rs = self._build(core, [False] * 5, [rxn])
         assert rs.reaction_refused[0] == 1

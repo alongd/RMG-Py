@@ -577,9 +577,45 @@ class Polymer(Species):
                     feat += '_Copoly-' + '+'.join(
                         f"{entry['monomer'].fingerprint}@{entry['fraction']:.6g}"
                         for entry in self.comonomers)
+                feat += self._repeat_mass_basis_segment()
                 eg = '_'.join(eg.fingerprint for eg in self.end_groups) if self.end_groups else ''
                 self._fingerprint = f'Polymer_{self.monomer.fingerprint}{feat}_EG-{eg}_{self.cutoff}'
         return self._fingerprint
+
+    def _repeat_mass_basis_segment(self) -> str:
+        """``_RepeatMW-<mw>`` segment, emitted ONLY when this pool's repeat mass
+        is not already implied by the structural content of its fingerprint.
+
+        The fingerprint is the sole dedup key in
+        ``CoreEdgeReactionModel._register_polymer`` (first-writer-wins: the
+        incoming object is discarded and the pre-existing one returned). For a
+        homopolymer-shaped pool ``monomer_mw_g_mol`` is exactly
+        ``monomer.get_molecular_weight()*1000``, so the ``monomer`` segment
+        already carries the mass basis and NO segment is emitted -- every legacy
+        homopolymer fingerprint stays byte-identical.
+
+        A COPOLYMER's daughter breaks that implication: daughters deliberately
+        drop ``comonomers`` (``_inherit_repeat_mass_to`` gives them the weighted
+        MASS, not the composition), so a copolymer daughter and a homopolymer
+        daughter over the same dominant unit / end groups / cutoff / features
+        would fingerprint IDENTICALLY while sitting on different repeat masses.
+        Dedup would then silently hand one pool the other's mass basis --
+        i.e. silently rewrite the ``mu1*monomer_mw_g_mol`` condensed-mass
+        contract of a chemically different pool. Emitting the mass whenever it
+        deviates from the dominant unit's own mass keeps those two apart.
+        (``:.6g`` -- the same rounding idiom as the ``_Copoly-`` fractions.)
+        """
+        mw = getattr(self, 'monomer_mw_g_mol', None)
+        try:
+            mw = float(mw)
+            implied = float(self.monomer.get_molecular_weight()) * 1000.0
+        except (TypeError, ValueError, AttributeError):
+            return ''
+        if not math.isfinite(mw) or not math.isfinite(implied):
+            return ''
+        if math.isclose(mw, implied, rel_tol=1e-9, abs_tol=1e-12):
+            return ''
+        return f'_RepeatMW-{mw:.6g}'
 
     @property
     def baseline_proxy(self) -> Species:
@@ -9574,14 +9610,33 @@ def _same_repeat_chemistry(daughter: 'Polymer', parent: 'Polymer') -> bool:
     M1 condition under which the elementary initiation/depropagation/
     termination constants transfer (same monomer chemistry AND monomer_mw).
 
-    Round-25 P2-1 probe finding: ``monomer_mw_g_mol`` derives SOLELY from
-    ``monomer`` (Polymer.__init__), and every daughter constructor site
-    passes the parent's monomer verbatim -- so an mw-only gate would be
-    vacuously true for the _mod shape. The truthful discriminator for a
-    feature modification is ``feature_monomer``: a daughter whose feature
+    The mw arm is WEAK, and deliberately so -- do not read it as a repeat-
+    chemistry test:
+
+    - Round-25 P2-1 (pre-copolymer) probe finding: ``monomer_mw_g_mol``
+      derived SOLELY from ``monomer`` (Polymer.__init__), and every daughter
+      constructor site passes the parent's monomer verbatim, so the mw arm
+      was vacuously true for the _mod shape.
+    - Post-copolymer that derivation no longer holds: for a pool declared
+      with ``monomers=[...]`` the mass is the composition-weighted mean
+      ``sum_i f_i M_i``, so equal masses no longer imply equal repeat units
+      (two different compositions can average to the same mass), and unequal
+      masses no longer imply different monomers. On top of that,
+      ``Polymer._inherit_repeat_mass_to`` COPIES the parent's weighted mass
+      onto every daughter -- daughters that deliberately drop ``comonomers``
+      -- so the arm is again forced true along a lineage by construction.
+
+    Net: the mw arm can only ever REJECT (a daughter that somehow landed on a
+    different mass basis), never confirm. The truthful discriminator for a
+    feature modification remains ``feature_monomer``: a daughter whose feature
     unit differs from the parent's carries CHANGED chain chemistry (the
     defect unit participates in initiation/depropagation), so the parent's
-    constants do not apply.
+    constants do not apply. Composition itself (``comonomers``) is NOT gated
+    on, because the daughters this predicate governs never carry it; a future
+    composition-bearing daughter shape would need this gate revisited.
+
+    Gate BEHAVIOUR is unchanged by the copolymer work -- only this docstring's
+    account of why it is sound.
     """
     if getattr(daughter, 'monomer_mw_g_mol', None) != \
             getattr(parent, 'monomer_mw_g_mol', None):
@@ -9700,6 +9755,56 @@ def _inherit_spawned_pool_channel(daughter: 'Polymer', parent: 'Polymer',
                 getattr(daughter, 'label', ''),
                 getattr(parent, 'label', ''))
     return False
+
+
+def assert_same_repeat_mass_on_dedup(existing: 'Polymer',
+                                     incoming: 'Polymer') -> None:
+    """Refuse a fingerprint dedup between two pools on DIFFERENT repeat masses.
+
+    ``CoreEdgeReactionModel._register_polymer`` is first-writer-wins: on a
+    fingerprint match the incoming object is discarded and the pre-existing one
+    returned in its place. Every attribute of the incoming pool is dropped --
+    including ``monomer_mw_g_mol``, the repeat mass that the condensed-mass
+    contract ``mu1*monomer_mw_g_mol - mu0*chain_mass_defect_g_mol`` is written
+    in. Silently discarding a DIFFERING mass hands one pool the other's mass
+    basis, which mints or destroys condensed mass with no channel to book it
+    against.
+
+    Two objects that fingerprint identically are supposed to be the same pool,
+    so a mass disagreement here means the fingerprint failed to separate two
+    distinct mass bases (see ``Polymer._repeat_mass_basis_segment``) -- a bug in
+    the identity key, not a conflict to paper over. Fail loudly, naming both
+    labels and both masses.
+
+    Only raises when BOTH masses are finite and positive; a missing/zero mass is
+    an un-derived best-effort value, not a competing basis.
+    """
+    def _mass(poly):
+        try:
+            value = float(getattr(poly, 'monomer_mw_g_mol', None))
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(value) or value <= 0.0:
+            return None
+        return value
+
+    ex_mw, inc_mw = _mass(existing), _mass(incoming)
+    if ex_mw is None or inc_mw is None:
+        return
+    if math.isclose(ex_mw, inc_mw, rel_tol=1e-9, abs_tol=1e-12):
+        return
+    raise ValueError(
+        f"Polymer fingerprint dedup refused: '{getattr(incoming, 'label', '')}' "
+        f"(monomer_mw_g_mol={inc_mw:.6g}) fingerprint-matches the already "
+        f"registered '{getattr(existing, 'label', '')}' "
+        f"(monomer_mw_g_mol={ex_mw:.6g}), but they sit on DIFFERENT repeat-mass "
+        f"bases. Dedup is first-writer-wins, so the incoming pool would be "
+        f"discarded and silently adopt the existing pool's repeat mass, "
+        f"rewriting its condensed-mass contract "
+        f"(mu1*monomer_mw_g_mol - mu0*chain_mass_defect_g_mol) by "
+        f"{abs(inc_mw - ex_mw):.6g} g per mol of chain units. Two pools with "
+        f"different repeat masses must not share a fingerprint: the identity "
+        f"key is failing to separate their mass bases.")
 
 
 def merge_unzip_channel_on_dedup(existing: 'Polymer',

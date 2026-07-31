@@ -189,6 +189,41 @@ def _monomer_heavy_atoms_from_pool_entry(p):
         return 0
 
 
+def _require_monomer_mw(lab, p):
+    """Repeat-unit molecular weight [g/mol] of an artifact pool, FAIL-LOUD.
+
+    The consumer world's entire condensed-mass accounting runs through
+    ``PolymerPoolConfig.condensed_mass_g`` ==
+    ``mu1*monomer_mw_g_mol - mu0*chain_mass_defect_g_mol``. A missing / null /
+    non-numeric / non-finite / non-positive repeat mass does not degrade
+    honestly there: it silently reports a pool of ZERO condensed mass (or, on
+    an X-loss feature pool with a nonzero defect, a NEGATIVE one) while every
+    moment stays healthy, so the mass-conservation and spawn-gate sensors all
+    read "fine" on a pool that has quietly stopped carrying mass. Every
+    generation-world serializer writes this field for every pool, so its
+    absence at the consumer seam means a truncated or hand-edited artifact --
+    a hard error naming the pool, not a 0.0 coercion."""
+    raw = p.get("monomer_mw_g_mol")
+    if raw is None or isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        raise ValueError(
+            f"Pool {lab!r}: artifact field 'monomer_mw_g_mol' is "
+            f"{'missing/null' if raw is None else f'non-numeric ({raw!r})'}. "
+            f"The consumer-world condensed mass is mu1*monomer_mw_g_mol - "
+            f"mu0*chain_mass_defect_g_mol; without a repeat mass the pool "
+            f"would silently report zero condensed mass while its moments "
+            f"stay healthy. Fix the artifact (every generation-world pool "
+            f"serializer emits this field).")
+    mw = float(raw)
+    if not math.isfinite(mw) or mw <= 0.0:
+        raise ValueError(
+            f"Pool {lab!r}: artifact field 'monomer_mw_g_mol' is {mw!r}; a "
+            f"repeat-unit molecular weight must be finite and strictly "
+            f"positive. A non-positive value zeroes (or, with a nonzero "
+            f"chain_mass_defect_g_mol, inverts the sign of) the pool's "
+            f"condensed mass silently. Fix the artifact.")
+    return mw
+
+
 def _parse_equation(eq):
     if "(+ M)" in eq or "(+M)" in eq or " + M " in eq:
         raise NotImplementedError(f"third-body reactions unsupported in v1: {eq}")
@@ -3715,7 +3750,7 @@ def build_system_from_artifact(artifact, species, reactions,
             # snapshot) consume this; without it the consumer-world window
             # collapses to the bare slack and the sensor drifts from
             # generation world.
-            monomer_mw_g_mol=float(p.get("monomer_mw_g_mol") or 0.0),
+            monomer_mw_g_mol=_require_monomer_mw(lab, p),
             # r89 dual-axis heavy denominator: reconstructed from the
             # artifact's monomer structure fields (monomer_adj_list /
             # monomer_smiles, emitted by polymer.py's pool serializer for
