@@ -624,6 +624,8 @@ cdef class ReactionSystem(DASx):
         cdef np.ndarray[np.float64_t, ndim=1] surface_total_div_accum_nums, surface_species_rate_ratios
         cdef np.ndarray[np.float64_t, ndim=1] forward_rate_coefficients, core_species_concentrations
         cdef double prev_time, total_moles, c, volume, RTP, max_char_rate, br, rr
+        cdef double initial_char_rate
+        cdef bint has_time_backstop, rate_ratio_suppression_logged
         cdef double unimolecular_threshold_val, bimolecular_threshold_val, trimolecular_threshold_val
         cdef bool useDynamicsTemp, first_time, use_dynamics, terminate_at_max_objects, schanged, invalid_objects_print_boolean
         cdef np.ndarray[np.float64_t, ndim=1] edge_reaction_rates
@@ -714,6 +716,40 @@ cdef class ReactionSystem(DASx):
         iteration = 0
         conversion = 0.0
         max_char_rate = 0.0
+
+        # D-017: TerminationRateRatio normalises against max_char_rate, the running
+        # maximum of char_rate. The loop below sets first_time = True and skips
+        # self.step() on its first pass, so max_char_rate is seeded from char_rate
+        # evaluated at t = 0 exactly -- the initial condition, before any integration.
+        #
+        # When the simulation starts from a composition that is not at partial
+        # equilibrium and has no radical pool to drive an induction-then-ignition
+        # rise, the largest characteristic flux of the whole trajectory is that t = 0
+        # relaxation of the reactant into its own fast reversible channels. Such a
+        # relaxation is closed and mass-conserving, so it converts nothing. The
+        # reference maximum is then a boundary value that is not a chemical event,
+        # char_rate/max_char_rate decreases monotonically from 1.0, and the criterion
+        # is guaranteed to fire during induction -- ending the simulation before the
+        # chemistry it was meant to explore has begun.
+        #
+        # The documented meaning of the criterion (users/rmg/input.rst) is the flux
+        # "relative to the main chemical process", so the reference maximum must be an
+        # INTERIOR maximum: evidence that a chemical event actually occurred.
+        #
+        # This is only enforced when the reaction system also carries a
+        # TerminationTime. That backstop is the one criterion guaranteed to be
+        # reachable, so suppression can never leave simulate() unbounded, and
+        # `terminated` still becomes True at the time limit, so edge pruning
+        # (main.py, gated on all_terminated) keeps working. Decks where
+        # terminationRateRatio is the only criterion -- including RMG's own
+        # test/regression/oxidation and test/regression/nitrogen -- are unaffected.
+        initial_char_rate = -1.0
+        rate_ratio_suppression_logged = False
+        has_time_backstop = False
+        for term in self.termination:
+            if isinstance(term, TerminationTime):
+                has_time_backstop = True
+                break
 
         max_edge_species_rate_ratios = self.max_edge_species_rate_ratios
         max_network_leak_rate_ratios = self.max_network_leak_rate_ratios
@@ -912,6 +948,12 @@ cdef class ReactionSystem(DASx):
 
             if char_rate > max_char_rate:
                 max_char_rate = char_rate
+
+            # D-017: remember the very first sample (the t = 0 initial condition,
+            # since the loop skips step() when first_time is True) so the rate-ratio
+            # criterion below can tell an interior maximum from a boundary one.
+            if initial_char_rate < 0.0:
+                initial_char_rate = char_rate
 
             core_species_rates = np.abs(self.core_species_rates)
             edge_reaction_rates = self.edge_reaction_rates
@@ -1347,10 +1389,30 @@ cdef class ReactionSystem(DASx):
                         break
                 elif isinstance(term, TerminationRateRatio):
                     if max_char_rate != 0.0 and char_rate / max_char_rate < term.ratio:
-                        terminated = True
-                        logging.info('At time {0:10.4e} s, reached target termination RateRatio: '
-                                     '{1}'.format(self.t,char_rate/max_char_rate))
-                        self.log_conversions(species_index, y0)
+                        # D-017: refuse to fire off a boundary maximum. If the
+                        # characteristic rate never rose above its t = 0 value, the
+                        # reference is the initial-condition relaxation rather than a
+                        # chemical event, and this decay is an induction period, not a
+                        # burnout. Only enforced when a TerminationTime backstop
+                        # exists -- see the comment where has_time_backstop is set.
+                        if has_time_backstop and max_char_rate <= initial_char_rate:
+                            if not rate_ratio_suppression_logged:
+                                rate_ratio_suppression_logged = True
+                                logging.warning(
+                                    'At time {0:10.4e} s the characteristic rate has fallen to {1:.4g} of its '
+                                    'maximum, which would satisfy terminationRateRatio={2}. NOT terminating: the '
+                                    'maximum characteristic rate ({3:10.4e} mol/m^3*s) was attained at t = 0, on the '
+                                    'initial condition, so it measures the relaxation of the initial composition '
+                                    'rather than the main chemical process. This simulation will run to its '
+                                    'terminationTime instead. If this is unexpected, the initial composition is '
+                                    'probably far from partial equilibrium (e.g. a neat closed-shell reactant with '
+                                    'fast reversible isomerisation channels and no radical pool).'.format(
+                                        self.t, char_rate / max_char_rate, term.ratio, max_char_rate))
+                        else:
+                            terminated = True
+                            logging.info('At time {0:10.4e} s, reached target termination RateRatio: '
+                                         '{1}'.format(self.t,char_rate/max_char_rate))
+                            self.log_conversions(species_index, y0)
                 elif isinstance(term, TerminationPolymerConversion):
                     # r86: defect-adjusted condensed polymer mass across ALL
                     # solver pools; M_poly(0) frozen and validated above.

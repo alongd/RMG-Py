@@ -323,7 +323,17 @@ the species block. Reaction system simulations terminate when one of the specifi
 criteria are satisfied.  Termination can be specied to occur at a specific time, at a specific
 conversion of a given initial species or to occur at a given terminationRateRatio, which is the
 characteristic flux in the system at that time divided by the maximum characteristic flux observed so far
-in the system (measure of how much chemistry is happening at a moment relative to the main chemical process).  
+in the system (measure of how much chemistry is happening at a moment relative to the main chemical process).
+
+Note on ``terminationRateRatio``: the maximum characteristic flux is only taken to represent "the main
+chemical process" if it is attained *after* the start of the simulation. If the characteristic flux never
+rises above its value at ``t = 0``, the reference maximum is the relaxation of the initial composition
+rather than a chemical event, and a decay away from it is an induction period rather than a burnout. In
+that situation the criterion is skipped, with a warning, and the simulation runs to its
+``terminationTime`` instead. This only applies when a ``terminationTime`` is also given: where
+``terminationRateRatio`` is the criterion of last resort it always fires, as before. Systems that start
+far from partial equilibrium — a neat closed-shell reactant with fast reversible isomerisation channels
+and no radical pool, for instance — are the ones affected.
 
 
 
