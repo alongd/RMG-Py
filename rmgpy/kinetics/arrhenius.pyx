@@ -29,10 +29,12 @@
 
 import numpy as np
 cimport numpy as np
-from libc.math cimport exp, sqrt, log10
+import os
+from libc.math cimport exp, sqrt, log10, pow
 from scipy.optimize import curve_fit, fsolve
 
 cimport rmgpy.constants as constants
+from rmgpy import settings
 import rmgpy.quantity as quantity
 from rmgpy.exceptions import KineticsError
 from rmgpy.kinetics.uncertainties import rank_accuracy_map
@@ -312,6 +314,1607 @@ cdef class Arrhenius(KineticsModel):
                           solute=self.solute,
                           comment=self.comment)
         return aep
+################################################################################
+
+
+cdef class TwoTemperaturePlasma(KineticsModel):
+    """
+    Two-temperature plasma kinetics, where the rate depends on both gas
+    temperature T and electron temperature Te.
+
+    The underlying functional form (Kossyi-type) is
+
+        k(T, Te) = A * Te^n
+                   * exp(-Ea_g / (R * T))
+                   * exp(Ea_e * (Te - T) / (R * T * Te))
+
+    where:
+        A      : pre-exponential factor
+        n      : electron temperature exponent
+        Ea_g   : gas activation energy
+        Ea_e   : electron activation energy
+
+    In RMG's standard `get_rate_coefficient(T)` interface, we evaluate
+    k(T, Te=T) as a reasonable fallback. A dedicated
+    `get_rate_coefficient_two_temp(T, Te)` method is provided to use
+    distinct gas and electron temperatures explicitly.
+    """
+
+    def __init__(self,
+                 A=None,
+                 n=0.0,
+                 Ea_g=(0.0, "J/mol"),
+                 Ea_e=(0.0, "J/mol"),
+                 T0=(1.0, "K"),
+                 Tmin=None, Tmax=None, Pmin=None, Pmax=None,
+                 uncertainty=None, solute=None, comment=''):
+        KineticsModel.__init__(
+            self,
+            Tmin=Tmin, Tmax=Tmax, Pmin=Pmin, Pmax=Pmax,
+            uncertainty=uncertainty, solute=solute, comment=comment,
+        )
+        self.A = A
+        self.n = n
+        self.Ea_g = Ea_g
+        self.Ea_e = Ea_e
+        self.T0 = T0
+        self.uses_electron_temperature = True
+
+    def __repr__(self):
+        string = 'TwoTemperaturePlasma(A={0!r}, n={1!r}, Ea_g={2!r}, Ea_e={3!r}'.format(self.A, self.n, self.Ea_g, self.Ea_e)
+        if self.T0.value_si != 1:
+            string += ', TO={0!r}'.format(self.T0)
+        if self.Tmin is not None:
+            string += ', Tmin={0!r}'.format(self.Tmin)
+        if self.Tmax is not None:
+            string += ', Tmax={0!r}'.format(self.Tmax)
+        if self.Pmin is not None:
+            string += ', Pmin={0!r}'.format(self.Pmin)
+        if self.Pmax is not None:
+            string += ', Pmax={0!r}'.format(self.Pmax)
+        if self.uncertainty:
+            string += ', uncertainty={0!r}'.format(self.uncertainty)
+        if self.solute:
+            string += ', solute={0!r}'.format(self.solute)
+        if self.comment != '':
+            string += ', comment="""{0}"""'.format(self.comment)
+        string += ')'
+        return string
+
+    def __reduce__(self):
+        """
+        Helper for pickling.
+        """
+        return (TwoTemperaturePlasma,
+                (self.A, self.n, self.Ea_g, self.Ea_e, self.T0,
+                 self.Tmin, self.Tmax, self.Pmin, self.Pmax,
+                 self.uncertainty, self.solute, self.comment))
+
+    property A:
+        """Pre-exponential factor (same units conventions as Arrhenius A)."""
+        def __get__(self):
+            return self._A
+        def __set__(self, value):
+            self._A = quantity.RateCoefficient(value)
+
+    property n:
+        """Electron temperature exponent."""
+        def __get__(self):
+            return self._n
+        def __set__(self, value):
+            self._n = quantity.Dimensionless(value)
+
+    property Ea_g:
+        """Gas activation energy."""
+        def __get__(self):
+            return self._Ea_g
+        def __set__(self, value):
+            self._Ea_g = quantity.Energy(value)
+
+    property Ea_e:
+        """Electron activation energy."""
+        def __get__(self):
+            return self._Ea_e
+        def __set__(self, value):
+            self._Ea_e = quantity.Energy(value)
+
+    property T0:
+        """Reference temperature."""
+        def __get__(self):
+            return self._T0
+        def __set__(self, value):
+            self._T0 = quantity.Temperature(value)
+
+    cpdef double get_rate_coefficient_two_temp(self, double T, double Te) except -1:
+        """
+        Full two-temperature rate coefficient k(T, Te) in SI molar units.
+        T  : gas temperature [K]
+        Te : electron temperature [K]
+        """
+        cdef double A_si, bval, Eag, Eae, T0
+
+        if T <= 0.0 or Te <= 0.0:
+            raise ValueError("TwoTemperaturePlasma: T and Te must be > 0 K.")
+
+        A_si = self._A.value_si           # e.g. m^3/(mol*s)
+        bval = self._n.value_si
+        T0   = self._T0.value_si          # K
+        Eag  = self._Ea_g.value_si        # J/mol
+        Eae  = self._Ea_e.value_si        # J/mol
+
+        return A_si * (Te / T0) ** bval * exp(-Eag / (constants.R * T)) * exp(Eae * (Te - T) / (constants.R * T * Te))
+
+    cpdef double get_rate_coefficient(self, double T, double P=0.0) except -1:
+        """
+        Standard RMG interface: interpret this as k(T, Te=T).
+        """
+        return self.get_rate_coefficient_two_temp(T, T)
+
+    cpdef change_t0(self, double T0):
+        """
+        Changes the reference temperature used in the exponent to `T0` in K,
+        and adjusts the preexponential factor accordingly.
+        """
+        self._A.value_si /= (self._T0.value_si / T0) ** self._n.value_si
+        self._T0.value_si = T0
+
+    cpdef bint is_identical_to(self, KineticsModel other_kinetics) except -2:
+        """
+        Check equality with another kinetics object.
+        """
+        if not isinstance(other_kinetics, TwoTemperaturePlasma):
+            return False
+        if not KineticsModel.is_identical_to(self, other_kinetics):
+            return False
+        if not self.A.equals(other_kinetics.A):
+            return False
+        if not self.n.equals(other_kinetics.n):
+            return False
+        if not self.Ea_g.equals(other_kinetics.Ea_g):
+            return False
+        if not self.Ea_e.equals(other_kinetics.Ea_e):
+            return False
+        return True
+
+    cpdef change_rate(self, double factor):
+        """
+        Scale A by `factor`.
+        """
+        self._A.value_si *= factor
+
+    def to_cantera_kinetics(self):
+        """
+        Convert to a Cantera TwoTempPlasmaRate object.
+
+        Returns
+        -------
+        ct.TwoTempPlasmaRate
+            With A in m^3/kmol/s, Ea_g and Ea_e in J/kmol.
+        """
+        import cantera as ct
+
+        rate_units_dimensionality = {
+            '1/s': 0,
+            's^-1': 0,
+            'm^3/(mol*s)': 1,
+            'm^6/(mol^2*s)': 2,
+            'cm^3/(mol*s)': 1,
+            'cm^6/(mol^2*s)': 2,
+            'm^3/(molecule*s)': 1,
+            'm^6/(molecule^2*s)': 2,
+            'cm^3/(molecule*s)': 1,
+            'cm^6/(molecule^2*s)': 2,
+        }
+
+        A = self._A.value_si
+        try:
+            # convert from per-mol to per-kmol (and any cm/molecule variants)
+            A *= 1000 ** rate_units_dimensionality[self._A.units]
+        except KeyError:
+            raise Exception(
+                'TwoTemperaturePlasma A-factor units {0} not supported for '
+                'conversion to Cantera TwoTempPlasmaRate.'.format(self._A.units)
+            )
+
+        b = self._n.value_si
+        Ea_g = self._Ea_g.value_si * 1000.0   # J/mol -> J/kmol
+        Ea_e = self._Ea_e.value_si * 1000.0   # J/mol -> J/kmol
+
+        return ct.TwoTempPlasmaRate(A, b, Ea_g, Ea_e)
+
+    def set_cantera_kinetics(self, ct_reaction, species_list):
+        """
+        Assign a Cantera Reaction's rate to a TwoTempPlasmaRate built
+        from this object.
+        """
+        import cantera as ct
+
+        assert isinstance(ct_reaction.rate, ct.TwoTempPlasmaRate), \
+            "ct_reaction.rate must be a Cantera TwoTempPlasmaRate"
+        ct_reaction.rate = self.to_cantera_kinetics()
+
+    cpdef ArrheniusEP to_arrhenius_ep(self, double alpha=0.0, double dHrxn=0.0):
+        """
+        Converts an Arrhenius object to ArrheniusEP
+        This function assumes you want to convert the electron activation energy Ea_e,
+        not the gas activation energy Ea_g.
+
+        If setting alpha, you need to also input dHrxn, which must be given
+        in J/mol (and vise versa).
+        """
+        if bool(alpha) ^ bool(dHrxn):
+            raise Exception('If you set alpha or dHrxn in to_arrhenius_ep, you need to set the other value to non-zero.')
+        self.change_t0(1)
+        aep = ArrheniusEP(A=self.A,
+                          n=self.n,
+                          alpha=alpha,
+                          E0=(self.Ea_e.value_si - alpha * dHrxn, 'J/mol'),
+                          Tmin=self.Tmin,
+                          Tmax=self.Tmax,
+                          Pmin=self.Pmin,
+                          Pmax=self.Pmax,
+                          uncertainty=self.uncertainty,
+                          solute=self.solute,
+                          comment=self.comment)
+        return aep
+
+
+################################################################################
+
+
+cdef class ElectronCollisionPlasma(KineticsModel):
+    """
+    Te-only plasma kinetics based on a tabulated electron–collision
+    cross-section σ(E) on an energy grid.
+
+    The rate coefficient is the Maxwellian average:
+        k(Te) = ⟨σ v⟩(Te)
+    calculated by numerical integration over the stored cross-section.
+    """
+
+    def __init__(self,
+                 energies=None,
+                 sigma=None,
+                 Tmin=None, Tmax=None, Pmin=None, Pmax=None,
+                 uncertainty=None, solute=None, comment=''):
+        KineticsModel.__init__(
+            self,
+            Tmin=Tmin, Tmax=Tmax,
+            Pmin=Pmin, Pmax=Pmax,
+            uncertainty=uncertainty,
+            solute=solute,
+            comment=comment,
+        )
+
+        if energies is None:
+            self.energies = ([], "J/mol")
+        else:
+            self.energies = energies
+
+        if sigma is None:
+            self.sigma = ([], "m^2")
+        else:
+            self.sigma = sigma
+
+        self.uses_electron_temperature = True
+
+    def __repr__(self):
+        string = "ElectronCollisionPlasma(energies={0!r}, sigma={1!r}".format(
+            self.energies, self.sigma
+        )
+        if self.Tmin is not None: string += ", Tmin={0!r}".format(self.Tmin)
+        if self.Tmax is not None: string += ", Tmax={0!r}".format(self.Tmax)
+        if self.Pmin is not None: string += ", Pmin={0!r}".format(self.Pmin)
+        if self.Pmax is not None: string += ", Pmax={0!r}".format(self.Pmax)
+        if self.comment: string += ', comment="""{0}"""'.format(self.comment)
+        string += ")"
+        return string
+
+    def __reduce__(self):
+        return (ElectronCollisionPlasma,
+                (self.energies, self.sigma,
+                 self.Tmin, self.Tmax, self.Pmin, self.Pmax,
+                 None, None, self.comment))
+
+    property energies:
+        def __get__(self): return self._energies
+        def __set__(self, value): self._energies = quantity.Energy(value)
+
+    property sigma:
+        def __get__(self): return self._sigma
+        def __set__(self, value): self._sigma = quantity.Quantity(value)
+
+    def __getstate__(self):
+        return {
+            "energies": self.energies,
+            "sigma": self.sigma,
+            "Tmin": self.Tmin, "Tmax": self.Tmax,
+            "Pmin": self.Pmin, "Pmax": self.Pmax,
+            "solute": self.solute, "comment": self.comment,
+        }
+
+    def __setstate__(self, state):
+        self.__init__(**state)
+
+    # --------------------------------------------------------------------------
+    #    Core Physics (Numerical Integration)
+    # --------------------------------------------------------------------------
+
+    cpdef double integrate_rate_coefficient(self, double Te) except -1:
+        """
+        Calculates k(Te) = <sigma * v> by numerically integrating the stored
+        cross-section over a Maxwellian electron energy distribution.
+        """
+        if Te <= 0.0:
+            return 0.0
+
+        # RMG stores Energy in J/mol. We need J/particle for the physics integration.
+        cdef np.ndarray[np.float64_t, ndim=1] E_molar = self._energies.value_si
+        cdef np.ndarray[np.float64_t, ndim=1] sigma_grid = self._sigma.value_si
+        cdef int n = E_molar.shape[0]
+
+        if n < 2:
+            return 0.0
+
+        cdef double kB = constants.kB
+        cdef double Na = constants.Na
+        cdef double m_e = constants.m_e  # kg
+
+        # Pre-factor for Maxwellian flux
+        cdef double prefactor = sqrt(8.0 / (constants.pi * m_e)) * pow(kB * Te, -1.5)
+
+        cdef double integral = 0.0
+        cdef double E1, E2, s1, s2, term1, term2, dE
+        cdef double kTe = kB * Te
+        cdef int i
+
+        # Loop variables in Particle Units (Joules)
+        cdef double E1_part, E2_part
+
+        for i in range(n - 1):
+            # Convert J/mol -> J/particle
+            E1_part = E_molar[i] / Na
+            E2_part = E_molar[i + 1] / Na
+
+            s1 = sigma_grid[i]
+            s2 = sigma_grid[i + 1]
+
+            term1 = s1 * E1_part * exp(-E1_part / kTe)
+            term2 = s2 * E2_part * exp(-E2_part / kTe)
+            dE = E2_part - E1_part
+
+            integral += 0.5 * (term1 + term2) * dE
+
+        # Result is m^3/s per particle. Convert to m^3/(mol*s) for RMG output.
+        return (prefactor * integral) * Na
+
+    cpdef double get_rate_coefficient_electron_temp(self, double Te) except -1:
+        """
+        Returns k(Te) in m^3/(mol*s) via numerical integration.
+        """
+        return self.integrate_rate_coefficient(Te)
+
+    cpdef double get_rate_coefficient(self, double T, double P=0.0) except -1:
+        """
+        Standard RMG interface. Interprets T as electron temperature.
+        """
+        return self.integrate_rate_coefficient(T)
+
+    cpdef bint is_identical_to(self, KineticsModel other_kinetics) except -2:
+        """
+        Returns ``True`` if the energy grid and cross-section table match (and the
+        validity window agrees), ``False`` otherwise.
+
+        The arrays are compared exactly rather than through ``ArrayQuantity.equals``:
+        that helper accepts anything within 1% *or* an absolute 0.01, and a collision
+        cross-section is of order 1e-20 m^2, so every table would compare equal to
+        every other one. This mirrors how Chebyshev compares its coefficients.
+        """
+        if not isinstance(other_kinetics, ElectronCollisionPlasma):
+            return False
+        if not KineticsModel.is_identical_to(self, other_kinetics):
+            return False
+        if not np.array_equal(self._energies.value_si, other_kinetics._energies.value_si):
+            return False
+        if not np.array_equal(self._sigma.value_si, other_kinetics._sigma.value_si):
+            return False
+        return True
+
+    cpdef change_rate(self, double factor):
+        """
+        Scale the overall rate by multiplying σ(E) by `factor`.
+        """
+        self._sigma.value_si *= factor
+
+    # --------------------------------------------------------------------------
+    #    Cantera & Legacy Conversion
+    # --------------------------------------------------------------------------
+
+    def to_cantera_kinetics(self):
+        """
+        Convert to a Cantera ElectronCollisionPlasmaRate object.
+        Passes raw energy/cross-section arrays for internal Cantera integration.
+        """
+        import cantera as ct
+
+        if hasattr(ct, "ElectronCollisionPlasmaRate"):
+            # Cantera 3.0+ native support
+            # Energies: Convert J/mol (RMG SI) -> eV (Cantera input)
+            # Factor: Faraday constant = 96485.33212 J/mol per eV
+            conversion_factor = 96485.33212
+
+            # Use .value_si (numpy array) and divide manually.
+            # Do NOT use .value("eV") as .value is not callable in Cython classes.
+            energies_eV = self._energies.value_si / conversion_factor
+
+            # Sigma: m^2 (already correct in value_si)
+            return ct.ElectronCollisionPlasmaRate(
+                energies_eV,
+                self._sigma.value_si
+            )
+        else:
+            # Fallback for older Cantera versions
+            import warnings
+            warnings.warn("Cantera.ElectronCollisionPlasmaRate not found. "
+                          "Falling back to Arrhenius fit (TwoTempPlasma).")
+            return self.to_two_temp_plasma().to_cantera_kinetics()
+
+    def set_cantera_kinetics(self, ct_reaction, species_list):
+        """
+        Sets a Cantera Reaction's rate to an ElectronCollisionPlasmaRate
+        built from this object.
+        """
+        ct_reaction.rate = self.to_cantera_kinetics()
+
+    def to_arrhenius(self, double Tmin=0.0, double Tmax=0.0):
+        """
+        Fit the integrated cross-section data to an Arrhenius model k(Te).
+        """
+        if Tmin == 0.0: Tmin = 11600.0  # ~1 eV
+        if Tmax == 0.0: Tmax = 116000.0  # ~10 eV
+
+        cdef np.ndarray Te_list = 1.0 / np.linspace(1.0 / Tmax, 1.0 / Tmin, 50)
+        cdef np.ndarray k_list = np.zeros_like(Te_list)
+
+        for i, Te in enumerate(Te_list):
+            k_list[i] = self.integrate_rate_coefficient(Te)
+
+        arr = Arrhenius()
+        # k_list is already molar from integrate_rate_coefficient
+        arr.fit_to_data(Te_list, k_list, "m^3/(mol*s)", T0=1.0)
+
+        arr.Tmin = (Tmin, "K")
+        arr.Tmax = (Tmax, "K")
+        arr.comment = f"Arrhenius fit to ElectronCollisionPlasma. {self.comment}"
+        return arr
+
+    cpdef TwoTemperaturePlasma to_two_temp_plasma(self):
+        """
+        Convert to TwoTemperaturePlasma by fitting k(Te).
+        """
+        arr = self.to_arrhenius()
+
+        return TwoTemperaturePlasma(
+            A=(arr.A.value_si, "m^3/(mol*s)"),
+            n=float(arr.n.value_si),
+            Ea_g=(0.0, "J/mol"),
+            Ea_e=(arr.Ea.value_si, "J/mol"),
+            Tmin=arr.Tmin,
+            Tmax=arr.Tmax,
+            comment=f"Mapped from ElectronCollisionPlasma. {self.comment}"
+        )
+
+
+################################################################################
+
+
+cdef class BadnellRRArrhenius(KineticsModel):
+    """
+    Radiative recombination kinetics using the Badnell (2006) fit, evaluated at electron temperature Te.
+
+    Rate expression (per-particle form in the paper):
+        alpha_RR(Te) = A * [ sqrt(Te/T0) * (1 + sqrt(Te/T0))^(1 - B*)
+                              * (1 + sqrt(Te/T1))^(1 + B*) ]^(-1)
+        with B* = B + C * exp(-T2 / Te)  (use B* = B if C/T2 are not provided)
+
+    This class returns the **per-mole** rate coefficient expected by RMG:
+        k(Te) = alpha_RR(Te) * N_A        (for bimolecular RR)
+    and in SI units according to the stored A units.
+
+    Attributes (ScalarQuantity unless noted):
+        A   : pre-exponential (supports 'cm^3/(molecule*s)', 'cm^3/(mol*s)', 'm^3/(mol*s)', etc.)
+        B   : dimensionless Badnell parameter
+        T0  : temperature in K
+        T1  : temperature in K
+        C   : (optional) dimensionless Badnell parameter
+        T2  : (optional) temperature in K
+        Z   : (optional) nuclear charge (int)
+        N   : (optional) electron count before recombination (int)
+        yaml_path_or_obj : (optional) source YAML file to populate this object
+        comment, Tmin, Tmax, Pmin, Pmax (inherited)
+    """
+
+    def __init__(self,
+                 A=None,
+                 B=0.0,
+                 T0=(1.0, "K"),
+                 T1=(1.0, "K"),
+                 C=None,
+                 T2=None,
+                 Z=None, N=None, yaml_path_or_obj=None,
+                 Tmin=None, Tmax=None, Pmin=None, Pmax=None,
+                 uncertainty=None, solute=None, comment=''):
+        KineticsModel.__init__(self, Tmin=Tmin, Tmax=Tmax, Pmin=Pmin, Pmax=Pmax,
+                               uncertainty=uncertainty, solute=solute, comment=comment)
+        self._Ea = None
+
+        # Radiative recombination consumes an electron, so both channels are
+        # intrinsic to this rate law regardless of how the object was built. Set
+        # them here, ahead of every branch below, so that no early return can
+        # leave a table-built object reporting False for either.
+        self.uses_electron_temperature = True
+        self.uses_electron_density = True
+
+        # If Z/N are given, load from YAML and return early
+        if Z is not None and N is not None:
+            yaml_path_or_obj = yaml_path_or_obj or os.path.join(settings['database.directory'], 'kinetics', 'badnell.yaml')
+            try:
+                Zi = int(Z)
+                Ni = int(N)
+            except Exception:
+                raise TypeError("Z and N must be integers.")
+            self.populate_from_yaml(yaml_path_or_obj, Zi, Ni,
+                                    Tmin=Tmin, Tmax=Tmax, comment=comment)
+            return
+
+        self.A = A
+        self.B = B
+        self.T0 = T0
+        self.T1 = T1
+        self.C = C
+        self.T2 = T2
+
+    property Ea:
+        """
+        The activation energy, estimated by fitting the kinetics to an Arrhenius form.
+        Stored internally as _Ea.
+        """
+        def __get__(self):
+            if self._Ea is None:
+                self._Ea = self.to_arrhenius().Ea
+            return self._Ea
+
+    def __repr__(self):
+        string = 'BadnellRRArrhenius(A={0!r}, B={1!r}, T0={2!r}, T1={3!r}'.format(self.A, self.B, self.T0, self.T1)
+        if self.C is not None: string += ', C={0!r}'.format(self.C)
+        if self.T2 is not None: string += ', T2={0!r}'.format(self.T2)
+        if self.Tmin is not None: string += ', Tmin={0!r}'.format(self.Tmin)
+        if self.Tmax is not None: string += ', Tmax={0!r}'.format(self.Tmax)
+        if self.Pmin is not None: string += ', Pmin={0!r}'.format(self.Pmin)
+        if self.Pmax is not None: string += ', Pmax={0!r}'.format(self.Pmax)
+        if self.uncertainty: string += ', uncertainty={0!r}'.format(self.uncertainty)
+        if self.solute: string += ', solute={0!r}'.format(self.solute)
+        if self.comment != '': string += ', comment="""{0}"""'.format(self.comment)
+        string += ')'
+        return string
+
+    def __reduce__(self):
+        return (BadnellRRArrhenius,
+                (self.A, self.B, self.T0, self.T1, self.C, self.T2,
+                 None, None, None,
+                 self.Tmin, self.Tmax, self.Pmin, self.Pmax,
+                 self.uncertainty, self.solute, self.comment))
+
+    # -------- properties --------
+
+    property A:
+        """Pre-exponential factor (Badnell A)."""
+        def __get__(self):
+            return self._A
+        def __set__(self, value):
+            # Allow per-molecule or per-mole units; quantity.RateCoefficient handles units.
+            self._A = quantity.RateCoefficient(value)
+
+    property B:
+        """Badnell B parameter (dimensionless)."""
+        def __get__(self):
+            return self._B
+        def __set__(self, value):
+            self._B = quantity.Dimensionless(value)
+
+    property T0:
+        """Badnell T0 parameter (K)."""
+        def __get__(self):
+            return self._T0
+        def __set__(self, value):
+            self._T0 = quantity.Temperature(value)
+
+    property T1:
+        """Badnell T1 parameter (K)."""
+        def __get__(self):
+            return self._T1
+        def __set__(self, value):
+            self._T1 = quantity.Temperature(value)
+
+    property C:
+        """Badnell C parameter (dimensionless, optional)."""
+        def __get__(self):
+            return self._C
+        def __set__(self, value):
+            if value is None:
+                self._C = None
+            else:
+                self._C = quantity.Dimensionless(value)
+
+    property T2:
+        """Badnell T2 parameter (K, optional)."""
+        def __get__(self):
+            return self._T2
+        def __set__(self, value):
+            if value is None:
+                self._T2 = None
+            else:
+                self._T2 = quantity.Temperature(value)
+
+
+    cpdef double get_rate_coefficient(self, double T, double P=0.0) except -1:
+        """
+        Return k(T) in SI units of m^3/(mol*s).
+
+        The Badnell fit is evaluated using A in SI (m^3/(mol*s)), so this
+        method is agnostic to whether the user originally provided A in
+        cm^3/(mol*s), cm^3/(molecule*s), or m^3/(mol*s).
+        """
+        cdef double A_SI, B, T0, T1, C, T2
+        cdef double t0, t1, Bstar, denom
+
+        if T <= 0.0:
+            return 0.0
+
+        # 1) Pre-exponential in SI
+        A_SI = self.A.value_si  # m^3/(mol*s)
+
+        # 2) Dimensionless / temperature parameters
+        B = <double> (self.B.value_si if hasattr(self.B, "value_si") else self.B)
+
+        C = 0.0
+        if self.C is not None:
+            C = <double> (self.C.value_si if hasattr(self.C, "value_si") else self.C)
+
+        if hasattr(self.T0, "value_si"):
+            T0 = <double> self.T0.value_si
+        else:
+            T0 = <double> self.T0
+
+        if hasattr(self.T1, "value_si"):
+            T1 = <double> self.T1.value_si
+        else:
+            T1 = <double> self.T1
+
+        T2 = 0.0
+        if self.T2 is not None:
+            if hasattr(self.T2, "value_si"):
+                T2 = <double> self.T2.value_si
+            else:
+                T2 = <double> self.T2
+
+        # 3) Badnell shape factor (per Badnell 2006)
+        t0 = sqrt(T / T0)
+        t1 = sqrt(T / T1)
+
+        Bstar = B
+        if C != 0.0 and T2 > 0.0:
+            # B* = B + C * exp(-T2 / T)
+            Bstar = B + C * exp(-T2 / T)
+
+        denom = t0 * pow(1.0 + t0, 1.0 - Bstar) * pow(1.0 + t1, 1.0 + Bstar)
+
+        # k(T) in m^3/(mol*s)
+        return A_SI / denom
+
+    cpdef bint is_identical_to(self, KineticsModel other_kinetics) except -2:
+        if not isinstance(other_kinetics, BadnellRRArrhenius):
+            return False
+        if not KineticsModel.is_identical_to(self, other_kinetics):
+            return False
+
+        # Compare all params (handle optional C/T2)
+        if not self.A.equals(other_kinetics.A): return False
+        if not self.B.equals(other_kinetics.B): return False
+        if not self.T0.equals(other_kinetics.T0): return False
+        if not self.T1.equals(other_kinetics.T1): return False
+
+        if (self.C is None) ^ (other_kinetics.C is None): return False
+        if (self.T2 is None) ^ (other_kinetics.T2 is None): return False
+        if self.C is not None and not self.C.equals(other_kinetics.C): return False
+        if self.T2 is not None and not self.T2.equals(other_kinetics.T2): return False
+        return True
+
+    cpdef change_rate(self, double factor):
+        """
+        Multiply the Badnell A factor by 'factor'.
+        (This scales the entire alpha_RR, analogous to Arrhenius.change_rate.)
+        """
+        self._A.value_si *= factor
+
+    def _brra__extract_row(self, obj, int Z, int N):
+        """
+        Internal: find a (Z,N) row in a few common YAML layouts.
+        Returns a Python dict with keys A,B,T0,T1 and optional C,T2.
+        Raises KeyError if not found.
+        """
+        cdef object units = obj.get("units", {})
+        # Try list-of-blocks schema
+        coeffs = obj.get("coefficients")
+        if isinstance(coeffs, list):
+            for blk in coeffs:
+                zblk = blk.get("Z")
+                if zblk is not None and int(zblk) == Z:
+                    entries = blk.get("entries")
+                    if isinstance(entries, list):
+                        for e in entries:
+                            if int(e.get("N", -999)) == N:
+                                return e
+                    elif isinstance(entries, dict):
+                        # entries: { "N": {A:...,B:...}, ... }
+                        if str(N) in entries:
+                            return entries[str(N)]
+                        if N in entries:
+                            return entries[N]
+        # Try nested map schema under "data"
+        data = obj.get("data")
+        if isinstance(data, dict):
+            znode = data.get(str(Z)) if str(Z) in data else data.get(Z)
+            if isinstance(znode, dict):
+                node = znode.get(str(N)) if str(N) in znode else znode.get(N)
+                if isinstance(node, dict):
+                    return node
+        # Try top-level Z map
+        znode = obj.get(str(Z)) if str(Z) in obj else obj.get(Z)
+        if isinstance(znode, dict):
+            node = znode.get(str(N)) if str(N) in znode else znode.get(N)
+            if isinstance(node, dict):
+                return node
+        raise KeyError(f"Badnell YAML: no entry for Z={Z}, N={N}")
+
+    def _brra__units(self, obj):
+        """Internal: return (a_units, t_units) with sensible defaults."""
+        units = obj.get("units", {}) if isinstance(obj, dict) else {}
+        a_units = units.get("A", "cm^3/(molecule*s)")
+        t_units = units.get("T", "K")
+        return a_units, t_units
+
+    def _brra__compute_default_T_window(self, int Z, int N):
+        """
+        Badnell fit validity spans ~ z^2 * [1e1, 1e7] K with z = Z-N (initial charge).
+        Use that for Tmin/Tmax if user left them unset.
+        """
+        cdef int z = Z - N
+        cdef double Tmin = 10.0 * z * z
+        cdef double Tmax = 1.0e7 * z * z
+        if z < 0:
+            z = 0  # defensive; but physically you shouldn't pass N>Z
+        # If z==0, fall back to a broad neutral window (let RMG handle validity checks)
+        if z == 0:
+            Tmin, Tmax = 1.0, 3.0e9
+        return Tmin, Tmax
+
+    cpdef populate_from_yaml(self, object yaml_path_or_obj, int Z, int N,
+                             bint allow_Z_gt36=False, Tmin=None, Tmax=None, comment=None):
+        """
+        Populate this BadnellRRArrhenius from a YAML dataset keyed by (Z,N).
+
+        Parameters
+        ----------
+        yaml_path_or_obj : str | pathlib.Path | file-like | dict
+            YAML filepath or already-loaded dict.
+        Z : int
+            Nuclear charge (1..36 supported by default).
+        N : int
+            Electron count BEFORE recombination (so z = Z-N).
+        allow_Z_gt36 : bool
+            If False, raise for Z>36.
+        Tmin, Tmax : optional
+            Override validity window (K). If None, uses ~z^2*[1e1,1e7] K.
+        comment : optional
+            Override/append comment.
+
+        Notes
+        -----
+        - A is interpreted with units from YAML (default 'cm^3/(molecule*s)').
+        - T0,T1,(T2) are in K.
+        - Sets C,T2 only if BOTH are present; else uses B* = B.
+        """
+        if not allow_Z_gt36 and Z > 36:
+            raise ValueError(f"Badnell YAML: Z={Z} exceeds 36 (this loader is restricted to Z<=36).")
+
+        # Load YAML if needed
+        cdef dict data
+        if isinstance(yaml_path_or_obj, dict):
+            data = yaml_path_or_obj
+        else:
+            import yaml as _yaml
+            with open(yaml_path_or_obj, "r") as f:
+                data = _yaml.safe_load(f)
+
+        row = self._brra__extract_row(data, Z, N)
+        a_units, t_units = self._brra__units(data)
+
+        # Required
+        A = float(row["A"])
+        B = float(row["B"])
+        T0 = float(row["T0"])
+        T1 = float(row["T1"])
+
+        # Optional C,T2 (use only if both provided)
+        C = row.get("C", None)
+        T2 = row.get("T2", None)
+        if C is not None:
+            C = float(C)
+        if T2 is not None:
+            T2 = float(T2)
+
+        # Assign to this object
+        self.A  = (A, a_units)
+        self.B  = B
+        self.T0 = (T0, t_units)
+        self.T1 = (T1, t_units)
+        if C is not None and T2 is not None:
+            self.C  = C
+            self.T2 = (T2, t_units)
+        else:
+            self.C  = None
+            self.T2 = None
+
+        # Validity window (unless user overrides)
+        if Tmin is None or Tmax is None:
+            dTmin, dTmax = self._brra__compute_default_T_window(Z, N)
+            if Tmin is None: Tmin = dTmin
+            if Tmax is None: Tmax = dTmax
+        self.Tmin = (Tmin, "K")
+        self.Tmax = (Tmax, "K")
+
+        # Comment
+        base = f"Badnell (2006) RR fit, Z={Z}, N={N}"
+        self.comment = f"{base}; {comment}" if comment else base
+
+        return self
+
+    @classmethod
+    def from_yaml(cls, object yaml_path_or_obj, int Z, int N,
+                  bint allow_Z_gt36=False, Tmin=None, Tmax=None, comment=None):
+        """
+        Construct and return a new BadnellRRArrhenius populated from YAML.
+        """
+        obj = cls(A=(1.0e-12, "cm^3/(molecule*s)"), B=0.0, T0=(1.0, "K"), T1=(1.0, "K"))
+        obj.populate_from_yaml(yaml_path_or_obj, Z, N,
+                               allow_Z_gt36=allow_Z_gt36,
+                               Tmin=Tmin, Tmax=Tmax, comment=comment)
+        return obj
+
+    def to_arrhenius(self, double Tmin=0.0, double Tmax=0.0):
+        """
+        Return an Arrhenius object that fits the Badnell kinetics over the specified temperature range.
+
+        The fit is performed by evaluating the Badnell rate at intervals linear in 1/T
+        (standard Arrhenius plot spacing) and fitting the modified Arrhenius equation to those points.
+
+        If Tmin or Tmax are not provided (or 0.0), the method defaults to self.Tmin/self.Tmax.
+        If those are also not set, it defaults to 800 K - 3000 K.
+        """
+        # Determine Temperature Boundaries
+        if Tmin == 0.0:
+            if self.Tmin is not None:
+                Tmin = self.Tmin.value_si
+            else:
+                Tmin = 1.0e4
+
+        if Tmax == 0.0:
+            if self.Tmax is not None:
+                Tmax = self.Tmax.value_si
+            else:
+                Tmax = 1.0e6
+
+        if Tmin >= Tmax:
+            raise ValueError(f"Tmin ({Tmin}) must be less than Tmax ({Tmax}) for Arrhenius fitting.")
+
+        # Generate sampling points
+        # Linear in 1/T space gives better weighting for Arrhenius fits
+        # We use 50 points to ensure a smooth fit
+        cdef np.ndarray Tlist = 1.0 / np.linspace(1.0 / Tmax, 1.0 / Tmin, 50)
+        cdef np.ndarray klist = np.zeros_like(Tlist)
+
+        cdef int i
+        cdef double T_val
+
+        for i in range(len(Tlist)):
+            T_val = Tlist[i]
+            klist[i] = self.get_rate_coefficient(T_val)
+
+        # Determine units
+        # get_rate_coefficient returns SI Molar: m^3/(mol*s)
+        # We assume bimolecular for standard Badnell RR
+        cdef str kunits = "m^3/(mol*s)"
+
+        # Create and fit Arrhenius object
+        # T0=1.0 is standard for minimizing correlation between A and n
+        arr = Arrhenius()
+        arr.fit_to_data(Tlist, klist, kunits, T0=1.0)
+
+        # Carry over metadata
+        arr.Tmin = (Tmin, "K")
+        arr.Tmax = (Tmax, "K")
+        arr.comment = f"Fitted to BadnellRRArrhenius over range {Tmin}-{Tmax} K. Original comment: {self.comment}"
+
+        return arr
+
+    def to_chebyshev(self, double Tmin=0.0, double Tmax=0.0, int degree_t=10):
+        """
+        Convert the Badnell kinetics to a Chebyshev object.
+
+        Since standard Chemkin/Cantera formats do not support the Badnell function natively,
+        the most robust, high-accuracy way to export this kinetics model is to map it
+        to a Chebyshev polynomial. We use a Pressure-Independent Chebyshev fit (P_basis=1).
+
+        Parameters:
+            degree_t: Number of temperature coefficients (basis functions).
+                      Badnell curves can be complex, so a higher degree (default 10)
+                      is recommended compared to standard Arrhenius (typically 3-4).
+        """
+        from rmgpy.kinetics.chebyshev import Chebyshev
+
+        # 1. Determine Temperature Range
+        if Tmin == 0.0:
+            Tmin = self.Tmin.value_si if self.Tmin is not None else 10.0
+        if Tmax == 0.0:
+            Tmax = self.Tmax.value_si if self.Tmax is not None else 1.0e7
+
+        if Tmin >= Tmax:
+            raise KineticsError(
+                f"BadnellRRArrhenius.to_chebyshev: Tmin ({Tmin}) must be < Tmax ({Tmax})."
+            )
+
+        # 2. Define Dummy Pressure Range (Required for Chebyshev format)
+        # Since Badnell is P-independent, these values don't affect the rate
+        # as long as we fit with degree_p = 1.
+        cdef double Pmin = 100.0        # Pa  (≈ 0.001 bar)
+        cdef double Pmax = 1.0e7        # Pa  (≈ 100 bar)
+
+        # 3. Create the Chebyshev Object
+        cheb = Chebyshev(
+            Tmin=(Tmin, "K"), Tmax=(Tmax, "K"),
+            Pmin=(Pmin, "Pa"), Pmax=(Pmax, "Pa"),
+        )
+
+        # 4. Generate Grid and Fit
+        # We need MORE grid points than polynomial degrees in both T and P.
+        cdef int nT = degree_t + 1      # > degree_t
+        cdef int degree_p = 1
+        cdef int nP = 2                 # > degree_p
+
+        # Use Chebyshev roots in 1/T space for optimal interpolation node spacing
+        k_idx = np.arange(nT, dtype=float)
+
+        invT_mid = 0.5 * (1.0 / Tmax + 1.0 / Tmin)
+        invT_halfspan = 0.5 * (1.0 / Tmax - 1.0 / Tmin)
+
+        T_nodes = invT_mid + invT_halfspan * np.cos(
+            (2.0 * k_idx + 1.0) * np.pi / (2.0 * nT)
+        )
+        T_points = 1.0 / T_nodes  # Convert 1/T back to T
+
+        # P_points: two points, but the rate is P-independent
+        P_points = np.array([Pmin, Pmax], dtype=float)
+
+        # K_data: shape (nT, nP)
+        K_data = np.zeros((nT, nP), dtype=float)
+        for i, T in enumerate(T_points):
+            # Calculate Badnell rate at this T
+            k_val = self.get_rate_coefficient(T)
+            # Same k(T) for all pressures since the rate is P-independent
+            K_data[i, :] = k_val
+
+        # 5. Perform Fit
+        cheb.fit_to_data(
+            T_points,
+            P_points,
+            K_data,
+            "m^3/(mol*s)",
+            degree_t,
+            degree_p,
+            Tmin,
+            Tmax,
+            Pmin,
+            Pmax,
+        )
+
+        # Add original kinetics description to comment for traceability
+        cheb.comment = (
+            f"Chebyshev fit to BadnellRR (Z={getattr(self, 'Z', '?')}, "
+            f"N={getattr(self, 'N', '?')}). Original: {self}"
+        )
+        return cheb
+
+    cpdef TwoTemperaturePlasma to_two_temp_plasma(self):
+        """
+        Map this BadnellRRArrhenius (k = k(Te) only) onto a TwoTemperaturePlasma.
+
+        The mapping is constructed so that:
+          - along T = Te, k(T, Te) matches the Badnell rate (via Arrhenius fit),
+          - for general T, the rate depends only on Te (T cancels analytically when Ea_g = Ea_e = fitted Ea).
+        """
+        if self.Tmin is not None:
+            Tlo = self.Tmin.value_si
+        else:
+            Tlo = 1.0e4
+
+        if self.Tmax is not None:
+            Thi = self.Tmax.value_si
+        else:
+            Thi = 1.0e6
+        #    to_arrhenius() should already pick a physically reasonable Te window.
+        arr = self.to_arrhenius(Tmin=Tlo, Tmax=Thi)
+
+        # Convert n to a bare float if needed
+        try:
+            n_val = float(arr.n.value_si)
+        except AttributeError:
+            n_val = float(arr.n)
+
+        # Build the canonical TwoTemperaturePlasma with Ea_g = 0, Ea_e = Ea
+        plasma = TwoTemperaturePlasma(
+            A=(arr.A.value_si, "m^3/(mol*s)"),
+            n=n_val,
+            Ea_g=(0.0, "J/mol"),
+            Ea_e=(arr.Ea.value_si, "J/mol"),
+            Tmin=(Tlo, "K"),
+            Tmax=(Thi, "K"),
+            Pmin=self.Pmin,
+            Pmax=self.Pmax,
+            uncertainty=self.uncertainty,
+            solute=self.solute,
+            comment=(f"BadnellRRArrhenius mapped to TwoTemperaturePlasma over {Tlo:g}-{Thi:g} K (Te). Original: {self.comment}"
+            ),
+        )
+
+        return plasma
+
+    def to_cantera_kinetics(self):
+        """
+        Export this BadnellRRArrhenius as a Cantera TwoTempPlasmaRate.
+
+        Implementation:
+          BadnellRRArrhenius → TwoTemperaturePlasma → ct.TwoTempPlasmaRate
+        """
+        plasma = self.to_two_temp_plasma()
+        return plasma.to_cantera_kinetics()
+
+
+################################################################################
+
+
+cdef class VoronovEIArrhenius(KineticsModel):
+    """
+    Electron-impact ionization (Voronov, 1997, https://doi.org/10.1006/adnd.1997.0732) for ground-state atoms/ions.
+
+    Per-particle fit (Table I in Voronov 1997):
+        k = <sigma v>(Te_eV) = A * [ (1 + P*sqrt(U)) * U^K * exp(-U) ] / [ (X + U) ]
+        where U = dE / Te_eV, Te_eV = (8.617333262e-5 eV/K) * Te_K
+        Here, (Te_eV) means "function of", not multiplication.
+
+    This class returns **molar** k in SI:
+        k(Te) = <sigma v>(Te) * N_A   [m^3/(mol*s)]
+
+    YAML schema (voronov.yaml):
+      units:
+        A:  "cm^3/(molecule*s)"
+        dE: "eV"
+        T:  "K"
+        Tmin: "eV"
+        Tmax: "eV"
+      coefficients:
+        - Z: <int>
+          element: "<sym>"
+          entries:
+            - N: <int>
+              dE, P, A, X, K, Tmin, Tmax
+
+    Attributes:
+        A : RateCoefficient (accepts per-molecule or per-mole units)
+        P,X,K: Dimensionless
+        dE: ionization threshold in eV (stored as double)
+        Z,N: integers identifying the stage (N = electrons before ionization)
+    """
+
+    def __init__(self,
+                 A=None,
+                 P=0.0,
+                 X=0.0,
+                 K=0.0,
+                 dE=None,
+                 Z=None, N=None, yaml_path_or_obj=None,
+                 Tmin=None, Tmax=None, Pmin=None, Pmax=None,
+                 uncertainty=None, solute=None, comment=''):
+        KineticsModel.__init__(self, Tmin=Tmin, Tmax=Tmax, Pmin=Pmin, Pmax=Pmax,
+                               uncertainty=uncertainty, solute=solute, comment=comment)
+        self._Ea = None
+
+        # Electron-impact ionization is driven by the electron population, so both
+        # channels are intrinsic to this rate law regardless of how the object was
+        # built. Set them here, ahead of every branch below, so that no early return
+        # can leave a table-built object reporting False for either.
+        self.uses_electron_temperature = True
+        self.uses_electron_density = True
+
+        # If Z/N are provided, load from YAML now
+        if Z is not None and N is not None:
+            yaml_path_or_obj = yaml_path_or_obj or os.path.join(settings['database.directory'], 'kinetics', 'voronov.yaml')
+            try:
+                Zi = int(Z); Ni = int(N)
+            except Exception:
+                raise TypeError("Z and N must be integers.")
+            self.populate_from_yaml(yaml_path_or_obj, Zi, Ni, Tmin=Tmin, Tmax=Tmax, comment=comment)
+            return
+
+        # direct-parameter construction
+        if dE is None:
+            raise ValueError(
+                "VoronovEIArrhenius requires the ionization threshold dE (in eV) when "
+                "constructed from explicit parameters. The Voronov rate goes as "
+                "exp(-dE / Te_eV), so a substituted threshold silently rescales every "
+                "rate computed from this object; there is no defensible default. Pass "
+                "dE, or build from the Voronov table by giving Z and N."
+            )
+        self.A = A if A is not None else (1.0e-12, "cm^3/(molecule*s)")
+        self.P = P
+        self.X = X
+        self.K = K
+        self.dE = dE
+
+    def __repr__(self):
+        string = 'VoronovEIArrhenius(A={0!r}, P={1!r}, X={2!r}, K={3!r}, dE={4:.4g} eV'.format(
+            self.A, self.P, self.X, self.K, self._dE_eV)
+        if self.Tmin is not None: string += ', Tmin={0!r}'.format(self.Tmin)
+        if self.Tmax is not None: string += ', Tmax={0!r}'.format(self.Tmax)
+        if self.Pmin is not None: string += ', Pmin={0!r}'.format(self.Pmin)
+        if self.Pmax is not None: string += ', Pmax={0!r}'.format(self.Pmax)
+        if self.uncertainty: string += ', uncertainty={0!r}'.format(self.uncertainty)
+        if self.solute: string += ', solute={0!r}'.format(self.solute)
+        if self.comment != '': string += ', comment="""{0}"""'.format(self.comment)
+        string += ')'
+        return string
+
+    def __reduce__(self):
+        return (VoronovEIArrhenius, (
+            self.A, self.P, self.X, self.K, self._dE_eV,  # dE
+            None, None, None,                             # Z, N, yaml_path_or_obj
+            self.Tmin, self.Tmax,                         # Tmin, Tmax
+            self.Pmin, self.Pmax,                         # Pmin, Pmax
+            self.uncertainty, self.solute, self.comment
+        ))
+
+    # ---- properties ----
+    property A:
+        def __get__(self):
+            return self._A
+        def __set__(self, value):
+            # Normalize to per-mol before creating RateCoefficient
+            if isinstance(value, (tuple, list)) and len(value) >= 2:
+                val = float(value[0])
+                units = str(value[1])
+                u = units.replace(" ", "").lower()
+                if "molecule" in u or u.endswith("cm^3/s") or u == "cm^3/s":
+                    # per particle -> per mole
+                    val *= constants.Na
+                    units = "cm^3/(mol*s)"
+                value = (val, units)
+            self._A = quantity.RateCoefficient(value)
+
+    property P:
+        def __get__(self):
+            return self._P
+        def __set__(self, value):
+            self._P = quantity.Dimensionless(value)
+
+    property X:
+        def __get__(self):
+            return self._X
+        def __set__(self, value):
+            self._X = quantity.Dimensionless(value)
+
+    property K:
+        def __get__(self):
+            return self._K
+        def __set__(self, value):
+            self._K = quantity.Dimensionless(value)
+
+    property dE:
+        """Ionization threshold in eV (stored as a plain double in eV)."""
+        def __get__(self): return self._dE_eV
+        def __set__(self, value):
+            if isinstance(value, tuple) or isinstance(value, list):
+                # Accept (val, "eV")
+                self._dE_eV = float(value[0])
+            else:
+                self._dE_eV = float(value)
+
+    property dE_eV:
+        def __get__(self):
+            return self._dE_eV
+        def __set__(self, val):
+            self._dE_eV = float(val)
+
+    # ---- core API ----
+    cpdef double get_rate_coefficient(self, double T, double P=0.0) except -1:
+        """
+        Return bimolecular **molar** rate coefficient k(Te) in SI (m^3/(mol*s)) at electron temperature T [K].
+
+        Uses Voronov (1997) Eq. (1):
+            <σv> = A * [ (1 + P*sqrt(U)) / (X + U) ] * U^K * exp(-U)
+
+        with U = dE / Te_eV.
+        """
+        cdef double A_si, Pval, Xval, Kval, Te_eV, U, numerator, denominator
+
+        # 1. Physical Constants
+        # Boltzmann constant in eV/K (approx 8.617e-5)
+        cdef double kB_eVperK = constants.kB / constants.e
+
+        if T <= 0.0:
+            return 0.0
+
+        Te_eV = kB_eVperK * T
+        if Te_eV <= 0.0:
+            return 0.0
+
+        # 2. Calculate U (Dimensionless)
+        # Ensure dE is in eV.
+        U = self._dE_eV / Te_eV
+
+        # Numerical stability for extremely high Te (U -> 0)
+        if U < 1.0e-16:
+            U = 1.0e-16
+
+        # 3. Load Parameters
+        A_si = self._A.value_si
+        Pval = self._P.value_si
+        Xval = self._X.value_si
+        Kval = self._K.value_si
+
+        # 4. Calculate Formula (Corrected)
+        # Eq: A * [ (1 + P*sqrt(U)) / (X + U) ] * U^K * exp(-U)
+
+        numerator = (1.0 + Pval * sqrt(U)) * pow(U, Kval) * exp(-U)
+        denominator = (Xval + U)
+
+        if denominator == 0.0:
+            raise ZeroDivisionError("VoronovEIArrhenius: denominator (X + U) is zero.")
+
+        cdef double rate_per_particle = A_si * (numerator / denominator)
+
+        return rate_per_particle
+
+    cpdef bint is_identical_to(self, KineticsModel other_kinetics) except -2:
+        if not isinstance(other_kinetics, VoronovEIArrhenius):
+            return False
+        if not KineticsModel.is_identical_to(self, other_kinetics):
+            return False
+        if not self.A.equals(other_kinetics.A): return False
+        if not self.P.equals(other_kinetics.P): return False
+        if not self.X.equals(other_kinetics.X): return False
+        if not self.K.equals(other_kinetics.K): return False
+        if self._dE_eV != other_kinetics._dE_eV: return False
+        return True
+
+    cpdef change_rate(self, double factor):
+        """Scale A by `factor`."""
+        self._A.value_si *= factor
+
+    # ---- YAML helpers ----
+    def _vor__extract_row(self, obj, int Z, int N):
+        """
+        Return the dict row for (Z,N) from a voronov.yaml-like object.
+        """
+        coeffs = obj.get("coefficients")
+        if isinstance(coeffs, list):
+            for blk in coeffs:
+                zblk = blk.get("Z")
+                if zblk is not None and int(zblk) == Z:
+                    entries = blk.get("entries")
+                    if isinstance(entries, list):
+                        for e in entries:
+                            if int(e.get("N", -999)) == N:
+                                return e
+        # Also allow top-level {Z:{N:{...}}} if ever used
+        znode = obj.get(str(Z)) if isinstance(obj, dict) and str(Z) in obj else obj.get(Z) if isinstance(obj, dict) else None
+        if isinstance(znode, dict):
+            node = znode.get(str(N)) if str(N) in znode else znode.get(N)
+            if isinstance(node, dict):
+                return node
+        raise KeyError(f"Voronov YAML: no entry for Z={Z}, N={N}")
+
+    def _vor__units(self, obj):
+        """
+        Return (a_units, t_units, de_units, te_min_units, te_max_units).
+        Defaults mirror the schema.
+        """
+        units = obj.get("units", {}) if isinstance(obj, dict) else {}
+        a_units   = units.get("A",   "cm^3/(molecule*s)")
+        t_units   = units.get("T",   "K")     # reactor Te units (K)
+        de_units  = units.get("dE",  "eV")
+        tmin_unit = units.get("Tmin","eV")
+        tmax_unit = units.get("Tmax","eV")
+        return a_units, t_units, de_units, tmin_unit, tmax_unit
+
+    cpdef populate_from_yaml(self, object yaml_path_or_obj, int Z, int N,
+                             bint allow_Z_gt28=False, Tmin=None, Tmax=None, comment=None):
+        """
+        Populate from voronov.yaml for the (Z,N) stage (N = electrons before ionization).
+        Stores Tmin/Tmax internally in K (converted from eV in the YAML).
+        """
+        if not allow_Z_gt28 and Z > 28:
+            raise ValueError(f"Voronov YAML: Z={Z} exceeds 28 (dataset covers H..Ni).")
+
+        # Load YAML
+        cdef dict data
+        if isinstance(yaml_path_or_obj, dict):
+            data = yaml_path_or_obj
+        else:
+            import yaml as _yaml
+            with open(yaml_path_or_obj, "r") as f:
+                data = _yaml.safe_load(f)
+
+        row = self._vor__extract_row(data, Z, N)
+        a_units, t_units, de_units, tmin_unit, tmax_unit = self._vor__units(data)
+
+        # Required fields
+        A  = float(row["A"])
+        P  = float(row["P"])
+        X  = float(row["X"])
+        Kp = float(row["K"])
+        dE = float(row["dE"])
+
+        # Assign
+        self.A = (A, a_units)
+        self.P = P
+        self.X = X
+        self.K = Kp
+        self.dE = dE  # eV
+
+        # Temperature validity window: YAML gives eV; store in K
+        cdef double kB_eVperK = 8.617333262e-5
+        cdef double Tmin_eV = float(row.get("Tmin", 1.0))
+        cdef double Tmax_eV = float(row.get("Tmax", 2.0e4))
+        cdef object Tmin_K
+        cdef object Tmax_K
+
+        if Tmin is None:
+            Tmin_K = (Tmin_eV / kB_eVperK, "K")
+        else:
+            Tmin_K = Tmin  # already something like (value, "K") from caller
+
+        if Tmax is None:
+            Tmax_K = (Tmax_eV / kB_eVperK, "K")
+        else:
+            Tmax_K = Tmax  # already something like (value, "K") from caller
+
+        self.Tmin = Tmin_K
+        self.Tmax = Tmax_K
+
+        base = f"Voronov (1997) e-impact ionization fit, Z={Z}, N={N} "
+        self.comment = f"{base}; {comment}" if comment else base
+        return self
+
+    @classmethod
+    def from_yaml(cls, object yaml_path_or_obj, int Z, int N,
+                  Tmin=None, Tmax=None, comment=None, bint allow_Z_gt28=False):
+        """
+        Construct a new VoronovEIArrhenius from voronov.yaml.
+        """
+        obj = cls(A=(1.0e-12, "cm^3/(molecule*s)"), P=0.0, X=0.1, K=0.3, dE=10.0)
+        obj.populate_from_yaml(yaml_path_or_obj, Z, N,
+                               Tmin=Tmin, Tmax=Tmax, comment=comment,
+                               allow_Z_gt28=allow_Z_gt28)
+        return obj
+
+    def to_arrhenius(self, double Tmin=0.0, double Tmax=0.0):
+        """
+        Return an Arrhenius object that fits the Voronov kinetics over the specified temperature range.
+
+        The fit is performed by evaluating the Voronov rate at intervals linear in 1/T
+        (standard Arrhenius plot spacing) and fitting the modified Arrhenius equation to those points.
+
+        If Tmin or Tmax are not provided (or 0.0), the method defaults to self.Tmin/self.Tmax.
+        If those are also not set, it defaults to 10,000 K - 100,000 K (typical for ionization).
+        """
+        # Determine Temperature Boundaries
+        if Tmin == 0.0:
+            if self.Tmin is not None:
+                Tmin = self.Tmin.value_si
+            else:
+                Tmin = 800.0
+
+        if Tmax == 0.0:
+            if self.Tmax is not None:
+                Tmax = self.Tmax.value_si
+            else:
+                Tmax = 3000.0
+
+        if Tmin >= Tmax:
+            raise ValueError(f"Tmin ({Tmin}) must be less than Tmax ({Tmax}) for Arrhenius fitting.")
+
+        # Generate sampling points
+        # Linear in 1/T space gives better weighting for Arrhenius fits
+        # We use 50 points to ensure a smooth fit
+        cdef np.ndarray Tlist = 1.0 / np.linspace(1.0 / Tmax, 1.0 / Tmin, 50)
+        cdef np.ndarray klist = np.zeros_like(Tlist)
+
+        cdef int i
+        cdef double T_val
+
+        for i in range(len(Tlist)):
+            T_val = Tlist[i]
+            klist[i] = self.get_rate_coefficient(T_val)
+
+        # Determine units
+        # get_rate_coefficient returns SI Molar: m^3/(mol*s)
+        cdef str kunits = "m^3/(mol*s)"
+
+        # Create and fit Arrhenius object
+        # T0=1.0 is standard for minimizing correlation between A and n
+        arr = Arrhenius()
+        arr.fit_to_data(Tlist, klist, kunits, T0=1.0)
+
+        # Carry over metadata
+        arr.Tmin = (Tmin, "K")
+        arr.Tmax = (Tmax, "K")
+        arr.comment = f"Fitted to VoronovEIArrhenius over range {Tmin}-{Tmax} K. Original comment: {self.comment}"
+
+        return arr
+
+    def to_chebyshev(self, double Tmin=0.0, double Tmax=0.0, int degree_t=10):
+        """
+        Convert the Voronov kinetics to a Chebyshev object.
+
+        Uses a Pressure-Independent Chebyshev fit (P_basis=1).
+        Default temperature range: 10,000 K - 100,000 K (typical for ionization).
+        """
+        from rmgpy.kinetics.chebyshev import Chebyshev
+
+        # 1. Determine Temperature Range
+        if Tmin == 0.0:
+            Tmin = self.Tmin.value_si if self.Tmin is not None else 10000.0
+        if Tmax == 0.0:
+            Tmax = self.Tmax.value_si if self.Tmax is not None else 100000.0
+
+        if Tmin >= Tmax:
+            from rmgpy.exceptions import KineticsError
+            raise KineticsError(
+                f"VoronovEIArrhenius.to_chebyshev: Tmin ({Tmin}) must be < Tmax ({Tmax})."
+            )
+
+        # 2. Define Dummy Pressure Range (Required for Chebyshev format)
+        cdef double Pmin = 100.0       # Pa  (≈ 0.001 bar)
+        cdef double Pmax = 1.0e7       # Pa  (≈ 100 bar)
+
+        # 3. Create the Chebyshev Object
+        cheb = Chebyshev(
+            Tmin=(Tmin, "K"), Tmax=(Tmax, "K"),
+            Pmin=(Pmin, "Pa"), Pmax=(Pmax, "Pa"),
+        )
+
+        # 4. Generate Grid and Fit using Chebyshev roots
+        #    IMPORTANT: need MORE grid points than polynomial degrees.
+        cdef int nT = degree_t + 1      # > degree_t
+        cdef int nP = 2                 # > degree_p (degree_p = 1)
+
+        k_idx = np.arange(nT, dtype=float)
+
+        invT_mid = 0.5 * (1.0 / Tmax + 1.0 / Tmin)
+        invT_halfspan = 0.5 * (1.0 / Tmax - 1.0 / Tmin)
+
+        # Chebyshev nodes in 1/T space
+        T_nodes = invT_mid + invT_halfspan * np.cos(
+            (2.0 * k_idx + 1.0) * np.pi / (2.0 * nT)
+        )
+        T_points = 1.0 / T_nodes
+
+        # P_points: two points, but the rate is independent of P
+        P_points = np.array([Pmin, Pmax], dtype=float)
+
+        # K_data: shape (nT, nP)
+        K_data = np.zeros((nT, nP), dtype=float)
+        for i, T in enumerate(T_points):
+            k_val = self.get_rate_coefficient(T)
+            # Same k(T) for all pressures, since Voronov EI is P-independent
+            K_data[i, :] = k_val
+
+        # 5. Perform Fit
+        # degree_t and degree_p = 1 (pressure-independent Chebyshev)
+        cheb.fit_to_data(
+            T_points,
+            P_points,
+            K_data,
+            "m^3/(mol*s)",
+            degree_t,
+            1,          # degree_p
+            Tmin,
+            Tmax,
+            Pmin,
+            Pmax,
+        )
+
+        # Add original kinetics description to comment for traceability
+        cheb.comment = (
+            f"Chebyshev fit to VoronovEI (Z={getattr(self, 'Z', '?')}, "
+            f"N={getattr(self, 'N', '?')}). Original: {self}"
+        )
+        return cheb
+
+    cpdef TwoTemperaturePlasma to_two_temp_plasma(self):
+        """
+        Map this VoronovEIArrhenius (k = k(Te) only) onto a TwoTemperaturePlasma.
+
+        The mapping is constructed so that:
+          - along T = Te, k(T, Te) matches the Voronov rate (via Arrhenius fit),
+          - for general T, the rate depends only on Te (T cancels analytically when Ea_g = 0).
+        """
+        # 1. Determine fitting window
+        # Ionization is a high-energy process. Even if the object has Tmin=300K (default/room temp),
+        # fitting Arrhenius from 300K includes a massive "dead zone" (rate ~ 0) that distorts
+        # the curve and creates huge errors at the turn-on threshold.
+        # We enforce a floor of 10,000 K (approx 1 eV) for the fit to ensure we capture the active regime.
+        cdef double Tlo = 10000.0
+
+        if self.Tmin is not None:
+            # If user specified a Tmin, use it, but clamp it to at least 10,000 K to avoid artifacts.
+            if self.Tmin.value_si > 10000.0:
+                Tlo = self.Tmin.value_si
+
+        cdef double Thi
+        if self.Tmax is not None:
+            Thi = self.Tmax.value_si
+        else:
+            Thi = 1.0e6  # Default to 1 MK if no max provided
+
+        # 2. Fit Arrhenius to the electron temperature curve
+        arr = self.to_arrhenius(Tmin=Tlo, Tmax=Thi)
+
+        # Convert n to a bare float if needed
+        try:
+            n_val = float(arr.n.value_si)
+        except AttributeError:
+            n_val = float(arr.n)
+
+        # 3. Build the canonical TwoTemperaturePlasma
+        # Physics: EI is purely electron-driven. Ea_g is forced to 0.0.
+        plasma = TwoTemperaturePlasma(
+            A=(arr.A.value_si, "m^3/(mol*s)"),
+            n=n_val,
+            Ea_g=(0.0, "J/mol"),
+            Ea_e=(arr.Ea.value_si, "J/mol"),
+            Tmin=(Tlo, "K"),
+            Tmax=(Thi, "K"),
+            Pmin=self.Pmin,
+            Pmax=self.Pmax,
+            uncertainty=self.uncertainty,
+            solute=self.solute,
+            comment=(f"VoronovEIArrhenius mapped to TwoTemperaturePlasma over {Tlo:g}-{Thi:g} K (Te). Original: {self.comment}"),
+        )
+
+        return plasma
+
+    def to_cantera_kinetics(self):
+        """
+        Export this VoronovEIArrhenius as a Cantera TwoTempPlasmaRate.
+
+        Implementation:
+          VoronovEIArrhenius → TwoTemperaturePlasma → ct.TwoTempPlasmaRate
+        """
+        plasma = self.to_two_temp_plasma()
+        return plasma.to_cantera_kinetics()
+
+
 ################################################################################
 
 
