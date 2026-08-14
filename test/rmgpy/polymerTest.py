@@ -4941,6 +4941,87 @@ def test_impostor_polymer_scale_discrete_row_refused_both_orientations():
     assert rxn_rev.polymer_refused_accumulating is False
 
 
+def test_conduit_refusal_log_names_the_distinct_rule_per_site(caplog):
+    """Attribution premise (this task): five independent refusal rules in
+    rmgpy/polymer.py all collapse into the same ``conduit-deferred``
+    ``refused_reason`` string when rendered by the solver -- log-side
+    attribution is the only place the FIRING RULE can be told apart. Two
+    rows refused by two DIFFERENT rules (r63 gas-association-orientation
+    and r82 impostor-discrete, both reusing the fixtures above) must log
+    two DIFFERENT site identifiers via :func:`_log_conduit_refusal`, while
+    ``refused_reason`` (``polymer_refused_accumulating is False`` ->
+    "conduit-deferred") stays IDENTICAL and UNCHANGED for both -- this half
+    of the assertion is a deliberate regression guard on the closed
+    ``refused_reason`` vocabulary premise (TA-schema32 mechanism.py
+    ``REFUSED_REASONS``): it must fail if anyone later widens that
+    vocabulary or changes how the reason string is derived instead of
+    keeping attribution log-only."""
+    import logging as _logging
+    from rmgpy.polymer import Polymer, stamp_gas_association_refusal
+    from rmgpy.species import Species
+    from rmgpy.molecule import Molecule
+    from rmgpy.reaction import Reaction
+    pp = Polymer(label="polypropylene", monomer="[CH2][CH]C",
+                 Mn=5000.0, Mw=8000.0, initial_mass=1.0)
+    # Site A: r63 gas-association-orientation (pure gas radicals -> proxy).
+    r1 = Species(molecule=[Molecule().from_smiles("[CH2]C(C)C")])
+    r2 = Species(molecule=[Molecule().from_smiles("C[CH]CCC")])
+    rxn_a = Reaction(reactants=[r1, r2], products=[pp], reversible=True)
+    # Site B: r82 impostor-discrete. NOTE the orientation matters: the
+    # association orientation (impostor+gas -> proxy) has ``p_condensed``
+    # True unconditionally, so it is caught by r63's association-orientation
+    # conjunct FIRST (p_condensed alone short-circuits _all_gas_radicals).
+    # Only the reverse orientation (proxy -> impostor+gas, non-radical
+    # products) falls through r63 and reaches the r82 impostor conjunct.
+    impostor = Species(molecule=[Molecule().from_smiles(
+        "C=CCC(C)CC(C)CC(C)CC(C)CC(C)CC(C)CC(C)C")])
+    br2 = Species(molecule=[Molecule().from_smiles("BrBr")])
+    rxn_b = Reaction(reactants=[pp], products=[br2, impostor], reversible=True)
+    with caplog.at_level(_logging.WARNING):
+        stamp_gas_association_refusal(rxn_a)
+        stamp_gas_association_refusal(rxn_b)
+    # refused_reason (via polymer_refused_accumulating) is UNCHANGED and
+    # IDENTICAL across both rows -- the census string still cannot tell
+    # them apart; only the log can.
+    assert rxn_a.polymer_refused is True
+    assert rxn_a.polymer_refused_accumulating is False   # -> "conduit-deferred"
+    assert rxn_b.polymer_refused is True
+    assert rxn_b.polymer_refused_accumulating is False   # -> "conduit-deferred"
+    hits = [r for r in caplog.records
+            if "POLYMER CONDUIT REFUSAL SITE:" in r.getMessage()]
+    assert len(hits) == 2
+    site_a = hits[0].getMessage()
+    site_b = hits[1].getMessage()
+    assert "r63_gas_association_orientation" in site_a
+    assert "r82_impostor_discrete" in site_b
+    assert site_a != site_b
+
+
+def test_conduit_refusal_site_identifiers_are_pairwise_distinct():
+    """Copy-paste guard: the five ``_log_conduit_refusal`` call sites in
+    rmgpy/polymer.py (one per independently-adjudicated refusal rule) must
+    each carry a DISTINCT ``site`` identifier -- a duplicate would silently
+    collapse two rules back into the same unattributable bucket this task
+    exists to split apart. Reads the five identifiers directly out of the
+    call sites in the module source so a future copy-paste duplicate fails
+    this test even before any row happens to exercise both sites.
+
+    FIVE, not six: ``readjudicate_conduit_admission`` also clears
+    ``polymer_refused_accumulating``, but on its ADMIT arm (it sets
+    ``polymer_refused = False`` immediately above). Logging that one through
+    a "REFUSAL SITE" line would make the log name an ADMITTED row as
+    refused -- the exact opposite of what this attribution is for -- so it
+    is deliberately not a call site."""
+    import inspect
+    import re
+    import rmgpy.polymer as polymer_module
+    source = inspect.getsource(polymer_module)
+    site_ids = re.findall(
+        r'_log_conduit_refusal\(\s*forward,\s*\n?\s*"([^"]+)"', source)
+    assert len(site_ids) == 5, site_ids
+    assert len(set(site_ids)) == 5, site_ids
+
+
 def test_impostor_threshold_spares_dp2_volatile_and_gas_only_rows():
     """Negative controls for the r82 impostor conjunct (pinned):
 

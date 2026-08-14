@@ -3220,6 +3220,29 @@ def _reaction_census_label(rxn) -> str:
     return str(rxn)
 
 
+def _log_conduit_refusal(forward, site, detail="") -> None:
+    """Name the rule that refused this row. Log-side ONLY -- ``refused_reason``
+    is a closed, load-bearing vocabulary (TA-schema32 mechanism.py
+    ``REFUSED_REASONS`` hard-rejects anything outside {"conduit-deferred",
+    "qssa-invalid", "qssa-unassessable"}, and polymer_moments_runner.py
+    reconstructs solver state FROM the reason string on replay) and must
+    never carry this identity. This helper exists purely so RMG.log can say
+    WHICH of the several independent refusal sites fired for a given row,
+    something the collapsed ``refused_reason`` string cannot express.
+
+    ``site`` is a short, stable identifier for the rule (distinct per call
+    site -- there are FIVE, one per genuine refusal rule). Note that
+    ``readjudicate_conduit_admission`` also clears
+    ``polymer_refused_accumulating``, but on its ADMIT arm (it sets
+    ``polymer_refused = False``); that is not a refusal and is deliberately
+    NOT logged here, or the log would name an admitted row as refused.
+    ``detail`` is an optional free-text suffix for extra context."""
+    logging.warning(
+        "POLYMER CONDUIT REFUSAL SITE: %s -- refused by '%s'%s",
+        _reaction_census_label(forward), site,
+        (" (%s)" % detail) if detail else "")
+
+
 _double_count_warned = set()
 
 
@@ -4179,6 +4202,7 @@ def stamp_gas_association_refusal(forward, pool_registry=None) -> None:
             forward.polymer_conduit_admission_pending = True
         forward.polymer_refused = True
         forward.polymer_refused_accumulating = False  # -> "conduit-deferred"
+        _log_conduit_refusal(forward, "r93_general_chain_scale_pool_coupling")
         # M18.2 (census-only): classify the refused row for the future
         # moment_credit_conduit/1 and APPEND the structured annotation to
         # the unchanged census line below. Zero behavior change: the row
@@ -4268,6 +4292,7 @@ def stamp_gas_association_refusal(forward, pool_registry=None) -> None:
     if p_condensed or (r_condensed and _all_gas_radicals(products)):
         forward.polymer_refused = True
         forward.polymer_refused_accumulating = False  # -> "conduit-deferred"
+        _log_conduit_refusal(forward, "r63_gas_association_orientation")
         return
 
     # THIRD refused shape (adjudicated adversarial round 82, grounded in FR1
@@ -4293,6 +4318,7 @@ def stamp_gas_association_refusal(forward, pool_registry=None) -> None:
                for poly in poly_side):
             forward.polymer_refused = True
             forward.polymer_refused_accumulating = False  # "conduit-deferred"
+            _log_conduit_refusal(forward, "r82_impostor_discrete")
             return
 
 
@@ -4709,6 +4735,7 @@ def _stamp_reference_state_split_refusal(forward, reactants, products,
         return  # classification pairs off; the tripwire's U cancels
     forward.polymer_refused = True
     forward.polymer_refused_accumulating = False  # -> "conduit-deferred"
+    _log_conduit_refusal(forward, "r87_reference_state_split")
 
 
 def _polymer_participants_identical(polymer_reactants, polymer_products) -> bool:
@@ -4800,6 +4827,7 @@ def _stamp_same_proxy_refusal(forward, reactants, products,
         return
     forward.polymer_refused = True
     forward.polymer_refused_accumulating = False  # -> "conduit-deferred"
+    _log_conduit_refusal(forward, "r74_same_proxy_refusal")
 
 
 def merge_polymer_adjudication_stamps(source, target) -> None:
