@@ -31,6 +31,8 @@
 This script contains unit tests of the :mod:`rmgpy.kinetics.arrhenius` module.
 """
 
+import copy
+import inspect
 import math
 import os
 import pickle
@@ -2922,3 +2924,434 @@ class TestVoronovEIArrhenius:
 
         # Check type
         assert isinstance(ct_rate, ct.TwoTempPlasmaRate)
+
+
+################################################################################
+#
+#   Cross-cutting checks on the plasma kinetics classes.
+#
+#   These deliberately test *properties* rather than individual call sites: each
+#   of the three defects they were written for had a sibling on a code path the
+#   original per-method tests never reached.
+#
+################################################################################
+
+
+def _arrhenius_pyx_path():
+    """
+    Locate the Cython source of :mod:`rmgpy.kinetics.arrhenius`.
+
+    The compiled extension sits next to its ``.pyx`` in an in-place build, which is
+    how this repo is built. Returns None if the source is not on disk (e.g. an
+    installed-wheel layout).
+    """
+    path = os.path.join(os.path.dirname(os.path.abspath(rmgpy.__file__)), "kinetics", "arrhenius.pyx")
+    return path if os.path.isfile(path) else None
+
+
+def _numeric_literal_arguments_of_calls_to(source, callee_names, line_range=None):
+    """
+    Find every call in `source` whose callee is one of `callee_names` and report the
+    numeric literals passed directly as its arguments.
+
+    Returns a list of ``(line, callee, [literals])`` for the call sites that pass at
+    least one numeric literal at the top level of the argument list. Nested calls are
+    not descended into: ``(1.0, "K")`` counts, ``foo(bar(2))`` reports only ``foo``'s
+    own arguments.
+
+    Tokenising rather than pattern-matching is what makes this reliable: a call
+    spelled inside a string -- ``__repr__`` builds one -- never produces a NAME
+    token, so it cannot be mistaken for a construction site.
+    """
+    import tokenize as _tokenize
+    import io as _io
+
+    tokens = list(_tokenize.generate_tokens(_io.StringIO(source).readline))
+    hits = []
+
+    for index, tok in enumerate(tokens):
+        if tok.type != _tokenize.NAME or tok.string not in callee_names:
+            continue
+        if index + 1 >= len(tokens):
+            continue
+        opener = tokens[index + 1]
+        if opener.type != _tokenize.OP or opener.string != "(":
+            continue
+        if line_range is not None and not (line_range[0] <= tok.start[0] <= line_range[1]):
+            continue
+
+        depth = 0
+        literals = []
+        for follower in tokens[index + 1:]:
+            if follower.type == _tokenize.OP and follower.string in "([{":
+                depth += 1
+            elif follower.type == _tokenize.OP and follower.string in ")]}":
+                depth -= 1
+                if depth == 0:
+                    break
+            elif follower.type == _tokenize.NUMBER and depth in (1, 2):
+                # depth 1 = a bare argument; depth 2 = inside a (value, "units") tuple.
+                literals.append(follower.string)
+        if literals:
+            hits.append((tok.start[0], tok.string, literals))
+
+    return hits
+
+
+def _class_body_line_range(source, class_name):
+    """Return the (first, last) 1-based line numbers of ``cdef class <class_name>``."""
+    lines = source.splitlines()
+    start = None
+    for number, line in enumerate(lines, start=1):
+        if line.startswith("cdef class "):
+            if start is not None:
+                return start, number - 1
+            if line.startswith("cdef class {0}".format(class_name)):
+                start = number
+    assert start is not None, "class {0} not found in source".format(class_name)
+    return start, len(lines)
+
+
+class TestVoronovFactoryInventory:
+    """
+    Every way a :class:`VoronovEIArrhenius` can come into existence, and the rule
+    each of them has to obey.
+
+    ``dE`` is the ionisation threshold and the Voronov rate goes as
+    ``exp(-dE / Te_eV)``, so a substituted threshold rescales every rate the object
+    will ever produce, silently. There is no defensible default. The previous round
+    of work enforced that on the direct-parameter constructor and left the sibling
+    factory inventing one, which is why this reads as an inventory rather than as a
+    test of one call.
+    """
+
+    # The complete set of entry points that can hand back a VoronovEIArrhenius.
+    # Keep this list and the assertions below in step: `test_..._inventory_is_complete`
+    # fails if a factory is added to the class without being accounted for here.
+    DECLARED_FACTORIES = frozenset(
+        {
+            "__init__ (explicit parameters)",
+            "__init__ (Z/N table lookup)",
+            "from_yaml",
+            "__reduce__ (pickle)",
+        }
+    )
+
+    # Classmethods/staticmethods on the class that construct and return an instance.
+    DECLARED_ALTERNATE_CONSTRUCTORS = frozenset({"from_yaml"})
+
+    def setup_method(self):
+        # A stand-in table whose threshold is nothing like any plausible fabricated
+        # constant, so a substituted value would be unmistakable.
+        self.table = {
+            "units": {"A": "cm^3/(molecule*s)", "dE": "eV", "Tmin": "eV", "Tmax": "eV"},
+            "coefficients": [
+                {
+                    "Z": 11,
+                    "entries": [
+                        {
+                            "N": 11,
+                            "A": 3.0e-8,
+                            "P": 0.25,
+                            "X": 1.80,
+                            "K": 0.42,
+                            "dE": 5.139076,
+                            "Tmin": 0.010,
+                            "Tmax": 12.0,
+                        }
+                    ],
+                }
+            ],
+        }
+        self.table_dE = 5.139076
+
+    def test_voronov_factory_inventory_is_complete(self):
+        """
+        The enumeration above has to match the class. Anything callable on
+        VoronovEIArrhenius that is bound to the class rather than an instance is an
+        alternate constructor until proven otherwise, so a new one shows up here
+        first and the rest of this class then has to grow a case for it.
+        """
+        alternate = set()
+        for name in dir(VoronovEIArrhenius):
+            if name.startswith("__"):
+                continue
+            attribute = inspect.getattr_static(VoronovEIArrhenius, name, None)
+            if isinstance(attribute, (classmethod, staticmethod)):
+                alternate.add(name)
+
+        assert alternate == set(self.DECLARED_ALTERNATE_CONSTRUCTORS), (
+            "the set of alternate constructors on VoronovEIArrhenius has changed; "
+            "add the new one to DECLARED_FACTORIES and give it a threshold check"
+        )
+        # The declared inventory is those, plus the two __init__ branches and pickle.
+        assert self.DECLARED_ALTERNATE_CONSTRUCTORS <= self.DECLARED_FACTORIES
+        assert len(self.DECLARED_FACTORIES) == len(self.DECLARED_ALTERNATE_CONSTRUCTORS) + 3
+
+    def test_voronov_factory_no_construction_site_invents_a_parameter(self):
+        """
+        No construction of a VoronovEIArrhenius anywhere in the module may pass a
+        numeric literal.
+
+        This is the check that catches the defect class rather than the instance.
+        A fabricated threshold that is overwritten a line later by the table is
+        invisible to every behavioural test -- the object never escapes carrying it --
+        yet it is a physical constant invented in shipped source, one failed lookup
+        away from being the value a mechanism runs on. The only place it is visible
+        is where it is written, so that is where it gets asserted about.
+        """
+        path = _arrhenius_pyx_path()
+        if path is None:
+            pytest.skip("arrhenius.pyx not available next to the compiled module")
+        with open(path) as source_file:
+            source = source_file.read()
+
+        line_range = _class_body_line_range(source, "VoronovEIArrhenius")
+        hits = _numeric_literal_arguments_of_calls_to(
+            source, {"VoronovEIArrhenius", "cls"}, line_range=line_range
+        )
+
+        assert hits == [], (
+            "VoronovEIArrhenius is constructed with fabricated parameters at: "
+            + "; ".join(
+                "{0}:{1} {2}({3})".format(path, line, callee, ", ".join(literals))
+                for line, callee, literals in hits
+            )
+        )
+
+    def test_voronov_factory_direct_parameters_demands_an_explicit_threshold(self):
+        """Factory 1: the explicit-parameter branch of __init__."""
+        with pytest.raises(ValueError):
+            VoronovEIArrhenius(A=(3.0e-8, "cm^3/(molecule*s)"), P=0.25, X=1.8, K=0.42)
+        with pytest.raises(ValueError):
+            VoronovEIArrhenius()
+
+        # A supplied threshold is kept verbatim, including the degenerate zero.
+        assert VoronovEIArrhenius(dE=13.598433).dE_eV == 13.598433
+        assert VoronovEIArrhenius(dE=0.0).dE_eV == 0.0
+
+    def test_voronov_factory_table_constructor_takes_the_threshold_from_the_table(self):
+        """Factory 2: the (Z, N) branch of __init__."""
+        obj = VoronovEIArrhenius(Z=11, N=11, yaml_path_or_obj=self.table)
+        assert obj.dE_eV == self.table_dE
+
+    def test_voronov_factory_from_yaml_takes_the_threshold_from_the_table(self):
+        """Factory 3: the from_yaml classmethod."""
+        obj = VoronovEIArrhenius.from_yaml(self.table, Z=11, N=11)
+        assert obj.dE_eV == self.table_dE
+
+        # The rest of the object has to be table-derived too, and carry the flags the
+        # constructor sets -- from_yaml must not become a path that skips them.
+        assert obj.P.value_si == 0.25
+        assert obj.X.value_si == 1.80
+        assert obj.K.value_si == 0.42
+        assert obj.uses_electron_temperature is True
+        assert obj.uses_electron_density is True
+        assert "Z=11" in obj.comment and "N=11" in obj.comment
+
+    def test_voronov_factory_table_paths_refuse_a_row_without_a_threshold(self):
+        """
+        Both table-driven factories: a row with no dE has to fail, not fall back.
+        This is what a fabricated placeholder would eventually leak through.
+        """
+        table = copy.deepcopy(self.table)
+        del table["coefficients"][0]["entries"][0]["dE"]
+
+        with pytest.raises((KeyError, ValueError, TypeError)):
+            VoronovEIArrhenius(Z=11, N=11, yaml_path_or_obj=table)
+        with pytest.raises((KeyError, ValueError, TypeError)):
+            VoronovEIArrhenius.from_yaml(table, Z=11, N=11)
+
+    def test_voronov_factory_pickle_carries_the_threshold_across(self):
+        """Factory 4: __reduce__, which reconstructs through __init__."""
+        obj = VoronovEIArrhenius(
+            A=(3.0e-8, "cm^3/(molecule*s)"), P=0.25, X=1.8, K=0.42, dE=13.598433,
+            Tmin=(1.0e4, "K"), Tmax=(2.0e5, "K"),
+        )
+        restored = pickle.loads(pickle.dumps(obj, -1))
+        assert restored.dE_eV == obj.dE_eV == 13.598433
+
+
+class TestPlasmaKineticsReprRoundTrip:
+    """
+    ``repr`` of a kinetics object has to be loadable Python.
+
+    RMG's Python database format persists an entry as ``repr(entry.data)`` and reads
+    it back by evaluating it, so a repr that is not valid Python is silent corruption
+    deferred to whoever reloads the file. Asserting the round-trip rather than the
+    presence of a substring is deliberate: it tests the property that matters, so it
+    catches the typo nobody thought to look for as well as the two that were found.
+    """
+
+    @staticmethod
+    def _two_temperature_plasma():
+        return TwoTemperaturePlasma(
+            A=(1.5e-10, "cm^3/(molecule*s)"),
+            n=0.5,
+            Ea_g=(10.0, "kJ/mol"),
+            Ea_e=(50.0, "kJ/mol"),
+            T0=(347.25, "K"),
+            Tmin=(300.0, "K"),
+            Tmax=(3000.0, "K"),
+            comment="round-trip fixture",
+        )
+
+    @staticmethod
+    def _electron_collision_plasma():
+        return ElectronCollisionPlasma(
+            energies=([1.0, 5.0, 10.0], "eV/molecule"),
+            sigma=([1.0e-20, 2.0e-20, 5.0e-21], "m^2"),
+            Tmin=(300.0, "K"),
+            Tmax=(3000.0, "K"),
+            comment="round-trip fixture",
+        )
+
+    @staticmethod
+    def _badnell_rr_arrhenius():
+        return BadnellRRArrhenius(
+            A=(1.0e-13, "cm^3/(molecule*s)"),
+            B=0.7,
+            T0=(100.0, "K"),
+            T1=(1.0e5, "K"),
+            C=0.3,
+            T2=(2.0e5, "K"),
+            Tmin=(300.0, "K"),
+            Tmax=(3000.0, "K"),
+            comment="round-trip fixture",
+        )
+
+    @staticmethod
+    def _voronov_ei_arrhenius():
+        return VoronovEIArrhenius(
+            A=(3.0e-8, "cm^3/(molecule*s)"),
+            P=0.25,
+            X=1.80,
+            K=0.42,
+            dE=13.598433,
+            Tmin=(1.0e4, "K"),
+            Tmax=(2.0e5, "K"),
+            comment="round-trip fixture",
+        )
+
+    # All four plasma kinetics classes, each with every optional field populated so
+    # that the optional branches of __repr__ are exercised too.
+    FIXTURES = [
+        ("TwoTemperaturePlasma", _two_temperature_plasma),
+        ("ElectronCollisionPlasma", _electron_collision_plasma),
+        ("BadnellRRArrhenius", _badnell_rr_arrhenius),
+        ("VoronovEIArrhenius", _voronov_ei_arrhenius),
+    ]
+
+    @staticmethod
+    def _database_local_context():
+        """
+        The namespace an RMG database file is evaluated in: the kinetics classes by
+        name, as `rmgpy.data.kinetics` supplies them.
+        """
+        import rmgpy.kinetics.arrhenius as arrhenius_module
+
+        return dict(vars(arrhenius_module))
+
+    @pytest.mark.parametrize("name,build", FIXTURES, ids=[name for name, _ in FIXTURES])
+    def test_repr_roundtrip_is_loadable_python(self, name, build):
+        original = build.__func__() if isinstance(build, staticmethod) else build()
+        text = repr(original)
+        assert text.startswith(name + "(")
+
+        try:
+            restored = eval(text, self._database_local_context())
+        except SyntaxError as error:
+            pytest.fail("{0}.__repr__ is not valid Python: {1}\n  {2}".format(name, error, text))
+        except TypeError as error:
+            pytest.fail(
+                "{0}.__repr__ does not name the constructor's parameters: {1}\n  {2}".format(name, error, text)
+            )
+
+        assert isinstance(restored, type(original))
+        assert original.is_identical_to(restored), (
+            "{0} did not survive repr -> eval intact:\n  {1}".format(name, text)
+        )
+        assert restored.is_identical_to(original)
+
+    def test_repr_roundtrip_is_loadable_python_preserves_reference_temperature(self):
+        """
+        `is_identical_to` compares quantities with a tolerance, so pin the two scalars
+        whose exact value a lossy repr would quietly round away.
+        """
+        original = self._two_temperature_plasma()
+        restored = eval(repr(original), self._database_local_context())
+        assert restored.T0.value_si == original.T0.value_si == 347.25
+
+    def test_repr_roundtrip_is_loadable_python_preserves_ionization_threshold(self):
+        original = self._voronov_ei_arrhenius()
+        restored = eval(repr(original), self._database_local_context())
+        assert restored.dE_eV == original.dE_eV == 13.598433
+
+
+class TestTwoTemperaturePlasmaIdentity:
+    """
+    ``is_identical_to`` has to answer False whenever the rate differs.
+
+    ``KineticsModel.is_identical_to`` compares only Tmin/Tmax and does not even check
+    the type, so every subclass owns the whole comparison. Parametrising over the
+    rate-bearing fields is the point: the live defect was a missing T0, and the next
+    one will be a different field added without a matching comparison.
+    """
+
+    BASE_KWARGS = dict(
+        A=(1.5e-10, "cm^3/(molecule*s)"),
+        n=0.5,
+        Ea_g=(10.0, "kJ/mol"),
+        Ea_e=(50.0, "kJ/mol"),
+        T0=(300.0, "K"),
+        Tmin=(300.0, "K"),
+        Tmax=(3000.0, "K"),
+        comment="identity fixture",
+    )
+
+    # Every constructor field that enters k(T, Te), with a perturbation big enough to
+    # clear the tolerance in Quantity.equals.
+    RATE_FIELDS = [
+        ("A", (4.5e-10, "cm^3/(molecule*s)")),
+        ("n", 1.5),
+        ("Ea_g", (25.0, "kJ/mol")),
+        ("Ea_e", (90.0, "kJ/mol")),
+        ("T0", (1.0, "K")),
+    ]
+
+    @pytest.mark.parametrize("field,value", RATE_FIELDS, ids=[field for field, _ in RATE_FIELDS])
+    def test_identity_is_sensitive_to_every_rate_bearing_field(self, field, value):
+        base = TwoTemperaturePlasma(**self.BASE_KWARGS)
+        perturbed_kwargs = dict(self.BASE_KWARGS)
+        perturbed_kwargs[field] = value
+        perturbed = TwoTemperaturePlasma(**perturbed_kwargs)
+
+        # Guard the premise of the assertion below: if the perturbation did not move
+        # the rate, the identity check has nothing to be sensitive to and this test
+        # would pass for the wrong reason.
+        k_base = base.get_rate_coefficient_two_temp(1000.0, 2000.0)
+        k_perturbed = perturbed.get_rate_coefficient_two_temp(1000.0, 2000.0)
+        assert not np.isclose(k_base, k_perturbed, rtol=1e-9), (
+            "perturbing {0} did not change k, so this case proves nothing".format(field)
+        )
+
+        assert not base.is_identical_to(perturbed), (
+            "TwoTemperaturePlasma.is_identical_to ignores {0}: two objects with "
+            "different rates compare identical".format(field)
+        )
+        assert not perturbed.is_identical_to(base)
+
+    def test_identity_is_sensitive_to_type(self):
+        """A different class is never identical, whatever the base class compares."""
+        base = TwoTemperaturePlasma(**self.BASE_KWARGS)
+        other = Arrhenius(A=(1.5e-10, "cm^3/(molecule*s)"), n=0.5, Ea=(10.0, "kJ/mol"),
+                          Tmin=(300.0, "K"), Tmax=(3000.0, "K"))
+        assert not base.is_identical_to(other)
+
+    def test_identity_holds_for_an_unperturbed_copy(self):
+        """The other half of the property: equal parameters still compare identical."""
+        base = TwoTemperaturePlasma(**self.BASE_KWARGS)
+        twin = TwoTemperaturePlasma(**self.BASE_KWARGS)
+        assert base.is_identical_to(twin)
+        assert twin.is_identical_to(base)
+        assert base.is_identical_to(pickle.loads(pickle.dumps(base, -1)))

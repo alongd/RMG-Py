@@ -363,7 +363,7 @@ cdef class TwoTemperaturePlasma(KineticsModel):
     def __repr__(self):
         string = 'TwoTemperaturePlasma(A={0!r}, n={1!r}, Ea_g={2!r}, Ea_e={3!r}'.format(self.A, self.n, self.Ea_g, self.Ea_e)
         if self.T0.value_si != 1:
-            string += ', TO={0!r}'.format(self.T0)
+            string += ', T0={0!r}'.format(self.T0)
         if self.Tmin is not None:
             string += ', Tmin={0!r}'.format(self.Tmin)
         if self.Tmax is not None:
@@ -473,6 +473,11 @@ cdef class TwoTemperaturePlasma(KineticsModel):
         if not self.Ea_g.equals(other_kinetics.Ea_g):
             return False
         if not self.Ea_e.equals(other_kinetics.Ea_e):
+            return False
+        # T0 scales the rate through (Te/T0)**n, so two objects that differ only in
+        # their reference temperature are different rates. Compared through
+        # ScalarQuantity.equals, as Arrhenius compares its own T0.
+        if not self.T0.equals(other_kinetics.T0):
             return False
         return True
 
@@ -1472,7 +1477,13 @@ cdef class VoronovEIArrhenius(KineticsModel):
         self.dE = dE
 
     def __repr__(self):
-        string = 'VoronovEIArrhenius(A={0!r}, P={1!r}, X={2!r}, K={3!r}, dE={4:.4g} eV'.format(
+        # dE is emitted as a (value, units) keyword at full precision. An RMG database
+        # entry is saved as repr(entry.data) and read back by evaluating it, so this
+        # has to be a loadable call -- a bare "dE=13.6 eV" suffix is neither a keyword
+        # argument nor valid Python -- and the threshold has to survive the trip
+        # exactly, since the rate goes as exp(-dE / Te_eV). The stored value is in eV
+        # by construction and the dE setter reads the value out of the tuple.
+        string = "VoronovEIArrhenius(A={0!r}, P={1!r}, X={2!r}, K={3!r}, dE=({4!r}, 'eV')".format(
             self.A, self.P, self.X, self.K, self._dE_eV)
         if self.Tmin is not None: string += ', Tmin={0!r}'.format(self.Tmin)
         if self.Tmax is not None: string += ', Tmax={0!r}'.format(self.Tmax)
@@ -1711,7 +1722,16 @@ cdef class VoronovEIArrhenius(KineticsModel):
         """
         Construct a new VoronovEIArrhenius from voronov.yaml.
         """
-        obj = cls(A=(1.0e-12, "cm^3/(molecule*s)"), P=0.0, X=0.1, K=0.3, dE=10.0)
+        # Allocate without running the explicit-parameter branch of __init__. That
+        # branch demands a dE, and satisfying it here would mean inventing an
+        # ionization threshold -- the exact thing the branch exists to forbid --
+        # for the table lookup below to overwrite. A placeholder that is always
+        # overwritten is invisible until the day it isn't. So the object is built
+        # empty and every parameter it ends up with comes from the table.
+        obj = cls.__new__(cls)
+        KineticsModel.__init__(obj, comment=comment or '')
+        obj.uses_electron_temperature = True
+        obj.uses_electron_density = True
         obj.populate_from_yaml(yaml_path_or_obj, Z, N,
                                Tmin=Tmin, Tmax=Tmax, comment=comment,
                                allow_Z_gt28=allow_Z_gt28)
