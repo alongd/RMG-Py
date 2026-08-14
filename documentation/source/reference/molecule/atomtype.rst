@@ -152,5 +152,7 @@ Atom type       Description
 *Fluorine atom types*
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 ``F``           fluorine atom with any local bond structure
+``F0sc``        fluorine atom with four lone pairs, no bonds and a -1 charge (the fluoride anion)
 ``F1s``         fluorine atom with three lone pairs and zero to one single bonds
+``F1sc``        fluorine atom with three lone pairs, no bonds and a +1 charge (the fluorine cation)
 =============== ==============================================================================================================================================================

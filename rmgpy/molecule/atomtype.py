@@ -270,7 +270,7 @@ ATOMTYPES['Rx'] = AtomType(label='Rx', generic=[], specific=[
     'Cl','Cl1s',
     'Br','Br1s',
     'I','I1s',
-    'F','F1s','X','Xv','Xo'])
+    'F','F0sc','F1s','F1sc','X','Xv','Xo'])
 
 ATOMTYPES['Rx!H'] = AtomType(label='Rx!H', generic=['Rx'], specific=[
     'R!H',
@@ -286,7 +286,7 @@ ATOMTYPES['Rx!H'] = AtomType(label='Rx!H', generic=['Rx'], specific=[
     'Cl','Cl1s',
     'Br','Br1s',
     'I','I1s',
-    'F','F1s','X','Xv','Xo'])
+    'F','F0sc','F1s','F1sc','X','Xv','Xo'])
 
 # Surface sites:
 ATOMTYPES['X'] = AtomType(label='X', generic=['Rx', 'Rx!H'], specific=['Xv', 'Xo'])
@@ -318,7 +318,7 @@ ATOMTYPES['R'] = AtomType(label='R', generic=['Rx'], specific=[
     'Cl','Cl1s',
     'Br','Br1s',
     'I','I1s',
-    'F','F1s'])
+    'F','F0sc','F1s','F1sc'])
 
 ATOMTYPES['R!H'] = AtomType(label='R!H', generic=['R', 'Rx', 'Rx!H'], specific=[
     'Val4','Val5','Val6','Val7',
@@ -333,7 +333,7 @@ ATOMTYPES['R!H'] = AtomType(label='R!H', generic=['R', 'Rx', 'Rx!H'], specific=[
     'Cl','Cl1s',
     'Br','Br1s',
     'I','I1s',
-    'F','F1s'])
+    'F','F0sc','F1s','F1sc'])
 
 ATOMTYPES['R!H!Val7'] = AtomType(label='R!H!Val7', generic=['R', 'Rx', 'Rx!H'], specific=[
     'Val4','Val5','Val6',
@@ -363,7 +363,7 @@ ATOMTYPES['Val7'] = AtomType(label='Val7', generic=['R', 'R!H', 'Rx', 'Rx!H'], s
     'Cl','Cl1s',
     'Br','Br1s',
     'I','I1s',
-    'F','F1s'])
+    'F','F0sc','F1s','F1sc'])
 
 
 ATOMTYPES['H'] = AtomType('H', generic=['Rx','R'], specific=['H0','H+'], charge=[0,+1])
@@ -693,10 +693,16 @@ ATOMTYPES['I1s'] = AtomType('I1s', generic=['R', 'R!H', 'I', 'Val7', 'Rx', 'Rx!H
                             single=[0,1], all_double=[0], r_double=[], o_double=[], s_double=[], triple=[0], quadruple=[0], benzene=[0], lone_pairs=[3], charge=[0])
 # examples for I1s: HI, [I], IO, CH3I, I2
 
-ATOMTYPES['F'] = AtomType('F', generic=['R', 'R!H', 'Val7', 'Rx', 'Rx!H'], specific=['F1s'])
+ATOMTYPES['F'] = AtomType('F', generic=['R', 'R!H', 'Val7', 'Rx', 'Rx!H'], specific=['F0sc', 'F1s', 'F1sc'])
+ATOMTYPES['F0sc'] = AtomType('F0sc', generic=['R', 'R!H', 'F', 'Val7', 'Rx', 'Rx!H'], specific=[],  # (shared electrons = 8)
+                             single=[0], all_double=[0], r_double=[], o_double=[], s_double=[], triple=[0], quadruple=[0], benzene=[0], lone_pairs=[4], charge=[-1])
+# examples for F0sc: the fluoride anion [F-]
 ATOMTYPES['F1s'] = AtomType('F1s', generic=['R', 'R!H', 'F', 'Val7', 'Rx', 'Rx!H'], specific=[],
                             single=[0,1], all_double=[0], r_double=[], o_double=[], s_double=[], triple=[0], quadruple=[0], benzene=[0], lone_pairs=[3], charge=[0])
 # examples for F1s: HF, [F], FO, CH3F, F2
+ATOMTYPES['F1sc'] = AtomType('F1sc', generic=['R', 'R!H', 'F', 'Val7', 'Rx', 'Rx!H'], specific=[],  # (shared electrons = 6)
+                             single=[0], all_double=[0], r_double=[], o_double=[], s_double=[], triple=[0], quadruple=[0], benzene=[0], lone_pairs=[3], charge=[+1])
+# examples for F1sc: the closed-shell fluorine cation [F+]
 
 ATOMTYPES['Rx'].set_actions(increment_bond=['Rx'], decrement_bond=['Rx'], form_bond=['Rx'], break_bond=['Rx'], increment_radical=['Rx'], decrement_radical=['Rx'], increment_lone_pair=['Rx'], decrement_lone_pair=['Rx'], increment_charge=['Rx'], decrement_charge=['Rx'])
 ATOMTYPES['Rx!H'].set_actions(increment_bond=['Rx!H'], decrement_bond=['Rx!H'], form_bond=['Rx!H'], break_bond=['Rx!H'], increment_radical=['Rx!H'], decrement_radical=['Rx!H'], increment_lone_pair=['Rx!H'], decrement_lone_pair=['Rx!H'], increment_charge=['Rx!H'], decrement_charge=['Rx!H'])
@@ -824,7 +830,7 @@ ATOMTYPES['S4b'].set_actions(increment_bond=[], decrement_bond=[], form_bond=[],
 ATOMTYPES['S4dd'].set_actions(increment_bond=['S4dc'], decrement_bond=['S4dc', 'S4d'], form_bond=[], break_bond=[], increment_radical=[], decrement_radical=[], increment_lone_pair=[], decrement_lone_pair=['S6dd'],increment_charge=[], decrement_charge=[])
 ATOMTYPES['S4t'].set_actions(increment_bond=[], decrement_bond=['S4d'], form_bond=['S4t'], break_bond=['S4t'], increment_radical=['S4t'], decrement_radical=['S4t'], increment_lone_pair=['S2tc'], decrement_lone_pair=['S6t', 'S6tdc'],increment_charge=[], decrement_charge=[])
 ATOMTYPES['S4tdc'].set_actions(increment_bond=['S4tdc'], decrement_bond=['S4d', 'S4tdc'], form_bond=['S4tdc'], break_bond=['S4tdc'], increment_radical=['S4tdc'], decrement_radical=['S4tdc'], increment_lone_pair=['S6tdc'], decrement_lone_pair=['S6td', 'S6tdc'],increment_charge=[], decrement_charge=[])
-ATOMTYPES['S6s'].set_actions(increment_bond=['S6d', 'S6dc'], decrement_bond=[], form_bond=['S6s'], break_bond=['S6s'], increment_radical=['S6s'], decrement_radical=['S6s'], increment_lone_pair=['S4s', 'S4sc'], decrement_lone_pair=[], increment_charge=[], decrement_charge=[])
+ATOMTYPES['S6s'].set_actions(increment_bond=['S6d', 'S6dc'], decrement_bond=[], form_bond=['S6s'], break_bond=['S6s'], increment_radical=['S6s'], decrement_radical=['S6s'], increment_lone_pair=['S4s', 'S4sc'], decrement_lone_pair=[], increment_charge=[], decrement_charge=['S6sc'])
 ATOMTYPES['S6sc'].set_actions(increment_bond=['S6dc'], decrement_bond=[], form_bond=['S6sc'], break_bond=['S6sc'], increment_radical=['S6sc'], decrement_radical=['S6sc'], increment_lone_pair=['S4s', 'S4sc'], decrement_lone_pair=[], increment_charge=[], decrement_charge=[])
 ATOMTYPES['S6d'].set_actions(increment_bond=['S6dd', 'S6t', 'S6tdc'], decrement_bond=['S6s'], form_bond=['S6d', 'S6dc'], break_bond=['S6d', 'S6dc'], increment_radical=['S6d'], decrement_radical=['S6d'], increment_lone_pair=['S4d', 'S4dc'], decrement_lone_pair=[], increment_charge=[], decrement_charge=[])
 ATOMTYPES['S6dc'].set_actions(increment_bond=['S6dd', 'S6ddd', 'S6dc', 'S6t', 'S6td', 'S6tdc'], decrement_bond=['S6sc', 'S6dc'], form_bond=['S6d', 'S6dc'], break_bond=['S6d', 'S6dc'], increment_radical=['S6dc'], decrement_radical=['S6dc'], increment_lone_pair=['S4d', 'S4dc'], decrement_lone_pair=[], increment_charge=[], decrement_charge=[])
@@ -845,7 +851,12 @@ ATOMTYPES['I'].set_actions(increment_bond=[], decrement_bond=[], form_bond=['I']
 ATOMTYPES['I1s'].set_actions(increment_bond=[], decrement_bond=[], form_bond=['I1s'], break_bond=['I1s'], increment_radical=['I1s'], decrement_radical=['I1s'], increment_lone_pair=[], decrement_lone_pair=[], increment_charge=[], decrement_charge=[])
 
 ATOMTYPES['F'].set_actions(increment_bond=[], decrement_bond=[], form_bond=['F'], break_bond=['F'], increment_radical=['F'], decrement_radical=['F'], increment_lone_pair=[], decrement_lone_pair=[], increment_charge=[], decrement_charge=[])
-ATOMTYPES['F1s'].set_actions(increment_bond=[], decrement_bond=[], form_bond=['F1s'], break_bond=['F1s'], increment_radical=['F1s'], decrement_radical=['F1s'], increment_lone_pair=[], decrement_lone_pair=[], increment_charge=[], decrement_charge=[])
+# F0sc has no bonds and a full octet, so no bond or lone pair action leads anywhere;
+# gaining charge returns it to the neutral F1s.
+ATOMTYPES['F0sc'].set_actions(increment_bond=[], decrement_bond=[], form_bond=[], break_bond=[], increment_radical=['F0sc'], decrement_radical=['F0sc'], increment_lone_pair=[], decrement_lone_pair=[], increment_charge=['F1s'], decrement_charge=[])
+ATOMTYPES['F1s'].set_actions(increment_bond=[], decrement_bond=[], form_bond=['F1s'], break_bond=['F1s'], increment_radical=['F1s'], decrement_radical=['F1s'], increment_lone_pair=[], decrement_lone_pair=[], increment_charge=['F1sc'], decrement_charge=['F0sc'])
+# F1sc cannot bond without exceeding +1 on fluorine; losing charge returns it to the neutral F1s.
+ATOMTYPES['F1sc'].set_actions(increment_bond=[], decrement_bond=[], form_bond=[], break_bond=[], increment_radical=['F1sc'], decrement_radical=['F1sc'], increment_lone_pair=[], decrement_lone_pair=[], increment_charge=[], decrement_charge=['F1s'])
 
 # these are ordered in priority of picking if a more general atomtype is encountered
 allElements = ['H', 'C', 'O', 'N', 'S', 'P', 'Si', 'F', 'Cl', 'Br', 'I', 'Li', 'Ne', 'Ar', 'He', 'X', 'e', ]

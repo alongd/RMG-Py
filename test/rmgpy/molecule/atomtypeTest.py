@@ -665,6 +665,22 @@ class TestGetAtomType:
                                                        2 F u0 p3 c0 {1,S}"""
         )
 
+        self.mol75_anion = Molecule().from_adjacency_list("""1 F u0 p4 c-1""")
+
+        self.mol75_cation = Molecule().from_adjacency_list("""1 F u0 p3 c+1""")
+
+        # SF6- is a doublet radical anion: 49 valence electrons, so the odd electron sits on S
+        self.mol_sf6_anion = Molecule().from_adjacency_list(
+            """multiplicity 2
+               1 S u1 p0 c-1 {2,S} {3,S} {4,S} {5,S} {6,S} {7,S}
+               2 F u0 p3 c0 {1,S}
+               3 F u0 p3 c0 {1,S}
+               4 F u0 p3 c0 {1,S}
+               5 F u0 p3 c0 {1,S}
+               6 F u0 p3 c0 {1,S}
+               7 F u0 p3 c0 {1,S}"""
+        )
+
         self.mol76 = Molecule().from_adjacency_list(
             """1 H u0 p0 c0 {2,S}
                                                        2 X u0 p0 c0 {1,S}"""
@@ -994,6 +1010,16 @@ class TestGetAtomType:
         Test that get_atomtype() returns appropriate fluorine atom types.
         """
         assert self.atom_type(self.mol75, 1) == "F1s"
+        assert self.atom_type(self.mol75_anion, 0) == "F0sc"
+        assert self.atom_type(self.mol75_cation, 0) == "F1sc"
+
+    def test_sf6_anion_types(self):
+        """
+        Test that get_atomtype() resolves every atom of the SF6 radical anion.
+        """
+        assert self.atom_type(self.mol_sf6_anion, 0) == "S6sc"
+        for index in range(1, 7):
+            assert self.atom_type(self.mol_sf6_anion, index) == "F1s"
 
     def test_lithium_types(self):
         """
