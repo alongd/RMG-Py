@@ -2455,7 +2455,13 @@ class Molecule(Graph):
         """
         cython.declare(atom1=Atom, order=cython.double)
         for atom1 in self.vertices:
-            if atom1.is_hydrogen() or atom1.is_surface_site() or atom1.is_electron() or atom1.is_lithium():
+            if (atom1.is_hydrogen() and atom1.charge >= 0) or atom1.is_surface_site() or atom1.is_electron() \
+                    or (atom1.is_lithium() and atom1.charge >= 0):
+                # A negatively charged hydrogen or lithium is *not* lone-pair-free: forcing it to
+                # zero here strips the anion back to neutral, and update_charge then re-derives
+                # the charge from the electron count and lands on +1. That inversion is silent -
+                # no exception, no log line - so H- came back as H+. Fall through to the general
+                # count instead.
                 atom1.lone_pairs = 0
             else:
                 order = atom1.get_total_bond_order()

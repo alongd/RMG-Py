@@ -27,6 +27,9 @@ Atom type       Description
 *Hydrogen atom types*
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 ``H``           hydrogen atom with up to one single bond
+``H0``          neutral hydrogen atom with no lone pairs and up to one single bond
+``H+``          hydrogen atom with no lone pairs, no bonds and a +1 charge (the proton)
+``H-``          hydrogen atom with one lone pair, no bonds and a -1 charge (the hydride anion)
 *Carbon atom types*
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 ``C``           carbon atom with any local bond structure
@@ -49,6 +52,9 @@ Atom type       Description
 *Nitrogen atom types*
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 ``N``           nitrogen atom with any local bond structure
+``Nm1``         charge class: any singly-negative nitrogen atom (a group label, parent of ``N1sc`` and ``N1dc``)
+``Nm2``         charge class: any doubly-negative nitrogen atom (a group label, parent of ``N0sc``)
+``Nm3``         charge class: any triply-negative nitrogen atom (the nitride anion)
 ``N0sc``        charged nitrogen atom with three lone pairs (valance 0) with up to one single bond
 ``N1s``         nitrogen atom with two lone pairs (valance 1) and up to one single bond
 ``N1sc``        charged nitrogen atom with two lone pairs (valance 1) up to two single bonds
@@ -68,6 +74,8 @@ Atom type       Description
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 ``O``           oxygen atom with any local bond structure
 ``Oa``          oxygen atom with three lone pairs and no bonds
+``Om1``         charge class: any singly-negative oxygen atom (a group label, parent of ``O0sc``)
+``Om2``         charge class: any doubly-negative oxygen atom (the oxide anion)
 ``O0sc``        charged oxygen with three lone pairs (valance 0) and up to one single bond
 ``O0dc``        charged oxygen atom with three lone pairs (valance 0) and one double bond
 ``O2s``         oxygen atom with two lone pairs (valance 2) and up to two single bonds
@@ -140,10 +148,12 @@ Atom type       Description
 *Chlorine atom types*
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 ``Cl``          chlorine atom with any local bond structure
+``Cl0sc``       chlorine atom with four lone pairs, no bonds and a -1 charge (the chloride anion)
 ``Cl1s``        chlorine atom with three lone pairs and zero to one single bonds
 *Bromine atom types*
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 ``Br``          bromine atom with any local bond structure
+``Br0sc``       bromine atom with four lone pairs, no bonds and a -1 charge (the bromide anion)
 ``Br1s``        bromine atom with three lone pairs and zero to one single bonds
 *Iodine atom types*
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------

@@ -669,6 +669,12 @@ class TestGetAtomType:
 
         self.mol75_cation = Molecule().from_adjacency_list("""1 F u0 p3 c+1""")
 
+        self.mol_hydride = Molecule().from_adjacency_list("""1 H u0 p1 c-1""")
+
+        self.mol_chloride = Molecule().from_adjacency_list("""1 Cl u0 p4 c-1""")
+
+        self.mol_bromide = Molecule().from_adjacency_list("""1 Br u0 p4 c-1""")
+
         # SF6- is a doublet radical anion: 49 valence electrons, so the odd electron sits on S
         self.mol_sf6_anion = Molecule().from_adjacency_list(
             """multiplicity 2
@@ -861,6 +867,27 @@ class TestGetAtomType:
         """
         assert self.atom_type(self.mol3, 0) == "H0"
 
+    def test_hydride_type(self):
+        """
+        Test that get_atomtype() resolves the hydride anion.
+        """
+        assert self.atom_type(self.mol_hydride, 0) == "H-"
+        assert self.mol_hydride.get_net_charge() == -1
+
+    def test_hydride_survives_update(self):
+        """
+        Test that Molecule.update() leaves the hydride anion at -1.
+
+        update_lone_pairs() used to force lone_pairs = 0 on every hydrogen regardless of charge,
+        which stripped the anion back to neutral; update_charge() then re-derived +1 from the
+        electron count. The inversion was silent, so this asserts on the charge, not on a raise.
+        """
+        mol = Molecule().from_adjacency_list("""1 H u0 p1 c-1""")
+        mol.update()
+        assert mol.get_net_charge() == -1
+        assert mol.atoms[0].lone_pairs == 1
+        assert mol.atoms[0].atomtype.label == "H-"
+
     def test_carbon_types(self):
         """
         Test that get_atomtype() returns appropriate carbon atom types.
@@ -992,12 +1019,14 @@ class TestGetAtomType:
         Test that get_atomtype() returns appropriate chlorine atom types.
         """
         assert self.atom_type(self.mol73, 1) == "Cl1s"
+        assert self.atom_type(self.mol_chloride, 0) == "Cl0sc"
 
     def test_bromine_types(self):
         """
         Test that get_atomtype() returns appropriate bromine atom types.
         """
         assert self.atom_type(self.mol79, 1) == "Br1s"
+        assert self.atom_type(self.mol_bromide, 0) == "Br0sc"
 
     def test_iodine_types(self):
         """
@@ -1063,3 +1092,152 @@ class TestGetAtomType:
         Test that get_atomtype() returns the proton (H+) atom type.
         """
         assert self.atom_type(self.proton, 0) == 'H+'
+
+
+class TestAnionRecipes:
+    """
+    Contains tests that a reaction recipe reaching a monatomic anion actually produces the anion.
+
+    These deliberately assert on the net charge and the formula of the product rather than on an
+    exception being raised. The defect they pin was silent: applying the recipe returned a species
+    of the opposite charge with no exception and no log line, so a ``pytest.raises`` test would
+    have passed against the bug and proved nothing.
+    """
+
+    def attach_electron(self, adjlist):
+        """Apply the electron-attachment recipe (radical -> lone pair, charge -1) to `adjlist`."""
+        from rmgpy.data.kinetics.family import ReactionRecipe
+
+        mol = Molecule().from_adjacency_list(adjlist)
+        product = mol.copy(deep=True)
+        recipe = ReactionRecipe([["LOSE_RADICAL", "*1", 1], ["GAIN_PAIR", "*1", 1]])
+        recipe.apply_forward(product, unique=True)
+        product.update()
+        return product
+
+    def test_hydride_from_recipe(self):
+        """A recipe reaching H- must yield a product of net charge -1, not the H+ it used to."""
+        product = self.attach_electron("""1 *1 H u1 p0 c0""")
+        assert product.get_net_charge() == -1
+        assert product.get_formula() == "H"
+        assert product.atoms[0].atomtype.label == "H-"
+
+    def test_chloride_from_recipe(self):
+        """A recipe reaching Cl- must yield a product of net charge -1."""
+        product = self.attach_electron("""1 *1 Cl u1 p3 c0""")
+        assert product.get_net_charge() == -1
+        assert product.get_formula() == "Cl"
+        assert product.atoms[0].atomtype.label == "Cl0sc"
+
+    def test_bromide_from_recipe(self):
+        """A recipe reaching Br- must yield a product of net charge -1."""
+        product = self.attach_electron("""1 *1 Br u1 p3 c0""")
+        assert product.get_net_charge() == -1
+        assert product.get_formula() == "Br"
+        assert product.atoms[0].atomtype.label == "Br0sc"
+
+
+class TestGenericLonePairActions:
+    """
+    Contains tests that GAIN_PAIR is a legal action on the *generic* atomtype of every element
+    whose anion this branch supports.
+
+    A reaction family builds its product template by applying the recipe to the root group
+    itself, so a recipe containing GAIN_PAIR can only ever match an atom whose generic atomtype
+    permits the action. Adding the H-/F0sc/Cl0sc/Br0sc leaves does not by itself make attachment
+    reachable: with an empty increment_lone_pair on generic H/F/Cl/Br, the root group cannot
+    include those elements at all, so the leaf exists and the capability does not.
+    """
+
+    def test_generic_lone_pair_actions_are_wired(self):
+        """The generic atomtypes of the supported anions must permit lone pair actions."""
+        from rmgpy.molecule.atomtype import ATOMTYPES
+
+        for label in ["H", "F", "Cl", "Br"]:
+            assert ATOMTYPES[label].increment_lone_pair, f"{label} has no increment_lone_pair action"
+            assert ATOMTYPES[label].decrement_lone_pair, f"{label} has no decrement_lone_pair action"
+
+    def test_gain_pair_on_generic_root_group(self):
+        """Applying the attachment recipe to a root group of each generic atomtype must not raise."""
+        from rmgpy.data.kinetics.family import ReactionRecipe
+        from rmgpy.molecule.group import Group
+
+        for label in ["H", "F", "Cl", "Br"]:
+            group = Group().from_adjacency_list(f"1 *1 {label} u1")
+            recipe = ReactionRecipe([["LOSE_RADICAL", "*1", 1], ["GAIN_PAIR", "*1", 1]])
+            recipe.apply_forward(group, unique=True)  # raises ActionError if the action is missing
+            assert group.atoms[0].radical_electrons == [0]
+
+    def test_gain_pair_on_halogen_radical_yields_anion(self):
+        """The recipe applied to a real halogen radical must yield the anion, not the cation."""
+        from rmgpy.data.kinetics.family import ReactionRecipe
+
+        for adjlist, expected in (
+            ("1 *1 Cl u1 p3 c0", "Cl0sc"),
+            ("1 *1 Br u1 p3 c0", "Br0sc"),
+            ("1 *1 F u1 p3 c0", "F0sc"),
+            ("1 *1 H u1 p0 c0", "H-"),
+        ):
+            product = Molecule().from_adjacency_list(adjlist)
+            ReactionRecipe([["LOSE_RADICAL", "*1", 1], ["GAIN_PAIR", "*1", 1]]).apply_forward(product, unique=True)
+            product.update()
+            assert product.get_net_charge() == -1
+            assert product.atoms[0].atomtype.label == expected
+
+
+class TestChargeClassParents:
+    """
+    Contains tests that the charge-class parent atomtypes stay group-matching labels.
+
+    They are reachable from a group definition through the specific/generic lists, but must never
+    win a get_atomtype lookup against their own leaves, because their feature ranges are only
+    consulted there. A parent declared wider than its leaves resolves atoms the leaves reject.
+    """
+
+    def test_parents_are_reachable_as_group_labels(self):
+        """Each parent must be linked to its leaves in both directions."""
+        from rmgpy.molecule.atomtype import ATOMTYPES
+
+        for parent, leaves in (("Om1", ["O0sc"]), ("Nm1", ["N1sc", "N1dc"]), ("Nm2", ["N0sc"])):
+            for leaf in leaves:
+                assert ATOMTYPES[leaf].is_specific_case_of(ATOMTYPES[parent])
+                assert ATOMTYPES[leaf] in ATOMTYPES[parent].specific
+                assert ATOMTYPES[parent] in ATOMTYPES[leaf].generic
+
+    def test_parents_do_not_shadow_their_leaves(self):
+        """get_atomtype must still return the leaf, not the charge-class parent."""
+        for adjlist, expected in (
+            # hydroxide [OH-]
+            ("1 O u0 p3 c-1 {2,S}\n2 H u0 p0 c0 {1,S}", "O0sc"),
+            # amide [NH2-]
+            ("1 N u0 p2 c-1 {2,S} {3,S}\n2 H u0 p0 c0 {1,S}\n3 H u0 p0 c0 {1,S}", "N1sc"),
+        ):
+            mol = Molecule().from_adjacency_list(adjlist)
+            assert mol.atoms[0].atomtype.label == expected
+
+    def test_parents_admit_no_octet_violation(self):
+        """
+        No charge-class parent may resolve an atom carrying more than eight electrons.
+
+        Om1 as originally written covered `O u1 p2 c-1` (nine electrons), which added a spurious
+        third resonance structure to NO2 and a fourth and fifth to SO2.
+        """
+        from rmgpy.molecule.atomtype import ATOMTYPES
+
+        valence = {"O": 6, "N": 5}
+        for parent, symbol in (("Om1", "O"), ("Om2", "O"), ("Nm1", "N"), ("Nm2", "N"), ("Nm3", "N")):
+            at = ATOMTYPES[parent]
+            for single in at.single or [0]:
+                for double in at.all_double or [0]:
+                    for triple in at.triple or [0]:
+                        for pairs in at.lone_pairs or [0]:
+                            for charge in at.charge or [0]:
+                                order = single + 2 * double + 3 * triple
+                                radicals = valence[symbol] - order - 2 * pairs - charge
+                                if radicals < 0:
+                                    continue  # not a real atom
+                                electrons = 2 * pairs + radicals + 2 * order
+                                assert electrons <= 8, (
+                                    f"{parent} resolves {symbol} u{radicals} p{pairs} c{charge:+d} "
+                                    f"with {order} bond orders, carrying {electrons} electrons"
+                                )
