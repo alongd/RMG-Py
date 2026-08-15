@@ -62,7 +62,9 @@ Dumper.add_representer(str, _multiline_str_representer)
 
 from rmgpy.data.kinetics.family import TemplateReaction
 from rmgpy.data.kinetics.library import LibraryReaction
-from rmgpy.electron_balance import check_electron_balance, check_electron_reactant_order, expand_electrons
+from rmgpy.electron_balance import (check_electron_balance, check_electron_reactant_order,
+                                    expand_electrons, get_electron_species,
+                                    potential_dependence_is_inert)
 from rmgpy.exceptions import MechanismWriterError
 from rmgpy.kinetics import (
     Arrhenius, PDepArrhenius, MultiArrhenius, MultiPDepArrhenius,
@@ -70,7 +72,9 @@ from rmgpy.kinetics import (
     StickingCoefficient, SurfaceArrhenius,
     TwoTemperaturePlasma, ElectronCollisionPlasma,
     BadnellRRArrhenius, VoronovEIArrhenius,
+    ArrheniusChargeTransfer, Marcus,
 )
+from rmgpy.kinetics.surface import SurfaceChargeTransfer
 from rmgpy.reaction import Reaction
 from rmgpy.rmg.pdep import PDepReaction
 from rmgpy.util import make_output_subdirectory
@@ -527,6 +531,17 @@ def species_to_dict(species, species_list):
     return species_entry
 
 
+#: Kinetics whose rate law is only meaningful in a plasma phase. Kept in step
+#: with rmgpy.chemkin.PLASMA_KINETICS_CLASSES so both writers refuse on the same
+#: condition when the mechanism defines no electron species.
+PLASMA_KINETICS_CLASSES = (
+    TwoTemperaturePlasma,
+    ElectronCollisionPlasma,
+    BadnellRRArrhenius,
+    VoronovEIArrhenius,
+)
+
+
 def _two_temperature_plasma_entry(A, b, Ea_gas, Ea_electron):
     """
     Build the Cantera 'two-temperature-plasma' fields for a rate
@@ -563,7 +578,11 @@ def reaction_to_dict_list(reaction, species_list=None):
                 products=reaction.products,
                 reversible=reaction.reversible,
                 kinetics=sub_kin,
-                duplicate=True
+                duplicate=True,
+                # Without this the sub-reaction is neutral, and the electron
+                # bookkeeping of a grouped charged reaction is gone before
+                # expand_electrons ever sees it.
+                electrons=reaction.electrons,
             )
             sub_result = reaction_to_dict_list(sub_rxn, species_list)
             if sub_result:
@@ -575,6 +594,19 @@ def reaction_to_dict_list(reaction, species_list=None):
     # Generate equation string
     equation = get_reaction_equation(reaction, species_list)
     entry = {'equation': equation}
+
+    if isinstance(kin, PLASMA_KINETICS_CLASSES) and get_electron_species(species_list) is None:
+        # The Chemkin writer already refuses this. Without the same check here the
+        # gas phase is written as 'ideal-gas' (save_cantera_model decides plasma
+        # mode from species presence) and then handed plasma reaction types
+        # anyway -- a non-plasma phase full of plasma rates, which no solver
+        # should accept and nothing warns about.
+        raise MechanismWriterError(
+            f"Cannot write reaction {equation} to Cantera YAML: its kinetics type "
+            f"{type(kin).__name__} is a plasma rate law, but the mechanism defines no "
+            f"electron species, so the phase would be written as a non-plasma phase "
+            f"containing plasma reaction rates. Add the electron to the species list."
+        )
 
     if reaction.duplicate:
         entry['duplicate'] = True
@@ -590,9 +622,61 @@ def reaction_to_dict_list(reaction, species_list=None):
         entry['type'] = 'interface-Arrhenius'
         entry['rate-constant'] = {'A': kin.A.value_si, 'b': kin.n.value_si, 'Ea': kin.Ea.value_si}
 
+    elif isinstance(kin, SurfaceChargeTransfer):
+        # Cantera's interface reactions do carry a charge-transfer coefficient
+        # as 'beta', but they apply it only when the reaction moves net charge
+        # *between phases* (Reaction::usesElectrochemistry). RMG keeps both the
+        # ion and the electron in the same gas/electrolyte phase, so a realistic
+        # surface charge transfer is charge-neutral per phase and Cantera
+        # accepts 'beta' and then silently discards it -- measured: written as
+        # `beta: 0.62`, read back as `beta: nan`, absent from input_data. A
+        # parameter that is in the file and not in the solver is exactly the
+        # defect this writer exists to prevent, so the potential dependence is
+        # held to the same rule as everywhere else: exact, or refused.
+        if not potential_dependence_is_inert(kin):
+            raise MechanismWriterError(
+                f"Cannot write reaction {equation} to Cantera YAML: its "
+                f"SurfaceChargeTransfer kinetics is potential-dependent "
+                f"(alpha={kin.alpha.value_si}, electrons={kin.electrons.value_si}, "
+                f"V0={kin.V0.value_si} V, Ea={kin.Ea.value_si} J/mol). Cantera applies a "
+                f"charge-transfer correction only to reactions that move net charge between "
+                f"phases, and RMG writes the ion and the electron into the same phase, so "
+                f"'beta' would be written and then silently ignored. Writing the rate at V0 "
+                f"instead would drop the potential dependence while still looking like a rate."
+            )
+        entry['type'] = 'interface-Arrhenius'
+        entry['rate-constant'] = {'A': kin.A.value_si, 'b': kin.n.value_si, 'Ea': kin.Ea.value_si}
+
     # 2. Gas Kinetics
     elif isinstance(kin, Arrhenius):
         entry['rate-constant'] = {'A': kin.A.value_si, 'b': kin.n.value_si, 'Ea': kin.Ea.value_si}
+
+    elif isinstance(kin, ArrheniusChargeTransfer):
+        # Cantera 3.1 has no bulk-phase potential-dependent rate form: 'beta' is
+        # only read by InterfaceRateBase, and on a bulk reaction Cantera accepts
+        # and then silently ignores it. So this exports only when the potential
+        # dependence is provably absent, in which case (A, n, Ea) is the exact
+        # rate at every potential and not merely at V0.
+        if not potential_dependence_is_inert(kin):
+            raise MechanismWriterError(
+                f"Cannot write reaction {equation} to Cantera YAML: its "
+                f"ArrheniusChargeTransfer kinetics is potential-dependent "
+                f"(alpha={kin.alpha.value_si}, electrons={kin.electrons.value_si}, "
+                f"V0={kin.V0.value_si} V, Ea={kin.Ea.value_si} J/mol) and Cantera has no "
+                f"bulk-phase potential-dependent rate form. Writing its rate at V0 would "
+                f"drop the potential dependence while still looking like a rate."
+            )
+        entry['rate-constant'] = {'A': kin.A.value_si, 'b': kin.n.value_si, 'Ea': kin.Ea.value_si}
+
+    elif isinstance(kin, Marcus):
+        raise MechanismWriterError(
+            f"Cannot write reaction {equation} to Cantera YAML: Marcus kinetics evaluate "
+            f"k(T, dGrxn) = A*T^n*exp(-dG_act/(R*T)) with "
+            f"dG_act = (lmbd_i(T)+lmbd_o)/4 * (1 + dGrxn/(lmbd_i(T)+lmbd_o))^2, and dGrxn is "
+            f"not a property of the rate law -- it comes from the species thermochemistry at "
+            f"run time. There is no value of these parameters for which a Cantera rate form "
+            f"reproduces this, so there is no correct file to write."
+        )
 
     elif isinstance(kin, Chebyshev):
         entry['type'] = 'Chebyshev'

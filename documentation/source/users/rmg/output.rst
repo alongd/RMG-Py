@@ -159,9 +159,45 @@ temperature, followed by a comment stating what the reduction discarded.
 case for, it raises ``MechanismWriterError`` and the export fails.  It does not warn and skip
 the reaction, and there is no option to make it do so: a mechanism that is silently missing a
 reaction, or that carries a placeholder rate coefficient, is worse than no mechanism at all.
-The same error is raised when an exported equation does not balance in ``E``, and when a rate
-law that depends on the electron density would be written with no electron among its
-reactants.
+The same error is raised when an exported equation does not balance in ``E``, when a rate law
+whose rate coefficient is of higher order than the exported reactant side would be written
+without its electron, when plasma kinetics are present but the mechanism defines no electron
+species, and when a potential-dependent rate has no exact representation (see below).
+
+A failed export leaves nothing behind: the Chemkin writers build the file in memory and land it
+with a single atomic rename, so a failure never leaves a partial ``chem*.inp`` on disk and never
+clobbers a mechanism written by an earlier successful run.
+
+Charge-Transfer and Marcus Kinetics
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+``SurfaceChargeTransfer`` and ``ArrheniusChargeTransfer`` evaluate
+
+.. math::
+
+   k(T, V) = A \left(\frac{T}{T_0}\right)^n
+             \exp\!\left(\frac{-(E_a - \alpha\, n_e\, F\, (V - V_0))}{R T}\right)
+
+Neither Chemkin nor Cantera can represent that potential dependence.  Chemkin has no
+potential-dependent rate expression at all, and while Cantera's interface reactions accept a
+charge-transfer coefficient ``beta``, they apply it only to reactions that move net charge
+*between phases* — RMG writes the ion and the electron into the same phase, so a ``beta`` written
+into an RMG mechanism is silently discarded when the file is read back.
+
+These rates are therefore exported **only when the potential dependence is provably absent**,
+namely when ``alpha * electrons == 0`` *and* ``Ea >= 0``.  Under those conditions ``(A, n, Ea)``
+is the exact rate at every potential, not merely at the reference potential ``V0``.  (The second
+condition matters because the non-negative clamp on the effective activation energy is applied
+only off ``V0``, so a rate with a negative ``Ea`` still jumps as soon as ``V`` leaves ``V0``.)
+Anything else raises ``MechanismWriterError``.
+
+``Marcus`` kinetics are never exported.  Their rate depends on the reaction free energy
+``dGrxn``, which is not a property of the rate law — it comes from the species thermochemistry at
+run time — so there is no reference point at which any reduction is exact.
+
+RMG deliberately does not write the reference-potential rate with the loss recorded in a comment.
+A ``note:`` in YAML and a ``!`` comment in Chemkin are read by humans and by no solver, so that
+would produce a number that looks like a rate while the physics behind it had been dropped.
 
 Comparison Reports
 ^^^^^^^^^^^^^^^^^^

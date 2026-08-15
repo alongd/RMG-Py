@@ -29,11 +29,14 @@
 This module contains functions for writing of Chemkin input files.
 """
 
+import io
 import logging
 import math
+import os
 import os.path
 import re
 import shutil
+import tempfile
 import textwrap
 import warnings
 
@@ -45,7 +48,8 @@ from rmgpy.data.base import Entry
 from rmgpy.data.kinetics.family import TemplateReaction
 from rmgpy.data.kinetics.library import LibraryReaction
 from rmgpy.electron_balance import (check_electron_balance, check_electron_reactant_order,
-                                    expand_electrons, get_electron_species)
+                                    expand_electrons, get_electron_species,
+                                    potential_dependence_is_inert)
 from rmgpy.exceptions import ChemkinError, MechanismWriterError
 from rmgpy.molecule.element import get_element
 from rmgpy.quantity import Quantity, QuantityError
@@ -1712,6 +1716,14 @@ PLASMA_KINETICS_CLASSES = (
     _kinetics.VoronovEIArrhenius,
 )
 
+#: Rate laws whose activation energy moves with an applied electrode potential.
+#: Chemkin has no way to express that, so these export only when their potential
+#: dependence is provably inert.
+CHARGE_TRANSFER_KINETICS_CLASSES = (
+    _kinetics.SurfaceChargeTransfer,
+    _kinetics.ArrheniusChargeTransfer,
+)
+
 
 def _plasma_arrhenius_for_chemkin(kinetics):
     """
@@ -1843,6 +1855,11 @@ def write_kinetics_entry(reaction, species_list, verbose=True, java_library=Fals
                                         specific_collider=reaction.specific_collider,
                                         reversible=reaction.reversible,
                                         kinetics=kinetics)
+            # Set after construction: LibraryReaction.__init__ takes no `electrons`
+            # keyword. Without this the sub-reaction is neutral, and the electron
+            # bookkeeping of a grouped charged reaction is gone before
+            # expand_electrons ever sees it.
+            new_reaction.electrons = reaction.electrons
             string += write_kinetics_entry(new_reaction, species_list, verbose, java_library, commented)
             string += "DUPLICATE\n"
 
@@ -1900,7 +1917,15 @@ def write_kinetics_entry(reaction, species_list, verbose=True, java_library=Fals
                     string += "! {0}\n".format(line)
 
     kinetics = reaction.kinetics
-    num_reactants = len(reaction.reactants)
+    # Count the electron too. num_reactants sets the expected order of the
+    # A-factor in the unit-conversion assertions below, and an electron reaction
+    # keeps its electrons in reaction.electrons rather than reaction.reactants --
+    # so an attachment with a bimolecular rate coefficient would otherwise be
+    # checked against unimolecular units and trip the assertion.
+    if species_list:
+        num_reactants = len(expand_electrons(reaction, species_list)[0])
+    else:
+        num_reactants = len(reaction.reactants)
     reaction_string = write_reaction_string(reaction, java_library, species_list=species_list)
 
     string += '{0!s:<51} '.format(reaction_string)
@@ -1945,6 +1970,35 @@ def write_kinetics_entry(reaction, species_list, verbose=True, java_library=Fals
             arrhenius.A.value_si / (arrhenius.T0.value_si ** arrhenius.n.value_si) * conversion_factor,
             arrhenius.n.value_si,
             arrhenius.Ea.value_si / 4184.
+        )
+    elif isinstance(kinetics, CHARGE_TRANSFER_KINETICS_CLASSES):
+        # Chemkin has no potential-dependent rate expression at all, so the only
+        # honest export is the case where the potential dependence is provably
+        # absent -- then (A, n, Ea) is the exact rate at every potential, not
+        # just at V0. See rmgpy.electron_balance.potential_dependence_is_inert.
+        if not potential_dependence_is_inert(kinetics):
+            raise MechanismWriterError(
+                'Cannot write reaction {0} to Chemkin: its {1} kinetics are potential-dependent '
+                '(alpha={2}, electrons={3}, V0={4} V, Ea={5} J/mol) and Chemkin has no '
+                'potential-dependent rate expression. Writing the rate at V0 would drop the '
+                'potential dependence while still looking like a rate.'.format(
+                    reaction_string, type(kinetics).__name__, kinetics.alpha.value_si,
+                    kinetics.electrons.value_si, kinetics.V0.value_si, kinetics.Ea.value_si)
+            )
+        conversion_factor = kinetics.A.get_conversion_factor_from_si_to_cm_mol_s()
+        string += '{0:<9.3e} {1:<9.3f} {2:<9.3f}'.format(
+            kinetics.A.value_si / (kinetics.T0.value_si ** kinetics.n.value_si) * conversion_factor,
+            kinetics.n.value_si,
+            kinetics.Ea.value_si / 4184.
+        )
+    elif isinstance(kinetics, _kinetics.Marcus):
+        raise MechanismWriterError(
+            'Cannot write reaction {0} to Chemkin: Marcus kinetics evaluate '
+            'k(T, dGrxn) = A*T^n*exp(-dG_act/(R*T)) with '
+            'dG_act = (lmbd_i(T)+lmbd_o)/4 * (1 + dGrxn/(lmbd_i(T)+lmbd_o))^2, and dGrxn is not a '
+            'property of the rate law -- it comes from the species thermochemistry at run time. '
+            'There is no value of these parameters for which a Chemkin rate expression '
+            'reproduces this, so there is no correct file to write.'.format(reaction_string)
         )
     elif isinstance(kinetics, PLASMA_KINETICS_CLASSES):
         # Chemkin has no two-temperature or cross-section rate form, so each of
@@ -2232,6 +2286,32 @@ def save_transport_file(path, species):
                 ))
 
 
+def _write_file_atomically(path, content):
+    """
+    Write ``content`` to ``path`` so that ``path`` either does not exist or holds
+    the complete file -- never a truncated prefix.
+
+    The Chemkin writers used to stream straight into the destination, so a
+    reaction that raised part-way through left a partial ``chem*.inp`` on disk
+    that looked like a mechanism. The content is now built in memory and landed
+    with a single rename inside the destination directory, which is atomic on
+    POSIX and leaves nothing behind if anything upstream raises.
+    """
+    directory = os.path.dirname(os.path.abspath(path))
+    fd, tmp_path = tempfile.mkstemp(prefix='.' + os.path.basename(path) + '.', suffix='.tmp',
+                                    dir=directory)
+    try:
+        with os.fdopen(fd, 'w') as handle:
+            handle.write(content)
+        os.replace(tmp_path, path)
+    except BaseException:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+
+
 def save_chemkin_file(path, species, reactions, verbose=True, check_for_duplicates=True,
                       elements_in_use=None):
     """
@@ -2252,7 +2332,9 @@ def save_chemkin_file(path, species, reactions, verbose=True, check_for_duplicat
         from rmgpy.rmg.model import ReactionModel
         elements_in_use = ReactionModel(species=species).get_elements()
 
-    f = open(path, 'w')
+    # Built in memory and landed atomically, so a MechanismWriterError from any
+    # reaction leaves no partial mechanism on disk. See _write_file_atomically.
+    f = io.StringIO()
 
     sorted_species = sorted(species, key=lambda species: species.index)
 
@@ -2288,14 +2370,18 @@ def save_chemkin_file(path, species, reactions, verbose=True, check_for_duplicat
     f.write('REACTIONS    KCAL/MOLE   MOLES\n\n')
     global _chemkin_reaction_count
     _chemkin_reaction_count = 0
-    for rxn in reactions:
-        f.write(write_kinetics_entry(rxn, species_list=species, verbose=verbose))
-        # Don't forget to mark duplicates!
-        f.write('\n')
-    f.write('END\n\n')
-    f.close()
-    logging.info("Chemkin file contains {0} reactions.".format(_chemkin_reaction_count))
-    _chemkin_reaction_count = None
+    try:
+        for rxn in reactions:
+            f.write(write_kinetics_entry(rxn, species_list=species, verbose=verbose))
+            # Don't forget to mark duplicates!
+            f.write('\n')
+        f.write('END\n\n')
+        _write_file_atomically(path, f.getvalue())
+        logging.info("Chemkin file contains {0} reactions.".format(_chemkin_reaction_count))
+    finally:
+        # Cleared on every exit, not only on success: a failed export used to
+        # leave this module-level counter holding the count it had reached.
+        _chemkin_reaction_count = None
 
 
 def save_chemkin_surface_file(path, species, reactions, verbose=True, check_for_duplicates=True,
@@ -2310,7 +2396,7 @@ def save_chemkin_surface_file(path, species, reactions, verbose=True, check_for_
     if check_for_duplicates:
         mark_duplicate_reactions(reactions)
 
-    f = open(path, 'w')
+    f = io.StringIO()
 
     sorted_species = sorted(species, key=lambda species: species.index)
 
@@ -2348,13 +2434,15 @@ def save_chemkin_surface_file(path, species, reactions, verbose=True, check_for_
     f.write('REACTIONS    KCAL/MOLE   MOLES\n\n')
     global _chemkin_reaction_count
     _chemkin_reaction_count = 0
-    for rxn in reactions:
-        f.write(write_kinetics_entry(rxn, species_list=species, verbose=verbose))
-        f.write('\n')
-    f.write('END\n\n')
-    f.close()
-    logging.info("Chemkin file contains {0} reactions.".format(_chemkin_reaction_count))
-    _chemkin_reaction_count = None
+    try:
+        for rxn in reactions:
+            f.write(write_kinetics_entry(rxn, species_list=species, verbose=verbose))
+            f.write('\n')
+        f.write('END\n\n')
+        _write_file_atomically(path, f.getvalue())
+        logging.info("Chemkin file contains {0} reactions.".format(_chemkin_reaction_count))
+    finally:
+        _chemkin_reaction_count = None
 
 
 def save_chemkin(reaction_model, path, verbose_path, dictionary_path=None, transport_path=None,

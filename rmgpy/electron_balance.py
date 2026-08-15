@@ -50,6 +50,8 @@ __all__ = [
     'get_species_electron_count',
     'check_electron_balance',
     'check_electron_reactant_order',
+    'get_plasma_rate_order',
+    'potential_dependence_is_inert',
 ]
 
 
@@ -122,6 +124,78 @@ def get_species_electron_count(species):
     return sum(1 for atom in molecule.atoms if atom.element.chemkin_name == 'E')
 
 
+def potential_dependence_is_inert(kinetics):
+    """
+    Return ``True`` when a charge-transfer rate law's potential dependence is
+    identically absent, so that writing its ``V = V0`` rate ``(A, n, Ea)`` is
+    exact at every potential rather than only at the reference one.
+
+    Both :class:`SurfaceChargeTransfer` and :class:`ArrheniusChargeTransfer`
+    evaluate::
+
+        k(T, V) = A * (T/T0)^n * exp(-Ea_eff / (R*T))
+        Ea_eff  = Ea - alpha * electrons * F * (V - V0)
+
+    so ``Ea_eff`` is free of ``V`` exactly when ``alpha * electrons == 0``.
+
+    The second condition is less obvious and just as load-bearing.
+    ``get_activation_energy_from_potential`` clamps a negative ``Ea_eff`` up to
+    zero, and ``get_rate_coefficient`` only calls it on the ``V != V0`` branch --
+    so a rate with ``Ea < 0`` still jumps as soon as ``V`` leaves ``V0``, even
+    when ``alpha * electrons == 0``. Measured at ``alpha=0``, ``electrons=-1``,
+    ``Ea=-5 kJ/mol``: ``k(V0)=3.33e+06`` against ``k(V!=V0)=1.00e+06``.
+
+    Anything else is a live potential dependence with no exact reduction, and the
+    writers refuse it rather than emit the reference-potential number.
+    """
+    alpha = getattr(kinetics, 'alpha', None)
+    electrons = getattr(kinetics, 'electrons', None)
+    Ea = getattr(kinetics, 'Ea', None)
+    if alpha is None or electrons is None or Ea is None:
+        return False
+    return (alpha.value_si * electrons.value_si == 0.0) and Ea.value_si >= 0.0
+
+
+#: Rate-coefficient units to the reaction order they imply. Same mapping the
+#: kinetics classes use in their own ``to_cantera_kinetics``.
+_ORDER_BY_RATE_UNITS = {
+    '1/s': 1,
+    's^-1': 1,
+    'm^3/(mol*s)': 2,
+    'cm^3/(mol*s)': 2,
+    'm^3/(molecule*s)': 2,
+    'cm^3/(molecule*s)': 2,
+    'm^6/(mol^2*s)': 3,
+    'cm^6/(mol^2*s)': 3,
+    'm^6/(molecule^2*s)': 3,
+    'cm^6/(molecule^2*s)': 3,
+}
+
+
+def get_plasma_rate_order(kinetics):
+    """
+    Return the reaction order implied by a plasma rate coefficient, or ``None``
+    when the kinetics is not a plasma type or its units are not recognised.
+
+    :class:`ElectronCollisionPlasma` stores a cross-section rather than an
+    A-factor; its rate coefficient is the Maxwellian average ``<sigma*v>``, which
+    is bimolecular by construction, so it is always order 2.
+    """
+    from rmgpy.kinetics import (
+        TwoTemperaturePlasma, ElectronCollisionPlasma,
+        BadnellRRArrhenius, VoronovEIArrhenius,
+    )
+
+    if isinstance(kinetics, ElectronCollisionPlasma):
+        return 2
+
+    if isinstance(kinetics, (TwoTemperaturePlasma, BadnellRRArrhenius, VoronovEIArrhenius)):
+        A = getattr(kinetics, 'A', None)
+        return _ORDER_BY_RATE_UNITS.get(getattr(A, 'units', None))
+
+    return None
+
+
 def check_electron_reactant_order(reaction, reactants, equation):
     """
     Raise :class:`MechanismWriterError` if the reaction's rate law is proportional
@@ -137,16 +211,37 @@ def check_electron_reactant_order(reaction, reactants, equation):
     ``electrons=2``).
     """
     kinetics = getattr(reaction, 'kinetics', None)
-    if not getattr(kinetics, 'uses_electron_density', False):
+    if kinetics is None:
         return
+
     if any(spc.is_electron() for spc in reactants):
         return
+
+    if getattr(kinetics, 'uses_electron_density', False):
+        # BadnellRRArrhenius and VoronovEIArrhenius say so themselves.
+        raise MechanismWriterError(
+            'Reaction {0!s} has kinetics {1} whose rate is proportional to the electron '
+            'density, but the exported equation "{2}" has no electron among its reactants, '
+            'so a solver would evaluate it at the wrong reaction order. Put the consumed '
+            'electron in reaction.reactants and count only surplus produced electrons in '
+            'reaction.electrons.'.format(reaction, type(kinetics).__name__, equation)
+        )
+
+    # TwoTemperaturePlasma and ElectronCollisionPlasma do not carry
+    # uses_electron_density at all, so asking the flag is useless for exactly the
+    # two classes most likely to trip this. Ask the rate coefficient instead: its
+    # dimensionality fixes the reaction order, and a plasma rate coefficient that
+    # is one order higher than the exported reactant side is missing its electron.
+    required_order = get_plasma_rate_order(kinetics)
+    if required_order is None or required_order == len(reactants):
+        return
+
     raise MechanismWriterError(
-        'Reaction {0!s} has kinetics {1} whose rate is proportional to the electron '
-        'density, but the exported equation "{2}" has no electron among its reactants, '
-        'so a solver would evaluate it at the wrong reaction order. Put the consumed '
-        'electron in reaction.reactants and count only surplus produced electrons in '
-        'reaction.electrons.'.format(reaction, type(kinetics).__name__, equation)
+        'Reaction {0!s} has kinetics {1} whose rate coefficient is of order {2:d}, but the '
+        'exported equation "{3}" has {4:d} reactant(s) and no electron among them, so a solver '
+        'would evaluate it at the wrong reaction order. An electron-impact reaction must carry '
+        'its electron in reaction.reactants (or in reaction.electrons as a negative count).'
+        .format(reaction, type(kinetics).__name__, required_order, equation, len(reactants))
     )
 
 

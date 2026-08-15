@@ -47,11 +47,17 @@ from rmgpy.chemkin import save_chemkin_file, write_kinetics_entry, write_reactio
 from rmgpy.exceptions import MechanismWriterError
 from rmgpy.kinetics import (
     Arrhenius,
+    ArrheniusChargeTransfer,
     BadnellRRArrhenius,
     ElectronCollisionPlasma,
+    Marcus,
+    MultiArrhenius,
+    MultiPDepArrhenius,
+    PDepArrhenius,
     TwoTemperaturePlasma,
     VoronovEIArrhenius,
 )
+from rmgpy.kinetics.surface import SurfaceChargeTransfer
 from rmgpy.kinetics.model import KineticsModel
 from rmgpy.molecule import Molecule
 from rmgpy.reaction import Reaction
@@ -532,3 +538,360 @@ class TestBothWriters:
                        electrons=0, reversible=False, kinetics=UnhandledKinetics())
         with pytest.raises(MechanismWriterError):
             write_kinetics_entry(bad, species_list=species)
+
+
+# ---------------------------------------------------------------------------
+# B1. Charge-transfer and Marcus kinetics: exact, or refused
+# ---------------------------------------------------------------------------
+
+def _charge_transfer_kinetics(cls, alpha, electrons, Ea, V0=0.0, units='m^3/(mol*s)'):
+    return cls(A=(2.5e+10, units), n=0.0, Ea=(Ea, 'kJ/mol'),
+               V0=(V0, 'V'), alpha=alpha, electrons=electrons)
+
+
+@pytest.fixture(scope='module')
+def surface_mechanism():
+    """
+    A surface mechanism shaped like a real RMG electrocatalysis entry: the ion
+    and the electron both live in the gas/electrolyte phase, the adsorbates on
+    the surface. This is the arrangement that decides whether Cantera sees a
+    charge transfer at all.
+    """
+    e = _make_species('e', 1, Molecule().from_adjacency_list('1 e u0 p0 c-1'))
+    hplus = _make_species('Hplus', 2, Molecule().from_adjacency_list('1 H u0 p0 c+1'))
+    site = _make_species('X', 3, Molecule().from_adjacency_list('1 X u0 p0 c0'))
+    hx = _make_species('HX', 4, Molecule().from_adjacency_list(
+        '1 H u0 p0 c0 {2,S}\n2 X u0 p0 c0 {1,S}\n'))
+    return [e, hplus, site, hx]
+
+
+def _surface_reaction(species, kinetics, index=1):
+    e, hplus, site, hx = species
+    return Reaction(index=index, reactants=[hplus, site], products=[hx],
+                    electrons=-1, reversible=False, kinetics=kinetics)
+
+
+def _bulk_reaction(species, kinetics, index=1):
+    e, o2, o2_anion, o_atom, o_anion, o_cation = species
+    return Reaction(index=index, reactants=[o_atom], products=[o_anion],
+                    electrons=-1, reversible=False, kinetics=kinetics)
+
+
+class TestChargeTransferKinetics:
+    """
+    Both charge-transfer rate laws evaluate
+
+        k(T, V) = A*(T/T0)^n * exp(-(Ea - alpha*electrons*F*(V - V0))/(R*T))
+
+    so writing (A, n, Ea) is exact at every potential only when
+    ``alpha*electrons == 0`` AND ``Ea >= 0`` -- the second because the
+    non-negative clamp on Ea_eff fires only on the ``V != V0`` branch. Both
+    halves of that rule are asserted, in both writers.
+    """
+
+    def test_inert_surface_charge_transfer_round_trips_in_cantera(self, surface_mechanism, tmp_out):
+        species = surface_mechanism
+        kin = _charge_transfer_kinetics(SurfaceChargeTransfer, alpha=0.0, electrons=-1, Ea=72.0)
+        rxn = _surface_reaction(species, kin)
+        path = os.path.join(tmp_out, 'ct_inert.yaml')
+        save_cantera_model(ReactionModel(species=species, reactions=[rxn]), path)
+
+        surf = ct.Interface(path, 'surface')
+        assert surf.n_reactions == 1
+        rate = surf.reaction(0).rate.input_data
+        assert rate['type'] == 'interface-Arrhenius'
+        assert rate['rate-constant']['A'] == pytest.approx(kin.A.value_si * 1000.0 ** 2, rel=1e-8)
+        assert rate['rate-constant']['b'] == pytest.approx(kin.n.value_si, rel=1e-10)
+        assert rate['rate-constant']['Ea'] == pytest.approx(kin.Ea.value_si * 1000.0, rel=1e-8)
+        assert 'e(1)' in surf.reaction(0).equation
+
+    def test_live_surface_charge_transfer_is_refused_in_cantera(self, surface_mechanism, tmp_out):
+        species = surface_mechanism
+        kin = _charge_transfer_kinetics(SurfaceChargeTransfer, alpha=0.62, electrons=-1, Ea=72.0)
+        rxn = _surface_reaction(species, kin)
+        path = os.path.join(tmp_out, 'ct_live.yaml')
+        with pytest.raises(MechanismWriterError) as exc:
+            save_cantera_model(ReactionModel(species=species, reactions=[rxn]), path)
+        assert 'potential-dependent' in str(exc.value)
+        assert not os.path.exists(path)
+
+    def test_cantera_never_writes_a_beta_that_cantera_would_discard(self, surface_mechanism, tmp_out):
+        """
+        The reason the live case is refused rather than exported with 'beta':
+        for RMG's phase arrangement Cantera reports no charge transfer, so a
+        written beta is silently dropped on read. Assert the writer emits none.
+        """
+        species = surface_mechanism
+        kin = _charge_transfer_kinetics(SurfaceChargeTransfer, alpha=0.0, electrons=-1, Ea=72.0)
+        rxn = _surface_reaction(species, kin)
+        path = os.path.join(tmp_out, 'ct_nobeta.yaml')
+        save_cantera_model(ReactionModel(species=species, reactions=[rxn]), path)
+        assert 'beta' not in open(path).read()
+        surf = ct.Interface(path, 'surface')
+        assert surf.reaction(0).rate.uses_electrochemistry is False
+
+    @pytest.mark.parametrize('alpha,electrons,Ea,inert', [
+        (0.0, -1, 72.0, True),    # no transfer coefficient -> no potential term
+        (0.62, 0, 72.0, True),    # no electrons -> no potential term
+        (0.62, -1, 72.0, False),  # live
+        (0.0, -1, -5.0, False),   # inert term, but the Ea clamp still bites off V0
+    ])
+    def test_inertness_rule_in_both_writers(self, mechanism, alpha, electrons, Ea, inert, tmp_out):
+        model, species, reactions = mechanism
+        kin = _charge_transfer_kinetics(ArrheniusChargeTransfer, alpha=alpha,
+                                        electrons=electrons, Ea=Ea, V0=0.3)
+        rxn = _bulk_reaction(species, kin)
+        tag = '{0}_{1}_{2}'.format(alpha, electrons, Ea)
+        yaml_path = os.path.join(tmp_out, 'act_{0}.yaml'.format(tag))
+        inp_path = os.path.join(tmp_out, 'act_{0}.inp'.format(tag))
+        container = ReactionModel(species=species, reactions=[rxn])
+
+        if inert:
+            save_cantera_model(container, yaml_path)
+            gas = ct.Solution(yaml_path)
+            rate = gas.reaction(0).rate.input_data
+            assert rate['rate-constant']['A'] == pytest.approx(kin.A.value_si * 1000.0, rel=1e-8)
+            assert rate['rate-constant']['b'] == pytest.approx(kin.n.value_si, rel=1e-10)
+            assert rate['rate-constant']['Ea'] == pytest.approx(kin.Ea.value_si * 1000.0, rel=1e-8)
+
+            save_chemkin_file(inp_path, species, [rxn], check_for_duplicates=False)
+            content = open(inp_path).read()
+            expected_A = (kin.A.value_si / (kin.T0.value_si ** kin.n.value_si)
+                          * kin.A.get_conversion_factor_from_si_to_cm_mol_s())
+            line = [l for l in content.splitlines()
+                    if l.strip().startswith('O(4)+e(1)=>O-(5)') and not l.strip().startswith('!')]
+            assert len(line) == 1, content
+            A, n, Ea_kcal = [float(tok) for tok in line[0].split()[1:4]]
+            assert A == pytest.approx(expected_A, rel=1e-3)
+            assert n == pytest.approx(kin.n.value_si, abs=1e-3)
+            assert Ea_kcal == pytest.approx(kin.Ea.value_si / 4184.0, abs=1e-3)
+        else:
+            with pytest.raises(MechanismWriterError) as exc:
+                save_cantera_model(container, yaml_path)
+            assert 'potential-dependent' in str(exc.value)
+            assert not os.path.exists(yaml_path)
+            with pytest.raises(MechanismWriterError):
+                save_chemkin_file(inp_path, species, [rxn], check_for_duplicates=False)
+            assert not os.path.exists(inp_path)
+
+    def test_marcus_is_refused_by_both_writers(self, mechanism, tmp_out):
+        """
+        Marcus rates depend on dGrxn, which is not a property of the rate law --
+        there is no reference point at which any reduction is exact, so there is
+        no correct file to write.
+        """
+        model, species, reactions = mechanism
+        e, o2, o2_anion, o_atom, o_anion, o_cation = species
+        kin = Marcus(A=(1.0e+10, 'm^3/(mol*s)'), n=0.0,
+                     lmbd_i_coefs=np.array([1.0e+04, 0.0, 0.0, 0.0]),
+                     wr=(0, 'J/mol'), wp=(0, 'J/mol'), lmbd_o=(5.0e+04, 'J/mol'))
+        rxn = Reaction(index=1, reactants=[o_atom, o_atom], products=[o2], electrons=0,
+                       reversible=False, kinetics=kin)
+        yaml_path = os.path.join(tmp_out, 'marcus.yaml')
+        inp_path = os.path.join(tmp_out, 'marcus.inp')
+        container = ReactionModel(species=species, reactions=[rxn])
+
+        with pytest.raises(MechanismWriterError) as exc:
+            save_cantera_model(container, yaml_path)
+        assert 'dGrxn' in str(exc.value)
+        assert not os.path.exists(yaml_path)
+
+        with pytest.raises(MechanismWriterError) as exc:
+            save_chemkin_file(inp_path, species, [rxn], check_for_duplicates=False)
+        assert 'dGrxn' in str(exc.value)
+        assert not os.path.exists(inp_path)
+
+
+# ---------------------------------------------------------------------------
+# B2. Grouped kinetics keep the electron
+# ---------------------------------------------------------------------------
+
+class TestMultiKineticsCarryElectrons:
+
+    @pytest.mark.parametrize('electrons,units,expected', [
+        (-1, 'cm^3/(mol*s)', 'O(4) + e(1) => O-(5)'),
+        (1, 's^-1', 'O-(5) => O(4) + e(1)'),
+    ])
+    def test_multi_arrhenius(self, mechanism, electrons, units, expected, tmp_out):
+        model, species, reactions = mechanism
+        e, o2, o2_anion, o_atom, o_anion, o_cation = species
+        reactants, products = ([o_atom], [o_anion]) if electrons < 0 else ([o_anion], [o_atom])
+        rxn = Reaction(index=1, reactants=reactants, products=products, electrons=electrons,
+                       reversible=False, kinetics=MultiArrhenius(arrhenius=[
+                           Arrhenius(A=(1.0e+10, units), n=0.0, Ea=(0.0, 'J/mol')),
+                           Arrhenius(A=(2.0e+10, units), n=0.0, Ea=(0.0, 'J/mol')),
+                       ]))
+        container = ReactionModel(species=species, reactions=[rxn])
+
+        yaml_path = os.path.join(tmp_out, 'multi_{0}.yaml'.format(electrons))
+        save_cantera_model(container, yaml_path)
+        gas = ct.Solution(yaml_path)
+        assert gas.n_reactions == 2
+        equations = [l.split(':', 1)[1].strip() for l in open(yaml_path).read().splitlines()
+                     if l.startswith('- equation:')]
+        assert equations == [expected, expected], equations
+
+        inp_path = os.path.join(tmp_out, 'multi_{0}.inp'.format(electrons))
+        save_chemkin_file(inp_path, species, [rxn], check_for_duplicates=False)
+        chemkin_equation = expected.replace(' ', '')
+        assert open(inp_path).read().count(chemkin_equation) == 2, open(inp_path).read()
+
+    @pytest.mark.parametrize('electrons,expected', [
+        (-1, 'O(4) + e(1) => O-(5)'),
+        (1, 'O-(5) => O(4) + e(1)'),
+    ])
+    def test_multi_pdep_arrhenius(self, mechanism, electrons, expected, tmp_out):
+        model, species, reactions = mechanism
+        e, o2, o2_anion, o_atom, o_anion, o_cation = species
+        reactants, products = ([o_atom], [o_anion]) if electrons < 0 else ([o_anion], [o_atom])
+        units = 'cm^3/(mol*s)' if electrons < 0 else 's^-1'
+
+        def pdep():
+            return PDepArrhenius(
+                pressures=([0.1, 1.0], 'bar'),
+                arrhenius=[Arrhenius(A=(1.0e+10, units), n=0.0, Ea=(0.0, 'J/mol')),
+                           Arrhenius(A=(2.0e+10, units), n=0.0, Ea=(0.0, 'J/mol'))])
+
+        rxn = Reaction(index=1, reactants=reactants, products=products, electrons=electrons,
+                       reversible=False,
+                       kinetics=MultiPDepArrhenius(arrhenius=[pdep(), pdep()]))
+        container = ReactionModel(species=species, reactions=[rxn])
+
+        yaml_path = os.path.join(tmp_out, 'multipdep_{0}.yaml'.format(electrons))
+        save_cantera_model(container, yaml_path)
+        equations = [l.split(':', 1)[1].strip() for l in open(yaml_path).read().splitlines()
+                     if l.startswith('- equation:')]
+        assert equations == [expected, expected], equations
+
+        inp_path = os.path.join(tmp_out, 'multipdep_{0}.inp'.format(electrons))
+        save_chemkin_file(inp_path, species, [rxn], check_for_duplicates=False)
+        assert open(inp_path).read().count(expected.replace(' ', '')) == 2
+
+
+# ---------------------------------------------------------------------------
+# B3. The two writers refuse on the same condition
+# ---------------------------------------------------------------------------
+
+class TestWritersAgreeOnMissingElectronSpecies:
+
+    def test_both_refuse_plasma_kinetics_with_no_electron_species(self, mechanism, tmp_out):
+        """
+        The Cantera writer decides plasma-phase mode from species presence, so
+        without this check it wrote plasma reaction types into a plain
+        'ideal-gas' phase while Chemkin refused the same mechanism.
+        """
+        model, species, reactions = mechanism
+        e, o2, o2_anion, o_atom, o_anion, o_cation = species
+        no_electron = [spc for spc in species if not spc.is_electron()]
+        neutral_plasma_rxn = Reaction(
+            index=1, reactants=[o_atom, o_atom], products=[o2], electrons=0, reversible=False,
+            kinetics=reactions[1].kinetics)  # ElectronCollisionPlasma
+        container = ReactionModel(species=no_electron, reactions=[neutral_plasma_rxn])
+
+        yaml_path = os.path.join(tmp_out, 'noe.yaml')
+        inp_path = os.path.join(tmp_out, 'noe.inp')
+        with pytest.raises(MechanismWriterError) as cantera_exc:
+            save_cantera_model(container, yaml_path)
+        with pytest.raises(MechanismWriterError) as chemkin_exc:
+            save_chemkin_file(inp_path, no_electron, [neutral_plasma_rxn],
+                              check_for_duplicates=False)
+        assert 'electron species' in str(cantera_exc.value)
+        assert 'electron species' in str(chemkin_exc.value)
+        assert not os.path.exists(yaml_path)
+        assert not os.path.exists(inp_path)
+
+
+# ---------------------------------------------------------------------------
+# B4. The wrong-order guard reaches the classes that need it
+# ---------------------------------------------------------------------------
+
+class TestWrongReactionOrderGuard:
+
+    @pytest.mark.parametrize('kinetics_index,name', [
+        (1, 'ElectronCollisionPlasma'),
+        (0, 'TwoTemperaturePlasma'),
+    ])
+    def test_electron_impact_without_an_electron_reactant_is_caught(
+            self, mechanism, kinetics_index, name, tmp_out):
+        """
+        Neither of these classes defines uses_electron_density, so the flag the
+        guard used to consult was absent and the guard never fired. The rate
+        coefficient's own dimensionality answers the question instead.
+        """
+        model, species, reactions = mechanism
+        e, o2, o2_anion, o_atom, o_anion, o_cation = species
+        # Electron-impact dissociation written without its electron: neutral on
+        # both sides, so it balances in E and only the order check can see it.
+        rxn = Reaction(index=1, reactants=[o2], products=[o_atom, o_atom], electrons=0,
+                       reversible=False, kinetics=reactions[kinetics_index].kinetics)
+        container = ReactionModel(species=species, reactions=[rxn])
+        yaml_path = os.path.join(tmp_out, 'order_{0}.yaml'.format(name))
+        inp_path = os.path.join(tmp_out, 'order_{0}.inp'.format(name))
+
+        with pytest.raises(MechanismWriterError) as cantera_exc:
+            save_cantera_model(container, yaml_path)
+        with pytest.raises(MechanismWriterError) as chemkin_exc:
+            save_chemkin_file(inp_path, species, [rxn], check_for_duplicates=False)
+        for exc in (cantera_exc, chemkin_exc):
+            assert 'reaction order' in str(exc.value)
+            assert name in str(exc.value)
+        assert not os.path.exists(yaml_path)
+        assert not os.path.exists(inp_path)
+
+    def test_the_five_reaction_plasma_fixture_still_exports(self, mechanism, tmp_out):
+        """Regression guard: the new order check must not fire on correct input."""
+        model, species, reactions = mechanism
+        path = os.path.join(tmp_out, 'fixture.yaml')
+        save_cantera_model(model, path)
+        assert ct.Solution(path).n_reactions == len(reactions)
+
+
+# ---------------------------------------------------------------------------
+# B5. A failed export leaves nothing behind
+# ---------------------------------------------------------------------------
+
+class TestFailedExportLeavesNothing:
+
+    def _failing_model(self, mechanism):
+        model, species, reactions = mechanism
+        bad = Reaction(index=99, reactants=[species[1]], products=[species[3], species[3]],
+                       electrons=0, reversible=False, kinetics=UnhandledKinetics())
+        return species, list(reactions) + [bad]
+
+    def test_chemkin_leaves_no_partial_file_and_no_dirty_counter(self, mechanism, tmp_out):
+        import rmgpy.chemkin
+        species, reactions = self._failing_model(mechanism)
+        path = os.path.join(tmp_out, 'partial.inp')
+        with pytest.raises(MechanismWriterError):
+            save_chemkin_file(path, species, reactions, check_for_duplicates=False)
+        assert not os.path.exists(path), 'a partial mechanism was left on disk'
+        assert rmgpy.chemkin._chemkin_reaction_count is None, 'the global counter was left dirty'
+        assert os.listdir(tmp_out) == [], 'a temporary file was left behind: {0}'.format(
+            os.listdir(tmp_out))
+
+    def test_chemkin_does_not_clobber_an_existing_good_file(self, mechanism, tmp_out):
+        """The destination is only replaced once the whole file is built."""
+        model, species, reactions = mechanism
+        path = os.path.join(tmp_out, 'chem.inp')
+        save_chemkin_file(path, species, reactions, check_for_duplicates=False)
+        good = open(path).read()
+        assert 'END' in good
+
+        species, failing = self._failing_model(mechanism)
+        with pytest.raises(MechanismWriterError):
+            save_chemkin_file(path, species, failing, check_for_duplicates=False)
+        assert open(path).read() == good, 'the previous good mechanism was clobbered'
+
+    def test_counter_is_cleared_after_a_successful_export_too(self, mechanism, tmp_out):
+        import rmgpy.chemkin
+        model, species, reactions = mechanism
+        save_chemkin_file(os.path.join(tmp_out, 'ok.inp'), species, reactions,
+                          check_for_duplicates=False)
+        assert rmgpy.chemkin._chemkin_reaction_count is None
+
+    def test_cantera_leaves_no_partial_file(self, mechanism, tmp_out):
+        species, reactions = self._failing_model(mechanism)
+        path = os.path.join(tmp_out, 'partial.yaml')
+        with pytest.raises(MechanismWriterError):
+            save_cantera_model(ReactionModel(species=species, reactions=reactions), path)
+        assert not os.path.exists(path)
