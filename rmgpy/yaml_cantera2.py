@@ -62,10 +62,14 @@ Dumper.add_representer(str, _multiline_str_representer)
 
 from rmgpy.data.kinetics.family import TemplateReaction
 from rmgpy.data.kinetics.library import LibraryReaction
+from rmgpy.electron_balance import check_electron_balance, check_electron_reactant_order, expand_electrons
+from rmgpy.exceptions import MechanismWriterError
 from rmgpy.kinetics import (
     Arrhenius, PDepArrhenius, MultiArrhenius, MultiPDepArrhenius,
     Chebyshev, Troe, Lindemann, ThirdBody,
     StickingCoefficient, SurfaceArrhenius,
+    TwoTemperaturePlasma, ElectronCollisionPlasma,
+    BadnellRRArrhenius, VoronovEIArrhenius,
 )
 from rmgpy.reaction import Reaction
 from rmgpy.rmg.pdep import PDepReaction
@@ -523,6 +527,26 @@ def species_to_dict(species, species_list):
     return species_entry
 
 
+def _two_temperature_plasma_entry(A, b, Ea_gas, Ea_electron):
+    """
+    Build the Cantera 'two-temperature-plasma' fields for a rate
+
+        k(T, Te) = A * Te^b * exp(-Ea_gas/(R*T)) * exp(Ea_electron*(Te-T)/(R*T*Te))
+
+    ``A`` is in SI molar units and ``Ea_gas``/``Ea_electron`` in J/mol, matching
+    the ``units:`` block this writer emits.
+    """
+    return {
+        'type': 'two-temperature-plasma',
+        'rate-constant': {
+            'A': A,
+            'b': b,
+            'Ea-gas': Ea_gas,
+            'Ea-electron': Ea_electron,
+        },
+    }
+
+
 def reaction_to_dict_list(reaction, species_list=None):
     """
     Convert an RMG Reaction object to a LIST of Cantera YAML dictionaries.
@@ -620,6 +644,46 @@ def reaction_to_dict_list(reaction, species_list=None):
         entry['efficiencies'] = {lbl: v for m, v in kin.efficiencies.items() if
                                  (lbl := get_label(m, species_list)) is not None}
 
+    # 3. Plasma Kinetics
+    elif isinstance(kin, TwoTemperaturePlasma):
+        # Cantera's 'two-temperature-plasma' is algebraically identical to RMG's
+        # TwoTemperaturePlasma: k = A*Te^b*exp(-Ea_g/(R*T))*exp(Ea_e*(Te-T)/(R*T*Te)).
+        entry.update(_two_temperature_plasma_entry(
+            A=kin.A.value_si / (kin.T0.value_si ** kin.n.value_si),
+            b=kin.n.value_si,
+            Ea_gas=kin.Ea_g.value_si,
+            Ea_electron=kin.Ea_e.value_si,
+        ))
+
+    elif isinstance(kin, ElectronCollisionPlasma):
+        # Cantera integrates the cross-section against the electron energy
+        # distribution itself, so the tabulated data goes across verbatim.
+        # RMG stores the energy grid in J/mol; Cantera wants eV.
+        entry['type'] = 'electron-collision-plasma'
+        entry['energy-levels'] = (kin.energies.value_si / constants.F).tolist()
+        entry['cross-sections'] = kin.sigma.value_si.tolist()
+
+    elif isinstance(kin, (BadnellRRArrhenius, VoronovEIArrhenius)):
+        # Cantera has no Badnell or Voronov form, but both rates are pure
+        # functions of the electron temperature, and a modified-Arrhenius fit in
+        # Te maps onto 'two-temperature-plasma' *exactly* when
+        # Ea-gas == Ea-electron: the two gas-temperature factors then cancel,
+        #     exp(-Ea/(R*T)) * exp(Ea*(Te-T)/(R*T*Te)) == exp(-Ea/(R*Te))
+        # leaving k = A*Te^b*exp(-Ea/(R*Te)), which is the fit.
+        #
+        # Note this deliberately does NOT go through the classes' own
+        # to_two_temp_plasma()/to_cantera_kinetics(), which set Ea_g=0 and
+        # Ea_e=Ea. That mapping does not cancel: it leaves a spurious
+        # exp(+Ea/(R*T)) factor, so the exported rate would vary by orders of
+        # magnitude with gas temperature at fixed Te.
+        arr = kin.to_arrhenius()
+        entry.update(_two_temperature_plasma_entry(
+            A=arr.A.value_si / (arr.T0.value_si ** arr.n.value_si),
+            b=arr.n.value_si,
+            Ea_gas=arr.Ea.value_si,
+            Ea_electron=arr.Ea.value_si,
+        ))
+
     elif isinstance(kin, PDepArrhenius):
         # A MultiArrhenius entry comes from a chemkin PLOG block with duplicate
         # pressures; expand it into one rate-constants entry per inner Arrhenius
@@ -642,9 +706,16 @@ def reaction_to_dict_list(reaction, species_list=None):
         entry['rate-constants'] = rates
 
     else:
-        logging.warning(f"Skipping reaction {equation}: Unknown kinetics type {type(kin)}")
-        return []
-    
+        # Hard failure, deliberately. Warning and returning [] deletes the
+        # reaction from the mechanism while the export still reports success,
+        # and a warning in a long RMG log is functionally invisible.
+        raise MechanismWriterError(
+            f"Cannot write reaction {equation} to Cantera YAML: no writer case for "
+            f"kinetics type {type(kin).__name__}. Add one to "
+            f"rmgpy.yaml_cantera2.reaction_to_dict_list rather than exporting a "
+            f"mechanism that is missing this reaction."
+        )
+
     # Remove efficiencies dict if present but empty.
     if 'efficiencies' in entry and not entry['efficiencies']:
         del entry['efficiencies']
@@ -706,9 +777,16 @@ def reaction_to_dict_list(reaction, species_list=None):
 
 
 def get_reaction_equation(reaction, species_list):
-    """Helper to build reaction string"""
-    reactants_str = " + ".join([get_label(r, species_list) for r in reaction.reactants])
-    products_str = " + ".join([get_label(p, species_list) for p in reaction.products])
+    """Helper to build reaction string.
+
+    ``reaction.electrons`` is folded into the equation as an explicit electron
+    species (see :mod:`rmgpy.electron_balance`); without it every charged
+    reaction exports unbalanced in the ``E`` pseudo-element, because RMG keeps
+    the electron stoichiometry out of the reactant/product lists.
+    """
+    reactants, products = expand_electrons(reaction, species_list)
+    reactants_str = " + ".join([get_label(r, species_list) for r in reactants])
+    products_str = " + ".join([get_label(p, species_list) for p in products])
 
     suffix = ""
     kin = reaction.kinetics
@@ -723,7 +801,10 @@ def get_reaction_equation(reaction, species_list):
         suffix = " (+" + m_label + ")"
 
     arrow = " <=> " if reaction.reversible else " => "
-    return reactants_str + suffix + arrow + products_str + suffix
+    equation = reactants_str + suffix + arrow + products_str + suffix
+    check_electron_balance(reaction, reactants, products, equation)
+    check_electron_reactant_order(reaction, reactants, equation)
+    return equation
 
 
 def get_label(obj: Union['Species', 'Molecule'], species_list: list['Species']):

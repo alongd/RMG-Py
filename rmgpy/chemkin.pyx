@@ -44,7 +44,9 @@ import rmgpy.kinetics as _kinetics
 from rmgpy.data.base import Entry
 from rmgpy.data.kinetics.family import TemplateReaction
 from rmgpy.data.kinetics.library import LibraryReaction
-from rmgpy.exceptions import ChemkinError
+from rmgpy.electron_balance import (check_electron_balance, check_electron_reactant_order,
+                                    expand_electrons, get_electron_species)
+from rmgpy.exceptions import ChemkinError, MechanismWriterError
 from rmgpy.molecule.element import get_element
 from rmgpy.quantity import Quantity, QuantityError
 from rmgpy.reaction import Reaction
@@ -1703,16 +1705,77 @@ def write_thermo_entry(species, element_counts=None, bint verbose=True):
 ################################################################################
 
 
-def write_reaction_string(reaction, java_library=False):
+PLASMA_KINETICS_CLASSES = (
+    _kinetics.TwoTemperaturePlasma,
+    _kinetics.ElectronCollisionPlasma,
+    _kinetics.BadnellRRArrhenius,
+    _kinetics.VoronovEIArrhenius,
+)
+
+
+def _plasma_arrhenius_for_chemkin(kinetics):
+    """
+    Reduce a plasma rate law to the modified-Arrhenius form Chemkin can write,
+    and return ``(arrhenius, note)`` where ``note`` states what the reduction
+    discarded.
+
+    Chemkin's rate expression is ``A * T^n * exp(-Ea/(R*T))`` and nothing else,
+    so none of the four plasma forms survives intact. Rather than drop the
+    reaction or emit a placeholder, each is reduced along ``T = Te`` and the
+    loss is written into the file next to the numbers.
+    """
+    if isinstance(kinetics, _kinetics.TwoTemperaturePlasma):
+        # Along T = Te the electron exponential is exactly 1, so the reduction is
+        # the exact rate on that diagonal: k = A*Te^n*exp(-Ea_g/(R*Te)).
+        # Ea_e has no Chemkin representation and is dropped.
+        arrhenius = _kinetics.Arrhenius(
+            A=(kinetics.A.value_si, kinetics.A.units),
+            n=kinetics.n.value_si,
+            Ea=(kinetics.Ea_g.value_si, 'J/mol'),
+            T0=(kinetics.T0.value_si, 'K'),
+        )
+        note = ('TwoTemperaturePlasma reduced along T=Te; Ea_electron={0:.4g} J/mol '
+                'is not representable in Chemkin and is dropped'.format(kinetics.Ea_e.value_si))
+    else:
+        # ElectronCollisionPlasma, BadnellRRArrhenius and VoronovEIArrhenius are
+        # all pure functions of Te; to_arrhenius() fits k(Te) over the class's
+        # own validity window.
+        arrhenius = kinetics.to_arrhenius()
+        note = ('{0} exported as a modified-Arrhenius fit of k(Te) over '
+                '{1:.4g}-{2:.4g} K; the original functional form is not '
+                'representable in Chemkin'.format(
+                    type(kinetics).__name__,
+                    arrhenius.Tmin.value_si if arrhenius.Tmin is not None else float('nan'),
+                    arrhenius.Tmax.value_si if arrhenius.Tmax is not None else float('nan')))
+    return arrhenius, note
+
+
+def write_reaction_string(reaction, java_library=False, species_list=None):
     """
     Return a reaction string in chemkin format.
+
+    When ``species_list`` is given, ``reaction.electrons`` is folded into the
+    string as an explicit electron species and the result is checked to balance
+    in the ``E`` pseudo-element (see :mod:`rmgpy.electron_balance`). RMG keeps
+    the electron stoichiometry out of the reactant/product lists, so without
+    this every charged reaction is written unbalanced in ``E``.
+
+    ``species_list`` is optional because this function also backs
+    :meth:`rmgpy.reaction.Reaction.to_labeled_str`, which has no mechanism to
+    draw the electron species from and is not an exported artifact.
     """
     kinetics = reaction.kinetics
 
+    reactants, products = expand_electrons(reaction, species_list) if species_list \
+        else (list(reaction.reactants), list(reaction.products))
+
     if kinetics is None:
-        reaction_string = ' + '.join([get_species_identifier(reactant) for reactant in reaction.reactants])
+        reaction_string = ' + '.join([get_species_identifier(reactant) for reactant in reactants])
         reaction_string += ' <=> ' if reaction.reversible else ' => '
-        reaction_string += ' + '.join([get_species_identifier(product) for product in reaction.products])
+        reaction_string += ' + '.join([get_species_identifier(product) for product in products])
+        if species_list:
+            check_electron_balance(reaction, reactants, products, reaction_string)
+            check_electron_reactant_order(reaction, reactants, reaction_string)
         return reaction_string
 
     if reaction.specific_collider is not None and not isinstance(kinetics, (_kinetics.Lindemann, _kinetics.Troe)):
@@ -1731,11 +1794,15 @@ def write_reaction_string(reaction, java_library=False):
             third_body = '(+{0})'.format(
                 get_species_identifier(reaction.specific_collider)) if reaction.specific_collider else '(+M)'
 
-    reaction_string = '+'.join([get_species_identifier(reactant) for reactant in reaction.reactants])
+    reaction_string = '+'.join([get_species_identifier(reactant) for reactant in reactants])
     reaction_string += third_body
     reaction_string += '<=>' if reaction.reversible else '=>'
-    reaction_string += '+'.join([get_species_identifier(product) for product in reaction.products])
+    reaction_string += '+'.join([get_species_identifier(product) for product in products])
     reaction_string += third_body
+
+    if species_list:
+        check_electron_balance(reaction, reactants, products, reaction_string)
+        check_electron_reactant_order(reaction, reactants, reaction_string)
 
     if len(reaction_string) > 52:
         logging.debug("Chemkin reaction string '%s' is too long for Chemkin 2!", reaction_string)
@@ -1834,7 +1901,7 @@ def write_kinetics_entry(reaction, species_list, verbose=True, java_library=Fals
 
     kinetics = reaction.kinetics
     num_reactants = len(reaction.reactants)
-    reaction_string = write_reaction_string(reaction, java_library)
+    reaction_string = write_reaction_string(reaction, java_library, species_list=species_list)
 
     string += '{0!s:<51} '.format(reaction_string)
 
@@ -1879,6 +1946,20 @@ def write_kinetics_entry(reaction, species_list, verbose=True, java_library=Fals
             arrhenius.n.value_si,
             arrhenius.Ea.value_si / 4184.
         )
+    elif isinstance(kinetics, PLASMA_KINETICS_CLASSES):
+        # Chemkin has no two-temperature or cross-section rate form, so each of
+        # the plasma classes is written as the modified-Arrhenius reduction of
+        # its own rate law along T = Te, marked with TDEP so a plasma-aware
+        # Chemkin evaluates it at the electron temperature. What that reduction
+        # discards is recorded in the artifact by the TDEP note below -- the one
+        # thing a lossy export must never do is stay quiet about being lossy.
+        arrhenius, plasma_note = _plasma_arrhenius_for_chemkin(kinetics)
+        conversion_factor = arrhenius.A.get_conversion_factor_from_si_to_cm_mol_s()
+        string += '{0:<9.3e} {1:<9.3f} {2:<9.3f}'.format(
+            arrhenius.A.value_si / (arrhenius.T0.value_si ** arrhenius.n.value_si) * conversion_factor,
+            arrhenius.n.value_si,
+            arrhenius.Ea.value_si / 4184.
+        )
     elif hasattr(kinetics, 'highPlimit') and kinetics.highPlimit is not None:
         arrhenius = kinetics.highPlimit
         conversion_factor = arrhenius.A.get_conversion_factor_from_si_to_cm_mol_s()
@@ -1888,11 +1969,34 @@ def write_kinetics_entry(reaction, species_list, verbose=True, java_library=Fals
             arrhenius.n.value_si,
             arrhenius.Ea.value_si / 4184.
         )
-    else:
-        # Print dummy values that Chemkin parses but ignores
+    elif isinstance(kinetics, (_kinetics.Chebyshev, _kinetics.PDepArrhenius)):
+        # Chemkin convention: these carry their real parameters on the CHEB/PLOG
+        # auxiliary lines written below, and the leading triple is dummy values
+        # that Chemkin parses and ignores.
         string += '{0:<9.3e} {1:<9.3f} {2:<9.3f}'.format(1, 0, 0)
+    else:
+        # Hard failure, deliberately. The old behaviour here was to fall through
+        # to the dummy triple, which does not drop the reaction -- it exports it
+        # with a rate coefficient of exactly 1 and no auxiliary lines to correct
+        # it, which reaches the solver looking like data.
+        raise MechanismWriterError(
+            'Cannot write reaction {0} to Chemkin: no writer case for kinetics type {1}. '
+            'Add one to rmgpy.chemkin.write_kinetics_entry rather than exporting a '
+            'mechanism in which this reaction carries a placeholder rate.'.format(
+                reaction_string, type(kinetics).__name__)
+        )
 
     string += '\n'
+
+    if isinstance(kinetics, PLASMA_KINETICS_CLASSES):
+        electron = get_electron_species(species_list)
+        if electron is None:
+            raise MechanismWriterError(
+                'Cannot write reaction {0} to Chemkin: its kinetics type {1} is evaluated at '
+                'the electron temperature, but the mechanism defines no electron species to '
+                'name in the TDEP declaration.'.format(reaction_string, type(kinetics).__name__)
+            )
+        string += '    TDEP/{0}/   ! {1}\n'.format(get_species_identifier(electron), plasma_note)
 
     if getattr(kinetics, 'coverage_dependence', None):
         # Write coverage dependence parameters for surface reactions

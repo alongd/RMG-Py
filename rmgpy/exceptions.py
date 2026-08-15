@@ -200,6 +200,19 @@ class OutputError(Exception):
     pass
 
 
+class MechanismWriterError(OutputError):
+    """
+    Raised when a mechanism writer cannot faithfully export a reaction: an
+    unhandled kinetics type, or an equation that does not balance.
+
+    This is deliberately fatal. A mechanism writer that warns and moves on
+    leaves a hole in the exported file while the export reports success, and a
+    warning in an RMG log is functionally invisible. Every caller should let
+    this propagate; there is no opt-out.
+    """
+    pass
+
+
 class PressureDependenceError(Exception):
     """
     An exception class to use when an error involving pressure dependence is

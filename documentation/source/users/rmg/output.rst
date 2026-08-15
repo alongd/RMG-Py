@@ -118,6 +118,51 @@ Files generated:
 * ``comparison_report.txt`` — numerical comparison against the ``cantera_from_ck``
   translation (written at the end of the run if both writers are enabled).
 
+Plasma Mechanisms
+^^^^^^^^^^^^^^^^^
+
+Mechanisms containing an electron species are written as plasma mechanisms by both the
+Chemkin writer and the ``cantera2`` writer.
+
+**The electron in reaction equations.**  RMG stores the electron stoichiometry of a charged
+reaction in ``Reaction.electrons`` rather than in its reactant and product lists.  Both
+writers fold that count into the equation they emit, on the reactant side when it is
+negative and the product side when it is positive, so that the exported reaction balances in
+the ``E`` pseudo-element.  Note that ``electrons`` counts only electrons that are *not*
+already listed as reactants or products: electron-impact ionization is written with the
+consumed electron in ``reactants`` and ``electrons=2`` for the two produced, which is what
+keeps both the ``E`` balance and the reaction order correct.
+
+**Plasma kinetics types.**  The four plasma rate laws are exported as follows:
+
+===============================  ==========================================  ==========================================
+RMG kinetics                     Cantera                                     Chemkin
+===============================  ==========================================  ==========================================
+``TwoTemperaturePlasma``         ``two-temperature-plasma`` (exact)          Arrhenius reduction along ``T = Te`` + ``TDEP``
+``ElectronCollisionPlasma``      ``electron-collision-plasma`` (exact)       Arrhenius fit of ``k(Te)`` + ``TDEP``
+``BadnellRRArrhenius``           ``two-temperature-plasma`` (Te-only fit)    Arrhenius fit of ``k(Te)`` + ``TDEP``
+``VoronovEIArrhenius``           ``two-temperature-plasma`` (Te-only fit)    Arrhenius fit of ``k(Te)`` + ``TDEP``
+===============================  ==========================================  ==========================================
+
+Badnell and Voronov rates are pure functions of the electron temperature and have no native
+Cantera form.  A modified-Arrhenius fit in ``Te`` maps onto ``two-temperature-plasma``
+exactly when ``Ea-gas`` equals ``Ea-electron``, since the two gas-temperature factors then
+cancel; that is the mapping the writer emits, so the exported rate does not move with the
+gas temperature at fixed ``Te``.
+
+Chemkin's rate expression cannot represent any of the four forms exactly.  Each reaction is
+therefore written as the modified-Arrhenius reduction of its rate law along ``T = Te``,
+marked with ``TDEP/<electron>/`` so a plasma-aware Chemkin evaluates it at the electron
+temperature, followed by a comment stating what the reduction discarded.
+
+**Unsupported kinetics are a hard error.**  If either writer meets a kinetics type it has no
+case for, it raises ``MechanismWriterError`` and the export fails.  It does not warn and skip
+the reaction, and there is no option to make it do so: a mechanism that is silently missing a
+reaction, or that carries a placeholder rate coefficient, is worse than no mechanism at all.
+The same error is raised when an exported equation does not balance in ``E``, and when a rate
+law that depends on the electron density would be written with no electron among its
+reactants.
+
 Comparison Reports
 ^^^^^^^^^^^^^^^^^^
 
