@@ -118,6 +118,87 @@ Files generated:
 * ``comparison_report.txt`` — numerical comparison against the ``cantera_from_ck``
   translation (written at the end of the run if both writers are enabled).
 
+Plasma Mechanisms
+^^^^^^^^^^^^^^^^^
+
+Mechanisms containing an electron species are written as plasma mechanisms by both the
+Chemkin writer and the ``cantera2`` writer.
+
+**The electron in reaction equations.**  RMG stores the electron stoichiometry of a charged
+reaction in ``Reaction.electrons`` rather than in its reactant and product lists.  Both
+writers fold that count into the equation they emit, on the reactant side when it is
+negative and the product side when it is positive, so that the exported reaction balances in
+the ``E`` pseudo-element.  Note that ``electrons`` counts only electrons that are *not*
+already listed as reactants or products: electron-impact ionization is written with the
+consumed electron in ``reactants`` and ``electrons=2`` for the two produced, which is what
+keeps both the ``E`` balance and the reaction order correct.
+
+**Plasma kinetics types.**  The four plasma rate laws are exported as follows:
+
+===============================  ==========================================  ==========================================
+RMG kinetics                     Cantera                                     Chemkin
+===============================  ==========================================  ==========================================
+``TwoTemperaturePlasma``         ``two-temperature-plasma`` (exact)          Arrhenius reduction along ``T = Te`` + ``TDEP``
+``ElectronCollisionPlasma``      ``electron-collision-plasma`` (exact)       Arrhenius fit of ``k(Te)`` + ``TDEP``
+``BadnellRRArrhenius``           ``two-temperature-plasma`` (Te-only fit)    Arrhenius fit of ``k(Te)`` + ``TDEP``
+``VoronovEIArrhenius``           ``two-temperature-plasma`` (Te-only fit)    Arrhenius fit of ``k(Te)`` + ``TDEP``
+===============================  ==========================================  ==========================================
+
+Badnell and Voronov rates are pure functions of the electron temperature and have no native
+Cantera form.  A modified-Arrhenius fit in ``Te`` maps onto ``two-temperature-plasma``
+exactly when ``Ea-gas`` equals ``Ea-electron``, since the two gas-temperature factors then
+cancel; that is the mapping the writer emits, so the exported rate does not move with the
+gas temperature at fixed ``Te``.
+
+Chemkin's rate expression cannot represent any of the four forms exactly.  Each reaction is
+therefore written as the modified-Arrhenius reduction of its rate law along ``T = Te``,
+marked with ``TDEP/<electron>/`` so a plasma-aware Chemkin evaluates it at the electron
+temperature, followed by a comment stating what the reduction discarded.
+
+**Unsupported kinetics are a hard error.**  If either writer meets a kinetics type it has no
+case for, it raises ``MechanismWriterError`` and the export fails.  It does not warn and skip
+the reaction, and there is no option to make it do so: a mechanism that is silently missing a
+reaction, or that carries a placeholder rate coefficient, is worse than no mechanism at all.
+The same error is raised when an exported equation does not balance in ``E``, when a rate law
+whose rate coefficient is of higher order than the exported reactant side would be written
+without its electron, when plasma kinetics are present but the mechanism defines no electron
+species, and when a potential-dependent rate has no exact representation (see below).
+
+A failed export leaves nothing behind: the Chemkin writers build the file in memory and land it
+with a single atomic rename, so a failure never leaves a partial ``chem*.inp`` on disk and never
+clobbers a mechanism written by an earlier successful run.
+
+Charge-Transfer and Marcus Kinetics
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+``SurfaceChargeTransfer`` and ``ArrheniusChargeTransfer`` evaluate
+
+.. math::
+
+   k(T, V) = A \left(\frac{T}{T_0}\right)^n
+             \exp\!\left(\frac{-(E_a - \alpha\, n_e\, F\, (V - V_0))}{R T}\right)
+
+Neither Chemkin nor Cantera can represent that potential dependence.  Chemkin has no
+potential-dependent rate expression at all, and while Cantera's interface reactions accept a
+charge-transfer coefficient ``beta``, they apply it only to reactions that move net charge
+*between phases* — RMG writes the ion and the electron into the same phase, so a ``beta`` written
+into an RMG mechanism is silently discarded when the file is read back.
+
+These rates are therefore exported **only when the potential dependence is provably absent**,
+namely when ``alpha * electrons == 0`` *and* ``Ea >= 0``.  Under those conditions ``(A, n, Ea)``
+is the exact rate at every potential, not merely at the reference potential ``V0``.  (The second
+condition matters because the non-negative clamp on the effective activation energy is applied
+only off ``V0``, so a rate with a negative ``Ea`` still jumps as soon as ``V`` leaves ``V0``.)
+Anything else raises ``MechanismWriterError``.
+
+``Marcus`` kinetics are never exported.  Their rate depends on the reaction free energy
+``dGrxn``, which is not a property of the rate law — it comes from the species thermochemistry at
+run time — so there is no reference point at which any reduction is exact.
+
+RMG deliberately does not write the reference-potential rate with the loss recorded in a comment.
+A ``note:`` in YAML and a ``!`` comment in Chemkin are read by humans and by no solver, so that
+would produce a number that looks like a rate while the physics behind it had been dropped.
+
 Comparison Reports
 ^^^^^^^^^^^^^^^^^^
 

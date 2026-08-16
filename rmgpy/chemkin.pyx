@@ -29,11 +29,14 @@
 This module contains functions for writing of Chemkin input files.
 """
 
+import io
 import logging
 import math
+import os
 import os.path
 import re
 import shutil
+import tempfile
 import textwrap
 import warnings
 
@@ -44,7 +47,10 @@ import rmgpy.kinetics as _kinetics
 from rmgpy.data.base import Entry
 from rmgpy.data.kinetics.family import TemplateReaction
 from rmgpy.data.kinetics.library import LibraryReaction
-from rmgpy.exceptions import ChemkinError
+from rmgpy.electron_balance import (check_electron_balance, check_electron_reactant_order,
+                                    expand_electrons, get_electron_species,
+                                    potential_dependence_is_inert)
+from rmgpy.exceptions import ChemkinError, MechanismWriterError
 from rmgpy.molecule.element import get_element
 from rmgpy.quantity import Quantity, QuantityError
 from rmgpy.reaction import Reaction
@@ -1703,16 +1709,85 @@ def write_thermo_entry(species, element_counts=None, bint verbose=True):
 ################################################################################
 
 
-def write_reaction_string(reaction, java_library=False):
+PLASMA_KINETICS_CLASSES = (
+    _kinetics.TwoTemperaturePlasma,
+    _kinetics.ElectronCollisionPlasma,
+    _kinetics.BadnellRRArrhenius,
+    _kinetics.VoronovEIArrhenius,
+)
+
+#: Rate laws whose activation energy moves with an applied electrode potential.
+#: Chemkin has no way to express that, so these export only when their potential
+#: dependence is provably inert.
+CHARGE_TRANSFER_KINETICS_CLASSES = (
+    _kinetics.SurfaceChargeTransfer,
+    _kinetics.ArrheniusChargeTransfer,
+)
+
+
+def _plasma_arrhenius_for_chemkin(kinetics):
+    """
+    Reduce a plasma rate law to the modified-Arrhenius form Chemkin can write,
+    and return ``(arrhenius, note)`` where ``note`` states what the reduction
+    discarded.
+
+    Chemkin's rate expression is ``A * T^n * exp(-Ea/(R*T))`` and nothing else,
+    so none of the four plasma forms survives intact. Rather than drop the
+    reaction or emit a placeholder, each is reduced along ``T = Te`` and the
+    loss is written into the file next to the numbers.
+    """
+    if isinstance(kinetics, _kinetics.TwoTemperaturePlasma):
+        # Along T = Te the electron exponential is exactly 1, so the reduction is
+        # the exact rate on that diagonal: k = A*Te^n*exp(-Ea_g/(R*Te)).
+        # Ea_e has no Chemkin representation and is dropped.
+        arrhenius = _kinetics.Arrhenius(
+            A=(kinetics.A.value_si, kinetics.A.units),
+            n=kinetics.n.value_si,
+            Ea=(kinetics.Ea_g.value_si, 'J/mol'),
+            T0=(kinetics.T0.value_si, 'K'),
+        )
+        note = ('TwoTemperaturePlasma reduced along T=Te; Ea_electron={0:.4g} J/mol '
+                'is not representable in Chemkin and is dropped'.format(kinetics.Ea_e.value_si))
+    else:
+        # ElectronCollisionPlasma, BadnellRRArrhenius and VoronovEIArrhenius are
+        # all pure functions of Te; to_arrhenius() fits k(Te) over the class's
+        # own validity window.
+        arrhenius = kinetics.to_arrhenius()
+        note = ('{0} exported as a modified-Arrhenius fit of k(Te) over '
+                '{1:.4g}-{2:.4g} K; the original functional form is not '
+                'representable in Chemkin'.format(
+                    type(kinetics).__name__,
+                    arrhenius.Tmin.value_si if arrhenius.Tmin is not None else float('nan'),
+                    arrhenius.Tmax.value_si if arrhenius.Tmax is not None else float('nan')))
+    return arrhenius, note
+
+
+def write_reaction_string(reaction, java_library=False, species_list=None):
     """
     Return a reaction string in chemkin format.
+
+    When ``species_list`` is given, ``reaction.electrons`` is folded into the
+    string as an explicit electron species and the result is checked to balance
+    in the ``E`` pseudo-element (see :mod:`rmgpy.electron_balance`). RMG keeps
+    the electron stoichiometry out of the reactant/product lists, so without
+    this every charged reaction is written unbalanced in ``E``.
+
+    ``species_list`` is optional because this function also backs
+    :meth:`rmgpy.reaction.Reaction.to_labeled_str`, which has no mechanism to
+    draw the electron species from and is not an exported artifact.
     """
     kinetics = reaction.kinetics
 
+    reactants, products = expand_electrons(reaction, species_list) if species_list \
+        else (list(reaction.reactants), list(reaction.products))
+
     if kinetics is None:
-        reaction_string = ' + '.join([get_species_identifier(reactant) for reactant in reaction.reactants])
+        reaction_string = ' + '.join([get_species_identifier(reactant) for reactant in reactants])
         reaction_string += ' <=> ' if reaction.reversible else ' => '
-        reaction_string += ' + '.join([get_species_identifier(product) for product in reaction.products])
+        reaction_string += ' + '.join([get_species_identifier(product) for product in products])
+        if species_list:
+            check_electron_balance(reaction, reactants, products, reaction_string)
+            check_electron_reactant_order(reaction, reactants, reaction_string)
         return reaction_string
 
     if reaction.specific_collider is not None and not isinstance(kinetics, (_kinetics.Lindemann, _kinetics.Troe)):
@@ -1731,11 +1806,15 @@ def write_reaction_string(reaction, java_library=False):
             third_body = '(+{0})'.format(
                 get_species_identifier(reaction.specific_collider)) if reaction.specific_collider else '(+M)'
 
-    reaction_string = '+'.join([get_species_identifier(reactant) for reactant in reaction.reactants])
+    reaction_string = '+'.join([get_species_identifier(reactant) for reactant in reactants])
     reaction_string += third_body
     reaction_string += '<=>' if reaction.reversible else '=>'
-    reaction_string += '+'.join([get_species_identifier(product) for product in reaction.products])
+    reaction_string += '+'.join([get_species_identifier(product) for product in products])
     reaction_string += third_body
+
+    if species_list:
+        check_electron_balance(reaction, reactants, products, reaction_string)
+        check_electron_reactant_order(reaction, reactants, reaction_string)
 
     if len(reaction_string) > 52:
         logging.debug("Chemkin reaction string '%s' is too long for Chemkin 2!", reaction_string)
@@ -1776,6 +1855,11 @@ def write_kinetics_entry(reaction, species_list, verbose=True, java_library=Fals
                                         specific_collider=reaction.specific_collider,
                                         reversible=reaction.reversible,
                                         kinetics=kinetics)
+            # Set after construction: LibraryReaction.__init__ takes no `electrons`
+            # keyword. Without this the sub-reaction is neutral, and the electron
+            # bookkeeping of a grouped charged reaction is gone before
+            # expand_electrons ever sees it.
+            new_reaction.electrons = reaction.electrons
             string += write_kinetics_entry(new_reaction, species_list, verbose, java_library, commented)
             string += "DUPLICATE\n"
 
@@ -1833,8 +1917,16 @@ def write_kinetics_entry(reaction, species_list, verbose=True, java_library=Fals
                     string += "! {0}\n".format(line)
 
     kinetics = reaction.kinetics
-    num_reactants = len(reaction.reactants)
-    reaction_string = write_reaction_string(reaction, java_library)
+    # Count the electron too. num_reactants sets the expected order of the
+    # A-factor in the unit-conversion assertions below, and an electron reaction
+    # keeps its electrons in reaction.electrons rather than reaction.reactants --
+    # so an attachment with a bimolecular rate coefficient would otherwise be
+    # checked against unimolecular units and trip the assertion.
+    if species_list:
+        num_reactants = len(expand_electrons(reaction, species_list)[0])
+    else:
+        num_reactants = len(reaction.reactants)
+    reaction_string = write_reaction_string(reaction, java_library, species_list=species_list)
 
     string += '{0!s:<51} '.format(reaction_string)
 
@@ -1879,6 +1971,49 @@ def write_kinetics_entry(reaction, species_list, verbose=True, java_library=Fals
             arrhenius.n.value_si,
             arrhenius.Ea.value_si / 4184.
         )
+    elif isinstance(kinetics, CHARGE_TRANSFER_KINETICS_CLASSES):
+        # Chemkin has no potential-dependent rate expression at all, so the only
+        # honest export is the case where the potential dependence is provably
+        # absent -- then (A, n, Ea) is the exact rate at every potential, not
+        # just at V0. See rmgpy.electron_balance.potential_dependence_is_inert.
+        if not potential_dependence_is_inert(kinetics):
+            raise MechanismWriterError(
+                'Cannot write reaction {0} to Chemkin: its {1} kinetics are potential-dependent '
+                '(alpha={2}, electrons={3}, V0={4} V, Ea={5} J/mol) and Chemkin has no '
+                'potential-dependent rate expression. Writing the rate at V0 would drop the '
+                'potential dependence while still looking like a rate.'.format(
+                    reaction_string, type(kinetics).__name__, kinetics.alpha.value_si,
+                    kinetics.electrons.value_si, kinetics.V0.value_si, kinetics.Ea.value_si)
+            )
+        conversion_factor = kinetics.A.get_conversion_factor_from_si_to_cm_mol_s()
+        string += '{0:<9.3e} {1:<9.3f} {2:<9.3f}'.format(
+            kinetics.A.value_si / (kinetics.T0.value_si ** kinetics.n.value_si) * conversion_factor,
+            kinetics.n.value_si,
+            kinetics.Ea.value_si / 4184.
+        )
+    elif isinstance(kinetics, _kinetics.Marcus):
+        raise MechanismWriterError(
+            'Cannot write reaction {0} to Chemkin: Marcus kinetics evaluate '
+            'k(T, dGrxn) = A*T^n*exp(-dG_act/(R*T)) with '
+            'dG_act = (lmbd_i(T)+lmbd_o)/4 * (1 + dGrxn/(lmbd_i(T)+lmbd_o))^2, and dGrxn is not a '
+            'property of the rate law -- it comes from the species thermochemistry at run time. '
+            'There is no value of these parameters for which a Chemkin rate expression '
+            'reproduces this, so there is no correct file to write.'.format(reaction_string)
+        )
+    elif isinstance(kinetics, PLASMA_KINETICS_CLASSES):
+        # Chemkin has no two-temperature or cross-section rate form, so each of
+        # the plasma classes is written as the modified-Arrhenius reduction of
+        # its own rate law along T = Te, marked with TDEP so a plasma-aware
+        # Chemkin evaluates it at the electron temperature. What that reduction
+        # discards is recorded in the artifact by the TDEP note below -- the one
+        # thing a lossy export must never do is stay quiet about being lossy.
+        arrhenius, plasma_note = _plasma_arrhenius_for_chemkin(kinetics)
+        conversion_factor = arrhenius.A.get_conversion_factor_from_si_to_cm_mol_s()
+        string += '{0:<9.3e} {1:<9.3f} {2:<9.3f}'.format(
+            arrhenius.A.value_si / (arrhenius.T0.value_si ** arrhenius.n.value_si) * conversion_factor,
+            arrhenius.n.value_si,
+            arrhenius.Ea.value_si / 4184.
+        )
     elif hasattr(kinetics, 'highPlimit') and kinetics.highPlimit is not None:
         arrhenius = kinetics.highPlimit
         conversion_factor = arrhenius.A.get_conversion_factor_from_si_to_cm_mol_s()
@@ -1888,11 +2023,34 @@ def write_kinetics_entry(reaction, species_list, verbose=True, java_library=Fals
             arrhenius.n.value_si,
             arrhenius.Ea.value_si / 4184.
         )
-    else:
-        # Print dummy values that Chemkin parses but ignores
+    elif isinstance(kinetics, (_kinetics.Chebyshev, _kinetics.PDepArrhenius)):
+        # Chemkin convention: these carry their real parameters on the CHEB/PLOG
+        # auxiliary lines written below, and the leading triple is dummy values
+        # that Chemkin parses and ignores.
         string += '{0:<9.3e} {1:<9.3f} {2:<9.3f}'.format(1, 0, 0)
+    else:
+        # Hard failure, deliberately. The old behaviour here was to fall through
+        # to the dummy triple, which does not drop the reaction -- it exports it
+        # with a rate coefficient of exactly 1 and no auxiliary lines to correct
+        # it, which reaches the solver looking like data.
+        raise MechanismWriterError(
+            'Cannot write reaction {0} to Chemkin: no writer case for kinetics type {1}. '
+            'Add one to rmgpy.chemkin.write_kinetics_entry rather than exporting a '
+            'mechanism in which this reaction carries a placeholder rate.'.format(
+                reaction_string, type(kinetics).__name__)
+        )
 
     string += '\n'
+
+    if isinstance(kinetics, PLASMA_KINETICS_CLASSES):
+        electron = get_electron_species(species_list)
+        if electron is None:
+            raise MechanismWriterError(
+                'Cannot write reaction {0} to Chemkin: its kinetics type {1} is evaluated at '
+                'the electron temperature, but the mechanism defines no electron species to '
+                'name in the TDEP declaration.'.format(reaction_string, type(kinetics).__name__)
+            )
+        string += '    TDEP/{0}/   ! {1}\n'.format(get_species_identifier(electron), plasma_note)
 
     if getattr(kinetics, 'coverage_dependence', None):
         # Write coverage dependence parameters for surface reactions
@@ -2050,30 +2208,39 @@ def save_species_dictionary(path, species, old_style=False):
     
     If `old_style==True` then it saves it in the old RMG-Java syntax.
     """
-    with open(path, 'w') as f:
-        for spec in species:
-            if old_style:
-                try:
-                    f.write(spec.molecule[0].to_adjacency_list(label=get_species_identifier(spec),
-                                                               remove_h=True, old_style=True))
-                except:
-                    new_adjlist = spec.molecule[0].to_adjacency_list(label=get_species_identifier(spec), remove_h=False)
-                    f.write("// Couldn't save {0} in old RMG-Java syntax, but here it is in "
-                            "newer RMG-Py syntax:".format(get_species_identifier(spec)))
-                    f.write("\n// " + "\n// ".join(new_adjlist.splitlines()) + '\n')
-            else:
-                try:
-                    for mol in spec.molecule:
-                        if mol.reactive:
-                            f.write(mol.to_adjacency_list(label=get_species_identifier(spec), remove_h=False))
-                            break
-                    else:
-                        raise ValueError('No reactive structures were found for species '
-                                         '{0}.'.format(get_species_identifier(spec)))
-                except:
-                    raise ChemkinError('Ran into error saving dictionary for species {0}. '
-                                       'Please check your files.'.format(get_species_identifier(spec)))
-            f.write('\n')
+    _write_file_atomically(path, render_species_dictionary(species, old_style=old_style))
+
+
+def render_species_dictionary(species, old_style=False):
+    """
+    Return the text of a species dictionary for the given list of `species`.
+    See :func:`render_chemkin_file`.
+    """
+    f = io.StringIO()
+    for spec in species:
+        if old_style:
+            try:
+                f.write(spec.molecule[0].to_adjacency_list(label=get_species_identifier(spec),
+                                                           remove_h=True, old_style=True))
+            except:
+                new_adjlist = spec.molecule[0].to_adjacency_list(label=get_species_identifier(spec), remove_h=False)
+                f.write("// Couldn't save {0} in old RMG-Java syntax, but here it is in "
+                        "newer RMG-Py syntax:".format(get_species_identifier(spec)))
+                f.write("\n// " + "\n// ".join(new_adjlist.splitlines()) + '\n')
+        else:
+            try:
+                for mol in spec.molecule:
+                    if mol.reactive:
+                        f.write(mol.to_adjacency_list(label=get_species_identifier(spec), remove_h=False))
+                        break
+                else:
+                    raise ValueError('No reactive structures were found for species '
+                                     '{0}.'.format(get_species_identifier(spec)))
+            except:
+                raise ChemkinError('Ran into error saving dictionary for species {0}. '
+                                   'Please check your files.'.format(get_species_identifier(spec)))
+        f.write('\n')
+    return f.getvalue()
 
 
 def save_transport_file(path, species):
@@ -2098,34 +2265,88 @@ def save_transport_file(path, species):
     7. After the last number, a comment field can be enclosed in parenthesis.
 
     """
+    _write_file_atomically(path, render_transport_file(species))
 
-    with open(path, 'w') as f:
-        f.write("! {0:15} {1:8} {2:9} {3:9} {4:9} {5:9} {6:9} {7:9}\n".format(
-            'Species', 'Shape', 'LJ-depth', 'LJ-diam', 'DiplMom', 'Polzblty', 'RotRelaxNum', 'Data'))
-        f.write("! {0:15} {1:8} {2:9} {3:9} {4:9} {5:9} {6:9} {7:9}\n".format(
-            'Name', 'Index', 'epsilon/k_B', 'sigma', 'mu', 'alpha', 'Zrot', 'Source'))
-        for spec in species:
-            transport_data = spec.get_transport_data()
-            if not transport_data:
-                missing_data = True
-            else:
-                missing_data = False
 
-            label = get_species_identifier(spec)
+def render_transport_file(species):
+    """
+    Return the text of a Chemkin transport properties file for the given list of
+    `species`. See :func:`render_chemkin_file`.
+    """
+    f = io.StringIO()
+    f.write("! {0:15} {1:8} {2:9} {3:9} {4:9} {5:9} {6:9} {7:9}\n".format(
+        'Species', 'Shape', 'LJ-depth', 'LJ-diam', 'DiplMom', 'Polzblty', 'RotRelaxNum', 'Data'))
+    f.write("! {0:15} {1:8} {2:9} {3:9} {4:9} {5:9} {6:9} {7:9}\n".format(
+        'Name', 'Index', 'epsilon/k_B', 'sigma', 'mu', 'alpha', 'Zrot', 'Source'))
+    for spec in species:
+        transport_data = spec.get_transport_data()
+        if not transport_data:
+            missing_data = True
+        else:
+            missing_data = False
 
-            if missing_data:
-                f.write('! {0:19s} {1!r}\n'.format(label, transport_data))
-            else:
-                f.write('{0:19} {1:d}   {2:9.3f} {3:9.3f} {4:9.3f} {5:9.3f} {6:9.3f}    ! {7:s}\n'.format(
-                    label,
-                    transport_data.shapeIndex,
-                    transport_data.epsilon.value_si / constants.R,
-                    transport_data.sigma.value_si * 1e10,
-                    (transport_data.dipoleMoment.value_si * constants.c * 1e21 if transport_data.dipoleMoment else 0),
-                    (transport_data.polarizability.value_si * 1e30 if transport_data.polarizability else 0),
-                    (transport_data.rotrelaxcollnum if transport_data.rotrelaxcollnum else 0),
-                    transport_data.comment,
-                ))
+        label = get_species_identifier(spec)
+
+        if missing_data:
+            f.write('! {0:19s} {1!r}\n'.format(label, transport_data))
+        else:
+            f.write('{0:19} {1:d}   {2:9.3f} {3:9.3f} {4:9.3f} {5:9.3f} {6:9.3f}    ! {7:s}\n'.format(
+                label,
+                transport_data.shapeIndex,
+                transport_data.epsilon.value_si / constants.R,
+                transport_data.sigma.value_si * 1e10,
+                (transport_data.dipoleMoment.value_si * constants.c * 1e21 if transport_data.dipoleMoment else 0),
+                (transport_data.polarizability.value_si * 1e30 if transport_data.polarizability else 0),
+                (transport_data.rotrelaxcollnum if transport_data.rotrelaxcollnum else 0),
+                transport_data.comment,
+            ))
+    return f.getvalue()
+
+
+def _write_files_atomically(entries):
+    """
+    Land a whole set of ``(path, content)`` pairs, or none of them.
+
+    Every file is first written to a temporary file in its own destination
+    directory; only once all of them are on disk are they renamed into place.
+    A failure while writing any of the temporaries leaves every destination
+    untouched, and the renames themselves are atomic on POSIX.
+
+    The Chemkin writers used to stream straight into their destinations, so a
+    reaction that raised part-way through left a partial ``chem*.inp`` on disk
+    that looked like a mechanism. Landing them one at a time fixed that per file
+    but not for the set: ``save_chemkin`` could update the gas file and then fail
+    on the surface or annotated file, leaving a mechanism split across two
+    generations of the model. This is what makes the output set all-old or
+    all-new.
+    """
+    staged = []
+    try:
+        for path, content in entries:
+            directory = os.path.dirname(os.path.abspath(path))
+            fd, tmp_path = tempfile.mkstemp(prefix='.' + os.path.basename(path) + '.',
+                                            suffix='.tmp', dir=directory)
+            staged.append((tmp_path, path))
+            with os.fdopen(fd, 'w') as handle:
+                handle.write(content)
+    except BaseException:
+        for tmp_path, _ in staged:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+        raise
+    for tmp_path, path in staged:
+        os.replace(tmp_path, path)
+
+
+def _write_file_atomically(path, content):
+    """
+    Write ``content`` to ``path`` so that ``path`` either does not exist, still
+    holds its previous contents, or holds the complete new file -- never a
+    truncated prefix. Single-file case of :func:`_write_files_atomically`.
+    """
+    _write_files_atomically([(path, content)])
 
 
 def save_chemkin_file(path, species, reactions, verbose=True, check_for_duplicates=True,
@@ -2140,6 +2361,20 @@ def save_chemkin_file(path, species, reactions, verbose=True, check_for_duplicat
     ELEMENTS section. If ``None``, it is computed from ``species`` via
     :meth:`rmgpy.rmg.model.ReactionModel.get_elements`.
     """
+    _write_file_atomically(path, render_chemkin_file(species, reactions, verbose=verbose,
+                                                    check_for_duplicates=check_for_duplicates,
+                                                    elements_in_use=elements_in_use))
+
+
+def render_chemkin_file(species, reactions, verbose=True, check_for_duplicates=True,
+                        elements_in_use=None):
+    """
+    Return the text of a Chemkin input file for the given `species` and `reactions`.
+
+    Serialization is separated from writing so that a whole set of output files
+    can be serialized before any of them is landed -- see
+    :func:`_write_files_atomically` and :func:`save_chemkin`.
+    """
     # Check for duplicate
     if check_for_duplicates:
         mark_duplicate_reactions(reactions)
@@ -2148,7 +2383,10 @@ def save_chemkin_file(path, species, reactions, verbose=True, check_for_duplicat
         from rmgpy.rmg.model import ReactionModel
         elements_in_use = ReactionModel(species=species).get_elements()
 
-    f = open(path, 'w')
+    # Built in memory and landed atomically by the caller, so a
+    # MechanismWriterError from any reaction leaves no partial mechanism on disk.
+    # See _write_files_atomically.
+    f = io.StringIO()
 
     sorted_species = sorted(species, key=lambda species: species.index)
 
@@ -2184,14 +2422,18 @@ def save_chemkin_file(path, species, reactions, verbose=True, check_for_duplicat
     f.write('REACTIONS    KCAL/MOLE   MOLES\n\n')
     global _chemkin_reaction_count
     _chemkin_reaction_count = 0
-    for rxn in reactions:
-        f.write(write_kinetics_entry(rxn, species_list=species, verbose=verbose))
-        # Don't forget to mark duplicates!
-        f.write('\n')
-    f.write('END\n\n')
-    f.close()
-    logging.info("Chemkin file contains {0} reactions.".format(_chemkin_reaction_count))
-    _chemkin_reaction_count = None
+    try:
+        for rxn in reactions:
+            f.write(write_kinetics_entry(rxn, species_list=species, verbose=verbose))
+            # Don't forget to mark duplicates!
+            f.write('\n')
+        f.write('END\n\n')
+        logging.info("Chemkin file contains {0} reactions.".format(_chemkin_reaction_count))
+        return f.getvalue()
+    finally:
+        # Cleared on every exit, not only on success: a failed export used to
+        # leave this module-level counter holding the count it had reached.
+        _chemkin_reaction_count = None
 
 
 def save_chemkin_surface_file(path, species, reactions, verbose=True, check_for_duplicates=True,
@@ -2202,11 +2444,22 @@ def save_chemkin_surface_file(path, species, reactions, verbose=True, check_for_
     If check_for_duplicates is False then we don't check for unlabeled duplicate reactions,
     thus saving time (eg. if you are sure you've already labeled them as duplicate).
     """
+    _write_file_atomically(path, render_chemkin_surface_file(
+        species, reactions, verbose=verbose, check_for_duplicates=check_for_duplicates,
+        surface_site_density=surface_site_density))
+
+
+def render_chemkin_surface_file(species, reactions, verbose=True, check_for_duplicates=True,
+                                surface_site_density=None):
+    """
+    Return the text of a Chemkin *surface* input file for the given `species` and
+    `reactions`. See :func:`render_chemkin_file`.
+    """
     # Check for duplicate
     if check_for_duplicates:
         mark_duplicate_reactions(reactions)
 
-    f = open(path, 'w')
+    f = io.StringIO()
 
     sorted_species = sorted(species, key=lambda species: species.index)
 
@@ -2244,13 +2497,15 @@ def save_chemkin_surface_file(path, species, reactions, verbose=True, check_for_
     f.write('REACTIONS    KCAL/MOLE   MOLES\n\n')
     global _chemkin_reaction_count
     _chemkin_reaction_count = 0
-    for rxn in reactions:
-        f.write(write_kinetics_entry(rxn, species_list=species, verbose=verbose))
-        f.write('\n')
-    f.write('END\n\n')
-    f.close()
-    logging.info("Chemkin file contains {0} reactions.".format(_chemkin_reaction_count))
-    _chemkin_reaction_count = None
+    try:
+        for rxn in reactions:
+            f.write(write_kinetics_entry(rxn, species_list=species, verbose=verbose))
+            f.write('\n')
+        f.write('END\n\n')
+        logging.info("Chemkin file contains {0} reactions.".format(_chemkin_reaction_count))
+        return f.getvalue()
+    finally:
+        _chemkin_reaction_count = None
 
 
 def save_chemkin(reaction_model, path, verbose_path, dictionary_path=None, transport_path=None,
@@ -2260,6 +2515,13 @@ def save_chemkin(reaction_model, path, verbose_path, dictionary_path=None, trans
     species and reactions to `path`. If `save_edge_species` is True, then
     a chemkin file and dictionary file for the core AND edge species and reactions
     will be saved.  It also saves verbose versions of each file.
+
+    Every output is serialized in full before any of them is landed, so the set of
+    files on disk is always all-old or all-new. Writing them one at a time made
+    each file individually atomic but still let a failure on, say, the surface
+    file leave a new gas file beside a stale surface file -- a mechanism split
+    across two generations of the model, which is harder to notice than no file
+    at all. See :func:`_write_files_atomically`.
     """
     from rmgpy.rmg.model import ReactionModel
     if save_edge_species:
@@ -2298,27 +2560,38 @@ def save_chemkin(reaction_model, path, verbose_path, dictionary_path=None, trans
                 gas_rxn_list.append(r)
 
         # We should already have marked everything as duplicates by now so use check_for_duplicates=False
-        save_chemkin_file(gas_path, gas_species_list, gas_rxn_list, verbose=False,
-                          check_for_duplicates=False, elements_in_use=elements_in_use)
-        save_chemkin_surface_file(surface_path, surface_species_list, surface_rxn_list, verbose=False,
-                                  check_for_duplicates=False, surface_site_density=reaction_model.surface_site_density)
+        staged = [
+            (gas_path, render_chemkin_file(gas_species_list, gas_rxn_list, verbose=False,
+                                           check_for_duplicates=False, elements_in_use=elements_in_use)),
+            (surface_path, render_chemkin_surface_file(
+                surface_species_list, surface_rxn_list, verbose=False, check_for_duplicates=False,
+                surface_site_density=reaction_model.surface_site_density)),
+        ]
         logging.info('Saving annotated version of Chemkin files...')
-        save_chemkin_file(gas_verbose_path, gas_species_list, gas_rxn_list, verbose=True,
-                          check_for_duplicates=False, elements_in_use=elements_in_use)
-        save_chemkin_surface_file(surface_verbose_path, surface_species_list, surface_rxn_list, verbose=True,
-                                  check_for_duplicates=False, surface_site_density=reaction_model.surface_site_density)
+        staged.append(
+            (gas_verbose_path, render_chemkin_file(gas_species_list, gas_rxn_list, verbose=True,
+                                                   check_for_duplicates=False, elements_in_use=elements_in_use)))
+        staged.append(
+            (surface_verbose_path, render_chemkin_surface_file(
+                surface_species_list, surface_rxn_list, verbose=True, check_for_duplicates=False,
+                surface_site_density=reaction_model.surface_site_density)))
 
     else:
         # Gas phase only
-        save_chemkin_file(path, species_list, rxn_list, verbose=False,
-                          check_for_duplicates=False, elements_in_use=elements_in_use)
+        staged = [
+            (path, render_chemkin_file(species_list, rxn_list, verbose=False,
+                                       check_for_duplicates=False, elements_in_use=elements_in_use)),
+        ]
         logging.info('Saving annotated version of Chemkin file...')
-        save_chemkin_file(verbose_path, species_list, rxn_list, verbose=True,
-                          check_for_duplicates=False, elements_in_use=elements_in_use)
+        staged.append(
+            (verbose_path, render_chemkin_file(species_list, rxn_list, verbose=True,
+                                               check_for_duplicates=False, elements_in_use=elements_in_use)))
     if dictionary_path:
-        save_species_dictionary(dictionary_path, species_list)
+        staged.append((dictionary_path, render_species_dictionary(species_list)))
     if transport_path:
-        save_transport_file(transport_path, species_list)
+        staged.append((transport_path, render_transport_file(species_list)))
+
+    _write_files_atomically(staged)
 
 
 def save_chemkin_files(rmg, config=None):
