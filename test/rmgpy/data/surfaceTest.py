@@ -28,6 +28,7 @@
 ###############################################################################
 
 import os
+import shutil
 
 from rmgpy import settings
 from rmgpy.data.surface import MetalDatabase
@@ -74,8 +75,13 @@ class TestMetalDatabase:
         assert repr(self.database.get_binding_energies(test_entry.label)) == repr(test_entry.binding_energies)
         assert repr(self.database.get_surface_site_density(test_entry.label)) == repr(test_entry.surface_site_density)
 
-    def test_write_entry_to_database(self):
-        """Test we can write an entry to the database"""
+    def test_write_entry_to_database(self, tmp_path):
+        """Test we can write an entry to the database
+
+        The save/load round-trip runs against a copy of the metal library in a
+        temporary directory: saving into ``settings["database.directory"]``
+        would dirty the user's RMG-database checkout on every unit-test run.
+        """
 
         test_entry = Entry(
             index=100,
@@ -95,7 +101,17 @@ class TestMetalDatabase:
             """,
         )
 
-        MetalLib = self.database.libraries["surface"]
+        # Scratch copy of the surface database to save into. MetalDatabase.save
+        # overwrites libraries/metal.py in place and does not create it, so the
+        # library file has to be seeded from the real database first.
+        scratch_surface = tmp_path / "surface"
+        (scratch_surface / "libraries").mkdir(parents=True)
+        scratch_metal_py = scratch_surface / "libraries" / "metal.py"
+        shutil.copyfile(
+            os.path.join(settings["database.directory"], "surface", "libraries", "metal.py"),
+            scratch_metal_py,
+        )
+
         self.database.add_entry(test_entry)
 
         # test to see if the entry was added
@@ -103,19 +119,19 @@ class TestMetalDatabase:
         assert repr(self.database.get_surface_site_density(test_entry.label)) == repr(test_entry.surface_site_density)
 
         # write the new entry
-        self.database.save(os.path.join(settings["database.directory"], "surface"))
-        # MetalLib.save_entry(os.path.join(settings['database.directory'], 'surface/libraries/metal.py'), test_entry)
+        self.database.save(str(scratch_surface))
 
         # test to see if entry was written
-        with open(
-            os.path.join(settings["database.directory"], "surface/libraries/metal.py"),
-            "r",
-        ) as f:
+        with open(scratch_metal_py, "r") as f:
             if "Me111" in f.read():
                 self.database.remove_entry(test_entry)
-                self.database.save(os.path.join(settings["database.directory"], "surface"))
+                self.database.save(str(scratch_surface))
             else:
                 raise DatabaseError("Unable to write entry to database.")
+
+        # and that removing it round-trips back out of the saved library
+        with open(scratch_metal_py, "r") as f:
+            assert "Me111" not in f.read()
 
     def test_load_from_label(self):
         """Test we can obtain metal parameters from a string"""
