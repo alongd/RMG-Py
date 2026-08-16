@@ -43,21 +43,25 @@ import numpy as np
 import pytest
 
 import rmgpy.constants as constants
-from rmgpy.chemkin import save_chemkin_file, write_kinetics_entry, write_reaction_string
+from rmgpy.chemkin import (save_chemkin, save_chemkin_file, save_chemkin_surface_file,
+                           write_kinetics_entry, write_reaction_string)
 from rmgpy.exceptions import MechanismWriterError
 from rmgpy.kinetics import (
     Arrhenius,
     ArrheniusChargeTransfer,
     BadnellRRArrhenius,
     ElectronCollisionPlasma,
+    Lindemann,
     Marcus,
     MultiArrhenius,
     MultiPDepArrhenius,
     PDepArrhenius,
+    ThirdBody,
+    Troe,
     TwoTemperaturePlasma,
     VoronovEIArrhenius,
 )
-from rmgpy.kinetics.surface import SurfaceChargeTransfer
+from rmgpy.kinetics.surface import StickingCoefficient, SurfaceArrhenius, SurfaceChargeTransfer
 from rmgpy.kinetics.model import KineticsModel
 from rmgpy.molecule import Molecule
 from rmgpy.reaction import Reaction
@@ -895,3 +899,595 @@ class TestFailedExportLeavesNothing:
         with pytest.raises(MechanismWriterError):
             save_cantera_model(ReactionModel(species=species, reactions=reactions), path)
         assert not os.path.exists(path)
+
+
+# ---------------------------------------------------------------------------
+# 9. Reference temperature: the two writers must agree on the *rate*
+# ---------------------------------------------------------------------------
+
+#: A reference temperature that is not RMG's conventional 1 K, together with a
+#: temperature exponent that is not zero, so that ``T0**n`` is a factor of 9e4 --
+#: large enough that no rounding can hide it.
+_T0 = (300.0, 'K')
+_N = 2.0
+_EA = (10.0, 'kJ/mol')
+#: Site density shared by both writers. Their defaults differ (2.72e-9 mol/cm^2
+#: in the Chemkin writer, 2.5e-5 mol/m^2 here), which would otherwise show up as
+#: a rate difference that has nothing to do with the reference temperature.
+_SITE_DENSITY = 2.5e-5  # mol/m^2
+
+
+@pytest.fixture(scope='module')
+def gas_forms_species():
+    """Neutral and charged gas species enough to build one of every gas rate form."""
+    e = _make_species('e', 1, Molecule().from_adjacency_list('1 e u0 p0 c-1'))
+    o_atom = _make_species('O', 2, Molecule().from_adjacency_list('1 O u2 p2 c0'))
+    o2 = _make_species('O2', 3, Molecule(smiles='[O][O]'))
+    o3 = _make_species('O3', 4, Molecule(smiles='[O-][O+]=O'))
+    o_anion = _make_species('O-', 5, Molecule().from_adjacency_list('1 O u1 p3 c-1'))
+    return [e, o_atom, o2, o3, o_anion]
+
+
+def _gas_form_reaction(name, species, T0, n):
+    """
+    One reaction per Cantera writer case that emits an ``{A, b, Ea}`` mapping
+    from a gas-phase RMG rate, built at the given reference temperature.
+    """
+    e, o_atom, o2, o3, o_anion = species
+
+    def arr(A, units):
+        return Arrhenius(A=(A, units), n=n, T0=T0, Ea=_EA)
+
+    if name == 'Arrhenius':
+        return Reaction(index=1, reactants=[o_atom, o2], products=[o3], reversible=False,
+                        kinetics=arr(1.0e6, 'm^3/(mol*s)'))
+    if name == 'ThirdBody':
+        return Reaction(index=1, reactants=[o_atom, o_atom], products=[o2], reversible=False,
+                        kinetics=ThirdBody(arrheniusLow=arr(1.0e6, 'm^6/(mol^2*s)')))
+    if name == 'Troe':
+        return Reaction(index=1, reactants=[o_atom, o_atom], products=[o2], reversible=False,
+                        kinetics=Troe(arrheniusHigh=arr(1.0e6, 'm^3/(mol*s)'),
+                                      arrheniusLow=arr(2.0e6, 'm^6/(mol^2*s)'),
+                                      alpha=0.5, T3=(100.0, 'K'), T1=(200.0, 'K'), T2=(300.0, 'K')))
+    if name == 'Lindemann':
+        return Reaction(index=1, reactants=[o_atom, o_atom], products=[o2], reversible=False,
+                        kinetics=Lindemann(arrheniusHigh=arr(1.0e6, 'm^3/(mol*s)'),
+                                           arrheniusLow=arr(2.0e6, 'm^6/(mol^2*s)')))
+    if name == 'PDepArrhenius':
+        return Reaction(index=1, reactants=[o_atom, o2], products=[o3], reversible=False,
+                        kinetics=PDepArrhenius(pressures=([0.1, 10.0], 'bar'),
+                                               arrhenius=[arr(1.0e6, 'm^3/(mol*s)'),
+                                                          arr(4.0e6, 'm^3/(mol*s)')]))
+    if name == 'MultiArrhenius':
+        return Reaction(index=1, reactants=[o_atom, o2], products=[o3], reversible=False,
+                        kinetics=MultiArrhenius(arrhenius=[arr(1.0e6, 'm^3/(mol*s)'),
+                                                           arr(3.0e6, 'm^3/(mol*s)')]))
+    if name == 'ArrheniusChargeTransfer':
+        return Reaction(index=1, reactants=[o_atom], products=[o_anion], electrons=-1,
+                        reversible=False,
+                        kinetics=ArrheniusChargeTransfer(
+                            A=(1.0e6, 'm^3/(mol*s)'), n=n, T0=T0, Ea=_EA,
+                            alpha=0.0, electrons=-1, V0=(0.0, 'V')))
+    raise AssertionError('no such gas rate form: {0}'.format(name))
+
+
+GAS_FORMS = ['Arrhenius', 'ThirdBody', 'Troe', 'Lindemann', 'PDepArrhenius', 'MultiArrhenius',
+             'ArrheniusChargeTransfer']
+
+
+@pytest.fixture(scope='module')
+def surface_forms_species():
+    """Gas and surface species enough to build one of every surface rate form."""
+    e = _make_species('e', 1, Molecule().from_adjacency_list('1 e u0 p0 c-1'))
+    hplus = _make_species('Hplus', 2, Molecule().from_adjacency_list('1 H u0 p0 c+1'))
+    h2 = _make_species('H2', 3, Molecule(smiles='[H][H]'))
+    site = _make_species('X', 4, Molecule().from_adjacency_list('1 X u0 p0 c0'))
+    hx = _make_species('HX', 5, Molecule().from_adjacency_list(
+        '1 H u0 p0 c0 {2,S}\n2 X u0 p0 c0 {1,S}\n'))
+    h2x = _make_species('H2X', 6, Molecule().from_adjacency_list(
+        '1 H u0 p0 c0 {2,S}\n2 H u0 p0 c0 {1,S}\n3 X u0 p0 c0\n'))
+    return [e, hplus, h2, site, hx, h2x]
+
+
+def _surface_form_reaction(name, species, T0, n):
+    """One reaction per surface-phase Cantera writer case that emits an A-factor."""
+    e, hplus, h2, site, hx, h2x = species
+    if name == 'StickingCoefficient':
+        return Reaction(index=1, reactants=[h2, site], products=[h2x], reversible=False,
+                        kinetics=StickingCoefficient(A=0.1, n=n, T0=T0, Ea=_EA))
+    if name == 'SurfaceArrhenius':
+        return Reaction(index=1, reactants=[h2, site], products=[h2x], reversible=False,
+                        kinetics=SurfaceArrhenius(A=(1.0e3, 'm^3/(mol*s)'), n=n, T0=T0, Ea=_EA))
+    if name == 'SurfaceChargeTransfer':
+        return Reaction(index=1, reactants=[hplus, site], products=[hx], electrons=-1,
+                        reversible=False,
+                        kinetics=SurfaceChargeTransfer(
+                            A=(1.0e3, 'm^3/(mol*s)'), n=n, T0=T0, Ea=_EA,
+                            alpha=0.0, electrons=-1, V0=(0.0, 'V')))
+    raise AssertionError('no such surface rate form: {0}'.format(name))
+
+
+SURFACE_FORMS = ['StickingCoefficient', 'SurfaceArrhenius', 'SurfaceChargeTransfer']
+
+_RATE_TEMPERATURES = (300.0, 500.0, 800.0, 1500.0, 2500.0)
+_RATE_PRESSURES = (0.2 * ct.one_atm, ct.one_atm, 8.0 * ct.one_atm)
+
+
+def _cantera_gas_from_chemkin(species, reactions, directory):
+    """
+    Write the Chemkin artifact, convert it with Cantera's own ``ck2yaml`` and
+    return the resulting :class:`cantera.Solution`.
+
+    The conversion is what makes this a *rate* comparison rather than a field
+    comparison: ck2yaml, not the test, does the ``cm^3/(mol*s)`` to
+    ``m^3/(kmol*s)`` conversion, so the test cannot pass by replaying the
+    Chemkin writer's own arithmetic.
+    """
+    from cantera import ck2yaml
+    inp_path = os.path.join(directory, 'chem.inp')
+    converted = os.path.join(directory, 'from_chemkin.yaml')
+    save_chemkin_file(inp_path, species, reactions, check_for_duplicates=False)
+    ck2yaml.convert(input_file=inp_path, out_name=converted, permissive=True, quiet=True)
+    return ct.Solution(converted)
+
+
+def _mole_fractions(species):
+    return ', '.join('{0}({1}):1'.format(spc.label, spc.index) for spc in species)
+
+
+class TestWritersAgreeOnTheRate:
+    """
+    RMG evaluates ``k = A*(T/T0)^n*exp(-Ea/RT)``; Cantera's ``{A, b, Ea}`` mapping
+    evaluates ``k = A*T^b*exp(-Ea/RT)`` and has nowhere to put ``T0``. The Chemkin
+    writer has always folded ``T0**n`` into the A-factor it writes; the Cantera
+    writer did not, so the same reaction exported to the two formats evaluated to
+    two different rates -- by a factor of ``T0**n``, silently, in the deliverable
+    format.
+
+    These tests compare the *rates* the two artifacts evaluate to. Comparing
+    fields or strings would pass while the physics diverges, which is how this
+    survived a previous review.
+    """
+
+    @pytest.mark.parametrize('form', GAS_FORMS)
+    def test_both_writers_evaluate_to_the_same_rate(self, gas_forms_species, form, tmp_out):
+        species = gas_forms_species
+        reactions = [_gas_form_reaction(form, species, _T0, _N)]
+        directory = os.path.join(tmp_out, form)
+        os.makedirs(directory)
+
+        yaml_path = os.path.join(directory, 'chem.yaml')
+        save_cantera_model(ReactionModel(species=species, reactions=reactions), yaml_path)
+        from_cantera = ct.Solution(yaml_path)
+        from_chemkin = _cantera_gas_from_chemkin(species, reactions, directory)
+
+        composition = _mole_fractions(species)
+        assert from_cantera.n_reactions == from_chemkin.n_reactions
+        for temperature in _RATE_TEMPERATURES:
+            for pressure in _RATE_PRESSURES:
+                from_cantera.TPX = temperature, pressure, composition
+                from_chemkin.TPX = temperature, pressure, composition
+                for k_cantera, k_chemkin in zip(from_cantera.forward_rate_constants,
+                                                from_chemkin.forward_rate_constants):
+                    # 1e-3 is the Chemkin *format's* precision -- it carries four
+                    # significant figures of A and three decimals of Ea in
+                    # kcal/mol. The defect this guards against is a factor of
+                    # 9e4, five orders of magnitude clear of that.
+                    assert k_cantera == pytest.approx(k_chemkin, rel=1e-3), (
+                        '{0} at T={1} K, P={2} Pa: Cantera {3!r} vs Chemkin {4!r}'.format(
+                            form, temperature, pressure, k_cantera, k_chemkin))
+
+    @pytest.mark.parametrize('form', GAS_FORMS + SURFACE_FORMS)
+    def test_exported_rate_does_not_depend_on_the_reference_temperature(
+            self, gas_forms_species, surface_forms_species, form, tmp_out):
+        """
+        ``change_t0`` rewrites A so the rate law is unchanged. Two kinetics
+        objects that differ only in ``T0`` are therefore the same physical rate,
+        and must export to the same evaluated rate. This is what covers the
+        surface cases, whose Chemkin artifacts ck2yaml cannot read back (it emits
+        no definition for the ``X`` site element).
+        """
+        surface = form in SURFACE_FORMS
+        species = surface_forms_species if surface else gas_forms_species
+        build = _surface_form_reaction if surface else _gas_form_reaction
+
+        solutions = []
+        for label, rebase in (('shifted', False), ('conventional', True)):
+            reaction = build(form, species, _T0, _N)
+            if rebase:
+                _rebase_to_t0_one(reaction.kinetics)
+            directory = os.path.join(tmp_out, form + '_' + label)
+            os.makedirs(directory)
+            path = os.path.join(directory, 'chem.yaml')
+            save_cantera_model(ReactionModel(species=species, reactions=[reaction]), path,
+                               site_density=_SITE_DENSITY if surface else None)
+            solutions.append(_load_for_rates(path, species, surface))
+
+        shifted, conventional = solutions
+        for temperature in _RATE_TEMPERATURES:
+            for pressure in _RATE_PRESSURES:
+                _set_state(shifted, temperature, pressure, species, surface)
+                _set_state(conventional, temperature, pressure, species, surface)
+                for k_shifted, k_conventional in zip(shifted.forward_rate_constants,
+                                                     conventional.forward_rate_constants):
+                    assert k_shifted == pytest.approx(k_conventional, rel=1e-12), (
+                        '{0} at T={1} K, P={2} Pa: T0=300 K export {3!r} but the same rate '
+                        'law written against T0=1 K exports {4!r}'.format(
+                            form, temperature, pressure, k_shifted, k_conventional))
+
+
+def _rebase_to_t0_one(kinetics):
+    """
+    Rewrite every A-factor inside ``kinetics`` in place so the rate law is
+    expressed against ``T0 = 1 K`` without changing the rate it evaluates:
+    ``change_t0`` folds the old reference temperature into A.
+    """
+    inner = getattr(kinetics, 'arrhenius', None)
+    if inner is not None:  # MultiArrhenius, PDepArrhenius
+        for component in inner:
+            _rebase_to_t0_one(component)
+        return
+    rebased = False
+    for attribute in ('arrheniusHigh', 'arrheniusLow'):  # ThirdBody, Lindemann, Troe
+        component = getattr(kinetics, attribute, None)
+        if component is not None:
+            _rebase_to_t0_one(component)
+            rebased = True
+    if not rebased:
+        kinetics.change_t0(1.0)
+
+
+def _load_for_rates(path, species, surface):
+    if not surface:
+        return ct.Solution(path)
+    import yaml as pyyaml
+    with open(path) as handle:
+        phase_names = [phase['name'] for phase in pyyaml.safe_load(handle)['phases']]
+    return ct.Interface(path, phase_names[-1])
+
+
+def _set_state(solution, temperature, pressure, species, surface):
+    gas_species = [spc for spc in species if not spc.contains_surface_site()]
+    if not surface:
+        solution.TPX = temperature, pressure, _mole_fractions(species)
+        return
+    surface_species = [spc for spc in species if spc.contains_surface_site()]
+    solution.TP = temperature, pressure
+    solution.adjacent['gas'].TPX = temperature, pressure, _mole_fractions(gas_species)
+    solution.coverages = ', '.join(
+        '{0}({1}):{2}'.format(spc.label, spc.index, 1.0 / len(surface_species))
+        for spc in surface_species)
+
+
+# ---------------------------------------------------------------------------
+# 10. The conventional T0 = 1 K export is provably unchanged
+# ---------------------------------------------------------------------------
+
+#: Golden Cantera YAML produced by the Cantera writer as it stood at commit
+#: 331614fe1, i.e. before ``T0`` normalization was added. RMG's own convention is
+#: ``T0 = 1 K``, so ``T0**n == 1`` and the normalization must change nothing;
+#: these files are what makes that claim checkable rather than asserted. See
+#: test/rmgpy/test_data/plasma_export/README.md for how they were generated.
+_GOLDEN_DIR = os.path.join(os.path.dirname(__file__), 'test_data', 'plasma_export')
+
+
+def _normalize_generator(text):
+    """
+    Blank out the one entry of a Cantera YAML file that cannot be stable across
+    commits: ``generator`` embeds the writer module's path and the current git
+    commit, and is long enough that the dumper wraps it over several lines.
+    Everything else -- every parameter, every note, every key order -- is
+    compared byte for byte.
+    """
+    lines, out, skipping = text.split('\n'), [], False
+    for line in lines:
+        if line.startswith('generator:'):
+            out.append('generator: <normalized>')
+            skipping = True
+        elif skipping and (line.startswith(' ') or line.startswith('\t')):
+            continue
+        else:
+            skipping = False
+            out.append(line)
+    return '\n'.join(out)
+
+
+def _t0_one_gas_model(species):
+    return ReactionModel(
+        species=species,
+        reactions=[_gas_form_reaction(form, species, (1.0, 'K'), _N) for form in GAS_FORMS],
+    )
+
+
+def _t0_one_surface_model(species):
+    return ReactionModel(
+        species=species,
+        reactions=[_surface_form_reaction(form, species, (1.0, 'K'), _N)
+                   for form in SURFACE_FORMS],
+    )
+
+
+class TestConventionalReferenceTemperatureIsUnchanged:
+    """
+    ``T0`` normalization was applied writer-wide, which is only safe because
+    RMG writes ``T0 = 1 K``. These tests are the proof that nothing moved for
+    that case: the exported files still match, byte for byte, what the writer
+    produced before the change.
+    """
+
+    def test_gas_export_is_byte_identical_to_the_base_commit(self, gas_forms_species, tmp_out):
+        path = os.path.join(tmp_out, 'chem.yaml')
+        save_cantera_model(_t0_one_gas_model(gas_forms_species), path)
+        with open(path) as handle:
+            written = handle.read()
+        with open(os.path.join(_GOLDEN_DIR, 't0_one_gas.yaml')) as handle:
+            golden = handle.read()
+        assert _normalize_generator(written) == _normalize_generator(golden)
+
+    def test_surface_export_is_byte_identical_to_the_base_commit(self, surface_forms_species,
+                                                                 tmp_out):
+        path = os.path.join(tmp_out, 'chem.yaml')
+        save_cantera_model(_t0_one_surface_model(surface_forms_species), path,
+                           site_density=_SITE_DENSITY)
+        with open(path) as handle:
+            written = handle.read()
+        with open(os.path.join(_GOLDEN_DIR, 't0_one_surface.yaml')) as handle:
+            golden = handle.read()
+        assert _normalize_generator(written) == _normalize_generator(golden)
+
+    def test_the_goldens_really_do_use_the_conventional_reference_temperature(
+            self, gas_forms_species, surface_forms_species):
+        """
+        A golden generated from ``T0 != 1`` kinetics would make the two tests
+        above vacuous -- they would compare an un-normalized export to another
+        un-normalized export.
+        """
+        models = [_t0_one_gas_model(gas_forms_species),
+                  _t0_one_surface_model(surface_forms_species)]
+        checked = 0
+        for model in models:
+            for reaction in model.reactions:
+                for kinetics in _every_rate_object(reaction.kinetics):
+                    assert kinetics.T0.value_si == 1.0
+                    assert kinetics.n.value_si != 0.0
+                    checked += 1
+        # 11 gas rate objects (Troe, Lindemann, PDepArrhenius and MultiArrhenius
+        # each carry two) and 3 surface ones.
+        assert checked == 14
+
+
+def _every_rate_object(kinetics):
+    """Yield every rate object inside ``kinetics`` that carries an A-factor."""
+    inner = getattr(kinetics, 'arrhenius', None)
+    if inner is not None:
+        for component in inner:
+            for rate in _every_rate_object(component):
+                yield rate
+        return
+    nested = False
+    for attribute in ('arrheniusHigh', 'arrheniusLow'):
+        component = getattr(kinetics, attribute, None)
+        if component is not None:
+            nested = True
+            for rate in _every_rate_object(component):
+                yield rate
+    if not nested:
+        yield kinetics
+
+
+# ---------------------------------------------------------------------------
+# 11. Failure behaviour: the artifacts already on disk survive it
+# ---------------------------------------------------------------------------
+
+_SENTINEL = 'PREVIOUS GOOD EXPORT - MUST SURVIVE A FAILED ONE\n'
+
+
+def _leftovers(directory, keep):
+    """Files in ``directory`` other than the expected outputs -- i.e. temp files."""
+    return sorted(set(os.listdir(directory)) - set(keep))
+
+
+class TestCanteraWriteIsAtomic:
+    """
+    The Cantera writer used to hand the destination file straight to
+    ``yaml.dump``. A failure inside the dump therefore truncated whatever was
+    already there. The previous test only covered a failure raised *before* the
+    file was opened, which is a case the old code also survived -- so it read as
+    closed while the real one was open.
+    """
+
+    def test_a_failure_inside_the_dump_leaves_the_previous_file_intact(
+            self, mechanism, tmp_out, monkeypatch):
+        import rmgpy.yaml_cantera2 as yaml_cantera2
+
+        model, species, reactions = mechanism
+        path = os.path.join(tmp_out, 'chem_annotated.yaml')
+        with open(path, 'w') as handle:
+            handle.write(_SENTINEL)
+
+        def exploding_dump(data, stream, **kwargs):
+            # Write real content first, then fail: this is what a mid-write
+            # failure looks like, and what truncates a streamed destination.
+            stream.write('phases:\n- name: gas\n  thermo: ideal-gas\n')
+            raise RuntimeError('dump failed half way through')
+
+        monkeypatch.setattr(yaml_cantera2.yaml, 'dump', exploding_dump)
+        with pytest.raises(RuntimeError, match='half way through'):
+            save_cantera_model(model, path)
+
+        with open(path) as handle:
+            assert handle.read() == _SENTINEL
+        assert _leftovers(tmp_out, ['chem_annotated.yaml']) == []
+
+    def test_a_failure_inside_the_dump_creates_no_file_where_there_was_none(
+            self, mechanism, tmp_out, monkeypatch):
+        import rmgpy.yaml_cantera2 as yaml_cantera2
+
+        model, species, reactions = mechanism
+        path = os.path.join(tmp_out, 'chem_annotated.yaml')
+
+        def exploding_dump(data, stream, **kwargs):
+            stream.write('phases:\n')
+            raise RuntimeError('dump failed half way through')
+
+        monkeypatch.setattr(yaml_cantera2.yaml, 'dump', exploding_dump)
+        with pytest.raises(RuntimeError):
+            save_cantera_model(model, path)
+
+        assert os.listdir(tmp_out) == []
+
+
+class TestChemkinOutputSetIsCoherent:
+    """
+    Each Chemkin file is written atomically, but ``save_chemkin`` writes several.
+    Landing them one at a time let a failure on a later file leave a new gas file
+    beside a stale surface file: a mechanism split across two generations of the
+    model, which reads as a valid export and is not one.
+    """
+
+    @pytest.fixture()
+    def surface_model(self, surface_forms_species):
+        species = surface_forms_species
+        e, hplus, h2, site, hx, h2x = species
+        good = Reaction(index=1, reactants=[h2, site], products=[h2x], reversible=False,
+                        kinetics=SurfaceArrhenius(A=(1.0e3, 'm^3/(mol*s)'), n=0.0,
+                                                  Ea=(10.0, 'kJ/mol')))
+        gas_only = Reaction(index=2, reactants=[h2], products=[h2], reversible=False,
+                            kinetics=Arrhenius(A=(1.0e3, 's^-1'), n=0.0, Ea=(10.0, 'kJ/mol')))
+
+        class _Core(object):
+            pass
+
+        core = _Core()
+        core.species = species
+        core.reactions = [gas_only, good]
+        model = _Core()
+        model.core = core
+        model.output_species_list = []
+        model.output_reaction_list = []
+        model.surface_site_density = None
+        return model, species
+
+    def _paths(self, tmp_out):
+        return dict(
+            path=os.path.join(tmp_out, 'chem.inp'),
+            verbose_path=os.path.join(tmp_out, 'chem_annotated.inp'),
+            dictionary_path=os.path.join(tmp_out, 'species_dictionary.txt'),
+            transport_path=os.path.join(tmp_out, 'tran.dat'),
+        )
+
+    def _expected_files(self):
+        return ['chem-gas.inp', 'chem-surface.inp', 'chem_annotated-gas.inp',
+                'chem_annotated-surface.inp', 'species_dictionary.txt', 'tran.dat']
+
+    def test_a_full_export_writes_the_whole_set(self, surface_model, tmp_out):
+        model, species = surface_model
+        save_chemkin(model, **self._paths(tmp_out))
+        assert sorted(os.listdir(tmp_out)) == sorted(self._expected_files())
+
+    def test_a_failure_on_a_later_file_leaves_the_earlier_ones_untouched(
+            self, surface_model, tmp_out):
+        model, species = surface_model
+        paths = self._paths(tmp_out)
+
+        # A first, good export, so there is a real previous generation on disk.
+        save_chemkin(model, **paths)
+        before = {}
+        for name in os.listdir(tmp_out):
+            with open(os.path.join(tmp_out, name)) as handle:
+                before[name] = handle.read()
+
+        # Move the gas rate *and* break the surface reaction. The gas file is
+        # rendered first, so a writer that landed as it went would already have
+        # replaced it with the new rate by the time the surface file failed --
+        # leaving a new gas file beside a stale surface file. Moving the gas rate
+        # is what makes that visible: without it the rewritten gas file would
+        # have identical bytes and the check would pass either way.
+        model.core.reactions[0].kinetics = Arrhenius(A=(5.0e3, 's^-1'), n=0.0,
+                                                     Ea=(10.0, 'kJ/mol'))
+        model.core.reactions[1].kinetics = UnhandledKinetics()
+        with pytest.raises(MechanismWriterError):
+            save_chemkin(model, **paths)
+
+        after = {}
+        for name in os.listdir(tmp_out):
+            with open(os.path.join(tmp_out, name)) as handle:
+                after[name] = handle.read()
+        assert after == before
+        assert _leftovers(tmp_out, self._expected_files()) == []
+
+    def test_a_failure_on_a_later_file_writes_nothing_at_all_the_first_time(
+            self, surface_model, tmp_out):
+        model, species = surface_model
+        model.core.reactions[1].kinetics = UnhandledKinetics()
+        with pytest.raises(MechanismWriterError):
+            save_chemkin(model, **self._paths(tmp_out))
+        assert os.listdir(tmp_out) == []
+
+
+class TestMultiKineticsReconstructionKeepsTheReaction:
+    """
+    Each component of a grouped ``MultiArrhenius``/``MultiPDepArrhenius`` is
+    re-entered into the writer as a freshly built ``Reaction``. Anything not
+    named in that constructor call is gone by the time the entry is built --
+    which is how the third-body collider and the flux pairs were being dropped
+    from grouped reactions only.
+    """
+
+    @pytest.fixture()
+    def grouped_reaction(self, gas_forms_species):
+        e, o_atom, o2, o3, o_anion = gas_forms_species
+        kinetics = MultiArrhenius(arrhenius=[
+            Arrhenius(A=(1.0e6, 'm^3/(mol*s)'), n=0.0, Ea=(10.0, 'kJ/mol')),
+            Arrhenius(A=(3.0e6, 'm^3/(mol*s)'), n=0.0, Ea=(20.0, 'kJ/mol')),
+        ])
+        return Reaction(index=17, reactants=[o_atom], products=[o_anion], electrons=-1,
+                        reversible=False, specific_collider=o2,
+                        pairs=[(o_atom, o_anion)], kinetics=kinetics)
+
+    def test_every_component_keeps_index_collider_pairs_and_electrons(
+            self, gas_forms_species, grouped_reaction, monkeypatch):
+        import rmgpy.yaml_cantera2 as yaml_cantera2
+
+        built = []
+        real_reaction = yaml_cantera2.Reaction
+
+        class RecordingReaction(real_reaction):
+            def __init__(self, *args, **kwargs):
+                super(RecordingReaction, self).__init__(*args, **kwargs)
+                built.append(self)
+
+        monkeypatch.setattr(yaml_cantera2, 'Reaction', RecordingReaction)
+        entries = yaml_cantera2.reaction_to_dict_list(grouped_reaction, gas_forms_species)
+
+        assert len(built) == 2, 'expected one sub-reaction per grouped component'
+        for sub in built:
+            assert sub.index == 17
+            assert sub.specific_collider is grouped_reaction.specific_collider
+            assert sub.pairs == grouped_reaction.pairs
+            assert sub.electrons == -1
+
+        # ...and the artifact carries what the artifact can carry.
+        assert len(entries) == 2
+        for entry in entries:
+            assert 'Specific third body collider: O2' in entry['note']
+            assert 'Flux pairs: O(2), O-(5)' in entry['note']
+            assert 'e(1)' in entry['equation']
+
+    def test_a_grouped_third_body_reaction_keeps_its_collider_in_the_equation(
+            self, gas_forms_species):
+        """
+        ``MultiPDepArrhenius`` groups ``PDepArrhenius`` components, but the same
+        reconstruction feeds ``ThirdBody``-shaped equations, where the collider
+        is part of the equation string rather than the note. Written as a direct
+        check on ``get_reaction_equation`` so the coupling is explicit.
+        """
+        import rmgpy.yaml_cantera2 as yaml_cantera2
+
+        e, o_atom, o2, o3, o_anion = gas_forms_species
+        reaction = Reaction(index=1, reactants=[o_atom, o_atom], products=[o2], reversible=False,
+                            specific_collider=o3,
+                            kinetics=ThirdBody(arrheniusLow=Arrhenius(
+                                A=(1.0e6, 'm^6/(mol^2*s)'), n=0.0, Ea=(10.0, 'kJ/mol'))))
+        equation = yaml_cantera2.get_reaction_equation(reaction, gas_forms_species)
+        assert equation.count('O3(4)') == 2

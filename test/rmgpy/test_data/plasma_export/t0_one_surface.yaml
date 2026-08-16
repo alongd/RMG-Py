@@ -1,0 +1,95 @@
+description: RMG-Py Generated Mechanism
+generator: 'RMG-Py CanteraWriter2 at /tmp/claude-1000/-home-alon-Code-RMG-Py-i011-export/c749ae22-1662-45b6-95ef-a975635dc2fd/scratchpad/basewriter/yaml_cantera2_base.py
+  (git commit: )'
+cantera-version: '3.1'
+units: {length: m, time: s, quantity: mol, activation-energy: J/mol}
+elements:
+- {symbol: X, atomic-weight: 195.083}
+phases:
+- name: gas
+  thermo: plasma
+  elements: [E, H, X]
+  species: [e(1), Hplus(2), H2(3)]
+  kinetics: gas
+  reactions: [gas-reactions]
+  transport: ionized-gas
+  electron-energy-distribution: {type: isotropic, shape-factor: 2.0, mean-electron-energy: 1.0}
+  state: {T: 300.0, P: 1 atm}
+- name: surface
+  thermo: ideal-surface
+  adjacent-phases: [gas]
+  elements: [E, H, X]
+  species: [X(4), HX(5), H2X(6)]
+  kinetics: surface
+  reactions: [surface-reactions]
+  site-density: 2.5e-05
+  state: {T: 300.0, P: 1 atm}
+species:
+- name: e(1)
+  composition: {E: 1}
+  thermo:
+    model: NASA7
+    temperature-ranges: [200.0, 1000.0, 6000.0]
+    data:
+    - [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, -11.7246]
+    - [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, -11.7246]
+  transport: {model: gas, geometry: atom, well-depth: 100.0, diameter: 3.0000000000000004}
+- name: Hplus(2)
+  composition: {E: -1, H: 1}
+  thermo:
+    model: NASA7
+    temperature-ranges: [200.0, 1000.0, 6000.0]
+    data:
+    - [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, -11.7246]
+    - [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, -11.7246]
+  transport: {model: gas, geometry: atom, well-depth: 100.0, diameter: 3.0000000000000004}
+- name: H2(3)
+  composition: {H: 2}
+  thermo:
+    model: NASA7
+    temperature-ranges: [200.0, 1000.0, 6000.0]
+    data:
+    - [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, -11.7246]
+    - [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, -11.7246]
+  transport: {model: gas, geometry: linear, well-depth: 100.0, diameter: 3.0000000000000004}
+- name: X(4)
+  composition: {X: 1}
+  thermo:
+    model: NASA7
+    temperature-ranges: [200.0, 1000.0, 6000.0]
+    data:
+    - [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, -11.7246]
+    - [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, -11.7246]
+- name: HX(5)
+  composition: {H: 1, X: 1}
+  thermo:
+    model: NASA7
+    temperature-ranges: [200.0, 1000.0, 6000.0]
+    data:
+    - [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, -11.7246]
+    - [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, -11.7246]
+- name: H2X(6)
+  composition: {H: 2, X: 1}
+  thermo:
+    model: NASA7
+    temperature-ranges: [200.0, 1000.0, 6000.0]
+    data:
+    - [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, -11.7246]
+    - [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, -11.7246]
+gas-reactions: []
+surface-reactions:
+- equation: H2(3) + X(4) => H2X(6)
+  type: sticking-Arrhenius
+  sticking-coefficient: {A: 0.1, b: 2.0, Ea: 10000.0}
+  note: |
+    Reaction index: Chemkin #1; RMG #1
+- equation: H2(3) + X(4) => H2X(6)
+  type: interface-Arrhenius
+  rate-constant: {A: 1000.0, b: 2.0, Ea: 10000.0}
+  note: |
+    Reaction index: Chemkin #2; RMG #1
+- equation: Hplus(2) + X(4) + e(1) => HX(5)
+  type: interface-Arrhenius
+  rate-constant: {A: 1000.0, b: 2.0, Ea: 10000.0}
+  note: |
+    Reaction index: Chemkin #3; RMG #1

@@ -2208,30 +2208,39 @@ def save_species_dictionary(path, species, old_style=False):
     
     If `old_style==True` then it saves it in the old RMG-Java syntax.
     """
-    with open(path, 'w') as f:
-        for spec in species:
-            if old_style:
-                try:
-                    f.write(spec.molecule[0].to_adjacency_list(label=get_species_identifier(spec),
-                                                               remove_h=True, old_style=True))
-                except:
-                    new_adjlist = spec.molecule[0].to_adjacency_list(label=get_species_identifier(spec), remove_h=False)
-                    f.write("// Couldn't save {0} in old RMG-Java syntax, but here it is in "
-                            "newer RMG-Py syntax:".format(get_species_identifier(spec)))
-                    f.write("\n// " + "\n// ".join(new_adjlist.splitlines()) + '\n')
-            else:
-                try:
-                    for mol in spec.molecule:
-                        if mol.reactive:
-                            f.write(mol.to_adjacency_list(label=get_species_identifier(spec), remove_h=False))
-                            break
-                    else:
-                        raise ValueError('No reactive structures were found for species '
-                                         '{0}.'.format(get_species_identifier(spec)))
-                except:
-                    raise ChemkinError('Ran into error saving dictionary for species {0}. '
-                                       'Please check your files.'.format(get_species_identifier(spec)))
-            f.write('\n')
+    _write_file_atomically(path, render_species_dictionary(species, old_style=old_style))
+
+
+def render_species_dictionary(species, old_style=False):
+    """
+    Return the text of a species dictionary for the given list of `species`.
+    See :func:`render_chemkin_file`.
+    """
+    f = io.StringIO()
+    for spec in species:
+        if old_style:
+            try:
+                f.write(spec.molecule[0].to_adjacency_list(label=get_species_identifier(spec),
+                                                           remove_h=True, old_style=True))
+            except:
+                new_adjlist = spec.molecule[0].to_adjacency_list(label=get_species_identifier(spec), remove_h=False)
+                f.write("// Couldn't save {0} in old RMG-Java syntax, but here it is in "
+                        "newer RMG-Py syntax:".format(get_species_identifier(spec)))
+                f.write("\n// " + "\n// ".join(new_adjlist.splitlines()) + '\n')
+        else:
+            try:
+                for mol in spec.molecule:
+                    if mol.reactive:
+                        f.write(mol.to_adjacency_list(label=get_species_identifier(spec), remove_h=False))
+                        break
+                else:
+                    raise ValueError('No reactive structures were found for species '
+                                     '{0}.'.format(get_species_identifier(spec)))
+            except:
+                raise ChemkinError('Ran into error saving dictionary for species {0}. '
+                                   'Please check your files.'.format(get_species_identifier(spec)))
+        f.write('\n')
+    return f.getvalue()
 
 
 def save_transport_file(path, species):
@@ -2256,60 +2265,88 @@ def save_transport_file(path, species):
     7. After the last number, a comment field can be enclosed in parenthesis.
 
     """
+    _write_file_atomically(path, render_transport_file(species))
 
-    with open(path, 'w') as f:
-        f.write("! {0:15} {1:8} {2:9} {3:9} {4:9} {5:9} {6:9} {7:9}\n".format(
-            'Species', 'Shape', 'LJ-depth', 'LJ-diam', 'DiplMom', 'Polzblty', 'RotRelaxNum', 'Data'))
-        f.write("! {0:15} {1:8} {2:9} {3:9} {4:9} {5:9} {6:9} {7:9}\n".format(
-            'Name', 'Index', 'epsilon/k_B', 'sigma', 'mu', 'alpha', 'Zrot', 'Source'))
-        for spec in species:
-            transport_data = spec.get_transport_data()
-            if not transport_data:
-                missing_data = True
-            else:
-                missing_data = False
 
-            label = get_species_identifier(spec)
+def render_transport_file(species):
+    """
+    Return the text of a Chemkin transport properties file for the given list of
+    `species`. See :func:`render_chemkin_file`.
+    """
+    f = io.StringIO()
+    f.write("! {0:15} {1:8} {2:9} {3:9} {4:9} {5:9} {6:9} {7:9}\n".format(
+        'Species', 'Shape', 'LJ-depth', 'LJ-diam', 'DiplMom', 'Polzblty', 'RotRelaxNum', 'Data'))
+    f.write("! {0:15} {1:8} {2:9} {3:9} {4:9} {5:9} {6:9} {7:9}\n".format(
+        'Name', 'Index', 'epsilon/k_B', 'sigma', 'mu', 'alpha', 'Zrot', 'Source'))
+    for spec in species:
+        transport_data = spec.get_transport_data()
+        if not transport_data:
+            missing_data = True
+        else:
+            missing_data = False
 
-            if missing_data:
-                f.write('! {0:19s} {1!r}\n'.format(label, transport_data))
-            else:
-                f.write('{0:19} {1:d}   {2:9.3f} {3:9.3f} {4:9.3f} {5:9.3f} {6:9.3f}    ! {7:s}\n'.format(
-                    label,
-                    transport_data.shapeIndex,
-                    transport_data.epsilon.value_si / constants.R,
-                    transport_data.sigma.value_si * 1e10,
-                    (transport_data.dipoleMoment.value_si * constants.c * 1e21 if transport_data.dipoleMoment else 0),
-                    (transport_data.polarizability.value_si * 1e30 if transport_data.polarizability else 0),
-                    (transport_data.rotrelaxcollnum if transport_data.rotrelaxcollnum else 0),
-                    transport_data.comment,
-                ))
+        label = get_species_identifier(spec)
+
+        if missing_data:
+            f.write('! {0:19s} {1!r}\n'.format(label, transport_data))
+        else:
+            f.write('{0:19} {1:d}   {2:9.3f} {3:9.3f} {4:9.3f} {5:9.3f} {6:9.3f}    ! {7:s}\n'.format(
+                label,
+                transport_data.shapeIndex,
+                transport_data.epsilon.value_si / constants.R,
+                transport_data.sigma.value_si * 1e10,
+                (transport_data.dipoleMoment.value_si * constants.c * 1e21 if transport_data.dipoleMoment else 0),
+                (transport_data.polarizability.value_si * 1e30 if transport_data.polarizability else 0),
+                (transport_data.rotrelaxcollnum if transport_data.rotrelaxcollnum else 0),
+                transport_data.comment,
+            ))
+    return f.getvalue()
+
+
+def _write_files_atomically(entries):
+    """
+    Land a whole set of ``(path, content)`` pairs, or none of them.
+
+    Every file is first written to a temporary file in its own destination
+    directory; only once all of them are on disk are they renamed into place.
+    A failure while writing any of the temporaries leaves every destination
+    untouched, and the renames themselves are atomic on POSIX.
+
+    The Chemkin writers used to stream straight into their destinations, so a
+    reaction that raised part-way through left a partial ``chem*.inp`` on disk
+    that looked like a mechanism. Landing them one at a time fixed that per file
+    but not for the set: ``save_chemkin`` could update the gas file and then fail
+    on the surface or annotated file, leaving a mechanism split across two
+    generations of the model. This is what makes the output set all-old or
+    all-new.
+    """
+    staged = []
+    try:
+        for path, content in entries:
+            directory = os.path.dirname(os.path.abspath(path))
+            fd, tmp_path = tempfile.mkstemp(prefix='.' + os.path.basename(path) + '.',
+                                            suffix='.tmp', dir=directory)
+            staged.append((tmp_path, path))
+            with os.fdopen(fd, 'w') as handle:
+                handle.write(content)
+    except BaseException:
+        for tmp_path, _ in staged:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+        raise
+    for tmp_path, path in staged:
+        os.replace(tmp_path, path)
 
 
 def _write_file_atomically(path, content):
     """
-    Write ``content`` to ``path`` so that ``path`` either does not exist or holds
-    the complete file -- never a truncated prefix.
-
-    The Chemkin writers used to stream straight into the destination, so a
-    reaction that raised part-way through left a partial ``chem*.inp`` on disk
-    that looked like a mechanism. The content is now built in memory and landed
-    with a single rename inside the destination directory, which is atomic on
-    POSIX and leaves nothing behind if anything upstream raises.
+    Write ``content`` to ``path`` so that ``path`` either does not exist, still
+    holds its previous contents, or holds the complete new file -- never a
+    truncated prefix. Single-file case of :func:`_write_files_atomically`.
     """
-    directory = os.path.dirname(os.path.abspath(path))
-    fd, tmp_path = tempfile.mkstemp(prefix='.' + os.path.basename(path) + '.', suffix='.tmp',
-                                    dir=directory)
-    try:
-        with os.fdopen(fd, 'w') as handle:
-            handle.write(content)
-        os.replace(tmp_path, path)
-    except BaseException:
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
-        raise
+    _write_files_atomically([(path, content)])
 
 
 def save_chemkin_file(path, species, reactions, verbose=True, check_for_duplicates=True,
@@ -2324,6 +2361,20 @@ def save_chemkin_file(path, species, reactions, verbose=True, check_for_duplicat
     ELEMENTS section. If ``None``, it is computed from ``species`` via
     :meth:`rmgpy.rmg.model.ReactionModel.get_elements`.
     """
+    _write_file_atomically(path, render_chemkin_file(species, reactions, verbose=verbose,
+                                                    check_for_duplicates=check_for_duplicates,
+                                                    elements_in_use=elements_in_use))
+
+
+def render_chemkin_file(species, reactions, verbose=True, check_for_duplicates=True,
+                        elements_in_use=None):
+    """
+    Return the text of a Chemkin input file for the given `species` and `reactions`.
+
+    Serialization is separated from writing so that a whole set of output files
+    can be serialized before any of them is landed -- see
+    :func:`_write_files_atomically` and :func:`save_chemkin`.
+    """
     # Check for duplicate
     if check_for_duplicates:
         mark_duplicate_reactions(reactions)
@@ -2332,8 +2383,9 @@ def save_chemkin_file(path, species, reactions, verbose=True, check_for_duplicat
         from rmgpy.rmg.model import ReactionModel
         elements_in_use = ReactionModel(species=species).get_elements()
 
-    # Built in memory and landed atomically, so a MechanismWriterError from any
-    # reaction leaves no partial mechanism on disk. See _write_file_atomically.
+    # Built in memory and landed atomically by the caller, so a
+    # MechanismWriterError from any reaction leaves no partial mechanism on disk.
+    # See _write_files_atomically.
     f = io.StringIO()
 
     sorted_species = sorted(species, key=lambda species: species.index)
@@ -2376,8 +2428,8 @@ def save_chemkin_file(path, species, reactions, verbose=True, check_for_duplicat
             # Don't forget to mark duplicates!
             f.write('\n')
         f.write('END\n\n')
-        _write_file_atomically(path, f.getvalue())
         logging.info("Chemkin file contains {0} reactions.".format(_chemkin_reaction_count))
+        return f.getvalue()
     finally:
         # Cleared on every exit, not only on success: a failed export used to
         # leave this module-level counter holding the count it had reached.
@@ -2391,6 +2443,17 @@ def save_chemkin_surface_file(path, species, reactions, verbose=True, check_for_
     of `species` and `reactions`.
     If check_for_duplicates is False then we don't check for unlabeled duplicate reactions,
     thus saving time (eg. if you are sure you've already labeled them as duplicate).
+    """
+    _write_file_atomically(path, render_chemkin_surface_file(
+        species, reactions, verbose=verbose, check_for_duplicates=check_for_duplicates,
+        surface_site_density=surface_site_density))
+
+
+def render_chemkin_surface_file(species, reactions, verbose=True, check_for_duplicates=True,
+                                surface_site_density=None):
+    """
+    Return the text of a Chemkin *surface* input file for the given `species` and
+    `reactions`. See :func:`render_chemkin_file`.
     """
     # Check for duplicate
     if check_for_duplicates:
@@ -2439,8 +2502,8 @@ def save_chemkin_surface_file(path, species, reactions, verbose=True, check_for_
             f.write(write_kinetics_entry(rxn, species_list=species, verbose=verbose))
             f.write('\n')
         f.write('END\n\n')
-        _write_file_atomically(path, f.getvalue())
         logging.info("Chemkin file contains {0} reactions.".format(_chemkin_reaction_count))
+        return f.getvalue()
     finally:
         _chemkin_reaction_count = None
 
@@ -2452,6 +2515,13 @@ def save_chemkin(reaction_model, path, verbose_path, dictionary_path=None, trans
     species and reactions to `path`. If `save_edge_species` is True, then
     a chemkin file and dictionary file for the core AND edge species and reactions
     will be saved.  It also saves verbose versions of each file.
+
+    Every output is serialized in full before any of them is landed, so the set of
+    files on disk is always all-old or all-new. Writing them one at a time made
+    each file individually atomic but still let a failure on, say, the surface
+    file leave a new gas file beside a stale surface file -- a mechanism split
+    across two generations of the model, which is harder to notice than no file
+    at all. See :func:`_write_files_atomically`.
     """
     from rmgpy.rmg.model import ReactionModel
     if save_edge_species:
@@ -2490,27 +2560,38 @@ def save_chemkin(reaction_model, path, verbose_path, dictionary_path=None, trans
                 gas_rxn_list.append(r)
 
         # We should already have marked everything as duplicates by now so use check_for_duplicates=False
-        save_chemkin_file(gas_path, gas_species_list, gas_rxn_list, verbose=False,
-                          check_for_duplicates=False, elements_in_use=elements_in_use)
-        save_chemkin_surface_file(surface_path, surface_species_list, surface_rxn_list, verbose=False,
-                                  check_for_duplicates=False, surface_site_density=reaction_model.surface_site_density)
+        staged = [
+            (gas_path, render_chemkin_file(gas_species_list, gas_rxn_list, verbose=False,
+                                           check_for_duplicates=False, elements_in_use=elements_in_use)),
+            (surface_path, render_chemkin_surface_file(
+                surface_species_list, surface_rxn_list, verbose=False, check_for_duplicates=False,
+                surface_site_density=reaction_model.surface_site_density)),
+        ]
         logging.info('Saving annotated version of Chemkin files...')
-        save_chemkin_file(gas_verbose_path, gas_species_list, gas_rxn_list, verbose=True,
-                          check_for_duplicates=False, elements_in_use=elements_in_use)
-        save_chemkin_surface_file(surface_verbose_path, surface_species_list, surface_rxn_list, verbose=True,
-                                  check_for_duplicates=False, surface_site_density=reaction_model.surface_site_density)
+        staged.append(
+            (gas_verbose_path, render_chemkin_file(gas_species_list, gas_rxn_list, verbose=True,
+                                                   check_for_duplicates=False, elements_in_use=elements_in_use)))
+        staged.append(
+            (surface_verbose_path, render_chemkin_surface_file(
+                surface_species_list, surface_rxn_list, verbose=True, check_for_duplicates=False,
+                surface_site_density=reaction_model.surface_site_density)))
 
     else:
         # Gas phase only
-        save_chemkin_file(path, species_list, rxn_list, verbose=False,
-                          check_for_duplicates=False, elements_in_use=elements_in_use)
+        staged = [
+            (path, render_chemkin_file(species_list, rxn_list, verbose=False,
+                                       check_for_duplicates=False, elements_in_use=elements_in_use)),
+        ]
         logging.info('Saving annotated version of Chemkin file...')
-        save_chemkin_file(verbose_path, species_list, rxn_list, verbose=True,
-                          check_for_duplicates=False, elements_in_use=elements_in_use)
+        staged.append(
+            (verbose_path, render_chemkin_file(species_list, rxn_list, verbose=True,
+                                               check_for_duplicates=False, elements_in_use=elements_in_use)))
     if dictionary_path:
-        save_species_dictionary(dictionary_path, species_list)
+        staged.append((dictionary_path, render_species_dictionary(species_list)))
     if transport_path:
-        save_transport_file(transport_path, species_list)
+        staged.append((transport_path, render_transport_file(species_list)))
+
+    _write_files_atomically(staged)
 
 
 def save_chemkin_files(rmg, config=None):

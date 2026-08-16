@@ -1,0 +1,104 @@
+description: RMG-Py Generated Mechanism
+generator: 'RMG-Py CanteraWriter2 at /tmp/claude-1000/-home-alon-Code-RMG-Py-i011-export/c749ae22-1662-45b6-95ef-a975635dc2fd/scratchpad/basewriter/yaml_cantera2_base.py
+  (git commit: )'
+cantera-version: '3.1'
+units: {length: m, time: s, quantity: mol, activation-energy: J/mol}
+phases:
+- name: gas
+  thermo: plasma
+  elements: [E, O]
+  species: [e(1), O(2), O2(3), O3(4), O-(5)]
+  kinetics: gas
+  transport: ionized-gas
+  electron-energy-distribution: {type: isotropic, shape-factor: 2.0, mean-electron-energy: 1.0}
+  state: {T: 300.0, P: 1 atm}
+species:
+- name: e(1)
+  composition: {E: 1}
+  thermo:
+    model: NASA7
+    temperature-ranges: [200.0, 1000.0, 6000.0]
+    data:
+    - [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, -11.7246]
+    - [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, -11.7246]
+  transport: {model: gas, geometry: atom, well-depth: 100.0, diameter: 3.0000000000000004}
+- name: O(2)
+  composition: {O: 1}
+  thermo:
+    model: NASA7
+    temperature-ranges: [200.0, 1000.0, 6000.0]
+    data:
+    - [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, -11.7246]
+    - [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, -11.7246]
+  transport: {model: gas, geometry: atom, well-depth: 100.0, diameter: 3.0000000000000004}
+- name: O2(3)
+  composition: {O: 2}
+  thermo:
+    model: NASA7
+    temperature-ranges: [200.0, 1000.0, 6000.0]
+    data:
+    - [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, -11.7246]
+    - [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, -11.7246]
+  transport: {model: gas, geometry: linear, well-depth: 100.0, diameter: 3.0000000000000004}
+- name: O3(4)
+  composition: {O: 3}
+  thermo:
+    model: NASA7
+    temperature-ranges: [200.0, 1000.0, 6000.0]
+    data:
+    - [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, -11.7246]
+    - [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, -11.7246]
+  transport: {model: gas, geometry: linear, well-depth: 100.0, diameter: 3.0000000000000004}
+- name: O-(5)
+  composition: {E: 1, O: 1}
+  thermo:
+    model: NASA7
+    temperature-ranges: [200.0, 1000.0, 6000.0]
+    data:
+    - [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, -11.7246]
+    - [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, -11.7246]
+  transport: {model: gas, geometry: atom, well-depth: 100.0, diameter: 3.0000000000000004}
+reactions:
+- equation: O(2) + O2(3) => O3(4)
+  rate-constant: {A: 1000000.0, b: 2.0, Ea: 10000.0}
+  note: |
+    Reaction index: Chemkin #1; RMG #1
+- equation: O(2) + O(2) + M => O2(3) + M
+  type: three-body
+  rate-constant: {A: 1000000.0, b: 2.0, Ea: 10000.0}
+  note: |
+    Reaction index: Chemkin #2; RMG #1
+- equation: O(2) + O(2) (+M) => O2(3) (+M)
+  type: falloff
+  high-P-rate-constant: {A: 1000000.0, b: 2.0, Ea: 10000.0}
+  low-P-rate-constant: {A: 2000000.0, b: 2.0, Ea: 10000.0}
+  Troe: {A: 0.5, T3: 100.0, T1: 200.0, T2: 300.0}
+  note: |
+    Reaction index: Chemkin #3; RMG #1
+- equation: O(2) + O(2) (+M) => O2(3) (+M)
+  type: falloff
+  high-P-rate-constant: {A: 1000000.0, b: 2.0, Ea: 10000.0}
+  low-P-rate-constant: {A: 2000000.0, b: 2.0, Ea: 10000.0}
+  note: |
+    Reaction index: Chemkin #4; RMG #1
+- equation: O(2) + O2(3) => O3(4)
+  type: pressure-dependent-Arrhenius
+  rate-constants:
+  - {P: 10000.0, A: 1000000.0, b: 2.0, Ea: 10000.0}
+  - {P: 1000000.0, A: 4000000.0, b: 2.0, Ea: 10000.0}
+  note: |
+    Reaction index: Chemkin #5; RMG #1
+- equation: O(2) + O2(3) => O3(4)
+  duplicate: true
+  rate-constant: {A: 1000000.0, b: 2.0, Ea: 10000.0}
+  note: |
+    Reaction index: Chemkin #6; RMG #1
+- equation: O(2) + O2(3) => O3(4)
+  duplicate: true
+  rate-constant: {A: 3000000.0, b: 2.0, Ea: 10000.0}
+  note: |
+    Reaction index: Chemkin #7; RMG #1
+- equation: O(2) + e(1) => O-(5)
+  rate-constant: {A: 1000000.0, b: 2.0, Ea: 10000.0}
+  note: |
+    Reaction index: Chemkin #8; RMG #1
