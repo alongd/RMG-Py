@@ -138,11 +138,19 @@ class KineticsDepository(Database):
     corresponds to a reaction family (a :class:`KineticsFamily` object). Each
     entry in a kinetics depository involves a reaction defined either by a
     real reactant and product species (as in a kinetics library).
+
+    The `electrons` attribute is the net number of electrons transferred in every reaction of this
+    depository, and is supplied by the owning family (which declares it in its ``groups.py``), since
+    a depository has no handle on its family. It is negative when electrons are consumed, i.e. when
+    they are reactants. It is used as the default for reactions loaded from this depository whose
+    kinetics data do not carry an electron count of their own.
     """
 
-    def __init__(self, label='', name='', short_desc='', long_desc='', metal=None, site=None, facet=None):
+    def __init__(self, label='', name='', short_desc='', long_desc='', metal=None, site=None, facet=None,
+                 electrons=0):
         Database.__init__(self, label=label, name=name, short_desc=short_desc, long_desc=long_desc,
                           metal=metal, site=site, facet=facet)
+        self.electrons = electrons
 
     def __str__(self):
         return 'Kinetics Depository {0}'.format(self.label)
@@ -215,6 +223,12 @@ class KineticsDepository(Database):
             
             if isinstance(entry.data, (SurfaceChargeTransfer, SurfaceArrheniusBEP)):
                 rxn.electrons = entry.data.electrons.value
+            elif self.electrons:
+                # The kinetics data carry no electron count of their own, so fall back on the count
+                # declared by the family that owns this depository. Electrons are participants of
+                # these reactions even though they are not listed among the reactants or products,
+                # so this must happen before `is_balanced()` below inspects the net charges.
+                rxn.electrons = self.electrons
 
             if not rxn.is_balanced():
                 raise DatabaseError('Reaction {0} in kinetics depository {1} was not balanced! Please reformulate.'

@@ -727,7 +727,9 @@ class KineticsFamily(Database):
                     # if name not in ['groups', 'rules']:
                     f_path = os.path.join(path, name, 'reactions.py')
                     label = '{0}/{1}'.format(self.label, name)
-                    depository = KineticsDepository(label=label)
+                    # Hand the family's electron count down: a depository cannot reach its family,
+                    # so this is the only place the count declared in groups.py can be supplied.
+                    depository = KineticsDepository(label=label, electrons=self.electrons)
                     logging.debug("Loading kinetics family depository from {0}".format(f_path))
                     depository.load(f_path, local_context, global_context)
                     self.depositories.append(depository)
@@ -755,7 +757,7 @@ class KineticsFamily(Database):
             if not os.path.exists(f_path):
                 logging.warning("Requested depository {0} does not exist".format(f_path))
                 continue
-            depository = KineticsDepository(label=label)
+            depository = KineticsDepository(label=label, electrons=self.electrons)
             logging.debug("Loading kinetics family depository from {0}".format(f_path))
             depository.load(f_path, local_context, global_context)
             self.depositories.append(depository)
@@ -876,7 +878,7 @@ class KineticsFamily(Database):
         except:
             logging.info('Could not find training depository in family {0}.'.format(self.label))
             logging.info('Starting a new one')
-            depository = KineticsDepository()
+            depository = KineticsDepository(electrons=self.electrons)
             self.depositories.append(depository)
 
         if depository.entries:

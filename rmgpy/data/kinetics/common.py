@@ -146,6 +146,26 @@ def save_entry(f, entry):
     f.write(')\n\n')
 
 
+def get_molecularity(reaction):
+    """
+    Return the molecularity of `reaction`, i.e. the number of particles that collide to form the
+    transition state, which is the order of its rate coefficient and therefore determines the
+    dimensions of its A factor.
+
+    This is not simply ``len(reaction.reactants)``. Electrons transferred by a reaction are genuine
+    reactant particles, yet they are never listed among the reactants: they are carried by the
+    ``electrons`` attribute, which reaction families declare in their ``groups.py`` and which is
+    negative when electrons are consumed. Non-dissociative electron attachment, ``A + e- => A-``,
+    is stored with a single reactant but is bimolecular, and its rate is expressed in
+    cm^3/(mol*s) accordingly. Electrons released by a reaction are products and do not contribute.
+
+    Returns an ``int``.
+    """
+    electrons = getattr(reaction, 'electrons', 0) or 0
+    # Only electrons on the reactant side (a negative count) add to the molecularity.
+    return len(reaction.reactants) + max(-electrons, 0)
+
+
 def ensure_species(input_list, resonance=False, keep_isomorphic=False):
     """
     The input list of :class:`Species` or :class:`Molecule` objects is modified

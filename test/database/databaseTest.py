@@ -44,6 +44,7 @@ import rmgpy.kinetics
 import rmgpy.constants
 from rmgpy import settings
 from rmgpy.data.base import LogicOr
+from rmgpy.data.kinetics.common import get_molecularity
 from rmgpy.data.rmg import RMGDatabase
 from rmgpy.exceptions import ImplicitBenzeneError, UnexpectedChargeError
 from rmgpy.molecule import Group, Molecule
@@ -51,6 +52,7 @@ from rmgpy.molecule.atomtype import ATOMTYPES
 from rmgpy.molecule.pathfinder import find_shortest_path
 from rmgpy.quantity import ScalarQuantity
 from rmgpy.kinetics.model import KineticsModel
+from rmgpy.kinetics.surface import SurfaceArrheniusBEP, SurfaceChargeTransfer
 
 # allow asserts to 'fail' and then continue - this test file relies on a lot
 # of asserts in each test and we want them all to run
@@ -118,6 +120,11 @@ class TestDatabase:
                 assert self.kinetics_check_num_reactant_and_product(
                     family_name
                 ), "Kinetics family {0}: number of reactant and product defined?".format(family_name)
+
+            with check:
+                assert self.kinetics_check_family_electrons_reach_training_reactions(
+                    family_name
+                ), "Kinetics family {0}: declared electron count reaches its depository reactions?".format(family_name)
 
             # tests for surface families
             if "surface" in family_name.lower():
@@ -820,6 +827,48 @@ class TestDatabase:
             raise ValueError("Error occured in databaseTest. Please check log warnings for all error messages.")
         return True
 
+    def kinetics_check_family_electrons_reach_training_reactions(self, family_name):
+        """
+        A family that declares an electron count in its groups.py must pass it on to the reactions
+        loaded from its depositories. The count is what makes those reactions' molecularity, and
+        hence their units, come out right; a family whose declaration stops at the load boundary
+        looks correct in its source file while every loaded reaction says the electron is not there.
+
+        Kinetics data that carry their own electron count -- charge transfer -- keep it, so those
+        entries are checked only for having a count at all.
+        """
+        boo = False
+        family = self.database.kinetics.families[family_name]
+        if not family.electrons:
+            return True
+
+        for depository in family.depositories:
+            for entry in depository.entries.values():
+                data_borne = isinstance(entry.data, (SurfaceChargeTransfer, SurfaceArrheniusBEP))
+                electrons = entry.item.electrons
+                if data_borne:
+                    expected = entry.data.electrons.value
+                else:
+                    expected = family.electrons
+                if electrons != expected:
+                    boo = True
+                    logging.error(
+                        "Reaction {0} in {1} has electrons={2}, but its family declares {3} and its "
+                        "kinetics {4}".format(
+                            entry.item,
+                            depository.label,
+                            electrons,
+                            family.electrons,
+                            "declare {0}".format(expected) if data_borne else "declare nothing",
+                        )
+                    )
+
+        if boo:
+            raise ValueError(
+                "Family {0} does not propagate its electron count to its depository reactions.".format(family_name)
+            )
+        return True
+
     def kinetics_check_rate_units_are_correct(self, database, tag="library"):
         """
         This test ensures that every reaction has acceptable units on the A factor.
@@ -835,7 +884,9 @@ class TestDatabase:
         for entry in database.entries.values():
             k = entry.data
             rxn = entry.item
-            molecularity = len(rxn.reactants)
+            # Not len(rxn.reactants): electrons consumed by the reaction are reactant particles too,
+            # but are carried by the `electrons` attribute rather than listed among the reactants.
+            molecularity = get_molecularity(rxn)
             surface_reactants = sum([1 for s in rxn.reactants if s.contains_surface_site()])
             try:
                 if isinstance(k, rmgpy.kinetics.StickingCoefficient):
