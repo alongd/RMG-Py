@@ -299,15 +299,26 @@ class TestChargedReactantFamiliesUnaffected:
         assert family.allow_charged_reactants is True
         assert family.is_charged_reactant_forbidden(Molecule().from_adjacency_list(ANION_O2)) is False
 
-    def test_shipped_attachment_family_is_not_armed_by_this_change(self):
+    def test_shipped_attachment_family_is_armed_by_the_database(self):
         """
-        The engine control ships unarmed. `Plasma_Electron_Attachment` declares nothing, so it
-        inherits allowChargedSpecies exactly as before; arming it is a one-line declaration in
-        the database and is deliberately not part of this change.
+        The declaration crosses the repository boundary and reaches the loaded family.
+
+        Everything above this class runs against fixtures written for the test. This one loads
+        `Plasma_Electron_Attachment` from the real database on `settings['database.directory']`,
+        where `allowChargedReactants = False` is declared, so it is the only committed check that
+        the engine control is reachable from database data at all rather than only from a fixture
+        this repository ships itself.
+
+        `allow_charged_species` is asserted alongside it because the two together are what make
+        this a *declaration* rather than an inheritance: silence would have made them equal.
+
+        This pins the two repositories to each other. A database without that declaration fails
+        here, and this suite stays red until the database side lands.
         """
         family = self.families["Plasma_Electron_Attachment"]
 
-        assert family.allow_charged_reactants is True
+        assert family.allow_charged_species is True
+        assert family.allow_charged_reactants is False
 
     def test_shipped_attachment_family_still_generates_neutral_attachment(self):
         """The chemistry the family exists for, from the real database, unchanged."""
