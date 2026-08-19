@@ -48,6 +48,8 @@ cpdef str to_smiles(mm.Molecule mol, backend=?)
 
 cpdef tuple get_charge_signature(mm.Molecule mol)
 
+cpdef tuple get_smiles_charges(str smiles)
+
 cpdef int get_smiles_net_charge(str smiles) except? -12345
 
 cpdef mm.Molecule from_inchi(mm.Molecule mol, str inchistr, backend=?, bint raise_atomtype_exception=?)

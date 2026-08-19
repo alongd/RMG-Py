@@ -1010,6 +1010,24 @@ class ChargedSMILESGenerationTest:
             assert get_charge_signature(mol)[1] == (-1, 1)
             assert mol.to_smiles() == smiles
 
+    def test_get_smiles_charges(self):
+        """The charges written in a SMILES string are read back as a multiset
+
+        The sum is not enough to police the backends: a SMILES that collapses an ion
+        pair to the neutral species with the same formula still sums to zero.
+        """
+        for smiles, charges in [
+            ("CC", ()),
+            ("[O-]", (-1,)),
+            ("[H+]", (1,)),
+            ("[C-]#[O+]", (-1, 1)),
+            ("[H+].[OH-]", (-1, 1)),
+            ("O", ()),  # water: same formula and net charge as the ion pair above
+            ("[Fe+2]", (2,)),
+            ("[O--]", (-2,)),
+        ]:
+            assert get_smiles_charges(smiles) == charges, smiles
+
     def test_get_smiles_net_charge(self):
         """The charge written in a SMILES string is read back correctly"""
         for smiles, charge in [

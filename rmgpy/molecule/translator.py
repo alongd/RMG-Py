@@ -135,6 +135,9 @@ MOLECULE_LOOKUPS = {
     ('O2', ()): 'O=O',
     ('C', ()): '[C]',  # for this to be in the "molecule" list it must be singlet with 2 lone pairs
     ('H2S', ()): 'S',
+    # Unreachable: get_formula() writes ammonia 'H3N', so this row has never been found.
+    # Left as-is rather than corrected, because making it live would change how ammonia
+    # is written for every existing user.
     ('NH3', ()): 'N',
     ('O3', (-1, 1)): '[O-][O+]=O',
     ('Cl2', ()): '[Cl][Cl]',
@@ -274,8 +277,10 @@ def to_smiles(mol, backend='default'):
     While converting to an RDMolecule it will perceive aromaticity
     and removes Hydrogen atoms.
 
-    Raises a `ValueError` if the molecule carries a charge that the resulting
-    SMILES does not, rather than returning a string for some other species.
+    When the conversion goes through a backend, a `ValueError` is raised if the
+    molecule carries charges the resulting SMILES does not, rather than returning a
+    string that names some other species. The shortcut table above is curated and is
+    returned as-is; the electron in particular is written ``e``, which is not SMILES.
     """
     # If we're going to have to check the formula anyway,
     # we may as well shortcut a few small known molecules.
@@ -322,16 +327,17 @@ def get_charge_signature(mol):
     return mol.get_formula(), tuple(charges)
 
 
-def get_smiles_net_charge(smiles):
+def get_smiles_charges(smiles):
     """
-    Return the sum of the formal charges written in the SMILES string `smiles`.
+    Return the sorted formal charges written in the SMILES string `smiles`.
 
     A SMILES string can only carry a charge inside a bracket atom, so the bracket
-    contents are the whole of it.
+    contents are the whole of it. The result is directly comparable with the charge
+    part of :func:`get_charge_signature`.
     """
-    cython.declare(total=cython.int, body=str, match=object)
+    cython.declare(charges=list, body=str, match=object)
 
-    total = 0
+    charges = []
     for body in _BRACKET_ATOM.findall(smiles):
         # An atom class (the ':1' of '[CH3:1]') trails the charge and is not one.
         body = body.split(':', 1)[0]
@@ -339,8 +345,22 @@ def get_smiles_net_charge(smiles):
         if match is None:
             continue
         # A charge is written either as repeated signs ('--') or as a count ('-2').
-        total += (1 if match.group(1) == '+' else -1) * (int(match.group(3)) if match.group(3)
-                                                         else 1 + len(match.group(2)))
+        charges.append((1 if match.group(1) == '+' else -1) * (int(match.group(3)) if match.group(3)
+                                                               else 1 + len(match.group(2))))
+    charges.sort()
+
+    return tuple(charges)
+
+
+def get_smiles_net_charge(smiles):
+    """
+    Return the sum of the formal charges written in the SMILES string `smiles`.
+    """
+    cython.declare(total=cython.int, charge=cython.int)
+
+    total = 0
+    for charge in get_smiles_charges(smiles):
+        total += charge
     return total
 
 
@@ -541,27 +561,33 @@ def _lookup(mol, identifier, identifier_type):
 
 def _check_smiles_charge(mol, identifier, identifier_type):
     """
-    Check that a written SMILES carries the charge the molecule has.
+    Check that a written SMILES carries the charges the molecule's atoms have.
 
     A wrong-but-parseable SMILES is worse than no SMILES at all: everything keyed on it
     - Chemkin and YAML export, species dictionaries, library matching - then silently
     treats the ion as whatever neutral species the string names. Returning False here
-    lets :func:`_write` try the next backend, and if none can carry the charge it raises.
+    lets :func:`_write` try the next backend, and if none can carry the charges it raises.
 
-    Only charged molecules are checked, so neutral chemistry pays nothing for this.
+    The comparison is against the charges themselves rather than their sum, for the same
+    reason the lookup tables are keyed that way: an ion pair such as H(+).OH(-) sums to
+    zero and would otherwise be indistinguishable from water. Molecules whose atoms are
+    all neutral are not checked, both because there is nothing to lose and because a
+    backend is free to write such a species in a charge-separated resonance form.
     """
-    cython.declare(charge=cython.int)
+    cython.declare(charges=tuple)
 
     if identifier_type != 'smi':
         return True
 
-    charge = mol.get_net_charge()
-    if charge == 0:
+    charges = get_charge_signature(mol)[1]
+    if not charges:
         return True
 
-    if get_smiles_net_charge(identifier) != charge:
-        logging.error('The SMILES {0!r} does not carry the net charge {1:+d} of this molecule:\n'
-                      '{2}'.format(identifier, charge, mol.to_adjacency_list()))
+    if get_smiles_charges(identifier) != charges:
+        # Not an error yet: _write moves on to the next backend, and only raises if
+        # every one of them fails.
+        logging.debug('The SMILES {0!r} does not carry the charges {1} of this molecule:\n'
+                      '{2}'.format(identifier, charges, mol.to_adjacency_list()))
         return False
 
     return True
