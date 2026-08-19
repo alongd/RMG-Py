@@ -894,6 +894,140 @@ class SMILESGenerationTest:
         assert to_smiles(mol, backend="openbabel") == smiles
 
 
+class ChargedSMILESGenerationTest:
+    """
+    SMILES generation for ions.
+
+    ``to_smiles`` shortcuts small species through a lookup table. That table used to
+    be keyed on the chemical formula alone, which says nothing about the charge, so an
+    ion was handed the neutral species' SMILES: O(-.) came out as ``[O]`` and H(-) as
+    ``H+``, the proton's (unparseable) entry. Nothing raised, so anything keyed on the
+    SMILES saw a different species than the mechanism contained.
+    """
+
+    def round_trip(self, adjlist, smiles):
+        """Assert `adjlist` writes as `smiles` and reads back at the same net charge."""
+        mol = Molecule().from_adjacency_list(adjlist)
+        assert mol.to_smiles() == smiles
+        assert Molecule().from_smiles(smiles).get_net_charge() == mol.get_net_charge()
+
+    def test_monatomic_anions(self):
+        """Monatomic anions keep their charge, including those whose formula is in the table"""
+        self.round_trip("1 O u1 p3 c-1", "[O-]")  # formula 'O' collides with the radical table
+        self.round_trip("1 H u0 p1 c-1", "[H-]")  # formula 'H' collides with the molecule table
+        self.round_trip("1 Cl u0 p4 c-1", "[Cl-]")
+        self.round_trip("1 F u0 p4 c-1", "[F-]")
+
+    def test_monatomic_cations(self):
+        """Monatomic cations keep their charge, with the right sign"""
+        self.round_trip("multiplicity 1\n1 H u0 p0 c+1", "[H+]")
+        self.round_trip("1 O u3 p1 c+1", "[O+]")
+
+    def test_polyatomic_anion_collision(self):
+        """A polyatomic whose formula is in the table keeps its charge too
+
+        The defect was never confined to single atoms: O2(-.) has formula 'O2', which
+        collides with the neutral biradical's ``[O][O]`` entry in exactly the same way.
+        """
+        self.round_trip("1 O u1 p2 c0 {2,S}\n2 O u0 p3 c-1 {1,S}", "[O][O-]")
+
+    def test_polyatomic_anion_control(self):
+        """OH(-) is unaffected; its formula was never in the table"""
+        self.round_trip("1 O u0 p3 c-1 {2,S}\n2 H u0 p0 c0 {1,S}", "[OH-]")
+
+    def test_net_neutral_ion_pairs(self):
+        """An ion pair is not the neutral species with the same formula
+
+        H(+).OH(-) is net neutral, so a key carrying only the net charge would still
+        hand it water's ``O``. The charges themselves are what tell them apart.
+        """
+        for adjlist, smiles in [
+            ("1 H u0 p0 c+1\n2 H u0 p1 c-1", "[H+].[H-]"),
+            ("1 H u0 p0 c+1\n2 O u0 p3 c-1 {3,S}\n3 H u0 p0 c0 {2,S}", "[H+].[OH-]"),
+            ("1 H u0 p0 c+1\n2 O u1 p3 c-1", "[H+].[O-]"),
+        ]:
+            mol = Molecule().from_adjacency_list(adjlist)
+            assert mol.get_net_charge() == 0
+            assert mol.to_smiles() == smiles
+
+    def test_charge_signature(self):
+        """The lookup key carries the atom charges, not just the formula"""
+        # water and the H(+)/OH(-) ion pair share a formula and a net charge
+        water = Molecule().from_adjacency_list(
+            "1 O u0 p2 c0 {2,S} {3,S}\n2 H u0 p0 c0 {1,S}\n3 H u0 p0 c0 {1,S}")
+        ion_pair = Molecule().from_adjacency_list(
+            "1 H u0 p0 c+1\n2 O u0 p3 c-1 {3,S}\n3 H u0 p0 c0 {2,S}")
+        assert water.get_formula() == ion_pair.get_formula()
+        assert water.get_net_charge() == ion_pair.get_net_charge()
+        assert get_charge_signature(water) == ("H2O", ())
+        assert get_charge_signature(ion_pair) == ("H2O", (-1, 1))
+        assert get_charge_signature(water) != get_charge_signature(ion_pair)
+
+        # carbon monoxide is written charge-separated and keeps its shortcut entry
+        carbon_monoxide = Molecule().from_adjacency_list("1 C u0 p1 c-1 {2,T}\n2 O u0 p1 c+1 {1,T}")
+        assert get_charge_signature(carbon_monoxide) == ("CO", (-1, 1))
+        assert carbon_monoxide.to_smiles() == "[C-]#[O+]"
+
+    def test_electron(self):
+        """The electron still resolves from the table
+
+        It has to: no backend can write it. RDKit raises on element 'e' and OpenBabel
+        emits an unparseable ``[#255-]``.
+        """
+        mol = Molecule().from_adjacency_list("1 e u0 p0 c-1")
+        assert mol.get_net_charge() == -1
+        assert mol.to_smiles() == "e"
+
+    def test_neutral_shortcuts_unchanged(self):
+        """Every neutral species that the table shortcuts is written exactly as before"""
+        for adjlist, smiles in [
+            ("1 N u0 p1 c0 {2,T}\n2 N u0 p1 c0 {1,T}", "N#N"),
+            ("1 O u0 p2 c0 {2,S} {3,S}\n2 H u0 p0 c0 {1,S}\n3 H u0 p0 c0 {1,S}", "O"),
+            ("1 C u0 p1 c-1 {2,T}\n2 O u0 p1 c+1 {1,T}", "[C-]#[O+]"),
+            ("1 O u0 p1 c+1 {2,S} {3,D}\n2 O u0 p3 c-1 {1,S}\n3 O u0 p2 c0 {1,D}", "[O-][O+]=O"),
+            ("1 O u0 p2 c0 {2,D}\n2 O u0 p2 c0 {1,D}", "O=O"),
+            ("1 O u1 p2 c0 {2,S}\n2 O u1 p2 c0 {1,S}", "[O][O]"),
+            ("1 Ar u0 p4 c0", "[Ar]"),
+            ("1 He u0 p1 c0", "[He]"),
+            ("1 C u0 p2 c0", "[C]"),
+        ]:
+            mol = Molecule().from_adjacency_list(adjlist)
+            assert mol.get_net_charge() == 0
+            assert mol.to_smiles() == smiles
+
+    def test_charge_separated_shortcuts(self):
+        """The entries that are written charge-separated keep their exact strings
+
+        CO and ozone carry atom charges that cancel, so their keys are not the
+        uncharged ones. Getting that wrong makes the entry simply stop being found.
+        """
+        for adjlist, smiles in [
+            ("1 C u0 p1 c-1 {2,T}\n2 O u0 p1 c+1 {1,T}", "[C-]#[O+]"),
+            ("1 O u0 p1 c+1 {2,S} {3,D}\n2 O u0 p3 c-1 {1,S}\n3 O u0 p2 c0 {1,D}", "[O-][O+]=O"),
+        ]:
+            mol = Molecule().from_adjacency_list(adjlist)
+            assert mol.get_net_charge() == 0
+            assert get_charge_signature(mol)[1] == (-1, 1)
+            assert mol.to_smiles() == smiles
+
+    def test_get_smiles_net_charge(self):
+        """The charge written in a SMILES string is read back correctly"""
+        for smiles, charge in [
+            ("CC", 0),
+            ("O", 0),
+            ("[O-]", -1),
+            ("[H+]", 1),
+            ("[C-]#[O+]", 0),  # charges that cancel
+            ("[O-][O+]=O", 0),
+            ("[NH4+]", 1),
+            ("[Fe+2]", 2),  # charge written as a count
+            ("[O--]", -2),  # charge written as repeated signs
+            ("[13CH4]", 0),  # an isotope is not a charge
+            ("[CH3:1]", 0),  # an atom class is not a charge
+        ]:
+            assert get_smiles_net_charge(smiles) == charge, smiles
+
+
 class ParsingTest:
     def setup_class(self):
         self.methane = Molecule().from_adjacency_list(

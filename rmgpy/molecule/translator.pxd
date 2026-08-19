@@ -35,6 +35,9 @@ cdef dict SMILES_LOOKUPS
 cdef dict MOLECULE_LOOKUPS
 cdef dict RADICAL_LOOKUPS
 
+cdef object _BRACKET_ATOM
+cdef object _BRACKET_CHARGE
+
 cpdef str to_inchi(mm.Molecule mol, str backend=?, int aug_level=?)
 
 cpdef str to_inchi_key(mm.Molecule mol, str backend=?, int aug_level=?)
@@ -42,6 +45,10 @@ cpdef str to_inchi_key(mm.Molecule mol, str backend=?, int aug_level=?)
 cpdef str to_smarts(mm.Molecule mol, backend=?)
 
 cpdef str to_smiles(mm.Molecule mol, backend=?)
+
+cpdef tuple get_charge_signature(mm.Molecule mol)
+
+cpdef int get_smiles_net_charge(str smiles) except? -12345
 
 cpdef mm.Molecule from_inchi(mm.Molecule mol, str inchistr, backend=?, bint raise_atomtype_exception=?)
 
@@ -56,6 +63,8 @@ cpdef object _rdkit_translator(object input_object, str identifier_type, mm.Mole
 cpdef object _openbabel_translator(object input_object, str identifier_type, mm.Molecule mol=?)
 
 cdef mm.Molecule _lookup(mm.Molecule mol, str identifier, str identifier_type)
+
+cpdef bint _check_smiles_charge(mm.Molecule mol, str identifier, str identifier_type) except *
 
 cpdef _check_output(mm.Molecule mol, str identifier)
 
