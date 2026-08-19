@@ -2819,10 +2819,16 @@ cdef class MultiPDepArrhenius(PDepKineticsModel):
 cdef class ArrheniusChargeTransfer(KineticsModel):
 
     """
-    A kinetics model for surface charge transfer reactions
+    A kinetics model for charge transfer reactions in the gas phase.
 
-    It is very similar to the :class:`SurfaceArrhenius`, but the Ea is potential-dependent
-
+    It is very similar to the :class:`Arrhenius`, but the Ea is potential-dependent. `A` carries
+    volumetric units (e.g. ``m^3/(mol*s)``), as used by the gas-phase cation families. The
+    potential dependence is inherited from the surface charge transfer models, and it is only
+    active when a reaction is evaluated away from `V0`: in the gas phase there is no electrode, so
+    the reaction is evaluated at `V0` and the ``alpha * electrons * F * (V - V0)`` term contributes
+    no shift. `electrons` and `alpha` are still stored and still meaningful — `electrons` records
+    the electron stoichiometry of the reaction, and `alpha` remains the symmetry factor that would
+    apply if an external potential were deliberately imposed.
 
     The attributes are:
 
@@ -2832,10 +2838,10 @@ cdef class ArrheniusChargeTransfer(KineticsModel):
     `A`             The preexponential factor
     `T0`            The reference temperature
     `n`             The temperature exponent
-    `Ea`            The activation energy
+    `Ea`            The activation energy at the reference potential `V0`
     `electrons`     The stochiometry coeff for electrons (negative if reactant, positive if product)
-    `V0`            The reference potential
-    `alpha`         The charge transfer coefficient
+    `V0`            The reference potential; the rate is evaluated here unless a potential is imposed
+    `alpha`         The charge transfer (symmetry) coefficient
     `Tmin`          The minimum temperature at which the model is valid, or zero if unknown or undefined
     `Tmax`          The maximum temperature at which the model is valid, or zero if unknown or undefined
     `Pmin`          The minimum pressure at which the model is valid, or zero if unknown or undefined
@@ -2843,6 +2849,9 @@ cdef class ArrheniusChargeTransfer(KineticsModel):
     `solute`        The transition state solute data
     `comment`       Information about the model (e.g. its source)
     =============== =============================================================
+
+    Note that the second positional argument of :meth:`get_rate_coefficient` is a potential in V,
+    not a pressure in Pa. There is no pressure dependence in this model.
 
     """
 
@@ -2954,8 +2963,12 @@ cdef class ArrheniusChargeTransfer(KineticsModel):
 
     cpdef double get_rate_coefficient(self, double T, double V=0.0) except -1:
         """
-        Return the rate coefficient in the appropriate combination of m^2,
-        mol, and s at temperature `T` in K.
+        Return the rate coefficient in the appropriate combination of m^3,
+        mol, and s at temperature `T` in K and potential `V` in volts.
+
+        `V` is a potential, not a pressure. For gas-phase chemistry it should be left at the
+        reference potential `V0`, which is what :meth:`rmgpy.reaction.Reaction.get_rate_coefficient`
+        supplies by default.
         """
         cdef double A, n, V0, T0, Ea
 
@@ -3078,9 +3091,25 @@ cdef class ArrheniusChargeTransfer(KineticsModel):
 
 cdef class ArrheniusChargeTransferBM(KineticsModel):
     """
-    A kinetics model based on the (modified) Arrhenius equation, using the
-    Evans-Polanyi equation to determine the activation energy. The attributes
-    are:
+    A kinetics model for charge transfer reactions in the gas phase, based on the (modified)
+    Arrhenius equation and using the Evans-Polanyi equation to determine the activation energy.
+
+    This is the Blowers-Masel form of :class:`ArrheniusChargeTransfer`, used for the rate rules of
+    the gas-phase cation families; `A` carries volumetric units (e.g. ``m^3/(mol*s)``). As for
+    :class:`ArrheniusChargeTransfer`, there is no electrode in the gas phase, so the reaction is
+    evaluated at the reference potential `V0` and the potential term contributes no shift, while
+    `electrons` and `alpha` are retained on the record. A reaction generated from a family carries
+    this model only until :meth:`rmgpy.reaction.Reaction.fix_barrier_height` converts it to an
+    :class:`ArrheniusChargeTransfer` via :meth:`to_arrhenius_charge_transfer`; reactions from a
+    kinetics library, from an imported mechanism, or built by hand are not put through that
+    conversion and can reach a solver still carrying this model.
+
+    Note that :meth:`to_arrhenius_charge_transfer` does not carry `alpha` across to the
+    :class:`ArrheniusChargeTransfer` it builds, so a converted record silently takes alpha's 0.5
+    default. That is invisible at `V0`, where the potential term vanishes, but not under an applied
+    field.
+
+    The attributes are:
 
     =============== =============================================================
     Attribute       Description
@@ -3088,10 +3117,10 @@ cdef class ArrheniusChargeTransferBM(KineticsModel):
     `A`             The preexponential factor
     `n`             The temperature exponent
     `w0`            The average of the bond dissociation energies of the bond formed and the bond broken
-    `E0`            The activation energy for a thermoneutral reaction
+    `E0`            The activation energy for a thermoneutral reaction, at the reference potential `V0`
     `electrons`     The stochiometry coeff for electrons (negative if reactant, positive if product)
-    `V0`            The reference potential
-    `alpha`         The charge transfer coefficient
+    `V0`            The reference potential; the rate is evaluated here
+    `alpha`         The charge transfer (symmetry) coefficient
     `Tmin`          The minimum temperature at which the model is valid, or zero if unknown or undefined
     `Tmax`          The maximum temperature at which the model is valid, or zero if unknown or undefined
     `Pmin`          The minimum pressure at which the model is valid, or zero if unknown or undefined
@@ -3099,6 +3128,10 @@ cdef class ArrheniusChargeTransferBM(KineticsModel):
     `solute`        Transition state solute data
     `comment`       Information about the model (e.g. its source)
     =============== =============================================================
+
+    Note that the second positional argument of :meth:`get_rate_coefficient` is an enthalpy of
+    reaction in J/mol -- neither a pressure nor a potential. There is no pressure dependence in
+    this model.
 
     """
 
