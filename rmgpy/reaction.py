@@ -909,7 +909,7 @@ class Reaction:
             if product is spec: stoich += 1
         return stoich
 
-    def get_rate_coefficient(self, T, P=0, surface_site_density=0, potential=0.):
+    def get_rate_coefficient(self, T, P=0, surface_site_density=0, potential=None):
         """
         Return the overall rate coefficient for the forward reaction at
         temperature `T` in K and pressure `P` in Pa, including any reaction
@@ -921,9 +921,16 @@ class Reaction:
 
         If the reaction has sticking coefficient kinetics, a nonzero surface site density
         in `mol/m^2` must be provided
+
+        `potential` is the applied electrode potential in V, and is only meaningful for
+        charge transfer kinetics. Leaving it as ``None`` evaluates charge transfer kinetics
+        at their own reference potential `V0`, which is the correct default for gas-phase
+        chemistry, where there is no electrode and hence no applied field. Surface kinetics
+        keep their historical default of 0 V.
         """
         if isinstance(self.kinetics,SurfaceChargeTransfer):
-            return self.get_surface_rate_coefficient(T, surface_site_density=surface_site_density, potential=potential)
+            return self.get_surface_rate_coefficient(T, surface_site_density=surface_site_density,
+                                                     potential=0. if potential is None else potential)
         elif isinstance(self.kinetics, StickingCoefficient):
             if surface_site_density <= 0:
                 raise ValueError("Please provide a postive surface site density in mol/m^2 "
@@ -937,6 +944,44 @@ class Reaction:
                 k = diffusion_limiter.get_effective_rate(self, T)
                 self.k_effective_cache[T] = k
             return k
+        elif isinstance(self.kinetics, ArrheniusChargeTransfer):
+            # The second positional argument of ArrheniusChargeTransfer.get_rate_coefficient is the
+            # electrode potential in V, not the pressure in Pa. These are gas-phase kinetics, so
+            # there is no electrode and no applied field: evaluate at the reference potential V0,
+            # where the alpha * electrons * F * (V - V0) term vanishes. An explicitly requested
+            # potential is honoured, so a deliberate applied field still works.
+            return self.kinetics.get_rate_coefficient(
+                T, self.kinetics.V0.value_si if potential is None else potential)
+        elif isinstance(self.kinetics, ArrheniusChargeTransferBM):
+            # The second positional argument here is the enthalpy of reaction in J/mol, neither the
+            # pressure nor a potential. Substituting a thermoneutral 0.0 would be the same class of
+            # error as passing the pressure, so resolve the Blowers-Masel barrier against this
+            # reaction's own enthalpy -- exactly as fix_barrier_height does -- and evaluate the
+            # resulting ArrheniusChargeTransfer.
+            try:
+                dHrxn = self.get_enthalpy_of_reaction(298.)
+            except Exception as e:
+                # Raise rather than fall back on a thermoneutral 0.0: a Blowers-Masel rate rule
+                # evaluated against a fabricated enthalpy is the bug this branch exists to remove.
+                try:
+                    described = str(self)
+                except Exception:
+                    # A reaction with no reactants or products cannot even be stringified.
+                    described = repr(self.kinetics)
+                raise KineticsError(
+                    f"Cannot evaluate {ArrheniusChargeTransferBM.__name__} kinetics for {described}: "
+                    "its Blowers-Masel barrier depends on the enthalpy of reaction, which needs "
+                    f"thermo on every reactant and product ({e}). Convert the kinetics with "
+                    "to_arrhenius_charge_transfer(dHrxn), or call fix_barrier_height(), before "
+                    "asking for a rate.") from e
+            charge_transfer_kinetics = self.kinetics.to_arrhenius_charge_transfer(dHrxn)
+            # to_arrhenius_charge_transfer does not carry alpha across, so restore it here. This is
+            # local to this evaluation -- the converter itself is still lossy for every other
+            # caller, including fix_barrier_height. alpha is irrelevant at V0, where the potential
+            # term vanishes, but not under an applied field.
+            charge_transfer_kinetics.alpha = self.kinetics.alpha
+            return charge_transfer_kinetics.get_rate_coefficient(
+                T, charge_transfer_kinetics.V0.value_si if potential is None else potential)
         else:
             return self.kinetics.get_rate_coefficient(T, P)
 

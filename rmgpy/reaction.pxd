@@ -113,7 +113,10 @@ cdef class Reaction:
 
     cpdef int get_stoichiometric_coefficient(self, Species spec)
 
-    cpdef double get_rate_coefficient(self, double T, double P=?, double surface_site_density=?, double potential=?)
+    # `potential` is an object, not a double, so that ``None`` can mean "no applied potential
+    # requested" as distinct from an explicit 0 V. Gas-phase charge transfer kinetics evaluate at
+    # their reference potential V0 in the former case.
+    cpdef double get_rate_coefficient(self, double T, double P=?, double surface_site_density=?, object potential=?)
 
     cpdef double get_surface_rate_coefficient(self, double T, double surface_site_density, double potential=?) except -2
 
