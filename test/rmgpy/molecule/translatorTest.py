@@ -968,6 +968,68 @@ class ChargedSMILESGenerationTest:
         assert get_charge_signature(carbon_monoxide) == ("CO", (-1, 1))
         assert carbon_monoxide.to_smiles() == "[C-]#[O+]"
 
+    # The two pairs that shared one shortcut entry before the key carried the charges.
+    # Each pair is two distinct, non-isomorphic species with the same formula and the
+    # same net charge.
+    CYCLIC_OZONE = "1 O u0 p2 c0 {2,S} {3,S}\n2 O u0 p2 c0 {1,S} {3,S}\n3 O u0 p2 c0 {1,S} {2,S}"
+    OZONE = "1 O u0 p1 c+1 {2,S} {3,D}\n2 O u0 p3 c-1 {1,S}\n3 O u0 p2 c0 {1,D}"
+    CO_CARBENE = "1 C u0 p1 c0 {2,D}\n2 O u0 p2 c0 {1,D}"
+    CO_CHARGE_SEPARATED = "1 C u0 p1 c-1 {2,T}\n2 O u0 p1 c+1 {1,T}"
+
+    def assert_round_trips_intact(self, adjlist, smiles):
+        """Assert `adjlist` writes as `smiles` and reads back as the same species
+
+        Not just the string, and not just the net charge: the molecular graph, the
+        charge, the radical electrons, the lone pairs and the multiplicity all have to
+        survive, or the identifier names a different species than the one written.
+        """
+        mol = Molecule().from_adjacency_list(adjlist)
+        assert mol.to_smiles() == smiles
+
+        round_tripped = Molecule().from_smiles(smiles)
+        assert mol.is_isomorphic(round_tripped)
+        assert round_tripped.get_net_charge() == mol.get_net_charge()
+        assert (sum(atom.radical_electrons for atom in round_tripped.atoms)
+                == sum(atom.radical_electrons for atom in mol.atoms))
+        assert (sum(atom.lone_pairs for atom in round_tripped.atoms)
+                == sum(atom.lone_pairs for atom in mol.atoms))
+        assert round_tripped.multiplicity == mol.multiplicity
+
+    def test_cyclic_and_open_ozone_are_distinct(self):
+        """Cyclic ozone no longer borrows ozone's SMILES
+
+        Both have formula O3 and net charge zero, so the formula-keyed shortcut handed
+        the cyclic form ozone's '[O-][O+]=O' - two distinct species collapsed onto one
+        identifier.
+        """
+        cyclic = Molecule().from_adjacency_list(self.CYCLIC_OZONE)
+        ozone = Molecule().from_adjacency_list(self.OZONE)
+        assert not cyclic.is_isomorphic(ozone)
+        assert cyclic.to_smiles() != ozone.to_smiles()
+
+        self.assert_round_trips_intact(self.CYCLIC_OZONE, "O1OO1")
+        self.assert_round_trips_intact(self.OZONE, "[O-][O+]=O")
+
+    def test_carbene_and_charge_separated_co_are_distinct(self):
+        """The carbene form of CO no longer borrows charge-separated CO's SMILES
+
+        The same collision as the ozone pair: formula CO, net charge zero, two distinct
+        species, one shortcut entry.
+
+        The carbene's own round trip is deliberately NOT asserted here, and no weakened
+        assertion stands in for it. '[C]=O' cannot express the singlet/triplet distinction
+        on a bare carbene carbon, so reading it back gives the triplet: multiplicity 1 -> 3,
+        radical electrons 0 -> 2, lone pairs 3 -> 2, and not isomorphic to what was written.
+        That is an open finding about the serialiser, not something to pin as correct.
+        """
+        carbene = Molecule().from_adjacency_list(self.CO_CARBENE)
+        charge_separated = Molecule().from_adjacency_list(self.CO_CHARGE_SEPARATED)
+        assert not carbene.is_isomorphic(charge_separated)
+        assert carbene.to_smiles() != charge_separated.to_smiles()
+
+        assert carbene.to_smiles() == "[C]=O"
+        self.assert_round_trips_intact(self.CO_CHARGE_SEPARATED, "[C-]#[O+]")
+
     def test_electron(self):
         """The electron still resolves from the table
 
