@@ -323,6 +323,32 @@ class ResonanceError(Exception):
     """
     pass
 
+
+class PlasmaStateError(Exception):
+    """
+    An exception raised when a plasma reactor's electron state or
+    two-temperature configuration is invalid or unsupported: a missing,
+    duplicated, or non-positive electron population, a missing or invalid
+    electron temperature, an electron representation whose incident-electron
+    order cannot be resolved, or a feature the plasma reactor does not
+    support. Raised before solver initialization; there is no fallback to a
+    one-temperature reactor.
+    """
+    pass
+
+
+class NonEquilibriumReverseRateError(Exception):
+    """
+    An exception raised when a reverse rate coefficient would have to be
+    constructed by automatic thermodynamic reversal (kr = kf / Keq) for a
+    reaction to which that construction does not apply: kinetics that depend
+    on the electron temperature combine two incompatible thermal closures
+    with Keq(Tgas), and evaluating Keq(Te) instead would price heavy-species
+    thermochemistry at the electron temperature. Mark the reaction
+    irreversible or provide explicit reverse kinetics.
+    """
+    pass
+
 ################################################################################
 # move classes that extend off previous exceptions here
 
