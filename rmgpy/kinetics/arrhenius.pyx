@@ -962,6 +962,16 @@ cdef class BadnellRRArrhenius(KineticsModel):
                 self._T2 = quantity.Temperature(value)
 
 
+    cpdef double get_rate_coefficient_electron_temp(self, double Te) except -1:
+        """
+        Return k(Te) in SI units of m^3/(mol*s) at electron temperature Te [K].
+
+        The Badnell radiative-recombination fit is a function of the electron
+        temperature only; this method is the explicit, unambiguous entry point
+        for two-temperature reactors.
+        """
+        return self.get_rate_coefficient(Te)
+
     cpdef double get_rate_coefficient(self, double T, double P=0.0) except -1:
         """
         Return k(T) in SI units of m^3/(mol*s).
@@ -1556,6 +1566,17 @@ cdef class VoronovEIArrhenius(KineticsModel):
             self._dE_eV = float(val)
 
     # ---- core API ----
+    cpdef double get_rate_coefficient_electron_temp(self, double Te) except -1:
+        """
+        Return bimolecular **molar** rate coefficient k(Te) in SI (m^3/(mol*s))
+        at electron temperature Te [K].
+
+        The Voronov electron-impact-ionization fit is a function of the
+        electron temperature only; this method is the explicit, unambiguous
+        entry point for two-temperature reactors.
+        """
+        return self.get_rate_coefficient(Te)
+
     cpdef double get_rate_coefficient(self, double T, double P=0.0) except -1:
         """
         Return bimolecular **molar** rate coefficient k(Te) in SI (m^3/(mol*s)) at electron temperature T [K].

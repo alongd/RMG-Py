@@ -101,6 +101,7 @@ cdef class BadnellRRArrhenius(KineticsModel):
     cdef public bint uses_electron_temperature
     cdef public bint uses_electron_density
 
+    cpdef double get_rate_coefficient_electron_temp(self, double Te) except -1
     cpdef double get_rate_coefficient(self, double T, double P=*) except -1
     cpdef bint is_identical_to(self, KineticsModel other_kinetics) except -2
     cpdef change_rate(self, double factor)
@@ -120,6 +121,7 @@ cdef class VoronovEIArrhenius(KineticsModel):
     cdef public bint uses_electron_temperature
     cdef public bint uses_electron_density
 
+    cpdef double get_rate_coefficient_electron_temp(self, double Te) except -1
     cpdef double get_rate_coefficient(self, double T, double P=*) except -1
     cpdef bint is_identical_to(self, KineticsModel other_kinetics) except -2
     cpdef change_rate(self, double factor)

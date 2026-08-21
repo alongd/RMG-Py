@@ -134,6 +134,7 @@ ext_modules = [
     'rmgpy/solver/liquid.pyx',
     'rmgpy/solver/mbSampled.pyx',
     'rmgpy/solver/surface.pyx',
+    'rmgpy/solver/plasma.pyx',
 ]
 
 scripts = [
