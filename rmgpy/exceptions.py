@@ -337,6 +337,21 @@ class PlasmaStateError(Exception):
     pass
 
 
+class ElectronPlacementError(Exception):
+    """
+    An exception raised when an electron-placement view of a reaction cannot
+    be resolved from a family-level placement declaration: the reaction's
+    family carries no placement declaration, the reaction's net electron
+    count contradicts the declaration (ionization- or excitation-shaped input
+    handed to an attachment resolver), the electron is represented twice
+    (explicitly among the participants and again in the metadata count), the
+    canonical electron species is missing or ambiguous, or the kinetics are
+    of an unsupported form. Always raised by name; there is no fallback to
+    net-derived electron placement.
+    """
+    pass
+
+
 class NonEquilibriumReverseRateError(Exception):
     """
     An exception raised when a reverse rate coefficient would have to be
