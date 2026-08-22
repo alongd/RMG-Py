@@ -284,7 +284,9 @@ class Reaction:
         if kinetics:
             return rmgpy.chemkin.write_kinetics_entry(self, species_list)
         else:
-            return rmgpy.chemkin.write_reaction_string(self)
+            # Forward species_list so write_reaction_string folds the metadata electron into the
+            # string; without it a charged reaction is written unbalanced in the E pseudo-element.
+            return rmgpy.chemkin.write_reaction_string(self, species_list=species_list)
 
 
     def to_cantera(self, species_list=None, use_chemkin_identifier=False):

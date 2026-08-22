@@ -3345,10 +3345,29 @@ class TestElectronDirection:
         assert "e" not in ct.reactants, ct.reactants
 
     def test_to_cantera_fails_when_electron_needed_but_absent(self):
+        from rmgpy.exceptions import MechanismWriterError
+
         rxn = Reaction(reactants=[self.neutral], products=[self.anion], electrons=-1,
                        kinetics=Arrhenius(A=(1e13, "cm^3/(mol*s)"), n=0, Ea=(10, "kJ/mol")))
-        with pytest.raises(Exception):
+        with pytest.raises(MechanismWriterError, match="electron"):
             rxn.to_cantera(species_list=[self.neutral, self.anion], use_chemkin_identifier=False)
+
+    def test_to_chemkin_reaction_string_places_electron(self):
+        """
+        Reaction.to_chemkin(species_list=..., kinetics=False) accepted species_list and then
+        discarded it, so its reaction string dropped the metadata electron. Thread it through so
+        the electron lands on the reactant side, as write_reaction_string already does when given
+        the list.
+        """
+        from rmgpy.chemkin import get_species_identifier
+
+        rxn = Reaction(reactants=[self.neutral], products=[self.anion], electrons=-1)
+        electron_id = get_species_identifier(self.electron)
+        string = rxn.to_chemkin(species_list=[self.neutral, self.anion, self.electron], kinetics=False)
+        reactant_side, arrow, product_side = string.partition("<=>")
+        assert arrow, string
+        assert electron_id in reactant_side, string
+        assert electron_id not in product_side, string
 
 
 class TestElectronsSurviveCopyAndPickle:
