@@ -42,7 +42,7 @@ import numpy as np
 import pytest
 
 import rmgpy.constants as constants
-from rmgpy.exceptions import NonEquilibriumReverseRateError, PlasmaStateError
+from rmgpy.exceptions import ElectronPlacementError, NonEquilibriumReverseRateError, PlasmaStateError
 from rmgpy.kinetics import Arrhenius
 from rmgpy.kinetics.arrhenius import TwoTemperaturePlasma
 from rmgpy.reaction import Reaction
@@ -439,13 +439,18 @@ class PlasmaReverseRatePolicyTest:
 
     def test_metadata_only_electron_rejected(self):
         """A nonzero metadata-only electron count cannot express incident-electron
-        order and is rejected, not guessed at."""
+        order and is rejected, not guessed at. Since the electron-representation
+        boundary was wired into initialize_model, a metadata-only electron
+        reaction is routed to the family-declared resolver, which rejects this
+        family-less reaction by name (ElectronPlacementError) -- the single
+        representation-error path, not a second parallel one. The reaction is
+        never silently accepted."""
         electron, ar, ar_ion, spc_a, spc_b = _species()
         rxn = Reaction(reactants=[spc_a], products=[spc_b], reversible=False,
                        electrons=1,
                        kinetics=Arrhenius(A=(100.0, 's^-1'), n=0.0, Ea=(10.0, 'kJ/mol')))
         reactor = _reactor(_mole_fractions(electron, ar, ar_ion, spc_a, spc_b))
-        with pytest.raises(PlasmaStateError, match='metadata-only electron'):
+        with pytest.raises(ElectronPlacementError, match='no family attribution'):
             reactor.initialize_model([ar, electron, ar_ion, spc_a, spc_b], [rxn], [], [])
 
     def test_reversible_thermal_electron_containing_rejected(self):

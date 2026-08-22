@@ -418,19 +418,28 @@ cdef class ReactionSystem(DASx):
 
     def generate_species_indices(self, core_species, edge_species):
         """
-        Assign an index to each species (core first, then edge) and 
+        Assign an index to each species (core first, then edge) and
         store the (species, index) pair in a dictionary.
         """
 
+        # Rebuild from scratch: initialize_model may be called more than once on
+        # the same reaction system (e.g. across model-enlargement iterations),
+        # and stale keys must not survive into the new mapping.
+        self.species_index = {}
         for index, spec in enumerate(itertools.chain(core_species, edge_species)):
             self.species_index[spec] = index
 
     def generate_reaction_indices(self, core_reactions, edge_reactions):
         """
-        Assign an index to each reaction (core first, then edge) and 
+        Assign an index to each reaction (core first, then edge) and
         store the (reaction, index) pair in a dictionary.
         """
 
+        # Rebuild from scratch. Only assigning would let keys accumulate without
+        # bound when a reaction object is not stable across re-initializations
+        # (a reactor that swaps a reaction for a freshly derived stand-in on each
+        # init would otherwise leave every prior stand-in behind).
+        self.reaction_index = {}
         for index, rxn in enumerate(itertools.chain(core_reactions, edge_reactions)):
             self.reaction_index[rxn] = index
 

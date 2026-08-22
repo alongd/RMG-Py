@@ -204,6 +204,22 @@ def resolve_electron_placement(reaction, species_list):
             '(is_forward=False); the electron-placement declaration is defined for '
             'the forward direction only, and a direction-agnostic view is not '
             'safe.'.format(reaction, family))
+    if getattr(reaction, 'is_forward', None) is not True:
+        # Reaction.__init__ (and TemplateReaction) default is_forward=None, so an
+        # unknown direction is NOT the same as a forward one. Placing the
+        # electron on the family-declared forward (reactant) side of a reaction
+        # whose direction was never established would silently manufacture a
+        # forward-direction view from ambiguous input. The pre-integration
+        # reactor refused every nonzero-metadata reaction outright; a
+        # direction-unknown reaction must be refused here too, by name, rather
+        # than resolved and accepted.
+        raise ElectronPlacementError(
+            'Reaction {0!s} (family {1!r}) has an unspecified reaction direction '
+            '(is_forward={2!r}); the electron-placement declaration is defined for '
+            'the explicit forward direction only, so a direction-unknown reaction '
+            'cannot be given a forward-side electron and is refused rather than '
+            'silently accepted.'.format(
+                reaction, family, getattr(reaction, 'is_forward', None)))
     if getattr(reaction, 'reversible', False):
         raise ElectronPlacementError(
             'Reaction {0!s} (family {1!r}) is reversible; the placement view is '
