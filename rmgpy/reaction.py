@@ -102,7 +102,15 @@ class Reaction:
     `comment`           ``str``                     A description of the reaction source (optional)
     `is_forward`        ``bool``                    Indicates if the reaction was generated in the forward (true) or reverse (false)
     `rank`              ``int``                     Integer indicating the accuracy of the kinetics for this reaction
+    `electrons`         ``int``                     Stoichiometric coefficient of the electron (negative if a reactant, positive if a product)
     =================== =========================== ============================
+
+    ``electrons`` is signed relative to *this reaction object's current
+    reactant/product orientation*: reversing the object (swapping reactants and
+    products) negates the scalar. This is distinct from
+    :attr:`KineticsFamily.electrons`, which is the family-forward declaration;
+    that declaration must be negated when copied onto a concrete reversed
+    reaction.
 
     """
 

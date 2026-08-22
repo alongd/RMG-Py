@@ -1734,6 +1734,12 @@ class KineticsFamily(Database):
         Create and return a new :class:`Reaction` object containing the
         provided `reactants` and `products` as lists of :class:`Molecule`
         objects.
+
+        ``KineticsFamily.electrons`` is the family-forward electron declaration.
+        ``Reaction.electrons`` is signed relative to the reaction object's
+        current reactant/product orientation, so it is negated here when
+        ``is_forward`` is ``False`` (the reactant and product lists have just
+        been swapped).
         """
 
         # Make sure the products are in fact different than the reactants
