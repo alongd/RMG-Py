@@ -3369,6 +3369,28 @@ class TestElectronDirection:
         assert electron_id in reactant_side, string
         assert electron_id not in product_side, string
 
+    def test_write_reaction_string_refuses_charged_reaction_without_species_list(self):
+        """
+        write_reaction_string folds the electron only when species_list is given; without one it
+        fell back to the raw reactant/product lists and silently emitted an electronless, E-
+        unbalanced equation for a charged reaction (and skipped the balance/order guards). A
+        charged reaction with no usable species_list must instead raise MechanismWriterError
+        naming the reaction and its electron count. Thermal reactions (electrons == 0) keep the
+        optional-list behaviour.
+        """
+        from rmgpy.chemkin import write_reaction_string
+        from rmgpy.exceptions import MechanismWriterError
+
+        charged = Reaction(reactants=[self.neutral], products=[self.anion], electrons=-1)
+        with pytest.raises(MechanismWriterError, match="electron"):
+            write_reaction_string(charged, species_list=None)
+        with pytest.raises(MechanismWriterError, match="electron"):
+            write_reaction_string(charged, species_list=[])
+
+        # Thermal reaction with no species_list still writes, unchanged.
+        thermal = Reaction(reactants=[self.neutral], products=[self.anion])
+        assert "<=>" in write_reaction_string(thermal)
+
     def test_cantera_writer1_refuses_metadata_electron_mechanism(self, tmp_path):
         """
         CanteraWriter1 has no electron-aware equation path (it overwrites Cantera's equation from

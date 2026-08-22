@@ -1772,14 +1772,26 @@ def write_reaction_string(reaction, java_library=False, species_list=None):
     the electron stoichiometry out of the reactant/product lists, so without
     this every charged reaction is written unbalanced in ``E``.
 
-    ``species_list`` is optional because this function also backs
-    :meth:`rmgpy.reaction.Reaction.to_labeled_str`, which has no mechanism to
-    draw the electron species from and is not an exported artifact.
+    ``species_list`` is optional only for thermal reactions
+    (``reaction.electrons == 0``), which have no electron species to fold in. For
+    a charged reaction it is required: called without one, this function raises
+    :class:`~rmgpy.exceptions.MechanismWriterError` rather than emit an equation
+    that is silently unbalanced in the ``E`` pseudo-element and skip the balance
+    and reactant-order guards below.
     """
     kinetics = reaction.kinetics
 
-    reactants, products = expand_electrons(reaction, species_list) if species_list \
-        else (list(reaction.reactants), list(reaction.products))
+    if species_list:
+        reactants, products = expand_electrons(reaction, species_list)
+    elif reaction.electrons:
+        raise MechanismWriterError(
+            'Reaction {0!s} carries {1:d} electron(s) but write_reaction_string was called '
+            'without a species_list to draw the electron species from; the equation would be '
+            'written silently unbalanced in the E pseudo-element. Pass species_list (e.g. via '
+            'Reaction.to_chemkin(species_list=...)) when writing charged reactions.'.format(
+                reaction, reaction.electrons))
+    else:
+        reactants, products = list(reaction.reactants), list(reaction.products)
 
     if kinetics is None:
         reaction_string = ' + '.join([get_species_identifier(reactant) for reactant in reactants])
