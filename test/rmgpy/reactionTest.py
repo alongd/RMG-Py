@@ -3369,6 +3369,21 @@ class TestElectronDirection:
         assert electron_id in reactant_side, string
         assert electron_id not in product_side, string
 
+    def test_cantera_writer1_refuses_metadata_electron_mechanism(self, tmp_path):
+        """
+        CanteraWriter1 has no electron-aware equation path (it overwrites Cantera's equation from
+        raw reactants/products), so it must refuse a metadata-electron mechanism up front with a
+        clear message pointing at CanteraWriter2, rather than crash from inside to_cantera with no
+        explanation.
+        """
+        from rmgpy.yaml_cantera1 import write_cantera
+        from rmgpy.exceptions import MechanismWriterError
+
+        rxn = Reaction(reactants=[self.neutral], products=[self.anion], electrons=-1,
+                       kinetics=Arrhenius(A=(1e13, "s^-1"), n=0, Ea=(10, "kJ/mol")))
+        with pytest.raises(MechanismWriterError, match="CanteraWriter2"):
+            write_cantera([self.neutral, self.anion], [rxn], set(), path=str(tmp_path / "chem.yml"))
+
 
 class TestElectronsSurviveCopyAndPickle:
     """
