@@ -188,6 +188,26 @@ cdef class PlasmaReactor(ReactionSystem):
                 "conditions {0!r}; construct the reactor directly with scalar T, P "
                 "and Te. ({1})".format(conditions, self._identity()))
 
+        # THE electron-representation boundary. This is the single production
+        # call site of the family-declared electron-placement resolver: the
+        # earliest point at which family-generation semantics are complete and
+        # the target reactor is known, but before any stoichiometric index or
+        # concentration product is built. Reactions that still carry their
+        # electron as metadata (reaction.electrons != 0) are replaced, once
+        # each, by the resolver's non-mutating reactor-facing view; the
+        # canonical reaction objects are never touched. Because the local
+        # reaction lists are rebound here, the resolved representation is the
+        # ONLY one seen downstream -- by validation, the base-class packing,
+        # rate-coefficient generation, residual and Jacobian evaluation --
+        # so there is never a second, independently derived electron
+        # representation. The canonical (model) reaction lists are retained so
+        # the public reaction_index map can be re-keyed back to them at the end,
+        # keeping solver-internal views out of the caller-facing identity.
+        core_reactions_model = core_reactions
+        edge_reactions_model = edge_reactions
+        core_reactions = self._resolve_electron_placements(core_reactions, core_species, edge_species)
+        edge_reactions = self._resolve_electron_placements(edge_reactions, core_species, edge_species)
+
         # Validate the composition and the reaction set BEFORE the base class
         # packs its stoichiometry arrays: malformed input would otherwise
         # surface as unnamed IndexError/KeyError from the packing code instead
@@ -226,6 +246,67 @@ cdef class PlasmaReactor(ReactionSystem):
         ReactionSystem.set_initial_derivative(self)
         # Initialize the model
         ReactionSystem.initialize_solver(self)
+
+        # Re-key the public reaction map back to the canonical (model) reactions.
+        # The base class built reaction_index from the resolved views (needed by
+        # generate_rate_coefficients above, which looks reactions up in it); but
+        # a caller -- e.g. the model builder's remove_species, which iterates
+        # reaction_system.reaction_index to find reactions touching a removed
+        # species -- must see the SAME reaction objects the model holds, not
+        # reactor-internal views it never created. Canonical and view lists are
+        # positionally aligned, so the solver's positional indices are unchanged;
+        # only the dictionary keys are restored to model identity. This runs
+        # after every consumer that needs view-keyed lookups, and after
+        # initialize_solver, so runtime residual/Jacobian (which index the packed
+        # arrays positionally, never through reaction_index) are unaffected.
+        self._rekey_reaction_index_to_model(core_reactions_model, edge_reactions_model)
+
+    def _rekey_reaction_index_to_model(self, core_reactions, edge_reactions):
+        """
+        Rebuild ``self.reaction_index`` so its keys are the canonical (model)
+        reactions passed to :meth:`initialize_model`, at the same positional
+        indices the base class assigned to the resolved views. Reassigns the
+        dict, so any views the base class registered are discarded -- which also
+        means re-initializing the same reactor does not accumulate stale view
+        keys, because the canonical reactions are stable across calls.
+        """
+        self.reaction_index = {}
+        for index, rxn in enumerate(itertools.chain(core_reactions or [], edge_reactions or [])):
+            self.reaction_index[rxn] = index
+
+    def _resolve_electron_placements(self, reactions, core_species, edge_species):
+        """
+        Return a reactor-facing view of ``reactions`` in which every reaction
+        that still carries its electron as metadata (``reaction.electrons`` is
+        nonzero) has been replaced by the resolver's non-mutating placement
+        view, and every already-in-reactor-form reaction (``electrons == 0``)
+        is passed through unchanged, by identity.
+
+        The order in which the electron is placed is NOT derived here from the
+        net electron count: presence of a metadata electron is only the gate
+        that selects a reaction for resolution; the side and count come from
+        the family-level declaration inside
+        :func:`rmgpy.electron_placement.resolve_electron_placement`, which
+        hard-fails by name (``ElectronPlacementError``) for any family, shape,
+        direction, or kinetics it does not authorise -- including the
+        ionisation-shaped case, whose net electron production does not
+        determine incident-electron order. The resolver is looked up on the
+        module at call time so a test can spy on it; the canonical reaction
+        objects handed in are never mutated.
+        """
+        from rmgpy import electron_placement
+
+        if reactions is None:
+            return reactions
+        species_list = list(core_species or []) + list(edge_species or [])
+        resolved = []
+        for rxn in reactions:
+            if getattr(rxn, 'electrons', 0):
+                resolved.append(
+                    electron_placement.resolve_electron_placement(rxn, species_list))
+            else:
+                resolved.append(rxn)
+        return resolved
 
     def _validate_electron_state(self, list core_species, list edge_species):
         """
@@ -401,6 +482,29 @@ cdef class PlasmaReactor(ReactionSystem):
                         "Te-dependent reaction {0!s}, kinetics {1}; mark the "
                         "reaction irreversible or provide explicit reverse "
                         "kinetics".format(rxn, kin.__class__.__name__))
+                # An electron-temperature-dependent rate law is a plasma rate
+                # law: it must carry an explicit incident electron among its
+                # reactants, WHATEVER the reaction's net electron count. Without
+                # one, an electron-collision rate silently loses its dependence
+                # on the electron population and is evaluated at the wrong
+                # reaction order. The metadata guard above and the family
+                # resolver together ensure a metadata electron is placed or
+                # refused before here; this closes the remaining gap -- a
+                # plasma-rate reaction whose electron never appears explicitly at
+                # all (e.g. electrons==0, no electron reactant) -- which the
+                # evaluator and reversibility checks above do not catch. Placed
+                # after them so those more specific diagnostics still take
+                # precedence for the reactions they name.
+                if n_electron_reactants == 0:
+                    raise PlasmaStateError(
+                        "reaction {0!s} has plasma-shaped kinetics {1} "
+                        "(electron-temperature dependent), but no explicit "
+                        "electron appears among its reactants; a plasma rate law "
+                        "must never be evaluated without an explicit incident "
+                        "electron, whatever the reaction's net electron count. "
+                        "Represent the incident electron explicitly as a "
+                        "reactant. ({2})".format(
+                            rxn, kin.__class__.__name__, self._identity()))
             else:
                 if rxn.reversible and (n_electron_reactants or n_electron_products):
                     raise NonEquilibriumReverseRateError(

@@ -41,8 +41,10 @@ attachment in the forward direction of ``Plasma_Electron_Attachment``.
 
 import os.path
 
+import numpy as np
 import pytest
 
+import rmgpy.electron_placement as electron_placement
 from rmgpy import settings
 from rmgpy.data.kinetics.common import get_molecularity
 from rmgpy.data.kinetics.database import KineticsDatabase
@@ -50,6 +52,7 @@ from rmgpy.data.kinetics.family import TemplateReaction
 from rmgpy.electron_placement import FAMILY_ELECTRON_PLACEMENT, resolve_electron_placement
 from rmgpy.exceptions import ElectronPlacementError, PlasmaStateError
 from rmgpy.kinetics import Arrhenius
+from rmgpy.kinetics.arrhenius import TwoTemperaturePlasma
 from rmgpy.reaction import Reaction
 from rmgpy.solver.plasma import PlasmaReactor
 from rmgpy.species import Species
@@ -212,6 +215,43 @@ class TestElectronPlacementResolver:
         with pytest.raises(ElectronPlacementError, match="reverse direction"):
             resolve_electron_placement(reaction, [_electron()])
 
+    def test_unknown_direction_fails_by_name(self):
+        """BLOCKER 1: the placement declaration authorises the FORWARD direction
+        only, so the resolver must require ``is_forward is True`` and refuse a
+        reaction whose direction was never established (``is_forward=None``) --
+        not merely one explicitly marked reverse. The old check tested only
+        ``is False``, so a ``None`` direction fell through and was resolved.
+
+        The compiled ``Reaction`` stores ``is_forward`` as a C ``bint`` that
+        coerces ``None`` to ``False`` (so the compiled reactor never actually
+        yields ``None`` -- the pre-existing reverse-direction check already
+        catches ``False``); but ``resolve_electron_placement`` is pure Python and
+        duck-typed, and in decythonized mode ``Reaction.is_forward`` stays the
+        ``None`` default. A duck-typed stand-in reproduces exactly that input.
+        Before the fix this resolves without error; after it, it fails by
+        name."""
+
+        class _UnknownDirectionReaction:
+            family = FAMILY
+            electrons = -1
+            reversible = False
+            is_forward = None  # never established -- pure-Python default
+            reactants = [_o2()]
+            products = [_o2_anion()]
+            kinetics = _arrhenius()
+            # Enough of the Reaction surface that, BEFORE the fix, the resolver
+            # runs to completion and returns a view (proving None was accepted);
+            # AFTER the fix it fails by name at the direction check first.
+            label = ''
+            duplicate = False
+            degeneracy = 1
+
+            def __str__(self):
+                return 'O2 + e- -> O2- (direction unknown)'
+
+        with pytest.raises(ElectronPlacementError, match="unspecified reaction direction"):
+            resolve_electron_placement(_UnknownDirectionReaction(), [_electron()])
+
     def test_reversible_fails_by_name(self):
         """The attachment declaration covers the irreversible forward form
         only; a reversible reaction's electron side is direction-ambiguous."""
@@ -348,14 +388,21 @@ class TestAttachmentPlacementDatabase:
         assert get_molecularity(self.reaction) == 2
         assert get_molecularity(view) == 2
 
-    def test_reactor_rejects_canonical_form(self):
-        """The reactor refuses the metadata-only representation by name: the
-        exact class of net-derived form the resolver exists to replace."""
+    def test_reactor_autoresolves_canonical_form(self):
+        """After the electron-representation boundary was wired into
+        PlasmaReactor.initialize_model, the SAME reactor that once refused the
+        metadata-only representation now accepts it automatically: the reactor
+        invokes the resolver at its generation-to-reactor handoff, so the
+        canonical reaction reaches the solver as a resolved view with a
+        positive forward rate. (Previously this raised PlasmaStateError
+        "metadata-only electron count"; that rejection now lives only on the
+        resolver's contract, exercised for shapes the family cannot place.)"""
         reactor = self._reactor()
-        with pytest.raises(PlasmaStateError, match="metadata-only electron count"):
-            reactor.initialize_model(self._core_species(), [self.reaction], [], [])
-        # The refusal must not have mutated the canonical reaction either.
+        reactor.initialize_model(self._core_species(), [self.reaction], [], [])
+        assert reactor.kf[0] > 0.0
+        # And the automatic resolution left the canonical object untouched.
         assert self.reaction.electrons == -1
+        assert not any(spc.is_electron() for spc in self.reaction.reactants)
 
     def test_reactor_accepts_resolved_view(self):
         """The same reactor configuration that rejects the canonical form
@@ -367,3 +414,444 @@ class TestAttachmentPlacementDatabase:
         # And resolution for the reactor still left the canonical object alone.
         assert self.reaction.electrons == -1
         assert len(self.reaction.reactants) == 1
+
+
+def _load_family_and_generate_attachment():
+    """Load the real ``Plasma_Electron_Attachment`` family from the database and
+    generate the ``O2 + e- -> O2-`` reaction from it (NOT a library lookup),
+    with kinetics filled in from the family's own rate rules -- the same steps
+    the model builder performs. Returns the canonical :class:`TemplateReaction`
+    (electron carried only as ``electrons = -1`` metadata). Loading a fresh
+    database each call is deliberate: it lets a test prove the reactor path is
+    exercised anew, never from a cached or special-cased result."""
+    families_path = os.path.join(settings["database.directory"], "kinetics", "families")
+    database = KineticsDatabase()
+    database.load_recommended_families(os.path.join(families_path, "recommended.py"))
+    database.load_families(families_path, families=[FAMILY])
+
+    species = Species().from_smiles(NEUTRAL_O2)
+    species.generate_resonance_structures()
+    reactions = database.generate_reactions_from_families([species], only_families=[FAMILY])
+    assert len(reactions) == 1
+    reaction = reactions[0]
+    assert isinstance(reaction, TemplateReaction)
+    assert reaction.family == FAMILY
+    assert reaction.electrons == -1
+    assert not any(spc.is_electron() for spc in reaction.reactants)
+
+    kinetics_database = KineticsDatabase()
+    kinetics_database.load_families(families_path, families=[FAMILY])
+    family = kinetics_database.families[FAMILY]
+    family.add_rules_from_training(thermo_database=None)
+    family.fill_rules_by_averaging_up()
+    template = family.retrieve_template(reaction.template)
+    reaction.kinetics = family.get_kinetics_for_template(
+        template, degeneracy=reaction.degeneracy)[0]
+    return reaction
+
+
+def _net_charge(spc):
+    """Net electrical charge of a reactor species; the electron is -1."""
+    if spc.is_electron():
+        return -1
+    return spc.molecule[0].get_net_charge()
+
+
+class TestElectronPlacementReactorIntegration:
+    """The electron-representation boundary, end to end and AUTOMATIC.
+
+    A real family-generated attachment reaction (electron carried only as
+    ``electrons = -1`` metadata) is handed, through the ordinary
+    direct-construction reactor handoff, to :class:`PlasmaReactor`. The reactor
+    must resolve the electron placement ITSELF, at its single production call
+    site, without the test ever invoking :func:`resolve_electron_placement`.
+
+    None of the tests in this class call the resolver directly; the resolver is
+    reached only through ``PlasmaReactor.initialize_model``.
+    """
+
+    @classmethod
+    def setup_class(cls):
+        cls.reaction = _load_family_and_generate_attachment()
+        cls.electron = _electron()
+        cls.o2 = cls.reaction.reactants[0]
+        cls.o2_anion = cls.reaction.products[0]
+
+    def _core_species(self):
+        return [self.electron, self.o2, self.o2_anion]
+
+    def _reactor(self):
+        imf = {self.electron: Y_E0, self.o2: 1.0}
+        return PlasmaReactor(T_GAS, P0, imf, (T_E, "K"), n_sims=1, termination=[])
+
+    def _initialized_reactor(self):
+        """Build a fresh reactor and run the FULL production pipeline: the
+        canonical reaction goes in, automatic resolution happens inside
+        initialize_model. The test never touches the resolver."""
+        reactor = self._reactor()
+        reactor.initialize_model(self._core_species(), [self.reaction], [], [])
+        return reactor
+
+    def _packed_reaction(self, reactor):
+        """The single reaction object the reactor exposes through reaction_index.
+        After the identity fix this is the CANONICAL (model) reaction, not the
+        internal resolved view -- callers must be able to bridge reaction_index
+        back to model reactions. The view's electron placement is inspected
+        instead through the solver's packed index arrays (see _electron_reactant_
+        count)."""
+        reactions = list(reactor.reaction_index.keys())
+        assert len(reactions) == 1
+        return reactions[0]
+
+    def _electron_reactant_count(self, reactor, reaction):
+        """How many times the electron index appears on the reactant side of the
+        packed (view-derived) row for `reaction` -- i.e. the incident-electron
+        rate order the solver will actually evaluate."""
+        j = reactor.reaction_index[reaction]
+        ie = reactor.electron_index
+        return sum(1 for m in range(reactor.reactant_indices.shape[1])
+                   if reactor.reactant_indices[j, m] == ie)
+
+    def _electron_product_count(self, reactor, reaction):
+        j = reactor.reaction_index[reaction]
+        ie = reactor.electron_index
+        return sum(1 for m in range(reactor.product_indices.shape[1])
+                   if reactor.product_indices[j, m] == ie)
+
+    # --- Verifier assertions 1-16 -------------------------------------------
+
+    def test_01_family_generated_reaction_reaches_reactor_automatically(self):
+        """1. The real family-generated attachment reaction reaches the reactor
+        automatically (no manual resolution, no direct resolver call)."""
+        reactor = self._initialized_reactor()
+        assert reactor.kf[0] > 0.0
+
+    def test_02_canonical_reaction_unchanged_after_pipeline(self):
+        """2. The canonical stored/generated reaction is unchanged after the
+        full pipeline runs."""
+        reactants_before = list(self.reaction.reactants)
+        products_before = list(self.reaction.products)
+        self._initialized_reactor()
+        assert self.reaction.electrons == -1
+        assert self.reaction.reactants == reactants_before
+        assert self.reaction.products == products_before
+        assert not any(spc.is_electron() for spc in self.reaction.reactants)
+        assert not any(spc.is_electron() for spc in self.reaction.products)
+
+    def test_03_view_has_exactly_one_incident_electron_on_reactant_side(self):
+        """3. The reactor-facing view contains exactly one incident electron on
+        the forward (reactant) side and none on the product side. The view is
+        not exposed publicly (reaction_index maps the canonical reaction), so
+        its placement is read from the solver's packed index arrays, which are
+        built from the view."""
+        reactor = self._initialized_reactor()
+        assert self._electron_reactant_count(reactor, self.reaction) == 1
+        assert self._electron_product_count(reactor, self.reaction) == 0
+
+    def test_04_electron_enters_forward_rate_exactly_once(self):
+        """4. Electron concentration enters the forward rate expression exactly
+        once: the packed reactant-index row references the electron once."""
+        reactor = self._initialized_reactor()
+        j = reactor.reaction_index[self._packed_reaction(reactor)]
+        ie = reactor.electron_index
+        occurrences = sum(1 for m in range(reactor.reactant_indices.shape[1])
+                          if reactor.reactant_indices[j, m] == ie)
+        assert occurrences == 1
+
+    def test_05_first_order_scaling_in_electron_concentration(self):
+        """5. Changing the electron concentration produces first-order scaling
+        of this attachment reaction's rate (rate = k*y_e*y_O2/V)."""
+        rates = {}
+        volumes = {}
+        for y_e in (Y_E0, 2.0 * Y_E0):
+            reactor = self._reactor()
+            reactor.initial_mole_fractions = {self.electron: y_e, self.o2: 1.0}
+            reactor.initialize_model(self._core_species(), [self.reaction], [], [])
+            ncs = reactor.num_core_species
+            y0 = np.array(reactor.y0[:ncs], float)
+            res, _ = reactor.residual(0.0, y0.copy(), np.zeros(ncs, float))
+            ie = reactor.electron_index
+            rates[y_e] = -res[ie]  # electron consumption rate, mol/s
+            volumes[y_e] = reactor.V
+        expected_ratio = 2.0 * volumes[Y_E0] / volumes[2.0 * Y_E0]
+        actual_ratio = rates[2.0 * Y_E0] / rates[Y_E0]
+        assert abs(actual_ratio - expected_ratio) / expected_ratio < 1e-10
+
+    def test_06_electron_derivative_negative(self):
+        """6. The electron derivative dN_e/dt is negative (electron consumed)."""
+        reactor = self._initialized_reactor()
+        ncs = reactor.num_core_species
+        y0 = np.array(reactor.y0[:ncs], float)
+        res, _ = reactor.residual(0.0, y0.copy(), np.zeros(ncs, float))
+        assert res[reactor.electron_index] < 0.0
+
+    def test_07_o2_derivative_negative(self):
+        """7. The O2 derivative is negative (reactant consumed)."""
+        reactor = self._initialized_reactor()
+        ncs = reactor.num_core_species
+        y0 = np.array(reactor.y0[:ncs], float)
+        res, _ = reactor.residual(0.0, y0.copy(), np.zeros(ncs, float))
+        assert res[reactor.get_species_index(self.o2)] < 0.0
+
+    def test_08_o2_anion_derivative_positive(self):
+        """8. The O2- derivative is positive (product formed)."""
+        reactor = self._initialized_reactor()
+        ncs = reactor.num_core_species
+        y0 = np.array(reactor.y0[:ncs], float)
+        res, _ = reactor.residual(0.0, y0.copy(), np.zeros(ncs, float))
+        assert res[reactor.get_species_index(self.o2_anion)] > 0.0
+
+    def test_09_net_charge_conserved(self):
+        """9. Net electrical charge is conserved across the reaction:
+        sum_i charge_i * dN_i/dt = 0."""
+        reactor = self._initialized_reactor()
+        ncs = reactor.num_core_species
+        y0 = np.array(reactor.y0[:ncs], float)
+        res, _ = reactor.residual(0.0, y0.copy(), np.zeros(ncs, float))
+        charge_rate = 0.0
+        for spc in self._core_species():
+            charge_rate += _net_charge(spc) * res[reactor.get_species_index(spc)]
+        scale = max(abs(res[reactor.electron_index]), 1e-300)
+        assert abs(charge_rate) < 1e-10 * scale
+
+    def test_10_electron_not_double_counted(self):
+        """10. The electron is not counted twice in molecularity, rate order, or
+        stoichiometry: the bimolecular view has one electron reactant, and
+        doubling C_e doubles (not quadruples) the forward rate."""
+        reactor = self._initialized_reactor()
+        packed = self._packed_reaction(reactor)
+        assert get_molecularity(packed) == 2
+        j = reactor.reaction_index[packed]
+        ie = reactor.electron_index
+        ncs = reactor.num_core_species
+        y0 = np.array(reactor.y0[:ncs], float)
+        reactor.residual(0.0, y0.copy(), np.zeros(ncs, float))
+        conc = np.array(reactor.core_species_concentrations, float)
+        kf = float(reactor.kf[j])
+
+        def forward_rate(c_e):
+            cx = conc.copy()
+            cx[ie] = c_e
+            rate = kf
+            for m in range(reactor.reactant_indices.shape[1]):
+                s = reactor.reactant_indices[j, m]
+                if s != -1:
+                    rate *= cx[s]
+            return rate
+
+        r1 = forward_rate(conc[ie])
+        r2 = forward_rate(2.0 * conc[ie])
+        assert abs(r2 / r1 - 2.0) < 1e-12  # first order: 2x, not 4x
+
+    def test_11_residual_and_jacobian_share_coefficients(self):
+        """11. Residual and Jacobian consume the same resolved coefficients and
+        the same EOS from the same state -- not two independently derived
+        sets."""
+        reactor = self._initialized_reactor()
+        ncs = reactor.num_core_species
+        y0 = np.array(reactor.y0[:ncs], float)
+        zeros = np.zeros(ncs, float)
+        reactor.residual(0.0, y0.copy(), zeros.copy())
+        v_residual = reactor.V
+        reactor.jacobian(0.0, y0.copy(), zeros.copy(), 0.0)
+        v_jacobian = reactor.compute_volume(y0)
+        assert v_residual == v_jacobian
+        # No reconstructed reverse rate for the irreversible attachment.
+        assert float(reactor.kb[0]) == 0.0
+
+    def test_12_analytic_electron_jacobian_column_matches_fd(self):
+        """12. The analytic electron-state Jacobian column agrees with a
+        finite-difference approximation of the same column."""
+        reactor = self._initialized_reactor()
+        ncs = reactor.num_core_species
+        y0 = np.array(reactor.y0[:ncs], float)
+        zeros = np.zeros(ncs, float)
+        jac = reactor.jacobian(0.0, y0.copy(), zeros.copy(), 0.0)
+        z = reactor.electron_index
+        h = max(1.0e-7 * abs(y0[z]), 1.0e-9)
+        yp = y0.copy(); yp[z] += h
+        ym = y0.copy(); ym[z] -= h
+        rp, _ = reactor.residual(0.0, yp, zeros.copy())
+        rm, _ = reactor.residual(0.0, ym, zeros.copy())
+        fd_col = (rp - rm) / (2.0 * h)
+        assert np.abs(fd_col).max() > 0.0
+        assert np.allclose(jac[:, z], fd_col, rtol=1e-4, atol=1e-8 * np.abs(fd_col).max())
+
+    def test_13_running_pipeline_twice_does_not_accumulate_electrons(self):
+        """13. Reconstructing the reactor does not accumulate additional
+        electron participants: running the pipeline twice keeps exactly one
+        incident electron on the packed reactant side, and the canonical is
+        untouched. (See test_regression_reinit_same_reactor_does_not_accumulate
+        for the same-object re-init variant.)"""
+        for _ in range(2):
+            reactor = self._initialized_reactor()
+            assert self._electron_reactant_count(reactor, self.reaction) == 1
+            # canonical never grows an explicit electron
+            assert not any(spc.is_electron() for spc in self.reaction.reactants)
+            assert self.reaction.electrons == -1
+
+    def test_14_thermal_reactions_pass_through_unchanged(self):
+        """14. Ordinary thermal reactions are untouched by the boundary: a
+        reaction with no metadata electron is returned by identity, never
+        wrapped, copied, or mutated."""
+        thermal = Reaction(reactants=[self.o2], products=[self.o2_anion],
+                           reversible=False, kinetics=_arrhenius())
+        assert getattr(thermal, "electrons", 0) == 0
+        reactor = self._reactor()
+        resolved = reactor._resolve_electron_placements(
+            [thermal], self._core_species(), [])
+        assert resolved[0] is thermal  # identity: thermal path unchanged
+
+    def test_15_reload_and_regenerate_uses_same_automatic_path(self):
+        """15. Reloading the database and regenerating the reaction from scratch
+        still exercises the same automatic production path -- a fresh canonical
+        object reaches the reactor and is resolved there, not from a cache."""
+        fresh_reaction = _load_family_and_generate_attachment()
+        assert fresh_reaction is not self.reaction
+        electron = _electron()
+        core_species = [electron, fresh_reaction.reactants[0], fresh_reaction.products[0]]
+        imf = {electron: Y_E0, fresh_reaction.reactants[0]: 1.0}
+        reactor = PlasmaReactor(T_GAS, P0, imf, (T_E, "K"), n_sims=1, termination=[])
+        reactor.initialize_model(core_species, [fresh_reaction], [], [])
+        # The fresh canonical reaction bridges into reaction_index by identity
+        # (not a cache, not a view) and was resolved anew AT the reactor: the
+        # solver packed an incident electron on its reactant side, with kf > 0.
+        assert fresh_reaction in reactor.reaction_index
+        ie = reactor.electron_index
+        j = reactor.reaction_index[fresh_reaction]
+        assert any(reactor.reactant_indices[j, m] == ie
+                   for m in range(reactor.reactant_indices.shape[1]))
+        assert reactor.kf[0] > 0.0
+        assert fresh_reaction.electrons == -1
+
+    def test_16_generated_attachment_remains_irreversible(self):
+        """16. The generated attachment reaction remains explicitly
+        irreversible: the view is irreversible and the reactor builds no
+        reverse rate for it."""
+        reactor = self._initialized_reactor()
+        packed = self._packed_reaction(reactor)
+        assert packed.reversible is False
+        assert float(reactor.kb[0]) == 0.0
+        assert np.isinf(reactor.Keq[0])
+
+    # --- Production-path assertion ------------------------------------------
+
+    def test_production_path_invokes_resolver_not_the_test(self, monkeypatch):
+        """The resolver is invoked by PRODUCTION code (initialize_model), not by
+        this test. A spy on the module-level resolver records that the reactor
+        called it exactly once, with the CANONICAL reaction (production made the
+        view, the test did not)."""
+        calls = []
+        original = electron_placement.resolve_electron_placement
+
+        def spy(reaction, species_list):
+            calls.append(reaction)
+            return original(reaction, species_list)
+
+        monkeypatch.setattr(electron_placement, "resolve_electron_placement", spy)
+        reactor = self._reactor()
+        reactor.initialize_model(self._core_species(), [self.reaction], [], [])
+
+        assert len(calls) == 1
+        assert calls[0] is self.reaction  # production handed the canonical in
+        assert reactor.kf[0] > 0.0
+
+    # --- Negative controls --------------------------------------------------
+
+    def test_negative_control_missing_electron_species(self):
+        """Missing canonical electron species: the attachment reaction is in the
+        model but no reactor electron species exists. The production path must
+        FAIL with the resolver's named representation error, not silently omit
+        the reaction from the reactor's reaction set."""
+        core_species = [self.o2, self.o2_anion]  # no electron
+        imf = {self.o2: 1.0}
+        reactor = PlasmaReactor(T_GAS, P0, imf, (T_E, "K"), n_sims=1, termination=[])
+        with pytest.raises(ElectronPlacementError, match="[Nn]o electron species"):
+            reactor.initialize_model(core_species, [self.reaction], [], [])
+
+    def test_negative_control_duplicate_explicit_representation(self):
+        """Duplicate explicit representation: a reaction that already carries an
+        explicit electron reactant AND a nonzero metadata electron count. The
+        production path must fail by name (double representation), never
+        double-count the electron."""
+        duplicated = TemplateReaction(
+            reactants=[self.o2, self.electron], products=[self.o2_anion],
+            family=FAMILY, electrons=-1, reversible=False, is_forward=True,
+            kinetics=_arrhenius())
+        reactor = self._reactor()
+        with pytest.raises(ElectronPlacementError, match="twice|double"):
+            reactor.initialize_model(self._core_species(), [duplicated], [], [])
+
+    def test_negative_control_unsupported_ionization_shaped(self):
+        """Unsupported ionisation-shaped case: net electron PRODUCTION
+        (electrons=+1) does not determine incident-electron order. The
+        production path must HARD-FAIL through the resolver's family-declaration
+        contract -- proving it does NOT take the shortcut
+        `incident order = abs(Reaction.electrons)`, which would (wrongly)
+        succeed here because abs(+1) == the declared count of 1."""
+        ionization_shaped = TemplateReaction(
+            reactants=[self.o2], products=[self.o2_anion],
+            family=FAMILY, electrons=1, reversible=False, is_forward=True,
+            kinetics=_arrhenius())
+        reactor = self._reactor()
+        with pytest.raises(ElectronPlacementError, match="ionization-shaped"):
+            reactor.initialize_model(self._core_species(), [ionization_shaped], [], [])
+
+    # --- Merge-gate regression coverage -------------------------------------
+
+    def test_regression_plasma_kinetics_without_incident_electron_refused(self):
+        """BLOCKER 2: a plasma-shaped (electron-temperature dependent) rate law
+        with NO explicit incident electron and a zero net electron count skips
+        the metadata gate and the resolver entirely, so the reactor itself must
+        refuse it -- otherwise it would be evaluated at the wrong reaction order
+        (missing its electron-density factor)."""
+        plasma_no_electron = Reaction(
+            reactants=[self.o2], products=[self.o2_anion], reversible=False,
+            kinetics=TwoTemperaturePlasma(A=(1.0e-3, "m^3/(mol*s)"), n=0.5,
+                                          Ea_g=(0.0, "J/mol"), Ea_e=(0.0, "J/mol")))
+        assert getattr(plasma_no_electron, "electrons", 0) == 0  # skips the gate
+        assert not any(spc.is_electron() for spc in plasma_no_electron.reactants)
+        reactor = self._reactor()
+        with pytest.raises(PlasmaStateError, match="plasma-shaped kinetics"):
+            reactor.initialize_model(self._core_species(), [plasma_no_electron], [], [])
+
+    def test_regression_reinit_same_reactor_does_not_accumulate(self):
+        """BLOCKER 3: re-initializing the SAME reactor with the same canonical
+        metadata reaction must not accumulate stale resolved-view keys in
+        reaction_index. (Assertion 13 missed this by building a fresh reactor
+        each loop.)"""
+        reactor = self._initialized_reactor()
+        assert len(reactor.reaction_index) == 1
+        # Re-initialize the same reactor object with the same canonical reaction.
+        reactor.initialize_model(self._core_species(), [self.reaction], [], [])
+        assert len(reactor.reaction_index) == 1
+        reactor.initialize_model(self._core_species(), [self.reaction], [], [])
+        assert len(reactor.reaction_index) == 1
+
+    def test_regression_reaction_index_maps_canonical_not_view(self):
+        """MAJOR: the public reaction_index must bridge back to the canonical
+        (model) reaction a caller passed in, not the reactor-internal resolved
+        view. Covers edge promotion: a metadata reaction supplied as an edge
+        reaction, then promoted to core, keeps model identity at the correct
+        positional index without leaking a view."""
+        # (a) core: canonical reaction is the key, no view leaks in.
+        reactor = self._initialized_reactor()
+        keys = list(reactor.reaction_index.keys())
+        assert self.reaction in reactor.reaction_index  # identity, not a view
+        assert reactor.reaction_index[self.reaction] == 0
+        assert all(k is self.reaction for k in keys)
+        assert all(k.electrons == -1 for k in keys)  # canonical, un-resolved
+
+        # (b) edge promotion: same canonical reaction as an EDGE reaction beside
+        # a thermal core reaction, then promoted to core. Identity is preserved
+        # and the index tracks the position, with no accumulation.
+        thermal = Reaction(reactants=[self.o2], products=[self.o2_anion],
+                           reversible=False, kinetics=_arrhenius())
+        reactor.initialize_model(self._core_species(), [thermal], [], [self.reaction])
+        assert reactor.reaction_index[thermal] == 0
+        assert reactor.reaction_index[self.reaction] == 1  # edge, after core
+        assert len(reactor.reaction_index) == 2
+
+        reactor.initialize_model(self._core_species(), [thermal, self.reaction], [], [])
+        assert reactor.reaction_index[self.reaction] == 1  # promoted into core
+        assert len(reactor.reaction_index) == 2  # no stale view left behind
