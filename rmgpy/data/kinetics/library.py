@@ -77,6 +77,7 @@ class LibraryReaction(Reaction):
                  elementary_high_p=False,
                  allow_max_rate_violation=False,
                  entry=None,
+                 electrons=0,
                  ):
         Reaction.__init__(self,
                           index=index,
@@ -93,6 +94,7 @@ class LibraryReaction(Reaction):
                           allow_pdep_route=allow_pdep_route,
                           elementary_high_p=elementary_high_p,
                           allow_max_rate_violation=allow_max_rate_violation,
+                          electrons=electrons,
                           )
         self.library = library
         self.family = library
@@ -117,7 +119,8 @@ class LibraryReaction(Reaction):
                                   self.allow_pdep_route,
                                   self.elementary_high_p,
                                   self.allow_max_rate_violation,
-                                  self.entry
+                                  self.entry,
+                                  self.electrons,
                                   ))
 
     def __repr__(self):
@@ -139,6 +142,7 @@ class LibraryReaction(Reaction):
         if self.allow_pdep_route: string += "allow_pdep_route={}, ".format(self.allow_pdep_route)
         if self.elementary_high_p: string += "elementary_high_p={}, ".format(self.elementary_high_p)
         if self.allow_max_rate_violation: string += "allow_max_rate_violation={}, ".format(self.allow_max_rate_violation)
+        if self.electrons != 0: string += 'electrons={0:d}, '.format(self.electrons)
         string = string[:-2] + ')'
         return string
 
@@ -301,7 +305,8 @@ class KineticsLibrary(Database):
                                       library=lib, specific_collider=entry.item.specific_collider, kinetics=entry.data,
                                       duplicate=entry.item.duplicate, reversible=entry.item.reversible,
                                       allow_pdep_route=entry.item.allow_pdep_route,
-                                      elementary_high_p=entry.item.elementary_high_p)
+                                      elementary_high_p=entry.item.elementary_high_p,
+                                      electrons=entry.item.electrons)
                 rxn.family = self.label  # the library the reaction was loaded from (opposed to originally from)
             elif self.auto_generated and entry.long_desc and 'rate rule' in entry.long_desc:  # template reaction
                 family = ''
@@ -318,13 +323,15 @@ class KineticsLibrary(Database):
                 rxn = TemplateReaction(reactants=entry.item.reactants[:], products=entry.item.products[:],
                                        specific_collider=entry.item.specific_collider, kinetics=entry.data,
                                        duplicate=entry.item.duplicate, reversible=entry.item.reversible,
-                                       family=family, template=template, degeneracy=entry.item.degeneracy)
+                                       family=family, template=template, degeneracy=entry.item.degeneracy,
+                                       electrons=entry.item.electrons)
             else:  # pdep or standard library reaction
                 rxn = LibraryReaction(reactants=entry.item.reactants[:], products=entry.item.products[:],
                                       library=self.label, specific_collider=entry.item.specific_collider,
                                       kinetics=entry.data, duplicate=entry.item.duplicate,
                                       reversible=entry.item.reversible, allow_pdep_route=entry.item.allow_pdep_route,
-                                      elementary_high_p=entry.item.elementary_high_p)
+                                      elementary_high_p=entry.item.elementary_high_p,
+                                      electrons=entry.item.electrons)
             rxns.append(rxn)
 
         return rxns

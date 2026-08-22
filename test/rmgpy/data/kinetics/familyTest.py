@@ -1315,3 +1315,73 @@ multiplicity 2
             )
             == 0
         )
+
+    def test_average_kinetics_accepts_1_per_s_units(self):
+        """
+        average_kinetics must accept the '1/s' spelling of a unimolecular rate as equivalent to
+        's^-1'. _make_rule runs every single-reaction node through average_kinetics even at n=1
+        'to standardize the units and run checks', so a training entry written with '1/s' (41 of
+        the 68 Retroene training entries do) otherwise hits the 'Invalid units' Exception. The
+        normalized result carries the canonical 's^-1' spelling.
+        """
+        k = Arrhenius(A=(1e13, "1/s"), n=0.0, Ea=(10, "kJ/mol"))
+        kav = rmgpy.data.kinetics.family.average_kinetics([k])
+        assert kav.A.units == "s^-1"
+        assert np.isclose(kav.A.value_si, 1e13)
+
+    def test_average_kinetics_requires_matching_electrons(self):
+        """
+        average_kinetics already asserts agreement on V0 and alpha for charge-transfer kinetics
+        but silently took the electron count from the first entry. Averaging kinetics that
+        disagree on the sign-carrying electron count is meaningless, so it must fail; a matching
+        set averages and preserves the count.
+        """
+        from rmgpy.kinetics import SurfaceChargeTransfer
+
+        def make(electrons):
+            return SurfaceChargeTransfer(A=(1e10, "cm^3/(mol*s)"), n=0.0, Ea=(10, "kJ/mol"),
+                                         V0=(0, "V"), alpha=0.5, electrons=electrons)
+
+        with pytest.raises(AssertionError):
+            rmgpy.data.kinetics.family.average_kinetics([make(-1), make(-2)])
+
+        kav = rmgpy.data.kinetics.family.average_kinetics([make(-1), make(-1)])
+        assert kav.electrons.value_si == -1
+
+    def test_rules_average_kinetics_accepts_1_per_s_units(self):
+        """
+        The duplicate unit table in KineticsRules._get_average_kinetics has the same '1/s' gap and
+        must be fixed alongside the one in family.average_kinetics.
+        """
+        from rmgpy.data.kinetics.rules import KineticsRules
+        from rmgpy.kinetics import ArrheniusEP
+
+        aep = ArrheniusEP(A=(1e13, "1/s"), n=0.0, alpha=0.5, E0=(10, "kJ/mol"))
+        kav = KineticsRules()._get_average_kinetics([aep])
+        assert kav.A.units == "s^-1"
+        assert np.isclose(kav.A.value_si, 1e13)
+
+    def test_rules_average_kinetics_requires_matching_electrons_and_v0(self):
+        """
+        KineticsRules._get_average_kinetics took electrons and V0 from the first
+        SurfaceChargeTransferBEP entry with no agreement check. This path is unreachable from real
+        data (the class was absent from local_context and occurs zero times under input/), so the
+        test constructs the kinetics objects directly. Disagreement on either field must fail; a
+        matching set averages and preserves both.
+        """
+        from rmgpy.data.kinetics.rules import KineticsRules
+        from rmgpy.kinetics import SurfaceChargeTransferBEP
+
+        def make(electrons, V0=0.0):
+            return SurfaceChargeTransferBEP(A=(1e10, "cm^3/(mol*s)"), n=0.0, E0=(10, "kJ/mol"),
+                                            V0=(V0, "V"), alpha=0.5, electrons=electrons)
+
+        with pytest.raises(Exception, match="electron counts"):
+            KineticsRules()._get_average_kinetics([make(-1), make(-2)])
+
+        with pytest.raises(Exception, match="V0 values"):
+            KineticsRules()._get_average_kinetics([make(-1, 0.0), make(-1, 0.5)])
+
+        kav = KineticsRules()._get_average_kinetics([make(-1), make(-1)])
+        assert kav.electrons.value_si == -1
+        assert kav.V0.value_si == 0.0

@@ -1734,6 +1734,12 @@ class KineticsFamily(Database):
         Create and return a new :class:`Reaction` object containing the
         provided `reactants` and `products` as lists of :class:`Molecule`
         objects.
+
+        ``KineticsFamily.electrons`` is the family-forward electron declaration.
+        ``Reaction.electrons`` is signed relative to the reaction object's
+        current reactant/product orientation, so it is negated here when
+        ``is_forward`` is ``False`` (the reactant and product lists have just
+        been swapped).
         """
 
         # Make sure the products are in fact different than the reactants
@@ -1748,7 +1754,10 @@ class KineticsFamily(Database):
             reversible=self.reversible,
             family=self.label,
             is_forward=is_forward,
-            electrons = self.electrons
+            # KineticsFamily.electrons is the family-forward declaration; Reaction.electrons is
+            # signed relative to the reaction's current orientation, so negate it when building
+            # the reverse reaction, whose reactant/product lists have just been swapped.
+            electrons=self.electrons if is_forward else -self.electrons,
         )
 
         # Reactant side first, and separately, so the refusal can be attributed. `is_forward`
@@ -4217,7 +4226,8 @@ class KineticsFamily(Database):
                         if rxns[i].kinetics.solute:
                             rxns[i].kinetics.solute = to_soluteTSdata(rxns[i].kinetics.solute,reactants=rxns[i].reactants)
                         rrev = Reaction(reactants=products, products=reacts,
-                                    kinetics=rxns[i].generate_reverse_rate_coefficient(), rank=rxns[i].rank)
+                                    kinetics=rxns[i].generate_reverse_rate_coefficient(), rank=rxns[i].rank,
+                                    electrons=-rxns[i].electrons)
                     rrev.is_forward = False
 
                     if estimate_thermo:
@@ -4257,7 +4267,8 @@ class KineticsFamily(Database):
                     products = [Species(molecule=[p]) for p in products]
 
                 rrev = Reaction(reactants=products, products=rxns[i].reactants,
-                                kinetics=rxns[i].generate_reverse_rate_coefficient(), rank=rxns[i].rank)
+                                kinetics=rxns[i].generate_reverse_rate_coefficient(), rank=rxns[i].rank,
+                                electrons=-rxns[i].electrons)
 
                 rrev.is_forward = False
 
@@ -4797,6 +4808,11 @@ def average_kinetics(kinetics_list):
         Aunits = 'm^3/(mol*s)'
     elif Aunits in {'cm^6/(mol^2*s)', 'cm^6/(molecule^2*s)', 'm^6/(molecule^2*s)'}:
         Aunits = 'm^6/(mol^2*s)'
+    elif Aunits == '1/s':
+        # Exact-spelling match, not dimension parsing: '1/s' is the one alternative spelling of the
+        # unimolecular unit that appears in training data, normalized to the canonical 's^-1'. Other
+        # dimensionally equivalent spellings (e.g. '1/min') are deliberately NOT handled here.
+        Aunits = 's^-1'
     elif Aunits in {'s^-1', 'm^3/(mol*s)', 'm^6/(mol^2*s)'}:
         # they were already in SI
         pass
@@ -4826,6 +4842,11 @@ def average_kinetics(kinetics_list):
             electrons = kinetics_list[0].electrons.value_si
         assert all(np.abs(k.V0.value_si) < 0.0001 for k in kinetics_list), [k.V0.value_si for k in kinetics_list]
         assert all(np.abs(k.alpha.value_si - 0.5) < 0.001 for k in kinetics_list), [k.alpha for k in kinetics_list]
+        # electrons carries the reaction's sign; averaging a set that disagrees on it is
+        # meaningless, so require agreement the same way V0 and alpha are required above.
+        assert all(k.electrons.value_si == electrons for k in kinetics_list), \
+            'Cannot average charge-transfer kinetics with disagreeing electron counts: ' \
+            '{0}'.format([k.electrons.value_si for k in kinetics_list])
     V0 = 0.0
     count = 0
     for kinetics in kinetics_list:

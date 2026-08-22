@@ -56,6 +56,7 @@ from rmgpy.data.kinetics.database import KineticsDatabase
 from rmgpy.data.kinetics.depository import KineticsDepository
 from rmgpy.reaction import Reaction
 from rmgpy.species import Species
+from rmgpy.thermo import ThermoData
 
 
 class TestMolecularityCountsElectrons:
@@ -187,3 +188,99 @@ class TestFamilyPropagatesElectronsToItsTrainingDepository:
         """The depository is where the family's declaration lands; it has no other route to it."""
         assert KineticsDepository(label="fixture", electrons=-1).electrons == -1
         assert KineticsDepository(label="fixture").electrons == 0
+
+
+class TestReverseTrainingReactionNegatesElectronCount:
+    """
+    A training reaction stored in the reverse (dissociation) direction is flipped to the family's
+    forward direction by get_training_set. That flip rebuilt the reaction with a bare Reaction()
+    that never passed ``electrons``, so ``electrons`` defaulted to 0 -- the count was *erased*, not
+    merely left un-negated. The family declares ``electrons = -1``, so the flipped forward reaction
+    must instead carry the negated count, +1.
+    """
+
+    @classmethod
+    def setup_class(cls):
+        root = os.path.join(os.path.dirname(__file__), "electron_reverse_data")
+        database = KineticsDatabase()
+        database.load_families(path=root, families=["Electron_Reverse_Recombination"])
+        cls.family = database.families["Electron_Reverse_Recombination"]
+
+    @staticmethod
+    def _placeholder_thermo():
+        # The flip computes a reverse rate coefficient, which needs species free energies; supply a
+        # placeholder so the flip runs at all. Its numeric value is irrelevant to the electron
+        # count, which is all this test asserts on.
+        return ThermoData(Tdata=([300, 400, 500, 600, 800, 1000, 1500], 'K'),
+                          Cpdata=([10, 10, 10, 10, 10, 10, 10], 'cal/(mol*K)'),
+                          H298=(0, 'kcal/mol'), S298=(50, 'cal/(mol*K)'),
+                          Cp0=(4.0, 'cal/(mol*K)'), CpInf=(20.0, 'cal/(mol*K)'))
+
+    def test_flipped_reverse_training_reaction_negates_electrons(self):
+        depository = self.family.get_training_depository()
+        for entry in depository.entries.values():
+            for spc in entry.item.reactants + entry.item.products:
+                spc.thermo = self._placeholder_thermo()
+
+        rxns = self.family.get_training_set(get_reverse=True, estimate_thermo=False)
+
+        assert len(rxns) == 1
+        flipped = rxns[0]
+        # The one entry was stored reversed relative to the recombination template, so what comes
+        # back is the forward-oriented recombination.
+        assert len(flipped.reactants) == 2 and len(flipped.products) == 1, str(flipped)
+        assert flipped.electrons == 1, f"expected the negated count +1, got {flipped.electrons}"
+
+
+class TestCreateReactionNegatesElectronsWhenReversed:
+    """
+    KineticsFamily._create_reaction swaps the participant lists when is_forward is False but copied
+    the family-forward electron declaration onto the reaction unchanged. Reaction.electrons is
+    signed relative to the reaction's current orientation, so a reversed reaction must carry the
+    negated count.
+    """
+
+    @classmethod
+    def setup_class(cls):
+        from rmgpy.molecule import Molecule
+
+        root = os.path.join(os.path.dirname(__file__), "electron_propagation_data")
+        database = KineticsDatabase()
+        database.load_families(path=root, families=["Electron_Carrying_Recombination"])
+        cls.family = database.families["Electron_Carrying_Recombination"]
+        assert cls.family.electrons == -1
+        cls.reactants = [Molecule().from_smiles("[CH3]"), Molecule().from_smiles("[CH3]")]
+        cls.products = [Molecule().from_smiles("CC")]
+
+    def test_forward_reaction_keeps_the_family_declaration(self):
+        forward = self.family._create_reaction(self.reactants, self.products, is_forward=True)
+        assert forward is not None
+        assert forward.electrons == -1
+
+    def test_reverse_reaction_negates_the_family_declaration(self):
+        reverse = self.family._create_reaction(self.reactants, self.products, is_forward=False)
+        assert reverse is not None
+        assert reverse.electrons == 1
+
+
+class TestDepositoryDataBorneElectronPrecedence:
+    """
+    KineticsDepository.load kept the data-borne electron count only for an isinstance allowlist
+    (SurfaceChargeTransfer, SurfaceArrheniusBEP) that missed SurfaceChargeTransferBEP,
+    ArrheniusChargeTransfer and ArrheniusChargeTransferBM -- all of which carry their own electrons
+    field -- so a training entry using one of those had its count overwritten by the family default.
+    Keying off the presence of the attribute fixes all of them, and any future class, at once.
+    """
+
+    def test_data_borne_count_wins_for_every_charge_transfer_class(self):
+        from rmgpy.data.kinetics.depository import KineticsDepository
+        from rmgpy.data.kinetics.database import KineticsDatabase
+
+        root = os.path.join(os.path.dirname(__file__), "electron_precedence_data")
+        depository = KineticsDepository(electrons=-1)  # family default the entries must override
+        depository.load(os.path.join(root, "reactions.py"), KineticsDatabase().local_context, {})
+
+        by_index = {entry.index: entry for entry in depository.entries.values()}
+        assert by_index[0].item.electrons == 2, "SurfaceChargeTransferBEP count overwritten"
+        assert by_index[1].item.electrons == -3, "ArrheniusChargeTransfer count overwritten"
+        assert by_index[2].item.electrons == 2, "ArrheniusChargeTransferBM count overwritten"

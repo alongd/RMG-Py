@@ -78,7 +78,11 @@ def expand_electrons(reaction, species_list):
 
     Sign convention matches :meth:`rmgpy.reaction.Reaction.is_balanced`: negative
     ``electrons`` means electrons are consumed (they belong on the reactant side),
-    positive means they are produced (product side).
+    positive means they are produced (product side). ``Reaction.electrons`` is
+    signed relative to the reaction object's current reactant/product
+    orientation, so reversing the object negates it; this helper reads that
+    current-orientation sign. (``KineticsFamily.electrons`` is a different thing --
+    the family-forward declaration.)
 
     Raises :class:`MechanismWriterError` if the reaction needs an electron but the
     mechanism does not define an electron species -- exporting the equation without

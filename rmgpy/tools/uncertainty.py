@@ -1529,7 +1529,7 @@ class Uncertainty(object):
             if self.all_thermo_intermediates is None or len(self.all_thermo_intermediates) != N_q_thermo:
                 self.all_thermo_intermediates = [f'dln[{sens_species.to_chemkin()}]/dG[{self.species_list[sp_idx].to_chemkin()}]' for sp_idx in species_used]
             if self.all_kinetics_intermediates is None or len(self.all_kinetics_intermediates) != N_q_kinetics:
-                self.all_kinetics_intermediates = ['k' + str(self.reaction_list[rxn_idx].index) + ': ' + self.reaction_list[rxn_idx].to_chemkin(kinetics=False) for rxn_idx in reactions_used]
+                self.all_kinetics_intermediates = ['k' + str(self.reaction_list[rxn_idx].index) + ': ' + self.reaction_list[rxn_idx].to_chemkin(species_list=self.species_list, kinetics=False) for rxn_idx in reactions_used]
             
             # append all data points
             thermo_plotting_data = []

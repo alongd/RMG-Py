@@ -75,6 +75,15 @@ def save_output_html(path, reaction_model, part_core_edge='core'):
     elif part_core_edge == 'edge':
         species = reaction_model.edge.species[:] + reaction_model.output_species_list
 
+    # `species` above is the list displayed and drawn on the page. Reaction serialization needs a
+    # COMPLETE species list instead: to_chemkin resolves third-body colliders and places the
+    # electron of a charged reaction from it, and the electron is core reactor state that is absent
+    # from edge.species -- so a charged edge reaction rendered against the edge `species` list would
+    # crash in expand_electrons. Serialize against core+edge+output (as chemkin.pyx already does)
+    # while leaving the displayed `species` list untouched, so the edge page gains no core rows.
+    serialization_species = (reaction_model.core.species[:] + reaction_model.edge.species[:]
+                             + reaction_model.output_species_list)
+
     if not os.path.isdir(os.path.join(dirname, 'species')):
         os.makedirs(os.path.join(dirname, 'species'))
 
@@ -495,7 +504,7 @@ $(document).ready(function() {
 </tr>
 <tr class="chemkin {{ rxn.get_source()|csssafe }} hide_chemkin">
     <td></td>
-    <td colspan="4">{{ rxn.to_chemkin(species) }}</td>
+    <td colspan="4">{{ rxn.to_chemkin(serialization_species) }}</td>
 </tr>
 </tbody>
 {% endfor %}
@@ -508,7 +517,8 @@ $(document).ready(function() {
 """)
 
     f = open(path, 'w')
-    f.write(template.render(title=title, species=species, reactions=reactions, families=families,
+    f.write(template.render(title=title, species=species, serialization_species=serialization_species,
+                            reactions=reactions, families=families,
                             family_count=family_count, get_species_identifier=get_species_identifier,
                             textwrap=textwrap))
     f.close()

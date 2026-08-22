@@ -102,7 +102,15 @@ class Reaction:
     `comment`           ``str``                     A description of the reaction source (optional)
     `is_forward`        ``bool``                    Indicates if the reaction was generated in the forward (true) or reverse (false)
     `rank`              ``int``                     Integer indicating the accuracy of the kinetics for this reaction
+    `electrons`         ``int``                     Stoichiometric coefficient of the electron (negative if a reactant, positive if a product)
     =================== =========================== ============================
+
+    ``electrons`` is signed relative to *this reaction object's current
+    reactant/product orientation*: reversing the object (swapping reactants and
+    products) negates the scalar. This is distinct from
+    :attr:`KineticsFamily.electrons`, which is the family-forward declaration;
+    that declaration must be negated when copied onto a concrete reversed
+    reaction.
 
     """
 
@@ -276,7 +284,9 @@ class Reaction:
         if kinetics:
             return rmgpy.chemkin.write_kinetics_entry(self, species_list)
         else:
-            return rmgpy.chemkin.write_reaction_string(self)
+            # Forward species_list so write_reaction_string folds the metadata electron into the
+            # string; without it a charged reaction is written unbalanced in the E pseudo-element.
+            return rmgpy.chemkin.write_reaction_string(self, species_list=species_list)
 
 
     def to_cantera(self, species_list=None, use_chemkin_identifier=False):
@@ -292,11 +302,20 @@ class Reaction:
         if species_list is None:
             species_list = []
 
+        # Fold metadata electrons into the participant lists before building the equation, so the
+        # in-memory Cantera reaction is balanced in charge and carries the correct reaction order.
+        # Reaction.electrons is signed relative to this object's current orientation (negative =>
+        # electron is a reactant, positive => product); expand_electrons raises rather than
+        # silently dropping the electron when one is required but the mechanism defines no electron
+        # species. The file writers (chemkin.pyx, yaml_cantera2.py) route through the same helper.
+        from rmgpy.electron_balance import expand_electrons
+        reactants, products = expand_electrons(self, species_list)
+
         # Create the dictionaries containing species strings and their stoichiometries
         # for initializing the cantera reaction object
         ct_reactants = {}
         ct_collider = {}
-        for reactant in self.reactants:
+        for reactant in reactants:
             if use_chemkin_identifier:
                 reactant_name = reactant.to_chemkin()
             else:
@@ -306,7 +325,7 @@ class Reaction:
             else:
                 ct_reactants[reactant_name] = 1
         ct_products = {}
-        for product in self.products:
+        for product in products:
             if use_chemkin_identifier:
                 product_name = product.to_chemkin()
             else:
@@ -584,8 +603,16 @@ class Reaction:
             try:
                 species1 = self.products if self.is_forward else self.reactants
                 species2 = other.products if other.is_forward else other.reactants
+                # electrons is signed to each reaction's stored orientation; compare on the
+                # forward basis, matching the forward product side chosen above, so this
+                # high-traffic generation shortcut is not electron-blind.
+                electrons1 = self.electrons if self.is_forward else -self.electrons
+                electrons2 = other.electrons if other.is_forward else -other.electrons
             except AttributeError:
                 raise TypeError('Only use check_template_rxn_products flag for TemplateReactions.')
+
+            if electrons1 != electrons2:
+                return False
 
             return same_species_lists(species1, species2,
                                       check_identical=check_identical,
@@ -593,10 +620,6 @@ class Reaction:
                                       generate_initial_map=generate_initial_map,
                                       strict=strict,
                                       save_order=save_order)
-
-        # compare stoichiometry of electrons in reaction
-        if self.electrons != other.electrons:
-            return False
 
         # Compare reactants to reactants
         forward_reactants_match = same_species_lists(self.reactants, other.reactants,
@@ -617,8 +640,9 @@ class Reaction:
         # Compare specific_collider to specific_collider
         collider_match = (self.specific_collider == other.specific_collider)
 
-        # Return now, if we can
-        if forward_reactants_match and forward_products_match and collider_match:
+        # Return now, if we can. Reaction.electrons is signed relative to each reaction's current
+        # orientation, so a forward (same-orientation) match requires equal electron counts.
+        if forward_reactants_match and forward_products_match and collider_match and self.electrons == other.electrons:
             return True
         if not either_direction:
             return False
@@ -639,8 +663,9 @@ class Reaction:
                                                     strict=strict,
                                                     save_order=save_order)
 
-        # should have already returned if it matches forwards, or we're not allowed to match backwards
-        return reverse_reactants_match and reverse_products_match and collider_match
+        # should have already returned if it matches forwards, or we're not allowed to match backwards.
+        # A reverse (opposite-orientation) match requires the electron count to be negated.
+        return reverse_reactants_match and reverse_products_match and collider_match and self.electrons == -other.electrons
 
     def _apply_CHE_model(self, T):
         """
@@ -656,7 +681,7 @@ class Reaction:
 
         if self.electrons != self.protons:
             raise ReactionError("Number of electrons must equal number of protons! "
-                                f"{self} has {self.electrons} protons and {self.electrons} electrons")
+                                f"{self} has {self.protons} protons and {self.electrons} electrons")
 
 
         H2_thermo = ThermoData(Tdata=([300,400,500,600,800,1000,1500],'K'),
@@ -1730,6 +1755,7 @@ class Reaction:
         other.allow_pdep_route = self.allow_pdep_route
         other.elementary_high_p = self.elementary_high_p
         other.comment = deepcopy(self.comment)
+        other.electrons = self.electrons
 
         return other
 

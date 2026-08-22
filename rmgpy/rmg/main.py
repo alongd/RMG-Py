@@ -1672,10 +1672,10 @@ class RMG(util.Subject):
                     " rate at the relevant conditions\n\n"
                 )
                 for violator in violators:
-                    if isinstance(violator[0].kinetics, (ThirdBody,Troe)):
-                        rxn_string = violator[0].to_chemkin(self.reaction_model.core.species)
-                    else:
-                        rxn_string = violator[0].to_chemkin()
+                    # Pass the core species list unconditionally: it resolves third-body colliders
+                    # (needed by the ThirdBody/Troe kinetics) and lets a charged reaction place its
+                    # metadata electron rather than crash in write_reaction_string.
+                    rxn_string = violator[0].to_chemkin(self.reaction_model.core.species)
                     direction = violator[1]
                     ratio = violator[2]
                     condition = violator[3]

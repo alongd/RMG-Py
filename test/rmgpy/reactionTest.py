@@ -3164,6 +3164,30 @@ class TestChargeTransferReaction:
         assert self.rxn_reduction.protons == -1
         assert self.rxn_oxidation.protons == 1
 
+    def test_apply_che_model_reports_true_proton_count(self):
+        """
+        When ``electrons != protons`` the CHE model is inapplicable and ``_apply_CHE_model``
+        raises. ``Reaction.protons`` is a real computed property (here -1: one proton consumed),
+        distinct from ``electrons``; the message must report it. Previously the message
+        interpolated ``self.electrons`` into the protons slot as well, so under the very condition
+        that guarantees the two differ it could only ever print two equal numbers.
+        """
+        from rmgpy.exceptions import ReactionError
+
+        rxn = Reaction(reactants=self.rxn_reduction.reactants,
+                       products=self.rxn_reduction.products,
+                       electrons=-2,  # protons stays -1, so the two now disagree
+                       kinetics=self.rxn_reduction.kinetics)
+        assert rxn.is_charge_transfer_reaction()
+        assert rxn.protons == -1
+        assert rxn.electrons == -2
+
+        with pytest.raises(ReactionError) as exc_info:
+            rxn._apply_CHE_model(298.0)
+        message = str(exc_info.value)
+        assert '-1 protons' in message, message
+        assert '-2 electrons' in message, message
+
     def test_is_surface_reaction(self):
         """Test is_surface_reaction() method"""
         assert self.rxn_reduction.is_surface_reaction()
@@ -3247,3 +3271,221 @@ class TestChargeTransferReaction:
                 kr = kr_oxidation.get_rate_coefficient(T,V)
                 K = self.rxn_oxidation.get_equilibrium_constant(T,V)
                 assert order_of_magnitude(kf/kr) == order_of_magnitude(K)
+
+
+class TestElectronDirection:
+    """
+    Reaction.electrons is signed relative to the reaction's current orientation. is_isomorphic and
+    to_cantera must honour that: a reaction and its correctly-negated reverse are the same reaction
+    under either_direction, and the in-memory Cantera reaction must carry the electron on the side
+    the sign selects.
+    """
+
+    def setup_class(self):
+        self.neutral = Species(label="OH", molecule=[Molecule().from_smiles("[OH]")])
+        self.anion = Species(label="OHm", molecule=[Molecule().from_smiles("[OH-]")])
+        self.electron = Species(label="e", molecule=[Molecule().from_smiles("e")])
+
+    # --- is_isomorphic (5c) ---
+
+    def test_reduction_and_its_negated_reverse_are_isomorphic_either_direction(self):
+        forward = Reaction(reactants=[self.neutral], products=[self.anion], electrons=-1)
+        reverse = Reaction(reactants=[self.anion], products=[self.neutral], electrons=1)
+        assert forward.is_isomorphic(reverse, either_direction=True)
+
+    def test_reduction_and_its_reverse_are_not_isomorphic_same_direction(self):
+        forward = Reaction(reactants=[self.neutral], products=[self.anion], electrons=-1)
+        reverse = Reaction(reactants=[self.anion], products=[self.neutral], electrons=1)
+        assert not forward.is_isomorphic(reverse, either_direction=False)
+
+    def test_reverse_with_wrong_electron_sign_is_not_isomorphic(self):
+        forward = Reaction(reactants=[self.neutral], products=[self.anion], electrons=-1)
+        wrong = Reaction(reactants=[self.anion], products=[self.neutral], electrons=-1)
+        assert not forward.is_isomorphic(wrong, either_direction=True)
+
+    def test_forward_match_requires_equal_electrons(self):
+        forward = Reaction(reactants=[self.neutral], products=[self.anion], electrons=-1)
+        same = Reaction(reactants=[self.neutral], products=[self.anion], electrons=-1)
+        differ = Reaction(reactants=[self.neutral], products=[self.anion], electrons=-2)
+        assert forward.is_isomorphic(same, either_direction=False)
+        assert not forward.is_isomorphic(differ, either_direction=False)
+
+    def test_check_template_rxn_products_is_electron_aware(self):
+        """
+        The check_template_rxn_products shortcut (the high-traffic generation path, where reactants
+        are known identical and only products are compared) must not be electron-blind: two
+        template reactions with identical products but disagreeing electron counts are different
+        reactions.
+        """
+        from rmgpy.data.kinetics.family import TemplateReaction
+
+        r1 = TemplateReaction(reactants=[self.neutral], products=[self.anion], electrons=-1, is_forward=True)
+        r2 = TemplateReaction(reactants=[self.neutral], products=[self.anion], electrons=-2, is_forward=True)
+        r3 = TemplateReaction(reactants=[self.neutral], products=[self.anion], electrons=-1, is_forward=True)
+
+        assert not r1.is_isomorphic(r2, check_template_rxn_products=True)
+        assert r1.is_isomorphic(r3, check_template_rxn_products=True)
+
+    def test_check_template_rxn_products_treats_unset_orientation_as_reverse(self):
+        """
+        Reaction.is_forward is a Cython bint, so a TemplateReaction built without an explicit
+        orientation stores is_forward as False and is silently treated as reverse: the shortcut
+        compares its *reactant* side and negates its electron count onto the forward basis. That
+        is pre-existing design debt, not introduced here, but the electron comparison added to
+        this shortcut makes it observable, so pin it rather than leave it to be rediscovered.
+        """
+        from rmgpy.data.kinetics.family import TemplateReaction
+
+        # No is_forward given -> stored False -> reverse: compares reactants=[anion],
+        # electrons negated to +1.
+        unset = TemplateReaction(reactants=[self.anion], products=[self.neutral], electrons=-1)
+        # Explicit forward: compares products=[anion], electrons +1 -> matches `unset`.
+        forward_match = TemplateReaction(reactants=[self.neutral], products=[self.anion],
+                                         electrons=1, is_forward=True)
+        # Explicit forward, electrons -1 -> effective -1 -> must NOT match `unset` (proves the
+        # unset reaction's electron was negated to +1, i.e. treated as reverse).
+        forward_mismatch = TemplateReaction(reactants=[self.neutral], products=[self.anion],
+                                            electrons=-1, is_forward=True)
+
+        assert unset.is_isomorphic(forward_match, check_template_rxn_products=True)
+        assert not unset.is_isomorphic(forward_mismatch, check_template_rxn_products=True)
+
+    # --- to_cantera (5d) ---
+
+    def test_to_cantera_places_electron_on_reactant_side(self):
+        rxn = Reaction(reactants=[self.neutral], products=[self.anion], electrons=-1,
+                       kinetics=Arrhenius(A=(1e13, "cm^3/(mol*s)"), n=0, Ea=(10, "kJ/mol")))
+        ct = rxn.to_cantera(species_list=[self.neutral, self.anion, self.electron],
+                            use_chemkin_identifier=False)
+        assert "e" in ct.reactants, ct.reactants
+        assert "e" not in ct.products, ct.products
+
+    def test_to_cantera_places_electron_on_product_side(self):
+        rxn = Reaction(reactants=[self.anion], products=[self.neutral], electrons=1,
+                       kinetics=Arrhenius(A=(1e13, "cm^3/(mol*s)"), n=0, Ea=(10, "kJ/mol")))
+        ct = rxn.to_cantera(species_list=[self.neutral, self.anion, self.electron],
+                            use_chemkin_identifier=False)
+        assert "e" in ct.products, ct.products
+        assert "e" not in ct.reactants, ct.reactants
+
+    def test_to_cantera_fails_when_electron_needed_but_absent(self):
+        from rmgpy.exceptions import MechanismWriterError
+
+        rxn = Reaction(reactants=[self.neutral], products=[self.anion], electrons=-1,
+                       kinetics=Arrhenius(A=(1e13, "cm^3/(mol*s)"), n=0, Ea=(10, "kJ/mol")))
+        with pytest.raises(MechanismWriterError, match="electron"):
+            rxn.to_cantera(species_list=[self.neutral, self.anion], use_chemkin_identifier=False)
+
+    def test_to_chemkin_reaction_string_places_electron(self):
+        """
+        Reaction.to_chemkin(species_list=..., kinetics=False) accepted species_list and then
+        discarded it, so its reaction string dropped the metadata electron. Thread it through so
+        the electron lands on the reactant side, as write_reaction_string already does when given
+        the list.
+        """
+        from rmgpy.chemkin import get_species_identifier
+
+        rxn = Reaction(reactants=[self.neutral], products=[self.anion], electrons=-1)
+        electron_id = get_species_identifier(self.electron)
+        string = rxn.to_chemkin(species_list=[self.neutral, self.anion, self.electron], kinetics=False)
+        reactant_side, arrow, product_side = string.partition("<=>")
+        assert arrow, string
+        assert electron_id in reactant_side, string
+        assert electron_id not in product_side, string
+
+    def test_write_reaction_string_refuses_charged_reaction_without_species_list(self):
+        """
+        write_reaction_string folds the electron only when species_list is given; without one it
+        fell back to the raw reactant/product lists and silently emitted an electronless, E-
+        unbalanced equation for a charged reaction (and skipped the balance/order guards). A
+        charged reaction with no usable species_list must instead raise MechanismWriterError
+        naming the reaction and its electron count. Thermal reactions (electrons == 0) keep the
+        optional-list behaviour.
+        """
+        from rmgpy.chemkin import write_reaction_string
+        from rmgpy.exceptions import MechanismWriterError
+
+        charged = Reaction(reactants=[self.neutral], products=[self.anion], electrons=-1)
+        with pytest.raises(MechanismWriterError, match="electron"):
+            write_reaction_string(charged, species_list=None)
+        with pytest.raises(MechanismWriterError, match="electron"):
+            write_reaction_string(charged, species_list=[])
+
+        # Thermal reaction with no species_list still writes, unchanged.
+        thermal = Reaction(reactants=[self.neutral], products=[self.anion])
+        assert "<=>" in write_reaction_string(thermal)
+
+    def test_cantera_writer1_refuses_metadata_electron_mechanism(self, tmp_path):
+        """
+        CanteraWriter1 has no electron-aware equation path (it overwrites Cantera's equation from
+        raw reactants/products), so it must refuse a metadata-electron mechanism up front with a
+        clear message pointing at CanteraWriter2, rather than crash from inside to_cantera with no
+        explanation.
+        """
+        from rmgpy.yaml_cantera1 import write_cantera
+        from rmgpy.exceptions import MechanismWriterError
+
+        rxn = Reaction(reactants=[self.neutral], products=[self.anion], electrons=-1,
+                       kinetics=Arrhenius(A=(1e13, "s^-1"), n=0, Ea=(10, "kJ/mol")))
+        with pytest.raises(MechanismWriterError, match="CanteraWriter2"):
+            write_cantera([self.neutral, self.anion], [rxn], set(), path=str(tmp_path / "chem.yml"))
+
+
+class TestElectronsSurviveCopyAndPickle:
+    """
+    Reaction.copy() and every subclass's serialization path must carry the electron count.
+    Because electrons is a ``cdef public int`` it zero-initialises silently when a path forgets
+    it, so an erased count looks exactly like a neutral reaction.
+    """
+
+    def setup_class(self):
+        self.a = Species(label="OH", molecule=[Molecule().from_smiles("[OH]")])
+        self.b = Species(label="OHm", molecule=[Molecule().from_smiles("[OH-]")])
+
+    def test_copy_preserves_electrons(self):
+        rxn = Reaction(reactants=[self.a], products=[self.b], electrons=-1)
+        assert rxn.copy().electrons == -1
+
+    def test_pickle_preserves_electrons_for_every_subclass(self):
+        import pickle
+
+        from rmgpy.data.kinetics.family import TemplateReaction
+        from rmgpy.data.kinetics.depository import DepositoryReaction
+        from rmgpy.data.kinetics.library import LibraryReaction
+        from rmgpy.rmg.pdep import PDepReaction
+
+        reactions = [
+            Reaction(reactants=[self.a], products=[self.b]),
+            TemplateReaction(reactants=[self.a], products=[self.b]),
+            DepositoryReaction(reactants=[self.a], products=[self.b]),
+            LibraryReaction(reactants=[self.a], products=[self.b]),
+            PDepReaction(reactants=[self.a], products=[self.b]),
+        ]
+        for rxn in reactions:
+            # electrons is a cdef public int, settable after construction on every subclass, so
+            # the constructors that do not yet accept it can still be exercised here.
+            rxn.electrons = -1
+            restored = pickle.loads(pickle.dumps(rxn))
+            assert restored.electrons == -1, type(rxn).__name__
+
+    def test_library_and_pdep_reactions_accept_electrons(self):
+        from rmgpy.data.kinetics.library import LibraryReaction
+        from rmgpy.rmg.pdep import PDepReaction
+
+        assert LibraryReaction(reactants=[self.a], products=[self.b], electrons=-1).electrons == -1
+        assert PDepReaction(reactants=[self.a], products=[self.b], electrons=-1).electrons == -1
+
+    def test_library_reaction_repr_round_trips_electrons(self):
+        """
+        LibraryReaction.__repr__ claims reconstructability but dropped electrons, so repr/eval
+        silently neutralised a charged library reaction.
+        """
+        from rmgpy.data.kinetics.library import LibraryReaction
+
+        rxn = LibraryReaction(reactants=[self.a], products=[self.b], electrons=-1,
+                              kinetics=Arrhenius(A=(1e13, "s^-1"), n=0, Ea=(10, "kJ/mol")))
+        assert "electrons=" in repr(rxn)
+        namespace = {"LibraryReaction": LibraryReaction, "Species": Species,
+                     "Molecule": Molecule, "Arrhenius": Arrhenius}
+        restored = eval(repr(rxn), namespace)
+        assert restored.electrons == -1

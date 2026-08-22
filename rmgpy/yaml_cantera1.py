@@ -60,6 +60,7 @@ def _multiline_str_representer(dumper, data):
 
 Dumper.add_representer(str, _multiline_str_representer)
 
+from rmgpy.exceptions import MechanismWriterError
 from rmgpy.species import Species
 from rmgpy.kinetics.arrhenius import (
     MultiArrhenius,
@@ -127,6 +128,21 @@ def write_cantera(
     elements_in_use is a set of :class:`Element` singletons. Only those elements
     are listed in the YAML 'elements' block and 'phases.elements' lines.
     """
+
+    # CanteraWriter1 has no electron-aware equation path: reaction_to_dicts overwrites Cantera's
+    # equation with _build_equation_string, built from raw obj.reactants/products, which omits any
+    # metadata electron -- and Reaction.to_cantera now refuses rather than silently drop it. Rather
+    # than crash mid-write or emit a mechanism unbalanced in the E pseudo-element, refuse the whole
+    # mechanism up front and point at the maintained writer, which folds the electron in via
+    # expand_electrons.
+    charged = next((rxn for rxn in rxns if getattr(rxn, 'electrons', 0)), None)
+    if charged is not None:
+        raise MechanismWriterError(
+            'CanteraWriter1 cannot write reactions that carry a metadata electron count '
+            '(e.g. {0!s} with electrons={1:d}): its equation writer omits the electron and would '
+            'produce a mechanism unbalanced in the E pseudo-element. Use CanteraWriter2 '
+            '(generateCanteraYAML, not generateCanteraYAML1), which folds the electron in via '
+            'expand_electrons.'.format(charged, charged.electrons))
 
     try:
         from rmgpy.rmg.main import RMG
