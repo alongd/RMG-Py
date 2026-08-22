@@ -97,7 +97,8 @@ class DepositoryReaction(Reaction):
                                      self.pairs,
                                      self.depository,
                                      self.family,
-                                     self.entry
+                                     self.entry,
+                                     self.electrons,
                                      ))
 
     def get_source(self):

@@ -67,7 +67,8 @@ class PDepReaction(rmgpy.reaction.Reaction):
                  transition_state=None,
                  duplicate=False,
                  degeneracy=1,
-                 pairs=None
+                 pairs=None,
+                 electrons=0
                  ):
         rmgpy.reaction.Reaction.__init__(self,
                                          index=index,
@@ -81,7 +82,8 @@ class PDepReaction(rmgpy.reaction.Reaction):
                                          transition_state=transition_state,
                                          duplicate=duplicate,
                                          degeneracy=degeneracy,
-                                         pairs=pairs
+                                         pairs=pairs,
+                                         electrons=electrons
                                          )
         self.network = network
 
@@ -101,7 +103,8 @@ class PDepReaction(rmgpy.reaction.Reaction):
                                self.transition_state,
                                self.duplicate,
                                self.degeneracy,
-                               self.pairs
+                               self.pairs,
+                               self.electrons
                                ))
 
     def get_source(self):

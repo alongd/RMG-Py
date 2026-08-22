@@ -1846,7 +1846,8 @@ def write_kinetics_entry(reaction, species_list, verbose=True, java_library=Fals
                                                specific_collider=reaction.specific_collider,
                                                reversible=reaction.reversible,
                                                kinetics=kinetics,
-                                               library=reaction.library
+                                               library=reaction.library,
+                                               electrons=reaction.electrons
                                                )
             else:
                 new_reaction = Reaction(index=reaction.index,
@@ -1854,12 +1855,8 @@ def write_kinetics_entry(reaction, species_list, verbose=True, java_library=Fals
                                         products=reaction.products,
                                         specific_collider=reaction.specific_collider,
                                         reversible=reaction.reversible,
-                                        kinetics=kinetics)
-            # Set after construction: LibraryReaction.__init__ takes no `electrons`
-            # keyword. Without this the sub-reaction is neutral, and the electron
-            # bookkeeping of a grouped charged reaction is gone before
-            # expand_electrons ever sees it.
-            new_reaction.electrons = reaction.electrons
+                                        kinetics=kinetics,
+                                        electrons=reaction.electrons)
             string += write_kinetics_entry(new_reaction, species_list, verbose, java_library, commented)
             string += "DUPLICATE\n"
 

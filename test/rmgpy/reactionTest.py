@@ -3333,3 +3333,48 @@ class TestElectronDirection:
                        kinetics=Arrhenius(A=(1e13, "cm^3/(mol*s)"), n=0, Ea=(10, "kJ/mol")))
         with pytest.raises(Exception):
             rxn.to_cantera(species_list=[self.neutral, self.anion], use_chemkin_identifier=False)
+
+
+class TestElectronsSurviveCopyAndPickle:
+    """
+    Reaction.copy() and every subclass's serialization path must carry the electron count.
+    Because electrons is a ``cdef public int`` it zero-initialises silently when a path forgets
+    it, so an erased count looks exactly like a neutral reaction.
+    """
+
+    def setup_class(self):
+        self.a = Species(label="OH", molecule=[Molecule().from_smiles("[OH]")])
+        self.b = Species(label="OHm", molecule=[Molecule().from_smiles("[OH-]")])
+
+    def test_copy_preserves_electrons(self):
+        rxn = Reaction(reactants=[self.a], products=[self.b], electrons=-1)
+        assert rxn.copy().electrons == -1
+
+    def test_pickle_preserves_electrons_for_every_subclass(self):
+        import pickle
+
+        from rmgpy.data.kinetics.family import TemplateReaction
+        from rmgpy.data.kinetics.depository import DepositoryReaction
+        from rmgpy.data.kinetics.library import LibraryReaction
+        from rmgpy.rmg.pdep import PDepReaction
+
+        reactions = [
+            Reaction(reactants=[self.a], products=[self.b]),
+            TemplateReaction(reactants=[self.a], products=[self.b]),
+            DepositoryReaction(reactants=[self.a], products=[self.b]),
+            LibraryReaction(reactants=[self.a], products=[self.b]),
+            PDepReaction(reactants=[self.a], products=[self.b]),
+        ]
+        for rxn in reactions:
+            # electrons is a cdef public int, settable after construction on every subclass, so
+            # the constructors that do not yet accept it can still be exercised here.
+            rxn.electrons = -1
+            restored = pickle.loads(pickle.dumps(rxn))
+            assert restored.electrons == -1, type(rxn).__name__
+
+    def test_library_and_pdep_reactions_accept_electrons(self):
+        from rmgpy.data.kinetics.library import LibraryReaction
+        from rmgpy.rmg.pdep import PDepReaction
+
+        assert LibraryReaction(reactants=[self.a], products=[self.b], electrons=-1).electrons == -1
+        assert PDepReaction(reactants=[self.a], products=[self.b], electrons=-1).electrons == -1

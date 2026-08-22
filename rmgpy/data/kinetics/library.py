@@ -77,6 +77,7 @@ class LibraryReaction(Reaction):
                  elementary_high_p=False,
                  allow_max_rate_violation=False,
                  entry=None,
+                 electrons=0,
                  ):
         Reaction.__init__(self,
                           index=index,
@@ -93,6 +94,7 @@ class LibraryReaction(Reaction):
                           allow_pdep_route=allow_pdep_route,
                           elementary_high_p=elementary_high_p,
                           allow_max_rate_violation=allow_max_rate_violation,
+                          electrons=electrons,
                           )
         self.library = library
         self.family = library
@@ -117,7 +119,8 @@ class LibraryReaction(Reaction):
                                   self.allow_pdep_route,
                                   self.elementary_high_p,
                                   self.allow_max_rate_violation,
-                                  self.entry
+                                  self.entry,
+                                  self.electrons,
                                   ))
 
     def __repr__(self):

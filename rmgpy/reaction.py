@@ -1737,6 +1737,7 @@ class Reaction:
         other.allow_pdep_route = self.allow_pdep_route
         other.elementary_high_p = self.elementary_high_p
         other.comment = deepcopy(self.comment)
+        other.electrons = self.electrons
 
         return other
 
