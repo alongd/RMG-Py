@@ -318,7 +318,9 @@ class KineticsRules(Database):
         elif Aunits == 'cm^6/(mol^2*s)' or Aunits == 'cm^6/(molecule^2*s)' or Aunits == 'm^6/(molecule^2*s)':
             Aunits = 'm^6/(mol^2*s)'
         elif Aunits == '1/s':
-            # dimensionally identical to 's^-1'; normalize to the canonical unimolecular spelling
+            # Exact-spelling match, not dimension parsing: '1/s' is the one alternative spelling of
+            # the unimolecular unit that appears in training data, normalized to the canonical
+            # 's^-1'. Other dimensionally equivalent spellings (e.g. '1/min') are NOT handled here.
             Aunits = 's^-1'
         elif Aunits == 's^-1' or Aunits == 'm^3/(mol*s)' or Aunits == 'm^6/(mol^2*s)':
             # they were already in SI

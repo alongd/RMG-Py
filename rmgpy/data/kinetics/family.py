@@ -4809,7 +4809,9 @@ def average_kinetics(kinetics_list):
     elif Aunits in {'cm^6/(mol^2*s)', 'cm^6/(molecule^2*s)', 'm^6/(molecule^2*s)'}:
         Aunits = 'm^6/(mol^2*s)'
     elif Aunits == '1/s':
-        # dimensionally identical to 's^-1'; normalize to the canonical unimolecular spelling
+        # Exact-spelling match, not dimension parsing: '1/s' is the one alternative spelling of the
+        # unimolecular unit that appears in training data, normalized to the canonical 's^-1'. Other
+        # dimensionally equivalent spellings (e.g. '1/min') are deliberately NOT handled here.
         Aunits = 's^-1'
     elif Aunits in {'s^-1', 'm^3/(mol*s)', 'm^6/(mol^2*s)'}:
         # they were already in SI
