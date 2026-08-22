@@ -39,9 +39,12 @@ and :math:`N_{heavy}` is the total moles of all other (heavy) core species.
 The same EOS implementation (:meth:`PlasmaReactor.compute_volume`) is used at
 initialization and in every residual and Jacobian evaluation.
 
-This reactor is intentionally reachable through **direct construction only**:
-it takes no electron-density argument, has no input-file syntax, and never
-creates an electron species on its own. The caller must supply exactly one
+The reactor constructor takes no electron-density argument and never creates an
+electron species on its own. It can be built directly, or from an input file via
+the ``plasmaReactor(...)`` directive (see :func:`rmgpy.rmg.input.plasma_reactor`),
+which converts an optional ``electronDensity`` into an electron mole fraction on
+the driver side -- the constructor's ``initial_mole_fractions`` remains the single
+source of the electron amount. The caller must supply exactly one
 electron pseudo-species (identified structurally via ``Species.is_electron()``)
 among the core species, a strictly positive initial electron amount, and a
 strictly positive electron temperature. Any unsupported configuration raises
@@ -139,6 +142,23 @@ cdef class PlasmaReactor(ReactionSystem):
 
         self.sens_conditions = sens_conditions
         self.n_sims = n_sims
+
+    def convert_initial_keys_to_species_objects(self, species_dict):
+        """
+        Convert the ``initial_mole_fractions`` dictionary from species labels into
+        species objects, using the given ``species_dict`` (label -> Species).
+
+        The input reader (``read_input_file``) calls this unconditionally on every
+        non-``Reactor`` reaction system after the input file is parsed, once the
+        species objects exist. ``plasma_reactor`` builds ``initial_mole_fractions``
+        keyed by label (including the electron entry it may have inserted from an
+        ``electronDensity`` directive), so this is where those labels become the
+        Species objects that ``initialize_model`` validates and packs.
+        """
+        initial_mole_fractions = {}
+        for label, mole_frac in self.initial_mole_fractions.items():
+            initial_mole_fractions[species_dict[label]] = mole_frac
+        self.initial_mole_fractions = initial_mole_fractions
 
     def _identity(self):
         """A short identity string for this reactor, used in error messages."""

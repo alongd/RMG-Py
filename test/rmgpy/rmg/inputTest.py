@@ -29,6 +29,9 @@
 
 from unittest.mock import patch
 
+import numpy as np
+
+import rmgpy.constants as constants
 import rmgpy.rmg.input as inp
 from rmgpy.exceptions import InputError
 from rmgpy.rmg.input import _parse_writer_config, _writer_config_to_input
@@ -628,3 +631,411 @@ class TestWriterConfig:
 
     def test_writer_config_to_input_none(self):
         assert _writer_config_to_input(None) is False
+
+
+class TestInputPlasmaReactor:
+    """
+    Functional tests for the ``plasmaReactor`` input directive and the electron
+    number-density conversion (I-067 increment 1).
+
+    Every test drives the *public* :func:`rmgpy.rmg.input.read_input_file` so that
+    the ``convert_initial_keys_to_species_objects`` hook at input.py:1737-1739 is
+    genuinely exercised. None of these tests constructs ``plasma_reactor`` or
+    ``PlasmaReactor`` directly: doing so would bypass that hook and hide whether a
+    user can actually run a plasma simulation from an input file.
+    """
+
+    T = 1000.0        # K, gas temperature
+    TE = 11604.5      # K, electron temperature (~1 eV)
+    P_ATM_SI = 101325.0
+    N_E = 1.0e23      # m^-3, requested electron number density
+
+    # ---- helpers -----------------------------------------------------------
+
+    def _read(self, tmp_path, body):
+        """Write ``body`` as an input file and parse it through read_input_file."""
+        path = tmp_path / "input.py"
+        path.write_text(body)
+        rmg = RMG()
+        inp.read_input_file(str(path), rmg)
+        return rmg
+
+    @staticmethod
+    def _e_species():
+        return "species(label='e-', structure=adjacencyList(\"1 e u1 p0 c-1\"))\n"
+
+    @staticmethod
+    def _heavy_species():
+        return (
+            "species(label='Ar', structure=adjacencyList(\"1 Ar u0 p4 c0\"))\n"
+            "species(label='He', structure=adjacencyList(\"1 He u0 p1 c0\"))\n"
+        )
+
+    def _preamble(self):
+        return self._e_species() + self._heavy_species()
+
+    def _expected_conversion(self, n_e, T, Te, P_si):
+        # The builder uses the reactor's own kB = R/Na (not constants.kB) so the EOS it
+        # inverts and the conversion agree by construction; the oracle must match.
+        boltzmann = constants.R / constants.Na
+        q = n_e * boltzmann * Te / P_si
+        a = q * T / Te
+        x_e = a / (1.0 - q + a)
+        heavy_scale = (1.0 - q) / (1.0 - q + a)
+        return q, x_e, heavy_scale
+
+    def _plasma_block(self, extra, mole_fractions="{'Ar': 0.7, 'He': 0.3}",
+                      temperature="(1000,'K')", pressure="(1,'atm')",
+                      electron_temperature="(11604.5,'K')"):
+        return (
+            "plasmaReactor(\n"
+            f"    temperature={temperature},\n"
+            f"    pressure={pressure},\n"
+            f"    electronTemperature={electron_temperature},\n"
+            f"{extra}"
+            f"    initialMoleFractions={mole_fractions},\n"
+            "    terminationTime=(1,'s'),\n"
+            ")\n"
+        )
+
+    # ---- positive path -----------------------------------------------------
+
+    def test_electron_density_conversion(self, tmp_path):
+        """Assertion 1 & 2: electron at x_e, heavy at input*heavy_scale, sum == 1."""
+        body = self._preamble() + self._plasma_block("    electronDensity=(1e23,'m^-3'),\n")
+        rmg = self._read(tmp_path, body)
+        reactor = rmg.reaction_systems[0]
+        imf = {k.label: v for k, v in reactor.initial_mole_fractions.items()}
+        _, x_e, heavy_scale = self._expected_conversion(self.N_E, self.T, self.TE, self.P_ATM_SI)
+        assert imf['e-'] == pytest.approx(x_e, rel=1e-12)
+        assert imf['Ar'] == pytest.approx(0.7 * heavy_scale, rel=1e-12)
+        assert imf['He'] == pytest.approx(0.3 * heavy_scale, rel=1e-12)
+        assert sum(reactor.initial_mole_fractions.values()) == pytest.approx(1.0, abs=1e-12)
+
+    def test_electron_density_round_trip(self, tmp_path):
+        """Assertion 3: the reactor's own compute_volume reproduces the requested n_e."""
+        body = self._preamble() + self._plasma_block("    electronDensity=(1e23,'m^-3'),\n")
+        rmg = self._read(tmp_path, body)
+        reactor = rmg.reaction_systems[0]
+        core = list(reactor.initial_mole_fractions.keys())
+        reactor.initialize_model(core, [], [], [])
+        volume = reactor.compute_volume(reactor.y0)
+        n_e_recovered = reactor.y0[reactor.electron_index] * constants.Na / volume
+        # The conversion uses the reactor's own kB = R/Na (not constants.kB), so the
+        # two sides of the equation of state agree by construction and the round-trip
+        # is exact to floating point.
+        assert n_e_recovered == pytest.approx(self.N_E, rel=1e-12)
+
+    def test_directive_optional_electron_named_directly(self, tmp_path):
+        """Assertion 4: naming the electron directly, with no density directive, still works."""
+        body = self._preamble() + self._plasma_block(
+            "", mole_fractions="{'Ar': 0.7, 'He': 0.2999, 'e-': 1e-4}")
+        rmg = self._read(tmp_path, body)
+        reactor = rmg.reaction_systems[0]
+        imf = {k.label: v for k, v in reactor.initial_mole_fractions.items()}
+        assert 'e-' in imf and imf['e-'] > 0.0
+        assert sum(reactor.initial_mole_fractions.values()) == pytest.approx(1.0, abs=1e-12)
+        core = list(reactor.initial_mole_fractions.keys())
+        reactor.initialize_model(core, [], [], [])
+        assert reactor.y0[reactor.electron_index] > 0.0
+
+    # ---- guard refusals (assertion 5: one per guard) -----------------------
+
+    def test_guard1_ranged_conditions_rejected(self, tmp_path):
+        body = self._preamble() + self._plasma_block(
+            "    electronDensity=(1e23,'m^-3'),\n", mole_fractions="{'Ar': 1.0}",
+            temperature="[(1000,'K'),(2000,'K')]")
+        with pytest.raises(InputError, match='electronDensity'):
+            self._read(tmp_path, body)
+
+    def test_guard2_te_units_rejected(self, tmp_path):
+        body = self._preamble() + self._plasma_block(
+            "    electronDensity=(1e23,'m^-3'),\n", mole_fractions="{'Ar': 1.0}",
+            electron_temperature="(1,'eV')")
+        with pytest.raises(InputError, match='electronTemperature'):
+            self._read(tmp_path, body)
+
+    def test_guard3_q_at_or_above_one_rejected(self, tmp_path):
+        # n_e large enough that P_e >= P (q >= 1): physically impossible.
+        body = self._preamble() + self._plasma_block(
+            "    electronDensity=(1e25,'m^-3'),\n", mole_fractions="{'Ar': 1.0}")
+        with pytest.raises(InputError, match='electronDensity'):
+            self._read(tmp_path, body)
+
+    def test_guard4_near_degenerate_q_rejected(self, tmp_path):
+        from rmgpy.rmg.input import PLASMA_ELECTRON_PRESSURE_MARGIN as margin
+        q_target = 1.0 - 0.5 * margin  # inside the degeneracy band, still q < 1
+        # Use the builder's kB = R/Na so the recomputed q lands exactly at q_target.
+        n_e = q_target * self.P_ATM_SI / ((constants.R / constants.Na) * self.TE)
+        body = self._preamble() + self._plasma_block(
+            f"    electronDensity=({n_e!r},'m^-3'),\n", mole_fractions="{'Ar': 1.0}")
+        with pytest.raises(InputError, match='electronDensity'):
+            self._read(tmp_path, body)
+
+    def test_guard5_duplicate_specification_rejected(self, tmp_path):
+        body = self._preamble() + self._plasma_block(
+            "    electronDensity=(1e23,'m^-3'),\n",
+            mole_fractions="{'Ar': 1.0, 'e-': 1e-4}")
+        with pytest.raises(InputError, match='electronDensity'):
+            self._read(tmp_path, body)
+
+    def test_guard6_zero_density_rejected(self, tmp_path):
+        body = self._preamble() + self._plasma_block(
+            "    electronDensity=(0,'m^-3'),\n", mole_fractions="{'Ar': 1.0}")
+        with pytest.raises(InputError, match='electronDensity'):
+            self._read(tmp_path, body)
+
+    def test_guard6_negative_density_rejected(self, tmp_path):
+        body = self._preamble() + self._plasma_block(
+            "    electronDensity=(-1.0,'m^-3'),\n", mole_fractions="{'Ar': 1.0}")
+        with pytest.raises(InputError, match='electronDensity'):
+            self._read(tmp_path, body)
+
+    def test_guard6_infinite_density_rejected(self, tmp_path):
+        # 1e400 evaluates to inf in the input file (no builtins needed).
+        body = self._preamble() + self._plasma_block(
+            "    electronDensity=(1e400,'m^-3'),\n", mole_fractions="{'Ar': 1.0}")
+        with pytest.raises(InputError, match='electronDensity'):
+            self._read(tmp_path, body)
+
+    def test_guard6_nan_density_rejected(self, tmp_path):
+        # 1e400 - 1e400 evaluates to nan in the input file (no builtins needed).
+        body = self._preamble() + self._plasma_block(
+            "    electronDensity=(1e400 - 1e400,'m^-3'),\n", mole_fractions="{'Ar': 1.0}")
+        with pytest.raises(InputError, match='electronDensity'):
+            self._read(tmp_path, body)
+
+    def test_guard7_missing_electron_species_rejected(self, tmp_path):
+        # Electron species is NOT declared; the density directive must refuse.
+        body = self._heavy_species() + self._plasma_block(
+            "    electronDensity=(1e23,'m^-3'),\n", mole_fractions="{'Ar': 1.0}")
+        with pytest.raises(InputError, match='electron'):
+            self._read(tmp_path, body)
+
+    # ---- review-fix regression guards (I-067 round 2) ----------------------
+
+    def test_guard_density_bare_number_rejected(self, tmp_path):
+        # B1: a bare number carries no dimension; it must not be read as m^-3.
+        body = self._preamble() + self._plasma_block(
+            "    electronDensity=1e23,\n", mole_fractions="{'Ar': 1.0}")
+        with pytest.raises(InputError, match='electronDensity'):
+            self._read(tmp_path, body)
+
+    def test_density_molecule_count_units_accepted_with_avogadro(self, tmp_path):
+        # 'molecule/cm^3' is a count density used interchangeably with cm^-3 in the
+        # plasma literature. RMG defines 'molecule' = mol/Na, so it must be accepted and
+        # converted with the Avogadro factor: 1e11 molecule/cm^3 == 1e17 m^-3. Proving
+        # x_e equality (not merely that it parsed) is what would catch a missing or
+        # doubled Na.
+        body_molecule = self._preamble() + self._plasma_block(
+            "    electronDensity=(1e11,'molecule/cm^3'),\n", mole_fractions="{'Ar': 1.0}")
+        body_si = self._preamble() + self._plasma_block(
+            "    electronDensity=(1e17,'m^-3'),\n", mole_fractions="{'Ar': 1.0}")
+        rmg_molecule = self._read(tmp_path, body_molecule)
+        rmg_si = self._read(tmp_path, body_si)
+        xe_molecule = {k.label: v for k, v in
+                       rmg_molecule.reaction_systems[0].initial_mole_fractions.items()}['e-']
+        xe_si = {k.label: v for k, v in
+                 rmg_si.reaction_systems[0].initial_mole_fractions.items()}['e-']
+        assert xe_molecule == pytest.approx(xe_si, rel=1e-12)
+
+    def test_density_plural_molecules_units_accepted(self, tmp_path):
+        # The plural 'molecules/cm^3' must be treated identically to 'molecule/cm^3'.
+        body_plural = self._preamble() + self._plasma_block(
+            "    electronDensity=(1e11,'molecules/cm^3'),\n", mole_fractions="{'Ar': 1.0}")
+        body_si = self._preamble() + self._plasma_block(
+            "    electronDensity=(1e17,'m^-3'),\n", mole_fractions="{'Ar': 1.0}")
+        rmg_plural = self._read(tmp_path, body_plural)
+        rmg_si = self._read(tmp_path, body_si)
+        xe_plural = {k.label: v for k, v in
+                     rmg_plural.reaction_systems[0].initial_mole_fractions.items()}['e-']
+        xe_si = {k.label: v for k, v in
+                 rmg_si.reaction_systems[0].initial_mole_fractions.items()}['e-']
+        assert xe_plural == pytest.approx(xe_si, rel=1e-12)
+
+    def test_density_reciprocal_volume_units_accepted(self, tmp_path):
+        # '1/cm^3' is dimensionally inverse-volume (dim 1/m^3) and must be accepted as a
+        # raw count density, equal to the cm^-3 spelling.
+        body_recip = self._preamble() + self._plasma_block(
+            "    electronDensity=(1e17,'1/cm^3'),\n", mole_fractions="{'Ar': 1.0}")
+        body_cm = self._preamble() + self._plasma_block(
+            "    electronDensity=(1e17,'cm^-3'),\n", mole_fractions="{'Ar': 1.0}")
+        rmg_recip = self._read(tmp_path, body_recip)
+        rmg_cm = self._read(tmp_path, body_cm)
+        xe_recip = {k.label: v for k, v in
+                    rmg_recip.reaction_systems[0].initial_mole_fractions.items()}['e-']
+        xe_cm = {k.label: v for k, v in
+                 rmg_cm.reaction_systems[0].initial_mole_fractions.items()}['e-']
+        assert xe_recip == pytest.approx(xe_cm, rel=1e-12)
+
+    def test_guard_density_molar_concentration_still_rejected(self, tmp_path):
+        # A molar concentration is NOT a count density; it must stay rejected even though
+        # it shares the molecule dimensionality.
+        body = self._preamble() + self._plasma_block(
+            "    electronDensity=(1e17,'mol/m^3'),\n", mole_fractions="{'Ar': 1.0}")
+        with pytest.raises(InputError, match='electronDensity'):
+            self._read(tmp_path, body)
+
+    def test_density_cm3_units_accepted(self, tmp_path):
+        # B1: cm^-3 is a valid number density; the guard must not reject it, and the
+        # conversion must round-trip (1e17 cm^-3 == 1e23 m^-3).
+        body = self._preamble() + self._plasma_block(
+            "    electronDensity=(1e17,'cm^-3'),\n", mole_fractions="{'Ar': 1.0}")
+        rmg = self._read(tmp_path, body)
+        reactor = rmg.reaction_systems[0]
+        core = list(reactor.initial_mole_fractions.keys())
+        reactor.initialize_model(core, [], [], [])
+        volume = reactor.compute_volume(reactor.y0)
+        n_e_recovered = reactor.y0[reactor.electron_index] * constants.Na / volume
+        assert n_e_recovered == pytest.approx(1e23, rel=1e-9)
+
+    def test_shared_mole_fraction_dict_not_mutated(self, tmp_path):
+        # B2: one dict bound once and passed to two reactor blocks must not have the
+        # first reactor rewritten by the second (which would trip the duplicate guard).
+        body = (
+            self._preamble() +
+            "imf = {'Ar': 0.7, 'He': 0.3}\n"
+            "plasmaReactor(temperature=(1000,'K'), pressure=(1,'atm'), "
+            "electronTemperature=(11604.5,'K'), electronDensity=(1e23,'m^-3'), "
+            "initialMoleFractions=imf, terminationTime=(1,'s'))\n"
+            "plasmaReactor(temperature=(1500,'K'), pressure=(1,'atm'), "
+            "electronTemperature=(11604.5,'K'), electronDensity=(1e23,'m^-3'), "
+            "initialMoleFractions=imf, terminationTime=(1,'s'))\n"
+        )
+        rmg = self._read(tmp_path, body)
+        assert len(rmg.reaction_systems) == 2
+        for reactor in rmg.reaction_systems:
+            labels = {k.label for k in reactor.initial_mole_fractions}
+            assert 'e-' in labels
+            assert sum(reactor.initial_mole_fractions.values()) == pytest.approx(1.0, abs=1e-12)
+
+    def test_guard_multiple_electron_species_rejected(self, tmp_path):
+        # B3: more than one electron species is ambiguous; refuse before mutating,
+        # rather than let the reactor reject it later at the wrong layer.
+        body = (
+            "species(label='e-', structure=adjacencyList(\"1 e u1 p0 c-1\"))\n"
+            "species(label='eX', structure=adjacencyList(\"1 e u0 p0 c-1\"))\n"
+            "species(label='Ar', structure=adjacencyList(\"1 Ar u0 p4 c0\"))\n"
+            + self._plasma_block("    electronDensity=(1e23,'m^-3'),\n",
+                                 mole_fractions="{'Ar': 1.0}")
+        )
+        with pytest.raises(InputError, match='electron'):
+            self._read(tmp_path, body)
+
+    def test_zero_pressure_reported_as_pressure(self, tmp_path):
+        # B5: P=0 must raise a clear 'pressure' InputError, not a raw ZeroDivisionError
+        # and not be misattributed to electronDensity.
+        body = self._preamble() + self._plasma_block(
+            "    electronDensity=(1e23,'m^-3'),\n", mole_fractions="{'Ar': 1.0}",
+            pressure="(0,'Pa')")
+        with pytest.raises(InputError, match='pressure'):
+            self._read(tmp_path, body)
+
+    def test_negative_temperature_reported_as_temperature(self, tmp_path):
+        # B5: T is validated before the conversion arithmetic, with its own message.
+        body = self._preamble() + self._plasma_block(
+            "    electronDensity=(1e23,'m^-3'),\n", mole_fractions="{'Ar': 1.0}",
+            temperature="(-5,'K')")
+        with pytest.raises(InputError, match='temperature'):
+            self._read(tmp_path, body)
+
+    def test_bare_number_electron_temperature_rejected(self, tmp_path):
+        # Minor: Te must be given as (value, 'K'); a bare number is refused.
+        body = self._preamble() + self._plasma_block(
+            "    electronDensity=(1e23,'m^-3'),\n", mole_fractions="{'Ar': 1.0}",
+            electron_temperature="11604.5")
+        with pytest.raises(InputError, match='electronTemperature'):
+            self._read(tmp_path, body)
+
+    # ---- non-finite mole fractions (I-067 round 4) -------------------------
+
+    def test_nan_mole_fraction_rejected_plain_path(self, tmp_path):
+        # nan < 0 is False, so without an explicit finiteness check a nan slips past
+        # every guard. Plain path (no electronDensity), electron named directly.
+        body = self._preamble() + self._plasma_block(
+            "", mole_fractions="{'Ar': (1e400 - 1e400), 'He': 0.3, 'e-': 1e-4}")
+        with pytest.raises(InputError, match='finite'):
+            self._read(tmp_path, body)
+
+    def test_inf_mole_fraction_rejected_plain_path(self, tmp_path):
+        body = self._preamble() + self._plasma_block(
+            "", mole_fractions="{'Ar': 1e400, 'He': 0.3, 'e-': 1e-4}")
+        with pytest.raises(InputError, match='finite'):
+            self._read(tmp_path, body)
+
+    def test_nan_mole_fraction_rejected_density_path(self, tmp_path):
+        # electronDensity path normalizes differently (heavy_total then scale); a nan
+        # heavy fraction must be refused, not divided through.
+        body = self._preamble() + self._plasma_block(
+            "    electronDensity=(1e23,'m^-3'),\n",
+            mole_fractions="{'Ar': (1e400 - 1e400), 'He': 0.3}")
+        with pytest.raises(InputError, match='finite'):
+            self._read(tmp_path, body)
+
+    def test_inf_mole_fraction_rejected_density_path(self, tmp_path):
+        body = self._preamble() + self._plasma_block(
+            "    electronDensity=(1e23,'m^-3'),\n",
+            mole_fractions="{'Ar': 1e400, 'He': 0.3}")
+        with pytest.raises(InputError, match='finite'):
+            self._read(tmp_path, body)
+
+    # ---- save_input_file round-trip (I-067 round 4) ------------------------
+
+    def test_save_input_file_round_trips_plasma_reactor(self, tmp_path):
+        # A plasma reactor written by save_input_file must come back as a PlasmaReactor,
+        # not a simpleReactor with electronTemperature dropped. Real round-trip: read ->
+        # save -> RE-READ the whole saved file -> assert PlasmaReactor with T, P, Te and
+        # every mole fraction intact (to the writer's %g precision).
+        from rmgpy.solver.plasma import PlasmaReactor
+        body = (
+            "database(thermoLibraries=['primaryThermoLibrary'], reactionLibraries=[], "
+            "seedMechanisms=[], kineticsFamilies='default')\n"
+            + self._preamble()
+            + self._plasma_block("    electronDensity=(1e23,'m^-3'),\n",
+                                 mole_fractions="{'Ar': 0.7, 'He': 0.3}")
+            + "simulator(atol=1e-16, rtol=1e-8)\n"
+            + "model(toleranceMoveToCore=0.1, toleranceInterruptSimulation=0.1)\n"
+        )
+        rmg1 = self._read(tmp_path, body)
+        reactor1 = rmg1.reaction_systems[0]
+        assert isinstance(reactor1, PlasmaReactor)
+
+        saved = tmp_path / "saved.py"
+        inp.save_input_file(str(saved), rmg1)
+
+        rmg2 = RMG()
+        inp.read_input_file(str(saved), rmg2)
+        reactor2 = rmg2.reaction_systems[0]
+        assert isinstance(reactor2, PlasmaReactor)
+        assert reactor2.T.value_si == pytest.approx(reactor1.T.value_si, rel=1e-5)
+        assert reactor2.P.value_si == pytest.approx(reactor1.P.value_si, rel=1e-5)
+        assert reactor2.Te.value_si == pytest.approx(reactor1.Te.value_si, rel=1e-5)
+        mf1 = {k.label: v for k, v in reactor1.initial_mole_fractions.items()}
+        mf2 = {k.label: v for k, v in reactor2.initial_mole_fractions.items()}
+        assert set(mf1) == set(mf2)
+        for label in mf1:
+            assert mf2[label] == pytest.approx(mf1[label], rel=1e-5)
+
+    def test_save_input_file_round_trips_kinetics_depositories_all(self, tmp_path):
+        # The reader maps kineticsDepositories='all' to rmg.kinetics_depositories = None;
+        # the writer must serialize None back to 'all' or the saved file cannot be re-read.
+        # The list form already round-trips, so 'all' is the case that proves the sentinel.
+        from rmgpy.solver.plasma import PlasmaReactor
+        body = (
+            "database(thermoLibraries=['primaryThermoLibrary'], reactionLibraries=[], "
+            "seedMechanisms=[], kineticsFamilies='default', kineticsDepositories='all')\n"
+            + self._preamble()
+            + self._plasma_block("    electronDensity=(1e23,'m^-3'),\n",
+                                 mole_fractions="{'Ar': 0.7, 'He': 0.3}")
+            + "simulator(atol=1e-16, rtol=1e-8)\n"
+            + "model(toleranceMoveToCore=0.1, toleranceInterruptSimulation=0.1)\n"
+        )
+        rmg1 = self._read(tmp_path, body)
+        assert rmg1.kinetics_depositories is None  # 'all' -> None in the reader
+        saved = tmp_path / "saved.py"
+        inp.save_input_file(str(saved), rmg1)
+
+        rmg2 = RMG()
+        inp.read_input_file(str(saved), rmg2)  # must not raise on the 'all' sentinel
+        assert isinstance(rmg2.reaction_systems[0], PlasmaReactor)
+        assert rmg2.kinetics_depositories is None  # the sentinel survived the round-trip

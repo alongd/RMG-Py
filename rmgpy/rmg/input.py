@@ -32,7 +32,9 @@ import os
 from copy import deepcopy
 
 import numpy as np
+import quantities as pq
 
+import rmgpy.constants as constants
 from rmgpy import settings
 from rmgpy.data.base import Entry
 from rmgpy.data.solvation import SolventData
@@ -57,6 +59,7 @@ from rmgpy.rmg.reactionmechanismsimulator_reactors import (
 from rmgpy.rmg.settings import ModelSettings, SimulatorSettings, WriterConfig
 from rmgpy.solver.liquid import LiquidReactor
 from rmgpy.solver.mbSampled import MBSampledReactor
+from rmgpy.solver.plasma import PlasmaReactor
 from rmgpy.solver.simple import SimpleReactor
 from rmgpy.solver.surface import SurfaceReactor
 from rmgpy.solver.termination import (
@@ -493,6 +496,264 @@ def simple_reactor(temperature,
                              'fraction of the balance species, this would require the balanceSpecies mole fraction to '
                              'be negative in some cases which is not allowed, either reduce the maximum mole fractions '
                              'or dont use balanceSpecies')
+
+# NUMERICAL degeneracy guard only -- NOT a physical plausibility limit. As the electron
+# partial-pressure ratio q = P_e / P -> 1, the two-temperature equation of state
+# V = R((N_total - N_e) T + N_e Te) / P sends the volume to infinity and the electron
+# mole fraction to 1, so the derived x_e/heavy_scale lose all numerical meaning. This
+# margin only refuses q so close to 1 that the arithmetic itself breaks down; it implies
+# no physical ceiling on ionization -- q = 0.999999999 is still accepted. The value is a
+# numerical design choice, deliberately named and exposed here so a reviewer can argue
+# with it.
+PLASMA_ELECTRON_PRESSURE_MARGIN = 1.0e-9
+
+
+def plasma_reactor(temperature,
+                   pressure,
+                   initialMoleFractions,
+                   electronTemperature,
+                   electronDensity=None,
+                   terminationConversion=None,
+                   terminationTime=None,
+                   terminationRateRatio=None):
+    """
+    Define a two-temperature plasma batch reactor (:class:`PlasmaReactor`) from an
+    input file.
+
+    ``electronTemperature`` sets the electron temperature ``Te`` and must be given in
+    the exact ``(value, 'K')`` form (the check is on the unit string ``'K'``; bare
+    numbers and non-kelvin units, electronvolts in particular, are refused). The
+    electron amount may be stated either explicitly, as an electron entry in
+    ``initialMoleFractions``, or -- the plasma-modeller convention -- as a number
+    density via the optional ``electronDensity`` directive, whose units must be a count
+    density: an inverse volume (``'m^-3'``, ``'cm^-3'``) or a molecule count
+    (``'molecule/cm^3'``, ``'molecules/m^3'``), e.g. ``electronDensity=(1e17, 'm^-3')``
+    or ``(1e11, 'molecule/cm^3')``. Molar concentrations (``mol/m^3``) and bare numbers
+    are rejected.
+
+    Ordering: because ``electronDensity`` is resolved against the declared electron
+    pseudo-species, the ``species(...)`` directive declaring the electron must appear
+    **before** this ``plasmaReactor(...)`` block in the input file.
+
+    When ``electronDensity`` is supplied it is converted, entirely on the driver side,
+    into an electron mole fraction ``x_e`` that is inserted into
+    ``initialMoleFractions``; every heavy species' mole fraction is scaled so the
+    composition still sums to one. The reactor constructor takes no electron-density
+    argument: ``initialMoleFractions`` is the single source of the electron amount.
+
+    .. note::
+        ``electronDensity`` sets only the *initial* electron number density. The
+        reactor recomputes its volume at every step from the evolving composition, so
+        the electron density does **not** remain fixed at this value -- it is an
+        initial condition, not a maintained constraint.
+    """
+    logging.debug('Found PlasmaReactor reaction system')
+
+    # Defensive copy: the conversion below mutates this dict (scaling heavy fractions,
+    # inserting the electron) and the SAME object is then stored on the reactor. An
+    # input file that binds one dict and passes it to two reactor blocks would otherwise
+    # have its first reactor silently rewritten by the second. Copy before touching it.
+    initialMoleFractions = dict(initialMoleFractions)
+
+    # PlasmaReactor is scalar-only. A single electronDensity directive resolves to a
+    # single electron mole fraction from (T, P, Te), so it cannot span a condition
+    # sweep; refuse ranged conditions at the door and say why.
+    ranged = (isinstance(temperature, list) or isinstance(pressure, list)
+              or isinstance(electronTemperature, list)
+              or any(isinstance(v, list) for v in initialMoleFractions.values()))
+    if ranged:
+        if electronDensity is not None:
+            raise InputError(
+                "electronDensity cannot be combined with ranged temperature, pressure, "
+                "electronTemperature or mole fractions: the electron mole fraction "
+                "depends on (T, P, Te), so a single electronDensity directive cannot "
+                "produce a single composition across a condition sweep. Supply scalar "
+                "conditions, or state the electron amount explicitly in "
+                "initialMoleFractions.")
+        raise InputError(
+            "PlasmaReactor supports only scalar temperature, pressure, "
+            "electronTemperature and mole fractions; ranged/condition-sweep plasma "
+            "reactors are not supported.")
+
+    for key, value in initialMoleFractions.items():
+        initialMoleFractions[key] = float(value)
+        # Finiteness must be checked before the sign test: nan < 0 is False, so a nan
+        # (or inf) would otherwise slip past every guard below -- heavy_total = sum(...)
+        # becomes nan, heavy_total <= 0.0 is False for nan, and the whole composition is
+        # divided by nan while only x_e stays finite.
+        if not np.isfinite(initialMoleFractions[key]):
+            raise InputError(
+                "Initial mole fraction for {0!r} must be finite; got {1!r}.".format(
+                    key, initialMoleFractions[key]))
+        if initialMoleFractions[key] < 0:
+            raise InputError('Initial mole fractions cannot be negative.')
+
+    # Te must be temperature-dimensioned in kelvin. The reactor stores Te as a generic
+    # Quantity and consumes .value_si as kelvin, so a non-kelvin electronTemperature
+    # (electronvolts in particular) would silently corrupt the equation of state.
+    te_quantity = Quantity(electronTemperature)
+    if te_quantity.units != 'K':
+        raise InputError(
+            "electronTemperature must be given in kelvin (units 'K'); got units {0!r}. "
+            "Electronvolts and other non-kelvin units are rejected: the reactor consumes "
+            "Te as kelvin, so a non-kelvin electronTemperature would silently corrupt the "
+            "two-temperature equation of state.".format(te_quantity.units))
+
+    if electronDensity is not None:
+        # Locate the electron pseudo-species declared in the input file. Require exactly
+        # one: zero is unresolvable, and more than one makes the directive's target
+        # ambiguous -- refuse here, at the directive, rather than let the reactor reject
+        # multiple core electrons later (wrong layer, and only after the composition has
+        # already been mutated against an arbitrarily-chosen electron).
+        electron_labels = [label for label, spc in species_dict.items()
+                           if callable(getattr(spc, 'is_electron', None)) and spc.is_electron()]
+        if len(electron_labels) == 0:
+            raise InputError(
+                "electronDensity was supplied but no electron pseudo-species is declared "
+                "in the input file; declare one (e.g. species(label='e-', "
+                "structure=adjacencyList('1 e u1 p0 c-1'))) before using electronDensity.")
+        if len(electron_labels) > 1:
+            raise InputError(
+                "electronDensity is ambiguous: {0} electron pseudo-species are declared "
+                "({1!r}); the directive cannot decide which to populate. Declare exactly "
+                "one electron species.".format(len(electron_labels), sorted(electron_labels)))
+        electron_label = electron_labels[0]
+
+        # Exactly one source of truth for the electron amount: reject a directive that
+        # duplicates an explicit electron entry rather than trying to prove them equal.
+        if electron_label in initialMoleFractions:
+            raise InputError(
+                "electronDensity was supplied together with an explicit electron entry "
+                "{0!r} in initialMoleFractions; these are two sources of truth for the "
+                "electron amount and may disagree. Supply exactly one: either the "
+                "electronDensity directive or the electron mole fraction, not "
+                "both.".format(electron_label))
+
+        # electronDensity must be a count density. Two dimensionally-distinct spellings
+        # are accepted; validate before reading value_si so a wrong dimension cannot be
+        # read as a raw m^-3 count and silently corrupt the composition:
+        #   * inverse volume ('m^-3', 'cm^-3', ...): value_si is already a raw count/m^3.
+        #   * molecule count ('molecule/cm^3', 'molecules/m^3', ...): RMG defines
+        #     'molecule' = mol/Na (rmgpy/quantity.py), so value_si is a MOLAR amount per
+        #     volume; multiply by constants.Na to recover a raw count/m^3. cm^-3 and
+        #     molecule/cm^3 are used interchangeably in the plasma literature, so a
+        #     modeller who types the latter gets the right answer, off by no Avogadro.
+        # Molar concentrations (mol/m^3) share the molecule dimensionality but are NOT
+        # count densities and stay rejected, as do bare numbers.
+        density_quantity = Quantity(electronDensity)
+        density_units = density_quantity.units
+        number_density_dimensionality = (1.0 / pq.m ** 3).simplified.dimensionality
+        molecule_density_dimensionality = (pq.mol / pq.m ** 3).simplified.dimensionality
+        try:
+            density_dimensionality = pq.Quantity(1.0, density_units).simplified.dimensionality
+        except Exception:
+            density_dimensionality = None
+        substance_head = density_units.replace(' ', '').lower().split('/')[0]
+        if density_dimensionality == number_density_dimensionality:
+            n_e = density_quantity.value_si
+        elif (density_dimensionality == molecule_density_dimensionality
+              and substance_head in ('molecule', 'molecules')):
+            # value_si is molar-per-volume because 'molecule' == mol/Na; restore the count.
+            n_e = density_quantity.value_si * constants.Na
+        else:
+            raise InputError(
+                "electronDensity must be a count density: inverse-volume units ('m^-3', "
+                "'cm^-3') or molecule-count units ('molecule/cm^3', 'molecules/m^3'); got "
+                "units {0!r}. Bare numbers and molar concentrations (mol/m^3) are rejected "
+                "-- a molar concentration is not a count density, and reading a wrong "
+                "dimension as a raw number density would silently corrupt the "
+                "composition.".format(density_units))
+        if not np.isfinite(n_e) or n_e <= 0.0:
+            raise InputError(
+                "electronDensity must be finite and strictly positive; got {0!r} m^-3 "
+                "(SI).".format(n_e))
+
+        t_si = Quantity(temperature).value_si
+        p_si = Quantity(pressure).value_si
+        te_si = te_quantity.value_si
+
+        # Validate T, P, Te BEFORE any conversion arithmetic: dividing by p_si below
+        # would otherwise raise a raw ZeroDivisionError on P=0, and a bad T/P/Te would be
+        # reported as an electronDensity error. Each gets its own message.
+        for name, value_si in (('temperature', t_si), ('pressure', p_si),
+                               ('electronTemperature', te_si)):
+            if not np.isfinite(value_si) or value_si <= 0.0:
+                raise InputError(
+                    "{0} must be finite and strictly positive; got {1!r} (SI).".format(
+                        name, value_si))
+
+        # q = P_e / P with P_e = n_e * kB * Te. Use the reactor's own kB = R / Na rather
+        # than constants.kB: compute_volume's EOS uses constants.R, and the constants
+        # module has Na * kB != R (independent CODATA rounding), so using R / Na here makes
+        # both sides of the inversion agree by construction and the round-trip exact.
+        # Use the dimensionless ratio q, never the difference P - P_e (which loses all
+        # significant digits as P_e -> P).
+        boltzmann = constants.R / constants.Na
+        q = (n_e * boltzmann * te_si) / p_si
+        if not np.isfinite(q) or q <= 0.0 or q >= 1.0:
+            raise InputError(
+                "electronDensity implies an electron partial-pressure ratio q = P_e/P = "
+                "{0!r}, outside the physical open interval (0, 1); q >= 1 means the "
+                "electron partial pressure meets or exceeds the total pressure. Reduce "
+                "electronDensity or raise the pressure.".format(q))
+        if (1.0 - q) < PLASMA_ELECTRON_PRESSURE_MARGIN:
+            raise InputError(
+                "electronDensity is near-degenerate: q = P_e/P = {0!r} leaves 1 - q = "
+                "{1!r}, below the margin PLASMA_ELECTRON_PRESSURE_MARGIN = {2!r}; the "
+                "two-temperature volume diverges here. Reduce electronDensity.".format(
+                    q, 1.0 - q, PLASMA_ELECTRON_PRESSURE_MARGIN))
+
+        # x_e and heavy_scale derived from compute_volume; see the module docstring of
+        # rmgpy/solver/plasma.pyx. a = q*T/Te; x_e = a/(1-q+a); heavy_scale = (1-q)/(1-q+a).
+        a = q * t_si / te_si
+        x_e = a / (1.0 - q + a)
+        heavy_scale = (1.0 - q) / (1.0 - q + a)
+
+        # The round-trip identity (compute_volume reproduces n_e) requires the heavy
+        # fractions to sum to one; normalize them first (as simple_reactor does), then
+        # scale by heavy_scale and insert the electron so the total is one again.
+        heavy_total = sum(initialMoleFractions.values())
+        # Reject non-finite explicitly: `heavy_total <= 0.0` is False for nan, so a nan
+        # total would otherwise pass. (The per-fraction finiteness check above already
+        # guards the inputs; this is defence in depth against a nan reaching the divide.)
+        if not np.isfinite(heavy_total) or heavy_total <= 0.0:
+            raise InputError(
+                "the heavy-species mole fractions supplied with electronDensity sum to "
+                "{0!r}; a finite, strictly positive total is required.".format(heavy_total))
+        for label in initialMoleFractions:
+            initialMoleFractions[label] = initialMoleFractions[label] / heavy_total * heavy_scale
+        initialMoleFractions[electron_label] = x_e
+    else:
+        # Electron stated explicitly (or absent -- the reactor will reject that later).
+        # Normalize the composition to sum to one, matching simple_reactor.
+        total = sum(initialMoleFractions.values())
+        if total > 0.0 and total != 1.0:
+            for label in initialMoleFractions:
+                initialMoleFractions[label] = initialMoleFractions[label] / total
+
+    termination = []
+    if terminationConversion is not None:
+        for spec, conv in terminationConversion.items():
+            termination.append(TerminationConversion(species_dict[spec], conv))
+    if terminationTime is not None:
+        termination.append(TerminationTime(Quantity(terminationTime)))
+    if terminationRateRatio is not None:
+        termination.append(TerminationRateRatio(terminationRateRatio))
+    if len(termination) == 0:
+        raise InputError('No termination conditions specified for reaction system #{0}.'.format(len(rmg.reaction_systems) + 2))
+
+    # Every argument passed by keyword: PlasmaReactor's fourth positional argument is
+    # Te, not n_sims as in simple_reactor -- do not copy that call shape.
+    system = PlasmaReactor(
+        T=temperature,
+        P=pressure,
+        initial_mole_fractions=initialMoleFractions,
+        Te=electronTemperature,
+        n_sims=1,
+        termination=termination,
+    )
+    rmg.reaction_systems.append(system)
+
 
 def constant_V_ideal_gas_reactor(temperature,
                    pressure,
@@ -1692,6 +1953,7 @@ def read_input_file(path, rmg0):
         'adjacencyListGroup': adjacency_list_group,
         'react': react,
         'simpleReactor': simple_reactor,
+        'plasmaReactor': plasma_reactor,
         'constantVIdealGasReactor' : constant_V_ideal_gas_reactor,
         'constantTPIdealGasReactor' : constant_TP_ideal_gas_reactor,
         'liquidSurfaceReactor' : liquid_cat_reactor,
@@ -1822,7 +2084,13 @@ def save_input_file(path, rmg):
     f.write('    thermoLibraries = {0!r},\n'.format(rmg.thermo_libraries))
     f.write('    reactionLibraries = {0!r},\n'.format(rmg.reaction_libraries))
     f.write('    seedMechanisms = {0!r},\n'.format(rmg.seed_mechanisms))
-    f.write('    kinetics_depositories = {0!r},\n'.format(rmg.kinetics_depositories))
+    # database() takes kineticsDepositories (camelCase); the snake_case spelling raised
+    # TypeError on re-read (pre-existing bug, latent -- no in-repo caller). The reader
+    # also maps the string sentinel 'all' to rmg.kinetics_depositories = None and then
+    # rejects None on re-read (it is neither 'default', 'all', nor a list); serialize the
+    # sentinel back to 'all' so a kineticsDepositories='all' input round-trips.
+    kinetics_depositories = 'all' if rmg.kinetics_depositories is None else rmg.kinetics_depositories
+    f.write('    kineticsDepositories = {0!r},\n'.format(kinetics_depositories))
     f.write('    kineticsFamilies = {0!r},\n'.format(rmg.kinetics_families))
     f.write('    kineticsEstimator = {0!r},\n'.format(rmg.kinetics_estimator))
     f.write(')\n\n')
@@ -1877,7 +2145,22 @@ def save_input_file(path, rmg):
 
     # Reaction systems
     for system in rmg.reaction_systems:
-        if rmg.solvent:
+        if isinstance(system, PlasmaReactor):
+            # A specific reactor type wins over the global rmg.solvent flag: a
+            # PlasmaReactor must be written as one even in a solvated input, not silently
+            # misclassified as a liquidReactor (with electronTemperature dropped). This
+            # branch leads the chain for that reason. Kwargs are comma-terminated so the
+            # emitted block is valid, re-readable Python.
+            f.write('plasmaReactor(\n')
+            f.write('    temperature = ' + format_temperature(system) + ',\n')
+            f.write('    pressure = ' + format_pressure(system) + ',\n')
+            f.write('    electronTemperature = ({0:g},"{1!s}"),\n'.format(system.Te.value, system.Te.units))
+            # Write the explicit mole fractions the reactor holds, electron included.
+            # electronDensity is deliberately not reconstructed: it was an input-time
+            # convenience, not reactor state, and the mole fractions are the ground truth.
+            f.write('    initialMoleFractions={\n')
+            f.write(format_initial_mole_fractions(system))
+        elif rmg.solvent:
             f.write('liquidReactor(\n')
             f.write('    temperature = ' + format_temperature(system) + '\n')
             f.write('    initialConcentrations={\n')
@@ -2005,6 +2288,11 @@ def save_input_file(path, rmg):
     if rmg.species_constraints:
         f.write('generatedSpeciesConstraints(\n')
         for constraint, value in sorted(list(rmg.species_constraints.items()), key=lambda constraint: constraint[0]):
+            # explicitlyAllowedMolecules is injected internally by read_input_file and is
+            # not a valid generatedSpeciesConstraints() kwarg; emitting it makes the block
+            # unreadable (pre-existing bug, latent -- no in-repo caller).
+            if constraint == 'explicitlyAllowedMolecules':
+                continue
             if value is not None:
                 f.write('    {0} = {1},\n'.format(constraint, value))
         f.write(')\n\n')
@@ -2020,7 +2308,10 @@ def save_input_file(path, rmg):
     f.write('    keepIrreversible = {0},\n'.format(rmg.keep_irreversible))
     f.write('    trimolecularProductReversible = {0},\n'.format(rmg.trimolecular_product_reversible))
     f.write('    verboseComments = {0},\n'.format(rmg.verbose_comments))
-    f.write('    wallTime = {0},\n'.format(rmg.walltime))
+    # wallTime is a string ('DD:HH:MM:SS'); it must be quoted or the emitted options()
+    # block is invalid Python and NO saved input file can be read back, for any reactor
+    # type (pre-existing bug, latent only because save_input_file has no in-repo caller).
+    f.write('    wallTime = "{0}",\n'.format(rmg.walltime))
     f.write('    generateChemkin = {0},\n'.format(_writer_config_to_input(rmg.chemkin_writer_config)))
     f.write('    generateRMSYAML = {0},\n'.format(_writer_config_to_input(rmg.rms_writer_config)))
     if rmg.cantera1_writer_config and rmg.cantera1_writer_config.enabled:
