@@ -3394,3 +3394,18 @@ class TestElectronsSurviveCopyAndPickle:
 
         assert LibraryReaction(reactants=[self.a], products=[self.b], electrons=-1).electrons == -1
         assert PDepReaction(reactants=[self.a], products=[self.b], electrons=-1).electrons == -1
+
+    def test_library_reaction_repr_round_trips_electrons(self):
+        """
+        LibraryReaction.__repr__ claims reconstructability but dropped electrons, so repr/eval
+        silently neutralised a charged library reaction.
+        """
+        from rmgpy.data.kinetics.library import LibraryReaction
+
+        rxn = LibraryReaction(reactants=[self.a], products=[self.b], electrons=-1,
+                              kinetics=Arrhenius(A=(1e13, "s^-1"), n=0, Ea=(10, "kJ/mol")))
+        assert "electrons=" in repr(rxn)
+        namespace = {"LibraryReaction": LibraryReaction, "Species": Species,
+                     "Molecule": Molecule, "Arrhenius": Arrhenius}
+        restored = eval(repr(rxn), namespace)
+        assert restored.electrons == -1

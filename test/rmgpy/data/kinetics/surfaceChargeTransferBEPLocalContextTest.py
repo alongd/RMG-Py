@@ -86,3 +86,22 @@ class TestSurfaceChargeTransferBEPLocalContext:
         # is_identical_to is this repo's equality idiom for kinetics models.
         assert loaded.is_identical_to(expected), f"entry 1: {loaded!r} != {expected!r}"
         assert loaded.electrons.value_si == -1
+
+    def test_get_library_reactions_preserves_electrons(self):
+        """
+        KineticsLibrary.get_library_reactions() built LibraryReaction from entry.item without
+        passing entry.item.electrons, so a charged library entry was neutralised on load even after
+        the constructor gained the parameter. The count must survive get_library_reactions.
+        """
+        from rmgpy.data.kinetics.database import KineticsDatabase
+
+        library_root = os.path.join(os.path.dirname(__file__), "surface_charge_transfer_bep_data")
+        database = KineticsDatabase()
+        database.load_libraries(library_root, libraries=["surface-charge-transfer-bep"])
+        library = database.libraries["surface-charge-transfer-bep"]
+        for entry in library.entries.values():
+            entry.item.electrons = -1
+
+        rxns = library.get_library_reactions()
+        assert rxns
+        assert all(rxn.electrons == -1 for rxn in rxns), [rxn.electrons for rxn in rxns]
