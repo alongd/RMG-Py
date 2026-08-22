@@ -227,6 +227,10 @@ class KineticsDepository(Database):
                 # ArrheniusChargeTransferBM, ...). Key off the attribute rather than an isinstance
                 # allowlist, which both missed three of these classes and wrongly listed
                 # SurfaceArrheniusBEP, which has no electrons field.
+                # Note: wrapper kinetics (e.g. MultiArrhenius holding a list of rate laws) expose no
+                # top-level `electrons` attribute, so charge-transfer data wrapped that way is not
+                # inspected here and would fall back on the family count below. Wrapper traversal is
+                # deliberately not implemented.
                 rxn.electrons = entry.data.electrons.value
             elif self.electrons:
                 # The kinetics data carry no electron count of their own, so fall back on the count
