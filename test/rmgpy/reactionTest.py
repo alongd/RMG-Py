@@ -3326,6 +3326,30 @@ class TestElectronDirection:
         assert not r1.is_isomorphic(r2, check_template_rxn_products=True)
         assert r1.is_isomorphic(r3, check_template_rxn_products=True)
 
+    def test_check_template_rxn_products_treats_unset_orientation_as_reverse(self):
+        """
+        Reaction.is_forward is a Cython bint, so a TemplateReaction built without an explicit
+        orientation stores is_forward as False and is silently treated as reverse: the shortcut
+        compares its *reactant* side and negates its electron count onto the forward basis. That
+        is pre-existing design debt, not introduced here, but the electron comparison added to
+        this shortcut makes it observable, so pin it rather than leave it to be rediscovered.
+        """
+        from rmgpy.data.kinetics.family import TemplateReaction
+
+        # No is_forward given -> stored False -> reverse: compares reactants=[anion],
+        # electrons negated to +1.
+        unset = TemplateReaction(reactants=[self.anion], products=[self.neutral], electrons=-1)
+        # Explicit forward: compares products=[anion], electrons +1 -> matches `unset`.
+        forward_match = TemplateReaction(reactants=[self.neutral], products=[self.anion],
+                                         electrons=1, is_forward=True)
+        # Explicit forward, electrons -1 -> effective -1 -> must NOT match `unset` (proves the
+        # unset reaction's electron was negated to +1, i.e. treated as reverse).
+        forward_mismatch = TemplateReaction(reactants=[self.neutral], products=[self.anion],
+                                            electrons=-1, is_forward=True)
+
+        assert unset.is_isomorphic(forward_match, check_template_rxn_products=True)
+        assert not unset.is_isomorphic(forward_mismatch, check_template_rxn_products=True)
+
     # --- to_cantera (5d) ---
 
     def test_to_cantera_places_electron_on_reactant_side(self):
