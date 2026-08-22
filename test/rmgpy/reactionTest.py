@@ -3271,3 +3271,65 @@ class TestChargeTransferReaction:
                 kr = kr_oxidation.get_rate_coefficient(T,V)
                 K = self.rxn_oxidation.get_equilibrium_constant(T,V)
                 assert order_of_magnitude(kf/kr) == order_of_magnitude(K)
+
+
+class TestElectronDirection:
+    """
+    Reaction.electrons is signed relative to the reaction's current orientation. is_isomorphic and
+    to_cantera must honour that: a reaction and its correctly-negated reverse are the same reaction
+    under either_direction, and the in-memory Cantera reaction must carry the electron on the side
+    the sign selects.
+    """
+
+    def setup_class(self):
+        self.neutral = Species(label="OH", molecule=[Molecule().from_smiles("[OH]")])
+        self.anion = Species(label="OHm", molecule=[Molecule().from_smiles("[OH-]")])
+        self.electron = Species(label="e", molecule=[Molecule().from_smiles("e")])
+
+    # --- is_isomorphic (5c) ---
+
+    def test_reduction_and_its_negated_reverse_are_isomorphic_either_direction(self):
+        forward = Reaction(reactants=[self.neutral], products=[self.anion], electrons=-1)
+        reverse = Reaction(reactants=[self.anion], products=[self.neutral], electrons=1)
+        assert forward.is_isomorphic(reverse, either_direction=True)
+
+    def test_reduction_and_its_reverse_are_not_isomorphic_same_direction(self):
+        forward = Reaction(reactants=[self.neutral], products=[self.anion], electrons=-1)
+        reverse = Reaction(reactants=[self.anion], products=[self.neutral], electrons=1)
+        assert not forward.is_isomorphic(reverse, either_direction=False)
+
+    def test_reverse_with_wrong_electron_sign_is_not_isomorphic(self):
+        forward = Reaction(reactants=[self.neutral], products=[self.anion], electrons=-1)
+        wrong = Reaction(reactants=[self.anion], products=[self.neutral], electrons=-1)
+        assert not forward.is_isomorphic(wrong, either_direction=True)
+
+    def test_forward_match_requires_equal_electrons(self):
+        forward = Reaction(reactants=[self.neutral], products=[self.anion], electrons=-1)
+        same = Reaction(reactants=[self.neutral], products=[self.anion], electrons=-1)
+        differ = Reaction(reactants=[self.neutral], products=[self.anion], electrons=-2)
+        assert forward.is_isomorphic(same, either_direction=False)
+        assert not forward.is_isomorphic(differ, either_direction=False)
+
+    # --- to_cantera (5d) ---
+
+    def test_to_cantera_places_electron_on_reactant_side(self):
+        rxn = Reaction(reactants=[self.neutral], products=[self.anion], electrons=-1,
+                       kinetics=Arrhenius(A=(1e13, "cm^3/(mol*s)"), n=0, Ea=(10, "kJ/mol")))
+        ct = rxn.to_cantera(species_list=[self.neutral, self.anion, self.electron],
+                            use_chemkin_identifier=False)
+        assert "e" in ct.reactants, ct.reactants
+        assert "e" not in ct.products, ct.products
+
+    def test_to_cantera_places_electron_on_product_side(self):
+        rxn = Reaction(reactants=[self.anion], products=[self.neutral], electrons=1,
+                       kinetics=Arrhenius(A=(1e13, "cm^3/(mol*s)"), n=0, Ea=(10, "kJ/mol")))
+        ct = rxn.to_cantera(species_list=[self.neutral, self.anion, self.electron],
+                            use_chemkin_identifier=False)
+        assert "e" in ct.products, ct.products
+        assert "e" not in ct.reactants, ct.reactants
+
+    def test_to_cantera_fails_when_electron_needed_but_absent(self):
+        rxn = Reaction(reactants=[self.neutral], products=[self.anion], electrons=-1,
+                       kinetics=Arrhenius(A=(1e13, "cm^3/(mol*s)"), n=0, Ea=(10, "kJ/mol")))
+        with pytest.raises(Exception):
+            rxn.to_cantera(species_list=[self.neutral, self.anion], use_chemkin_identifier=False)

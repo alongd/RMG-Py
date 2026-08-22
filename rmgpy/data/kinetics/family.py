@@ -1748,7 +1748,10 @@ class KineticsFamily(Database):
             reversible=self.reversible,
             family=self.label,
             is_forward=is_forward,
-            electrons = self.electrons
+            # KineticsFamily.electrons is the family-forward declaration; Reaction.electrons is
+            # signed relative to the reaction's current orientation, so negate it when building
+            # the reverse reaction, whose reactant/product lists have just been swapped.
+            electrons=self.electrons if is_forward else -self.electrons,
         )
 
         # Reactant side first, and separately, so the refusal can be attributed. `is_forward`
@@ -4217,7 +4220,8 @@ class KineticsFamily(Database):
                         if rxns[i].kinetics.solute:
                             rxns[i].kinetics.solute = to_soluteTSdata(rxns[i].kinetics.solute,reactants=rxns[i].reactants)
                         rrev = Reaction(reactants=products, products=reacts,
-                                    kinetics=rxns[i].generate_reverse_rate_coefficient(), rank=rxns[i].rank)
+                                    kinetics=rxns[i].generate_reverse_rate_coefficient(), rank=rxns[i].rank,
+                                    electrons=-rxns[i].electrons)
                     rrev.is_forward = False
 
                     if estimate_thermo:
@@ -4257,7 +4261,8 @@ class KineticsFamily(Database):
                     products = [Species(molecule=[p]) for p in products]
 
                 rrev = Reaction(reactants=products, products=rxns[i].reactants,
-                                kinetics=rxns[i].generate_reverse_rate_coefficient(), rank=rxns[i].rank)
+                                kinetics=rxns[i].generate_reverse_rate_coefficient(), rank=rxns[i].rank,
+                                electrons=-rxns[i].electrons)
 
                 rrev.is_forward = False
 
