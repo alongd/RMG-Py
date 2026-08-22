@@ -46,7 +46,8 @@ from rmgpy.kinetics import Arrhenius, ArrheniusEP, ThirdBody, Lindemann, Troe, \
                            PDepArrhenius, MultiArrhenius, MultiPDepArrhenius, \
                            Chebyshev, KineticsData, StickingCoefficient, \
                            StickingCoefficientBEP, SurfaceArrhenius, SurfaceArrheniusBEP, \
-                           ArrheniusBM, SurfaceChargeTransfer, KineticsModel, Marcus, \
+                           ArrheniusBM, SurfaceChargeTransfer, SurfaceChargeTransferBEP, \
+                           KineticsModel, Marcus, \
                            ArrheniusChargeTransfer, ArrheniusChargeTransferBM, \
                            TwoTemperaturePlasma, ElectronCollisionPlasma, \
                            BadnellRRArrhenius, VoronovEIArrhenius
@@ -87,6 +88,7 @@ class KineticsDatabase(object):
             'SurfaceArrhenius': SurfaceArrhenius,
             'SurfaceArrheniusBEP': SurfaceArrheniusBEP,
             'SurfaceChargeTransfer': SurfaceChargeTransfer,
+            'SurfaceChargeTransferBEP': SurfaceChargeTransferBEP,
             'R': constants.R,
             'ArrheniusBM': ArrheniusBM,
             'ArrheniusChargeTransferBM': ArrheniusChargeTransferBM,
