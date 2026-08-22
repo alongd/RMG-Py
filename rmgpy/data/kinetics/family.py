@@ -4797,6 +4797,9 @@ def average_kinetics(kinetics_list):
         Aunits = 'm^3/(mol*s)'
     elif Aunits in {'cm^6/(mol^2*s)', 'cm^6/(molecule^2*s)', 'm^6/(molecule^2*s)'}:
         Aunits = 'm^6/(mol^2*s)'
+    elif Aunits == '1/s':
+        # dimensionally identical to 's^-1'; normalize to the canonical unimolecular spelling
+        Aunits = 's^-1'
     elif Aunits in {'s^-1', 'm^3/(mol*s)', 'm^6/(mol^2*s)'}:
         # they were already in SI
         pass
@@ -4826,6 +4829,11 @@ def average_kinetics(kinetics_list):
             electrons = kinetics_list[0].electrons.value_si
         assert all(np.abs(k.V0.value_si) < 0.0001 for k in kinetics_list), [k.V0.value_si for k in kinetics_list]
         assert all(np.abs(k.alpha.value_si - 0.5) < 0.001 for k in kinetics_list), [k.alpha for k in kinetics_list]
+        # electrons carries the reaction's sign; averaging a set that disagrees on it is
+        # meaningless, so require agreement the same way V0 and alpha are required above.
+        assert all(k.electrons.value_si == electrons for k in kinetics_list), \
+            'Cannot average charge-transfer kinetics with disagreeing electron counts: ' \
+            '{0}'.format([k.electrons.value_si for k in kinetics_list])
     V0 = 0.0
     count = 0
     for kinetics in kinetics_list:

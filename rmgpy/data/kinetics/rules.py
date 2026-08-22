@@ -309,6 +309,9 @@ class KineticsRules(Database):
             Aunits = 'm^3/(mol*s)'
         elif Aunits == 'cm^6/(mol^2*s)' or Aunits == 'cm^6/(molecule^2*s)' or Aunits == 'm^6/(molecule^2*s)':
             Aunits = 'm^6/(mol^2*s)'
+        elif Aunits == '1/s':
+            # dimensionally identical to 's^-1'; normalize to the canonical unimolecular spelling
+            Aunits = 's^-1'
         elif Aunits == 's^-1' or Aunits == 'm^3/(mol*s)' or Aunits == 'm^6/(mol^2*s)':
             # they were already in SI
             pass
