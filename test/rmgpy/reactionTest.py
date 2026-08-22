@@ -3310,6 +3310,22 @@ class TestElectronDirection:
         assert forward.is_isomorphic(same, either_direction=False)
         assert not forward.is_isomorphic(differ, either_direction=False)
 
+    def test_check_template_rxn_products_is_electron_aware(self):
+        """
+        The check_template_rxn_products shortcut (the high-traffic generation path, where reactants
+        are known identical and only products are compared) must not be electron-blind: two
+        template reactions with identical products but disagreeing electron counts are different
+        reactions.
+        """
+        from rmgpy.data.kinetics.family import TemplateReaction
+
+        r1 = TemplateReaction(reactants=[self.neutral], products=[self.anion], electrons=-1, is_forward=True)
+        r2 = TemplateReaction(reactants=[self.neutral], products=[self.anion], electrons=-2, is_forward=True)
+        r3 = TemplateReaction(reactants=[self.neutral], products=[self.anion], electrons=-1, is_forward=True)
+
+        assert not r1.is_isomorphic(r2, check_template_rxn_products=True)
+        assert r1.is_isomorphic(r3, check_template_rxn_products=True)
+
     # --- to_cantera (5d) ---
 
     def test_to_cantera_places_electron_on_reactant_side(self):

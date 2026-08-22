@@ -601,8 +601,16 @@ class Reaction:
             try:
                 species1 = self.products if self.is_forward else self.reactants
                 species2 = other.products if other.is_forward else other.reactants
+                # electrons is signed to each reaction's stored orientation; compare on the
+                # forward basis, matching the forward product side chosen above, so this
+                # high-traffic generation shortcut is not electron-blind.
+                electrons1 = self.electrons if self.is_forward else -self.electrons
+                electrons2 = other.electrons if other.is_forward else -other.electrons
             except AttributeError:
                 raise TypeError('Only use check_template_rxn_products flag for TemplateReactions.')
+
+            if electrons1 != electrons2:
+                return False
 
             return same_species_lists(species1, species2,
                                       check_identical=check_identical,
