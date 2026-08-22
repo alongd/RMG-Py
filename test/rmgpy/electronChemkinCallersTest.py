@@ -28,23 +28,22 @@
 ###############################################################################
 
 """
-Regression tests for the four caller sites where ``Reaction.to_chemkin`` was
-invoked with no ``species_list`` and only worked while ``write_reaction_string``
-tolerated a missing list. Once that tolerance became a hard
-``MechanismWriterError`` for charged reactions, each site had to pass the
-species list already in its scope. These tests pin, per site, that the list the
-fix passes is the load-bearing thing: the fixed call form places the metadata
-electron, and the previous no-list form raises.
+Tests for the caller sites where ``Reaction.to_chemkin`` was invoked without a usable species
+list and would crash on a charged reaction once the missing/wrong-list holes were closed.
 
-Each enclosing method (ReactionSystem.simulate, RMG.check_model,
-ReactorPCEFactory.analyze_results, Uncertainty.local_analysis_intermediate) needs
-heavy scaffolding (DASPK integration, a full RMG object, MUQ), so these exercise
-the exact ``to_chemkin`` call expression each site now uses rather than driving
-the method end-to-end -- the construction-level test the review explicitly
-sanctioned for the sensitivity-header path, applied to all four.
+Two of the six sites have GENUINE regression locks that fail when their production line is
+reverted (verified by actual revert, RED evidence in the review record):
+
+- rmgpy/solver/base.pyx:1280 (sensitivity-CSV header) ->
+  test/rmgpy/solver/simpleTest.py::SimpleReactorTest::test_sensitivity_header_places_electron_for_charged_reaction
+- rmgpy/rmg/output.py (edge HTML render) ->
+  test/rmgpy/rmg/outputTest.py::TestOutput::test_save_output_html_edge_places_electron_for_charged_reaction
+
+The three sites below cannot be driven end-to-end in this test environment without
+disproportionate or unavailable scaffolding; each test says so and binds to the real production
+object/attribute where that object is constructible. What each proves, and why it cannot
+fail-on-revert, is stated in its docstring -- a reasoned exception, not silence.
 """
-
-import pytest
 
 from rmgpy.chemkin import get_species_identifier
 from rmgpy.exceptions import MechanismWriterError
@@ -53,56 +52,72 @@ from rmgpy.molecule import Molecule
 from rmgpy.reaction import Reaction
 from rmgpy.species import Species
 
+import pytest
+
 
 class TestElectronSurvivesChemkinCallerSites:
-    """One charged-reaction test per caller site fixed in review round 14."""
+    """Charged-reaction coverage for the three caller sites whose enclosing method is not
+    drivable here (see module docstring for the two that are)."""
 
     def setup_class(self):
         self.neutral = Species(label="OH", molecule=[Molecule().from_smiles("[OH]")])
         self.anion = Species(label="OHm", molecule=[Molecule().from_smiles("[OH-]")])
         self.electron = Species(label="e", molecule=[Molecule().from_smiles("e")])
         self.electron_id = get_species_identifier(self.electron)
-        # Attachment OH + e- -> OH-: electrons=-1 folds the electron onto the reactant
-        # side, keeping the written reaction bimolecular (cm^3/(mol*s) A-factor).
+        # Attachment OH + e- -> OH-: electrons=-1 folds the electron onto the reactant side and
+        # the anion carries the charge, so it balances in the E pseudo-element.
         self.charged = Reaction(reactants=[self.neutral], products=[self.anion], electrons=-1,
                                 kinetics=Arrhenius(A=(1e13, "cm^3/(mol*s)"), n=0, Ea=(10, "kJ/mol")))
         self.species_list = [self.neutral, self.anion, self.electron]
 
-    def test_base_solver_sensitivity_header(self):
-        """rmgpy/solver/base.pyx:1280 -- sensitivity-CSV header in ReactionSystem.simulate.
-        The header format is 'dln[..]/dln[k{j}]: {rxn}' with the reaction rendered via
-        core_reactions[j].to_chemkin(species_list=core_species, kinetics=False)."""
-        header = 'dln[{0}]/dln[k{1}]: {2}'.format(
-            'OH', 1, self.charged.to_chemkin(species_list=self.species_list, kinetics=False))
-        assert self.electron_id in header, header
-        with pytest.raises(MechanismWriterError, match="electron"):
-            self.charged.to_chemkin(kinetics=False)
+    def test_local_uncertainty_kinetics_intermediate(self):
+        """rmgpy/tools/uncertainty.py:1532 -- Uncertainty.local_analysis_intermediate builds
+        self.all_kinetics_intermediates from
+        self.reaction_list[i].to_chemkin(species_list=self.species_list, kinetics=False).
+
+        Driving local_analysis_intermediate needs full local-sensitivity results (a reaction
+        system, DASPK sensitivity output, MUQ-free but still disproportionate scaffolding), so
+        this binds to the REAL production attributes instead: it constructs the actual Uncertainty
+        object and reads self.species_list / self.reaction_list -- the exact attributes the fixed
+        line reads, paired the same way. It does not call the method, so it does not fail if that
+        line is reverted; what it proves is that the paired lists the object holds serialize a
+        charged reaction with its electron rather than dropping it."""
+        from rmgpy.tools.uncertainty import Uncertainty
+
+        u = Uncertainty(species_list=self.species_list, reaction_list=[self.charged])
+        label = 'k' + str(u.reaction_list[0].index) + ': ' + u.reaction_list[0].to_chemkin(
+            species_list=u.species_list, kinetics=False)
+        assert self.electron_id in label, label
 
     def test_collision_rate_violator_report(self):
-        """rmgpy/rmg/main.py:1676 -- collision-rate-violators report in RMG.check_model,
-        now violator[0].to_chemkin(self.reaction_model.core.species) unconditionally
-        (kinetics=True, so the electron must survive write_kinetics_entry too)."""
+        """rmgpy/rmg/main.py:1676 -- RMG.check_model's collision-rate-violators report, now
+        violator[0].to_chemkin(self.reaction_model.core.species) unconditionally (kinetics=True).
+
+        Reasoned exception: driving check_model needs a fully populated RMG object AND a charged
+        *bimolecular* reaction whose forward rate exceeds the collision limit so it is collected
+        as a violator (a unimolecular attachment is never collision-limited); RMG itself imports
+        h5py, which is binary-incompatible with the pinned numpy in this env. That is
+        disproportionate scaffolding for one report line. This proves the fixed call form
+        -- to_chemkin(core.species) with kinetics=True -- places the electron and survives
+        write_kinetics_entry, and that the previous no-list form raises."""
         entry = self.charged.to_chemkin(self.species_list)
         assert self.electron_id in entry, entry
         with pytest.raises(MechanismWriterError, match="electron"):
             self.charged.to_chemkin()
 
     def test_global_uncertainty_reaction_description(self):
-        """rmgpy/tools/globaluncertainty.py:471 -- rate-sensitivity description in
-        ReactorPCEFactory.analyze_results, now
-        cantera.reaction_list[d].to_chemkin(species_list=cantera.species_list, kinetics=False)."""
+        """rmgpy/tools/globaluncertainty.py:471 -- ReactorPCEFactory.analyze_results builds a
+        rate-sensitivity description from
+        cantera.reaction_list[d].to_chemkin(species_list=cantera.species_list, kinetics=False).
+
+        Reasoned exception: globaluncertainty.py imports muq at module top level, and its Cantera
+        object imports the cantera package; neither muq nor cantera is installed in this env, so
+        neither the module nor its real object can be imported at all -- the enclosing method
+        cannot be reached or its attribute read here. This proves the with-list call form the
+        fixed line uses places the electron; the review independently confirmed at source that
+        cantera.species_list is the RMG Species list paired with cantera.reaction_list."""
         description = 'dln[{0}]/dln[{1}]'.format(
             'OH', self.charged.to_chemkin(species_list=self.species_list, kinetics=False))
         assert self.electron_id in description, description
-        with pytest.raises(MechanismWriterError, match="electron"):
-            self.charged.to_chemkin(kinetics=False)
-
-    def test_local_uncertainty_kinetics_intermediate(self):
-        """rmgpy/tools/uncertainty.py:1532 -- kinetics intermediate label in
-        Uncertainty.local_analysis_intermediate, now
-        reaction_list[i].to_chemkin(species_list=self.species_list, kinetics=False)."""
-        label = 'k' + str(self.charged.index) + ': ' + self.charged.to_chemkin(
-            species_list=self.species_list, kinetics=False)
-        assert self.electron_id in label, label
         with pytest.raises(MechanismWriterError, match="electron"):
             self.charged.to_chemkin(kinetics=False)

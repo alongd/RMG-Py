@@ -785,3 +785,61 @@ class SimpleReactorTest:
 
         # Only "CH4" should be marked constant
         assert rxn_system.const_spc_indices == [core_species.index(a)]
+
+    def test_sensitivity_header_places_electron_for_charged_reaction(self):
+        """
+        Regression lock for the sensitivity-CSV header in ReactionSystem.simulate
+        (rmgpy/solver/base.pyx): a charged core reaction's header cell is rendered with
+        core_reactions[j].to_chemkin(species_list=core_species, kinetics=False). The electron
+        lives in core_species; without that list to_chemkin raises MechanismWriterError and the
+        whole sensitivity run dies. Reverting the species_list on that production line makes this
+        test fail (verified by actual revert).
+
+        SimpleReactor is used because PlasmaReactor rejects sensitivity=True up front; base.pyx is
+        the shared base class, so this drives the exact production line.
+        """
+        import tempfile
+        from rmgpy.chemkin import get_species_identifier
+
+        def _thermo(h298):
+            return ThermoData(
+                Tdata=([300, 400, 500, 600, 800, 1000, 1500], "K"),
+                Cpdata=([5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0], "cal/(mol*K)"),
+                H298=(h298, "kcal/mol"), S298=(45.0, "cal/(mol*K)"))
+
+        neutral = Species(label="OHrad", molecule=[Molecule().from_smiles("[OH]")], thermo=_thermo(9.0))
+        anion = Species(label="OHminus", molecule=[Molecule().from_smiles("[OH-]")], thermo=_thermo(0.0))
+        electron = Species(label="eNEG", molecule=[Molecule().from_adjacency_list("1 e u1 p0 c-1")],
+                           thermo=_thermo(0.0))
+
+        # OH + e- -> OH- : the electron is kept out of the reactant list and tracked via
+        # electrons=-1. Irreversible and unimolecular for the solver (s^-1); the electron is
+        # folded in only when the header string is written.
+        charged = Reaction(reactants=[neutral], products=[anion], electrons=-1, reversible=False,
+                           kinetics=Arrhenius(A=(1e3, "s^-1"), n=0, Ea=(0, "kJ/mol")))
+
+        core_species = [neutral, anion, electron]
+        core_reactions = [charged]
+
+        rxn_system = SimpleReactor(
+            1000.0, 1.0e5,
+            initial_mole_fractions={neutral: 0.5, anion: 0.3, electron: 0.2},
+            n_sims=1,
+            termination=[TerminationTime((1e-6, "s"))],
+            sensitive_species=[anion],
+            sensitivity_threshold=-1.0,  # render every reaction in the header, including the charged one
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            csv_path = os.path.join(tmp, "sens.csv")
+            rxn_system.simulate(
+                core_species, core_reactions, [], [], [], [],
+                model_settings=ModelSettings(tol_keep_in_edge=0, tol_move_to_core=1e5,
+                                             tol_interrupt_simulation=1e8),
+                simulator_settings=SimulatorSettings(),
+                sensitivity=True,
+                sens_worksheet=[csv_path],
+            )
+            with open(csv_path) as f:
+                header = f.readline()
+        assert get_species_identifier(electron) in header, header
