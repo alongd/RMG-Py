@@ -297,8 +297,16 @@ class KineticsRules(Database):
             if isinstance(kinetics, SurfaceChargeTransferBEP):
                 if electrons is None:
                     electrons = kinetics.electrons.value_si
+                elif kinetics.electrons.value_si != electrons:
+                    raise Exception('Cannot average SurfaceChargeTransferBEP kinetics with '
+                                    'disagreeing electron counts: {0} != {1}.'.format(
+                                        kinetics.electrons.value_si, electrons))
                 if V0 is None:
                     V0 = kinetics.V0.value_si
+                elif kinetics.V0.value_si != V0:
+                    raise Exception('Cannot average SurfaceChargeTransferBEP kinetics with '
+                                    'disagreeing V0 values: {0} != {1}.'.format(
+                                        kinetics.V0.value_si, V0))
 
         logA /= count
         n /= count

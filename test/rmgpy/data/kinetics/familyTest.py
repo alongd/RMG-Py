@@ -1360,3 +1360,28 @@ multiplicity 2
         kav = KineticsRules()._get_average_kinetics([aep])
         assert kav.A.units == "s^-1"
         assert np.isclose(kav.A.value_si, 1e13)
+
+    def test_rules_average_kinetics_requires_matching_electrons_and_v0(self):
+        """
+        KineticsRules._get_average_kinetics took electrons and V0 from the first
+        SurfaceChargeTransferBEP entry with no agreement check. This path is unreachable from real
+        data (the class was absent from local_context and occurs zero times under input/), so the
+        test constructs the kinetics objects directly. Disagreement on either field must fail; a
+        matching set averages and preserves both.
+        """
+        from rmgpy.data.kinetics.rules import KineticsRules
+        from rmgpy.kinetics import SurfaceChargeTransferBEP
+
+        def make(electrons, V0=0.0):
+            return SurfaceChargeTransferBEP(A=(1e10, "cm^3/(mol*s)"), n=0.0, E0=(10, "kJ/mol"),
+                                            V0=(V0, "V"), alpha=0.5, electrons=electrons)
+
+        with pytest.raises(Exception, match="electron counts"):
+            KineticsRules()._get_average_kinetics([make(-1), make(-2)])
+
+        with pytest.raises(Exception, match="V0 values"):
+            KineticsRules()._get_average_kinetics([make(-1, 0.0), make(-1, 0.5)])
+
+        kav = KineticsRules()._get_average_kinetics([make(-1), make(-1)])
+        assert kav.electrons.value_si == -1
+        assert kav.V0.value_si == 0.0
