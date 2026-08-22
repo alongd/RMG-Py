@@ -469,7 +469,8 @@ Description                                                                 sens
                         parameter_index = k
                         if not self.reactor_mod.correlated:
                             description = 'dln[{0}]/dln[{1}]'.format(output_species.to_chemkin(),
-                                                                     self.reactor_mod.cantera.reaction_list[descriptor].to_chemkin(kinetics=False))
+                                                                     self.reactor_mod.cantera.reaction_list[descriptor].to_chemkin(
+                                                                         species_list=self.reactor_mod.cantera.species_list, kinetics=False))
                         else:
                             description = 'dln[{0}]/dln[{1}]'.format(output_species.to_chemkin(), descriptor)
 
