@@ -3164,6 +3164,30 @@ class TestChargeTransferReaction:
         assert self.rxn_reduction.protons == -1
         assert self.rxn_oxidation.protons == 1
 
+    def test_apply_che_model_reports_true_proton_count(self):
+        """
+        When ``electrons != protons`` the CHE model is inapplicable and ``_apply_CHE_model``
+        raises. ``Reaction.protons`` is a real computed property (here -1: one proton consumed),
+        distinct from ``electrons``; the message must report it. Previously the message
+        interpolated ``self.electrons`` into the protons slot as well, so under the very condition
+        that guarantees the two differ it could only ever print two equal numbers.
+        """
+        from rmgpy.exceptions import ReactionError
+
+        rxn = Reaction(reactants=self.rxn_reduction.reactants,
+                       products=self.rxn_reduction.products,
+                       electrons=-2,  # protons stays -1, so the two now disagree
+                       kinetics=self.rxn_reduction.kinetics)
+        assert rxn.is_charge_transfer_reaction()
+        assert rxn.protons == -1
+        assert rxn.electrons == -2
+
+        with pytest.raises(ReactionError) as exc_info:
+            rxn._apply_CHE_model(298.0)
+        message = str(exc_info.value)
+        assert '-1 protons' in message, message
+        assert '-2 electrons' in message, message
+
     def test_is_surface_reaction(self):
         """Test is_surface_reaction() method"""
         assert self.rxn_reduction.is_surface_reaction()
