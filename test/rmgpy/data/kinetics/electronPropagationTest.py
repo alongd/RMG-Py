@@ -261,3 +261,26 @@ class TestCreateReactionNegatesElectronsWhenReversed:
         reverse = self.family._create_reaction(self.reactants, self.products, is_forward=False)
         assert reverse is not None
         assert reverse.electrons == 1
+
+
+class TestDepositoryDataBorneElectronPrecedence:
+    """
+    KineticsDepository.load kept the data-borne electron count only for an isinstance allowlist
+    (SurfaceChargeTransfer, SurfaceArrheniusBEP) that missed SurfaceChargeTransferBEP,
+    ArrheniusChargeTransfer and ArrheniusChargeTransferBM -- all of which carry their own electrons
+    field -- so a training entry using one of those had its count overwritten by the family default.
+    Keying off the presence of the attribute fixes all of them, and any future class, at once.
+    """
+
+    def test_data_borne_count_wins_for_every_charge_transfer_class(self):
+        from rmgpy.data.kinetics.depository import KineticsDepository
+        from rmgpy.data.kinetics.database import KineticsDatabase
+
+        root = os.path.join(os.path.dirname(__file__), "electron_precedence_data")
+        depository = KineticsDepository(electrons=-1)  # family default the entries must override
+        depository.load(os.path.join(root, "reactions.py"), KineticsDatabase().local_context, {})
+
+        by_index = {entry.index: entry for entry in depository.entries.values()}
+        assert by_index[0].item.electrons == 2, "SurfaceChargeTransferBEP count overwritten"
+        assert by_index[1].item.electrons == -3, "ArrheniusChargeTransfer count overwritten"
+        assert by_index[2].item.electrons == 2, "ArrheniusChargeTransferBM count overwritten"

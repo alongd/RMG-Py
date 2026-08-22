@@ -35,7 +35,6 @@ import re
 
 from rmgpy.data.base import Database, Entry, DatabaseError
 from rmgpy.data.kinetics.common import save_entry
-from rmgpy.kinetics import SurfaceChargeTransfer, SurfaceArrheniusBEP
 from rmgpy.reaction import Reaction
 
 
@@ -222,7 +221,12 @@ class KineticsDepository(Database):
                 # Same comment about molecule vs species objects as above.
                 rxn.products.append(species_dict[product])
             
-            if isinstance(entry.data, (SurfaceChargeTransfer, SurfaceArrheniusBEP)):
+            if hasattr(entry.data, 'electrons'):
+                # Every charge-transfer rate law carries its own electron count
+                # (SurfaceChargeTransfer, SurfaceChargeTransferBEP, ArrheniusChargeTransfer,
+                # ArrheniusChargeTransferBM, ...). Key off the attribute rather than an isinstance
+                # allowlist, which both missed three of these classes and wrongly listed
+                # SurfaceArrheniusBEP, which has no electrons field.
                 rxn.electrons = entry.data.electrons.value
             elif self.electrons:
                 # The kinetics data carry no electron count of their own, so fall back on the count
