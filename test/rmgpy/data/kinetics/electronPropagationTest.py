@@ -232,12 +232,31 @@ class TestReverseTrainingReactionNegatesElectronCount:
         assert flipped.electrons == 1, f"expected the negated count +1, got {flipped.electrons}"
 
 
-class TestCreateReactionNegatesElectronsWhenReversed:
+class TestCreateReactionStoresFamilyForwardOrientation:
     """
-    KineticsFamily._create_reaction swaps the participant lists when is_forward is False but copied
-    the family-forward electron declaration onto the reaction unchanged. Reaction.electrons is
-    signed relative to the reaction's current orientation, so a reversed reaction must carry the
-    negated count.
+    ``KineticsFamily._create_reaction`` stores every reaction it builds in family-forward molecular
+    orientation, for BOTH directions, and so copies the family-forward electron declaration onto the
+    reaction unchanged in both -- it must NOT negate.
+
+    This corrects an earlier version of this test (I-086) that called ``_create_reaction`` with
+    family-forward-oriented arguments and ``is_forward=False``, then asserted the negated count +1.
+    That calling convention is not the one the engine uses. Every real caller
+    (``_generate_reactions``) invokes ``_create_reaction(reactant_structures, product_structures,
+    forward)`` where ``reactant_structures`` is what was matched against the *forward or reverse*
+    template and ``product_structures`` is the recipe output. For ``forward=False`` that is
+    (family-products, family-reactants); the constructor's ``reactants=... if is_forward else
+    products`` then swaps the reactant side back to the family-reactant molecules, so the stored
+    reaction is family-forward-oriented -- reactants are the family reactants -- whichever direction
+    it was generated in. Because the stored orientation is family-forward, ``Reaction.electrons``
+    (signed to the stored orientation) is the family-forward declaration -1 in both directions.
+    Negating it produced electrons=+1 for a reaction whose electron is physically a reactant, which
+    the Chemkin writer then correctly refused as unbalanced in the E pseudo-element (reverse
+    ``Cation_R_Recombination``: ``Li+ + CH3 (+ e-) -> CH3Li``).
+
+    The genuine reverse-oriented reaction, whose reactant side is the *original products* and whose
+    electron count is therefore negated, is built elsewhere -- the training-set flip at
+    ``get_training_set(get_reverse=True)`` -- and is locked by
+    ``TestReverseTrainingReactionNegatesElectronCount`` above. This test does not touch that path.
     """
 
     @classmethod
@@ -249,18 +268,41 @@ class TestCreateReactionNegatesElectronsWhenReversed:
         database.load_families(path=root, families=["Electron_Carrying_Recombination"])
         cls.family = database.families["Electron_Carrying_Recombination"]
         assert cls.family.electrons == -1
-        cls.reactants = [Molecule().from_smiles("[CH3]"), Molecule().from_smiles("[CH3]")]
-        cls.products = [Molecule().from_smiles("CC")]
+        # Family-forward: reactants are the two methyls, product is ethane.
+        cls.family_reactants = [Molecule().from_smiles("[CH3]"), Molecule().from_smiles("[CH3]")]
+        cls.family_products = [Molecule().from_smiles("CC")]
 
-    def test_forward_reaction_keeps_the_family_declaration(self):
-        forward = self.family._create_reaction(self.reactants, self.products, is_forward=True)
+    @staticmethod
+    def _reactant_smiles(reaction):
+        return sorted(mol.to_smiles() for mol in reaction.reactants)
+
+    def test_forward_generation_is_family_forward_and_keeps_the_sign(self):
+        """Forward generation: ``reactant_structures`` = family reactants. Stored family-forward,
+        electrons = -1."""
+        forward = self.family._create_reaction(
+            self.family_reactants, self.family_products, is_forward=True)
         assert forward is not None
+        assert forward.is_forward is True
+        # Reactant side is the two methyls -- family-forward orientation.
+        assert len(forward.reactants) == 2 and len(forward.products) == 1
+        assert self._reactant_smiles(forward) == sorted(["[CH3]", "[CH3]"])
         assert forward.electrons == -1
 
-    def test_reverse_reaction_negates_the_family_declaration(self):
-        reverse = self.family._create_reaction(self.reactants, self.products, is_forward=False)
+    def test_reverse_generation_is_also_family_forward_and_keeps_the_sign(self):
+        """Reverse generation as the engine performs it: ``reactant_structures`` is the family
+        PRODUCT (matched against the reverse template) and ``product_structures`` is the recipe
+        output (the family reactants). The constructor swaps the reactant side back to the family
+        reactants, so the stored reaction is still family-forward-oriented and its electron count
+        stays the family-forward -1 -- it is NOT negated to +1."""
+        reverse = self.family._create_reaction(
+            self.family_products, self.family_reactants, is_forward=False)
         assert reverse is not None
-        assert reverse.electrons == 1
+        assert reverse.is_forward is False
+        # Despite is_forward=False, the reactant side is the two methyls -- family-forward
+        # molecular orientation, exactly as the reverse-generated Li+ + CH3 <=> CH3Li is stored.
+        assert len(reverse.reactants) == 2 and len(reverse.products) == 1
+        assert self._reactant_smiles(reverse) == sorted(["[CH3]", "[CH3]"])
+        assert reverse.electrons == -1
 
 
 class TestDepositoryDataBorneElectronPrecedence:
