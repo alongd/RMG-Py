@@ -55,14 +55,25 @@ purely net-derived — is used only as a low-level list-append primitive after
 the declaration has authorised the placement, with the result checked against
 the declaration afterwards.
 
-Scope: non-dissociative electron attachment
-(``Plasma_Electron_Attachment``, ``A + e- -> A-``) only. Every other family,
-reaction shape, direction, or kinetics form fails by name with
+Scope: the families named in :data:`FAMILY_ELECTRON_PLACEMENT`, in the
+single-electron-on-the-reactant-side shape they declare. Every other family,
+reaction shape, or kinetics form fails by name with
 :class:`rmgpy.exceptions.ElectronPlacementError` — there is no silent fallback
 to net-derived inference, and no general mechanism to inherit accidentally.
+
+Direction and reversibility are deliberately NOT part of that scope, since
+I-088. The declaration is about the family-forward molecular orientation, and the
+engine stores every generated reaction in that orientation whichever direction it
+was generated in, so ``is_forward`` says nothing about which side the electron
+belongs on; the resolver verifies the side structurally instead (step 10, the
+``E`` pseudo-element balance of the finished view). Reversibility is a
+reverse-RATE question, owned and enforced by the consumer —
+:class:`rmgpy.solver.plasma.PlasmaReactor` refuses a reversible
+electron-containing reaction by name — and the view carries ``reversible``
+through unchanged so that guard still fires.
 """
 
-from rmgpy.electron_balance import expand_electrons
+from rmgpy.electron_balance import expand_electrons, get_species_electron_count
 from rmgpy.exceptions import ElectronPlacementError
 from rmgpy.reaction import Reaction
 
@@ -73,15 +84,28 @@ __all__ = [
 
 #: Family-level electron placement declarations, keyed by family label.
 #: Each value is ``(side, count)``: the side of the reaction the family places
-#: its electrons on, in the forward direction, and how many it places there.
-#: This mapping — not ``Reaction.electrons`` — is the order source for
+#: its electrons on, in its FAMILY-FORWARD orientation, and how many it places
+#: there. This mapping — not ``Reaction.electrons`` — is the order source for
 #: :func:`resolve_electron_placement`. A family absent from this mapping has NO
 #: placement declaration and resolves to a named failure, never to a
-#: net-derived guess. Only non-dissociative electron attachment is declared in
-#: this increment; ionization- and excitation-type families must gain their own
-#: declarations (and their own validation) before they can resolve.
+#: net-derived guess.
+#:
+#: Both declared families place a single electron on the reactant side, for
+#: different chemistry: ``Plasma_Electron_Attachment`` is non-dissociative
+#: attachment (``A + e- -> A-``); ``Cation_R_Recombination`` is cation-radical
+#: recombination (``Li+ + R. + e- -> R-Li``), which the plasma decks reach in the
+#: family's REVERSE generation direction — RMG has only the neutral ``R-Li``, so
+#: it matches the product template and reconstructs ``Li+ + R.``. The declaration
+#: is about the family's forward molecular orientation, which is the orientation
+#: the engine stores in BOTH generation directions (see step 6 below), so one
+#: entry covers both.
+#:
+#: Ionization- and excitation-type families (net electron production, or none)
+#: must gain their own declarations and their own validation before they can
+#: resolve; the shape check in step 5 refuses them by name until then.
 FAMILY_ELECTRON_PLACEMENT = {
     'Plasma_Electron_Attachment': ('reactants', 1),
+    'Cation_R_Recombination': ('reactants', 1),
 }
 
 
@@ -112,18 +136,23 @@ def resolve_electron_placement(reaction, species_list):
     species and kinetics *objects* with the canonical reaction by reference
     (the reactor indexes species by identity), but the canonical reaction
     itself is never mutated: same ``electrons``, same participant lists, after
-    this call as before. The view is directional — it is produced for, and
-    validated in, the forward direction only — and is a reactor-facing object,
-    never to be written back into any database structure.
+    this call as before. The view is produced in the reaction's own stored
+    orientation, and is a reactor-facing object, never to be written back into
+    any database structure.
 
     Raises :class:`~rmgpy.exceptions.ElectronPlacementError`, always naming the
     offending family/reaction, unless ALL of the following hold: the family
-    carries a placement declaration (this increment: only
-    ``Plasma_Electron_Attachment``); ``reaction.electrons`` equals the declared
-    net consumption (-1); no explicit electron already appears among the
-    participants; the reaction is irreversible and in its forward direction;
-    the kinetics are a currently supported, non-pressure-dependent form; and
-    exactly one canonical electron species is resolvable from `species_list`.
+    carries a placement declaration in :data:`FAMILY_ELECTRON_PLACEMENT`;
+    ``reaction.electrons`` equals the declared net consumption (-1); no explicit
+    electron already appears among the participants; the kinetics are a
+    currently supported, non-pressure-dependent form carrying no electron count
+    of their own; exactly one canonical electron species is resolvable from
+    `species_list`; and the finished view balances in the ``E`` pseudo-element,
+    which is what proves the declared side was the correct side.
+
+    ``is_forward`` and ``reversible`` are NOT acceptance conditions — see the
+    module docstring and step 6 for why, and for where the reversibility
+    protection lives instead.
     """
     # 1. Family attribution. Placement is family-declared; a reaction that
     #    carries no family cannot name a declaration and must not fall back to
@@ -167,7 +196,7 @@ def resolve_electron_placement(reaction, species_list):
         raise ElectronPlacementError(
             'Family {0!r} declares electron placement {1!r}, which this resolver '
             'does not support; only a single electron on the reactant side '
-            '(non-dissociative attachment) is implemented.'.format(family, declaration))
+            'is implemented.'.format(family, declaration))
 
     # 4. A reaction that already carries its electron explicitly (with a zero
     #    metadata count) is already in reactor form; there is nothing for this
@@ -191,41 +220,51 @@ def resolve_electron_placement(reaction, species_list):
             shape = 'multi-electron attachment-shaped'
         raise ElectronPlacementError(
             'Reaction {0!s} carries electrons={1:d}, which is {2}; family {3!r} '
-            'declares single-electron attachment (net {4:d}). No placement view is '
+            'declares single-electron consumption (net {4:d}). No placement view is '
             'defined for this shape in this increment.'.format(
                 reaction, net_electrons, shape, family, expected_net))
 
-    # 6. Directionality. The declaration authorises the FORWARD direction of
-    #    an irreversible attachment; a reverse-direction or reversible reaction
-    #    would put the electron on the wrong side, or on both.
-    if getattr(reaction, 'is_forward', None) is False:
-        raise ElectronPlacementError(
-            'Reaction {0!s} (family {1!r}) was generated in the reverse direction '
-            '(is_forward=False); the electron-placement declaration is defined for '
-            'the forward direction only, and a direction-agnostic view is not '
-            'safe.'.format(reaction, family))
-    if getattr(reaction, 'is_forward', None) is not True:
-        # Reaction.__init__ (and TemplateReaction) default is_forward=None, so an
-        # unknown direction is NOT the same as a forward one. Placing the
-        # electron on the family-declared forward (reactant) side of a reaction
-        # whose direction was never established would silently manufacture a
-        # forward-direction view from ambiguous input. The pre-integration
-        # reactor refused every nonzero-metadata reaction outright; a
-        # direction-unknown reaction must be refused here too, by name, rather
-        # than resolved and accepted.
-        raise ElectronPlacementError(
-            'Reaction {0!s} (family {1!r}) has an unspecified reaction direction '
-            '(is_forward={2!r}); the electron-placement declaration is defined for '
-            'the explicit forward direction only, so a direction-unknown reaction '
-            'cannot be given a forward-side electron and is refused rather than '
-            'silently accepted.'.format(
-                reaction, family, getattr(reaction, 'is_forward', None)))
-    if getattr(reaction, 'reversible', False):
-        raise ElectronPlacementError(
-            'Reaction {0!s} (family {1!r}) is reversible; the placement view is '
-            'directional and family {1!r} declares irreversible attachment. A '
-            'reversible view would leave the reverse rate of an electron-containing '
-            'reaction implicitly defined.'.format(reaction, family))
+    # 6. Directionality is NOT read from ``is_forward``, and reversibility is
+    #    not this module's business. Both were checked here until I-088; the
+    #    reasoning that removed them, and where each protection now lives:
+    #
+    #    ``is_forward`` — the old check refused ``is_forward=False`` on the
+    #    premise that a reverse-generated reaction "would put the electron on the
+    #    wrong side". It does not. ``KineticsFamily._create_reaction``
+    #    (family.py, see its docstring) stores the reaction in FAMILY-FORWARD
+    #    molecular orientation in BOTH generation directions — the reverse branch
+    #    swaps the reverse-matched lists back — and sets ``is_forward`` only to
+    #    record how the match was found. The engine therefore never hands this
+    #    resolver a reverse-ORIENTED reaction: for every one of them the
+    #    reactant side is the family reactant side, which is exactly the side the
+    #    declaration names. The genuinely reverse-oriented objects are built
+    #    elsewhere (the training-set flip in ``get_training_set(get_reverse=True)``,
+    #    family.py, which sets ``is_forward = False`` AND negates ``electrons``);
+    #    those are plain ``Reaction`` objects with no family attribution, refused
+    #    at step 1, and their positive ``electrons`` is refused at step 5 besides.
+    #    So ``is_forward`` is uninformative about placement, and refusing on it
+    #    excluded precisely the chemistry the plasma decks generate.
+    #
+    #    What the old check was proxying for — "is the electron really a reactant
+    #    in the stored orientation?" — is now VERIFIED rather than trusted, at
+    #    step 10, from the participants themselves. That check is strictly
+    #    stronger: it does not depend on ``is_forward``, on the producer honouring
+    #    the orientation invariant, or on ``electrons`` being signed correctly.
+    #
+    #    ``reversible`` — the old check refused ``reversible=True`` because "a
+    #    reversible view would leave the reverse rate of an electron-containing
+    #    reaction implicitly defined". That hazard is real, but it is a REVERSE-RATE
+    #    policy, not a placement question: a reversible reaction still has a
+    #    definite reactant side in its stored orientation, so which side the
+    #    electron goes on is not ambiguous. The policy is owned and enforced by the
+    #    consumer, ``PlasmaReactor``, which refuses a reversible electron-containing
+    #    reaction by name in ``_validate_reactions`` (kr = kf/Keq(Tgas) would price
+    #    the electron's thermochemistry at the gas temperature) and again
+    #    defensively in ``generate_rate_coefficients``. Both run on the VIEW, after
+    #    placement, and the view carries ``reversible`` through unchanged below, so
+    #    placement cannot launder it. Keeping a copy here refused the reaction one
+    #    step earlier under a misattributed message: the declaration is
+    #    ``('reactants', 1)`` and says nothing about reversibility.
 
     # 7. Kinetics form. The view is reactor-facing, so kinetics the reactor
     #    path cannot support are refused here, by name, rather than surfacing
@@ -238,8 +277,8 @@ def resolve_electron_placement(reaction, species_list):
     if kinetics.is_pressure_dependent():
         raise ElectronPlacementError(
             'Reaction {0!s} (family {1!r}) carries pressure-dependent kinetics '
-            '{2}; pressure-dependent forms are not a supported shape for the '
-            'attachment placement view.'.format(
+            '{2}; pressure-dependent forms are not a supported shape for a '
+            'placement view.'.format(
                 reaction, family, kinetics.__class__.__name__))
     kinetics_electrons = getattr(kinetics, 'electrons', None)
     if kinetics_electrons:
@@ -284,6 +323,44 @@ def resolve_electron_placement(reaction, species_list):
             'declares {4:d} on the reactant side; refusing the inconsistent '
             'view.'.format(reaction, family, placed_reactants, placed_products,
                            declared_count))
+
+    # 10. Structural verification that the declared side is the RIGHT side.
+    #     Steps 3-9 establish only that the placement matches the family's
+    #     declaration and the reaction's metadata count. Both of those are
+    #     assertions by a producer; this step checks the result against the
+    #     participants themselves, which no producer controls.
+    #
+    #     With n electrons on one side, the ``E`` pseudo-element balances for
+    #     exactly one of the two sides: moving them across changes the imbalance
+    #     by 2n, which is nonzero for n >= 1. So an E-balanced view is proof that
+    #     the electron went to the correct side, independent of ``is_forward``, of
+    #     ``electrons``, and of the orientation invariant the generating family
+    #     is supposed to honour. This is what replaced the ``is_forward`` refusal
+    #     in step 6 -- verification of the outcome in place of a proxy for it, and
+    #     it is the check that would have caught the I-086 sign inversion at this
+    #     boundary rather than at the Chemkin writer.
+    #
+    #     Counted with the writers' own rule (``get_species_electron_count``,
+    #     imported read-only) so the reactor boundary and the export boundary
+    #     cannot disagree about what balances.
+    try:
+        reactant_e = sum(get_species_electron_count(spc) for spc in view_reactants)
+        product_e = sum(get_species_electron_count(spc) for spc in view_products)
+    except (AttributeError, IndexError) as exc:
+        raise ElectronPlacementError(
+            'Electron placement for reaction {0!s} (family {1!r}) cannot be '
+            'verified: the E pseudo-element count is undefined for at least one '
+            'participant ({2!s}). A view that cannot be checked is refused rather '
+            'than trusted.'.format(reaction, family, exc))
+    if reactant_e != product_e:
+        raise ElectronPlacementError(
+            'Electron placement for reaction {0!s} (family {1!r}) put {2:d} '
+            'electron(s) on the {3} side per the family declaration, but the '
+            'resulting view does not balance in the E pseudo-element (E={4:d} on '
+            'the left, E={5:d} on the right). The declared side cannot be the '
+            'correct side for this reaction; refusing the view rather than '
+            'handing the reactor an unbalanced one.'.format(
+                reaction, family, declared_count, side, reactant_e, product_e))
 
     # The view: a plain reactor-facing Reaction. Species and kinetics objects
     # are shared by reference (the reactor indexes species by identity);

@@ -1,0 +1,465 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+rootdir: /home/alon/Code/RMG-Py-i088-placement
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 6 items
+
+test/rmgpy/electronPlacementTest.py::TestCationRecombinationPlacement::test_00_reaction_is_reverse_generated_and_reversible PASSED
+test/rmgpy/electronPlacementTest.py::TestCationRecombinationPlacement::test_01_electron_placed_on_reactant_side_exactly_once FAILED
+test/rmgpy/electronPlacementTest.py::TestCationRecombinationPlacement::test_02_view_balances_in_charge_and_E_pseudo_element FAILED
+test/rmgpy/electronPlacementTest.py::TestCationRecombinationPlacement::test_03_canonical_reaction_is_not_mutated FAILED
+test/rmgpy/electronPlacementTest.py::TestCationRecombinationPlacement::test_04_view_stays_reversible FAILED
+test/rmgpy/electronPlacementTest.py::TestCationRecombinationPlacement::test_05_reactor_still_refuses_the_reversible_view_by_name FAILED
+
+=================================== FAILURES ===================================
+_ TestCationRecombinationPlacement.test_01_electron_placed_on_reactant_side_exactly_once _
+
+self = <electronPlacementTest.TestCationRecombinationPlacement object at 0x7a01d8bd3f40>
+
+    def test_01_electron_placed_on_reactant_side_exactly_once(self):
+        """THE assertion: the electron lands on the REACTANT side, and exactly
+        one of it does. A product-side placement or a count of 0 or 2 fails."""
+>       view = self._resolve()
+
+test/rmgpy/electronPlacementTest.py:965: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test/rmgpy/electronPlacementTest.py:942: in _resolve
+    return resolve_electron_placement(self.reaction, self.species_list)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+reaction = TemplateReaction(reactants=[Species(label="[Li+]", molecule=[Molecule(smiles="[Li+]")], molecular_weight=(6.941,'amu')...][CH3]")], molecular_weight=(21.9756,'amu'))]], family='Cation_R_Recombination', template=['Root_2R->C'], electrons=-1)
+species_list = [Species(label="e-", molecule=[Molecule(smiles="e")], molecular_weight=(0.0005486,'amu')), Species(label="[Li+]", mole...15.0346,'amu')), Species(label="[Li][CH3]", molecule=[Molecule(smiles="[Li][CH3]")], molecular_weight=(21.9756,'amu'))]
+
+    def resolve_electron_placement(reaction, species_list):
+        """
+        Resolve a family-declared, reactor-facing electron-placement view of
+        `reaction`.
+    
+        `reaction` is a canonical (database-representation) reaction whose electron
+        is carried as ``electrons`` metadata; `species_list` is the model's species
+        list, which must contain exactly one canonical electron species.
+    
+        Returns a new :class:`rmgpy.reaction.Reaction` — the view — with copied
+        participant lists, the electron inserted on the family-declared side
+        (reactants, for attachment), and ``electrons = 0``. The view shares the
+        species and kinetics *objects* with the canonical reaction by reference
+        (the reactor indexes species by identity), but the canonical reaction
+        itself is never mutated: same ``electrons``, same participant lists, after
+        this call as before. The view is directional — it is produced for, and
+        validated in, the forward direction only — and is a reactor-facing object,
+        never to be written back into any database structure.
+    
+        Raises :class:`~rmgpy.exceptions.ElectronPlacementError`, always naming the
+        offending family/reaction, unless ALL of the following hold: the family
+        carries a placement declaration (this increment: only
+        ``Plasma_Electron_Attachment``); ``reaction.electrons`` equals the declared
+        net consumption (-1); no explicit electron already appears among the
+        participants; the reaction is irreversible and in its forward direction;
+        the kinetics are a currently supported, non-pressure-dependent form; and
+        exactly one canonical electron species is resolvable from `species_list`.
+        """
+        # 1. Family attribution. Placement is family-declared; a reaction that
+        #    carries no family cannot name a declaration and must not fall back to
+        #    its net electron count.
+        family = getattr(reaction, 'family', None)
+        if not family:
+            raise ElectronPlacementError(
+                'Reaction {0!s} carries no family attribution; electron placement is '
+                'family-declared and cannot be inferred from the net electron count '
+                '(Reaction.electrons).'.format(reaction))
+    
+        net_electrons = getattr(reaction, 'electrons', 0) or 0
+        n_explicit_reactants = sum(1 for spc in (reaction.reactants or []) if _is_electron(spc))
+        n_explicit_products = sum(1 for spc in (reaction.products or []) if _is_electron(spc))
+        n_explicit = n_explicit_reactants + n_explicit_products
+    
+        # 2. Double representation is fatal, whatever the family: an explicit
+        #    electron participant AND a nonzero metadata count would double-count
+        #    rate order or electron stoichiometry, and silently preferring either
+        #    source would hide the corruption.
+        if n_explicit and net_electrons != 0:
+            raise ElectronPlacementError(
+                'Reaction {0!s} (family {1!r}) represents the electron twice: {2:d} explicit '
+                'electron participant(s) AND a nonzero metadata electron count '
+                '(electrons={3:d}). This double representation would double-count electron '
+                'stoichiometry or rate order; refusing to prefer either source.'.format(
+                    reaction, family, n_explicit, net_electrons))
+    
+        # 3. Family placement declaration. Absence is a named failure, never a
+        #    fallback to net-derived inference.
+        declaration = FAMILY_ELECTRON_PLACEMENT.get(family)
+        if declaration is None:
+>           raise ElectronPlacementError(
+                'Family {0!r} has no electron-placement declaration (reaction {1!s}, '
+                'electrons={2:d}); refusing to infer electron placement from the net '
+                'electron count. Only families declared in FAMILY_ELECTRON_PLACEMENT '
+                'can resolve.'.format(family, reaction, net_electrons))
+E           rmgpy.exceptions.ElectronPlacementError: Family 'Cation_R_Recombination' has no electron-placement declaration (reaction [Li+] + [CH3] <=> [Li][CH3], electrons=-1); refusing to infer electron placement from the net electron count. Only families declared in FAMILY_ELECTRON_PLACEMENT can resolve.
+
+rmgpy/electron_placement.py:159: ElectronPlacementError
+_ TestCationRecombinationPlacement.test_02_view_balances_in_charge_and_E_pseudo_element _
+
+self = <electronPlacementTest.TestCationRecombinationPlacement object at 0x7a01d8c040a0>
+
+    def test_02_view_balances_in_charge_and_E_pseudo_element(self):
+        """Structural proof that the side is right, independent of any metadata:
+        with the electron on the reactant side both the net electrical charge and
+        the ``E`` pseudo-element balance across the view. Placing it on the
+        product side would leave charge -1 vs 0 and E -1 vs +1."""
+>       view = self._resolve()
+
+test/rmgpy/electronPlacementTest.py:979: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test/rmgpy/electronPlacementTest.py:942: in _resolve
+    return resolve_electron_placement(self.reaction, self.species_list)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+reaction = TemplateReaction(reactants=[Species(label="[Li+]", molecule=[Molecule(smiles="[Li+]")], molecular_weight=(6.941,'amu')...][CH3]")], molecular_weight=(21.9756,'amu'))]], family='Cation_R_Recombination', template=['Root_2R->C'], electrons=-1)
+species_list = [Species(label="e-", molecule=[Molecule(smiles="e")], molecular_weight=(0.0005486,'amu')), Species(label="[Li+]", mole...15.0346,'amu')), Species(label="[Li][CH3]", molecule=[Molecule(smiles="[Li][CH3]")], molecular_weight=(21.9756,'amu'))]
+
+    def resolve_electron_placement(reaction, species_list):
+        """
+        Resolve a family-declared, reactor-facing electron-placement view of
+        `reaction`.
+    
+        `reaction` is a canonical (database-representation) reaction whose electron
+        is carried as ``electrons`` metadata; `species_list` is the model's species
+        list, which must contain exactly one canonical electron species.
+    
+        Returns a new :class:`rmgpy.reaction.Reaction` — the view — with copied
+        participant lists, the electron inserted on the family-declared side
+        (reactants, for attachment), and ``electrons = 0``. The view shares the
+        species and kinetics *objects* with the canonical reaction by reference
+        (the reactor indexes species by identity), but the canonical reaction
+        itself is never mutated: same ``electrons``, same participant lists, after
+        this call as before. The view is directional — it is produced for, and
+        validated in, the forward direction only — and is a reactor-facing object,
+        never to be written back into any database structure.
+    
+        Raises :class:`~rmgpy.exceptions.ElectronPlacementError`, always naming the
+        offending family/reaction, unless ALL of the following hold: the family
+        carries a placement declaration (this increment: only
+        ``Plasma_Electron_Attachment``); ``reaction.electrons`` equals the declared
+        net consumption (-1); no explicit electron already appears among the
+        participants; the reaction is irreversible and in its forward direction;
+        the kinetics are a currently supported, non-pressure-dependent form; and
+        exactly one canonical electron species is resolvable from `species_list`.
+        """
+        # 1. Family attribution. Placement is family-declared; a reaction that
+        #    carries no family cannot name a declaration and must not fall back to
+        #    its net electron count.
+        family = getattr(reaction, 'family', None)
+        if not family:
+            raise ElectronPlacementError(
+                'Reaction {0!s} carries no family attribution; electron placement is '
+                'family-declared and cannot be inferred from the net electron count '
+                '(Reaction.electrons).'.format(reaction))
+    
+        net_electrons = getattr(reaction, 'electrons', 0) or 0
+        n_explicit_reactants = sum(1 for spc in (reaction.reactants or []) if _is_electron(spc))
+        n_explicit_products = sum(1 for spc in (reaction.products or []) if _is_electron(spc))
+        n_explicit = n_explicit_reactants + n_explicit_products
+    
+        # 2. Double representation is fatal, whatever the family: an explicit
+        #    electron participant AND a nonzero metadata count would double-count
+        #    rate order or electron stoichiometry, and silently preferring either
+        #    source would hide the corruption.
+        if n_explicit and net_electrons != 0:
+            raise ElectronPlacementError(
+                'Reaction {0!s} (family {1!r}) represents the electron twice: {2:d} explicit '
+                'electron participant(s) AND a nonzero metadata electron count '
+                '(electrons={3:d}). This double representation would double-count electron '
+                'stoichiometry or rate order; refusing to prefer either source.'.format(
+                    reaction, family, n_explicit, net_electrons))
+    
+        # 3. Family placement declaration. Absence is a named failure, never a
+        #    fallback to net-derived inference.
+        declaration = FAMILY_ELECTRON_PLACEMENT.get(family)
+        if declaration is None:
+>           raise ElectronPlacementError(
+                'Family {0!r} has no electron-placement declaration (reaction {1!s}, '
+                'electrons={2:d}); refusing to infer electron placement from the net '
+                'electron count. Only families declared in FAMILY_ELECTRON_PLACEMENT '
+                'can resolve.'.format(family, reaction, net_electrons))
+E           rmgpy.exceptions.ElectronPlacementError: Family 'Cation_R_Recombination' has no electron-placement declaration (reaction [Li+] + [CH3] <=> [Li][CH3], electrons=-1); refusing to infer electron placement from the net electron count. Only families declared in FAMILY_ELECTRON_PLACEMENT can resolve.
+
+rmgpy/electron_placement.py:159: ElectronPlacementError
+__ TestCationRecombinationPlacement.test_03_canonical_reaction_is_not_mutated __
+
+self = <electronPlacementTest.TestCationRecombinationPlacement object at 0x7a01d8c04250>
+
+    def test_03_canonical_reaction_is_not_mutated(self):
+        """The database representation survives resolution untouched."""
+        reactants_before = list(self.reaction.reactants)
+        products_before = list(self.reaction.products)
+>       self._resolve()
+
+test/rmgpy/electronPlacementTest.py:990: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test/rmgpy/electronPlacementTest.py:942: in _resolve
+    return resolve_electron_placement(self.reaction, self.species_list)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+reaction = TemplateReaction(reactants=[Species(label="[Li+]", molecule=[Molecule(smiles="[Li+]")], molecular_weight=(6.941,'amu')...][CH3]")], molecular_weight=(21.9756,'amu'))]], family='Cation_R_Recombination', template=['Root_2R->C'], electrons=-1)
+species_list = [Species(label="e-", molecule=[Molecule(smiles="e")], molecular_weight=(0.0005486,'amu')), Species(label="[Li+]", mole...15.0346,'amu')), Species(label="[Li][CH3]", molecule=[Molecule(smiles="[Li][CH3]")], molecular_weight=(21.9756,'amu'))]
+
+    def resolve_electron_placement(reaction, species_list):
+        """
+        Resolve a family-declared, reactor-facing electron-placement view of
+        `reaction`.
+    
+        `reaction` is a canonical (database-representation) reaction whose electron
+        is carried as ``electrons`` metadata; `species_list` is the model's species
+        list, which must contain exactly one canonical electron species.
+    
+        Returns a new :class:`rmgpy.reaction.Reaction` — the view — with copied
+        participant lists, the electron inserted on the family-declared side
+        (reactants, for attachment), and ``electrons = 0``. The view shares the
+        species and kinetics *objects* with the canonical reaction by reference
+        (the reactor indexes species by identity), but the canonical reaction
+        itself is never mutated: same ``electrons``, same participant lists, after
+        this call as before. The view is directional — it is produced for, and
+        validated in, the forward direction only — and is a reactor-facing object,
+        never to be written back into any database structure.
+    
+        Raises :class:`~rmgpy.exceptions.ElectronPlacementError`, always naming the
+        offending family/reaction, unless ALL of the following hold: the family
+        carries a placement declaration (this increment: only
+        ``Plasma_Electron_Attachment``); ``reaction.electrons`` equals the declared
+        net consumption (-1); no explicit electron already appears among the
+        participants; the reaction is irreversible and in its forward direction;
+        the kinetics are a currently supported, non-pressure-dependent form; and
+        exactly one canonical electron species is resolvable from `species_list`.
+        """
+        # 1. Family attribution. Placement is family-declared; a reaction that
+        #    carries no family cannot name a declaration and must not fall back to
+        #    its net electron count.
+        family = getattr(reaction, 'family', None)
+        if not family:
+            raise ElectronPlacementError(
+                'Reaction {0!s} carries no family attribution; electron placement is '
+                'family-declared and cannot be inferred from the net electron count '
+                '(Reaction.electrons).'.format(reaction))
+    
+        net_electrons = getattr(reaction, 'electrons', 0) or 0
+        n_explicit_reactants = sum(1 for spc in (reaction.reactants or []) if _is_electron(spc))
+        n_explicit_products = sum(1 for spc in (reaction.products or []) if _is_electron(spc))
+        n_explicit = n_explicit_reactants + n_explicit_products
+    
+        # 2. Double representation is fatal, whatever the family: an explicit
+        #    electron participant AND a nonzero metadata count would double-count
+        #    rate order or electron stoichiometry, and silently preferring either
+        #    source would hide the corruption.
+        if n_explicit and net_electrons != 0:
+            raise ElectronPlacementError(
+                'Reaction {0!s} (family {1!r}) represents the electron twice: {2:d} explicit '
+                'electron participant(s) AND a nonzero metadata electron count '
+                '(electrons={3:d}). This double representation would double-count electron '
+                'stoichiometry or rate order; refusing to prefer either source.'.format(
+                    reaction, family, n_explicit, net_electrons))
+    
+        # 3. Family placement declaration. Absence is a named failure, never a
+        #    fallback to net-derived inference.
+        declaration = FAMILY_ELECTRON_PLACEMENT.get(family)
+        if declaration is None:
+>           raise ElectronPlacementError(
+                'Family {0!r} has no electron-placement declaration (reaction {1!s}, '
+                'electrons={2:d}); refusing to infer electron placement from the net '
+                'electron count. Only families declared in FAMILY_ELECTRON_PLACEMENT '
+                'can resolve.'.format(family, reaction, net_electrons))
+E           rmgpy.exceptions.ElectronPlacementError: Family 'Cation_R_Recombination' has no electron-placement declaration (reaction [Li+] + [CH3] <=> [Li][CH3], electrons=-1); refusing to infer electron placement from the net electron count. Only families declared in FAMILY_ELECTRON_PLACEMENT can resolve.
+
+rmgpy/electron_placement.py:159: ElectronPlacementError
+________ TestCationRecombinationPlacement.test_04_view_stays_reversible ________
+
+self = <electronPlacementTest.TestCationRecombinationPlacement object at 0x7a01d8c04400>
+
+    def test_04_view_stays_reversible(self):
+        """Placement converts a REPRESENTATION, it does not decide a rate
+        policy. The view carries reversible=True through unchanged, so the
+        reactor's reverse-rate guard still sees what it needs to see."""
+>       assert self._resolve().reversible is True
+
+test/rmgpy/electronPlacementTest.py:1003: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test/rmgpy/electronPlacementTest.py:942: in _resolve
+    return resolve_electron_placement(self.reaction, self.species_list)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+reaction = TemplateReaction(reactants=[Species(label="[Li+]", molecule=[Molecule(smiles="[Li+]")], molecular_weight=(6.941,'amu')...][CH3]")], molecular_weight=(21.9756,'amu'))]], family='Cation_R_Recombination', template=['Root_2R->C'], electrons=-1)
+species_list = [Species(label="e-", molecule=[Molecule(smiles="e")], molecular_weight=(0.0005486,'amu')), Species(label="[Li+]", mole...15.0346,'amu')), Species(label="[Li][CH3]", molecule=[Molecule(smiles="[Li][CH3]")], molecular_weight=(21.9756,'amu'))]
+
+    def resolve_electron_placement(reaction, species_list):
+        """
+        Resolve a family-declared, reactor-facing electron-placement view of
+        `reaction`.
+    
+        `reaction` is a canonical (database-representation) reaction whose electron
+        is carried as ``electrons`` metadata; `species_list` is the model's species
+        list, which must contain exactly one canonical electron species.
+    
+        Returns a new :class:`rmgpy.reaction.Reaction` — the view — with copied
+        participant lists, the electron inserted on the family-declared side
+        (reactants, for attachment), and ``electrons = 0``. The view shares the
+        species and kinetics *objects* with the canonical reaction by reference
+        (the reactor indexes species by identity), but the canonical reaction
+        itself is never mutated: same ``electrons``, same participant lists, after
+        this call as before. The view is directional — it is produced for, and
+        validated in, the forward direction only — and is a reactor-facing object,
+        never to be written back into any database structure.
+    
+        Raises :class:`~rmgpy.exceptions.ElectronPlacementError`, always naming the
+        offending family/reaction, unless ALL of the following hold: the family
+        carries a placement declaration (this increment: only
+        ``Plasma_Electron_Attachment``); ``reaction.electrons`` equals the declared
+        net consumption (-1); no explicit electron already appears among the
+        participants; the reaction is irreversible and in its forward direction;
+        the kinetics are a currently supported, non-pressure-dependent form; and
+        exactly one canonical electron species is resolvable from `species_list`.
+        """
+        # 1. Family attribution. Placement is family-declared; a reaction that
+        #    carries no family cannot name a declaration and must not fall back to
+        #    its net electron count.
+        family = getattr(reaction, 'family', None)
+        if not family:
+            raise ElectronPlacementError(
+                'Reaction {0!s} carries no family attribution; electron placement is '
+                'family-declared and cannot be inferred from the net electron count '
+                '(Reaction.electrons).'.format(reaction))
+    
+        net_electrons = getattr(reaction, 'electrons', 0) or 0
+        n_explicit_reactants = sum(1 for spc in (reaction.reactants or []) if _is_electron(spc))
+        n_explicit_products = sum(1 for spc in (reaction.products or []) if _is_electron(spc))
+        n_explicit = n_explicit_reactants + n_explicit_products
+    
+        # 2. Double representation is fatal, whatever the family: an explicit
+        #    electron participant AND a nonzero metadata count would double-count
+        #    rate order or electron stoichiometry, and silently preferring either
+        #    source would hide the corruption.
+        if n_explicit and net_electrons != 0:
+            raise ElectronPlacementError(
+                'Reaction {0!s} (family {1!r}) represents the electron twice: {2:d} explicit '
+                'electron participant(s) AND a nonzero metadata electron count '
+                '(electrons={3:d}). This double representation would double-count electron '
+                'stoichiometry or rate order; refusing to prefer either source.'.format(
+                    reaction, family, n_explicit, net_electrons))
+    
+        # 3. Family placement declaration. Absence is a named failure, never a
+        #    fallback to net-derived inference.
+        declaration = FAMILY_ELECTRON_PLACEMENT.get(family)
+        if declaration is None:
+>           raise ElectronPlacementError(
+                'Family {0!r} has no electron-placement declaration (reaction {1!s}, '
+                'electrons={2:d}); refusing to infer electron placement from the net '
+                'electron count. Only families declared in FAMILY_ELECTRON_PLACEMENT '
+                'can resolve.'.format(family, reaction, net_electrons))
+E           rmgpy.exceptions.ElectronPlacementError: Family 'Cation_R_Recombination' has no electron-placement declaration (reaction [Li+] + [CH3] <=> [Li][CH3], electrons=-1); refusing to infer electron placement from the net electron count. Only families declared in FAMILY_ELECTRON_PLACEMENT can resolve.
+
+rmgpy/electron_placement.py:159: ElectronPlacementError
+_ TestCationRecombinationPlacement.test_05_reactor_still_refuses_the_reversible_view_by_name _
+
+self = <electronPlacementTest.TestCationRecombinationPlacement object at 0x7a01d8c045b0>
+
+    def test_05_reactor_still_refuses_the_reversible_view_by_name(self):
+        """The protection the resolver's own ``reversible`` refusal provided is
+        NOT lost: PlasmaReactor._validate_reactions refuses a reversible
+        electron-containing reaction by name, because kr = kf/Keq(Tgas) would
+        price the electron's thermochemistry at the gas temperature. This is the
+        tripwire for I-088's removal of that check from the resolver -- if the
+        reactor ever stops refusing, this test goes red."""
+>       view = self._resolve()
+
+test/rmgpy/electronPlacementTest.py:1012: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test/rmgpy/electronPlacementTest.py:942: in _resolve
+    return resolve_electron_placement(self.reaction, self.species_list)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+reaction = TemplateReaction(reactants=[Species(label="[Li+]", molecule=[Molecule(smiles="[Li+]")], molecular_weight=(6.941,'amu')...][CH3]")], molecular_weight=(21.9756,'amu'))]], family='Cation_R_Recombination', template=['Root_2R->C'], electrons=-1)
+species_list = [Species(label="e-", molecule=[Molecule(smiles="e")], molecular_weight=(0.0005486,'amu')), Species(label="[Li+]", mole...15.0346,'amu')), Species(label="[Li][CH3]", molecule=[Molecule(smiles="[Li][CH3]")], molecular_weight=(21.9756,'amu'))]
+
+    def resolve_electron_placement(reaction, species_list):
+        """
+        Resolve a family-declared, reactor-facing electron-placement view of
+        `reaction`.
+    
+        `reaction` is a canonical (database-representation) reaction whose electron
+        is carried as ``electrons`` metadata; `species_list` is the model's species
+        list, which must contain exactly one canonical electron species.
+    
+        Returns a new :class:`rmgpy.reaction.Reaction` — the view — with copied
+        participant lists, the electron inserted on the family-declared side
+        (reactants, for attachment), and ``electrons = 0``. The view shares the
+        species and kinetics *objects* with the canonical reaction by reference
+        (the reactor indexes species by identity), but the canonical reaction
+        itself is never mutated: same ``electrons``, same participant lists, after
+        this call as before. The view is directional — it is produced for, and
+        validated in, the forward direction only — and is a reactor-facing object,
+        never to be written back into any database structure.
+    
+        Raises :class:`~rmgpy.exceptions.ElectronPlacementError`, always naming the
+        offending family/reaction, unless ALL of the following hold: the family
+        carries a placement declaration (this increment: only
+        ``Plasma_Electron_Attachment``); ``reaction.electrons`` equals the declared
+        net consumption (-1); no explicit electron already appears among the
+        participants; the reaction is irreversible and in its forward direction;
+        the kinetics are a currently supported, non-pressure-dependent form; and
+        exactly one canonical electron species is resolvable from `species_list`.
+        """
+        # 1. Family attribution. Placement is family-declared; a reaction that
+        #    carries no family cannot name a declaration and must not fall back to
+        #    its net electron count.
+        family = getattr(reaction, 'family', None)
+        if not family:
+            raise ElectronPlacementError(
+                'Reaction {0!s} carries no family attribution; electron placement is '
+                'family-declared and cannot be inferred from the net electron count '
+                '(Reaction.electrons).'.format(reaction))
+    
+        net_electrons = getattr(reaction, 'electrons', 0) or 0
+        n_explicit_reactants = sum(1 for spc in (reaction.reactants or []) if _is_electron(spc))
+        n_explicit_products = sum(1 for spc in (reaction.products or []) if _is_electron(spc))
+        n_explicit = n_explicit_reactants + n_explicit_products
+    
+        # 2. Double representation is fatal, whatever the family: an explicit
+        #    electron participant AND a nonzero metadata count would double-count
+        #    rate order or electron stoichiometry, and silently preferring either
+        #    source would hide the corruption.
+        if n_explicit and net_electrons != 0:
+            raise ElectronPlacementError(
+                'Reaction {0!s} (family {1!r}) represents the electron twice: {2:d} explicit '
+                'electron participant(s) AND a nonzero metadata electron count '
+                '(electrons={3:d}). This double representation would double-count electron '
+                'stoichiometry or rate order; refusing to prefer either source.'.format(
+                    reaction, family, n_explicit, net_electrons))
+    
+        # 3. Family placement declaration. Absence is a named failure, never a
+        #    fallback to net-derived inference.
+        declaration = FAMILY_ELECTRON_PLACEMENT.get(family)
+        if declaration is None:
+>           raise ElectronPlacementError(
+                'Family {0!r} has no electron-placement declaration (reaction {1!s}, '
+                'electrons={2:d}); refusing to infer electron placement from the net '
+                'electron count. Only families declared in FAMILY_ELECTRON_PLACEMENT '
+                'can resolve.'.format(family, reaction, net_electrons))
+E           rmgpy.exceptions.ElectronPlacementError: Family 'Cation_R_Recombination' has no electron-placement declaration (reaction [Li+] + [CH3] <=> [Li][CH3], electrons=-1); refusing to infer electron placement from the net electron count. Only families declared in FAMILY_ELECTRON_PLACEMENT can resolve.
+
+rmgpy/electron_placement.py:159: ElectronPlacementError
+=============================== warnings summary ===============================
+test/rmgpy/electronPlacementTest.py::TestCationRecombinationPlacement::test_00_reaction_is_reverse_generated_and_reversible
+  /home/alon/Code/RMG-Py-i088-placement/rmgpy/data/kinetics/family.py:1145: DeprecationWarning: add_rules_from_training should be only called for non-ATG families, but Cation_R_Recombination is an ATG family. Skip this function call. Calling add_rules_from_training on ATG families may be deprecated in RMG-Py 3.2
+    warnings.warn(f'add_rules_from_training should be only called for non-ATG families, '
+
+test/rmgpy/electronPlacementTest.py::TestCationRecombinationPlacement::test_00_reaction_is_reverse_generated_and_reversible
+  /home/alon/Code/RMG-Py-i088-placement/rmgpy/data/kinetics/family.py:1356: DeprecationWarning: fill_rules_by_averaging_up should be only called for non-ATG families, but Cation_R_Recombination is an ATG family. Skip this function call. Calling fill_rules_by_averaging_up on ATG families may be deprecated in RMG-Py 3.2
+    warnings.warn(f'fill_rules_by_averaging_up should be only called for non-ATG families, '
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED test/rmgpy/electronPlacementTest.py::TestCationRecombinationPlacement::test_01_electron_placed_on_reactant_side_exactly_once
+FAILED test/rmgpy/electronPlacementTest.py::TestCationRecombinationPlacement::test_02_view_balances_in_charge_and_E_pseudo_element
+FAILED test/rmgpy/electronPlacementTest.py::TestCationRecombinationPlacement::test_03_canonical_reaction_is_not_mutated
+FAILED test/rmgpy/electronPlacementTest.py::TestCationRecombinationPlacement::test_04_view_stays_reversible
+FAILED test/rmgpy/electronPlacementTest.py::TestCationRecombinationPlacement::test_05_reactor_still_refuses_the_reversible_view_by_name
+=================== 5 failed, 1 passed, 2 warnings in 0.92s ====================

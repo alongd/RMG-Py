@@ -1,0 +1,14 @@
+Traceback (most recent call last):
+  File "/home/alon/Code/RMG-Py-i088-placement/rmg.py", line 33, in <module>
+    __main__.main()
+  File "/home/alon/Code/RMG-Py-i088-placement/rmgpy/__main__.py", line 104, in main
+    rmg.execute(**kwargs)
+  File "/home/alon/Code/RMG-Py-i088-placement/rmgpy/rmg/main.py", line 1069, in execute
+    terminated, resurrected, obj, new_surface_species, new_surface_reactions, t, x = reaction_system.simulate(
+  File "rmgpy/solver/base.pyx", line 580, in rmgpy.solver.base.ReactionSystem.simulate
+  File "rmgpy/solver/base.pyx", line 678, in rmgpy.solver.base.ReactionSystem.simulate
+  File "rmgpy/solver/plasma.pyx", line 237, in rmgpy.solver.plasma.PlasmaReactor.initialize_model
+  File "rmgpy/solver/plasma.pyx", line 334, in rmgpy.solver.plasma.PlasmaReactor._resolve_electron_placements
+  File "/home/alon/Code/RMG-Py-i088-placement/rmgpy/electron_placement.py", line 159, in resolve_electron_placement
+    raise ElectronPlacementError(
+rmgpy.exceptions.ElectronPlacementError: Family 'Cation_R_Recombination' has no electron-placement declaration (reaction [Lip](3) + [CH3](4) <=> CH3Li(2), electrons=-1); refusing to infer electron placement from the net electron count. Only families declared in FAMILY_ELECTRON_PLACEMENT can resolve.
