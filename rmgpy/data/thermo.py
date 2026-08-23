@@ -1365,6 +1365,21 @@ class ThermoDatabase(object):
 
         thermo0 = self.get_thermo_data_from_libraries(species)
 
+        if species.is_electron():
+            # The electron is a structureless charge-carrier pseudo-species: it has no
+            # group-additivity representation and must never be handed to RDKit, which
+            # rejects the 'e' element ('Element e not found'). Its thermo comes from a
+            # library entry only (matched multiplicity-agnostically above, so a u1 or u0
+            # declaration both resolve to the canonical entry). If no electron thermo
+            # library is loaded, fail loudly with guidance rather than crashing opaquely
+            # in the group-additivity fallback below.
+            if thermo0 is not None:
+                return thermo0[0]
+            raise DatabaseError(
+                "No thermochemistry found for the electron pseudo-species {0!r}. Load a "
+                "thermo library that defines the electron (e.g. 'electrocatThermo'); RMG "
+                "cannot estimate electron thermo by group additivity.".format(species.label))
+
         if thermo0 is not None:  # was able to find thermodata in the loaded libraries
             if len(thermo0) != 3:
                 raise RuntimeError("thermo0 should be a tuple (thermo_data, library, entry), not {0}".format(thermo0))
@@ -2052,9 +2067,19 @@ class ThermoDatabase(object):
         Returns a tuple: (ThermoData, library, entry)  or None.
         """
         match = None
+        # The electron is a charge-carrier pseudo-species, not a molecule, and RMG's
+        # is_electron() predicate is deliberately multiplicity-agnostic: an electron is
+        # an electron whether declared u0 or u1. Its thermo, however, is a single
+        # canonical library entry (u0), and the structural isomorphism test below
+        # distinguishes u0 from u1, so a u1-declared electron would miss the entry, fall
+        # through to group additivity, and crash in RDKit ('Element e not found'). Match
+        # the electron against any electron entry regardless of unpaired-electron count.
+        species_is_electron = species.is_electron()
         for entry in library.entries.values():
+            entry_is_electron = species_is_electron and callable(getattr(entry.item, 'is_electron', None)) \
+                and entry.item.is_electron()
             for molecule in species.molecule:
-                if molecule.is_isomorphic(entry.item) and entry.data is not None:
+                if (molecule.is_isomorphic(entry.item) or entry_is_electron) and entry.data is not None:
                     thermo_data = deepcopy(entry.data)
                     thermo_data.label = entry.label
                     find_cp0_and_cpinf(species, thermo_data)

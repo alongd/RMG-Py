@@ -783,3 +783,76 @@ class PlasmaDatabaseSmokeTest:
         assert abs(charge) < 1e-6 * max(y_end[1], y_end[2])
         nuclei = y_end[0] + y_end[2]
         assert abs(nuclei - (y_start[0] + y_start[2])) < 1e-8
+
+
+class PlasmaReactorDriverInterfaceTest:
+    """Wall B: RMG.execute() computes Tmin/Tmax over every reaction system with
+    ``x.Trange[0] if x.Trange else x.T`` (main.py:879). Every other concrete
+    reactor (simple/liquid/surface) declares ``Trange`` as a public attribute
+    that is None for scalar-T conditions; PlasmaReactor was the only one that
+    omitted it, so the driver raised AttributeError before any chemistry ran."""
+
+    def test_plasma_reactor_exposes_trange_as_none(self):
+        """A scalar plasma reactor carries Trange == None, identical to the
+        contract a scalar SimpleReactor honors -- the honest value the driver
+        reads to fall back to the scalar gas temperature."""
+        electron, ar, ar_ion, _, _ = _species()
+        reactor = _reactor(_mole_fractions(electron, ar, ar_ion))
+        # Before the fix this attribute did not exist -> AttributeError.
+        assert reactor.Trange is None
+        # PlasmaReactor forbids ranged conditions, so Trange is permanently None.
+        assert reactor.T.value_si == T_GAS
+
+    def test_driver_tmin_tmax_expression_reduces_to_scalar_temperature(self):
+        """The exact list comprehension from RMG.execute() must run over a
+        PlasmaReactor and return its scalar gas temperature, mixing cleanly with
+        a ranged SimpleReactor in the same reaction_systems list."""
+        electron, ar, ar_ion, spc_a, spc_b = _species()
+        plasma = _reactor(_mole_fractions(electron, ar, ar_ion))
+        ranged = SimpleReactor(T=[(800, 'K'), (1200, 'K')], P=(P0, 'Pa'),
+                               initial_mole_fractions={spc_a: 1.0}, termination=[])
+        systems = [ranged, plasma]
+        # Verbatim from rmgpy/rmg/main.py:879-880; raised AttributeError pre-fix.
+        tmin = min([x.Trange[0].value_si if x.Trange else x.T.value_si for x in systems])
+        tmax = max([x.Trange[1].value_si if x.Trange else x.T.value_si for x in systems])
+        assert tmin == 800.0            # from the ranged SimpleReactor lower bound
+        assert tmax == 1200.0           # from the ranged SimpleReactor upper bound
+        # And the plasma reactor alone reduces to its scalar gas temperature.
+        assert min([x.Trange[0].value_si if x.Trange else x.T.value_si for x in [plasma]]) == T_GAS
+        assert max([x.Trange[1].value_si if x.Trange else x.T.value_si for x in [plasma]]) == T_GAS
+
+
+@pytest.mark.database
+class PlasmaElectronThermoTest:
+    """Wall A: the electron pseudo-species declared u1 must resolve to the
+    canonical electron thermo entry. is_electron() is deliberately
+    multiplicity-agnostic (an electron is an electron whether u0 or u1), but the
+    structure-keyed thermo library lookup distinguished u0 from u1, so a u1
+    electron missed the u0 database entry, fell through to group additivity, and
+    crashed inside RDKit ('Element e not found'). The electron thermo lookup
+    must be multiplicity-agnostic and resolve to the correct entry."""
+
+    def test_u1_electron_resolves_to_canonical_electron_thermo(self):
+        import os
+        from rmgpy import settings
+        from rmgpy.data.thermo import ThermoDatabase
+
+        thermo_db = ThermoDatabase()
+        thermo_db.load(os.path.join(settings['database.directory'], 'thermo'),
+                       libraries=['electrocatThermo'], depository=False)
+
+        electron_u1 = Species(label='e-').from_adjacency_list('1 e u1 p0 c-1')
+        assert electron_u1.is_electron()
+
+        # The library lookup must HIT the (u0) electron entry despite the u1
+        # declaration -- not merely avoid raising.
+        hit = thermo_db.get_thermo_data_from_libraries(electron_u1)
+        assert hit is not None, 'u1 electron missed the electron thermo library entry'
+        thermo_data, _library, entry = hit
+        assert entry.label == 'electron'
+        assert abs(thermo_data.get_enthalpy(298.0)) < 1.0  # canonical electron: H298 = 0 J/mol
+
+        # The full path must return that entry, never fall through to group
+        # additivity / RDKit.
+        full = thermo_db.get_thermo_data(electron_u1)
+        assert abs(full.get_enthalpy(298.0)) < 1.0
