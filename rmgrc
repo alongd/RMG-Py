@@ -1,0 +1,13 @@
+# RMG settings for the plasma lineage.
+#
+# Without this file `database.directory` resolves to the sibling `RMG-database`
+# checkout, which is the polymer-branch database and carries none of the plasma
+# families -- every plasma suite then fails with
+#   DatabaseError: Unrecognized item "Plasma_Electron_Attachment"
+# which looks exactly like a regression and is not one.
+#
+# The path is relative on purpose. RMG resolves it against the current working
+# directory, and every worktree on this lineage sits as a sibling of
+# RMG-database-plasma, so this one line is correct from the repo root of any of
+# them without naming a machine or a user.
+database.directory = ../RMG-database-plasma/input
