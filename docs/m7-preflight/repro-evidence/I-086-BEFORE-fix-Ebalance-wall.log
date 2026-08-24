@@ -1,0 +1,52 @@
+Initialization complete. Starting model generation.
+
+Generating initial reactions...
+For reaction generation 1 process is used.
+Species  renamed [Lip] based on thermo library name
+Species  renamed [CH3] based on thermo library name
+Generating thermo for new species...
+
+Summary of Secondary Model Edge Enlargement
+---------------------------------
+Added 0 new core species
+Created 2 new edge species
+    [Lip](3)
+    [CH3](4)
+Added 0 new core reactions
+Created 1 new edge reactions
+    [Lip](3) + [CH3](4) <=> CH3Li(2)
+
+After model enlargement:
+    The model core has 6 species and 0 reactions
+    The model edge has 2 species and 1 reactions
+
+
+Completed initial enlarge edge step.
+
+Saving current model core to Chemkin file...
+Chemkin file contains 0 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 0 reactions.
+Saving current model core and edge to Chemkin file...
+
+----- stderr traceback -----
+Traceback (most recent call last):
+  File "/home/alon/Code/RMG-Py-i086-electron-sign/rmg.py", line 33, in <module>
+    __main__.main()
+  File "/home/alon/Code/RMG-Py-i086-electron-sign/rmgpy/__main__.py", line 104, in main
+    rmg.execute(**kwargs)
+  File "/home/alon/Code/RMG-Py-i086-electron-sign/rmgpy/rmg/main.py", line 961, in execute
+    self.save_everything()
+  File "/home/alon/Code/RMG-Py-i086-electron-sign/rmgpy/rmg/main.py", line 2254, in save_everything
+    self.notify()
+  File "/home/alon/Code/RMG-Py-i086-electron-sign/rmgpy/util.py", line 114, in notify
+    observer.update(self)
+  File "rmgpy/chemkin.pyx", line 2728, in rmgpy.chemkin.ChemkinWriter.update
+  File "rmgpy/chemkin.pyx", line 2653, in rmgpy.chemkin.save_chemkin_files
+  File "rmgpy/chemkin.pyx", line 2591, in rmgpy.chemkin.save_chemkin
+  File "rmgpy/chemkin.pyx", line 2436, in rmgpy.chemkin.render_chemkin_file
+  File "rmgpy/chemkin.pyx", line 1938, in rmgpy.chemkin.write_kinetics_entry
+  File "rmgpy/chemkin.pyx", line 1828, in rmgpy.chemkin.write_reaction_string
+  File "/home/alon/Code/RMG-Py-i086-electron-sign/rmgpy/electron_balance.py", line 265, in check_electron_balance
+    raise MechanismWriterError(
+rmgpy.exceptions.MechanismWriterError: Reaction [Lip](3) + [CH3](4) <=> CH3Li(2) does not balance in the E pseudo-element and would be exported wrong: the equation "[Lip](3)+[CH3](4)<=>CH3Li(2)+e-(1)" has E=-1 on the left and E=1 on the right (reaction.electrons=1).

@@ -1,0 +1,12 @@
+:root:Moving /home/alon/Code/RMG-Py-i085-compose/docs/m7-preflight/RMG.log to /home/alon/Code/RMG-Py-i085-compose/docs/m7-preflight/RMG_backup.log
+
+Traceback (most recent call last):
+  File "/home/alon/Code/RMG-Py-i085-compose/rmg.py", line 33, in <module>
+    __main__.main()
+  File "/home/alon/Code/RMG-Py-i085-compose/rmgpy/__main__.py", line 104, in main
+    rmg.execute(**kwargs)
+  File "/home/alon/Code/RMG-Py-i085-compose/rmgpy/rmg/main.py", line 879, in execute
+    self.Tmin = min([x.Trange[0].value_si if x.Trange else x.T.value_si for x in self.reaction_systems])
+  File "/home/alon/Code/RMG-Py-i085-compose/rmgpy/rmg/main.py", line 879, in <listcomp>
+    self.Tmin = min([x.Trange[0].value_si if x.Trange else x.T.value_si for x in self.reaction_systems])
+AttributeError: 'rmgpy.solver.plasma.PlasmaReactor' object has no attribute 'Trange'

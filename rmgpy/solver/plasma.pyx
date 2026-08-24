@@ -88,6 +88,14 @@ cdef class PlasmaReactor(ReactionSystem):
     cdef public dict sens_conditions
     cdef public int n_sims
 
+    # Temperature range of a ranged reactor, or None for a scalar reactor. Every
+    # other concrete reactor (simple/liquid/surface) declares this; RMG.execute()
+    # reads it on every reaction system to compute Tmin/Tmax. PlasmaReactor forbids
+    # ranged conditions (see __init__), so this is permanently None -- the driver
+    # then falls back to the scalar gas temperature self.T, exactly as it does for a
+    # scalar SimpleReactor.
+    cdef public list Trange
+
     # Electron state resolution (set during initialize_model)
     cdef public int electron_index
     cdef public object electron_species

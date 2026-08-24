@@ -1,0 +1,49 @@
+Initialization complete. Starting model generation.
+
+Generating initial reactions...
+For reaction generation 1 process is used.
+Species  renamed [Lip] based on thermo library name
+Species  renamed [CH3] based on thermo library name
+Generating thermo for new species...
+
+Summary of Secondary Model Edge Enlargement
+---------------------------------
+Added 0 new core species
+Created 2 new edge species
+    [Lip](3)
+    [CH3](4)
+Added 0 new core reactions
+Created 1 new edge reactions
+    [Lip](3) + [CH3](4) <=> CH3Li(2)
+
+After model enlargement:
+    The model core has 6 species and 0 reactions
+    The model edge has 2 species and 1 reactions
+
+
+Completed initial enlarge edge step.
+
+Saving current model core to Chemkin file...
+Chemkin file contains 0 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 0 reactions.
+Saving current model core and edge to Chemkin file...
+
+----- stderr traceback -----
+Traceback (most recent call last):
+  File "/home/alon/Code/RMG-Py-i086-electron-sign/rmg.py", line 33, in <module>
+    __main__.main()
+  File "/home/alon/Code/RMG-Py-i086-electron-sign/rmgpy/__main__.py", line 104, in main
+    rmg.execute(**kwargs)
+  File "/home/alon/Code/RMG-Py-i086-electron-sign/rmgpy/rmg/main.py", line 961, in execute
+    self.save_everything()
+  File "/home/alon/Code/RMG-Py-i086-electron-sign/rmgpy/rmg/main.py", line 2254, in save_everything
+    self.notify()
+  File "/home/alon/Code/RMG-Py-i086-electron-sign/rmgpy/util.py", line 114, in notify
+    observer.update(self)
+  File "rmgpy/chemkin.pyx", line 2728, in rmgpy.chemkin.ChemkinWriter.update
+  File "rmgpy/chemkin.pyx", line 2653, in rmgpy.chemkin.save_chemkin_files
+  File "rmgpy/chemkin.pyx", line 2591, in rmgpy.chemkin.save_chemkin
+  File "rmgpy/chemkin.pyx", line 2436, in rmgpy.chemkin.render_chemkin_file
+  File "rmgpy/chemkin.pyx", line 2004, in rmgpy.chemkin.write_kinetics_entry
+rmgpy.exceptions.MechanismWriterError: Cannot write reaction [Lip](3)+[CH3](4)+e-(1)<=>CH3Li(2) to Chemkin: Marcus kinetics evaluate k(T, dGrxn) = A*T^n*exp(-dG_act/(R*T)) with dG_act = (lmbd_i(T)+lmbd_o)/4 * (1 + dGrxn/(lmbd_i(T)+lmbd_o))^2, and dGrxn is not a property of the rate law -- it comes from the species thermochemistry at run time. There is no value of these parameters for which a Chemkin rate expression reproduces this, so there is no correct file to write.

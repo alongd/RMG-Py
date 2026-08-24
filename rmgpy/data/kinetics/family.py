@@ -1737,9 +1737,11 @@ class KineticsFamily(Database):
 
         ``KineticsFamily.electrons`` is the family-forward electron declaration.
         ``Reaction.electrons`` is signed relative to the reaction object's
-        current reactant/product orientation, so it is negated here when
-        ``is_forward`` is ``False`` (the reactant and product lists have just
-        been swapped).
+        stored reactant/product orientation. Both the forward and the reverse
+        branch below store the reaction in family-forward molecular orientation
+        (the reverse branch swaps the just-reversed lists back), so the electron
+        sign is the family-forward declaration in *both* cases -- it is not
+        negated here.
         """
 
         # Make sure the products are in fact different than the reactants
@@ -1754,10 +1756,19 @@ class KineticsFamily(Database):
             reversible=self.reversible,
             family=self.label,
             is_forward=is_forward,
-            # KineticsFamily.electrons is the family-forward declaration; Reaction.electrons is
-            # signed relative to the reaction's current orientation, so negate it when building
-            # the reverse reaction, whose reactant/product lists have just been swapped.
-            electrons=self.electrons if is_forward else -self.electrons,
+            # The reactant/product lists above are stored in family-forward molecular orientation
+            # for BOTH directions: is_forward=True keeps (reactant_structures -> product_structures),
+            # and is_forward=False swaps the reverse-generated (product_structures -> reactant
+            # structures) back to it. Reaction.electrons is signed to that stored orientation, which
+            # is the family-forward orientation either way, so it takes the family-forward
+            # declaration unnegated. Negating on is_forward=False was an I-086 defect: it treated the
+            # is_forward flag as if it also reversed the molecular orientation, producing electrons=+1
+            # (electron placed as a product) for a reaction whose electron is physically a reactant --
+            # e.g. reverse Cation_R_Recombination, Li+ + CH3 (+ e-) -> CH3Li -- which the Chemkin
+            # writer then correctly refused as unbalanced in the E pseudo-element. A genuinely
+            # reverse-oriented reaction (reactants set to the original products) is built elsewhere,
+            # with its own explicit negation; this constructor never produces one.
+            electrons=self.electrons,
         )
 
         # Reactant side first, and separately, so the refusal can be attributed. `is_forward`

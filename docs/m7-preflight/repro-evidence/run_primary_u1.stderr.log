@@ -1,0 +1,155 @@
+[21:22:22] 
+
+****
+Post-condition Violation
+Element 'e' not found
+Violation occurred on line 93 in file /home/conda/feedstock_root/build_artifacts/rdkit-meta_1753546494515/work/Code/GraphMol/PeriodicTable.h
+Failed Expression: anum > -1
+----------
+Stacktrace:
+ 0# Invar::Invariant::toString[abi:cxx11]() const in /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/rdkit/../../../libRDKitRDGeneral.so.1
+ 1# Invar::operator<<(std::ostream&, Invar::Invariant const&) in /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/rdkit/../../../libRDKitRDGeneral.so.1
+ 2# 0x00007E2C45678FFA in /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/rdkit/Chem/../../../../libRDKitGraphMol.so.1
+ 3# RDKit::Atom::Atom(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) in /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/rdkit/Chem/../../../../libRDKitGraphMol.so.1
+ 4# 0x00007E2C45B27CA6 in /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/rdkit/Chem/rdchem.so
+ 5# 0x00007E2C45B320A9 in /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/rdkit/Chem/rdchem.so
+ 6# boost::python::objects::function::call(_object*, _object*) const in /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/rdkit/../../../libboost_python39.so.1.86.0
+ 7# 0x00007E2C4616F469 in /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/rdkit/../../../libboost_python39.so.1.86.0
+ 8# boost::python::detail::exception_handler::operator()(boost::function_n<void> const&) const in /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/rdkit/../../../libboost_python39.so.1.86.0
+ 9# 0x00007E2C4231AAA4 in /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/rdkit/Chem/rdSLNParse.so
+10# 0x00007E2C4271B0E4 in /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/rdkit/Chem/rdDepictor.so
+11# 0x00007E2C429C0CE4 in /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/rdkit/Chem/rdChemReactions.so
+12# 0x00007E2C429C0D34 in /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/rdkit/Chem/rdChemReactions.so
+13# 0x00007E2C486EF6B4 in /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/rdkit/Chem/rdMolChemicalFeatures.so
+14# 0x00007E2C45118D14 in /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/rdkit/Chem/rdmolfiles.so
+15# 0x00007E2C45118D64 in /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/rdkit/Chem/rdmolfiles.so
+16# 0x00007E2C455019B4 in /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/rdkit/Chem/rdCIPLabeler.so
+17# 0x00007E2C45B75F04 in /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/rdkit/Chem/rdchem.so
+18# 0x00007E2C45B08B60 in /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/rdkit/Chem/rdchem.so
+19# 0x00007E2C45B08640 in /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/rdkit/Chem/rdchem.so
+20# 0x00007E2C45B08120 in /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/rdkit/Chem/rdchem.so
+21# 0x00007E2C45B07C00 in /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/rdkit/Chem/rdchem.so
+22# 0x00007E2C45B076E0 in /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/rdkit/Chem/rdchem.so
+23# 0x00007E2C46241F24 in /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/rdkit/rdBase.so
+24# 0x00007E2C46241F74 in /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/rdkit/rdBase.so
+25# 0x00007E2C46241FC4 in /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/rdkit/rdBase.so
+26# 0x00007E2C46242014 in /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/rdkit/rdBase.so
+27# boost::python::handle_exception_impl(boost::function_n<void>) in /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/rdkit/../../../libboost_python39.so.1.86.0
+28# 0x00007E2C4616C9C3 in /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/rdkit/../../../libboost_python39.so.1.86.0
+29# _PyObject_MakeTpCall in python
+30# 0x0000630A9DD4EE31 in python
+31# 0x0000630A9DD4C5CD in python
+32# _PyObject_MakeTpCall in python
+33# PyObject_VectorcallMethod in python
+34# 0x00007E2C44596E64 in /home/alon/Code/RMG-Py-i085-compose/rmgpy/molecule/converter.cpython-39-x86_64-linux-gnu.so
+35# 0x00007E2C4459BF4C in /home/alon/Code/RMG-Py-i085-compose/rmgpy/molecule/converter.cpython-39-x86_64-linux-gnu.so
+36# 0x00007E2C43D5BBC1 in /home/alon/Code/RMG-Py-i085-compose/rmgpy/molecule/translator.cpython-39-x86_64-linux-gnu.so
+37# 0x00007E2C43D5DCDB in /home/alon/Code/RMG-Py-i085-compose/rmgpy/molecule/translator.cpython-39-x86_64-linux-gnu.so
+38# 0x00007E2C43D611AF in /home/alon/Code/RMG-Py-i085-compose/rmgpy/molecule/translator.cpython-39-x86_64-linux-gnu.so
+39# 0x00007E2C43D6152F in /home/alon/Code/RMG-Py-i085-compose/rmgpy/molecule/translator.cpython-39-x86_64-linux-gnu.so
+40# 0x00007E2C4486B67D in /home/alon/Code/RMG-Py-i085-compose/rmgpy/molecule/molecule.cpython-39-x86_64-linux-gnu.so
+41# 0x00007E2C44839F24 in /home/alon/Code/RMG-Py-i085-compose/rmgpy/molecule/molecule.cpython-39-x86_64-linux-gnu.so
+42# PyObject_Str in python
+43# 0x0000630A9DD40CBA in python
+44# 0x0000630A9DD7BF13 in python
+45# 0x0000630A9DDEEF3C in python
+46# PyObject_Format in python
+47# _PyEval_EvalFrameDefault in python
+48# 0x0000630A9DD419FA in python
+49# _PyEval_EvalFrameDefault in python
+50# 0x0000630A9DD419FA in python
+51# 0x0000630A9DD4EABE in python
+52# _PyEval_EvalFrameDefault in python
+53# 0x0000630A9DD419FA in python
+54# _PyEval_EvalFrameDefault in python
+55# 0x0000630A9DD419FA in python
+56# _PyEval_EvalFrameDefault in python
+57# 0x0000630A9DD301E5 in python
+58# _PyFunction_Vectorcall in python
+59# _PyEval_EvalFrameDefault in python
+60# 0x0000630A9DD301E5 in python
+61# _PyFunction_Vectorcall in python
+62# _PyEval_EvalFrameDefault in python
+63# 0x0000630A9DD301E5 in python
+64# _PyFunction_Vectorcall in python
+65# _PyEval_EvalFrameDefault in python
+66# 0x0000630A9DD301E5 in python
+67# _PyFunction_Vectorcall in python
+68# _PyEval_EvalFrameDefault in python
+69# 0x0000630A9DD301E5 in python
+70# _PyFunction_Vectorcall in python
+71# _PyEval_EvalFrameDefault in python
+72# 0x0000630A9DD301E5 in python
+73# 0x0000630A9DD4EB6B in python
+74# PyObject_Call in python
+75# _PyEval_EvalFrameDefault in python
+76# 0x0000630A9DD301E5 in python
+77# 0x0000630A9DD4EB6B in python
+78# PyObject_Call in python
+79# _PyEval_EvalFrameDefault in python
+80# 0x0000630A9DD419FA in python
+81# _PyEval_EvalFrameDefault in python
+82# 0x0000630A9DD301E5 in python
+83# _PyEval_EvalCodeWithName in python
+84# PyEval_EvalCodeEx in python
+85# PyEval_EvalCode in python
+86# 0x0000630A9DE07C2A in python
+87# 0x0000630A9DE040F3 in python
+88# 0x0000630A9DC9F2C4 in python
+89# PyRun_SimpleFileExFlags in python
+90# Py_RunMain in python
+91# Py_BytesMain in python
+92# 0x00007E2D2EC2A1CA in /lib/x86_64-linux-gnu/libc.so.6
+93# __libc_start_main in /lib/x86_64-linux-gnu/libc.so.6
+94# 0x0000630A9DDCE48E in python
+----------
+****
+
+Traceback (most recent call last):
+  File "rmgpy/molecule/translator.py", line 294, in rmgpy.molecule.translator.to_smiles
+KeyError: ('He', (-1,))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/alon/Code/RMG-Py-i085-compose/rmg.py", line 33, in <module>
+    __main__.main()
+  File "/home/alon/Code/RMG-Py-i085-compose/rmgpy/__main__.py", line 104, in main
+    rmg.execute(**kwargs)
+  File "/home/alon/Code/RMG-Py-i085-compose/rmgpy/rmg/main.py", line 871, in execute
+    requires_rms = self.initialize(**kwargs)
+  File "/home/alon/Code/RMG-Py-i085-compose/rmgpy/rmg/main.py", line 700, in initialize
+    submit(spec, self.solvent)
+  File "/home/alon/Code/RMG-Py-i085-compose/rmgpy/thermo/thermoengine.py", line 184, in submit
+    spc.thermo = evaluator(spc, solvent_name=solvent_name)
+  File "/home/alon/Code/RMG-Py-i085-compose/rmgpy/thermo/thermoengine.py", line 163, in evaluator
+    thermo = generate_thermo_data(spc, solvent_name=solvent_name)
+  File "/home/alon/Code/RMG-Py-i085-compose/rmgpy/thermo/thermoengine.py", line 127, in generate_thermo_data
+    thermo0 = thermodb.get_thermo_data(spc)
+  File "/home/alon/Code/RMG-Py-i085-compose/rmgpy/data/thermo.py", line 1519, in get_thermo_data
+    thermo0 = self.get_thermo_data_from_groups(species)
+  File "/home/alon/Code/RMG-Py-i085-compose/rmgpy/data/thermo.py", line 2089, in get_thermo_data_from_groups
+    tdata = self.estimate_thermo_via_group_additivity(molecule)
+  File "/home/alon/Code/RMG-Py-i085-compose/rmgpy/data/thermo.py", line 2329, in estimate_thermo_via_group_additivity
+    thermo_data = self.estimate_radical_thermo_via_hbi(molecule, self.compute_group_additivity_thermo)
+  File "/home/alon/Code/RMG-Py-i085-compose/rmgpy/data/thermo.py", line 2237, in estimate_radical_thermo_via_hbi
+    thermo_data_sat = stable_thermo_estimator(saturated_struct)
+  File "/home/alon/Code/RMG-Py-i085-compose/rmgpy/data/thermo.py", line 2367, in compute_group_additivity_thermo
+    data_added = self._add_group_thermo_data(thermo_data, self.groups['group'], molecule, {'*': atom})[1]
+  File "/home/alon/Code/RMG-Py-i085-compose/rmgpy/data/thermo.py", line 2738, in _add_group_thermo_data
+    raise KeyError(f'Node not found for atom {atom} in molecule {molecule} in thermo database {database.label}.')
+  File "rmgpy/molecule/molecule.py", line 1102, in rmgpy.molecule.molecule.Molecule.__str__
+  File "rmgpy/molecule/molecule.py", line 2108, in rmgpy.molecule.molecule.Molecule.to_smiles
+  File "rmgpy/molecule/translator.py", line 267, in rmgpy.molecule.translator.to_smiles
+  File "rmgpy/molecule/translator.py", line 300, in rmgpy.molecule.translator.to_smiles
+  File "rmgpy/molecule/translator.py", line 668, in rmgpy.molecule.translator._write
+  File "rmgpy/molecule/translator.py", line 464, in rmgpy.molecule.translator._rdkit_translator
+  File "rmgpy/molecule/converter.py", line 53, in rmgpy.molecule.converter.to_rdkit_mol
+  File "rmgpy/molecule/converter.py", line 84, in rmgpy.molecule.converter.to_rdkit_mol
+RuntimeError: Post-condition Violation
+	Element 'e' not found
+	Violation occurred on line 93 in file Code/GraphMol/PeriodicTable.h
+	Failed Expression: anum > -1
+	RDKIT: 2025.03.5
+	BOOST: 
+
