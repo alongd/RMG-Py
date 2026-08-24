@@ -3489,3 +3489,66 @@ class TestElectronsSurviveCopyAndPickle:
                      "Molecule": Molecule, "Arrhenius": Arrhenius}
         restored = eval(repr(rxn), namespace)
         assert restored.electrons == -1
+
+
+class TestIsBalancedChargeConservation:
+    """
+    ``Reaction.is_balanced`` must enforce charge conservation, not only element conservation.
+
+    It accumulates ``reactants_net_charge`` / ``products_net_charge`` atom by atom and adjusts
+    them by ``self.electrons`` (the electron the reaction carries as a scalar rather than a
+    species), then -- historically -- discarded the result and returned ``True`` unconditionally.
+    These tests pin the charge half of the balance to the return value.
+
+    Sign convention (``reaction.py`` docstring; matches ``electron_balance.expand_electrons``):
+    ``electrons`` is signed to the object's current orientation, negative = electron consumed
+    (reactant side), positive = electron produced (product side). An electron carries charge -1.
+    Consuming reaction A + e- -> A- (electrons=-1): reactant species charge 0, ``+= electrons``
+    -> -1; product species charge -1; -1 == -1 balanced. Producing reaction A -> A+ + e-
+    (electrons=+1): reactant 0; product species +1, ``-= electrons`` -> 0; 0 == 0 balanced.
+    """
+
+    def setup_class(self):
+        self.neutral = Species(label="OH", molecule=[Molecule().from_smiles("[OH]")])
+        self.anion = Species(label="OHm", molecule=[Molecule().from_smiles("[OH-]")])
+
+    def test_charge_unbalanced_but_element_balanced_is_rejected(self):
+        """
+        RED-before: OH -> OH- is balanced in every element (one O, one H each side) but the
+        net charge drops from 0 to -1 with no electron accounted for. Before the charge
+        comparison gated the return, ``is_balanced`` returned ``True`` here -- the assertion
+        that could not previously exist.
+        """
+        rxn = Reaction(reactants=[self.neutral], products=[self.anion])
+        assert rxn.electrons == 0
+        assert not rxn.is_balanced()
+
+    def test_neutral_element_balanced_reaction_is_accepted(self):
+        """A charge-neutral, element-balanced reaction is still accepted."""
+        rxn = Reaction(reactants=[self.neutral], products=[self.neutral])
+        assert rxn.is_balanced()
+
+    def test_reduction_with_consumed_electron_is_accepted(self):
+        """
+        A + e- -> A- carried as electrons=-1: charge balances once the consumed electron is
+        counted. One consuming reaction's arithmetic, worked in the docstring.
+        """
+        rxn = Reaction(reactants=[self.neutral], products=[self.anion], electrons=-1)
+        assert rxn.is_balanced()
+
+    def test_oxidation_with_produced_electron_is_accepted(self):
+        """A- -> A + e- carried as electrons=+1: one producing reaction's arithmetic."""
+        rxn = Reaction(reactants=[self.anion], products=[self.neutral], electrons=1)
+        assert rxn.is_balanced()
+
+    def test_sign_inverted_electron_reaction_is_rejected(self):
+        """
+        The hypothesis in the ticket: the dead check let a charge/electron sign inversion reach
+        the writer. The correct reduction A -> A- carries electrons=-1; the same reaction with
+        the electron sign flipped to +1 puts the electron on the wrong side and leaves the charge
+        off by 2. A live comparison rejects it; the dead one accepted it.
+        """
+        correct = Reaction(reactants=[self.neutral], products=[self.anion], electrons=-1)
+        inverted = Reaction(reactants=[self.neutral], products=[self.anion], electrons=1)
+        assert correct.is_balanced()
+        assert not inverted.is_balanced()

@@ -1623,12 +1623,19 @@ class Reaction:
             if reactant_elements[element] != product_elements[element]:
                 return False
 
+        # Fold the electron the reaction carries as a scalar (rather than as a species) into the
+        # net charges before comparing. ``electrons`` is signed to this object's current
+        # orientation -- negative means electrons are consumed (reactant side), positive means
+        # produced (product side) -- and an electron carries charge -1. So |electrons| electrons
+        # on the reactant side contribute a total charge of ``self.electrons`` (a negative number),
+        # and |electrons| on the product side contribute ``-self.electrons``. This matches the sign
+        # convention in ``rmgpy.electron_balance.expand_electrons``.
         if self.electrons < 0:
             reactants_net_charge += self.electrons
         elif self.electrons > 0:
             products_net_charge -= self.electrons
 
-        return True
+        return reactants_net_charge == products_net_charge
 
     def generate_pairs(self):
         """
