@@ -3488,7 +3488,6 @@ cdef class Marcus(KineticsModel):
     `A`             The preexponential factor
     `n`             The temperature exponent
     `lmbd_i_coefs`  Coefficients for inner sphere reorganization energy
-    `V0`            The reference potential
     `beta`          Transmission decay coefficient
     `wr`            Work to bring reactants together
     `wp`            Work to bring products together 
@@ -3595,8 +3594,13 @@ cdef class Marcus(KineticsModel):
     cpdef double get_rate_coefficient(self, double T, double dGrxn=0.0) except -1:
         """
         Return the rate coefficient in the appropriate combination of m^3,
-        mol, and s at temperature `T` in K and enthalpy of reaction `dHrxn`
+        mol, and s at temperature `T` in K and free energy of reaction `dGrxn`
         in J/mol.
+
+        `dGrxn` is a property of the reaction, not of the rate law, so it cannot be defaulted
+        here to anything meaningful: the 0.0 below means an exactly thermoneutral reaction. Callers
+        holding a reaction should route through :meth:`rmgpy.reaction.Reaction.get_rate_coefficient`,
+        which resolves `dGrxn` from the species thermochemistry.
         """
         cdef double A, n, dG
         dG = self.get_gibbs_activation_energy(T, dGrxn)
@@ -3612,8 +3616,8 @@ cdef class Marcus(KineticsModel):
     
     cpdef double get_gibbs_activation_energy(self, double T, double dGrxn) except -1:
         """
-        Return the activation energy in J/mol corresponding to the given
-        enthalpy of reaction `dHrxn` in J/mol.
+        Return the Gibbs activation energy in J/mol corresponding to the given
+        free energy of reaction `dGrxn` in J/mol.
         """
         cdef double lmbd_i
         lmbd_i = self.get_lmbd_i(T)
