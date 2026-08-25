@@ -1,0 +1,31 @@
+INFO:root:Kinetics family Cation_R_Recombination is QUARANTINED FOR QUANTITATIVE PLASMA USE (Marcus): electrochemical reference/domain unavailable
+database.directory : /home/alon/Code/RMG-database-i102-quarantine/input
+families           : /home/alon/Code/RMG-database-i102-quarantine/input/kinetics/families
+families loaded    : 135
+families quarantined: 1
+
+==============================================================================
+family                 : Cation_R_Recombination
+state                  : QUARANTINED FOR QUANTITATIVE PLASMA USE
+appliesToKineticsClass : Marcus -> <class 'rmgpy.kinetics.arrhenius.Marcus'>
+reason                 : electrochemical reference/domain unavailable
+manifest               : /home/alon/Code/RMG-database-i102-quarantine/input/kinetics/families/Cation_R_Recombination/quarantine.py
+------------------------------------------------------------------------------
+rate rules affected    : 7
+    [  1] Root                                               Marcus
+    [  2] Root_2R->C                                         Marcus
+    [  3] Root_N-2R->C                                       Marcus
+    [  4] Root_2R->C_Ext-2C-R                                Marcus
+    [  5] Root_N-2R->C_Ext-2BrClFHILiNOPSSi-R                Marcus
+    [  6] Root_N-2R->C_2BrClFHILiNOPSSi->S                   Marcus
+    [  7] Root_N-2R->C_N-2BrClFHILiNOPSSi->S                 Marcus
+training entries affected: 5
+    [  0] NH2 + Li <=> NH2Li                                 Marcus
+    [  1] C2H5 + Li <=> C2H5Li                               Marcus
+    [  2] CH3 + Li <=> CH3Li                                 Marcus
+    [  3] CH3NH + Li <=> CH3NHLi                             Marcus
+    [  4] SH + Li <=> SHLi                                   Marcus
+------------------------------------------------------------------------------
+unaffected in this family: 0 rate rules, 0 training entries
+==============================================================================
+TOTAL AFFECTED ENTRIES : 12

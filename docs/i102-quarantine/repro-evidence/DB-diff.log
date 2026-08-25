@@ -1,0 +1,12 @@
+$ git status --porcelain
+?? input/kinetics/families/Cation_R_Recombination/quarantine.py
+
+$ git add -A input/ && git diff --cached --stat
+ .../families/Cation_R_Recombination/quarantine.py  | 49 ++++++++++++++++++++++
+ 1 file changed, 49 insertions(+)
+
+$ git diff --cached --diff-filter=MD --stat   # modifications and deletions only
+(empty means nothing was modified or deleted)
+
+$ git diff --cached -- input/kinetics/families/Cation_R_Recombination/rules.py input/kinetics/families/Cation_R_Recombination/training/
+(empty: no rate, no lambda, no A, no n, no equation, no deletion)
