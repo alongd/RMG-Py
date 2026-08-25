@@ -340,12 +340,13 @@ class TestElectronPlacementResolver:
 
     def test_declaration_registry_is_explicit_and_closed(self):
         """The registry is a closed, hand-maintained list. Two families are
-        declared, both in the single-electron-on-the-reactant-side shape; any
-        other entry appearing here means placement semantics generalized without
-        someone deciding they should."""
+        declared, both in the single-electron-on-the-reactant-side shape --
+        spelled ``(reactant_count, product_count)`` since I-113 widened the
+        declaration; any other entry appearing here means placement semantics
+        generalized without someone deciding they should."""
         assert FAMILY_ELECTRON_PLACEMENT == {
-            "Plasma_Electron_Attachment": ("reactants", 1),
-            "Cation_R_Recombination": ("reactants", 1),
+            "Plasma_Electron_Attachment": (1, 0),
+            "Cation_R_Recombination": (1, 0),
         }
 
 

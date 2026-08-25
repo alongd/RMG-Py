@@ -739,12 +739,22 @@ def test_extra_refusal_fires(name, probe, expected_phrase):
 
 
 def test_family_electron_placement_still_holds_exactly_two_consuming_entries():
-    """The declaration table is untouched: two families, both single-electron
-    on the reactant side. Nothing ionisation-shaped has been added."""
+    """The declaration table still holds exactly two families, both
+    single-electron on the reactant side. Nothing ionisation-shaped has been
+    added.
+
+    The VALUES were respelled by I-113, which widened the declaration from
+    ``(side, count)`` to ``(reactant_count, product_count)`` so that incident
+    order could be declared separately from net change; ``('reactants', 1)`` and
+    ``(1, 0)`` are the same chemistry in the two spellings. This is the only row
+    of this measurement that I-113 deliberately moved. The CHEMISTRY the row
+    measures -- two families, one consumed electron each, no ionisation family --
+    is unchanged, which is what the row is here to pin.
+    """
     from rmgpy.electron_placement import FAMILY_ELECTRON_PLACEMENT
     assert FAMILY_ELECTRON_PLACEMENT == {
-        'Plasma_Electron_Attachment': ('reactants', 1),
-        'Cation_R_Recombination': ('reactants', 1),
+        'Plasma_Electron_Attachment': (1, 0),
+        'Cation_R_Recombination': (1, 0),
     }
 
 
