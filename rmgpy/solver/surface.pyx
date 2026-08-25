@@ -307,6 +307,10 @@ cdef class SurfaceReactor(ReactionSystem):
                     warned = True
                 self.kf[j] = rxn.get_rate_coefficient(self.T.value_si, P)
             if rxn.reversible:
+                # Refuse to reconstruct a reverse rate that Keq(Tgas) does not define;
+                # see Reaction.get_reverse_from_equilibrium_refusal. Electrochemistry is
+                # exempt there, so surface charge transfer is unaffected.
+                rxn.check_reverse_from_equilibrium_supported()
                 # kb is set here from the uncorrected Keq. For reactions with
                 # thermo_coverage_dependence, kb is not used directly — residual
                 # and jacobian both compute kr = kf / compute_thermo_coverage_corrections()

@@ -79,6 +79,10 @@ cdef class Reaction:
 
     cpdef bint is_surface_charge_transfer_reaction(self)
 
+    cpdef str get_reverse_from_equilibrium_refusal(self)
+
+    cpdef check_reverse_from_equilibrium_supported(self)
+
     cpdef bint has_template(self, list reactants, list products)
 
     cpdef bint matches_species(self, list reactants, list products=?)
