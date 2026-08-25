@@ -48,8 +48,10 @@ Eight reaction shapes are put through three INDEPENDENT gates:
 3. :class:`rmgpy.solver.plasma.PlasmaReactor`, via ``initialize_model`` --
    which refuses any nonzero metadata electron count outright, and routes it
    first through :func:`rmgpy.electron_placement.resolve_electron_placement`,
-   whose ``FAMILY_ELECTRON_PLACEMENT`` declares only two attachment-shaped
-   families.
+   whose ``FAMILY_ELECTRON_PLACEMENT`` declared, when this was measured, only
+   two attachment-shaped families. It now names four owners, three of them
+   attachment-shaped; the probes below are unaffected, since none of them
+   attributes a declared owner.
 
 The kinetics used for the ionisation and recombination rows are the real
 lithium fits shipped in the plasma database -- ``VoronovEIArrhenius(Z=3, N=3)``
@@ -746,7 +748,7 @@ def test_family_electron_placement_is_still_the_exact_declared_table():
     """The declaration table is exactly what someone decided it should be, and
     nothing has joined it by accident.
 
-    This row has moved twice since I-108 measured it, both times by hand:
+    This row has moved three times since I-108 measured it, every time by hand:
 
     * I-113 respelled the VALUES, widening the declaration from ``(side, count)``
       to ``(reactant_count, product_count)`` so incident order could be declared
@@ -756,17 +758,24 @@ def test_family_electron_placement_is_still_the_exact_declared_table():
       the chemistry: the table now holds an electron-PRODUCING owner, and that
       owner is a kinetics library rather than a family (legal because
       ``LibraryReaction`` sets ``family = library``).
+    * I-119 added ``'PlasmaRadiativeRecombination': (1, 0)``, the electron SINK
+      that pairs with that source. Its numbers are attachment's, because
+      ``A+ + e- -> A + hv`` has attachment's shape - the electron is captured and
+      does not come out again - so it is the first entry to duplicate an existing
+      VALUE while declaring different chemistry. That duplication is the reason
+      the table is a list of owners and not a list of shapes.
 
     The row is renamed accordingly. Its old name asserted "exactly two consuming
     entries", which has become false, and a test whose name lies is worse than
     one that fails. What it still pins is the property I-108 cared about: the
-    table is a closed, hand-maintained list, so a FOURTH entry nobody decided on
+    table is a closed, hand-maintained list, so a FIFTH entry nobody decided on
     still fails here.
     """
     from rmgpy.electron_placement import FAMILY_ELECTRON_PLACEMENT
     assert FAMILY_ELECTRON_PLACEMENT == {
         'Plasma_Electron_Attachment': (1, 0),
         'Cation_R_Recombination': (1, 0),
+        'PlasmaRadiativeRecombination': (1, 0),
         'PlasmaElectronImpactIonization': (1, 2),
     }
 

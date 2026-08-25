@@ -390,15 +390,23 @@ class TestPlacementPrimitive:
 class TestDeclarationSchema:
 
     def test_shipped_registry_is_still_closed_and_two_sided(self):
-        """The table is a closed, hand-maintained list. Two families at
-        ``(1, 0)`` -- one electron in, none out -- and, since I-116, the
-        ``PlasmaElectronImpactIonization`` kinetics library at ``(1, 2)``.
-        Widening the schema in I-113 must not have added chemistry to the table
-        by itself, and it did not: the third entry arrived later, by a decision,
-        and any FOURTH one still fails here."""
+        """The table is a closed, hand-maintained list. Two families and, since
+        I-119, one kinetics library at ``(1, 0)`` -- one electron in, none out --
+        plus, since I-116, the ``PlasmaElectronImpactIonization`` library at
+        ``(1, 2)``. Widening the schema in I-113 must not have added chemistry to
+        the table by itself, and it did not: both library entries arrived later,
+        each by a decision, and any FIFTH one still fails here.
+
+        Note what the widened schema bought and what it did not. Only
+        ``PlasmaElectronImpactIonization`` needs two differing numbers; the
+        recombination entry I-119 added is attachment-shaped and would have fitted
+        the old ``(side, count)`` spelling. The schema is wider than three of its
+        four users need, which is correct -- the one that needs it could not be
+        expressed at all before."""
         assert FAMILY_ELECTRON_PLACEMENT == {
             'Plasma_Electron_Attachment': (1, 0),
             'Cation_R_Recombination': (1, 0),
+            'PlasmaRadiativeRecombination': (1, 0),
             'PlasmaElectronImpactIonization': (1, 2),
         }
 

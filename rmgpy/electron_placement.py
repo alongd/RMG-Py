@@ -119,8 +119,9 @@ __all__ = [
 #: degenerate case where one number does both jobs; ionisation is not (see the
 #: module docstring).
 #:
-#: Two of the three declared owners place a single electron on the reactant side
-#: and none on the product side, for different chemistry:
+#: Three of the four declared owners place a single electron on the reactant side
+#: and none on the product side, for three unrelated chemistries — which is
+#: exactly why ``(1, 0)`` has to be declared three times rather than inferred once:
 #: ``Plasma_Electron_Attachment`` is non-dissociative attachment
 #: (``A + e- -> A-``); ``Cation_R_Recombination``
 #: is cation-radical recombination (``Li+ + R. + e- -> R-Li``), which the plasma
@@ -130,8 +131,30 @@ __all__ = [
 #: orientation, which is the orientation the engine stores in BOTH generation
 #: directions (see step 6 below), so one entry covers both.
 #:
-#: The third, ``PlasmaElectronImpactIonization``, declares ``(1, 2)`` — one
-#: electron incident, two liberated — and is the first declaration whose two
+#: ``PlasmaRadiativeRecombination`` is the third, added by I-119: ``A+ + e- ->
+#: A + hv``, the Badnell (2006) fits, the electron SINK that pairs with the
+#: ionisation source below. It shares attachment's numbers because it shares
+#: attachment's SHAPE — the electron is captured and does not come out again, so
+#: the one electron is both the whole incident order and the whole net change.
+#: Sharing them buys it nothing: an owner absent from this mapping resolves to a
+#: named failure even when another owner has already declared its exact shape,
+#: which ``test_plasma_radiative_recombination.py`` in RMG-database pins. The
+#: photon is not represented — it carries neither charge nor mass, so no balance
+#: check misses it.
+#:
+#: One thing that entry is deliberately NOT: the reverse of the ionisation entry
+#: below. Radiative recombination is a second-order forward channel with a photon;
+#: the true inverse of electron-impact ionisation is three-body recombination
+#: ``A+ + 2 e- -> A + e-``, which would declare ``(2, 1)``. That declaration is
+#: absent because the channel cannot be stored at all — ``TwoTemperaturePlasma``,
+#: the only Te-aware third-order rate law, carries no ``electrons`` field, so such
+#: an entry fails ``KineticsLibrary.load``'s balance check before any question of
+#: data arises. Measured, with what would be needed to lift it, in
+#: ``docs/i119-recombination-loss.md`` in RMG-database — which also carries the
+#: coverage arithmetic that narrows 318 Badnell stages to the single usable Li+.
+#:
+#: The fourth, ``PlasmaElectronImpactIonization``, declares ``(1, 2)`` — one
+#: electron incident, two liberated — and is the only declaration whose two
 #: numbers differ, which is the case I-113 widened the schema for. It is a
 #: kinetics LIBRARY label, not a family label, and that is deliberate rather than
 #: accidental: what this resolver reads is ``Reaction.family``, and
@@ -149,6 +172,7 @@ __all__ = [
 FAMILY_ELECTRON_PLACEMENT = {
     'Plasma_Electron_Attachment': (1, 0),
     'Cation_R_Recombination': (1, 0),
+    'PlasmaRadiativeRecombination': (1, 0),
     'PlasmaElectronImpactIonization': (1, 2),
 }
 
