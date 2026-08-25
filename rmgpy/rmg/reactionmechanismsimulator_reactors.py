@@ -45,6 +45,7 @@ from rmgpy.kinetics.arrhenius import (
     MultiArrhenius,
     MultiPDepArrhenius,
     PDepArrhenius,
+    check_marcus_work_terms_exportable,
 )
 from rmgpy.kinetics.chebyshev import Chebyshev
 from rmgpy.kinetics.falloff import Lindemann, ThirdBody, Troe
@@ -658,6 +659,7 @@ def to_rms(obj, species_names=None, rms_species_list=None, rmg_species=None):
         V0 = obj._V0.value_si
         return Main.Arrheniusq(A, n, Ea, q, V0, Main.EmptyRateUncertainty())
     elif isinstance(obj, Marcus):
+        check_marcus_work_terms_exportable(obj, "an RMS (Julia) rate object", "these kinetics")
         A = obj._A.value_si
         n = obj._n.value_si
         return Main.Marcus(A,n,obj._lmbd_i_coefs.value_si,obj._lmbd_o.value_si, obj._wr.value_si, obj._wp.value_si, obj._beta.value_si, Main.EmptyRateUncertainty())

@@ -36,7 +36,7 @@ from scipy.optimize import curve_fit, fsolve
 cimport rmgpy.constants as constants
 from rmgpy import settings
 import rmgpy.quantity as quantity
-from rmgpy.exceptions import KineticsError
+from rmgpy.exceptions import KineticsError, MechanismWriterError
 from rmgpy.kinetics.uncertainties import rank_accuracy_map
 from rmgpy.molecule.molecule import Bond
 from rmgpy.kinetics.model import KineticsModel, PDepKineticsModel
@@ -3490,7 +3490,7 @@ cdef class Marcus(KineticsModel):
     `lmbd_i_coefs`  Coefficients for inner sphere reorganization energy
     `beta`          Transmission decay coefficient
     `wr`            Work to bring reactants together
-    `wp`            Work to bring products together 
+    `wp`            Work to bring products together
     `lmbd_o`        Outer sphere reorganization energy (solvent)
     `Tmin`          The minimum temperature at which the model is valid, or zero if unknown or undefined
     `Tmax`          The maximum temperature at which the model is valid, or zero if unknown or undefined
@@ -3500,9 +3500,19 @@ cdef class Marcus(KineticsModel):
     `comment`       Information about the model (e.g. its source)
     =============== =============================================================
 
+    The rate is ``A * T**n * exp(-dG_act / (R*T))`` with the barrier built by
+    :meth:`get_gibbs_activation_energy`, which consumes `wr` and `wp`.
+
+    `beta` is the one attribute here that the rate law does *not* consume, and that is not an
+    oversight to be fixed by wiring it in: it damps electronic coupling over a donor-acceptor
+    separation, and this class carries no separation to damp over. It survives only to be handed
+    to a runtime that supplies its own distance -- ReactionMechanismSimulator multiplies it by a
+    `d` that has no counterpart here. Treat a `beta` on an entry as data for that export, not as
+    something that shapes an RMG-computed rate.
+
     """
 
-    def __init__(self, A=None, n=0.0, lmbd_i_coefs=np.array([0.0,0.0,0.0,0.0]), beta=(1.2e-10,"1/m"), 
+    def __init__(self, A=None, n=0.0, lmbd_i_coefs=np.array([0.0,0.0,0.0,0.0]), beta=(1.2e-10,"1/m"),
                 wr=(0,"J/mol"), wp=(0,"J/mol"), lmbd_o=(0,"J/mol"), Tmin=None, Tmax=None,
                 Pmin=None, Pmax=None, solute=None, uncertainty=None, comment=''):
 
@@ -3578,14 +3588,14 @@ cdef class Marcus(KineticsModel):
             self._lmbd_o = quantity.Energy(value)
 
     property wr:
-        """outer sphere reorganization energy"""
+        """work required to bring the reactants together into the precursor complex"""
         def __get__(self):
             return self._wr
         def __set__(self, value):
             self._wr = quantity.Energy(value)
 
     property wp:
-        """outer sphere reorganization energy"""
+        """work required to bring the products together into the successor complex"""
         def __get__(self):
             return self._wp
         def __set__(self, value):
@@ -3618,10 +3628,28 @@ cdef class Marcus(KineticsModel):
         """
         Return the Gibbs activation energy in J/mol corresponding to the given
         free energy of reaction `dGrxn` in J/mol.
+
+        The work terms enter as Marcus theory requires them to. `dGrxn` is the free energy
+        between *separated* reactants and *separated* products, but the parabolas are those of
+        the precursor and successor complexes, so the driving force the quadratic sees is
+
+            dG' = dGrxn + wp - wr
+
+        and the whole barrier is measured from the separated reactants, which costs `wr` to
+        assemble:
+
+            dG_act = wr + lmbd/4 * (1 + dG'/lmbd)^2
+
+        With ``wr = wp = 0`` this is exactly the bare quadratic, so every entry that leaves the
+        work terms at their default is numerically unchanged. Before this was written the terms
+        were stored and discarded: a supplied `wr` moved the rate by a factor of exactly 1.
         """
-        cdef double lmbd_i
+        cdef double lmbd_i, lmbd, wr, dG_prime
         lmbd_i = self.get_lmbd_i(T)
-        return (lmbd_i+self.lmbd_o.value_si)/4.0*(1.0+dGrxn/(lmbd_i+self.lmbd_o.value_si))**2
+        lmbd = lmbd_i + self._lmbd_o.value_si
+        wr = self._wr.value_si
+        dG_prime = dGrxn + self._wp.value_si - wr
+        return wr + lmbd/4.0*(1.0+dG_prime/lmbd)**2
 
     cpdef bint is_identical_to(self, KineticsModel other_kinetics) except -2:
         """
@@ -3633,10 +3661,16 @@ cdef class Marcus(KineticsModel):
             return False
         if not KineticsModel.is_identical_to(self, other_kinetics):
             return False
+        # `wr`/`wp` belong in this comparison because they move the barrier: two models that
+        # differ only in their work terms are different rate laws. They were absent here while
+        # they were also absent from the barrier, which was consistent but wrong on both counts.
+        # `electrons` was compared here and `Marcus` has never defined it, so this method raised
+        # AttributeError on every pair of Marcus models it was ever handed.
         if (not self.A.equals(other_kinetics.A) or not self.n.equals(other_kinetics.n)
                 or not self.lmbd_i_coefs.equals(other_kinetics.lmbd_i_coefs) or not self.lmbd_o.equals(other_kinetics.lmbd_o)
                 or not self.beta.equals(other_kinetics.beta)
-                or not self.electrons.equals(other_kinetics.electrons)):
+                or not self.wr.equals(other_kinetics.wr)
+                or not self.wp.equals(other_kinetics.wp)):
             return False
 
         return True
@@ -3653,6 +3687,38 @@ cdef class Marcus(KineticsModel):
         converted to an Arrhenius form.
         """
         raise NotImplementedError('set_cantera_kinetics() is not implemented for Marcus class kinetics.')
+
+
+def check_marcus_work_terms_exportable(kinetics, destination, described):
+    """
+    Refuse to export `Marcus` kinetics carrying a non-zero `wr` or `wp` to `destination`.
+
+    ReactionMechanismSimulator's `Marcus` struct declares `wr` and `wp` and its rate body never
+    reads them, so a work term handed across that boundary is discarded on arrival. RMG's own
+    barrier does consume them (:meth:`Marcus.get_gibbs_activation_energy`), which is exactly why
+    the export cannot stay silent: a non-zero work term would make RMG and RMS disagree about the
+    same mechanism, quietly, with no side reporting anything.
+
+    Zero terms export unchanged -- they are what every entry holds today, and zero is the one
+    value the two runtimes provably agree on.
+
+    `destination` names the writer for the message; `described` identifies the reaction or entry.
+    """
+    if not isinstance(kinetics, Marcus):
+        return
+    if kinetics.wr.value_si == 0.0 and kinetics.wp.value_si == 0.0:
+        return
+    raise MechanismWriterError(
+        'Cannot write {0} to {1}: its Marcus kinetics carry work terms '
+        'wr={2:g} J/mol, wp={3:g} J/mol, which enter the RMG barrier as '
+        'dG_act = wr + lmbd/4 * (1 + (dGrxn + wp - wr)/lmbd)^2. ReactionMechanismSimulator '
+        'stores wr and wp on its Marcus struct but never reads them in its rate expression, so '
+        'exporting these values would hand RMS a rate law it computes differently from RMG '
+        'while both call it the same reaction. Set the work terms to zero to export, or teach '
+        'RMS to consume them.'.format(
+            described, destination, kinetics.wr.value_si, kinetics.wp.value_si)
+    )
+
 
 def get_w0(actions, rxn):
     """
