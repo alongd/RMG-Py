@@ -4,49 +4,58 @@
 name = "Electron_Carrying_Recombination/training"
 shortDesc = "Fixture training reactions for the electron-count propagation tests"
 longDesc = """
-A deliberately ordinary, non-plasma reaction -- methyl radical recombination -- in a family that
-declares `electrons = -1`. The family is synthetic: nothing about methyl recombination requires an
-electron. That is the point. The electron count has to survive the load boundary for any family
-that declares it, not only for the plasma families that motivated the flag.
+Cation recombination, the smallest reaction whose declared electron count is actually true:
+`Li+ + CH3 (+ e-) -> CH3Li`. The reactant side carries +1, the product side is neutral, and the
+electron the family declares is what closes the gap. The dictionary names the cation `Lip` and the
+proton `Hp` because a species label may not contain a `+`; the entry labels below are split on `+`
+to find the reactants.
 
-Three reactant particles collide (two methyls and the electron), so the rate is third order and the
-A factor is given in cm^6/(mol^2*s), even though `reactants` holds only two species.
+That the chemistry is real is what arms the fixture. `Reaction.is_balanced` folds `electrons` into
+the net charges, so if the family's declaration fails to reach the loaded reaction the entry does
+not merely carry the wrong count -- it fails the balance check and does not load at all. The rates
+are placeholders; only their units carry meaning, and only for the molecularity assertion.
+
+Three reactant particles collide in entry 0 (the cation, the radical and the electron), so the rate
+is third order and the A factor is given in cm^6/(mol^2*s), even though `reactants` holds only two
+species. That mismatch between `len(reactants)` and the true molecularity is the whole reason
+`get_molecularity` exists.
 """
 
 entry(
     index = 0,
-    label = "CH3 + CH3 <=> C2H6",
+    label = "Lip + CH3 <=> CH3Li",
     degeneracy = 1.0,
     kinetics = Arrhenius(A=(1.0e+16, 'cm^6/(mol^2*s)'), n=0, Ea=(0, 'kcal/mol'), T0=(1, 'K')),
     rank = 5,
     shortDesc = u"""Fixture value, not a measurement""",
     longDesc =
 u"""
-The rate is arbitrary. Only its units matter here, and they matter because they encode the
-molecularity that the units checker has to arrive at.
+The kinetics carry no electron count of their own, so this entry can only get one from the family
+declaration. It is the entry the propagation tests read.
 """,
 )
 
 entry(
     index = 1,
-    label = "CH3 + CH3 <=> C2H6",
+    label = "Lip + Hp <=> LiH",
     degeneracy = 1.0,
-    kinetics = SurfaceChargeTransfer(
-        alpha = 0.5,
+    kinetics = ArrheniusChargeTransfer(
         A = (1.0e+13, 'm^3/(mol*s)'),
         n = 0,
+        Ea = (0, 'kJ/mol'),
         V0 = (0, 'V'),
-        Ea = (0, 'eV/molecule'),
-        electrons = 1,
+        alpha = 0.5,
+        electrons = -2,
     ),
     rank = 5,
     shortDesc = u"""Fixture value, not a measurement""",
     longDesc =
 u"""
-The same reaction again, but with kinetics that carry an electron count of their own, and one that
-disagrees with the family's. Charge transfer kinetics have always supplied their own count; the
-family's declaration is only a default, and must not overwrite them. Nothing here is physical --
-the reaction is the fixture's methyl recombination and the kinetics are borrowed wholesale -- the
-entry exists solely to pin the precedence between the two sources.
+A two-electron recombination in the same family: two cations, +2 on the reactant side, neutral
+product, and a charge-transfer rate law that carries its own electron count of -2. Charge transfer
+kinetics have always supplied their own count; the family's declaration is only a default and must
+not overwrite them. The entry exists to pin that precedence, and it is self-arming in the same way
+entry 0 is -- if the family's -1 won, the reaction would be one charge unit short of balanced and
+the load would fail.
 """,
 )

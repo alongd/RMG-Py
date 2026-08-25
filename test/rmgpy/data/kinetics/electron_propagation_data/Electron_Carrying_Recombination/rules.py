@@ -4,23 +4,12 @@
 name = "Electron_Carrying_Recombination/rules"
 shortDesc = ""
 longDesc = """
-For some reason the definition of Cs_rad::
-
- Cs_rad
- 1 * C 1 
-
-which is not mutually exclusive from its L2 siblings such as::
-
- Cd_rad
- 1 * C 1 {2,D}, {3,S}
- 2   C 0 {1,D}
- 3   R 0 {1,S}
-
-is apparently not causing a problem
+One rule at the root, so the family has a rate estimator at all. Nothing in the electron-count
+tests reads it; the number is a placeholder, not a measurement.
 """
 entry(
-    index=424,
-    label="Y_rad",
+    index=1,
+    label="Root",
     kinetics=ArrheniusEP(
         A=(1e13, "cm^3/(mol*s)"),
         n=0,

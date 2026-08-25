@@ -44,9 +44,17 @@ Two consequences, both tested here:
    ``test/database/databaseTest.py`` demanded first-order units from a bimolecular electron
    attachment and rejected a correct rate.
 
-Everything here is deliberately non-plasma: methyl radical recombination and hand-built reactions
-with no family at all. The defect is in how an electron count crosses a boundary, not in plasma
-chemistry, and a proof that only holds for the plasma family would not be a proof of the fix.
+Everything here is deliberately non-plasma. The hand-built reactions have no family at all, the
+control family is neutral methyl recombination, and the electron-carrying fixtures are a cut-down
+copy of the shipped ``Cation_R_Recombination``: ``Li+ + CH3 (+ e-) -> CH3Li``. The defect is in how
+an electron count crosses a boundary, not in plasma chemistry, and a proof that only holds for the
+plasma family would not be a proof of the fix.
+
+Cation recombination rather than something simpler because the declared count has to be *true*.
+``Reaction.is_balanced`` folds ``electrons`` into the net charges and compares them, so only a
+reaction whose reactant side really is one charge unit more positive than its product side can
+declare that it consumes an electron. That makes these fixtures self-arming: a count that fails to
+reach the loaded reaction is not a wrong number, it is a failed load.
 """
 
 import os.path
@@ -118,8 +126,10 @@ class TestMolecularityCountsElectrons:
 class TestFamilyPropagatesElectronsToItsTrainingDepository:
     """
     A family's declared electron count must reach the reactions loaded from its training
-    depository. Both fixture families are ordinary methyl recombination; they differ only in
-    whether ``groups.py`` declares ``electrons``.
+    depository. ``Plain_Recombination`` is neutral methyl recombination and declares nothing;
+    ``Electron_Carrying_Recombination`` is cation recombination and declares ``electrons = -1``.
+    They cannot be the same chemistry with only the declaration switched, because a declaration
+    that is not true of the chemistry no longer loads.
     """
 
     @classmethod
@@ -150,6 +160,10 @@ class TestFamilyPropagatesElectronsToItsTrainingDepository:
         """
         The assertion is on the loaded object. Reading the fixture's groups.py would pass while the
         propagation stayed broken, which is exactly how this defect survived.
+
+        Since ``is_balanced`` went live this is doubly armed: ``Li+ + CH3 -> CH3Li`` balances only
+        at ``electrons = -1``, so a declaration that never arrived would already have failed the
+        load in ``setup_class`` rather than reaching this assertion.
         """
         entry = self._training_entry("Electron_Carrying_Recombination", 0)
         assert entry.item.electrons == -1, f"entry {entry.label}: electrons={entry.item.electrons}"
@@ -161,9 +175,10 @@ class TestFamilyPropagatesElectronsToItsTrainingDepository:
 
     def test_loaded_training_reactions_have_the_physical_molecularity(self):
         """
-        End to end: the value the units checker consumes. The same reaction, ``CH3 + CH3 <=> C2H6``,
-        is termolecular in the family that consumes an electron and bimolecular in the one that does
-        not, while ``len(reactants)`` is 2 in both.
+        End to end: the value the units checker consumes. ``Li+ + CH3 <=> CH3Li`` is termolecular
+        because the family consumes an electron; ``CH3 + CH3 <=> C2H6`` is bimolecular because its
+        family does not. ``len(reactants)`` is 2 in both, which is the whole point -- it is not the
+        molecularity.
         """
         with_electron = self._training_entry("Electron_Carrying_Recombination", 0).item
         without_electron = self._training_entry("Plain_Recombination", 0).item
@@ -178,11 +193,12 @@ class TestFamilyPropagatesElectronsToItsTrainingDepository:
         """
         The family's count is only a default. Kinetics that carry their own electron count -- charge
         transfer, i.e. every electrochemistry entry in the real database -- must keep it, so this fix
-        cannot silently rewrite them. The fixture's entry 1 declares +1 against the family's -1.
+        cannot silently rewrite them. The fixture's entry 1 is a two-electron recombination,
+        ``Li+ + H+ (+ 2e-) -> LiH``, whose kinetics declare -2 against the family's -1.
         """
         entry = self._training_entry("Electron_Carrying_Recombination", 1)
-        assert entry.data.electrons.value == 1, "fixture no longer sets a conflicting data count"
-        assert entry.item.electrons == 1, f"family default overwrote the data count: {entry.item.electrons}"
+        assert entry.data.electrons.value == -2, "fixture no longer sets a conflicting data count"
+        assert entry.item.electrons == -2, f"family default overwrote the data count: {entry.item.electrons}"
 
     def test_depository_carries_the_count_handed_down_by_its_family(self):
         """The depository is where the family's declaration lands; it has no other route to it."""
@@ -195,8 +211,14 @@ class TestReverseTrainingReactionNegatesElectronCount:
     A training reaction stored in the reverse (dissociation) direction is flipped to the family's
     forward direction by get_training_set. That flip rebuilt the reaction with a bare Reaction()
     that never passed ``electrons``, so ``electrons`` defaulted to 0 -- the count was *erased*, not
-    merely left un-negated. The family declares ``electrons = -1``, so the flipped forward reaction
-    must instead carry the negated count, +1.
+    merely left un-negated. The stored entry is ``CH3Li -> Li+ + CH3``, which releases an electron
+    and so carries +1; the flipped forward recombination must carry the negated count, -1.
+
+    The stored entry declares that +1 on its own kinetics rather than inheriting the family's -1,
+    and it has no choice. ``KineticsDepository.load`` stamps the family-*forward* count onto
+    whatever orientation is stored and balances that, which for a backward-stored entry is wrong by
+    2*|electrons| -- so a backward-stored entry relying on a nonzero family declaration can never
+    load. That is a property of the depository, not of this test; see the fixture's longDesc.
     """
 
     @classmethod
@@ -229,7 +251,7 @@ class TestReverseTrainingReactionNegatesElectronCount:
         # The one entry was stored reversed relative to the recombination template, so what comes
         # back is the forward-oriented recombination.
         assert len(flipped.reactants) == 2 and len(flipped.products) == 1, str(flipped)
-        assert flipped.electrons == 1, f"expected the negated count +1, got {flipped.electrons}"
+        assert flipped.electrons == -1, f"expected the negated count -1, got {flipped.electrons}"
 
 
 class TestCreateReactionStoresFamilyForwardOrientation:
@@ -268,9 +290,12 @@ class TestCreateReactionStoresFamilyForwardOrientation:
         database.load_families(path=root, families=["Electron_Carrying_Recombination"])
         cls.family = database.families["Electron_Carrying_Recombination"]
         assert cls.family.electrons == -1
-        # Family-forward: reactants are the two methyls, product is ethane.
-        cls.family_reactants = [Molecule().from_smiles("[CH3]"), Molecule().from_smiles("[CH3]")]
-        cls.family_products = [Molecule().from_smiles("CC")]
+        # Family-forward: reactants are the lithium cation and the methyl radical, product is
+        # methyllithium. This is the reaction named in the class docstring below, not a stand-in
+        # for it -- the family only accepts it because the electron it declares closes the +1/0
+        # charge gap.
+        cls.family_reactants = [Molecule().from_smiles("[Li+]"), Molecule().from_smiles("[CH3]")]
+        cls.family_products = [Molecule().from_smiles("[Li][CH3]")]
 
     @staticmethod
     def _reactant_smiles(reaction):
@@ -283,9 +308,9 @@ class TestCreateReactionStoresFamilyForwardOrientation:
             self.family_reactants, self.family_products, is_forward=True)
         assert forward is not None
         assert forward.is_forward is True
-        # Reactant side is the two methyls -- family-forward orientation.
+        # Reactant side is the cation and the radical -- family-forward orientation.
         assert len(forward.reactants) == 2 and len(forward.products) == 1
-        assert self._reactant_smiles(forward) == sorted(["[CH3]", "[CH3]"])
+        assert self._reactant_smiles(forward) == sorted(["[Li+]", "[CH3]"])
         assert forward.electrons == -1
 
     def test_reverse_generation_is_also_family_forward_and_keeps_the_sign(self):
@@ -298,10 +323,10 @@ class TestCreateReactionStoresFamilyForwardOrientation:
             self.family_products, self.family_reactants, is_forward=False)
         assert reverse is not None
         assert reverse.is_forward is False
-        # Despite is_forward=False, the reactant side is the two methyls -- family-forward
+        # Despite is_forward=False, the reactant side is the cation and the radical -- family-forward
         # molecular orientation, exactly as the reverse-generated Li+ + CH3 <=> CH3Li is stored.
         assert len(reverse.reactants) == 2 and len(reverse.products) == 1
-        assert self._reactant_smiles(reverse) == sorted(["[CH3]", "[CH3]"])
+        assert self._reactant_smiles(reverse) == sorted(["[Li+]", "[CH3]"])
         assert reverse.electrons == -1
 
 
@@ -312,6 +337,10 @@ class TestDepositoryDataBorneElectronPrecedence:
     ArrheniusChargeTransfer and ArrheniusChargeTransferBM -- all of which carry their own electrons
     field -- so a training entry using one of those had its count overwritten by the family default.
     Keying off the presence of the attribute fixes all of them, and any future class, at once.
+
+    All three entries hold the same reaction, ``Li+ + H+ (+ 2e-) -> LiH``, declaring the -2 that is
+    true of it, against a family default of -1. Varying only the kinetics class is what makes the
+    class the only possible explanation for a difference in outcome.
     """
 
     def test_data_borne_count_wins_for_every_charge_transfer_class(self):
@@ -323,6 +352,6 @@ class TestDepositoryDataBorneElectronPrecedence:
         depository.load(os.path.join(root, "reactions.py"), KineticsDatabase().local_context, {})
 
         by_index = {entry.index: entry for entry in depository.entries.values()}
-        assert by_index[0].item.electrons == 2, "SurfaceChargeTransferBEP count overwritten"
-        assert by_index[1].item.electrons == -3, "ArrheniusChargeTransfer count overwritten"
-        assert by_index[2].item.electrons == 2, "ArrheniusChargeTransferBM count overwritten"
+        assert by_index[0].item.electrons == -2, "SurfaceChargeTransferBEP count overwritten"
+        assert by_index[1].item.electrons == -2, "ArrheniusChargeTransfer count overwritten"
+        assert by_index[2].item.electrons == -2, "ArrheniusChargeTransferBM count overwritten"
