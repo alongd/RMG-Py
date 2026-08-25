@@ -70,8 +70,10 @@ and the rate is off by a factor of the electron density while the file still
 looks well formed. So incident order is ``reactant_count``, *declared*, and net
 is ``product_count - reactant_count``, *validated*.
 
-Scope: the families named in :data:`FAMILY_ELECTRON_PLACEMENT`, in the shape
-each declares. Every other family, reaction shape, or kinetics form fails by
+Scope: the owners named in :data:`FAMILY_ELECTRON_PLACEMENT` — families and
+kinetics libraries alike, since ``LibraryReaction`` sets ``family = library`` and
+the resolver reads ``Reaction.family`` — in the shape each declares. Every other
+owner, reaction shape, or kinetics form fails by
 name with :class:`rmgpy.exceptions.ElectronPlacementError` — there is no silent
 fallback to net-derived inference, and no general mechanism to inherit
 accidentally.
@@ -117,9 +119,10 @@ __all__ = [
 #: degenerate case where one number does both jobs; ionisation is not (see the
 #: module docstring).
 #:
-#: Both declared families place a single electron on the reactant side and none
-#: on the product side, for different chemistry: ``Plasma_Electron_Attachment``
-#: is non-dissociative attachment (``A + e- -> A-``); ``Cation_R_Recombination``
+#: Two of the three declared owners place a single electron on the reactant side
+#: and none on the product side, for different chemistry:
+#: ``Plasma_Electron_Attachment`` is non-dissociative attachment
+#: (``A + e- -> A-``); ``Cation_R_Recombination``
 #: is cation-radical recombination (``Li+ + R. + e- -> R-Li``), which the plasma
 #: decks reach in the family's REVERSE generation direction — RMG has only the
 #: neutral ``R-Li``, so it matches the product template and reconstructs
@@ -127,14 +130,26 @@ __all__ = [
 #: orientation, which is the orientation the engine stores in BOTH generation
 #: directions (see step 6 below), so one entry covers both.
 #:
-#: An ionisation family would declare ``(1, 2)`` — one electron incident, two
-#: liberated. The resolver supports that shape; no such family is declared here,
-#: because which family (or library) should own electron-impact ionisation is a
-#: database question, not a code one. The registry stays a closed,
-#: hand-maintained list: an entry appearing here means someone decided it should.
+#: The third, ``PlasmaElectronImpactIonization``, declares ``(1, 2)`` — one
+#: electron incident, two liberated — and is the first declaration whose two
+#: numbers differ, which is the case I-113 widened the schema for. It is a
+#: kinetics LIBRARY label, not a family label, and that is deliberate rather than
+#: accidental: what this resolver reads is ``Reaction.family``, and
+#: ``LibraryReaction.__init__`` sets ``self.family = library``
+#: (``rmgpy/data/kinetics/library.py``), so a library owns its placement on
+#: exactly the same terms a family does. The mapping's name is simply older than
+#: the question. A family was rejected on measurement rather than taste — RMG's
+#: rate-rule averaging cannot combine two ``VoronovEIArrhenius`` fits at all, so
+#: a Voronov-trained family is capped at one training entry per node and buys no
+#: generativity; the argument is ``docs/i114-ionisation-owner.md`` in
+#: RMG-database.
+#:
+#: The registry stays a closed, hand-maintained list: an entry appearing here
+#: means someone decided it should.
 FAMILY_ELECTRON_PLACEMENT = {
     'Plasma_Electron_Attachment': (1, 0),
     'Cation_R_Recombination': (1, 0),
+    'PlasmaElectronImpactIonization': (1, 2),
 }
 
 #: Outcomes of the rate-order cross-check (step 11). Disagreement is not one of

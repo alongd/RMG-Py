@@ -386,10 +386,14 @@ def gate_reactor(row):
     ``(accepted, detail)``.
 
     The reaction is a bare :class:`Reaction` with no family attribution, which
-    is what a hand-written or library-sourced reaction is at this boundary: a
-    ``LibraryReaction`` sets ``family`` to the LIBRARY's label, and no library
-    label appears in ``FAMILY_ELECTRON_PLACEMENT`` either, so both land on a
-    named refusal for metadata-carrying rows.
+    is what a hand-written reaction is at this boundary, and what a
+    library-sourced one was when this was measured: a ``LibraryReaction`` sets
+    ``family`` to the LIBRARY's label, and at I-108 no library label appeared in
+    ``FAMILY_ELECTRON_PLACEMENT`` either, so both landed on a named refusal for
+    metadata-carrying rows. Since I-116 one library label does appear there
+    (``PlasmaElectronImpactIonization``), so the second half of that sentence is
+    no longer general -- but this probe is unaffected, because it attributes no
+    family at all and is refused at step 1 rather than step 3.
     """
     spc = _species()
     rxn = Reaction(
@@ -738,23 +742,32 @@ def test_extra_refusal_fires(name, probe, expected_phrase):
     assert expected_phrase in detail, '{0}: {1}'.format(name, detail)
 
 
-def test_family_electron_placement_still_holds_exactly_two_consuming_entries():
-    """The declaration table still holds exactly two families, both
-    single-electron on the reactant side. Nothing ionisation-shaped has been
-    added.
+def test_family_electron_placement_is_still_the_exact_declared_table():
+    """The declaration table is exactly what someone decided it should be, and
+    nothing has joined it by accident.
 
-    The VALUES were respelled by I-113, which widened the declaration from
-    ``(side, count)`` to ``(reactant_count, product_count)`` so that incident
-    order could be declared separately from net change; ``('reactants', 1)`` and
-    ``(1, 0)`` are the same chemistry in the two spellings. This is the only row
-    of this measurement that I-113 deliberately moved. The CHEMISTRY the row
-    measures -- two families, one consumed electron each, no ionisation family --
-    is unchanged, which is what the row is here to pin.
+    This row has moved twice since I-108 measured it, both times by hand:
+
+    * I-113 respelled the VALUES, widening the declaration from ``(side, count)``
+      to ``(reactant_count, product_count)`` so incident order could be declared
+      separately from net change. ``('reactants', 1)`` and ``(1, 0)`` are the
+      same chemistry in the two spellings, so the chemistry was unchanged.
+    * I-116 added ``'PlasmaElectronImpactIonization': (1, 2)``, which DOES change
+      the chemistry: the table now holds an electron-PRODUCING owner, and that
+      owner is a kinetics library rather than a family (legal because
+      ``LibraryReaction`` sets ``family = library``).
+
+    The row is renamed accordingly. Its old name asserted "exactly two consuming
+    entries", which has become false, and a test whose name lies is worse than
+    one that fails. What it still pins is the property I-108 cared about: the
+    table is a closed, hand-maintained list, so a FOURTH entry nobody decided on
+    still fails here.
     """
     from rmgpy.electron_placement import FAMILY_ELECTRON_PLACEMENT
     assert FAMILY_ELECTRON_PLACEMENT == {
         'Plasma_Electron_Attachment': (1, 0),
         'Cation_R_Recombination': (1, 0),
+        'PlasmaElectronImpactIonization': (1, 2),
     }
 
 

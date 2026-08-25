@@ -268,12 +268,19 @@ the owning family's declared count; a library has no owning family to ask.
 ## 4. The reactor jaw — untouched, all three refusals confirmed **[M]**
 
 **[M]** `FAMILY_ELECTRON_PLACEMENT` is byte-for-byte what the ticket describes, asserted by
-`test_family_electron_placement_still_holds_exactly_two_consuming_entries`:
+`test_family_electron_placement_is_still_the_exact_declared_table`:
 
 ```
 FAMILY_ELECTRON_PLACEMENT = {'Plasma_Electron_Attachment': ('reactants', 1),
                              'Cation_R_Recombination': ('reactants', 1)}
 ```
+
+The value above is **as of I-108** and has since moved twice, both times by hand: I-113 respelled it
+to the two-sided `(reactant_count, product_count)` form, and I-116 added a third entry,
+`'PlasmaElectronImpactIonization': (1, 2)` — a kinetics library, and the first electron-producing
+owner. The test carrying this row was renamed at I-116 because its old name asserted "exactly two
+consuming entries", which had become false. What the row still measures — the table is closed and
+hand-maintained — is unchanged.
 
 **[M]** All three refusals fire, with the messages intact (full output in the harness's `THE
 REFUSALS` section):

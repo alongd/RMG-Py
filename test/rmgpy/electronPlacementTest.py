@@ -339,14 +339,19 @@ class TestElectronPlacementResolver:
             resolve_electron_placement(reaction, [_electron(), _electron()])
 
     def test_declaration_registry_is_explicit_and_closed(self):
-        """The registry is a closed, hand-maintained list. Two families are
-        declared, both in the single-electron-on-the-reactant-side shape --
-        spelled ``(reactant_count, product_count)`` since I-113 widened the
-        declaration; any other entry appearing here means placement semantics
-        generalized without someone deciding they should."""
+        """The registry is a closed, hand-maintained list. Three owners are
+        declared: two families in the single-electron-on-the-reactant-side shape
+        -- spelled ``(reactant_count, product_count)`` since I-113 widened the
+        declaration -- and one kinetics LIBRARY,
+        ``PlasmaElectronImpactIonization``, at ``(1, 2)``, the first entry whose
+        two numbers differ. A library label is a legal key because
+        ``LibraryReaction`` sets ``family = library``. Any FURTHER entry
+        appearing here means placement semantics generalized without someone
+        deciding they should."""
         assert FAMILY_ELECTRON_PLACEMENT == {
             "Plasma_Electron_Attachment": (1, 0),
             "Cation_R_Recombination": (1, 0),
+            "PlasmaElectronImpactIonization": (1, 2),
         }
 
 

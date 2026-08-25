@@ -63,7 +63,10 @@ rate law is load-bearing:
 No ionisation family is added to :data:`FAMILY_ELECTRON_PLACEMENT` here: which
 family (or library) should own Li ionisation is a data question and a separate
 ticket. The declaration is injected under a synthetic label, as the I-108
-measurement did.
+measurement did. (That separate ticket has since answered: I-116 declared the
+``PlasmaElectronImpactIonization`` kinetics library at ``(1, 2)``. This file
+keeps its synthetic label and its injection, so what it tests stays the code
+path rather than the shipped data.)
 """
 
 import pytest
@@ -387,16 +390,24 @@ class TestPlacementPrimitive:
 class TestDeclarationSchema:
 
     def test_shipped_registry_is_still_closed_and_two_sided(self):
-        """Two families, both ``(1, 0)``: one electron in, none out. Widening
-        the schema must not have added chemistry to the table."""
+        """The table is a closed, hand-maintained list. Two families at
+        ``(1, 0)`` -- one electron in, none out -- and, since I-116, the
+        ``PlasmaElectronImpactIonization`` kinetics library at ``(1, 2)``.
+        Widening the schema in I-113 must not have added chemistry to the table
+        by itself, and it did not: the third entry arrived later, by a decision,
+        and any FOURTH one still fails here."""
         assert FAMILY_ELECTRON_PLACEMENT == {
             'Plasma_Electron_Attachment': (1, 0),
             'Cation_R_Recombination': (1, 0),
+            'PlasmaElectronImpactIonization': (1, 2),
         }
 
     def test_no_ionisation_family_is_shipped(self):
-        """The code path is this ticket; which family owns Li ionisation is a
-        data question and a separate one."""
+        """I-113 delivered the code path and left the owner open. I-116 answered
+        it with a kinetics LIBRARY, ``PlasmaElectronImpactIonization``. No
+        ionisation FAMILY is shipped, so this file's synthetic family label is
+        still undeclared and every test here still injects its own
+        declaration."""
         assert IONISATION_FAMILY not in FAMILY_ELECTRON_PLACEMENT
 
     @pytest.mark.parametrize('bad', [
