@@ -40,7 +40,7 @@ Running RMG
 #. **Why did I get** ``ImportError: No module named graph`` **when trying to run RMG?**
 
    This error is commonly seen when RMG is run before compiling. The ``graph`` module just happens to be one of the
-   first Cython modules to be imported. To resolve this, compile RMG using the ``make`` command while in the main
+   first Cython modules to be imported. To resolve this, compile RMG using the ``make build`` command while in the main
    RMG-Py directory.
 
 #. **Why did I get** ``ImportError: No module named cantera`` **when trying to run RMG?**

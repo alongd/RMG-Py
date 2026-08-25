@@ -79,7 +79,18 @@ The instructions listed below were written for Ubuntu 12.04 and should generally
 	git clone https://github.com/ReactionMechanismGenerator/RMG-Py.git
 	sudo pip install -r RMG-Py/requirements.txt
 	cd RMG-Py
-	make
+	make unsafe-install-shared-env CONFIRM_SHARED_ENV_MUTATION=yes
+
+.. note::
+
+    ``make`` on its own deliberately refuses to run, and prints the safe alternatives.
+    ``pip install -e .`` — which is what the old default target ran — does not install
+    into the checkout; it rewrites the *Python environment's* editable-install record so
+    that ``import rmgpy`` resolves to whichever source tree ran it. Where several RMG-Py
+    checkouts share one conda environment, that silently breaks all the others. The
+    editable install therefore lives behind an explicitly named, opt-in target. Once RMG
+    is installed, use ``make build`` for day-to-day recompilation; it never touches the
+    environment.
 
 * Run an example: ::
 
@@ -108,6 +119,6 @@ The instructions listed below were written for Ubuntu 12.04 and should generally
 
     cd RMG-Py
     make clean-solver
-    make
+    make build
     
   Note that using this option will allow RMG to both run with and without sensitivity.  

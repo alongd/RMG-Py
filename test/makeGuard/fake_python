@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+#
+# Stand-in for `python` used by the Makefile shared-environment guard harness.
+#
+# It never runs real Python. It records every invocation, classifies the ones that
+# would have mutated the shared conda environment, and exits 0 so that `make` keeps
+# walking the recipe. That is what lets the harness answer the question the guard
+# exists to answer: does this Make target *reach* the editable-install operation?
+#
+# Two log files, both named by the environment:
+#   MAKE_GUARD_ARGV_LOG   every invocation, verbatim
+#   MAKE_GUARD_EVENT_LOG  classified events (PIP_INSTALL_REACHED, BUILD_EXT, ...)
+set -u
+
+printf 'python %s\n' "$*" >> "$MAKE_GUARD_ARGV_LOG"
+
+args=" $* "
+
+if [[ "$args" == *" -m pip "* ]]; then
+    if [[ "$args" == *" install "* ]]; then
+        printf 'PIP_INSTALL_REACHED python %s\n' "$*" >> "$MAKE_GUARD_EVENT_LOG"
+    elif [[ "$args" == *" uninstall "* ]]; then
+        printf 'PIP_UNINSTALL_REACHED python %s\n' "$*" >> "$MAKE_GUARD_EVENT_LOG"
+    else
+        printf 'PIP_OTHER_REACHED python %s\n' "$*" >> "$MAKE_GUARD_EVENT_LOG"
+    fi
+    exit 0
+fi
+
+if [[ "$args" == *"setup.py"* && "$args" == *"build_ext"* ]]; then
+    printf 'BUILD_EXT python %s\n' "$*" >> "$MAKE_GUARD_EVENT_LOG"
+    exit 0
+fi
+
+if [[ "$args" == *"utilities.py"* ]]; then
+    printf 'UTILITIES python %s\n' "$*" >> "$MAKE_GUARD_EVENT_LOG"
+    exit 0
+fi
+
+exit 0

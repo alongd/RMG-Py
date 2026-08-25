@@ -31,17 +31,22 @@ Performance-critical code uses Cython (`.pyx` files) with declaration files (`.p
 
 ## Development Commands
 ```bash
-make install          # First-time pip editable install + Cython build. Writes a .installed sentinel; subsequent `make install` is a no-op until `make clean`.
-make build            # Incremental in-place Cython rebuild (`setup.py build_ext --inplace`). Fast — use this after editing .pyx/.pxd/cythonized .py.
-make                  # Default target: dep check, install if needed (via sentinel), then `make build`. Safe go-to.
+make build            # Incremental in-place Cython rebuild (`setup.py build_ext --inplace`). Fast, and never touches the Python environment — this is the go-to.
+make                  # Refuses, by design, and prints the safe alternatives. So do `make all` and `make install`. See below.
 make test             # Run unit tests (excludes functional/database tests)
 make test-functional  # Run functional tests
 make test-database    # Run database tests
 make test-all         # Run all tests
-make clean            # Remove .so/.pyc/.c build artifacts, the build/ dir, the .installed sentinel, and pip-uninstall the package.
+make clean            # Remove .so/.pyc/.c build artifacts, the build/ dir, and the .installed sentinel. Scoped to this checkout.
 make decython         # Remove most .so files for "pure Python" debugging (keeps _statmech.so, quantity.so, and rmgpy/solver/*.so). Pure python mode is not reliably tested and might not work.
 make documentation    # Build Sphinx docs
+
+# Maintenance only — these mutate the Python environment, not this checkout.
+make unsafe-install-shared-env   CONFIRM_SHARED_ENV_MUTATION=yes   # editable install (pip install -e .)
+make unsafe-uninstall-shared-env CONFIRM_SHARED_ENV_MUTATION=yes   # pip uninstall
 ```
+
+`pip install -e .` rewrites the *environment's* editable-install record so that `import rmgpy` resolves to whichever source tree ran it. Where several RMG-Py checkouts share one conda environment — the normal case for worktree-based development — running it from one checkout silently repoints every other checkout's imports. The default goal therefore refuses before pip is invoked; the editable install lives behind the conspicuously named opt-in targets above. Use `make build` for everything else.
 
 ## Testing Conventions
 - Tests live in `test/` mirroring `rmgpy/` and `arkane/` structure
