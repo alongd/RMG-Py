@@ -603,6 +603,12 @@ cdef class PlasmaReactor(ReactionSystem):
                             "electron-containing reaction {0!s}, kinetics {1}; "
                             "mark the reaction irreversible or provide explicit "
                             "reverse kinetics".format(rxn, kin.__class__.__name__))
+                    # The reactor-independent refusal. Every check above is more specific
+                    # and fires first, so this cannot normally be reached from here; it is
+                    # kept so that the reversal stays closed in this reactor even if those
+                    # plasma-specific validations are ever loosened, and so that no reactor
+                    # is the odd one out. See Reaction.get_reverse_from_equilibrium_refusal.
+                    rxn.check_reverse_from_equilibrium_supported()
                     self.Keq[j] = rxn.get_equilibrium_constant(self.T.value_si)
                     self.kb[j] = self.kf[j] / self.Keq[j]
                 else:
