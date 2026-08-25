@@ -168,6 +168,26 @@ class KineticsError(Exception):
     pass
 
 
+class QuarantinedKineticsError(KineticsError):
+    """
+    Raised when a reaction whose kinetics come from quarantined database data is
+    admitted to an RMG reaction model.
+
+    A quarantined rate is one whose evaluation has lost the semantics of its
+    source model -- the number it returns is not the number the data means. The
+    database records the quarantine; this exception is what stops the run.
+
+    This is deliberately fatal and deliberately not catchable into a fallback.
+    Dropping the reaction, averaging a replacement rule, zeroing the rate,
+    marking it irreversible, or substituting a collision rate would each let the
+    run report success on a mechanism that is quietly wrong, which is the whole
+    failure this exception exists to prevent. Every caller should let it
+    propagate; there is no opt-out short of resolving the quarantine in the
+    database.
+    """
+    pass
+
+
 class ModifiedStrongCollisionError(Exception):
     """
     An exception raised when the modified strong collision method is unsuccessful

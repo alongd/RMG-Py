@@ -45,6 +45,7 @@ from rmgpy.constraints import fails_species_constraints, pass_cutting_threshold
 from rmgpy.data.kinetics.depository import DepositoryReaction
 from rmgpy.data.kinetics.family import KineticsFamily, TemplateReaction
 from rmgpy.data.kinetics.library import KineticsLibrary, LibraryReaction
+from rmgpy.data.kinetics.quarantine import check_quarantine
 from rmgpy.data.rmg import get_db
 from rmgpy.data.vaporLiquidMassTransfer import vapor_liquid_mass_transfer
 from rmgpy.display import display
@@ -1047,6 +1048,16 @@ class CoreEdgeReactionModel:
 
         # Find the reaction kinetics
         kinetics, source, entry, is_forward = self.generate_kinetics(reaction)
+        # Refuse quarantined database data before anything is bound or mutated. This is the
+        # boundary the reaction crosses to become part of the model: it is the single call site
+        # where estimated kinetics meet a reaction, it is strictly downstream of generation, and
+        # it is strictly upstream of both the edge and the core -- a rate that never reaches the
+        # core still steers enlargement from the edge, so gating at core admission alone would
+        # let a quarantined rate quietly declare a real channel unimportant. Raising here also
+        # means the direction flip below has not happened and reaction.kinetics is still None,
+        # so a refused reaction is left exactly as generated.
+        check_quarantine(reaction, stage='kinetics estimation for the reaction model',
+                         kinetics=kinetics, source=source, entry=entry)
         # Flip the reaction direction if the kinetics are defined in the reverse direction
         if not is_forward:
             family = get_db("kinetics").families[reaction.family]
@@ -1583,6 +1594,12 @@ class CoreEdgeReactionModel:
         ensure it is supposed to be a core reaction (i.e. all of its reactants
         AND all of its products are in the list of core species).
         """
+        # Backstop for the paths that never pass through kinetics estimation and so never
+        # reach the gate in apply_kinetics_to_reaction: seed mechanisms, reaction libraries,
+        # and API callers that pass generate_kinetics=False. Cheap -- one None check for any
+        # reaction whose family carries no quarantine manifest, which is all of ordinary
+        # chemistry.
+        check_quarantine(rxn, stage='admission to the model core')
         if rxn not in self.core.reactions:
             self.core.reactions.append(rxn)
 
@@ -1611,6 +1628,10 @@ class CoreEdgeReactionModel:
         list of core species, and the others are in either the core or the
         edge).
         """
+        # Same backstop as add_reaction_to_core, for the same paths. The edge is not a
+        # holding pen: edge fluxes decide what gets promoted, so a quarantined rate here is
+        # already steering the model.
+        check_quarantine(rxn, stage='admission to the model edge')
         self.edge.reactions.append(rxn)
         if not requires_rms:
             return
