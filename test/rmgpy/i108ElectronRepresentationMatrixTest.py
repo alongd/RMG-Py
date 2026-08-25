@@ -217,6 +217,18 @@ SUPPLEMENTARY = [
         'kinetics': _thermal_bimolecular,
     },
     {
+        # The form ``check_electron_reactant_order``'s own docstring calls the
+        # correct RMG representation of electron-impact ionisation -- "put the
+        # consumed electron in reaction.reactants and count only surplus produced
+        # electrons in reaction.electrons" -- and the form the shipped
+        # plasma-local-context fixture writes (entry 4, ``e + H => proton + e``).
+        'family': 'EI', 'form': 'half-explicit',
+        'equation': 'Li + e => Li+ + e  (electrons=+1)',
+        'reactants': ['Li', 'e'], 'products': ['Liplus', 'e'],
+        'electrons': 1,
+        'kinetics': lambda: _voronov_li(1),
+    },
+    {
         'family': '3b', 'form': 'e-e-ion+meta',
         'equation': 'Li+ + e + e => Li + e  (electrons=-1)',
         'reactants': ['Liplus', 'e', 'e'], 'products': ['Li', 'e'],
@@ -460,6 +472,7 @@ EXPECTED = {
     'CT/ion-atom': (False, False, True),
     # Supplementary.
     'CT/charge-balanced': (True, True, True),
+    'EI/half-explicit': (True, True, False),
     '3b/e-e-ion+meta': (False, False, False),
 }
 
@@ -555,6 +568,67 @@ def test_reactor_gate_is_orthogonal_to_the_balance_gate():
 
 
 ################################################################################
+# The two incompatible definitions of "the E element"
+################################################################################
+
+def e_counts_by_both_rules(row):
+    """Count element ``E`` on both sides of ``row`` under each of the two rules
+    the codebase actually uses, and return them.
+
+    ``Reaction.is_balanced`` counts ATOMS of element ``e``: only the electron
+    pseudo-species has any, so a free electron is a conserved element and a
+    reaction that creates or destroys one cannot balance.
+
+    ``rmgpy.electron_balance.get_species_electron_count`` -- used by the Chemkin
+    and Cantera writers via ``check_electron_balance``, and by
+    ``resolve_electron_placement`` step 10 -- counts MINUS THE NET CHARGE for a
+    charged species. Under that rule the electron a cation gains is already
+    accounted for in the cation's charge, so an ionisation written with explicit
+    electrons balances.
+
+    The two rules disagree on exactly the shapes this ticket is about, which is
+    the whole substance of the disagreement being re-measured.
+    """
+    from rmgpy.electron_balance import get_species_electron_count
+    spc = _species()
+    reactants = [spc[label] for label in row['reactants']]
+    products = [spc[label] for label in row['products']]
+
+    atom_rule = (
+        sum(1 for s in reactants for a in s.molecule[0].atoms if a.element.symbol == 'e'),
+        sum(1 for s in products for a in s.molecule[0].atoms if a.element.symbol == 'e'),
+    )
+    charge_rule = (
+        sum(get_species_electron_count(s) for s in reactants),
+        sum(get_species_electron_count(s) for s in products),
+    )
+    return atom_rule, charge_rule
+
+
+def test_the_two_E_rules_disagree_on_explicit_ionisation():
+    """``Li + e => Li+ + e + e`` is unbalanced under ``is_balanced``'s atom rule
+    (1 vs 2) and balanced under the writers' charge rule (1 vs 1).
+
+    So "does the electron balance?" has two different answers in this codebase
+    depending on which boundary is asking, and the shape that the balance check
+    refuses is the shape the export boundary and the placement resolver's own
+    step-10 verification would both accept.
+    """
+    atom_rule, charge_rule = e_counts_by_both_rules(_row('EI/explicit'))
+    assert atom_rule == (1, 2)
+    assert charge_rule == (1, 1)
+
+    # Not a one-off. EVERY explicit-electron shape in the matrix is refused by
+    # the atom rule and balanced by the charge rule -- the divergence is total,
+    # not incidental to ionisation.
+    for key in ('EI/explicit', 'EI/half', 'RR/explicit', '3b/e-e-ion', '3b/neutral M'):
+        atom_rule, charge_rule = e_counts_by_both_rules(_row(key))
+        assert atom_rule[0] != atom_rule[1], (key, atom_rule)
+        assert charge_rule[0] == charge_rule[1], (key, charge_rule)
+        assert not gate_is_balanced(_row(key))[0], key
+
+
+################################################################################
 # The three reactor-side refusals
 ################################################################################
 
@@ -620,6 +694,25 @@ def refusal_reactor_metadata_only():
     return True, 'validated'
 
 
+def refusal_double_representation():
+    """The half-explicit canonical form -- incident electron as a species, only
+    the surplus as the scalar -- put to the resolver with a DECLARED family, so
+    that step 1's family check cannot mask what step 2 does with it.
+
+    This is the form ``check_electron_reactant_order`` prescribes and the shipped
+    plasma-local-context fixture writes. The resolver classifies it as double
+    representation and refuses it outright.
+    """
+    rxn = _template_reaction(DECLARED_CONSUMING_FAMILY, 1, ['Li', 'e'],
+                            ['Liplus', 'e'], _voronov_li(1))
+    try:
+        from rmgpy.electron_placement import resolve_electron_placement
+        resolve_electron_placement(rxn, [_species()['e']])
+    except ElectronPlacementError as exc:
+        return False, str(exc).strip()
+    return True, 'resolved'
+
+
 REFUSALS = [
     ('undeclared family', refusal_undeclared_family, 'no electron-placement declaration'),
     ('ionisation vs consuming family', refusal_ionisation_against_consuming_family,
@@ -627,6 +720,22 @@ REFUSALS = [
     ('reactor metadata-only count', refusal_reactor_metadata_only,
      'cannot distinguish incident-electron order from net electron production'),
 ]
+
+#: Not one of the three the ticket named -- a fourth, found by measuring.
+EXTRA_REFUSALS = [
+    ('half-explicit double representation', refusal_double_representation,
+     'represents the electron twice'),
+]
+
+
+@pytest.mark.parametrize('name,probe,expected_phrase', EXTRA_REFUSALS,
+                         ids=[r[0] for r in EXTRA_REFUSALS])
+def test_extra_refusal_fires(name, probe, expected_phrase):
+    """The representation the export boundary prescribes is the representation
+    the placement boundary refuses. Pinned so the collision is visible."""
+    accepted, detail = probe()
+    assert not accepted, '{0}: expected a refusal, got {1}'.format(name, detail)
+    assert expected_phrase in detail, '{0}: {1}'.format(name, detail)
 
 
 def test_family_electron_placement_still_holds_exactly_two_consuming_entries():
@@ -666,5 +775,11 @@ if __name__ == '__main__':
             'ACCEPT' if r['library'] else 'refuse', r['library_detail']))
         print('   reactor     : {0}  {1}'.format(
             'ACCEPT' if r['reactor'] else 'refuse', r['reactor_detail']))
+        print()
+    print('THE REFUSALS')
+    for name, probe, _phrase in REFUSALS + EXTRA_REFUSALS:
+        accepted, detail = probe()
+        print('== {0}: {1}'.format(name, 'ACCEPTED (!)' if accepted else 'REFUSED'))
+        print('   {0}'.format(detail))
         print()
     print('database.directory = {0}'.format(settings['database.directory']))
