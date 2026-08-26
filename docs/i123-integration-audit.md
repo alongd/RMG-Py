@@ -153,9 +153,10 @@ Database steps 4 and 5 are one chain, not two independent branches. Both merges 
 anyway, in the stated order, so a failure could be attributed to the ionisation half separately
 from the recombination half. The second merge brought only the recombination delta.
 
-### The two "live work" exclusions currently exclude nothing
+### The two "live work" exclusions excluded nothing at the moment of the merge — and stopped being true during the audit
 
-**[M]** Both excluded branches are at the identical commit as a branch being merged:
+**[M]** At the time the merges were performed, both excluded branches were at the identical commit
+as a branch being merged:
 
 ```
 $ git rev-parse i119-rr-registry i121-transport-probe        # RMG-Py
@@ -166,8 +167,21 @@ aabc3c622c85c1aac5e4b35966148d20e284e076
 aabc3c622c85c1aac5e4b35966148d20e284e076
 ```
 
-Neither has committed past its base yet. The exclusions cost nothing today and remain correct as
-standing instructions; noted so nobody reads "excluded" as "its content is absent."
+**[M]** By the end of the audit, roughly an hour later, both had moved:
+
+```
+$ git rev-parse --short i121-transport-probe      # RMG-Py,       was 92e2d4234
+b98799ced
+$ git rev-parse --short i120-argon-recombination  # RMG-database, was aabc3c622
+5f52259f6
+```
+
+So the exclusions were empty when the merges were made and are not empty now. Two consequences,
+both worth stating: the instruction to exclude them was **correct** — those two branches are
+genuinely live and committing — and the union measured here does **not** contain their new work,
+so nothing in this report speaks to whether that work integrates. Noted also so nobody reads
+"excluded" as "its content is absent": everything those branches had at merge time is in the
+union, by way of `i119-rr-registry` and `i119-recombination`.
 
 ---
 
