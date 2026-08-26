@@ -1,0 +1,26 @@
+Traceback (most recent call last):
+  File "/home/alon/Code/RMG-Py-i123-integration/rmg.py", line 33, in <module>
+    __main__.main()
+  File "/home/alon/Code/RMG-Py-i123-integration/rmgpy/__main__.py", line 104, in main
+    rmg.execute(**kwargs)
+  File "/home/alon/Code/RMG-Py-i123-integration/rmgpy/rmg/main.py", line 961, in execute
+    self.save_everything()
+  File "/home/alon/Code/RMG-Py-i123-integration/rmgpy/rmg/main.py", line 2254, in save_everything
+    self.notify()
+  File "/home/alon/Code/RMG-Py-i123-integration/rmgpy/util.py", line 114, in notify
+    observer.update(self)
+  File "rmgpy/chemkin.pyx", line 2728, in rmgpy.chemkin.ChemkinWriter.update
+    save_chemkin_files(rmg, config=self.config)
+  File "rmgpy/chemkin.pyx", line 2653, in rmgpy.chemkin.save_chemkin_files
+    save_chemkin(rmg.reaction_model, this_chemkin_path, latest_chemkin_verbose_path, latest_dictionary_path,
+  File "rmgpy/chemkin.pyx", line 2591, in rmgpy.chemkin.save_chemkin
+    (path, render_chemkin_file(species_list, rxn_list, verbose=False,
+  File "rmgpy/chemkin.pyx", line 2436, in rmgpy.chemkin.render_chemkin_file
+    f.write(write_kinetics_entry(rxn, species_list=species, verbose=verbose))
+  File "rmgpy/chemkin.pyx", line 1938, in rmgpy.chemkin.write_kinetics_entry
+    reaction_string = write_reaction_string(reaction, java_library, species_list=species_list)
+  File "rmgpy/chemkin.pyx", line 1829, in rmgpy.chemkin.write_reaction_string
+    check_electron_reactant_order(reaction, reactants, reaction_string)
+  File "/home/alon/Code/RMG-Py-i123-integration/rmgpy/electron_balance.py", line 226, in check_electron_reactant_order
+    raise MechanismWriterError(
+rmgpy.exceptions.MechanismWriterError: Reaction Li(2) => [Lip](3) has kinetics VoronovEIArrhenius whose rate is proportional to the electron density, but the exported equation "Li(2)=>[Lip](3)+e-(1)" has no electron among its reactants, so a solver would evaluate it at the wrong reaction order. Put the consumed electron in reaction.reactants and count only surplus produced electrons in reaction.electrons.

@@ -1,0 +1,116 @@
+...........................FFF.F........................................ [ 55%]
+.........................................................                [100%]
+=================================== FAILURES ===================================
+__ test_trained_species_resolve_to_their_own_rate_through_their_own_node[O2] ___
+
+kinetics_db = <rmgpy.data.kinetics.database.KineticsDatabase object at 0x6ffe9afb7be0>
+family = <ReactionFamily "Plasma_Electron_Attachment">, name = 'O2'
+
+    @pytest.mark.parametrize('name', EXPECTED_IN)
+    def test_trained_species_resolve_to_their_own_rate_through_their_own_node(kinetics_db, family, name):
+        """The three trained reactions keep their own rates, through their own nodes.
+    
+        Asserting the rate without the template would have passed against every
+        defect this test file was rewritten for: the wrong node hands out a
+        plausible-looking number.
+        """
+        expected_node, expected_index, expected_a_cm3 = EXPECTED_TRAINED_KINETICS[name]
+    
+        reactions = _generate(kinetics_db, name)
+        assert len(reactions) == 1, '{0} generated {1} reactions'.format(name, len(reactions))
+        reaction = reactions[0]
+        assert reaction.template == [expected_node]
+    
+        kinetics, source, entry, is_forward = family.get_kinetics(
+            reaction, template_labels=reaction.template, degeneracy=reaction.degeneracy,
+            estimator='rate rules', return_all_kinetics=False)
+    
+>       assert source == 'rate rules'
+E       assert <KineticsDepository "Plasma_Electron_Attachment/training"> == 'rate rules'
+
+test/test_plasma_electron_attachment.py:557: AssertionError
+__ test_trained_species_resolve_to_their_own_rate_through_their_own_node[OH] ___
+
+kinetics_db = <rmgpy.data.kinetics.database.KineticsDatabase object at 0x6ffe9afb7be0>
+family = <ReactionFamily "Plasma_Electron_Attachment">, name = 'OH'
+
+    @pytest.mark.parametrize('name', EXPECTED_IN)
+    def test_trained_species_resolve_to_their_own_rate_through_their_own_node(kinetics_db, family, name):
+        """The three trained reactions keep their own rates, through their own nodes.
+    
+        Asserting the rate without the template would have passed against every
+        defect this test file was rewritten for: the wrong node hands out a
+        plausible-looking number.
+        """
+        expected_node, expected_index, expected_a_cm3 = EXPECTED_TRAINED_KINETICS[name]
+    
+        reactions = _generate(kinetics_db, name)
+        assert len(reactions) == 1, '{0} generated {1} reactions'.format(name, len(reactions))
+        reaction = reactions[0]
+        assert reaction.template == [expected_node]
+    
+        kinetics, source, entry, is_forward = family.get_kinetics(
+            reaction, template_labels=reaction.template, degeneracy=reaction.degeneracy,
+            estimator='rate rules', return_all_kinetics=False)
+    
+>       assert source == 'rate rules'
+E       assert <KineticsDepository "Plasma_Electron_Attachment/training"> == 'rate rules'
+
+test/test_plasma_electron_attachment.py:557: AssertionError
+___ test_trained_species_resolve_to_their_own_rate_through_their_own_node[O] ___
+
+kinetics_db = <rmgpy.data.kinetics.database.KineticsDatabase object at 0x6ffe9afb7be0>
+family = <ReactionFamily "Plasma_Electron_Attachment">, name = 'O'
+
+    @pytest.mark.parametrize('name', EXPECTED_IN)
+    def test_trained_species_resolve_to_their_own_rate_through_their_own_node(kinetics_db, family, name):
+        """The three trained reactions keep their own rates, through their own nodes.
+    
+        Asserting the rate without the template would have passed against every
+        defect this test file was rewritten for: the wrong node hands out a
+        plausible-looking number.
+        """
+        expected_node, expected_index, expected_a_cm3 = EXPECTED_TRAINED_KINETICS[name]
+    
+        reactions = _generate(kinetics_db, name)
+        assert len(reactions) == 1, '{0} generated {1} reactions'.format(name, len(reactions))
+        reaction = reactions[0]
+        assert reaction.template == [expected_node]
+    
+        kinetics, source, entry, is_forward = family.get_kinetics(
+            reaction, template_labels=reaction.template, degeneracy=reaction.degeneracy,
+            estimator='rate rules', return_all_kinetics=False)
+    
+>       assert source == 'rate rules'
+E       assert <KineticsDepository "Plasma_Electron_Attachment/training"> == 'rate rules'
+
+test/test_plasma_electron_attachment.py:557: AssertionError
+____________ test_o2_rate_comes_from_the_training_set_not_a_library ____________
+
+kinetics_db = <rmgpy.data.kinetics.database.KineticsDatabase object at 0x6ffe9afb7be0>
+family = <ReactionFamily "Plasma_Electron_Attachment">
+
+    def test_o2_rate_comes_from_the_training_set_not_a_library(kinetics_db, family):
+        """The rate is an exact rate-rule hit on the O2 training reaction.
+    
+        No kinetics libraries are loaded by this fixture at all, so a library lookup
+        is not merely improbable here - it is impossible. What the test pins is the
+        positive claim: the number came from training reaction 1.
+        """
+        assert kinetics_db.libraries == {}
+    
+        reaction = _generate(kinetics_db, 'O2')[0]
+        kinetics, source, entry, is_forward = family.get_kinetics(
+            reaction, template_labels=reaction.template, degeneracy=reaction.degeneracy,
+            estimator='rate rules', return_all_kinetics=False)
+    
+>       assert source == 'rate rules'
+E       assert <KineticsDepository "Plasma_Electron_Attachment/training"> == 'rate rules'
+
+test/test_plasma_electron_attachment.py:607: AssertionError
+=========================== short test summary info ============================
+FAILED test/test_plasma_electron_attachment.py::test_trained_species_resolve_to_their_own_rate_through_their_own_node[O2]
+FAILED test/test_plasma_electron_attachment.py::test_trained_species_resolve_to_their_own_rate_through_their_own_node[OH]
+FAILED test/test_plasma_electron_attachment.py::test_trained_species_resolve_to_their_own_rate_through_their_own_node[O]
+FAILED test/test_plasma_electron_attachment.py::test_o2_rate_comes_from_the_training_set_not_a_library
+4 failed, 125 passed in 1.76s

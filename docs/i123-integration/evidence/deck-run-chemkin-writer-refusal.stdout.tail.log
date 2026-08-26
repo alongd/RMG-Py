@@ -1,0 +1,60 @@
+
+After model enlargement:
+    The model core has 4 species and 0 reactions
+    The model edge has 3 species and 1 reactions
+
+
+Adding species e-(1) to model core
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    e-(1)
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 5 species and 0 reactions
+    The model edge has 2 species and 1 reactions
+
+
+Adding species Li(2) to model core
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    Li(2)
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 6 species and 0 reactions
+    The model edge has 1 species and 1 reactions
+
+
+Initialization complete. Starting model generation.
+
+Generating initial reactions...
+For reaction generation 1 process is used.
+
+Summary of Secondary Model Edge Enlargement
+---------------------------------
+Added 0 new core species
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 6 species and 0 reactions
+    The model edge has 1 species and 1 reactions
+
+
+Completed initial enlarge edge step.
+
+Saving current model core to Chemkin file...
+Chemkin file contains 0 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 0 reactions.
+Saving current model core and edge to Chemkin file...
