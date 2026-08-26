@@ -164,6 +164,9 @@ cdef class LiquidReactor(ReactionSystem):
             j = self.reaction_index[rxn]
             self.kf[j] = rxn.get_rate_coefficient(self.T.value_si, self.P.value_si)
             if rxn.reversible:
+                # Refuse to reconstruct a reverse rate that Keq(Tgas) does not define;
+                # see Reaction.get_reverse_from_equilibrium_refusal.
+                rxn.check_reverse_from_equilibrium_supported()
                 self.Keq[j] = rxn.get_equilibrium_constant(self.T.value_si)
                 self.kb[j] = self.kf[j] / self.Keq[j]
 

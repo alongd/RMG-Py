@@ -50,7 +50,7 @@ import cython
 import numpy as np
 
 import rmgpy.constants as constants
-from rmgpy.exceptions import ReactionError, KineticsError
+from rmgpy.exceptions import ReactionError, KineticsError, NonEquilibriumReverseRateError
 from rmgpy.kinetics import KineticsData, ArrheniusBM, ArrheniusEP, ThirdBody, Lindemann, Troe, Chebyshev, \
     PDepArrhenius, MultiArrhenius, MultiPDepArrhenius, get_rate_coefficient_units_from_reaction_order, \
     SurfaceArrheniusBEP, StickingCoefficientBEP, ArrheniusChargeTransfer, ArrheniusChargeTransferBM, Marcus
@@ -545,6 +545,105 @@ class Reaction:
         if self.is_surface_reaction() and self.is_charge_transfer_reaction():
             return True
         return False
+
+    def get_reverse_from_equilibrium_refusal(self):
+        """
+        Return ``None`` if this reaction's reverse rate may be reconstructed as
+        ``kb = kf(Tgas) / Keq(Tgas)``, or a string explaining why it may not.
+
+        Every reactor performs that reconstruction inline for a nominally reversible
+        reaction. It is only defined when ``Keq(Tgas)`` prices every participant of the
+        reaction at the state the forward rate was evaluated at. Two independent ways
+        that fails, each sufficient on its own:
+
+        1. **The forward rate is not a function of Tgas alone.** Kinetics that declare a
+           dependence on a second state variable -- the electron temperature or the
+           electron density -- are evaluated at a closure ``Keq(Tgas)`` does not carry, so
+           ``kf(Tgas, Te) / Keq(Tgas)`` mixes two thermal closures and satisfies detailed
+           balance at neither.
+
+        2. **The reaction transfers charge whose reference Keq(Tgas) does not carry.**
+           ``get_equilibrium_constant`` sums free energies over the explicit reactant and
+           product lists and, at the default ``potential = 0`` that every reactor calls it
+           with, adds no electrochemical term. A reaction with a net electron
+           stoichiometry therefore prices its electron at vacuum rest -- and when the
+           electron is carried only as :attr:`electrons` metadata, with no electron among
+           the species, it is left out of the sum altogether, so ``Keq`` describes a
+           different reaction than the one being reversed. The single supported exception
+           is electrochemistry: kinetics that declare an electrode-potential reference
+           ``V0`` do define the potential at which the electron is priced, and RMG builds
+           their reverse through that potential in
+           :meth:`generate_reverse_rate_coefficient`.
+
+        The predicate is deliberately written on properties of the reaction and its rate
+        law, never on a kinetics class name, so a rate law added later inherits the
+        refusal rather than slipping past it. Where an attribute may be absent the
+        default is chosen to refuse: a kinetics class that does not declare ``V0`` is
+        treated as carrying no potential reference.
+        """
+        cython.declare(n_explicit_electrons=cython.int, spec=Species)
+
+        if not self.reversible:
+            # Nothing to reconstruct; the mechanism has already said so.
+            return None
+
+        kinetics = self.kinetics
+        kinetics_name = 'None' if kinetics is None else kinetics.__class__.__name__
+
+        if getattr(kinetics, 'uses_electron_temperature', False) \
+                or getattr(kinetics, 'uses_electron_density', False):
+            return ('its kinetics {0} is not a function of the gas temperature alone (it '
+                    'declares a dependence on the electron temperature or electron '
+                    'density), so kf and Keq(Tgas) are evaluated at different thermal '
+                    'closures'.format(kinetics_name))
+
+        n_explicit_electrons = 0
+        for spec in self.reactants:
+            if spec.is_electron():
+                n_explicit_electrons += 1
+        for spec in self.products:
+            if spec.is_electron():
+                n_explicit_electrons += 1
+
+        if self.electrons != 0 or n_explicit_electrons > 0:
+            if hasattr(kinetics, 'V0'):
+                # Electrochemistry: the rate law names the electrode potential at which
+                # the electron is priced, so the reversal is referenced.
+                return None
+            if n_explicit_electrons > 0:
+                return ('it transfers charge (an electron appears explicitly among its '
+                        'species) and its kinetics {0} declares no electrode-potential '
+                        'reference, so Keq(Tgas) prices the electron at the gas '
+                        'temperature and at zero potential -- neither of which is the '
+                        "electron's state".format(kinetics_name))
+            return ('it transfers charge (electrons={0:d}) carried only as reaction '
+                    'metadata, so get_equilibrium_constant sums free energies over the '
+                    'explicit species and omits the electron entirely, and its kinetics '
+                    '{1} declares no electrode-potential reference that would supply '
+                    'one'.format(self.electrons, kinetics_name))
+
+        return None
+
+    def check_reverse_from_equilibrium_supported(self):
+        """
+        Raise :class:`NonEquilibriumReverseRateError` if this reaction's reverse rate may
+        not be reconstructed as ``kb = kf(Tgas) / Keq(Tgas)``.
+
+        Reactors call this before integration, at the point where they would otherwise
+        build ``kb``. The refusal is deliberate: the reverse of such a reaction is a
+        statement the *mechanism* has to make, by declaring the reaction irreversible or
+        by supplying explicit reverse kinetics, and it is not one the integrator may make
+        on the mechanism's behalf by reaching for a thermodynamic identity that does not
+        hold here.
+        """
+        cython.declare(reason=str)
+
+        reason = self.get_reverse_from_equilibrium_refusal()
+        if reason is not None:
+            raise NonEquilibriumReverseRateError(
+                'reaction {0!s} is declared reversible, but its reverse rate cannot be '
+                'reconstructed from kf(Tgas)/Keq(Tgas): {1}. Declare the reaction '
+                'irreversible, or supply explicit reverse kinetics.'.format(self, reason))
 
     def has_template(self, reactants, products):
         """
