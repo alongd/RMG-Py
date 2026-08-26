@@ -1,0 +1,23 @@
+$ python -m pytest test/rmgpy/i135TdepRoundTripTest.py test/rmgpy/i135ExportExitStatusTest.py test/rmgpy/i126ChemkinElectronOrderTest.py
+   with rmgpy/chemkin.pyx and rmgpy/rmg/main.py restored to 93b83ac9d and rebuilt
+
+FAILED test/rmgpy/i135TdepRoundTripTest.py::TestTheFileReadsBack::test_the_written_file_loads
+FAILED test/rmgpy/i135TdepRoundTripTest.py::TestTheFileReadsBack::test_the_rate_comes_back_on_the_electron_temperature
+FAILED test/rmgpy/i135TdepRoundTripTest.py::TestTheFileReadsBack::test_a_gas_temperature_reading_would_be_a_different_reaction
+FAILED test/rmgpy/i135TdepRoundTripTest.py::TestTheFileReadsBack::test_every_plasma_rate_law_survives[voronov]
+FAILED test/rmgpy/i135TdepRoundTripTest.py::TestTheFileReadsBack::test_every_plasma_rate_law_survives[badnell]
+FAILED test/rmgpy/i135TdepRoundTripTest.py::TestTheFileReadsBack::test_every_plasma_rate_law_survives[electron-collision]
+FAILED test/rmgpy/i135TdepRoundTripTest.py::TestTheFileReadsBack::test_every_plasma_rate_law_survives[two-temperature]
+FAILED test/rmgpy/i135TdepRoundTripTest.py::TestWhatTheRoundTripStillLoses::test_the_electron_count_does_not_come_back
+FAILED test/rmgpy/i135TdepRoundTripTest.py::TestWhatTheRoundTripStillLoses::test_the_original_functional_form_does_not_come_back
+FAILED test/rmgpy/i135TdepRoundTripTest.py::TestRefusalsRatherThanGuesses::test_tdep_on_a_species_that_is_not_the_electron_is_refused
+FAILED test/rmgpy/i135TdepRoundTripTest.py::TestRefusalsRatherThanGuesses::test_tdep_on_an_unknown_species_is_refused
+FAILED test/rmgpy/i135TdepRoundTripTest.py::TestRefusalsRatherThanGuesses::test_a_malformed_tdep_line_is_refused
+FAILED test/rmgpy/i135TdepRoundTripTest.py::TestRefusalsRatherThanGuesses::test_tdep_combined_with_falloff_is_refused
+FAILED test/rmgpy/i135ExportExitStatusTest.py::TestAFailedExportIsNotSilent::test_a_clean_run_records_no_failure_and_does_not_raise
+FAILED test/rmgpy/i135ExportExitStatusTest.py::TestAFailedExportIsNotSilent::test_a_recorded_failure_fails_the_run
+FAILED test/rmgpy/i135ExportExitStatusTest.py::TestAFailedExportIsNotSilent::test_execute_consults_the_record
+FAILED test/rmgpy/i135ExportExitStatusTest.py::TestAFailedExportIsNotSilent::test_the_translation_step_records_rather_than_swallows
+FAILED test/rmgpy/i126ChemkinElectronOrderTest.py::TestChemkinRoundTrip::test_the_tdep_line_no_longer_blocks_the_full_trip
+
+======================== 18 failed, 17 passed in 2.26s =========================

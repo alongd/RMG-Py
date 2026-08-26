@@ -1,0 +1,49 @@
+database.directory (resolved) : /home/alon/Code/RMG-database-i123b-reaudit/input
+rmgpy package                 : /home/alon/Code/RMG-Py-i135-tdep-roundtrip
+chemkin file                  : /tmp/claude-1000/-home-alon-Code-RMG-Py-i135-tdep-roundtrip/4362e9eb-2d6f-4bb0-a327-0f0e937745bf/scratchpad/deck-before/chemkin/chem.inp
+
+------------------------------------------------------------------------------
+the reaction lines as written
+------------------------------------------------------------------------------
+  REACTIONS    KCAL/MOLE   MOLES
+  Li(2)+e-(1)=>[Lip](3)+e-(1)+e-(1)                   1.490e+18 -0.267    162.150
+      TDEP/e-(1)/   ! VoronovEIArrhenius exported as a modified-Arrhenius fit of k(Te) over 1.16e+04-2.321e+08 K; the original functional form is not representable in Chemkin
+  END
+
+------------------------------------------------------------------------------
+A. RMG load_chemkin_file on the file as written
+------------------------------------------------------------------------------
+  REFUSED: ChemkinError: 'e-(1)' doesn't look like a collision efficiency for species TDEP in line 'TDEP/E-(1)/'
+NoneType: None
+
+------------------------------------------------------------------------------
+B. the same file with the TDEP auxiliary line removed
+------------------------------------------------------------------------------
+  removed 1 TDEP line(s)
+  READ: 7 species, 1 reactions
+  reaction  : Li(2) + e-(1) => [Lip](3) + e-(1) + e-(1)
+  kinetics  : Arrhenius
+  uses Te   : False
+  electrons : 0
+    k(  11604.5 K) = 1.081914e+08
+    k(  20000.0 K) = 1.790424e+09
+    k( 100000.0 K) = 3.046598e+10
+
+------------------------------------------------------------------------------
+C. Cantera ck2yaml on the file as written
+------------------------------------------------------------------------------
+  cantera 3.1.0 from /home/alon/Code/Cantera/build/python/cantera/__init__.py
+*******************************************************************************
+Error while reading reaction in chem.inp starting on line 66:
+"""
+Li(2)+e-(1)=>[Lip](3)+e-(1)+e-(1)                   1.490e+18 -0.267    162.150  
+    TDEP/e-(1)/   ! VoronovEIArrhenius exported as a modified-Arrhenius fit of k(Te) over 1.16e+04-2.321e+08 K; the original functional form is not representable in Chemkin
+"""
+could not convert string to float: 'e-(1)'
+  REFUSED: InputError: for the correct Chemkin syntax.
+
+------------------------------------------------------------------------------
+summary
+------------------------------------------------------------------------------
+  A  RMG reader, file as written           : REFUSED
+  B  RMG reader, TDEP line removed         : READ

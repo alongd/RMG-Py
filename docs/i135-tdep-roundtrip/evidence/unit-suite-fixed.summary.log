@@ -1,0 +1,6 @@
+$ python -m pytest -m "not functional and not database"   (run serially, no -n)
+
+FAILED test/rmgpy/electronPlacementTest.py::TestElectronPlacementResolver::test_declaration_registry_is_explicit_and_closed - AssertionError: assert {'Plasma_Electron_Attachment': (1, 0), 'Cation_R_Recombination': (1, 0), 'PlasmaRadiativeRecombination': (1, 0), 'PlasmaElectronImpactIonization': (1, 2)} == {'Plasma_Electron_Attachment': (1, 0), 'Cation_R_Recombination': (1, 0), 'PlasmaElectronImpactIonization': (1, 2)}
+FAILED test/rmgpy/preflightDeckFamilyExclusionTest.py::PlasmaDeckFamilyExclusionTest::test_plasma_deck_does_not_declare_family[docs/i102-quarantine/input.py] - AssertionError: plasma deck docs/i102-quarantine/input.py declares Cation_R_Recombination, a lithium-ion-battery SEI family excluded from every plasma configuration. Declared families: ['Cation_R_Recombination', 'Cation_Li_Abstraction', 'Cation_Addition_MultipleBond', 'Cation_Addition_MultipleBond_Disprop', 'Cation_NO_Substitution', 'Cation_NO_Ring_Opening', 'Li_Abstraction', 'Li_Addition_MultipleBond']
+
+= 2 failed, 2853 passed, 49 skipped, 131 deselected, 54 warnings in 250.76s (0:04:10) =
