@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+#
+# Stand-in for a bare `pip` on PATH, so the harness also catches a recipe that
+# calls `pip` directly rather than through `python -m pip`. Same contract as
+# fake_python: record, classify, never touch anything real.
+set -u
+
+printf 'pip %s\n' "$*" >> "$MAKE_GUARD_ARGV_LOG"
+
+args=" $* "
+
+if [[ "$args" == *" install "* ]]; then
+    printf 'PIP_INSTALL_REACHED pip %s\n' "$*" >> "$MAKE_GUARD_EVENT_LOG"
+elif [[ "$args" == *" uninstall "* ]]; then
+    printf 'PIP_UNINSTALL_REACHED pip %s\n' "$*" >> "$MAKE_GUARD_EVENT_LOG"
+else
+    printf 'PIP_OTHER_REACHED pip %s\n' "$*" >> "$MAKE_GUARD_EVENT_LOG"
+fi
+
+exit 0

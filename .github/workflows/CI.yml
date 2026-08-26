@@ -112,8 +112,10 @@ jobs:
           cd ..
           git clone -b $RMG_DATABASE_BRANCH https://github.com/ReactionMechanismGenerator/RMG-database.git
 
-      # RMG build step
-      - run: make install
+      # RMG build step. `make` refuses to perform an editable install by default,
+      # because on a developer machine that repoints a shared conda environment at
+      # whichever checkout ran it. A CI runner's environment is disposable, so opt in.
+      - run: make unsafe-install-shared-env CONFIRM_SHARED_ENV_MUTATION=yes
 
       - name: Setup Juliaup
         if: matrix.include-rms == 'with RMS'
@@ -179,8 +181,10 @@ jobs:
           cd ..
           git clone -b $RMG_DATABASE_BRANCH https://github.com/ReactionMechanismGenerator/RMG-database.git
 
-      # RMG build step
-      - run: make install
+      # RMG build step. `make` refuses to perform an editable install by default,
+      # because on a developer machine that repoints a shared conda environment at
+      # whichever checkout ran it. A CI runner's environment is disposable, so opt in.
+      - run: make unsafe-install-shared-env CONFIRM_SHARED_ENV_MUTATION=yes
 
       - name: Make separate No-RMS conda env
         run: |
@@ -286,7 +290,7 @@ jobs:
           conda activate rmg_env_without_rms
           echo "CONDA_PREFIX: $CONDA_PREFIX"  # see if the conda environment was activated
           conda run -n rmg_env_without_rms conda install -y pip
-          conda run -n rmg_env_without_rms make install
+          conda run -n rmg_env_without_rms make unsafe-install-shared-env CONFIRM_SHARED_ENV_MUTATION=yes
 
           exec 2> >(tee -a regression.stderr >&2) 1> >(tee -a regression.stdout)
           mkdir -p "test/regression-diff"
