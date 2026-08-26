@@ -65,6 +65,14 @@ This folder is always produced when the Chemkin writer is enabled (``generateChe
 After the final RMG iteration, Cantera's own ``ck2yaml`` converter is used to translate the Chemkin-format files in ``/chemkin`` into Cantera YAML.
 This is the most thoroughly tested route and is the recommended output for production use.
 
+If the translation fails, RMG logs the traceback, finishes writing everything else, and then
+**exits non-zero** with a ``MechanismWriterError`` naming the step whose output is missing.
+It used to log the failure and exit 0, which reported success for a run that had produced no
+Cantera file at all.  The model, the Chemkin files and the direct Cantera writers' output are
+all still on disk when this happens.  The known case is a plasma mechanism: ``ck2yaml`` does
+not implement Chemkin's ``TDEP`` keyword, so it cannot read the file RMG writes, and the
+``cantera2`` writer is the route to use for those mechanisms.
+
 ``/cantera1`` *(beta)*
 ^^^^^^^^^^^^^^^^^^^^^^
 
