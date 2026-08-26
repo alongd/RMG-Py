@@ -117,4 +117,21 @@ options(
     generatePlots=False,
     saveEdgeSpecies=True,
     saveSimulationProfiles=False,
+    # I-126. Chemkin and Cantera can both express these two rate laws -- lossily,
+    # as the modified-Arrhenius reduction along T = Te, and each says so in the
+    # file it writes. ReactionMechanismSimulator cannot express them at ALL:
+    # `rmgpy/yaml_rms.py:252` has no branch for VoronovEIArrhenius or
+    # BadnellRRArrhenius and raises
+    #   ValueError: Object of type <class '...VoronovEIArrhenius'> does not have a
+    #   defined conversion to ReactionMechanismSimulator format
+    # That is a kinetics-coverage gap in the RMS writer, not an electron-placement
+    # one -- it fires on the rate law before the equation is ever built -- and it
+    # is a separate ticket. Until it lands, a deck whose whole chemistry is these
+    # two rate laws must not ask for an RMS file; the writer is enabled by default
+    # and would kill the run on the first save.
+    generateRMSYAML=False,
+    # Turned ON so the deck exercises the second writer that shares
+    # `rmgpy.electron_balance` with Chemkin, rather than leaving the Cantera export
+    # path proven only by unit test.
+    generateCanteraYAML2=True,
 )

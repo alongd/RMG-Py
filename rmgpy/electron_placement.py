@@ -233,24 +233,33 @@ def _place_declared_electrons(reaction, electron, reactant_count, product_count)
     ``reaction.products`` with ``reactant_count`` and ``product_count`` copies of
     ``electron`` appended to the respective side. ``reaction`` is not mutated.
 
-    This is deliberately a SECOND primitive rather than a widening of
-    :func:`rmgpy.electron_balance.expand_electrons`. That function is net-derived
-    by contract — it appends ``-electrons`` electrons to the reactants and
-    nothing to the products — and it is shared with the export path
-    (``chemkin.pyx``, both Cantera YAML writers, ``Reaction.is_balanced``), none
-    of which has a family declaration in hand to widen it with. Widening it would
-    have meant either threading a declaration through four export call sites or
-    giving it a default that silently reproduced today's behaviour, and the
-    export writers' whole purpose is to be the one place the net scalar IS
-    authoritative.
+    This is a SECOND primitive rather than a widening of
+    :func:`rmgpy.electron_balance.expand_electrons`, because that function has a
+    net-derived fallback this one must never acquire: it appends ``-electrons``
+    electrons to the reactants and nothing to the products for any reaction whose
+    owner has made no declaration, and the whole point of this path is that
+    placement is never derived from the net scalar.
 
-    The two stay in step by construction and by test: on every shape
-    ``expand_electrons`` can express — all the one-sided ones — this function
-    returns exactly the same lists, which
-    ``test/rmgpy/i113IonisationPlacementTest.py`` pins for consumption and
-    production alike. They also stay in step downstream, because the view this
-    one builds is verified with ``get_species_electron_count`` (step 10), the
-    very function the export boundary balances with.
+    An earlier version of this note argued something stronger and wrong — that
+    ``expand_electrons`` must stay purely net-derived because its export callers
+    have "no family declaration in hand". They do: the declaration is keyed on
+    ``Reaction.family``, which every reaction already carries, so nothing had to
+    be threaded through any call site. I-126 established the cost of believing
+    otherwise. The two converters drifted, and the export path could not express
+    ``Li + e- -> Li+ + 2e-`` at all: it wrote ``Li -> Li+ + e-``, first order,
+    and ``check_electron_reactant_order`` refused the file. ``expand_electrons``
+    now consults this module's declaration first and keeps the net rule only for
+    undeclared owners.
+
+    The two stay in step by construction and by test: on every shape the net rule
+    can express — all the one-sided ones — this function returns exactly the same
+    lists, which ``test/rmgpy/i113IonisationPlacementTest.py`` pins for
+    consumption and production alike; on the two-sided ones the export path now
+    reads this same table, which ``test/rmgpy/i126ChemkinElectronOrderTest.py``
+    pins by comparing the writer's lists against the resolver's view object for
+    object. They also stay in step downstream, because the view this one builds
+    is verified with ``get_species_electron_count`` (step 10), the very function
+    the export boundary balances with.
 
     Unlike ``expand_electrons`` this primitive never looks at
     ``reaction.electrons``: the counts come from the caller, which got them from

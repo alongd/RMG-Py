@@ -40,12 +40,26 @@ element-unbalanced in the ``E`` pseudo-element.
 
 Both writers must behave identically here, so the logic lives in one place
 rather than being written twice -- once in Python and once in Cython.
+
+That "one place" is also where the export path meets the *other* consumer of the
+same conversion, :class:`rmgpy.solver.plasma.PlasmaReactor`, and I-126 is the
+ticket that joined them. The reactor converts through
+:func:`rmgpy.electron_placement.resolve_electron_placement`, driven by the
+two-sided ``FAMILY_ELECTRON_PLACEMENT`` declaration; the export path converted
+through :func:`expand_electrons`, driven by the net scalar alone. Two converters,
+one representation, and they disagreed on any shape the net scalar cannot
+express -- so a mechanism the reactor evaluated correctly could not be written
+out at all. :func:`expand_electrons` now reads that same declaration wherever the
+reaction's owner carries one, and falls back to the net rule only where no owner
+has spoken. The declaration is stated once, in ``electron_placement``, and both
+halves of the codebase read it.
 """
 
 from rmgpy.exceptions import MechanismWriterError
 
 __all__ = [
     'get_electron_species',
+    'get_placement_declaration',
     'expand_electrons',
     'get_species_electron_count',
     'check_electron_balance',
@@ -69,6 +83,54 @@ def get_electron_species(species_list):
     return None
 
 
+def get_placement_declaration(reaction):
+    """
+    Return the ``(reactant_count, product_count)`` electron-placement declaration
+    the reaction's owner carries, or ``None`` if it has no owner or the owner is
+    absent from :data:`rmgpy.electron_placement.FAMILY_ELECTRON_PLACEMENT`.
+
+    The owner is ``Reaction.family``, which is the family label for a
+    :class:`TemplateReaction` and the library label for a
+    :class:`LibraryReaction` (``LibraryReaction.__init__`` sets
+    ``family = library``), so a kinetics library declares its placement on the
+    same terms a family does. A plain :class:`Reaction` -- which is what the
+    reactor's placement view is -- has no ``family`` attribute at all, so a view
+    can never be re-expanded through a declaration.
+
+    ``None`` means "this owner has made no statement about placement", which is
+    the case for every reaction in RMG except the handful of declared plasma
+    owners, and which leaves :func:`expand_electrons` on its net-derived rule.
+    It never means "the declaration was unusable": a malformed declaration
+    raises, because silently falling back to the very rule the declaration
+    exists to override is how a wrong equation gets written while the export
+    reports success.
+
+    Imported lazily: :mod:`rmgpy.electron_placement` imports this module at
+    module scope, and a name lookup inside the function keeps that a one-way
+    dependency.
+    """
+    from rmgpy.electron_placement import FAMILY_ELECTRON_PLACEMENT
+
+    owner = getattr(reaction, 'family', None)
+    if not owner:
+        return None
+    declaration = FAMILY_ELECTRON_PLACEMENT.get(owner)
+    if declaration is None:
+        return None
+    if (not isinstance(declaration, tuple) or len(declaration) != 2
+            or not all(isinstance(n, int) and not isinstance(n, bool) and n >= 0
+                       for n in declaration)
+            or declaration == (0, 0)):
+        raise MechanismWriterError(
+            'Owner {0!r} carries the malformed electron-placement declaration {1!r} '
+            '(reaction {2!s}). A declaration must be a (reactant_count, product_count) '
+            'pair of non-negative integers placing at least one electron; refusing to '
+            'export the reaction rather than fall back to the net-derived placement the '
+            'declaration exists to override.'.format(owner, declaration, reaction)
+        )
+    return declaration
+
+
 def expand_electrons(reaction, species_list):
     """
     Return ``(reactants, products)``: copies of ``reaction.reactants`` and
@@ -76,23 +138,58 @@ def expand_electrons(reaction, species_list):
     electron species, so that the exported equation carries the electron the way
     a solver needs to see it.
 
-    Sign convention matches :meth:`rmgpy.reaction.Reaction.is_balanced`: negative
-    ``electrons`` means electrons are consumed (they belong on the reactant side),
-    positive means they are produced (product side). ``Reaction.electrons`` is
-    signed relative to the reaction object's current reactant/product
-    orientation, so reversing the object negates it; this helper reads that
-    current-orientation sign. (``KineticsFamily.electrons`` is a different thing --
-    the family-forward declaration.)
+    There are two placement rules, and which one applies is decided by the
+    reaction's OWNER, never by the writer.
+
+    **The declaration, when the owner has one.** If the owner (family or kinetics
+    library) appears in ``FAMILY_ELECTRON_PLACEMENT``, its
+    ``(reactant_count, product_count)`` pair is authoritative and the electron is
+    placed on both sides in the numbers it names. This is the same declaration,
+    read from the same table, that
+    :func:`rmgpy.electron_placement.resolve_electron_placement` gives the plasma
+    reactor -- which is the point: the reactor and the writers then cannot
+    disagree about which representation a reaction is in, because there is only
+    one statement of it. ``reaction.electrons`` is validated against the
+    declaration's net change (``product_count - reactant_count``) and read for
+    nothing else.
+
+    **The net-derived rule, when it has not.** Negative ``electrons`` means
+    electrons are consumed (they belong on the reactant side), positive means
+    they are produced (product side), matching
+    :meth:`rmgpy.reaction.Reaction.is_balanced`. ``Reaction.electrons`` is signed
+    relative to the reaction object's current reactant/product orientation, so
+    reversing the object negates it; this helper reads that current-orientation
+    sign. (``KineticsFamily.electrons`` is a different thing -- the
+    family-forward declaration.)
+
+    Why the net rule is not enough on its own, which is what I-126 fixed: a net
+    count is ONE number and placement needs TWO. ``electrons = +1`` is equally
+    consistent with ``Li + e- => Li+ + 2 e-`` (order 2, the
+    ``cm^3/(molecule*s)`` Voronov coefficient's own dimensionality) and with
+    ``Li => Li+ + e-`` (order 1), and the net rule always produces the second.
+    Both balance in ``E``, so the resulting file looks well formed while the rate
+    is wrong by a factor of the electron density -- which is exactly what
+    :func:`check_electron_reactant_order` refused to write, correctly. The net
+    rule stays for every owner that has made no declaration, where it is not
+    merely adequate but provably identical to the declared one: an owner whose
+    declaration is one-sided (``(n, 0)`` or ``(0, n)``) places exactly where the
+    net count would.
 
     Raises :class:`MechanismWriterError` if the reaction needs an electron but the
     mechanism does not define an electron species -- exporting the equation without
-    it would be exactly the silent corruption these helpers exist to prevent.
+    it would be exactly the silent corruption these helpers exist to prevent --
+    and if a declared owner's reaction carries a net count its declaration does
+    not predict.
     """
     reactants = list(reaction.reactants)
     products = list(reaction.products)
 
     electrons = getattr(reaction, 'electrons', 0) or 0
     if electrons == 0:
+        # Nothing to fold in. A reaction already in explicit-electron form (the
+        # reactor's placement view, or a mechanism read back from a written
+        # file) arrives here and is returned untouched, which is what makes this
+        # helper idempotent over the write/read round trip.
         return reactants, products
 
     electron = get_electron_species(species_list)
@@ -102,6 +199,23 @@ def expand_electrons(reaction, species_list):
             'species, so the electron cannot be written into the exported equation. '
             'Add the electron to the species list before exporting.'.format(reaction, electrons)
         )
+
+    declaration = get_placement_declaration(reaction)
+    if declaration is not None:
+        reactant_count, product_count = declaration
+        if product_count - reactant_count != electrons:
+            raise MechanismWriterError(
+                'Reaction {0!s} carries electrons={1:+d}, but its owner {2!r} declares the '
+                'electron placement {3!r} -- net {4:+d} ({5:d} electron(s) on the reactant '
+                'side, {6:d} on the product side). The reaction and its owner describe '
+                'different chemistry; refusing to export it rather than prefer either '
+                'source.'.format(reaction, electrons, getattr(reaction, 'family', None),
+                                 declaration, product_count - reactant_count,
+                                 reactant_count, product_count)
+            )
+        reactants.extend([electron] * reactant_count)
+        products.extend([electron] * product_count)
+        return reactants, products
 
     if electrons < 0:
         reactants.extend([electron] * (-electrons))
