@@ -191,9 +191,37 @@ condition matters because the non-negative clamp on the effective activation ene
 only off ``V0``, so a rate with a negative ``Ea`` still jumps as soon as ``V`` leaves ``V0``.)
 Anything else raises ``MechanismWriterError``.
 
-``Marcus`` kinetics are never exported.  Their rate depends on the reaction free energy
-``dGrxn``, which is not a property of the rate law — it comes from the species thermochemistry at
-run time — so there is no reference point at which any reduction is exact.
+``Marcus`` kinetics are never exported to Chemkin or Cantera.  Their rate depends on the reaction
+free energy ``dGrxn``, which is not a property of the rate law — it comes from the species
+thermochemistry at run time — so there is no reference point at which any reduction is exact.
+
+Marcus Work Terms and the RMS Export
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+``Marcus`` kinetics carry two work terms: ``wr``, the work to bring the reactants together into
+the precursor complex, and ``wp``, the work to bring the products together into the successor
+complex.  They enter the barrier
+
+.. math::
+
+   \Delta G^{\ddagger} = w_r
+       + \frac{\lambda}{4}\left(1 + \frac{\Delta G_{rxn} + w_p - w_r}{\lambda}\right)^2
+
+over :math:`\lambda = \lambda_i(T) + \lambda_o`.  Both default to zero, and with both at zero the
+barrier is the bare Marcus quadratic, so an entry that names no work terms is unaffected by them.
+
+ReactionMechanismSimulator is the one destination that accepts ``Marcus`` kinetics at all, and
+its ``Marcus`` rate expression does not read ``wr`` or ``wp``.  Exporting a non-zero work term
+would therefore hand RMS a rate law it evaluates differently from RMG while both call it the same
+reaction.  Both RMS writers — the ``.rms`` YAML file and the in-process Julia rate object — raise
+``MechanismWriterError`` rather than export a ``Marcus`` entry whose work terms are non-zero.  A
+work term is either honoured or refused; it is never quietly dropped.
+
+Note that ``beta``, the transmission decay coefficient, is different in kind: it damps electronic
+coupling over a donor–acceptor separation, and RMG's rate expression carries no such separation.
+RMG never applies it, RMS multiplies it by a distance of its own, and no refusal is raised for a
+non-zero ``beta`` because every ``Marcus`` entry in the database sets one.  Treat it as data for
+the RMS export, not as something that shapes an RMG-computed rate.
 
 RMG deliberately does not write the reference-potential rate with the loss recorded in a comment.
 A ``note:`` in YAML and a ``!`` comment in Chemkin are read by humans and by no solver, so that

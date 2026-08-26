@@ -45,7 +45,8 @@ from rmgpy.species import Species
 from rmgpy.reaction import Reaction
 from rmgpy.thermo.nasa import NASAPolynomial, NASA
 from rmgpy.thermo.wilhoit import Wilhoit
-from rmgpy.kinetics.arrhenius import Arrhenius, PDepArrhenius, MultiArrhenius, MultiPDepArrhenius, ArrheniusChargeTransfer, Marcus
+from rmgpy.kinetics.arrhenius import Arrhenius, PDepArrhenius, MultiArrhenius, MultiPDepArrhenius, ArrheniusChargeTransfer, Marcus, \
+                                     check_marcus_work_terms_exportable
 from rmgpy.kinetics.falloff import Troe, ThirdBody, Lindemann
 from rmgpy.kinetics.chebyshev import Chebyshev
 from rmgpy.data.solvation import SolventData
@@ -170,6 +171,7 @@ def obj_to_dict(obj, spcs, names=None, label="solvent"):
         result_dict["n"] = obj.n.value_si
         result_dict["q"] = obj._alpha.value_si*obj._electrons.value_si
     elif isinstance(obj, Marcus):
+        check_marcus_work_terms_exportable(obj, "an RMS YAML file", "these kinetics")
         result_dict["type"] = "Marcus"
         result_dict["A"] = obj.A.value_si
         result_dict["n"] = obj.n.value_si

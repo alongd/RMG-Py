@@ -742,7 +742,8 @@ def reaction_to_dict_list(reaction, species_list=None):
         raise MechanismWriterError(
             f"Cannot write reaction {equation} to Cantera YAML: Marcus kinetics evaluate "
             f"k(T, dGrxn) = A*T^n*exp(-dG_act/(R*T)) with "
-            f"dG_act = (lmbd_i(T)+lmbd_o)/4 * (1 + dGrxn/(lmbd_i(T)+lmbd_o))^2, and dGrxn is "
+            f"dG_act = wr + lmbd/4 * (1 + (dGrxn + wp - wr)/lmbd)^2 over "
+            f"lmbd = lmbd_i(T) + lmbd_o, and dGrxn is "
             f"not a property of the rate law -- it comes from the species thermochemistry at "
             f"run time. There is no value of these parameters for which a Cantera rate form "
             f"reproduces this, so there is no correct file to write."
