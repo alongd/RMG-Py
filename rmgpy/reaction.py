@@ -50,6 +50,12 @@ import cython
 import numpy as np
 
 import rmgpy.constants as constants
+# Module scope rather than the lazy import used for `expand_electrons` below, because
+# `is_isomorphic` is one of the hottest paths in RMG and must not pay for an import
+# statement per comparison. This does not close a cycle: `electron_balance` imports only
+# `rmgpy.exceptions` at module scope and reaches `electron_placement` -- which does import
+# this module -- lazily, inside `get_placement_declaration`.
+from rmgpy.electron_balance import get_electron_placement_counts
 from rmgpy.exceptions import ReactionError, KineticsError, NonEquilibriumReverseRateError
 from rmgpy.kinetics import KineticsData, ArrheniusBM, ArrheniusEP, ThirdBody, Lindemann, Troe, Chebyshev, \
     PDepArrhenius, MultiArrhenius, MultiPDepArrhenius, get_rate_coefficient_units_from_reaction_order, \
@@ -739,9 +745,19 @@ class Reaction:
         # Compare specific_collider to specific_collider
         collider_match = (self.specific_collider == other.specific_collider)
 
-        # Return now, if we can. Reaction.electrons is signed relative to each reaction's current
-        # orientation, so a forward (same-orientation) match requires equal electron counts.
-        if forward_reactants_match and forward_products_match and collider_match and self.electrons == other.electrons:
+        # Return now, if we can. The electron is a participant that RMG's canonical
+        # representation keeps out of the participant lists, so it is compared here rather
+        # than by same_species_lists above -- and it is compared PER SIDE, not as the net
+        # `electrons` scalar. The net scalar is equal-and-opposite for the two shipped
+        # lithium plasma channels, whose heavy species are mirrors, so a net comparison
+        # calls electron-impact ionisation and radiative recombination the same reaction
+        # taken in opposite directions. get_electron_placement_counts documents why; for
+        # every reaction whose owner declares no placement -- everything outside the plasma
+        # families and libraries -- the counts reduce to exactly the net comparison this
+        # line used to make, so no non-plasma verdict changes.
+        electrons_self = get_electron_placement_counts(self)
+        electrons_other = get_electron_placement_counts(other)
+        if forward_reactants_match and forward_products_match and collider_match and electrons_self == electrons_other:
             return True
         if not either_direction:
             return False
@@ -763,8 +779,11 @@ class Reaction:
                                                     save_order=save_order)
 
         # should have already returned if it matches forwards, or we're not allowed to match backwards.
-        # A reverse (opposite-orientation) match requires the electron count to be negated.
-        return reverse_reactants_match and reverse_products_match and collider_match and self.electrons == -other.electrons
+        # A reverse (opposite-orientation) match compares each side's electron count against
+        # the other reaction's opposite side, which is the per-side form of the negation this
+        # line used to apply to the net scalar.
+        return (reverse_reactants_match and reverse_products_match and collider_match
+                and electrons_self == (electrons_other[1], electrons_other[0]))
 
     def _apply_CHE_model(self, T):
         """

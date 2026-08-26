@@ -49,6 +49,7 @@ from rmgpy.data.kinetics.quarantine import check_quarantine
 from rmgpy.data.rmg import get_db
 from rmgpy.data.vaporLiquidMassTransfer import vapor_liquid_mass_transfer
 from rmgpy.display import display
+from rmgpy.electron_balance import get_electron_placement_counts
 from rmgpy.exceptions import ForbiddenStructureException
 from rmgpy.kinetics import Arrhenius, KineticsData
 from rmgpy.kinetics.surface import StickingCoefficient
@@ -2347,9 +2348,35 @@ def are_identical_species_references(rxn1, rxn2):
     """
     Checks if the references of the reactants and products of the two reactions
     are identical, in either direction.
+
+    The electron counts must match too. RMG's canonical representation keeps the
+    electron out of the participant lists and in ``Reaction.electrons``, so the
+    reference comparison above sees only the heavy species -- which makes an
+    ionisation and a recombination over the same two heavy species look like the
+    same reaction taken in opposite directions. They are not, and the model then
+    silently keeps whichever was offered first. The electrons are therefore
+    compared as what they are, participants, via
+    :func:`~rmgpy.electron_balance.get_electron_placement_counts`: per side, not
+    as a net scalar. See that function for why the net scalar is not sufficient
+    here even though it looks as though it should be.
+
+    For every reaction whose owner declares no electron placement -- which is
+    every reaction outside the plasma families and libraries -- this is the same
+    verdict as before, exactly: the counts reduce to the net comparison the
+    predicate never made explicitly, and the heavy-species comparison is
+    untouched.
     """
     identical_same_direction = rxn1.reactants == rxn2.reactants and rxn1.products == rxn2.products
     identical_opposite_directions = rxn1.reactants == rxn2.products and rxn1.products == rxn2.reactants
     identical_collider = rxn1.specific_collider == rxn2.specific_collider
+
+    electrons1 = get_electron_placement_counts(rxn1)
+    electrons2 = get_electron_placement_counts(rxn2)
+    # The counts are stated per side in each reaction's own orientation, so a
+    # same-direction match compares them side for side and a reverse match
+    # compares each side against the other reaction's opposite side.
+    identical_same_direction = identical_same_direction and electrons1 == electrons2
+    identical_opposite_directions = (identical_opposite_directions
+                                     and electrons1 == (electrons2[1], electrons2[0]))
 
     return (identical_same_direction or identical_opposite_directions) and identical_collider

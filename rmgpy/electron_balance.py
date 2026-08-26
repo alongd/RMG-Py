@@ -60,6 +60,7 @@ from rmgpy.exceptions import MechanismWriterError
 __all__ = [
     'get_electron_species',
     'get_placement_declaration',
+    'get_electron_placement_counts',
     'expand_electrons',
     'get_species_electron_count',
     'check_electron_balance',
@@ -129,6 +130,115 @@ def get_placement_declaration(reaction):
             'declaration exists to override.'.format(owner, declaration, reaction)
         )
     return declaration
+
+
+def get_electron_placement_counts(reaction):
+    """
+    Return ``(reactant_count, product_count)``: how many free electrons stand on
+    each side of ``reaction`` **as it is currently oriented**.
+
+    This is the electron half of reaction IDENTITY. Two reactions are the same
+    reaction when they have the same participants on each side, and the electron
+    is a participant like any other -- it is merely stored as metadata rather
+    than in the participant lists. This function restores it to a comparable
+    form so that identity predicates can include it.
+
+    **Why this is not ``Reaction.electrons``, which is the trap.** The net scalar
+    is ONE number and identity needs TWO, for exactly the reason
+    :func:`expand_electrons` needs two: a net count cannot say how many electrons
+    were incident, only how many appeared or vanished. The consequence for
+    identity is sharper than the consequence for export, and it is what
+    ``docs/i134-duplicate-electrons/`` exists to record. Take the two shipped
+    lithium plasma channels:
+
+        electron-impact ionisation   Li  + e-  =>  Li+ + 2 e-    placement (1, 2)
+        radiative recombination      Li+ + e-  =>  Li  + hv      placement (1, 0)
+
+    Their heavy species are exact mirrors, so every reference comparison matches
+    them in the reverse direction. Their NET electron counts are ``+1`` and
+    ``-1`` -- exactly equal and opposite, which is precisely the relation a
+    reverse pair has. **So a net-based test declares them the same reaction, and
+    they are not.** The reverse of the ionisation is three-body recombination,
+    ``Li+ + 2 e- => Li + e-``, placement ``(2, 1)``, third order; the radiative
+    channel is ``(1, 0)``, second order, with a photon carrying off the energy.
+    Different molecularity, different rate law, different temperature dependence,
+    opposite roles in the charge balance. Only the placement pair separates them:
+    ``(1, 2)`` reversed is ``(2, 1)``, which is not ``(1, 0)``.
+
+    This is the same distinction ``FAMILY_ELECTRON_PLACEMENT`` was widened for in
+    I-113 and I-126 -- incident order is DECLARED, never derived -- turning out to
+    be what identity needs as well. Anyone reaching for ``reaction.electrons``
+    here should read the paragraph above first: it is not equivalent, and the
+    failure it produces is silent.
+
+    **The contract for reactions with no declaration**, which is almost every
+    reaction in RMG. When the owner has made no statement, the counts come from
+    the same net-derived rule :func:`expand_electrons` falls back to: negative
+    ``electrons`` means they are consumed, so ``(-electrons, 0)``; positive means
+    produced, so ``(0, electrons)``; zero means ``(0, 0)``. Two consequences of
+    that rule are worth stating precisely, because they bound what consulting
+    this function can change:
+
+    * it reduces to a comparison of the net counts. ``(r1, p1) == (r2, p2)``
+      holds exactly when ``electrons1 == electrons2``, since one count is always
+      zero and the other is ``|electrons|`` on the side the sign names; and
+      ``(r1, p1) == (p2, r2)`` holds exactly when ``electrons1 == -electrons2``,
+      by the same argument with the sides swapped. Those are precisely the two
+      comparisons :meth:`rmgpy.reaction.Reaction.is_isomorphic` already made on
+      the net scalar, so **that** predicate's verdict for an undeclared owner is
+      unchanged bit for bit.
+    * ``electrons = 0`` gives ``(0, 0)``, so any two reactions that are both
+      electrically neutral compare equal on electrons whatever else is true of
+      them. That is what bounds the change for
+      :func:`rmgpy.rmg.model.are_identical_species_references`, which compared no
+      electron information at all before: for neutral chemistry -- all of RMG
+      outside the charged families and the plasma libraries -- its verdict is
+      also unchanged. For a CHARGED reaction it is a genuine tightening, which is
+      the point of the repair.
+
+    A declared owner whose declaration is ONE-SIDED -- ``(n, 0)`` or ``(0, n)``
+    -- places exactly where the net rule would, so it moves nothing either. Only
+    a two-sided declaration can change an answer that the net rule got, and
+    ``PlasmaElectronImpactIonization``'s ``(1, 2)`` is the only one shipped.
+
+    **Orientation.** A declaration is stated in its owner's forward orientation.
+    A reaction object may be stored either way round, and ``Reaction.electrons``
+    is signed to that stored orientation, so the two together determine it: the
+    stored orientation is forward when ``product_count - reactant_count`` equals
+    ``electrons``, and reversed when ``reactant_count - product_count`` does. The
+    reversed case returns the declaration swapped.
+
+    **When the reaction and its owner disagree**, matching neither orientation,
+    this falls through to the net rule rather than raising.
+    :func:`expand_electrons` raises there, and should: it is an export boundary,
+    and writing a wrong equation is unrecoverable. This function is consulted on
+    every duplicate comparison of every run, where raising would convert a data
+    inconsistency into a traceback from an unrelated-looking place, and where the
+    export boundary is still downstream and still refuses. Falling back is
+    reading the reaction's own account of itself when its owner's account cannot
+    be applied. No shipped path reaches this branch: ``_create_reaction`` sets
+    ``electrons`` from the family declaration itself, and library entries are
+    balance-checked at load.
+
+    ``reaction`` is never mutated, and explicit electrons already sitting in the
+    participant lists are not counted -- a reaction in that form (the reactor's
+    placement view, or a mechanism read back from a written file) carries
+    ``electrons = 0`` and has its electrons compared as ordinary participants by
+    the list comparison itself.
+    """
+    electrons = getattr(reaction, 'electrons', 0) or 0
+
+    declaration = get_placement_declaration(reaction)
+    if declaration is not None:
+        reactant_count, product_count = declaration
+        if product_count - reactant_count == electrons:
+            return reactant_count, product_count
+        if reactant_count - product_count == electrons:
+            return product_count, reactant_count
+
+    if electrons < 0:
+        return -electrons, 0
+    return 0, electrons
 
 
 def expand_electrons(reaction, species_list):
