@@ -155,6 +155,28 @@ therefore written as the modified-Arrhenius reduction of its rate law along ``T 
 marked with ``TDEP/<electron>/`` so a plasma-aware Chemkin evaluates it at the electron
 temperature, followed by a comment stating what the reduction discarded.
 
+**Reading a plasma Chemkin file back.**  ``TDEP`` is a standard Chemkin auxiliary keyword
+(CHEMKIN-III, "Species Temperature Dependence"): the species named in the slashes supplies
+the temperature at which the reaction's rate parameters are evaluated, in place of the gas
+temperature.  ``load_chemkin_file`` understands it, and rebuilds the reaction as a
+``TwoTemperaturePlasma`` whose two activation energies are equal — the same identity the
+Cantera writer uses — so the reloaded rate is a function of ``Te`` and the plasma reactor
+evaluates it there.  Two things do **not** survive the round trip, both of them properties of
+the Chemkin format rather than of the reader:
+
+* the original functional form.  What comes back is the modified-Arrhenius reduction that was
+  written, not the Voronov, Badnell or cross-section rate law it was reduced from.
+* the ``Reaction.electrons`` count.  The equation carries its electrons explicitly, and they
+  are read back as ordinary species, so the reloaded reaction has ``electrons = 0`` with
+  electron species in its reactant and product lists.
+
+RMG only understands ``TDEP`` naming the electron, and only on a line of its own.  A ``TDEP``
+naming any other species, or sharing its line with ``MOME``, ``XSMI`` or ``EXCI``, raises
+``ChemkinError`` rather than being read back as something RMG has no rate law for.  Third-party
+Chemkin readers vary: Cantera's ``ck2yaml`` does not implement ``TDEP`` at all and rejects the
+file, so ``cantera_from_ck/`` cannot be produced for a plasma mechanism (see below).  The
+``cantera2`` writer's output is the portable Cantera artifact for these mechanisms.
+
 **Unsupported kinetics are a hard error.**  If either writer meets a kinetics type it has no
 case for, it raises ``MechanismWriterError`` and the export fails.  It does not warn and skip
 the reaction, and there is no option to make it do so: a mechanism that is silently missing a
