@@ -69,6 +69,11 @@ Each reaction family contains the files:
 * training.py containing a training set for the family
 * rules.py containing kinetic parameters for rules
 
+A family may optionally also contain:
+
+* quarantine.py declaring that some of the family's data must not enter a
+  quantitative mechanism (see :ref:`kinetics_quarantine`)
+
 `A full list of the kinetic families can be found on the RMG website <https://rmg.mit.edu/database/kinetics/families/>`_ (please allow 1-2 minutes for the website to load).
 
 Recipe
@@ -139,3 +144,53 @@ For more information on the estimation algorithm see :ref:`kinetics`.
 
 The training set can be modified in training.py and the rules can be modified in
 rules.py. For more information on modification see :ref:`kinetic-training-set` and :ref:`kinetic-rules`.
+
+.. _kinetics_quarantine:
+
+Quarantined data
+----------------
+Some data in the database is real and worth keeping, yet its *evaluation* has lost
+the semantics of its source model -- the number the rate law returns is not the
+number the data means. Rates fitted under conditions that a mechanism does not
+reproduce are the usual case: an electrode electron-transfer rate evaluated in a
+gas-phase mechanism, where there is no electrode and no reference potential, is
+computed correctly and means nothing.
+
+Deleting such data destroys provenance; leaving it in circulation puts a
+meaningless rate into a mechanism that then reports success. **Quarantine** is the
+third option: keep the data, and refuse loudly at the boundary where it would
+become a quantitative claim.
+
+A family declares a quarantine by carrying a ``quarantine.py`` sidecar next to its
+``groups.py`` and ``rules.py``::
+
+    name = "Some_Family/quarantine"
+    state = "QUARANTINED FOR QUANTITATIVE PLASMA USE"
+    appliesToKineticsClass = "Marcus"
+    reason = "electrochemical reference/domain unavailable"
+
+``state`` and ``reason`` are free text and are quoted back in the error.
+``appliesToKineticsClass`` names a class in :mod:`rmgpy.kinetics` and is the
+criterion: **the manifest never names an entry.** RMG computes which entries are
+affected by testing every rate rule and every training entry of the family against
+that class, so the quarantine cannot fall out of step with the data. Adding an
+entry of that class quarantines it automatically; refitting one to another kinetics
+class releases it automatically; renumbering or relabelling entries changes
+nothing. A misspelled class name raises ``DatabaseError`` when the family loads,
+rather than producing a manifest that announces a quarantine while gating nothing.
+
+When a reaction whose kinetics come from quarantined data is admitted to an RMG
+reaction model, the run stops with ``QuarantinedKineticsError``, naming the family,
+the rule or training-entry provenance, the generated reaction, the kinetics class,
+the reason, and the path of the manifest. The reaction is **not** dropped,
+averaged, zeroed, reversed, made irreversible, or given a substitute rate: each of
+those would let the run report success on a mechanism that is quietly wrong.
+
+The gate sits inside RMG's mechanism builder and nowhere else. The database still
+loads, the family stays registered and still generates reactions, and the rate law
+itself still evaluates, so the data remains usable for refitting, for provenance
+audits, and for any consumer that supplies the missing reference. Lifting a
+quarantine means deleting the ``quarantine.py`` file.
+
+Families with no ``quarantine.py`` -- which is all of them by default -- are
+completely unaffected.

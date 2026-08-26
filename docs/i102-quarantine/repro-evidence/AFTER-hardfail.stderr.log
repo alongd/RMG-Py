@@ -1,0 +1,27 @@
+Traceback (most recent call last):
+  File "/home/alon/Code/RMG-Py-i102-quarantine/rmg.py", line 33, in <module>
+    __main__.main()
+  File "/home/alon/Code/RMG-Py-i102-quarantine/rmgpy/__main__.py", line 104, in main
+    rmg.execute(**kwargs)
+  File "/home/alon/Code/RMG-Py-i102-quarantine/rmgpy/rmg/main.py", line 939, in execute
+    self.reaction_model.enlarge(
+  File "/home/alon/Code/RMG-Py-i102-quarantine/rmgpy/rmg/model.py", line 799, in enlarge
+    self.process_new_reactions(rxnList, spc, requires_rms=requires_rms)
+  File "/home/alon/Code/RMG-Py-i102-quarantine/rmgpy/rmg/model.py", line 920, in process_new_reactions
+    raise e
+  File "/home/alon/Code/RMG-Py-i102-quarantine/rmgpy/rmg/model.py", line 917, in process_new_reactions
+    rxn, is_new = self.make_new_reaction(rxn, generate_thermo=generate_thermo, generate_kinetics=generate_kinetics)
+  File "/home/alon/Code/RMG-Py-i102-quarantine/rmgpy/rmg/model.py", line 618, in make_new_reaction
+    self.apply_kinetics_to_reaction(forward)
+  File "/home/alon/Code/RMG-Py-i102-quarantine/rmgpy/rmg/model.py", line 1059, in apply_kinetics_to_reaction
+    check_quarantine(reaction, stage='kinetics estimation for the reaction model',
+  File "/home/alon/Code/RMG-Py-i102-quarantine/rmgpy/data/kinetics/quarantine.py", line 309, in check_quarantine
+    raise QuarantinedKineticsError(
+rmgpy.exceptions.QuarantinedKineticsError: QUARANTINED FOR QUANTITATIVE PLASMA USE: refusing to admit a quarantined rate at kinetics estimation for the reaction model.
+  family:             Cation_R_Recombination
+  provenance:         Cation_R_Recombination/training entry 2 "CH3 + Li <=> CH3Li"; rank 3; template [Root_2R->C]; comment: Matched reaction 2 CH3 + Li <=> CH3Li in Cation_R_Recombination/training This reaction matched rate rule [Root_2R->C] family: Cation_R_Recombination
+  reaction:           [Lip](3) + [CH3](4) <=> CH3Li(2)
+  kinetics class:     Marcus
+  reason:             electrochemical reference/domain unavailable
+  quarantine record:  /home/alon/Code/RMG-database-i102-quarantine/input/kinetics/families/Cation_R_Recombination/quarantine.py
+This reaction is not being dropped, averaged, zeroed, reversed, made irreversible, or given a substitute rate -- any of those would let the run report success on a mechanism that is quietly wrong. The family and its data remain in the database untouched. Remove /home/alon/Code/RMG-database-i102-quarantine/input/kinetics/families/Cation_R_Recombination/quarantine.py only when the quarantine is genuinely resolved.

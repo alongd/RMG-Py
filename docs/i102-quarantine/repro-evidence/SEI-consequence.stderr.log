@@ -1,0 +1,27 @@
+Traceback (most recent call last):
+  File "/home/alon/Code/RMG-Py-i102-quarantine/rmg.py", line 33, in <module>
+    __main__.main()
+  File "/home/alon/Code/RMG-Py-i102-quarantine/rmgpy/__main__.py", line 104, in main
+    rmg.execute(**kwargs)
+  File "/home/alon/Code/RMG-Py-i102-quarantine/rmgpy/rmg/main.py", line 871, in execute
+    requires_rms = self.initialize(**kwargs)
+  File "/home/alon/Code/RMG-Py-i102-quarantine/rmgpy/rmg/main.py", line 548, in initialize
+    self.load_input(self.input_file)
+  File "/home/alon/Code/RMG-Py-i102-quarantine/rmgpy/rmg/main.py", line 296, in load_input
+    read_input_file(path, self)
+  File "/home/alon/Code/RMG-Py-i102-quarantine/rmgpy/rmg/input.py", line 1983, in read_input_file
+    exec(f.read(), global_context, local_context)
+  File "<string>", line 98, in <module>
+  File "/home/alon/Code/RMG-Py-i102-quarantine/rmgpy/rmg/input.py", line 1052, in liquid_cat_reactor
+    system = ConstantTLiquidSurfaceReactor(rmg.reaction_model.core.phase_system,
+  File "/home/alon/Code/RMG-Py-i102-quarantine/rmgpy/rmg/reactionmechanismsimulator_reactors.py", line 524, in __init__
+    super().__init__(core_phase_system, edge_phase_system, initial_conditions, terminations, constant_species)
+  File "/home/alon/Code/RMG-Py-i102-quarantine/rmgpy/rmg/reactionmechanismsimulator_reactors.py", line 418, in __init__
+    self.terminations = [to_rms(term) for term in terminations]
+  File "/home/alon/Code/RMG-Py-i102-quarantine/rmgpy/rmg/reactionmechanismsimulator_reactors.py", line 418, in <listcomp>
+    self.terminations = [to_rms(term) for term in terminations]
+  File "/home/alon/Code/RMG-Py-i102-quarantine/rmgpy/rmg/reactionmechanismsimulator_reactors.py", line 836, in to_rms
+    return Main.TerminationTime(obj.time.value_si)
+  File "/home/alon/Code/RMG-Py-i102-quarantine/rmgpy/rmg/reactionmechanismsimulator_reactors.py", line 73, in __getattr__
+    from juliacall import Main as JuliaMain
+ModuleNotFoundError: No module named 'juliacall'

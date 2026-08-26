@@ -1,0 +1,329 @@
+============================= test session starts ==============================
+collecting ... collected 36 items
+
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_manifest_loads_its_fields INFO:root:Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_family_without_a_manifest_is_not_quarantined PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_an_unknown_kinetics_class_raises_rather_than_quarantining_nothing PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_manifest_missing_a_required_field_raises[state] PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_manifest_missing_a_required_field_raises[appliesToKineticsClass] PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_manifest_missing_a_required_field_raises[reason] PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_the_criterion_is_selective INFO:root:Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_the_criterion_is_evaluated_against_the_data_not_a_stored_list INFO:root:Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_no_hard_coded_entry_list_exists_in_the_code PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheRefusalNamesFiveThings::test_it_names_the_family INFO:root:Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheRefusalNamesFiveThings::test_it_names_the_provenance INFO:root:Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheRefusalNamesFiveThings::test_it_names_the_generated_reaction INFO:root:Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheRefusalNamesFiveThings::test_it_names_the_kinetics_class INFO:root:Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheRefusalNamesFiveThings::test_it_names_the_reason INFO:root:Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheRefusalNamesFiveThings::test_it_names_the_campaign_state_and_the_manifest INFO:root:Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheRefusalNamesFiveThings::test_provenance_is_never_blank INFO:root:Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheGateFires::test_at_kinetics_estimation_the_primary_site INFO:root:Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+FAILED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheGateFires::test_at_core_admission_the_backstop INFO:root:Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+FAILED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheGateFires::test_at_edge_admission_the_backstop INFO:root:Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+FAILED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheGateFires::test_ordinary_chemistry_is_untouched INFO:root:Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheGateFires::test_a_quarantined_family_still_admits_its_unquarantined_kinetics INFO:root:Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheGateFires::test_an_unloaded_database_does_not_crash_the_gate PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_1_the_reaction_is_not_removed_after_generation INFO:root:Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+FAILED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_2_no_average_rule_is_substituted INFO:root:Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+FAILED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_3_it_is_never_evaluated_at_potential_zero INFO:root:Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+FAILED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_4_it_is_not_marked_irreversible INFO:root:Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+FAILED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_5_no_reverse_rate_is_derived INFO:root:Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+FAILED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_6_seeding_a_product_or_cation_does_not_bypass_it INFO:root:Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+FAILED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_7_no_generic_collision_rate_replaces_it INFO:root:Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+FAILED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheRealQuarantinedFamily::test_the_family_is_quarantined_with_the_ruling_s_words INFO:root:Kinetics family Cation_R_Recombination is QUARANTINED FOR QUANTITATIVE PLASMA USE (Marcus): electrochemical reference/domain unavailable
+PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheRealQuarantinedFamily::test_the_affected_set_is_enumerated_from_the_database PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheRealQuarantinedFamily::test_nothing_was_deleted PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheRealQuarantinedFamily::test_the_rates_themselves_were_not_touched PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheDoorLeftOpen::test_the_database_still_loads INFO:root:Kinetics family Cation_R_Recombination is QUARANTINED FOR QUANTITATIVE PLASMA USE (Marcus): electrochemical reference/domain unavailable
+PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheDoorLeftOpen::test_the_family_is_still_registered_and_still_generates_reactions PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheDoorLeftOpen::test_the_rate_law_still_evaluates PASSED
+
+=================================== FAILURES ===================================
+________ TestTheGateFires.test_at_kinetics_estimation_the_primary_site _________
+
+self = <quarantineTest.TestTheGateFires object at 0x714f97bd8e80>
+registered = <KineticsQuarantine 'Fake_Quarantined_Family' QUARANTINED FOR TESTING applies to Marcus>
+
+    def test_at_kinetics_estimation_the_primary_site(self, registered):
+        model = _StubModel((make_marcus(), "rate rules", None, True))
+        reaction = make_reaction()
+        with pytest.raises(QuarantinedKineticsError):
+>           model.apply_kinetics_to_reaction(reaction)
+E           Failed: DID NOT RAISE <class 'rmgpy.exceptions.QuarantinedKineticsError'>
+
+../../../../test/rmgpy/data/kinetics/quarantineTest.py:343: Failed
+------------------------------ Captured log setup ------------------------------
+INFO     root:quarantine.py:219 Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+_____________ TestTheGateFires.test_at_core_admission_the_backstop _____________
+
+self = <quarantineTest.TestTheGateFires object at 0x714f97bdd160>
+registered = <KineticsQuarantine 'Fake_Quarantined_Family' QUARANTINED FOR TESTING applies to Marcus>
+
+    def test_at_core_admission_the_backstop(self, registered):
+        model = CoreEdgeReactionModel()
+        reaction = make_reaction()
+        reaction.kinetics = make_marcus()
+        with pytest.raises(QuarantinedKineticsError):
+>           model.add_reaction_to_core(reaction)
+E           Failed: DID NOT RAISE <class 'rmgpy.exceptions.QuarantinedKineticsError'>
+
+../../../../test/rmgpy/data/kinetics/quarantineTest.py:350: Failed
+------------------------------ Captured log setup ------------------------------
+INFO     root:quarantine.py:219 Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+_____________ TestTheGateFires.test_at_edge_admission_the_backstop _____________
+
+self = <quarantineTest.TestTheGateFires object at 0x714f97bdd400>
+registered = <KineticsQuarantine 'Fake_Quarantined_Family' QUARANTINED FOR TESTING applies to Marcus>
+
+    def test_at_edge_admission_the_backstop(self, registered):
+        """
+        The edge is not a holding pen: edge fluxes decide what is promoted, so a rate
+        of 1e-226 sitting there has already declared a real channel unimportant. The
+        preflight deck this ticket came from put the Marcus reaction in the edge and
+        never in the core, so a gate at core admission alone would not have fired.
+        """
+        model = CoreEdgeReactionModel()
+        reaction = make_reaction()
+        reaction.kinetics = make_marcus()
+        with pytest.raises(QuarantinedKineticsError):
+>           model.add_reaction_to_edge(reaction)
+E           Failed: DID NOT RAISE <class 'rmgpy.exceptions.QuarantinedKineticsError'>
+
+../../../../test/rmgpy/data/kinetics/quarantineTest.py:364: Failed
+------------------------------ Captured log setup ------------------------------
+INFO     root:quarantine.py:219 Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+_ TestTheSevenForbiddenSilentBehaviours.test_1_the_reaction_is_not_removed_after_generation _
+
+self = <quarantineTest.TestTheSevenForbiddenSilentBehaviours object at 0x714f97bdde80>
+registered = <KineticsQuarantine 'Fake_Quarantined_Family' QUARANTINED FOR TESTING applies to Marcus>
+
+    def test_1_the_reaction_is_not_removed_after_generation(self, registered):
+        """
+        Forbidden: remove the reaction after generation.
+    
+        The gate raises; it never returns a sentinel that a caller could read as
+        "skip this one", and the exception is not swallowed on the way out of the
+        model. The reaction object survives untouched -- it is evidence, not litter.
+        """
+        model = _StubModel((make_marcus(), "rate rules", None, True))
+        reaction = make_reaction()
+        before = (list(reaction.reactants), list(reaction.products))
+    
+        with pytest.raises(QuarantinedKineticsError):
+>           model.apply_kinetics_to_reaction(reaction)
+E           Failed: DID NOT RAISE <class 'rmgpy.exceptions.QuarantinedKineticsError'>
+
+../../../../test/rmgpy/data/kinetics/quarantineTest.py:423: Failed
+------------------------------ Captured log setup ------------------------------
+INFO     root:quarantine.py:219 Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+_ TestTheSevenForbiddenSilentBehaviours.test_2_no_average_rule_is_substituted __
+
+self = <quarantineTest.TestTheSevenForbiddenSilentBehaviours object at 0x714f97be4160>
+registered = <KineticsQuarantine 'Fake_Quarantined_Family' QUARANTINED FOR TESTING applies to Marcus>
+
+    def test_2_no_average_rule_is_substituted(self, registered):
+        """
+        Forbidden: substitute an average rule.
+    
+        RMG's own averaged rate-rule estimate is the tempting substitute, because it
+        arrives through the same call and looks like an ordinary result: an averaged
+        estimate returns ``entry=None``, so a gate keyed on having exact provenance
+        would let precisely this case through. It refuses identically.
+        """
+        model = _StubModel((make_marcus(), "rate rules", None, True))
+        with pytest.raises(QuarantinedKineticsError) as exc:
+>           model.apply_kinetics_to_reaction(make_reaction())
+E           Failed: DID NOT RAISE <class 'rmgpy.exceptions.QuarantinedKineticsError'>
+
+../../../../test/rmgpy/data/kinetics/quarantineTest.py:442: Failed
+------------------------------ Captured log setup ------------------------------
+INFO     root:quarantine.py:219 Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+_ TestTheSevenForbiddenSilentBehaviours.test_3_it_is_never_evaluated_at_potential_zero _
+
+self = <quarantineTest.TestTheSevenForbiddenSilentBehaviours object at 0x714f97bdd8e0>
+registered = <KineticsQuarantine 'Fake_Quarantined_Family' QUARANTINED FOR TESTING applies to Marcus>
+
+    def test_3_it_is_never_evaluated_at_potential_zero(self, registered):
+        """
+        Forbidden: evaluate it with ``potential = 0``.
+    
+        The refusal happens before the kinetics are bound to the reaction, so there
+        is nothing for any consumer to evaluate at any potential: `kinetics` is still
+        None afterwards. The gate itself takes no potential and reads none, which is
+        why no value of one can change its answer.
+        """
+        model = _StubModel((make_marcus(), "rate rules", None, True))
+        reaction = make_reaction()
+        assert reaction.kinetics is None
+    
+        with pytest.raises(QuarantinedKineticsError):
+>           model.apply_kinetics_to_reaction(reaction)
+E           Failed: DID NOT RAISE <class 'rmgpy.exceptions.QuarantinedKineticsError'>
+
+../../../../test/rmgpy/data/kinetics/quarantineTest.py:464: Failed
+------------------------------ Captured log setup ------------------------------
+INFO     root:quarantine.py:219 Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+__ TestTheSevenForbiddenSilentBehaviours.test_4_it_is_not_marked_irreversible __
+
+self = <quarantineTest.TestTheSevenForbiddenSilentBehaviours object at 0x714f97bd88e0>
+registered = <KineticsQuarantine 'Fake_Quarantined_Family' QUARANTINED FOR TESTING applies to Marcus>
+
+    def test_4_it_is_not_marked_irreversible(self, registered):
+        """
+        Forbidden: mark it irreversible and continue.
+    
+        Two claims: `reversible` is not mutated, and there is no "and continue" --
+        the exception leaves the method.
+        """
+        model = _StubModel((make_marcus(), "rate rules", None, True))
+        reaction = make_reaction()
+        assert reaction.reversible is True
+    
+        with pytest.raises(QuarantinedKineticsError):
+>           model.apply_kinetics_to_reaction(reaction)
+E           Failed: DID NOT RAISE <class 'rmgpy.exceptions.QuarantinedKineticsError'>
+
+../../../../test/rmgpy/data/kinetics/quarantineTest.py:481: Failed
+------------------------------ Captured log setup ------------------------------
+INFO     root:quarantine.py:219 Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+___ TestTheSevenForbiddenSilentBehaviours.test_5_no_reverse_rate_is_derived ____
+
+self = <quarantineTest.TestTheSevenForbiddenSilentBehaviours object at 0x714f97bceee0>
+registered = <KineticsQuarantine 'Fake_Quarantined_Family' QUARANTINED FOR TESTING applies to Marcus>
+
+    def test_5_no_reverse_rate_is_derived(self, registered):
+        """
+        Forbidden: derive a reverse rate.
+    
+        This is the live case, not a hypothetical: the deck this ticket came from
+        reaches ``Cation_R_Recombination`` through its auto-derived reverse template,
+        so the kinetics match in the reverse direction and RMG's next act would be to
+        flip the reaction and adopt the rate. The gate is placed before that flip, so
+        reactants and products come out in the order they went in.
+        """
+        model = _StubModel((make_marcus(), "rate rules", None, False))  # is_forward=False
+        reaction = make_reaction()
+        reactants, products = list(reaction.reactants), list(reaction.products)
+    
+        with pytest.raises(QuarantinedKineticsError):
+>           model.apply_kinetics_to_reaction(reaction)
+
+../../../../test/rmgpy/data/kinetics/quarantineTest.py:500: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <quarantineTest._StubModel object at 0x714f97ab5760>
+reaction = TemplateReaction(reactants=[Species(label="CH3Li", molecule=[Molecule(smiles="[Li][CH3]")], molecular_weight=(21.9756,...lecule(smiles="[CH3]")], molecular_weight=(15.0346,'amu'))], family='Fake_Quarantined_Family', template=['Root_2R->C'])
+
+    def apply_kinetics_to_reaction(self, reaction):
+        """
+        retrieve the best kinetics for the reaction and apply it towards the forward
+        or reverse direction (if reverse, flip the direaction).
+        """
+        from rmgpy.data.rmg import get_db
+    
+        # Find the reaction kinetics
+        kinetics, source, entry, is_forward = self.generate_kinetics(reaction)
+        # Refuse quarantined database data before anything is bound or mutated. This is the
+        # boundary the reaction crosses to become part of the model: it is the single call site
+        # where estimated kinetics meet a reaction, it is strictly downstream of generation, and
+        # it is strictly upstream of both the edge and the core -- a rate that never reaches the
+        # core still steers enlargement from the edge, so gating at core admission alone would
+        # let a quarantined rate quietly declare a real channel unimportant. Raising here also
+        # means the direction flip below has not happened and reaction.kinetics is still None,
+        # so a refused reaction is left exactly as generated.
+        check_quarantine(reaction, stage='kinetics estimation for the reaction model',
+                         kinetics=kinetics, source=source, entry=entry)
+        # Flip the reaction direction if the kinetics are defined in the reverse direction
+        if not is_forward:
+            family = get_db("kinetics").families[reaction.family]
+            reaction.reactants, reaction.products = reaction.products, reaction.reactants
+>           reaction.pairs = [(p, r) for r, p in reaction.pairs]
+E           TypeError: 'NoneType' object is not iterable
+
+../../../../rmgpy/rmg/model.py:1065: TypeError
+------------------------------ Captured log setup ------------------------------
+INFO     root:quarantine.py:219 Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+_ TestTheSevenForbiddenSilentBehaviours.test_6_seeding_a_product_or_cation_does_not_bypass_it _
+
+self = <quarantineTest.TestTheSevenForbiddenSilentBehaviours object at 0x714f97be42e0>
+registered = <KineticsQuarantine 'Fake_Quarantined_Family' QUARANTINED FOR TESTING applies to Marcus>
+
+    def test_6_seeding_a_product_or_cation_does_not_bypass_it(self, registered):
+        """
+        Forbidden: seed a product or cation to bypass it.
+    
+        Seeding is how a run gets a quarantined reaction into the model without going
+        through kinetics estimation -- a seed mechanism or reaction library carries
+        its own kinetics, so `apply_kinetics_to_reaction` is never called for it.
+        That is what the core and edge backstops are for, and this is the test that
+        holds them in place.
+        """
+        for admit in ("add_reaction_to_core", "add_reaction_to_edge"):
+            model = CoreEdgeReactionModel()
+            reaction = make_reaction()
+            reaction.kinetics = make_marcus()  # pre-attached, as from a seed mechanism
+            with pytest.raises(QuarantinedKineticsError):
+>               getattr(model, admit)(reaction)
+E               Failed: DID NOT RAISE <class 'rmgpy.exceptions.QuarantinedKineticsError'>
+
+../../../../test/rmgpy/data/kinetics/quarantineTest.py:521: Failed
+------------------------------ Captured log setup ------------------------------
+INFO     root:quarantine.py:219 Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+_ TestTheSevenForbiddenSilentBehaviours.test_7_no_generic_collision_rate_replaces_it _
+
+self = <quarantineTest.TestTheSevenForbiddenSilentBehaviours object at 0x714f97be4580>
+registered = <KineticsQuarantine 'Fake_Quarantined_Family' QUARANTINED FOR TESTING applies to Marcus>
+
+    def test_7_no_generic_collision_rate_replaces_it(self, registered):
+        """
+        Forbidden: replace it with a generic collision rate.
+    
+        The gate has one non-raising outcome and it is ``None``. It cannot return a
+        substitute because it returns no kinetics at all, and the refused reaction
+        keeps the kinetics it had -- none.
+        """
+        model = _StubModel((make_marcus(), "rate rules", None, True))
+        reaction = make_reaction()
+        with pytest.raises(QuarantinedKineticsError):
+>           model.apply_kinetics_to_reaction(reaction)
+E           Failed: DID NOT RAISE <class 'rmgpy.exceptions.QuarantinedKineticsError'>
+
+../../../../test/rmgpy/data/kinetics/quarantineTest.py:535: Failed
+------------------------------ Captured log setup ------------------------------
+INFO     root:quarantine.py:219 Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+=========================== short test summary info ============================
+FAILED ../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheGateFires::test_at_kinetics_estimation_the_primary_site
+FAILED ../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheGateFires::test_at_core_admission_the_backstop
+FAILED ../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheGateFires::test_at_edge_admission_the_backstop
+FAILED ../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_1_the_reaction_is_not_removed_after_generation
+FAILED ../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_2_no_average_rule_is_substituted
+FAILED ../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_3_it_is_never_evaluated_at_potential_zero
+FAILED ../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_4_it_is_not_marked_irreversible
+FAILED ../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_5_no_reverse_rate_is_derived
+FAILED ../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_6_seeding_a_product_or_cation_does_not_bypass_it
+FAILED ../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_7_no_generic_collision_rate_replaces_it
+======================== 10 failed, 26 passed in 0.16s =========================

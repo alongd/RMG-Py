@@ -1,0 +1,2 @@
+check_quarantine on an unquarantined family: 308 ns per call (0.308 s for 1,000,000 calls)
+A 100k-reaction edge therefore pays about 30.8 ms in total.
