@@ -833,10 +833,29 @@ cdef class BadnellRRArrhenius(KineticsModel):
         T1  : temperature in K
         C   : (optional) dimensionless Badnell parameter
         T2  : (optional) temperature in K
+        electrons : net electron stoichiometry, signed to the reaction as written
+                    (negative = consumed). Defaults to -1, the one electron a
+                    single radiative recombination captures.
         Z   : (optional) nuclear charge (int)
         N   : (optional) electron count before recombination (int)
         yaml_path_or_obj : (optional) source YAML file to populate this object
         comment, Tmin, Tmax, Pmin, Pmax (inherited)
+
+    Electron bookkeeping
+    --------------------
+    ``electrons`` is the **net** change in free electron number, which is what
+    ``Reaction.is_balanced`` folds into the charge comparison and what
+    ``KineticsLibrary.load``/``KineticsDepository.load`` copy onto the reaction.
+    It is not an alternative spelling of "an electron takes part": an electron
+    that survives the reaction is a spectator and must be written explicitly on
+    both sides, because ``is_balanced`` counts the electron as a conserved
+    element like any other. Radiative recombination destroys its electron, so it
+    has no spectator to write and the whole electron lives in this scalar::
+
+        He+ => He     with electrons = -1     (He+ + e- -> He + hv)
+
+    The photon is not represented; RMG has no photon species, and ``hv`` carries
+    neither charge nor mass, so no balance check misses it.
     """
 
     def __init__(self,
@@ -846,6 +865,7 @@ cdef class BadnellRRArrhenius(KineticsModel):
                  T1=(1.0, "K"),
                  C=None,
                  T2=None,
+                 electrons=-1,
                  Z=None, N=None, yaml_path_or_obj=None,
                  Tmin=None, Tmax=None, Pmin=None, Pmax=None,
                  uncertainty=None, solute=None, comment=''):
@@ -853,12 +873,14 @@ cdef class BadnellRRArrhenius(KineticsModel):
                                uncertainty=uncertainty, solute=solute, comment=comment)
         self._Ea = None
 
-        # Radiative recombination consumes an electron, so both channels are
+        # Radiative recombination consumes an electron, so all three of these are
         # intrinsic to this rate law regardless of how the object was built. Set
         # them here, ahead of every branch below, so that no early return can
-        # leave a table-built object reporting False for either.
+        # leave a table-built object reporting False -- or, for `electrons`, an
+        # unset NULL that `hasattr` still answers True to -- for any of them.
         self.uses_electron_temperature = True
         self.uses_electron_density = True
+        self.electrons = electrons
 
         # If Z/N are given, load from YAML and return early
         if Z is not None and N is not None:
@@ -893,6 +915,11 @@ cdef class BadnellRRArrhenius(KineticsModel):
         string = 'BadnellRRArrhenius(A={0!r}, B={1!r}, T0={2!r}, T1={3!r}'.format(self.A, self.B, self.T0, self.T1)
         if self.C is not None: string += ', C={0!r}'.format(self.C)
         if self.T2 is not None: string += ', T2={0!r}'.format(self.T2)
+        # Always emitted, never conditional on being non-default. An RMG database entry is
+        # persisted as repr(entry.data) and read back by evaluating it, and the electron count
+        # is what decides whether the reaction balances -- a default left off the page is a
+        # number the reader has to already know.
+        string += ', electrons={0!r}'.format(self.electrons)
         if self.Tmin is not None: string += ', Tmin={0!r}'.format(self.Tmin)
         if self.Tmax is not None: string += ', Tmax={0!r}'.format(self.Tmax)
         if self.Pmin is not None: string += ', Pmin={0!r}'.format(self.Pmin)
@@ -906,6 +933,7 @@ cdef class BadnellRRArrhenius(KineticsModel):
     def __reduce__(self):
         return (BadnellRRArrhenius,
                 (self.A, self.B, self.T0, self.T1, self.C, self.T2,
+                 self.electrons,
                  None, None, None,
                  self.Tmin, self.Tmax, self.Pmin, self.Pmax,
                  self.uncertainty, self.solute, self.comment))
@@ -950,6 +978,21 @@ cdef class BadnellRRArrhenius(KineticsModel):
                 self._C = None
             else:
                 self._C = quantity.Dimensionless(value)
+
+    property electrons:
+        """
+        Net electron stoichiometry of the reaction this rate law describes, signed to
+        the reaction as written: negative when electrons are consumed, positive when
+        they are produced. Same convention as
+        :attr:`rmgpy.reaction.Reaction.electrons` and
+        :class:`ArrheniusChargeTransfer`, which is what lets
+        ``KineticsLibrary.load`` and ``KineticsDepository.load`` copy it across
+        unchanged.
+        """
+        def __get__(self):
+            return self._electrons
+        def __set__(self, value):
+            self._electrons = quantity.Dimensionless(value)
 
     property T2:
         """Badnell T2 parameter (K, optional)."""
@@ -1043,6 +1086,11 @@ cdef class BadnellRRArrhenius(KineticsModel):
         if (self.T2 is None) ^ (other_kinetics.T2 is None): return False
         if self.C is not None and not self.C.equals(other_kinetics.C): return False
         if self.T2 is not None and not self.T2.equals(other_kinetics.T2): return False
+
+        # Two rate laws that differ only in how many electrons they consume describe
+        # different reactions, and one of them will fail to balance where the other
+        # does not. The comparison has to see that.
+        if not self.electrons.equals(other_kinetics.electrons): return False
         return True
 
     cpdef change_rate(self, double factor):
@@ -1438,7 +1486,30 @@ cdef class VoronovEIArrhenius(KineticsModel):
         A : RateCoefficient (accepts per-molecule or per-mole units)
         P,X,K: Dimensionless
         dE: ionization threshold in eV (stored as double)
+        electrons : net electron stoichiometry, signed to the reaction as written
+                    (positive = produced). Defaults to +1, the one electron a
+                    single ionization stage liberates.
         Z,N: integers identifying the stage (N = electrons before ionization)
+
+    Electron bookkeeping
+    --------------------
+    ``electrons`` is the **net** change in free electron number, not a count of the
+    electrons that take part. ``Reaction.is_balanced`` treats the electron as a
+    conserved element, so an electron that *survives* the reaction is a spectator
+    and has to be written explicitly on both sides; only the surplus goes in the
+    scalar. Electron-impact ionization has one of each -- the incident electron
+    comes out again, and a second one is liberated::
+
+        e + H => H+ + e     with electrons = +1     (H + e- -> H+ + 2 e-)
+
+    Writing the incident electron out is not decoration. It is what makes the
+    exported equation second order, which is what the rate coefficient's
+    ``cm^3/(molecule*s)`` dimensionality says it must be; the metadata electron
+    lands on the product side and cannot supply it. ``H => H+`` with
+    ``electrons = +1`` balances and loads, but
+    ``rmgpy.electron_balance.check_electron_reactant_order`` refuses to export it,
+    correctly -- a solver would evaluate it first order in H and never multiply by
+    the electron density.
     """
 
     def __init__(self,
@@ -1447,6 +1518,7 @@ cdef class VoronovEIArrhenius(KineticsModel):
                  X=0.0,
                  K=0.0,
                  dE=None,
+                 electrons=1,
                  Z=None, N=None, yaml_path_or_obj=None,
                  Tmin=None, Tmax=None, Pmin=None, Pmax=None,
                  uncertainty=None, solute=None, comment=''):
@@ -1454,12 +1526,15 @@ cdef class VoronovEIArrhenius(KineticsModel):
                                uncertainty=uncertainty, solute=solute, comment=comment)
         self._Ea = None
 
-        # Electron-impact ionization is driven by the electron population, so both
-        # channels are intrinsic to this rate law regardless of how the object was
-        # built. Set them here, ahead of every branch below, so that no early return
-        # can leave a table-built object reporting False for either.
+        # Electron-impact ionization is driven by the electron population, so all
+        # three of these are intrinsic to this rate law regardless of how the object
+        # was built. Set them here, ahead of every branch below, so that no early
+        # return can leave a table-built object reporting False -- or, for
+        # `electrons`, an unset NULL that `hasattr` still answers True to -- for any
+        # of them.
         self.uses_electron_temperature = True
         self.uses_electron_density = True
+        self.electrons = electrons
 
         # If Z/N are provided, load from YAML now
         if Z is not None and N is not None:
@@ -1495,6 +1570,9 @@ cdef class VoronovEIArrhenius(KineticsModel):
         # by construction and the dE setter reads the value out of the tuple.
         string = "VoronovEIArrhenius(A={0!r}, P={1!r}, X={2!r}, K={3!r}, dE=({4!r}, 'eV')".format(
             self.A, self.P, self.X, self.K, self._dE_eV)
+        # Always emitted, never conditional on being non-default -- see the note on
+        # BadnellRRArrhenius.__repr__.
+        string += ', electrons={0!r}'.format(self.electrons)
         if self.Tmin is not None: string += ', Tmin={0!r}'.format(self.Tmin)
         if self.Tmax is not None: string += ', Tmax={0!r}'.format(self.Tmax)
         if self.Pmin is not None: string += ', Pmin={0!r}'.format(self.Pmin)
@@ -1508,6 +1586,7 @@ cdef class VoronovEIArrhenius(KineticsModel):
     def __reduce__(self):
         return (VoronovEIArrhenius, (
             self.A, self.P, self.X, self.K, self._dE_eV,  # dE
+            self.electrons,                               # electrons
             None, None, None,                             # Z, N, yaml_path_or_obj
             self.Tmin, self.Tmax,                         # Tmin, Tmax
             self.Pmin, self.Pmax,                         # Pmin, Pmax
@@ -1548,6 +1627,21 @@ cdef class VoronovEIArrhenius(KineticsModel):
             return self._K
         def __set__(self, value):
             self._K = quantity.Dimensionless(value)
+
+    property electrons:
+        """
+        Net electron stoichiometry of the reaction this rate law describes, signed to
+        the reaction as written: positive when electrons are produced. Same convention
+        as :attr:`rmgpy.reaction.Reaction.electrons` and
+        :class:`ArrheniusChargeTransfer`, which is what lets ``KineticsLibrary.load``
+        and ``KineticsDepository.load`` copy it across unchanged. The incident electron
+        is a spectator and is written explicitly on both sides; only the surplus is
+        counted here.
+        """
+        def __get__(self):
+            return self._electrons
+        def __set__(self, value):
+            self._electrons = quantity.Dimensionless(value)
 
     property dE:
         """Ionization threshold in eV (stored as a plain double in eV)."""
@@ -1636,6 +1730,10 @@ cdef class VoronovEIArrhenius(KineticsModel):
         if not self.X.equals(other_kinetics.X): return False
         if not self.K.equals(other_kinetics.K): return False
         if self._dE_eV != other_kinetics._dE_eV: return False
+        # Two rate laws that differ only in how many electrons they liberate describe
+        # different reactions, and one of them will fail to balance where the other
+        # does not. The comparison has to see that.
+        if not self.electrons.equals(other_kinetics.electrons): return False
         return True
 
     cpdef change_rate(self, double factor):
@@ -1753,6 +1851,13 @@ cdef class VoronovEIArrhenius(KineticsModel):
         KineticsModel.__init__(obj, comment=comment or '')
         obj.uses_electron_temperature = True
         obj.uses_electron_density = True
+        # Not a fabricated parameter, and so not the thing the comment above forbids.
+        # The Voronov table is indexed by ionization stage (Z, N) and every row is a
+        # single ionization, which liberates exactly one electron; +1 is a property of
+        # the class, not a number the table could disagree with. Left unset it would be
+        # a NULL that `hasattr(kinetics, 'electrons')` still answers True to, so both
+        # database loaders would read it and raise AttributeError on None.
+        obj.electrons = 1
         obj.populate_from_yaml(yaml_path_or_obj, Z, N,
                                Tmin=Tmin, Tmax=Tmax, comment=comment,
                                allow_Z_gt28=allow_Z_gt28)
@@ -3488,7 +3593,6 @@ cdef class Marcus(KineticsModel):
     `A`             The preexponential factor
     `n`             The temperature exponent
     `lmbd_i_coefs`  Coefficients for inner sphere reorganization energy
-    `V0`            The reference potential
     `beta`          Transmission decay coefficient
     `wr`            Work to bring reactants together
     `wp`            Work to bring products together 
@@ -3595,8 +3699,13 @@ cdef class Marcus(KineticsModel):
     cpdef double get_rate_coefficient(self, double T, double dGrxn=0.0) except -1:
         """
         Return the rate coefficient in the appropriate combination of m^3,
-        mol, and s at temperature `T` in K and enthalpy of reaction `dHrxn`
+        mol, and s at temperature `T` in K and free energy of reaction `dGrxn`
         in J/mol.
+
+        `dGrxn` is a property of the reaction, not of the rate law, so it cannot be defaulted
+        here to anything meaningful: the 0.0 below means an exactly thermoneutral reaction. Callers
+        holding a reaction should route through :meth:`rmgpy.reaction.Reaction.get_rate_coefficient`,
+        which resolves `dGrxn` from the species thermochemistry.
         """
         cdef double A, n, dG
         dG = self.get_gibbs_activation_energy(T, dGrxn)
@@ -3612,8 +3721,8 @@ cdef class Marcus(KineticsModel):
     
     cpdef double get_gibbs_activation_energy(self, double T, double dGrxn) except -1:
         """
-        Return the activation energy in J/mol corresponding to the given
-        enthalpy of reaction `dHrxn` in J/mol.
+        Return the Gibbs activation energy in J/mol corresponding to the given
+        free energy of reaction `dGrxn` in J/mol.
         """
         cdef double lmbd_i
         lmbd_i = self.get_lmbd_i(T)

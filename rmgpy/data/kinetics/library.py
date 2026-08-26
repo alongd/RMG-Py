@@ -564,6 +564,24 @@ class KineticsLibrary(Database):
                                         'dictionary.'.format(product, self.label))
                 rxn.products.append(species_dict[product])
 
+            if hasattr(entry.data, 'electrons'):
+                # A charge-transfer reaction carries its electron count on its rate law
+                # (SurfaceChargeTransfer, SurfaceChargeTransferBEP, ArrheniusChargeTransfer,
+                # ArrheniusChargeTransferBM, ...), not among its reactants and products, and
+                # `load_entry` above takes no electron argument, so `rxn.electrons` is still zero
+                # here. `is_balanced()` folds the count into the net charges, so it must be copied
+                # across before the check runs or a balanced charged entry is rejected.
+                # Keyed off the attribute rather than an isinstance allowlist, matching
+                # `KineticsDepository.load`; see the note there on which classes carry the field.
+                # Wrapper kinetics (e.g. MultiArrhenius holding a list of rate laws) expose no
+                # top-level `electrons` attribute, so charge-transfer data wrapped that way is not
+                # inspected here. Wrapper traversal is deliberately not implemented, as in the
+                # depository.
+                # Unlike the depository there is no fallback for kinetics that declare no count of
+                # their own: a depository falls back on the electron count declared by the family
+                # that owns it, and a library has no owning family to ask.
+                rxn.electrons = entry.data.electrons.value
+
             if not rxn.is_balanced():
                 raise DatabaseError('Reaction {0} in kinetics library {1} was not balanced! '
                                     'Please reformulate.'.format(rxn, self.label))

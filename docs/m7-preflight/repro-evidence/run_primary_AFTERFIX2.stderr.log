@@ -1,0 +1,23 @@
+:root:Removing old /home/alon/Code/RMG-Py-i085-compose/docs/m7-preflight/RMG_backup.log
+:root:Moving /home/alon/Code/RMG-Py-i085-compose/docs/m7-preflight/RMG.log to /home/alon/Code/RMG-Py-i085-compose/docs/m7-preflight/RMG_backup.log
+
+Traceback (most recent call last):
+  File "/home/alon/Code/RMG-Py-i085-compose/rmg.py", line 33, in <module>
+    __main__.main()
+  File "/home/alon/Code/RMG-Py-i085-compose/rmgpy/__main__.py", line 104, in main
+    rmg.execute(**kwargs)
+  File "/home/alon/Code/RMG-Py-i085-compose/rmgpy/rmg/main.py", line 961, in execute
+    self.save_everything()
+  File "/home/alon/Code/RMG-Py-i085-compose/rmgpy/rmg/main.py", line 2254, in save_everything
+    self.notify()
+  File "/home/alon/Code/RMG-Py-i085-compose/rmgpy/util.py", line 114, in notify
+    observer.update(self)
+  File "rmgpy/chemkin.pyx", line 2728, in rmgpy.chemkin.ChemkinWriter.update
+  File "rmgpy/chemkin.pyx", line 2653, in rmgpy.chemkin.save_chemkin_files
+  File "rmgpy/chemkin.pyx", line 2591, in rmgpy.chemkin.save_chemkin
+  File "rmgpy/chemkin.pyx", line 2436, in rmgpy.chemkin.render_chemkin_file
+  File "rmgpy/chemkin.pyx", line 1938, in rmgpy.chemkin.write_kinetics_entry
+  File "rmgpy/chemkin.pyx", line 1828, in rmgpy.chemkin.write_reaction_string
+  File "/home/alon/Code/RMG-Py-i085-compose/rmgpy/electron_balance.py", line 265, in check_electron_balance
+    raise MechanismWriterError(
+rmgpy.exceptions.MechanismWriterError: Reaction [Lip](3) + [CH3](4) <=> CH3Li(2) does not balance in the E pseudo-element and would be exported wrong: the equation "[Lip](3)+[CH3](4)<=>CH3Li(2)+e-(1)" has E=-1 on the left and E=1 on the right (reaction.electrons=1).

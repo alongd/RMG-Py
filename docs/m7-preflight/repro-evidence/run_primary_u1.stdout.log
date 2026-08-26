@@ -1,0 +1,132 @@
+Global RMG Settings:
+   database.directory   = /home/alon/Code/RMG-database-plasma/input (from rmgrc)
+   test_data.directory  = /home/alon/Code/RMG-Py-i085-compose/test/rmgpy/test_data (Default, relative to RMG-Py source code)
+RMG execution initiated at Sun Aug 23 21:22:19 2026
+
+#########################################################
+# RMG-Py - Reaction Mechanism Generator in Python       #
+# Version: 4.0.0                                        #
+# Authors: RMG Developers (rmg_dev@mit.edu)             #
+# P.I.s:   William H. Green (whgreen@mit.edu)           #
+#          Richard H. West (r.west@neu.edu)             #
+# Website: http://reactionmechanismgenerator.github.io/ #
+#########################################################
+
+The current git HEAD for RMG-Py is:
+	6d3c03823d578801d7a61e27aab4eff1ffb743b0
+	Sat Aug 22 20:33:02 2026 +0300
+
+The current git HEAD for RMG-database is:
+	fb3c13c60852376f192155b7b8911eb86f74b035
+	Wed Aug 19 22:32:38 2026 +0300
+
+Reading input file "/home/alon/Code/RMG-Py-i085-compose/docs/m7-preflight/input.py"...
+# M7-PREFLIGHT -- LITHIUM CHARGED-PATH INTEGRATION
+#
+# Neutral lithium-bearing feed (methyllithium) driven through a two-temperature
+# plasma reactor.  The composition is NEUTRAL: no cation is seeded.  The six
+# lithium-specific Cation_* families are loaded so the cation is produced by RMG
+# from the neutral feed via the auto-derived reverse template of
+# Cation_R_Recombination (Li+ + R.  <=>  R-Li), exercised in reverse.
+#
+# Run (read-only against RMG-database-plasma):
+#   conda activate rmg_env
+#   export PYTHONPATH=/home/alon/Code/RMG-Py-m7-preflight:$PYTHONPATH
+#   python /home/alon/Code/RMG-Py-m7-preflight/rmg.py \
+#       /home/alon/Code/RMG-Py-m7-preflight/docs/m7-preflight/input.py
+# database.directory is taken from docs/m7-preflight/rmgrc when run from that dir,
+# or set it in ~/.rmg/rmgrc -> /home/alon/Code/RMG-database-plasma/input
+
+database(
+    thermoLibraries=[
+        'LithiumPrimaryThermo', 'LithiumAdditionalThermo',
+        'primaryThermoLibrary',
+    ],
+    reactionLibraries=[],
+    seedMechanisms=[],
+    kineticsDepositories=['training'],
+    kineticsFamilies=[
+        # the six lithium-specific cation families (produce/consume Li+)
+        'Cation_R_Recombination',
+        'Cation_Li_Abstraction',
+        'Cation_Addition_MultipleBond',
+        'Cation_Addition_MultipleBond_Disprop',
+        'Cation_NO_Substitution',
+        'Cation_NO_Ring_Opening',
+        # neutral lithium families that the neutral feed can also fire
+        'Li_Abstraction',
+        'Li_Addition_MultipleBond',
+    ],
+    kineticsEstimator='rate rules',
+)
+
+# --- electron pseudo-species MUST be declared before plasmaReactor(...) ---
+species(
+    label='e-',
+    reactive=True,
+    structure=adjacencyList("1 e u1 p0 c-1"),
+)
+
+# --- neutral lithium-bearing feed: methyllithium, CH3Li, net charge 0 ---
+species(
+    label='CH3Li',
+    reactive=True,
+    structure=SMILES("C[Li]"),
+)
+
+# --- inert bath gas ---
+species(
+    label='He',
+    reactive=False,
+    structure=SMILES("[He]"),
+)
+
+plasmaReactor(
+    temperature=(1000, 'K'),
+    pressure=(1, 'atm'),
+    electronTemperature=(11604.5, 'K'),          # ~1 eV
+    electronDensity=(1e17, 'm^-3'),              # nonzero initial electron density
+    initialMoleFractions={
+        'CH3Li': 0.05,
+        'He': 0.95,
+    },
+    terminationTime=(1e-3, 's'),
+)
+
+simulator(
+    atol=1e-16,
+    rtol=1e-8,
+)
+
+model(
+    toleranceKeepInEdge=0.0,
+    toleranceMoveToCore=0.5,
+    toleranceInterruptSimulation=1e8,
+    maximumEdgeSpecies=200,
+)
+
+options(
+    units='si',
+    generateOutputHTML=False,
+    generatePlots=False,
+    saveEdgeSpecies=True,
+    saveSimulationProfiles=False,
+)
+
+Warning: Edge species saving was turned on. This will slow down model generation for large simulations.
+
+Loading transport library from NIST_Fluorine.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport library from PrimaryTransportLibrary.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport library from GRI-Mech.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport library from OneDMinN2.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport library from NOx2018.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport group database from /home/alon/Code/RMG-database-plasma/input/transport/groups...
+Loading frequencies group database from /home/alon/Code/RMG-database-plasma/input/statmech/groups...
+Loading solvation thermodynamics group database from /home/alon/Code/RMG-database-plasma/input/solvation/groups...
+Loading thermodynamics library from LithiumPrimaryThermo.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from LithiumAdditionalThermo.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from primaryThermoLibrary.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics group database from /home/alon/Code/RMG-database-plasma/input/thermo/groups...
+Loading thermodynamics SIDTs from /home/alon/Code/RMG-database-plasma/input/thermo/sidt...
+Adding rate rules from training set in kinetics families...
+Filling in rate rules in kinetics families by averaging...

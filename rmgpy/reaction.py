@@ -951,7 +951,9 @@ class Reaction:
         charge transfer kinetics. Leaving it as ``None`` evaluates charge transfer kinetics
         at their own reference potential `V0`, which is the correct default for gas-phase
         chemistry, where there is no electrode and hence no applied field. Surface kinetics
-        keep their historical default of 0 V.
+        keep their historical default of 0 V. `Marcus` kinetics have no reference potential, so
+        ``None`` means 0 V there; the potential reaches them only through the free energy of
+        reaction, which is the argument their barrier is actually a function of.
         """
         if isinstance(self.kinetics,SurfaceChargeTransfer):
             return self.get_surface_rate_coefficient(T, surface_site_density=surface_site_density,
@@ -1007,6 +1009,38 @@ class Reaction:
             charge_transfer_kinetics.alpha = self.kinetics.alpha
             return charge_transfer_kinetics.get_rate_coefficient(
                 T, charge_transfer_kinetics.V0.value_si if potential is None else potential)
+        elif isinstance(self.kinetics, Marcus):
+            # The second positional argument of Marcus.get_rate_coefficient is the free energy of
+            # reaction in J/mol, neither the pressure nor a potential. Leaving the pressure in place
+            # put a bar of pressure into the barrier; substituting a thermoneutral 0.0 would be the
+            # same class of error, and a quieter one -- it collapses every Marcus reaction to the
+            # intrinsic (lmbd_i + lmbd_o)/4 barrier without raising anything. Resolve dGrxn against
+            # this reaction's own species thermochemistry instead.
+            #
+            # get_free_energy_of_reaction is the right helper of the two: it is the public one, and
+            # it dispatches to the charge transfer form only when the reaction actually transfers
+            # electrons. Its potential term is wanted here. Marcus carries no reference potential --
+            # no V0 property, no V0 constructor argument, and no Butler-Volmer term in its rate law
+            # -- but that is a statement about the rate law, not about the thermodynamics: an
+            # applied field genuinely shifts dGrxn of a charge transfer reaction by -n*F*V. With no
+            # electrode there is no field, so the gas-phase default of potential=None means 0 V,
+            # which leaves dGrxn as the plain sum over species and invents nothing.
+            try:
+                dGrxn = self.get_free_energy_of_reaction(T, 0.0 if potential is None else potential)
+            except Exception as e:
+                # Raise rather than fall back on a thermoneutral 0.0: that fallback is the defect
+                # this branch exists to remove.
+                try:
+                    described = str(self)
+                except Exception:
+                    # A reaction with no reactants or products cannot even be stringified.
+                    described = repr(self.kinetics)
+                raise KineticsError(
+                    f"Cannot evaluate {Marcus.__name__} kinetics for {described}: its barrier "
+                    "depends on the free energy of reaction, which needs thermo on every reactant "
+                    f"and product ({e}). Marcus rates cannot be evaluated from the rate law alone."
+                ) from e
+            return self.kinetics.get_rate_coefficient(T, dGrxn)
         else:
             return self.kinetics.get_rate_coefficient(T, P)
 
@@ -1589,12 +1623,19 @@ class Reaction:
             if reactant_elements[element] != product_elements[element]:
                 return False
 
+        # Fold the electron the reaction carries as a scalar (rather than as a species) into the
+        # net charges before comparing. ``electrons`` is signed to this object's current
+        # orientation -- negative means electrons are consumed (reactant side), positive means
+        # produced (product side) -- and an electron carries charge -1. So |electrons| electrons
+        # on the reactant side contribute a total charge of ``self.electrons`` (a negative number),
+        # and |electrons| on the product side contribute ``-self.electrons``. This matches the sign
+        # convention in ``rmgpy.electron_balance.expand_electrons``.
         if self.electrons < 0:
             reactants_net_charge += self.electrons
         elif self.electrons > 0:
             products_net_charge -= self.electrons
 
-        return True
+        return reactants_net_charge == products_net_charge
 
     def generate_pairs(self):
         """

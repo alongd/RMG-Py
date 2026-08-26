@@ -49,8 +49,13 @@ from rmgpy import settings
 from rmgpy.data.kinetics.common import get_molecularity
 from rmgpy.data.kinetics.database import KineticsDatabase
 from rmgpy.data.kinetics.family import TemplateReaction
+from rmgpy.electron_balance import check_electron_balance
 from rmgpy.electron_placement import FAMILY_ELECTRON_PLACEMENT, resolve_electron_placement
-from rmgpy.exceptions import ElectronPlacementError, PlasmaStateError
+from rmgpy.exceptions import (
+    ElectronPlacementError,
+    NonEquilibriumReverseRateError,
+    PlasmaStateError,
+)
 from rmgpy.kinetics import Arrhenius
 from rmgpy.kinetics.arrhenius import TwoTemperaturePlasma
 from rmgpy.reaction import Reaction
@@ -58,9 +63,12 @@ from rmgpy.solver.plasma import PlasmaReactor
 from rmgpy.species import Species
 
 FAMILY = "Plasma_Electron_Attachment"
-# Any of the other electron-bearing families that also declare electrons = -1;
-# proves the resolver did not silently generalize beyond attachment.
-OTHER_ELECTRON_FAMILY = "Cation_R_Recombination"
+# An electron-bearing family that also declares electrons = -1 but carries NO
+# placement declaration; proves the resolver did not silently generalize to
+# every family that happens to consume an electron. (Until I-088 this was
+# Cation_R_Recombination, which is now declared -- a surface electrochemistry
+# family is used instead, deliberately far from the plasma families.)
+OTHER_ELECTRON_FAMILY = "Surface_Proton_Electron_Reduction_Alpha"
 
 NEUTRAL_O2 = "[O][O]"
 ANION_O2 = "[O][O-]"
@@ -208,28 +216,35 @@ class TestElectronPlacementResolver:
         with pytest.raises(ElectronPlacementError, match="already carries"):
             resolve_electron_placement(reaction, [electron])
 
-    def test_reverse_direction_fails_by_name(self):
-        """The placement view is directional; a reverse-generated reaction is
-        refused rather than given a forward-side electron."""
+    def test_reverse_generated_reaction_resolves(self):
+        """I-088 replaces the old ``is_forward=False`` refusal.
+
+        ``is_forward`` records how a reaction was FOUND, not how its participant
+        lists are ordered: ``KineticsFamily._create_reaction`` stores
+        family-forward molecular orientation in BOTH generation directions. So a
+        reverse-generated reaction's electron is still a reactant, and refusing
+        on ``is_forward`` excluded exactly the chemistry the plasma decks
+        generate. It resolves, to the same view a forward-found one gives."""
         reaction = _attachment(is_forward=False)
-        with pytest.raises(ElectronPlacementError, match="reverse direction"):
-            resolve_electron_placement(reaction, [_electron()])
+        view = resolve_electron_placement(reaction, [_electron()])
+        assert sum(1 for spc in view.reactants if spc.is_electron()) == 1
+        assert not any(spc.is_electron() for spc in view.products)
+        assert view.electrons == 0
 
-    def test_unknown_direction_fails_by_name(self):
-        """BLOCKER 1: the placement declaration authorises the FORWARD direction
-        only, so the resolver must require ``is_forward is True`` and refuse a
-        reaction whose direction was never established (``is_forward=None``) --
-        not merely one explicitly marked reverse. The old check tested only
-        ``is False``, so a ``None`` direction fell through and was resolved.
+    def test_unknown_direction_resolves(self):
+        """Same reasoning for ``is_forward=None``. The old BLOCKER-1 check
+        refused a direction-unknown reaction on the grounds that it "would
+        silently manufacture a forward-direction view from ambiguous input" --
+        but the view is not manufactured from the direction at all, and since
+        I-088 the side is verified structurally instead (see
+        ``test_wrong_side_placement_refused_by_E_balance``, which is what
+        actually catches a bad orientation and which ``is_forward`` never
+        could).
 
-        The compiled ``Reaction`` stores ``is_forward`` as a C ``bint`` that
-        coerces ``None`` to ``False`` (so the compiled reactor never actually
-        yields ``None`` -- the pre-existing reverse-direction check already
-        catches ``False``); but ``resolve_electron_placement`` is pure Python and
-        duck-typed, and in decythonized mode ``Reaction.is_forward`` stays the
-        ``None`` default. A duck-typed stand-in reproduces exactly that input.
-        Before the fix this resolves without error; after it, it fails by
-        name."""
+        A duck-typed stand-in is used because the compiled ``Reaction`` stores
+        ``is_forward`` as a C ``bint`` that coerces ``None`` to ``False``;
+        ``resolve_electron_placement`` is pure Python and sees the real
+        ``None``."""
 
         class _UnknownDirectionReaction:
             family = FAMILY
@@ -239,9 +254,6 @@ class TestElectronPlacementResolver:
             reactants = [_o2()]
             products = [_o2_anion()]
             kinetics = _arrhenius()
-            # Enough of the Reaction surface that, BEFORE the fix, the resolver
-            # runs to completion and returns a view (proving None was accepted);
-            # AFTER the fix it fails by name at the direction check first.
             label = ''
             duplicate = False
             degeneracy = 1
@@ -249,15 +261,42 @@ class TestElectronPlacementResolver:
             def __str__(self):
                 return 'O2 + e- -> O2- (direction unknown)'
 
-        with pytest.raises(ElectronPlacementError, match="unspecified reaction direction"):
-            resolve_electron_placement(_UnknownDirectionReaction(), [_electron()])
+        view = resolve_electron_placement(_UnknownDirectionReaction(), [_electron()])
+        assert sum(1 for spc in view.reactants if spc.is_electron()) == 1
+        assert not any(spc.is_electron() for spc in view.products)
 
-    def test_reversible_fails_by_name(self):
-        """The attachment declaration covers the irreversible forward form
-        only; a reversible reaction's electron side is direction-ambiguous."""
-        reaction = _attachment(reversible=True)
-        with pytest.raises(ElectronPlacementError, match="reversible"):
+    def test_wrong_side_placement_refused_by_E_balance(self):
+        """The check that REPLACED the ``is_forward`` refusals, and is strictly
+        stronger than either of them.
+
+        This reaction is genuinely reverse-ORIENTED -- its reactant side is the
+        family's product side (the anion) -- while its metadata still claims the
+        family-forward ``electrons = -1``. That is the I-086 defect class: the
+        producer's orientation and its electron sign disagree. Every metadata
+        check passes (declared family, correct net count, no explicit electron),
+        and ``is_forward=True`` here, so NEITHER old direction check would have
+        fired. Placing the electron on the declared reactant side gives E=2 on
+        the left against E=0 on the right, and the structural check refuses it."""
+        reaction = _attachment(reactants=[_o2_anion()], products=[_o2()],
+                               is_forward=True)
+        with pytest.raises(ElectronPlacementError,
+                           match="does not balance in the E pseudo-element"):
             resolve_electron_placement(reaction, [_electron()])
+
+    def test_reversible_resolves_and_stays_reversible(self):
+        """I-088 replaces the old ``reversible=True`` refusal.
+
+        Reversibility does not make the electron's side ambiguous -- the stored
+        orientation still has a definite reactant side. What it makes ambiguous
+        is the reverse RATE, and that is the consumer's policy: the resolver
+        passes ``reversible`` through untouched so ``PlasmaReactor`` can refuse
+        it by name (locked by
+        ``TestCationRecombinationPlacement.test_05_...`` against the real
+        reactor)."""
+        reaction = _attachment(reversible=True)
+        view = resolve_electron_placement(reaction, [_electron()])
+        assert sum(1 for spc in view.reactants if spc.is_electron()) == 1
+        assert view.reversible is True
 
     def test_missing_kinetics_fails_by_name(self):
         reaction = _attachment(kinetics=None)
@@ -299,10 +338,21 @@ class TestElectronPlacementResolver:
         with pytest.raises(ElectronPlacementError, match="must be unique"):
             resolve_electron_placement(reaction, [_electron(), _electron()])
 
-    def test_declaration_registry_is_attachment_only(self):
-        """This increment declares exactly one family; a broader registry
-        would mean attachment semantics silently generalized."""
-        assert FAMILY_ELECTRON_PLACEMENT == {FAMILY: ("reactants", 1)}
+    def test_declaration_registry_is_explicit_and_closed(self):
+        """The registry is a closed, hand-maintained list. Three owners are
+        declared: two families in the single-electron-on-the-reactant-side shape
+        -- spelled ``(reactant_count, product_count)`` since I-113 widened the
+        declaration -- and one kinetics LIBRARY,
+        ``PlasmaElectronImpactIonization``, at ``(1, 2)``, the first entry whose
+        two numbers differ. A library label is a legal key because
+        ``LibraryReaction`` sets ``family = library``. Any FURTHER entry
+        appearing here means placement semantics generalized without someone
+        deciding they should."""
+        assert FAMILY_ELECTRON_PLACEMENT == {
+            "Plasma_Electron_Attachment": (1, 0),
+            "Cation_R_Recombination": (1, 0),
+            "PlasmaElectronImpactIonization": (1, 2),
+        }
 
 
 @pytest.mark.database
@@ -855,3 +905,159 @@ class TestElectronPlacementReactorIntegration:
         reactor.initialize_model(self._core_species(), [thermal, self.reaction], [], [])
         assert reactor.reaction_index[self.reaction] == 1  # promoted into core
         assert len(reactor.reaction_index) == 2  # no stale view left behind
+
+
+# ---------------------------------------------------------------------------
+# I-088: the reverse-generated cation recombination.
+#
+# The chemistry this project actually needs is generated in the family's
+# REVERSE direction: RMG has only the neutral CH3Li in the model, matches it
+# against Cation_R_Recombination's product template, and reconstructs the
+# reactant side Li+ + CH3. `_create_reaction` stores that back in family-forward
+# molecular orientation (reactants=[Li+, CH3], products=[CH3Li]) while flagging
+# is_forward=False to record how it was FOUND (family.py:1753-1770, I-086). The
+# family is reversible=True with an auto-derived reverse.
+#
+# So the reaction that must resolve carries is_forward=False AND reversible=True,
+# and its electron is physically a REACTANT (electrons=-1). These tests assert
+# the two quantities the ticket names -- the side the electron lands on and how
+# many land there -- plus the structural proof that the side is right (the E
+# pseudo-element and the net charge both balance across the view), and the proof
+# that placement did not launder the reverse-rate problem: the view is still
+# reversible, and the reactor still refuses it for that reason, by name.
+# ---------------------------------------------------------------------------
+
+CATION_FAMILY = "Cation_R_Recombination"
+NEUTRAL_CH3LI = "C[Li]"
+
+
+def _generate_reverse_cation_recombination():
+    """Load the real ``Cation_R_Recombination`` family and reach the lithium
+    cation the way the model builder does: feed the NEUTRAL product ``CH3Li``
+    and let the family generate in its reverse direction. Returns the canonical
+    :class:`TemplateReaction` with kinetics filled in from the family's own rate
+    rules. No library lookup, no hand-built reaction."""
+    families_path = os.path.join(settings["database.directory"], "kinetics", "families")
+    database = KineticsDatabase()
+    database.load_recommended_families(os.path.join(families_path, "recommended.py"))
+    database.load_families(families_path, families=[CATION_FAMILY])
+
+    species = Species().from_smiles(NEUTRAL_CH3LI)
+    species.generate_resonance_structures()
+    reactions = database.generate_reactions_from_families(
+        [species], only_families=[CATION_FAMILY])
+
+    # Li+ + CH3 <=> CH3Li: two reactants, one of them the lithium cation, and a
+    # single neutral product. There must be exactly one.
+    matches = [rxn for rxn in reactions
+               if len(rxn.reactants) == 2 and len(rxn.products) == 1
+               and any(_net_charge(spc) == 1 for spc in rxn.reactants)]
+    assert len(matches) == 1, (
+        "expected exactly one reverse Li+ + CH3 <=> CH3Li reaction, got "
+        "{0}: {1}".format(len(matches), [str(r) for r in reactions]))
+    reaction = matches[0]
+
+    # Kinetics from the family's own rate rules, as the model builder does. A
+    # fresh family is loaded because add_rules_from_training and
+    # fill_rules_by_averaging_up mutate the family's rule table.
+    kinetics_database = KineticsDatabase()
+    kinetics_database.load_families(families_path, families=[CATION_FAMILY])
+    family = kinetics_database.families[CATION_FAMILY]
+    family.add_rules_from_training(thermo_database=None)
+    family.fill_rules_by_averaging_up()
+    template = family.retrieve_template(reaction.template)
+    reaction.kinetics = family.get_kinetics_for_template(
+        template, degeneracy=reaction.degeneracy)[0]
+    return reaction
+
+
+@pytest.mark.database
+class TestCationRecombinationPlacement:
+    """I-088: placement resolves for the reverse-generated, reversible cation
+    recombination, and puts the electron on the reactant side exactly once."""
+
+    @classmethod
+    def setup_class(cls):
+        cls.reaction = _generate_reverse_cation_recombination()
+        cls.electron = _electron()
+        cls.species_list = ([cls.electron] + list(cls.reaction.reactants)
+                            + list(cls.reaction.products))
+
+    def _resolve(self):
+        return resolve_electron_placement(self.reaction, self.species_list)
+
+    # -- preconditions: this really is the shape the three refusals rejected ---
+
+    def test_00_reaction_is_reverse_generated_and_reversible(self):
+        """The reaction under test carries ALL THREE properties the resolver
+        used to refuse: an undeclared family, is_forward=False, reversible=True.
+        If any of these drifts, the rest of this class stops testing I-088."""
+        rxn = self.reaction
+        assert rxn.family == CATION_FAMILY
+        assert rxn.is_forward is False
+        assert rxn.reversible is True
+        assert rxn.electrons == -1
+        # Family-forward orientation: the CATION is on the reactant side, so the
+        # electron must be a reactant to make up the missing negative charge.
+        assert sorted(_net_charge(spc) for spc in rxn.reactants) == [0, 1]
+        assert [_net_charge(spc) for spc in rxn.products] == [0]
+
+    # -- the two quantities the ticket names ----------------------------------
+
+    def test_01_electron_placed_on_reactant_side_exactly_once(self):
+        """THE assertion: the electron lands on the REACTANT side, and exactly
+        one of it does. A product-side placement or a count of 0 or 2 fails."""
+        view = self._resolve()
+        assert sum(1 for spc in view.reactants if spc.is_electron()) == 1
+        assert sum(1 for spc in view.products if spc.is_electron()) == 0
+        assert any(spc is self.electron for spc in view.reactants)
+        assert view.electrons == 0
+        assert len(view.reactants) == len(self.reaction.reactants) + 1
+        assert len(view.products) == len(self.reaction.products)
+        assert get_molecularity(view) == 3
+
+    def test_02_view_balances_in_charge_and_E_pseudo_element(self):
+        """Structural proof that the side is right, independent of any metadata:
+        with the electron on the reactant side both the net electrical charge and
+        the ``E`` pseudo-element balance across the view. Placing it on the
+        product side would leave charge -1 vs 0 and E -1 vs +1."""
+        view = self._resolve()
+        assert (sum(_net_charge(spc) for spc in view.reactants)
+                == sum(_net_charge(spc) for spc in view.products) == 0)
+        # The Chemkin writer's own guard, applied to the view's two sides. It
+        # raises MechanismWriterError on an E imbalance; silence is the assertion.
+        check_electron_balance(view, view.reactants, view.products, str(view))
+
+    def test_03_canonical_reaction_is_not_mutated(self):
+        """The database representation survives resolution untouched."""
+        reactants_before = list(self.reaction.reactants)
+        products_before = list(self.reaction.products)
+        self._resolve()
+        assert self.reaction.electrons == -1
+        assert self.reaction.reactants == reactants_before
+        assert self.reaction.products == products_before
+        assert not any(spc.is_electron() for spc in self.reaction.reactants)
+        assert not any(spc.is_electron() for spc in self.reaction.products)
+
+    # -- placement must not launder the reverse-rate problem -------------------
+
+    def test_04_view_stays_reversible(self):
+        """Placement converts a REPRESENTATION, it does not decide a rate
+        policy. The view carries reversible=True through unchanged, so the
+        reactor's reverse-rate guard still sees what it needs to see."""
+        assert self._resolve().reversible is True
+
+    def test_05_reactor_still_refuses_the_reversible_view_by_name(self):
+        """The protection the resolver's own ``reversible`` refusal provided is
+        NOT lost: PlasmaReactor._validate_reactions refuses a reversible
+        electron-containing reaction by name, because kr = kf/Keq(Tgas) would
+        price the electron's thermochemistry at the gas temperature. This is the
+        tripwire for I-088's removal of that check from the resolver -- if the
+        reactor ever stops refusing, this test goes red."""
+        view = self._resolve()
+        core_species = [self.electron] + list(view.reactants[:-1]) + list(view.products)
+        imf = {self.electron: Y_E0, view.reactants[0]: 1.0}
+        reactor = PlasmaReactor(T_GAS, P0, imf, (T_E, "K"), n_sims=1, termination=[])
+        with pytest.raises(NonEquilibriumReverseRateError,
+                           match="electron-containing reaction"):
+            reactor.initialize_model(core_species, [view], [], [])

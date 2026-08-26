@@ -611,7 +611,7 @@ def plasma_reactor(temperature,
             raise InputError(
                 "electronDensity was supplied but no electron pseudo-species is declared "
                 "in the input file; declare one (e.g. species(label='e-', "
-                "structure=adjacencyList('1 e u1 p0 c-1'))) before using electronDensity.")
+                "structure=adjacencyList('1 e u0 p0 c-1'))) before using electronDensity.")
         if len(electron_labels) > 1:
             raise InputError(
                 "electronDensity is ambiguous: {0} electron pseudo-species are declared "
