@@ -1,0 +1,50 @@
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/collision.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/configuration.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/me.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/msc.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/reaction.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/rs.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/cse.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/conformer.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/mode.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/rotation.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/schrodinger.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/torsion.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/translation.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/vibration.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/thermo/thermodata.cpython-39-x86_64-linux-gnu.so -> rmgpy/thermo
+copying build/lib.linux-x86_64-cpython-39/rmgpy/thermo/model.cpython-39-x86_64-linux-gnu.so -> rmgpy/thermo
+copying build/lib.linux-x86_64-cpython-39/rmgpy/thermo/nasa.cpython-39-x86_64-linux-gnu.so -> rmgpy/thermo
+copying build/lib.linux-x86_64-cpython-39/rmgpy/thermo/wilhoit.cpython-39-x86_64-linux-gnu.so -> rmgpy/thermo
+copying build/lib.linux-x86_64-cpython-39/rmgpy/constants.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/quantity.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/reaction.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/species.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/chemkin.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/base.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/simple.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/liquid.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/mbSampled.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/surface.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/plasma.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+MAKE_BUILD_EXIT=0
+      |                                                                         ^
+rmgpy/solver/surface.c:14898:41: note: in expansion of macro ‘__Pyx_BufPtrStrided1d’
+14898 |       __pyx_v_surface_site_fraction = (*__Pyx_BufPtrStrided1d(__pyx_t_5numpy_float64_t *, __pyx_pybuffernd_coverages.rcbuffer->pybuffer.buf, __pyx_t_14, __pyx_pybuffernd_coverages.diminfo[0].strides));
+      |                                         ^~~~~~~~~~~~~~~~~~~~~
+rmgpy/solver/surface.c:13539:21: note: ‘__pyx_pybuffernd_coverages.diminfo[0].strides’ was declared here
+13539 |   __Pyx_LocalBuf_ND __pyx_pybuffernd_coverages;
+      |                     ^~~~~~~~~~~~~~~~~~~~~~~~~~
+rmgpy/solver/surface.c:14897:38: warning: ‘__pyx_pybuffernd_coverages.diminfo[0].shape’ may be used uninitialized [-Wmaybe-uninitialized]
+14897 |       if (__pyx_t_14 < 0) __pyx_t_14 += __pyx_pybuffernd_coverages.diminfo[0].shape;
+      |                           ~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+rmgpy/solver/surface.c:13539:21: note: ‘__pyx_pybuffernd_coverages.diminfo[0].shape’ was declared here
+13539 |   __Pyx_LocalBuf_ND __pyx_pybuffernd_coverages;
+      |                     ^~~~~~~~~~~~~~~~~~~~~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/solver/plasma.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~

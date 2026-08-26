@@ -1,0 +1,31 @@
+==============================================================================
+database.directory = /home/alon/Code/RMG-database-i123b-reaudit/input
+rmgpy              = /home/alon/Code/RMG-Py-i123b-reaudit
+==============================================================================
+
+STAGE 1 -- the two library reactions are physically distinct
+    ionisation    : [Li] => [Lip]   electrons=1
+    recombination : [Lip] => [Li]   electrons=-1
+  [PASS] ionisation nets an electron GAIN -- 1
+  [PASS] recombination nets an electron LOSS -- -1
+  [PASS] the two differ in electron count -- 1 vs -1
+  [PASS] their heavy-species halves are exact mirrors -- ['[Li]'] => ['[Lip]']  vs  ['[Lip]'] => ['[Li]']
+
+STAGE 2 -- source first, then sink: the SINK is dropped
+  [PASS] ionisation entered the model -- is_new=True
+  [PASS] recombination was judged NOT NEW and dropped -- is_new=False
+
+STAGE 3 -- sink first, then source: now the SOURCE is dropped
+  [PASS] recombination entered the model -- is_new=True
+  [PASS] ionisation was judged NOT NEW and dropped -- is_new=False
+  [PASS] the outcome is order-dependent, not a judgement on the sink -- first-added survives in both orders
+
+STAGE 4 -- the verdict does not depend on Reaction.electrons at all
+  [PASS] electrons=0: sink still judged not new -- is_new=False
+  [PASS] electrons=-1: sink still judged not new -- is_new=False
+  [PASS] electrons=12345: sink still judged not new -- is_new=False
+
+==============================================================================
+SINK-COLLAPSE PROBE: the sink is discarded as a duplicate of the source.
+The generated mechanism has an ionisation source and no recombination sink.
+==============================================================================

@@ -1,0 +1,9 @@
+Refusing to modify the shared RMG environment.
+Use `make build` for an in-place worktree build.
+Editable installation requires an explicit maintenance procedure:
+    make unsafe-install-shared-env CONFIRM_SHARED_ENV_MUTATION=yes
+
+Targets that do not touch the environment: build, check, clean,
+clean-solver, decython, documentation, q2dtor, test, test-all,
+test-unittests, test-functional, test-database.
+make: *** [Makefile:72: guard] Error 1

@@ -1,0 +1,49 @@
+==============================================================================
+database.directory = /home/alon/Code/RMG-database-i123b-reaudit/input
+deck output        = /tmp/claude-1000/-home-alon-Code-RMG-Py-i123b-reaudit/f1bf73d1-500d-48e5-8694-047c13090e8d/scratchpad/deck
+==============================================================================
+
+------------------------------------------------------------------------------
+A. RMG Chemkin reader on the file RMG just wrote
+------------------------------------------------------------------------------
+  reaction block as written:
+     | KCAL/MOLE   MOLES
+     | Li(2)+e-(1)=>[Lip](3)+e-(1)+e-(1)                   1.490e+18 -0.267    162.150
+     |     TDEP/e-(1)/   ! VoronovEIArrhenius exported as a modified-Arrhenius fit of k(Te) over 1.16e+04-2.321e+08 K; the original functional form is not representable in Chemkin
+
+load_chemkin_file(chem.inp)
+  OUTCOME : RAISED ChemkinError
+            'e-(1)' doesn't look like a collision efficiency for species TDEP in line 'TDEP/E-(1)/'
+  (traceback tail)
+                kinetics = _read_kinetics_line(
+              File "rmgpy/chemkin.pyx", line 632, in rmgpy.chemkin._read_kinetics_line
+                raise ChemkinError("{0!r} doesn't look like a collision efficiency for species {1} in "
+            rmgpy.exceptions.ChemkinError: 'e-(1)' doesn't look like a collision efficiency for species TDEP in line 'TDEP/E-(1)/'
+
+------------------------------------------------------------------------------
+B. the same file with the TDEP auxiliary line removed
+------------------------------------------------------------------------------
+  removed 1 TDEP line(s) -> /tmp/claude-1000/-home-alon-Code-RMG-Py-i123b-reaudit/f1bf73d1-500d-48e5-8694-047c13090e8d/scratchpad/deck/chemkin/chem_no_tdep.inp
+
+load_chemkin_file(chem_no_tdep.inp)
+  OUTCOME : OK
+  species  : 7  ['He', 'Ar', 'Ne', 'N2', 'e-(1)', 'Li(2)', '[Lip](3)']
+  reactions: 1
+     Li(2) + e-(1) => [Lip](3) + e-(1) + e-(1)   kinetics=Arrhenius  electrons=0
+
+------------------------------------------------------------------------------
+C. Cantera native reader on the yaml RMG wrote alongside it
+------------------------------------------------------------------------------
+
+cantera.Solution(cantera2/chem_annotated.yaml)
+  OUTCOME : OK
+  species  : 7  ['He', 'Ar', 'Ne', 'N2', 'e-(1)', 'Li(2)', '[Lip](3)']
+  reactions: 1
+     Li(2) + e-(1) => [Lip](3) + e-(1) + e-(1)
+
+------------------------------------------------------------------------------
+SUMMARY
+------------------------------------------------------------------------------
+  A  RMG Chemkin reader, file as written      : REFUSED
+  B  RMG Chemkin reader, TDEP line removed    : READ
+  C  Cantera native reader on RMGs own yaml  : READ

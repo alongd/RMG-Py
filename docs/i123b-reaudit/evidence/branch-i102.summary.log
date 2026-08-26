@@ -1,0 +1,13 @@
+### i102   worktree /home/alon/Code/RMG-Py-i123b-b-i102
+### BRANCH i102  HEAD=99602b099
+BUILD_EXIT=0
+rmgpy: /home/alon/Code/RMG-Py-i123b-b-i102/rmgpy/__init__.py
+molecule: /home/alon/Code/RMG-Py-i123b-b-i102/rmgpy/molecule/molecule.cpython-39-x86_64-linux-gnu.so
+database.directory = /home/alon/Code/RMG-database-plasma/input
+resolved = /home/alon/Code/RMG-database-plasma/input
+exists = True
+
+FAILED test/rmgpy/qm/qmMainTest.py::TestQMCalculator::test_get_thermo_data_mopac - FileNotFoundError: [Errno 2] No such file or directory: '/home/alon/Code/testing/qm/QMscratch/pm6/UFWIBTONFRDIAS-UHFFFAOYSA-N.out'
+
+= 1 failed, 2640 passed, 49 skipped, 90 deselected, 54 warnings in 562.89s (0:09:22) =
+PYTEST_EXIT=1

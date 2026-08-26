@@ -1,0 +1,6 @@
+$ cd /home/alon/Code/RMG-Py-i123b-baseline && python -m pytest -m "not functional and not database"
+  (shared branch plasma @ a61dc1303, paired with RMG-database-plasma @ fb3c13c60)
+
+(no FAILED or ERROR lines)
+=== 2623 passed, 50 skipped, 83 deselected, 54 warnings in 533.02s (0:08:53) ===
+PYTEST_BASELINE_EXIT=0

@@ -1,0 +1,25 @@
+  terminated, resurrected, obj, new_surface_species, new_surface_reactions, t, x = reaction_system.simulate(
+Traceback (most recent call last):
+  File "/home/alon/Code/RMG-Py-i123b-reaudit/rmg.py", line 33, in <module>
+    __main__.main()
+  File "/home/alon/Code/RMG-Py-i123b-reaudit/rmgpy/__main__.py", line 104, in main
+    rmg.execute(**kwargs)
+  File "/home/alon/Code/RMG-Py-i123b-reaudit/rmgpy/rmg/main.py", line 1229, in execute
+    self.save_everything()
+  File "/home/alon/Code/RMG-Py-i123b-reaudit/rmgpy/rmg/main.py", line 2254, in save_everything
+    self.notify()
+  File "/home/alon/Code/RMG-Py-i123b-reaudit/rmgpy/util.py", line 114, in notify
+    observer.update(self)
+  File "/home/alon/Code/RMG-Py-i123b-reaudit/rmgpy/yaml_rms.py", line 292, in update
+    write_rms(rmg.reaction_model.core.species, rmg.reaction_model.core.reactions, solvent=rmg.solvent, solvent_data=solvent_data,
+  File "/home/alon/Code/RMG-Py-i123b-reaudit/rmgpy/yaml_rms.py", line 66, in write_rms
+    result_dict = get_mech_dict(spcs, rxns, solvent=solvent, solvent_data=solvent_data)
+  File "/home/alon/Code/RMG-Py-i123b-reaudit/rmgpy/yaml_rms.py", line 88, in get_mech_dict
+    result_dict["Reactions"] = [obj_to_dict(x, spcs, names=names) for x in rxns]
+  File "/home/alon/Code/RMG-Py-i123b-reaudit/rmgpy/yaml_rms.py", line 88, in <listcomp>
+    result_dict["Reactions"] = [obj_to_dict(x, spcs, names=names) for x in rxns]
+  File "/home/alon/Code/RMG-Py-i123b-reaudit/rmgpy/yaml_rms.py", line 146, in obj_to_dict
+    result_dict["kinetics"] = obj_to_dict(obj.kinetics, spcs, names)
+  File "/home/alon/Code/RMG-Py-i123b-reaudit/rmgpy/yaml_rms.py", line 252, in obj_to_dict
+    raise ValueError("Object of type {} does not have a defined conversion to "
+ValueError: Object of type <class 'rmgpy.kinetics.arrhenius.VoronovEIArrhenius'> does not have a defined conversion to ReactionMechanismSimulator format

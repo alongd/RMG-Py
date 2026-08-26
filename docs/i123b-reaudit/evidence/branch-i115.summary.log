@@ -1,0 +1,12 @@
+### i115   worktree /home/alon/Code/RMG-Py-i123b-b-i115
+### BRANCH i115  HEAD=ceb9fd5f1
+BUILD_EXIT=0
+rmgpy: /home/alon/Code/RMG-Py-i123b-b-i115/rmgpy/__init__.py
+molecule: /home/alon/Code/RMG-Py-i123b-b-i115/rmgpy/molecule/molecule.cpython-39-x86_64-linux-gnu.so
+database.directory = /home/alon/Code/RMG-database-plasma/input
+resolved = /home/alon/Code/RMG-database-plasma/input
+exists = True
+
+
+=== 2630 passed, 50 skipped, 87 deselected, 54 warnings in 582.37s (0:09:42) ===
+PYTEST_EXIT=0

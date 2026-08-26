@@ -1,0 +1,2 @@
+### i102-quarantine, full suite re-run serially (no parallel scratch contention)
+=== 2641 passed, 49 skipped, 90 deselected, 54 warnings in 330.99s (0:05:30) ===

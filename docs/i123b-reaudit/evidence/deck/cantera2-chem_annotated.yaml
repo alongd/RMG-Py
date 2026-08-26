@@ -1,0 +1,106 @@
+description: RMG-Py Generated Mechanism
+generator: 'RMG-Py CanteraWriter2 at /home/alon/Code/RMG-Py-i123b-reaudit/rmgpy/yaml_cantera2.py
+  (git commit: 9874fc7)'
+cantera-version: '3.1'
+units: {length: m, time: s, quantity: mol, activation-energy: J/mol}
+phases:
+- name: gas
+  thermo: plasma
+  elements: [Ar, E, He, Li, N, Ne]
+  species: [He, Ar, Ne, N2, e-(1), Li(2), '[Lip](3)']
+  kinetics: gas
+  transport: ionized-gas
+  electron-energy-distribution: {type: isotropic, shape-factor: 2.0, mean-electron-energy: 1.0}
+  state: {T: 300.0, P: 1 atm}
+species:
+- name: He
+  composition: {He: 1}
+  thermo:
+    model: NASA7
+    temperature-ranges: [200.0, 1000.0, 6000.0]
+    data:
+    - [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, 0.928724]
+    - [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, 0.928724]
+    note: 'Thermo library: primaryThermoLibrary'
+  transport: {model: gas, geometry: atom, well-depth: 10.2, diameter: 2.5760000000000005,
+    note: NOx2018}
+- name: Ar
+  composition: {Ar: 1}
+  thermo:
+    model: NASA7
+    temperature-ranges: [200.0, 1000.0, 6000.0]
+    data:
+    - [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, 4.37967]
+    - [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, 4.37967]
+    note: 'Thermo library: primaryThermoLibrary'
+  transport: {model: gas, geometry: atom, well-depth: 136.50054988458677, diameter: 3.3300000000000005,
+    note: NIST_Fluorine}
+- name: Ne
+  composition: {Ne: 1}
+  thermo:
+    model: NASA7
+    temperature-ranges: [200.0, 1000.0, 6000.0]
+    data:
+    - [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, 3.35532]
+    - [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, 3.35532]
+    note: 'Thermo library: primaryThermoLibrary'
+  transport: {model: gas, geometry: atom, well-depth: 148.6, diameter: 3.758, note: Epsilon
+      & sigma estimated with fixed Lennard Jones Parameters. This is the fallback
+      method! Try improving transport databases!}
+- name: N2
+  composition: {N: 2}
+  thermo:
+    model: NASA7
+    temperature-ranges: [200.0, 1000.0, 6000.0]
+    data:
+    - [3.53101, -0.000123661, -5.02999e-07, 2.43531e-09, -1.40881e-12, -1046.98, 2.96747]
+    - [2.95258, 0.0013969, -4.92632e-07, 7.8601e-11, -4.60755e-15, -923.949, 5.87189]
+    note: 'Thermo library: primaryThermoLibrary'
+  transport: {model: gas, geometry: linear, well-depth: 97.53006564938819, diameter: 3.621000000000001,
+    polarizability: 1.760000000000001, rotational-relaxation: 4.0, note: NIST_Fluorine}
+- name: e-(1)
+  composition: {E: 1}
+  thermo:
+    model: NASA7
+    temperature-ranges: [298.0, 1000.0, 3000.0]
+    data:
+    - [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    - [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    note: 'Thermo library: electrocatThermo'
+  transport: {model: gas, geometry: atom, well-depth: 148.6, diameter: 3.758, note: Epsilon
+      & sigma estimated with fixed Lennard Jones Parameters. This is the fallback
+      method! Try improving transport databases!}
+- name: Li(2)
+  composition: {Li: 1}
+  thermo:
+    model: NASA7
+    temperature-ranges: [10.0, 794.005, 3000.0]
+    data:
+    - [2.5, 1.99051e-15, -1.1909e-17, 2.10806e-20, -1.11018e-23, 18206.2, 2.43319]
+    - [2.5, 1.52667e-14, -1.58445e-17, 6.63089e-21, -9.62112e-25, 18206.2, 2.43319]
+    note: 'Thermo library: LithiumPrimaryThermo'
+  transport: {model: gas, geometry: atom, well-depth: 148.6, diameter: 3.758, note: Epsilon
+      & sigma estimated with fixed Lennard Jones Parameters. This is the fallback
+      method! Try improving transport databases!}
+- name: '[Lip](3)'
+  composition: {E: -1, Li: 1}
+  thermo:
+    model: NASA7
+    temperature-ranges: [10.0, 794.005, 3000.0]
+    data:
+    - [2.5, 1.99051e-15, -1.1909e-17, 2.10806e-20, -1.11018e-23, 63352.0, 1.74004]
+    - [2.5, 1.52667e-14, -1.58445e-17, 6.63089e-21, -9.62112e-25, 63352.0, 1.74004]
+    note: 'Thermo library: LithiumPrimaryThermo'
+  transport: {model: gas, geometry: atom, well-depth: 148.6, diameter: 3.758, note: Epsilon
+      & sigma estimated with fixed Lennard Jones Parameters. This is the fallback
+      method! Try improving transport databases!}
+reactions:
+- equation: Li(2) + e-(1) => [Lip](3) + e-(1) + e-(1)
+  type: two-temperature-plasma
+  rate-constant: {A: 1490435700692.9358, b: -0.26677974840496976, Ea-gas: 678436.9302780825,
+    Ea-electron: 678436.9302780825}
+  note: |
+    Reaction index: Chemkin #1; RMG #1
+    Library reaction: PlasmaElectronImpactIonization
+    Flux pairs: Li(2), [Lip](3)
+    Voronov (1997) e-impact ionization fit, Z=3, N=3
