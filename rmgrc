@@ -49,4 +49,13 @@
 # pin -- ae52de38a, 9874fc706, 34de41c76, cd6cde425, and this one -- and all five must come
 # out before this lineage is merge-clean for `plasma`, which must read
 #   database.directory = ../RMG-database-plasma/input
-database.directory = ../RMG-database-i148-seed-placement/input
+#
+# Sixth pass (i123e-audit): repointed again, at this pass's own sibling
+# RMG-database-i123e-audit worktree, for exactly the reason every pass since the third gave.
+# The line inherited on this branch named RMG-database-i148-seed-placement, the FIFTH pass's
+# worktree and not this one's -- the recurring defect the sibling untracking branch exists to
+# end, and it has now caught five passes running. SIX commits now carry this pin --
+# ae52de38a, 9874fc706, 34de41c76, cd6cde425, ce93e6c12, and this one -- and all six must
+# come out before this lineage is merge-clean for `plasma`, which must read
+#   database.directory = ../RMG-database-plasma/input
+database.directory = ../RMG-database-i123e-audit/input
