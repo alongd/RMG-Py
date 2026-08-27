@@ -1598,12 +1598,27 @@ cdef class VoronovEIArrhenius(KineticsModel):
         def __get__(self):
             return self._A
         def __set__(self, value):
-            # Normalize to per-mol before creating RateCoefficient
+            # A bare "cm^3/s" means the per-particle rate coefficient the Voronov tables
+            # report, which is not a spelling quantity.RateCoefficient can disambiguate
+            # from a volumetric flow rate -- so that one case is converted to per-mole
+            # here. The units string it is then labelled with says cm, which is what the
+            # declaration itself said, so the pairing holds.
+            #
+            # A declaration that spells out "molecule" is NOT converted here. It used to
+            # be, and the conversion hardcoded "cm^3/(mol*s)" as the result -- rewriting
+            # the length half of the unit as well as the amount half. For the shipped
+            # "cm^3/(molecule*s)" that was accidentally right; for "m^3/(molecule*s)",
+            # which RATECOEFFICIENT_COMMON_UNITS admits, it relabelled a metre-based
+            # number as centimetre-based and understated the rate by exactly 10**6.
+            # quantity.RateCoefficient already understands "molecule" (quantity.py
+            # registers it as mol/N_A), so handing the declaration straight over is both
+            # shorter and correct for every spelling -- which is what the sibling class
+            # BadnellRRArrhenius has always done.
             if isinstance(value, (tuple, list)) and len(value) >= 2:
                 val = float(value[0])
                 units = str(value[1])
                 u = units.replace(" ", "").lower()
-                if "molecule" in u or u.endswith("cm^3/s") or u == "cm^3/s":
+                if "molecule" not in u and (u.endswith("cm^3/s") or u == "cm^3/s"):
                     # per particle -> per mole
                     val *= constants.Na
                     units = "cm^3/(mol*s)"

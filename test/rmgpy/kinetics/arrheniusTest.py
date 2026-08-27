@@ -42,6 +42,7 @@ import numpy as np
 
 import rmgpy
 import rmgpy.constants as constants
+import rmgpy.quantity as quantity
 from rmgpy import settings
 from rmgpy.kinetics.arrhenius import (
     Arrhenius,
@@ -2652,6 +2653,44 @@ class TestVoronovEIArrhenius:
         """
         expected_SI = self.A_cms_per_molecule * 1e-6 * constants.Na  # m^3/(mol*s)
         assert np.isclose(self.ei.A.value_si, expected_SI, rtol=0, atol=1e-12 * max(1.0, expected_SI))
+
+    @pytest.mark.parametrize(
+        "units",
+        [
+            "cm^3/(molecule*s)",
+            "m^3/(molecule*s)",
+            "cm^3/(mol*s)",
+            "m^3/(mol*s)",
+        ],
+    )
+    def test_a_factor_is_stored_at_the_declared_magnitude_in_every_spelling(self, units):
+        """
+        The ``A`` setter must not change the number it was given.
+
+        It used to convert a per-particle declaration to per-mole and then label the
+        result ``"cm^3/(mol*s)"`` unconditionally -- rewriting the *length* half of the
+        unit along with the amount half. For the shipped ``cm^3/(molecule*s)`` that was
+        accidentally right; for ``m^3/(molecule*s)``, which
+        ``RATECOEFFICIENT_COMMON_UNITS`` admits, it relabelled a metre-based number as
+        centimetre-based and understated the rate by exactly 10**6.
+
+        The reference is what :class:`~rmgpy.quantity.RateCoefficient` makes of the same
+        declaration on its own -- which is also what the sibling class
+        :class:`BadnellRRArrhenius` has always produced, since it does no hand-rolled
+        conversion at all.
+        """
+        expected = quantity.RateCoefficient((3.0e-8, units)).value_si
+        obj = VoronovEIArrhenius(
+            A=(3.0e-8, units), P=self.P, X=self.X, K=self.K, dE=self.dE_eV
+        )
+        assert np.isclose(obj.A.value_si, expected, rtol=1e-12), (
+            "A declared as {0!r} was stored as {1:g}, not {2:g}".format(
+                units, obj.A.value_si, expected
+            )
+        )
+        # And the sibling that does no conversion agrees, spelling for spelling.
+        badnell = BadnellRRArrhenius(A=(3.0e-8, units))
+        assert np.isclose(obj.A.value_si, badnell.A.value_si, rtol=1e-12)
 
     def test_dimensionless_params(self):
         assert round(abs(self.ei.P.value_si - self.P), 12) == 0
