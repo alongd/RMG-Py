@@ -1856,8 +1856,24 @@ def _plasma_arrhenius_for_chemkin(kinetics):
         # Along T = Te the electron exponential is exactly 1, so the reduction is
         # the exact rate on that diagonal: k = A*Te^n*exp(-Ea_g/(R*Te)).
         # Ea_e has no Chemkin representation and is dropped.
+        #
+        # Each parameter is paired with the units its number is actually in. For Ea and
+        # T0 that is the SI value with a literal SI units string, because their SI units
+        # are fixed. A rate coefficient's are not -- they depend on the reaction order --
+        # so there is no literal to write, and A is passed as the declared value with the
+        # declared units instead. Both pairings are correct; a value from one unit system
+        # under the units string of the other is not.
+        #
+        # This line used to read ``A=(kinetics.A.value_si, kinetics.A.units)``, an SI
+        # number labelled with whatever the source happened to declare. That is right
+        # only while the source declares SI, which every rate law RMG builds for itself
+        # does -- so it was invisible until the Chemkin reader became the first producer
+        # of a TwoTemperaturePlasma declared in cm^3/(mol*s). From then on it understated
+        # a second-order rate constant by exactly 10**6 per round trip (1 m^3 = 10**6
+        # cm^3; a third-order rate would have lost 10**12), silently, at exit status 0,
+        # under a units header the numbers no longer matched.
         arrhenius = _kinetics.Arrhenius(
-            A=(kinetics.A.value_si, kinetics.A.units),
+            A=(kinetics.A.value, kinetics.A.units),
             n=kinetics.n.value_si,
             Ea=(kinetics.Ea_g.value_si, 'J/mol'),
             T0=(kinetics.T0.value_si, 'K'),
