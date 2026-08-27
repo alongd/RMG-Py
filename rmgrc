@@ -58,4 +58,4 @@
 # ae52de38a, 9874fc706, 34de41c76, cd6cde425, ce93e6c12, and this one -- and all six must
 # come out before this lineage is merge-clean for `plasma`, which must read
 #   database.directory = ../RMG-database-plasma/input
-database.directory = ../RMG-database-i123e-audit/input
+database.directory = ../RMG-database-i150-union-reds/input
