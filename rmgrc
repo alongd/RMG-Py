@@ -22,4 +22,12 @@
 # RMG-database-i123b-reaudit worktree, not the first pass's RMG-database-i123-integration.
 # Same hazard, same revert requirement -- this line is one of the two commits that must
 # come out before this branch is merge-clean for `plasma`.
-database.directory = ../RMG-database-i123b-reaudit/input
+#
+# Third pass (i123c-audit): repointed again, at this pass's own sibling
+# RMG-database-i123c-audit worktree. The second pass's path named a worktree this pass does
+# not own, and a run from this repo root would have loaded a database tree another branch is
+# free to move under it. THREE commits now carry this pin -- the first pass's ae52de38a, the
+# second pass's 9874fc706, and this one -- and all three must come out before this lineage is
+# merge-clean for `plasma`, which must read
+#   database.directory = ../RMG-database-plasma/input
+database.directory = ../RMG-database-i123c-audit/input
