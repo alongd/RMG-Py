@@ -1,0 +1,119 @@
+==============================================================================
+rmgpy              = /home/alon/Code/RMG-Py-i145-units-laundering
+compiled module    = /home/alon/Code/RMG-Py-i145-units-laundering/rmgpy/molecule/molecule.cpython-39-x86_64-linux-gnu.so
+database.directory = /home/alon/Code/RMG-database-i123c-audit/input
+resolved realpath  = /home/alon/Code/RMG-database-i123c-audit/input
+chemkin file       = /tmp/claude-1000/-home-alon-Code-RMG-Py-i145-units-laundering/fc426dff-691d-4c64-9336-8715c45a9a56/scratchpad/deck-after/chemkin/chem.inp
+==============================================================================
+
+==============================================================================
+A1. THE READER, CHECKED AGAINST THE FILE'S OWN STATED CONVENTION
+==============================================================================
+  [..] header: 'REACTIONS    KCAL/MOLE   MOLES'
+  [..] so the printed triple means k = A * Te**n * exp(-Ea/(R*Te)) with A in
+  [..] cm**3/(mol*s) for a second-order rate and Ea in kcal/mol.
+  [..] R = 8.314472 J/(mol*K), taken from rmgpy.constants
+  [..] Li(2)+e-(1)=>[Lip](3)+e-(1)+e-(1)
+  [..]     printed        : A = 1.490000e+18 cm^3/(mol*s), n = -0.267, Ea = 162.15 kcal/mol
+  [..]     reloaded object: A = 1.49e+18 cm^3/(mol*s)   value_si = 1.490000e+12
+  [..]     k by hand from the file  = 1.081914e+08 m^3/(mol*s)
+  [..]     k from the reloaded obj  = 1.081914e+08 m^3/(mol*s)
+  [PASS] reloaded k matches hand arithmetic on the printed triple: Li(2)+e-(1)=>[Lip](3)+e-(1)+e-(1) -- ratio 1.000000000
+  [PASS] the reloaded A declares the file's units, not SI: Li(2)+e-(1)=>[Lip](3)+e-(1)+e-(1) -- units = 'cm^3/(mol*s)'
+  [..] [Lip](3)+e-(1)=>Li(2)
+  [..]     printed        : A = 1.734000e+14 cm^3/(mol*s), n = -0.801, Ea = 0.01 kcal/mol
+  [..]     reloaded object: A = 1.734e+14 cm^3/(mol*s)   value_si = 1.734000e+08
+  [..]     k by hand from the file  = 9.618226e+04 m^3/(mol*s)
+  [..]     k from the reloaded obj  = 9.618226e+04 m^3/(mol*s)
+  [PASS] reloaded k matches hand arithmetic on the printed triple: [Lip](3)+e-(1)=>Li(2) -- ratio 1.000000000
+  [PASS] the reloaded A declares the file's units, not SI: [Lip](3)+e-(1)=>Li(2) -- units = 'cm^3/(mol*s)'
+
+==============================================================================
+A2. THE READER, CHECKED AGAINST THE GENERATOR, TO THE PRINTED DIGIT
+==============================================================================
+  [..] the two library entries, reduced by the very function the writer calls,
+  [..] then formatted with the writer's own format string:
+  [..]     BadnellRRArrhenius     [Lip] => [Li]        1.734e+14 -0.801    0.010       k(Te) = 9.581983e+04
+  [..]     VoronovEIArrhenius     [Li] => [Lip]        1.490e+18 -0.267    162.150     k(Te) = 1.084448e+08
+  [PASS] both library rate laws were found -- found ['BadnellRRArrhenius', 'VoronovEIArrhenius']
+  [..] Li(2) + e-(1) => [Lip](3) + e-(1) + e-(1)
+  [..]     triple the GENERATOR reduces to : '1.490e+18 -0.267    162.150  '
+  [..]     triple the FILE carries         : '1.490e+18 -0.267    162.150  '
+  [PASS] the file carries the generated triple, character for character: Li(2) + e-(1) => [Lip](3) + e-(1) + e-(1) -- '1.490e+18 -0.267    162.150  ' vs '1.490e+18 -0.267    162.150  '
+  [..]     triple the RELOADED object gives: '1.490e+18 -0.267    162.150  '
+  [PASS] the reader rebuilds the file's triple, character for character: Li(2) + e-(1) => [Lip](3) + e-(1) + e-(1) -- '1.490e+18 -0.267    162.150  ' vs '1.490e+18 -0.267    162.150  '
+  [..]     k as GENERATED (unrounded library object) = 1.084448e+08
+  [..]     k as READ BACK (from the file)            = 1.081914e+08
+  [..]     ratio = 0.997662782; bound from printing n to 3 decimals = 1.004690540
+  [PASS] the residual against the unrounded generator is inside the bound the file's own printed precision sets: Li(2) + e-(1) => [Lip](3) + e-(1) + e-(1) -- residual 2.337e-03 vs bound 4.691e-03
+  [..] [Lip](3) + e-(1) => Li(2)
+  [..]     triple the GENERATOR reduces to : '1.734e+14 -0.801    0.010    '
+  [..]     triple the FILE carries         : '1.734e+14 -0.801    0.010    '
+  [PASS] the file carries the generated triple, character for character: [Lip](3) + e-(1) => Li(2) -- '1.734e+14 -0.801    0.010    ' vs '1.734e+14 -0.801    0.010    '
+  [..]     triple the RELOADED object gives: '1.734e+14 -0.801    0.010    '
+  [PASS] the reader rebuilds the file's triple, character for character: [Lip](3) + e-(1) => Li(2) -- '1.734e+14 -0.801    0.010    ' vs '1.734e+14 -0.801    0.010    '
+  [..]     k as GENERATED (unrounded library object) = 9.581983e+04
+  [..]     k as READ BACK (from the file)            = 9.618226e+04
+  [..]     ratio = 1.003782428; bound from printing n to 3 decimals = 1.004690540
+  [PASS] the residual against the unrounded generator is inside the bound the file's own printed precision sets: [Lip](3) + e-(1) => Li(2) -- residual 3.782e-03 vs bound 4.691e-03
+  [..] 
+  [..] THEREFORE: the read-back half is correct -- it rebuilds every digit the file
+  [..] carries, and the file carries every digit the generator produced. Anything the
+  [..] round trip loses is lost on the way OUT, which is what the rest of this probe
+  [..] measures.
+
+==============================================================================
+B. THE WRITER'S UNIT PAIRING, DRIVEN DIRECTLY
+==============================================================================
+  [..] the same rate law, declared two ways:
+  [..]     SI  : A = 1.49e+12 m^3/(mol*s)   value_si = 1.490000e+12
+  [..]     cgs : A = 1.49e+18 cm^3/(mol*s)   value_si = 1.490000e+12
+  [PASS] the two objects ARE the same rate law -- 1.490000e+12 vs 1.490000e+12 in SI
+  [..] reduced for Chemkin:
+  [..]     from the SI-declared object  : A = 1.49e+12 m^3/(mol*s)   value_si = 1.490000e+12
+  [..]     from the cgs-declared object : A = 1.49e+18 cm^3/(mol*s)   value_si = 1.490000e+12
+  [..]     ratio of the two reductions  : 1.000000e+00   (1 m**3 = 10**6 cm**3)
+  [PASS] the reduction is UNIT-INDEPENDENT: the same rate law reduces to the same number however its units are declared -- ratio = 1.000000000e+00
+  [PASS] the reduction preserves the source rate law exactly (SI-declared source) -- 1.490000e+12 vs 1.490000e+12
+  [PASS] the reduction preserves the source rate law exactly (cgs-declared source) -- 1.490000e+12 vs 1.490000e+12
+
+==============================================================================
+C+D. THREE SUCCESSIVE ROUND TRIPS
+==============================================================================
+  [..] as generated   header 'REACTIONS    KCAL/MOLE   MOLES'
+  [..]     Li(2)+e-(1)=>[Lip](3)+e-(1)+e-(1)          1.490e+18   -0.267    162.150
+  [..]     [Lip](3)+e-(1)=>Li(2)                      1.734e+14   -0.801      0.010
+  [..] after trip 1   header 'REACTIONS    KCAL/MOLE   MOLES'
+  [..]     Li(2)+e-(1)=>[Lip](3)+e-(1)+e-(1)          1.490e+18   -0.267    162.150
+  [..]     [Lip](3)+e-(1)=>Li(2)                      1.734e+14   -0.801      0.010
+  [..] after trip 2   header 'REACTIONS    KCAL/MOLE   MOLES'
+  [..]     Li(2)+e-(1)=>[Lip](3)+e-(1)+e-(1)          1.490e+18   -0.267    162.150
+  [..]     [Lip](3)+e-(1)=>Li(2)                      1.734e+14   -0.801      0.010
+  [..] after trip 3   header 'REACTIONS    KCAL/MOLE   MOLES'
+  [..]     Li(2)+e-(1)=>[Lip](3)+e-(1)+e-(1)          1.490e+18   -0.267    162.150
+  [..]     [Lip](3)+e-(1)=>Li(2)                      1.734e+14   -0.801      0.010
+  [..] as generated   k = 1.081914e+08, 9.618226e+04
+  [..] after trip 1   k = 1.081914e+08, 9.618226e+04
+  [..] after trip 2   k = 1.081914e+08, 9.618226e+04
+  [..] after trip 3   k = 1.081914e+08, 9.618226e+04
+  [PASS] the rate constant survives round trip 1 -- ratios 1.000000000e+00, 1.000000000e+00
+  [PASS] the rate constant survives round trip 2 -- ratios 1.000000000e+00, 1.000000000e+00
+  [PASS] the rate constant survives round trip 3 -- ratios 1.000000000e+00, 1.000000000e+00
+  [PASS] the printed A column survives round trip 1 -- [1.49e+18, 173400000000000.0] vs [1.49e+18, 173400000000000.0]
+  [PASS] the printed A column survives round trip 2 -- [1.49e+18, 173400000000000.0] vs [1.49e+18, 173400000000000.0]
+  [PASS] the printed A column survives round trip 3 -- [1.49e+18, 173400000000000.0] vs [1.49e+18, 173400000000000.0]
+  [PASS] every file in the chain declares the same units header -- {'REACTIONS    KCAL/MOLE   MOLES'}
+
+==============================================================================
+E. NEGATIVE CONTROL: AN ORDINARY NON-PLASMA MECHANISM
+==============================================================================
+  [..] mechanism: /home/alon/Code/RMG-Py-i145-units-laundering/test/rmgpy/test_data/chemkin/chemkin_py/minimal/chem.inp
+  [..] 8 species, 2 reactions; kinetics classes: ['Arrhenius']
+  [PASS] the control mechanism carries no plasma rate law -- classes ['Arrhenius']
+  [PASS] the control mechanism carries no electrons
+  [PASS] the control mechanism is byte-identical after round trip 2 -- 4021 bytes vs 4021 bytes
+  [PASS] the control mechanism is byte-identical after round trip 3 -- 4021 bytes vs 4021 bytes
+  [..] control file digest (for the before/after comparison): ba8e2c58cea509e93069d432f47b1d3808cf0d59114495fa635f896a5ac7c65c
+
+==============================================================================
+all checks passed

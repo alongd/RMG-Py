@@ -1,0 +1,188 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+rootdir: /home/alon/Code/RMG-Py-i145-units-laundering
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 7 items
+
+test/rmgpy/chemkinTest.py::TestPlasmaChemkinRoundTrip::test_plasma_round_trip_preserves_rate_coefficient FAILED
+test/rmgpy/chemkinTest.py::TestPlasmaChemkinRoundTrip::test_plasma_arrhenius_reduction_is_unit_independent FAILED
+test/rmgpy/chemkinTest.py::TestPlasmaChemkinRoundTrip::test_plasma_reduction_is_exact_along_the_electron_diagonal FAILED
+test/rmgpy/kinetics/arrheniusTest.py::TestVoronovEIArrhenius::test_a_factor_is_stored_at_the_declared_magnitude_in_every_spelling[cm^3/(molecule*s)] PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestVoronovEIArrhenius::test_a_factor_is_stored_at_the_declared_magnitude_in_every_spelling[m^3/(molecule*s)] FAILED
+test/rmgpy/kinetics/arrheniusTest.py::TestVoronovEIArrhenius::test_a_factor_is_stored_at_the_declared_magnitude_in_every_spelling[cm^3/(mol*s)] PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestVoronovEIArrhenius::test_a_factor_is_stored_at_the_declared_magnitude_in_every_spelling[m^3/(mol*s)] PASSED
+
+=================================== FAILURES ===================================
+_ TestPlasmaChemkinRoundTrip.test_plasma_round_trip_preserves_rate_coefficient _
+
+self = <chemkinTest.TestPlasmaChemkinRoundTrip object at 0x7f84c27a3670>
+tmp_path = PosixPath('/tmp/pytest-of-alon/pytest-717/test_plasma_round_trip_preserv0')
+
+    def test_plasma_round_trip_preserves_rate_coefficient(self, tmp_path):
+        """Three successive Chemkin round trips must not move the rate constant."""
+        species, reactions = self._load_fixture()
+        assert reactions, "the fixture carries no reactions"
+        assert all(
+            isinstance(rxn.kinetics, TwoTemperaturePlasma) for rxn in reactions
+        ), "the fixture is supposed to exercise the plasma rate law"
+    
+        def rates(rxns):
+            return [rxn.kinetics.get_rate_coefficient(self.T_GAS, self.TE) for rxn in rxns]
+    
+        def pre_exponentials(rxns):
+            return [rxn.kinetics.A.value_si for rxn in rxns]
+    
+        expected_k = rates(reactions)
+        expected_A = pre_exponentials(reactions)
+    
+        for trip in range(1, 4):
+            path = str(tmp_path / "chem_trip{0}.inp".format(trip))
+            save_chemkin_file(path, species, reactions, verbose=False)
+            species, reactions = load_chemkin_file(
+                path, os.path.join(self.PLASMA_MODEL_DIR, "species_dictionary.txt")
+            )
+>           assert rates(reactions) == pytest.approx(expected_k, rel=1e-12), (
+                "round trip {0} moved the rate constant: {1} vs {2}".format(
+                    trip, rates(reactions), expected_k
+                )
+            )
+E           AssertionError: round trip 1 moved the rate constant: [108.19136428997359, 0.09618226330489692] vs [108191364.2899736, 96182.26330489691]
+E           assert [108.19136428...8226330489692] == approx([10819...91 ± 9.6e-08])
+E             
+E             comparison failed. Mismatched elements: 2 / 2:
+E             Max absolute difference: 108191256.09860931
+E             Max relative difference: 999999.0000000001
+E             Index | Obtained            | Expected                   
+E             0     | 108.19136428997359  | 108191364.2899736 ± 1.1e-04
+E             1     | 0.09618226330489692 | 96182.26330489691 ± 9.6e-08
+
+test/rmgpy/chemkinTest.py:1270: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  root:chemkinTest.py:1242 Discarding comments from Chemkin file because not sure which reaction they apply to
+WARNING  root:chemkinTest.py:1267 Discarding comments from Chemkin file because not sure which reaction they apply to
+_ TestPlasmaChemkinRoundTrip.test_plasma_arrhenius_reduction_is_unit_independent _
+
+self = <chemkinTest.TestPlasmaChemkinRoundTrip object at 0x7f84c27a37f0>
+
+    def test_plasma_arrhenius_reduction_is_unit_independent(self):
+        """
+        The Chemkin reduction of a plasma rate law must not depend on which units string
+        the source object happens to declare.
+    
+        The same rate law is built twice -- once in SI, once in cgs -- and reduced. A
+        second-order rate coefficient carries m**3 in its dimensionality and
+        1 m**3 = (100 cm)**3 = 10**6 cm**3, so a value/units mispairing shows up here as
+        exactly that factor.
+        """
+        si = TwoTemperaturePlasma(
+            A=(1.49e12, "m^3/(mol*s)"),
+            n=-0.267,
+            Ea_g=(6.784e5, "J/mol"),
+            Ea_e=(6.784e5, "J/mol"),
+            T0=(1.0, "K"),
+        )
+        cgs = TwoTemperaturePlasma(
+            A=(1.49e18, "cm^3/(mol*s)"),
+            n=-0.267,
+            Ea_g=(6.784e5, "J/mol"),
+            Ea_e=(6.784e5, "J/mol"),
+            T0=(1.0, "K"),
+        )
+        # Same rate law, said two ways.
+        assert si.A.value_si == pytest.approx(cgs.A.value_si, rel=1e-12)
+    
+        arr_si, _ = _plasma_arrhenius_for_chemkin(si)
+        arr_cgs, _ = _plasma_arrhenius_for_chemkin(cgs)
+    
+        assert arr_si.A.value_si == pytest.approx(si.A.value_si, rel=1e-12)
+>       assert arr_cgs.A.value_si == pytest.approx(cgs.A.value_si, rel=1e-12)
+E       assert 1490000.0000000005 == 1490000000000.0002 ± 1.49
+E         
+E         comparison failed
+E         Obtained: 1490000.0000000005
+E         Expected: 1490000000000.0002 ± 1.49
+
+test/rmgpy/chemkinTest.py:1312: AssertionError
+_ TestPlasmaChemkinRoundTrip.test_plasma_reduction_is_exact_along_the_electron_diagonal _
+
+self = <chemkinTest.TestPlasmaChemkinRoundTrip object at 0x7f84c27a3970>
+
+    def test_plasma_reduction_is_exact_along_the_electron_diagonal(self):
+        """
+        The reduction is documented as exact along ``T = Te``; check that it is, for a
+        source declared in non-SI units. This is what makes the round-trip assertion
+        above an assertion about chemistry rather than about bookkeeping.
+        """
+        cgs = TwoTemperaturePlasma(
+            A=(1.49e18, "cm^3/(mol*s)"),
+            n=-0.267,
+            Ea_g=(6.784e5, "J/mol"),
+            Ea_e=(6.784e5, "J/mol"),
+            T0=(1.0, "K"),
+        )
+        arrhenius, _ = _plasma_arrhenius_for_chemkin(cgs)
+        for temperature in (5000.0, 11604.5, 50000.0):
+>           assert arrhenius.get_rate_coefficient(temperature) == pytest.approx(
+                cgs.get_rate_coefficient(temperature, temperature), rel=1e-12
+            )
+E           assert 0.012546185260372324 == 12546.185260372324 ± 1.3e-08
+E             
+E             comparison failed
+E             Obtained: 0.012546185260372324
+E             Expected: 12546.185260372324 ± 1.3e-08
+
+test/rmgpy/chemkinTest.py:1330: AssertionError
+_ TestVoronovEIArrhenius.test_a_factor_is_stored_at_the_declared_magnitude_in_every_spelling[m^3/(molecule*s)] _
+
+self = <arrheniusTest.TestVoronovEIArrhenius object at 0x7f84c2785730>
+units = 'm^3/(molecule*s)'
+
+    @pytest.mark.parametrize(
+        "units",
+        [
+            "cm^3/(molecule*s)",
+            "m^3/(molecule*s)",
+            "cm^3/(mol*s)",
+            "m^3/(mol*s)",
+        ],
+    )
+    def test_a_factor_is_stored_at_the_declared_magnitude_in_every_spelling(self, units):
+        """
+        The ``A`` setter must not change the number it was given.
+    
+        It used to convert a per-particle declaration to per-mole and then label the
+        result ``"cm^3/(mol*s)"`` unconditionally -- rewriting the *length* half of the
+        unit along with the amount half. For the shipped ``cm^3/(molecule*s)`` that was
+        accidentally right; for ``m^3/(molecule*s)``, which
+        ``RATECOEFFICIENT_COMMON_UNITS`` admits, it relabelled a metre-based number as
+        centimetre-based and understated the rate by exactly 10**6.
+    
+        The reference is what :class:`~rmgpy.quantity.RateCoefficient` makes of the same
+        declaration on its own -- which is also what the sibling class
+        :class:`BadnellRRArrhenius` has always produced, since it does no hand-rolled
+        conversion at all.
+        """
+        expected = quantity.RateCoefficient((3.0e-8, units)).value_si
+        obj = VoronovEIArrhenius(
+            A=(3.0e-8, units), P=self.P, X=self.X, K=self.K, dE=self.dE_eV
+        )
+>       assert np.isclose(obj.A.value_si, expected, rtol=1e-12), (
+            "A declared as {0!r} was stored as {1:g}, not {2:g}".format(
+                units, obj.A.value_si, expected
+            )
+        )
+E       AssertionError: A declared as 'm^3/(molecule*s)' was stored as 1.80664e+10, not 1.80664e+16
+E       assert False
+E        +  where False = <function isclose at 0x7f84bb9442b0>(18066425370.000004, 1.806642537e+16, rtol=1e-12)
+E        +    where <function isclose at 0x7f84bb9442b0> = np.isclose
+E        +    and   18066425370.000004 = (1.80664e+16,'cm^3/(mol*s)').value_si
+E        +      where (1.80664e+16,'cm^3/(mol*s)') = VoronovEIArrhenius(A=(1.80664e+16,'cm^3/(mol*s)'), P=0.25, X=1.8, K=0.42, dE=(5.14, 'eV'), electrons=1).A
+
+test/rmgpy/kinetics/arrheniusTest.py:2686: AssertionError
+=========================== short test summary info ============================
+FAILED test/rmgpy/chemkinTest.py::TestPlasmaChemkinRoundTrip::test_plasma_round_trip_preserves_rate_coefficient
+FAILED test/rmgpy/chemkinTest.py::TestPlasmaChemkinRoundTrip::test_plasma_arrhenius_reduction_is_unit_independent
+FAILED test/rmgpy/chemkinTest.py::TestPlasmaChemkinRoundTrip::test_plasma_reduction_is_exact_along_the_electron_diagonal
+FAILED test/rmgpy/kinetics/arrheniusTest.py::TestVoronovEIArrhenius::test_a_factor_is_stored_at_the_declared_magnitude_in_every_spelling[m^3/(molecule*s)]
+========================= 4 failed, 3 passed in 1.10s ==========================
