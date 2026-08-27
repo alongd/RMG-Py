@@ -831,7 +831,32 @@ ordinary non-plasma mechanism restarts from its own seed to a byte-identical mod
 **If the manager reclassifies §9 as a fifth known non-blocking defect** — a defensible reading,
 argued fairly in §9.5 — then every other Verifier item is satisfied and the answer becomes READY
 subject to the `rmgrc` reverts. That decision is not mine and not the manager's alone; §9.5 names
-the two conditions that would make it safe.
+the two conditions that would make it safe. **It was put, and it was decided — §13.1.**
+
+### 13.1 Both open questions were put to the operator, and both were decided
+
+Recorded here so the next reader finds a settled question rather than an auditor's judgement call
+left hanging. Put after the report was written and committed, with §9.5's counter-argument stated
+as its own option rather than as a footnote to the recommendation:
+
+| question | decision |
+|---|---|
+| Does §9 block, or is it a fifth known non-blocking defect? | **Stands as blocking.** NOT READY is upheld. |
+| Who removes the four `rmgrc` pins, and when? | **Left in place; whoever performs the merge reverts them**, as the first step. |
+
+Of the four reasons in §9.5, two are the load-bearing pair behind the ruling: **the defect has no
+workaround** — the RMS writer can be switched off and the two channels can be split across two
+libraries, but a seed cannot be declined — and **RMG emits the broken artifact silently**, so the
+failure surfaces in a different run, possibly days later, rather than in the run that caused it.
+
+The pins stay because this branch needs them to load its own database: removing them would make
+every command in §15 read the wrong tree, and the report would stop being reproducible from its own
+tip. §3 carries all four SHAs — `ae52de38a`, `9874fc706`, `34de41c76`, `cd6cde425` — and the line
+they must be restored to. **That is a merge-time obligation on the merger, not an outstanding task
+of this audit.** It is also the fourth pass running to inherit the previous pass's pin by not
+reading it (§0.2) — a recurring defect in this lineage's configuration rather than four independent
+slips. Making `rmgrc` un-inheritable was considered as part of the same decision and deliberately
+left out of scope here; it wants its own ticket.
 
 ---
 
