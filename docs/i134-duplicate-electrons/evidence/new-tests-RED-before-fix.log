@@ -1,0 +1,65 @@
+# The new tests against the UNREPAIRED consumers.
+# rmgpy/electron_balance.py carries the new helper (additive, nothing calls it);
+# rmgpy/reaction.py and rmgpy/rmg/model.py reverted to HEAD and rebuilt.
+
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+rootdir: /home/alon/Code/RMG-Py-i134-duplicate-electrons
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 180 items
+
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_counts_are_the_net_rule[-3] PASSED
+
+--- failures ---
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[-3--3]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[-3--2]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[-3--1]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[-3-0]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[-3-1]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[-3-2]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[-2--3]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[-2--2]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[-2--1]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[-2-0]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[-2-1]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[-2-3]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[-1--3]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[-1--2]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[-1--1]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[-1-0]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[-1-2]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[-1-3]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[0--3]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[0--2]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[0--1]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[0-1]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[0-2]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[0-3]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[1--3]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[1--2]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[1-0]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[1-1]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[1-2]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[1-3]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[2--3]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[2--1]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[2-0]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[2-1]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[2-2]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[2-3]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[3--2]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[3--1]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[3-0]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[3-1]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[3-2]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[3-3]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestChargedFamilyReactionsAreNotConfused::test_the_same_direction_charge_reversal_survives
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestChargedFamilyReactionsAreNotConfused::test_the_neutral_transformation_over_the_same_heavy_species_survives
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestChargedFamilyReactionsAreNotConfused::test_the_model_keeps_both_through_the_real_path
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestLithiumChargeNetworkReachesTheModel::test_both_channels_enter_the_model[True]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestLithiumChargeNetworkReachesTheModel::test_both_channels_enter_the_model[False]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestLithiumChargeNetworkReachesTheModel::test_the_cation_has_a_loss_channel_in_the_model
+
+--- summary ---
+================== 48 failed, 131 passed, 1 xfailed in 2.17s ===================
