@@ -92,7 +92,7 @@ through unchanged so that guard still fires.
 
 import logging
 
-from rmgpy.electron_balance import get_plasma_rate_order, get_species_electron_count
+from rmgpy.electron_balance import get_placement_owner, get_plasma_rate_order, get_species_electron_count
 from rmgpy.exceptions import ElectronPlacementError
 from rmgpy.reaction import Reaction
 
@@ -344,15 +344,27 @@ def resolve_electron_placement(reaction, species_list):
             'stoichiometry or rate order; refusing to prefer either source.'.format(
                 reaction, family, n_explicit, net_electrons))
 
-    # 3. Family placement declaration. Absence is a named failure, never a
-    #    fallback to net-derived inference.
-    declaration = FAMILY_ELECTRON_PLACEMENT.get(family)
+    # 3. Owner placement declaration. Absence is a named failure, never a
+    #    fallback to net-derived inference. The owner is resolved from the
+    #    reaction's own attributions -- ``family`` first, then the ``library``
+    #    provenance a seed round trip preserves (I-148) -- by the same
+    #    ``get_placement_owner`` the export path reads, so the reactor and the
+    #    writers cannot disagree about which owner a reaction belongs to. For a
+    #    reaction reloaded from a seed mechanism, ``family`` is the fixed
+    #    container label (``seed``/``restart``) and carries no declaration; the
+    #    original owner survives in ``Reaction.library``, parsed back out of the
+    #    entry's ``longDesc`` by ``KineticsLibrary.get_library_reactions``.
+    owner = get_placement_owner(reaction)
+    declaration = FAMILY_ELECTRON_PLACEMENT.get(owner) if owner is not None else None
     if declaration is None:
+        library = getattr(reaction, 'library', None)
+        provenance = ('' if not library or library == family
+                      else ', original library {0!r}'.format(library))
         raise ElectronPlacementError(
-            'Family {0!r} has no electron-placement declaration (reaction {1!s}, '
-            'electrons={2:d}); refusing to infer electron placement from the net '
-            'electron count. Only families declared in FAMILY_ELECTRON_PLACEMENT '
-            'can resolve.'.format(family, reaction, net_electrons))
+            'Family {0!r}{1} has no electron-placement declaration (reaction {2!s}, '
+            'electrons={3:d}); refusing to infer electron placement from the net '
+            'electron count. Only owners declared in FAMILY_ELECTRON_PLACEMENT '
+            'can resolve.'.format(family, provenance, reaction, net_electrons))
     #    The shape check is a general one: any pair of non-negative integers
     #    that places at least one electron somewhere is a declaration this
     #    resolver can honour. What it refuses is a MALFORMED declaration —
@@ -367,7 +379,7 @@ def resolve_electron_placement(reaction, species_list):
             '{1!r} (reaction {2!s}). A declaration must be a '
             '(reactant_count, product_count) pair of non-negative integers '
             'placing at least one electron; refusing to interpret it.'.format(
-                family, declaration, reaction))
+                owner, declaration, reaction))
     reactant_count, product_count = declaration
 
     # 4. A reaction that already carries its electron explicitly (with a zero

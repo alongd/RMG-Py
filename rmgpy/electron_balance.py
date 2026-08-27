@@ -59,6 +59,7 @@ from rmgpy.exceptions import MechanismWriterError
 
 __all__ = [
     'get_electron_species',
+    'get_placement_owner',
     'get_placement_declaration',
     'get_electron_placement_counts',
     'expand_electrons',
@@ -84,19 +85,73 @@ def get_electron_species(species_list):
     return None
 
 
+def get_placement_owner(reaction):
+    """
+    Return the label whose :data:`FAMILY_ELECTRON_PLACEMENT` declaration governs
+    ``reaction``, or ``None`` when no attribution the reaction carries names a
+    declared owner.
+
+    Two attributions are consulted, in a fixed precedence, and both travel WITH
+    the reaction object rather than being read off whatever container currently
+    holds it:
+
+    * ``Reaction.family`` -- the current attribution: the family label for a
+      :class:`TemplateReaction`, the library label for a
+      :class:`LibraryReaction` (``LibraryReaction.__init__`` sets
+      ``family = library``), or the fixed container label (``seed`` /
+      ``restart``) for a reaction reloaded from an auto-generated seed
+      mechanism, because ``KineticsLibrary.get_library_reactions`` overwrites
+      ``family`` with the label of the library it loaded from.
+    * ``Reaction.library`` -- the reaction's ORIGINAL owner, for exactly the
+      reloaded-seed case above: the seed writer emits ``Originally from
+      reaction library: <label>`` into each entry's ``longDesc``
+      (``rmgpy/rmg/main.py``, ``make_seed_mech``), and
+      ``get_library_reactions`` parses that line back into
+      ``LibraryReaction.library`` for auto-generated libraries. This is the
+      I-148 repair: before it, only ``family`` was consulted, so every plasma
+      reaction that round-tripped through a seed lost its declaration to the
+      renamed container and silently fell back to the net-derived rule -- the
+      ionisation channel's (1, 2) collapsed to (0, 1), the restarted core
+      carried the channel twice, and the first mechanism save was refused.
+
+    ``family`` wins when both name a declared owner: the current attribution
+    governs, and the preserved provenance is consulted only where the current
+    attribution is silent. This rule is monotonic over the pre-I-148 behaviour
+    -- every reaction that resolved before resolves to the same owner, and the
+    only reactions that newly resolve are those whose ``family`` names no
+    declaration at all (the seed's fixed labels are never declared; declaring
+    them is the one-line non-fix this module refuses, since it would hand one
+    placement to every reaction that ever passed through a seed).
+
+    A plain :class:`Reaction` -- which is what the reactor's placement view is
+    -- has neither attribute, so a view can never be re-expanded through a
+    declaration.
+
+    Imported lazily, like :func:`get_placement_declaration` and for the same
+    reason.
+    """
+    from rmgpy.electron_placement import FAMILY_ELECTRON_PLACEMENT
+
+    family = getattr(reaction, 'family', None)
+    if family and family in FAMILY_ELECTRON_PLACEMENT:
+        return family
+    library = getattr(reaction, 'library', None)
+    if library and library in FAMILY_ELECTRON_PLACEMENT:
+        return library
+    return None
+
+
 def get_placement_declaration(reaction):
     """
     Return the ``(reactant_count, product_count)`` electron-placement declaration
-    the reaction's owner carries, or ``None`` if it has no owner or the owner is
-    absent from :data:`rmgpy.electron_placement.FAMILY_ELECTRON_PLACEMENT`.
+    the reaction's owner carries, or ``None`` if no attribution the reaction
+    carries names an owner declared in
+    :data:`rmgpy.electron_placement.FAMILY_ELECTRON_PLACEMENT`.
 
-    The owner is ``Reaction.family``, which is the family label for a
-    :class:`TemplateReaction` and the library label for a
-    :class:`LibraryReaction` (``LibraryReaction.__init__`` sets
-    ``family = library``), so a kinetics library declares its placement on the
-    same terms a family does. A plain :class:`Reaction` -- which is what the
-    reactor's placement view is -- has no ``family`` attribute at all, so a view
-    can never be re-expanded through a declaration.
+    The owner is resolved by :func:`get_placement_owner`, which reads the
+    reaction's own attributions -- ``family`` first, then the ``library``
+    provenance a seed round trip preserves -- never the label of the container
+    the reaction currently sits in.
 
     ``None`` means "this owner has made no statement about placement", which is
     the case for every reaction in RMG except the handful of declared plasma
@@ -112,12 +167,10 @@ def get_placement_declaration(reaction):
     """
     from rmgpy.electron_placement import FAMILY_ELECTRON_PLACEMENT
 
-    owner = getattr(reaction, 'family', None)
-    if not owner:
+    owner = get_placement_owner(reaction)
+    if owner is None:
         return None
-    declaration = FAMILY_ELECTRON_PLACEMENT.get(owner)
-    if declaration is None:
-        return None
+    declaration = FAMILY_ELECTRON_PLACEMENT[owner]
     if (not isinstance(declaration, tuple) or len(declaration) != 2
             or not all(isinstance(n, int) and not isinstance(n, bool) and n >= 0
                        for n in declaration)
