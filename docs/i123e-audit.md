@@ -152,3 +152,93 @@ Probe: `docs/i123e-audit/probe_i148_repair.py` (object-level; head prints resolv
   it is measured by the two whole-run seed restarts in item 9 (if the restarted core carries the
   ionisation `(1,2)` intact and single-copy and saves byte-identically, the shipped path does not reach
   it). Not fixed either way.
+
+## 9. The charge network end to end (each stage separately) [M]
+
+Driver evidence under `docs/i123e-audit/evidence/`. Resolved rmgpy + DB printed at the head of every
+stage (rmgpy = the audit worktree; db = `RMG-database-i123e-audit/input`).
+
+- **Deck (Stage A) — PASS.** `python rmg.py -o .../deck-run docs/i123-integration/input.py`. Final core
+  = **7 species, 2 reactions**. The cation `[Lip](3)` is **produced from the neutral feed** and pulled
+  into the CORE (RMG.log "Adding species [Lip](3) to model core"; the species dictionary seeds no
+  cation). Both channels are core reactions in `chem_annotated.inp`:
+  `Li(2)+e-(1)=>[Lip](3)+e-(1)+e-(1)` (Library reaction PlasmaElectronImpactIonization, Voronov) and
+  `[Lip](3)+e-(1)=>Li(2)` (PlasmaRadiativeRecombination, Badnell). All artifacts (chemkin/, seed/,
+  restart_from_seed.py, cantera2/) written **before** the deck exits **1** at the known
+  `cantera_from_ck/` ck2yaml step (item 12.iii).
+- **Three Chemkin round trips (Stage B) — PASS, no drift.** At every readback the rate-law class is
+  **explicitly asserted** = `TwoTemperaturePlasma`, evaluated with `get_rate_coefficient_two_temp(T,Te)`
+  (dodging the 33-orders gas-T fall-through trap). k(1000,11604.5) is **identical to the last digit
+  across all three trips** — ionisation `1.0819136429e+08`, recombination `9.6182263305e+04`. The prior
+  10^6×-per-trip collapse is gone. There is a **one-time** lossy-fit offset from the canonical library
+  value (ionisation 16.3%, recombination 26.1%), incurred once at export as the documented TDEP
+  modified-Arrhenius reduction and **not compounded** (trip3 == trip1). Canonical values:
+  Voronov `get_rate_coefficient_electron_temp(11604.5)` = `1.2929794709e+08`, Badnell `1.3014284591e+05`.
+- **Two successive seed restarts (Stage C) — PASS; latent seed→core defect UNREACHABLE via the shipped
+  path.** restart1 (`restart_from_seed.py` unedited) builds 7/2 core, `chem.inp` **byte-identical** to the
+  deck's, ionisation channel **single copy**, (1,2) order preserved, exits 1 at the same ck2yaml step.
+  restart2 (from restart1's own `seed/`) builds 7/2 core, mechanism **byte-identical** to restart1, and
+  `diff -r restart1/seed restart2/seed` is **identical** (a fixed point after the first save). The fourth
+  blocker (double-build, save refused) does not recur.
+  - **Object-level proof the recovery is genuine, not the net-rule coincidence [M]:** loading the actual
+    seed via `KineticsDatabase.load_libraries(.../seed, ['seed'])` (auto_generated=True), the reloaded
+    reactions carry `family='seed'` but `library='PlasmaElectronImpactIonization'` /
+    `'PlasmaRadiativeRecombination'`; `get_placement_owner` returns the **real owner**, and
+    `get_placement_declaration` returns **(1,2)** for ionisation where the net-rule fallback would give
+    **(0,1)**. (Recombination's (1,0) does coincide with the net rule — the "one row where wrong==right"
+    the brief warns about — but the ionisation row breaks the tie: I-148 genuinely recovers the
+    declaration.) This is item 8.4: the shipped seed path recovers the declaration, so the family-less
+    net-derived demotion is never reached; not fixed either way.
+
+## 10. mergeModels [M] — PASS
+
+`scripts/mergeModels.py` (unmodified, run as a subprocess) on two half-mechanisms each carrying one
+channel: merged model = 7 species / 2 reactions, **both channels survive**, and each k(1000,11604.5) is
+**exactly unchanged** by the merge (ratio 1): ionisation `1.0819136429e+08`, recombination
+`9.6182263305e+04`, class-correct evaluation.
+
+## 11. Reloaded-representation — PROPERTY (measured, not a defect) [M/R]
+
+A Chemkin-reloaded reaction carries explicit electron participants with scalar `electrons=0` (placement
+(0,0), owner `Unclassified`, kinetics `TwoTemperaturePlasma`), where the canonical form carries a scalar
+and no participant. Measured:
+- A reloaded reaction does **not** compare `is_isomorphic` equal to its canonical original (the round trip
+  recovers the chemistry in the expanded representation, not the canonical object). The two reloaded
+  channels stay mutually distinct — no i134-style collapse.
+- A reloaded **plasma** reaction has `is_balanced()==False` (the E-element tally cannot be satisfied by a
+  zero scalar), so a reloaded plasma mechanism is **refused at the `KineticsLibrary.load` balance gate**
+  (`rmgpy/data/kinetics/library.py:585`) — loud, not silent. The owner-loss on reload is a **general**
+  Chemkin property (neutral reloads also raise `Unclassified`); the `is_balanced` refusal is
+  plasma-specific (neutral control: 66/66 balanced). No shipped path feeds a Chemkin-reloaded plasma
+  mechanism back as a library/seed (the seed path uses the canonical, lossless representation). No
+  duplicate, crash, or wrong number resulted in any stage. **Reported as a property**: a closed, loud
+  door, not a corruption.
+
+## 12. Known defects — confirmed (not fixed) [M]
+
+(i) **RMS YAML writer still fails loudly.** `rmgpy/yaml_rms.py:252` terminal `else: raise ValueError`;
+    both `VoronovEIArrhenius` and `BadnellRRArrhenius` refused loudly. Driven through the shipped path (a
+    deck copy with `generateRMSYAML=True`) the run **crashes mid-run** at save with that ValueError, exit
+    1; the leftover `.rms` carries 0 plasma entries — no wrong number emitted. Deck disables RMS as the
+    documented workaround.
+(ii) **A single library carrying both channels still cannot load.** `check_for_duplicates` raises
+    `DatabaseError: Unexpected duplicate reaction [Li] => [Lip] ... index 2 matches index 1`. The strict
+    xfail `test/rmgpy/i134DuplicateElectronsTest.py::TestTheLibraryLoadLandmineIsNotReachedFromHere::test_one_library_carrying_both_channels_can_be_loaded`
+    is **XFAIL** (not XPASS). Deck keeps two libraries.
+(iii) **Chemkin→Cantera (ck2yaml) TDEP failure surfaces in exit status.** Deck (and both restarts, and the
+    RMS-variant run) exit **1**, failing step named `Chemkin-to-Cantera translation (cantera_from_ck/)`,
+    root cause `cantera.ck2yaml.InputError` on the `TDEP/e-(1)/` line. Not exit 0.
+(iv) **Lithium cation enthalpy — measured on this union.** `input/thermo/libraries/LithiumPrimaryThermo.py`
+    entry index 65 `[Lip]`: E0 = 526.738 kJ/mol → H298 = **532.936 kJ/mol**, **146.6 kJ/mol below** the
+    reference ΔfH(Li⁺,g) = ΔfH(Li,g)+IE(Li) = 159.3+520.2 = 679.5 kJ/mol; `shortDesc` empty. Non-blocking
+    (the deck's two reactions are irreversible; no Keq depends on it).
+(v) **Two pre-existing suite failures** — the two named in item 6, unchanged; do-not-fix.
+
+## 14. Negative control [M] — PASS, byte-identical base-vs-union
+
+`examples/rmg/minimal/input.py` run on the union (exit **0**) and on the base worktree
+`/home/alon/Code/RMG-Py-i123e-baseline` (plasma a61dc1303, exit **0**), compared run-vs-run on the same
+operation (never run-vs-restart). Core 26 species / 66 reactions on both. `chem_annotated.inp` sha256
+`2850089d…cdb54e5` **identical** on both; `chem.inp` `b318e4c7…c317fb8` identical; `species_dictionary.txt`
+`5114ffb2…bd85e8f` identical. An ordinary non-plasma mechanism builds, runs, and exports identically on
+the union and the base.
