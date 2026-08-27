@@ -57,7 +57,8 @@ from rmgpy.chemkin import ChemkinWriter
 from rmgpy.constraints import fails_species_constraints
 from rmgpy.data.auto_database import auto_select_libraries, to_reaction_library_tuples
 from rmgpy.data.base import Entry
-from rmgpy.data.kinetics.library import KineticsLibrary
+from rmgpy.data.kinetics.library import KineticsLibrary, seed_placement_survives
+from rmgpy.electron_balance import get_placement_owner
 from rmgpy.data.rmg import RMGDatabase
 from rmgpy.data.vaporLiquidMassTransfer import vapor_liquid_mass_transfer
 from rmgpy.exceptions import (
@@ -1841,6 +1842,7 @@ class RMG(util.Subject):
                 else:
                     entry.long_desc = reaction.kinetics.comment
 
+                warn_if_seed_loses_placement(reaction, entry, "core")
                 kinetics_library.entries[i + 1] = entry
 
             # load kinetics library entries
@@ -1857,6 +1859,7 @@ class RMG(util.Subject):
                     entry.long_desc = "Originally from reaction library: " + reaction.library + "\n" + reaction.kinetics.comment
                 except AttributeError:
                     entry.long_desc = reaction.kinetics.comment
+                warn_if_seed_loses_placement(reaction, entry, "edge")
                 edge_kinetics_library.entries[i + 1] = entry
 
             # save in database
@@ -2378,6 +2381,47 @@ class RMG(util.Subject):
                 logging.log(level, "The current anaconda package for RMG-database is:")
                 logging.log(level, database_conda_package)
                 logging.log(level, "")
+
+
+def warn_if_seed_loses_placement(reaction, entry, model_part):
+    """
+    Warn, loudly and at seed-WRITE time, when ``reaction``'s electron-placement
+    declaration would not survive the seed round trip that ``entry`` is about to
+    be written into.
+
+    The placement declaration is keyed on the reaction's owner label
+    (:data:`rmgpy.electron_placement.FAMILY_ELECTRON_PLACEMENT`), and the seed
+    renames its container to a fixed label -- so the declaration survives only
+    through the per-entry provenance that
+    :meth:`~rmgpy.data.kinetics.library.KineticsLibrary.get_library_reactions`
+    parses back out of ``entry.long_desc``
+    (:func:`~rmgpy.data.kinetics.library.seed_placement_survives` mirrors its
+    branches). A reaction this does not cover would reload with no declaration
+    and silently fall back to the net-derived placement rule, which is exactly
+    the I-148 failure: the restarted model either carries the channel twice, is
+    refused at its first mechanism save, or -- worst -- evaluates the rate at
+    the wrong order. The failure would otherwise announce itself only in the
+    restarting run, possibly long after this one; this warning makes the run
+    that writes the unusable artifact the one that says so.
+
+    ``model_part`` names which seed library the entry belongs to (``core`` or
+    ``edge``), for the message only.
+    """
+    owner = get_placement_owner(reaction)
+    if owner is None:
+        return
+    if seed_placement_survives(entry, owner):
+        return
+    logging.warning(
+        'SEED LOSES ELECTRON PLACEMENT: reaction %s in the %s seed belongs to '
+        '%r, whose electron-placement declaration is keyed on that label, but '
+        'the seed entry being written carries no provenance the seed reader '
+        'parses (an "Originally from reaction library: %s" line or a '
+        '"rate rule"/"family: %s" comment). Reloaded from this seed, the '
+        'reaction will fall back to the net-derived placement rule: a restart '
+        'may duplicate the channel, be refused at its first mechanism save, or '
+        'evaluate the rate at the wrong reaction order.',
+        reaction, model_part, owner, owner, owner)
 
 
 def determine_procnum_from_ram():
