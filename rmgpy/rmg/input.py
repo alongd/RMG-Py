@@ -89,8 +89,15 @@ def database(
 ):
     # This function just stores the information about the database to be loaded
     # We don't actually load the database until after we're finished reading
-    # the input file
-    rmg.database_directory = settings['database.directory']
+    # the input file.
+    #
+    # Resolve database.directory through require_database_directory(): if no rmgrc
+    # was found, or it points at a directory that does not exist, the run stops here
+    # -- loudly, in the first second of reading the input file -- rather than silently
+    # loading whatever the default location happens to contain.
+    rmg.database_directory = settings.require_database_directory()
+    logging.info('Using RMG database at: {0} ({1})'.format(
+        rmg.database_directory, settings.sources['database.directory']))
 
     # Handle 'auto' token: pass through for later resolution by auto_select_libraries().
     # '<PAH_libs>' is only valid as a token inside a list, not as a standalone value.

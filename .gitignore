@@ -90,8 +90,11 @@ RMG_Py.egg-info/*
 # deleted files
 **/.fuse_hidden*
 
-# RMG configuration file
+# RMG configuration file. Untracked on purpose: it pins database.directory at a
+# per-checkout path, so tracking it makes every branch cut from another inherit a
+# pointer at a database it does not own. Copy rmgrc.template to ./rmgrc instead.
 rmgpy/rmgrc
+/rmgrc
 
 # treegen log files
 scripts/treegen.log

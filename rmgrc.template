@@ -1,0 +1,23 @@
+# RMG run-configuration template for the plasma lineage.  COPY, DO NOT EDIT IN PLACE.
+#
+#   cp rmgrc.template rmgrc      # from the repository root of this worktree
+#   # then set database.directory below to YOUR RMG-database checkout
+#
+# The actual file ./rmgrc is git-ignored (see .gitignore) and MUST NOT be tracked.
+# It is untracked on purpose: it pins database.directory at a path specific to one
+# checkout, and a tracked copy makes every branch cut from another inherit a pointer
+# at a database that branch does not own -- which has produced meaningless-green test
+# runs (a whole suite measured against the wrong, or a since-moved, database).
+#
+# If ./rmgrc is absent, or database.directory names a directory that does not exist,
+# RMG stops loudly in the first second of a run rather than silently loading whatever
+# a default location happens to contain.  That is deliberate; do not add a fallback.
+#
+# The value is a path resolved against the current working directory (RMG's cwd), so
+# a relative pin is correct from the repo root of any worktree that sits as a sibling
+# of the database checkout, without naming a machine or a user.  Every plasma worktree
+# sits beside RMG-database-plasma, so the line below is the usual correct value.
+#
+#   key : val        (whitespace around the colon is optional; '=' also works)
+
+database.directory = ../RMG-database-plasma/input

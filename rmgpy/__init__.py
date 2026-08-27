@@ -139,6 +139,59 @@ class Settings(dict):
                     self["test_data.directory"] = value
                     self.sources["test_data.directory"] = "from {0}".format(self.filename)
 
+    def require_database_directory(self):
+        """
+        Resolve and validate ``database.directory`` for an actual run, returning the
+        resolved absolute path. Two conditions are refused **loudly** rather than
+        papered over with a silently-chosen default, because a silent default has
+        repeatedly turned out to be the *wrong* database and produced a green test
+        run that measured nothing:
+
+        * No ``rmgrc`` configuration file was found at all (``self.filename is None``).
+          RMG will not guess a database location; the run stops naming the file it
+          wanted and how to create it.
+        * ``database.directory`` names a path that is not an existing directory.
+
+        Raises :class:`SettingsError` in either case. This is intentionally *not*
+        wired into settings loading (importing :mod:`rmgpy` must always succeed); it
+        is called from the run path, where a missing or wrong database is fatal.
+        """
+        package_dir = os.path.abspath(os.path.dirname(__file__))
+        repo_template = os.path.abspath(os.path.join(package_dir, "..", "rmgrc.template"))
+        packaged_template = os.path.join(package_dir, "rmgrc_template")
+        if self.filename is None:
+            raise SettingsError(
+                "No RMG configuration file (rmgrc) was found, so database.directory is unset.\n"
+                "RMG refuses to guess a database location: a silently-chosen default has\n"
+                "repeatedly been the wrong database and produced a meaningless-green run.\n"
+                "\n"
+                "Fix, from the repository root of this checkout:\n"
+                "    cp rmgrc.template rmgrc\n"
+                "then edit ./rmgrc so that database.directory points at your RMG-database\n"
+                "input directory. Searched (in order): ./rmgrc, ~/.rmg/rmgrc, {packaged}\n"
+                "Templates: {repo_template} or {packaged_template}".format(
+                    packaged=os.path.join(package_dir, "rmgrc"),
+                    repo_template=repo_template,
+                    packaged_template=packaged_template,
+                )
+            )
+        path = self["database.directory"]
+        if not os.path.isdir(path):
+            raise SettingsError(
+                "database.directory resolves to:\n"
+                "    {path}\n"
+                "which is not an existing directory. It was read from {source} ({filename}).\n"
+                "RMG refuses to fall back to a default location.\n"
+                "Fix: edit {filename} so database.directory names your RMG-database input\n"
+                "directory, or copy {repo_template} and set it there.".format(
+                    path=path,
+                    source=self.sources["database.directory"],
+                    filename=self.filename,
+                    repo_template=repo_template,
+                )
+            )
+        return path
+
     def reset(self):
         """
         Reset all settings to their default values.
