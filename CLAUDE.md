@@ -104,6 +104,8 @@ RMG looks up `database.directory` in this order:
 
 Template: [rmgpy/rmgrc_template](rmgpy/rmgrc_template). Copy it (don't edit in place — it's overwritten on install). In CI, the database is checked out at the branch named in `RMG_DATABASE_BRANCH` (env var in [.github/workflows/CI.yml](.github/workflows/CI.yml)); change that line if your PR depends on an unmerged database branch.
 
+**Plasma lineage: `rmgrc` is untracked and there is no silent fallback.** The root `rmgrc` is git-ignored on purpose (a tracked one makes every child branch inherit a pin at a database it does not own). Copy [rmgrc.template](rmgrc.template) to `./rmgrc` and point `database.directory` at your own checkout. A run reads `database.directory` through `Settings.require_database_directory()` (called from the `database()` directive): a missing `rmgrc`, or one naming a directory that does not exist, stops the run loudly with a non-zero exit rather than falling back to step 5 above. See [docs/rmgrc.md](docs/rmgrc.md) for setup and the merge/checkout consequences.
+
 ## Conventions
 
 - **Python API uses `snake_case`**.
