@@ -30,4 +30,14 @@
 # second pass's 9874fc706, and this one -- and all three must come out before this lineage is
 # merge-clean for `plasma`, which must read
 #   database.directory = ../RMG-database-plasma/input
-database.directory = ../RMG-database-i123c-audit/input
+#
+# Fourth pass (i123d-audit): repointed again, at this pass's own sibling
+# RMG-database-i123d-audit worktree, for exactly the reason the third pass gave. The line
+# inherited on this branch named RMG-database-i123c-audit, which is the THIRD pass's worktree
+# and not this one's; a run from this repo root would have loaded a database tree another
+# branch may move under it, and the ionisation and recombination libraries this audit exists
+# to exercise would have been read from someone else's checkout. FOUR commits now carry this
+# pin -- ae52de38a, 9874fc706, 34de41c76, and this one -- and all four must come out before
+# this lineage is merge-clean for `plasma`, which must read
+#   database.directory = ../RMG-database-plasma/input
+database.directory = ../RMG-database-i123d-audit/input
