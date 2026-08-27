@@ -1,0 +1,21 @@
+### negative control: diff -r -q, excluding logs/plots/binaries
+Files /tmp/claude-1000/-home-alon-Code-RMG-Py-i123c-audit/098e215d-fcb0-4d98-86b2-f99bf77793a7/scratchpad/nc-baseline/cantera_from_ck/chem_annotated.yaml and /tmp/claude-1000/-home-alon-Code-RMG-Py-i123c-audit/098e215d-fcb0-4d98-86b2-f99bf77793a7/scratchpad/nc-union/cantera_from_ck/chem_annotated.yaml differ
+Files /tmp/claude-1000/-home-alon-Code-RMG-Py-i123c-audit/098e215d-fcb0-4d98-86b2-f99bf77793a7/scratchpad/nc-baseline/cantera_from_ck/chem.yaml and /tmp/claude-1000/-home-alon-Code-RMG-Py-i123c-audit/098e215d-fcb0-4d98-86b2-f99bf77793a7/scratchpad/nc-union/cantera_from_ck/chem.yaml differ
+
+### the whole of each difference
+--- cantera_from_ck/chem.yaml
+4c4
+< date: Thu, 27 Aug 2026 10:07:05 +0300
+---
+> date: Thu, 27 Aug 2026 09:54:54 +0300
+--- cantera_from_ck/chem_annotated.yaml
+4c4
+< date: Thu, 27 Aug 2026 10:07:05 +0300
+---
+> date: Thu, 27 Aug 2026 09:54:54 +0300
+
+### model sizes
+baseline: The final model core has 26 species and 66 reactions
+baseline: The final model edge has 146 species and 332 reactions
+union   : The final model core has 26 species and 66 reactions
+union   : The final model edge has 146 species and 332 reactions

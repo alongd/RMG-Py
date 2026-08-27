@@ -1,0 +1,86 @@
+==============================================================================
+rmgpy              = /home/alon/Code/RMG-Py-i123c-audit
+compiled module    = /home/alon/Code/RMG-Py-i123c-audit/rmgpy/molecule/molecule.cpython-39-x86_64-linux-gnu.so
+database.directory = /home/alon/Code/RMG-database-i123c-audit/input
+resolved realpath  = /home/alon/Code/RMG-database-i123c-audit/input
+chemkin file       = /tmp/claude-1000/-home-alon-Code-RMG-Py-i123c-audit/098e215d-fcb0-4d98-86b2-f99bf77793a7/scratchpad/deck-lithium/chemkin/chem.inp
+==============================================================================
+
+------------------------------------------------------------------------------
+the writer's unit pairing, driven directly on two TwoTemperaturePlasma objects
+------------------------------------------------------------------------------
+  [..] the same rate law, declared two ways:
+  [..]     SI  : A = 1.49e+12 m^3/(mol*s)   value_si = 1.490000e+12
+  [..]     cgs : A = 1.49e+18 cm^3/(mol*s)   value_si = 1.490000e+12
+  [PASS] the two objects ARE the same rate law -- 1.490000e+12 vs 1.490000e+12 in SI
+  [..] reduced for Chemkin:
+  [..]     from the SI-declared object  : A = 1.49e+12 m^3/(mol*s)   value_si = 1.490000e+12
+  [..]     from the cgs-declared object : A = 1.49e+12 cm^3/(mol*s)   value_si = 1.490000e+06
+  [..]     ratio of the two reductions  : 1.000000e-06
+  [PASS] the reduction is UNIT-DEPENDENT -- the same rate law reduces to two different numbers depending on the units string it declares -- ratio = 1.000000e-06, i.e. 1e-6 for a second-order rate
+  [..] rmgpy/chemkin.pyx: A=(kinetics.A.value_si, kinetics.A.units) -- an SI VALUE paired with the object's DECLARED units. Right only when the object already declares SI.
+
+------------------------------------------------------------------------------
+the live round trip: RMG writes, RMG reads, RMG writes again
+------------------------------------------------------------------------------
+  as first written:
+REACTIONS    KCAL/MOLE   MOLES
+
+Li(2)+e-(1)=>[Lip](3)+e-(1)+e-(1)                   1.490e+18 -0.267    162.150  
+    TDEP/e-(1)/   ! VoronovEIArrhenius exported as a modified-Arrhenius fit of k(Te) over 1.16e+04-2.321e+08 K; the original functional form is not representable in Chemkin
+
+[Lip](3)+e-(1)=>Li(2)                               1.734e+14 -0.801    0.010    
+    TDEP/e-(1)/   ! BadnellRRArrhenius exported as a modified-Arrhenius fit of k(Te) over 10-1e+07 K; the original functional form is not representable in Chemkin
+
+END
+
+
+  read back:
+    Li(2) + e-(1) => [Lip](3) + e-(1) + e-(1)
+      kinetics : TwoTemperaturePlasma
+      A        : 1.49e+18 cm^3/(mol*s)   (value_si = 1.490000e+12)
+      k(11604.5 K, Te=11604.5 K) = 1.081914e+08
+    [Lip](3) + e-(1) => Li(2)
+      kinetics : TwoTemperaturePlasma
+      A        : 1.734e+14 cm^3/(mol*s)   (value_si = 1.734000e+08)
+      k(11604.5 K, Te=11604.5 K) = 9.618226e+04
+  as written the SECOND time:
+REACTIONS    KCAL/MOLE   MOLES
+
+! Reaction index: Chemkin #1; RMG #1
+! Library reaction: Unclassified
+Li(2)+e-(1)=>[Lip](3)+e-(1)+e-(1)                   1.490e+12 -0.267    162.150  
+    TDEP/e-(1)/   ! TwoTemperaturePlasma reduced along T=Te; Ea_electron=6.784e+05 J/mol is not representable in Chemkin and is dropped
+
+! Reaction index: Chemkin #2; RMG #2
+! Library reaction: Unclassified
+[Lip](3)+e-(1)=>Li(2)                               1.734e+08 -0.801    0.010    
+    TDEP/e-(1)/   ! TwoTemperaturePlasma reduced along T=Te; Ea_electron=41.84 J/mol is not representable in Chemkin and is dropped
+
+END
+
+
+  [..] A column, first write : [1.49e+18, 173400000000000.0]
+  [..] A column, second write: [1490000000000.0, 173400000.0]
+  [FAIL] the two files carry the same A column -- first [1.49e+18, 173400000000000.0] vs second [1490000000000.0, 173400000.0]
+  [..]     1.490000e+18 -> 1.490000e+12   ratio 1.000000e-06
+  [..]     1.734000e+14 -> 1.734000e+08   ratio 1.000000e-06
+  [PASS] both files declare the same units in their REACTIONS header -- 'REACTIONS    KCAL/MOLE   MOLES' vs 'REACTIONS    KCAL/MOLE   MOLES'
+
+------------------------------------------------------------------------------
+the rate a downstream consumer of the SECOND file would use
+------------------------------------------------------------------------------
+  [..] Li(2) + e-(1) => [Lip](3) + e-(1) + e-(1)
+  [..]     k after one round trip  = 1.081914e+08
+  [..]     k after two round trips = 1.081914e+02   ratio 1.000000e-06
+  [FAIL] the rate survives a second round trip -- ratio 1.000000e-06
+  [..] [Lip](3) + e-(1) => Li(2)
+  [..]     k after one round trip  = 9.618226e+04
+  [..]     k after two round trips = 9.618226e-02   ratio 1.000000e-06
+  [FAIL] the rate survives a second round trip -- ratio 1.000000e-06
+
+==============================================================================
+FAILURES (3):
+  - the two files carry the same A column
+  - the rate survives a second round trip
+  - the rate survives a second round trip

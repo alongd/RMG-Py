@@ -1,0 +1,5 @@
+INFO:root:Thermo file has default temperature range 300.0 to 1000.0 and 1000.0 to 5000.0
+WARNING:root:Discarding comments from Chemkin file because not sure which reaction they apply to
+INFO:root:Thermo file has default temperature range 300.0 to 1000.0 and 1000.0 to 5000.0
+/home/alon/Code/Cantera/build/python/cantera/ck2yaml.py:2288: UserWarning: To be removed after Cantera 3.1; renamed to 'convert'
+  warnings.warn(

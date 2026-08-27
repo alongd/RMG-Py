@@ -1,0 +1,13 @@
+### union database suite
+================= 4 failed, 173 passed, 284 warnings in 42.85s =================
+FAILED test/test_plasma_electron_attachment.py::test_trained_species_resolve_to_their_own_rate_through_their_own_node[O2]
+FAILED test/test_plasma_electron_attachment.py::test_trained_species_resolve_to_their_own_rate_through_their_own_node[OH]
+FAILED test/test_plasma_electron_attachment.py::test_trained_species_resolve_to_their_own_rate_through_their_own_node[O]
+FAILED test/test_plasma_electron_attachment.py::test_o2_rate_comes_from_the_training_set_not_a_library
+
+### baseline database suite
+========================= 4 failed, 41 passed in 3.15s =========================
+FAILED test/test_plasma_electron_attachment.py::test_trained_species_resolve_to_their_own_rate_through_their_own_node[O2]
+FAILED test/test_plasma_electron_attachment.py::test_trained_species_resolve_to_their_own_rate_through_their_own_node[OH]
+FAILED test/test_plasma_electron_attachment.py::test_trained_species_resolve_to_their_own_rate_through_their_own_node[O]
+FAILED test/test_plasma_electron_attachment.py::test_o2_rate_comes_from_the_training_set_not_a_library

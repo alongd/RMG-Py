@@ -1,0 +1,88 @@
+################ i110-make-guard  (db=/home/alon/Code/RMG-database-i123c-baseline/input) ################
+  HEAD: fa042c08d Document the shared-environment guard in CLAUDE.md
+  check-pydas exit: 0
+  make build exit: 0
+rmgpy      : /home/alon/Code/RMG-Py-i123c-step/rmgpy/__init__.py
+compiled   : /home/alon/Code/RMG-Py-i123c-step/rmgpy/molecule/molecule.cpython-39-x86_64-linux-gnu.so
+database   : /home/alon/Code/RMG-database-i123c-baseline/input
+  suite exit: 0
+  === 2635 passed, 50 skipped, 68 deselected, 54 warnings in 510.90s (0:08:30) ===
+
+################ i119-rr-registry  (db=/home/alon/Code/RMG-database-i123c-baseline/input) ################
+  HEAD: 92e2d4234 Let a kinetics library own radiative recombination
+  check-pydas exit: 0
+  make build exit: 0
+rmgpy      : /home/alon/Code/RMG-Py-i123c-step/rmgpy/__init__.py
+compiled   : /home/alon/Code/RMG-Py-i123c-step/rmgpy/molecule/molecule.cpython-39-x86_64-linux-gnu.so
+database   : /home/alon/Code/RMG-database-i123c-baseline/input
+  suite exit: 1
+  = 1 failed, 2684 passed, 50 skipped, 118 deselected, 54 warnings in 617.51s (0:10:17) =
+  FAILED test/rmgpy/electronPlacementTest.py::TestElectronPlacementResolver::test_declaration_registry_is_explicit_and_closed - AssertionError: assert {'Plasma_Electron_Attachment': (1, 0), 'Cation_R_Recombination': (1, 0), 'PlasmaRadiativeRecombination': (1, 0), 'PlasmaElectronImpactIonization': (1, 2)} == {'Plasma_Electron_Attachment': (1, 0), 'Cation_R_Recombination': (1, 0), 'PlasmaElectronImpactIonization': (1, 2)}
+
+################ i115-preflight-deck  (db=/home/alon/Code/RMG-database-i123c-baseline/input) ################
+  HEAD: ceb9fd5f1 Exclude the battery-SEI family from the plasma preflight decks
+  check-pydas exit: 0
+  make build exit: 0
+rmgpy      : /home/alon/Code/RMG-Py-i123c-step/rmgpy/__init__.py
+compiled   : /home/alon/Code/RMG-Py-i123c-step/rmgpy/molecule/molecule.cpython-39-x86_64-linux-gnu.so
+database   : /home/alon/Code/RMG-database-i123c-baseline/input
+  suite exit: 0
+  === 2630 passed, 50 skipped, 87 deselected, 54 warnings in 783.21s (0:13:03) ===
+
+################ i112-marcus-work-terms  (db=/home/alon/Code/RMG-database-i123c-baseline/input) ################
+  HEAD: ab3d84072 Let the Marcus work terms reach the barrier they belong in
+  check-pydas exit: 0
+  make build exit: 0
+rmgpy      : /home/alon/Code/RMG-Py-i123c-step/rmgpy/__init__.py
+compiled   : /home/alon/Code/RMG-Py-i123c-step/rmgpy/molecule/molecule.cpython-39-x86_64-linux-gnu.so
+database   : /home/alon/Code/RMG-database-i123c-baseline/input
+  suite exit: 0
+  === 2667 passed, 50 skipped, 83 deselected, 54 warnings in 795.48s (0:13:15) ===
+
+################ i102-quarantine  (db=/home/alon/Code/RMG-database-i123c-baseline/input) ################
+  HEAD: 99602b099 docs: evidence for the Cation_R_Recombination Marcus quarantine
+  check-pydas exit: 0
+  make build exit: 0
+rmgpy      : /home/alon/Code/RMG-Py-i123c-step/rmgpy/__init__.py
+compiled   : /home/alon/Code/RMG-Py-i123c-step/rmgpy/molecule/molecule.cpython-39-x86_64-linux-gnu.so
+database   : /home/alon/Code/RMG-database-i123c-baseline/input
+  suite exit: 0
+  === 2641 passed, 49 skipped, 90 deselected, 54 warnings in 717.06s (0:11:57) ===
+
+################ i126-chemkin-electrons  (db=/home/alon/Code/RMG-database-i123c-step1/input) ################
+  HEAD: 1b79bee5b Let the export path read the electron-placement declaration the reactor reads
+  check-pydas exit: 0
+  make build exit: 0
+rmgpy      : /home/alon/Code/RMG-Py-i123c-step/rmgpy/__init__.py
+compiled   : /home/alon/Code/RMG-Py-i123c-step/rmgpy/molecule/molecule.cpython-39-x86_64-linux-gnu.so
+database   : /home/alon/Code/RMG-database-i123c-step1/input
+  suite exit: 1
+  = 2 failed, 2835 passed, 49 skipped, 131 deselected, 54 warnings in 724.45s (0:12:04) =
+  FAILED test/rmgpy/electronPlacementTest.py::TestElectronPlacementResolver::test_declaration_registry_is_explicit_and_closed - AssertionError: assert {'Plasma_Electron_Attachment': (1, 0), 'Cation_R_Recombination': (1, 0), 'PlasmaRadiativeRecombination': (1, 0), 'PlasmaElectronImpactIonization': (1, 2)} == {'Plasma_Electron_Attachment': (1, 0), 'Cation_R_Recombination': (1, 0), 'PlasmaElectronImpactIonization': (1, 2)}
+  FAILED test/rmgpy/preflightDeckFamilyExclusionTest.py::PlasmaDeckFamilyExclusionTest::test_plasma_deck_does_not_declare_family[docs/i102-quarantine/input.py] - AssertionError: plasma deck docs/i102-quarantine/input.py declares Cation_R_Recombination, a lithium-ion-battery SEI family excluded from every plasma configuration. Declared families: ['Cation_R_Recombination', 'Cation_Li_Abstraction', 'Cation_Addition_MultipleBond', 'Cation_Addition_MultipleBond_Disprop', 'Cation_NO_Substitution', 'Cation_NO_Ring_Opening', 'Li_Abstraction', 'Li_Addition_MultipleBond']
+
+################ i134-duplicate-drops-sink  (db=/home/alon/Code/RMG-database-i123c-audit/input) ################
+  HEAD: 9b8cc38e7 Record the I-134 investigation, and the landmine the repair does not reach
+  check-pydas exit: 0
+  make build exit: 0
+rmgpy      : /home/alon/Code/RMG-Py-i123c-step/rmgpy/__init__.py
+compiled   : /home/alon/Code/RMG-Py-i123c-step/rmgpy/molecule/molecule.cpython-39-x86_64-linux-gnu.so
+database   : /home/alon/Code/RMG-database-i123c-audit/input
+  suite exit: 1
+  = 2 failed, 3002 passed, 50 skipped, 143 deselected, 54 warnings in 621.96s (0:10:21) =
+  FAILED test/rmgpy/electronPlacementTest.py::TestElectronPlacementResolver::test_declaration_registry_is_explicit_and_closed - AssertionError: assert {'Plasma_Electron_Attachment': (1, 0), 'Cation_R_Recombination': (1, 0), 'PlasmaRadiativeRecombination': (1, 0), 'PlasmaElectronImpactIonization': (1, 2)} == {'Plasma_Electron_Attachment': (1, 0), 'Cation_R_Recombination': (1, 0), 'PlasmaElectronImpactIonization': (1, 2)}
+  FAILED test/rmgpy/preflightDeckFamilyExclusionTest.py::PlasmaDeckFamilyExclusionTest::test_plasma_deck_does_not_declare_family[docs/i102-quarantine/input.py] - AssertionError: plasma deck docs/i102-quarantine/input.py declares Cation_R_Recombination, a lithium-ion-battery SEI family excluded from every plasma configuration. Declared families: ['Cation_R_Recombination', 'Cation_Li_Abstraction', 'Cation_Addition_MultipleBond', 'Cation_Addition_MultipleBond_Disprop', 'Cation_NO_Substitution', 'Cation_NO_Ring_Opening', 'Li_Abstraction', 'Li_Addition_MultipleBond']
+
+################ i135-tdep-roundtrip  (db=/home/alon/Code/RMG-database-i123c-audit/input) ################
+  HEAD: 948a783fd Record the I-135 evidence: before, after, red check, negative control
+  check-pydas exit: 0
+  make build exit: 0
+rmgpy      : /home/alon/Code/RMG-Py-i123c-step/rmgpy/__init__.py
+compiled   : /home/alon/Code/RMG-Py-i123c-step/rmgpy/molecule/molecule.cpython-39-x86_64-linux-gnu.so
+database   : /home/alon/Code/RMG-database-i123c-audit/input
+  suite exit: 1
+  = 2 failed, 2853 passed, 49 skipped, 131 deselected, 54 warnings in 451.36s (0:07:31) =
+  FAILED test/rmgpy/electronPlacementTest.py::TestElectronPlacementResolver::test_declaration_registry_is_explicit_and_closed - AssertionError: assert {'Plasma_Electron_Attachment': (1, 0), 'Cation_R_Recombination': (1, 0), 'PlasmaRadiativeRecombination': (1, 0), 'PlasmaElectronImpactIonization': (1, 2)} == {'Plasma_Electron_Attachment': (1, 0), 'Cation_R_Recombination': (1, 0), 'PlasmaElectronImpactIonization': (1, 2)}
+  FAILED test/rmgpy/preflightDeckFamilyExclusionTest.py::PlasmaDeckFamilyExclusionTest::test_plasma_deck_does_not_declare_family[docs/i102-quarantine/input.py] - AssertionError: plasma deck docs/i102-quarantine/input.py declares Cation_R_Recombination, a lithium-ion-battery SEI family excluded from every plasma configuration. Declared families: ['Cation_R_Recombination', 'Cation_Li_Abstraction', 'Cation_Addition_MultipleBond', 'Cation_Addition_MultipleBond_Disprop', 'Cation_NO_Substitution', 'Cation_NO_Ring_Opening', 'Li_Abstraction', 'Li_Addition_MultipleBond']
+
+################ SWEEP DONE ################
