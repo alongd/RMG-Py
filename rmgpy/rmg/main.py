@@ -65,6 +65,7 @@ from rmgpy.exceptions import (
     DatabaseError,
     ForbiddenStructureException,
     InputError,
+    MechanismWriterError,
 )
 from rmgpy.kinetics import ThirdBody, Troe
 from rmgpy.kinetics.diffusionLimited import diffusion_limiter
@@ -227,6 +228,11 @@ class RMG(util.Subject):
         self.bimolecular_threshold = None
         self.trimolecular_threshold = None
         self.termination = []
+
+        #: ``(step name, exception)`` for every end-of-run export step that
+        #: failed. Consulted at the end of :meth:`execute`; see
+        #: :meth:`report_export_failures`.
+        self.export_failures = []
 
         self.done = False
         self.verbosity = logging.INFO
@@ -1396,10 +1402,12 @@ class RMG(util.Subject):
                                               os.path.join(self.output_directory, "cantera2", "chem.yaml"),
                                               output=os.path.join(self.output_directory, "cantera2", "comparison_report.txt"))
 
-        except EnvironmentError:
+        except EnvironmentError as exc:
             logging.exception("Could not generate Cantera files due to EnvironmentError. Check read\\write privileges in output directory.")
-        except Exception:
+            self.export_failures.append(("Chemkin-to-Cantera translation (cantera_from_ck/)", exc))
+        except Exception as exc:
             logging.exception("Could not generate Cantera files for some reason.")
+            self.export_failures.append(("Chemkin-to-Cantera translation (cantera_from_ck/)", exc))
 
         self.check_model()
         # Write output file
@@ -1413,6 +1421,45 @@ class RMG(util.Subject):
             logging.info("The final model edge has %s species and %s reactions" % (edge_spec, edge_reac))
 
         self.finish()
+
+        self.report_export_failures()
+
+    def report_export_failures(self):
+        """
+        Fail the run if any end-of-run export step did not produce its files.
+
+        The Chemkin-to-Cantera translation above catches every exception and
+        logs it. Until this method existed, that was the end of it: ``execute``
+        returned normally and the process exited 0, so a run that left
+        ``cantera_from_ck/`` empty reported success to whatever launched it, and
+        the only trace was one traceback among thousands of log lines. That is
+        the failure shape ``MechanismWriterError``'s own docstring describes --
+        a hole in the exported output while the export reports success.
+
+        Raising here, after :meth:`finish`, keeps everything that did work: the
+        model, the Chemkin files, the direct Cantera writers' output and the run
+        statistics are all already on disk. What changes is only that the caller
+        is told.
+        """
+        if not self.export_failures:
+            return
+
+        logging.error("")
+        logging.error("=" * 79)
+        logging.error("EXPORT FAILED. %d of RMG's output steps did not produce their files:", len(self.export_failures))
+        for step, exc in self.export_failures:
+            logging.error("  %s", step)
+            logging.error("      %s: %s", type(exc).__name__, str(exc).strip().splitlines()[0] if str(exc).strip() else exc)
+        logging.error("")
+        logging.error("Model generation itself completed and every file written before this point is")
+        logging.error("valid; the output above names what is missing.")
+        logging.error("=" * 79)
+        logging.error("")
+
+        raise MechanismWriterError(
+            "RMG finished model generation, but {0} export step(s) failed and their output is "
+            "missing: {1}. See the traceback(s) logged above.".format(
+                len(self.export_failures), "; ".join(step for step, _ in self.export_failures)))
 
     def run_model_analysis(self, number=10):
         """

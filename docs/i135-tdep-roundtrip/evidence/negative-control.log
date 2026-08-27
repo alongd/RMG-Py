@@ -1,0 +1,12 @@
+negative control: examples/rmg/minimal/input.py on the fixed tree
+NEGCTL_AFTER_EXIT=0
+chem.inp                   308924af2ca69954eddcba1853080886
+chem_edge.inp              6fc758854b2a3975c0c3d5216f7e8523
+chem_annotated.inp         d5108f38ff4634aec225776ae82c47ff
+species_dictionary.txt     c321b3b67de7ad4ac3bddfb23beea391
+tran.dat                   d78237511ff04ffef29d039f66d97eb8
+
+baseline md5s recorded on 93b83ac9d in docs/i123b-reaudit.md section 9 -- all five identical
+cantera_from_ck/ produced:
+chem_annotated.yaml
+chem.yaml

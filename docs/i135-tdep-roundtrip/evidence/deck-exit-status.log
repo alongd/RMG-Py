@@ -1,0 +1,10 @@
+494:Error: EXPORT FAILED. 1 of RMG's output steps did not produce their files:
+495-Error:   Chemkin-to-Cantera translation (cantera_from_ck/)
+496-Error:       InputError: Error while reading reaction in chem.inp starting on line 66:
+497-Error: 
+498-Error: Model generation itself completed and every file written before this point is
+499-Error: valid; the output above names what is missing.
+500-Error: ===============================================================================
+501-Error: 
+RMG_EXIT_before=0 (recorded in docs/i123b-reaudit.md 7.3)
+RMG_EXIT_after=1

@@ -273,14 +273,14 @@ class TestChemkinRoundTrip:
     """Write the mechanism, read it back, and show the electron placement and
     the rate both survive. A green writer is not a correct file.
 
-    The trip stops one step short of ``load_chemkin_file``, and the reason is a
-    defect this ticket did not introduce and does not own: RMG's Chemkin READER
-    has no case for the ``TDEP/<electron>/`` auxiliary line RMG's own Chemkin
-    WRITER emits for every plasma rate law. ``test_tdep_line_is_what_blocks_the
-    _full_trip`` pins that separately, on a reaction whose exported equation is
-    byte-identical before and after this ticket's change -- which is how it is
-    established as pre-existing rather than caused here. Everything the format
-    itself supports is round-tripped below.
+    When this ticket landed the trip stopped one step short of
+    ``load_chemkin_file``, on a defect it did not introduce and did not own:
+    RMG's Chemkin READER had no case for the ``TDEP/<electron>/`` auxiliary line
+    RMG's own Chemkin WRITER emits for every plasma rate law. I-135 closed that,
+    so the trip below no longer has to stop; the tests here still measure the
+    format-only path -- what a Chemkin parser *without* plasma support sees --
+    because that is what this ticket's change is about, and
+    ``test/rmgpy/i135TdepRoundTripTest.py`` owns the electron-temperature half.
     """
 
     def _write(self, tmp_path, reaction, species_list):
@@ -307,8 +307,9 @@ class TestChemkinRoundTrip:
         assert 'TDEP/e(1)/' in text, text
 
         # Drop the TDEP auxiliary line -- what any Chemkin parser without plasma
-        # support sees, and what RMG's own reader would see if it had a case for
-        # it. Everything this ticket is about is on the two lines that remain.
+        # support sees. Everything this ticket is about is on the two lines that
+        # remain; RMG's own reader keeps the line and the electron temperature
+        # with it, which is I-135's, not this ticket's.
         with open(chem, 'w') as f:
             f.write('\n'.join(line for line in text.split('\n')
                               if not line.strip().startswith('TDEP/')))
@@ -337,20 +338,24 @@ class TestChemkinRoundTrip:
                                 rel_tol=0.02), (
                 Te, read.kinetics.get_rate_coefficient(Te), written.get_rate_coefficient(Te))
 
-    def test_tdep_line_is_what_blocks_the_full_trip(self, tmp_path):
-        """Pre-existing, and not this ticket's: the same refusal appears on
-        radiative recombination, whose declaration is one-sided and whose
-        exported equation is therefore unchanged by this ticket."""
+    def test_the_tdep_line_no_longer_blocks_the_full_trip(self, tmp_path):
+        """This used to be the reader's refusal, reproduced on radiative
+        recombination -- whose declaration is one-sided and whose exported
+        equation is therefore unchanged by this ticket, which is how the refusal
+        was established as pre-existing rather than caused here. I-135 taught
+        the reader the keyword; kept as the regression guard from this side, so
+        the two tickets' halves cannot drift apart."""
         from rmgpy.chemkin import load_chemkin_file
-        from rmgpy.exceptions import ChemkinError
 
         spc = _species()
         chem, dictionary = self._write(tmp_path, _recombination(spc),
                                        [spc['e'], spc['Li'], spc['Liplus']])
         assert 'Liplus(3)+e(1)=>Li(2)' in open(chem).read()
-        with pytest.raises(ChemkinError) as exc:
-            load_chemkin_file(chem, dictionary)
-        assert 'TDEP' in str(exc.value)
+        assert 'TDEP/e(1)/' in open(chem).read()
+
+        _read_species, read_reactions = load_chemkin_file(chem, dictionary)
+        assert len(read_reactions) == 1
+        assert read_reactions[0].kinetics.uses_electron_temperature is True
 
 
 def _flat_nasa():
