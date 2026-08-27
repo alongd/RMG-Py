@@ -94,6 +94,20 @@ KNOWN_PLASMA_DECKS = {
 #: 298.15 K, declared liquid/surface potentials). The negative control.
 SEI_DECK = "examples/rmg/SEI_pure_ACN/input.py"
 
+#: Demonstration decks, NOT runnable production decks: each exists to declare the quarantined
+#: family on purpose and drive the I-102 quarantine hard-fail (``QuarantinedKineticsError``) so the
+#: gate's behaviour can be shown and regression-tested (see
+#: ``docs/i102-quarantine/I-102-MARCUS-QUARANTINE-FINDINGS.md`` sec. 4). Because such a deck
+#: DECLARES the family deliberately, the plasma-deck exclusion sweep below must not assert over it:
+#: the sweep exists to catch a real plasma deck that reaches the family by accident, and this
+#: fixture reaches it by design -- globbing it meets exactly what it was written to contain. It is
+#: exempted by this explicit named path, not by a glob that happens to stop matching, and the
+#: exemption is itself policed by ``QuarantineDemonstrationDeckExemptionTest`` so it cannot silently
+#: grow or shelter a deck that has stopped demonstrating the hard-fail.
+QUARANTINE_DEMONSTRATION_DECKS = {
+    "docs/i102-quarantine/input.py",
+}
+
 
 def _top_level_calls(path):
     """
@@ -166,6 +180,13 @@ ALL_DECKS = _discover_decks()
 PLASMA_DECKS = [relpath for relpath, calls in ALL_DECKS if PLASMA_REACTOR_CALL in calls]
 NON_PLASMA_DECKS = [relpath for relpath, calls in ALL_DECKS if PLASMA_REACTOR_CALL not in calls]
 
+#: The plasma decks the exclusion sweep actually asserts over: every discovered plasma deck EXCEPT
+#: the named quarantine-demonstration fixtures, which declare the family on purpose (see
+#: ``QUARANTINE_DEMONSTRATION_DECKS``). The exemption is by explicit path -- not a narrowed glob --
+#: and is itself guarded by ``QuarantineDemonstrationDeckExemptionTest``.
+EXCLUSION_SWEEP_DECKS = [relpath for relpath in PLASMA_DECKS
+                        if relpath not in QUARANTINE_DEMONSTRATION_DECKS]
+
 
 def _read_deck(relpath, tmp_path):
     """Parse a deck with RMG's own input reader and return the populated RMG object."""
@@ -207,10 +228,60 @@ class PlasmaDeckDiscoveryTest:
         )
 
 
+class QuarantineDemonstrationDeckExemptionTest:
+    """Police the named exemption the plasma-deck exclusion sweep grants each I-102 quarantine
+    demonstration deck (``QUARANTINE_DEMONSTRATION_DECKS``). The exemption is legitimate only while
+    the exempted deck is BOTH (a) still discovered as a plasma deck and (b) still declaring the
+    quarantined family it exists to demonstrate the hard-fail on. If either stops being true the
+    exemption is stale or unjustified, and the guard goes red -- so the exemption cannot silently
+    grow, and cannot silently shelter a deck that has become an ordinary plasma deck.
+    """
+
+    def test_exemption_set_is_not_empty(self):
+        """A guard that swept an empty exemption set would pass vacuously; assert there is at least
+        one exempted demonstration deck to police."""
+        assert QUARANTINE_DEMONSTRATION_DECKS, (
+            "QUARANTINE_DEMONSTRATION_DECKS is empty -- either the demonstration deck was removed "
+            "(then delete this guard) or the constant was cleared by accident."
+        )
+
+    @pytest.mark.parametrize("relpath", sorted(QUARANTINE_DEMONSTRATION_DECKS))
+    def test_exempted_deck_is_a_discovered_plasma_deck(self, relpath):
+        """An exempted path no discovered plasma deck matches is a dead exemption -- a rename or
+        move would silently drop the deck out of BOTH the sweep and this guard. The exempted deck
+        must be a real, discovered plasma deck, so the exclusion below is a genuine exemption rather
+        than a path that no longer resolves."""
+        assert relpath in PLASMA_DECKS, (
+            "exempted quarantine-demonstration deck {0} is not a discovered plasma deck. If it was "
+            "renamed or moved, update QUARANTINE_DEMONSTRATION_DECKS; do not leave a dead exemption "
+            "that shelters nothing.".format(relpath)
+        )
+
+    @pytest.mark.parametrize("relpath", sorted(QUARANTINE_DEMONSTRATION_DECKS))
+    def test_exempted_deck_still_declares_the_family(self, relpath, tmp_path):
+        """The exemption is justified ONLY because the deck declares the quarantined family on
+        purpose, to demonstrate the hard-fail. If it stops declaring the family it no longer needs
+        the exemption and belongs back under the ordinary exclusion sweep -- so this goes red to
+        force that decision, rather than letting a now-ordinary deck sit silently exempt. Same
+        assertion style (*parsed-configuration*) as the exclusion sweep it complements."""
+        rmg = _read_deck(relpath, tmp_path)
+        families = rmg.kinetics_families
+        assert isinstance(families, list), (
+            "{0} does not resolve to an explicit family list; its exemption cannot be justified "
+            "without one".format(relpath)
+        )
+        assert QUARANTINED_FAMILY in families, (
+            "exempted deck {0} no longer declares {1}. Its exemption from the plasma-deck exclusion "
+            "sweep exists only to let it demonstrate the quarantine hard-fail; if it has stopped "
+            "declaring the family, remove it from QUARANTINE_DEMONSTRATION_DECKS so the ordinary "
+            "sweep covers it again.".format(relpath, QUARANTINED_FAMILY)
+        )
+
+
 class PlasmaDeckFamilyExclusionTest:
     """No plasma deck declares the battery-SEI family."""
 
-    @pytest.mark.parametrize("relpath", PLASMA_DECKS)
+    @pytest.mark.parametrize("relpath", EXCLUSION_SWEEP_DECKS)
     def test_plasma_deck_does_not_declare_family(self, relpath, tmp_path):
         """
         Assertion style: *parsed-configuration*. RMG's own input reader executes the deck and the
@@ -228,7 +299,7 @@ class PlasmaDeckFamilyExclusionTest:
         )
 
     @pytest.mark.database
-    @pytest.mark.parametrize("relpath", PLASMA_DECKS)
+    @pytest.mark.parametrize("relpath", EXCLUSION_SWEEP_DECKS)
     def test_plasma_deck_generates_no_reaction_from_family(self, relpath, tmp_path):
         """
         Assertion style: *behavioural*. The deck's own declared families and its own declared
