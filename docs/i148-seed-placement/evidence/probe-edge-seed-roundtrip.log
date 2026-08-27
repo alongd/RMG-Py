@@ -1,0 +1,29 @@
+==============================================================================
+rmgpy              = /home/alon/Code/RMG-Py-i148-seed-placement/rmgpy/__init__.py
+database.directory = /home/alon/Code/RMG-database-i148-seed-placement/input
+(the database itself is not loaded; the reactions are built in place)
+==============================================================================
+
+E1 -- what the written seed_edge carries
+  [PASS] seed_edge/reactions.py was written
+  [PASS] the edge seed loads
+  [PASS] the edge seed carries both charge channels -- 2 reaction(s)
+  [PASS] the ORIGINAL rate-law classes survived (asserted on the class) -- ['BadnellRRArrhenius', 'VoronovEIArrhenius']
+  [PASS] the scalar electron counts survived -- [-1, 1]
+
+E2 -- owners and placements off the reloaded edge objects
+  Li => Lip      family='seed_edge' library='PlasmaElectronImpactIonization' owner='PlasmaElectronImpactIonization' placement=(1, 2)
+  [PASS] PlasmaElectronImpactIonization: family is the container label -- 'seed_edge'
+  [PASS] PlasmaElectronImpactIonization: library is the original owner -- 'PlasmaElectronImpactIonization'
+  [PASS] PlasmaElectronImpactIonization: placement is the canonical declaration -- (1, 2) (canonical (1, 2))
+  Lip => Li      family='seed_edge' library='PlasmaRadiativeRecombination' owner='PlasmaRadiativeRecombination' placement=(1, 0)
+  [PASS] PlasmaRadiativeRecombination: family is the container label -- 'seed_edge'
+  [PASS] PlasmaRadiativeRecombination: library is the original owner -- 'PlasmaRadiativeRecombination'
+  [PASS] PlasmaRadiativeRecombination: placement is the canonical declaration -- (1, 0) (canonical (1, 0))
+
+E3 -- the seed-write warning stayed silent (provenance sufficed)
+  [PASS] no placement warning fired for the edge entries -- 0 warning(s)
+
+==============================================================================
+EDGE SEED ROUND TRIP: written by the real writer, read by the real reader, placement preserved
+==============================================================================

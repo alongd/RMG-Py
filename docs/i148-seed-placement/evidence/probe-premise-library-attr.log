@@ -1,0 +1,5 @@
+rmgpy = /home/alon/Code/RMG-Py-i148-seed-placement/rmgpy/__init__.py
+database.directory = /home/alon/Code/RMG-database-i148-seed-placement/input
+auto_generated = True
+Li => [Lip]    type=LibraryReaction family='seed' library='PlasmaElectronImpactIonization'
+[Lip] => Li    type=LibraryReaction family='seed' library='PlasmaRadiativeRecombination'

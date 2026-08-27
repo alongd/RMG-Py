@@ -1,0 +1,19 @@
+INFO:root:Making seed mechanism...
+INFO:root:Making seed mechanism...
+WARNING:root:SEED LOSES ELECTRON PLACEMENT: reaction Li => Lip in the core seed belongs to 'PlasmaElectronImpactIonization', whose electron-placement declaration is keyed on that label, but the seed entry being written carries no provenance the seed reader parses (an "Originally from reaction library: PlasmaElectronImpactIonization" line or a "rate rule"/"family: PlasmaElectronImpactIonization" comment). Reloaded from this seed, the reaction will fall back to the net-derived placement rule: a restart may duplicate the channel, be refused at its first mechanism save, or evaluate the rate at the wrong reaction order.
+==============================================================================
+rmgpy              = /home/alon/Code/RMG-Py-i148-seed-placement/rmgpy/__init__.py
+database.directory = /home/alon/Code/RMG-database-i148-seed-placement/input
+(no database is loaded by this probe)
+==============================================================================
+
+P1 -- provenance present (Reaction.library = 'PlasmaElectronImpactIonization'): expect silence
+  seed written: True;  0 placement warning(s)
+
+P2 -- provenance stripped (Reaction.library = None, owner only in Reaction.family): expect the warning
+  seed written: True;  1 placement warning(s)
+  WARNING: SEED LOSES ELECTRON PLACEMENT: reaction Li => Lip in the core seed belongs to 'PlasmaElectronImpactIonization', whose electron-placement declaration is keyed on that label, but the seed entry being written carries no provenance the seed reader parses (an "Originally from reaction library: PlasmaElectronImpactIonization" line or a "rate rule"/"family: PlasmaElectronImpactIonization" comment). Reloaded from this seed, the reaction will fall back to the net-derived placement rule: a restart may duplicate the channel, be refused at its first mechanism save, or evaluate the rate at the wrong reaction order.
+
+==============================================================================
+SEED-WRITE WARNING PROBE: P1 silent, P2 fired, both seeds written
+==============================================================================

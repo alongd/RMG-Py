@@ -1,0 +1,14 @@
+== restart-after-seedonly: tail of stdout ==
+479:Error: EXPORT FAILED. 1 of RMG's output steps did not produce their files:
+480:Error:   Chemkin-to-Cantera translation (cantera_from_ck/)
+481:Error:       InputError: Error while reading reaction in chem.inp starting on line 66:
+482:Error: 
+483:Error: Model generation itself completed and every file written before this point is
+484:Error: valid; the output above names what is missing.
+485:Error: ===============================================================================
+486:Error: 
+== tail of stderr ==
+    self.report_export_failures()
+  File "/home/alon/Code/RMG-Py-i148-seed-placement/rmgpy/rmg/main.py", line 1460, in report_export_failures
+    raise MechanismWriterError(
+rmgpy.exceptions.MechanismWriterError: RMG finished model generation, but 1 export step(s) failed and their output is missing: Chemkin-to-Cantera translation (cantera_from_ck/). See the traceback(s) logged above.
