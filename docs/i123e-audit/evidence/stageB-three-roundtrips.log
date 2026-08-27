@@ -1,0 +1,93 @@
+INFO:root:Loading kinetics library PlasmaElectronImpactIonization from /home/alon/Code/RMG-database-i123e-audit/input/kinetics/libraries/PlasmaElectronImpactIonization/reactions.py...
+INFO:root:Loading kinetics library PlasmaRadiativeRecombination from /home/alon/Code/RMG-database-i123e-audit/input/kinetics/libraries/PlasmaRadiativeRecombination/reactions.py...
+INFO:root:Thermo file has default temperature range 300.0 to 1000.0 and 1000.0 to 5000.0
+WARNING:root:Discarding comments from Chemkin file because not sure which reaction they apply to
+INFO:root:Chemkin file contains 2 reactions.
+INFO:root:Thermo file has default temperature range 300.0 to 1000.0 and 1000.0 to 5000.0
+WARNING:root:Discarding comments from Chemkin file because not sure which reaction they apply to
+INFO:root:Chemkin file contains 2 reactions.
+INFO:root:Thermo file has default temperature range 300.0 to 1000.0 and 1000.0 to 5000.0
+WARNING:root:Discarding comments from Chemkin file because not sure which reaction they apply to
+INFO:root:Chemkin file contains 2 reactions.
+==============================================================================
+database.directory = /home/alon/Code/RMG-database-i123e-audit/input
+deck output        = /home/alon/Code/RMG-Py-i123e-audit/docs/i123e-audit/evidence/deck-run
+roundtrip workdir  = /home/alon/Code/RMG-Py-i123e-audit/docs/i123e-audit/evidence/roundtrips
+T = 1000.0 K   Te = 11604.5 K
+==============================================================================
+
+CANONICAL LIBRARY VALUES (pre-serialisation)
+  ionisation     [Li] => [Lip]                        class=VoronovEIArrhenius     get_rate_coefficient_electron_temp(Te)
+                 k(T=1000, Te=11604.5) = 1.2929794709e+08
+  recombination  [Lip] => [Li]                        class=BadnellRRArrhenius     get_rate_coefficient_electron_temp(Te)
+                 k(T=1000, Te=11604.5) = 1.3014284591e+05
+
+------------------------------------------------------------------------------
+TRIP 1: load /home/alon/Code/RMG-Py-i123e-audit/docs/i123e-audit/evidence/deck-run/chemkin/chem.inp
+  loaded 7 species, 2 reactions
+  [PASS] trip 1: exactly 2 reactions read back -- 2
+  [PASS] trip 1: rate-law class asserted explicitly -- TwoTemperaturePlasma
+  ionisation     Li(2) + e-(1) => [Lip](3) + e-(1) + e-(1) class=TwoTemperaturePlasma   get_rate_coefficient_two_temp(T, Te)
+                 k = 1.0819136429e+08   electrons=0
+  [PASS] trip 1: rate-law class asserted explicitly -- TwoTemperaturePlasma
+  recombination  [Lip](3) + e-(1) => Li(2)            class=TwoTemperaturePlasma   get_rate_coefficient_two_temp(T, Te)
+                 k = 9.6182263305e+04   electrons=0
+  [PASS] trip 1: both channels present -- ['ionisation', 'recombination']
+  wrote /home/alon/Code/RMG-Py-i123e-audit/docs/i123e-audit/evidence/roundtrips/trip1/chem.inp
+
+------------------------------------------------------------------------------
+TRIP 2: load /home/alon/Code/RMG-Py-i123e-audit/docs/i123e-audit/evidence/roundtrips/trip1/chem.inp
+  loaded 7 species, 2 reactions
+  [PASS] trip 2: exactly 2 reactions read back -- 2
+  [PASS] trip 2: rate-law class asserted explicitly -- TwoTemperaturePlasma
+  ionisation     Li(2) + e-(1) => [Lip](3) + e-(1) + e-(1) class=TwoTemperaturePlasma   get_rate_coefficient_two_temp(T, Te)
+                 k = 1.0819136429e+08   electrons=0
+  [PASS] trip 2: rate-law class asserted explicitly -- TwoTemperaturePlasma
+  recombination  [Lip](3) + e-(1) => Li(2)            class=TwoTemperaturePlasma   get_rate_coefficient_two_temp(T, Te)
+                 k = 9.6182263305e+04   electrons=0
+  [PASS] trip 2: both channels present -- ['ionisation', 'recombination']
+  wrote /home/alon/Code/RMG-Py-i123e-audit/docs/i123e-audit/evidence/roundtrips/trip2/chem.inp
+
+------------------------------------------------------------------------------
+TRIP 3: load /home/alon/Code/RMG-Py-i123e-audit/docs/i123e-audit/evidence/roundtrips/trip2/chem.inp
+  loaded 7 species, 2 reactions
+  [PASS] trip 3: exactly 2 reactions read back -- 2
+  [PASS] trip 3: rate-law class asserted explicitly -- TwoTemperaturePlasma
+  ionisation     Li(2) + e-(1) => [Lip](3) + e-(1) + e-(1) class=TwoTemperaturePlasma   get_rate_coefficient_two_temp(T, Te)
+                 k = 1.0819136429e+08   electrons=0
+  [PASS] trip 3: rate-law class asserted explicitly -- TwoTemperaturePlasma
+  recombination  [Lip](3) + e-(1) => Li(2)            class=TwoTemperaturePlasma   get_rate_coefficient_two_temp(T, Te)
+                 k = 9.6182263305e+04   electrons=0
+  [PASS] trip 3: both channels present -- ['ionisation', 'recombination']
+  wrote /home/alon/Code/RMG-Py-i123e-audit/docs/i123e-audit/evidence/roundtrips/trip3/chem.inp
+
+==============================================================================
+TABLE: trip | channel | class | k(T=1000, Te=11604.5)
+  1    | ionisation     | TwoTemperaturePlasma   | 1.0819136429e+08
+  1    | recombination  | TwoTemperaturePlasma   | 9.6182263305e+04
+  2    | ionisation     | TwoTemperaturePlasma   | 1.0819136429e+08
+  2    | recombination  | TwoTemperaturePlasma   | 9.6182263305e+04
+  3    | ionisation     | TwoTemperaturePlasma   | 1.0819136429e+08
+  3    | recombination  | TwoTemperaturePlasma   | 9.6182263305e+04
+
+DRIFT ANALYSIS (vs canonical library value)
+  ionisation: canonical = 1.2929794709e+08
+    trip 1: k = 1.0819136429e+08   k/canonical = 0.8367601089
+    trip 2: k = 1.0819136429e+08   k/canonical = 0.8367601089
+    trip 3: k = 1.0819136429e+08   k/canonical = 0.8367601089
+  [PASS] ionisation: no drift across trips (trip1 == trip2 == trip3) -- 1.0819136429e+08 / 1.0819136429e+08 / 1.0819136429e+08
+    one-time export-fit deviation from canonical: 16.324% (documented lossy fit, incurred at export, not per trip)
+  [PASS] ionisation: fit loss incurred once, not compounded (trip3 == trip1)
+  [PASS] ionisation: NOT the historical 1e6x-per-trip collapse
+  recombination: canonical = 1.3014284591e+05
+    trip 1: k = 9.6182263305e+04   k/canonical = 0.7390514833
+    trip 2: k = 9.6182263305e+04   k/canonical = 0.7390514833
+    trip 3: k = 9.6182263305e+04   k/canonical = 0.7390514833
+  [PASS] recombination: no drift across trips (trip1 == trip2 == trip3) -- 9.6182263305e+04 / 9.6182263305e+04 / 9.6182263305e+04
+    one-time export-fit deviation from canonical: 26.095% (documented lossy fit, incurred at export, not per trip)
+  [PASS] recombination: fit loss incurred once, not compounded (trip3 == trip1)
+  [PASS] recombination: NOT the historical 1e6x-per-trip collapse
+
+==============================================================================
+STAGE B: three round trips stable; classes asserted; no drift
+==============================================================================

@@ -1,0 +1,88 @@
+ELEMENTS
+	Ar
+	E
+	He
+	Li
+	N
+	Ne
+END
+
+SPECIES
+    He                  ! He
+    Ar                  ! Ar
+    Ne                  ! Ne
+    N2                  ! N2
+    e-(1)               ! e-(1)
+    Li(2)               ! Li(2)
+    [Lip](3)            ! [Lip](3)
+END
+
+
+
+THERM ALL
+   300.000  1000.000  5000.000
+
+! Thermo library: primaryThermoLibrary
+He                      He  1               G   200.000  6000.000 1000.00      1
+ 2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2
+-7.45375000E+02 9.28724000E-01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3
+ 0.00000000E+00 0.00000000E+00-7.45375000E+02 9.28724000E-01                   4
+
+! Thermo library: primaryThermoLibrary
+Ar                      Ar  1               G   200.000  6000.000 1000.00      1
+ 2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2
+-7.45375000E+02 4.37967000E+00 2.50000000E+00 0.00000000E+00 0.00000000E+00    3
+ 0.00000000E+00 0.00000000E+00-7.45375000E+02 4.37967000E+00                   4
+
+! Thermo library: primaryThermoLibrary
+Ne                      Ne  1               G   200.000  6000.000 1000.00      1
+ 2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2
+-7.45375000E+02 3.35532000E+00 2.50000000E+00 0.00000000E+00 0.00000000E+00    3
+ 0.00000000E+00 0.00000000E+00-7.45375000E+02 3.35532000E+00                   4
+
+! Thermo library: primaryThermoLibrary
+N2                      N   2               G   200.000  6000.000 1000.00      1
+ 2.95258000E+00 1.39690000E-03-4.92632000E-07 7.86010000E-11-4.60755000E-15    2
+-9.23949000E+02 5.87189000E+00 3.53101000E+00-1.23661000E-04-5.02999000E-07    3
+ 2.43531000E-09-1.40881000E-12-1.04698000E+03 2.96747000E+00                   4
+
+! Thermo library: electrocatThermo
+e-(1)                   E   1               G   298.000  3000.000 1000.00      1
+ 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2
+ 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    3
+ 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00                   4
+
+! Thermo library: LithiumPrimaryThermo
+Li(2)                   Li  1               G    10.000  3000.000  794.00      1
+ 2.50000000E+00 1.52667000E-14-1.58445000E-17 6.63089000E-21-9.62112000E-25    2
+ 1.82062000E+04 2.43319000E+00 2.50000000E+00 1.99051000E-15-1.19090000E-17    3
+ 2.10806000E-20-1.11018000E-23 1.82062000E+04 2.43319000E+00                   4
+
+! Thermo library: LithiumPrimaryThermo
+[Lip](3)                E  -1Li  1          G    10.000  3000.000  794.00      1
+ 2.50000000E+00 1.52667000E-14-1.58445000E-17 6.63089000E-21-9.62112000E-25    2
+ 6.33520000E+04 1.74004000E+00 2.50000000E+00 1.99051000E-15-1.19090000E-17    3
+ 2.10806000E-20-1.11018000E-23 6.33520000E+04 1.74004000E+00                   4
+
+END
+
+
+
+REACTIONS    KCAL/MOLE   MOLES
+
+! Reaction index: Chemkin #1; RMG #1
+! Library reaction: PlasmaElectronImpactIonization
+! Flux pairs: Li(2), [Lip](3); 
+! Voronov (1997) e-impact ionization fit, Z=3, N=3
+Li(2)+e-(1)=>[Lip](3)+e-(1)+e-(1)                   1.490e+18 -0.267    162.150  
+    TDEP/e-(1)/   ! VoronovEIArrhenius exported as a modified-Arrhenius fit of k(Te) over 1.16e+04-2.321e+08 K; the original functional form is not representable in Chemkin
+
+! Reaction index: Chemkin #2; RMG #2
+! Library reaction: PlasmaRadiativeRecombination
+! Flux pairs: [Lip](3), Li(2); 
+! Badnell (2006) RR fit, Z=3, N=2
+[Lip](3)+e-(1)=>Li(2)                               1.734e+14 -0.801    0.010    
+    TDEP/e-(1)/   ! BadnellRRArrhenius exported as a modified-Arrhenius fit of k(Te) over 10-1e+07 K; the original functional form is not representable in Chemkin
+
+END
+
