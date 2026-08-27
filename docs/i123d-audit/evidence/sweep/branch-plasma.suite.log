@@ -1,0 +1,60 @@
+test/rmgpy/yaml_cantera2Test.py::TestCanteraWriter2::test_reaction_to_dict_pdep_arrhenius PASSED
+test/rmgpy/yaml_cantera2Test.py::TestCanteraWriter2::test_reaction_to_dict_chebyshev PASSED
+test/rmgpy/yaml_cantera2Test.py::TestCanteraWriter2::test_reaction_to_dict_lindemann PASSED
+test/rmgpy/yaml_cantera2Test.py::TestCanteraWriter2::test_reaction_to_dict_negative_a_falloff PASSED
+test/rmgpy/yaml_cantera2Test.py::TestCanteraWriter2::test_cantera_writer_class_listener Saving current model core to Cantera file: /home/alon/Code/RMG-Py-i123d-step/test/rmgpy/tmp/cantera2/chem_annotated0002.yaml
+PASSED
+test/rmgpy/yaml_cantera2Test.py::TestCanteraWriter2::test_species_to_dict_surface_no_transport PASSED
+test/rmgpy/yaml_cantera2Test.py::TestCanteraWriter2::test_species_to_dict_surface_thermo PASSED
+test/rmgpy/yaml_cantera2Test.py::TestCanteraWriter2::test_reaction_to_dict_surface_arrhenius PASSED
+test/rmgpy/yaml_cantera2Test.py::TestCanteraWriter2::test_reaction_to_dict_sticking_coefficient PASSED
+test/rmgpy/yaml_cantera2Test.py::TestCanteraWriter2::test_reaction_to_dict_negative_a_sticking_coefficient PASSED
+test/rmgpy/yaml_cantera2Test.py::TestCanteraWriter2::test_reaction_to_dict_coverage_dependence PASSED
+test/rmgpy/yaml_cantera2Test.py::TestCanteraWriter2::test_reaction_to_dict_thirdbody_unit PASSED
+test/rmgpy/yaml_cantera2Test.py::TestCanteraWriter2::test_get_elements_block_isotopes_and_surface_site PASSED
+test/rmgpy/yaml_cantera2Test.py::TestCanteraWriter2::test_generate_cantera_data_elements_block PASSED
+test/rmgpy/yaml_cantera2Test.py::TestCanteraWriter2::test_generate_cantera_data_gas_phase_state PASSED
+test/rmgpy/yaml_cantera2Test.py::TestCanteraWriter2::test_generate_cantera_data_gas_reactions_key PASSED
+test/rmgpy/yaml_cantera2Test.py::TestCanteraWriter2::test_generate_cantera_data_surface_phase_state_and_reactions_key PASSED
+test/rmgpy/yaml_cantera2Test.py::TestCanteraWriter2::test_species_to_dict_surface_sites_count PASSED
+test/rmgpy/yaml_cantera2Test.py::TestCanteraWriter2::test_species_to_dict_gas_no_sites_field PASSED
+test/rmgpy/yaml_cantera2Test.py::TestCanteraWriter2::test_species_to_dict_transport_note_always_present PASSED
+test/rmgpy/yaml_cantera2Test.py::TestRecentlyGeneratedCanteraYaml2GasOnly::testGeneratorsAsExpected <- test/rmgpy/cantera_yaml_comparer.py SKIPPED
+test/rmgpy/yaml_cantera2Test.py::TestRecentlyGeneratedCanteraYaml2GasOnly::testKeysMatch <- test/rmgpy/cantera_yaml_comparer.py SKIPPED
+test/rmgpy/yaml_cantera2Test.py::TestRecentlyGeneratedCanteraYaml2GasOnly::testPhasesMatch <- test/rmgpy/cantera_yaml_comparer.py SKIPPED
+test/rmgpy/yaml_cantera2Test.py::TestRecentlyGeneratedCanteraYaml2GasOnly::testElementsMatch <- test/rmgpy/cantera_yaml_comparer.py SKIPPED
+test/rmgpy/yaml_cantera2Test.py::TestRecentlyGeneratedCanteraYaml2GasOnly::testSpeciesMatch <- test/rmgpy/cantera_yaml_comparer.py SKIPPED
+
+=============================== warnings summary ===============================
+test/arkane/encorr/bacTest.py::TestBAC::test_save_correlation_mat
+  /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/matplotlib/backends/backend_pdf.py:1758: DeprecationWarning: 'mode' parameter is deprecated and will be removed in Pillow 13 (2026-10-15)
+    img = Image.fromarray(rgb8, mode='P')
+
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnTheRate::test_exported_rate_does_not_depend_on_the_reference_temperature[StickingCoefficient]
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnTheRate::test_exported_rate_does_not_depend_on_the_reference_temperature[StickingCoefficient]
+  /home/alon/Code/RMG-Py-i123d-step/test/rmgpy/plasmaExportTest.py:1146: UserWarning: StickingRate::validate: 
+  Sticking coefficient is greater than 1 for reaction 'H2(3) + X(4) => H2X(6)'
+  at T = 2000.0
+  at T = 5000.0
+  at T = 10000.0
+  
+    return ct.Interface(path, phase_names[-1])
+
+test/rmgpy/statmech/ndTorsionsTest.py: 21 warnings
+  /home/alon/Code/RMG-Py-i123d-step/rmgpy/statmech/ndTorsions.py:618: DeprecationWarning: You are passing x=[0.         0.21666156 0.43332312 0.64998469 0.86664625 1.08330781
+   1.29996937 1.51663094 1.7332925  1.94995406 2.16661562 2.38327719
+   2.59993875 2.81660031 3.03326187 3.24992343 3.466585   3.68324656
+   3.89990812 4.11656968 4.33323125 4.54989281 4.76655437 4.98321593
+   5.1998775  5.41653906 5.63320062 5.84986218 6.06652374 6.28318531] as a positional argument. Please change your invocation to use keyword arguments. From SciPy 1.14, passing these as positional arguments will result in an error.
+    Imat = simpson(Imat, rphis)
+
+test/rmgpy/statmech/ndTorsionsTest.py: 30 warnings
+  /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numdifftools/finite_difference.py:282: DeprecationWarning: Conversion of an array with ndim > 0 to a scalar is deprecated, and will error in future. Ensure you extract a single element from your array before performing this operation. (Deprecated NumPy 1.25.)
+    hess[i, i] = (f(x + 2 * e_i) - 2 * f_x + f(x - 2 * e_i)) / (4. * hess[i, i])
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================================ tests coverage ================================
+_______________ coverage: platform linux, python 3.9.23-final-0 ________________
+
+Coverage HTML written to dir htmlcov
+=== 2623 passed, 50 skipped, 83 deselected, 54 warnings in 247.44s (0:04:07) ===

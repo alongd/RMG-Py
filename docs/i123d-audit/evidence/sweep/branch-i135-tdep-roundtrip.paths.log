@@ -1,0 +1,3 @@
+rmgpy      : /home/alon/Code/RMG-Py-i123d-step/rmgpy/__init__.py
+compiled   : /home/alon/Code/RMG-Py-i123d-step/rmgpy/molecule/molecule.cpython-39-x86_64-linux-gnu.so
+database   : /home/alon/Code/RMG-database-i123d-audit/input

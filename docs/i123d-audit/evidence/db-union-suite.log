@@ -1,0 +1,701 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0
+rootdir: /home/alon/Code/RMG-database-i123d-audit
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collected 177 items
+
+test/test_argon_cation_thermo.py ....................................... [ 22%]
+.........                                                                [ 27%]
+test/test_cation_r_recombination_sei.py ..................               [ 37%]
+test/test_plasma_electron_attachment.py .........FFF.F.................. [ 55%]
+.............                                                            [ 62%]
+test/test_plasma_electron_impact_ionization.py ......................... [ 76%]
+.....                                                                    [ 79%]
+test/test_plasma_radiative_recombination.py ............................ [ 95%]
+........                                                                 [100%]
+
+=================================== FAILURES ===================================
+__ test_trained_species_resolve_to_their_own_rate_through_their_own_node[O2] ___
+
+kinetics_db = <rmgpy.data.kinetics.database.KineticsDatabase object at 0x77cfd6b9f820>
+family = <ReactionFamily "Plasma_Electron_Attachment">, name = 'O2'
+
+    @pytest.mark.parametrize('name', EXPECTED_IN)
+    def test_trained_species_resolve_to_their_own_rate_through_their_own_node(kinetics_db, family, name):
+        """The three trained reactions keep their own rates, through their own nodes.
+    
+        Asserting the rate without the template would have passed against every
+        defect this test file was rewritten for: the wrong node hands out a
+        plausible-looking number.
+        """
+        expected_node, expected_index, expected_a_cm3 = EXPECTED_TRAINED_KINETICS[name]
+    
+        reactions = _generate(kinetics_db, name)
+        assert len(reactions) == 1, '{0} generated {1} reactions'.format(name, len(reactions))
+        reaction = reactions[0]
+        assert reaction.template == [expected_node]
+    
+        kinetics, source, entry, is_forward = family.get_kinetics(
+            reaction, template_labels=reaction.template, degeneracy=reaction.degeneracy,
+            estimator='rate rules', return_all_kinetics=False)
+    
+>       assert source == 'rate rules'
+E       assert <KineticsDepository "Plasma_Electron_Attachment/training"> == 'rate rules'
+
+test/test_plasma_electron_attachment.py:557: AssertionError
+__ test_trained_species_resolve_to_their_own_rate_through_their_own_node[OH] ___
+
+kinetics_db = <rmgpy.data.kinetics.database.KineticsDatabase object at 0x77cfd6b9f820>
+family = <ReactionFamily "Plasma_Electron_Attachment">, name = 'OH'
+
+    @pytest.mark.parametrize('name', EXPECTED_IN)
+    def test_trained_species_resolve_to_their_own_rate_through_their_own_node(kinetics_db, family, name):
+        """The three trained reactions keep their own rates, through their own nodes.
+    
+        Asserting the rate without the template would have passed against every
+        defect this test file was rewritten for: the wrong node hands out a
+        plausible-looking number.
+        """
+        expected_node, expected_index, expected_a_cm3 = EXPECTED_TRAINED_KINETICS[name]
+    
+        reactions = _generate(kinetics_db, name)
+        assert len(reactions) == 1, '{0} generated {1} reactions'.format(name, len(reactions))
+        reaction = reactions[0]
+        assert reaction.template == [expected_node]
+    
+        kinetics, source, entry, is_forward = family.get_kinetics(
+            reaction, template_labels=reaction.template, degeneracy=reaction.degeneracy,
+            estimator='rate rules', return_all_kinetics=False)
+    
+>       assert source == 'rate rules'
+E       assert <KineticsDepository "Plasma_Electron_Attachment/training"> == 'rate rules'
+
+test/test_plasma_electron_attachment.py:557: AssertionError
+___ test_trained_species_resolve_to_their_own_rate_through_their_own_node[O] ___
+
+kinetics_db = <rmgpy.data.kinetics.database.KineticsDatabase object at 0x77cfd6b9f820>
+family = <ReactionFamily "Plasma_Electron_Attachment">, name = 'O'
+
+    @pytest.mark.parametrize('name', EXPECTED_IN)
+    def test_trained_species_resolve_to_their_own_rate_through_their_own_node(kinetics_db, family, name):
+        """The three trained reactions keep their own rates, through their own nodes.
+    
+        Asserting the rate without the template would have passed against every
+        defect this test file was rewritten for: the wrong node hands out a
+        plausible-looking number.
+        """
+        expected_node, expected_index, expected_a_cm3 = EXPECTED_TRAINED_KINETICS[name]
+    
+        reactions = _generate(kinetics_db, name)
+        assert len(reactions) == 1, '{0} generated {1} reactions'.format(name, len(reactions))
+        reaction = reactions[0]
+        assert reaction.template == [expected_node]
+    
+        kinetics, source, entry, is_forward = family.get_kinetics(
+            reaction, template_labels=reaction.template, degeneracy=reaction.degeneracy,
+            estimator='rate rules', return_all_kinetics=False)
+    
+>       assert source == 'rate rules'
+E       assert <KineticsDepository "Plasma_Electron_Attachment/training"> == 'rate rules'
+
+test/test_plasma_electron_attachment.py:557: AssertionError
+____________ test_o2_rate_comes_from_the_training_set_not_a_library ____________
+
+kinetics_db = <rmgpy.data.kinetics.database.KineticsDatabase object at 0x77cfd6b9f820>
+family = <ReactionFamily "Plasma_Electron_Attachment">
+
+    def test_o2_rate_comes_from_the_training_set_not_a_library(kinetics_db, family):
+        """The rate is an exact rate-rule hit on the O2 training reaction.
+    
+        No kinetics libraries are loaded by this fixture at all, so a library lookup
+        is not merely improbable here - it is impossible. What the test pins is the
+        positive claim: the number came from training reaction 1.
+        """
+        assert kinetics_db.libraries == {}
+    
+        reaction = _generate(kinetics_db, 'O2')[0]
+        kinetics, source, entry, is_forward = family.get_kinetics(
+            reaction, template_labels=reaction.template, degeneracy=reaction.degeneracy,
+            estimator='rate rules', return_all_kinetics=False)
+    
+>       assert source == 'rate rules'
+E       assert <KineticsDepository "Plasma_Electron_Attachment/training"> == 'rate rules'
+
+test/test_plasma_electron_attachment.py:607: AssertionError
+=============================== warnings summary ===============================
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:5427: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:5539: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:5628: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:5672: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:5698: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:5860: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:5904: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:5930: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:6097: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:6141: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:6167: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:6295: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:7200: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:7470: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:7726: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:7840: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:8025: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:8128: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:9315: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:10169: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:10258: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:11178: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:20791: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:20884: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:21052: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:21078: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:21531: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:21711: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:21739: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:21927: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:22858: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:22951: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:23114: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:23297: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:23392: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:24051: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:24336: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:27050: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:27143: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:27280: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:27308: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:27491: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:28152: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:30542: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:38231: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:38277: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:38304: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:38507: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:39316: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:41060: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:41126: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:41383: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:42688: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:42759: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:43026: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:43634: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:43680: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:43707: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:51842: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:51867: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:51916: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:52269: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:52295: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:52359: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:52384: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:52461: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:22378: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:22405: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:22458: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:22486: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:22515: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:22545: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:22574: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:22602: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:22631: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:23066: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:23095: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:23125: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:23156: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:23186: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:23214: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:23242: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:23479: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:23508: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:23537: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:24531: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:24668: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:24742: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:24769: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:24798: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:26751: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:26779: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:33222: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:33684: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:33736: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:33780: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:34311: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:34339: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:34368: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:34817: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:34845: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:34938: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:35231: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:35330: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:35376: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:36210: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:36236: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:36783: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:37597: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:40266: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:40293: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:40321: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:40350: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:40378: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:40405: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:40433: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:40458: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:40484: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:40511: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:40537: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:41052: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:41160: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:41225: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:41874: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:44422: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:44449: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:44476: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:49272: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:50344: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:50369: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:50397: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:50424: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:50450: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:50610: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:50636: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:50663: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:50689: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:50716: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:50984: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:51613: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:51732: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_thermo.py::test_every_electron_entry_in_this_database_prices_the_electron_at_zero
+test/test_argon_cation_thermo.py::test_without_this_library_the_species_is_refused
+  <string>:51756: DeprecationWarning: invalid escape sequence \D
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED test/test_plasma_electron_attachment.py::test_trained_species_resolve_to_their_own_rate_through_their_own_node[O2]
+FAILED test/test_plasma_electron_attachment.py::test_trained_species_resolve_to_their_own_rate_through_their_own_node[OH]
+FAILED test/test_plasma_electron_attachment.py::test_trained_species_resolve_to_their_own_rate_through_their_own_node[O]
+FAILED test/test_plasma_electron_attachment.py::test_o2_rate_comes_from_the_training_set_not_a_library
+================= 4 failed, 173 passed, 284 warnings in 22.96s =================
+### db union suite exit: 1 ###

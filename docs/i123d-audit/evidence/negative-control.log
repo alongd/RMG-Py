@@ -1,0 +1,15 @@
+# negative control -- examples/rmg/minimal
+== nc-union-basedb  exit=0
+b318e4c74f03c5fcfbf2d1c13ce28d1076cf17e4bd5619855c2bf6cb7c317fb8  chem.inp
+2850089d64e3d74423d22bc26ad2b1969741c93256ebd00beacb34a99cdb54e5  chem_annotated.inp
+5114ffb2f4b357170486a77d5b0ad86808eac4b25d434665e9cbeaf76bd85e8f  species_dictionary.txt
+== nc-baseline-basedb  exit=0
+b318e4c74f03c5fcfbf2d1c13ce28d1076cf17e4bd5619855c2bf6cb7c317fb8  chem.inp
+2850089d64e3d74423d22bc26ad2b1969741c93256ebd00beacb34a99cdb54e5  chem_annotated.inp
+5114ffb2f4b357170486a77d5b0ad86808eac4b25d434665e9cbeaf76bd85e8f  species_dictionary.txt
+== nc-union-uniondb  exit=0
+b318e4c74f03c5fcfbf2d1c13ce28d1076cf17e4bd5619855c2bf6cb7c317fb8  chem.inp
+2850089d64e3d74423d22bc26ad2b1969741c93256ebd00beacb34a99cdb54e5  chem_annotated.inp
+5114ffb2f4b357170486a77d5b0ad86808eac4b25d434665e9cbeaf76bd85e8f  species_dictionary.txt
+== diff -r -q union-basedb/chemkin baseline-basedb/chemkin
+diff exit=0
