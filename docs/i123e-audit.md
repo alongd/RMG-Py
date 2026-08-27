@@ -1,6 +1,6 @@
 # I-123 fifth audit (i123e) — plasma/electron-chemistry union
 
-Verdict: **PENDING** (draft; filled as measurement completes).
+Verdict: **READY** — no blocking failure (see section 15). Merge preconditions in section 15.
 
 Evidence labels: **[R]** code (file:line) · **[D]** database · **[M]** measured (command + output) ·
 **[I]** inference with basis.
@@ -242,3 +242,90 @@ operation (never run-vs-restart). Core 26 species / 66 reactions on both. `chem_
 `2850089d…cdb54e5` **identical** on both; `chem.inp` `b318e4c7…c317fb8` identical; `species_dictionary.txt`
 `5114ffb2…bd85e8f` identical. An ordinary non-plasma mechanism builds, runs, and exports identically on
 the union and the base.
+
+## 7. Each contributing branch's own state [M]
+
+Each RMG-Py contributing branch built in its own throwaway detached worktree; its signature test
+module(s) run serially on its own tip. i148-seed-placement's tip (`278abfe32`) is the union minus this
+pass's rmgrc repoint, so its own state == the union's measured state (2 known failures).
+
+| branch | tip | build | signature module(s) | result |
+|---|---|---|---|---|
+| i119-rr-registry | 92e2d4234 | ok | electronPlacementTest.py | **50 passed, 1 FAILED** (`test_declaration_registry_is_explicit_and_closed`) |
+| i134-duplicate-drops-sink | 9b8cc38e7 | ok | i134DuplicateElectronsTest.py | 179 passed, 1 xfailed |
+| i135-tdep-roundtrip | 948a783fd | ok | chemkinTest.py + i126ChemkinElectronOrderTest.py | 51 passed |
+| i102-quarantine | 99602b099 | ok | quarantineTest.py | 29 passed, 7 skipped |
+| i112-marcus-work-terms | ab3d84072 | ok | marcusWorkTermsTest.py + reactionMarcusTest.py | 60 passed |
+| i115-preflight-deck | ceb9fd5f1 | ok | preflightDeckFamilyExclusionTest.py | 11 passed |
+| i110-make-guard | fa042c08d | n/a | makeGuardTest.py | 40 passed |
+| i148-seed-placement | 278abfe32 | == union | (union suite) | == union: 2 known failures |
+
+**Only i119-rr-registry is red on its own**, on exactly the closed-registry pin that is one of the
+union's two known failures — so that red is visible in the union, not masked. The union's second failure
+(the i102-quarantine deck exclusion) is **not** red on either contributing branch alone (i115's preflight
+suite 11/11 green, i102's quarantine suite green) — it is an integration-only artifact of the i115 deck
+sweep globbing the i102 demonstration deck once both are merged. No contributing branch is red in a way
+hidden by the union.
+
+## 16. git log --oneline --graph on each branch
+
+Full graphs captured under `docs/i123e-audit/evidence/git-graph-rmgpy.txt` (57 lines,
+`plasma..i123e-audit`) and `docs/i123e-audit/evidence/git-graph-database.txt` (25 lines,
+`plasma..i123e-audit-db`). Inventory summarised in section 1.
+
+## 17. What I could not reach (named)
+
+- **`scripts/simulate.py` on the deck's Chemkin `chem.inp` plasma reactions** was not run. The
+  reloaded-representation property (item 11) was established at object level: a reloaded plasma reaction
+  is `is_balanced()==False` and is **refused at the `KineticsLibrary.load` gate** (loud), and no shipped
+  path feeds a Chemkin-reloaded plasma mechanism back into a reactor (the supported continuation is the
+  seed, which is canonical and lossless and was exercised). I did not additionally drive `simulate.py`
+  end-to-end on the plasma `chem.inp`; the closed, loud load gate is the basis for calling this a
+  property rather than a defect.
+- **The five RMG-database contributing branches** (i114-ionisation, i119-recombination, i104, i103,
+  i111) were not each independently suite-tested. They are data-only; they were exercised together via
+  the union database, which loaded successfully through the entire deck + every probe (resolved path
+  printed at each head), and the RMG-Py union suite's `database`-marked tests were deselected in the unit
+  run per the "full unit suite" instruction.
+- **Functional and `database`-marked pytest suites** were not run (unit suite only, per the brief); the
+  lithium deck end-to-end is the functional exercise of the charge network.
+- **The one-time TDEP lossy-fit residual** (ionisation 16.3%, recombination 26.1% off canonical) was
+  characterised as documented and confirmed non-compounding across three round trips and class-correct,
+  but I did not independently re-derive the fit residual from the Voronov/Badnell parameters — the
+  blocker this item concerns is *compounding* drift, which is measured to be absent.
+- **A whole RMG run whose final EDGE holds a charged reaction** — the I-148 doc's own named limit — is
+  not producible by any shipped configuration (the plasma solver promotes the cation to core at t=0),
+  so the charged edge-seed round trip remains proven only at object level, as the repair states.
+
+## 15. Verdict — READY
+
+All four prior blockers are verified fixed on this tree, by exercising the whole path rather than the
+stage:
+1. **Chemkin writer refusal** — the deck saves `chem.inp`/`chem_annotated.inp` with both plasma rate
+   laws (Stage A).
+2. **Dropped cation sink** — both the ionisation source and the radiative-recombination sink are present
+   as core reactions and in the written mechanism (Stage A), and both survive `mergeModels` (Stage D).
+3. **10^6×-per-trip Chemkin error** — three successive round trips are stable to the last digit, class
+   asserted `TwoTemperaturePlasma` each time; only a one-time, documented, non-compounding export-fit
+   offset remains (Stage B).
+4. **Seed-restart placement loss** — two successive seed restarts produce byte-identical mechanisms with
+   the ionisation channel single-copy and (1,2) intact; the I-148 owner recovery is proven genuine (the
+   ionisation row (1,2) ≠ the net-rule (0,1)), not the one-row coincidence (Stage C).
+
+The I-148 repair is monotonic, its reactor guard is intact, its duplicated-parsing coupling can at worst
+produce a wrong warning (never a wrong number), and the latent seed→core electron-drop it named is
+unreachable via the shipped seed path. The union unit suite has exactly two failures, both the documented
+do-not-fix known non-blockers; the base has none. The negative control is byte-identical base-vs-union.
+No new blocking failure was found by widening scope across the serialisations, the merge order, the
+contributing branches, or the known-defect set.
+
+**Verdict: READY** — no blocking failure. This is a verdict on correctness, not an authorisation to
+merge. Merge preconditions (not performed here, per Gates):
+- Revert the **six** rmgrc pins (`ae52de38a`, `9874fc706`, `34de41c76`, `cd6cde425`, `ce93e6c12`,
+  `cc508be3e`) so `rmgrc` returns to `database.directory = ../RMG-database-plasma/input` (blob
+  `90292bed`). Reverting all six is sufficient (section 13).
+- Land `i149-rmgrc-untracked` on `plasma` **first**, then merge this union with the pins reverted, so the
+  rmgrc change resolves as a clean deletion rather than a modify/delete conflict (section 13).
+- The residual non-blockers (ck2yaml TDEP exit-1, RMS coverage gap, both-channels single-library load,
+  the +146.6 kJ/mol Li⁺ enthalpy, the two do-not-fix test failures) are owned elsewhere and do not gate
+  this verdict; they are enumerated in sections 11–12 so the merger inherits no surprise.
