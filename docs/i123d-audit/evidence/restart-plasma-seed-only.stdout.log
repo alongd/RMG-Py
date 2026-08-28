@@ -1,0 +1,310 @@
+Global RMG Settings:
+   database.directory   = /home/alon/Code/RMG-database-i123d-audit/input (from rmgrc)
+   test_data.directory  = /home/alon/Code/RMG-Py-i123d-audit/test/rmgpy/test_data (Default, relative to RMG-Py source code)
+RMG execution initiated at Thu Aug 27 16:14:05 2026
+
+#########################################################
+# RMG-Py - Reaction Mechanism Generator in Python       #
+# Version: 4.0.0                                        #
+# Authors: RMG Developers (rmg_dev@mit.edu)             #
+# P.I.s:   William H. Green (whgreen@mit.edu)           #
+#          Richard H. West (r.west@neu.edu)             #
+# Website: http://reactionmechanismgenerator.github.io/ #
+#########################################################
+
+The current git HEAD for RMG-Py is:
+	cd6cde4252c9616dba70c67b33f7b7b8d7b9310b
+	Thu Aug 27 15:58:38 2026 +0300
+
+The current git HEAD for RMG-database is:
+	d7c8595ce41fa5402329a29f451f9eb3256b4d58
+	Thu Aug 27 12:07:43 2026 +0300
+
+Reading input file "/tmp/claude-1000/-home-alon-Code-RMG-Py-i123d-audit/99250c86-5b76-46fd-93a0-5cdece07c4c0/scratchpad/restart2/restart_from_seed.py"...
+restartFromSeed(path='seed')
+
+# I-123 -- THE LITHIUM CHARGE NETWORK THROUGH THE REAL INPUT-FILE PATH
+#
+# The companion probe (probe_lithium_charge_network.py) drives the network by calling the
+# loader, the resolver and PlasmaReactor directly. This deck drives the SAME network the
+# way a user would: an input file, rmg.py, the plasma reactor. Both are needed -- the probe
+# proves each stage in isolation, the deck proves the input-file path that carries them.
+#
+# WHY THIS DECK AND NOT docs/m7-preflight/input.py. That deck feeds methyllithium and, since
+# i115-preflight-deck removed Cation_R_Recombination from it, generates no reactions at all:
+# the reverse of that family's template was its only route from the neutral feed to Li+, and
+# its own header records that restoring the charged path "needs a genuine plasma ionisation
+# route (e.g. electron-impact ionisation), not this family." That route is exactly what the
+# i119 chain (RMG-Py) and the i114/i119 chain (RMG-database) deliver, and it is present for
+# the first time on this integration branch. So this deck is the m7-preflight deck's own
+# stated successor, not a replacement for it -- and the reason it can exist at all is the
+# union under audit.
+#
+# The chemistry, both directions, from the shipped tables and not authored here:
+#
+#   source   Li  + e-  =>  Li+ + 2 e-     Voronov (1997) Z=3 N=3, via PlasmaElectronImpactIonization
+#   sink     Li+ + e-  =>  Li  + hv       Badnell (2006) Z=3 N=2, via PlasmaRadiativeRecombination
+#
+# The composition is NEUTRAL: no cation is seeded. Li+ has to be produced from the neutral
+# feed, which is the claim this deck exists to exercise.
+#
+# Run from the RMG-Py integration worktree root, so rmgrc resolves to the integration
+# database worktree:
+#
+#   conda activate rmg_env
+#   python rmg.py docs/i123-integration/input.py
+
+database(
+    thermoLibraries=[
+        # [Li] and [Lip] as free monatomic species.
+        'LithiumPrimaryThermo', 'LithiumAdditionalThermo',
+        'primaryThermoLibrary',
+        # carries the electron thermo entry ('1 e u0 p0 c-1', H298 = 0). Without it the
+        # electron misses every library and the reactor stops at the thermo wall -- that
+        # was I-085's deck-config gap, recorded in docs/m7-preflight/.
+        'electrocatThermo',
+    ],
+    reactionLibraries=[],
+    seedMechanisms=[],
+    kineticsDepositories=['training'],
+    # The charge network under audit is carried entirely by the two libraries above. The
+    # natural way to say that is `kineticsFamilies=[]`, and it is WRONG: an empty list is
+    # falsy, and KineticsDatabase.load_families reads a falsy `families` as "load the
+    # default set", so the deck silently gets EVERY family -- including
+    # Cation_R_Recombination, the quarantined battery-SEI family that i111/i102 exist to
+    # keep out of plasma decks. Measured, not assumed:
+    # test_plasma_deck_generates_no_reaction_from_family fails on this deck with
+    # `resolves to a family set that loads Cation_R_Recombination. Declared: []`.
+    # `kineticsFamilies='none'` would load nothing, but the deck-exclusion sweep requires
+    # an explicit list. So: name the two neutral lithium families the M7 deck used. Neither
+    # produces a cation, so the charge network below is still library-only.
+    kineticsFamilies=[
+        'Li_Abstraction',
+        'Li_Addition_MultipleBond',
+    ],
+    kineticsEstimator='rate rules',
+)
+
+# --- electron pseudo-species MUST be declared before plasmaReactor(...) ---
+species(
+    label='e-',
+    reactive=True,
+    structure=adjacencyList("1 e u1 p0 c-1"),
+)
+
+# --- neutral lithium feed: atomic Li, net charge 0, no cation seeded ---
+species(
+    label='Li',
+    reactive=True,
+    structure=adjacencyList("""
+multiplicity 2
+1 Li u1 p0 c0
+"""),
+)
+
+# --- inert bath gas ---
+species(
+    label='He',
+    reactive=False,
+    structure=SMILES("[He]"),
+)
+
+plasmaReactor(
+    temperature=(1000, 'K'),
+    pressure=(1, 'atm'),
+    electronTemperature=(11604.5, 'K'),          # ~1 eV, inside the Voronov fit's range
+    electronDensity=(1e17, 'm^-3'),
+    initialMoleFractions={
+        'Li': 0.05,
+        'He': 0.95,
+    },
+    terminationTime=(1e-3, 's'),
+)
+
+simulator(
+    atol=1e-16,
+    rtol=1e-8,
+)
+
+model(
+    toleranceKeepInEdge=0.0,
+    toleranceMoveToCore=0.5,
+    toleranceInterruptSimulation=1e8,
+    maximumEdgeSpecies=200,
+)
+
+options(
+    units='si',
+    generateOutputHTML=False,
+    generatePlots=False,
+    saveEdgeSpecies=True,
+    saveSimulationProfiles=False,
+    # I-126. Chemkin and Cantera can both express these two rate laws -- lossily,
+    # as the modified-Arrhenius reduction along T = Te, and each says so in the
+    # file it writes. ReactionMechanismSimulator cannot express them at ALL:
+    # `rmgpy/yaml_rms.py:252` has no branch for VoronovEIArrhenius or
+    # BadnellRRArrhenius and raises
+    #   ValueError: Object of type <class '...VoronovEIArrhenius'> does not have a
+    #   defined conversion to ReactionMechanismSimulator format
+    # That is a kinetics-coverage gap in the RMS writer, not an electron-placement
+    # one -- it fires on the rate law before the equation is ever built -- and it
+    # is a separate ticket. Until it lands, a deck whose whole chemistry is these
+    # two rate laws must not ask for an RMS file; the writer is enabled by default
+    # and would kill the run on the first save.
+    generateRMSYAML=False,
+    # Turned ON so the deck exercises the second writer that shares
+    # `rmgpy.electron_balance` with Chemkin, rather than leaving the Cantera export
+    # path proven only by unit test.
+    generateCanteraYAML2=True,
+)
+
+Warning: Edge species saving was turned on. This will slow down model generation for large simulations.
+
+Loading transport library from NIST_Fluorine.py in /home/alon/Code/RMG-database-i123d-audit/input/transport/libraries...
+Loading transport library from PrimaryTransportLibrary.py in /home/alon/Code/RMG-database-i123d-audit/input/transport/libraries...
+Loading transport library from GRI-Mech.py in /home/alon/Code/RMG-database-i123d-audit/input/transport/libraries...
+Loading transport library from OneDMinN2.py in /home/alon/Code/RMG-database-i123d-audit/input/transport/libraries...
+Loading transport library from NOx2018.py in /home/alon/Code/RMG-database-i123d-audit/input/transport/libraries...
+Loading transport group database from /home/alon/Code/RMG-database-i123d-audit/input/transport/groups...
+Loading frequencies group database from /home/alon/Code/RMG-database-i123d-audit/input/statmech/groups...
+Loading solvation thermodynamics group database from /home/alon/Code/RMG-database-i123d-audit/input/solvation/groups...
+Loading thermodynamics library from LithiumPrimaryThermo.py in /home/alon/Code/RMG-database-i123d-audit/input/thermo/libraries...
+Loading thermodynamics library from LithiumAdditionalThermo.py in /home/alon/Code/RMG-database-i123d-audit/input/thermo/libraries...
+Loading thermodynamics library from primaryThermoLibrary.py in /home/alon/Code/RMG-database-i123d-audit/input/thermo/libraries...
+Loading thermodynamics library from electrocatThermo.py in /home/alon/Code/RMG-database-i123d-audit/input/thermo/libraries...
+Loading thermodynamics group database from /home/alon/Code/RMG-database-i123d-audit/input/thermo/groups...
+Loading thermodynamics SIDTs from /home/alon/Code/RMG-database-i123d-audit/input/thermo/sidt...
+Adding rate rules from training set in kinetics families...
+Filling in rate rules in kinetics families by averaging...
+Loading kinetics library restart from /tmp/claude-1000/-home-alon-Code-RMG-Py-i123d-audit/99250c86-5b76-46fd-93a0-5cdece07c4c0/scratchpad/restart2/previous_restart/restart/reactions.py...
+Loading kinetics library restart_edge from /tmp/claude-1000/-home-alon-Code-RMG-Py-i123d-audit/99250c86-5b76-46fd-93a0-5cdece07c4c0/scratchpad/restart2/previous_restart/restart_edge/reactions.py...
+Adding seed mechanism restart to model core...
+Loading kinetics library PlasmaElectronImpactIonization from /home/alon/Code/RMG-database-i123d-audit/input/kinetics/libraries/PlasmaElectronImpactIonization/reactions.py...
+Loading kinetics library PlasmaRadiativeRecombination from /home/alon/Code/RMG-database-i123d-audit/input/kinetics/libraries/PlasmaRadiativeRecombination/reactions.py...
+
+Summary of Model Enlargement
+---------------------------------
+Added 2 new core species
+    Li(2)
+    [Lip](3)
+Created 0 new edge species
+Added 2 new core reactions
+    Li(2) => [Lip](3)
+    [Lip](3) => Li(2)
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 2 species and 2 reactions
+    The model edge has 2 species and 0 reactions
+
+NOT generating reactions for unreactive species He
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    He
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 3 species and 2 reactions
+    The model edge has 1 species and 0 reactions
+
+
+NOT generating reactions for unreactive species Ar
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    Ar
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 4 species and 2 reactions
+    The model edge has 1 species and 0 reactions
+
+
+NOT generating reactions for unreactive species Ne
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    Ne
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 5 species and 2 reactions
+    The model edge has 1 species and 0 reactions
+
+
+NOT generating reactions for unreactive species N2
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    N2
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 6 species and 2 reactions
+    The model edge has 1 species and 0 reactions
+
+
+Adding species e-(1) to model core
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    e-(1)
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 7 species and 2 reactions
+    The model edge has 0 species and 0 reactions
+
+
+Adding species Li(2) to model core
+
+Summary of Model Enlargement
+---------------------------------
+Added 0 new core species
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 7 species and 2 reactions
+    The model edge has 0 species and 0 reactions
+
+
+Warning: No filters were found in file /tmp/claude-1000/-home-alon-Code-RMG-Py-i123d-audit/99250c86-5b76-46fd-93a0-5cdece07c4c0/scratchpad/restart2/seed/filters/filters.h5. This is to be expected if the restart files specified are from an RMG job without reaction filtering. Therefore, RMG will assume that all of the core species from the restart core seed have already been reacted and will not react them again. Additional species added to the input file but not in the restart core seed WILL be reacted with the rest of the core.
+Initialization complete. Starting model generation.
+
+Generating initial reactions...
+For reaction generation 1 process is used.
+
+Summary of Secondary Model Edge Enlargement
+---------------------------------
+Added 0 new core species
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 7 species and 2 reactions
+    The model edge has 0 species and 0 reactions
+
+
+Completed initial enlarge edge step.
+
+Saving current model core to Chemkin file...
+### RESTART2_EXIT=1 ###

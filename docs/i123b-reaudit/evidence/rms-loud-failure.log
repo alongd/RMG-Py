@@ -1,0 +1,11 @@
+database.directory = /home/alon/Code/RMG-database-i123b-reaudit/input
+
+--- PlasmaElectronImpactIonization -> [Li] => [Lip]   kinetics=VoronovEIArrhenius
+  LOUD: raised ValueError
+  message: Object of type <class 'rmgpy.kinetics.arrhenius.VoronovEIArrhenius'> does not have a defined conversion to ReactionMechanismSimulator format
+  at: File "/home/alon/Code/RMG-Py-i123b-reaudit/rmgpy/yaml_rms.py", line 252, in obj_to_dict
+
+--- PlasmaRadiativeRecombination -> [Lip] => [Li]   kinetics=BadnellRRArrhenius
+  LOUD: raised ValueError
+  message: Object of type <class 'rmgpy.kinetics.arrhenius.BadnellRRArrhenius'> does not have a defined conversion to ReactionMechanismSimulator format
+  at: File "/home/alon/Code/RMG-Py-i123b-reaudit/rmgpy/yaml_rms.py", line 252, in obj_to_dict

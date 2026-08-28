@@ -45,9 +45,11 @@ from rmgpy.constraints import fails_species_constraints, pass_cutting_threshold
 from rmgpy.data.kinetics.depository import DepositoryReaction
 from rmgpy.data.kinetics.family import KineticsFamily, TemplateReaction
 from rmgpy.data.kinetics.library import KineticsLibrary, LibraryReaction
+from rmgpy.data.kinetics.quarantine import check_quarantine
 from rmgpy.data.rmg import get_db
 from rmgpy.data.vaporLiquidMassTransfer import vapor_liquid_mass_transfer
 from rmgpy.display import display
+from rmgpy.electron_balance import get_electron_placement_counts
 from rmgpy.exceptions import ForbiddenStructureException
 from rmgpy.kinetics import Arrhenius, KineticsData
 from rmgpy.kinetics.surface import StickingCoefficient
@@ -1047,6 +1049,16 @@ class CoreEdgeReactionModel:
 
         # Find the reaction kinetics
         kinetics, source, entry, is_forward = self.generate_kinetics(reaction)
+        # Refuse quarantined database data before anything is bound or mutated. This is the
+        # boundary the reaction crosses to become part of the model: it is the single call site
+        # where estimated kinetics meet a reaction, it is strictly downstream of generation, and
+        # it is strictly upstream of both the edge and the core -- a rate that never reaches the
+        # core still steers enlargement from the edge, so gating at core admission alone would
+        # let a quarantined rate quietly declare a real channel unimportant. Raising here also
+        # means the direction flip below has not happened and reaction.kinetics is still None,
+        # so a refused reaction is left exactly as generated.
+        check_quarantine(reaction, stage='kinetics estimation for the reaction model',
+                         kinetics=kinetics, source=source, entry=entry)
         # Flip the reaction direction if the kinetics are defined in the reverse direction
         if not is_forward:
             family = get_db("kinetics").families[reaction.family]
@@ -1583,6 +1595,12 @@ class CoreEdgeReactionModel:
         ensure it is supposed to be a core reaction (i.e. all of its reactants
         AND all of its products are in the list of core species).
         """
+        # Backstop for the paths that never pass through kinetics estimation and so never
+        # reach the gate in apply_kinetics_to_reaction: seed mechanisms, reaction libraries,
+        # and API callers that pass generate_kinetics=False. Cheap -- one None check for any
+        # reaction whose family carries no quarantine manifest, which is all of ordinary
+        # chemistry.
+        check_quarantine(rxn, stage='admission to the model core')
         if rxn not in self.core.reactions:
             self.core.reactions.append(rxn)
 
@@ -1611,6 +1629,10 @@ class CoreEdgeReactionModel:
         list of core species, and the others are in either the core or the
         edge).
         """
+        # Same backstop as add_reaction_to_core, for the same paths. The edge is not a
+        # holding pen: edge fluxes decide what gets promoted, so a quarantined rate here is
+        # already steering the model.
+        check_quarantine(rxn, stage='admission to the model edge')
         self.edge.reactions.append(rxn)
         if not requires_rms:
             return
@@ -2326,9 +2348,35 @@ def are_identical_species_references(rxn1, rxn2):
     """
     Checks if the references of the reactants and products of the two reactions
     are identical, in either direction.
+
+    The electron counts must match too. RMG's canonical representation keeps the
+    electron out of the participant lists and in ``Reaction.electrons``, so the
+    reference comparison above sees only the heavy species -- which makes an
+    ionisation and a recombination over the same two heavy species look like the
+    same reaction taken in opposite directions. They are not, and the model then
+    silently keeps whichever was offered first. The electrons are therefore
+    compared as what they are, participants, via
+    :func:`~rmgpy.electron_balance.get_electron_placement_counts`: per side, not
+    as a net scalar. See that function for why the net scalar is not sufficient
+    here even though it looks as though it should be.
+
+    For every reaction whose owner declares no electron placement -- which is
+    every reaction outside the plasma families and libraries -- this is the same
+    verdict as before, exactly: the counts reduce to the net comparison the
+    predicate never made explicitly, and the heavy-species comparison is
+    untouched.
     """
     identical_same_direction = rxn1.reactants == rxn2.reactants and rxn1.products == rxn2.products
     identical_opposite_directions = rxn1.reactants == rxn2.products and rxn1.products == rxn2.reactants
     identical_collider = rxn1.specific_collider == rxn2.specific_collider
+
+    electrons1 = get_electron_placement_counts(rxn1)
+    electrons2 = get_electron_placement_counts(rxn2)
+    # The counts are stated per side in each reaction's own orientation, so a
+    # same-direction match compares them side for side and a reverse match
+    # compares each side against the other reaction's opposite side.
+    identical_same_direction = identical_same_direction and electrons1 == electrons2
+    identical_opposite_directions = (identical_opposite_directions
+                                     and electrons1 == (electrons2[1], electrons2[0]))
 
     return (identical_same_direction or identical_opposite_directions) and identical_collider

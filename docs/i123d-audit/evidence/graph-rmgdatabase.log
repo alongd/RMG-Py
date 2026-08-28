@@ -1,0 +1,25 @@
+$ git log --oneline --graph plasma..HEAD   # RMG-database, branch i123d-audit-db
+* d7c8595ce Record the database half of the I-123 third audit
+* 2d7123b08 Give argon a sourced cation thermochemistry, and audit the gap it came from
+*   c7bd96292 Merge i119-recombination: give radiative recombination a library owner
+|\  
+| * aabc3c622 docs: report on the electron loss channels
+| * 9ee5042d1 test: pin the recombination path from load to reactor acceptance
+| * 9325c2d27 kinetics: give radiative recombination a library owner
+* | 1fb224371 Merge i114-ionisation-declaration: give electron-impact ionisation a library owner
+|\| 
+| * fcd87ce6e docs: record that the placement declaration landed
+| * 277a0e333 test: pin the ionisation path from load to reactor acceptance
+| * 6862c21c5 kinetics: give electron-impact ionisation a library owner
+| * bdbbf2864 test: pin database.directory for the suites in this repository
+*   ac944618e Merge i104-alkali-plasma: inventory the alkali-plasma cation source and loss network
+|\  
+| * fc7bc101b docs: inventory the alkali-plasma cation source and loss network
+*   79320d363 Merge i103-electrochem-provenance: diagnose the Cation_R_Recombination Marcus provenance
+|\  
+| * 069ea3d0b docs: diagnose the Cation_R_Recombination Marcus provenance
+* 3b61056c1 Merge i111-sei-reclassification: reclassify Cation_R_Recombination as a legacy SEI family
+* 1fcbb80fa docs: report on the SEI reclassification
+* aaa97074c test: pin the SEI reclassification and its plasma exclusion
+* 03b96a974 kinetics: reclassify Cation_R_Recombination as a legacy SEI family
+* 7d4f47d3a kinetics: quarantine the Cation_R_Recombination Marcus data

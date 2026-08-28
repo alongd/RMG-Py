@@ -1,0 +1,20 @@
+INFO:root:Thermo file has default temperature range 300.0 to 1000.0 and 1000.0 to 5000.0
+WARNING:root:Discarding comments from Chemkin file because not sure which reaction they apply to
+INFO:root:Loading kinetics library PlasmaElectronImpactIonization from /home/alon/Code/RMG-database-i123d-audit/input/kinetics/libraries/PlasmaElectronImpactIonization/reactions.py...
+INFO:root:Loading kinetics library PlasmaRadiativeRecombination from /home/alon/Code/RMG-database-i123d-audit/input/kinetics/libraries/PlasmaRadiativeRecombination/reactions.py...
+INFO:root:Chemkin file contains 2 reactions.
+INFO:root:Thermo file has default temperature range 300.0 to 1000.0 and 1000.0 to 5000.0
+WARNING:root:Discarding comments from Chemkin file because not sure which reaction they apply to
+INFO:root:Chemkin file contains 2 reactions.
+INFO:root:Thermo file has default temperature range 300.0 to 1000.0 and 1000.0 to 5000.0
+WARNING:root:Discarding comments from Chemkin file because not sure which reaction they apply to
+INFO:root:Chemkin file contains 2 reactions.
+INFO:root:Thermo file has default temperature range 300.0 to 1000.0 and 1000.0 to 5000.0
+WARNING:root:Discarding comments from Chemkin file because not sure which reaction they apply to
+INFO:root:Thermo file has default temperature range 300.0 to 1000.0 and 1000.0 to 5000.0
+INFO:root:Chemkin file contains 2 reactions.
+INFO:root:Thermo file has default temperature range 300.0 to 1000.0 and 1000.0 to 5000.0
+INFO:root:Chemkin file contains 2 reactions.
+INFO:root:Thermo file has default temperature range 300.0 to 1000.0 and 1000.0 to 5000.0
+INFO:root:Chemkin file contains 2 reactions.
+INFO:root:Thermo file has default temperature range 300.0 to 1000.0 and 1000.0 to 5000.0

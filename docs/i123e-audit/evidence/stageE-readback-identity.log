@@ -1,0 +1,114 @@
+INFO:root:Loading kinetics library PlasmaElectronImpactIonization from /home/alon/Code/RMG-database-i123e-audit/input/kinetics/libraries/PlasmaElectronImpactIonization/reactions.py...
+INFO:root:Loading kinetics library PlasmaRadiativeRecombination from /home/alon/Code/RMG-database-i123e-audit/input/kinetics/libraries/PlasmaRadiativeRecombination/reactions.py...
+INFO:root:Thermo file has default temperature range 300.0 to 1000.0 and 1000.0 to 5000.0
+WARNING:root:Discarding comments from Chemkin file because not sure which reaction they apply to
+INFO:root:Loading transport library from NIST_Fluorine.py in /home/alon/Code/RMG-database-i123e-audit/input/transport/libraries...
+INFO:root:Loading transport library from PrimaryTransportLibrary.py in /home/alon/Code/RMG-database-i123e-audit/input/transport/libraries...
+INFO:root:Loading transport library from GRI-Mech.py in /home/alon/Code/RMG-database-i123e-audit/input/transport/libraries...
+INFO:root:Loading transport library from OneDMinN2.py in /home/alon/Code/RMG-database-i123e-audit/input/transport/libraries...
+INFO:root:Loading transport library from NOx2018.py in /home/alon/Code/RMG-database-i123e-audit/input/transport/libraries...
+INFO:root:Loading transport group database from /home/alon/Code/RMG-database-i123e-audit/input/transport/groups...
+INFO:root:Loading frequencies library from halogens_G4.py in /home/alon/Code/RMG-database-i123e-audit/input/statmech/libraries...
+INFO:root:Loading frequencies group database from /home/alon/Code/RMG-database-i123e-audit/input/statmech/groups...
+INFO:root:Loading solvation thermodynamics group database from /home/alon/Code/RMG-database-i123e-audit/input/solvation/groups...
+INFO:root:Loading thermodynamics library from primaryThermoLibrary.py in /home/alon/Code/RMG-database-i123e-audit/input/thermo/libraries...
+INFO:root:Loading thermodynamics group database from /home/alon/Code/RMG-database-i123e-audit/input/thermo/groups...
+INFO:root:Loading thermodynamics SIDTs from /home/alon/Code/RMG-database-i123e-audit/input/thermo/sidt...
+==============================================================================
+rmgpy              = /home/alon/Code/RMG-Py-i123e-audit
+compiled module    = /home/alon/Code/RMG-Py-i123e-audit/rmgpy/molecule/molecule.cpython-39-x86_64-linux-gnu.so
+database.directory = /home/alon/Code/RMG-database-i123e-audit/input
+resolved realpath  = /home/alon/Code/RMG-database-i123e-audit/input
+chemkin file       = docs/i123e-audit/evidence/deck-run/chemkin/chem.inp
+==============================================================================
+
+------------------------------------------------------------------------------
+the canonical originals, straight out of the database
+------------------------------------------------------------------------------
+  PlasmaElectronImpactIonization
+      [Li] => [Lip]
+        type            : LibraryReaction
+        kinetics        : VoronovEIArrhenius
+        electrons scalar: 1
+        placement counts: (1, 2)
+        reactants       : [('[Li]', False)]
+        products        : [('[Lip]', False)]
+        owner (family)  : PlasmaElectronImpactIonization
+  PlasmaRadiativeRecombination
+      [Lip] => [Li]
+        type            : LibraryReaction
+        kinetics        : BadnellRRArrhenius
+        electrons scalar: -1
+        placement counts: (1, 0)
+        reactants       : [('[Lip]', False)]
+        products        : [('[Li]', False)]
+        owner (family)  : PlasmaRadiativeRecombination
+
+------------------------------------------------------------------------------
+the reloaded mechanism
+------------------------------------------------------------------------------
+  read 7 species, 2 reactions
+    Li(2) + e-(1) => [Lip](3) + e-(1) + e-(1)
+      type            : LibraryReaction
+      kinetics        : TwoTemperaturePlasma
+      electrons scalar: 0
+      placement counts: (0, 0)
+      reactants       : [('Li', False), ('e-', True)]
+      products        : [('[Lip]', False), ('e-', True), ('e-', True)]
+      owner (family)  : Unclassified
+    [Lip](3) + e-(1) => Li(2)
+      type            : LibraryReaction
+      kinetics        : TwoTemperaturePlasma
+      electrons scalar: 0
+      placement counts: (0, 0)
+      reactants       : [('[Lip]', False), ('e-', True)]
+      products        : [('Li', False)]
+      owner (family)  : Unclassified
+  [PASS] the file read back at all -- 2 reaction(s)
+  [PASS] every reloaded reaction carries a ZERO electron scalar -- [0, 0]
+  [PASS] every reloaded reaction carries the electron as an EXPLICIT participant
+
+------------------------------------------------------------------------------
+Q1 -- does a reloaded reaction compare as the same reaction as its original?
+------------------------------------------------------------------------------
+  [..] PlasmaElectronImpactIonization   vs reloaded Li(2) + e-(1) => [Lip](3) + e-(1) + e-(1) same-direction=False either-direction=False
+  [..] PlasmaElectronImpactIonization   vs reloaded [Lip](3) + e-(1) => Li(2)          same-direction=False either-direction=False
+  [..] PlasmaRadiativeRecombination     vs reloaded Li(2) + e-(1) => [Lip](3) + e-(1) + e-(1) same-direction=False either-direction=False
+  [..] PlasmaRadiativeRecombination     vs reloaded [Lip](3) + e-(1) => Li(2)          same-direction=False either-direction=False
+  [PASS] NO reloaded reaction compares equal to its canonical original -- []
+  [..] this is the property, stated: the round trip recovers the CHEMISTRY in the expanded electron representation, not the canonical OBJECT. A reloaded mechanism and the model that produced it are not interchangeable under RMG's identity predicate, in either direction.
+
+------------------------------------------------------------------------------
+Q2 -- do the two reloaded channels collapse into each other?
+------------------------------------------------------------------------------
+  [..] Li(2) + e-(1) => [Lip](3) + e-(1) + e-(1)  vs  [Lip](3) + e-(1) => Li(2)  ->  is_isomorphic(either_direction=True) = False
+  [PASS] reloaded pair 0/1 stays distinct
+  [..] in the EXPANDED form the electrons are ordinary participants, so the two channels differ in their participant lists alone -- the expansion is self-distinguishing and needs no placement declaration
+
+------------------------------------------------------------------------------
+Q3 -- can the reloaded mechanism be fed back into a model?
+------------------------------------------------------------------------------
+  [..] route 1: Reaction.is_balanced, the gate KineticsLibrary.load applies to every entry (rmgpy/data/kinetics/library.py:585) -- so this decides whether a reloaded plasma mechanism can be handed back to RMG as a library or a seed
+  [..] Li(2) + e-(1) => [Lip](3) + e-(1) + e-(1)
+  [..]     reactant elements {'Li': 1, 'e': 1}   product elements {'Li': 1, 'e': 2}   electrons scalar 0
+  [..]     is_balanced -> False
+  [..] [Lip](3) + e-(1) => Li(2)
+  [..]     reactant elements {'Li': 1, 'e': 1}   product elements {'Li': 1}   electrons scalar 0
+  [..]     is_balanced -> False
+  [..] is_balanced counts the electron as a conserved ELEMENT and then folds the scalar `electrons` into the net charges. The expanded form puts the electron in BOTH participant lists AND sets the scalar to zero, so the element tallies differ and the scalar cannot compensate.
+  [..] route 2: CoreEdgeReactionModel.make_new_reaction on the reloaded objects
+  [..] make_new_reaction RAISED on Li(1) + e-(2) => [Lip](3) + e-(2) + e-(2): Exception: Could not retrieve the family/library: Unclassified from families ['Li_Abstraction'] and libraries [].
+  [..] make_new_reaction RAISED on [Lip](3) + e-(2) => Li(1): Exception: Could not retrieve the family/library: Unclassified from families ['Li_Abstraction'] and libraries [].
+  [..] accepted 0 of 2 reloaded reactions
+  [..] control skipped: set I123C_NEUTRAL_CONTROL to a non-plasma RMG output dir
+
+------------------------------------------------------------------------------
+summary
+------------------------------------------------------------------------------
+  reloaded reactions        : 2
+  electron scalar on reload : [0, 0]
+  explicit e- participants  : [3, 1]
+  identical to canonical    : NO
+  is_balanced on reload     : [False, False]
+
+all checks passed

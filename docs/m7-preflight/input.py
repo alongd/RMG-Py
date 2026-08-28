@@ -1,10 +1,28 @@
 # M7-PREFLIGHT -- LITHIUM CHARGED-PATH INTEGRATION
 #
 # Neutral lithium-bearing feed (methyllithium) driven through a two-temperature
-# plasma reactor.  The composition is NEUTRAL: no cation is seeded.  The six
-# lithium-specific Cation_* families are loaded so the cation is produced by RMG
-# from the neutral feed via the auto-derived reverse template of
-# Cation_R_Recombination (Li+ + R.  <=>  R-Li), exercised in reverse.
+# plasma reactor.  The composition is NEUTRAL: no cation is seeded.  The
+# lithium-specific Cation_* families are loaded so that any cation is produced by
+# RMG from the neutral feed rather than seeded.
+#
+# EXCLUDED -- Cation_R_Recombination.  It has been recovered as what it actually
+# is: a lithium-ion-battery SEI family, Marcus electron transfer at a Li(110)
+# electrode in liquid ethylene carbonate at 298.15 K under declared electrode
+# potentials.  It is not plasma chemistry; read as plasma kinetics its rates
+# evaluate 30-230 orders of magnitude below anything physical, and a binding
+# ruling excludes it from every plasma configuration.  The family and its data
+# are preserved deliberately as provenance evidence and remain correct for the
+# electrochemical domain -- see examples/rmg/SEI_pure_ACN/input.py, which keeps
+# it.  Only this deck's reference to it is removed.
+#
+# Consequence, recorded rather than worked around: the reverse of that family's
+# template was this deck's ONLY route from the neutral feed to Li+, and the only
+# family here that fired at all.  With it gone the deck generates no reactions
+# from CH3Li.  The charged-path exercise this deck was built for is retired, not
+# relocated; restoring it needs a genuine plasma ionisation route (e.g.
+# electron-impact ionisation), not this family.
+#
+# Pinned by test/rmgpy/preflightDeckFamilyExclusionTest.py.
 #
 # Run (read-only against RMG-database-plasma):
 #   conda activate rmg_env
@@ -30,8 +48,8 @@ database(
     seedMechanisms=[],
     kineticsDepositories=['training'],
     kineticsFamilies=[
-        # the six lithium-specific cation families (produce/consume Li+)
-        'Cation_R_Recombination',
+        # the lithium-specific cation families (produce/consume Li+).
+        # Cation_R_Recombination is deliberately absent -- see the header.
         'Cation_Li_Abstraction',
         'Cation_Addition_MultipleBond',
         'Cation_Addition_MultipleBond_Disprop',

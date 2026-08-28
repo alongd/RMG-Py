@@ -1,0 +1,47 @@
+==============================================================================
+database.directory = /home/alon/Code/RMG-database-i123b-reaudit/input
+rmgpy              = /home/alon/Code/RMG-Py-i123b-reaudit
+==============================================================================
+
+STAGE 1 -- LOAD both kinetics libraries out of the integration database
+  [PASS] ionisation library loaded
+  [PASS] recombination library loaded
+  [PASS] ionisation has exactly one entry -- 1
+  [PASS] recombination has exactly one entry -- 1
+    ionisation    : [Li] => [Lip]   electrons=1  kinetics=VoronovEIArrhenius
+    recombination : [Lip] => [Li]   electrons=-1  kinetics=BadnellRRArrhenius
+  [PASS] ionisation declares a net electron GAIN -- 1
+  [PASS] recombination declares a net electron LOSS -- -1
+  [PASS] the neutral feed and the cation are the same two species in both channels -- source produces exactly what the sink consumes
+
+STAGE 2 -- BALANCE: each canonical reaction closes its own charge gap
+  [PASS] ionisation is_balanced
+  [PASS] recombination is_balanced
+
+STAGE 3 -- PLACEMENT: the resolver restores the electron participants
+    FAMILY_ELECTRON_PLACEMENT = {'Plasma_Electron_Attachment': (1, 0), 'Cation_R_Recombination': (1, 0), 'PlasmaRadiativeRecombination': (1, 0), 'PlasmaElectronImpactIonization': (1, 2)}
+  [PASS] the ionisation library is a declared owner
+  [PASS] the recombination library is a declared owner
+  [PASS] ionisation declares one electron in, two out -- (1, 2)
+  [PASS] recombination declares one electron in, none out -- (1, 0)
+    ionisation view    : [Li] + e => [Lip] + e + e  ->  reactant/product electrons (1, 2), order 2
+    recombination view : [Lip] + e => [Li]  ->  reactant/product electrons (1, 0), order 2
+  [PASS] ionisation resolves to Li + e- => Li+ + 2 e- -- (1, 2)
+  [PASS] recombination resolves to Li+ + e- => Li + hv -- (1, 0)
+  [PASS] both views carry no residual electron metadata
+  [PASS] both resolved views are second order in the reactor
+  [PASS] resolution did not mutate the canonical reactions
+
+STAGE 4 -- REACTOR: one PlasmaReactor holds the source AND the sink
+  [PASS] the reactor accepted both reactions -- 2
+  [PASS] the reactor located the electron -- 2
+    kf[source] = 5.031584e+07   expected (Voronov) = 5.031584e+07
+    kf[sink]   = 1.468188e+05   expected (Badnell) = 1.468188e+05
+  [PASS] source evaluated at the Voronov rate
+  [PASS] sink evaluated at the Badnell rate
+  [PASS] the cation has a non-zero loss channel
+
+==============================================================================
+LITHIUM CHARGE NETWORK: ALL STAGES PASSED -- neutral feed -> cation -> sink
+==============================================================================
+PROBE_EXIT=0

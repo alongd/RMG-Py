@@ -57,7 +57,8 @@ from rmgpy.chemkin import ChemkinWriter
 from rmgpy.constraints import fails_species_constraints
 from rmgpy.data.auto_database import auto_select_libraries, to_reaction_library_tuples
 from rmgpy.data.base import Entry
-from rmgpy.data.kinetics.library import KineticsLibrary
+from rmgpy.data.kinetics.library import KineticsLibrary, seed_placement_survives
+from rmgpy.electron_balance import get_placement_owner
 from rmgpy.data.rmg import RMGDatabase
 from rmgpy.data.vaporLiquidMassTransfer import vapor_liquid_mass_transfer
 from rmgpy.exceptions import (
@@ -65,6 +66,7 @@ from rmgpy.exceptions import (
     DatabaseError,
     ForbiddenStructureException,
     InputError,
+    MechanismWriterError,
 )
 from rmgpy.kinetics import ThirdBody, Troe
 from rmgpy.kinetics.diffusionLimited import diffusion_limiter
@@ -227,6 +229,11 @@ class RMG(util.Subject):
         self.bimolecular_threshold = None
         self.trimolecular_threshold = None
         self.termination = []
+
+        #: ``(step name, exception)`` for every end-of-run export step that
+        #: failed. Consulted at the end of :meth:`execute`; see
+        #: :meth:`report_export_failures`.
+        self.export_failures = []
 
         self.done = False
         self.verbosity = logging.INFO
@@ -1396,10 +1403,12 @@ class RMG(util.Subject):
                                               os.path.join(self.output_directory, "cantera2", "chem.yaml"),
                                               output=os.path.join(self.output_directory, "cantera2", "comparison_report.txt"))
 
-        except EnvironmentError:
+        except EnvironmentError as exc:
             logging.exception("Could not generate Cantera files due to EnvironmentError. Check read\\write privileges in output directory.")
-        except Exception:
+            self.export_failures.append(("Chemkin-to-Cantera translation (cantera_from_ck/)", exc))
+        except Exception as exc:
             logging.exception("Could not generate Cantera files for some reason.")
+            self.export_failures.append(("Chemkin-to-Cantera translation (cantera_from_ck/)", exc))
 
         self.check_model()
         # Write output file
@@ -1413,6 +1422,45 @@ class RMG(util.Subject):
             logging.info("The final model edge has %s species and %s reactions" % (edge_spec, edge_reac))
 
         self.finish()
+
+        self.report_export_failures()
+
+    def report_export_failures(self):
+        """
+        Fail the run if any end-of-run export step did not produce its files.
+
+        The Chemkin-to-Cantera translation above catches every exception and
+        logs it. Until this method existed, that was the end of it: ``execute``
+        returned normally and the process exited 0, so a run that left
+        ``cantera_from_ck/`` empty reported success to whatever launched it, and
+        the only trace was one traceback among thousands of log lines. That is
+        the failure shape ``MechanismWriterError``'s own docstring describes --
+        a hole in the exported output while the export reports success.
+
+        Raising here, after :meth:`finish`, keeps everything that did work: the
+        model, the Chemkin files, the direct Cantera writers' output and the run
+        statistics are all already on disk. What changes is only that the caller
+        is told.
+        """
+        if not self.export_failures:
+            return
+
+        logging.error("")
+        logging.error("=" * 79)
+        logging.error("EXPORT FAILED. %d of RMG's output steps did not produce their files:", len(self.export_failures))
+        for step, exc in self.export_failures:
+            logging.error("  %s", step)
+            logging.error("      %s: %s", type(exc).__name__, str(exc).strip().splitlines()[0] if str(exc).strip() else exc)
+        logging.error("")
+        logging.error("Model generation itself completed and every file written before this point is")
+        logging.error("valid; the output above names what is missing.")
+        logging.error("=" * 79)
+        logging.error("")
+
+        raise MechanismWriterError(
+            "RMG finished model generation, but {0} export step(s) failed and their output is "
+            "missing: {1}. See the traceback(s) logged above.".format(
+                len(self.export_failures), "; ".join(step for step, _ in self.export_failures)))
 
     def run_model_analysis(self, number=10):
         """
@@ -1794,6 +1842,7 @@ class RMG(util.Subject):
                 else:
                     entry.long_desc = reaction.kinetics.comment
 
+                warn_if_seed_loses_placement(reaction, entry, "core")
                 kinetics_library.entries[i + 1] = entry
 
             # load kinetics library entries
@@ -1810,6 +1859,7 @@ class RMG(util.Subject):
                     entry.long_desc = "Originally from reaction library: " + reaction.library + "\n" + reaction.kinetics.comment
                 except AttributeError:
                     entry.long_desc = reaction.kinetics.comment
+                warn_if_seed_loses_placement(reaction, entry, "edge")
                 edge_kinetics_library.entries[i + 1] = entry
 
             # save in database
@@ -2331,6 +2381,47 @@ class RMG(util.Subject):
                 logging.log(level, "The current anaconda package for RMG-database is:")
                 logging.log(level, database_conda_package)
                 logging.log(level, "")
+
+
+def warn_if_seed_loses_placement(reaction, entry, model_part):
+    """
+    Warn, loudly and at seed-WRITE time, when ``reaction``'s electron-placement
+    declaration would not survive the seed round trip that ``entry`` is about to
+    be written into.
+
+    The placement declaration is keyed on the reaction's owner label
+    (:data:`rmgpy.electron_placement.FAMILY_ELECTRON_PLACEMENT`), and the seed
+    renames its container to a fixed label -- so the declaration survives only
+    through the per-entry provenance that
+    :meth:`~rmgpy.data.kinetics.library.KineticsLibrary.get_library_reactions`
+    parses back out of ``entry.long_desc``
+    (:func:`~rmgpy.data.kinetics.library.seed_placement_survives` mirrors its
+    branches). A reaction this does not cover would reload with no declaration
+    and silently fall back to the net-derived placement rule, which is exactly
+    the I-148 failure: the restarted model either carries the channel twice, is
+    refused at its first mechanism save, or -- worst -- evaluates the rate at
+    the wrong order. The failure would otherwise announce itself only in the
+    restarting run, possibly long after this one; this warning makes the run
+    that writes the unusable artifact the one that says so.
+
+    ``model_part`` names which seed library the entry belongs to (``core`` or
+    ``edge``), for the message only.
+    """
+    owner = get_placement_owner(reaction)
+    if owner is None:
+        return
+    if seed_placement_survives(entry, owner):
+        return
+    logging.warning(
+        'SEED LOSES ELECTRON PLACEMENT: reaction %s in the %s seed belongs to '
+        '%r, whose electron-placement declaration is keyed on that label, but '
+        'the seed entry being written carries no provenance the seed reader '
+        'parses (an "Originally from reaction library: %s" line or a '
+        '"rate rule"/"family: %s" comment). Reloaded from this seed, the '
+        'reaction will fall back to the net-derived placement rule: a restart '
+        'may duplicate the channel, be refused at its first mechanism save, or '
+        'evaluate the rate at the wrong reaction order.',
+        reaction, model_part, owner, owner, owner)
 
 
 def determine_procnum_from_ram():

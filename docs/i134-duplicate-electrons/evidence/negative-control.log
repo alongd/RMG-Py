@@ -1,0 +1,26 @@
+# Negative control: examples/rmg/minimal, before vs after
+
+## Model size
+MODEL GENERATION COMPLETED
+
+The final model core has 26 species and 66 reactions
+The final model edge has 146 species and 332 reactions
+-- after --
+MODEL GENERATION COMPLETED
+
+The final model core has 26 species and 66 reactions
+The final model edge has 146 species and 332 reactions
+
+## diff -r, excluding logs, images, spreadsheets and HDF5
+Files nc-before/cantera_from_ck/chem_annotated.yaml and nc-after/cantera_from_ck/chem_annotated.yaml differ
+Files nc-before/cantera_from_ck/chem.yaml and nc-after/cantera_from_ck/chem.yaml differ
+
+## the entire content of both differences
+4c4
+< date: Thu, 27 Aug 2026 00:10:19 +0300
+---
+> date: Thu, 27 Aug 2026 00:26:16 +0300
+4c4
+< date: Thu, 27 Aug 2026 00:10:19 +0300
+---
+> date: Thu, 27 Aug 2026 00:26:16 +0300

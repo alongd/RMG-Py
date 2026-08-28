@@ -1,0 +1,3 @@
+== plasma restart chem.inp identity ==
+withlibs BYTE-IDENTICAL
+seedonly BYTE-IDENTICAL

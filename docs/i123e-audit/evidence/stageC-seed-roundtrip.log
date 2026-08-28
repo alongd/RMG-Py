@@ -1,0 +1,56 @@
+INFO:root:Loading kinetics library PlasmaElectronImpactIonization from /home/alon/Code/RMG-database-i123e-audit/input/kinetics/libraries/PlasmaElectronImpactIonization/reactions.py...
+INFO:root:Loading kinetics library PlasmaRadiativeRecombination from /home/alon/Code/RMG-database-i123e-audit/input/kinetics/libraries/PlasmaRadiativeRecombination/reactions.py...
+INFO:root:Loading kinetics library seed from /home/alon/Code/RMG-Py-i123e-audit/docs/i123e-audit/evidence/deck-run/seed/seed/reactions.py...
+==============================================================================
+database.directory = /home/alon/Code/RMG-database-i123e-audit/input
+resolved           = /home/alon/Code/RMG-database-i123e-audit/input
+seed directory     = /home/alon/Code/RMG-Py-i123e-audit/docs/i123e-audit/evidence/deck-run/seed/seed
+==============================================================================
+
+------------------------------------------------------------------------------
+S0 -- the canonical originals, from the database
+------------------------------------------------------------------------------
+  [..] PlasmaElectronImpactIonization   [Li] => [Lip]      electrons=+1  owner=PlasmaElectronImpactIonization  placement=(1, 2)
+  [..] PlasmaRadiativeRecombination     [Lip] => [Li]      electrons=-1  owner=PlasmaRadiativeRecombination  placement=(1, 0)
+
+------------------------------------------------------------------------------
+S1 -- what the seed file carries
+------------------------------------------------------------------------------
+  [PASS] the seed mechanism loads at all
+  [PASS] the seed carries both charge channels -- 2 reaction(s)
+  [..] Li => [Lip]                  kinetics=VoronovEIArrhenius     electrons=+1
+  [..] [Lip] => Li                  kinetics=BadnellRRArrhenius     electrons=-1
+  [PASS] the seed kept the ORIGINAL rate laws, not a Chemkin reduction -- ['BadnellRRArrhenius', 'VoronovEIArrhenius']
+  [PASS] the seed kept the scalar electron counts -- [-1, 1]
+
+------------------------------------------------------------------------------
+S2 -- the owner each reloaded seed reaction reports
+------------------------------------------------------------------------------
+  [..] FAMILY_ELECTRON_PLACEMENT keys = ['Cation_R_Recombination', 'PlasmaElectronImpactIonization', 'PlasmaRadiativeRecombination', 'Plasma_Electron_Attachment']
+  [..] Li => [Lip]                  owner='seed'   declared in the registry: False
+  [..] [Lip] => Li                  owner='seed'   declared in the registry: False
+  [PASS] no reloaded seed reaction names an owner the registry knows -- ['seed', 'seed']
+  [..] the originating library label is NOT recoverable from the seed entry: it survives only as free text in longDesc, which nothing parses
+
+------------------------------------------------------------------------------
+S3 -- placement counts, canonical versus after the seed round trip
+------------------------------------------------------------------------------
+  [..] channel                  canonical    via seed     consequence
+  [..] ElectronImpactIonization (1, 2)       (1, 2)       declaration preserved by luck
+  [PASS] the canonical PlasmaElectronImpactIonization entry still declares (1, 2) -- (1, 2)
+  [..] RadiativeRecombination   (1, 0)       (1, 0)       declaration preserved by luck
+  [PASS] the canonical PlasmaRadiativeRecombination entry still declares (1, 0) -- (1, 0)
+  [..] 
+  [..] the fallback rule for an undeclared owner is: electrons<0 -> (-electrons, 0), electrons>0 -> (0, electrons). For the recombination (electrons=-1) that gives (1, 0), which is what the declaration says anyway, so nothing changes. For the ionisation (electrons=+1) it gives (0, 1) where the declaration says (1, 2): the electron that is CONSUMED disappears from the reactant side, which is exactly the incident-order information a net scalar cannot carry.
+
+------------------------------------------------------------------------------
+S4 -- identity: is the seed copy the same reaction as the canonical copy?
+------------------------------------------------------------------------------
+  [..] PlasmaElectronImpactIonization   same-direction=True  either-direction=True
+  [PASS] PlasmaElectronImpactIonization: the seed copy IS the canonical reaction -- placement agrees, so identity agrees
+  [..] PlasmaRadiativeRecombination     same-direction=True  either-direction=True
+  [PASS] PlasmaRadiativeRecombination: the seed copy IS the canonical reaction -- placement agrees, so identity agrees
+
+==============================================================================
+SEED ROUND TRIP: every step measured as described above
+==============================================================================

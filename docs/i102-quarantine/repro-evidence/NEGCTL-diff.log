@@ -1,0 +1,16 @@
+=== negative control: examples/rmg/minimal, before vs after the gate ===
+before core: 0
+  BEFORE  The final model core has 26 species and 66 reactions
+  BEFORE  The final model edge has 146 species and 332 reactions
+  AFTER   The final model core has 26 species and 66 reactions
+  AFTER   The final model edge has 146 species and 332 reactions
+
+byte-for-byte comparison of the generated mechanism files:
+  IDENTICAL  chemkin/chem.inp
+  IDENTICAL  chemkin/chem_annotated.inp
+  IDENTICAL  chemkin/chem_edge_annotated.inp
+  IDENTICAL  chemkin/species_dictionary.txt
+
+sha256:
+2850089d64e3d74423d22bc26ad2b1969741c93256ebd00beacb34a99cdb54e5  /home/alon/Code/RMG-Py-i102-quarantine/docs/i102-quarantine/negctl-before/chemkin/chem_annotated.inp
+2850089d64e3d74423d22bc26ad2b1969741c93256ebd00beacb34a99cdb54e5  /home/alon/Code/RMG-Py-i102-quarantine/docs/i102-quarantine/negctl-after/chemkin/chem_annotated.inp

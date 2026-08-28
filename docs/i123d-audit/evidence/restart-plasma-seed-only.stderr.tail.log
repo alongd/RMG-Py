@@ -1,0 +1,20 @@
+    self.save_everything()
+  File "/home/alon/Code/RMG-Py-i123d-audit/rmgpy/rmg/main.py", line 2301, in save_everything
+    self.notify()
+  File "/home/alon/Code/RMG-Py-i123d-audit/rmgpy/util.py", line 114, in notify
+    observer.update(self)
+  File "rmgpy/chemkin.pyx", line 2860, in rmgpy.chemkin.ChemkinWriter.update
+    save_chemkin_files(rmg, config=self.config)
+  File "rmgpy/chemkin.pyx", line 2754, in rmgpy.chemkin.save_chemkin_files
+    save_chemkin(rmg.reaction_model,
+  File "rmgpy/chemkin.pyx", line 2723, in rmgpy.chemkin.save_chemkin
+    (path, render_chemkin_file(species_list, rxn_list, verbose=False,
+  File "rmgpy/chemkin.pyx", line 2568, in rmgpy.chemkin.render_chemkin_file
+    f.write(write_kinetics_entry(rxn, species_list=species, verbose=verbose))
+  File "rmgpy/chemkin.pyx", line 2070, in rmgpy.chemkin.write_kinetics_entry
+    reaction_string = write_reaction_string(reaction, java_library, species_list=species_list)
+  File "rmgpy/chemkin.pyx", line 1961, in rmgpy.chemkin.write_reaction_string
+    check_electron_reactant_order(reaction, reactants, reaction_string)
+  File "/home/alon/Code/RMG-Py-i123d-audit/rmgpy/electron_balance.py", line 450, in check_electron_reactant_order
+    raise MechanismWriterError(
+rmgpy.exceptions.MechanismWriterError: Reaction Li(2) => [Lip](3) has kinetics VoronovEIArrhenius whose rate is proportional to the electron density, but the exported equation "Li(2)=>[Lip](3)+e-(1)" has no electron among its reactants, so a solver would evaluate it at the wrong reaction order. Put the consumed electron in reaction.reactants and count only surplus produced electrons in reaction.electrons.

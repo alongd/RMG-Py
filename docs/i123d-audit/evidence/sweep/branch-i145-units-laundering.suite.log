@@ -1,0 +1,60 @@
+
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnTheRate::test_exported_rate_does_not_depend_on_the_reference_temperature[StickingCoefficient]
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnTheRate::test_exported_rate_does_not_depend_on_the_reference_temperature[StickingCoefficient]
+  /home/alon/Code/RMG-Py-i123d-step/test/rmgpy/plasmaExportTest.py:1146: UserWarning: StickingRate::validate: 
+  Sticking coefficient is greater than 1 for reaction 'H2(3) + X(4) => H2X(6)'
+  at T = 2000.0
+  at T = 5000.0
+  at T = 10000.0
+  
+    return ct.Interface(path, phase_names[-1])
+
+test/rmgpy/statmech/ndTorsionsTest.py: 21 warnings
+  /home/alon/Code/RMG-Py-i123d-step/rmgpy/statmech/ndTorsions.py:618: DeprecationWarning: You are passing x=[0.         0.21666156 0.43332312 0.64998469 0.86664625 1.08330781
+   1.29996937 1.51663094 1.7332925  1.94995406 2.16661562 2.38327719
+   2.59993875 2.81660031 3.03326187 3.24992343 3.466585   3.68324656
+   3.89990812 4.11656968 4.33323125 4.54989281 4.76655437 4.98321593
+   5.1998775  5.41653906 5.63320062 5.84986218 6.06652374 6.28318531] as a positional argument. Please change your invocation to use keyword arguments. From SciPy 1.14, passing these as positional arguments will result in an error.
+    Imat = simpson(Imat, rphis)
+
+test/rmgpy/statmech/ndTorsionsTest.py: 30 warnings
+  /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numdifftools/finite_difference.py:282: DeprecationWarning: Conversion of an array with ndim > 0 to a scalar is deprecated, and will error in future. Ensure you extract a single element from your array before performing this operation. (Deprecated NumPy 1.25.)
+    hess[i, i] = (f(x + 2 * e_i) - 2 * f_x + f(x - 2 * e_i)) / (4. * hess[i, i])
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================================ tests coverage ================================
+_______________ coverage: platform linux, python 3.9.23-final-0 ________________
+
+Coverage HTML written to dir htmlcov
+=========================== short test summary info ============================
+FAILED test/rmgpy/electronPlacementTest.py::TestElectronPlacementResolver::test_declaration_registry_is_explicit_and_closed - AssertionError: assert {'Plasma_Electron_Attachment': (1, 0), 'Cation_R_Recombination': (1, 0), 'PlasmaRadiativeRecombination': (1, 0), 'PlasmaElectronImpactIonization': (1, 2)} == {'Plasma_Electron_Attachment': (1, 0), 'Cation_R_Recombination': (1, 0), 'PlasmaElectronImpactIonization': (1, 2)}
+  
+  Common items:
+  {'Cation_R_Recombination': (1, 0),
+   'PlasmaElectronImpactIonization': (1, 2),
+   'Plasma_Electron_Attachment': (1, 0)}
+  Left contains 1 more item:
+  {'PlasmaRadiativeRecombination': (1, 0)}
+  
+  Full diff:
+    {
+        'Cation_R_Recombination': (
+            1,
+            0,
+        ),
+        'PlasmaElectronImpactIonization': (
+            1,
+            2,
+        ),
+  +     'PlasmaRadiativeRecombination': (
+  +         1,
+  +         0,
+  +     ),
+        'Plasma_Electron_Attachment': (
+            1,
+            0,
+        ),
+    }
+FAILED test/rmgpy/preflightDeckFamilyExclusionTest.py::PlasmaDeckFamilyExclusionTest::test_plasma_deck_does_not_declare_family[docs/i102-quarantine/input.py] - AssertionError: plasma deck docs/i102-quarantine/input.py declares Cation_R_Recombination, a lithium-ion-battery SEI family excluded from every plasma configuration. Declared families: ['Cation_R_Recombination', 'Cation_Li_Abstraction', 'Cation_Addition_MultipleBond', 'Cation_Addition_MultipleBond_Disprop', 'Cation_NO_Substitution', 'Cation_NO_Ring_Opening', 'Li_Abstraction', 'Li_Addition_MultipleBond']
+assert 'Cation_R_Recombination' not in ['Cation_R_Recombination', 'Cation_Li_Abstraction', 'Cation_Addition_MultipleBond', 'Cation_Addition_MultipleBond_Disprop', 'Cation_NO_Substitution', 'Cation_NO_Ring_Opening', 'Li_Abstraction', 'Li_Addition_MultipleBond']
+= 2 failed, 3028 passed, 49 skipped, 143 deselected, 54 warnings in 238.81s (0:03:58) =

@@ -50,10 +50,14 @@ from rmgpy.chemkin import (
     write_kinetics_entry,
     write_thermo_entry,
 )
-from rmgpy.chemkin import _remove_line_breaks, _process_duplicate_reactions
+from rmgpy.chemkin import (
+    _remove_line_breaks,
+    _process_duplicate_reactions,
+    _plasma_arrhenius_for_chemkin,
+)
 from rmgpy.data.kinetics import LibraryReaction
 from rmgpy.exceptions import ChemkinError
-from rmgpy.kinetics.arrhenius import Arrhenius, MultiArrhenius
+from rmgpy.kinetics.arrhenius import Arrhenius, MultiArrhenius, TwoTemperaturePlasma
 from rmgpy.kinetics.chebyshev import Chebyshev
 from rmgpy.reaction import Reaction
 from rmgpy.species import Species
@@ -1200,4 +1204,126 @@ class TestReadReactionComments:
                 new_comment_lines - self.expected_lines[index],
                 comment.strip(),
                 new_comment.strip(),
+            )
+
+
+class TestPlasmaChemkinRoundTrip:
+    """
+    A plasma mechanism must survive being written, read, and written again.
+
+    The Chemkin export of a plasma rate law is lossy in a documented way -- the
+    two-temperature form is reduced along ``T = Te`` and the file says so -- but the
+    reduction is not allowed to change the rate constant it reduces. It did: the reducer
+    built its intermediate ``Arrhenius`` from the source's SI *value* paired with the
+    source's *declared* units string, which is right only while the source declares SI.
+    RMG's own producers all do, so the mispairing was invisible until the Chemkin reader
+    became the first producer of a ``TwoTemperaturePlasma`` declared in
+    ``cm^3/(mol*s)``. From then on every read-then-write divided a second-order rate
+    constant by exactly 10**6 -- silently, at exit status 0, under a units header stating
+    units the numbers were no longer in -- and compounded once per round trip.
+
+    These tests assert on the rate constant the round trip yields, not on the text of the
+    file, so relabelling the header could not satisfy them.
+    """
+
+    # Located from this file, not from rmgpy.__file__: several worktrees of this repo
+    # share one conda environment, so the installed package can resolve to a different
+    # tree than the one the tests were collected from.
+    PLASMA_MODEL_DIR = os.path.join(
+        os.path.dirname(__file__), "test_data", "chemkin", "plasma_tdep"
+    )
+    T_GAS = 11604.5
+    TE = 11604.5
+
+    def _load_fixture(self):
+        return load_chemkin_file(
+            os.path.join(self.PLASMA_MODEL_DIR, "chem.inp"),
+            os.path.join(self.PLASMA_MODEL_DIR, "species_dictionary.txt"),
+        )
+
+    def test_plasma_round_trip_preserves_rate_coefficient(self, tmp_path):
+        """Three successive Chemkin round trips must not move the rate constant."""
+        species, reactions = self._load_fixture()
+        assert reactions, "the fixture carries no reactions"
+        assert all(
+            isinstance(rxn.kinetics, TwoTemperaturePlasma) for rxn in reactions
+        ), "the fixture is supposed to exercise the plasma rate law"
+
+        def rates(rxns):
+            return [rxn.kinetics.get_rate_coefficient(self.T_GAS, self.TE) for rxn in rxns]
+
+        def pre_exponentials(rxns):
+            return [rxn.kinetics.A.value_si for rxn in rxns]
+
+        expected_k = rates(reactions)
+        expected_A = pre_exponentials(reactions)
+
+        for trip in range(1, 4):
+            path = str(tmp_path / "chem_trip{0}.inp".format(trip))
+            save_chemkin_file(path, species, reactions, verbose=False)
+            species, reactions = load_chemkin_file(
+                path, os.path.join(self.PLASMA_MODEL_DIR, "species_dictionary.txt")
+            )
+            assert rates(reactions) == pytest.approx(expected_k, rel=1e-12), (
+                "round trip {0} moved the rate constant: {1} vs {2}".format(
+                    trip, rates(reactions), expected_k
+                )
+            )
+            assert pre_exponentials(reactions) == pytest.approx(expected_A, rel=1e-12), (
+                "round trip {0} moved the pre-exponential: {1} vs {2}".format(
+                    trip, pre_exponentials(reactions), expected_A
+                )
+            )
+
+    def test_plasma_arrhenius_reduction_is_unit_independent(self):
+        """
+        The Chemkin reduction of a plasma rate law must not depend on which units string
+        the source object happens to declare.
+
+        The same rate law is built twice -- once in SI, once in cgs -- and reduced. A
+        second-order rate coefficient carries m**3 in its dimensionality and
+        1 m**3 = (100 cm)**3 = 10**6 cm**3, so a value/units mispairing shows up here as
+        exactly that factor.
+        """
+        si = TwoTemperaturePlasma(
+            A=(1.49e12, "m^3/(mol*s)"),
+            n=-0.267,
+            Ea_g=(6.784e5, "J/mol"),
+            Ea_e=(6.784e5, "J/mol"),
+            T0=(1.0, "K"),
+        )
+        cgs = TwoTemperaturePlasma(
+            A=(1.49e18, "cm^3/(mol*s)"),
+            n=-0.267,
+            Ea_g=(6.784e5, "J/mol"),
+            Ea_e=(6.784e5, "J/mol"),
+            T0=(1.0, "K"),
+        )
+        # Same rate law, said two ways.
+        assert si.A.value_si == pytest.approx(cgs.A.value_si, rel=1e-12)
+
+        arr_si, _ = _plasma_arrhenius_for_chemkin(si)
+        arr_cgs, _ = _plasma_arrhenius_for_chemkin(cgs)
+
+        assert arr_si.A.value_si == pytest.approx(si.A.value_si, rel=1e-12)
+        assert arr_cgs.A.value_si == pytest.approx(cgs.A.value_si, rel=1e-12)
+        assert arr_cgs.A.value_si == pytest.approx(arr_si.A.value_si, rel=1e-12)
+
+    def test_plasma_reduction_is_exact_along_the_electron_diagonal(self):
+        """
+        The reduction is documented as exact along ``T = Te``; check that it is, for a
+        source declared in non-SI units. This is what makes the round-trip assertion
+        above an assertion about chemistry rather than about bookkeeping.
+        """
+        cgs = TwoTemperaturePlasma(
+            A=(1.49e18, "cm^3/(mol*s)"),
+            n=-0.267,
+            Ea_g=(6.784e5, "J/mol"),
+            Ea_e=(6.784e5, "J/mol"),
+            T0=(1.0, "K"),
+        )
+        arrhenius, _ = _plasma_arrhenius_for_chemkin(cgs)
+        for temperature in (5000.0, 11604.5, 50000.0):
+            assert arrhenius.get_rate_coefficient(temperature) == pytest.approx(
+                cgs.get_rate_coefficient(temperature, temperature), rel=1e-12
             )

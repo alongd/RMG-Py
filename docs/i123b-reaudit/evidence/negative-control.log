@@ -1,0 +1,14 @@
+Negative control: examples/rmg/minimal/input.py, identical input file on both trees.
+
+union    : /home/alon/Code/RMG-Py-i123b-reaudit  + RMG-database-i123b-reaudit   -> exit 0
+baseline : /home/alon/Code/RMG-Py-i123b-baseline + RMG-database-plasma          -> exit 0
+
+The final model core has 26 species and 66 reactions
+The final model edge has 146 species and 332 reactions
+
+byte comparison of every Chemkin artifact:
+  IDENTICAL  chem.inp                 md5 308924af2ca69954eddcba1853080886
+  IDENTICAL  chem_edge.inp            md5 6fc758854b2a3975c0c3d5216f7e8523
+  IDENTICAL  chem_annotated.inp       md5 d5108f38ff4634aec225776ae82c47ff
+  IDENTICAL  species_dictionary.txt   md5 c321b3b67de7ad4ac3bddfb23beea391
+  IDENTICAL  tran.dat                 md5 d78237511ff04ffef29d039f66d97eb8

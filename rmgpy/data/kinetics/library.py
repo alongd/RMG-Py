@@ -273,6 +273,51 @@ class LibraryReaction(Reaction):
 
 ################################################################################
 
+def seed_placement_survives(entry, owner):
+    """
+    Return ``True`` if the electron-placement declaration of ``owner`` (a key of
+    :data:`rmgpy.electron_placement.FAMILY_ELECTRON_PLACEMENT`) would survive
+    ``entry`` being written into an auto-generated (seed) kinetics library and
+    read back.
+
+    The declaration is keyed on the reaction's owner label, and a seed renames
+    its container to a fixed label (``seed`` on write, ``restart`` on restart),
+    so the owner survives the round trip only through the per-entry provenance
+    that :meth:`KineticsLibrary.get_library_reactions` parses out of
+    ``entry.long_desc``. This predicate mirrors that reader's branches, in the
+    reader's own order, and MUST be kept in step with it:
+
+    1. an ``Originally from reaction library: <label>`` line is parsed back
+       into ``LibraryReaction.library``, which ``get_placement_owner`` consults
+       after ``family`` (I-148) -- the declaration survives exactly when the
+       first such line names the owner;
+    2. failing that, a ``rate rule`` comment with a ``family: <label>`` line is
+       rebuilt as a :class:`TemplateReaction` of that family -- the declaration
+       survives exactly when that family is the owner;
+    3. failing both, the reaction is rebuilt as a :class:`LibraryReaction` of
+       the container itself, whose fixed label carries no declaration -- the
+       declaration is lost, and the reloaded reaction falls back to the
+       net-derived placement rule.
+
+    The seed writer (``rmgpy/rmg/main.py``, ``make_seed_mech``) calls this at
+    write time and warns loudly on ``False``, so a representation the
+    provenance lines do not cover announces itself in the run that writes the
+    seed rather than failing the run that restarts from it.
+    """
+    long_desc = entry.long_desc or ''
+    for line in long_desc.split('\n'):
+        if 'Originally from reaction library: ' in line:
+            lib = line.replace('Originally from reaction library: ', '').strip()
+            return lib == owner
+    if 'rate rule' in long_desc:
+        family = ''
+        for line in long_desc.split('\n'):
+            if 'family:' in line:
+                family = line.split('family:')[1].strip()
+        return family == owner
+    return False
+
+
 class KineticsLibrary(Database):
     """
     A class for working with an RMG kinetics library.
@@ -563,6 +608,24 @@ class KineticsLibrary(Database):
                     raise DatabaseError('Species {0} in kinetics library {1} is missing from its '
                                         'dictionary.'.format(product, self.label))
                 rxn.products.append(species_dict[product])
+
+            if hasattr(entry.data, 'electrons'):
+                # A charge-transfer reaction carries its electron count on its rate law
+                # (SurfaceChargeTransfer, SurfaceChargeTransferBEP, ArrheniusChargeTransfer,
+                # ArrheniusChargeTransferBM, ...), not among its reactants and products, and
+                # `load_entry` above takes no electron argument, so `rxn.electrons` is still zero
+                # here. `is_balanced()` folds the count into the net charges, so it must be copied
+                # across before the check runs or a balanced charged entry is rejected.
+                # Keyed off the attribute rather than an isinstance allowlist, matching
+                # `KineticsDepository.load`; see the note there on which classes carry the field.
+                # Wrapper kinetics (e.g. MultiArrhenius holding a list of rate laws) expose no
+                # top-level `electrons` attribute, so charge-transfer data wrapped that way is not
+                # inspected here. Wrapper traversal is deliberately not implemented, as in the
+                # depository.
+                # Unlike the depository there is no fallback for kinetics that declare no count of
+                # their own: a depository falls back on the electron count declared by the family
+                # that owns it, and a library has no owning family to ask.
+                rxn.electrons = entry.data.electrons.value
 
             if not rxn.is_balanced():
                 raise DatabaseError('Reaction {0} in kinetics library {1} was not balanced! '

@@ -1,0 +1,40 @@
+    hess[i, i] = (f(x + 2 * e_i) - 2 * f_x + f(x - 2 * e_i)) / (4. * hess[i, i])
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================================ tests coverage ================================
+_______________ coverage: platform linux, python 3.9.23-final-0 ________________
+
+Coverage HTML written to dir htmlcov
+=========================== short test summary info ============================
+FAILED test/rmgpy/electronPlacementTest.py::TestElectronPlacementResolver::test_declaration_registry_is_explicit_and_closed - AssertionError: assert {'Plasma_Electron_Attachment': (1, 0), 'Cation_R_Recombination': (1, 0), 'PlasmaRadiativeRecombination': (1, 0), 'PlasmaElectronImpactIonization': (1, 2)} == {'Plasma_Electron_Attachment': (1, 0), 'Cation_R_Recombination': (1, 0), 'PlasmaElectronImpactIonization': (1, 2)}
+  
+  Common items:
+  {'Cation_R_Recombination': (1, 0),
+   'PlasmaElectronImpactIonization': (1, 2),
+   'Plasma_Electron_Attachment': (1, 0)}
+  Left contains 1 more item:
+  {'PlasmaRadiativeRecombination': (1, 0)}
+  
+  Full diff:
+    {
+        'Cation_R_Recombination': (
+            1,
+            0,
+        ),
+        'PlasmaElectronImpactIonization': (
+            1,
+            2,
+        ),
+  +     'PlasmaRadiativeRecombination': (
+  +         1,
+  +         0,
+  +     ),
+        'Plasma_Electron_Attachment': (
+            1,
+            0,
+        ),
+    }
+FAILED test/rmgpy/preflightDeckFamilyExclusionTest.py::PlasmaDeckFamilyExclusionTest::test_plasma_deck_does_not_declare_family[docs/i102-quarantine/input.py] - AssertionError: plasma deck docs/i102-quarantine/input.py declares Cation_R_Recombination, a lithium-ion-battery SEI family excluded from every plasma configuration. Declared families: ['Cation_R_Recombination', 'Cation_Li_Abstraction', 'Cation_Addition_MultipleBond', 'Cation_Addition_MultipleBond_Disprop', 'Cation_NO_Substitution', 'Cation_NO_Ring_Opening', 'Li_Abstraction', 'Li_Addition_MultipleBond']
+assert 'Cation_R_Recombination' not in ['Cation_R_Recombination', 'Cation_Li_Abstraction', 'Cation_Addition_MultipleBond', 'Cation_Addition_MultipleBond_Disprop', 'Cation_NO_Substitution', 'Cation_NO_Ring_Opening', 'Li_Abstraction', 'Li_Addition_MultipleBond']
+= 2 failed, 3028 passed, 49 skipped, 143 deselected, 54 warnings in 263.25s (0:04:23) =
+### union unit suite exit: 1 ###

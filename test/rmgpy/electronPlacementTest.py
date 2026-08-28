@@ -339,13 +339,33 @@ class TestElectronPlacementResolver:
             resolve_electron_placement(reaction, [_electron(), _electron()])
 
     def test_declaration_registry_is_explicit_and_closed(self):
-        """The registry is a closed, hand-maintained list. Two families are
-        declared, both in the single-electron-on-the-reactant-side shape; any
-        other entry appearing here means placement semantics generalized without
-        someone deciding they should."""
+        """The registry is a closed, hand-maintained list. Four owners are
+        declared, each in the ``(reactant_count, product_count)`` shape I-113
+        widened the declaration to:
+
+        * two FAMILIES that consume one electron with none produced --
+          ``Plasma_Electron_Attachment`` (``A + e- -> A-``) and
+          ``Cation_R_Recombination`` (reverse-generated ``cation + R + e- ->
+          RH``) -- both ``(1, 0)``;
+        * one kinetics LIBRARY, ``PlasmaRadiativeRecombination``, at ``(1, 0)``:
+          ``A+ + e- -> A + hv`` consumes one incident electron and produces none
+          (the released energy leaves as a photon), so one electron stands on the
+          reactant side and none on the product side; and
+        * one kinetics LIBRARY, ``PlasmaElectronImpactIonization``, at
+          ``(1, 2)`` -- ``A + e- -> A+ + 2 e-`` -- the entry whose two numbers
+          differ, one incident electron in and two out.
+
+        A library label is a legal key because ``LibraryReaction`` sets
+        ``family = library``. Any FURTHER entry appearing here means placement
+        semantics generalized without someone deciding they should. The
+        ``PlasmaRadiativeRecombination`` entry was added by the i119 chain and
+        confirmed on the chemistry above (``A+ + e- -> A + hv``, one electron
+        consumed, none produced) before this pin was widened to admit it."""
         assert FAMILY_ELECTRON_PLACEMENT == {
-            "Plasma_Electron_Attachment": ("reactants", 1),
-            "Cation_R_Recombination": ("reactants", 1),
+            "Plasma_Electron_Attachment": (1, 0),
+            "Cation_R_Recombination": (1, 0),
+            "PlasmaRadiativeRecombination": (1, 0),
+            "PlasmaElectronImpactIonization": (1, 2),
         }
 
 

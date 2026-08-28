@@ -53,6 +53,7 @@ from rmgpy.data.kinetics.common import save_entry, find_degenerate_reactions, ge
                                        ensure_independent_atom_ids, check_for_same_reactants
 from rmgpy.data.kinetics.depository import KineticsDepository
 from rmgpy.data.kinetics.groups import KineticsGroups
+from rmgpy.data.kinetics.quarantine import load_family_quarantine
 from rmgpy.data.kinetics.rules import KineticsRules
 from rmgpy.exceptions import ActionError, DatabaseError, InvalidActionError, KekulizationError, KineticsError, \
                              ForbiddenStructureException, UndeterminableKineticsError
@@ -617,6 +618,10 @@ class KineticsFamily(Database):
         self.rules = None
         self.depositories = []
 
+        # A KineticsQuarantine if the family directory carries a quarantine.py sidecar,
+        # None for every ordinary family. See rmgpy.data.kinetics.quarantine.
+        self.quarantine = None
+
     def __repr__(self):
         return '<ReactionFamily "{0}">'.format(self.label)
 
@@ -689,6 +694,11 @@ class KineticsFamily(Database):
         self.allow_charged_reactants = (self.allow_charged_species if allow_charged_reactants is None
                                         else allow_charged_reactants)
         self.electrons = local_context.get('electrons', 0)
+
+        # Loaded here, before the `depository_labels == 'all'` branch below returns early, so
+        # every way of loading a family sees the same quarantine state. Ordinary families have
+        # no manifest and this is one os.path.exists.
+        self.quarantine = load_family_quarantine(self.label, path)
 
         if self.reactant_num:
             self.groups.reactant_num = self.reactant_num

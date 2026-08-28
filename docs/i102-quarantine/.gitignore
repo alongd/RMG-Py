@@ -1,0 +1,8 @@
+# RMG run directories produced while gathering the evidence in repro-evidence/.
+# The logs are committed; the model output trees are not.
+red-before/
+after/
+negctl-before/
+negctl-after/
+probes/run/
+sei/

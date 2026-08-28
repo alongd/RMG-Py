@@ -293,6 +293,11 @@ def read_kinetics_entry(entry, species_dict, Aunits, Aunits_surf, Eunits):
                 arrheniusHigh=kinetics['arrhenius high'],
                 arrheniusLow=kinetics['arrhenius low'])
             reaction.kinetics.efficiencies = kinetics['efficiencies']
+        elif 'species temperature dependence' in kinetics and 'arrhenius high' in kinetics:
+            # The extra lines were a TDEP declaration (possibly with REV/DUP);
+            # the base rate parameters are the ones on the reaction line, and the
+            # electron temperature is re-attached below.
+            reaction.kinetics = kinetics['arrhenius high']
         elif 'explicit reverse' in kinetics or reaction.duplicate:
             # it's a normal high-P reaction - the extra lines were only either REV (explicit reverse) or DUP (duplicate)
             if 'sticking coefficient' in kinetics:
@@ -311,6 +316,14 @@ def read_kinetics_entry(entry, species_dict, Aunits, Aunits_surf, Eunits):
                 'Unable to understand all additional information lines for reaction {0}.'.format(entry))
 
         # These things may *also* be true
+        if 'species temperature dependence' in kinetics:
+            # Re-attach the electron temperature. Done here rather than in the
+            # branch above so that every combination reaches it: a TDEP line
+            # sitting on falloff or pressure-dependent parameters is refused by
+            # the rebuilder instead of having its temperature silently dropped.
+            reaction.kinetics = _two_temperature_plasma_from_arrhenius(
+                reaction.kinetics, kinetics['species temperature dependence'], reaction)
+
         if 'sri' in kinetics:
             reaction.kinetics.comment += "Warning: SRI parameters from chemkin file ignored on import. "
 
@@ -479,6 +492,94 @@ def _read_kinetics_reaction(line, species_dict, Aunits, Aunits_surf, Eunits):
     return reaction, third_body, kinetics, k_units, k_low_units
 
 
+def _read_tdep_species(line, case_preserved_tokens, reaction, species_dict):
+    """
+    Parse a Chemkin ``TDEP/<species>/`` auxiliary line and return the
+    :class:`~rmgpy.species.Species` whose temperature the rate is evaluated at.
+
+    Only the bare ``TDEP/<species>/`` form is accepted, and only when the named
+    species is the mechanism's electron. The other plasma auxiliary keywords --
+    ``MOME``, ``XSMI``, ``EXCI`` -- change what the rate parameters *mean*, and
+    RMG has no representation for any of them; a line carrying one must keep
+    raising rather than be quietly reduced to its TDEP part. Likewise a TDEP on
+    some other species' temperature (a vibrational temperature, say) has no RMG
+    rate law behind it, and reading it back as an electron-temperature rate law
+    would be inventing chemistry.
+    """
+    if len(case_preserved_tokens) < 3 or not case_preserved_tokens[1].strip():
+        raise ChemkinError(
+            'Malformed TDEP auxiliary line for reaction {0}: expected TDEP/<species>/, '
+            'got {1!r}'.format(reaction, line))
+
+    trailing = ''.join(case_preserved_tokens[2:]).strip()
+    if trailing:
+        raise ChemkinError(
+            'Unsupported Chemkin auxiliary data {0!r} alongside TDEP for reaction {1} in line '
+            '{2!r}. RMG understands TDEP/<species>/ on its own; MOME, XSMI and EXCI change the '
+            'meaning of the rate parameters and RMG has no rate law that carries '
+            'them.'.format(trailing, reaction, line))
+
+    label = case_preserved_tokens[1].strip()
+    try:
+        tdep_species = species_dict[label]
+    except KeyError:
+        try:
+            tdep_species = species_dict[label.upper()]
+        except KeyError:
+            raise ChemkinError(
+                'TDEP names species {0!r} for reaction {1}, which is not in the species '
+                'dictionary.'.format(label, reaction))
+
+    if get_electron_species([tdep_species]) is None:
+        raise ChemkinError(
+            'TDEP names species {0!r} for reaction {1}, which is not the electron. RMG can only '
+            'represent a rate evaluated at the electron temperature; there is no rate law here '
+            'for the temperature of any other species.'.format(label, reaction))
+
+    return tdep_species
+
+
+def _two_temperature_plasma_from_arrhenius(arrhenius, tdep_species, reaction):
+    """
+    Rebuild the rate law a ``TDEP/<electron>/`` line describes.
+
+    The Chemkin line says: evaluate ``A * T^n * exp(-Ea/(R*T))`` at the electron
+    temperature. :class:`~rmgpy.kinetics.TwoTemperaturePlasma` collapses to
+    exactly that when its two activation energies are equal --
+
+        k(T, Te) = A*(Te/T0)^n * exp(-Ea_g/(R*T)) * exp(Ea_e*(Te-T)/(R*T*Te))
+
+    with ``Ea_e == Ea_g == Ea`` leaves ``A*(Te/T0)^n * exp(-Ea/(R*Te))`` -- which
+    is the same identity ``rmgpy.yaml_cantera2`` relies on to write these rate
+    laws as Cantera's native ``two-temperature-plasma``.
+
+    Reading the reaction back as a plain :class:`~rmgpy.kinetics.Arrhenius`
+    would evaluate the very same numbers at the *gas* temperature, which is a
+    different reaction rather than a lossier one, so anything this function
+    cannot rebuild faithfully raises instead.
+    """
+    if type(arrhenius) is not _kinetics.Arrhenius:
+        raise ChemkinError(
+            'Reaction {0} carries a TDEP/{1}/ line, but its rate parameters read back as {2}. '
+            'RMG can only re-attach an electron temperature to a plain modified-Arrhenius '
+            'expression; combining TDEP with pressure dependence, falloff or a surface rate law '
+            'has no RMG rate law behind it.'.format(
+                reaction, get_species_identifier(tdep_species), type(arrhenius).__name__))
+
+    return _kinetics.TwoTemperaturePlasma(
+        A=(arrhenius.A.value, arrhenius.A.units),
+        n=arrhenius.n.value,
+        Ea_g=(arrhenius.Ea.value, arrhenius.Ea.units),
+        Ea_e=(arrhenius.Ea.value, arrhenius.Ea.units),
+        T0=(arrhenius.T0.value, arrhenius.T0.units),
+        Tmin=arrhenius.Tmin,
+        Tmax=arrhenius.Tmax,
+        Pmin=arrhenius.Pmin,
+        Pmax=arrhenius.Pmax,
+        comment=arrhenius.comment,
+    )
+
+
 def _read_kinetics_line(line, reaction, species_dict, Eunits, kunits, klow_units, kinetics):
     """
     Parse the subsequent lines of of a Chemkin reaction entry.
@@ -494,7 +595,22 @@ def _read_kinetics_line(line, reaction, species_dict, Eunits, kunits, klow_units
     elif any(product.molecule[0].contains_surface_site() for product in reaction.products):
         surf_rxn = True
     
-    if 'DUP' in line:
+    if line.strip().startswith('TDEP'):
+        # Species temperature dependence. CHEMKIN-III, section IV, "Species
+        # Temperature Dependence": the species name following the TDEP keyword
+        # names the temperature at which this reaction's rate parameters are
+        # evaluated, in place of the gas temperature. That is what RMG's own
+        # writer emits for every plasma rate law (see write_kinetics_entry), and
+        # without this branch the line falls through to the collider-efficiency
+        # default below, where the species name is parsed as a number.
+        #
+        # Matched on the prefix rather than by substring, unlike the keywords
+        # below, so that a keyword or comment mentioning TDEP elsewhere on a
+        # line cannot capture it.
+        kinetics['species temperature dependence'] = _read_tdep_species(
+            line, case_preserved_tokens, reaction, species_dict)
+
+    elif 'DUP' in line:
         # Duplicate reaction
         reaction.duplicate = True
 
@@ -1740,8 +1856,24 @@ def _plasma_arrhenius_for_chemkin(kinetics):
         # Along T = Te the electron exponential is exactly 1, so the reduction is
         # the exact rate on that diagonal: k = A*Te^n*exp(-Ea_g/(R*Te)).
         # Ea_e has no Chemkin representation and is dropped.
+        #
+        # Each parameter is paired with the units its number is actually in. For Ea and
+        # T0 that is the SI value with a literal SI units string, because their SI units
+        # are fixed. A rate coefficient's are not -- they depend on the reaction order --
+        # so there is no literal to write, and A is passed as the declared value with the
+        # declared units instead. Both pairings are correct; a value from one unit system
+        # under the units string of the other is not.
+        #
+        # This line used to read ``A=(kinetics.A.value_si, kinetics.A.units)``, an SI
+        # number labelled with whatever the source happened to declare. That is right
+        # only while the source declares SI, which every rate law RMG builds for itself
+        # does -- so it was invisible until the Chemkin reader became the first producer
+        # of a TwoTemperaturePlasma declared in cm^3/(mol*s). From then on it understated
+        # a second-order rate constant by exactly 10**6 per round trip (1 m^3 = 10**6
+        # cm^3; a third-order rate would have lost 10**12), silently, at exit status 0,
+        # under a units header the numbers no longer matched.
         arrhenius = _kinetics.Arrhenius(
-            A=(kinetics.A.value_si, kinetics.A.units),
+            A=(kinetics.A.value, kinetics.A.units),
             n=kinetics.n.value_si,
             Ea=(kinetics.Ea_g.value_si, 'J/mol'),
             T0=(kinetics.T0.value_si, 'K'),

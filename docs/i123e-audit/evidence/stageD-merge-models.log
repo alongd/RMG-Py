@@ -1,0 +1,77 @@
+INFO:root:Thermo file has default temperature range 300.0 to 1000.0 and 1000.0 to 5000.0
+WARNING:root:Discarding comments from Chemkin file because not sure which reaction they apply to
+INFO:root:Thermo file has default temperature range 300.0 to 1000.0 and 1000.0 to 5000.0
+WARNING:root:Discarding comments from Chemkin file because not sure which reaction they apply to
+INFO:root:Thermo file has default temperature range 300.0 to 1000.0 and 1000.0 to 5000.0
+WARNING:root:Discarding comments from Chemkin file because not sure which reaction they apply to
+INFO:root:Thermo file has default temperature range 300.0 to 1000.0 and 1000.0 to 5000.0
+WARNING:root:Discarding comments from Chemkin file because not sure which reaction they apply to
+INFO:root:Thermo file has default temperature range 300.0 to 1000.0 and 1000.0 to 5000.0
+WARNING:root:Discarding comments from Chemkin file because not sure which reaction they apply to
+INFO:root:Chemkin file contains 2 reactions.
+INFO:root:Thermo file has default temperature range 300.0 to 1000.0 and 1000.0 to 5000.0
+WARNING:root:Discarding comments from Chemkin file because not sure which reaction they apply to
+==============================================================================
+database.directory = /home/alon/Code/RMG-database-i123e-audit/input
+resolved           = /home/alon/Code/RMG-database-i123e-audit/input
+repo               = /home/alon/Code/RMG-Py-i123e-audit
+deck output        = /home/alon/Code/RMG-Py-i123e-audit/docs/i123e-audit/evidence/deck-run
+==============================================================================
+
+------------------------------------------------------------------------------
+THE DECK ITSELF -- the reference both halves are measured against
+------------------------------------------------------------------------------
+    Li(2) + e-(1) => [Lip](3) + e-(1) + e-(1)    k(Te=11604.5) = 1.0819136429e+08
+    [Lip](3) + e-(1) => Li(2)                    k(Te=11604.5) = 9.6182263305e+04
+  [PASS] the deck carries both charge channels -- 2 reaction(s)
+
+------------------------------------------------------------------------------
+SPLIT -- one reaction per half, textually, numbers untouched
+------------------------------------------------------------------------------
+reaction entries found: 2
+wrote /home/alon/Code/RMG-Py-i123e-audit/docs/i123e-audit/evidence/deck-run/merge-half0/chem.inp
+Li(2)+e-(1)=>[Lip](3)+e-(1)+e-(1)                   1.490e+18 -0.267    162.150  
+    TDEP/e-(1)/   ! VoronovEIArrhenius exported as a modified-Arrhenius fit of k(Te) over 1.16e+04-2.321e+08 K; the original functional form is not representable in Chemkin
+wrote /home/alon/Code/RMG-Py-i123e-audit/docs/i123e-audit/evidence/deck-run/merge-half1/chem.inp
+[Lip](3)+e-(1)=>Li(2)                               1.734e+14 -0.801    0.010    
+    TDEP/e-(1)/   ! BadnellRRArrhenius exported as a modified-Arrhenius fit of k(Te) over 10-1e+07 K; the original functional form is not representable in Chemkin
+  [PASS] make_half_mechanisms exited 0 -- exit 0
+  [PASS] merge-half0 carries exactly one reaction -- 1 reaction(s)
+  [..] Li(2) + e-(1) => [Lip](3) + e-(1) + e-(1) k = 1.0819136429e+08
+  [PASS] splitting did not move Li(2)+e-(1)=>[Lip](3)+e-(1)+e-(1) -- half 1.0819136429e+08 vs deck 1.0819136429e+08
+  [PASS] merge-half1 carries exactly one reaction -- 1 reaction(s)
+  [..] [Lip](3) + e-(1) => Li(2)                k = 9.6182263305e+04
+  [PASS] splitting did not move [Lip](3)+e-(1)=>Li(2) -- half 9.6182263305e+04 vs deck 9.6182263305e+04
+
+------------------------------------------------------------------------------
+MERGE -- scripts/mergeModels.py, unmodified, as a subprocess
+------------------------------------------------------------------------------
+    $ /home/alon/anaconda3/envs/rmg_env/bin/python /home/alon/Code/RMG-Py-i123e-audit/scripts/mergeModels.py --model1 /home/alon/Code/RMG-Py-i123e-audit/docs/i123e-audit/evidence/deck-run/merge-half0/chem.inp /home/alon/Code/RMG-Py-i123e-audit/docs/i123e-audit/evidence/deck-run/merge-half0/species_dictionary.txt --model2 /home/alon/Code/RMG-Py-i123e-audit/docs/i123e-audit/evidence/deck-run/merge-half1/chem.inp /home/alon/Code/RMG-Py-i123e-audit/docs/i123e-audit/evidence/deck-run/merge-half1/species_dictionary.txt
+Loading model #1...
+Loading model #2...
+Ignoring common species and reactions from model #1...
+Added 7 out of 7 (100.0%) unique species from model #1.
+Added 1 out of 1 (100.0%) unique reactions from model #1.
+Ignoring common species and reactions from model #2...
+Added 0 out of 7 (0.0%) unique species from model #2.
+Added 1 out of 1 (100.0%) unique reactions from model #2.
+The merged model has 7 species and 2 reactions
+Merged Chemkin file saved to /home/alon/Code/RMG-Py-i123e-audit/docs/i123e-audit/evidence/deck-run/merge-run/chem.inp
+Merged species dictionary saved to /home/alon/Code/RMG-Py-i123e-audit/docs/i123e-audit/evidence/deck-run/merge-run/species_dictionary.txt
+  [PASS] mergeModels exited 0 -- exit 0
+  [PASS] mergeModels wrote a Chemkin file -- /home/alon/Code/RMG-Py-i123e-audit/docs/i123e-audit/evidence/deck-run/merge-run/chem.inp
+
+------------------------------------------------------------------------------
+THE MERGED MODEL -- both channels, and both rate constants
+------------------------------------------------------------------------------
+    Li(2) + e-(1) => [Lip](3) + e-(1) + e-(1)    k(Te=11604.5) = 1.0819136429e+08
+    [Lip](3) + e-(1) => Li(2)                    k(Te=11604.5) = 9.6182263305e+04
+  [PASS] the merged model carries BOTH charge channels -- 2 reaction(s)
+  [PASS] Li(2)+e-(1)=>[Lip](3)+e-(1)+e-(1) rate constant unchanged by the merge -- merged 1.0819136429e+08 vs deck 1.0819136429e+08   ratio 1
+  [PASS] [Lip](3)+e-(1)=>Li(2) rate constant unchanged by the merge -- merged 9.6182263305e+04 vs deck 9.6182263305e+04   ratio 1
+  [PASS] Li(2)+e-(1)=>[Lip](3)+e-(1)+e-(1) survived the merge
+  [PASS] [Lip](3)+e-(1)=>Li(2) survived the merge
+
+==============================================================================
+MERGE MODELS: both channels survived and neither rate constant moved
+==============================================================================

@@ -1,0 +1,49 @@
+==============================================================================
+rmgpy              = /home/alon/Code/RMG-Py-i123c-audit
+compiled module    = /home/alon/Code/RMG-Py-i123c-audit/rmgpy/molecule/molecule.cpython-39-x86_64-linux-gnu.so
+database.directory = /home/alon/Code/RMG-database-i123c-audit/input
+resolved realpath  = /home/alon/Code/RMG-database-i123c-audit/input
+==============================================================================
+
+------------------------------------------------------------------------------
+DEFECT 1 -- the RMS YAML writer, and whether it still fails LOUDLY
+------------------------------------------------------------------------------
+  [..] rmgpy/yaml_rms.py:252  raise ValueError("Object of type {} does not have a defined conversion to "
+  [..]   preceding line: else:
+  [PASS] the dispatch's terminal branch is a raise, not a fall-through default -- else:
+  [..] PlasmaElectronImpactIonization -> VoronovEIArrhenius  LOUD: ValueError
+  [..]     Object of type <class 'rmgpy.kinetics.arrhenius.VoronovEIArrhenius'> does not have a defined conversion to ReactionMechanismSimulator format
+  [PASS] VoronovEIArrhenius rate law is REFUSED loudly by the RMS writer
+  [..] PlasmaRadiativeRecombination -> BadnellRRArrhenius  LOUD: ValueError
+  [..]     Object of type <class 'rmgpy.kinetics.arrhenius.BadnellRRArrhenius'> does not have a defined conversion to ReactionMechanismSimulator format
+  [PASS] BadnellRRArrhenius rate law is REFUSED loudly by the RMS writer
+  [PASS] the shipped deck still disables the RMS writer as its documented workaround -- generateRMSYAML setting in docs/i123-integration/input.py
+
+------------------------------------------------------------------------------
+DEFECT 2 -- one library carrying both channels still cannot be loaded
+------------------------------------------------------------------------------
+  [..] entry 1: [Li] => [Lip]   electrons=1  family=None  placement=(0, 1)
+  [..] entry 2: [Lip] => [Li]   electrons=-1  family=None  placement=(1, 0)
+  [..] check_for_duplicates REFUSED -> DatabaseError
+  [..]     Unexpected duplicate reaction [Li] => [Lip] in kinetics library PlasmaBothChannels. Reaction index 2 matches index 1.
+  [PASS] a single library carrying both channels is still REFUSED at load
+  [..] the two entries above carry family=None: the owner is attached later, in get_library_reactions, which is why the placement declaration is invisible here
+  [PASS] the shipped deck still keeps the two channels in TWO libraries -- PlasmaElectronImpactIonization + PlasmaRadiativeRecombination
+  [PASS] PlasmaElectronImpactIonization carries exactly one entry -- 1
+  [PASS] PlasmaRadiativeRecombination carries exactly one entry -- 1
+
+------------------------------------------------------------------------------
+DEFECT 3 -- the lithium cation enthalpy, MEASURED on this union
+------------------------------------------------------------------------------
+  [..] lithium/cation thermo libraries present in this database: ['LithiumPrimaryThermo', 'LithiumAdditionalThermo', 'PlasmaCationThermo']
+  [..] LithiumPrimaryThermo :: entry '[Lip]' index=65
+  [..]     H298      = 532.936 kJ/mol
+  [..]     E0        = 526.738 kJ/mol
+  [..]     shortDesc = []
+  [PASS] a lithium cation thermo entry exists in this database
+  [..] reference dfH(Li+, g) = dfH(Li, g) + IE(Li) = 159.3 + 520.2 = 679.5 kJ/mol
+  [..]     [I] basis: standard atomisation enthalpy and first ionisation energy of lithium; quoted, not re-derived from a primary source in this probe
+  [..] LithiumPrimaryThermo :: [Lip]  H298 = 532.936 kJ/mol   gap vs reference = +146.6 kJ/mol (+1.52 eV)
+
+==============================================================================
+all checks passed

@@ -1,0 +1,12 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+rootdir: /home/alon/Code/RMG-Py-i123e-audit
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 1 item
+
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheLibraryLoadLandmineIsNotReachedFromHere::test_one_library_carrying_both_channels_can_be_loaded XFAIL
+
+=========================== short test summary info ============================
+XFAIL test/rmgpy/i134DuplicateElectronsTest.py::TestTheLibraryLoadLandmineIsNotReachedFromHere::test_one_library_carrying_both_channels_can_be_loaded - Not reached by this repair: check_for_duplicates runs over entry.item, which carries no owner, so both channels fall back to the net rule and stay mirrors. Fixing it requires recording the owner at load, and a decision about a registry that is keyed one placement per owner. When this starts passing, that ticket has landed and this marker should be removed.
+============================== 1 xfailed in 1.03s ==============================

@@ -1,0 +1,14 @@
+== restart-before-seedonly: tail of stdout ==
+197:    The model core has 2 species and 2 reactions
+211:    The model core has 3 species and 2 reactions
+226:    The model core has 4 species and 2 reactions
+241:    The model core has 5 species and 2 reactions
+256:    The model core has 6 species and 2 reactions
+271:    The model core has 7 species and 2 reactions
+285:    The model core has 7 species and 2 reactions
+303:    The model core has 7 species and 2 reactions
+== tail of stderr ==
+    check_electron_reactant_order(reaction, reactants, reaction_string)
+  File "/home/alon/Code/RMG-Py-i148-seed-placement/rmgpy/electron_balance.py", line 450, in check_electron_reactant_order
+    raise MechanismWriterError(
+rmgpy.exceptions.MechanismWriterError: Reaction Li(2) => [Lip](3) has kinetics VoronovEIArrhenius whose rate is proportional to the electron density, but the exported equation "Li(2)=>[Lip](3)+e-(1)" has no electron among its reactants, so a solver would evaluate it at the wrong reaction order. Put the consumed electron in reaction.reactants and count only surplus produced electrons in reaction.electrons.

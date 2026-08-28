@@ -1,0 +1,25 @@
+[Lip](3)+e-(1)=>Li(2)                               1.734e+14 -0.801    0.010    
+    TDEP/e-(1)/   ! BadnellRRArrhenius exported as a modified-Arrhenius fit of k(Te) over 10-1e+07 K; the original functional form is not representable in Chemkin
+"""
+could not convert string to float: 'e-(1)'
+Please check https://cantera.org/stable/userguide/ck2yaml-tutorial.html#debugging-common-errors-in-ck-files
+for the correct Chemkin syntax.
+Performing final model checks...
+No collision rate violators found in the model's core.
+
+MODEL GENERATION COMPLETED
+
+The final model core has 7 species and 2 reactions
+The final model edge has 0 species and 0 reactions
+
+RMG execution terminated at Thu Aug 27 14:58:41 2026
+Error: 
+Error: ===============================================================================
+Error: EXPORT FAILED. 1 of RMG's output steps did not produce their files:
+Error:   Chemkin-to-Cantera translation (cantera_from_ck/)
+Error:       InputError: Error while reading reaction in chem.inp starting on line 66:
+Error: 
+Error: Model generation itself completed and every file written before this point is
+Error: valid; the output above names what is missing.
+Error: ===============================================================================
+Error: 

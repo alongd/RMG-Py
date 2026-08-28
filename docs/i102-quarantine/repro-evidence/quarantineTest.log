@@ -1,0 +1,41 @@
+============================= test session starts ==============================
+collecting ... collected 36 items
+
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_manifest_loads_its_fields PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_family_without_a_manifest_is_not_quarantined PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_an_unknown_kinetics_class_raises_rather_than_quarantining_nothing PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_manifest_missing_a_required_field_raises[state] PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_manifest_missing_a_required_field_raises[appliesToKineticsClass] PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_manifest_missing_a_required_field_raises[reason] PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_the_criterion_is_selective PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_the_criterion_is_evaluated_against_the_data_not_a_stored_list PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_no_hard_coded_entry_list_exists_in_the_code PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheRefusalNamesFiveThings::test_it_names_the_family PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheRefusalNamesFiveThings::test_it_names_the_provenance PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheRefusalNamesFiveThings::test_it_names_the_generated_reaction PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheRefusalNamesFiveThings::test_it_names_the_kinetics_class PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheRefusalNamesFiveThings::test_it_names_the_reason PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheRefusalNamesFiveThings::test_it_names_the_campaign_state_and_the_manifest PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheRefusalNamesFiveThings::test_provenance_is_never_blank PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheGateFires::test_at_kinetics_estimation_the_primary_site PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheGateFires::test_at_core_admission_the_backstop PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheGateFires::test_at_edge_admission_the_backstop PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheGateFires::test_ordinary_chemistry_is_untouched PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheGateFires::test_a_quarantined_family_still_admits_its_unquarantined_kinetics PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheGateFires::test_an_unloaded_database_does_not_crash_the_gate PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_1_the_reaction_is_not_removed_after_generation PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_2_no_average_rule_is_substituted PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_3_it_is_never_evaluated_at_potential_zero PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_4_it_is_not_marked_irreversible PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_5_no_reverse_rate_is_derived PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_6_seeding_a_product_or_cation_does_not_bypass_it PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_7_no_generic_collision_rate_replaces_it PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheRealQuarantinedFamily::test_the_family_is_quarantined_with_the_ruling_s_words PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheRealQuarantinedFamily::test_the_affected_set_is_enumerated_from_the_database PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheRealQuarantinedFamily::test_nothing_was_deleted PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheRealQuarantinedFamily::test_the_rates_themselves_were_not_touched PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheDoorLeftOpen::test_the_database_still_loads PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheDoorLeftOpen::test_the_family_is_still_registered_and_still_generates_reactions PASSED
+../../../../test/rmgpy/data/kinetics/quarantineTest.py::TestTheDoorLeftOpen::test_the_rate_law_still_evaluates PASSED
+
+============================== 36 passed in 0.93s ==============================

@@ -1,0 +1,16 @@
+
+--- ck2yaml on chem.inp
+*******************************************************************************
+Error while reading reaction in chem.inp starting on line 66:
+"""
+Li(2)+e-(1)=>[Lip](3)+e-(1)+e-(1)                   1.490e+18 -0.267    162.150  
+    TDEP/e-(1)/   ! VoronovEIArrhenius exported as a modified-Arrhenius fit of k(Te) over 1.16e+04-2.321e+08 K; the original functional form is not representable in Chemkin
+"""
+could not convert string to float: 'e-(1)'
+  REFUSED: InputError
+  Error while reading reaction in chem.inp starting on line 66:
+  could not convert string to float: 'e-(1)'
+
+--- ck2yaml on chem_no_tdep.inp
+  CONVERTED: 7 species, 1 reactions
+     Li(2) + e-(1) => [Lip](3) + e-(1) + e-(1)

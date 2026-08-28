@@ -1,0 +1,10 @@
+i111-sei-reclassification  [1fcbb80fa]  RMG-Py=union  ->  4 failed, 59 passed in 2.94s
+i111-sei-reclassification  [1fcbb80fa]  RMG-Py=baseline  ->  4 failed, 59 passed in 2.72s
+i103-electrochem-provenance  [069ea3d0b]  RMG-Py=union  ->  4 failed, 41 passed in 3.39s
+i103-electrochem-provenance  [069ea3d0b]  RMG-Py=baseline  ->  4 failed, 41 passed in 2.49s
+i104-alkali-plasma  [fc7bc101b]  RMG-Py=union  ->  4 failed, 41 passed in 2.47s
+i104-alkali-plasma  [fc7bc101b]  RMG-Py=baseline  ->  4 failed, 41 passed in 2.57s
+i114-ionisation-declaration  [fcd87ce6e]  RMG-Py=union  ->  4 failed, 71 passed in 2.44s
+i114-ionisation-declaration  [fcd87ce6e]  RMG-Py=baseline  ->  13 failed, 62 passed in 3.31s
+i119-recombination  [aabc3c622]  RMG-Py=union  ->  4 failed, 107 passed in 3.78s
+i119-recombination  [aabc3c622]  RMG-Py=baseline  ->  24 failed, 87 passed in 4.25s

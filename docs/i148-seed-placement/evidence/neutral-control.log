@@ -1,0 +1,9 @@
+== neutral control: base-vs-fix restart outputs ==
+chem.inp BYTE-IDENTICAL
+species_dictionary.txt BYTE-IDENTICAL
+chem_edge.inp BYTE-IDENTICAL
+
+counts:
+/tmp/claude-1000/-home-alon-Code-RMG-Py-i148-seed-placement/def53061-164f-4627-bd9e-956e94cf0308/scratchpad/minimal-restart-base/stdout.log:The final model core has 26 species and 66 reactions
+/tmp/claude-1000/-home-alon-Code-RMG-Py-i148-seed-placement/def53061-164f-4627-bd9e-956e94cf0308/scratchpad/minimal/stdout.log:The final model core has 26 species and 66 reactions
+/tmp/claude-1000/-home-alon-Code-RMG-Py-i148-seed-placement/def53061-164f-4627-bd9e-956e94cf0308/scratchpad/minimal-restart/stdout.log:The final model core has 26 species and 66 reactions

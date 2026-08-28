@@ -98,6 +98,7 @@ cdef class BadnellRRArrhenius(KineticsModel):
     cdef public ScalarQuantity _Ea
     cdef public object _C      # ScalarQuantity or None (dimensionless)
     cdef public object _T2     # ScalarQuantity or None (temperature)
+    cdef public ScalarQuantity _electrons
     cdef public bint uses_electron_temperature
     cdef public bint uses_electron_density
 
@@ -118,6 +119,7 @@ cdef class VoronovEIArrhenius(KineticsModel):
     cdef public ScalarQuantity _K
     cdef public ScalarQuantity _Ea
     cdef public double _dE_eV
+    cdef public ScalarQuantity _electrons
     cdef public bint uses_electron_temperature
     cdef public bint uses_electron_density
 

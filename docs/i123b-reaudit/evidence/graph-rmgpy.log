@@ -1,0 +1,29 @@
+* 9874fc706 Point the re-audit branch's rmgrc at the re-audit database worktree
+* 1b79bee5b Let the export path read the electron-placement declaration the reactor reads
+* 3559bf431 Correct the live-work exclusion section: both branches moved during the audit
+* 9fc5258d9 Report the I-123 integration audit: NOT READY, one blocking failure
+* ae52de38a Point the integration branch's rmgrc at the I-123 integration database
+*   f087cdf04 Merge i102-quarantine: hard-fail when quarantined database data reaches a reaction model
+|\  
+| * 99602b099 docs: evidence for the Cation_R_Recombination Marcus quarantine
+| * 541e6498f kinetics: hard-fail when quarantined database data reaches a reaction model
+*   5e1686bcb Merge i112-marcus-work-terms: let the Marcus work terms reach the barrier they belong in
+|\  
+| * ab3d84072 Let the Marcus work terms reach the barrier they belong in
+*   9f0eae40b Merge i115-preflight-deck: exclude the battery-SEI family from the plasma preflight decks
+|\  
+| * ceb9fd5f1 Exclude the battery-SEI family from the plasma preflight decks
+*   c1f23e93e Merge i119-rr-registry: the charge-network chain, seven tickets in one branch
+|\  
+| * 92e2d4234 Let a kinetics library own radiative recombination
+| * 18abb2789 Let a kinetics library own electron-impact ionisation
+| * dde602778 Let a family declare electrons on both sides of a reaction
+| * 98b0e70b4 Re-measure the electron-representation disagreement instead of arbitrating it
+| * 0af07c2a2 Pin the electron-representation matrix as a measurement rather than a claim
+| * 0a3b0ff3d Let the two plasma rate laws declare the electron they consume
+| * 6cb64c70d Give the electron-count fixtures chemistry that actually balances
+| * 04bbb2881 Propagate a library entry's declared electron count to its reaction
+| * aee9e510e Make Reaction.is_balanced enforce the charge balance it computes
+* 582fd6ab9 Merge i110-make-guard: refuse a bare `make` that installs into the shared conda environment
+* fa042c08d Document the shared-environment guard in CLAUDE.md
+* 5094dbea3 Refuse to install into the shared environment from a bare `make`

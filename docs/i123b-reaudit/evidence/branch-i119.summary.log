@@ -1,0 +1,13 @@
+### i119   worktree /home/alon/Code/RMG-Py-i123b-b-i119
+### BRANCH i119  HEAD=92e2d4234
+BUILD_EXIT=0
+rmgpy: /home/alon/Code/RMG-Py-i123b-b-i119/rmgpy/__init__.py
+molecule: /home/alon/Code/RMG-Py-i123b-b-i119/rmgpy/molecule/molecule.cpython-39-x86_64-linux-gnu.so
+database.directory = /home/alon/Code/RMG-database-plasma/input
+resolved = /home/alon/Code/RMG-database-plasma/input
+exists = True
+
+FAILED test/rmgpy/electronPlacementTest.py::TestElectronPlacementResolver::test_declaration_registry_is_explicit_and_closed - AssertionError: assert {'Plasma_Electron_Attachment': (1, 0), 'Cation_R_Recombination': (1, 0), 'PlasmaRadiativeRecombination': (1, 0), 'PlasmaElectronImpactIonization': (1, 2)} == {'Plasma_Electron_Attachment': (1, 0), 'Cation_R_Recombination': (1, 0), 'PlasmaElectronImpactIonization': (1, 2)}
+
+= 1 failed, 2684 passed, 50 skipped, 118 deselected, 54 warnings in 597.57s (0:09:57) =
+PYTEST_EXIT=1

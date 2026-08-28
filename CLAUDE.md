@@ -20,10 +20,12 @@ The conda env is the only supported install path. Python is pinned `>=3.9,<3.12`
 conda env create --file environment.yml   # creates env named `rmg_env`
 conda activate rmg_env
 git clone https://github.com/ReactionMechanismGenerator/RMG-database ../RMG-database
-make install
+make unsafe-install-shared-env CONFIRM_SHARED_ENV_MUTATION=yes
 ```
 
-`make install` runs `python utilities.py check-pydas` (which writes [rmgpy/solver/settings.pxi](rmgpy/solver/settings.pxi) — see Cython section), then `pip install --no-build-isolation -vv -e .`, then touches a `.installed` sentinel. Subsequent `make` invocations skip reinstall unless the sentinel is missing.
+That target runs `python utilities.py check-pydas` (which writes [rmgpy/solver/settings.pxi](rmgpy/solver/settings.pxi) — see Cython section), then `pip install --no-build-isolation -vv -e .`, then touches a `.installed` sentinel.
+
+**Why the ugly name.** `pip install -e .` does not install into the checkout; it rewrites the *environment's* editable-install record so that `import rmgpy` resolves to whichever source tree ran it. Several worktrees of this repo routinely share one `rmg_env`, so an install run from one worktree silently repoints every other worktree's imports. Bare `make` therefore refuses before pip is invoked and prints the safe alternatives; `make all` and `make install` are aliases of that refusal. Only the two `unsafe-*` targets mutate the environment, and only with `CONFIRM_SHARED_ENV_MUTATION=yes`. The guard is unconditional — it inspects no path and no record, so it cannot be defeated by the environment's editable-install record being absent, stale, or pointed anywhere in particular. [test/makeGuardTest.py](test/makeGuardTest.py) locks this down against a committed pre-guard Makefile snapshot; read its module docstring before changing the Makefile's target graph.
 
 **Always keep [environment.yml](environment.yml) and [.conda/meta.yaml](.conda/meta.yaml) in sync** — both define runtime deps and CI builds from `meta.yaml` for the conda package.
 
@@ -36,9 +38,11 @@ Optional pieces:
 Cython modules are listed explicitly in `setup.py` `ext_modules`. **Some `.py` files are cythonized** (not just `.pyx`): e.g. `rmgpy/molecule/molecule.py`, `group.py`, `atomtype.py`, `rmgpy/species.py`, `rmgpy/reaction.py`, `rmgpy/quantity.py`, `rmgpy/constants.py`. If you edit one of these, **rebuild** — the `.so` is what gets imported, not the `.py`.
 
 Workflow:
-- `make build` — incremental in-place `setup.py build_ext --inplace`. Fast. Use this after editing `.pyx`/`.pxd`/cythonized `.py`.
-- `make` (default `all`) — checks deps, ensures `.installed` sentinel, then `make build`. Safe go-to.
-- `make clean` — removes `.so`, `.pyc`, generated `.c`, `build/`, and `.installed`. Also `pip uninstall`s the package.
+- `make build` — runs `check-pydas`, then incremental in-place `setup.py build_ext --inplace`. Fast, never touches the environment. **This is the go-to**; use it after editing `.pyx`/`.pxd`/cythonized `.py`.
+- `make` / `make all` / `make install` — refuse, by design, and name `make build`. See the Setup section.
+- `make clean` — removes `.so`, `.pyc`, generated `.c`, `build/`, and `.installed`, all scoped to this checkout. It no longer `pip uninstall`s: that is `make unsafe-uninstall-shared-env CONFIRM_SHARED_ENV_MUTATION=yes`.
+- `make unsafe-install-shared-env CONFIRM_SHARED_ENV_MUTATION=yes` — the editable install. Maintenance only; it repoints the shared environment.
+- The `eg0`–`eg10` and `scoop` example targets depend on `build`, not on an install.
 - `make decython` — deletes most `.so` files (keeps `_statmech.so`, `quantity.so`, and `rmgpy/solver/*.so`) so pure Python is loaded for debugging. **Pure Python mode is not reliably tested**; expect breakage.
 
 Cython conventions in this repo:
@@ -139,7 +143,8 @@ The `gh-pages` branch hosts the live site; CI publishes on push to `main`.
 ## Quick gotchas
 
 - **Edits to `.pyx`/`.pxd`/cythonized `.py` won't take effect until you rebuild** (`make build`). Mysterious unchanged behavior is almost always a stale `.so`.
-- **`.so` files persist across branch switches.** When chasing a weird bug after a checkout, `make clean && make` before debugging.
+- **`.so` files persist across branch switches.** When chasing a weird bug after a checkout, `make clean && make build` before debugging.
+- **Never run `pip install -e .` by hand in a worktree.** The Makefile guard closes the `make` path only; a direct pip invocation still repoints the shared environment for every other worktree.
 - **Don't use `--no-verify` or skip Cython rebuilds** to make a commit go through; the underlying issue will resurface in CI.
 - **Functional/database tests need RMG-database checked out** at a compatible branch in `../RMG-database`.
 - **RMS reactor types in input files require Julia** — without `install_rms.sh` they'll fail at runtime, not import.

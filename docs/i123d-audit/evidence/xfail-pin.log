@@ -1,0 +1,20 @@
+test/rmgpy/i134DuplicateElectronsTest.py::TestGenuineDuplicatesStillCollapse::test_a_charged_reaction_and_its_true_reverse_collapse PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestGenuineDuplicatesStillCollapse::test_a_different_collider_still_separates_otherwise_identical_reactions PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestGenuineDuplicatesStillCollapse::test_a_repeated_reaction_from_a_declared_owner_still_collapses PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestChargedFamilyReactionsAreNotConfused::test_the_family_is_charged_and_its_reactions_carry_the_declaration PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestChargedFamilyReactionsAreNotConfused::test_its_true_reverse_still_collapses PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestChargedFamilyReactionsAreNotConfused::test_the_same_direction_charge_reversal_survives PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestChargedFamilyReactionsAreNotConfused::test_the_neutral_transformation_over_the_same_heavy_species_survives PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestChargedFamilyReactionsAreNotConfused::test_the_model_keeps_both_through_the_real_path PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestLithiumChargeNetworkReachesTheModel::test_the_two_channels_are_not_a_reverse_pair PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestLithiumChargeNetworkReachesTheModel::test_both_channels_enter_the_model[True] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestLithiumChargeNetworkReachesTheModel::test_both_channels_enter_the_model[False] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestLithiumChargeNetworkReachesTheModel::test_the_cation_has_a_loss_channel_in_the_model PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheLibraryLoadLandmineIsNotReachedFromHere::test_a_loaded_entry_carries_no_owner PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheLibraryLoadLandmineIsNotReachedFromHere::test_the_owner_appears_when_the_entry_becomes_a_library_reaction PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheLibraryLoadLandmineIsNotReachedFromHere::test_one_library_carrying_both_channels_can_be_loaded XFAIL
+
+=========================== short test summary info ============================
+XFAIL test/rmgpy/i134DuplicateElectronsTest.py::TestTheLibraryLoadLandmineIsNotReachedFromHere::test_one_library_carrying_both_channels_can_be_loaded - Not reached by this repair: check_for_duplicates runs over entry.item, which carries no owner, so both channels fall back to the net rule and stay mirrors. Fixing it requires recording the owner at load, and a decision about a registry that is keyed one placement per owner. When this starts passing, that ticket has landed and this marker should be removed.
+======================== 179 passed, 1 xfailed in 1.78s ========================
+### exit: 0 ###

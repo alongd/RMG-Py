@@ -1,0 +1,14 @@
+/home/alon/Code/RMG-Py-i123d-audit/rmgpy/rmg/main.py:1075: RuntimeWarning: invalid value encountered in divide
+  terminated, resurrected, obj, new_surface_species, new_surface_reactions, t, x = reaction_system.simulate(
+/home/alon/Code/RMG-Py-i123d-audit/rmgpy/rmg/main.py:1075: RuntimeWarning: divide by zero encountered in divide
+  terminated, resurrected, obj, new_surface_species, new_surface_reactions, t, x = reaction_system.simulate(
+Traceback (most recent call last):
+  File "/home/alon/Code/RMG-Py-i123d-audit/rmg.py", line 33, in <module>
+    __main__.main()
+  File "/home/alon/Code/RMG-Py-i123d-audit/rmgpy/__main__.py", line 104, in main
+    rmg.execute(**kwargs)
+  File "/home/alon/Code/RMG-Py-i123d-audit/rmgpy/rmg/main.py", line 1425, in execute
+    self.report_export_failures()
+  File "/home/alon/Code/RMG-Py-i123d-audit/rmgpy/rmg/main.py", line 1459, in report_export_failures
+    raise MechanismWriterError(
+rmgpy.exceptions.MechanismWriterError: RMG finished model generation, but 1 export step(s) failed and their output is missing: Chemkin-to-Cantera translation (cantera_from_ck/). See the traceback(s) logged above.

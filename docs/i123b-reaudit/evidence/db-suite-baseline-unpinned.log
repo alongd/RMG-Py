@@ -1,0 +1,904 @@
+EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE                            [100%]
+==================================== ERRORS ====================================
+_________ ERROR at setup of test_recipe_is_lose_radical_plus_gain_pair _________
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+_______ ERROR at setup of test_electron_is_carried_by_the_electrons_flag _______
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+_____ ERROR at setup of test_root_is_a_union_of_exactly_the_trained_groups _____
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+__________________ ERROR at setup of test_group_tree_is_legal __________________
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+___________ ERROR at setup of test_no_union_member_lacks_an_l2_child ___________
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+__ ERROR at setup of test_training_set_is_populated_and_each_entry_templates ___
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+_ ERROR at setup of test_every_rate_rule_generation_can_reach_is_an_exact_training_hit _
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+_ ERROR at setup of test_the_only_averaged_rule_is_the_root_which_generation_never_reaches _
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+_ ERROR at setup of test_no_rate_rule_generation_can_reach_mixes_pressure_baked_with_radiative _
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+_ ERROR at setup of test_trained_species_resolve_to_their_own_rate_through_their_own_node[O2] _
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+_ ERROR at setup of test_trained_species_resolve_to_their_own_rate_through_their_own_node[OH] _
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+_ ERROR at setup of test_trained_species_resolve_to_their_own_rate_through_their_own_node[O] _
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+___ ERROR at setup of test_o2_attachment_is_generated_with_the_right_product ___
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+___ ERROR at setup of test_o2_rate_comes_from_the_training_set_not_a_library ___
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+_ ERROR at setup of test_every_match_yields_a_mono_anion_of_the_same_formula[O2] _
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+_ ERROR at setup of test_every_match_yields_a_mono_anion_of_the_same_formula[OH] _
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+_ ERROR at setup of test_every_match_yields_a_mono_anion_of_the_same_formula[O] _
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+_ ERROR at setup of test_each_trained_group_pins_its_ground_state_multiplicity _
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+____________________ ERROR at setup of test_o2_spin_states _____________________
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+_ ERROR at setup of test_known_limitation_resonance_generation_erases_declared_multiplicity _
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+_______________ ERROR at setup of test_atomic_oxygen_spin_states _______________
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+____ ERROR at setup of test_hydroxyl_multiplicity_constraint_loses_no_match ____
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+________ ERROR at setup of test_root_group_matches_expected_species[O2] ________
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+________ ERROR at setup of test_root_group_matches_expected_species[OH] ________
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+________ ERROR at setup of test_root_group_matches_expected_species[O] _________
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+_______ ERROR at setup of test_root_group_excludes_expected_species[H2O] _______
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+_______ ERROR at setup of test_root_group_excludes_expected_species[N2] ________
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+_______ ERROR at setup of test_root_group_excludes_expected_species[CO2] _______
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+_______ ERROR at setup of test_root_group_excludes_expected_species[O3] ________
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+_______ ERROR at setup of test_root_group_excludes_expected_species[Ar] ________
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+________ ERROR at setup of test_root_group_excludes_expected_species[H] ________
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+_______ ERROR at setup of test_root_group_excludes_expected_species[Cl] ________
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+_______ ERROR at setup of test_root_group_excludes_expected_species[HO2] _______
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+______ ERROR at setup of test_root_group_excludes_expected_species[CH3O] _______
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+_______ ERROR at setup of test_root_group_excludes_expected_species[CH3] _______
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+________ ERROR at setup of test_root_group_excludes_expected_species[N] ________
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+________ ERROR at setup of test_root_group_excludes_expected_species[S] ________
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+_ ERROR at setup of test_untrained_open_shell_species_are_not_matched_at_all[HO2] _
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+_ ERROR at setup of test_untrained_open_shell_species_are_not_matched_at_all[CH3O] _
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+_ ERROR at setup of test_untrained_open_shell_species_are_not_matched_at_all[CH3] _
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+_ ERROR at setup of test_untrained_open_shell_species_are_not_matched_at_all[N] _
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+_ ERROR at setup of test_untrained_open_shell_species_are_not_matched_at_all[S] _
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+____ ERROR at setup of test_closed_shell_species_are_excluded_by_the_recipe ____
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+_____ ERROR at setup of test_hydrogen_and_chlorine_are_excluded_by_element _____
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+_ ERROR at setup of test_charged_reactants_are_refused_by_declaration_not_by_group_shape _
+
+    @pytest.fixture(scope='module')
+    def kinetics_db():
+        """Load only this family, only its training depository, and no libraries."""
+>       assert settings['database.directory'] == THIS_DATABASE, (
+            'RMG resolved database.directory to {0!r}, not this worktree ({1!r}). '
+            'rmgrc is read from the current working directory and fails silently when '
+            'absent - run pytest from the repository root.'.format(
+                settings['database.directory'], THIS_DATABASE)
+        )
+E       AssertionError: RMG resolved database.directory to '/home/alon/Code/RMG-database/input', not this worktree ('/home/alon/Code/RMG-database-i123b-baseline/input'). rmgrc is read from the current working directory and fails silently when absent - run pytest from the repository root.
+E       assert '/home/alon/C...atabase/input' == '/home/alon/C...aseline/input'
+E         
+E         - /home/alon/Code/RMG-database-i123b-baseline/input
+E         ?                             ---------------
+E         + /home/alon/Code/RMG-database/input
+
+test/test_plasma_electron_attachment.py:230: AssertionError
+=========================== short test summary info ============================
+ERROR test/test_plasma_electron_attachment.py::test_recipe_is_lose_radical_plus_gain_pair
+ERROR test/test_plasma_electron_attachment.py::test_electron_is_carried_by_the_electrons_flag
+ERROR test/test_plasma_electron_attachment.py::test_root_is_a_union_of_exactly_the_trained_groups
+ERROR test/test_plasma_electron_attachment.py::test_group_tree_is_legal - Ass...
+ERROR test/test_plasma_electron_attachment.py::test_no_union_member_lacks_an_l2_child
+ERROR test/test_plasma_electron_attachment.py::test_training_set_is_populated_and_each_entry_templates
+ERROR test/test_plasma_electron_attachment.py::test_every_rate_rule_generation_can_reach_is_an_exact_training_hit
+ERROR test/test_plasma_electron_attachment.py::test_the_only_averaged_rule_is_the_root_which_generation_never_reaches
+ERROR test/test_plasma_electron_attachment.py::test_no_rate_rule_generation_can_reach_mixes_pressure_baked_with_radiative
+ERROR test/test_plasma_electron_attachment.py::test_trained_species_resolve_to_their_own_rate_through_their_own_node[O2]
+ERROR test/test_plasma_electron_attachment.py::test_trained_species_resolve_to_their_own_rate_through_their_own_node[OH]
+ERROR test/test_plasma_electron_attachment.py::test_trained_species_resolve_to_their_own_rate_through_their_own_node[O]
+ERROR test/test_plasma_electron_attachment.py::test_o2_attachment_is_generated_with_the_right_product
+ERROR test/test_plasma_electron_attachment.py::test_o2_rate_comes_from_the_training_set_not_a_library
+ERROR test/test_plasma_electron_attachment.py::test_every_match_yields_a_mono_anion_of_the_same_formula[O2]
+ERROR test/test_plasma_electron_attachment.py::test_every_match_yields_a_mono_anion_of_the_same_formula[OH]
+ERROR test/test_plasma_electron_attachment.py::test_every_match_yields_a_mono_anion_of_the_same_formula[O]
+ERROR test/test_plasma_electron_attachment.py::test_each_trained_group_pins_its_ground_state_multiplicity
+ERROR test/test_plasma_electron_attachment.py::test_o2_spin_states - Assertio...
+ERROR test/test_plasma_electron_attachment.py::test_known_limitation_resonance_generation_erases_declared_multiplicity
+ERROR test/test_plasma_electron_attachment.py::test_atomic_oxygen_spin_states
+ERROR test/test_plasma_electron_attachment.py::test_hydroxyl_multiplicity_constraint_loses_no_match
+ERROR test/test_plasma_electron_attachment.py::test_root_group_matches_expected_species[O2]
+ERROR test/test_plasma_electron_attachment.py::test_root_group_matches_expected_species[OH]
+ERROR test/test_plasma_electron_attachment.py::test_root_group_matches_expected_species[O]
+ERROR test/test_plasma_electron_attachment.py::test_root_group_excludes_expected_species[H2O]
+ERROR test/test_plasma_electron_attachment.py::test_root_group_excludes_expected_species[N2]
+ERROR test/test_plasma_electron_attachment.py::test_root_group_excludes_expected_species[CO2]
+ERROR test/test_plasma_electron_attachment.py::test_root_group_excludes_expected_species[O3]
+ERROR test/test_plasma_electron_attachment.py::test_root_group_excludes_expected_species[Ar]
+ERROR test/test_plasma_electron_attachment.py::test_root_group_excludes_expected_species[H]
+ERROR test/test_plasma_electron_attachment.py::test_root_group_excludes_expected_species[Cl]
+ERROR test/test_plasma_electron_attachment.py::test_root_group_excludes_expected_species[HO2]
+ERROR test/test_plasma_electron_attachment.py::test_root_group_excludes_expected_species[CH3O]
+ERROR test/test_plasma_electron_attachment.py::test_root_group_excludes_expected_species[CH3]
+ERROR test/test_plasma_electron_attachment.py::test_root_group_excludes_expected_species[N]
+ERROR test/test_plasma_electron_attachment.py::test_root_group_excludes_expected_species[S]
+ERROR test/test_plasma_electron_attachment.py::test_untrained_open_shell_species_are_not_matched_at_all[HO2]
+ERROR test/test_plasma_electron_attachment.py::test_untrained_open_shell_species_are_not_matched_at_all[CH3O]
+ERROR test/test_plasma_electron_attachment.py::test_untrained_open_shell_species_are_not_matched_at_all[CH3]
+ERROR test/test_plasma_electron_attachment.py::test_untrained_open_shell_species_are_not_matched_at_all[N]
+ERROR test/test_plasma_electron_attachment.py::test_untrained_open_shell_species_are_not_matched_at_all[S]
+ERROR test/test_plasma_electron_attachment.py::test_closed_shell_species_are_excluded_by_the_recipe
+ERROR test/test_plasma_electron_attachment.py::test_hydrogen_and_chlorine_are_excluded_by_element
+ERROR test/test_plasma_electron_attachment.py::test_charged_reactants_are_refused_by_declaration_not_by_group_shape
+45 errors in 1.79s

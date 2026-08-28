@@ -1,0 +1,16 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+rootdir: /home/alon/Code/RMG-Py-i145-units-laundering
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 7 items
+
+test/rmgpy/chemkinTest.py::TestPlasmaChemkinRoundTrip::test_plasma_round_trip_preserves_rate_coefficient PASSED
+test/rmgpy/chemkinTest.py::TestPlasmaChemkinRoundTrip::test_plasma_arrhenius_reduction_is_unit_independent PASSED
+test/rmgpy/chemkinTest.py::TestPlasmaChemkinRoundTrip::test_plasma_reduction_is_exact_along_the_electron_diagonal PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestVoronovEIArrhenius::test_a_factor_is_stored_at_the_declared_magnitude_in_every_spelling[cm^3/(molecule*s)] PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestVoronovEIArrhenius::test_a_factor_is_stored_at_the_declared_magnitude_in_every_spelling[m^3/(molecule*s)] PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestVoronovEIArrhenius::test_a_factor_is_stored_at_the_declared_magnitude_in_every_spelling[cm^3/(mol*s)] PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestVoronovEIArrhenius::test_a_factor_is_stored_at_the_declared_magnitude_in_every_spelling[m^3/(mol*s)] PASSED
+
+============================== 7 passed in 1.14s ===============================

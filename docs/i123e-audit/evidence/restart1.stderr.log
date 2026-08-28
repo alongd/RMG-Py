@@ -1,0 +1,10 @@
+Traceback (most recent call last):
+  File "/home/alon/Code/RMG-Py-i123e-audit/rmg.py", line 33, in <module>
+    __main__.main()
+  File "/home/alon/Code/RMG-Py-i123e-audit/rmgpy/__main__.py", line 104, in main
+    rmg.execute(**kwargs)
+  File "/home/alon/Code/RMG-Py-i123e-audit/rmgpy/rmg/main.py", line 1426, in execute
+    self.report_export_failures()
+  File "/home/alon/Code/RMG-Py-i123e-audit/rmgpy/rmg/main.py", line 1460, in report_export_failures
+    raise MechanismWriterError(
+rmgpy.exceptions.MechanismWriterError: RMG finished model generation, but 1 export step(s) failed and their output is missing: Chemkin-to-Cantera translation (cantera_from_ck/). See the traceback(s) logged above.
