@@ -10,11 +10,4 @@
 # directory, and every worktree on this lineage sits as a sibling of
 # RMG-database-plasma, so this one line is correct from the repo root of any of
 # them without naming a machine or a user.
-# I-123 INTEGRATION BRANCH ONLY. On `plasma` this line reads
-#   database.directory = ../RMG-database-plasma/input
-# and it must go back to that before any merge to `plasma`. The I-123 audit merges a
-# candidate set in BOTH repositories, so the RMG-Py union must be tested against the
-# RMG-database union rather than against the plasma database worktree -- otherwise the
-# ionisation and radiative-recombination libraries the audit exists to exercise are
-# simply absent, and the suite measures the wrong pair.
-database.directory = ../RMG-database-i123-integration/input
+database.directory = ../RMG-database-plasma/input
