@@ -142,6 +142,7 @@ The `gh-pages` branch hosts the live site; CI publishes on push to `main`.
 
 ## Quick gotchas
 
+- **A fresh checkout has no `rmgrc` and will not run until you make one.** `cp rmgrc.template rmgrc`, then set `database.directory` to your own RMG-database checkout (plasma worktrees sit beside `RMG-database-plasma`, which is the template's default). The file is git-ignored on purpose and there is no fallback: without it a run stops in its first second naming the file it wanted. See [docs/rmgrc.md](docs/rmgrc.md).
 - **Edits to `.pyx`/`.pxd`/cythonized `.py` won't take effect until you rebuild** (`make build`). Mysterious unchanged behavior is almost always a stale `.so`.
 - **`.so` files persist across branch switches.** When chasing a weird bug after a checkout, `make clean && make build` before debugging.
 - **Never run `pip install -e .` by hand in a worktree.** The Makefile guard closes the `make` path only; a direct pip invocation still repoints the shared environment for every other worktree.
