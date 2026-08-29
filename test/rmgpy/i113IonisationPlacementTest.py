@@ -393,17 +393,17 @@ class TestDeclarationSchema:
         """The table is a closed, hand-maintained list. Two families and, since
         I-119, one kinetics library at ``(1, 0)`` -- one electron in, none out --
         plus, since I-116, the ``PlasmaElectronImpactIonization`` library at
-        ``(1, 2)``, plus, since I-154, four families at ``(0, 1)`` -- none in,
+        ``(1, 2)``, plus, since I-154, three families at ``(0, 1)`` -- none in,
         one out. Widening the schema in I-113 must not have added chemistry to
         the table by itself, and it did not: every later entry arrived by a
-        decision, and any NINTH one still fails here.
+        decision, and any EIGHTH one still fails here.
 
         Note what the widened schema bought and what it did not. Only
         ``PlasmaElectronImpactIonization`` needs two differing NON-ZERO numbers;
         the recombination entry I-119 added is attachment-shaped and would have
-        fitted the old ``(side, count)`` spelling, and so would the four I-154
-        added, as ``('products', 1)``. The schema is wider than seven of its
-        eight users need, which is correct -- the one that needs it could not be
+        fitted the old ``(side, count)`` spelling, and so would the three I-154
+        added, as ``('products', 1)``. The schema is wider than six of its
+        seven users need, which is correct -- the one that needs it could not be
         expressed at all before."""
         assert FAMILY_ELECTRON_PLACEMENT == {
             'Plasma_Electron_Attachment': (1, 0),
@@ -413,7 +413,6 @@ class TestDeclarationSchema:
             'Plasma_Associative_Ionization_Alkali_Alkali': (0, 1),
             'Plasma_Associative_Ionization_Alkali_Alkaline': (0, 1),
             'Plasma_Associative_Ionization_Alkaline_Alkaline': (0, 1),
-            'Plasma_Collisional_Ionization': (0, 1),
         }
 
     def test_no_electron_impact_ionisation_family_is_shipped(self):
@@ -424,8 +423,8 @@ class TestDeclarationSchema:
         been a second, disagreeing owner for the same chemistry.
 
         Read this test's name precisely, because I-154 DID ship ionisation
-        families -- four of them, at ``(0, 1)``. Those are ASSOCIATIVE and
-        heavy-particle COLLISIONAL ionisation, where no electron is incident.
+        families -- three of them, at ``(0, 1)``. Those are ASSOCIATIVE
+        ionisation, where no electron is incident.
         What is still unshipped as a family is ELECTRON-IMPACT ionisation,
         ``A + e- -> A+ + 2 e-``, which is this file's subject -- so its synthetic
         family label is still undeclared and every test here still injects its

@@ -339,7 +339,7 @@ class TestElectronPlacementResolver:
             resolve_electron_placement(reaction, [_electron(), _electron()])
 
     def test_declaration_registry_is_explicit_and_closed(self):
-        """The registry is a closed, hand-maintained list. Eight owners are
+        """The registry is a closed, hand-maintained list. Seven owners are
         declared, each in the ``(reactant_count, product_count)`` shape I-113
         widened the declaration to:
 
@@ -362,29 +362,29 @@ class TestElectronPlacementResolver:
         confirmed on the chemistry above (``A+ + e- -> A + hv``, one electron
         consumed, none produced) before this pin was widened to admit it.
 
-        I-154 adds the last four, all ``(0, 1)`` and all FAMILIES, when the
+        I-154 adds the last three, all ``(0, 1)`` and all FAMILIES, when the
         earlier line's plasma chemistry was carried onto this one. They are the
         first entries with an EMPTY reactant side: associative ionisation
-        (``Li + Li -> Li2+ + e-``, three metal-pairing families) and
-        heavy-particle collisional ionisation
-        (``NO + O2 -> NO+ + e- + O2``) liberate an electron without one being
-        incident, so the electron contributes nothing to the reaction ORDER -
-        the rate is second order in the heavy particles, which is what their
-        ``cm^3/(mol*s)`` coefficients are written for - while the NET change is
-        +1. Each was confirmed against the family's own ``groups.py``
-        ``electrons`` count and its training labels before being added here; the
-        derivation is ``docs/i154-carry-chemistry.md`` in RMG-database.
+        (``Li + Li -> Li2+ + e-``, three metal-pairing families) liberates an
+        electron without one being incident, so the electron contributes nothing
+        to the reaction ORDER - the rate is second order in the heavy particles,
+        which is what their ``cm^3/(mol*s)`` coefficients are written for - while
+        the NET change is +1. Each was confirmed against the family's own
+        ``groups.py`` ``electrons`` count and its training labels before being
+        added here; the derivation is ``docs/i154-carry-chemistry.md`` in
+        RMG-database.
 
-        Three other families carried by I-154 are deliberately ABSENT, which is
-        the more interesting half of that ticket:
-        ``Plasma_Charge_Transfer`` and ``Plasma_Ion_Molecule_Association``
-        involve no free electron at all, and
-        ``Plasma_Electron_Impact_Dissociation`` carries its electron as an
-        explicit template reactant, so its reactions are already in reactor form
-        and there is nothing to place. That last one also could not be expressed
-        here even if someone tried: ``(1, 1)`` conserves the electron, so the net
-        count is zero and ``PlasmaReactor._resolve_electron_placements`` never
-        consults this table for it."""
+        Four other families I-154 examined are ABSENT, which is the more
+        interesting half of that ticket. ``Plasma_Charge_Transfer`` and
+        ``Plasma_Ion_Molecule_Association`` involve no free electron at all.
+        ``Plasma_Collisional_Ionization`` and
+        ``Plasma_Electron_Impact_Dissociation`` are held back from the database
+        altogether, because each makes a SPECTATOR a template participant and
+        RMG's family model cannot express that. The last one also could not be
+        expressed here even if it were carried: ``(1, 1)`` conserves the
+        electron, so the net count is zero and
+        ``PlasmaReactor._resolve_electron_placements`` never consults this table
+        for it."""
         assert FAMILY_ELECTRON_PLACEMENT == {
             "Plasma_Electron_Attachment": (1, 0),
             "Cation_R_Recombination": (1, 0),
@@ -393,7 +393,6 @@ class TestElectronPlacementResolver:
             "Plasma_Associative_Ionization_Alkali_Alkali": (0, 1),
             "Plasma_Associative_Ionization_Alkali_Alkaline": (0, 1),
             "Plasma_Associative_Ionization_Alkaline_Alkaline": (0, 1),
-            "Plasma_Collisional_Ionization": (0, 1),
         }
 
 
