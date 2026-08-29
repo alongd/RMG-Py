@@ -845,6 +845,11 @@ class GroupAtom(Vertex):
                               'Br': 3,
                               'I': 3,
                               'Ar': 4,
+                              'Li': 0,
+                              'Na': 0,
+                              'K': 0,
+                              'Mg': 0,
+                              'Ca': 0,
                               'X': 0,
                               'e': 0
                               }

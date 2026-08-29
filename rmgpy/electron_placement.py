@@ -169,11 +169,52 @@ __all__ = [
 #:
 #: The registry stays a closed, hand-maintained list: an entry appearing here
 #: means someone decided it should.
+#: I-154 adds three more, and they are the first entries in this table with an
+#: EMPTY reactant side: ``(0, 1)``. Associative ionisation liberates an electron
+#: without one being incident — ``Li + Li -> Li2+ + e-`` — so the electron
+#: contributes nothing to the reaction ORDER (the rate is second order in the
+#: heavy particles, which is what the ``cm^3/(mol*s)`` coefficients are written
+#: for) while the NET change is +1. That is the mirror of attachment's degenerate
+#: case: there one number did both jobs because the electron was purely incident;
+#: here the two numbers differ because the electron is purely produced, and
+#: ``reactant_count = 0`` is the whole point rather than an omission. The shape
+#: check accepts it because ``(0, 1)`` still places an electron somewhere; only
+#: ``(0, 0)`` is malformed.
+#:
+#: The other four families I-154 examined are ABSENT, and each absence is a
+#: measurement rather than an oversight. Two are held back from the database
+#: entirely — ``Plasma_Collisional_Ionization`` and
+#: ``Plasma_Electron_Impact_Dissociation`` both make a SPECTATOR a template
+#: participant, which RMG's family model cannot express (see
+#: ``docs/i154-carry-chemistry.md`` in RMG-database), so declaring a placement
+#: for an owner the database does not contain would be a claim about nothing.
+#: The remaining two would be absent even if they were carried:
+#:
+#: * ``Plasma_Charge_Transfer`` (``A+ + B- -> A + B``) and
+#:   ``Plasma_Ion_Molecule_Association`` (``Li+ + H -> LiH+``) involve no free
+#:   electron at all — both declare ``electrons = 0`` in ``groups.py``, so the
+#:   resolver is never reached and a declaration here would be a claim about a
+#:   reaction shape that does not exist.
+#:
+#: One limit of this table is worth recording, because
+#: ``Plasma_Electron_Impact_Dissociation`` is the case that found it.
+#: ``AB + e- -> A + B + e-`` DOES carry an incident electron, but the electron is
+#: CONSERVED, so its net count is zero — and
+#: ``PlasmaReactor._resolve_electron_placements`` is gated on ``electrons != 0``.
+#: A ``(1, 1)`` declaration therefore could not be honoured even if someone wrote
+#: it: the resolver would never consult the table for that shape. Such a family
+#: has to carry its electron as an explicit template participant instead, which
+#: is what that one does — and which is separately why it is held back from the
+#: database (RMG's family model cannot express a spectator participant; see the
+#: report). The gap is real and is recorded rather than papered over.
 FAMILY_ELECTRON_PLACEMENT = {
     'Plasma_Electron_Attachment': (1, 0),
     'Cation_R_Recombination': (1, 0),
     'PlasmaRadiativeRecombination': (1, 0),
     'PlasmaElectronImpactIonization': (1, 2),
+    'Plasma_Associative_Ionization_Alkali_Alkali': (0, 1),
+    'Plasma_Associative_Ionization_Alkali_Alkaline': (0, 1),
+    'Plasma_Associative_Ionization_Alkaline_Alkaline': (0, 1),
 }
 
 #: Outcomes of the rate-order cross-check (step 11). Disagreement is not one of
