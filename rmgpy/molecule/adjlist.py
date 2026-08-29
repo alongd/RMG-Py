@@ -705,6 +705,14 @@ def from_adjacency_list(adjlist, group=False, saturate_h=False, check_consistenc
                         partial_charges.append(3)
                     elif e == '+4':
                         partial_charges.append(4)
+                    elif e == '+5':
+                        partial_charges.append(5)
+                    elif e == '+6':
+                        partial_charges.append(6)
+                    elif e == '+7':
+                        partial_charges.append(7)
+                    elif e == '+8':
+                        partial_charges.append(8)
                     elif e == '-1':
                         partial_charges.append(-1)
                     elif e == '-2':
