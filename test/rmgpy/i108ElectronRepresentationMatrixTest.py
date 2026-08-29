@@ -765,10 +765,20 @@ def test_family_electron_placement_is_still_the_exact_declared_table():
       VALUE while declaring different chemistry. That duplication is the reason
       the table is a list of owners and not a list of shapes.
 
+    * I-154 added four ``(0, 1)`` FAMILIES when the earlier development line's
+      plasma chemistry was carried onto this one: three associative-ionisation
+      families and heavy-particle collisional ionisation. These are the first
+      entries with an EMPTY reactant side, and they complete the set of shapes
+      the two-sided declaration was widened for. Attachment is "incident only",
+      ionisation is "incident and produced", and these are "produced only": no
+      electron is incident, so the electron adds nothing to the reaction ORDER,
+      while the NET change is +1. A one-sided ``(side, count)`` declaration could
+      have spelled this one, but not alongside the ``(1, 2)`` row.
+
     The row is renamed accordingly. Its old name asserted "exactly two consuming
     entries", which has become false, and a test whose name lies is worse than
     one that fails. What it still pins is the property I-108 cared about: the
-    table is a closed, hand-maintained list, so a FIFTH entry nobody decided on
+    table is a closed, hand-maintained list, so a NINTH entry nobody decided on
     still fails here.
     """
     from rmgpy.electron_placement import FAMILY_ELECTRON_PLACEMENT
@@ -777,6 +787,10 @@ def test_family_electron_placement_is_still_the_exact_declared_table():
         'Cation_R_Recombination': (1, 0),
         'PlasmaRadiativeRecombination': (1, 0),
         'PlasmaElectronImpactIonization': (1, 2),
+        'Plasma_Associative_Ionization_Alkali_Alkali': (0, 1),
+        'Plasma_Associative_Ionization_Alkali_Alkaline': (0, 1),
+        'Plasma_Associative_Ionization_Alkaline_Alkaline': (0, 1),
+        'Plasma_Collisional_Ionization': (0, 1),
     }
 
 
