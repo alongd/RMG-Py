@@ -169,11 +169,47 @@ __all__ = [
 #:
 #: The registry stays a closed, hand-maintained list: an entry appearing here
 #: means someone decided it should.
+#: I-154 adds four more, and they are the first entries in this table with an
+#: EMPTY reactant side: ``(0, 1)``. Associative and heavy-particle collisional
+#: ionisation liberate an electron without one being incident —
+#: ``Li + Li -> Li2+ + e-``, ``NO + O2 -> NO+ + e- + O2`` — so the electron
+#: contributes nothing to the reaction ORDER (the rate is second order in the
+#: heavy particles, which is what the ``cm^3/(mol*s)`` coefficients are written
+#: for) while the NET change is +1. That is the mirror of attachment's degenerate
+#: case: there one number did both jobs because the electron was purely incident;
+#: here the two numbers differ because the electron is purely produced, and
+#: ``reactant_count = 0`` is the whole point rather than an omission. The shape
+#: check accepts it because ``(0, 1)`` still places an electron somewhere; only
+#: ``(0, 0)`` is malformed.
+#:
+#: Three carried families are deliberately ABSENT, and each absence is a
+#: measurement rather than an oversight:
+#:
+#: * ``Plasma_Charge_Transfer`` (``A+ + B- -> A + B``) and
+#:   ``Plasma_Ion_Molecule_Association`` (``Li+ + H -> LiH+``) involve no free
+#:   electron at all — they declare ``electrons = 0`` in ``groups.py``, so the
+#:   resolver is never reached and a declaration here would be a claim about a
+#:   reaction shape that does not exist.
+#: * ``Plasma_Electron_Impact_Dissociation`` (``AB + e- -> A + B + e-``) DOES
+#:   carry an incident electron, and still declares nothing here — because the
+#:   electron is one of its template reactants, a real group in its ``groups.py``
+#:   tagged ``*3``. Its reactions therefore arrive already in reactor form with
+#:   ``electrons = 0``, and ``PlasmaReactor._resolve_electron_placements`` passes
+#:   them through by identity; there is nothing to place. Note what this means for
+#:   the table's reach: a ``(1, 1)`` declaration could not be honoured even if it
+#:   were written, since the resolver is gated on ``electrons != 0`` and an
+#:   electron-CONSERVING shape has a zero net count. The explicit-participant
+#:   representation is not a workaround for that gap, it is the representation
+#:   that shape already has.
 FAMILY_ELECTRON_PLACEMENT = {
     'Plasma_Electron_Attachment': (1, 0),
     'Cation_R_Recombination': (1, 0),
     'PlasmaRadiativeRecombination': (1, 0),
     'PlasmaElectronImpactIonization': (1, 2),
+    'Plasma_Associative_Ionization_Alkali_Alkali': (0, 1),
+    'Plasma_Associative_Ionization_Alkali_Alkaline': (0, 1),
+    'Plasma_Associative_Ionization_Alkaline_Alkaline': (0, 1),
+    'Plasma_Collisional_Ionization': (0, 1),
 }
 
 #: Outcomes of the rate-order cross-check (step 11). Disagreement is not one of
