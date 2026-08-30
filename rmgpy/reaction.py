@@ -2092,7 +2092,22 @@ def _same_object(object1, object2, _check_identical=False, _only_check_label=Fal
              _generate_initial_map=False, _strict=True, _save_order=False):
     if _only_check_label:
         return str(object1) == str(object2)
-    elif _check_identical:
+    # Net charge is part of species identity. strict=False graph comparison is
+    # charge-blind (a single O atom of charge -1 is isomorphic to one of +1), so
+    # without this guard same_species_lists would let [A+, B-] match [A-, B+]:
+    # the two candidate pairings are (A+~A-, B-~B+) and (A+~B+, B-~A-), and the
+    # charge-blind isomorphism accepts the first. The guard is applied PER PAIR,
+    # so it binds charge to the individual pairing the isomorphism actually
+    # chooses, not to the side as a whole -- neither pairing survives, and the two
+    # genuinely distinct charged channels are no longer treated as one. Net charge
+    # is conserved across resonance, so a genuine resonance match is unaffected;
+    # and neutral chemistry is unaffected (0 == 0), so ordinary reaction
+    # degeneracy is unchanged. The helper is_isomorphic_same_charge is not reused
+    # here because this call forwards generate_initial_map/save_order and also
+    # covers the is_identical and label modes, which that helper does not.
+    if object1.get_net_charge() != object2.get_net_charge():
+        return False
+    if _check_identical:
         return object1.is_identical(object2, strict=_strict)
     else:
         return object1.is_isomorphic(object2, generate_initial_map=_generate_initial_map,

@@ -48,12 +48,16 @@ import pytest
 
 from rmgpy.electron_balance import is_isomorphic_same_charge
 from rmgpy.molecule import Molecule
+from rmgpy.reaction import Reaction, same_species_lists
 from rmgpy.species import Species
 
 
 O_CATION_ADJ = "multiplicity 2\n1 O u1 p2 c+1"
 O_ANION_ADJ = "multiplicity 2\n1 O u1 p3 c-1"
 O_NEUTRAL_ADJ = "multiplicity 3\n1 O u2 p2 c0"
+N_CATION_ADJ = "multiplicity 3\n1 N u2 p1 c+1"
+N_ANION_ADJ = "multiplicity 3\n1 N u2 p2 c-1"
+N_NEUTRAL_ADJ = "multiplicity 4\n1 N u3 p1 c0"
 
 
 class TestIsIsomorphicSameCharge:
@@ -97,3 +101,55 @@ class TestIsIsomorphicSameCharge:
         methane = Species().from_smiles("C")
         assert neutral_o.get_net_charge() == methane.get_net_charge() == 0
         assert is_isomorphic_same_charge(neutral_o, methane, strict=False) is False
+
+
+class TestSameSpeciesListsChargeAware:
+    """
+    Reaction-level matching (same_species_lists / _same_object) must not treat
+    two lists that differ only by which species carries which charge as the same.
+    [O+, N-] and [O-, N+] have the same net-charge MULTISET, so a side-total check
+    is insufficient: the guard has to bind charge to the individual species
+    pairing the isomorphism chooses. Without it, reaction degeneracy silently sums
+    two distinct charged channels and drops one (rmgpy/data/kinetics/common.py).
+    """
+
+    @staticmethod
+    def _spc(adj):
+        return Species().from_adjacency_list(adj)
+
+    def test_charge_swapped_lists_are_not_the_same(self):
+        """[O+, N-] vs [O-, N+]: charge-blind pairing would match them; the
+        per-pair net-charge guard must reject every pairing."""
+        op, nm = self._spc(O_CATION_ADJ), self._spc(N_ANION_ADJ)
+        om, np_ = self._spc(O_ANION_ADJ), self._spc(N_CATION_ADJ)
+        # Precondition: the O skeletons are isomorphic ignoring charge, so the
+        # (O+~O-, N-~N+) pairing is exactly what a charge-blind match accepts.
+        assert op.is_isomorphic(om, strict=False)
+        assert nm.is_isomorphic(np_, strict=False)
+        assert same_species_lists([op, nm], [om, np_], strict=False) is False
+
+    def test_reordered_same_charge_lists_still_match(self):
+        """A genuine reordering of the same charged species must still match:
+        the guard rejects only charge-mismatched pairings, not valid ones."""
+        op, nm = self._spc(O_CATION_ADJ), self._spc(N_ANION_ADJ)
+        op2, nm2 = self._spc(O_CATION_ADJ), self._spc(N_ANION_ADJ)
+        assert same_species_lists([op, nm], [nm2, op2], strict=False) is True
+
+    def test_neutral_lists_are_unaffected(self):
+        """Ordinary neutral chemistry is untouched: both sides are net-charge 0,
+        so the guard is a pass-through and reordered neutral lists still match."""
+        o, n = self._spc(O_NEUTRAL_ADJ), self._spc(N_NEUTRAL_ADJ)
+        o2, n2 = self._spc(O_NEUTRAL_ADJ), self._spc(N_NEUTRAL_ADJ)
+        assert o.get_net_charge() == n.get_net_charge() == 0
+        assert same_species_lists([o, n], [n2, o2], strict=False) is True
+
+    def test_reaction_isomorphic_distinguishes_charge_swapped_channels(self):
+        """The real defect path: Reaction.is_isomorphic -> same_species_lists.
+        Two reactions whose reactant charges are swapped are distinct channels,
+        so degeneracy must not fold them together."""
+        product = self._spc(O_NEUTRAL_ADJ)
+        rxn1 = Reaction(reactants=[self._spc(O_CATION_ADJ), self._spc(N_ANION_ADJ)],
+                        products=[product])
+        rxn2 = Reaction(reactants=[self._spc(O_ANION_ADJ), self._spc(N_CATION_ADJ)],
+                        products=[product])
+        assert rxn1.is_isomorphic(rxn2, either_direction=False, strict=False) is False

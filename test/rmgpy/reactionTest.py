@@ -87,6 +87,12 @@ class PseudoSpecies(object):
     def __str__(self):
         return self.label
 
+    def get_net_charge(self):
+        # A real Species exposes get_net_charge, and same_species_lists now reads
+        # it to keep opposite-charge species distinct. These pseudo-species stand
+        # in for neutral species, so their net charge is 0.
+        return 0
+
     def is_isomorphic(self, other, generate_initial_map=False, strict=True, save_order=False):
         return self.label.lower() == other.label.lower()
 
