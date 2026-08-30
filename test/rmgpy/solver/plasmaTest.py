@@ -626,6 +626,26 @@ class PlasmaReactorUnsupportedTest:
         with pytest.raises(PlasmaStateError, match='pressure-dependent'):
             reactor.initialize_model([ar, electron, ar_ion, spc_a, spc_b], [rxn], [], [])
 
+    def test_thirdbody_kinetics_unsupported(self):
+        # The exact wall the 5-torr argon first-light deck hits: PlasmaAir's
+        # N2 <=> N + N entry carries ThirdBody kinetics. ThirdBody is a
+        # PDepKineticsModel, so is_pressure_dependent() is True and the same
+        # plasma.pyx guard that refuses PDepArrhenius refuses it too. A
+        # two-temperature plasma has no collider-efficiency model to give a
+        # k0 * [M] rate law meaning, so the refusal is deliberate; this test
+        # pins it against future weakening. Two sibling ThirdBody entries in
+        # the same library, OH + e- <=> OH- and O2 + e- <=> O2-, are refused
+        # identically.
+        from rmgpy.kinetics.falloff import ThirdBody
+        electron, ar, ar_ion, spc_a, spc_b = _species()
+        rxn = Reaction(reactants=[spc_a], products=[spc_b], reversible=False,
+                       kinetics=ThirdBody(
+                           arrheniusLow=Arrhenius(A=(7.0e21, 'cm^3/(mol*s)'), n=-1.6,
+                                                  Ea=(225000, 'cal/mol'), T0=(1, 'K'))))
+        reactor = _reactor(_mole_fractions(electron, ar, ar_ion, spc_a, spc_b))
+        with pytest.raises(PlasmaStateError, match='pressure-dependent'):
+            reactor.initialize_model([ar, electron, ar_ion, spc_a, spc_b], [rxn], [], [])
+
     def test_const_species_unsupported(self):
         electron, ar, ar_ion, _, _ = _species()
         with pytest.raises(PlasmaStateError, match='constant species'):
