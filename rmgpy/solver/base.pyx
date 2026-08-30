@@ -850,21 +850,33 @@ cdef class ReactionSystem(DASx):
                 max_species_index = np.argmax(edge_species_rates)
                 max_species = edge_species[max_species_index]
                 max_species_rate = edge_species_rates[max_species_index]
-                if max_species_rate == 0:
-                    # The core is not merely singular, the whole system is inert: every edge rate is
-                    # zero too, so there is no largest-rate species and the argmax above has returned
-                    # index 0 by tie-breaking convention alone. Promoting it would put an arbitrary
-                    # species into the core and present the result as a mechanism. Report the
-                    # condition and promote nothing; the break still has to happen, since a model
-                    # whose rates are all zero can never satisfy a conversion criterion.
+                # np.finfo(float64).tiny (2.2e-308) is the smallest *normal* double: anything below it
+                # is a subnormal, which in this context can only be underflow or cancellation dust, not
+                # a physical rate. Testing max_species_rate == 0 exactly was the F5 defect -- a species
+                # carrying 5e-324 of numerical dust is physically indistinguishable from inert but is
+                # not == 0, so argmax picked it and it was promoted on no physical basis. A measured
+                # justification for the boundary: across a live, growing superminimal trajectory the
+                # smallest nonzero edge species rate ever observed was 3.98e-39, ~270 orders of
+                # magnitude above this threshold, so a real edge flux can never be suppressed by it;
+                # while the inert argon deck produces edge rates of exactly 0.0. The subnormal band
+                # (0, 2.2e-308) is therefore empty of real rates and full of dust.
+                if max_species_rate < np.finfo(np.float64).tiny:
+                    # The core is not merely singular, the whole system is inert: the largest edge rate
+                    # is dust too, so there is no physically largest-rate species and the argmax above
+                    # has returned a species on no physical basis. Promoting it would put an arbitrary
+                    # species into the core and present the result as a mechanism. Report the condition
+                    # and promote nothing; the break still has to happen, since a model whose rates are
+                    # all dust can never satisfy a conversion criterion.
                     logging.error('ZERO FLUX: at time {0:10.4e} s this reaction system ({1}, the one named '
                                   'in the "Conducting simulation of reaction system" line above) carries no '
-                                  'flux at all -- every core species rate and every edge species rate is '
-                                  'exactly zero. NO species was added to the model core: with all {2:d} edge '
-                                  'rates at zero there is no largest-rate species to promote, and promoting '
-                                  'one anyway would put an arbitrary species into the core. This reaction '
-                                  'system cannot grow the model any further.'
-                                  ''.format(self.t, type(self).__name__, len(edge_species_rates)))
+                                  'resolvable flux at all -- every core species rate is exactly zero and the '
+                                  'largest of its {2:d} edge species rates is {3:.3e}, at or below the '
+                                  'smallest normal floating-point magnitude (numerical dust, not a physical '
+                                  'rate). NO species was added to the model core: with no edge species '
+                                  'carrying resolvable flux there is no largest-rate species to promote, and '
+                                  'promoting one anyway would put an arbitrary species into the core. This '
+                                  'reaction system cannot grow the model any further.'
+                                  ''.format(self.t, type(self).__name__, len(edge_species_rates), max_species_rate))
                     break
                 logging.info('At time {0:10.4e} s, species {1} was added to model core to avoid '
                              'singularity'.format(self.t, max_species))

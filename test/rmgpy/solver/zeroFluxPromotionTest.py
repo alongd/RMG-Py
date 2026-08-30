@@ -37,9 +37,14 @@ the largest rate.  That is a defensible choice while the edge carries flux, and 
 choice at all when it does not: ``np.argmax`` over an all-zero array returns 0, so
 the species promoted is whichever one happens to sit first in the edge list.
 
-These two tests pin both halves of the boundary.  The edge list is deliberately
-ordered so that the largest-rate species is *not* the first one, which is what makes
-"chosen by rate" distinguishable from "chosen by position".
+These tests pin the halves of the boundary.  The edge list is deliberately ordered so
+that the largest-rate species is *not* the first one, which is what makes "chosen by
+rate" distinguishable from "chosen by position".  A third test guards the F5 defect:
+the inert test above uses an edge rate of *exactly* zero, but the promotion guard used
+to test ``max_species_rate == 0`` exactly, so an edge species carrying subnormal
+numerical dust (a rate in ``(0, np.finfo(float).tiny)``, physically inert but not
+``== 0``) walked past it and was promoted.  The guard now rejects the whole subnormal
+band, and that test constructs a rate inside it.
 """
 
 import logging
@@ -176,3 +181,45 @@ class ZeroFluxPromotionTest:
         assert invalid_objects == [edge_species[2]], (
             "expected the fastest edge species (CH3) to be promoted, got {0!r}".format(invalid_objects)
         )
+
+    def test_no_promotion_when_the_only_edge_flux_is_subnormal_dust(self, caplog):
+        """
+        The F5 defect: the characteristic rate is exactly zero and the edge carries a
+        rate that is *nonzero* but subnormal -- underflow/cancellation dust, physically
+        indistinguishable from inert.  The old guard tested ``max_species_rate == 0``
+        exactly, so this rate slipped past and the species was force-promoted on no
+        physical basis.  With a tiny unimolecular A factor, C2H6 -> 2 CH3 produces a CH3
+        rate down in the subnormal band ``(0, np.finfo(float).tiny)``; the guard must now
+        recognise it as dust, promote nothing, and report the zero-flux condition.
+        """
+        system = self._build(a_unimolecular=1.0e-315, a_bimolecular=0.0)
+        rxn_system, core_species, core_reactions, edge_species, edge_reactions = system
+
+        with caplog.at_level(logging.INFO):
+            terminated, resurrected, invalid_objects, _surf_spc, _surf_rxn, _t, _x = self._simulate(*system)
+
+        max_edge_rate = float(np.abs(rxn_system.edge_species_rates).max())
+        assert 0.0 < max_edge_rate < np.finfo(np.float64).tiny, (
+            "this test needs the largest edge rate to be nonzero subnormal dust so that the "
+            "old exact-zero guard would have promoted it; got {0!r} (tiny={1!r})".format(
+                max_edge_rate, np.finfo(np.float64).tiny
+            )
+        )
+        assert np.all(rxn_system.core_species_rates == 0.0), "the core is meant to be inert here"
+        assert invalid_objects == [], (
+            "a system whose only edge flux is subnormal dust promoted {0!r} into the core; a "
+            "rate below the smallest normal float is numerical dust, not a physical basis for "
+            "promotion".format(invalid_objects)
+        )
+        assert not any(
+            "added to model core to avoid singularity" in record.getMessage() for record in caplog.records
+        ), "the singularity escape hatch promoted a species whose rate is numerical dust"
+        zero_flux_records = [
+            record
+            for record in caplog.records
+            if record.levelno >= logging.ERROR and record.getMessage().startswith("ZERO FLUX:")
+        ]
+        assert zero_flux_records, "the zero-flux condition was never reported: {0!r}".format(
+            [r.getMessage() for r in caplog.records]
+        )
+        assert "numerical dust" in zero_flux_records[0].getMessage(), zero_flux_records[0].getMessage()
