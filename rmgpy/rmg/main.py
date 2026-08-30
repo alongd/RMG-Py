@@ -375,9 +375,9 @@ class RMG(util.Subject):
                         reaction_system.Prange[0].value_si > self.pressure_dependence.Pmin.value_si
                     ), "Reaction system P is below pressure_dependence range."
 
-            assert any(
-                [not s.reactive for s in reaction_system.initial_mole_fractions.keys()]
-            ), "Pressure Dependence calculations require at least one inert (nonreacting) species for the bath gas."
+                assert any(
+                    [not s.reactive for s in reaction_system.initial_mole_fractions.keys()]
+                ), "Pressure Dependence calculations require at least one inert (nonreacting) species for the bath gas."
 
     def check_libraries(self):
         """
@@ -434,10 +434,26 @@ class RMG(util.Subject):
         """
         return any(isinstance(reaction_system, PlasmaReactor) for reaction_system in self.reaction_systems)
 
+    def job_is_all_plasma(self):
+        """
+        Return ``True`` only if this job has at least one reaction system and *every* one of them
+        is a two-temperature plasma reactor.
+
+        This -- not :meth:`uses_plasma_reactor` -- is the predicate that gates the default bath
+        gases. The gate must be decided per reaction system: a single :class:`PlasmaReactor` sharing
+        a job with ordinary gas-phase or pressure-dependent reactors must not strip those reactors of
+        the Ar/He/Ne/N2 that their third-body and pressure-dependent kinetics rely on. The four
+        default gases live in one shared model core, so a mixed job keeps them (the ordinary
+        reactor's need wins); only a job that is plasma all the way through drops them.
+        """
+        return bool(self.reaction_systems) and all(
+            isinstance(reaction_system, PlasmaReactor) for reaction_system in self.reaction_systems
+        )
+
     def add_default_bath_gases(self):
         """
-        Add Ar, He, Ne and N2 to the model as nonreactive species -- on every job except a
-        plasma one.
+        Add Ar, He, Ne and N2 to the model as nonreactive species -- on every job except one
+        whose reaction systems are *all* plasma reactors.
 
         The injection dates from 5ec0636e (2014), whose whole justification was "just like
         Java". It is nonetheless load-bearing today for ordinary gas-phase jobs, so it is
@@ -453,17 +469,26 @@ class RMG(util.Subject):
           writes, and the restart fixtures under ``test/rmgpy/test_data/restartTest`` record
           them at core indices 0-3.
 
-        None of that applies to a plasma job. :class:`~rmgpy.solver.plasma.PlasmaReactor` has
-        no collider or third-body handling at all, plasma decks declare their own gas
-        explicitly, and a plasma deck that also enables ``pressureDependence`` must already
-        satisfy the inert check in :meth:`check_input`, which runs before this and reads only
-        the deck's own species. What does apply is that a plasma mechanism is small: the 5
-        torr argon deck has three real species, so three uninvited noble gases were half of
-        its core, sitting at zero mole fraction and making the mechanism file a poor record of
-        what the modeller asked for. A plasma deck that wants a bath gas declares it, like any
-        other species.
+        None of that applies to a job that is plasma all the way through.
+        :class:`~rmgpy.solver.plasma.PlasmaReactor` has no collider or third-body handling at all,
+        plasma decks declare their own gas explicitly, and a plasma deck that also enables
+        ``pressureDependence`` must already satisfy the inert check in :meth:`check_input`, which
+        runs before this and reads only the deck's own species. What does apply is that a plasma
+        mechanism is small: the 5 torr argon deck has three real species, so three uninvited noble
+        gases were half of its core, sitting at zero mole fraction and making the mechanism file a
+        poor record of what the modeller asked for. A plasma deck that wants a bath gas declares it,
+        like any other species.
+
+        The decision is per reaction system, not per job: a mixed job -- one that pairs a plasma
+        reactor with an ordinary gas-phase or pressure-dependent reactor -- keeps the four defaults,
+        because those reactors need them and the shared model core cannot hand them to one reactor
+        while withholding them from another. The plasma reactor in such a job sees the four at zero
+        mole fraction, which is inert: reaction generation is gated on ``Species.reactive`` (in
+        :meth:`rmgpy.rmg.model.CoreEdgeReactionModel.enlarge` and in ``react_all``), so a
+        nonreactive bath gas seeds no reactions, and ``PlasmaReactor`` has no third-body handling to
+        make a collider of it.
         """
-        if self.uses_plasma_reactor():
+        if self.job_is_all_plasma():
             logging.info(
                 "Plasma job: not adding the default bath gases (Ar, He, Ne, N2). "
                 "Declare them in the input file if this model needs them."

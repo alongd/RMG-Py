@@ -77,6 +77,8 @@ No database is required: ``make_new_species`` and ``enlarge`` of a nonreactive s
 need no thermo.
 """
 
+from types import SimpleNamespace
+
 import pytest
 
 from rmgpy.molecule import Molecule
@@ -155,11 +157,40 @@ class ReactorTypeProbeTest:
     def test_non_plasma_reaction_system_is_not_detected(self):
         assert _bare_rmg([_simple_reactor()]).uses_plasma_reactor() is False
 
-    def test_mixed_reaction_systems_count_as_plasma(self):
-        assert _bare_rmg([_simple_reactor(), _plasma_reactor()]).uses_plasma_reactor() is True
+    def test_mixed_reaction_systems_are_detected_but_are_not_all_plasma(self):
+        # Changed assertion (this test previously read ``uses_plasma_reactor() is True`` and stopped
+        # there, which codified the job-wide suppression: a mixed job "counted as plasma" and lost
+        # its bath gases). ``uses_plasma_reactor()`` still answers True for a mixed job -- that
+        # predicate is unchanged -- but it no longer gates the bath gases. ``job_is_all_plasma()``
+        # does, and a mixed job is not all-plasma, so it keeps its defaults.
+        rmg = _bare_rmg([_simple_reactor(), _plasma_reactor()])
+        assert rmg.uses_plasma_reactor() is True
+        assert rmg.job_is_all_plasma() is False
 
     def test_no_reaction_systems_is_not_plasma(self):
         assert _bare_rmg([]).uses_plasma_reactor() is False
+
+
+class GatePredicateProbeTest:
+    """
+    The predicate that actually gates the bath gases -- ``job_is_all_plasma`` -- asserted on its
+    own in both directions, the way :class:`ReactorTypeProbeTest` pins ``uses_plasma_reactor``. A
+    failure here names the predicate rather than the downstream species list.
+    """
+
+    def test_pure_plasma_job_is_all_plasma(self):
+        assert _bare_rmg([_plasma_reactor()]).job_is_all_plasma() is True
+
+    def test_pure_ordinary_job_is_not_all_plasma(self):
+        assert _bare_rmg([_simple_reactor()]).job_is_all_plasma() is False
+
+    def test_mixed_job_is_not_all_plasma(self):
+        assert _bare_rmg([_simple_reactor(), _plasma_reactor()]).job_is_all_plasma() is False
+
+    def test_no_reaction_systems_is_not_all_plasma(self):
+        # ``all([])`` is True, so the predicate guards on a non-empty job: an empty job must still
+        # get bath gases, exactly as it did before this change.
+        assert _bare_rmg([]).job_is_all_plasma() is False
 
 
 class PlasmaDeckGetsNoBathGasTest:
@@ -236,6 +267,98 @@ class NonPlasmaDeckStillGetsBathGasTest:
 
         labels = [spec.label for spec in rmg.initial_species]
         assert labels == ["nitrogen", "Ar", "He", "Ne"], labels
+
+
+class MixedJobKeepsBathGasesTest:
+    """
+    Amended Verifier 2 (see ``docs/contracts/i184-bathgas-scope.md``). The original wording asked
+    for the plasma reactor to have no default bath gases while the ordinary reactor has them, in one
+    mixed job. That is architecturally unsatisfiable under a shared core: the four defaults live in
+    one :class:`~rmgpy.rmg.model.CoreEdgeReactionModel` core that every reaction system simulates
+    against, so a mixed job cannot hand them to one reactor and withhold them from another. The
+    manager amended it to: a mixed job gains all four, a pure-plasma job gains none -- both here.
+
+    This is the regression the suite lacked: the old ``any(PlasmaReactor)`` gate stripped the four
+    defaults from every reactor as soon as a single plasma reactor was present, so the ordinary
+    reactor in a mixed job silently lost the Ar/He/Ne/N2 its third-body and pressure-dependent
+    kinetics rely on.
+    """
+
+    def test_mixed_job_gets_bath_gases_pure_plasma_does_not(self):
+        mixed = _bare_rmg([_simple_reactor(), _plasma_reactor()])
+        _declare(mixed, "ethane", "CC")
+
+        mixed.add_default_bath_gases()
+
+        assert [spec.label for spec in mixed.initial_species] == ["ethane", "Ar", "He", "Ne", "N2"], (
+            "the ordinary reactor sharing a job with a plasma reactor lost its default bath gases: "
+            "{0}".format([spec.label for spec in mixed.initial_species])
+        )
+
+        pure_plasma = _bare_rmg([_plasma_reactor()])
+        _declare(pure_plasma, "Ar", "[Ar]")
+
+        pure_plasma.add_default_bath_gases()
+
+        assert [spec.label for spec in pure_plasma.initial_species] == ["Ar"], (
+            "a pure-plasma job gained default bath gases it never asked for: {0}".format(
+                [spec.label for spec in pure_plasma.initial_species]
+            )
+        )
+
+
+class PDepInertCheckIsPerReactionSystemTest:
+    """
+    Second finding (MEDIUM), confirmed and fixed: the "at least one inert for the bath gas"
+    assertion in :meth:`~rmgpy.rmg.main.RMG.check_input` used to sit *outside* its
+    ``for reaction_system in self.reaction_systems`` loop, so it read the loop variable's last value
+    and checked only the *last* reaction system. A pressure-dependent job whose *earlier* system
+    declared no inert escaped the check entirely. The assertion now sits inside the loop, so every
+    system is checked.
+    """
+
+    @staticmethod
+    def _quantity(value_si):
+        return SimpleNamespace(value_si=value_si)
+
+    def _pdep(self):
+        # Only the four range bounds are read by check_input's pdep block.
+        return SimpleNamespace(
+            Tmin=self._quantity(300.0),
+            Tmax=self._quantity(3000.0),
+            Pmin=self._quantity(1.0e3),
+            Pmax=self._quantity(1.0e7),
+        )
+
+    class _Species:
+        # A hashable species stand-in: check_input's inert assertion reads only ``.reactive`` and
+        # uses the species as a dict key, and SimpleNamespace is unhashable.
+        def __init__(self, reactive):
+            self.reactive = reactive
+
+    def _system(self, has_inert):
+        mole_fractions = {self._Species(reactive=True): 1.0}
+        if has_inert:
+            mole_fractions[self._Species(reactive=False)] = 0.5
+        # T and P are in range, so only the inert assertion can fire.
+        return SimpleNamespace(
+            T=self._quantity(1000.0),
+            P=self._quantity(1.0e5),
+            initial_mole_fractions=mole_fractions,
+        )
+
+    def test_early_system_without_inert_is_caught(self):
+        rmg = _bare_rmg([self._system(has_inert=False), self._system(has_inert=True)])
+        rmg.pressure_dependence = self._pdep()
+
+        with pytest.raises(AssertionError, match="at least one inert"):
+            rmg.check_input()
+
+    def test_all_systems_with_an_inert_pass(self):
+        rmg = _bare_rmg([self._system(has_inert=True), self._system(has_inert=True)])
+        rmg.pressure_dependence = self._pdep()
+
+        rmg.check_input()  # must not raise
 
 
 @pytest.mark.functional
