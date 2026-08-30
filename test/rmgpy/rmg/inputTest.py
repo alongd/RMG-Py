@@ -1182,6 +1182,23 @@ class TestInputPlasmaChargeBalance:
         assert 'Arp' not in imf1          # no cation invented behind the modeller's back
         assert imf1['Ar'] + imf1['e-'] == pytest.approx(1.0, abs=1e-15)
 
+    def test_balance_species_label_is_carried_to_the_reactor(self, tmp_path):
+        # I-185: the reactor must learn WHICH ion the deck's neutrality rests on, so it
+        # can check (once the reaction set exists) that the ion is producible. The label
+        # is carried, not the computed fraction.
+        body = self._preamble() + self._block(
+            "    electronDensity=(1e23,'m^-3'),\n"
+            "    chargeBalanceSpecies='Arp',\n")
+        reactor = self._read(tmp_path, body).reaction_systems[0]
+        assert reactor.charge_balance_species == 'Arp'
+
+    def test_no_balance_species_leaves_reactor_field_none(self, tmp_path):
+        # Omitting the keyword leaves the reachability check inert: opt-in with the
+        # directive, exactly as the balancing itself is.
+        body = self._preamble() + self._block("    electronDensity=(1e23,'m^-3'),\n")
+        reactor = self._read(tmp_path, body).reaction_systems[0]
+        assert reactor.charge_balance_species is None
+
     # ---- parse-time guards -------------------------------------------------
 
     def test_undeclared_balance_species_rejected_at_parse_time(self, tmp_path):

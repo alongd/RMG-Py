@@ -957,3 +957,151 @@ class PlasmaChargeNeutralityWarningTest:
                     if 'NOT charge neutral' in r.getMessage()]
         assert len(messages) == 1
         assert 'relative imbalance 1.0' in messages[0]
+
+
+class PlasmaChargeBalanceReachabilityTest:
+    """
+    I-185: a deck can be made charge neutral with an ion nothing can produce.
+
+    ``chargeBalanceSpecies`` assigns the named ion a mole fraction that zeroes the net
+    charge; because the composition is then arithmetically neutral,
+    ``_warn_if_not_charge_neutral`` correctly stays silent. The defect this restores a
+    signal for is that the balancing ion may be a phantom -- produced by no loaded
+    reaction -- so the deck *looks* well posed (balanced, no warning) while the
+    chemistry that would sustain the balance does not exist. The reactor now checks, at
+    model initialization (the first point the reaction set exists), that the ion is
+    reachable, and WARNS -- never raises -- when it is not.
+
+    "Reachable" here == the ion's label matches a species that appears as a product of
+    some reaction (core or edge), or -- for a reversible reaction -- as a participant on
+    either side. Declared-but-produced-by-nothing is the phantom.
+
+    The composition in every fixture is charge neutral by construction (cation amount ==
+    electron amount), so ``_warn_if_not_charge_neutral`` is silent and the only charge
+    signal that can fire is the reachability one -- which is the whole point: without
+    this check, the phantom passes with no message at all.
+    """
+
+    def _neutral_imf(self):
+        electron, ar, ar_ion, spc_a, spc_b = _species()
+        imf = {electron: Y_E0, ar: Y_AR0, ar_ion: Y_E0, spc_a: Y_A0, spc_b: Y_B0}
+        return electron, ar, ar_ion, spc_a, spc_b, imf
+
+    def _reactor_with_balance(self, imf, label):
+        return PlasmaReactor(T_GAS, P0, imf, (T_E, 'K'), n_sims=1, termination=[],
+                             charge_balance_species=label)
+
+    _UNREACHABLE = 'no reaction in the loaded model produces'
+
+    def _reachability_msgs(self, caplog):
+        return [r.getMessage() for r in caplog.records
+                if self._UNREACHABLE in r.getMessage()]
+
+    def test_defect_a_phantom_balance_is_silent_without_the_directive(self, caplog):
+        """
+        Verifier 1, the defect: a neutral composition whose cation is produced by NO
+        reaction draws no charge signal at all when the reactor is not told the ion is a
+        balance ion -- which is exactly the pre-fix behaviour of ``chargeBalanceSpecies``
+        (it consumed the label into a mole fraction and told the reactor nothing). The
+        neutrality warning is silent (the composition IS neutral); nothing names the
+        phantom.
+        """
+        electron, ar, ar_ion, spc_a, spc_b, imf = self._neutral_imf()
+        core_species = [ar, electron, ar_ion, spc_a, spc_b]
+        core_reactions = [_thermal(spc_a, spc_b)]        # Ar+ produced by nothing
+        reactor = PlasmaReactor(T_GAS, P0, imf, (T_E, 'K'), n_sims=1, termination=[])
+        assert reactor.charge_balance_species is None
+        with caplog.at_level(logging.WARNING):
+            _initialize(reactor, core_species, core_reactions)
+        assert not self._reachability_msgs(caplog)
+        assert not [r for r in caplog.records if 'NOT charge neutral' in r.getMessage()]
+
+    def test_unreachable_balance_ion_warns_and_names_it(self, caplog):
+        """Verifier 2: with the directive, the phantom is diagnosed by name."""
+        electron, ar, ar_ion, spc_a, spc_b, imf = self._neutral_imf()
+        core_species = [ar, electron, ar_ion, spc_a, spc_b]
+        core_reactions = [_thermal(spc_a, spc_b)]        # Ar+ produced by nothing
+        reactor = self._reactor_with_balance(imf, 'Ar+')
+        with caplog.at_level(logging.WARNING):
+            _initialize(reactor, core_species, core_reactions)
+        msgs = self._reachability_msgs(caplog)
+        assert len(msgs) == 1
+        assert "'Ar+'" in msgs[0]                        # names the species
+        assert 'chargeBalanceSpecies' in msgs[0]         # says why it is suspect
+        assert 'arithmetic' in msgs[0]
+        # It is the SOLE charge signal: the neutrality check is (correctly) silent.
+        assert not [r for r in caplog.records if 'NOT charge neutral' in r.getMessage()]
+
+    def test_reachable_balance_ion_is_silent(self, caplog):
+        """
+        Verifier 3: an ion a loaded reaction produces raises nothing. This is the check
+        that stops the fix becoming noise.
+        """
+        electron, ar, ar_ion, spc_a, spc_b, imf = self._neutral_imf()
+        core_species = [ar, electron, ar_ion, spc_a, spc_b]
+        core_reactions = [_ionization(electron, ar, ar_ion), _thermal(spc_a, spc_b)]
+        reactor = self._reactor_with_balance(imf, 'Ar+')
+        with caplog.at_level(logging.WARNING):
+            _initialize(reactor, core_species, core_reactions)
+        assert not self._reachability_msgs(caplog)
+
+    def test_reversible_reaction_credits_the_reactant_side(self, caplog):
+        """
+        A reversible reaction that has the ion only on its reactant side still counts,
+        because its reverse produces the ion; the same reaction irreversible does not.
+        Exercised on the check directly to isolate the reachability rule from the
+        reverse-rate policy that ``_validate_reactions`` enforces on reversible plasma
+        reactions.
+        """
+        electron, ar, ar_ion, spc_a, spc_b, imf = self._neutral_imf()
+        consumes_ion = dict(reactants=[ar_ion, electron], products=[ar],
+                            kinetics=Arrhenius(A=(1.0, 's^-1'), n=0.0, Ea=(0.0, 'kJ/mol')))
+        reactor = self._reactor_with_balance(imf, 'Ar+')
+        with caplog.at_level(logging.WARNING):
+            reactor._warn_if_balance_ion_unreachable(
+                [Reaction(reversible=True, **consumes_ion)], [])
+        assert not self._reachability_msgs(caplog)
+
+        reactor2 = self._reactor_with_balance(imf, 'Ar+')
+        with caplog.at_level(logging.WARNING):
+            reactor2._warn_if_balance_ion_unreachable(
+                [Reaction(reversible=False, **consumes_ion)], [])
+        assert len(self._reachability_msgs(caplog)) == 1   # irreversible: not credited
+
+    def test_edge_production_is_credited(self, caplog):
+        """An ion produced only by an edge reaction is still loaded chemistry making it."""
+        electron, ar, ar_ion, spc_a, spc_b, imf = self._neutral_imf()
+        reactor = self._reactor_with_balance(imf, 'Ar+')
+        with caplog.at_level(logging.WARNING):
+            reactor._warn_if_balance_ion_unreachable([], [_ionization(electron, ar, ar_ion)])
+        assert not self._reachability_msgs(caplog)
+
+    def test_unreachable_balance_ion_does_not_raise(self):
+        """Non-goal made executable: warn, never raise. The reactor initializes."""
+        electron, ar, ar_ion, spc_a, spc_b, imf = self._neutral_imf()
+        core_species = [ar, electron, ar_ion, spc_a, spc_b]
+        reactor = self._reactor_with_balance(imf, 'Ar+')
+        _initialize(reactor, core_species, [_thermal(spc_a, spc_b)])
+        assert reactor.y0[reactor.electron_index] == Y_E0
+        assert reactor.V > 0.0
+
+    def test_reachability_warning_fires_at_most_once(self, caplog):
+        """
+        Latched: model generation calls initialize_model many times; the loud signal
+        must not repeat every enlargement.
+        """
+        electron, ar, ar_ion, spc_a, spc_b, imf = self._neutral_imf()
+        core_species = [ar, electron, ar_ion, spc_a, spc_b]
+        core_reactions = [_thermal(spc_a, spc_b)]
+        reactor = self._reactor_with_balance(imf, 'Ar+')
+        with caplog.at_level(logging.WARNING):
+            _initialize(reactor, core_species, core_reactions)
+            _initialize(reactor, core_species, core_reactions)
+        assert len(self._reachability_msgs(caplog)) == 1
+
+    def test_charge_balance_species_label_survives_pickle(self):
+        """__reduce__ carries the label, so a restored reactor still runs the check."""
+        electron, ar, ar_ion, spc_a, spc_b, imf = self._neutral_imf()
+        reactor = self._reactor_with_balance(imf, 'Ar+')
+        restored = pickle.loads(pickle.dumps(reactor))
+        assert restored.charge_balance_species == 'Ar+'

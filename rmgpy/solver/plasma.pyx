@@ -129,8 +129,22 @@ cdef class PlasmaReactor(ReactionSystem):
     # plasma validation.
     cdef public bint _plasma_validated
 
+    # The LABEL of the chargeBalanceSpecies the deck named (or None). The directive
+    # in rmgpy/rmg/input.py assigns this ion a mole fraction so the initial
+    # composition comes out neutral; carrying the label here lets the reactor check,
+    # once the reaction set exists, that the ion is one the loaded chemistry can
+    # actually produce -- otherwise the neutrality is arithmetic only, achieved with
+    # a species nothing makes. A string, never a Species object: it survives pickling
+    # untouched and is matched against reaction-participant labels at model-init.
+    cdef public object charge_balance_species
+    # Latched once the reachability of charge_balance_species has been settled (either
+    # confirmed producible, or warned about), so the warning is emitted at most once
+    # across the many initialize_model calls a model-generation run makes.
+    cdef public bint _balance_reachability_settled
+
     def __init__(self, T, P, initial_mole_fractions, Te, n_sims=1, termination=None, sensitive_species=None,
-                 sensitivity_threshold=1e-3, sens_conditions=None, const_spc_names=None):
+                 sensitivity_threshold=1e-3, sens_conditions=None, const_spc_names=None,
+                 charge_balance_species=None):
         ReactionSystem.__init__(self, termination, sensitive_species, sensitivity_threshold)
 
         if isinstance(T, list) or isinstance(P, list) or isinstance(Te, list):
@@ -174,6 +188,9 @@ cdef class PlasmaReactor(ReactionSystem):
         self.sens_conditions = sens_conditions
         self.n_sims = n_sims
 
+        self.charge_balance_species = charge_balance_species
+        self._balance_reachability_settled = False
+
     def convert_initial_keys_to_species_objects(self, species_dict):
         """
         Convert the ``initial_mole_fractions`` dictionary from species labels into
@@ -203,7 +220,7 @@ cdef class PlasmaReactor(ReactionSystem):
         return (self.__class__,
                 (self.T, self.P, self.initial_mole_fractions, self.Te, self.n_sims, self.termination,
                  self.sensitive_species, self.sensitivity_threshold, self.sens_conditions,
-                 self.const_spc_names))
+                 self.const_spc_names, self.charge_balance_species))
 
     cpdef initialize_model(self, list core_species, list core_reactions, list edge_species, list edge_reactions,
                           list surface_species=None, list surface_reactions=None, list pdep_networks=None,
@@ -265,6 +282,13 @@ cdef class PlasmaReactor(ReactionSystem):
         # of the named errors this reactor promises.
         self._validate_electron_state(core_species, edge_species)
         self._validate_reactions(core_species, edge_species, core_reactions, edge_reactions)
+
+        # If the deck balanced its charge with a named ion, check -- now that the
+        # reaction set exists -- that the loaded chemistry can actually produce that
+        # ion. Warns, never raises: an unproducible balancing ion means the neutrality
+        # this reactor was handed is arithmetic only, but that is the modeller's to
+        # judge, not the reactor's to forbid.
+        self._warn_if_balance_ion_unreachable(core_reactions, edge_reactions)
 
         # Now call the base class version of the method.
         # This initializes the attributes declared in the base class,
@@ -512,6 +536,89 @@ cdef class PlasmaReactor(ReactionSystem):
             net, magnitude, (abs(net) / magnitude if magnitude > 0.0 else float('inf')),
             PLASMA_NET_CHARGE_ATOL, PLASMA_NET_CHARGE_RTOL, threshold, breakdown,
             self._identity())
+
+    def _warn_if_balance_ion_unreachable(self, core_reactions, edge_reactions):
+        """
+        Warn -- once, and never raise -- when the deck balanced its charge with a
+        ``chargeBalanceSpecies`` that no reaction in the loaded model produces.
+
+        THE DEFINITION OF "reachable" this uses, stated so it can be argued with: the
+        balancing ion is reachable when its label matches a species that appears as a
+        PRODUCT of at least one reaction (core or edge), or -- for a reversible
+        reaction, which runs in both directions -- as a participant on either side.
+        A species that is merely declared, or merely consumed by irreversible
+        reactions, is NOT reachable: nothing makes it. That is exactly the phantom the
+        check is for -- an ion given a mole fraction to zero the net charge while no
+        chemistry can generate it, so the neutral state is one the mechanism cannot
+        sustain.
+
+        WHY HERE AND NOT AT PARSE TIME. Reachability is undecidable when the input file
+        is read: ``database()`` records only the NAMES of reaction libraries and seed
+        mechanisms, never their contents, and the kinetics families have not run.
+        ``initialize_model`` is the first point the reaction set exists, so it is the
+        first point the question can be answered at all.
+
+        WHAT THIS CANNOT CATCH, stated so the warning is not mistaken for more than it
+        is:
+          * It is topological, not quantitative. A production reaction that exists but
+            carries negligible rate counts as reachable; the ion has a path, even if
+            no meaningful flux. A deck can still be ill-posed for want of flux.
+          * It is a one-hop presence check, not a graph traversal from the initial
+            species. An ion produced only from other species that are themselves never
+            formed still counts as reachable.
+          * It matches by label. An ion a library supplies under a different label than
+            the deck declared would read as unreachable (a false alarm) -- which is one
+            more reason this warns rather than refuses.
+          * It is settled at the first model initialization that resolves it. A
+            producing reaction generated by a family only in a later enlargement is not
+            retroactively credited; for a genuinely unproducible ion, which is the
+            target case, this makes no difference.
+
+        Because of these, the check restores a SIGNAL -- it names a suspect. It does not
+        prove a fault, and it adds no chemistry: the gap it points at is real and stays
+        unfilled.
+        """
+        cdef bint reachable
+        cdef object label, spc, rxn
+
+        if self.charge_balance_species is None or self._balance_reachability_settled:
+            return
+        label = self.charge_balance_species
+
+        reachable = False
+        for rxn in itertools.chain(core_reactions or [], edge_reactions or []):
+            participants = list(rxn.products)
+            if getattr(rxn, 'reversible', False):
+                participants = participants + list(rxn.reactants)
+            for spc in participants:
+                if getattr(spc, 'label', None) == label:
+                    reachable = True
+                    break
+            if reachable:
+                break
+
+        # Settle it either way so the (loud) warning cannot repeat across the many
+        # initialize_model calls a generation run makes.
+        self._balance_reachability_settled = True
+        if reachable:
+            return
+
+        logging.warning(
+            "PlasmaReactor: chargeBalanceSpecies %r was assigned a mole fraction to "
+            "make the initial composition charge neutral, but no reaction in the "
+            "loaded model produces it -- it is a product of no reaction, and a "
+            "participant in no reversible one, among the %d core and %d edge "
+            "reactions. The charge balance therefore rests on an ion the loaded "
+            "chemistry (reaction libraries, seed mechanisms, kinetics families) cannot "
+            "generate: the composition is neutral only by arithmetic, because a mole "
+            "fraction was given to a species nothing makes, so the neutral state it "
+            "produces is not one this mechanism can sustain. This is the "
+            "charge-neutrality signal that balancing with %r silenced. Check that a "
+            "library, seed mechanism or family able to produce %r is loaded, or remove "
+            "the chargeBalanceSpecies directive. This is a warning, not an error, and "
+            "it names a suspect rather than proving a fault. (%s)",
+            label, len(core_reactions or []), len(edge_reactions or []),
+            label, label, self._identity())
 
     def _validate_reactions(self, core_species, edge_species, core_reactions, edge_reactions):
         """

@@ -918,6 +918,14 @@ def plasma_reactor(temperature,
         Te=electronTemperature,
         n_sims=1,
         termination=termination,
+        # Carry the balancing-ion LABEL, not its computed fraction, to the reactor.
+        # Reachability -- whether any loaded reaction source actually produces this
+        # ion -- is undecidable here: at parse time only the NAMES of the reaction
+        # libraries and seed mechanisms are known (see database()), never their
+        # contents, and the kinetics families have not run. The reactor is the first
+        # place the loaded reaction set exists, so the check that the neutrality this
+        # keyword achieves is not fictitious runs there, against that set.
+        charge_balance_species=chargeBalanceSpecies,
     )
     rmg.reaction_systems.append(system)
 
