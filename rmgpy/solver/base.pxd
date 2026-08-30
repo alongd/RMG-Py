@@ -105,7 +105,11 @@ cdef class ReactionSystem(DASx):
     cdef public list snapshots
 
     cdef public list termination
-    
+
+    # Outcome of a TerminationSteadyState criterion, if the system carries one
+    cdef public bint steady_state_reached
+    cdef public double steady_state_residual
+
     # Trimolecular reactants flag
     cdef public bint trimolecular
 

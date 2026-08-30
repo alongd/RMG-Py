@@ -56,7 +56,8 @@ from rmgpy.chemkin import get_species_identifier
 from rmgpy.reaction import Reaction
 from rmgpy.quantity import Quantity
 from rmgpy.species import Species
-from rmgpy.solver.termination import TerminationTime, TerminationConversion, TerminationRateRatio
+from rmgpy.solver.termination import (TerminationTime, TerminationConversion, TerminationRateRatio,
+                                      TerminationSteadyState)
 ################################################################################
 
 # `char_rate` (computed just below, in ReactionSystem.simulate) is the L2 norm of the core
@@ -204,7 +205,12 @@ cdef class ReactionSystem(DASx):
 
         self.termination = termination or []
 
-        # Flag to indicate whether or not reactions with 3 reactants are present 
+        # Outcome of any TerminationSteadyState criterion, for whoever reports the run.
+        # `steady_state_residual` is nan until a criterion has had two steps to look at.
+        self.steady_state_reached = False
+        self.steady_state_residual = float('nan')
+
+        # Flag to indicate whether or not reactions with 3 reactants are present
         self.trimolecular = False
 
         # reaction filtration, unimolecular_threshold is a vector with length of number of core species
@@ -738,6 +744,20 @@ cdef class ReactionSystem(DASx):
         iteration = 0
         conversion = 0.0
         max_char_rate = 0.0
+
+        # Steady-state termination. Each call to simulate() restarts the integration from
+        # t=0, so the criterion's arming latch must be cleared here rather than carried
+        # over from the previous enlargement's simulation.
+        steady_state_terms = [term for term in self.termination
+                              if isinstance(term, TerminationSteadyState)]
+        for term in steady_state_terms:
+            term.reset()
+        steady_state_prev_y = None
+        steady_state_prev_t = -1.0
+        steady_state_satisfied = False
+        steady_state_inert = False
+        self.steady_state_reached = False
+        self.steady_state_residual = float('nan')
 
         max_edge_species_rate_ratios = self.max_edge_species_rate_ratios
         max_network_leak_rate_ratios = self.max_network_leak_rate_ratios
@@ -1287,12 +1307,78 @@ cdef class ReactionSystem(DASx):
                 logging.info('terminating simulation due to interrupt...')
                 break
 
+            # Fold this step into any steady-state criterion BEFORE the termination loop
+            # below reads it, so that a run stopping on its backstop time can still report
+            # the residual it got to whatever order the criteria were declared in.
+            if steady_state_terms:
+                if steady_state_prev_y is not None:
+                    for term in steady_state_terms:
+                        if term.update(y_core_species, self.t, steady_state_prev_y,
+                                       steady_state_prev_t, atol, core_species):
+                            steady_state_satisfied = True
+                if not steady_state_satisfied:
+                    steady_state_prev_y = y_core_species.copy()
+                    steady_state_prev_t = self.t
+                self.steady_state_residual = steady_state_terms[0].residual
+
+                # A system carrying no net flux cannot change again, so there is nothing
+                # left to integrate and the run must stop. The ordinary path above already
+                # handles the case where it stopped after doing something: a frozen
+                # composition gives a residual of exactly zero, which clears any tolerance
+                # and accumulates the window like any other flat tail, and the criterion is
+                # armed because a transient happened. What is left here is the system that
+                # NEVER started -- never armed, no flux, nothing to measure. That also has
+                # to terminate, but it has demonstrated nothing, and saying otherwise is
+                # the confusion this criterion exists to remove. The zero-rate condition
+                # itself is diagnosed and logged by the solver upstream; this is only its
+                # termination consequence.
+                if char_rate == 0.0 and not steady_state_satisfied:
+                    steady_state_inert = True
+                    for term in steady_state_terms:
+                        if term.armed:
+                            steady_state_inert = False
+                    if steady_state_inert:
+                        steady_state_satisfied = True
+
             # Finish simulation if any of the termination criteria are satisfied
+            if steady_state_satisfied:
+                terminated = True
+                self.steady_state_reached = not steady_state_inert
+                if steady_state_inert:
+                    logging.warning(
+                        'At time {0:10.4e} s, terminating terminationSteadyState WITHOUT a steady state: the '
+                        'system carries no flux, so the composition cannot change and there is nothing further '
+                        'to integrate. NO STEADY STATE WAS DEMONSTRATED -- this model never started, which is '
+                        'not the same result as a stationary ionisation balance, and must not be reported as '
+                        'one. There is no residual to quote: the criterion was never evaluated, because a '
+                        'composition that cannot move carries no information about whether it has '
+                        'settled.'.format(self.t))
+                else:
+                    term = steady_state_terms[0]
+                    logging.info('At time {0:10.4e} s, reached steady state: residual {1:10.4e} below '
+                                 'tolerance {2:10.4e} for {3:d} consecutive steps (slowest species: '
+                                 '{4}).'.format(self.t, self.steady_state_residual, term.tolerance,
+                                                term.streak, term.worst_label))
+                self.log_conversions(species_index, y0)
+
             for term in self.termination:
+                if terminated:
+                    break
                 if isinstance(term, TerminationTime):
                     if self.t > term.time.value_si:
                         terminated = True
                         logging.info('At time {0:10.4e} s, reached target termination time.'.format(term.time.value_si))
+                        # A steady-state criterion that was asked for and not met must say
+                        # so here, loudly and with its number. A run that quietly stops on
+                        # its backstop looks exactly like a run that converged.
+                        for ss in steady_state_terms:
+                            logging.warning(
+                                'Terminated on the backstop terminationTime at {0:10.4e} s WITHOUT reaching '
+                                'steady state: residual {1:10.4e} against tolerance {2:10.4e} ({3} consecutive '
+                                'steps below it, {4} needed; the integration {5} the fastest relaxation time in '
+                                'the system). This result is NOT a steady-state result.'
+                                ''.format(self.t, ss.residual, ss.tolerance, ss.streak, ss.window,
+                                          'passed' if ss.armed else 'never reached'))
                         self.log_conversions(species_index, y0)
                         break
                 elif isinstance(term, TerminationConversion):

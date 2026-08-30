@@ -450,10 +450,64 @@ sensitivities for dln(C_i)/dln(k_j) > sensitivityThreshold  or dlnC_i/d(G_j) > s
 Note that in the RMG job, after the model has been generated to completion, sensitivity analysis will be conducted
 in one final simulation (sensitivity is not performed in intermediate iterations of the job).
 
+Plasma Reactors: Terminating at Steady State
+--------------------------------------------------
+
+``plasmaReactor`` accepts a fourth termination criterion that the other reactor types do
+not: ``terminationSteadyState``. A low-pressure discharge does not stop at a time, a
+conversion or a falling rate ratio -- it relaxes to a **stationary ionisation balance**, in
+which the composition stops changing while nothing is being consumed net and no rate ratio
+is decaying. In an argon-only deck ``terminationConversion`` is worse than useless, because
+nothing converts and the criterion can never be met. ``terminationSteadyState`` lets a deck
+say "integrate until this stops changing" and mean it::
+
+	plasmaReactor(
+		temperature=(298.15,'K'),
+		pressure=(5,'torr'),
+		electronTemperature=(34813.5,'K'),
+		electronDensity=(1e16,'m^-3'),
+		initialMoleFractions={
+			'Ar': 0.99999994,
+			'Ar+': 6.2e-08,
+		},
+		terminationTime=(1e-3,'s'),
+		terminationSteadyState=1e-6,
+	)
+
+The value is the **tolerance** on a dimensionless residual
+
+.. math:: R = \max_i \left| \frac{\mathrm{d} \ln x_i}{\mathrm{d} \ln t} \right|
+
+taken over every core species the integrator resolves -- the largest fractional change in
+any mole fraction per e-fold of integration time. Because
+:math:`|\mathrm{d}\ln x_i/\mathrm{d}t|` is the inverse of species *i*'s relaxation time,
+:math:`R` is the elapsed time measured in units of the fastest chemistry still running. The
+dict form gives full control::
+
+		terminationSteadyState={'tolerance': 1e-6, 'window': 3},
+
+where ``window`` is how many consecutive solver steps must satisfy the tolerance.
+
+Two things about it are worth knowing before you use it:
+
+* **A** ``terminationTime`` **is required alongside it**, as a backstop. A composition that
+  never settles would otherwise integrate without limit. When the backstop fires first, the
+  log says at warning level that steady state was *not* reached and names the residual it
+  got to; that result must not be reported as a steady-state result.
+* **The criterion arms before it fires.** A small residual has two causes -- the system has
+  converged, or the integration has not yet reached its own chemistry -- and early in a run
+  it is always the second. So the criterion may only fire once :math:`R` has reached 1, i.e.
+  once the integration has run for longer than the fastest relaxation time present. A model
+  that carries no flux at all never arms; such a run terminates, but reports that no steady
+  state was demonstrated, because a system that never started has converged to nothing.
+
+The run logs the residual it terminated at, so "we integrated to steady state, by this
+criterion, and here is the residual" is a claim a reader can check.
+
 Advanced Setting: Range Based Reactors
 -------------------------------------------------
 
-Under this setting rather than using reactors at fixed points, reaction conditions are sampled from a range of conditions.  
+Under this setting rather than using reactors at fixed points, reaction conditions are sampled from a range of conditions.
 Conditions are chosen using a weighted stochastic grid sampling algorithm.  An implemented objective function measures how
 desirable it is to sample from a point condition (T, P, concentrations) based on prior run conditions (weighted by how 
 recent they were and how many objects they returned). Each iteration this objective function is evaluated at a grid of
