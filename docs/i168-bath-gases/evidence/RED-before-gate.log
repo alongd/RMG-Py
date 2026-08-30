@@ -1,0 +1,8 @@
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/rmgpy/i168BathGasInjectionTest.py:272: AssertionError
+=========================== short test summary info ============================
+FAILED test/rmgpy/i168BathGasInjectionTest.py::PlasmaDeckGetsNoBathGasTest::test_argon_only_plasma_deck_stays_argon_only
+FAILED test/rmgpy/i168BathGasInjectionTest.py::PlasmaDeckGetsNoBathGasTest::test_the_species_dictionary_gains_nothing_either
+FAILED test/rmgpy/i168BathGasInjectionTest.py::CoreMembershipTest::test_plasma_core_holds_only_what_the_deck_declared
+========================= 3 failed, 8 passed in 8.22s ==========================
