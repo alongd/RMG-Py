@@ -1,0 +1,38 @@
+# BEFORE: electronDensity, no cation, unmodified plasma@4f18dc389 -- the silence
+#
+# EXCERPT of before-nonneutral/RMG.log -- NOT the whole log. Line numbers are the
+# original ones. Regenerate with ../make_excerpts.sh after re-running the deck.
+# Full log: 571 lines.
+
+## Every 'Warning:' line in the entire run
+180:Warning: Edge species saving was turned on. This will slow down model generation for large simulations.
+
+## Every charge/neutrality line RMG itself emitted
+## (lines belonging to the echoed input deck -- the log replays the deck
+##  verbatim, comments and all -- and lines that only match on the worktree
+##  path 'i169-charge-neutral' are excluded; that is what makes this a census
+##  of RMG's own output rather than of the deck's prose.)
+  (none -- RMG emitted no message mentioning charge or neutrality)
+
+## Same census over stdout.log and stderr.log
+stdout.log: 0 RMG-emitted charge/neutral mentions
+stderr.log: 0 RMG-emitted charge/neutral mentions
+
+## Context: the reaction system, and how the run ended
+    plasmaReactor(
+        temperature=(298.15, 'K'),
+        pressure=(5, 'torr'),
+        electronTemperature=(34813.5, 'K'),     # 3 eV
+        electronDensity=(1e16, 'm^-3'),         # 1e10 cm^-3
+        initialMoleFractions={
+            'Ar': 1.0,
+        },
+        terminationTime=(1e-3, 's'),            # substitute for "quasi-steady state"
+    )
+
+    Error:       InputError: Error while reading reaction in chem.inp starting on line 66:
+    Error: 
+    Error: Model generation itself completed and every file written before this point is
+    Error: valid; the output above names what is missing.
+    Error: ===============================================================================
+    Error: 

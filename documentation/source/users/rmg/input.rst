@@ -565,7 +565,49 @@ number of fixed reactors.  The second should get you reasonably close to converg
 For gas phase reactors if normalization of the ranged mole fractions is undesirable (eg. perhaps a specific species mole 
 fractions needs to be kept constant) one can use a ``balanceSpecies``.  When a ``balanceSpecies`` is used instead of 
 normalizing the mole fractions the concentration of the defined ``balanceSpecies`` is adjusted to maintain an overall mole 
-fraction of one.  This ensures that all species except the ``balanceSpecies`` have mole fractions within the range specified.  
+fraction of one.  This ensures that all species except the ``balanceSpecies`` have mole fractions within the range specified.
+
+.. _plasmareactorchargebalance:
+
+Charge Balancing a Plasma Reactor
+---------------------------------
+
+A ``plasmaReactor`` seeds its electron population either as an explicit electron mole fraction in
+``initialMoleFractions`` or, in the plasma-modeller convention, as a number density via
+``electronDensity``.  ``electronDensity`` inserts the electron and rescales the heavy species so the
+composition still sums to one -- but it creates no compensating positive ion, so a deck that lists
+only neutral heavy species is **net negative** at t = 0.
+
+``chargeBalanceSpecies`` is the charge analogue of ``balanceSpecies`` above: it names one declared,
+charged species whose mole fraction RMG computes so that the resulting composition carries no net
+charge.  It works both alongside ``electronDensity`` and with an explicitly typed electron
+fraction::
+
+	plasmaReactor(
+	    temperature=(298.15, 'K'),
+	    pressure=(5, 'torr'),
+	    electronTemperature=(34813.5, 'K'),
+	    electronDensity=(1e16, 'm^-3'),
+	    chargeBalanceSpecies='Arp',
+	    initialMoleFractions={
+	        'Ar': 1.0,
+	    },
+	    terminationTime=(1e-3, 's'),
+	)
+
+The named species must be declared with a ``species(...)`` directive before the reactor block, must
+carry a non-zero net charge, must not be the electron pseudo-species, and must **not** also have an
+entry in ``initialMoleFractions`` -- that would be two sources of truth for one number.  Each of
+those is refused while the input file is read, with the offending label in the message.  Any other
+charged species listed in ``initialMoleFractions`` keeps the fraction it was given and enters the
+balance; the named species takes whatever remains, so naming one species resolves the balance
+unambiguously even when several ions are present.  The mole fraction computed and the net charge it
+achieved are both written to ``RMG.log``.
+
+Omitting ``chargeBalanceSpecies`` leaves the composition exactly as it would be without it.  A
+non-neutral initial composition is never an error -- it may be deliberate -- but it is no longer
+silent: ``PlasmaReactor`` logs a warning naming the net charge per mole whenever the initial
+composition is not neutral, whether or not this keyword was used.
 
 .. _simulatortolerances:
 

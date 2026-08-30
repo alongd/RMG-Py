@@ -1,0 +1,40 @@
+# AFTER: the same deck plus chargeBalanceSpecies='Arp' -- neutral, and silent
+#
+# EXCERPT of after-neutral/RMG.log -- NOT the whole log. Line numbers are the
+# original ones. Regenerate with ../make_excerpts.sh after re-running the deck.
+# Full log: 541 lines.
+
+## Every 'Warning:' line in the entire run
+135:Warning: Edge species saving was turned on. This will slow down model generation for large simulations.
+
+## Every charge/neutrality line RMG itself emitted
+## (lines belonging to the echoed input deck -- the log replays the deck
+##  verbatim, comments and all -- and lines that only match on the worktree
+##  path 'i169-charge-neutral' are excluded; that is what makes this a census
+##  of RMG's own output rather than of the deck's prose.)
+104:    chargeBalanceSpecies='Arp',             # <- the whole change vs the control deck
+134:plasmaReactor: chargeBalanceSpecies 'Arp' (charge +1) was given mole fraction 6.17516536791096e-08 to balance the composition; the resulting net charge is -1.3234889800848443e-23 per mole (composition sums to 0.9999999999999999).
+
+## Same census over stdout.log and stderr.log
+stdout.log: 0 RMG-emitted charge/neutral mentions
+stderr.log: 0 RMG-emitted charge/neutral mentions
+
+## Context: the reaction system, and how the run ended
+    plasmaReactor(
+        temperature=(298.15, 'K'),
+        pressure=(5, 'torr'),
+        electronTemperature=(34813.5, 'K'),     # 3 eV
+        electronDensity=(1e16, 'm^-3'),         # 1e10 cm^-3
+        chargeBalanceSpecies='Arp',             # <- the whole change vs the control deck
+        initialMoleFractions={
+            'Ar': 1.0,
+        },
+        terminationTime=(1e-3, 's'),            # substitute for "quasi-steady state"
+    )
+
+    Error:       InputError: Error while reading reaction in chem.inp starting on line 72:
+    Error: 
+    Error: Model generation itself completed and every file written before this point is
+    Error: valid; the output above names what is missing.
+    Error: ===============================================================================
+    Error: 

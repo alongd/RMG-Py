@@ -1123,3 +1123,218 @@ class TestInputPlasmaReactor:
         inp.read_input_file(str(saved), rmg2)  # must not raise on the 'all' sentinel
         assert isinstance(rmg2.reaction_systems[0], PlasmaReactor)
         assert rmg2.kinetics_depositories is None  # the sentinel survived the round-trip
+
+
+class TestInputPlasmaChargeBalance:
+    """
+    Tests for ``chargeBalanceSpecies`` on the ``plasmaReactor`` directive (I-169).
+
+    Like :class:`TestInputPlasmaReactor` above, every test drives the public
+    :func:`rmgpy.rmg.input.read_input_file`: the whole complaint this keyword answers
+    is about what a modeller can express in a deck, so a test that called
+    ``plasma_reactor`` directly would not be testing it.
+
+    The oracle these tests hold the implementation to is stated independently of it:
+    a composition is charge balanced when ``sum(x_i * z_i) == 0``, computed from the
+    resolved reactor composition and each species' own ``get_net_charge()``.
+    """
+
+    # ---- helpers -----------------------------------------------------------
+
+    def _read(self, tmp_path, body):
+        path = tmp_path / "input.py"
+        path.write_text(body)
+        rmg = RMG()
+        inp.read_input_file(str(path), rmg)
+        return rmg
+
+    @staticmethod
+    def _preamble():
+        return (
+            "species(label='e-', structure=adjacencyList(\"1 e u1 p0 c-1\"))\n"
+            "species(label='Ar', structure=adjacencyList(\"1 Ar u0 p4 c0\"))\n"
+            "species(label='Arp', structure=adjacencyList(\"\"\"\n"
+            "multiplicity 2\n"
+            "1 Ar u1 p3 c+1\n"
+            "\"\"\"))\n"
+        )
+
+    @staticmethod
+    def _block(extra, mole_fractions="{'Ar': 1.0}"):
+        return (
+            "plasmaReactor(\n"
+            "    temperature=(1000,'K'),\n"
+            "    pressure=(1,'atm'),\n"
+            "    electronTemperature=(11604.5,'K'),\n"
+            f"{extra}"
+            f"    initialMoleFractions={mole_fractions},\n"
+            "    terminationTime=(1,'s'),\n"
+            ")\n"
+        )
+
+    @staticmethod
+    def _net_charge(reactor):
+        """sum(x_i * z_i) over the resolved composition -- the oracle, stated here."""
+        return sum(value * spc.get_net_charge()
+                   for spc, value in reactor.initial_mole_fractions.items())
+
+    # ---- the neutral-seeding path ------------------------------------------
+
+    def test_charge_balance_with_electron_density_is_neutral(self, tmp_path):
+        # The whole point: no hand-derived constant in the deck, and the resulting
+        # composition is neutral to roundoff rather than to the modeller's arithmetic.
+        body = self._preamble() + self._block(
+            "    electronDensity=(1e23,'m^-3'),\n"
+            "    chargeBalanceSpecies='Arp',\n")
+        reactor = self._read(tmp_path, body).reaction_systems[0]
+        imf = {k.label: v for k, v in reactor.initial_mole_fractions.items()}
+        assert 'Arp' in imf                                   # RMG created the entry
+        assert imf['Arp'] == pytest.approx(imf['e-'], rel=1e-12)  # singly charged: x+ == x_e
+        assert sum(reactor.initial_mole_fractions.values()) == pytest.approx(1.0, abs=1e-12)
+        assert abs(self._net_charge(reactor)) < 1e-15
+
+    def test_charge_balance_preserves_electron_density_round_trip(self, tmp_path):
+        # Balancing must not disturb the electron density the deck asked for: the
+        # cation is inserted on the heavy side, and the EOS must still recover n_e.
+        body = self._preamble() + self._block(
+            "    electronDensity=(1e23,'m^-3'),\n"
+            "    chargeBalanceSpecies='Arp',\n")
+        reactor = self._read(tmp_path, body).reaction_systems[0]
+        core = list(reactor.initial_mole_fractions.keys())
+        reactor.initialize_model(core, [], [], [])
+        volume = reactor.compute_volume(reactor.y0)
+        n_e_recovered = reactor.y0[reactor.electron_index] * constants.Na / volume
+        assert n_e_recovered == pytest.approx(1e23, rel=1e-9)
+
+    def test_charge_balance_with_explicit_electron_fraction(self, tmp_path):
+        # The keyword must work in the OTHER branch too -- an explicitly typed electron
+        # fraction, no electronDensity. A keyword that no-ops in one branch is a defect.
+        body = self._preamble() + self._block(
+            "    chargeBalanceSpecies='Arp',\n",
+            mole_fractions="{'Ar': 0.9, 'e-': 1e-6}")
+        reactor = self._read(tmp_path, body).reaction_systems[0]
+        imf = {k.label: v for k, v in reactor.initial_mole_fractions.items()}
+        assert imf['Arp'] == pytest.approx(imf['e-'], rel=1e-12)
+        assert sum(reactor.initial_mole_fractions.values()) == pytest.approx(1.0, abs=1e-12)
+        assert abs(self._net_charge(reactor)) < 1e-15
+
+    def test_charge_balance_accounts_for_charge_already_present(self, tmp_path):
+        # A deck that already types SOME cation must have only the remainder supplied,
+        # not x_e again -- otherwise the "balance" overshoots into net positive.
+        body = self._preamble() + self._block(
+            "    chargeBalanceSpecies='Arp',\n",
+            mole_fractions="{'Ar': 0.9, 'e-': 1e-6, 'Nep2': 2e-7}")
+        body = body.replace(
+            "plasmaReactor(",
+            "species(label='Nep2', structure=adjacencyList(\"\"\"\n"
+            "1 Ne u0 p3 c+2\n"
+            "\"\"\"))\n"
+            "plasmaReactor(", 1)
+        reactor = self._read(tmp_path, body).reaction_systems[0]
+        imf = {k.label: v for k, v in reactor.initial_mole_fractions.items()}
+        # Arp must carry x_e - 2*x_Nep2 worth of charge, not x_e.
+        assert imf['Arp'] == pytest.approx(imf['e-'] - 2.0 * imf['Nep2'], rel=1e-9)
+        assert abs(self._net_charge(reactor)) < 1e-15
+
+    def test_multiply_charged_balance_species(self, tmp_path):
+        # z_b = +2: the balancing fraction is x_e/2, not x_e. Guards against an
+        # implementation that assumes singly-charged ions.
+        body = self._preamble() + self._block(
+            "    electronDensity=(1e23,'m^-3'),\n"
+            "    chargeBalanceSpecies='Nep2',\n")
+        body = body.replace(
+            "plasmaReactor(",
+            "species(label='Nep2', structure=adjacencyList(\"\"\"\n"
+            "1 Ne u0 p3 c+2\n"
+            "\"\"\"))\n"
+            "plasmaReactor(", 1)
+        reactor = self._read(tmp_path, body).reaction_systems[0]
+        imf = {k.label: v for k, v in reactor.initial_mole_fractions.items()}
+        assert imf['Nep2'] == pytest.approx(imf['e-'] / 2.0, rel=1e-12)
+        assert abs(self._net_charge(reactor)) < 1e-15
+
+    def test_omitting_the_keyword_leaves_the_composition_untouched(self, tmp_path):
+        # Existing decks must keep working unchanged -- bit for bit, not approximately.
+        (tmp_path / 'a').mkdir()
+        (tmp_path / 'b').mkdir()
+        body = self._preamble() + self._block("    electronDensity=(1e23,'m^-3'),\n")
+        r1 = self._read(tmp_path / 'a', body).reaction_systems[0]
+        r2 = self._read(tmp_path / 'b', body).reaction_systems[0]
+        imf1 = {k.label: v for k, v in r1.initial_mole_fractions.items()}
+        imf2 = {k.label: v for k, v in r2.initial_mole_fractions.items()}
+        assert imf1 == imf2
+        assert 'Arp' not in imf1          # no cation invented behind the modeller's back
+        assert imf1['Ar'] + imf1['e-'] == pytest.approx(1.0, abs=1e-15)
+
+    def test_balance_species_label_is_carried_to_the_reactor(self, tmp_path):
+        # I-185: the reactor must learn WHICH ion the deck's neutrality rests on, so it
+        # can check (once the reaction set exists) that the ion is producible. The label
+        # is carried, not the computed fraction.
+        body = self._preamble() + self._block(
+            "    electronDensity=(1e23,'m^-3'),\n"
+            "    chargeBalanceSpecies='Arp',\n")
+        reactor = self._read(tmp_path, body).reaction_systems[0]
+        assert reactor.charge_balance_species == 'Arp'
+
+    def test_no_balance_species_leaves_reactor_field_none(self, tmp_path):
+        # Omitting the keyword leaves the reachability check inert: opt-in with the
+        # directive, exactly as the balancing itself is.
+        body = self._preamble() + self._block("    electronDensity=(1e23,'m^-3'),\n")
+        reactor = self._read(tmp_path, body).reaction_systems[0]
+        assert reactor.charge_balance_species is None
+
+    # ---- parse-time guards -------------------------------------------------
+
+    def test_undeclared_balance_species_rejected_at_parse_time(self, tmp_path):
+        body = self._preamble() + self._block(
+            "    electronDensity=(1e23,'m^-3'),\n"
+            "    chargeBalanceSpecies='Krp',\n")
+        with pytest.raises(InputError, match="Krp"):
+            self._read(tmp_path, body)
+
+    def test_uncharged_balance_species_rejected(self, tmp_path):
+        body = self._preamble() + self._block(
+            "    electronDensity=(1e23,'m^-3'),\n"
+            "    chargeBalanceSpecies='Ar',\n")
+        with pytest.raises(InputError, match="no net charge"):
+            self._read(tmp_path, body)
+
+    def test_electron_as_balance_species_rejected(self, tmp_path):
+        body = self._preamble() + self._block(
+            "    electronDensity=(1e23,'m^-3'),\n"
+            "    chargeBalanceSpecies='e-',\n")
+        with pytest.raises(InputError, match="electron pseudo-species"):
+            self._read(tmp_path, body)
+
+    def test_balance_species_also_in_mole_fractions_rejected(self, tmp_path):
+        # Two sources of truth for one number -- the same rule electronDensity applies
+        # to the electron.
+        body = self._preamble() + self._block(
+            "    electronDensity=(1e23,'m^-3'),\n"
+            "    chargeBalanceSpecies='Arp',\n",
+            mole_fractions="{'Ar': 1.0, 'Arp': 1e-7}")
+        with pytest.raises(InputError, match="two sources of truth"):
+            self._read(tmp_path, body)
+
+    def test_non_string_balance_species_rejected(self, tmp_path):
+        body = self._preamble() + self._block(
+            "    electronDensity=(1e23,'m^-3'),\n"
+            "    chargeBalanceSpecies=['Arp'],\n")
+        with pytest.raises(InputError, match="string label"):
+            self._read(tmp_path, body)
+
+    def test_wrong_sign_balance_species_rejected(self, tmp_path):
+        # An anion cannot cancel an excess of negative charge; the required fraction is
+        # negative, which must be a named error rather than a negative mole fraction.
+        body = self._preamble() + self._block(
+            "    electronDensity=(1e23,'m^-3'),\n"
+            "    chargeBalanceSpecies='Om',\n")
+        body = body.replace(
+            "plasmaReactor(",
+            "species(label='Om', structure=adjacencyList(\"\"\"\n"
+            "multiplicity 2\n"
+            "1 O u1 p3 c-1\n"
+            "\"\"\"))\n"
+            "plasmaReactor(", 1)
+        with pytest.raises(InputError, match="not a usable mole fraction"):
+            self._read(tmp_path, body)
