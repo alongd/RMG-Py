@@ -65,6 +65,7 @@ from rmgpy.solver.surface import SurfaceReactor
 from rmgpy.solver.termination import (
     TerminationConversion,
     TerminationRateRatio,
+    TerminationSteadyState,
     TerminationTime,
 )
 from rmgpy.data.auto_database import AUTO, PAH_LIBS
@@ -522,7 +523,8 @@ def plasma_reactor(temperature,
                    electronDensity=None,
                    terminationConversion=None,
                    terminationTime=None,
-                   terminationRateRatio=None):
+                   terminationRateRatio=None,
+                   terminationSteadyState=None):
     """
     Define a two-temperature plasma batch reactor (:class:`PlasmaReactor`) from an
     input file.
@@ -553,6 +555,21 @@ def plasma_reactor(temperature,
         reactor recomputes its volume at every step from the evolving composition, so
         the electron density does **not** remain fixed at this value -- it is an
         initial condition, not a maintained constraint.
+
+    ``terminationSteadyState`` stops the integration when the composition has stopped
+    changing, which is the endpoint a discharge actually has and which none of the other
+    three criteria expresses (a low-pressure plasma runs to a stationary ionisation
+    balance: nothing is consumed net, and no rate ratio decays). Give it a bare tolerance
+    on the residual, ``terminationSteadyState=1e-6``, or a dict for full control,
+    ``terminationSteadyState={'tolerance': 1e-6, 'window': 3}``. The residual and the
+    reasoning behind the default are documented on
+    :class:`~rmgpy.solver.termination.TerminationSteadyState`; the run logs the residual
+    it terminated at, so the resulting claim is checkable.
+
+    A ``terminationTime`` is **required** alongside it, as a backstop: a composition that
+    never settles would otherwise integrate without limit. When the backstop fires first,
+    the log says at warning level that steady state was not reached and names the residual
+    it got to.
     """
     logging.debug('Found PlasmaReactor reaction system')
 
@@ -746,6 +763,30 @@ def plasma_reactor(temperature,
         termination.append(TerminationTime(Quantity(terminationTime)))
     if terminationRateRatio is not None:
         termination.append(TerminationRateRatio(terminationRateRatio))
+    if terminationSteadyState is not None:
+        if isinstance(terminationSteadyState, dict):
+            unknown = set(terminationSteadyState) - {'tolerance', 'window'}
+            if unknown:
+                raise InputError(
+                    "terminationSteadyState accepts only the keys 'tolerance' and 'window'; got "
+                    "{0!r}.".format(sorted(unknown)))
+            kwargs = dict(terminationSteadyState)
+        else:
+            kwargs = {'tolerance': terminationSteadyState}
+        try:
+            termination.append(TerminationSteadyState(**kwargs))
+        except (TypeError, ValueError) as e:
+            raise InputError('Invalid terminationSteadyState: {0}'.format(e))
+        # A steady-state criterion is not guaranteed to fire: a model whose composition
+        # never settles would integrate without limit. Demand the backstop at the door,
+        # where the failure is a one-line input error, rather than discovering it as a job
+        # that has been running for a week.
+        if terminationTime is None:
+            raise InputError(
+                'terminationSteadyState requires a companion terminationTime to act as a '
+                'backstop. A composition that never settles would otherwise integrate '
+                'without limit; with a backstop the run stops on time and reports the '
+                'residual it reached, saying plainly that steady state was not met.')
     if len(termination) == 0:
         raise InputError('No termination conditions specified for reaction system #{0}.'.format(len(rmg.reaction_systems) + 2))
 
@@ -2204,6 +2245,12 @@ def save_input_file(path, rmg):
                 f.write('    terminationRateRatio = {0:g},\n'.format(term.ratio))
             elif isinstance(term, TerminationConversion):
                 conversions += '        "{0:s}": {1:g},\n'.format(term.species.label, term.conversion)
+            elif isinstance(term, TerminationSteadyState):
+                # Always the dict form: the window is as much of the criterion as the
+                # tolerance is, and a round-trip that silently restored the default window
+                # would be a different criterion wearing the same name.
+                f.write('    terminationSteadyState = {{"tolerance": {0!r}, "window": {1:d}}},\n'
+                        ''.format(term.tolerance, term.window))
             else:
                 raise NotImplementedError('Termination criteria of type {0} not supported'.format(type(term)))
         if conversions:

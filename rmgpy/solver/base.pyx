@@ -56,8 +56,41 @@ from rmgpy.chemkin import get_species_identifier
 from rmgpy.reaction import Reaction
 from rmgpy.quantity import Quantity
 from rmgpy.species import Species
-from rmgpy.solver.termination import TerminationTime, TerminationConversion, TerminationRateRatio
+from rmgpy.solver.termination import (TerminationTime, TerminationConversion, TerminationRateRatio,
+                                      TerminationSteadyState)
 ################################################################################
+
+# `char_rate` (computed just below, in ReactionSystem.simulate) is the L2 norm of the core
+# species rates: sqrt(sum(rate_i^2)).  The zero-flux promotion gate used to test
+# `char_rate == 0` exactly, which is too narrow -- a core carrying only numerical dust can
+# produce a char_rate that is nonzero yet physically meaningless, so the gate was skipped and
+# control fell through to ratio-based promotion whose denominator (lines 832-834) is that same
+# near-nothing number, promoting an edge species on garbage ratios. This constant widens the
+# gate to a measured dust floor, the same idea as the F5 fix applied to a single edge rate a few
+# lines below (see the `np.finfo(np.float64).tiny` comment there) -- but NOT that same number.
+# F5's `tiny` (~2.2e-308) is the smallest *normal* double and bounds a single rate. char_rate is
+# an L2 norm, a different population: sqrt() of any tiny positive sum-of-squares returns a
+# NORMAL-magnitude double (sqrt(5e-324) = sqrt(the smallest subnormal double) is already
+# ~2.2e-162), so the smallest nonzero char_rate the arithmetic can produce is ~2.2e-162 -- deep
+# in the *normal* range, nowhere near F5's subnormal band. F5's `tiny` would therefore never
+# fire on a real char_rate; reusing it here would silently disable the gate for the dust case
+# this constant exists to catch.
+#
+# Measured on a healthy, growing deck (examples/rmg/minimal/input.py, ethane pyrolysis, no QM,
+# no pdep): 29,128 char_rate samples over the whole run, of which 29,110 were nonzero; the
+# smallest nonzero value observed was 6.292134509113702e-15. Measured on an inert/dust
+# construction (test/rmgpy/solver/zeroFluxPromotionTest.py,
+# test_no_promotion_when_core_char_rate_is_normal_magnitude_dust: a core with one reaction whose
+# A factor is tuned to 1e-105): a char_rate of 1.344684291137062e-104, deep in the same
+# normal-but-dust band the arithmetic floor above describes.
+#
+# The floor below sits about 85 orders of magnitude under the measured healthy minimum
+# (6.3e-15 / 1e-100 = 6.3e85) and about 61 orders of magnitude above the arithmetic dust floor
+# (1e-100 / 2.2e-162 = 4.5e61) -- comfortably inside the >=20-orders-of-magnitude margin this
+# fix requires on both sides, so it cannot mistake a healthy run's smallest real signal for
+# dust, nor let dust several dozen more orders of magnitude "healthier" than the worst measured
+# dust case slip past it.
+_CHAR_RATE_FLOOR = 1e-100
 
 cdef class ReactionSystem(DASx):
     """
@@ -172,7 +205,12 @@ cdef class ReactionSystem(DASx):
 
         self.termination = termination or []
 
-        # Flag to indicate whether or not reactions with 3 reactants are present 
+        # Outcome of any TerminationSteadyState criterion, for whoever reports the run.
+        # `steady_state_residual` is nan until a criterion has had two steps to look at.
+        self.steady_state_reached = False
+        self.steady_state_residual = float('nan')
+
+        # Flag to indicate whether or not reactions with 3 reactants are present
         self.trimolecular = False
 
         # reaction filtration, unimolecular_threshold is a vector with length of number of core species
@@ -707,6 +745,20 @@ cdef class ReactionSystem(DASx):
         conversion = 0.0
         max_char_rate = 0.0
 
+        # Steady-state termination. Each call to simulate() restarts the integration from
+        # t=0, so the criterion's arming latch must be cleared here rather than carried
+        # over from the previous enlargement's simulation.
+        steady_state_terms = [term for term in self.termination
+                              if isinstance(term, TerminationSteadyState)]
+        for term in steady_state_terms:
+            term.reset()
+        steady_state_prev_y = None
+        steady_state_prev_t = -1.0
+        steady_state_satisfied = False
+        steady_state_inert = False
+        self.steady_state_reached = False
+        self.steady_state_residual = float('nan')
+
         max_edge_species_rate_ratios = self.max_edge_species_rate_ratios
         max_network_leak_rate_ratios = self.max_network_leak_rate_ratios
         forward_rate_coefficients = self.kf
@@ -846,10 +898,66 @@ cdef class ReactionSystem(DASx):
                 if max_network_leak_rate_ratios[i] < network_leak_rate_ratios[index]:
                     max_network_leak_rate_ratios[i] = network_leak_rate_ratios[index]
 
-            if char_rate == 0 and len(edge_species_rates) > 0:  # this deals with the case when there is no flux in the system
+            # A non-finite rate is a broken integration, not a physical flux, and it defeats
+            # every gate below: NaN fails all comparisons silently (``NaN <= floor`` and
+            # ``NaN < tiny`` are both False), and np.argmax treats a NaN as the largest value,
+            # so an overflow or invalid kinetics would be selected as "the fastest species" and
+            # promoted into the core -- numerical garbage presented as model growth. Treating it
+            # as zero flux would be just as wrong: it converts a detectable numerical failure
+            # into a quiet inert result. Stop loudly instead, naming what went non-finite, so the
+            # failure is diagnosable rather than laundered into the mechanism.
+            if not (np.isfinite(char_rate) and np.isfinite(edge_species_rates).all()):
+                bad_core = np.flatnonzero(~np.isfinite(self.core_species_rates))
+                bad_edge = np.flatnonzero(~np.isfinite(edge_species_rates))
+                raise ValueError(
+                    'Non-finite reaction rate at time {0:10.4e} s in reaction system {1} (the one '
+                    'named in the "Conducting simulation of reaction system" line above): the '
+                    'characteristic core rate is {2!r}, with {3:d} of {4:d} core species rates and '
+                    '{5:d} of {6:d} edge species rates non-finite (NaN or infinite). A non-finite '
+                    'rate is a broken integration -- an overflow or invalid kinetics -- not a '
+                    'physical flux; it is neither promoted into the core nor reported as an inert '
+                    'result. Core species indices with non-finite rates: {7}; edge species indices: '
+                    '{8}.'.format(self.t, type(self).__name__, char_rate,
+                                  bad_core.size, self.num_core_species,
+                                  bad_edge.size, len(edge_species_rates),
+                                  list(bad_core), list(bad_edge)))
+
+            # No resolvable flux (exact zero OR normal-magnitude dust). When a terminationSteadyState
+            # criterion is present this block stands down: a no-flux exit is that criterion's to
+            # report (as "NO STEADY STATE WAS DEMONSTRATED"), and breaking here would take the
+            # promotion path before control ever reached the steady-state termination logic below.
+            if char_rate <= _CHAR_RATE_FLOOR and len(edge_species_rates) > 0 and not steady_state_terms:
                 max_species_index = np.argmax(edge_species_rates)
                 max_species = edge_species[max_species_index]
                 max_species_rate = edge_species_rates[max_species_index]
+                # np.finfo(float64).tiny (2.2e-308) is the smallest *normal* double: anything below it
+                # is a subnormal, which in this context can only be underflow or cancellation dust, not
+                # a physical rate. Testing max_species_rate == 0 exactly was the F5 defect -- a species
+                # carrying 5e-324 of numerical dust is physically indistinguishable from inert but is
+                # not == 0, so argmax picked it and it was promoted on no physical basis. A measured
+                # justification for the boundary: across a live, growing superminimal trajectory the
+                # smallest nonzero edge species rate ever observed was 3.98e-39, ~270 orders of
+                # magnitude above this threshold, so a real edge flux can never be suppressed by it;
+                # while the inert argon deck produces edge rates of exactly 0.0. The subnormal band
+                # (0, 2.2e-308) is therefore empty of real rates and full of dust.
+                if max_species_rate < np.finfo(np.float64).tiny:
+                    # The core is not merely singular, the whole system is inert: the largest edge rate
+                    # is dust too, so there is no physically largest-rate species and the argmax above
+                    # has returned a species on no physical basis. Promoting it would put an arbitrary
+                    # species into the core and present the result as a mechanism. Report the condition
+                    # and promote nothing; the break still has to happen, since a model whose rates are
+                    # all dust can never satisfy a conversion criterion.
+                    logging.error('ZERO FLUX: at time {0:10.4e} s this reaction system ({1}, the one named '
+                                  'in the "Conducting simulation of reaction system" line above) carries no '
+                                  'resolvable flux at all -- every core species rate is exactly zero and the '
+                                  'largest of its {2:d} edge species rates is {3:.3e}, at or below the '
+                                  'smallest normal floating-point magnitude (numerical dust, not a physical '
+                                  'rate). NO species was added to the model core: with no edge species '
+                                  'carrying resolvable flux there is no largest-rate species to promote, and '
+                                  'promoting one anyway would put an arbitrary species into the core. This '
+                                  'reaction system cannot grow the model any further.'
+                                  ''.format(self.t, type(self).__name__, len(edge_species_rates), max_species_rate))
+                    break
                 logging.info('At time {0:10.4e} s, species {1} was added to model core to avoid '
                              'singularity'.format(self.t, max_species))
                 invalid_objects.append(max_species)
@@ -1227,12 +1335,83 @@ cdef class ReactionSystem(DASx):
                 logging.info('terminating simulation due to interrupt...')
                 break
 
+            # Fold this step into any steady-state criterion BEFORE the termination loop
+            # below reads it, so that a run stopping on its backstop time can still report
+            # the residual it got to whatever order the criteria were declared in.
+            if steady_state_terms:
+                if steady_state_prev_y is not None:
+                    for term in steady_state_terms:
+                        if term.update(y_core_species, self.t, steady_state_prev_y,
+                                       steady_state_prev_t, atol, core_species):
+                            steady_state_satisfied = True
+                if not steady_state_satisfied:
+                    steady_state_prev_y = y_core_species.copy()
+                    steady_state_prev_t = self.t
+                self.steady_state_residual = steady_state_terms[0].residual
+
+                # A system carrying no net flux cannot change again, so there is nothing
+                # left to integrate and the run must stop. The ordinary path above already
+                # handles the case where it stopped after doing something: a frozen
+                # composition gives a residual of exactly zero, which clears any tolerance
+                # and accumulates the window like any other flat tail, and the criterion is
+                # armed because a transient happened. What is left here is the system that
+                # NEVER started -- never armed, no flux, nothing to measure. That also has
+                # to terminate, but it has demonstrated nothing, and saying otherwise is
+                # the confusion this criterion exists to remove. The zero-rate condition
+                # itself is diagnosed and logged by the solver upstream; this is only its
+                # termination consequence. The band tested is the same ``_CHAR_RATE_FLOOR``
+                # the zero-flux promotion block uses (exact zero OR normal-magnitude dust):
+                # that block now stands down when a steady-state criterion is present, so this
+                # is the sole owner of the no-flux exit and must cover the whole inert band it
+                # would have caught, not just exact zero, or a dust-rate system would neither
+                # promote nor terminate and would churn to the backstop time.
+                if char_rate <= _CHAR_RATE_FLOOR and not steady_state_satisfied:
+                    steady_state_inert = True
+                    for term in steady_state_terms:
+                        if term.armed:
+                            steady_state_inert = False
+                    if steady_state_inert:
+                        steady_state_satisfied = True
+
             # Finish simulation if any of the termination criteria are satisfied
+            if steady_state_satisfied:
+                terminated = True
+                self.steady_state_reached = not steady_state_inert
+                if steady_state_inert:
+                    logging.warning(
+                        'At time {0:10.4e} s, terminating terminationSteadyState WITHOUT a steady state: the '
+                        'system carries no flux, so the composition cannot change and there is nothing further '
+                        'to integrate. NO STEADY STATE WAS DEMONSTRATED -- this model never started, which is '
+                        'not the same result as a stationary ionisation balance, and must not be reported as '
+                        'one. There is no residual to quote: the criterion was never evaluated, because a '
+                        'composition that cannot move carries no information about whether it has '
+                        'settled.'.format(self.t))
+                else:
+                    term = steady_state_terms[0]
+                    logging.info('At time {0:10.4e} s, reached steady state: residual {1:10.4e} below '
+                                 'tolerance {2:10.4e} for {3:d} consecutive steps (slowest species: '
+                                 '{4}).'.format(self.t, self.steady_state_residual, term.tolerance,
+                                                term.streak, term.worst_label))
+                self.log_conversions(species_index, y0)
+
             for term in self.termination:
+                if terminated:
+                    break
                 if isinstance(term, TerminationTime):
                     if self.t > term.time.value_si:
                         terminated = True
                         logging.info('At time {0:10.4e} s, reached target termination time.'.format(term.time.value_si))
+                        # A steady-state criterion that was asked for and not met must say
+                        # so here, loudly and with its number. A run that quietly stops on
+                        # its backstop looks exactly like a run that converged.
+                        for ss in steady_state_terms:
+                            logging.warning(
+                                'Terminated on the backstop terminationTime at {0:10.4e} s WITHOUT reaching '
+                                'steady state: residual {1:10.4e} against tolerance {2:10.4e} ({3} consecutive '
+                                'steps below it, {4} needed; the integration {5} the fastest relaxation time in '
+                                'the system). This result is NOT a steady-state result.'
+                                ''.format(self.t, ss.residual, ss.tolerance, ss.streak, ss.window,
+                                          'passed' if ss.armed else 'never reached'))
                         self.log_conversions(species_index, y0)
                         break
                 elif isinstance(term, TerminationConversion):

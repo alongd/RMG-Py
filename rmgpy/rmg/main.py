@@ -1667,6 +1667,26 @@ class RMG(util.Subject):
         """
         logging.info("Performing final model checks...")
 
+        # A core that carries no reactions is not a mechanism. It is what the run is left
+        # holding when every reaction system reached the zero-flux condition (see the ZERO FLUX
+        # handling in rmgpy/solver/base.pyx) and no species could ever be promoted: model
+        # generation halts, the enlarge loop finds nothing to add, and execute() would otherwise
+        # fall straight through to the "MODEL GENERATION COMPLETED" banner and exit 0 -- presenting
+        # a model with no chemistry in it as a finished result, indistinguishable to any downstream
+        # consumer from a real one. Reject it loudly here, in the same place and the same way this
+        # method already rejects an isomorphic-duplicate core: raising CoreError propagates out of
+        # execute(), so the banner never prints and the process exits non-zero.
+        if not self.reaction_model.core.reactions:
+            raise CoreError(
+                "Although model generation has completed, the final model core has {0} species but "
+                "0 reactions. A core with no reactions carries no chemistry, so it is not a valid "
+                "mechanism and must not be reported as a completed model. This is the end-state of a "
+                "run in which every reaction system reached the zero-flux condition and no species "
+                "could be promoted -- see the ZERO FLUX errors earlier in this log. If the input is "
+                "genuinely inert under these conditions, that is a property of the input, not a "
+                "mechanism RMG can build.".format(len(self.reaction_model.core.species))
+            )
+
         # Check that no two species in core or edge are isomorphic
         for i, spc in enumerate(self.reaction_model.core.species):
             for j in range(i):
