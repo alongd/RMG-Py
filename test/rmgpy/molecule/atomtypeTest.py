@@ -1061,7 +1061,9 @@ class TestGetAtomType:
         """
         Test that get_atomtype() returns appropriate types for other misc inerts.
         """
-        assert self.atom_type(self.mol6, 0) == "Ar"
+        # Argon resolves to the charge-specific Ar0, not the generic Ar: the generic is now
+        # the parent of Ar0/Ar+/Ar++, and 'Ar' is no longer in nonSpecifics.
+        assert self.atom_type(self.mol6, 0) == "Ar0"
         assert self.atom_type(self.mol7, 0) == "He"
         assert self.atom_type(self.mol8, 0) == "Ne"
 
