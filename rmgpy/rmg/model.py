@@ -298,15 +298,23 @@ class CoreEdgeReactionModel:
         """
         Check to see if an existing species contains the same
         :class:`molecule.Molecule` as `molecule`. Comparison is done using
-        isomorphism without consideration of electrons. Therefore, resonance
-        structures of a species will all match each other.
+        isomorphism without consideration of electrons (so resonance structures
+        of a species all match each other) but WITH consideration of net charge:
+        an anion and a cation with the same heavy-atom skeleton are different
+        species, not resonance structures, so they must not collapse onto one
+        another. ``strict=False`` isomorphism alone is charge-blind (a single O
+        atom of charge -1 is isomorphic to one of charge +1), so the net charge
+        is checked explicitly here. Net charge is conserved across resonance, so
+        this never rejects a genuine resonance match.
 
         Returns the matched species if found and `None` otherwise.
         """
+        net_charge = molecule.get_net_charge()
 
         # First check cache and return if species is found
         for i, spec in enumerate(self.species_cache):
-            if spec is not None and spec.is_isomorphic(molecule, strict=False):
+            if (spec is not None and spec.molecule[0].get_net_charge() == net_charge
+                    and spec.is_isomorphic(molecule, strict=False)):
                 self.species_cache.pop(i)
                 self.species_cache.insert(0, spec)
                 return spec
@@ -319,7 +327,8 @@ class CoreEdgeReactionModel:
             pass
         else:
             for spec in species_list:
-                if spec.is_isomorphic(molecule, strict=False):
+                if (spec.molecule[0].get_net_charge() == net_charge
+                        and spec.is_isomorphic(molecule, strict=False)):
                     self.species_cache.pop()
                     self.species_cache.insert(0, spec)
                     return spec

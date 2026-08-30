@@ -42,6 +42,7 @@ import rmgpy.constants as constants
 cimport rmgpy.constants as constants
 from rmgpy.quantity import Quantity
 from rmgpy.quantity cimport ScalarQuantity
+from rmgpy.electron_balance import is_isomorphic_same_charge
 from rmgpy.solver.base cimport ReactionSystem
 from rmgpy.molecule import Molecule
 
@@ -216,7 +217,7 @@ cdef class SurfaceReactor(ReactionSystem):
                     for spec, parameters in sp.thermo.thermo_coverage_dependence.items():
                         molecule = Molecule().from_adjacency_list(spec)
                         for species in self.species_index.keys():
-                            if species.is_isomorphic(molecule, strict=False):
+                            if is_isomorphic_same_charge(species, molecule, strict=False):
                                 species_index = self.species_index[species]
                                 enthalpy_coeff = np.array([p.value_si for p in parameters['enthalpy-coefficients']])
                                 entropy_coeff = np.array([p.value_si for p in parameters['entropy-coefficients']])

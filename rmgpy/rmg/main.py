@@ -58,7 +58,7 @@ from rmgpy.constraints import fails_species_constraints
 from rmgpy.data.auto_database import auto_select_libraries, to_reaction_library_tuples
 from rmgpy.data.base import Entry
 from rmgpy.data.kinetics.library import KineticsLibrary, seed_placement_survives
-from rmgpy.electron_balance import get_placement_owner
+from rmgpy.electron_balance import get_placement_owner, is_isomorphic_same_charge
 from rmgpy.data.rmg import RMGDatabase
 from rmgpy.data.vaporLiquidMassTransfer import vapor_liquid_mass_transfer
 from rmgpy.exceptions import (
@@ -1539,7 +1539,7 @@ class RMG(util.Subject):
                                 for dep_sp_adj, parameters in s.thermo.thermo_coverage_dependence.items():
                                     mol = Molecule().from_adjacency_list(dep_sp_adj)
                                     for sp in self.reaction_model.core.species:
-                                        if sp.is_isomorphic(mol, strict=False):
+                                        if is_isomorphic_same_charge(sp, mol, strict=False):
                                             if s_name not in coverage_deps:
                                                 coverage_deps[s_name] = '  coverage-dependencies:'
                                             coverage_deps[s_name] += f"""
@@ -2327,7 +2327,11 @@ class RMG(util.Subject):
                 reordered_core_species = []
                 for spc in restart_species_list:
                     for j, oldCoreSpc in enumerate(self.reaction_model.core.species):
-                        if oldCoreSpc.is_isomorphic(spc, strict=False):
+                        # strict=False alone is charge-blind, which would pair an anion in the
+                        # saved species_map with an opposite-charge core species and pop the wrong
+                        # row onto the filter tensors / react flags -- silently, with no export
+                        # guard to catch it. Require equal net charge.
+                        if is_isomorphic_same_charge(oldCoreSpc, spc, strict=False):
                             reordered_core_species.append(self.reaction_model.core.species.pop(j))
                             break
                     else:

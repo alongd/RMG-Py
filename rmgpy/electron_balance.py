@@ -405,6 +405,29 @@ def get_species_electron_count(species):
     return sum(1 for atom in molecule.atoms if atom.element.chemkin_name == 'E')
 
 
+def is_isomorphic_same_charge(species, other, strict=False):
+    """
+    Return ``True`` iff ``species`` and ``other`` are isomorphic under
+    ``is_isomorphic(..., strict=strict)`` AND carry the same net charge.
+
+    ``strict=False`` isomorphism is charge-blind (``Atom.equivalent`` with
+    ``strict=False`` compares only the element), so a single O atom of charge -1
+    is isomorphic to one of charge +1. Several lookups match with ``strict=False``
+    on purpose, so that resonance structures of a species match each other -- but
+    on their own they then treat an anion and a cation with the same heavy-atom
+    skeleton as the same species. Net charge is conserved across resonance
+    structures, so requiring equal net charge never rejects a genuine resonance
+    match; it only stops opposite-charge species from being confused.
+
+    ``species`` must be an :class:`rmgpy.species.Species` (it owns the
+    ``is_isomorphic`` call); ``other`` may be a :class:`~rmgpy.species.Species` or
+    a :class:`~rmgpy.molecule.molecule.Molecule`. Both expose ``get_net_charge``.
+    """
+    if species.get_net_charge() != other.get_net_charge():
+        return False
+    return species.is_isomorphic(other, strict=strict)
+
+
 def potential_dependence_is_inert(kinetics):
     """
     Return ``True`` when a charge-transfer rate law's potential dependence is
