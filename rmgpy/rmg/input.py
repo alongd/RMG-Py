@@ -515,11 +515,37 @@ def simple_reactor(temperature,
 PLASMA_ELECTRON_PRESSURE_MARGIN = 1.0e-9
 
 
+def _plasma_species_charge(label, species_dict, why):
+    """
+    Return the net charge of the declared species `label`, as an int, raising
+    :class:`InputError` naming `label` and `why` if the label is not declared or its
+    charge cannot be determined. Charges are only ever needed when a deck asks for
+    charge balancing, so an undetermined charge is an input error at the directive
+    rather than a silently-skipped term in a sum that is about to be called "the net
+    charge".
+    """
+    try:
+        spc = species_dict[label]
+    except KeyError:
+        raise InputError(
+            "{0} names {1!r}, which is not a declared species; declare it with a "
+            "species(...) directive before the plasmaReactor(...) block. Declared "
+            "species are {2}.".format(why, label, sorted(species_dict.keys())))
+    try:
+        return int(spc.get_net_charge())
+    except Exception as exc:
+        raise InputError(
+            "{0} involves {1!r}, whose net charge could not be determined ({2!s}); a "
+            "charge-balanced composition cannot be computed without it. Give the "
+            "species an explicit structure.".format(why, label, exc))
+
+
 def plasma_reactor(temperature,
                    pressure,
                    initialMoleFractions,
                    electronTemperature,
                    electronDensity=None,
+                   chargeBalanceSpecies=None,
                    terminationConversion=None,
                    terminationTime=None,
                    terminationRateRatio=None):
@@ -548,11 +574,32 @@ def plasma_reactor(temperature,
     composition still sums to one. The reactor constructor takes no electron-density
     argument: ``initialMoleFractions`` is the single source of the electron amount.
 
+    ``chargeBalanceSpecies`` is the optional label of a declared, charged species whose
+    mole fraction RMG computes so that the resulting composition is charge neutral --
+    the charge analogue of ``balanceSpecies`` on ``simpleReactor``, and the same shape:
+    a string naming one species that absorbs the residual. Without it, a deck that seeds
+    an ``electronDensity`` and lists only neutral heavy species is net negative at
+    t = 0, and getting neutrality requires re-deriving this function's own
+    ``q``/``x_e``/``heavy_scale`` algebra by hand in the deck. It works in both branches:
+    alongside ``electronDensity``, and with an electron fraction typed explicitly in
+    ``initialMoleFractions``. The named species must be declared, must carry a non-zero
+    charge, must not be the electron, and must **not** also appear in
+    ``initialMoleFractions`` -- that would be two sources of truth for one number, the
+    same rule ``electronDensity`` applies to the electron. Any other charged species in
+    ``initialMoleFractions`` keeps the fraction it was given and enters the balance; the
+    named species takes what remains, so no ambiguity arises when several ions are
+    present. The mole fraction computed and the resulting net charge are both logged.
+
+    Omitting ``chargeBalanceSpecies`` leaves the composition exactly as it is today. A
+    non-neutral composition is never an error here: :class:`PlasmaReactor` warns about
+    it at model initialization, whether or not this keyword was used.
+
     .. note::
         ``electronDensity`` sets only the *initial* electron number density. The
         reactor recomputes its volume at every step from the evolving composition, so
         the electron density does **not** remain fixed at this value -- it is an
-        initial condition, not a maintained constraint.
+        initial condition, not a maintained constraint. ``chargeBalanceSpecies``
+        likewise fixes only the *initial* composition; neutrality is not maintained.
     """
     logging.debug('Found PlasmaReactor reaction system')
 
@@ -605,6 +652,42 @@ def plasma_reactor(temperature,
             "Electronvolts and other non-kelvin units are rejected: the reactor consumes "
             "Te as kelvin, so a non-kelvin electronTemperature would silently corrupt the "
             "two-temperature equation of state.".format(te_quantity.units))
+
+    # chargeBalanceSpecies is validated HERE, at parse time, so a deck that names a
+    # species it never declared -- or names an uncharged one -- is told so while the
+    # input file is being read, where the modeller can see which block is wrong, rather
+    # than at model initialization several minutes into a run. Same shape as
+    # simple_reactor's balanceSpecies guard, which likewise refuses at the directive.
+    charge_balance_charge = 0
+    if chargeBalanceSpecies is not None:
+        if not isinstance(chargeBalanceSpecies, str):
+            raise InputError(
+                "chargeBalanceSpecies must be the string label of a single declared "
+                "species; got {0!r}.".format(chargeBalanceSpecies))
+        charge_balance_charge = _plasma_species_charge(
+            chargeBalanceSpecies, species_dict, 'chargeBalanceSpecies')
+        if charge_balance_charge == 0:
+            raise InputError(
+                "chargeBalanceSpecies names {0!r}, which carries no net charge; an "
+                "uncharged species cannot balance a charge, and setting its mole "
+                "fraction would change the composition without changing the net "
+                "charge at all. Name the ion that carries the compensating "
+                "charge.".format(chargeBalanceSpecies))
+        balance_spc = species_dict[chargeBalanceSpecies]
+        if callable(getattr(balance_spc, 'is_electron', None)) and balance_spc.is_electron():
+            raise InputError(
+                "chargeBalanceSpecies names the electron pseudo-species {0!r}. The "
+                "electron amount is what is being balanced -- by electronDensity or by "
+                "an explicit mole fraction -- so it cannot also be the free variable "
+                "that absorbs the residual charge. Name the compensating "
+                "ion.".format(chargeBalanceSpecies))
+        if chargeBalanceSpecies in initialMoleFractions:
+            raise InputError(
+                "chargeBalanceSpecies names {0!r}, which also has an explicit entry in "
+                "initialMoleFractions; these are two sources of truth for one mole "
+                "fraction and may disagree. Supply exactly one: either name the species "
+                "as chargeBalanceSpecies and let RMG compute its fraction, or type the "
+                "fraction yourself.".format(chargeBalanceSpecies))
 
     if electronDensity is not None:
         # Locate the electron pseudo-species declared in the input file. Require exactly
@@ -719,6 +802,46 @@ def plasma_reactor(temperature,
         # The round-trip identity (compute_volume reproduces n_e) requires the heavy
         # fractions to sum to one; normalize them first (as simple_reactor does), then
         # scale by heavy_scale and insert the electron so the total is one again.
+        # Charge balancing, when asked for, is done by inserting the named ion into the
+        # heavy composition BEFORE the normalize-and-scale block below, which is left
+        # exactly as it was: its raw fraction c is solved for in terms of the x_e and
+        # heavy_scale already derived above, never by re-deriving them. With
+        #   S  = sum of the modeller's heavy fractions (the balance ion is not among them)
+        #   H  = sum over those of x_i * z_i, the charge the deck already carries
+        #   hs = heavy_scale, z_b = the balance ion's charge
+        # the block below sends a raw c to a final fraction c/(S+c)*hs, so demanding
+        # zero net charge, hs*(H + c*z_b)/(S + c) - x_e = 0, gives exactly
+        #   c = (x_e*S - hs*H) / (hs*z_b - x_e).
+        # For the common case of neutral heavy species and a singly-charged cation
+        # (H = 0, z_b = 1) this is c = x_e*S/(hs - x_e) -- the number a modeller
+        # currently has to derive by hand and type as a literal.
+        if chargeBalanceSpecies is not None:
+            heavy_sum = sum(initialMoleFractions.values())
+            heavy_charge = sum(
+                value * _plasma_species_charge(label, species_dict,
+                                               'chargeBalanceSpecies')
+                for label, value in initialMoleFractions.items())
+            denominator = heavy_scale * charge_balance_charge - x_e
+            if denominator == 0.0:
+                raise InputError(
+                    "chargeBalanceSpecies {0!r} (charge {1:+d}) cannot balance this "
+                    "composition: heavy_scale * charge - x_e is exactly zero "
+                    "(heavy_scale = {2!r}, x_e = {3!r}), so adding the ion changes the "
+                    "net charge by nothing at any fraction. Name an ion of different "
+                    "charge, or reduce electronDensity.".format(
+                        chargeBalanceSpecies, charge_balance_charge, heavy_scale, x_e))
+            balance_fraction = (x_e * heavy_sum - heavy_scale * heavy_charge) / denominator
+            if not np.isfinite(balance_fraction) or balance_fraction < 0.0:
+                raise InputError(
+                    "balancing the charge with {0!r} (charge {1:+d}) requires its mole "
+                    "fraction to be {2!r}, which is not a usable mole fraction. The "
+                    "composition already carries a net charge of {3!r} per mole of "
+                    "heavy species, which an ion of this sign cannot cancel. Name an "
+                    "ion of the opposite sign, or correct the explicit "
+                    "fractions.".format(chargeBalanceSpecies, charge_balance_charge,
+                                        balance_fraction, heavy_charge))
+            initialMoleFractions[chargeBalanceSpecies] = balance_fraction
+
         heavy_total = sum(initialMoleFractions.values())
         # Reject non-finite explicitly: `heavy_total <= 0.0` is False for nan, so a nan
         # total would otherwise pass. (The per-fraction finiteness check above already
@@ -732,11 +855,48 @@ def plasma_reactor(temperature,
         initialMoleFractions[electron_label] = x_e
     else:
         # Electron stated explicitly (or absent -- the reactor will reject that later).
+        # Charge balancing in this branch is simpler than in the electronDensity one:
+        # the normalization below divides every fraction by the same total, which scales
+        # the net charge without changing its sign or its zero, so it is enough to make
+        # the composition neutral BEFORE normalizing. c * z_b = -sum(x_i * z_i).
+        if chargeBalanceSpecies is not None:
+            explicit_charge = sum(
+                value * _plasma_species_charge(label, species_dict,
+                                               'chargeBalanceSpecies')
+                for label, value in initialMoleFractions.items())
+            balance_fraction = -explicit_charge / charge_balance_charge
+            if not np.isfinite(balance_fraction) or balance_fraction < 0.0:
+                raise InputError(
+                    "balancing the charge with {0!r} (charge {1:+d}) requires its mole "
+                    "fraction to be {2!r}, which is not a usable mole fraction. The "
+                    "explicit composition carries a net charge of {3!r}, which an ion "
+                    "of this sign cannot cancel. Name an ion of the opposite sign, or "
+                    "correct the explicit fractions.".format(
+                        chargeBalanceSpecies, charge_balance_charge, balance_fraction,
+                        explicit_charge))
+            initialMoleFractions[chargeBalanceSpecies] = balance_fraction
+
         # Normalize the composition to sum to one, matching simple_reactor.
         total = sum(initialMoleFractions.values())
         if total > 0.0 and total != 1.0:
             for label in initialMoleFractions:
                 initialMoleFractions[label] = initialMoleFractions[label] / total
+
+    # Say what it did. A modeller must be able to read RMG.log and check this arithmetic
+    # without re-deriving it -- being unable to is the complaint the keyword answers --
+    # so the computed fraction and the net charge it actually achieved are both logged,
+    # from the final composition rather than from the intermediate that produced it.
+    if chargeBalanceSpecies is not None:
+        achieved_net = sum(
+            value * _plasma_species_charge(label, species_dict, 'chargeBalanceSpecies')
+            for label, value in initialMoleFractions.items())
+        logging.info(
+            'plasmaReactor: chargeBalanceSpecies %r (charge %+d) was given mole '
+            'fraction %r to balance the composition; the resulting net charge is %r '
+            'per mole (composition sums to %r).',
+            chargeBalanceSpecies, charge_balance_charge,
+            initialMoleFractions[chargeBalanceSpecies], achieved_net,
+            sum(initialMoleFractions.values()))
 
     termination = []
     if terminationConversion is not None:
