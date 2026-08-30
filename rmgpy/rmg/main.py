@@ -1319,6 +1319,15 @@ class RMG(util.Subject):
         self.check_model()
         # Write output file
 
+        # Fail the run before announcing completion: an export step that did not
+        # produce its files makes this run incomplete, and the "MODEL GENERATION
+        # COMPLETED" banner below must never be printed for such a run -- a human
+        # reading the log, or a tool grepping for that banner, would otherwise see
+        # success followed by a traceback. report_export_failures raises iff a
+        # failure was recorded, so on the healthy path it returns and the banner
+        # stands.
+        self.report_export_failures()
+
         if not end_early:
             logging.info("")
             logging.info("MODEL GENERATION COMPLETED")
@@ -1328,8 +1337,6 @@ class RMG(util.Subject):
             logging.info("The final model edge has %s species and %s reactions" % (edge_spec, edge_reac))
 
         self.finish()
-
-        self.report_export_failures()
 
     def mechanism_has_plasma_kinetics(self):
         """
@@ -1388,12 +1395,28 @@ class RMG(util.Subject):
                              "ck2yaml implements no TDEP handler and rejects such a file, so the "
                              "translated copy cannot be produced for a plasma mechanism.")
 
-                # A stale cantera_from_ck/chem.yaml (or chem_edge.yaml) may survive
-                # from a previous non-plasma run into a reused output directory.
-                # This run did not produce it; it must neither be left behind nor,
-                # below, have its notes stripped so it looks freshly made. Remove it.
-                for stale in ("chem.yaml", "chem_edge.yaml"):
-                    stale_path = os.path.join(self.output_directory, "cantera_from_ck", stale)
+                # A previous non-plasma run, into a reused output directory, may
+                # have left every artifact its Chemkin-to-Cantera step produces:
+                # the translated cantera_from_ck/chem.yaml and chem_annotated.yaml
+                # (the two files generate_cantera_files_from_chemkin writes -- gas
+                # chem.inp/chem_annotated.inp, or the surface chem-gas.inp/
+                # chem_annotated-gas.inp whose "-gas." collapses to the same two
+                # names), and the comparison_report.txt each direct writer's
+                # comparison against the translated copy wrote. This run produced
+                # none of them; it must neither leave them behind -- indistinguishable
+                # from current output -- nor, below, strip a stale chem.yaml's notes
+                # so it looks freshly made. Remove exactly those files, each named
+                # in full and rooted at this run's own output directory: no glob, no
+                # recursion, nothing assembled from anything user-supplied.
+                stale_files = [
+                    os.path.join(self.output_directory, "cantera_from_ck", name)
+                    for name in ("chem.yaml", "chem_annotated.yaml", "chem_edge.yaml")
+                ]
+                stale_files += [
+                    os.path.join(self.output_directory, writer_dir, "comparison_report.txt")
+                    for writer_dir in ("cantera1", "cantera2")
+                ]
+                for stale_path in stale_files:
                     if os.path.exists(stale_path):
                         os.remove(stale_path)
 
@@ -1539,10 +1562,12 @@ class RMG(util.Subject):
         the failure shape ``MechanismWriterError``'s own docstring describes --
         a hole in the exported output while the export reports success.
 
-        Raising here, after :meth:`finish`, keeps everything that did work: the
-        model, the Chemkin files, the direct Cantera writers' output and the run
-        statistics are all already on disk. What changes is only that the caller
-        is told.
+        Raising here keeps everything that did work: by this point the model, the
+        Chemkin files, the direct Cantera writers' output and the run statistics
+        are all already on disk. It runs before the ``MODEL GENERATION COMPLETED``
+        banner and before :meth:`finish` (which only logs a closing quote and
+        timestamp and writes nothing), so a run whose export failed is never
+        announced as complete. What changes is only that the caller is told.
         """
         if not self.export_failures:
             return

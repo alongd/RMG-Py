@@ -111,3 +111,49 @@ class TestAFailedExportIsNotSilent:
         for handler in handlers:
             assert 'self.export_failures.append(' in handler, (
                 'an export-step exception handler logs without recording:\n' + handler)
+
+
+class TestCompletionBannerFollowsTheExportCheck:
+    """The third defect: ``execute`` logged ``MODEL GENERATION COMPLETED`` *before*
+    ``report_export_failures`` raised. A run that failed export therefore printed
+    success and then a traceback, and any tool that greps for that banner saw only
+    success. The banner must never be emitted for a run whose export failed."""
+
+    def test_report_precedes_the_banner_in_execute(self):
+        """``execute`` is too heavy to drive without a full model and database, so
+        this checks the property directly on its source -- the same idiom the
+        wiring tests above use. ``report_export_failures`` raises iff a failure was
+        recorded, so placing its call before the banner makes the banner
+        unreachable on the failure path while leaving the healthy path unchanged."""
+        import inspect
+
+        from rmgpy.rmg.main import RMG
+
+        source = inspect.getsource(RMG.execute)
+        assert 'self.report_export_failures()' in source
+        assert 'MODEL GENERATION COMPLETED' in source
+        assert source.index('self.report_export_failures()') < source.index('MODEL GENERATION COMPLETED'), (
+            'the completion banner is emitted before the export-failure check that '
+            'can invalidate it')
+
+    def test_a_recorded_failure_raises_before_any_completion_banner(self, caplog):
+        """Behavioral guard on the ordering: replaying ``execute``'s tail
+        (report, then banner) with a failure recorded must raise before the banner
+        is ever logged."""
+        import logging
+
+        from rmgpy.rmg.main import RMG
+
+        rmg = RMG(input_file=None, output_directory=None)
+        rmg.export_failures.append((
+            'Cantera export for plasma mechanism (cantera2/)',
+            MechanismWriterError('No Cantera artifact was produced')))
+
+        with caplog.at_level(logging.INFO):
+            with pytest.raises(MechanismWriterError):
+                # execute()'s fixed tail order: the check that can invalidate the
+                # banner runs first and raises, so the banner is never reached.
+                rmg.report_export_failures()
+                logging.info('MODEL GENERATION COMPLETED')
+        assert 'MODEL GENERATION COMPLETED' not in caplog.text, (
+            'the completion banner was logged for a run whose export failed')

@@ -364,6 +364,48 @@ class TestStaleTranslationArtifactIsRemoved:
         plasma_rmg.generate_end_of_run_cantera_files()
         assert not os.path.exists(stale)
 
+    def test_planted_stale_chem_annotated_yaml_is_gone(self, plasma_rmg):
+        """F1, the enumerated gap. ``chem_annotated.yaml`` is the *other* file the
+        translation writes (``generate_cantera_files_from_chemkin`` translates both
+        ``chem.inp`` and ``chem_annotated.inp``). The skip cleanup used to delete
+        ``chem.yaml`` and a ``chem_edge.yaml`` the translation never writes, and
+        leave this one behind for a downstream reader to take as current output."""
+        stale = os.path.join(plasma_rmg.output_directory, 'cantera_from_ck', 'chem_annotated.yaml')
+        with open(stale, 'w') as f:
+            f.write('# stale annotated translation from a previous non-plasma run\n')
+        plasma_rmg.generate_end_of_run_cantera_files()
+        assert not os.path.exists(stale), (
+            'a stale cantera_from_ck/chem_annotated.yaml survived the plasma skip path')
+
+    def test_every_genuinely_translated_file_is_gone_after_a_reused_dir(self, tmp_path):
+        """Not a planted sentinel: a real thermal run writes the translation into a
+        directory, then a plasma run reuses it. Every file the thermal translation
+        actually produced must be gone -- none may be read as this run's output.
+        This is the two-run reproduction the finding demands, made permanent."""
+        d = str(tmp_path)
+        thermal = _prepared_rmg(_thermal_core(), d, cantera2_enabled=True)
+        thermal.generate_end_of_run_cantera_files()
+        ck = os.path.join(d, 'cantera_from_ck')
+        produced = sorted(os.listdir(ck))
+        assert produced, 'the thermal run wrote no translated files -- the test would be vacuous'
+        plasma = _prepared_rmg(_plasma_core(), d, cantera2_enabled=True)
+        plasma.generate_end_of_run_cantera_files()
+        survivors = [f for f in produced if os.path.exists(os.path.join(ck, f))]
+        assert survivors == [], (
+            'translated files from the previous run survived the skip: ' + repr(survivors))
+
+    def test_stale_comparison_report_is_gone(self, plasma_rmg):
+        """F2. A ``comparison_report.txt`` describes a comparison of the translated
+        copy against a direct writer's file. The skip performs no translation and
+        no comparison, so a prior run's report must not survive to describe a
+        comparison this run did not perform."""
+        report = os.path.join(plasma_rmg.output_directory, 'cantera2', 'comparison_report.txt')
+        with open(report, 'w') as f:
+            f.write('# stale comparison report from a previous run\n')
+        plasma_rmg.generate_end_of_run_cantera_files()
+        assert not os.path.exists(report), (
+            'a stale cantera2/comparison_report.txt survived the plasma skip path')
+
 
 def _writer_species():
     """An electron, an O atom, its cation and O2 -- enough for
