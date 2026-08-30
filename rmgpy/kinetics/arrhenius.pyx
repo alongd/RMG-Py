@@ -338,6 +338,35 @@ cdef class TwoTemperaturePlasma(KineticsModel):
     k(T, Te=T) as a reasonable fallback. A dedicated
     `get_rate_coefficient_two_temp(T, Te)` method is provided to use
     distinct gas and electron temperatures explicitly.
+
+    Electron bookkeeping
+    --------------------
+    ``electrons`` is the **net** change in free electron number of the reaction
+    this rate law describes, signed to the reaction as written: negative when
+    electrons are consumed, positive when they are produced, zero when the
+    electron is conserved (the generic case for which it defaults to 0). It is
+    the same signed quantity as :attr:`rmgpy.reaction.Reaction.electrons`,
+    :class:`BadnellRRArrhenius` and :class:`VoronovEIArrhenius`, which is what
+    lets ``KineticsLibrary.load`` and ``KineticsDepository.load`` copy it onto
+    the reaction so ``Reaction.is_balanced`` can fold it into the charge check.
+
+    It is NOT an alternative spelling of "an electron takes part": an electron
+    that survives the reaction is a spectator and must be written explicitly on
+    both sides, exactly as for the two classes above. Unlike the charge-transfer
+    rate laws (:class:`ArrheniusChargeTransfer`, :class:`SurfaceChargeTransfer`,
+    ...), whose ``electrons`` is a live parameter of the Butler-Volmer term
+    ``alpha * electrons * F * (V - V0)`` and there means "electrons transferred
+    across the interface", the Kossyi form above carries no electron-count term
+    at all, so this field is pure net-stoichiometry bookkeeping with nothing to
+    double as. That is why it, like the Badnell/Voronov fields, can be validated
+    against the reaction and family net counts rather than refused as a second
+    placement source (see ``rmgpy.electron_placement``). Dissociative
+    recombination ``Ar2+ + e- -> Ar + Ar`` and three-body recombination
+    ``A+ + 2 e- -> A + e-`` are the channels this makes representable.
+
+    The default is 0 by design: the two-temperature form is generic and asserts
+    no intrinsic electron chemistry, so an electron-changing library entry must
+    declare its net explicitly rather than inherit a possibly-wrong count.
     """
 
     def __init__(self,
@@ -346,6 +375,7 @@ cdef class TwoTemperaturePlasma(KineticsModel):
                  Ea_g=(0.0, "J/mol"),
                  Ea_e=(0.0, "J/mol"),
                  T0=(1.0, "K"),
+                 electrons=0,
                  Tmin=None, Tmax=None, Pmin=None, Pmax=None,
                  uncertainty=None, solute=None, comment=''):
         KineticsModel.__init__(
@@ -358,12 +388,23 @@ cdef class TwoTemperaturePlasma(KineticsModel):
         self.Ea_g = Ea_g
         self.Ea_e = Ea_e
         self.T0 = T0
+        # Net free-electron stoichiometry, signed to the reaction as written; see
+        # the class docstring. Defaults to 0 (the generic, electron-conserving
+        # case), which is why an electron-changing entry must set it explicitly.
+        self.electrons = electrons
         self.uses_electron_temperature = True
 
     def __repr__(self):
         string = 'TwoTemperaturePlasma(A={0!r}, n={1!r}, Ea_g={2!r}, Ea_e={3!r}'.format(self.A, self.n, self.Ea_g, self.Ea_e)
         if self.T0.value_si != 1:
             string += ', T0={0!r}'.format(self.T0)
+        # Emitted only when non-default: a database entry is persisted as
+        # repr(entry.data) and read back by evaluating it, and a non-zero
+        # electron count is what decides whether the reaction balances, so it
+        # must survive the round trip. The generic default of 0 is left off to
+        # keep the many electron-conserving entries' reprs unchanged.
+        if self.electrons.value_si != 0:
+            string += ', electrons={0!r}'.format(self.electrons)
         if self.Tmin is not None:
             string += ', Tmin={0!r}'.format(self.Tmin)
         if self.Tmax is not None:
@@ -387,6 +428,7 @@ cdef class TwoTemperaturePlasma(KineticsModel):
         """
         return (TwoTemperaturePlasma,
                 (self.A, self.n, self.Ea_g, self.Ea_e, self.T0,
+                 self.electrons,
                  self.Tmin, self.Tmax, self.Pmin, self.Pmax,
                  self.uncertainty, self.solute, self.comment))
 
@@ -424,6 +466,22 @@ cdef class TwoTemperaturePlasma(KineticsModel):
             return self._T0
         def __set__(self, value):
             self._T0 = quantity.Temperature(value)
+
+    property electrons:
+        """
+        Net electron stoichiometry of the reaction this rate law describes, signed to
+        the reaction as written: negative when electrons are consumed, positive when
+        they are produced, zero when the electron is conserved. Same convention as
+        :attr:`rmgpy.reaction.Reaction.electrons`, :class:`BadnellRRArrhenius` and
+        :class:`VoronovEIArrhenius`, which is what lets ``KineticsLibrary.load`` and
+        ``KineticsDepository.load`` copy it across unchanged. See the class docstring
+        for why the Kossyi form's field is pure net-stoichiometry bookkeeping rather
+        than the "electrons transferred" quantity the charge-transfer laws carry.
+        """
+        def __get__(self):
+            return self._electrons
+        def __set__(self, value):
+            self._electrons = quantity.Dimensionless(value)
 
     cpdef double get_rate_coefficient_two_temp(self, double T, double Te) except -1:
         """
@@ -478,6 +536,12 @@ cdef class TwoTemperaturePlasma(KineticsModel):
         # their reference temperature are different rates. Compared through
         # ScalarQuantity.equals, as Arrhenius compares its own T0.
         if not self.T0.equals(other_kinetics.T0):
+            return False
+        # Two rate laws with the same functional parameters but different net
+        # electron stoichiometry describe different chemistry (e.g. an
+        # electron-conserving excitation vs. a dissociative recombination), so
+        # they are not identical.
+        if not self.electrons.equals(other_kinetics.electrons):
             return False
         return True
 
