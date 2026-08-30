@@ -45,6 +45,16 @@ to test ``max_species_rate == 0`` exactly, so an edge species carrying subnormal
 numerical dust (a rate in ``(0, np.finfo(float).tiny)``, physically inert but not
 ``== 0``) walked past it and was promoted.  The guard now rejects the whole subnormal
 band, and that test constructs a rate inside it.
+
+A fourth test guards the char_rate sibling of the F5 defect, one layer up: ``char_rate``
+(the L2 norm of the core species rates) used to gate promotion with ``char_rate == 0``
+exactly.  A core carrying a single reaction with a tiny enough A-factor produces a
+``char_rate`` that is nonzero yet still numerical dust -- normal-magnitude dust, not
+F5's subnormal band, because ``sqrt`` of any tiny positive sum-of-squares returns a
+normal double.  The old exact-zero test let that case fall through to ratio-based
+promotion, dividing by the same near-nothing ``char_rate`` and promoting an arbitrary
+species on the resulting garbage ratio.  The guard now rejects the whole dust band
+below ``_CHAR_RATE_FLOOR``, and that test constructs a ``char_rate`` inside it.
 """
 
 import logging
@@ -55,7 +65,7 @@ from rmgpy.kinetics import Arrhenius
 from rmgpy.molecule import Molecule
 from rmgpy.reaction import Reaction
 from rmgpy.rmg.settings import ModelSettings, SimulatorSettings
-from rmgpy.solver.base import TerminationTime
+from rmgpy.solver.base import TerminationTime, _CHAR_RATE_FLOOR
 from rmgpy.solver.simple import SimpleReactor
 from rmgpy.species import Species
 from rmgpy.thermo import ThermoData
@@ -223,3 +233,76 @@ class ZeroFluxPromotionTest:
             [r.getMessage() for r in caplog.records]
         )
         assert "numerical dust" in zero_flux_records[0].getMessage(), zero_flux_records[0].getMessage()
+
+    def test_no_promotion_when_core_char_rate_is_normal_magnitude_dust(self, caplog):
+        """
+        The char_rate sibling of the F5 defect: ``char_rate`` is nonzero but is itself
+        numerical dust, not a physical rate.  A single core reaction (C2H6 -> 2 CH3) with
+        an A-factor of 1e-105 produces a core rate small enough that the L2 norm
+        ``char_rate = sqrt(sum(rate_i**2))`` lands strictly inside ``(0, _CHAR_RATE_FLOOR)``
+        -- nonzero, so the old ``char_rate == 0`` gate would have skipped it and fallen
+        through to ratio-based promotion (dividing by that same near-nothing char_rate).
+        The edge is fully inert (no edge reactions), so with the widened gate this must
+        take the same zero-flux path as a truly all-zero core: nothing promoted, and the
+        condition reported rather than papered over.
+        """
+        ch4 = _species("C", [8.615, 9.687, 10.963, 12.301, 14.841, 16.976, 20.528], -17.714, 44.472)
+        c2h6 = _species("CC", [12.684, 15.506, 18.326, 20.971, 25.500, 29.016, 34.595], -19.521, 54.799)
+        ch3 = _species("[CH3]", [9.397, 10.123, 10.856, 11.571, 12.899, 14.055, 16.195], 9.357, 45.174)
+        c2h5 = _species("C[CH2]", [11.635, 13.744, 16.085, 18.246, 21.885, 24.676, 29.107], 29.496, 56.687)
+        h2 = _species("[H][H]", [6.895, 6.975, 6.994, 7.009, 7.081, 7.219, 7.720], 0.0, 31.233)
+
+        core_rxn = Reaction(
+            reactants=[c2h6],
+            products=[ch3, ch3],
+            kinetics=Arrhenius(A=(1e-105, "1/s"), n=0.0, Ea=(0.0, "kcal/mol"), T0=(298.15, "K")),
+        )
+
+        core_species = [ch4, c2h6, ch3]
+        core_reactions = [core_rxn]
+        edge_species = [c2h5, h2]
+        edge_reactions = []
+
+        rxn_system = SimpleReactor(
+            T=1000.0,
+            P=1.0e5,
+            initial_mole_fractions={ch4: 0.5, c2h6: 0.5},
+            n_sims=1,
+            termination=[TerminationTime((1e-6, "s"))],
+        )
+        rxn_system.initialize_model(core_species, core_reactions, edge_species, edge_reactions)
+
+        with caplog.at_level(logging.INFO):
+            terminated, resurrected, invalid_objects, _surf_spc, _surf_rxn, _t, _x = rxn_system.simulate(
+                core_species,
+                core_reactions,
+                edge_species,
+                edge_reactions,
+                [],
+                [],
+                model_settings=ModelSettings(tol_keep_in_edge=0, tol_move_to_core=0.1, tol_interrupt_simulation=1e5),
+                simulator_settings=SimulatorSettings(),
+            )
+
+        char_rate = float(np.sqrt(np.sum(rxn_system.core_species_rates ** 2)))
+        assert 0.0 < char_rate < _CHAR_RATE_FLOOR, (
+            "this test needs char_rate to be nonzero normal-magnitude dust so that the old "
+            "exact-zero gate would have let it fall through to ratio-based promotion; got "
+            "{0!r} (floor={1!r})".format(char_rate, _CHAR_RATE_FLOOR)
+        )
+        assert invalid_objects == [], (
+            "a core whose only nonzero rate is dust-magnitude char_rate promoted {0!r} into the "
+            "core; a char_rate this small is numerical dust, not a physical basis for ratio-based "
+            "promotion".format(invalid_objects)
+        )
+        assert not any(
+            "added to model core to avoid singularity" in record.getMessage() for record in caplog.records
+        ), "the singularity escape hatch promoted a species on a dust-magnitude char_rate"
+        zero_flux_records = [
+            record
+            for record in caplog.records
+            if record.levelno >= logging.ERROR and record.getMessage().startswith("ZERO FLUX:")
+        ]
+        assert zero_flux_records, "the zero-flux condition was never reported: {0!r}".format(
+            [r.getMessage() for r in caplog.records]
+        )

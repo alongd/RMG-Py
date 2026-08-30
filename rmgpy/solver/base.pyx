@@ -59,6 +59,38 @@ from rmgpy.species import Species
 from rmgpy.solver.termination import TerminationTime, TerminationConversion, TerminationRateRatio
 ################################################################################
 
+# `char_rate` (computed just below, in ReactionSystem.simulate) is the L2 norm of the core
+# species rates: sqrt(sum(rate_i^2)).  The zero-flux promotion gate used to test
+# `char_rate == 0` exactly, which is too narrow -- a core carrying only numerical dust can
+# produce a char_rate that is nonzero yet physically meaningless, so the gate was skipped and
+# control fell through to ratio-based promotion whose denominator (lines 832-834) is that same
+# near-nothing number, promoting an edge species on garbage ratios. This constant widens the
+# gate to a measured dust floor, the same idea as the F5 fix applied to a single edge rate a few
+# lines below (see the `np.finfo(np.float64).tiny` comment there) -- but NOT that same number.
+# F5's `tiny` (~2.2e-308) is the smallest *normal* double and bounds a single rate. char_rate is
+# an L2 norm, a different population: sqrt() of any tiny positive sum-of-squares returns a
+# NORMAL-magnitude double (sqrt(5e-324) = sqrt(the smallest subnormal double) is already
+# ~2.2e-162), so the smallest nonzero char_rate the arithmetic can produce is ~2.2e-162 -- deep
+# in the *normal* range, nowhere near F5's subnormal band. F5's `tiny` would therefore never
+# fire on a real char_rate; reusing it here would silently disable the gate for the dust case
+# this constant exists to catch.
+#
+# Measured on a healthy, growing deck (examples/rmg/minimal/input.py, ethane pyrolysis, no QM,
+# no pdep): 29,128 char_rate samples over the whole run, of which 29,110 were nonzero; the
+# smallest nonzero value observed was 6.292134509113702e-15. Measured on an inert/dust
+# construction (test/rmgpy/solver/zeroFluxPromotionTest.py,
+# test_no_promotion_when_core_char_rate_is_normal_magnitude_dust: a core with one reaction whose
+# A factor is tuned to 1e-105): a char_rate of 1.344684291137062e-104, deep in the same
+# normal-but-dust band the arithmetic floor above describes.
+#
+# The floor below sits about 85 orders of magnitude under the measured healthy minimum
+# (6.3e-15 / 1e-100 = 6.3e85) and about 61 orders of magnitude above the arithmetic dust floor
+# (1e-100 / 2.2e-162 = 4.5e61) -- comfortably inside the >=20-orders-of-magnitude margin this
+# fix requires on both sides, so it cannot mistake a healthy run's smallest real signal for
+# dust, nor let dust several dozen more orders of magnitude "healthier" than the worst measured
+# dust case slip past it.
+_CHAR_RATE_FLOOR = 1e-100
+
 cdef class ReactionSystem(DASx):
     """
     A base class for all RMG reaction systems.
@@ -846,7 +878,7 @@ cdef class ReactionSystem(DASx):
                 if max_network_leak_rate_ratios[i] < network_leak_rate_ratios[index]:
                     max_network_leak_rate_ratios[i] = network_leak_rate_ratios[index]
 
-            if char_rate == 0 and len(edge_species_rates) > 0:  # this deals with the case when there is no flux in the system
+            if char_rate <= _CHAR_RATE_FLOOR and len(edge_species_rates) > 0:  # no resolvable flux: exact zero OR normal-magnitude dust
                 max_species_index = np.argmax(edge_species_rates)
                 max_species = edge_species[max_species_index]
                 max_species_rate = edge_species_rates[max_species_index]
