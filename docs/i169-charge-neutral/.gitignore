@@ -1,0 +1,29 @@
+# Generated RMG run output. The three decks here are meant to be RE-RUN in place, which
+# repopulates all of this; none of it belongs in the source repo (see the prune commit
+# for why). Ignored so that a later `git add docs/` cannot silently undo that.
+#
+# The evidence that IS tracked: each run's input.py and RMG.log.charge-excerpt, the
+# before-run's stderr.log, the pytest logs, API-PROPOSAL.md, measure_net_charge.py and
+# make_excerpts.sh.
+chemkin/
+cantera2/
+cantera_from_ck/
+pdep/
+plot/
+solver/
+seed/
+kinetics_database/
+restart_from_seed.py
+statistics.xls
+RMG.log
+stdout.log
+rmgrc
+
+# ...but keep the excerpts and the one stderr the before-silence claim rests on.
+!*/RMG.log.charge-excerpt
+!before-nonneutral/stderr.log
+
+# the after-runs stderr and the empty pytest stderr carry nothing the claims rest on
+*/stderr.log
+!before-nonneutral/stderr.log
+*.err
