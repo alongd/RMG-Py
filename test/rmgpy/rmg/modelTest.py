@@ -475,6 +475,35 @@ class TestCoreEdgeReactionModel:
         assert anion_spc is not cation_spc
         assert anion_spc.molecule[0].get_net_charge() == -1
 
+    def test_check_for_existing_species_cache_branch_is_charge_aware(self):
+        """
+        The species_cache fast-path in check_for_existing_species must be
+        charge-aware too, not only the formula-dictionary path. Creating a
+        species does not populate the cache; only a successful lookup does. The
+        cache is consulted FIRST and returns on an isomorph match, so if it holds
+        an opposite-charge species it would short-circuit before the dictionary
+        guard is ever reached.
+
+        Seed the cache with the O+ cation via a successful lookup, then look up
+        the O- anion: the charge guard in the cache loop must reject the cached
+        cation so the anion is not collapsed onto it. Without that guard this
+        returns the cached cation instead of None.
+        """
+        cerm = CoreEdgeReactionModel()
+        o_cation = Molecule().from_adjacency_list("multiplicity 2\n1 O u1 p2 c+1")
+
+        cation_spc, _ = cerm.make_new_species(o_cation, label="Op", generate_thermo=False)
+
+        # A successful lookup of the same cation seeds species_cache with it.
+        seed_lookup = Molecule().from_adjacency_list("multiplicity 2\n1 O u1 p2 c+1")
+        assert cerm.check_for_existing_species(seed_lookup) is cation_spc
+        assert cation_spc in cerm.species_cache
+
+        # The anion lookup now hits the cache first; the cache guard must reject
+        # the cached cation, so no existing species matches the anion.
+        anion_lookup = Molecule().from_adjacency_list("multiplicity 2\n1 O u1 p3 c-1")
+        assert cerm.check_for_existing_species(anion_lookup) is None
+
     def test_make_new_reaction(self):
         """
         Test that CoreEdgeReactionModel.make_new_reaction method correctly works.

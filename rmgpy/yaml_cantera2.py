@@ -66,7 +66,7 @@ from rmgpy.data.kinetics.family import TemplateReaction
 from rmgpy.data.kinetics.library import LibraryReaction
 from rmgpy.electron_balance import (check_electron_balance, check_electron_reactant_order,
                                     expand_electrons, get_electron_species,
-                                    potential_dependence_is_inert)
+                                    is_isomorphic_same_charge, potential_dependence_is_inert)
 from rmgpy.exceptions import MechanismWriterError
 from rmgpy.kinetics import (
     Arrhenius, PDepArrhenius, MultiArrhenius, MultiPDepArrhenius,
@@ -548,7 +548,7 @@ def species_to_dict(species, species_list):
         for adj_list, parameters in thermo_data.thermo_coverage_dependence.items():
             mol = Molecule().from_adjacency_list(adj_list)
             for sp in species_list:
-                if sp.is_isomorphic(mol, strict=False):
+                if is_isomorphic_same_charge(sp, mol, strict=False):
                     dep_label = get_label(sp, species_list)
                     if dep_label:
                         cov_deps[dep_label] = {

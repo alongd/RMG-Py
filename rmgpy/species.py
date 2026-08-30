@@ -502,11 +502,12 @@ class Species(object):
                 and hasattr(self.thermo, 'thermo_coverage_dependence')
                 and self.thermo.thermo_coverage_dependence):
             from rmgpy.molecule.molecule import Molecule
+            from rmgpy.electron_balance import is_isomorphic_same_charge
             cov_deps = {}
             for adj_list, parameters in self.thermo.thermo_coverage_dependence.items():
                 mol = Molecule().from_adjacency_list(adj_list)
                 for sp in all_species:
-                    if sp.is_isomorphic(mol, strict=False):
+                    if is_isomorphic_same_charge(sp, mol, strict=False):
                         dep_name = sp.to_chemkin() if use_chemkin_identifier else sp.label
                         cov_deps[dep_name] = {
                             'units': {'energy': 'J', 'quantity': 'mol'},
