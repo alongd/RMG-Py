@@ -36,6 +36,17 @@ treating the free electron as a conserved pseudo-element is a defect or a
 load-bearing invariant, and each measured a different base. This module is the
 re-measurement, pinned as tests so the answer stops being a transcription.
 
+**I-172 settled that disagreement: it was a defect, and it is gone.**
+``is_balanced`` now skips element ``e`` in the per-element comparison and judges
+the free electron by the charge comparison alone, so the five explicit-electron
+shapes below moved from refused to accepted on gates 1 and 2. The pins are
+updated to the post-I-172 measurement and each carries its pre-I-172 value, since
+the historical values are the evidence for what the census used to do -- see
+``test/rmgpy/i172ElectronCensusTest.py``, which owns the new behaviour and its
+negative controls. The module's own question is unchanged and gate 3 did not
+move: the reactor still refuses scalar counts the balance check accepts, so the
+three gates remain independent.
+
 Eight reaction shapes are put through three INDEPENDENT gates:
 
 1. ``Reaction.is_balanced()`` -- a pure function of the participants plus the
@@ -261,10 +272,12 @@ def _balance_diagnosis(row):
     """Say WHICH of ``is_balanced``'s two comparisons a row fails.
 
     The distinction is the entire subject of the disagreement this module
-    re-measures: an ``E``-element mismatch means the shape is structurally
-    unrepresentable with an explicit electron and no scalar can rescue it,
-    whereas a charge mismatch means the chemistry itself does not conserve
-    charge.
+    re-measures. Since I-172 element ``e`` is not compared at all, so a change in
+    the free-electron count is reported here as a note rather than as a mismatch
+    -- it is informative (it says the shape moves electrons) but it is not a
+    refusal. A mismatch on any other element still means the chemistry does not
+    conserve atoms, and a charge mismatch still means it does not conserve
+    charge; those two are the whole of the check.
     """
     spc = _species()
     r_counts, r_charge = _element_counts([spc[label] for label in row['reactants']])
@@ -277,8 +290,11 @@ def _balance_diagnosis(row):
 
     element_mismatch = sorted(
         sym for sym in set(r_counts) | set(p_counts)
-        if r_counts.get(sym, 0) != p_counts.get(sym, 0))
+        if r_counts.get(sym, 0) != p_counts.get(sym, 0) and sym != 'e')
     parts = []
+    if r_counts.get('e', 0) != p_counts.get('e', 0):
+        parts.append('free-electron count {0} -> {1} (not compared since I-172)'.format(
+            r_counts.get('e', 0), p_counts.get('e', 0)))
     if element_mismatch:
         parts.append('element mismatch on {0} (L {1} / R {2})'.format(
             ','.join(element_mismatch),
@@ -464,13 +480,18 @@ def format_table(results):
 #: measured values, pinned so a change to any of the three gates has to be a
 #: deliberate edit here rather than a silent drift.
 EXPECTED = {
-    # Every explicit-electron shape whose free-electron COUNT changes fails the
-    # per-element comparison on element E, before charge is ever looked at.
-    'EI/explicit': (False, False, True),
-    'EI/half': (False, False, False),
-    'RR/explicit': (False, False, True),
-    '3b/e-e-ion': (False, False, True),
-    '3b/neutral M': (False, False, True),
+    # Since I-172 the free electron is exempt from the per-element comparison and
+    # is judged by charge alone, so every explicit-electron shape below balances
+    # and loads: each conserves charge, which is what makes it a correctly
+    # written ionisation or recombination in the first place. The pre-I-172
+    # values, when the E census refused them before charge was ever looked at,
+    # are given for each -- that refusal is what made a plasma kinetics library
+    # carrying such entries load NO reactions at all.
+    'EI/explicit': (True, True, True),        # pre-I-172: (False, False, True)
+    'EI/half': (True, True, False),           # pre-I-172: (False, False, False)
+    'RR/explicit': (True, True, True),        # pre-I-172: (False, False, True)
+    '3b/e-e-ion': (True, True, True),         # pre-I-172: (False, False, True)
+    '3b/neutral M': (True, True, True),       # pre-I-172: (False, False, True)
     # The scalar forms balance and load.
     'EI/metadata': (True, True, False),
     'RR/metadata': (True, True, False),
@@ -520,16 +541,21 @@ def _row(key):
                 if r['family'] == family and r['form'] == form)
 
 
-def test_explicit_electron_is_a_conserved_element():
-    """``is_balanced()`` refuses every explicit-electron form whose free
-    electron count changes -- ionisation, radiative recombination and both
-    three-body recombination shapes alike -- and refuses each of them on the
-    ``E`` per-element comparison, which runs before charge is compared at all."""
+def test_explicit_electron_is_judged_by_charge_not_by_element_count():
+    """``is_balanced()`` accepts every explicit-electron form whose free electron
+    count changes -- ionisation, radiative recombination and both three-body
+    recombination shapes alike -- because each conserves charge.
+
+    Before I-172 all five were refused here, on the ``E`` per-element comparison,
+    which ran before charge was compared at all. That is the defect this module
+    was written to adjudicate; the electron is still judged, by the one
+    comparison that describes it correctly.
+    """
     for key in ('EI/explicit', 'EI/half', 'RR/explicit', '3b/e-e-ion', '3b/neutral M'):
         row = _row(key)
         accepted, detail = gate_is_balanced(row)
-        assert not accepted, key
-        assert 'element mismatch on e' in detail, (key, detail)
+        assert accepted, (key, detail)
+        assert 'charge mismatch' not in detail, (key, detail)
 
 
 def test_the_scalar_cannot_rescue_an_explicit_electron_shape():
@@ -539,7 +565,10 @@ def test_the_scalar_cannot_rescue_an_explicit_electron_shape():
     row = _row('3b/e-e-ion+meta')
     accepted, detail = gate_is_balanced(row)
     assert not accepted
-    assert 'element mismatch on e' in detail, detail
+    # Since I-172 the double-counting shows up where it belongs: the explicit
+    # electrons are already in the net charges, so folding the scalar in on top
+    # of them moves the reactant side to -2 against a product side of -1.
+    assert 'charge mismatch' in detail, detail
 
 
 def test_matrix_charge_transfer_row_fails_on_charge_not_on_electrons():
@@ -559,13 +588,19 @@ def test_matrix_charge_transfer_row_fails_on_charge_not_on_electrons():
 
 
 def test_reactor_gate_is_orthogonal_to_the_balance_gate():
-    """The plasma reactor never calls ``is_balanced()``. It accepts explicit
-    electron shapes the balance check refuses, and refuses scalar shapes the
-    balance check accepts. Neither gate subsumes the other, which is why the
-    matrix has to ask all three questions separately."""
-    accepted, detail = gate_reactor(_row('RR/explicit'))
+    """The plasma reactor never calls ``is_balanced()``. It accepts shapes the
+    balance check refuses, and refuses scalar shapes the balance check accepts.
+    Neither gate subsumes the other, which is why the matrix has to ask all three
+    questions separately.
+
+    The first half used to be shown with ``RR/explicit``, which I-172 made the
+    balance check accept. ``CT/ion-atom`` shows it now: the reactor initializes a
+    reaction that does not conserve charge at all, so the independence is if
+    anything starker than it was.
+    """
+    accepted, detail = gate_reactor(_row('CT/ion-atom'))
     assert accepted, detail
-    assert not gate_is_balanced(_row('RR/explicit'))[0]
+    assert not gate_is_balanced(_row('CT/ion-atom'))[0]
 
     assert gate_is_balanced(_row('RR/metadata'))[0]
     accepted, detail = gate_reactor(_row('RR/metadata'))
@@ -612,26 +647,29 @@ def e_counts_by_both_rules(row):
 
 
 def test_the_two_E_rules_disagree_on_explicit_ionisation():
-    """``Li + e => Li+ + e + e`` is unbalanced under ``is_balanced``'s atom rule
-    (1 vs 2) and balanced under the writers' charge rule (1 vs 1).
+    """``Li + e => Li+ + e + e`` is unbalanced under the atom rule (1 vs 2) and
+    balanced under the writers' charge rule (1 vs 1).
 
-    So "does the electron balance?" has two different answers in this codebase
-    depending on which boundary is asking, and the shape that the balance check
-    refuses is the shape the export boundary and the placement resolver's own
-    step-10 verification would both accept.
+    The two rules still disagree; what I-172 changed is which of them
+    ``is_balanced`` follows. It used to follow the atom rule, so "does the
+    electron balance?" had two different answers in this codebase depending on
+    which boundary was asking, and the shape the balance check refused was the
+    shape the export boundary and the placement resolver's own step-10
+    verification would both accept. It now follows the charge rule, and the
+    boundaries agree.
     """
     atom_rule, charge_rule = e_counts_by_both_rules(_row('EI/explicit'))
     assert atom_rule == (1, 2)
     assert charge_rule == (1, 1)
 
-    # Not a one-off. EVERY explicit-electron shape in the matrix is refused by
-    # the atom rule and balanced by the charge rule -- the divergence is total,
-    # not incidental to ionisation.
+    # Not a one-off. EVERY explicit-electron shape in the matrix parts the two
+    # rules -- the divergence is total, not incidental to ionisation -- and
+    # `is_balanced` sides with the charge rule in every one of them.
     for key in ('EI/explicit', 'EI/half', 'RR/explicit', '3b/e-e-ion', '3b/neutral M'):
         atom_rule, charge_rule = e_counts_by_both_rules(_row(key))
         assert atom_rule[0] != atom_rule[1], (key, atom_rule)
         assert charge_rule[0] == charge_rule[1], (key, charge_rule)
-        assert not gate_is_balanced(_row(key))[0], key
+        assert gate_is_balanced(_row(key))[0], key
 
 
 ################################################################################
