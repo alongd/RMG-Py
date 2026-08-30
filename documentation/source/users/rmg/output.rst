@@ -69,9 +69,22 @@ If the translation fails, RMG logs the traceback, finishes writing everything el
 **exits non-zero** with a ``MechanismWriterError`` naming the step whose output is missing.
 It used to log the failure and exit 0, which reported success for a run that had produced no
 Cantera file at all.  The model, the Chemkin files and the direct Cantera writers' output are
-all still on disk when this happens.  The known case is a plasma mechanism: ``ck2yaml`` does
-not implement Chemkin's ``TDEP`` keyword, so it cannot read the file RMG writes, and the
-``cantera2`` writer is the route to use for those mechanisms.
+all still on disk when this happens.
+
+**Plasma mechanisms are the exception, and RMG does not attempt the translation for them.**
+``ck2yaml`` does not implement Chemkin's ``TDEP`` keyword, so it cannot read a mechanism that
+contains any rate law evaluated at the electron temperature.  Rather than run a translation
+that is known to fail and then fail the run over its absence, RMG skips the step, says so in
+``RMG.log`` naming the reason and the replacement, and leaves ``cantera_from_ck/`` empty.
+``cantera2/chem.yaml`` is the authoritative Cantera artifact for those mechanisms; unlike the
+translated copy it keeps the ``plasma`` phase, the ``ionized-gas`` transport model and the
+electron-energy distribution.  No ``comparison_report.txt`` is written for a plasma run,
+since there is no second route to compare against.
+
+The condition is the presence of an electron-temperature-dependent rate law in the core, not
+the presence of an electron species and not the choice of reactor: a mechanism can carry an
+electron, or be simulated with ``plasmaReactor``, while every rate law in it is representable
+in Chemkin, and such a run is translated normally.
 
 ``/cantera1`` *(beta)*
 ^^^^^^^^^^^^^^^^^^^^^^

@@ -1832,6 +1832,38 @@ PLASMA_KINETICS_CLASSES = (
     _kinetics.VoronovEIArrhenius,
 )
 
+#: Wrapper rate laws that hold a list of sub-rate-laws in ``.arrhenius``. The
+#: Chemkin writer unwraps these (see :func:`write_kinetics_entry`) and writes each
+#: sub-rate on its own line, so a plasma sub-rate emits a ``TDEP/`` line even
+#: though the wrapper itself is not a plasma class. Named once so the writer's
+#: unwrap and :func:`kinetics_has_plasma_rate` cannot drift apart.
+MULTI_KINETICS_CLASSES = (
+    _kinetics.MultiArrhenius,
+    _kinetics.MultiPDepArrhenius,
+)
+
+
+def kinetics_has_plasma_rate(kinetics):
+    """
+    Whether ``kinetics`` -- possibly a ``MultiArrhenius`` / ``MultiPDepArrhenius``
+    wrapper -- carries any leaf rate law that :func:`write_kinetics_entry` exports
+    with a ``TDEP/<electron>/`` auxiliary line, i.e. any member of
+    :data:`PLASMA_KINETICS_CLASSES`.
+
+    This is the single source of truth for "would writing this reaction emit a
+    TDEP line". :func:`write_kinetics_entry` unwraps the multi-kinetics wrappers
+    reaction by reaction and then tests each leaf against
+    :data:`PLASMA_KINETICS_CLASSES` (the ``if kinetics_has_plasma_rate`` guard on
+    the leaf below); this function performs the same unwrap on the kinetics object
+    alone, so a caller that must decide *before* writing -- such as
+    ``RMG.mechanism_has_plasma_kinetics`` -- reaches the identical verdict without
+    a second, drift-prone copy of the rule.
+    """
+    if isinstance(kinetics, MULTI_KINETICS_CLASSES):
+        return any(kinetics_has_plasma_rate(sub) for sub in kinetics.arrhenius)
+    return isinstance(kinetics, PLASMA_KINETICS_CLASSES)
+
+
 #: Rate laws whose activation energy moves with an applied electrode potential.
 #: Chemkin has no way to express that, so these export only when their potential
 #: dependence is provably inert.
@@ -1977,7 +2009,7 @@ def write_kinetics_entry(reaction, species_list, verbose=True, java_library=Fals
     """
     string = ""
 
-    if isinstance(reaction.kinetics, (_kinetics.MultiArrhenius, _kinetics.MultiPDepArrhenius)):
+    if isinstance(reaction.kinetics, MULTI_KINETICS_CLASSES):
         if verbose:
             if reaction.kinetics.comment:
                 for line in reaction.kinetics.comment.split("\n"):
@@ -2183,7 +2215,12 @@ def write_kinetics_entry(reaction, species_list, verbose=True, java_library=Fals
 
     string += '\n'
 
-    if isinstance(kinetics, PLASMA_KINETICS_CLASSES):
+    # Multi* wrappers were unwrapped at the top of this function, so ``kinetics``
+    # here is always a leaf; kinetics_has_plasma_rate on a leaf reduces to the
+    # PLASMA_KINETICS_CLASSES membership test the format branch above used. Routing
+    # the emit decision through the shared helper is what makes
+    # RMG.mechanism_has_plasma_kinetics provably the same rule, not a copy of it.
+    if kinetics_has_plasma_rate(kinetics):
         electron = get_electron_species(species_list)
         if electron is None:
             raise MechanismWriterError(
