@@ -601,7 +601,6 @@ ATOMTYPES['O4b'] = AtomType('O4b', generic=['R', 'R!H', 'R!H!Val7', 'O', 'Val6',
                             single=[0], all_double=[0], r_double=[0], o_double=[0], s_double=[0], triple=[0], quadruple=[], benzene=[2], lone_pairs=[1], charge=[0])
 # examples for O4b: Furane, Benzofurane, Oxazole...
 
-ATOMTYPES['Ne'] = AtomType('Ne', generic=['R', 'R!H', 'R!H!Val7', 'Rx', 'Rx!H'], specific=[], charge=[0, 1, 2])
 ATOMTYPES['Si'] = AtomType('Si', generic=['R', 'R!H', 'R!H!Val7', 'Val4', 'Rx', 'Rx!H'], specific=['Sis', 'Sid', 'Sidd', 'Sit', 'SiO', 'Sib', 'Sibf', 'Siq'],
                            single=[], all_double=[], r_double=[], o_double=[], s_double=[], triple=[], quadruple=[], benzene=[], lone_pairs=[], charge=[])
 ATOMTYPES['Sis'] = AtomType('Sis', generic=['R', 'R!H', 'R!H!Val7', 'Si', 'Val4', 'Rx', 'Rx!H'], specific=[],
@@ -896,8 +895,6 @@ ATOMTYPES['O4sc'].set_actions(increment_bond=['O4dc'], decrement_bond=[], form_b
 ATOMTYPES['O4dc'].set_actions(increment_bond=['O4tc'], decrement_bond=['O4sc'], form_bond=['O4dc'], break_bond=['O4dc'], increment_radical=['O4dc'], decrement_radical=['O4dc'], increment_lone_pair=['O2d'], decrement_lone_pair=[], increment_charge=[], decrement_charge=[])
 ATOMTYPES['O4tc'].set_actions(increment_bond=[], decrement_bond=['O4dc'], form_bond=[], break_bond=[], increment_radical=[], decrement_radical=[], increment_lone_pair=[], decrement_lone_pair=[], increment_charge=[], decrement_charge=[])
 ATOMTYPES['O4b'].set_actions(increment_bond=[], decrement_bond=[], form_bond=[], break_bond=[], increment_radical=[], decrement_radical=[], increment_lone_pair=[], decrement_lone_pair=[], increment_charge=[], decrement_charge=[])
-
-ATOMTYPES['Ne'].set_actions(increment_bond=[], decrement_bond=[], form_bond=[], break_bond=[], increment_radical=['Ne'], decrement_radical=['Ne'], increment_lone_pair=[], decrement_lone_pair=[], increment_charge=[], decrement_charge=[])
 
 ATOMTYPES['Si'].set_actions(increment_bond=['Si'], decrement_bond=['Si'], form_bond=['Si'], break_bond=['Si'], increment_radical=['Si'], decrement_radical=['Si'], increment_lone_pair=[], decrement_lone_pair=[], increment_charge=[], decrement_charge=[])
 ATOMTYPES['Sis'].set_actions(increment_bond=['Sid', 'SiO'], decrement_bond=[], form_bond=['Sis'], break_bond=['Sis'], increment_radical=['Sis'], decrement_radical=['Sis'], increment_lone_pair=[], decrement_lone_pair=[], increment_charge=[], decrement_charge=[])
