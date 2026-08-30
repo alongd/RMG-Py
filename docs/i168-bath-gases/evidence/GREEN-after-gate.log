@@ -1,0 +1,6 @@
+test/rmgpy/i168BathGasInjectionTest.py::NonPlasmaDeckStillGetsBathGasTest::test_bath_gases_are_nonreactive_and_reach_the_core_first PASSED
+test/rmgpy/i168BathGasInjectionTest.py::NonPlasmaDeckStillGetsBathGasTest::test_a_declared_bath_gas_is_not_duplicated PASSED
+test/rmgpy/i168BathGasInjectionTest.py::CoreMembershipTest::test_plasma_core_holds_only_what_the_deck_declared PASSED
+test/rmgpy/i168BathGasInjectionTest.py::CoreMembershipTest::test_non_plasma_core_still_leads_with_all_four PASSED
+
+============================== 11 passed in 8.08s ==============================

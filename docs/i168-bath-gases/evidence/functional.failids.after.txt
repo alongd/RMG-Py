@@ -1,0 +1,5 @@
+FAILED test/arkane/arkaneMainTest.py::TestArkaneExamples::test_arkane_examples
+FAILED test/arkane/arkaneMainTest.py::TestArkaneExamples::test_arkane_two_parameter_arrhenius_fit
+FAILED test/arkane/arkaneOutputTest.py::OutputTest::test_prettify
+FAILED test/rmgpy/tools/fluxdiagramTest.py::FluxDiagramTest::test_avi_liquid
+FAILED test/rmgpy/tools/fluxdiagramTest.py::FluxDiagramTest::test_avi_simple

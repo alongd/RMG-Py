@@ -1,0 +1,7 @@
+SPECIES
+    e-(1)               ! e-(1)
+    Ar(2)               ! Ar(2)
+    Arp(3)              ! Arp(3)
+    [Li](4)             ! [Li](4)
+    [Lip](5)            ! [Lip](5)
+END

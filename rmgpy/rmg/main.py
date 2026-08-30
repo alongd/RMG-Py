@@ -80,6 +80,7 @@ from rmgpy.rmg.pdep import PDepNetwork
 from rmgpy.rmg.reactionmechanismsimulator_reactors import Reactor as RMSReactor
 from rmgpy.rmg.settings import ModelSettings, WriterConfig
 from rmgpy.solver.base import TerminationTime
+from rmgpy.solver.plasma import PlasmaReactor
 from rmgpy.stats import ExecutionStatsWriter
 from rmgpy.thermo.thermoengine import submit
 from rmgpy.tools.plot import plot_sensitivity
@@ -426,6 +427,55 @@ class RMG(util.Subject):
                         )
                     )
 
+    def uses_plasma_reactor(self):
+        """
+        Return ``True`` if any of this job's reaction systems is a two-temperature plasma
+        reactor. Mirrors the ``requires_rms`` probe in :meth:`initialize`.
+        """
+        return any(isinstance(reaction_system, PlasmaReactor) for reaction_system in self.reaction_systems)
+
+    def add_default_bath_gases(self):
+        """
+        Add Ar, He, Ne and N2 to the model as nonreactive species -- on every job except a
+        plasma one.
+
+        The injection dates from 5ec0636e (2014), whose whole justification was "just like
+        Java". It is nonetheless load-bearing today for ordinary gas-phase jobs, so it is
+        gated rather than removed:
+
+        * :meth:`rmgpy.rmg.pdep.PDepNetwork.update` picks the bath gas as *every* nonreactive
+          core species and asserts there is at least one, so a pressure-dependent deck that
+          declares no inert of its own is kept alive only by these four;
+        * ``calculate_effective_pressure`` in ``rmgpy/solver/simple.pyx`` indexes ``y0`` by a
+          reaction's ``specific_collider``, which is only in range while a ``(+N2)``-style
+          collider is a core species;
+        * the four sort first (index -1) in every Chemkin, Cantera and seed artifact RMG
+          writes, and the restart fixtures under ``test/rmgpy/test_data/restartTest`` record
+          them at core indices 0-3.
+
+        None of that applies to a plasma job. :class:`~rmgpy.solver.plasma.PlasmaReactor` has
+        no collider or third-body handling at all, plasma decks declare their own gas
+        explicitly, and a plasma deck that also enables ``pressureDependence`` must already
+        satisfy the inert check in :meth:`check_input`, which runs before this and reads only
+        the deck's own species. What does apply is that a plasma mechanism is small: the 5
+        torr argon deck has three real species, so three uninvited noble gases were half of
+        its core, sitting at zero mole fraction and making the mechanism file a poor record of
+        what the modeller asked for. A plasma deck that wants a bath gas declares it, like any
+        other species.
+        """
+        if self.uses_plasma_reactor():
+            logging.info(
+                "Plasma job: not adding the default bath gases (Ar, He, Ne, N2). "
+                "Declare them in the input file if this model needs them."
+            )
+            return
+
+        for label, smiles in [("Ar", "[Ar]"), ("He", "[He]"), ("Ne", "[Ne]"), ("N2", "N#N")]:
+            molecule = Molecule().from_smiles(smiles)
+            spec, is_new = self.reaction_model.make_new_species(molecule, label=label, reactive=False)
+            if is_new:
+                self.initial_species.append(spec)
+
     def save_input(self, path=None):
         """
         Save an RMG job to the input file located at `path`.
@@ -720,12 +770,8 @@ class RMG(util.Subject):
         for library, option in self.reaction_libraries:
             self.reaction_model.add_reaction_library_to_edge(library, requires_rms=requires_rms)
 
-        # Also always add in a few bath gases (since RMG-Java does)
-        for label, smiles in [("Ar", "[Ar]"), ("He", "[He]"), ("Ne", "[Ne]"), ("N2", "N#N")]:
-            molecule = Molecule().from_smiles(smiles)
-            spec, is_new = self.reaction_model.make_new_species(molecule, label=label, reactive=False)
-            if is_new:
-                self.initial_species.append(spec)
+        # Also always add in a few bath gases (since RMG-Java does), except on a plasma job
+        self.add_default_bath_gases()
 
         # Perform species constraints and forbidden species checks on input species
         for spec in self.initial_species:
