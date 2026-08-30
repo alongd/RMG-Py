@@ -850,6 +850,22 @@ cdef class ReactionSystem(DASx):
                 max_species_index = np.argmax(edge_species_rates)
                 max_species = edge_species[max_species_index]
                 max_species_rate = edge_species_rates[max_species_index]
+                if max_species_rate == 0:
+                    # The core is not merely singular, the whole system is inert: every edge rate is
+                    # zero too, so there is no largest-rate species and the argmax above has returned
+                    # index 0 by tie-breaking convention alone. Promoting it would put an arbitrary
+                    # species into the core and present the result as a mechanism. Report the
+                    # condition and promote nothing; the break still has to happen, since a model
+                    # whose rates are all zero can never satisfy a conversion criterion.
+                    logging.error('ZERO FLUX: at time {0:10.4e} s this reaction system ({1}, the one named '
+                                  'in the "Conducting simulation of reaction system" line above) carries no '
+                                  'flux at all -- every core species rate and every edge species rate is '
+                                  'exactly zero. NO species was added to the model core: with all {2:d} edge '
+                                  'rates at zero there is no largest-rate species to promote, and promoting '
+                                  'one anyway would put an arbitrary species into the core. This reaction '
+                                  'system cannot grow the model any further.'
+                                  ''.format(self.t, type(self).__name__, len(edge_species_rates)))
+                    break
                 logging.info('At time {0:10.4e} s, species {1} was added to model core to avoid '
                              'singularity'.format(self.t, max_species))
                 invalid_objects.append(max_species)
