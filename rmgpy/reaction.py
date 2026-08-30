@@ -1688,7 +1688,13 @@ class Reaction:
     def is_balanced(self):
         """
         Return ``True`` if the reaction has the same number of each atom on
-        each side of the reaction equation, or ``False`` if not.
+        each side of the reaction equation *and* conserves charge, or ``False``
+        if not.
+
+        The free electron is exempt from the per-element comparison and is
+        judged by the charge comparison instead -- see the comment in the loop
+        below. So ``Ar + e- => Ar+ + e- + e-`` balances (charge -1 = -1) while
+        ``Ar + e- => Ar + e- + e-`` does not (charge -1 vs -2).
         """
         from rmgpy.molecule.element import element_list
         from rmgpy.molecule.fragment import CuttingLabel, Fragment
@@ -1738,6 +1744,17 @@ class Reaction:
                     product_elements[atom.element] += 1
 
         for element in element_list:
+            # The free electron is `element_list[0]`, but it is not conserved the way an atom
+            # is: an ionisation creates one and an attachment destroys one, and what must hold
+            # across the arrow is charge, not electron count. Comparing its census here refused
+            # every ionisation, attachment and recombination -- and did so before the charge
+            # comparison below ever ran, since this loop returns first. So skip it, and let the
+            # charge comparison be the thing that judges it. That comparison already accounts
+            # for it exactly: every `e-` species contributed -1 to the net charges in the loops
+            # above, and the scalar `self.electrons` is folded in just below. The electron is
+            # still judged; it is no longer judged twice, once correctly and once wrongly.
+            if element.symbol == 'e':
+                continue
             if reactant_elements[element] != product_elements[element]:
                 return False
 
