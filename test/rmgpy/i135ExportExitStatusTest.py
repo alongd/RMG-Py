@@ -78,11 +78,36 @@ class TestAFailedExportIsNotSilent:
         source = inspect.getsource(RMG.execute)
         assert 'self.report_export_failures()' in source
 
-    def test_the_translation_step_records_rather_than_swallows(self):
-        """The other half of the wiring: the handlers that used to only log."""
+    def test_execute_still_runs_the_export_step(self):
+        """
+        The export steps live in :meth:`RMG.generate_end_of_run_cantera_files`,
+        which ``execute`` calls. Without that call the handlers below are dead
+        code and the run exits 0 regardless of what they record.
+        """
         import inspect
 
         from rmgpy.rmg.main import RMG
 
         source = inspect.getsource(RMG.execute)
-        assert source.count('self.export_failures.append(') == 2, source.count('self.export_failures.append(')
+        assert 'self.generate_end_of_run_cantera_files()' in source
+
+    def test_the_export_steps_record_rather_than_swallow(self):
+        """
+        The other half of the wiring: the handlers that used to only log.
+
+        Counting appends alone would pass a block that grew a third ``except``
+        which only logged, so this checks the stronger property -- that every
+        exception handler in the export step records what it caught.
+        """
+        import inspect
+        import re
+
+        from rmgpy.rmg.main import RMG
+
+        source = inspect.getsource(RMG.generate_end_of_run_cantera_files)
+        handlers = re.findall(r'^        except .*?(?=^        \S|\Z)', source,
+                              flags=re.MULTILINE | re.DOTALL)
+        assert handlers, 'the export step has no exception handlers at all'
+        for handler in handlers:
+            assert 'self.export_failures.append(' in handler, (
+                'an export-step exception handler logs without recording:\n' + handler)

@@ -53,7 +53,7 @@ from scipy.optimize import brute
 
 import rmgpy.util as util
 from rmgpy import settings
-from rmgpy.chemkin import ChemkinWriter
+from rmgpy.chemkin import PLASMA_KINETICS_CLASSES, ChemkinWriter
 from rmgpy.constraints import fails_species_constraints
 from rmgpy.data.auto_database import auto_select_libraries, to_reaction_library_tuples
 from rmgpy.data.base import Entry
@@ -1312,14 +1312,80 @@ class RMG(util.Subject):
 
         self.run_model_analysis()
 
+        # End-of-run Cantera export: the ck2yaml translation, the direct writers'
+        # notes-stripped chem.yaml, and the comparison between them.
+        self.generate_end_of_run_cantera_files()
+
+        self.check_model()
+        # Write output file
+
+        if not end_early:
+            logging.info("")
+            logging.info("MODEL GENERATION COMPLETED")
+            logging.info("")
+            core_spec, core_reac, edge_spec, edge_reac = self.reaction_model.get_model_size()
+            logging.info("The final model core has %s species and %s reactions" % (core_spec, core_reac))
+            logging.info("The final model edge has %s species and %s reactions" % (edge_spec, edge_reac))
+
+        self.finish()
+
+        self.report_export_failures()
+
+    def mechanism_has_plasma_kinetics(self):
+        """
+        Whether the core carries any rate law that is evaluated at the electron
+        temperature, and therefore any reaction the Chemkin writer exports with a
+        ``TDEP/<electron>/`` auxiliary line.
+
+        This is the exact condition under which ``ck2yaml`` rejects the Chemkin
+        file, because it is the same condition
+        :func:`rmgpy.chemkin.write_kinetics_entry` uses to decide to write that
+        line -- not a proxy for it. Asking instead whether an electron species is
+        present, or whether the reactor is a :class:`PlasmaReactor`, would answer
+        a different question: a mechanism can carry an electron, or be simulated
+        in a plasma reactor, while every rate law in it is representable.
+        """
+        return any(isinstance(rxn.kinetics, PLASMA_KINETICS_CLASSES)
+                   for rxn in self.reaction_model.core.reactions)
+
+    def generate_end_of_run_cantera_files(self):
+        """
+        Produce every end-of-run Cantera artifact and record, rather than raise,
+        whatever fails.
+
+        Called once from :meth:`execute` after the model is final. Extracted from
+        ``execute`` so it can be exercised directly by a test against a hand-built
+        model; the caller supplies nothing and the method reads its inputs off
+        ``self``.
+
+        The Chemkin-to-Cantera translation and the direct writers' own end-of-run
+        output are kept in separate ``try`` blocks. They used to share one, which
+        meant a failure of the translation also skipped the step that produces
+        ``cantera1/chem.yaml`` and ``cantera2/chem.yaml`` -- so the artifact meant
+        to stand in for the translation was lost whenever the translation failed,
+        which is exactly when it was needed. That is not plasma-specific.
+        """
         # generate Cantera files in designated Cantera output folders. The direct
         # writers (cantera1/, cantera2/) already wrote chem_annotated{NNNN}.yaml +
         # chem_annotated.yaml each iteration. End-of-run we also produce the
         # notes-stripped chem.yaml (and chem_edge.yaml when present), mirroring
         # Chemkin's chem.inp / chem_annotated.inp split, and run the comparison.
+        translated_cantera_file = None
         try:
-            translated_cantera_file = None
-            if self.chemkin_writer_config and self.chemkin_writer_config.enabled:
+            if self.mechanism_has_plasma_kinetics():
+                # Not a failure, and not silence either: name the omission, its
+                # cause, and what stands in its place.
+                logging.info("")
+                logging.info("Skipping the Chemkin-to-Cantera translation (cantera_from_ck/).")
+                logging.info("This mechanism contains rate laws evaluated at the electron temperature, "
+                             "which the Chemkin file declares with TDEP/ auxiliary lines. Cantera's "
+                             "ck2yaml implements no TDEP handler and rejects such a file, so the "
+                             "translated copy cannot be produced for a plasma mechanism.")
+                logging.info("cantera2/chem.yaml is the authoritative Cantera artifact for this run: "
+                             "unlike the translated copy it keeps the plasma phase, the ionized-gas "
+                             "transport model and the electron-energy distribution.")
+                logging.info("")
+            elif self.chemkin_writer_config and self.chemkin_writer_config.enabled:
                 logging.info("Translating final chemkin file into Cantera yaml.")
                 if any([s.contains_surface_site() for s in self.reaction_model.core.species]):
                     # Surface (catalytic) chemistry
@@ -1375,6 +1441,14 @@ class RMG(util.Subject):
             ck_chem_yaml = os.path.join(self.output_directory, "cantera_from_ck", "chem.yaml")
             util.strip_yaml_notes(ck_chem_yaml, ck_chem_yaml)
 
+        except EnvironmentError as exc:
+            logging.exception("Could not generate Cantera files due to EnvironmentError. Check read\\write privileges in output directory.")
+            self.export_failures.append(("Chemkin-to-Cantera translation (cantera_from_ck/)", exc))
+        except Exception as exc:
+            logging.exception("Could not generate Cantera files for some reason.")
+            self.export_failures.append(("Chemkin-to-Cantera translation (cantera_from_ck/)", exc))
+
+        try:
             # Produce notes-stripped chem.yaml / chem_edge.yaml end-of-run for
             # each direct Cantera writer (mirrors Chemkin's chem.inp).
             for writer_dir, writer_cfg in (
@@ -1404,26 +1478,12 @@ class RMG(util.Subject):
                                               output=os.path.join(self.output_directory, "cantera2", "comparison_report.txt"))
 
         except EnvironmentError as exc:
-            logging.exception("Could not generate Cantera files due to EnvironmentError. Check read\\write privileges in output directory.")
-            self.export_failures.append(("Chemkin-to-Cantera translation (cantera_from_ck/)", exc))
+            logging.exception("Could not write the direct Cantera writers' end-of-run output due to "
+                              "EnvironmentError. Check read\\write privileges in output directory.")
+            self.export_failures.append(("Direct Cantera writer end-of-run output (cantera1/, cantera2/)", exc))
         except Exception as exc:
-            logging.exception("Could not generate Cantera files for some reason.")
-            self.export_failures.append(("Chemkin-to-Cantera translation (cantera_from_ck/)", exc))
-
-        self.check_model()
-        # Write output file
-
-        if not end_early:
-            logging.info("")
-            logging.info("MODEL GENERATION COMPLETED")
-            logging.info("")
-            core_spec, core_reac, edge_spec, edge_reac = self.reaction_model.get_model_size()
-            logging.info("The final model core has %s species and %s reactions" % (core_spec, core_reac))
-            logging.info("The final model edge has %s species and %s reactions" % (edge_spec, edge_reac))
-
-        self.finish()
-
-        self.report_export_failures()
+            logging.exception("Could not write the direct Cantera writers' end-of-run output for some reason.")
+            self.export_failures.append(("Direct Cantera writer end-of-run output (cantera1/, cantera2/)", exc))
 
     def report_export_failures(self):
         """
