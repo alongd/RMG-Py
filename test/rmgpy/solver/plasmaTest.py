@@ -36,6 +36,7 @@ It proves reactor state handling; it does not claim that a neutral mechanism
 can generate its own first cation.
 """
 
+import logging
 import pickle
 
 import numpy as np
@@ -856,3 +857,103 @@ class PlasmaElectronThermoTest:
         # additivity / RDKit.
         full = thermo_db.get_thermo_data(electron_u1)
         assert abs(full.get_enthalpy(298.0)) < 1.0
+
+
+class PlasmaChargeNeutralityWarningTest:
+    """
+    I-169: the fifth check in ``_validate_electron_state`` -- the initial
+    composition's net charge.
+
+    Before this check existed, an ``electronDensity``-seeded deck with no compensating
+    cation ran to completion of model generation without one message naming the charge
+    it carried: measured on the I-164 5 torr argon control deck, whose RMG.log held a
+    single ``Warning:`` line, about edge-species saving.
+
+    The check WARNS and never raises. Every test here asserts on that: a non-neutral
+    composition must reach a fully initialized reactor, not an exception.
+    """
+
+    def _non_neutral_system(self, y_ion):
+        """The standard fixture with the cation amount decoupled from the electron."""
+        electron, ar, ar_ion, spc_a, spc_b = _species()
+        core_species = [ar, electron, ar_ion, spc_a, spc_b]
+        core_reactions = [_ionization(electron, ar, ar_ion),
+                          _recombination(electron, ar, ar_ion),
+                          _thermal(spc_a, spc_b),
+                          _three_body_recombination(electron, ar, ar_ion)]
+        imf = {electron: Y_E0, ar: Y_AR0, ar_ion: y_ion, spc_a: Y_A0, spc_b: Y_B0}
+        return _reactor(imf), core_species, core_reactions
+
+    def test_non_neutral_composition_warns_and_names_the_net_charge(self, caplog):
+        """The deck shape the ticket is about: electrons, no compensating cation."""
+        reactor, core_species, core_reactions = self._non_neutral_system(0.0)
+        with caplog.at_level(logging.WARNING):
+            _initialize(reactor, core_species, core_reactions)
+        messages = [r.getMessage() for r in caplog.records
+                    if 'NOT charge neutral' in r.getMessage()]
+        assert len(messages) == 1
+        # The message must carry the NUMBER, not merely the fact -- someone reading
+        # RMG.log has to learn what the imbalance is without recomputing it.
+        total = Y_E0 + Y_AR0 + Y_A0 + Y_B0
+        expected = -Y_E0 / total
+        assert repr(expected) in messages[0]
+        assert 'chargeBalanceSpecies' in messages[0]     # names the way to fix it
+
+    def test_non_neutral_composition_does_not_raise(self):
+        """Non-goal made executable: warn, never raise. The reactor initializes."""
+        reactor, core_species, core_reactions = self._non_neutral_system(0.0)
+        _initialize(reactor, core_species, core_reactions)
+        assert reactor.y0[reactor.electron_index] == Y_E0
+        assert reactor.V > 0.0
+
+    def test_neutral_composition_is_silent(self, caplog):
+        """No false positives on the composition a modeller meant to write."""
+        with caplog.at_level(logging.WARNING):
+            _full_system()
+        assert not [r for r in caplog.records if 'charge neutral' in r.getMessage()]
+
+    def test_excess_cation_also_warns(self, caplog):
+        """The check is signed-agnostic: net POSITIVE is reported too."""
+        reactor, core_species, core_reactions = self._non_neutral_system(1.0e-3)
+        with caplog.at_level(logging.WARNING):
+            _initialize(reactor, core_species, core_reactions)
+        messages = [r.getMessage() for r in caplog.records
+                    if 'NOT charge neutral' in r.getMessage()]
+        assert len(messages) == 1
+        total = Y_E0 + Y_AR0 + 1.0e-3 + Y_A0 + Y_B0
+        expected = (1.0e-3 - Y_E0) / total
+        assert expected > 0.0                      # net POSITIVE, not negative
+        assert repr(expected) in messages[0]
+
+    def test_imbalance_below_tolerance_is_silent(self, caplog):
+        """
+        A cation off by one part in 1e9 of the electron amount is roundoff-scale, not a
+        modelling error: relative imbalance 5e-10 < RTOL = 1e-6. This is the test that
+        stops the check from crying wolf on arithmetic that did close.
+        """
+        reactor, core_species, core_reactions = self._non_neutral_system(
+            Y_E0 * (1.0 + 1.0e-9))
+        with caplog.at_level(logging.WARNING):
+            _initialize(reactor, core_species, core_reactions)
+        assert not [r for r in caplog.records if 'NOT charge neutral' in r.getMessage()]
+
+    def test_weakly_ionized_full_imbalance_is_caught(self, caplog):
+        """
+        The corner an absolute-only tolerance would miss: an electron amount of 1e-10
+        with no cation at all. The net charge is tiny in absolute terms but the
+        composition is 100% imbalanced, and RTOL sees it.
+        """
+        electron, ar, ar_ion, spc_a, spc_b = _species()
+        core_species = [ar, electron, ar_ion, spc_a, spc_b]
+        core_reactions = [_ionization(electron, ar, ar_ion),
+                          _recombination(electron, ar, ar_ion),
+                          _thermal(spc_a, spc_b),
+                          _three_body_recombination(electron, ar, ar_ion)]
+        imf = {electron: 1.0e-10, ar: Y_AR0, ar_ion: 0.0, spc_a: Y_A0, spc_b: Y_B0}
+        reactor = _reactor(imf)
+        with caplog.at_level(logging.WARNING):
+            _initialize(reactor, core_species, core_reactions)
+        messages = [r.getMessage() for r in caplog.records
+                    if 'NOT charge neutral' in r.getMessage()]
+        assert len(messages) == 1
+        assert 'relative imbalance 1.0' in messages[0]

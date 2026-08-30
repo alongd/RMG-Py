@@ -68,6 +68,29 @@ from rmgpy.quantity cimport ScalarQuantity
 from rmgpy.solver.base cimport ReactionSystem
 
 
+# Tolerances for the initial-composition net-charge check in
+# PlasmaReactor._warn_if_not_charge_neutral. The check warns when
+#
+#     |net| > max(PLASMA_NET_CHARGE_ATOL, PLASMA_NET_CHARGE_RTOL * magnitude)
+#
+# where net = sum(x_i * z_i) per mole of mixture and magnitude = sum(|x_i * z_i|), the
+# total charge the net is a cancellation of. BOTH terms are needed. A purely absolute
+# test is blind to a weakly ionized deck: an argon plasma seeded at n_e = 1e16 m^-3 and
+# 5 torr is 100% charge-imbalanced at a net of only -6.2e-8 per mole, which any
+# absolute tolerance loose enough to survive real compositions would swallow. A purely
+# relative test cries wolf in the opposite corner, where the charged fraction is itself
+# near the roundoff floor and |net|/magnitude is dominated by cancellation error.
+#
+# ATOL is set above the double-precision accumulation bound for the sum: N terms each
+# bounded by 1 accumulate at most ~N * 2.22e-16, so 1e-12 clears models up to ~4500
+# species, well beyond any plasma mechanism RMG generates. RTOL at 1e-6 is far above
+# that same floor in relative terms and far below any imbalance a modeller could mean.
+# Neither is a physical statement: they separate "the arithmetic did not quite close"
+# from "the composition is not neutral", nothing more.
+PLASMA_NET_CHARGE_ATOL = 1.0e-12
+PLASMA_NET_CHARGE_RTOL = 1.0e-6
+
+
 cdef class PlasmaReactor(ReactionSystem):
     """
     A two-temperature plasma reaction system: a homogeneous, isobaric batch
@@ -406,6 +429,89 @@ cdef class PlasmaReactor(ReactionSystem):
             raise PlasmaStateError(
                 "initial electron amount must be finite and strictly positive; got "
                 "{0!r}. ({1})".format(electron_amount, self._identity()))
+
+        # Fifth check, ADDED alongside the four above and replacing none of them: is
+        # the initial composition charge neutral? This one WARNS and never raises. A
+        # deliberately non-neutral initial condition may be perfectly legitimate and
+        # this reactor does not get to decide that; what it refuses to do is stay
+        # silent, which is what it did before -- a deck seeded with an electron density
+        # and no compensating cation ran to completion without one message naming the
+        # charge it was carrying.
+        self._warn_if_not_charge_neutral()
+
+    def _warn_if_not_charge_neutral(self):
+        """
+        Log a warning naming the initial composition's net charge per mole when it is
+        not neutral to within
+        ``max(PLASMA_NET_CHARGE_ATOL, PLASMA_NET_CHARGE_RTOL * magnitude)``.
+
+        Never raises: non-neutrality is reported, not forbidden. A species whose charge
+        cannot be determined is named in the message rather than skipped silently, so
+        the reported number is never quietly incomplete.
+        """
+        cdef double net, magnitude, total, threshold
+
+        net = 0.0
+        magnitude = 0.0
+        total = 0.0
+        undetermined = []
+        contributions = []
+        for spc, value in self.initial_mole_fractions.items():
+            amount = float(value)
+            total += amount
+            try:
+                charge = int(spc.get_net_charge())
+            except Exception:
+                undetermined.append(str(spc))
+                continue
+            if charge:
+                net += amount * charge
+                magnitude += abs(amount * charge)
+                contributions.append((abs(amount * charge), str(spc), charge, amount))
+
+        # Report per mole of mixture. A directly-constructed reactor need not have been
+        # handed a composition summing to one, and "net charge" is only comparable to a
+        # tolerance once it is per mole of something.
+        if np.isfinite(total) and total > 0.0:
+            net /= total
+            magnitude /= total
+
+        if undetermined:
+            logging.warning(
+                "PlasmaReactor could not determine the net charge of %s in the initial "
+                "composition, so the charge-neutrality check below is computed without "
+                "them and may be incomplete. (%s)",
+                ', '.join(sorted(undetermined)), self._identity())
+
+        if not np.isfinite(net):
+            logging.warning(
+                "PlasmaReactor could not evaluate the initial composition's net charge "
+                "(got %r). (%s)", net, self._identity())
+            return
+
+        threshold = max(PLASMA_NET_CHARGE_ATOL, PLASMA_NET_CHARGE_RTOL * magnitude)
+        if abs(net) <= threshold:
+            return
+
+        contributions.sort(reverse=True)
+        breakdown = ', '.join(
+            '{0} (charge {1:+d}) x={2!r}'.format(label, charge, amount)
+            for _, label, charge, amount in contributions[:10])
+        if len(contributions) > 10:
+            breakdown += ', ... {0} more charged species'.format(len(contributions) - 10)
+
+        logging.warning(
+            "PlasmaReactor initial composition is NOT charge neutral: net charge = %r "
+            "per mole (total charge magnitude %r, relative imbalance %r), above the "
+            "tolerance max(atol=%r, rtol=%r * magnitude) = %r. Charged species: %s. "
+            "This is a warning, not an error -- a deliberately non-neutral initial "
+            "condition is legitimate -- but a deck that seeds an electronDensity "
+            "without a compensating cation lands here by accident. To have RMG compute "
+            "the balancing ion's mole fraction for you, name it with "
+            "chargeBalanceSpecies='<label>' in the plasmaReactor(...) block. (%s)",
+            net, magnitude, (abs(net) / magnitude if magnitude > 0.0 else float('inf')),
+            PLASMA_NET_CHARGE_ATOL, PLASMA_NET_CHARGE_RTOL, threshold, breakdown,
+            self._identity())
 
     def _validate_reactions(self, core_species, edge_species, core_reactions, edge_reactions):
         """
