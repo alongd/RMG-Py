@@ -42,15 +42,19 @@ The second of those is why the arming latch exists, and
 :func:`test_early_quiescence_does_not_fire_the_criterion` is the regression test for it.
 """
 
+import logging
+
 import numpy as np
 import pytest
 
 import rmgpy.constants as constants
 from rmgpy.kinetics import Arrhenius
 from rmgpy.kinetics.arrhenius import TwoTemperaturePlasma
+from rmgpy.molecule import Molecule
 from rmgpy.reaction import Reaction
 from rmgpy.rmg.settings import ModelSettings, SimulatorSettings
 from rmgpy.solver.plasma import PlasmaReactor
+from rmgpy.solver.simple import SimpleReactor
 from rmgpy.solver.termination import TerminationSteadyState, TerminationTime
 from rmgpy.species import Species
 from rmgpy.thermo import ThermoData
@@ -117,6 +121,39 @@ class TerminationSteadyStateResidualTest:
         y_now = np.array([1.0, 0.0, 1e-25])       # a 1e5x change, entirely below the floor
         r, _ = TerminationSteadyState.compute_residual(y_now, np.e, y_prev, 1.0, ATOL)
         assert r == 0.0
+
+    def test_a_large_negative_population_poisons_the_residual(self):
+        """
+        Finding 3. A negative population is a solver failure, not a settled composition. The
+        live mask tests ``y > floor``, so a large-negative species would be dropped from the
+        residual entirely -- neither counted nor reported -- and the criterion could declare
+        steady state while it sat negative. Here two species are large and flat (so on their
+        own they read as perfectly steady) while a third has gone negative beyond the floor;
+        the residual must be inf, which resets the streak and can never arm, and must name the
+        offending species rather than ignore it.
+        """
+        y_prev = np.array([1.0e6, 1.0e6, 0.3])
+        y_now = np.array([1.0e6, 1.0e6, -0.3])    # species 'C' went negative beyond the floor
+        r, worst = TerminationSteadyState.compute_residual(
+            y_now, np.e, y_prev, 1.0, ATOL, labels=['A', 'B', 'C'])
+        assert np.isinf(r), "a negative population must poison the residual, not be dropped from it"
+        assert worst == 'C', "the residual must name the negative species, got {0!r}".format(worst)
+        # And the latch consequence: fed to update(), an inf residual cannot arm or advance.
+        term = TerminationSteadyState(tolerance=1e-6, window=1)
+        term.armed = True                          # even a system that had armed earlier
+        assert term.update(y_now, np.e, y_prev, 1.0, ATOL, labels=['A', 'B', 'C']) is False
+        assert term.streak == 0
+
+    def test_a_negative_below_the_floor_is_still_treated_as_noise(self):
+        """
+        The poison is for a population negative *beyond* the resolution floor. A tiny negative
+        within ``[-floor, 0)`` is round-off around zero, not a failure, and must not trip the
+        guard -- otherwise ordinary integrator noise would forbid steady state.
+        """
+        y_prev = np.array([1.0, 1.0])
+        y_now = np.array([1.0, -ATOL / 2.0])       # negative, but within the floor: noise
+        r, _ = TerminationSteadyState.compute_residual(y_now, np.e, y_prev, 1.0, ATOL)
+        assert np.isfinite(r), "a sub-floor negative is noise and must not poison the residual"
 
     def test_no_live_species_is_not_evaluable(self):
         y = np.array([0.0, 0.0])
@@ -295,6 +332,38 @@ def _simulate(reactor, core_species, core_reactions):
     )
 
 
+def _hydrocarbon(smiles, cp, h298, s298):
+    tdata = ([300, 400, 500, 600, 800, 1000, 1500], "K")
+    return Species(molecule=[Molecule().from_smiles(smiles)],
+                   thermo=ThermoData(Tdata=tdata, Cpdata=(cp, "cal/(mol*K)"),
+                                     H298=(h298, "kcal/mol"), S298=(s298, "cal/(mol*K)")))
+
+
+def _inert_core_with_nonempty_edge(termination):
+    """
+    The shape of a real inert plasma deck: empty chemistry (no flux anywhere) but a NON-EMPTY
+    edge. The core has no reactions, and the single edge reaction carries no flux (A = 0), so
+    ``char_rate`` is zero and every edge rate is zero, while the edge species list is not
+    empty. This is the case the empty-edge :func:`_inert_system` cannot exercise: with a
+    non-empty edge the zero-flux promotion block runs first and breaks (reporting ZERO FLUX),
+    so control never reached the steady-state termination logic. Returns the full (core, edge)
+    argument set for ``simulate``.
+    """
+    ch4 = _hydrocarbon("C", [8.615, 9.687, 10.963, 12.301, 14.841, 16.976, 20.528], -17.714, 44.472)
+    c2h6 = _hydrocarbon("CC", [12.684, 15.506, 18.326, 20.971, 25.500, 29.016, 34.595], -19.521, 54.799)
+    ch3 = _hydrocarbon("[CH3]", [9.397, 10.123, 10.856, 11.571, 12.899, 14.055, 16.195], 9.357, 45.174)
+    # A structurally-present edge reaction that carries no flux (A = 0): the edge is non-empty
+    # but the chemistry is empty, so char_rate and every edge rate are exactly zero.
+    edge_rxn = Reaction(reactants=[c2h6], products=[ch3, ch3],
+                        kinetics=Arrhenius(A=(0.0, "1/s"), n=0.0, Ea=(0.0, "kcal/mol"), T0=(298.15, "K")))
+    core_species = [ch4, c2h6]
+    edge_species = [ch3]
+    reactor = SimpleReactor(T=1000.0, P=1.0e5, initial_mole_fractions={ch4: 0.5, c2h6: 0.5},
+                            n_sims=1, termination=termination)
+    reactor.initialize_model(core_species, [], edge_species, [edge_rxn])
+    return reactor, core_species, [], edge_species, [edge_rxn]
+
+
 class SteadyStateTerminationInSolverTest:
     """The criterion driven by the real integrator, not by synthetic steps."""
 
@@ -365,3 +434,52 @@ class SteadyStateTerminationInSolverTest:
         _simulate(reactor2, core_species2, core_reactions2)
         assert steady.armed is False
         assert reactor2.steady_state_reached is False
+
+    def test_inert_core_with_nonempty_edge_reports_no_steady_state_instead_of_promoting(self, caplog):
+        """
+        Finding 2. The steady-state "NO STEADY STATE WAS DEMONSTRATED" report was unreachable
+        whenever the edge was non-empty: the zero-flux promotion block runs BEFORE the
+        steady-state termination logic and breaks, so an inert plasma deck (empty chemistry
+        but a non-empty edge) took the promotion path instead of reporting honestly. The
+        existing no-flux coverage uses an empty edge, which never exercises that ordering.
+
+        With a steady-state criterion declared, the zero-flux block must stand down and let the
+        steady-state block own the no-flux exit: nothing is promoted, `steady_state_reached`
+        stays False, and the honest report is emitted.
+        """
+        steady = TerminationSteadyState(tolerance=1e-6, window=3)
+        backstop = TerminationTime((1.0, 's'))
+        reactor, core_species, core_reactions, edge_species, edge_reactions = \
+            _inert_core_with_nonempty_edge([steady, backstop])
+
+        # Guard the premise: the edge is non-empty (so the zero-flux block's len()>0 gate is
+        # met and it runs first), exactly the ordering the empty-edge case never reaches.
+        assert len(edge_species) > 0
+
+        with caplog.at_level(logging.INFO):
+            terminated, _res, invalid_objects, _ss, _sr, _t, _x = reactor.simulate(
+                core_species, core_reactions, edge_species, edge_reactions, [], [],
+                model_settings=ModelSettings(tol_keep_in_edge=0, tol_move_to_core=1e5,
+                                             tol_interrupt_simulation=1e8),
+                simulator_settings=SimulatorSettings(),
+            )
+
+        assert np.all(reactor.core_species_rates == 0.0), "the core is meant to be inert here"
+        assert np.all(reactor.edge_species_rates == 0.0), "empty chemistry: no edge flux either"
+        assert terminated
+        assert invalid_objects == [], (
+            "an inert core with a non-empty edge promoted {0!r} instead of reporting that no "
+            "steady state was demonstrated".format(invalid_objects)
+        )
+        assert reactor.steady_state_reached is False
+        assert not any(
+            "added to model core to avoid singularity" in r.getMessage() for r in caplog.records
+        ), "the zero-flux promotion path fired even though a steady-state criterion was declared"
+        assert not any(
+            r.getMessage().startswith("ZERO FLUX:") for r in caplog.records
+        ), "the zero-flux block reported instead of deferring to the steady-state criterion"
+        assert any(
+            "NO STEADY STATE WAS DEMONSTRATED" in r.getMessage() for r in caplog.records
+        ), "the honest steady-state report was never reached: {0!r}".format(
+            [r.getMessage() for r in caplog.records]
+        )

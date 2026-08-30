@@ -205,6 +205,19 @@ class TerminationSteadyState:
         if not np.isfinite(dlnt) or dlnt <= 0.0:
             return float('nan'), None
 
+        # A negative population is a solver failure, not a settled composition. The live
+        # mask below tests ``y > floor``, which would silently DROP a large-negative species
+        # -- neither counting it in the residual nor reporting it -- so the criterion could
+        # declare steady state while a species sits large and negative. A moles value below
+        # ``-floor`` is negative beyond the integrator's own resolution, i.e. not round-off
+        # noise around zero. Poison the residual instead: such a species is emphatically not
+        # stationary, so return inf (which resets the streak and can never arm) and surface it
+        # in the label, mirroring how an *appearing* species is handled below.
+        negative = (y_now < -floor) | (y_prev < -floor)
+        if negative.any():
+            idx = int(np.argmax(negative))
+            return float('inf'), _label_of(labels, idx)
+
         total_now = y_now.sum()
         total_prev = y_prev.sum()
         if not (np.isfinite(total_now) and np.isfinite(total_prev)) or total_now <= 0.0 or total_prev <= 0.0:

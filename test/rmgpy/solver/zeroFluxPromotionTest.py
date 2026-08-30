@@ -60,6 +60,7 @@ below ``_CHAR_RATE_FLOOR``, and that test constructs a ``char_rate`` inside it.
 import logging
 
 import numpy as np
+import pytest
 
 from rmgpy.kinetics import Arrhenius
 from rmgpy.molecule import Molecule
@@ -306,3 +307,82 @@ class ZeroFluxPromotionTest:
         assert zero_flux_records, "the zero-flux condition was never reported: {0!r}".format(
             [r.getMessage() for r in caplog.records]
         )
+
+    def _build_poisoning(self, target, a_unimolecular=0.0, a_bimolecular=0.0):
+        """
+        Same reactor as :meth:`_build`, but whose ``residual`` overwrites one recorded
+        species rate with NaN after each real evaluation, modelling an overflow or invalid
+        kinetics that produces a non-finite rate.  ``target`` is ``'core'`` (poison core
+        species rate 0, so ``char_rate`` goes NaN) or ``'edge'`` (poison edge species rate 0,
+        the entry ``np.argmax`` would then select).  The returned delta is left untouched, so
+        the integrator itself stays healthy and only the gate-facing rate record is non-finite.
+        """
+        ch4 = _species("C", [8.615, 9.687, 10.963, 12.301, 14.841, 16.976, 20.528], -17.714, 44.472)
+        c2h6 = _species("CC", [12.684, 15.506, 18.326, 20.971, 25.500, 29.016, 34.595], -19.521, 54.799)
+        ch3 = _species("[CH3]", [9.397, 10.123, 10.856, 11.571, 12.899, 14.055, 16.195], 9.357, 45.174)
+        c2h5 = _species("C[CH2]", [11.635, 13.744, 16.085, 18.246, 21.885, 24.676, 29.107], 29.496, 56.687)
+        h2 = _species("[H][H]", [6.895, 6.975, 6.994, 7.009, 7.081, 7.219, 7.720], 0.0, 31.233)
+        edge_rxn1 = Reaction(
+            reactants=[c2h6], products=[ch3, ch3],
+            kinetics=Arrhenius(A=(a_unimolecular, "1/s"), n=0.0, Ea=(0.0, "kcal/mol"), T0=(298.15, "K")),
+        )
+        edge_rxn2 = Reaction(
+            reactants=[ch4, c2h6], products=[ch3, c2h5, h2],
+            kinetics=Arrhenius(A=(a_bimolecular, "m^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol"), T0=(298.15, "K")),
+        )
+        core_species = [ch4, c2h6]
+        edge_species = [c2h5, h2, ch3]
+        edge_reactions = [edge_rxn1, edge_rxn2]
+
+        class _PoisonedReactor(SimpleReactor):
+            def residual(self, t, y, dydt, senpar=np.zeros(1, float)):
+                res = super().residual(t, y, dydt, senpar)
+                if target == 'core':
+                    self.core_species_rates[0] = np.nan
+                elif target == 'edge':
+                    self.edge_species_rates[0] = np.nan
+                return res
+
+        rxn_system = _PoisonedReactor(
+            T=1000.0, P=1.0e5,
+            initial_mole_fractions={ch4: 0.5, c2h6: 0.5}, n_sims=1,
+            termination=[TerminationTime((1e-6, "s"))],
+        )
+        rxn_system.initialize_model(core_species, [], edge_species, edge_reactions)
+        return rxn_system, core_species, [], edge_species, edge_reactions
+
+    def test_a_nan_edge_rate_is_not_selected_as_the_largest_and_promoted(self):
+        """
+        Finding 1, the argmax gate.  The core is inert (char_rate below the floor) and one
+        edge species carries a NaN rate.  ``np.argmax`` treats a NaN as the largest value and
+        the old ``max_species_rate < tiny`` guard is False against NaN, so the NaN-rated
+        species was force-promoted into the core -- numerical garbage becoming model growth.
+        A non-finite rate is a broken integration, so the run must now stop loudly rather than
+        promote it or treat it as zero flux.
+        """
+        system = self._build_poisoning(target='edge', a_unimolecular=0.0, a_bimolecular=0.0)
+        rxn_system = system[0]
+        with pytest.raises(ValueError, match="[Nn]on-finite reaction rate"):
+            self._simulate(*system)
+        # The poison is edge species 0 (C[CH2]); the message names the edge index.
+        try:
+            self._simulate(*system)
+        except ValueError as exc:
+            message = str(exc)
+        assert "edge species indices: [0]" in message, message
+        assert "not a physical flux" in message, message
+
+    def test_a_nan_core_rate_does_not_slip_past_the_char_rate_gate(self):
+        """
+        Finding 1, the char_rate sibling gate.  A single NaN core rate makes
+        ``char_rate = sqrt(sum(rate**2))`` NaN, and ``char_rate <= _CHAR_RATE_FLOOR`` is False
+        against NaN, so the broken integration slipped past the zero-flux gate entirely and
+        continued into normal promotion on NaN-poisoned rates.  Both gates get the same
+        treatment: a non-finite characteristic rate stops the run loudly.
+        """
+        system = self._build_poisoning(target='core', a_unimolecular=1.0e6, a_bimolecular=0.0)
+        with pytest.raises(ValueError, match="[Nn]on-finite reaction rate") as excinfo:
+            self._simulate(*system)
+        message = str(excinfo.value)
+        assert "characteristic core rate is nan" in message, message
+        assert "core species indices with non-finite rates: [0]".lower() in message.lower(), message

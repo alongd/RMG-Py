@@ -898,7 +898,35 @@ cdef class ReactionSystem(DASx):
                 if max_network_leak_rate_ratios[i] < network_leak_rate_ratios[index]:
                     max_network_leak_rate_ratios[i] = network_leak_rate_ratios[index]
 
-            if char_rate <= _CHAR_RATE_FLOOR and len(edge_species_rates) > 0:  # no resolvable flux: exact zero OR normal-magnitude dust
+            # A non-finite rate is a broken integration, not a physical flux, and it defeats
+            # every gate below: NaN fails all comparisons silently (``NaN <= floor`` and
+            # ``NaN < tiny`` are both False), and np.argmax treats a NaN as the largest value,
+            # so an overflow or invalid kinetics would be selected as "the fastest species" and
+            # promoted into the core -- numerical garbage presented as model growth. Treating it
+            # as zero flux would be just as wrong: it converts a detectable numerical failure
+            # into a quiet inert result. Stop loudly instead, naming what went non-finite, so the
+            # failure is diagnosable rather than laundered into the mechanism.
+            if not (np.isfinite(char_rate) and np.isfinite(edge_species_rates).all()):
+                bad_core = np.flatnonzero(~np.isfinite(self.core_species_rates))
+                bad_edge = np.flatnonzero(~np.isfinite(edge_species_rates))
+                raise ValueError(
+                    'Non-finite reaction rate at time {0:10.4e} s in reaction system {1} (the one '
+                    'named in the "Conducting simulation of reaction system" line above): the '
+                    'characteristic core rate is {2!r}, with {3:d} of {4:d} core species rates and '
+                    '{5:d} of {6:d} edge species rates non-finite (NaN or infinite). A non-finite '
+                    'rate is a broken integration -- an overflow or invalid kinetics -- not a '
+                    'physical flux; it is neither promoted into the core nor reported as an inert '
+                    'result. Core species indices with non-finite rates: {7}; edge species indices: '
+                    '{8}.'.format(self.t, type(self).__name__, char_rate,
+                                  bad_core.size, self.num_core_species,
+                                  bad_edge.size, len(edge_species_rates),
+                                  list(bad_core), list(bad_edge)))
+
+            # No resolvable flux (exact zero OR normal-magnitude dust). When a terminationSteadyState
+            # criterion is present this block stands down: a no-flux exit is that criterion's to
+            # report (as "NO STEADY STATE WAS DEMONSTRATED"), and breaking here would take the
+            # promotion path before control ever reached the steady-state termination logic below.
+            if char_rate <= _CHAR_RATE_FLOOR and len(edge_species_rates) > 0 and not steady_state_terms:
                 max_species_index = np.argmax(edge_species_rates)
                 max_species = edge_species[max_species_index]
                 max_species_rate = edge_species_rates[max_species_index]
@@ -1331,8 +1359,13 @@ cdef class ReactionSystem(DASx):
                 # to terminate, but it has demonstrated nothing, and saying otherwise is
                 # the confusion this criterion exists to remove. The zero-rate condition
                 # itself is diagnosed and logged by the solver upstream; this is only its
-                # termination consequence.
-                if char_rate == 0.0 and not steady_state_satisfied:
+                # termination consequence. The band tested is the same ``_CHAR_RATE_FLOOR``
+                # the zero-flux promotion block uses (exact zero OR normal-magnitude dust):
+                # that block now stands down when a steady-state criterion is present, so this
+                # is the sole owner of the no-flux exit and must cover the whole inert band it
+                # would have caught, not just exact zero, or a dust-rate system would neither
+                # promote nor terminate and would churn to the backstop time.
+                if char_rate <= _CHAR_RATE_FLOOR and not steady_state_satisfied:
                     steady_state_inert = True
                     for term in steady_state_terms:
                         if term.armed:
