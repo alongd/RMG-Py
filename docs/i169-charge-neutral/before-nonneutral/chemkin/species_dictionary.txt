@@ -1,0 +1,24 @@
+He
+1 He u0 p1 c0
+
+Ne
+1 Ne u0 p4 c0
+
+N2
+1 N u0 p1 c0 {2,T}
+2 N u0 p1 c0 {1,T}
+
+e-(1)
+multiplicity 2
+1 e u1 p0 c-1
+
+Ar(2)
+1 Ar u0 p4 c0
+
+[Li](3)
+multiplicity 2
+1 Li u1 p0 c0
+
+[Lip](4)
+1 Li u0 p0 c+1
+

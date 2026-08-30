@@ -1,0 +1,599 @@
+Global RMG Settings:
+   database.directory   = /home/alon/Code/RMG-database-plasma/input (from rmgrc)
+   test_data.directory  = /home/alon/Code/RMG-Py-i169-charge-neutral/test/rmgpy/test_data (Default, relative to RMG-Py source code)
+RMG execution initiated at Sun Aug 30 13:21:36 2026
+
+#########################################################
+# RMG-Py - Reaction Mechanism Generator in Python       #
+# Version: 4.0.0                                        #
+# Authors: RMG Developers (rmg_dev@mit.edu)             #
+# P.I.s:   William H. Green (whgreen@mit.edu)           #
+#          Richard H. West (r.west@neu.edu)             #
+# Website: http://reactionmechanismgenerator.github.io/ #
+#########################################################
+
+The current git HEAD for RMG-Py is:
+	4f18dc389bfc2548cb5faede9f4b6bc07ec9ac93
+	Sat Aug 29 19:50:38 2026 +0300
+
+The current git HEAD for RMG-database is:
+	053d48080a8cdae910f94b2b6cb774ad980e6189
+	Sat Aug 29 19:51:06 2026 +0300
+
+Reading input file "/home/alon/Code/RMG-Py-i169-charge-neutral/docs/i169-charge-neutral/before-nonneutral/input.py"...
+# I-164 -- 5 TORR PURE-ARGON PLASMA, DIAGNOSTIC PROBE
+#
+# The case, as specified:
+#
+#   5 torr argon at room temperature, ARGON ONLY, with a seed electron density;
+#   neutral at t = 0, achieved by converting part of the argon to Ar+; integrated to
+#   quasi-steady state.
+#
+# This deck exists to be RUN, not to be believed: it is the instrument of a diagnostic
+# probe that measures what stops RMG from simulating this configuration today. Nothing
+# here is tuned to make the run pass.
+#
+# Run (from the directory holding this file, which must also hold an rmgrc pinning
+# database.directory at an RMG-database-plasma checkout):
+#
+#   conda activate rmg_env
+#   python /home/alon/Code/RMG-Py-plasma/rmg.py input.py \
+#     > >(tee -a stdout.log) 2> >(tee -a stderr.log >&2)
+#
+# ---------------------------------------------------------------------------------
+# HOW FAITHFULLY THIS EXPRESSES THE CASE
+# ---------------------------------------------------------------------------------
+#
+# 1. CHARGE-NEUTRAL SEEDING IS NOT A DIRECTIVE; THE ARITHMETIC IS DONE BY HAND BELOW.
+#    `electronDensity` inserts an electron mole fraction x_e and scales every heavy
+#    species down by `heavy_scale` so the composition still sums to one
+#    (rmgpy/rmg/input.py:713-732). It creates no compensating cation, so a deck that
+#    uses it alone is net-negative at t = 0. To be neutral the modeller must supply
+#    Ar+ explicitly AND pre-divide by heavy_scale, i.e. reproduce input.py's own
+#    internal derivation outside it. With
+#
+#        kB = R/Na, q = n_e kB Te / P, a = q Tgas / Te
+#        x_e = a / (1 - q + a),  heavy_scale = (1 - q) / (1 - q + a)
+#
+#    the heavy-side Ar+ fraction that lands on x_Ar+ = x_e after scaling is
+#
+#        r = a / (1 - q)
+#
+#    For P = 5 torr (666.6118421052631 Pa), Tgas = 298.15 K, Te = 34813.5 K,
+#    n_e = 1e16 m^-3:
+#
+#        q   = 7.210383435118683e-06
+#        a   = 6.175121206372917e-08
+#        x_e = 6.175165350358923e-08
+#        r   = 6.175165731685617e-08     <- the number typed below
+#
+#    This is exact, not approximate: r * heavy_scale = a/(1-q+a) = x_e identically.
+#    It is nonetheless a finding, not a workaround: the API has no charge-neutral
+#    seeding directive, and getting neutrality right requires re-deriving the
+#    driver's internals inside the deck.
+#
+# 2. "QUASI-STEADY STATE" IS NOT EXPRESSIBLE. `plasmaReactor` accepts only
+#    terminationConversion / terminationTime / terminationRateRatio
+#    (rmgpy/rmg/input.py:518-525). None of them means "integrate until d/dt -> 0".
+#    Substituted: terminationTime = 1e-3 s, orders above the electron kinetics
+#    timescale at this density, and stated here as a substitution.
+#
+# 3. ROOM TEMPERATURE = 298.15 K; ELECTRON TEMPERATURE MUST BE KELVIN. The directive
+#    rejects electronvolts outright, so 3 eV is typed as its kelvin equivalent
+#    34813.5 K (= 3 * 11604.5). 3 eV is a standard low-pressure argon discharge Te.
+#
+# 4. SEED ELECTRON DENSITY = 1e16 m^-3 (1e10 cm^-3), representative of a few-torr
+#    argon glow. Nothing in the case fixed it; it is stated, not derived.
+#
+# ---------------------------------------------------------------------------------
+
+database(
+    thermoLibraries=[
+        # neutral Ar ('1 Ar u0 p4 c0')
+        'primaryThermoLibrary',
+        # Ar+ as a free monatomic cation ('[Arp]', '1 Ar u1 p3 c+1'), NIST-JANAF Ar-002
+        'PlasmaCationThermo',
+        # the electron thermo entry ('1 e u0 p0 c-1', H298 = 0). Without it the electron
+        # misses every library and the reactor stops at the thermo wall.
+        'electrocatThermo',
+    ],
+    reactionLibraries=[
+        # what an argon plasma needs: Ar + e- => Ar+ + 2 e-, and Ar+ + e- => Ar + hv.
+        # Both libraries are requested here as a modeller would request them; whether
+        # either actually carries argon is one of the things this probe measures.
+        'PlasmaElectronImpactIonization',
+        'PlasmaRadiativeRecombination',
+    ],
+    seedMechanisms=[],
+    kineticsDepositories=['training'],
+    # An EMPTY list is falsy and KineticsDatabase.load_families reads it as "load the
+    # default set" -- which would drag in Cation_R_Recombination, the quarantined
+    # battery-SEI family. So an explicit list is required. Plasma_Electron_Attachment
+    # is the only plasma-generic neutral family in the database and its root is a
+    # LogicOr over O / OH / O2, so it cannot match argon; it is named to keep the list
+    # truthy and non-default, not because it is expected to fire.
+    kineticsFamilies=[
+        'Plasma_Electron_Attachment',
+    ],
+    kineticsEstimator='rate rules',
+)
+
+# --- electron pseudo-species MUST be declared before plasmaReactor(...) ---
+species(
+    label='e-',
+    reactive=True,
+    structure=adjacencyList("1 e u1 p0 c-1"),
+)
+
+# --- neutral argon ---
+species(
+    label='Ar',
+    reactive=True,
+    structure=adjacencyList("""
+1 Ar u0 p4 c0
+"""),
+)
+
+# CONTROL RUN 2. Identical to ../input.py except that Ar+ is neither declared nor
+# seeded: the deck is written the OBVIOUS way, with `electronDensity` alone. The
+# directive inserts x_e and creates no compensating cation, so the mixture carries a
+# net charge of -x_e at t = 0. This control measures whether anything in RMG or the
+# PlasmaReactor notices.
+
+plasmaReactor(
+    temperature=(298.15, 'K'),
+    pressure=(5, 'torr'),
+    electronTemperature=(34813.5, 'K'),     # 3 eV
+    electronDensity=(1e16, 'm^-3'),         # 1e10 cm^-3
+    initialMoleFractions={
+        'Ar': 1.0,
+    },
+    terminationTime=(1e-3, 's'),            # substitute for "quasi-steady state"
+)
+
+simulator(
+    atol=1e-16,
+    rtol=1e-8,
+)
+
+model(
+    toleranceKeepInEdge=0.0,
+    toleranceMoveToCore=0.5,
+    toleranceInterruptSimulation=1e8,
+    maximumEdgeSpecies=200,
+)
+
+options(
+    units='si',
+    generateOutputHTML=False,
+    generatePlots=False,
+    saveEdgeSpecies=True,
+    saveSimulationProfiles=False,
+    # The RMS writer has no branch for the plasma rate laws (VoronovEIArrhenius /
+    # BadnellRRArrhenius) and would kill the run on the first save; off, as on every
+    # other plasma deck in this repo.
+    generateRMSYAML=False,
+    generateCanteraYAML2=True,
+)
+
+Using RMG database at: /home/alon/Code/RMG-database-plasma/input (from rmgrc)
+Warning: Edge species saving was turned on. This will slow down model generation for large simulations.
+
+Loading transport library from NIST_Fluorine.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport library from PrimaryTransportLibrary.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport library from GRI-Mech.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport library from OneDMinN2.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport library from NOx2018.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport group database from /home/alon/Code/RMG-database-plasma/input/transport/groups...
+Loading kinetics library PlasmaElectronImpactIonization from /home/alon/Code/RMG-database-plasma/input/kinetics/libraries/PlasmaElectronImpactIonization/reactions.py...
+Loading kinetics library PlasmaRadiativeRecombination from /home/alon/Code/RMG-database-plasma/input/kinetics/libraries/PlasmaRadiativeRecombination/reactions.py...
+Loading frequencies group database from /home/alon/Code/RMG-database-plasma/input/statmech/groups...
+Loading solvation thermodynamics group database from /home/alon/Code/RMG-database-plasma/input/solvation/groups...
+Loading thermodynamics library from primaryThermoLibrary.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from PlasmaCationThermo.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from electrocatThermo.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics group database from /home/alon/Code/RMG-database-plasma/input/thermo/groups...
+Loading thermodynamics SIDTs from /home/alon/Code/RMG-database-plasma/input/thermo/sidt...
+Adding rate rules from training set in kinetics families...
+Filling in rate rules in kinetics families by averaging...
+Adding reaction library PlasmaElectronImpactIonization to model edge...
+
+Summary of Model Enlargement
+---------------------------------
+Added 0 new core species
+Created 2 new edge species
+    [Li](3)
+    [Lip](4)
+Added 0 new core reactions
+Created 1 new edge reactions
+    [Li](3) => [Lip](4)
+
+After model enlargement:
+    The model core has 0 species and 0 reactions
+    The model edge has 4 species and 1 reactions
+
+Adding reaction library PlasmaRadiativeRecombination to model edge...
+
+Summary of Model Enlargement
+---------------------------------
+Added 0 new core species
+Created 0 new edge species
+Added 0 new core reactions
+Created 1 new edge reactions
+    [Lip](4) => [Li](3)
+
+After model enlargement:
+    The model core has 0 species and 0 reactions
+    The model edge has 4 species and 2 reactions
+
+NOT generating reactions for unreactive species He
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    He
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 1 species and 0 reactions
+    The model edge has 4 species and 2 reactions
+
+
+NOT generating reactions for unreactive species Ne
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    Ne
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 2 species and 0 reactions
+    The model edge has 4 species and 2 reactions
+
+
+NOT generating reactions for unreactive species N2
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    N2
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 3 species and 0 reactions
+    The model edge has 4 species and 2 reactions
+
+
+Adding species e-(1) to model core
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    e-(1)
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 4 species and 0 reactions
+    The model edge has 3 species and 2 reactions
+
+
+Adding species Ar(2) to model core
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    Ar(2)
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 5 species and 0 reactions
+    The model edge has 2 species and 2 reactions
+
+
+Initialization complete. Starting model generation.
+
+Generating initial reactions...
+For reaction generation 1 process is used.
+
+Summary of Secondary Model Edge Enlargement
+---------------------------------
+Added 0 new core species
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 5 species and 0 reactions
+    The model edge has 2 species and 2 reactions
+
+
+Completed initial enlarge edge step.
+
+Saving current model core to Chemkin file...
+Chemkin file contains 0 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 0 reactions.
+Saving current model core and edge to Chemkin file...
+Chemkin file contains 2 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 2 reactions.
+Saving current model core to Cantera file: /home/alon/Code/RMG-Py-i169-charge-neutral/docs/i169-charge-neutral/before-nonneutral/cantera2/chem_annotated0005.yaml
+Saving current model core and edge to Cantera file...
+Updating RMG execution statistics...
+    Execution time (DD:HH:MM:SS): 00:00:00:02
+    Memory used: 535.50 MB
+
+Making seed mechanism...
+Beginning model generation stage 1 of 1.
+
+Making seed mechanism...
+Conducting simulation of reaction system 1...
+At time 0.0000e+00 s, species [Li](3) was added to model core to avoid singularity
+
+
+Adding species [Li](3) to model core
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    [Li](3)
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 6 species and 0 reactions
+    The model edge has 1 species and 2 reactions
+
+
+For reaction generation 1 process is used.
+
+Summary of Secondary Model Edge Enlargement
+---------------------------------
+Added 0 new core species
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 6 species and 0 reactions
+    The model edge has 1 species and 2 reactions
+
+
+Saving current model core to Chemkin file...
+Chemkin file contains 0 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 0 reactions.
+Saving current model core and edge to Chemkin file...
+Chemkin file contains 2 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 2 reactions.
+Saving current model core to Cantera file: /home/alon/Code/RMG-Py-i169-charge-neutral/docs/i169-charge-neutral/before-nonneutral/cantera2/chem_annotated0006.yaml
+Saving current model core and edge to Cantera file...
+Updating RMG execution statistics...
+    Execution time (DD:HH:MM:SS): 00:00:00:02
+    Memory used: 536.86 MB
+
+Making seed mechanism...
+Conducting simulation of reaction system 1...
+At time 0.0000e+00 s, species [Lip](4) was added to model core to avoid singularity
+
+
+Adding species [Lip](4) to model core
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    [Lip](4)
+Created 0 new edge species
+Moved 2 reactions from edge to core
+    [Li](3) => [Lip](4)
+    [Lip](4) => [Li](3)
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 7 species and 2 reactions
+    The model edge has 0 species and 0 reactions
+
+
+For reaction generation 1 process is used.
+
+Summary of Secondary Model Edge Enlargement
+---------------------------------
+Added 0 new core species
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 7 species and 2 reactions
+    The model edge has 0 species and 0 reactions
+
+
+Saving current model core to Chemkin file...
+Chemkin file contains 2 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 2 reactions.
+Saving current model core and edge to Chemkin file...
+Chemkin file contains 2 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 2 reactions.
+Saving current model core to Cantera file: /home/alon/Code/RMG-Py-i169-charge-neutral/docs/i169-charge-neutral/before-nonneutral/cantera2/chem_annotated0007.yaml
+Saving current model core and edge to Cantera file...
+Updating RMG execution statistics...
+    Execution time (DD:HH:MM:SS): 00:00:00:02
+    Memory used: 536.87 MB
+
+Making seed mechanism...
+Conducting simulation of reaction system 1...
+At time 1.0000e-03 s, reached target termination time.
+
+
+For reaction generation 1 process is used.
+
+Summary of Secondary Model Edge Enlargement
+---------------------------------
+Added 0 new core species
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 7 species and 2 reactions
+    The model edge has 0 species and 0 reactions
+
+
+Saving current model core to Chemkin file...
+Chemkin file contains 2 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 2 reactions.
+Saving current model core and edge to Chemkin file...
+Chemkin file contains 2 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 2 reactions.
+Saving current model core to Cantera file: /home/alon/Code/RMG-Py-i169-charge-neutral/docs/i169-charge-neutral/before-nonneutral/cantera2/chem_annotated0007.yaml
+Saving current model core and edge to Cantera file...
+Updating RMG execution statistics...
+    Execution time (DD:HH:MM:SS): 00:00:00:03
+    Memory used: 536.99 MB
+
+Making seed mechanism...
+Saving current model core to Chemkin file...
+Chemkin file contains 2 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 2 reactions.
+Saving current model core and edge to Chemkin file...
+Chemkin file contains 2 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 2 reactions.
+Saving current model core to Cantera file: /home/alon/Code/RMG-Py-i169-charge-neutral/docs/i169-charge-neutral/before-nonneutral/cantera2/chem_annotated0007.yaml
+Saving current model core and edge to Cantera file...
+Updating RMG execution statistics...
+    Execution time (DD:HH:MM:SS): 00:00:00:03
+    Memory used: 536.99 MB
+
+Translating final chemkin file into Cantera yaml.
+*******************************************************************************
+Error while reading reaction in chem.inp starting on line 66:
+"""
+[Li](3)+e-(1)=>[Lip](4)+e-(1)+e-(1)                 1.490e+18 -0.267    162.150  
+    TDEP/e-(1)/   ! VoronovEIArrhenius exported as a modified-Arrhenius fit of k(Te) over 1.16e+04-2.321e+08 K; the original functional form is not representable in Chemkin
+"""
+could not convert string to float: 'e-(1)'
+*******************************************************************************
+Error while reading reaction in chem.inp starting on line 69:
+"""
+[Lip](4)+e-(1)=>[Li](3)                             1.734e+14 -0.801    0.010    
+    TDEP/e-(1)/   ! BadnellRRArrhenius exported as a modified-Arrhenius fit of k(Te) over 10-1e+07 K; the original functional form is not representable in Chemkin
+"""
+could not convert string to float: 'e-(1)'
+Error: Error converting to Cantera format.
+Traceback (most recent call last):
+  File "/home/alon/Code/RMG-Py-i169-charge-neutral/rmgpy/rmg/main.py", line 2042, in generate_cantera_files_from_chemkin
+    parser.convert_mech(chemkin_file, transport_file=transport_file, out_name=out_name, quiet=True, permissive=True, **kwargs)
+  File "/home/alon/Code/Cantera/build/python/cantera/ck2yaml.py", line 2216, in convert_mech
+    raise InputError('\n'.join(parser.handler.errors))
+cantera.ck2yaml.InputError: Error while reading reaction in chem.inp starting on line 66:
+"""
+[Li](3)+e-(1)=>[Lip](4)+e-(1)+e-(1)                 1.490e+18 -0.267    162.150  
+    TDEP/e-(1)/   ! VoronovEIArrhenius exported as a modified-Arrhenius fit of k(Te) over 1.16e+04-2.321e+08 K; the original functional form is not representable in Chemkin
+"""
+could not convert string to float: 'e-(1)'
+Error while reading reaction in chem.inp starting on line 69:
+"""
+[Lip](4)+e-(1)=>[Li](3)                             1.734e+14 -0.801    0.010    
+    TDEP/e-(1)/   ! BadnellRRArrhenius exported as a modified-Arrhenius fit of k(Te) over 10-1e+07 K; the original functional form is not representable in Chemkin
+"""
+could not convert string to float: 'e-(1)'
+Please check https://cantera.org/stable/userguide/ck2yaml-tutorial.html#debugging-common-errors-in-ck-files
+for the correct Chemkin syntax.
+Trying again without transport data file.
+*******************************************************************************
+Error while reading reaction in chem.inp starting on line 66:
+"""
+[Li](3)+e-(1)=>[Lip](4)+e-(1)+e-(1)                 1.490e+18 -0.267    162.150  
+    TDEP/e-(1)/   ! VoronovEIArrhenius exported as a modified-Arrhenius fit of k(Te) over 1.16e+04-2.321e+08 K; the original functional form is not representable in Chemkin
+"""
+could not convert string to float: 'e-(1)'
+*******************************************************************************
+Error while reading reaction in chem.inp starting on line 69:
+"""
+[Lip](4)+e-(1)=>[Li](3)                             1.734e+14 -0.801    0.010    
+    TDEP/e-(1)/   ! BadnellRRArrhenius exported as a modified-Arrhenius fit of k(Te) over 10-1e+07 K; the original functional form is not representable in Chemkin
+"""
+could not convert string to float: 'e-(1)'
+Error: Could not generate Cantera files for some reason.
+Traceback (most recent call last):
+  File "/home/alon/Code/RMG-Py-i169-charge-neutral/rmgpy/rmg/main.py", line 2042, in generate_cantera_files_from_chemkin
+    parser.convert_mech(chemkin_file, transport_file=transport_file, out_name=out_name, quiet=True, permissive=True, **kwargs)
+  File "/home/alon/Code/Cantera/build/python/cantera/ck2yaml.py", line 2216, in convert_mech
+    raise InputError('\n'.join(parser.handler.errors))
+cantera.ck2yaml.InputError: Error while reading reaction in chem.inp starting on line 66:
+"""
+[Li](3)+e-(1)=>[Lip](4)+e-(1)+e-(1)                 1.490e+18 -0.267    162.150  
+    TDEP/e-(1)/   ! VoronovEIArrhenius exported as a modified-Arrhenius fit of k(Te) over 1.16e+04-2.321e+08 K; the original functional form is not representable in Chemkin
+"""
+could not convert string to float: 'e-(1)'
+Error while reading reaction in chem.inp starting on line 69:
+"""
+[Lip](4)+e-(1)=>[Li](3)                             1.734e+14 -0.801    0.010    
+    TDEP/e-(1)/   ! BadnellRRArrhenius exported as a modified-Arrhenius fit of k(Te) over 10-1e+07 K; the original functional form is not representable in Chemkin
+"""
+could not convert string to float: 'e-(1)'
+Please check https://cantera.org/stable/userguide/ck2yaml-tutorial.html#debugging-common-errors-in-ck-files
+for the correct Chemkin syntax.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/alon/Code/RMG-Py-i169-charge-neutral/rmgpy/rmg/main.py", line 1366, in execute
+    translated_cantera_file = self.generate_cantera_files_from_chemkin(
+  File "/home/alon/Code/RMG-Py-i169-charge-neutral/rmgpy/rmg/main.py", line 2046, in generate_cantera_files_from_chemkin
+    parser.convert_mech(chemkin_file, out_name=out_name, quiet=True, permissive=True, **kwargs)
+  File "/home/alon/Code/Cantera/build/python/cantera/ck2yaml.py", line 2216, in convert_mech
+    raise InputError('\n'.join(parser.handler.errors))
+cantera.ck2yaml.InputError: Error while reading reaction in chem.inp starting on line 66:
+"""
+[Li](3)+e-(1)=>[Lip](4)+e-(1)+e-(1)                 1.490e+18 -0.267    162.150  
+    TDEP/e-(1)/   ! VoronovEIArrhenius exported as a modified-Arrhenius fit of k(Te) over 1.16e+04-2.321e+08 K; the original functional form is not representable in Chemkin
+"""
+could not convert string to float: 'e-(1)'
+Error while reading reaction in chem.inp starting on line 69:
+"""
+[Lip](4)+e-(1)=>[Li](3)                             1.734e+14 -0.801    0.010    
+    TDEP/e-(1)/   ! BadnellRRArrhenius exported as a modified-Arrhenius fit of k(Te) over 10-1e+07 K; the original functional form is not representable in Chemkin
+"""
+could not convert string to float: 'e-(1)'
+Please check https://cantera.org/stable/userguide/ck2yaml-tutorial.html#debugging-common-errors-in-ck-files
+for the correct Chemkin syntax.
+Performing final model checks...
+No collision rate violators found in the model's core.
+
+MODEL GENERATION COMPLETED
+
+The final model core has 7 species and 2 reactions
+The final model edge has 0 species and 0 reactions
+
+RMG execution terminated at Sun Aug 30 13:21:39 2026
+Error: 
+Error: ===============================================================================
+Error: EXPORT FAILED. 1 of RMG's output steps did not produce their files:
+Error:   Chemkin-to-Cantera translation (cantera_from_ck/)
+Error:       InputError: Error while reading reaction in chem.inp starting on line 66:
+Error: 
+Error: Model generation itself completed and every file written before this point is
+Error: valid; the output above names what is missing.
+Error: ===============================================================================
+Error: 

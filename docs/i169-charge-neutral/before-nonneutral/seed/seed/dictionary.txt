@@ -1,0 +1,7 @@
+[Li]
+multiplicity 2
+1 Li u1 p0 c0
+
+[Lip]
+1 Li u0 p0 c+1
+

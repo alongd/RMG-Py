@@ -1,0 +1,70 @@
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=9.78829e-18): result may not be accurate.
+  fu = func(x, *args)
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=8.30526e-20): result may not be accurate.
+  fu = func(x, *args)
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=1.38146e-20): result may not be accurate.
+  fu = func(x, *args)
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=8.43874e-21): result may not be accurate.
+  fu = func(x, *args)
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=2.11249e-21): result may not be accurate.
+  fu = func(x, *args)
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=5.2787e-21): result may not be accurate.
+  fu = func(x, *args)
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=2.26538e-21): result may not be accurate.
+  fu = func(x, *args)
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=1.9079e-21): result may not be accurate.
+  fu = func(x, *args)
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=7.53573e-21): result may not be accurate.
+  fu = func(x, *args)
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=7.43345e-21): result may not be accurate.
+  fu = func(x, *args)
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=1.47964e-21): result may not be accurate.
+  fu = func(x, *args)
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=1.34061e-20): result may not be accurate.
+  fu = func(x, *args)
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=8.87325e-21): result may not be accurate.
+  fu = func(x, *args)
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=3.20362e-21): result may not be accurate.
+  fu = func(x, *args)
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=2.39961e-21): result may not be accurate.
+  fu = func(x, *args)
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=3.56405e-21): result may not be accurate.
+  fu = func(x, *args)
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=4.40143e-21): result may not be accurate.
+  fu = func(x, *args)
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=4.71804e-22): result may not be accurate.
+  fu = func(x, *args)
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=4.97734e-21): result may not be accurate.
+  fu = func(x, *args)
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=7.47076e-21): result may not be accurate.
+  fu = func(x, *args)
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=6.10745e-21): result may not be accurate.
+  fu = func(x, *args)
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=3.69387e-21): result may not be accurate.
+  fu = func(x, *args)
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=1.30536e-20): result may not be accurate.
+  fu = func(x, *args)
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=1.51603e-20): result may not be accurate.
+  fu = func(x, *args)
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=3.18757e-21): result may not be accurate.
+  fu = func(x, *args)
+/home/alon/Code/RMG-Py-i169-charge-neutral/rmgpy/thermo/thermoengine.py:100: LinAlgWarning: Ill-conditioned matrix (rcond=3.18757e-21): result may not be accurate.
+  thermo = wilhoit.to_nasa(Tmin=100.0, Tmax=5000.0, Tint=1000.0)
+/home/alon/Code/RMG-Py-i169-charge-neutral/rmgpy/thermo/thermoengine.py:100: LinAlgWarning: Ill-conditioned matrix (rcond=1.08953e-21): result may not be accurate.
+  thermo = wilhoit.to_nasa(Tmin=100.0, Tmax=5000.0, Tint=1000.0)
+/home/alon/Code/RMG-Py-i169-charge-neutral/rmgpy/rmg/main.py:1076: RuntimeWarning: invalid value encountered in divide
+  terminated, resurrected, obj, new_surface_species, new_surface_reactions, t, x = reaction_system.simulate(
+/home/alon/Code/RMG-Py-i169-charge-neutral/rmgpy/rmg/main.py:1076: RuntimeWarning: invalid value encountered in divide
+  terminated, resurrected, obj, new_surface_species, new_surface_reactions, t, x = reaction_system.simulate(
+/home/alon/Code/RMG-Py-i169-charge-neutral/rmgpy/rmg/main.py:1076: RuntimeWarning: invalid value encountered in divide
+  terminated, resurrected, obj, new_surface_species, new_surface_reactions, t, x = reaction_system.simulate(
+Traceback (most recent call last):
+  File "/home/alon/Code/RMG-Py-i169-charge-neutral/rmg.py", line 33, in <module>
+    __main__.main()
+  File "/home/alon/Code/RMG-Py-i169-charge-neutral/rmgpy/__main__.py", line 104, in main
+    rmg.execute(**kwargs)
+  File "/home/alon/Code/RMG-Py-i169-charge-neutral/rmgpy/rmg/main.py", line 1426, in execute
+    self.report_export_failures()
+  File "/home/alon/Code/RMG-Py-i169-charge-neutral/rmgpy/rmg/main.py", line 1460, in report_export_failures
+    raise MechanismWriterError(
+rmgpy.exceptions.MechanismWriterError: RMG finished model generation, but 1 export step(s) failed and their output is missing: Chemkin-to-Cantera translation (cantera_from_ck/). See the traceback(s) logged above.
