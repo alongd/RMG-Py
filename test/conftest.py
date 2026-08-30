@@ -4,9 +4,63 @@ multiprocessing.set_start_method('fork')
 
 import os
 
+import pytest
+
 from openbabel import pybel
 
 pybel.ob.obErrorLog.SetOutputLevel(0)
+
+
+################################################################################
+# Isolation: the RMG database is a process-global singleton.
+#
+# rmgpy.data.rmg.database is a module-level variable that RMGDatabase() rebinds
+# on construction (see RMGDatabase.__init__: `global database; database = self`)
+# and that nothing ever resets. A test module that loads a database therefore
+# leaves it resident for every module that runs *after* it in the same pytest
+# process. get_db() -- and through it thermo/kinetics estimation -- reads that
+# global, so the leaked database silently becomes the one a later, unrelated
+# module resolves against.
+#
+# This is invisible when each suite is run one-per-process (the usual CI shape)
+# and produces order-dependent failures when suites share a process. The motivating
+# case: a module that loads a thermo database WITHOUT electron thermo (e.g.
+# thermo_libraries=["primaryThermoLibrary"]) leaves it resident, and a later plasma
+# input test that declares the electron pseudo-species 'e-' then resolves it against
+# that database and trips the (correct) electron-thermo guard at thermo.py:1378 --
+# a failure that has nothing to do with the code under test. Run in isolation, no
+# database is loaded, so get_db('thermo') *raises* DatabaseError (rmgpy/data/rmg.py:275);
+# generate_thermo_data catches that and returns None (rmgpy/thermo/thermoengine.py:120-125),
+# thermo generation is skipped, and the same test passes.
+#
+# This does NOT weaken the guard where it matters. RMG.initialize() loads the database
+# before it submits the initial species, so a production job that declares 'e-' against
+# a database carrying no electron thermo still trips thermo.py:1378, exactly as intended.
+#
+# The fixture below snapshots the singleton before each test module and restores
+# it afterward, scoping any database a module loads to that module. Module scope
+# (not function scope) is deliberate: the reset runs only after every test in the
+# module has finished, so intra-module sharing -- the common `setup_class` that
+# loads a database once and reuses it across the class's tests -- is untouched.
+# Only cross-module leakage is removed.
+#
+# A side effect worth stating: if a test currently passes ONLY because an earlier
+# module left a database loaded (it loads none of its own), this fixture will make
+# it fail. That is the intended behaviour -- such a test is green for the wrong
+# reason, trusting a database it did not choose -- and the failure is the finding,
+# not a regression introduced here.
+################################################################################
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _isolate_rmg_database_singleton():
+    import rmgpy.data.rmg as rmg_data
+
+    saved = rmg_data.database
+    try:
+        yield
+    finally:
+        rmg_data.database = saved
 
 
 ################################################################################
