@@ -1016,6 +1016,90 @@ class TestInputPlasmaReactor:
         for label in mf1:
             assert mf2[label] == pytest.approx(mf1[label], rel=1e-5)
 
+    # ---- terminationSteadyState (I-170) ------------------------------------
+
+    def test_termination_steady_state_bare_tolerance(self, tmp_path):
+        """The DSL-consistent spelling: a bare tolerance, as terminationRateRatio takes."""
+        from rmgpy.solver.termination import TerminationSteadyState
+        body = self._preamble() + self._plasma_block("    terminationSteadyState=1e-7,\n")
+        rmg = self._read(tmp_path, body)
+        terms = [t for t in rmg.reaction_systems[0].termination
+                 if isinstance(t, TerminationSteadyState)]
+        assert len(terms) == 1
+        assert terms[0].tolerance == 1e-7
+        assert terms[0].window == 3          # the default
+
+    def test_termination_steady_state_dict_form(self, tmp_path):
+        from rmgpy.solver.termination import TerminationSteadyState
+        body = self._preamble() + self._plasma_block(
+            "    terminationSteadyState={'tolerance': 1e-5, 'window': 7},\n")
+        rmg = self._read(tmp_path, body)
+        term = [t for t in rmg.reaction_systems[0].termination
+                if isinstance(t, TerminationSteadyState)][0]
+        assert term.tolerance == 1e-5
+        assert term.window == 7
+
+    def test_termination_steady_state_requires_a_backstop_time(self, tmp_path):
+        """
+        A criterion that may never fire cannot be a deck's only stopping condition. The
+        refusal belongs here, at the door, not in a job that has been running for a week.
+        """
+        body = (self._preamble()
+                + "plasmaReactor(\n"
+                  "    temperature=(1000,'K'),\n"
+                  "    pressure=(1,'atm'),\n"
+                  "    electronTemperature=(11604.5,'K'),\n"
+                  "    initialMoleFractions={'Ar': 0.7, 'He': 0.3},\n"
+                  "    terminationSteadyState=1e-6,\n"
+                  ")\n")
+        with pytest.raises(InputError, match='backstop'):
+            self._read(tmp_path, body)
+
+    @pytest.mark.parametrize('value', ['0.0', '-1e-6', "{'tolerance': 1e-6, 'window': 0}"])
+    def test_termination_steady_state_rejects_nonsense(self, tmp_path, value):
+        body = self._preamble() + self._plasma_block(
+            "    terminationSteadyState={0},\n".format(value))
+        with pytest.raises(InputError):
+            self._read(tmp_path, body)
+
+    def test_termination_steady_state_rejects_unknown_keys(self, tmp_path):
+        body = self._preamble() + self._plasma_block(
+            "    terminationSteadyState={'tolerance': 1e-6, 'tolerence': 1e-3},\n")
+        with pytest.raises(InputError, match='tolerence'):
+            self._read(tmp_path, body)
+
+    def test_termination_steady_state_absent_by_default(self, tmp_path):
+        """A deck that does not ask for it does not get it."""
+        from rmgpy.solver.termination import TerminationSteadyState
+        body = self._preamble() + self._plasma_block("")
+        rmg = self._read(tmp_path, body)
+        assert not any(isinstance(t, TerminationSteadyState)
+                       for t in rmg.reaction_systems[0].termination)
+
+    def test_save_input_file_round_trips_termination_steady_state(self, tmp_path):
+        """
+        Both halves of the criterion must survive the writer. A round-trip that restored
+        the default window would be a different criterion wearing the same name.
+        """
+        from rmgpy.solver.termination import TerminationSteadyState
+        body = (
+            "database(thermoLibraries=['primaryThermoLibrary'], reactionLibraries=[], "
+            "seedMechanisms=[], kineticsFamilies='default')\n"
+            + self._preamble()
+            + self._plasma_block("    terminationSteadyState={'tolerance': 2.5e-7, 'window': 5},\n")
+            + "simulator(atol=1e-16, rtol=1e-8)\n"
+            + "model(toleranceMoveToCore=0.1, toleranceInterruptSimulation=0.1)\n"
+        )
+        rmg1 = self._read(tmp_path, body)
+        saved = tmp_path / "saved.py"
+        inp.save_input_file(str(saved), rmg1)
+        rmg2 = RMG()
+        inp.read_input_file(str(saved), rmg2)
+        term = [t for t in rmg2.reaction_systems[0].termination
+                if isinstance(t, TerminationSteadyState)][0]
+        assert term.tolerance == 2.5e-7
+        assert term.window == 5
+
     def test_save_input_file_round_trips_kinetics_depositories_all(self, tmp_path):
         # The reader maps kineticsDepositories='all' to rmg.kinetics_depositories = None;
         # the writer must serialize None back to 'all' or the saved file cannot be re-read.
