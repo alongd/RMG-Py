@@ -1992,6 +1992,13 @@ class Reaction:
         kr_list = []
         collision_limit_f = []
         collision_limit_r = []
+        # The reported violation must name the condition its ratio was computed at. `conditions` is
+        # never shortened when a condition is skipped, so indexing conditions[i] against kf_list /
+        # kr_list (which ARE shortened) would misattribute a real ratio to the wrong T/P. Carry the
+        # retained condition ALONGSIDE its value in these parallel lists instead of recovering it by
+        # index: kf_list / collision_limit_f / conditions_f move in lockstep, as do the reverse three.
+        conditions_f = []
+        conditions_r = []
         # This check runs in both directions; the reverse direction needs a reverse rate
         # coefficient. generate_reverse_rate_coefficient() raises UnsupportedReverseRateError for
         # kinetics types with no reverse implementation -- and, because its MultiArrhenius /
@@ -2005,11 +2012,19 @@ class Reaction:
         for condition in conditions:
             if len(self.reactants) >= 2:
                 try:
-                    collision_limit_f.append(self.calculate_coll_limit(temp=condition[0], reverse=False))
+                    coll_limit_f = self.calculate_coll_limit(temp=condition[0], reverse=False)
                 except ValueError:
-                    continue
+                    # The forward collision limit is uncomputable for this reaction (missing/zero
+                    # transport data on a reactant). Skip only the forward direction -- fall through
+                    # to the reverse block, whose collision limit depends on the PRODUCTS' transport
+                    # data and may well be computable. The old `continue` here suppressed a perfectly
+                    # computable reverse check; this decouples them so the reverse direction still
+                    # runs (the check firing more often, never less).
+                    pass
                 else:
+                    collision_limit_f.append(coll_limit_f)
                     kf_list.append(self.get_rate_coefficient(condition[0], condition[1]))
+                    conditions_f.append(condition)
             if len(self.products) >= 2 and not reverse_unsupported:
                 try:
                     coll_limit_r = self.calculate_coll_limit(temp=condition[0], reverse=True)
@@ -2032,17 +2047,18 @@ class Reaction:
                     continue
                 collision_limit_r.append(coll_limit_r)
                 kr_list.append(reverse_kinetics.get_rate_coefficient(condition[0], condition[1]))
+                conditions_r.append(condition)
         if len(self.reactants) >= 2:
             for i, k in enumerate(kf_list):
                 if k > collision_limit_f[i]:
                     ratio = k / collision_limit_f[i]
-                    condition = '{0} K, {1:.1f} bar'.format(conditions[i][0], conditions[i][1] / 1e5)
+                    condition = '{0} K, {1:.1f} bar'.format(conditions_f[i][0], conditions_f[i][1] / 1e5)
                     violator_list.append([self, 'forward', ratio, condition])
         if len(self.products) >= 2:
             for i, k in enumerate(kr_list):
                 if k > collision_limit_r[i]:
                     ratio = k / collision_limit_r[i]
-                    condition = '{0} K, {1:.1f} bar'.format(conditions[i][0], conditions[i][1] / 1e5)
+                    condition = '{0} K, {1:.1f} bar'.format(conditions_r[i][0], conditions_r[i][1] / 1e5)
                     violator_list.append([self, 'reverse', ratio, condition])
         return violator_list
 
