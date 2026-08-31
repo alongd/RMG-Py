@@ -1,5 +1,18 @@
 # I-194 — the argon deck re-run on a runtime cut from the source of truth
 
+> **Read this first — added by the campaign manager when this record was merged, 2026-08-31.**
+> Everything below was measured at `plasma` tip `3b479a638`, **before** the reverse-rate fix. At
+> that commit the deck finished model generation and then died in final validation, exit 1, because
+> `check_collision_limit_violation` demanded a reverse rate coefficient for a plasma rate law that
+> has none. That wall has since been removed (`4cc872eb4`), and the same deck now reaches
+> `MODEL GENERATION COMPLETED` with exit 0, core 3 species / 1 reaction. See
+> `docs/i195-reverse-rate/i195-reverse-rate.md`.
+>
+> So the exit code and the traceback below are a **diagnosis, not the current behaviour**. What is
+> still current, and why this record is kept: the deck itself (`input.py`, the reproducible 5 torr
+> argon case), the lineage discipline that produced it, and the finding that three of four
+> "durable" defects from the prior argon run were artifacts of a runtime 28 commits stale.
+
 Every argon run this campaign reported ran on `/home/alon/Code/RMG-Py-argonrun`, a runtime
 **28 commits behind** `plasma`. This ticket rebuilt the runtime from source at `plasma`'s tip and
 re-ran the identical `PlasmaArgon` deck to get a trustworthy measurement. **No RMG source was
