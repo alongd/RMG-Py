@@ -3688,3 +3688,135 @@ class TestReverseCollisionLimitDegradation:
         messages = " ".join(rec.getMessage() for rec in caplog.records)
         assert "skipping the reverse-direction collision-limit check" not in messages
         assert self.arrhenius_rxn.generate_reverse_rate_coefficient() is not None
+
+
+def _coll_species(label, adjacency_or_smiles, sigma=3.0, smiles=False):
+    """A Species with NASA thermo and, if ``sigma`` != 0, LJ transport data. ``sigma=0`` yields a
+    species whose transport makes ``get_mean_sigma_and_epsilon`` raise ``ValueError`` -- the natural
+    trigger that skips the corresponding direction of ``check_collision_limit_violation``."""
+    if smiles:
+        molecule = Molecule(smiles=adjacency_or_smiles)
+    else:
+        molecule = Molecule().from_adjacency_list(adjacency_or_smiles)
+    spc = Species(label=label, molecule=[molecule])
+    coeffs = [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, -11.7246]
+    spc.thermo = NASA(
+        polynomials=[
+            NASAPolynomial(coeffs=coeffs, Tmin=(200, 'K'), Tmax=(1000, 'K')),
+            NASAPolynomial(coeffs=coeffs, Tmin=(1000, 'K'), Tmax=(6000, 'K')),
+        ],
+        Tmin=(200, 'K'), Tmax=(6000, 'K'),
+    )
+    spc.transport_data = TransportData(
+        shapeIndex=0 if len(molecule.atoms) == 1 else 1,
+        sigma=(sigma, 'angstrom'),
+        epsilon=(100.0, 'K'),
+        dipoleMoment=(0.0, 'De'),
+        polarizability=(0.0, 'angstrom^3'),
+        rotrelaxcollnum=0.0,
+    )
+    return spc
+
+
+class _SkipCollLimitAtTemp(Reaction):
+    """A Reaction whose forward collision limit is uncomputable at exactly one temperature.
+
+    The natural ``ValueError`` from ``get_mean_sigma_and_epsilon`` is condition-INDEPENDENT (it
+    ignores T and P), so it can never skip one condition and keep a later one -- it is all-or-none.
+    To exercise the attribution logic we need a skip that IS condition-dependent, so we override the
+    ``cpdef`` ``calculate_coll_limit`` to raise at a chosen temperature. The override is dispatched
+    through the extension type's vtable, so the compiled ``check_collision_limit_violation`` calls
+    this version. ``reverse`` is never affected (``skip_reverse`` defaults off)."""
+    skip_temp = None
+
+    def calculate_coll_limit(self, temp, reverse=False):
+        if (not reverse) and self.skip_temp is not None and abs(temp - self.skip_temp) < 1e-9:
+            raise ValueError
+        return Reaction.calculate_coll_limit(self, temp, reverse)
+
+
+class TestCollisionLimitAttribution:
+    """
+    Pins that ``check_collision_limit_violation`` reports each violation at the condition its ratio
+    was actually computed at. ``conditions`` is never shortened when a condition is skipped, so the
+    old code -- which recovered the condition string by ``conditions[i]`` while enumerating the
+    (shortened) ``kf_list`` / ``kr_list`` -- attributed a real ratio to the wrong T/P as soon as any
+    earlier condition was skipped. The fix carries the retained condition alongside its value.
+
+    The second test pins the deliberate decoupling: a reaction whose FORWARD collision limit is
+    uncomputable (a reactant with no transport data) must still have its computable REVERSE
+    direction checked. The old forward ``continue`` suppressed it; the check now fires more often.
+    """
+
+    def test_forward_violation_names_the_condition_its_ratio_came_from(self):
+        """RED before the fix: the ratio is computed at t_max (the surviving condition) but reported
+        at t_min (the skipped one). GREEN after: the reported condition is t_max."""
+        a = _coll_species('A', '1 O u2 p2 c0')
+        b = _coll_species('B', '1 O u2 p2 c0')
+        p = _coll_species('P', '[O][O]', smiles=True)  # single product -> reverse branch skipped
+        rxn = _SkipCollLimitAtTemp(
+            reactants=[a, b], products=[p], reversible=False,
+            kinetics=Arrhenius(A=(1.0e30, 'cm^3/(mol*s)'), n=0, Ea=(0, 'J/mol')),
+        )
+        rxn.skip_temp = 300.0
+        result = rxn.check_collision_limit_violation(
+            t_min=300.0, t_max=2000.0, p_min=1.0e5, p_max=1.0e5)
+        assert len(result) == 1, result
+        _, direction, ratio, condition = result[0]
+        assert direction == 'forward'
+        # The one surviving condition is t_max=2000 K. The ratio and the reported condition must
+        # both belong to it, not to the skipped t_min=300 K.
+        assert condition == '2000.0 K, 1.0 bar', condition
+        expected_ratio = (rxn.get_rate_coefficient(2000.0, 1.0e5)
+                          / Reaction.calculate_coll_limit(rxn, 2000.0, False))
+        assert abs(ratio / expected_ratio - 1.0) < 1e-9, (ratio, expected_ratio)
+
+    def test_reverse_still_checked_when_forward_uncomputable(self, caplog):
+        """Decoupling (finding 2). RED before: a missing-transport reactant makes the forward limit
+        uncomputable, the old forward ``continue`` also suppressed the reverse block, and the
+        reverse violation went unreported. GREEN after: the reverse direction is still checked and
+        the violation is reported."""
+        r1 = _coll_species('R1', '1 O u2 p2 c0', sigma=0.0)  # zero transport -> forward ValueError
+        r2 = _coll_species('R2', '1 O u2 p2 c0', sigma=0.0)
+        p1 = _coll_species('P1', '1 O u2 p2 c0')
+        p2 = _coll_species('P2', '1 O u2 p2 c0')
+        rxn = Reaction(
+            reactants=[r1, r2], products=[p1, p2], reversible=False,
+            kinetics=Arrhenius(A=(1.0e30, 'cm^3/(mol*s)'), n=0, Ea=(0, 'J/mol')),
+        )
+        with caplog.at_level(logging.WARNING):
+            result = rxn.check_collision_limit_violation(
+                t_min=300.0, t_max=300.0, p_min=1.0e5, p_max=1.0e5)
+        # Forward is uncomputable (skipped), but the reverse direction is computable and violated.
+        directions = {v[1] for v in result}
+        assert 'reverse' in directions, result
+        assert 'forward' not in directions, result
+        # No spurious "unsupported reverse" warning: the reverse rate IS supported here.
+        messages = " ".join(rec.getMessage() for rec in caplog.records)
+        assert "skipping the reverse-direction collision-limit check" not in messages
+
+    def test_no_skip_ratios_and_conditions_unchanged(self):
+        """When nothing is skipped, every condition is retained in order, so attribution is the
+        identity map and both directions' ratios equal the independently computed values."""
+        a = _coll_species('A', '1 O u2 p2 c0')
+        b = _coll_species('B', '1 O u2 p2 c0')
+        c = _coll_species('C', '1 O u2 p2 c0')
+        d = _coll_species('D', '1 O u2 p2 c0')
+        rxn = Reaction(
+            reactants=[a, b], products=[c, d], reversible=False,
+            kinetics=Arrhenius(A=(1.0e30, 'cm^3/(mol*s)'), n=0, Ea=(0, 'J/mol')),
+        )
+        result = rxn.check_collision_limit_violation(
+            t_min=300.0, t_max=2000.0, p_min=1.0e5, p_max=1.0e5)
+        # Two conditions, forward and reverse each violated at both -> four violations.
+        forward = {v[3]: v[2] for v in result if v[1] == 'forward'}
+        reverse = {v[3]: v[2] for v in result if v[1] == 'reverse'}
+        assert set(forward) == {'300.0 K, 1.0 bar', '2000.0 K, 1.0 bar'}, forward
+        assert set(reverse) == {'300.0 K, 1.0 bar', '2000.0 K, 1.0 bar'}, reverse
+        reverse_kin = rxn.generate_reverse_rate_coefficient()
+        for temp in (300.0, 2000.0):
+            key = '{0} K, 1.0 bar'.format(temp)
+            exp_f = rxn.get_rate_coefficient(temp, 1.0e5) / rxn.calculate_coll_limit(temp, False)
+            exp_r = reverse_kin.get_rate_coefficient(temp, 1.0e5) / rxn.calculate_coll_limit(temp, True)
+            assert abs(forward[key] / exp_f - 1.0) < 1e-9, (temp, forward[key], exp_f)
+            assert abs(reverse[key] / exp_r - 1.0) < 1e-9, (temp, reverse[key], exp_r)
