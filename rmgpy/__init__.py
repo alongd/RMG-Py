@@ -55,6 +55,13 @@ class Settings(dict):
     ``settings`` in this module, which is an instance of this class.
     """
 
+    #: Source marker written by :meth:`reset` for values left at their compiled-in
+    #: default. ``load`` overwrites the marker with ``"from {filename}"`` on a match and
+    #: :meth:`__setitem__` writes ``"-"`` for a programmatic assignment, so equality
+    #: against this constant is the one reliable test for "still the compiled-in default".
+    #: :meth:`require_database_directory` keys its refusal on that, not on provenance.
+    DEFAULT_SOURCE = "Default, relative to RMG-Py source code"
+
     def __init__(self, path=None):
         super(Settings, self).__init__()
         self.filename = None
@@ -150,11 +157,33 @@ class Settings(dict):
         * No ``rmgrc`` configuration file was found at all (``self.filename is None``).
           RMG will not guess a database location; the run stops naming the file it
           wanted and how to create it.
+        * An ``rmgrc`` *was* found but ``database.directory`` is still the compiled-in
+          default, i.e. ``sources["database.directory"] == DEFAULT_SOURCE``. The rule the
+          refusal enforces is exact: **no line in the file matched the loader's
+          ``database.directory`` substring scan**, so nothing overrode the default. That
+          covers an absent key, an INI ``[section]`` spelling, and a mis-spelling that does
+          not contain the substring (e.g. ``databse.directory``). It does **not** cover a
+          mis-spelling that still contains it -- ``database.directory_old = /x`` matches the
+          scan, sets the source to ``from <file>``, and passes this refusal; such a line is
+          the loose-substring-match weakness left out of scope, caught only by the existing
+          directory check if the mis-parsed value is not an existing directory. This is the
+          likeliest of the three refusals to be walked through: the default is usually a real
+          directory, so the check below would pass and the run would proceed against a
+          database the user never named.
+
+          Keying on ``DEFAULT_SOURCE`` rather than on "did the value come from a file" is
+          deliberate: a value set programmatically (``settings["database.directory"] = ...``,
+          source ``"-"``) is not the default and must not be refused.
         * ``database.directory`` names a path that is not an existing directory.
 
-        Raises :class:`SettingsError` in either case. This is intentionally *not*
+        Raises :class:`SettingsError` in each case. This is intentionally *not*
         wired into settings loading (importing :mod:`rmgpy` must always succeed); it
         is called from the run path, where a missing or wrong database is fatal.
+
+        Deliberate compatibility break: an ``rmgrc`` that sets only ``test_data.directory``
+        and relied on the compiled-in ``database.directory`` default now hard-fails here.
+        That reliance on a silently-chosen default is exactly what this guard exists to
+        stop, so the break is intended, not incidental.
         """
         package_dir = os.path.abspath(os.path.dirname(__file__))
         repo_template = os.path.abspath(os.path.join(package_dir, "..", "rmgrc.template"))
@@ -171,6 +200,33 @@ class Settings(dict):
                 "input directory. Searched (in order): ./rmgrc, ~/.rmg/rmgrc, {packaged}\n"
                 "Templates: {repo_template} or {packaged_template}".format(
                     packaged=os.path.join(package_dir, "rmgrc"),
+                    repo_template=repo_template,
+                    packaged_template=packaged_template,
+                )
+            )
+        if self.sources["database.directory"] == self.DEFAULT_SOURCE:
+            # A file was found (filename is not None) but no line in it matched the loader's
+            # ``database.directory`` substring scan, so the value is still the compiled-in
+            # default set by reset(). Equality against DEFAULT_SOURCE -- not
+            # ``startswith("from ")`` -- is the discriminator, so a value assigned
+            # programmatically (source "-") is correctly left alone rather than refused.
+            raise SettingsError(
+                "An RMG configuration file was found:\n"
+                "    {filename}\n"
+                "but no 'database.directory' line in it took effect, so the value is still\n"
+                "the compiled-in default:\n"
+                "    {path}\n"
+                "RMG refuses to fall back to that default: a silently-chosen default has\n"
+                "repeatedly been the wrong database and produced a meaningless-green run.\n"
+                "An absent key, an INI-style [section] header, or a mis-spelled key is the\n"
+                "usual cause.\n"
+                "\n"
+                "Fix: edit {filename} so it contains one line spelled exactly\n"
+                "    database.directory = /path/to/your/RMG-database/input\n"
+                "(a single 'key = value' line; no [section] headers). Template: {repo_template}\n"
+                "or {packaged_template}.".format(
+                    filename=self.filename,
+                    path=self["database.directory"],
                     repo_template=repo_template,
                     packaged_template=packaged_template,
                 )
@@ -199,9 +255,9 @@ class Settings(dict):
         self.filename = None
         rmgpy_module_dir = os.path.abspath(os.path.dirname(__file__))
         self["database.directory"] = os.path.realpath(os.path.join(rmgpy_module_dir, "..", "..", "RMG-database", "input"))
-        self.sources["database.directory"] = "Default, relative to RMG-Py source code"
+        self.sources["database.directory"] = self.DEFAULT_SOURCE
         self["test_data.directory"] = os.path.realpath(os.path.join(rmgpy_module_dir, "..", "test", "rmgpy", "test_data"))
-        self.sources["test_data.directory"] = "Default, relative to RMG-Py source code"
+        self.sources["test_data.directory"] = self.DEFAULT_SOURCE
 
 
 # The global settings object
