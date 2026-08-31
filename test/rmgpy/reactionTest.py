@@ -31,6 +31,7 @@
 This module contains unit tests of the rmgpy.reaction module.
 """
 
+import logging
 import math
 
 import cantera as ct
@@ -45,6 +46,7 @@ import rmgpy.constants as constants
 from rmgpy.kinetics import (
     Arrhenius,
     ArrheniusEP,
+    ElectronCollisionPlasma,
     MultiArrhenius,
     PDepArrhenius,
     MultiPDepArrhenius,
@@ -56,6 +58,7 @@ from rmgpy.kinetics import (
     StickingCoefficient,
     SurfaceChargeTransfer,
 )
+from rmgpy.transport import TransportData
 from rmgpy.molecule import Molecule
 from rmgpy.quantity import Quantity
 from rmgpy.reaction import Reaction
@@ -3558,3 +3561,130 @@ class TestIsBalancedChargeConservation:
         inverted = Reaction(reactants=[self.neutral], products=[self.anion], electrons=1)
         assert correct.is_balanced()
         assert not inverted.is_balanced()
+
+
+def _reverse_check_species(label, adjacency_or_smiles, smiles=False):
+    """A Species carrying the NASA thermo and transport that
+    ``check_collision_limit_violation`` needs to reach the reverse branch."""
+    if smiles:
+        molecule = Molecule(smiles=adjacency_or_smiles)
+    else:
+        molecule = Molecule().from_adjacency_list(adjacency_or_smiles)
+    spc = Species(label=label, molecule=[molecule])
+    coeffs = [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, -11.7246]
+    spc.thermo = NASA(
+        polynomials=[
+            NASAPolynomial(coeffs=coeffs, Tmin=(200, 'K'), Tmax=(1000, 'K')),
+            NASAPolynomial(coeffs=coeffs, Tmin=(1000, 'K'), Tmax=(6000, 'K')),
+        ],
+        Tmin=(200, 'K'), Tmax=(6000, 'K'),
+    )
+    spc.transport_data = TransportData(
+        shapeIndex=0 if len(molecule.atoms) == 1 else 1,
+        sigma=(3.0, 'angstrom'),
+        epsilon=(100.0, 'K'),
+        dipoleMoment=(0.0, 'De'),
+        polarizability=(0.0, 'angstrom^3'),
+        rotrelaxcollnum=0.0,
+    )
+    return spc
+
+
+
+
+class TestReverseCollisionLimitDegradation:
+    """
+    Fix (C) for I-195, dedicated-exception form. ``check_collision_limit_violation`` checks both
+    directions; the reverse direction needs a reverse rate coefficient.
+    ``generate_reverse_rate_coefficient`` raises ``UnsupportedReverseRateError`` for kinetics types
+    with no reverse implementation -- and, because its wrapper branches recurse, also when a WRAPPED
+    child is such a type. The check must catch exactly that, skip the reverse direction loudly, and
+    continue rather than abort ``check_model()``; a reverse-supported irreversible reaction must
+    still be reverse-checked as before.
+
+    Every reaction below is ``reversible=False`` with >= 2 products, so all enter the reverse branch
+    (guarded on product count, never on ``reversible``). Each has a single reactant, so the forward
+    branch is skipped and the reverse path is exercised in isolation.
+    """
+
+    def setup_class(self):
+        e = _reverse_check_species('e', '1 e u0 p0 c-1')
+        o_atom = _reverse_check_species('O', '1 O u2 p2 c0')
+        o_cation = _reverse_check_species('O+', '1 O u3 p1 c+1')
+        o2 = _reverse_check_species('O2', '[O][O]', smiles=True)
+
+        ecp = ElectronCollisionPlasma(
+            energies=([0.0, 1.0, 2.0, 5.0, 10.0], 'eV/molecule'),
+            sigma=([0.0, 1.0e-21, 2.5e-20, 1.1e-20, 3.0e-21], 'm^2'),
+        )
+        # Directly unsupported reverse: ElectronCollisionPlasma, irreversible, 2 products.
+        self.plasma_rxn = Reaction(
+            reactants=[o_atom], products=[o_cation, e], electrons=-1, reversible=False,
+            kinetics=ecp,
+        )
+        # WRAPPED unsupported reverse: MultiArrhenius whose child is unsupported. The outer type is
+        # in the supported set, so only recursion into the child exposes the gap -- this is the case
+        # the first (outer-only) form of the fix missed.
+        self.wrapped_rxn = Reaction(
+            reactants=[o_atom], products=[o_cation, e], electrons=-1, reversible=False,
+            kinetics=MultiArrhenius(arrhenius=[ecp]),
+        )
+        # Supported reverse: Arrhenius, irreversible, 2 products.
+        self.arrhenius_rxn = Reaction(
+            reactants=[o2], products=[o_atom, o_atom], reversible=False,
+            kinetics=Arrhenius(A=(1.2e+11, 'cm^3/(mol*s)'), n=0.3, Ea=(5000.0, 'J/mol')),
+        )
+
+    def test_direct_unsupported_reverse_check_skipped_loudly_not_raised(self, caplog):
+        """
+        An irreversible reaction whose kinetics type has no reverse implementation must NOT crash
+        the collision-limit check. GREEN after the fix: it returns a list and warns loudly.
+        """
+        from rmgpy.exceptions import UnsupportedReverseRateError
+        with caplog.at_level(logging.WARNING):
+            result = self.plasma_rxn.check_collision_limit_violation(
+                t_min=300.0, t_max=300.0, p_min=1.0e5, p_max=1.0e5)
+        assert isinstance(result, list)
+        messages = " ".join(rec.getMessage() for rec in caplog.records)
+        assert "ElectronCollisionPlasma" in messages
+        assert "skipping the reverse-direction collision-limit check" in messages
+        assert str(self.plasma_rxn) in messages
+        # Called directly, the method raises the dedicated subclass for this type.
+        with pytest.raises(UnsupportedReverseRateError):
+            self.plasma_rxn.generate_reverse_rate_coefficient()
+
+    def test_wrapped_unsupported_child_skipped_loudly_not_raised(self, caplog):
+        """
+        THE RECURSION CASE. A MultiArrhenius whose child is unsupported reports a supported OUTER
+        type, so a check that only inspects the outer object is fooled and the recursive call
+        re-raises mid-loop. RED before the dedicated-exception fix: this raises. GREEN after: the
+        child's UnsupportedReverseRateError propagates out of the wrapper and is caught, so the
+        check warns and continues.
+        """
+        from rmgpy.exceptions import UnsupportedReverseRateError
+        # The dedicated exception propagates through the wrapper's recursion.
+        with pytest.raises(UnsupportedReverseRateError):
+            self.wrapped_rxn.generate_reverse_rate_coefficient()
+        with caplog.at_level(logging.WARNING):
+            result = self.wrapped_rxn.check_collision_limit_violation(
+                t_min=300.0, t_max=300.0, p_min=1.0e5, p_max=1.0e5)
+        assert isinstance(result, list)
+        messages = " ".join(rec.getMessage() for rec in caplog.records)
+        assert "skipping the reverse-direction collision-limit check" in messages
+        assert str(self.wrapped_rxn) in messages
+        # The warning surfaces the offending CHILD class (via the propagated exception message),
+        # not only the outer MultiArrhenius wrapper.
+        assert "ElectronCollisionPlasma" in messages
+
+    def test_supported_reverse_check_still_runs(self, caplog):
+        """
+        A reverse-supported irreversible reaction must still be reverse-checked as before: no skip
+        warning, and its reverse rate coefficient is genuinely computed.
+        """
+        with caplog.at_level(logging.WARNING):
+            result = self.arrhenius_rxn.check_collision_limit_violation(
+                t_min=300.0, t_max=300.0, p_min=1.0e5, p_max=1.0e5)
+        assert isinstance(result, list)
+        messages = " ".join(rec.getMessage() for rec in caplog.records)
+        assert "skipping the reverse-direction collision-limit check" not in messages
+        assert self.arrhenius_rxn.generate_reverse_rate_coefficient() is not None
