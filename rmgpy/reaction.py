@@ -56,7 +56,8 @@ import rmgpy.constants as constants
 # `rmgpy.exceptions` at module scope and reaches `electron_placement` -- which does import
 # this module -- lazily, inside `get_placement_declaration`.
 from rmgpy.electron_balance import get_electron_placement_counts
-from rmgpy.exceptions import ReactionError, KineticsError, NonEquilibriumReverseRateError
+from rmgpy.exceptions import ReactionError, KineticsError, NonEquilibriumReverseRateError, \
+    UnsupportedReverseRateError
 from rmgpy.kinetics import KineticsData, ArrheniusBM, ArrheniusEP, ThirdBody, Lindemann, Troe, Chebyshev, \
     PDepArrhenius, MultiArrhenius, MultiPDepArrhenius, get_rate_coefficient_units_from_reaction_order, \
     SurfaceArrheniusBEP, StickingCoefficientBEP, ArrheniusChargeTransfer, ArrheniusChargeTransferBM, Marcus
@@ -1484,22 +1485,6 @@ class Reaction:
                        rxn=Reaction, klist=np.ndarray, i=cython.size_t,
                        Tindex=cython.size_t, Pindex=cython.size_t)
 
-        supported_types = (
-            KineticsData.__name__,
-            Arrhenius.__name__,
-            SurfaceArrhenius.__name__,
-            SurfaceChargeTransfer.__name__,
-            MultiArrhenius.__name__,
-            PDepArrhenius.__name__,
-            MultiPDepArrhenius.__name__,
-            Chebyshev.__name__,
-            ThirdBody.__name__,
-            Lindemann.__name__,
-            Troe.__name__,
-            StickingCoefficient.__name__,
-            ArrheniusChargeTransfer.__name__,
-        )
-
         # Get the units for the reverse rate coefficient
         try:
             surf_prods = [spcs for spcs in self.products if spcs.contains_surface_site()]
@@ -1611,8 +1596,16 @@ class Reaction:
             kr = Troe(krHigh, krLow, *parameters[2:])
             return kr
         else:
-            raise ReactionError("Unexpected kinetics type {0}; "
-                                "should be one of {1}".format(self.kinetics.__class__, supported_types))
+            # No reverse-rate implementation for this kinetics type. Raise a dedicated subclass
+            # so callers can catch exactly this case without swallowing a generic ReactionError
+            # raised elsewhere (e.g. by get_equilibrium_constant). The isinstance chain above is the
+            # single source of truth for what is supported; this branch is its complement, so the
+            # two cannot drift. Because the MultiArrhenius/PDepArrhenius/MultiPDepArrhenius branches
+            # recurse into their children, an unsupported child raises this here and it propagates
+            # unchanged to the outermost caller.
+            raise UnsupportedReverseRateError(
+                "Reverse rate coefficient generation is not implemented for kinetics type "
+                "{0}".format(self.kinetics.__class__))
 
     def calculate_tst_rate_coefficients(self, Tlist):
         return np.array([self.calculate_tst_rate_coefficient(T) for T in Tlist], float)
@@ -1999,6 +1992,16 @@ class Reaction:
         kr_list = []
         collision_limit_f = []
         collision_limit_r = []
+        # This check runs in both directions; the reverse direction needs a reverse rate
+        # coefficient. generate_reverse_rate_coefficient() raises UnsupportedReverseRateError for
+        # kinetics types with no reverse implementation -- and, because its MultiArrhenius /
+        # PDepArrhenius / MultiPDepArrhenius branches recurse into their children, also when a WRAPPED
+        # child is such a type. We catch exactly that dedicated exception, never the generic
+        # ReactionError that get_equilibrium_constant() may raise (e.g. an equilibrium constant of 0),
+        # so a real defect on a supported reaction is never masked. When the reverse rate is
+        # uncomputable we skip only the reverse direction and warn once; the forward direction is
+        # handled entirely separately below and is unaffected.
+        reverse_unsupported = False
         for condition in conditions:
             if len(self.reactants) >= 2:
                 try:
@@ -2007,13 +2010,28 @@ class Reaction:
                     continue
                 else:
                     kf_list.append(self.get_rate_coefficient(condition[0], condition[1]))
-            if len(self.products) >= 2:
+            if len(self.products) >= 2 and not reverse_unsupported:
                 try:
-                    collision_limit_r.append(self.calculate_coll_limit(temp=condition[0], reverse=True))
+                    coll_limit_r = self.calculate_coll_limit(temp=condition[0], reverse=True)
                 except ValueError:
                     continue
-                else:
-                    kr_list.append(self.generate_reverse_rate_coefficient().get_rate_coefficient(condition[0], condition[1]))
+                try:
+                    reverse_kinetics = self.generate_reverse_rate_coefficient()
+                except UnsupportedReverseRateError as exc:
+                    # exc names the specific unsupported type -- for a wrapper such as MultiArrhenius
+                    # that is the offending CHILD, which the outer type alone would not reveal.
+                    reverse_unsupported = True
+                    logging.warning(
+                        "Reaction {0!s}: skipping the reverse-direction collision-limit check. Its "
+                        "kinetics type {1} (or a component of it) has no reverse-rate implementation "
+                        "in generate_reverse_rate_coefficient() ({2}), so no reverse rate coefficient "
+                        "could be formed to compare against the collision limit. The reverse direction "
+                        "is left unchecked for this reaction.".format(
+                            self, type(self.kinetics).__name__, exc)
+                    )
+                    continue
+                collision_limit_r.append(coll_limit_r)
+                kr_list.append(reverse_kinetics.get_rate_coefficient(condition[0], condition[1]))
         if len(self.reactants) >= 2:
             for i, k in enumerate(kf_list):
                 if k > collision_limit_f[i]:

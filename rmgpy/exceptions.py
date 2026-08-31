@@ -260,6 +260,19 @@ class ReactionError(Exception):
     pass
 
 
+class UnsupportedReverseRateError(ReactionError):
+    """
+    Raised by :meth:`Reaction.generate_reverse_rate_coefficient` when the reaction's
+    kinetics type (or, for a wrapper such as ``MultiArrhenius``/``PDepArrhenius``, one of
+    its children) has no reverse-rate implementation. A dedicated subclass so callers can
+    catch *only* the "no reverse available" case without also swallowing a generic
+    :class:`ReactionError` raised for other reasons (e.g. ``get_equilibrium_constant``
+    returning 0). Because the wrapper branches recurse, a child raising this propagates to
+    the outermost caller unchanged.
+    """
+    pass
+
+
 class ReactionPairsError(Exception):
     """
     An exception to be raised when an error occurs while working with reaction
