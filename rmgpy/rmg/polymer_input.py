@@ -1069,6 +1069,25 @@ def compile_polymer_phase(blueprint: Union[PolymerPhaseBlueprint, PolymerPhase],
                         "Reconcile initial_mass/Mn/Mw with initialMoles in the input deck.",
                         spc.label, mu0_from_mass, mu0, mu0)
 
+            # Reconcile initial_mass_g onto the SAME branch as .moments above.
+            # write_polymer_pools_sidecar serializes Polymer.initial_mass_g
+            # (rmgpy/polymer.py) right beside Polymer.moments; leaving it at the
+            # deck-declared value reports a t=0 resin loading the solver never
+            # integrated (initial_mass/Mn would imply mu0_from_mass, not the
+            # integrated mu0). mu0*Mn is the resin mass consistent with the
+            # integrated chain count, so initial_mass_g == moments[0]*mn_g_mol
+            # in the sidecar. This is a report-consistency fix ONLY: it touches
+            # no integrated quantity (mu0/mu1/mu2/y0 are already fixed above).
+            # STRICTLY AFTER the disagreement warning: the warning derives
+            # mu0_from_mass from this very field, so reconciling first would
+            # make the two branches equal by construction and the detector could
+            # never fire. Only pools that actually declare a mass are touched;
+            # a pool with no initialMoles entry never enters this loop, and
+            # spawned born-at-zero daughters (initial_mass=0.0, moments=[0,0,0])
+            # are created later by the solver and never pass through here.
+            if initial_mass_g is not None and spc.Mn:
+                spc.initial_mass_g = mu0 * spc.Mn
+
             # Explicit-DP handshake (stage A): the deck flag explicit_dp=True
             # (input.py polymer() step 4c) auto-generated exactly ONE capped
             # oligomer at DP == cutoff (xs) and registered it as a real core
