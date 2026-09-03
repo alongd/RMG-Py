@@ -2046,7 +2046,27 @@ class Reaction:
                     )
                     continue
                 collision_limit_r.append(coll_limit_r)
-                kr_list.append(reverse_kinetics.get_rate_coefficient(condition[0], condition[1]))
+                # reverse_kinetics.get_rate_coefficient's second positional argument is a pressure in
+                # Pa for ordinary kinetics, but an electrode POTENTIAL in V for the charge-transfer
+                # types generate_reverse_rate_coefficient can return (ArrheniusChargeTransfer,
+                # SurfaceChargeTransfer). Passing the pressure (order 1e5) as a potential lands 1e5 V
+                # inside the Butler-Volmer exponential; it does not raise but drives the reverse rate
+                # to underflow, silently turning this check into a no-op for charge transfer.
+                #
+                # The Butler-Volmer term alpha*electrons*F*(V - V0) vanishes at the REFERENCE
+                # potential V0, not at 0 V, and generate_reverse_rate_coefficient copies a
+                # possibly-nonzero V0 onto the reverse object (reaction.py:1441, :1465 build it with
+                # V0=(V0,'V')). So evaluate charge transfer at its own V0 -- exactly as the forward
+                # branch does via self.get_rate_coefficient. V0 is present on precisely the
+                # charge-transfer types and absent (or None) on Arrhenius, SurfaceArrhenius,
+                # StickingCoefficient and Marcus, so its presence both selects the branch and supplies
+                # the value; a future potential-taking type carries V0 by construction, with no
+                # allowlist to keep in sync.
+                reverse_v0 = getattr(reverse_kinetics, 'V0', None)
+                if reverse_v0 is not None:
+                    kr_list.append(reverse_kinetics.get_rate_coefficient(condition[0], reverse_v0.value_si))
+                else:
+                    kr_list.append(reverse_kinetics.get_rate_coefficient(condition[0], condition[1]))
                 conditions_r.append(condition)
         if len(self.reactants) >= 2:
             for i, k in enumerate(kf_list):

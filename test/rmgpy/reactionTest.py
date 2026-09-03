@@ -45,6 +45,7 @@ import pytest
 import rmgpy.constants as constants
 from rmgpy.kinetics import (
     Arrhenius,
+    ArrheniusChargeTransfer,
     ArrheniusEP,
     ElectronCollisionPlasma,
     MultiArrhenius,
@@ -3820,3 +3821,124 @@ class TestCollisionLimitAttribution:
             exp_r = reverse_kin.get_rate_coefficient(temp, 1.0e5) / rxn.calculate_coll_limit(temp, True)
             assert abs(forward[key] / exp_f - 1.0) < 1e-9, (temp, forward[key], exp_f)
             assert abs(reverse[key] / exp_r - 1.0) < 1e-9, (temp, reverse[key], exp_r)
+
+
+# The reference potential the reverse charge-transfer kinetics carries. Deliberately NONZERO: the
+# Butler-Volmer shift alpha*electrons*F*(V - V0) vanishes at V0, not at 0 V, so only a nonzero V0
+# distinguishes "evaluated at the reference potential V0" (correct) from "evaluated at 0 V" (the wrong
+# round-10 fix) from "evaluated at the pressure" (the original bug). generate_reverse_rate_coefficient
+# copies exactly this kind of nonzero V0 onto the reverse object (reaction.py:1441, :1465).
+_REVERSE_V0 = 0.4
+_REVERSE_PRESSURE = 1.0e5
+
+
+class _RecordingReverseACT(ArrheniusChargeTransfer):
+    """An ``ArrheniusChargeTransfer`` that records the second positional argument each time
+    ``get_rate_coefficient`` is called. ``get_rate_coefficient`` is ``cpdef``, so a Python override is
+    dispatched through the extension type's vtable and is seen even by the compiled
+    ``check_collision_limit_violation``. Because it subclasses ``ArrheniusChargeTransfer`` it carries a
+    ``V0``, so the fix's ``getattr(reverse_kinetics, 'V0', None)`` probe routes it down the potential
+    branch and passes its ``V0.value_si``."""
+    recorded = []
+
+    def get_rate_coefficient(self, T, V=0.0):
+        type(self).recorded.append(V)
+        return ArrheniusChargeTransfer.get_rate_coefficient(self, T, V)
+
+
+class _RecordingReverseSCT(SurfaceChargeTransfer):
+    """The same recorder for ``SurfaceChargeTransfer`` -- the other charge-transfer type
+    ``generate_reverse_rate_coefficient`` can return (reaction.py:1445)."""
+    recorded = []
+
+    def get_rate_coefficient(self, T, V=0.0):
+        type(self).recorded.append(V)
+        return SurfaceChargeTransfer.get_rate_coefficient(self, T, V)
+
+
+class _RecordingReverseArrhenius(Arrhenius):
+    """Recorder for an ordinary pressure-taking kinetics type. It carries no ``V0``, so the fix must
+    keep passing it the pressure ``condition[1]``."""
+    recorded = []
+
+    def get_rate_coefficient(self, T, P=0.0):
+        type(self).recorded.append(P)
+        return Arrhenius.get_rate_coefficient(self, T, P)
+
+
+class _ReverseSpyReaction(Reaction):
+    """A Reaction whose ``generate_reverse_rate_coefficient`` returns a pre-built spy kinetics object,
+    so the reverse-branch call site of ``check_collision_limit_violation`` exercises the spy.
+    ``generate_reverse_rate_coefficient`` is ``cpdef``; overriding it in a Python subclass reaches the
+    compiled caller through the vtable (same mechanism as ``_SkipCollLimitAtTemp`` above)."""
+    spy_kinetics = None
+
+    def generate_reverse_rate_coefficient(self, network_kinetics=False, Tmin=None, Tmax=None,
+                                          surface_site_density=0):
+        return self.spy_kinetics
+
+
+class TestReverseCollisionLimitPotential:
+    """i197. The reverse branch of ``check_collision_limit_violation`` called
+    ``reverse_kinetics.get_rate_coefficient(condition[0], condition[1])``. ``condition[1]`` is a
+    pressure in Pa. For an ``ArrheniusChargeTransfer`` / ``SurfaceChargeTransfer`` reverse kinetics
+    (which ``generate_reverse_rate_coefficient`` can return) that second argument is an electrode
+    POTENTIAL in V, so a pressure of order 1e5 Pa was fed as 1e5 V into the Butler-Volmer exponential
+    without crashing. The Butler-Volmer shift vanishes at the reference potential ``V0`` (nonzero on
+    generated reverse objects), so the fix evaluates charge transfer at its own ``V0`` while leaving
+    ordinary types receiving the pressure.
+
+    A single reactant skips the forward branch; two products with transport data let the reverse
+    collision limit compute so the reverse branch is entered."""
+
+    def _rxn_with_spy(self, spy):
+        reactant = _reverse_check_species('R', '1 O u2 p2 c0')
+        p1 = _reverse_check_species('P1', '1 O u2 p2 c0')
+        p2 = _reverse_check_species('P2', '1 O u2 p2 c0')
+        rxn = _ReverseSpyReaction(
+            reactants=[reactant], products=[p1, p2], electrons=-1, reversible=False,
+            kinetics=ArrheniusChargeTransfer(
+                A=(1.0e10, 'm^3/(mol*s)'), n=0.0, Ea=(20.0, 'kJ/mol'),
+                V0=(_REVERSE_V0, 'V'), alpha=0.5, electrons=-1),
+        )
+        rxn.spy_kinetics = spy
+        return rxn
+
+    def test_arrhenius_charge_transfer_reverse_evaluated_at_reference_potential(self):
+        """RED-BEFORE / GREEN-AFTER. The recorded argument must be the object's own nonzero reference
+        potential V0=0.4 V -- never the pressure 1.0e5 (original bug), never 0.0 (the wrong round-10
+        fix, which is wrong precisely because the Butler-Volmer shift vanishes at V0, not at 0)."""
+        _RecordingReverseACT.recorded = []
+        spy = _RecordingReverseACT(
+            A=(1.0e10, 'm^3/(mol*s)'), n=0.0, Ea=(20.0, 'kJ/mol'),
+            V0=(_REVERSE_V0, 'V'), alpha=0.5, electrons=-1)
+        rxn = self._rxn_with_spy(spy)
+        rxn.check_collision_limit_violation(
+            t_min=1000.0, t_max=1000.0, p_min=_REVERSE_PRESSURE, p_max=_REVERSE_PRESSURE)
+        assert _RecordingReverseACT.recorded == [_REVERSE_V0], _RecordingReverseACT.recorded
+        assert _REVERSE_PRESSURE not in _RecordingReverseACT.recorded, _RecordingReverseACT.recorded
+        assert 0.0 not in _RecordingReverseACT.recorded, _RecordingReverseACT.recorded
+
+    def test_surface_charge_transfer_reverse_evaluated_at_reference_potential(self):
+        """RED-BEFORE / GREEN-AFTER, SurfaceChargeTransfer coverage. Same pin as the Arrhenius case."""
+        _RecordingReverseSCT.recorded = []
+        spy = _RecordingReverseSCT(
+            A=(1.0e10, 'm^2/(mol*s)'), n=0.0, Ea=(20.0, 'kJ/mol'),
+            V0=(_REVERSE_V0, 'V'), alpha=0.5, electrons=-1)
+        rxn = self._rxn_with_spy(spy)
+        rxn.check_collision_limit_violation(
+            t_min=1000.0, t_max=1000.0, p_min=_REVERSE_PRESSURE, p_max=_REVERSE_PRESSURE)
+        assert _RecordingReverseSCT.recorded == [_REVERSE_V0], _RecordingReverseSCT.recorded
+        assert _REVERSE_PRESSURE not in _RecordingReverseSCT.recorded, _RecordingReverseSCT.recorded
+        assert 0.0 not in _RecordingReverseSCT.recorded, _RecordingReverseSCT.recorded
+
+    def test_non_charge_transfer_reverse_still_receives_pressure(self):
+        """REGRESSION GUARD (not red before or after). An ordinary pressure-taking reverse kinetics
+        carries no V0, so it must keep receiving the pressure condition[1]=1.0e5, never a potential."""
+        _RecordingReverseArrhenius.recorded = []
+        spy = _RecordingReverseArrhenius(
+            A=(1.2e11, 'cm^3/(mol*s)'), n=0.3, Ea=(5000.0, 'J/mol'))
+        rxn = self._rxn_with_spy(spy)
+        rxn.check_collision_limit_violation(
+            t_min=1000.0, t_max=1000.0, p_min=_REVERSE_PRESSURE, p_max=_REVERSE_PRESSURE)
+        assert _RecordingReverseArrhenius.recorded == [_REVERSE_PRESSURE], _RecordingReverseArrhenius.recorded
