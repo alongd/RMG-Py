@@ -394,17 +394,20 @@ class TestDeclarationSchema:
         I-119, one kinetics library at ``(1, 0)`` -- one electron in, none out --
         plus, since I-116, the ``PlasmaElectronImpactIonization`` library at
         ``(1, 2)``, plus, since I-154, three families at ``(0, 1)`` -- none in,
-        one out. Widening the schema in I-113 must not have added chemistry to
-        the table by itself, and it did not: every later entry arrived by a
-        decision, and any EIGHTH one still fails here.
+        one out, plus, since I-206, two FAMILIES that mirror an existing library
+        VALUE for the same chemistry: ``Plasma_Electron_Impact_Ionization``
+        ``(1, 2)`` and ``Plasma_Radiative_Recombination`` ``(1, 0)``. Widening
+        the schema in I-113 must not have added chemistry to the table by itself,
+        and it did not: every later entry arrived by a decision, and any TENTH
+        one still fails here.
 
-        Note what the widened schema bought and what it did not. Only
-        ``PlasmaElectronImpactIonization`` needs two differing NON-ZERO numbers;
-        the recombination entry I-119 added is attachment-shaped and would have
-        fitted the old ``(side, count)`` spelling, and so would the three I-154
-        added, as ``('products', 1)``. The schema is wider than six of its
-        seven users need, which is correct -- the one that needs it could not be
-        expressed at all before."""
+        Note what the widened schema bought and what it did not. Only the two
+        ``(1, 2)`` entries need two differing NON-ZERO numbers; the recombination
+        entry I-119 added is attachment-shaped and would have fitted the old
+        ``(side, count)`` spelling, and so would the three I-154 added, as
+        ``('products', 1)``, and the ``(1, 0)`` family I-206 added. The schema is
+        wider than most of its users need, which is correct -- the ones that need
+        it could not be expressed at all before."""
         assert FAMILY_ELECTRON_PLACEMENT == {
             'Plasma_Electron_Attachment': (1, 0),
             'Cation_R_Recombination': (1, 0),
@@ -413,26 +416,36 @@ class TestDeclarationSchema:
             'Plasma_Associative_Ionization_Alkali_Alkali': (0, 1),
             'Plasma_Associative_Ionization_Alkali_Alkaline': (0, 1),
             'Plasma_Associative_Ionization_Alkaline_Alkaline': (0, 1),
+            'Plasma_Electron_Impact_Ionization': (1, 2),
+            'Plasma_Radiative_Recombination': (1, 0),
         }
 
-    def test_no_electron_impact_ionisation_family_is_shipped(self):
+    def test_electron_impact_ionisation_family_is_now_shipped(self):
         """I-113 delivered the code path and left the owner open. I-116 answered
         it with a kinetics LIBRARY, ``PlasmaElectronImpactIonization``, and I-154
-        confirmed that ruling by declining to carry the earlier development
-        line's ``Plasma_Electron_Impact_Ionization`` FAMILY, which would have
-        been a second, disagreeing owner for the same chemistry.
+        recorded declining to carry the earlier development line's
+        ``Plasma_Electron_Impact_Ionization`` FAMILY -- on the grounds it would
+        be a second, disagreeing owner for the same chemistry.
 
-        Read this test's name precisely, because I-154 DID ship ionisation
-        families -- three of them, at ``(0, 1)``. Those are ASSOCIATIVE
-        ionisation, where no electron is incident.
-        What is still unshipped as a family is ELECTRON-IMPACT ionisation,
-        ``A + e- -> A+ + 2 e-``, which is this file's subject -- so its synthetic
-        family label is still undeclared and every test here still injects its
-        own declaration. The test was renamed for that distinction; the old name
-        asserted something that has become false."""
+        I-206 REVERSES that: the database branch now carries the family (as a
+        data-less Arrhenius estimate, distinct from the library's Voronov fit),
+        so ``Plasma_Electron_Impact_Ionization`` is declared here at ``(1, 2)``,
+        mirroring the library's pair. The two are not a placement disagreement --
+        they declare the SAME pair -- but they are two owners for the same
+        chemistry, and whether both should generate the reaction is a
+        model-generation question the database branch that carries the family
+        owns, not a placement one (see ``docs/i206-electron-placement.md``).
+
+        What this file's tests inject is a SYNTHETIC label,
+        ``Li_Electron_Impact_Ionization``, deliberately distinct from any shipped
+        owner so the injected declaration cannot collide with a real one; that
+        label is still undeclared, which is what the tests here rely on."""
+        # I-206: the family is now a declared owner, mirroring the library.
+        assert FAMILY_ELECTRON_PLACEMENT.get('Plasma_Electron_Impact_Ionization') == (1, 2)
+        assert FAMILY_ELECTRON_PLACEMENT.get('PlasmaElectronImpactIonization') == (1, 2)
+        # This file's synthetic subject label remains undeclared: every test
+        # here injects its own declaration for it.
         assert IONISATION_FAMILY not in FAMILY_ELECTRON_PLACEMENT
-        assert not any(key.startswith('Plasma_Electron_Impact_Ionization')
-                       for key in FAMILY_ELECTRON_PLACEMENT)
 
     @pytest.mark.parametrize('bad', [
         ('reactants', 1),   # the old two-field shape, now meaningless
