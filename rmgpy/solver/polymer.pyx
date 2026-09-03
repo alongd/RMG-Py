@@ -150,6 +150,24 @@ ATTRIBUTION_TRUST_K = 100.0
 # max(..., SMALL_EPS). Generic solver infrastructure OUTSIDE the 2.8 kernel
 # contract -- the sidecar recipe strings are deliberately untouched.
 EXHAUSTION_FLOOR_K = 100.0
+# i061 MOMENT ERROR-WEIGHT FLOOR (DASPK step-collapse fix). The moment-
+# coordinate state slots (a pool's mu0/mu1/mu2 positions and any is_moment_dummy
+# core species) are BOOKKEEPING coordinates carrying dmu/dt, not molar species
+# amounts. The chemistry already declares any moment at |mu_k| <= EXHAUSTION_
+# FLOOR_K*atol to be AT THE FLOOR -- indistinguishable from zero for the r81
+# negative-moment tripwire, the exhaustion census, the softclamp and the
+# attribution trust band. Yet with the deck atol (e.g. 1e-14) DASPK's error
+# weight ewt = rtol*|y| + atol still demands the integrator resolve those slots
+# to atol, i.e. TWO DECADES BELOW the model's own accepted-state floor. At the
+# all-monomer moment boundary ~43/70 slots sit there at once and DDASPK
+# collapses its step to ~1e-9 s chasing noise the chemistry discards (i061:
+# ~40-55 days to reach terminationTime). We therefore floor the DASPK atol of
+# the MOMENT slots ONLY to the model's own accepted-state floor, so error
+# control stops one decade before the chemistry does. Anchored to EXHAUSTION_
+# FLOOR_K's rationale but a SEPARATE constant per the idiom above (error control
+# and chemistry exhaustion are two jobs that may diverge). NEVER applied to a
+# physical species -- see the include-mask scoping in initialize_model.
+MOMENT_EWT_FLOOR_K = 100.0
 # Near-exhaustion bundle limiter band (P1-A, round-27 re-adjudication of the
 # P1-1 hard-min): the cross-pool bundle cap S_cap is TAIL-ONLY. The band is
 # measured by the debited pool's ACCEPTED-STATE FLOOR DISTANCE
@@ -1668,6 +1686,11 @@ class HybridPolymerSystem(ReactionSystem):
         # (pydas' own atol/rtol arrays are cdef-private).
         self._jac_wt_atol = None
         self._jac_wt_rtol = None
+        # i061: pre-floor copy of atol_array (see MOMENT_EWT_FLOOR_K). The
+        # moment error-weight floor raises atol_array on the mu-slots for DASPK
+        # error control; chemistry noise-floor consumers read this preserved
+        # array so their behaviour is bitwise unchanged. Set in initialize_model.
+        self._chem_atol_array = None
 
         self._scratch_C_gas = None
         self._scratch_C_poly = None
@@ -4096,6 +4119,37 @@ class HybridPolymerSystem(ReactionSystem):
         # proven; detection does NOT re-run per step). Runs on every
         # rebuild so the layout validation tracks the live model.
         self._setup_scoped_jacobian()
+
+        # i061 moment error-weight floor (see MOMENT_EWT_FLOOR_K). Applied HERE,
+        # AFTER _pool_mu_floors (4060), _softclamp_lam (4082) and the scoped
+        # Jacobian's _jac_wt_atol have all been computed from the ORIGINAL
+        # atol_array, and immediately BEFORE initialize_solver hands the array to
+        # DASPK -- so the only consumer that sees the floored value is DASPK's
+        # own error weight. Chemistry noise-floor consumers are left bitwise
+        # unchanged: _chem_atol_array preserves the pre-floor array for the one
+        # LIVE reader (attribution trust, get_polymer_pool_stats). Scope is the
+        # complement of _char_rate_include_mask -- exactly the pool mu_indices
+        # and is_moment_dummy core positions (bookkeeping coordinates), NEVER a
+        # physical species. Inert when there are no moment slots.
+        self._chem_atol_array = np.array(self.atol_array, dtype=float)
+        if self._char_rate_include_mask is not None:
+            _floor = MOMENT_EWT_FLOOR_K * atol
+            _moment_slots = [i for i in range(self.num_core_species)
+                             if not self._char_rate_include_mask[i]]
+            _floored = []
+            for i in _moment_slots:
+                if self.atol_array[i] < _floor:
+                    self.atol_array[i] = _floor
+                    _floored.append(i)
+            if _floored:
+                _labels = ", ".join(
+                    "%d:%s" % (i, getattr(core_species[i], "label", "?"))
+                    for i in _floored)
+                logging.info(
+                    "i061 moment error-weight floor: raised DASPK atol to "
+                    "%.3e on %d moment-coordinate slot(s) [%s]; physical "
+                    "species untouched.", _floor, len(_floored), _labels)
+
         ReactionSystem.initialize_solver(self)
 
         self.diagnose_polymer_mapping(core_species)
@@ -4850,7 +4904,15 @@ class HybridPolymerSystem(ReactionSystem):
         # SMALL_EPS (pre-floor behavior, honest).
         n_pools = len(self.polymer_pools)
         e_n_by_pool = [0.0] * n_pools
-        atol_arr = getattr(self, "atol_array", None)
+        # i061: the attribution trust band is a CHEMISTRY noise floor and must
+        # stay anchored to the deck atol, so read the PRE-floor copy. The moment
+        # error-weight floor (initialize_model) raised atol_array on the mu-slots
+        # for DASPK error control only. Falls back to atol_array when no floor
+        # was applied (e.g. a snapshot before initialize_model, atol_mu0->0.0,
+        # the pre-existing honest degeneracy).
+        atol_arr = getattr(self, "_chem_atol_array", None)
+        if atol_arr is None:
+            atol_arr = getattr(self, "atol_array", None)
         for p in range(n_pools):
             i0 = self.pool_mu0_indices[p]
             i1 = self.pool_mu1_indices[p]
