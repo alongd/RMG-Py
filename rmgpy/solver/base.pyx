@@ -36,6 +36,8 @@ cdef extern from "math.h":
 import csv
 import itertools
 import logging
+import os
+import time
 
 import cython
 import numpy as np
@@ -812,9 +814,54 @@ cdef class ReactionSystem(DASx):
 
         first_time = True
 
-        invalid_objects_print_boolean = True  
+        invalid_objects_print_boolean = True
+
+        # i061 DIAGNOSTIC-ONLY stall trace (env-gated; no behavioural effect).
+        # When RMG_STALL_TRACE names a file, append (wall, iter, self.t,
+        # step_time) periodically so the simulated-time-advance-per-wall-clock
+        # can be measured externally. Off unless the env var is set.
+        _stall_trace_path = os.environ.get('RMG_STALL_TRACE')
+        _stall_trace_fh = open(_stall_trace_path, 'a', buffering=1) if _stall_trace_path else None
+        _stall_iter = 0
+        _stall_wall0 = time.time()
+        _stall_every = int(os.environ.get('RMG_STALL_TRACE_EVERY', '2000'))
+        _stall_prev_t = self.t
+        _stall_dumped = False
+
         while not terminated:
             # Integrate forward in time by one time step
+            if _stall_trace_fh is not None:
+                _stall_iter += 1
+                _dt_adv = self.t - _stall_prev_t
+                if _stall_iter == 1 or _stall_iter % _stall_every == 0:
+                    _stall_trace_fh.write(
+                        'wall=%.4f iter=%d t=%.12e step_time=%.6e last_dadv=%.3e\n'
+                        % (time.time() - _stall_wall0, _stall_iter, self.t, step_time, _dt_adv))
+                # one-shot dump when the step advances but negligibly: name the
+                # state components with the tightest error-weight headroom, which
+                # is what throttles the DASPK step size.
+                if (not _stall_dumped) and _stall_iter > 50 and self.t > 50.0 \
+                        and 0.0 <= _dt_adv < 1.0e-6:
+                    _stall_dumped = True
+                    try:
+                        _y = np.abs(np.asarray(self.y, dtype=float))
+                        _at = np.asarray(self.atol_array, dtype=float)
+                        _rt = np.asarray(self.rtol_array, dtype=float)
+                        _ewt = _rt * _y + _at
+                        _npin = int(np.sum(_y <= 10.0 * _at))
+                        _order = np.argsort(_y)
+                        _stall_trace_fh.write(
+                            'STAGNATION t=%.12e step_time=%.6e dt_adv=%.3e neq=%d ncore=%d n_at_floor=%d\n'
+                            % (self.t, step_time, _dt_adv, self.neq, self.num_core_species, _npin))
+                        _idxs = list(_order[:15]) + list(_order[-3:])
+                        for _k in _idxs:
+                            _lbl = core_species[_k].label if _k < len(core_species) else '(state#%d beyond core: moment/edge)' % _k
+                            _stall_trace_fh.write(
+                                '  idx=%d y=%.6e ewt=%.6e |y|/ewt=%.3e  %s\n'
+                                % (_k, _y[_k], _ewt[_k], _y[_k] / _ewt[_k] if _ewt[_k] > 0 else -1.0, _lbl))
+                    except Exception as _e:
+                        _stall_trace_fh.write('STAGNATION dump failed: %r\n' % (_e,))
+                _stall_prev_t = self.t
 
             if not first_time:
                 try:
