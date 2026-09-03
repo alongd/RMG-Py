@@ -248,18 +248,48 @@ else verdict 1 "primary checkout has UNEXPECTED changes"; printf '%s\n' "$UNEXPE
 
 printf '  worktree %s:\n' "$WT"
 git -C "$WT" status --porcelain | sed 's/^/    /'
-EXPECTED=' M rmgpy/solver/polymer.pyx
- M test/rmgpy/solver/solverPolymerTest.py
-?? test/rmgpy/solver/i055_sidecar_audit.py
-?? test/rmgpy/solver/i055_sidecar_emit.py
-?? test/rmgpy/solver/i055_threshold_probe.py
-?? test/rmgpy/solver/i055_verify.sh
-?? test/rmgpy/solver/i055_verify_core.py
-?? test/rmgpy/solver/unzip_realizability_probe.py'
-if [ "$(git -C "$WT" status --porcelain)" = "$EXPECTED" ]; then
-  verdict 0 "worktree contains exactly the intended files"
+# Allow-list semantics, NOT a frozen snapshot of the dirty tree. The previous
+# version hardcoded the PRE-COMMIT status string, so committing the work -- the
+# correct end state -- made this check trip. A committed verifier that exits 1
+# on the committed tree teaches the next reader that red is normal here, which
+# is how a real regression gets waved through later.
+#
+# The property is: the worktree contains NO change outside the I-055 file set.
+# An EMPTY status therefore passes (everything is committed), and any path not
+# on this list still fails, whether modified, staged, deleted or untracked.
+I055_PATHS=(
+  "rmgpy/solver/polymer.pyx"
+  "test/rmgpy/solver/solverPolymerTest.py"
+  "test/rmgpy/solver/i055_verify.sh"
+  "test/rmgpy/solver/i055_verify_core.py"
+  "test/rmgpy/solver/i055_threshold_probe.py"
+  "test/rmgpy/solver/i055_sidecar_audit.py"
+  "test/rmgpy/solver/i055_sidecar_emit.py"
+  "test/rmgpy/solver/unzip_realizability_probe.py"
+)
+WT_STATUS=$(git -C "$WT" status --porcelain)
+UNEXPECTED_WT=""
+while IFS= read -r line; do
+  [ -z "$line" ] && continue
+  # strip the 2-char porcelain status field; take the destination of a rename
+  path=${line:3}
+  case "$path" in *" -> "*) path=${path##* -> } ;; esac
+  path=${path%\"}; path=${path#\"}
+  hit=0
+  for keep in "${I055_PATHS[@]}"; do
+    [ "$path" = "$keep" ] && { hit=1; break; }
+  done
+  [ "$hit" -eq 0 ] && UNEXPECTED_WT="$UNEXPECTED_WT$line"$'\n'
+done <<< "$WT_STATUS"
+if [ -z "$UNEXPECTED_WT" ]; then
+  if [ -z "$WT_STATUS" ]; then
+    verdict 0 "worktree is clean: all I-055 work is committed"
+  else
+    verdict 0 "worktree contains only I-055 files (uncommitted)"
+  fi
 else
-  verdict 1 "worktree contains unintended changes (see list above)"
+  printf '  unexpected entries:\n%s' "$UNEXPECTED_WT" | sed 's/^/    /'
+  verdict 1 "worktree contains changes OUTSIDE the I-055 file set"
 fi
 # poly_104 is the evidence run; it finished before this work began and must
 # not have been written. poly_103 is deliberately still running, so its tree
