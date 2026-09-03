@@ -83,6 +83,62 @@ def get_sorting_key(spc):
     return tuple(ele_count[n] for n in numbers)
 
 
+def _reverse_rate_at_reference_potential(kinetics, T, P):
+    """Evaluate a reverse-direction kinetics object for the collision-limit check, evaluating any
+    charge-transfer component at its own reference potential V0 rather than treating the pressure as
+    a potential. Recurses through MultiArrhenius / PDepArrhenius / MultiPDepArrhenius wrappers, whose
+    own get_rate_coefficient cannot thread a per-child potential -- and, for MultiArrhenius, cannot
+    even bind a charge-transfer child to its `cdef Arrhenius` loop variable. Asks each object for the
+    property it holds (V0 -> a charge-transfer leaf; pressures -> a pressure-interpolating wrapper;
+    arrhenius -> a summing wrapper) rather than enumerating kinetics types; a future potential-taking
+    or wrapper type is handled by construction. Every non-charge-transfer object reaches the final
+    branch and is evaluated exactly as before, and for a non-charge-transfer wrapper the recursion
+    reproduces the wrapper's own value numerically.
+
+    Note: PDepArrhenius.get_adjacent_expressions is declared `cdef` (arrhenius.pxd:177), not `cpdef`,
+    so it is not reachable via attribute access from this module (reaction.py does not cimport
+    arrhenius.pxd for PDepArrhenius; confirmed empirically -- calling it here raises AttributeError).
+    The bracket search below is the same ilow/ihigh scan that method performs
+    (arrhenius.pyx:2628-2646), reimplemented against the `pressures`/`arrhenius` properties that ARE
+    Python-accessible, so no `.pxd`/`rmgpy/kinetics/` change is needed."""
+    v0 = getattr(kinetics, 'V0', None)
+    if v0 is not None:
+        # A charge-transfer leaf: its second positional argument is an electrode potential in V.
+        # Evaluate at its own reference potential V0, exactly as the top-level reverse branch does.
+        return kinetics.get_rate_coefficient(T, v0.value_si)
+    pressures = getattr(kinetics, 'pressures', None)
+    if pressures is not None:
+        # A pressure-interpolating wrapper (PDepArrhenius). Bracket P against its own pressure list
+        # (the same scan get_adjacent_expressions performs) and evaluate each bracketing child at its
+        # own reference potential, then log-interpolate exactly as its own get_rate_coefficient does;
+        # the only added logic is threading the per-child potential.
+        plist = pressures.value_si
+        children = kinetics.arrhenius
+        ilow, ihigh = 0, -1
+        for i in range(len(plist)):
+            if plist[i] <= P:
+                ilow = i
+            if plist[i] >= P and ihigh == -1:
+                ihigh = i
+        plow, phigh = plist[ilow], plist[ihigh]
+        alow, ahigh = children[ilow], children[ihigh]
+        klow = _reverse_rate_at_reference_potential(alow, T, P)
+        if plow == phigh:
+            return klow
+        khigh = _reverse_rate_at_reference_potential(ahigh, T, P)
+        if klow == khigh == 0.0:
+            return 0.0
+        return klow * 10 ** (math.log10(P / plow) / math.log10(phigh / plow) * math.log10(khigh / klow))
+    children = getattr(kinetics, 'arrhenius', None)
+    if children is not None:
+        # A summing wrapper (MultiArrhenius / MultiPDepArrhenius): total rate is the sum of children.
+        # Recurse so each charge-transfer child is evaluated at its own V0; a non-charge-transfer
+        # child reaches the final branch and receives the pressure, matching the native wrapper.
+        return sum(_reverse_rate_at_reference_potential(child, T, P) for child in children)
+    # Ordinary pressure-taking kinetics: unchanged from the historical behaviour.
+    return kinetics.get_rate_coefficient(T, P)
+
+
 class Reaction:
     """
     A chemical reaction. The attributes are:
@@ -2062,11 +2118,22 @@ class Reaction:
                 # StickingCoefficient and Marcus, so its presence both selects the branch and supplies
                 # the value; a future potential-taking type carries V0 by construction, with no
                 # allowlist to keep in sync.
-                reverse_v0 = getattr(reverse_kinetics, 'V0', None)
-                if reverse_v0 is not None:
-                    kr_list.append(reverse_kinetics.get_rate_coefficient(condition[0], reverse_v0.value_si))
-                else:
-                    kr_list.append(reverse_kinetics.get_rate_coefficient(condition[0], condition[1]))
+                #
+                # reverse_kinetics can also be a MultiArrhenius / PDepArrhenius / MultiPDepArrhenius
+                # WRAPPER whose CHILDREN are charge-transfer (i201). The wrapper itself carries no
+                # top-level V0, so a check that only inspects the outer object is fooled just like the
+                # UnsupportedReverseRateError recursion case above. The wrapper's own
+                # get_rate_coefficient cannot fix this: MultiArrhenius iterates a `cdef Arrhenius` loop
+                # variable and ArrheniusChargeTransfer is not an Arrhenius subclass, so binding a
+                # charge-transfer child raises TypeError; PDepArrhenius/MultiPDepArrhenius pass only T
+                # to children, so a charge-transfer grandchild silently defaults to V=0.0 instead of
+                # V0. _reverse_rate_at_reference_potential recurses one level at a time, asking each
+                # object for the property it holds (V0 / pressures / arrhenius) exactly as this branch
+                # does for the top-level object, so every charge-transfer leaf -- however deeply
+                # wrapped -- is evaluated at its own V0, and every non-charge-transfer object is
+                # evaluated exactly as before.
+                kr_list.append(
+                    _reverse_rate_at_reference_potential(reverse_kinetics, condition[0], condition[1]))
                 conditions_r.append(condition)
         if len(self.reactants) >= 2:
             for i, k in enumerate(kf_list):

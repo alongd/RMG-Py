@@ -3942,3 +3942,143 @@ class TestReverseCollisionLimitPotential:
         rxn.check_collision_limit_violation(
             t_min=1000.0, t_max=1000.0, p_min=_REVERSE_PRESSURE, p_max=_REVERSE_PRESSURE)
         assert _RecordingReverseArrhenius.recorded == [_REVERSE_PRESSURE], _RecordingReverseArrhenius.recorded
+
+
+class TestReverseCollisionLimitPotentialWrappers:
+    """i201. The i197 fix (immediately above) evaluates a *top-level* charge-transfer reverse
+    kinetics at its own V0, discriminated by ``getattr(reverse_kinetics, 'V0', None)``. That does
+    nothing for a MultiArrhenius / PDepArrhenius / MultiPDepArrhenius WRAPPER whose CHILDREN are
+    charge-transfer: the wrapper carries no top-level V0, so it fell to the else-branch and was
+    handed a pressure. The wrapper's own ``get_rate_coefficient`` cannot fix this either --
+    MultiArrhenius iterates a ``cdef Arrhenius`` loop variable and ``ArrheniusChargeTransfer`` is not
+    an ``Arrhenius`` subclass, so it raises ``TypeError``; PDepArrhenius/MultiPDepArrhenius pass only
+    T to children, so a charge-transfer grandchild silently defaults to V=0.0 instead of V0.
+
+    ``_reverse_rate_at_reference_potential`` (module-level, above ``class Reaction``) recurses one
+    level at a time, asking each object for the property it holds (V0 / pressures / arrhenius)
+    instead of enumerating kinetics types, so every charge-transfer leaf is evaluated at its own V0
+    however deeply wrapped.
+
+    Reuses the i197 infrastructure: ``_ReverseSpyReaction`` (its ``generate_reverse_rate_coefficient``
+    returns a pre-built ``spy_kinetics``), ``_RecordingReverseACT``, ``_reverse_check_species``,
+    ``_REVERSE_V0``/``_REVERSE_PRESSURE``. A single reactant skips the forward branch; two products
+    with transport data let the reverse collision limit compute so the reverse branch is entered.
+
+    The PDepArrhenius pressure grid ``[1.0e4, 1.0e5, 1.0e6]`` contains ``_REVERSE_PRESSURE`` exactly,
+    so ``plow == phigh`` and exactly one child is evaluated -- deterministic single-element
+    ``recorded`` lists below.
+    """
+
+    def _rxn_with_spy(self, spy):
+        reactant = _reverse_check_species('R', '1 O u2 p2 c0')
+        p1 = _reverse_check_species('P1', '1 O u2 p2 c0')
+        p2 = _reverse_check_species('P2', '1 O u2 p2 c0')
+        rxn = _ReverseSpyReaction(
+            reactants=[reactant], products=[p1, p2], electrons=-1, reversible=False,
+            kinetics=ArrheniusChargeTransfer(
+                A=(1.0e10, 'm^3/(mol*s)'), n=0.0, Ea=(20.0, 'kJ/mol'),
+                V0=(_REVERSE_V0, 'V'), alpha=0.5, electrons=-1),
+        )
+        rxn.spy_kinetics = spy
+        return rxn
+
+    def test_multi_arrhenius_of_charge_transfer_evaluated_at_v0(self):
+        """RED-BEFORE / GREEN-AFTER. Before the fix, the wrapper's native get_rate_coefficient tries
+        to bind an ArrheniusChargeTransfer child to a `cdef Arrhenius` loop variable and raises
+        TypeError. After the fix, each child is evaluated at its own V0=0.4, never at the pressure or
+        at 0.0."""
+        _RecordingReverseACT.recorded = []
+        act_a = _RecordingReverseACT(
+            A=(1.0e10, 'm^3/(mol*s)'), n=0.0, Ea=(20.0, 'kJ/mol'),
+            V0=(_REVERSE_V0, 'V'), alpha=0.5, electrons=-1)
+        act_b = _RecordingReverseACT(
+            A=(2.0e10, 'm^3/(mol*s)'), n=0.0, Ea=(25.0, 'kJ/mol'),
+            V0=(_REVERSE_V0, 'V'), alpha=0.5, electrons=-1)
+        spy = MultiArrhenius(arrhenius=[act_a, act_b])
+        rxn = self._rxn_with_spy(spy)
+        rxn.check_collision_limit_violation(
+            t_min=1000.0, t_max=1000.0, p_min=_REVERSE_PRESSURE, p_max=_REVERSE_PRESSURE)
+        assert _RecordingReverseACT.recorded == [_REVERSE_V0, _REVERSE_V0], _RecordingReverseACT.recorded
+        assert _REVERSE_PRESSURE not in _RecordingReverseACT.recorded, _RecordingReverseACT.recorded
+        assert 0.0 not in _RecordingReverseACT.recorded, _RecordingReverseACT.recorded
+
+    def test_pdep_arrhenius_of_charge_transfer_evaluated_at_v0(self):
+        """RED-BEFORE / GREEN-AFTER. Before the fix, PDepArrhenius.get_rate_coefficient passes only T
+        to the bracketing child, so the charge-transfer child defaults to V=0.0 -- silently wrong, no
+        crash. After the fix, the bracketing child is evaluated at its own V0=0.4."""
+        _RecordingReverseACT.recorded = []
+        act_a = _RecordingReverseACT(
+            A=(1.0e10, 'm^3/(mol*s)'), n=0.0, Ea=(20.0, 'kJ/mol'),
+            V0=(_REVERSE_V0, 'V'), alpha=0.5, electrons=-1)
+        act_b = _RecordingReverseACT(
+            A=(2.0e10, 'm^3/(mol*s)'), n=0.0, Ea=(25.0, 'kJ/mol'),
+            V0=(_REVERSE_V0, 'V'), alpha=0.5, electrons=-1)
+        act_c = _RecordingReverseACT(
+            A=(3.0e10, 'm^3/(mol*s)'), n=0.0, Ea=(30.0, 'kJ/mol'),
+            V0=(_REVERSE_V0, 'V'), alpha=0.5, electrons=-1)
+        spy = PDepArrhenius(
+            pressures=([1.0e4, 1.0e5, 1.0e6], 'Pa'), arrhenius=[act_a, act_b, act_c])
+        rxn = self._rxn_with_spy(spy)
+        rxn.check_collision_limit_violation(
+            t_min=1000.0, t_max=1000.0, p_min=_REVERSE_PRESSURE, p_max=_REVERSE_PRESSURE)
+        assert _RecordingReverseACT.recorded == [_REVERSE_V0], _RecordingReverseACT.recorded
+        assert 0.0 not in _RecordingReverseACT.recorded, _RecordingReverseACT.recorded
+        assert _REVERSE_PRESSURE not in _RecordingReverseACT.recorded, _RecordingReverseACT.recorded
+
+    def test_multi_pdep_arrhenius_of_pdep_of_charge_transfer_evaluated_at_v0(self):
+        """RED-BEFORE / GREEN-AFTER, two levels of wrapping. Before the fix: recorded == [0.0]. After:
+        recorded == [0.4]."""
+        _RecordingReverseACT.recorded = []
+        act_a = _RecordingReverseACT(
+            A=(1.0e10, 'm^3/(mol*s)'), n=0.0, Ea=(20.0, 'kJ/mol'),
+            V0=(_REVERSE_V0, 'V'), alpha=0.5, electrons=-1)
+        act_b = _RecordingReverseACT(
+            A=(2.0e10, 'm^3/(mol*s)'), n=0.0, Ea=(25.0, 'kJ/mol'),
+            V0=(_REVERSE_V0, 'V'), alpha=0.5, electrons=-1)
+        act_c = _RecordingReverseACT(
+            A=(3.0e10, 'm^3/(mol*s)'), n=0.0, Ea=(30.0, 'kJ/mol'),
+            V0=(_REVERSE_V0, 'V'), alpha=0.5, electrons=-1)
+        inner_pdep = PDepArrhenius(
+            pressures=([1.0e4, 1.0e5, 1.0e6], 'Pa'), arrhenius=[act_a, act_b, act_c])
+        spy = MultiPDepArrhenius(arrhenius=[inner_pdep])
+        rxn = self._rxn_with_spy(spy)
+        rxn.check_collision_limit_violation(
+            t_min=1000.0, t_max=1000.0, p_min=_REVERSE_PRESSURE, p_max=_REVERSE_PRESSURE)
+        assert _RecordingReverseACT.recorded == [_REVERSE_V0], _RecordingReverseACT.recorded
+        assert 0.0 not in _RecordingReverseACT.recorded, _RecordingReverseACT.recorded
+        assert _REVERSE_PRESSURE not in _RecordingReverseACT.recorded, _RecordingReverseACT.recorded
+
+    def test_helper_matches_native_for_non_charge_transfer_wrappers(self):
+        """REGRESSION GUARD (green before AND after). For a non-charge-transfer wrapper, the recursive
+        helper must be numerically IDENTICAL to the wrapper's own native get_rate_coefficient, even
+        though the pressure/potential argument threading differs internally for charge-transfer
+        leaves. Covers all three wrapper types built from ordinary Arrhenius children (no V0)."""
+        from rmgpy.reaction import _reverse_rate_at_reference_potential
+
+        T = 1000.0
+        P = _REVERSE_PRESSURE  # on the PDep grid below, so bracketing is deterministic
+
+        a1 = Arrhenius(A=(1.0e10, 'cm^3/(mol*s)'), n=0.0, Ea=(20.0, 'kJ/mol'))
+        a2 = Arrhenius(A=(2.0e10, 'cm^3/(mol*s)'), n=0.1, Ea=(25.0, 'kJ/mol'))
+        a3 = Arrhenius(A=(3.0e10, 'cm^3/(mol*s)'), n=0.2, Ea=(30.0, 'kJ/mol'))
+
+        multi_arrh = MultiArrhenius(arrhenius=[a1, a2])
+        assert _reverse_rate_at_reference_potential(multi_arrh, T, P) == multi_arrh.get_rate_coefficient(T, P)
+
+        pdep_arrh = PDepArrhenius(pressures=([1.0e4, 1.0e5, 1.0e6], 'Pa'), arrhenius=[a1, a2, a3])
+        assert _reverse_rate_at_reference_potential(pdep_arrh, T, P) == pdep_arrh.get_rate_coefficient(T, P)
+
+        multi_pdep = MultiPDepArrhenius(arrhenius=[
+            PDepArrhenius(pressures=([1.0e4, 1.0e5, 1.0e6], 'Pa'), arrhenius=[a1, a2, a3]),
+            PDepArrhenius(pressures=([1.0e4, 1.0e5, 1.0e6], 'Pa'), arrhenius=[a2, a3, a1]),
+        ])
+        assert _reverse_rate_at_reference_potential(multi_pdep, T, P) == multi_pdep.get_rate_coefficient(T, P)
+
+    def test_top_level_potential_tests_still_pass(self):
+        """Sanity check that this new class did not disturb the i197 leaf-path tests -- run them via
+        the class object directly so a failure here points straight at TestReverseCollisionLimitPotential
+        rather than requiring a second pytest invocation."""
+        top_level = TestReverseCollisionLimitPotential()
+        top_level.test_arrhenius_charge_transfer_reverse_evaluated_at_reference_potential()
+        top_level.test_surface_charge_transfer_reverse_evaluated_at_reference_potential()
+        top_level.test_non_charge_transfer_reverse_still_receives_pressure()
