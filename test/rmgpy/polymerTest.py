@@ -5762,6 +5762,94 @@ def test_compile_polymer_phase_no_warning_when_consistent(caplog):
     assert disagreement == [], disagreement
 
 
+def test_compile_polymer_phase_reconciles_initial_mass_to_initial_moles(caplog):
+    """i057: compile_polymer_phase must ALSO reconcile the Polymer object's
+    .initial_mass_g (the sidecar serializes it beside .moments) onto the
+    solver-integrated branch, so the sidecar cannot report a t=0 resin mass the
+    solver never integrated. The reconciled mass must equal mu0*Mn ==
+    moments[0]*mn_g_mol, and the disagreement warning must STILL fire (the
+    reconciliation happens strictly after the detector, which reads the
+    deck-declared mass).
+
+    Deck: initial_mass=1 kg, Mn=5000 -> implied mu0 = 0.2; initialMoles gives
+    moles=0.01. Before: initial_mass_g=1000.0 g (1000 chains-worth). After:
+    initial_mass_g == 0.01*5000 == 50.0 g."""
+    import logging
+    from rmgpy.rmg.polymer_input import compile_polymer_phase
+
+    blueprint, initial_moles, species_dict, poly = _build_compile_inputs(moles=0.01)
+
+    # Pre-condition: the deck-declared mass disagrees with initialMoles.
+    assert poly.initial_mass_g == pytest.approx(1000.0)
+    assert poly.initial_mass_g / poly.Mn == pytest.approx(0.2, rel=1e-9)
+
+    with caplog.at_level(logging.WARNING):
+        compile_polymer_phase(blueprint, initial_moles, species_dict)
+
+    # The detector still fires on the (original) disagreeing deck.
+    warnings = [r.getMessage() for r in caplog.records
+                if r.levelno >= logging.WARNING and "initialMoles" in r.getMessage()]
+    assert warnings, "disagreement warning must still fire after reconciliation"
+
+    # initial_mass_g reconciled onto the solver's mu0 branch: mu0*Mn.
+    assert poly.initial_mass_g == pytest.approx(0.01 * 5000.0, rel=1e-12)
+    # Sidecar identity: initial_mass_g == moments[0] * mn_g_mol (mn_g_mol == Mn).
+    assert poly.initial_mass_g == pytest.approx(float(poly.moments[0]) * poly.Mn,
+                                                rel=1e-12)
+
+
+def test_compile_polymer_phase_consistent_deck_mass_unchanged(caplog):
+    """i057 (negative): when the deck is already consistent
+    (initial_mass/Mn == initialMoles), reconciling initial_mass_g to mu0*Mn is a
+    no-op to tolerance and no disagreement warning fires."""
+    import logging
+    from rmgpy.rmg.polymer_input import compile_polymer_phase
+
+    # initial_mass=1 kg, Mn=5000 -> implied mu0 = 0.2; set moles to match.
+    blueprint, initial_moles, species_dict, poly = _build_compile_inputs(moles=0.2)
+
+    with caplog.at_level(logging.WARNING):
+        compile_polymer_phase(blueprint, initial_moles, species_dict)
+
+    disagreement = [r.getMessage() for r in caplog.records
+                    if r.levelno >= logging.WARNING and "initialMoles" in r.getMessage()]
+    assert disagreement == [], disagreement
+    # Consistent deck: reconciled mass equals the declared 1000.0 g.
+    assert poly.initial_mass_g == pytest.approx(1000.0, rel=1e-9)
+    assert poly.initial_mass_g == pytest.approx(float(poly.moments[0]) * poly.Mn,
+                                                rel=1e-12)
+
+
+def test_compile_polymer_phase_leaves_non_initialmoles_pool_untouched():
+    """i057 (scope guard): a pool present in the phase species list but with NO
+    initialMoles entry never enters compile_polymer_phase's reconciliation loop,
+    so its declared initial_mass_g is left exactly as-is."""
+    from rmgpy.rmg.polymer_input import compile_polymer_phase, PolymerPhaseBlueprint
+    from rmgpy.species import Species
+
+    # Pool A is driven by initialMoles; pool B is declared but absent from it.
+    bp_a, initial_moles, sd_a, poly_a = _build_compile_inputs(moles=0.01, label="PSA")
+
+    poly_b = Polymer(label="PSB", monomer="[CH2][CH]c1ccccc1",
+                     end_groups=['[CH3]', '[H]'], cutoff=3,
+                     Mn=5000.0, Mw=6000.0, initial_mass=1.0)
+    species_dict = dict(sd_a)
+    species_dict["PSB"] = poly_b
+    for suffix, smi in (("_mu0", "CO"), ("_mu1", "C=O"), ("_mu2", "C#N")):
+        s = Species().from_smiles(smi)
+        s.label = f"PSB{suffix}"
+        species_dict[f"PSB{suffix}"] = s
+    blueprint = PolymerPhaseBlueprint(label="poly", species=["PSA", "PSB"],
+                                      solvent="PSA")
+
+    before_b = poly_b.initial_mass_g
+    compile_polymer_phase(blueprint, initial_moles, species_dict)
+
+    # Pool A reconciled; pool B (no initialMoles entry) untouched.
+    assert poly_a.initial_mass_g == pytest.approx(0.01 * 5000.0, rel=1e-12)
+    assert poly_b.initial_mass_g == before_b == pytest.approx(1000.0)
+
+
 # ---------------------------------------------------------------------------
 # Stage 1: daughter-pool registration (proxy_reaction_reality_rules.md Layer 2)
 #
