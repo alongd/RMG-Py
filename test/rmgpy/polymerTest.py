@@ -5850,6 +5850,132 @@ def test_compile_polymer_phase_leaves_non_initialmoles_pool_untouched():
     assert poly_b.initial_mass_g == before_b == pytest.approx(1000.0)
 
 
+def _zero_moment_polymer(label="PSZ", initial_mass=1.0):
+    """A Polymer whose Mn is 0.0. Built through the MOMENTS constructor path,
+    which is the only way to get there: the (Mn, Mw) path refuses Mn <= 0, but
+    _calculate_distribution_from_moments back-calculates Mn = Mw = 0.0 from
+    zero moments, and `initial_mass` still defaults to 1 kg."""
+    return Polymer(label=label, monomer="[CH2][CH]c1ccccc1",
+                   end_groups=['[CH3]', '[H]'], cutoff=3,
+                   moments=[0.0, 0.0, 0.0], initial_mass=initial_mass)
+
+
+def _compile_inputs_for(poly, moles):
+    from rmgpy.rmg.polymer_input import PolymerPhaseBlueprint
+    from rmgpy.species import Species
+
+    label = poly.label
+    species_dict = {label: poly}
+    for suffix, smi in (("_mu0", "CO"), ("_mu1", "C=O"), ("_mu2", "C#N")):
+        s = Species().from_smiles(smi)
+        s.label = f"{label}{suffix}"
+        species_dict[f"{label}{suffix}"] = s
+    blueprint = PolymerPhaseBlueprint(label=label, species=[label],
+                                      solvent=label)
+    return blueprint, {poly: moles}, species_dict
+
+
+def test_compile_polymer_phase_mn_zero_is_refused_reconciliation_and_warned(caplog):
+    """I-065 defect 3. `if initial_mass_g is not None and spc.Mn:` truthy-tests
+    a FLOAT, so Mn == 0.0 fell silently out of the reconciliation -- and out of
+    the disagreement detector above it, which had the same shape. The state is
+    reachable from the input language: polymer(moments=[0,0,0], ...) is
+    back-calculated to Mn = 0.0 while initial_mass still defaults to 1 kg.
+
+    Decided policy, now stated in the code: SKIP the reconciliation (mu0*Mn
+    would write 0 g over the declared mass) and WARN, loudly, because the pool
+    is broken -- Mn = 0 makes mu1 = mu2 = 0 while mu0 keeps initialMoles, which
+    is outside the realizable cone mu1 >= mu0. Not refused: this line's remit
+    is the t=0 report, and a report fix must not become the thing that aborts a
+    run. A silent skip that happens to be right is still the defect."""
+    import logging
+    from rmgpy.rmg.polymer_input import compile_polymer_phase
+
+    poly = _zero_moment_polymer()
+    assert poly.Mn == 0.0 and poly.initial_mass_g == pytest.approx(1000.0)
+    blueprint, initial_moles, species_dict = _compile_inputs_for(poly, 0.01)
+
+    with caplog.at_level(logging.WARNING):
+        compile_polymer_phase(blueprint, initial_moles, species_dict)
+
+    hits = [r.getMessage() for r in caplog.records
+            if r.levelno >= logging.WARNING and "not positive" in r.getMessage()]
+    assert len(hits) == 1, f"Mn == 0.0 was handled silently: {caplog.text}"
+    assert "PSZ" in hits[0]
+    # declared mass left alone -- NOT overwritten with mu0*0 == 0
+    assert poly.initial_mass_g == pytest.approx(1000.0)
+    # and the pool is indeed off the cone, which is what the warning says
+    assert poly.moments[0] == pytest.approx(0.01)
+    assert poly.moments[1] == 0.0
+
+
+def test_compile_polymer_phase_mn_zero_empty_pool_stays_silent(caplog):
+    """No false positive: a pool declaring zero mass AND zero moles is empty
+    and self-consistent, so there is nothing to report."""
+    import logging
+    from rmgpy.rmg.polymer_input import compile_polymer_phase
+
+    poly = _zero_moment_polymer(label="PSZE", initial_mass=0.0)
+    blueprint, initial_moles, species_dict = _compile_inputs_for(poly, 0.0)
+
+    with caplog.at_level(logging.WARNING):
+        compile_polymer_phase(blueprint, initial_moles, species_dict)
+
+    assert [r.getMessage() for r in caplog.records
+            if r.levelno >= logging.WARNING
+            and "not positive" in r.getMessage()] == []
+
+
+def test_compile_polymer_phase_zero_declared_mass_is_a_real_disagreement(caplog):
+    """The same float-truthiness defect on the OTHER operand, in the detector
+    the reconciliation must never outrun: `if initial_mass_g and spc.Mn:` made
+    a deck declaring initial_mass=0 invisible to the disagreement check, while
+    the reconciliation (`is not None`) still fired on it -- silently equalising
+    a mismatch that was never reported, which is exactly what the strictly-after
+    ordering exists to prevent. Both guards now test `is not None` / `> 0.0`, so
+    the reconciled set is exactly the inspected set."""
+    import logging
+    from rmgpy.rmg.polymer_input import compile_polymer_phase
+
+    blueprint, initial_moles, species_dict, poly = _build_compile_inputs(
+        moles=0.01, initial_mass=0.0)
+    assert poly.initial_mass_g == 0.0
+
+    with caplog.at_level(logging.WARNING):
+        compile_polymer_phase(blueprint, initial_moles, species_dict)
+
+    assert [r.getMessage() for r in caplog.records
+            if r.levelno >= logging.WARNING and "initialMoles" in r.getMessage()], (
+        "a deck declaring 0 g of resin against 0.01 mol of chains is a "
+        "disagreement and must be reported")
+    assert poly.initial_mass_g == pytest.approx(0.01 * 5000.0, rel=1e-12)
+
+
+def test_reconciled_initial_mass_is_live_for_the_moment_re_derivation():
+    """I-065 defect 4: where the 'touches no integrated quantity' guarantee
+    stops. It holds because Polymer._calculate_moments_from_distribution --
+    the one place a moment is re-derived from initial_mass_g -- runs only from
+    __init__, i.e. strictly before compile_polymer_phase. It is NOT a property
+    of the object: calling that re-derivation by hand after reconciliation now
+    returns the INTEGRATED moments, not the declared ones, and Polymer.copy
+    carries the reconciled value. Pinned so that any future caller moved after
+    compile_polymer_phase fails here rather than silently changing y0."""
+    from rmgpy.rmg.polymer_input import compile_polymer_phase
+
+    blueprint, initial_moles, species_dict, poly = _build_compile_inputs(moles=0.01)
+    declared = poly._calculate_moments_from_distribution()
+    assert declared[0] == pytest.approx(0.2, rel=1e-6)   # deck-declared branch
+
+    compile_polymer_phase(blueprint, initial_moles, species_dict)
+
+    after = poly._calculate_moments_from_distribution()
+    assert after[0] == pytest.approx(0.01, rel=1e-9), (
+        "the re-derivation now reads the reconciled mass -- the guarantee is "
+        "only that nothing calls it after this point, not that the field is inert")
+    assert poly.copy(deep=True).initial_mass_g == pytest.approx(0.01 * 5000.0,
+                                                               rel=1e-12)
+
+
 # ---------------------------------------------------------------------------
 # Stage 1: daughter-pool registration (proxy_reaction_reality_rules.md Layer 2)
 #

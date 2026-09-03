@@ -1058,8 +1058,26 @@ def compile_polymer_phase(blueprint: Union[PolymerPhaseBlueprint, PolymerPhase],
             # ways to state the t=0 amount, but they must agree; if they don't,
             # the solver silently honors initialMoles and the initial_mass +
             # Mn/Mw in the deck misrepresent the simulated state.
+            # Mn == 0.0 is REACHABLE, not hypothetical, so both branches
+            # below test it explicitly rather than by truthiness (I-065
+            # defect 3). Polymer.__init__ refuses Mn <= 0 on the (Mn, Mw)
+            # path, but the moments path does not: a pool declared
+            # polymer(moments=[0, 0, 0], ...) is back-calculated to
+            # Mn = Mw = 0.0 by _calculate_distribution_from_moments, and
+            # `initial_mass` defaults to 1 kg, so it arrives here with a
+            # declared mass and no molecular weight. Testing `spc.Mn` for
+            # truthiness let that pool fall silently out of BOTH the
+            # detector and the reconciliation.
+            # Likewise `initial_mass_g` is a float and initial_mass=0.0 is a
+            # legal deck: `if initial_mass_g` made the detector blind to a
+            # pool declaring zero mass against a nonzero initialMoles, which
+            # is a real disagreement. The two guards must also stay
+            # IDENTICAL -- reconciling a pool the detector could not inspect
+            # would equalise the branches silently, which is the failure the
+            # ordering rule below exists to prevent.
             initial_mass_g = getattr(spc, 'initial_mass_g', None)
-            if initial_mass_g and spc.Mn:
+            has_mn = spc.Mn is not None and spc.Mn > 0.0
+            if initial_mass_g is not None and has_mn:
                 mu0_from_mass = initial_mass_g / spc.Mn
                 if abs(mu0_from_mass - mu0) > 1e-6 * max(abs(mu0_from_mass), abs(mu0)):
                     logging.warning(
@@ -1076,17 +1094,77 @@ def compile_polymer_phase(blueprint: Union[PolymerPhaseBlueprint, PolymerPhase],
             # integrated (initial_mass/Mn would imply mu0_from_mass, not the
             # integrated mu0). mu0*Mn is the resin mass consistent with the
             # integrated chain count, so initial_mass_g == moments[0]*mn_g_mol
-            # in the sidecar. This is a report-consistency fix ONLY: it touches
-            # no integrated quantity (mu0/mu1/mu2/y0 are already fixed above).
+            # in the sidecar.
+            #
+            # WHAT IS AND IS NOT GUARANTEED (I-065 defect 4). The guarantee is
+            # narrow and downstream-only: NO INTEGRATED QUANTITY IS RECOMPUTED
+            # FROM initial_mass_g AFTER THIS POINT. mu0/mu1/mu2 and y0 are
+            # already fixed above and are never re-derived; the sole re-derivation
+            # site, Polymer._calculate_moments_from_distribution (which seeds
+            # mu1 = initial_mass_g / monomer_mw_g_mol), runs ONLY from
+            # Polymer.__init__, i.e. strictly BEFORE this function -- audited,
+            # not assumed. The guarantee stops at the object: initial_mass_g is
+            # a mutable Polymer attribute, Polymer.copy carries it verbatim, and
+            # anything that reads it after this point -- the sidecar, and through
+            # it TA's mechanism loader -- sees the INTEGRATED value, not the
+            # deck-declared one. It is therefore NOT true that this "touches no
+            # integrated quantity" in general; it is true that it touches none
+            # that is still live. Any future code that re-derives moments from
+            # this field must run before compile_polymer_phase or read the
+            # declared mass from the deck instead.
+            #
             # STRICTLY AFTER the disagreement warning: the warning derives
             # mu0_from_mass from this very field, so reconciling first would
             # make the two branches equal by construction and the detector could
-            # never fire. Only pools that actually declare a mass are touched;
-            # a pool with no initialMoles entry never enters this loop, and
-            # spawned born-at-zero daughters (initial_mass=0.0, moments=[0,0,0])
-            # are created later by the solver and never pass through here.
-            if initial_mass_g is not None and spc.Mn:
+            # never fire. Guarded IDENTICALLY to that warning (same has_mn, same
+            # `is not None`), so the set of pools reconciled is exactly the set
+            # the detector was able to inspect -- a pool reconciled without being
+            # checked is the ordering bug wearing a different hat.
+            # WHICH POOLS ARE TOUCHED. Not "only pools that declare a mass":
+            # there is no declared-vs-defaulted discriminator anywhere on the
+            # object. input.py polymer() defaults initial_mass=1.0 kg and
+            # Polymer.__init__ assigns self.initial_mass_g = initial_mass*1000.0
+            # unconditionally, so EVERY deck-declared pool arrives here with
+            # initial_mass_g set (1000.0 g if the deck never mentioned it) and
+            # `initial_mass_g is not None` excludes nothing. has_mn is the only
+            # real gate. A deck that left initial_mass at its default and set
+            # initialMoles != 1000/Mn is therefore warned and reconciled exactly
+            # as if it had written initial_mass=1.0 -- pre-existing behavior,
+            # unchanged here, but not something this line may claim to avoid.
+            # What genuinely never reaches this code: a pool with no
+            # initialMoles entry (the loop's own `continue` above), and
+            # solver-spawned born-at-zero daughters (initial_mass=0.0,
+            # moments=[0,0,0]), which are created after compile and never pass
+            # through this function at all.
+            if initial_mass_g is not None and has_mn:
                 spc.initial_mass_g = mu0 * spc.Mn
+            elif initial_mass_g is not None and (initial_mass_g or mu0):
+                # Mn <= 0 (or absent) with a declared mass: SKIP, LOUDLY.
+                # (A pool that declares zero mass AND zero moles is empty and
+                # self-consistent -- nothing to report, so it stays silent.
+                # Truthiness is correct HERE and only here: the test is
+                # deliberately "either quantity is nonzero", which is what
+                # `or` means on two floats.)
+                # Decided, not incidental -- a silent skip that happens to be
+                # right is still the defect. Not refused, because this line's
+                # remit is the t=0 REPORT and a report fix must not become the
+                # thing that aborts a run; not silently skipped, because mu0*Mn
+                # would write 0 g over the declared mass and, worse, the pool
+                # itself is broken: Mn = 0 makes mu1 = mu2 = 0 above while mu0
+                # keeps initialMoles, which is off the realizable cone
+                # mu1 >= mu0 >= 0 whenever initialMoles > 0. The sidecar's
+                # initial_mass_g therefore stays on the DECLARED branch here
+                # and may disagree with moments[0]*mn_g_mol.
+                logging.warning(
+                    "Polymer pool '%s': Mn=%r is not positive, so the t=0 resin "
+                    "mass cannot be reconciled onto the integrated chain count "
+                    "and initial_mass_g stays at the deck-declared %g g, which "
+                    "the sidecar will report beside moments=[%g, 0, 0]. A pool "
+                    "back-calculated from zero moments carries Mn=0.0; with "
+                    "initialMoles=%g > 0 its t=0 state is outside the "
+                    "realizable cone (mu1 >= mu0). Declare Mn/Mw, or declare "
+                    "initialMoles=0 for a genuinely empty pool.",
+                    spc.label, spc.Mn, initial_mass_g, mu0, mu0)
 
             # Explicit-DP handshake (stage A): the deck flag explicit_dp=True
             # (input.py polymer() step 4c) auto-generated exactly ONE capped
