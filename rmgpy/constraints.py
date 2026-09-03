@@ -29,6 +29,8 @@
 
 import logging
 
+from collections import Counter
+
 from rmgpy.species import Species
 
 
@@ -37,6 +39,99 @@ from rmgpy.species import Species
 # ---------------------------------------------------------------------------
 
 _unbounded_polymer_warned = False
+
+# ---------------------------------------------------------------------------
+# Generation census (I-067)
+# ---------------------------------------------------------------------------
+#
+# A size bound set too low truncates the mechanism silently: the run gets fast,
+# the log looks clean, and the chemistry that would have mattered was simply
+# never generated. Nothing in RMG's output announces it. This census does --
+# every structure a constraint tier refuses is counted, bucketed by heavy-atom
+# count and by which constraint refused it, and up to _CENSUS_SMILES_CAP distinct
+# refused structures are kept by SMILES so the cut set can be named and
+# cross-referenced against an unbounded run's edge fluxes.
+#
+# Only the REFUSAL path is instrumented. A refusal raises ForbiddenStructureException
+# at every call site, which dwarfs the cost of a to_smiles(); the accept path --
+# the genuinely hot one -- is untouched. The size distribution of what was
+# RETAINED is read off the finished model's species lists instead, which is both
+# cheaper and exact.
+
+_CENSUS_SMILES_CAP = 20000
+
+_census = {}
+
+
+def reset_generation_census():
+    """Clear the constraint-refusal census. Called from RMG.initialize."""
+    _census.clear()
+    _census.update({
+        'refused': Counter(),                                    # tier -> n
+        'by_heavy': {'gas': Counter(), 'polymer': Counter()},    # tier -> heavy -> n
+        'by_reason': Counter(),                                  # 'tier/constraint' -> n
+        'smiles': {'gas': {}, 'polymer': {}},                    # tier -> smiles -> [n, heavy, C]
+        'smiles_capped': False,
+    })
+
+
+reset_generation_census()
+
+
+def get_generation_census():
+    """Return the live constraint-refusal census dict (not a copy)."""
+    return _census
+
+
+def _record_refusal(struct, tier, reason):
+    """Record one constraint refusal. Reached only when a structure is rejected."""
+    try:
+        heavy = struct.get_num_atoms() - struct.get_num_atoms('H')
+        carbon = struct.get_num_atoms('C')
+    except Exception:
+        return
+    _census['refused'][tier] += 1
+    _census['by_heavy'][tier][heavy] += 1
+    _census['by_reason']['{0}/{1}'.format(tier, reason.split(':')[0])] += 1
+    bucket = _census['smiles'][tier]
+    if len(bucket) >= _CENSUS_SMILES_CAP:
+        _census['smiles_capped'] = True
+        return
+    try:
+        smi = struct.to_smiles()
+    except Exception:
+        return
+    entry = bucket.get(smi)
+    if entry is None:
+        bucket[smi] = [1, heavy, carbon]
+    else:
+        entry[0] += 1
+
+
+def log_generation_census(header='GENERATION CENSUS'):
+    """
+    Log what the constraint tiers refused: by tier, by heavy-atom count and by
+    constraint. Emitted after every enlargement, so the truncation a bound causes
+    is visible while it happens rather than only in a post-hoc diff of two runs.
+    """
+    total = sum(_census['refused'].values())
+    if not total:
+        logging.info('%s: no structure was refused by any constraint tier.', header)
+        return
+    logging.info('%s: %d structure-refusals (gas tier %d, polymer tier %d)%s',
+                 header, total, _census['refused']['gas'], _census['refused']['polymer'],
+                 '; SMILES capture CAPPED at {0} distinct'.format(_CENSUS_SMILES_CAP)
+                 if _census['smiles_capped'] else '')
+    for tier in ('gas', 'polymer'):
+        hist = _census['by_heavy'][tier]
+        if not hist:
+            continue
+        logging.info('    %s tier refusals by heavy-atom count: %s', tier,
+                     ', '.join('{0}:{1}'.format(h, hist[h]) for h in sorted(hist)))
+        logging.info('    %s tier distinct refused structures: %d', tier,
+                     len(_census['smiles'][tier]))
+    for key in sorted(_census['by_reason']):
+        logging.info('    refused by %s: %d', key, _census['by_reason'][key])
 
 # Default heavy-atom count at or above which a discrete species routes to the polymer
 # tier (generatePolymerConstraints) rather than the gas tier. Polymer-independent (a flat
@@ -53,10 +148,23 @@ def reset_polymer_warning():
 def _warn_unbounded_polymer_once():
     global _unbounded_polymer_warned
     if not _unbounded_polymer_warned:
+        # Scope note (I-067): this fires ONLY for real Polymer objects. Generated
+        # proxy structures are Molecules/Species, which carry is_polymer_proxy but
+        # never is_polymer, and with polymer_constraints=None size routing is off
+        # (is_polymer_constraint_member returns False), so they are bounded by the
+        # gas tier like everything else. The message used to say "polymer proxy
+        # chemistry is unbounded", which was false and sent readers looking for a
+        # runaway generation leg that does not exist.
         logging.warning(
-            "Polymer/proxy species bypass generatedSpeciesConstraints because "
-            "generatePolymerConstraints is not set; polymer proxy chemistry is unbounded. "
-            "Add a generatePolymerConstraints block to bound polymer-family reaction generation."
+            "Polymer pool objects bypass generatedSpeciesConstraints because "
+            "generatePolymerConstraints is not set. Generated proxy species are NOT "
+            "affected -- with no polymer tier configured they fall through to "
+            "generatedSpeciesConstraints. Adding a generatePolymerConstraints block "
+            "switches on size routing: every species with heavy-atom count >= "
+            "polymerSizeThreshold (default {0}) then leaves the gas tier for the "
+            "polymer tier, so a block looser than generatedSpeciesConstraints "
+            "ENLARGES the generated space rather than bounding it.".format(
+                DEFAULT_POLYMER_SIZE_THRESHOLD)
         )
         _unbounded_polymer_warned = True
 
@@ -207,7 +315,11 @@ def fails_species_constraints(species):
         if polymer_constraints is None:
             _warn_unbounded_polymer_once()
             return False
-        return _evaluate_constraints(_normalize(species), polymer_constraints)
+        struct = _normalize(species)
+        reason = _evaluate_constraints(struct, polymer_constraints)
+        if reason:
+            _record_refusal(struct, 'polymer', reason)
+        return reason
 
     try:
         species_constraints = get_input('species_constraints')
@@ -215,7 +327,11 @@ def fails_species_constraints(species):
         logging.debug('Species constraints could not be found.')
         species_constraints = {}
 
-    return _evaluate_constraints(_normalize(species), species_constraints)
+    struct = _normalize(species)
+    reason = _evaluate_constraints(struct, species_constraints)
+    if reason:
+        _record_refusal(struct, 'gas', reason)
+    return reason
 
 
 def validate_explicit_dp_oligomers(initial_species, species_constraints):

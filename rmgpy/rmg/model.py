@@ -36,12 +36,15 @@ import itertools
 import logging
 import os
 import re
+import time
 
 import numpy as np
 
 import rmgpy.data.rmg
 from rmgpy import settings
-from rmgpy.constraints import fails_species_constraints, pass_cutting_threshold
+
+
+from rmgpy.constraints import fails_species_constraints, log_generation_census, pass_cutting_threshold
 from rmgpy.data.kinetics.depository import DepositoryReaction
 from rmgpy.data.kinetics.family import KineticsFamily, TemplateReaction, _handshake_structures
 from rmgpy.polymer import MassFluxAccumulator, Polymer, PolymerCrosslinkError, PolymerFluxArchetype, collect_polymer_pool_registry, compute_concerted_loss_evidence, compute_h_loss_shape_evidence, is_end_group_reaction, merge_polymer_adjudication_stamps, readjudicate_conduit_admission, restamp_flipped_polymer_archetype, stamp_gas_association_refusal, stamp_polymer_flux_archetype
@@ -67,6 +70,13 @@ from rmgpy.rmg.reactionmechanismsimulator_reactors import (
 from rmgpy.rmg.reactionmechanismsimulator_reactors import Reactor as RMSReactor
 from rmgpy.species import Species
 from rmgpy.thermo.thermoengine import submit
+
+
+def _process_cpu_seconds():
+    """CPU seconds burned by this process and its children, user + system."""
+    t = os.times()
+    return t.user + t.system + t.children_user + t.children_system
+
 
 ################################################################################
 
@@ -1078,6 +1088,8 @@ class CoreEdgeReactionModel:
         to form edge reactions.
         """
 
+        enlarge_t0 = time.time()
+        enlarge_c0 = _process_cpu_seconds()
         num_old_core_species = len(self.core.species)
         num_old_core_reactions = len(self.core.reactions)
         num_old_edge_species = len(self.edge.species)
@@ -1208,6 +1220,21 @@ class CoreEdgeReactionModel:
             reactions_moved_from_edge=reactions_moved_from_edge,
             new_edge_species=self.edge.species[num_old_edge_species:],
             new_edge_reactions=self.edge.reactions[num_old_edge_reactions:],
+            react_edge=react_edge,
+        )
+
+        # I-067: cost and shape of this enlargement. `enlarge` IS the reaction-
+        # generation leg, so its wall clock is the leg's cost -- reported per
+        # enlargement rather than as a cumulative total, because a bound is
+        # judged on where growth turns superlinear. Paired with the size
+        # histogram of what was generated and the census of what a constraint
+        # tier refused, so a bound that quietly truncates the mechanism shows up
+        # in the log of the run that did it.
+        self.log_enlargement_cost(
+            wall_seconds=time.time() - enlarge_t0,
+            cpu_seconds=_process_cpu_seconds() - enlarge_c0,
+            new_core_species=self.core.species[num_old_core_species:],
+            new_edge_species=self.edge.species[num_old_edge_species:],
             react_edge=react_edge,
         )
 
@@ -1648,6 +1675,78 @@ class CoreEdgeReactionModel:
         logging.info("    The model core has {0:d} species and {1:d} reactions".format(core_species_count, core_reaction_count))
         logging.info("    The model edge has {0:d} species and {1:d} reactions".format(edge_species_count, edge_reaction_count))
         logging.info("")
+
+    @staticmethod
+    def _heavy_atom_count(spec):
+        """Heavy-atom count of a species' first structure, or None if it has none."""
+        mols = getattr(spec, "molecule", None)
+        if not mols:
+            return None
+        try:
+            return mols[0].get_num_atoms() - mols[0].get_num_atoms("H")
+        except Exception:
+            return None
+
+    def log_enlargement_cost(self, wall_seconds, cpu_seconds, new_core_species, new_edge_species, react_edge):
+        """
+        Log the cost and the size shape of one enlargement (I-067).
+
+        `enlarge` is the reaction-generation leg, so its own clock is that leg's
+        cost. It is reported PER enlargement, not cumulatively, because the
+        question a size bound answers is where the growth turns superlinear --
+        which a running total hides.
+
+        Both wall and CPU seconds are reported. CPU (self + children, so a
+        multiprocessing react_all is still counted) is the number to compare
+        ACROSS runs: wall time on a shared machine measures the machine's other
+        tenants as much as the leg.
+
+        Species are bucketed by heavy-atom count and split on ``is_polymer_proxy``,
+        the provenance marker the kinetics families propagate through every product
+        of a reaction that touched a proxy structure
+        (``rmgpy/data/kinetics/family.py``, ``_generate_product_structures``). That
+        is the population a ``generatePolymerConstraints`` block is aimed at, so it
+        is the population whose distribution has to be on the record before any
+        bound is chosen.
+        """
+        from collections import Counter
+
+        label = "SECONDARY EDGE ENLARGEMENT" if react_edge else "ENLARGEMENT"
+        core_n, core_r, edge_n, edge_r = self.get_model_size()
+        logging.info(
+            "%s COST: %.2f s cpu, %.2f s wall; +%d core species, +%d edge species; "
+            "model now core %d/%d, edge %d/%d (species/reactions)",
+            label, cpu_seconds, wall_seconds, len(new_core_species), len(new_edge_species),
+            core_n, core_r, edge_n, edge_r,
+        )
+
+        proxy_hist, other_hist = Counter(), Counter()
+        for spec in self.core.species + self.edge.species:
+            heavy = self._heavy_atom_count(spec)
+            if heavy is None:
+                continue
+            if getattr(spec, "is_polymer_proxy", False):
+                proxy_hist[heavy] += 1
+            else:
+                other_hist[heavy] += 1
+        for name, hist in (("polymer-proxy", proxy_hist), ("non-proxy", other_hist)):
+            if hist:
+                logging.info(
+                    "    %s species by heavy-atom count (%d total, max %d): %s",
+                    name, sum(hist.values()), max(hist),
+                    ", ".join("{0}:{1}".format(h, hist[h]) for h in sorted(hist)),
+                )
+
+        family_hist = Counter()
+        for rxn in self.core.reactions + self.edge.reactions:
+            fam = getattr(rxn, "family", None)
+            family_hist[getattr(fam, "label", fam) or "<no family>"] += 1
+        logging.info(
+            "    reactions by family: %s",
+            ", ".join("{0}:{1}".format(k, family_hist[k]) for k in sorted(family_hist, key=str)),
+        )
+
+        log_generation_census(header="    CONSTRAINT REFUSAL CENSUS")
 
     def add_species_to_core(self, spec, requires_rms=False):
         """
