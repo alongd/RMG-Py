@@ -129,7 +129,7 @@ e = template([a, b], [c, d], ESTIMATE); e.reactants.sort(); e.products.sort()
 print("CASE2 before prune: registry_key=%s found=%s" % (key_of(incumbent), m.check_for_existing_reaction(e)[0]))
 m.remove_species_from_edge([], b)
 e2 = template([a, b], [c, d], ESTIMATE); e2.reactants.sort(); e2.products.sort()
-print("CASE2 after prune:  registry_key=%s found=%s  (incumbent erased; a re-proposed estimate now wins)"
+print("CASE2 after prune:  registry_key=%s found=%s  (incumbent erased; a re-proposed estimate would face no collision)"
       % (key_of(incumbent), m.check_for_existing_reaction(e2)[0]))
 
 

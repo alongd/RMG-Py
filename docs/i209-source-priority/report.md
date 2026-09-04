@@ -14,17 +14,30 @@ inversion is **edge pruning** erasing the incumbent (Correction 2 below, confirm
 ## Verdict (Q3), verbatim
 
 **The estimate can win, under these conditions:** a reaction library is loaded, and mid-run RMG's
-edge **pruning** removes an edge species that participates in one of that library's reactions. That
-prune deletes the sourced library reaction from RMG's global reaction registry
-(`remove_species_from_edge`, def model.py:1515; its deletion block model.py:1578-1591 walks *every* `reaction_dict` key, `KineticsLibrary`
-keys included, and removes entries for the pruned species). Once the incumbent is erased, a later
-family enlargement that regenerates the same chemistry finds **no incumbent to collide against**,
-so the family estimate registers fresh and becomes the operative rate — the sourced value is gone.
+edge **pruning** removes an edge species that participates in one of that library's reactions.
+
+What the tests confirm — the two steps I directly observed:
+1. A prune deletes the sourced library reaction from RMG's global reaction registry
+   (`remove_species_from_edge`, def model.py:1515; its deletion block model.py:1578-1591 walks
+   *every* `reaction_dict` key, `KineticsLibrary` keys included, and removes entries for the pruned
+   species). Confirmed: after `remove_species_from_edge`, the incumbent is no longer in
+   `reaction_dict`.
+2. A subsequent duplicate check over the same species then finds **no incumbent**
+   (`check_for_existing_reaction` returns `False`), so a re-proposed family estimate faces no
+   collision to lose to.
+
 Pruning is a default, routinely-triggered mechanism (`tol_keep_in_edge` rate cutoff and the
-`maximum_edge_species` cap, model.py:1471-1476), needs no seed mechanism and no special chemistry,
-and applies to any library reaction whose edge species falls below the flux/size thresholds. So
-"the library loads first, therefore the sourced value always wins" is **not durable**: first
-registration is erasable.
+`maximum_edge_species` cap, model.py:1471-1476), needs no seed mechanism and no special chemistry.
+So "the library loads first, therefore the sourced value always wins" is **not durable**: first
+registration is erasable, and after erasure nothing protects the sourced value from a regenerated
+estimate.
+
+**Named gap — the unobserved join.** I did not run the full sequence end to end in a live model:
+prune the incumbent → family enlargement actually re-introduces the same species and regenerates
+the same reaction → the estimate is installed as the operative rate in a running mechanism. Steps 1
+and 2 are each confirmed directly (see CASE2 / `test_edge_pruning_erases_a_library_incumbent`), but
+the joined live prune-then-regenerate-then-install sequence was not exercised; it requires a full
+`rmg.py` run (see "What the probe could not reach").
 
 ## The mechanism (Q1) — unchanged, confirmed from code and from a run
 
@@ -57,15 +70,18 @@ value**. This is decided purely by registration order, not by any preference for
 `docs/i209-source-priority/repro.py`, run in `rmg_env` against the committed
 `test/rmgpy/test_data/testing_database` (families `H_Abstraction`, `Disproportionation`; libraries
 `GRI-Mech3.0`, `ethane-oxidation`). Species `[H] + C=C[CH2]C <=> C=C=CC + [H][H]`; sourced
-Arrhenius `A = 1.0e12 cm^3/mol/s` (`1.0e6` SI), estimate `A = 9.9e9 cm^3/mol/s` (`9900` SI). All
-three cases go through the real `make_new_species` dedup + `check_for_existing_reaction` path; none
-needs a full `rmg.py` run.
+Arrhenius `A = 1.0e12 cm^3/mol/s` (`1.0e6` SI), estimate `A = 9.9e9 cm^3/mol/s` (`9900` SI). CASE2
+and CASE3 go through the real `make_new_species` dedup path (species enter via `make_new_species`;
+duplicates resolve through `make_new_reaction` / `check_for_existing_reaction`, over fresh species
+objects in CASE3); CASE1 does **not** dedup — it shares the same species objects across both
+reactions and calls `register_reaction` / `check_for_existing_reaction` directly, isolating the
+predicate's order-dependence. None of the three needs a full `rmg.py` run.
 
 ```
 CASE1a library-first: are_identical=True found=True kept_A=1000000.0000000001 (SOURCED=1000000.0000000001)
 CASE1b estimate-first: found=True kept_A=9900.000000000002 (ESTIMATE=9900.000000000002, SOURCED discarded)
 CASE2 before prune: registry_key=GRI-Mech3.0 found=True
-CASE2 after prune:  registry_key=None found=False  (incumbent erased; a re-proposed estimate now wins)
+CASE2 after prune:  registry_key=None found=False  (incumbent erased; a re-proposed estimate would face no collision)
 CASE3 confirmed library-vs-library collisions (GRI first, ethane-oxidation offered): 14 of 18
 ```
 
@@ -240,9 +256,12 @@ pairs that collide.
 
 "The sourced value wins" is **not a guarantee.** It holds for library-vs-family only because of the
 fixed registration order, and that order also lets a first-registered value be **erased by edge
-pruning**, after which a regenerated family estimate becomes operative — silently in the common
-case, with only an unrelated "Pruning species …" INFO line as any trace. The `--restart` route that
-the previous draft headlined does **not** invert (family estimates reload as family-keyed
-`TemplateReaction`s the seed sweep skips). The shape is model-wide, not plasma-specific, and has a
-confirmed second face in library-vs-library collisions (14 identity-confirmed in a two-library
-probe).
+pruning**: I confirmed directly that a prune deletes a library incumbent from `reaction_dict` and
+that a subsequent duplicate check then finds no incumbent — the two steps that make the guarantee
+non-durable. The full live sequence that follows (a regenerated family estimate then installed as
+the operative rate in a running model) is the plausible consequence but was **not** observed end to
+end; it is named as a gap above and in "What the probe could not reach." Whatever trace exists is
+only an unrelated "Pruning species …" INFO line. The `--restart` route that the previous draft
+headlined does **not** invert (family estimates reload as family-keyed `TemplateReaction`s the seed
+sweep skips). The shape is model-wide, not plasma-specific, and has a confirmed second face in
+library-vs-library collisions (14 identity-confirmed in a two-library probe).

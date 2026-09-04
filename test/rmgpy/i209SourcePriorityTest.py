@@ -47,15 +47,25 @@ the duplicate path (e.g. one that started preferring a sourced value over an
 estimate) is caught by a failing characterization test rather than shipping
 silently. They assert nothing about what the code *should* do.
 
-The load-bearing finding is the pair
-``test_sourced_value_wins_when_registered_first`` /
-``test_estimate_wins_when_registered_first``: the SAME predicate keeps the
-sourced value in one ordering and the estimate in the other. Which value
-survives is decided purely by registration order -- and RMG's initialize()
-sequence registers seed mechanisms (core) and reaction libraries (edge) before
-any family reaction is generated, so a family estimate normally loses to a
-library. A seed mechanism carrying a previously-estimated rate is registered
-*ahead* of reaction libraries, which is the ordering the second test pins.
+The load-bearing finding is the **order-dependence of the predicate itself**:
+the SAME identity check keeps the sourced value when it is registered first and
+the estimate when the estimate is registered first
+(``test_sourced_value_wins_when_registered_first`` /
+``test_later_registrant_discarded_regardless_of_kinetics``). Which value survives
+is decided purely by registration order and never by kinetics or provenance.
+
+The reachability story -- how a realistic run reaches the ordering in which an
+estimate beats a sourced value -- is **edge pruning**, not seed mechanisms:
+``remove_species_from_edge`` deletes reactions (library reactions included) from
+the global ``reaction_dict`` when an edge species is pruned, so a sourced library
+reaction registered first can be erased mid-run
+(``test_edge_pruning_erases_a_library_incumbent``). The auto-generated seed /
+``--restart`` route does NOT invert the guarantee: a family estimate reloads as a
+family-keyed ``TemplateReaction`` that the seed sweep in
+``check_for_existing_reaction`` skips (see report.md, Correction 1). Only a
+hand-supplied, non-auto-generated seed mechanism produces library-keyed reactions
+that could win by ordering, and none of these tests exercises that path -- the
+order-dependence tests hand-register reactions directly.
 """
 
 import os
@@ -202,49 +212,53 @@ class TestSourcePriorityIsOrdering:
             assert kept is sourced
             assert kept.kinetics.A.value_si == SOURCED.A.value_si
 
-    def test_estimate_wins_when_registered_first(self):
-        """Q3 inversion: a seed mechanism carrying a previously family-estimated
-        rate is registered ahead of reaction libraries. Now the estimate is the
-        incumbent, and the later sourced library reaction is discarded. The model
-        keeps the ESTIMATE -- the sourced value never becomes operative. Nothing
-        about the kinetics or provenance changes this verdict; only the order
-        did."""
+    def test_later_registrant_discarded_regardless_of_kinetics(self):
+        """Order-dependence of the predicate, in the mirror image of the previous
+        test: when an estimate is registered first and a sourced library reaction
+        is offered second, ``check_for_existing_reaction`` returns the *estimate*
+        and the sourced value is the discarded newcomer. Nothing about the
+        kinetics or provenance changes this verdict; only the registration order
+        did. This pins the predicate's behaviour directly -- the reactions are
+        hand-registered, so this test does NOT model a seed-mechanism run (it
+        never calls ``add_seed_mechanism_to_core``); how a realistic run reaches
+        this ordering is the pruning test below and report.md, not this one."""
         with self._singleton():
             a, b, c, d = self._species()
             cerm = self._model(a, b, c, d)
-            # A seed reaction is a LibraryReaction whose numbers were estimated in
-            # a prior run and written to the seed mechanism.
-            seed_estimate = self._library([a, b], [c, d], SEED_LIBRARY, ESTIMATE)
-            self._register(cerm, seed_estimate)
+            # A first-registered incumbent whose rate happens to be an estimate.
+            incumbent_estimate = self._library([a, b], [c, d], SEED_LIBRARY, ESTIMATE)
+            self._register(cerm, incumbent_estimate)
 
             sourced = self._library([a, b], [c, d], SOURCED_LIBRARY, SOURCED)
             found, kept = cerm.check_for_existing_reaction(sourced)
 
             assert found
-            assert kept is seed_estimate
+            assert kept is incumbent_estimate
             assert kept.kinetics.A.value_si == ESTIMATE.A.value_si
             # The sourced value was not kept.
             assert kept.kinetics.A.value_si != SOURCED.A.value_si
 
     def test_make_new_reaction_returns_the_incumbent_estimate(self):
-        """The same inversion end to end through the true production entry point
+        """Order-dependence through the true production entry point
         ``make_new_reaction`` (what both ``add_seed_mechanism_to_core`` and
         ``add_reaction_library_to_edge`` call). Both reactions enter the model the
         way a real run introduces them, and the second reaction is built from
         FRESH species objects, so the collapse is resolved through isomorphism
         de-duplication exactly as in a run -- not by sharing Python references.
-        The estimate is registered first; the later sourced reaction comes back
+        An estimate is registered first; the later sourced reaction comes back
         with ``is_new=False`` and the estimate's kinetics, so the caller silently
-        drops the sourced newcomer."""
+        drops the sourced newcomer. This exercises the predicate through the real
+        entry point; it does NOT model a seed-mechanism run (no
+        ``add_seed_mechanism_to_core`` call)."""
         with self._singleton():
             cerm = CoreEdgeReactionModel()
 
-            # 1) A seed reaction carrying a previously-estimated rate enters first.
+            # 1) A first-registered incumbent whose rate happens to be an estimate.
             a, b, c, d = self._species()
-            seed_estimate = self._library([a, b], [c, d], SEED_LIBRARY, ESTIMATE)
-            registered_seed, seed_is_new = cerm.make_new_reaction(
-                seed_estimate, generate_thermo=False, generate_kinetics=False)
-            assert seed_is_new is True
+            incumbent_estimate = self._library([a, b], [c, d], SEED_LIBRARY, ESTIMATE)
+            registered_incumbent, incumbent_is_new = cerm.make_new_reaction(
+                incumbent_estimate, generate_thermo=False, generate_kinetics=False)
+            assert incumbent_is_new is True
 
             # 2) The sourced library reaction enters later, over independently
             #    constructed species with the same structures.
@@ -254,7 +268,7 @@ class TestSourcePriorityIsOrdering:
                 sourced, generate_thermo=False, generate_kinetics=False)
 
             assert is_new is False
-            assert returned is registered_seed
+            assert returned is registered_incumbent
             assert returned.kinetics.A.value_si == ESTIMATE.A.value_si
             assert returned.kinetics.A.value_si != SOURCED.A.value_si
 
@@ -279,10 +293,14 @@ class TestSourcePriorityIsOrdering:
         pruned species, so a sourced library reaction registered under a
         ``KineticsLibrary`` key is erased when one of its edge species is pruned
         (triggered by ``tol_keep_in_edge`` or the ``maximum_edge_species`` cap,
-        model.py ~1471). Afterwards a re-proposed reaction over the same species
-        faces NO incumbent, so a family estimate would install as the operative
-        rate. This inverts "the library loads first so the sourced value always
-        wins" without any seed mechanism, for any chemistry.
+        model.py ~1471). This test pins exactly two steps: the library incumbent
+        is erased from the registry by the prune, and a subsequent duplicate check
+        over the same species then finds NO incumbent -- so a re-proposed family
+        estimate would face no collision. The joined live sequence (family
+        actually regenerates the reaction and the estimate is installed as the
+        operative rate in a running model) is NOT exercised here; see report.md.
+        This makes "the library loads first so the sourced value always wins"
+        non-durable, without any seed mechanism, for any chemistry.
 
         Driven without a full ``rmg.py`` run: species enter via
         ``make_new_species`` (as in a run) and pruning is invoked directly with an
