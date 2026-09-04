@@ -1,17 +1,25 @@
 # RECORDED BEFORE arm for the I-075 verifier (test/rmgpy/solver/i075_verify.sh check 8).
 #
-# tree        /home/alon/Code/RMG-Py-i075-blocker-landing at 74df5e84d (the two i061
-#             commits, BEFORE the i075 edits), extensions built in-place in that tree
-#             with `python utilities.py check-pydas && python setup.py build_ext --inplace -j 8`
-#             (settings.pxi: DEF DASPK = 1).
+# WHAT THIS IS: the full unit suite on the PRE-MERGE MAINLINE -- polymer at
+# 9e7e0c4d5e9572b2a67c1b1d8bb8880287a793e1, the tip this work landed on top of.
+# The AFTER arm the verifier runs live is the merged tree. The difference between
+# them is therefore exactly what this landing changes, which is the property worth
+# asserting.
+#
+# tree        /home/alon/Code/RMG-Py-i065-mainline at 9e7e0c4d5 (clean, idle),
+#             extensions built in-place there, settings.pxi: DEF DASPK = 1.
 # command     python -m pytest -m "not functional and not database" -p no:cacheprovider \
 #               --no-cov -q --tb=no \
 #               --deselect test/rmgpy/solver/solverPolymerJacobianTest.py::TestScopedJacobianPoly102::test_v2_v3_crash_window_twin_and_episode_invariance
-# measured    2026-09-04, 240.5 s: 14 failed, 3468 passed, 40 skipped, 40 deselected.
+# measured    2026-09-04, 256.4 s: 13 failed, 3487 passed, 39 skipped, 40 deselected.
 #
-# --no-cov is an override of the repo's pytest.ini default (--cov=arkane --cov=rmgpy),
-# NOT an edit to it. With coverage on the same suite takes hours; both arms of the
-# comparison use the same flags, which is what makes a state change attributable.
+# --no-cov OVERRIDES the repo's pytest.ini default (--cov=arkane --cov=rmgpy) for
+# this run; pytest.ini itself is untouched. With coverage on the same suite takes
+# hours. BOTH arms use identical flags -- that is what makes a state change
+# attributable to the code rather than to the harness.
+#
+# The deselected test is not a failure: it does not terminate, on this build and on
+# the merged build alike. Ticketed separately.
 #
 # One line per test: <outcome>TAB<classname>::<name>.
 failed	test.rmgpy.data.kinetics.familyTest.TestGenerateReactions::test_beta_scission_generates_polymer_fragments
@@ -21,12 +29,11 @@ failed	test.rmgpy.solver.solverPolymerConduitTest.TestConduitFluxBookingIncremen
 failed	test.rmgpy.solver.solverPolymerTest.TestHybridPolymerReactor::test_cross_pool_reverse_flux_vanishes_continuously
 failed	test.rmgpy.solver.solverPolymerTest.TestHybridPolymerReactor::test_cross_pool_ve_detailed_balance_in_depletion_band
 failed	test.rmgpy.solver.solverPolymerTest.TestHybridPolymerReactor::test_weaklink_u_capacity_saturation
+failed	test.rmgpy.solver.solverPolymerTest.TestR81ExhaustionTailConditioning::test_floor_crossing_pool_wake_up_integrates_smoothly
 failed	test.rmgpy.solver.solverPolymerTest.TestR81ResurrectionZeroMetricGuard::test_positive_edge_rate_resurrection_unchanged
 failed	test.rmgpy.solver.solverPolymerTest.TestR81ResurrectionZeroMetricGuard::test_run7_shape_zero_edge_rates_do_not_add_species
 failed	test.rmgpy.solver.solverPolymerTest.TestRtolNearFloorConviction::test_rtol_1e4_near_floor_conviction_canary
 failed	test.rmgpy.tools.polymerMomentsConsumerTest.TestChannelSufficiency::test_pure_unzip_matches_oracle
-failed	test.rmgpy.tools.polymerMomentsRunnerTest.TestAtolReplayParity::test_atol_reaches_solver_floors_and_numpy_consumer
-failed	test.rmgpy.tools.polymerMomentsRunnerTest.TestAtolReplayParity::test_default_tolerances_unchanged
 failed	test.rmgpy.tools.polymerMomentsRunnerTest.TestExplicitDpArtifactLoader::test_handshake_residual_deposits_and_drains_through_runner_path
 passed	test.arkane.arkaneFunctionalInputTest.FunctionalInputTest::test_load_input_file
 passed	test.arkane.arkaneFunctionalInputTest.FunctionalInputTest::test_process_model_chemistry
@@ -433,6 +440,7 @@ passed	test.rmgpy.data.thermoTest.TestMolecularManipulationInvolvedInThermoEstim
 passed	test.rmgpy.data.thermoTest.TestMolecularManipulationInvolvedInThermoEstimation::test_combine_cycles
 passed	test.rmgpy.data.thermoTest.TestMolecularManipulationInvolvedInThermoEstimation::test_combine_two_rings_into_sub_molecule
 passed	test.rmgpy.data.thermoTest.TestMolecularManipulationInvolvedInThermoEstimation::test_convert_ring_to_sub_molecule
+passed	test.rmgpy.data.thermoTest.TestMolecularManipulationInvolvedInThermoEstimation::test_deterministic_bicyclic_decomposition
 passed	test.rmgpy.data.thermoTest.TestMolecularManipulationInvolvedInThermoEstimation::test_find_aromatic_bonds_from_sub_molecule
 passed	test.rmgpy.data.thermoTest.TestMolecularManipulationInvolvedInThermoEstimation::test_get_copy_for_one_ring
 passed	test.rmgpy.data.thermoTest.TestMolecularManipulationInvolvedInThermoEstimation::test_is_aromatic_ring
@@ -2072,9 +2080,15 @@ passed	test.rmgpy.polymerTest::test_assess_refused_qssa_kout_never_calls_missing
 passed	test.rmgpy.polymerTest::test_chain_scale_classifier_spares_declared_volatiles
 passed	test.rmgpy.polymerTest::test_chain_scale_defect_refusal_negative_controls_stay_live
 passed	test.rmgpy.polymerTest::test_chain_scale_proxy_derived_adduct_same_pool_row_refused_both_orientations
+passed	test.rmgpy.polymerTest::test_compile_polymer_phase_consistent_deck_mass_unchanged
+passed	test.rmgpy.polymerTest::test_compile_polymer_phase_leaves_non_initialmoles_pool_untouched
+passed	test.rmgpy.polymerTest::test_compile_polymer_phase_mn_zero_empty_pool_stays_silent
+passed	test.rmgpy.polymerTest::test_compile_polymer_phase_mn_zero_is_refused_reconciliation_and_warned
 passed	test.rmgpy.polymerTest::test_compile_polymer_phase_no_warning_when_consistent
+passed	test.rmgpy.polymerTest::test_compile_polymer_phase_reconciles_initial_mass_to_initial_moles
 passed	test.rmgpy.polymerTest::test_compile_polymer_phase_reconciles_moments_to_initial_moles
 passed	test.rmgpy.polymerTest::test_compile_polymer_phase_warns_on_mu0_disagreement
+passed	test.rmgpy.polymerTest::test_compile_polymer_phase_zero_declared_mass_is_a_real_disagreement
 passed	test.rmgpy.polymerTest::test_derive_daughter_pool_config_binds_moment_dummies
 passed	test.rmgpy.polymerTest::test_derive_daughter_pool_config_channel_free_stays_channel_free
 passed	test.rmgpy.polymerTest::test_derive_daughter_pool_config_inherits_qssa_channel_and_routing
@@ -2206,6 +2220,7 @@ passed	test.rmgpy.polymerTest::test_r95_above_ratio_below_floor_is_not_chain_sca
 passed	test.rmgpy.polymerTest::test_r95_dp2_volatile_stays_live
 passed	test.rmgpy.polymerTest::test_r95_heavy_monomer_shape_d_still_refused
 passed	test.rmgpy.polymerTest::test_r95_pp_c8_fragment_coupling_stays_live
+passed	test.rmgpy.polymerTest::test_reconciled_initial_mass_is_live_for_the_moment_re_derivation
 passed	test.rmgpy.polymerTest::test_reference_state_split_isomerization_refused_with_pool_registry
 passed	test.rmgpy.polymerTest::test_same_pool_polymer_reaction_is_not_refused
 passed	test.rmgpy.polymerTest::test_scission_daughter_channel_free_parent_stays_channel_free
@@ -2539,6 +2554,10 @@ passed	test.rmgpy.solver.solverPolymerJacobianTest.TestScopedKernelGuards::test_
 passed	test.rmgpy.solver.solverPolymerJacobianTest.TestScopedKernelGuards::test_guard3_shape_assert_fires_on_layout_drift
 passed	test.rmgpy.solver.solverPolymerJacobianTest.TestScopedKernelGuards::test_guard4_reaction_rate_semantics_unchanged
 passed	test.rmgpy.solver.solverPolymerJacobianTest.TestScopedKernelGuards::test_v1_golden_J_synthetic_and_guard1_volume_coupling
+passed	test.rmgpy.solver.solverPolymerTest.TestAcceptedStateVarianceCensus::test_variance_census_fires_on_an_unrealizable_second_moment
+passed	test.rmgpy.solver.solverPolymerTest.TestAcceptedStateVarianceCensus::test_variance_census_is_silent_on_an_exhausted_pool_at_the_floors
+passed	test.rmgpy.solver.solverPolymerTest.TestAcceptedStateVarianceCensus::test_variance_census_is_warn_once_and_independent_of_the_cone_half
+passed	test.rmgpy.solver.solverPolymerTest.TestAcceptedStateVarianceCensus::test_variance_census_never_raises_and_r81_still_does
 passed	test.rmgpy.solver.solverPolymerTest.TestAllowUnpairedReferenceStateKnobPlumb::test_knob_default_false_and_input_function_carries_it
 passed	test.rmgpy.solver.solverPolymerTest.TestAllowUnpairedReferenceStateKnobPlumb::test_to_solver_object_passes_knob
 passed	test.rmgpy.solver.solverPolymerTest.TestArmedRowsExerciseStage1::test_armed_row_green_with_live_stage1[A_armed]
@@ -2814,7 +2833,6 @@ passed	test.rmgpy.solver.solverPolymerTest.TestQssaKoutFloorPlumb::test_main_ini
 passed	test.rmgpy.solver.solverPolymerTest.TestQssaKoutFloorPlumb::test_to_solver_object_forwards_deck_filter_floor
 passed	test.rmgpy.solver.solverPolymerTest.TestR81ExhaustionTailConditioning::test_exhausted_pool_rhs_stays_live_census_only
 passed	test.rmgpy.solver.solverPolymerTest.TestR81ExhaustionTailConditioning::test_exhaustion_census_once_per_pool_per_rebuild
-passed	test.rmgpy.solver.solverPolymerTest.TestR81ExhaustionTailConditioning::test_floor_crossing_pool_wake_up_integrates_smoothly
 passed	test.rmgpy.solver.solverPolymerTest.TestR81ExhaustionTailConditioning::test_negative_moment_beyond_floor_hard_errors
 passed	test.rmgpy.solver.solverPolymerTest.TestR81ExhaustionTailConditioning::test_negative_moment_within_band_projects_with_census
 passed	test.rmgpy.solver.solverPolymerTest.TestR81ExhaustionTailConditioning::test_spawn_gate_in_band_zero_carries_census
@@ -2837,6 +2855,12 @@ passed	test.rmgpy.solver.solverPolymerTest.TestRefusalAdjudicationSurvivesRebuil
 passed	test.rmgpy.solver.solverPolymerTest.TestRefusalAdjudicationSurvivesRebuild::test_red_a_refused_edge_row_is_flux_dead_for_enlargement
 passed	test.rmgpy.solver.solverPolymerTest.TestRefusalAdjudicationSurvivesRebuild::test_red_hard_fail_on_unclassified_live_proxy_row
 passed	test.rmgpy.solver.solverPolymerTest.TestRefusalAdjudicationSurvivesRebuild::test_unclassified_proxy_row_escape_hatch_keeps_legacy_demotion
+passed	test.rmgpy.solver.solverPolymerTest.TestReleaseAvailabilityGate::test_deprop_sibling_emits_exactly_zero_without_repeat_units
+passed	test.rmgpy.solver.solverPolymerTest.TestReleaseAvailabilityGate::test_gate_is_exactly_one_on_the_cone_and_exactly_zero_with_no_units
+passed	test.rmgpy.solver.solverPolymerTest.TestReleaseAvailabilityGate::test_legacy_unzip_fabricated_gas_without_repeat_units
+passed	test.rmgpy.solver.solverPolymerTest.TestReleaseAvailabilityGate::test_no_gas_is_emitted_beyond_the_units_the_pool_held
+passed	test.rmgpy.solver.solverPolymerTest.TestReleaseAvailabilityGate::test_qssa_sibling_is_already_gated_by_its_initiation_term
+passed	test.rmgpy.solver.solverPolymerTest.TestReleaseAvailabilityGate::test_release_is_bit_for_bit_unchanged_inside_the_cone
 passed	test.rmgpy.solver.solverPolymerTest.TestReversibleChainScissionScopePin::test_census_attributes_refusal_to_the_scission_reaction
 passed	test.rmgpy.solver.solverPolymerTest.TestReversibleChainScissionScopePin::test_reversible_scission_to_gas_products_refuses
 passed	test.rmgpy.solver.solverPolymerTest.TestRtolNearFloorConviction::test_rtol_1e6_near_floor_trajectory_faithful
@@ -3257,7 +3281,9 @@ passed	test.rmgpy.tools.polymerMomentsConsumerTest.TestVolatileEjectionSufficien
 passed	test.rmgpy.tools.polymerMomentsConsumerTest.TestVolatileEjectionSufficiency::test_same_pool_ve_negative_a_clamp_matches_oracle
 passed	test.rmgpy.tools.polymerMomentsConsumerTest.TestVolatileEjectionSufficiency::test_same_pool_ve_positive_a_matches_oracle
 passed	test.rmgpy.tools.polymerMomentsConsumerTest::test_consumer_module_is_rmgpy_free
+passed	test.rmgpy.tools.polymerMomentsRunnerTest.TestAtolReplayParity::test_atol_reaches_solver_floors_and_numpy_consumer
 passed	test.rmgpy.tools.polymerMomentsRunnerTest.TestAtolReplayParity::test_cli_atol_propagates_through_main
+passed	test.rmgpy.tools.polymerMomentsRunnerTest.TestAtolReplayParity::test_default_tolerances_unchanged
 passed	test.rmgpy.tools.polymerMomentsRunnerTest.TestChemYamlLoader::test_load_chem_yaml
 passed	test.rmgpy.tools.polymerMomentsRunnerTest.TestCli::test_main_writes_csv
 passed	test.rmgpy.tools.polymerMomentsRunnerTest.TestConduitEntryRejectRules::test_bad_admission_direction_rejected
@@ -3505,7 +3531,6 @@ skipped	test.arkane.ess.arkaneGaussianTest.ArkaneGaussianLogTest::test_load_ethy
 skipped	test.rmgpy.data.kinetics.familyTest.TestFamily::test_save_family
 skipped	test.rmgpy.data.kinetics.kineticsTest.TestReactionDegeneracy::test_degeneracy_does_not_include_identical_atom_labels
 skipped	test.rmgpy.data.solvationTest.TestSoluteDatabase::test_initial_species
-skipped	test.rmgpy.data.thermoTest.TestMolecularManipulationInvolvedInThermoEstimation::test_deterministic_bicyclic_decomposition
 skipped	test.rmgpy.data.thermoTest.TestThermoAccuracy::test_new_thermo_generation
 skipped	test.rmgpy.data.thermoTest.TestThermoDatabase::test_species_thermo_generation_ml
 skipped	test.rmgpy.data.thermoTest.TestThermoDatabase::test_thermo_generation_ml_settings

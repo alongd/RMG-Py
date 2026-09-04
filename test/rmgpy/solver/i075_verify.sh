@@ -145,11 +145,13 @@ verdict "$RC" "test_floor_crossing_pool_wake_up_integrates_smoothly passes (it w
 ################################################################################
 step "8. the full unit suite, before vs after"
 ################################################################################
-# The BEFORE arm is a RECORDED measurement: the same worktree, built from
-# 74df5e84d (the i061 pair, before the i075 edits), full unit suite, same
-# deselect. It cannot be recomputed here without destroying the build under
-# test, so it is pinned below by name -- and the AFTER arm is run live and
-# diffed against it. Any test that changes state must appear in EXPECTED_CHANGE.
+# The BEFORE arm is a RECORDED measurement of the PRE-MERGE MAINLINE (polymer at
+# the pinned sha above), taken with the same flags as the live AFTER arm; see the
+# header of i075_suite_before.txt for the tree, the build and the exact command.
+# It cannot be recomputed here without a second checkout and a second build, so
+# it is recorded by name -- and the AFTER arm runs live against the tree under
+# test and is diffed against it. Every test that changes state must appear in
+# EXPECTED_CHANGE, and the count is asserted, so a silently-different suite fails.
 BEFORE_TXT="$HERE/i075_suite_before.txt"
 if [ ! -f "$BEFORE_TXT" ]; then
   verdict 1 "recorded BEFORE suite result $BEFORE_TXT is missing"
@@ -167,17 +169,21 @@ import sys, xml.etree.ElementTree as ET
 
 # The ONLY state changes this work is allowed to cause, each with the reason it
 # is expected. Anything else -- in either direction -- fails the check.
-_WHY = ("re-pinned to the post-i061 slot partition: these two asserted "
-        "np.all(atol_array == deck_atol), i.e. the pre-fix uniformity the "
-        "floor exists to break. Now pinned per slot class AND on the "
-        "chemistry copy -- strictly more than before (they are RED with the "
-        "floor disabled, which the originals were not).")
 EXPECTED_CHANGE = {
-    "test.rmgpy.tools.polymerMomentsRunnerTest.TestAtolReplayParity::"
-    "test_atol_reaches_solver_floors_and_numpy_consumer": _WHY,
-    "test.rmgpy.tools.polymerMomentsRunnerTest.TestAtolReplayParity::"
-    "test_default_tolerances_unchanged": _WHY,
+    "test.rmgpy.solver.solverPolymerTest.TestR81ExhaustionTailConditioning::"
+    "test_floor_crossing_pool_wake_up_integrates_smoothly":
+        "failed -> passed: this is the defect i061 fixes. On the pre-merge "
+        "mainline the pool waking up through the r81 floor collapses DASPK "
+        "(IDID=-6); with the moment error-weight floor it integrates.",
 }
+# NOT in this list, and deliberately so: the two TestAtolReplayParity pins.
+# They asserted np.all(atol_array == deck_atol) -- the pre-fix UNIFORMITY that
+# the floor exists to break -- so the floor turns them red. They were re-pinned
+# to the partition (physical == deck atol, moment == MOMENT_EWT_FLOOR_K*atol,
+# chemistry copy uniform) IN this landing, which is strictly tighter than what
+# they said before: both are RED with the floor disabled, which the originals
+# were not. Net effect across the landing: no state change, which is why they
+# do not appear here.
 
 def load_txt(path):
     res = {}
@@ -240,7 +246,7 @@ print("  FAILING AFTER (%d) -- every one of them also failing BEFORE:"
       % len(failed_after))
 for k in failed_after:
     print("    %s%s" % (k, "" if before.get(k) == "failed" else "   <-- NEW"))
-if len(after) < 3000:
+if len(after) < 3500:
     ok = False
     print("  FAIL: only %d tests collected; a truncated run must not pass"
           % len(after))
