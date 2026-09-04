@@ -132,11 +132,23 @@ def _sha256(path):
 def compute_provenance():
     """Compute (never transcribe) the provenance block for the fixture.
 
-    Everything here is derived from the running process: the git SHA and path of
-    the checkout ``rmgpy`` was imported from, the imported ``arrhenius`` module
-    file, the resolved ``database.directory``, and the on-disk table hashes. It
-    asserts the tables exist under the resolved database directory, so a wrong
-    working directory (``rmgrc`` resolving to the wrong tree) fails loudly.
+    Everything here is derived from the running process: the git SHA, path and
+    dirty state of the checkout ``rmgpy`` was imported from, the imported
+    ``arrhenius`` module file with its sha256 and mtime, the resolved
+    ``database.directory``, and the on-disk table hashes. It asserts the tables
+    exist under the resolved database directory, so a wrong working directory
+    (``rmgrc`` resolving to the wrong tree) fails loudly.
+
+    What this ties down, and what it does NOT. The block ties the fixture's
+    values to a *specific imported binary* (``arrhenius_so_sha256``/``_mtime``) in
+    a *specific checkout* (``rmgpy_checkout``) at a *specific source SHA*
+    (``generated_from_sha``), with the checkout's ``checkout_dirty`` flag. It does
+    NOT prove that binary was compiled from that source — a stale or copied ``.so``
+    sitting under the checkout would still be recorded with a clean-looking SHA.
+    Only a build-from-clean-tree in the same step could close that gap. The
+    residual assumption, stated so it is not hidden, is that the imported ``.so``
+    was built from the recorded SHA; ``checkout_dirty`` at least surfaces
+    uncommitted source at generation time.
     """
     from rmgpy import settings
 
@@ -148,6 +160,14 @@ def compute_provenance():
             stderr=subprocess.DEVNULL).decode().strip()
     except Exception:  # noqa: BLE001
         sha = "UNKNOWN"
+    try:
+        dirty = bool(subprocess.check_output(
+            ["git", "-C", checkout, "status", "--porcelain"],
+            stderr=subprocess.DEVNULL).decode().strip())
+    except Exception:  # noqa: BLE001
+        dirty = None
+
+    so_path = os.path.abspath(arrhenius_module.__file__)
 
     db_dir = os.path.abspath(settings["database.directory"])
     kinetics_dir = os.path.join(db_dir, "kinetics")
@@ -161,15 +181,20 @@ def compute_provenance():
 
     return {
         "generated_from_sha": sha,
+        "checkout_dirty": dirty,
         "rmgpy_checkout": checkout,
-        "arrhenius_module": os.path.abspath(arrhenius_module.__file__),
+        "arrhenius_module": so_path,
+        "arrhenius_so_sha256": _sha256(so_path) if so_path.endswith(".so") else None,
+        "arrhenius_so_mtime": os.path.getmtime(so_path),
         "database_directory": db_dir,
         "badnell_yaml_sha256": _sha256(badnell),
         "voronov_yaml_sha256": _sha256(voronov),
         "note": ("Reference k(T)/k(Te) for the four plasma kinetics classes, "
                  "computed from the imported arrhenius module. All fields above "
-                 "are computed by compute_provenance(), not transcribed. See "
-                 "plasmaKineticsConsolidationTest.py."),
+                 "are computed by compute_provenance(), not transcribed. The "
+                 "arrhenius_so_* fields tie the values to a specific binary; they "
+                 "do not prove that binary was built from generated_from_sha "
+                 "(see the docstring). See plasmaKineticsConsolidationTest.py."),
     }
 
 

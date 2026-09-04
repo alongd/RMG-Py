@@ -245,11 +245,24 @@ class PlasmaKineticsConsolidationTest:
         badnell = os.path.join(kinetics_dir, "badnell.yaml")
         voronov = os.path.join(kinetics_dir, "voronov.yaml")
         for path, sha in ((badnell, _BADNELL_SHA), (voronov, _VORONOV_SHA)):
+            # Table ABSENT is a legitimate skip: the database is optional here.
             if not os.path.exists(path):
                 pytest.skip(f"plasma data table not present: {path}")
+            # Table PRESENT with a different hash is a FAILURE, not a skip — this
+            # is the exact event the guard exists to catch (the shipped table
+            # changed under the fixture). Skipping it would silently downgrade the
+            # test to a no-op while the suite still reports green.
             got = hashlib.sha256(open(path, "rb").read()).hexdigest()
             if got != sha:
-                pytest.skip(f"data table differs from fixture provenance: {path}")
+                pytest.fail(
+                    f"data table moved under the fixture: {path}\n"
+                    f"  fixture sha256: {sha}\n"
+                    f"  on-disk sha256: {got}\n"
+                    "The table this fixture was generated against has changed. If "
+                    "that change is intended, deliberately regenerate the fixture "
+                    "(see plasma_kinetics_differential_gen.py) so the reference "
+                    "values and provenance follow the new table; do not silence "
+                    "this by skipping.")
 
         for (Z, N) in gen.BADNELL_ZN:
             ref = REFERENCE[f"Badnell_yaml_{Z}_{N}"]
@@ -286,8 +299,20 @@ class PlasmaKineticsConsolidationTest:
         """
         prov = REFERENCE["meta"]["provenance"]
         for key in ("generated_from_sha", "rmgpy_checkout", "arrhenius_module",
-                    "database_directory", "badnell_yaml_sha256", "voronov_yaml_sha256"):
+                    "arrhenius_so_sha256", "arrhenius_so_mtime", "database_directory",
+                    "badnell_yaml_sha256", "voronov_yaml_sha256"):
             assert key in prov and prov[key], key
-        assert len(prov["generated_from_sha"]) == 40, prov["generated_from_sha"]
-        for key in ("badnell_yaml_sha256", "voronov_yaml_sha256"):
-            assert len(prov[key]) == 64, prov[key]
+        # The source SHA must be a real 40-char git hash, not the UNKNOWN fallback.
+        assert prov["generated_from_sha"] != "UNKNOWN", "generated_from_sha not captured"
+        assert len(prov["generated_from_sha"]) == 40 and \
+            all(c in "0123456789abcdef" for c in prov["generated_from_sha"]), \
+            prov["generated_from_sha"]
+        for key in ("badnell_yaml_sha256", "voronov_yaml_sha256", "arrhenius_so_sha256"):
+            assert len(prov[key]) == 64, (key, prov[key])
+        # The imported binary the values came from must sit under the recorded
+        # checkout — the values, the SHA and the checkout name the same tree.
+        assert os.path.commonpath([prov["rmgpy_checkout"], prov["arrhenius_module"]]) \
+            == prov["rmgpy_checkout"], (prov["rmgpy_checkout"], prov["arrhenius_module"])
+        # This ties the values to a specific binary in a specific checkout at a
+        # specific SHA; it does NOT prove the binary was built from that SHA (see
+        # compute_provenance's docstring for the residual assumption).
