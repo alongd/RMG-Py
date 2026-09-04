@@ -441,6 +441,103 @@ def main():
             else "TEXT DIFFERS -- the warning was modified")
 
         # --------------------------------------------------------------
+        # CHECK 7 -- the OTHER direction of compatibility, and the one the
+        # no-schema-bump decision actually rests on: an OLD consumer reading
+        # a NEW artifact. Check 5 measured old-artifact/new-consumer; that is
+        # the easy direction. This one was originally argued rather than
+        # measured ("an older reader ignores the key and degrades to today's
+        # warning"), and arguing it is not good enough for the claim that
+        # holds up a compatibility decision.
+        # --------------------------------------------------------------
+        oldc = ta_load(post_path, ta_base_wt)
+        oldc_census = census_warnings(oldc)
+        ok7 = check(
+            f"7a. NEW artifact through the OLD consumer ({TA_BASE_SHA}): "
+            "loads, does not raise, and degrades to exactly today's census "
+            "warning",
+            oldc["error"] is None
+            and len(oldc_census) == len(defect_pools),
+            f"error={oldc['error']}  census warnings={len(oldc_census)} "
+            f"(expected {len(defect_pools)})")
+        # ...and the degradation is INERT, not merely survivable: the old
+        # consumer must behave identically with and without the new key.
+        ok7 &= check(
+            "7b. the new key is INERT at the old consumer -- its warning set "
+            "on the NEW artifact is identical to its warning set on the OLD "
+            "one (ignored, not merely tolerated)",
+            sorted(oldc["warnings"]) == sorted(pre["warnings"]),
+            "identical" if sorted(oldc["warnings"]) == sorted(pre["warnings"])
+            else ("DIFFERS\n old-artifact: "
+                  f"{sorted(pre['warnings'])}\n new-artifact: "
+                  f"{sorted(oldc['warnings'])}"))
+
+        # 7c -- the boundary of 7a/7b, and it is NOT where the no-bump
+        # rationale assumed. TA holds a composition-carrying (copolymer) pool
+        # to a CLOSED key set (_COMPOSITION_CARRIER_POOL_KEYS) and raises on
+        # any key outside it, with a message that says in as many words that
+        # the producer must bump the schema minor. So on such a pool the new
+        # key is fatal to an old consumer, not inert. Measured both ways.
+        # The stamp must move to 3.2 with the block: TA elects the copolymer
+        # rung on PRESENCE of a composition block and refuses an older stamp
+        # that carries one, so a 2.5-stamped probe is rejected by the version
+        # rule before it ever reaches the key allowlist. (Found by this check
+        # failing for that reason -- the earlier guard is doing its job.)
+        comp = json.loads(json.dumps(post_art))
+        comp["schema_version"] = "3.2"
+        for p in comp["pools"]:
+            if p["label"] == target:
+                p["composition"] = {}
+        fp = tmp / "composition_carrier.json"
+        fp.write_text(json.dumps(comp, indent=1))
+        old_comp = ta_load(fp, ta_base_wt)
+        comp_ctl = json.loads(json.dumps(comp))
+        for p in comp_ctl["pools"]:
+            if p["label"] == target:
+                p.pop(PROV_KEY, None)
+        fp2 = tmp / "composition_carrier_control.json"
+        fp2.write_text(json.dumps(comp_ctl, indent=1))
+        old_comp_ctl = ta_load(fp2, ta_base_wt)
+        blames_key = PROV_KEY in (old_comp["error"] or "")
+        ctl_blames_key = PROV_KEY in (old_comp_ctl["error"] or "")
+        ok7 &= check(
+            "7c. BOUNDARY: on a composition-carrying pool the old consumer "
+            "REFUSES the new key outright (closed carrier key set) -- and "
+            "the same artifact without the key is not refused for that "
+            "reason, so the refusal is attributable to this ticket's key",
+            blames_key and not ctl_blames_key,
+            f"with key   : {old_comp['error']}\n"
+            f"without key: {old_comp_ctl['error']}")
+        # ...and the post-fix consumer does not refuse for that reason.
+        new_comp = ta_load(fp, TA_ROOT)
+        ok7 &= check(
+            "7d. the post-fix consumer does NOT refuse the same pool over "
+            "this key (it is in the carrier allowlist)",
+            PROV_KEY not in (new_comp["error"] or ""),
+            f"error={new_comp['error']}")
+
+        # 7e -- so is 7c a live break or a future landmine? Measured against
+        # every real artifact on disk: if no producer output has ever carried
+        # a composition block, no existing consumer can hit 7c today.
+        all_sidecars = sorted(Path(os.path.expanduser("~/runs/RMG")).glob(
+            "poly_*/chemkin/polymer_pools.json"))
+        with_comp = []
+        for sc in all_sidecars:
+            try:
+                a = json.loads(sc.read_text())
+            except Exception:
+                continue
+            if any(isinstance(p, dict) and "composition" in p
+                   for p in a.get("pools", [])):
+                with_comp.append(str(sc))
+        ok7 &= check(
+            "7e. 7c is a FUTURE landmine, not a live break: no real producer "
+            "artifact on this box carries a composition block, so no pool "
+            "can carry both it and this key today",
+            not with_comp,
+            f"scanned {len(all_sidecars)} real sidecars under ~/runs/RMG; "
+            f"carrying a composition block: {with_comp or 'none'}")
+
+        # --------------------------------------------------------------
         # CHECK 4 -- the bias, measured. The daughters hold zero moments in
         # every artifact today, so mu0*defect is exactly zero and the
         # correction contributes nothing. Construct the case where it does:
