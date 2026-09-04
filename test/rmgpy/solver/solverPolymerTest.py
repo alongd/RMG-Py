@@ -95,7 +95,8 @@ def _softmin_p(terms, p=8.0):
     return m * sum((m / x) ** p for x in terms) ** (-1.0 / p)
 
 
-def _s_eff(mu, end_group=False, s_base=None, v_poly=1.0, atol=1e-16):
+def _s_eff(mu, end_group=False, s_base=None, v_poly=1.0, atol=1e-16,
+           rtol=1e-8):
     """Near-exhaustion bundle limiter (tail-only smoothstep; C1 soft-min,
     cone-margin drain guard), round-27 P1-A throttle + round-29 N2
     soft-min + round-30 N1 independent cone gate (keep in sync with
@@ -113,10 +114,16 @@ def _s_eff(mu, end_group=False, s_base=None, v_poly=1.0, atol=1e-16):
     non-end-group, length-biased cone-shrinking debits b1 > b0 = 1):
         Q10 = mu1 - mu0 <= 0        -> 0 REGARDLESS of E
         M = Q10[mol]/floor >= 1e4   -> S_free EXACTLY (margin safely bulk)
-        M <= 1e2                    -> 0 EXACTLY (N5b round-62 DASSL-hang
-                                       dead band: below M_lo, Q10 is itself
-                                       sub-floor-scale cancellation noise;
-                                       was softmin_p(S_free, S_cone))
+        M <= 1e2                    -> NARROWED dead band (I-090), on the
+                                       b1 axis: 0 EXACTLY once b1 - 1 has
+                                       left the RELATIVE width the state
+                                       cannot resolve,
+                                       (ewt(mu1)+ewt(mu2))/mu1 -- the N5b
+                                       round-62 answer, unchanged for every
+                                       O(1) b1 - 1 -- handing back through a
+                                       C1 smoothstep to softmin_p(S_free,
+                                       S_cone) as b1 -> 1+, where S_cone
+                                       DIVERGES and so bounds nothing
         between                     -> C1 v-smoothstep blend of S_free and
                                        softmin_p(S_free, S_cone)
     End-group rows (round-62 N5b adjudicated fix) SKIP stage 2 entirely
@@ -183,11 +190,34 @@ def _s_eff(mu, end_group=False, s_base=None, v_poly=1.0, atol=1e-16):
     m_dist = q10 * v_poly / floor     # margin in MOLES vs the mol floor
     if m_dist >= 1.0e4:
         return s_free
-    # N5b round-62 DASSL-hang dead band: below M_lo, q10 is itself
-    # sub-floor-scale cancellation noise -- return the exact hard zero
-    # instead of trusting cap/s_cone's noise-scale magnitude down there.
+    # N5b round-62 DASSL-hang dead band, as NARROWED by I-090 (keep in sync
+    # with HybridPolymerSystem._bundle_limited_site and the numpy oracle
+    # consumer -- three copies, one law). Below M_lo q10 is itself
+    # sub-floor-scale cancellation noise, so the exact hard zero beats
+    # trusting cap/s_cone's noise-scale magnitude AND sign down there --
+    # EXCEPT on the b1 == 1 surface, where s_cone = q10/(b1 - 1) diverges
+    # and therefore bounds nothing: there the hard zero discards a live rate
+    # across a jump the corrector cannot step over. The completion is kept
+    # on a noise-scale neighbourhood of that surface only and handed back to
+    # the same exact zero, C1 at both ends. The neighbourhood is the RELATIVE
+    # width the accepted state cannot resolve, (ewt(mu1) + ewt(mu2))/mu1 with
+    # the integrator's own error weight ewt(mu_k) = rtol*mu_k + floor,
+    # floored at sqrt(machine eps). Moments here are per-volume while `floor`
+    # is in moles, so the band is formed on the MOLE basis (b1 is
+    # basis-invariant). Derivation in the solver's I-090 block comment.
     if m_dist <= 1.0e2:
-        return 0.0
+        b1_band = ((rtol * (mu1 + mu2) * v_poly + floor + floor)
+                   / (mu1 * v_poly))
+        b1_band = max(b1_band, float(np.sqrt(np.finfo(np.float64).eps)))
+        b1_n = (b1c - 1.0) / b1_band
+        if b1_n >= 1.0:
+            return 0.0
+        s_cone = q10 / (b1c - 1.0)
+        if s_free <= 0.0:
+            return s_free
+        cap = _softmin_p([s_free, s_cone])
+        u = 1.0 - b1_n * b1_n * (3.0 - 2.0 * b1_n)
+        return u * cap
     s_cone = q10 / (b1c - 1.0)
     if s_free <= 0.0:
         return s_free

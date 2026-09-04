@@ -294,6 +294,56 @@ LN_EXP_OVERFLOW_GUARD = 700.0
 # astride the boundary. Genuine deep violations (mu1 < mu0 - band)
 # still return 0.0 unchanged.
 MU3_CLOSURE_BOUNDARY_REL = float(np.sqrt(np.finfo(np.float64).eps))
+CONE_B1_NOISE_REL_FLOOR = MU3_CLOSURE_BOUNDARY_REL
+# Cone-margin dead-band NARROWING (I-090). See _bundle_limited_site's
+# stage-2 block for the law; the reasoning about its WIDTH is here.
+#
+# Inside the dead band the round-62 law returns 0.0 for EVERY b1c. That is
+# the right answer where the stage-2 bound S_cone = Q10/(V*(b1c - 1)) is a
+# real bound, and the wrong one right at b1c == 1, where S_cone DIVERGES
+# and therefore caps nothing: the hard zero there discards a rate this
+# gate has no business capping, and does it with a jump (S_free on the
+# b1c <= 1 side, 0.0 on the other) that DASPK's corrector cannot step
+# across -- the round-62/I-077b never-returns signature.
+#
+# So the completion is kept on a neighbourhood of the b1c == 1 surface and
+# handed back to the exact hard zero outside it. The width of that
+# neighbourhood is the scale below which b1c - 1 = (mu2 - mu1)/mu1 is not a
+# difference the accepted state ever RESOLVED -- which is just the
+# propagated uncertainty of the two moments the difference is taken
+# between, in exactly the error-weight form the integrator itself enforces:
+#
+#     ewt(mu_k) = rtol*|mu_k| + f_k          (DASPK's own per-slot weight,
+#                                             f_k the r81 accepted-state
+#                                             floor already read here)
+#     band      = (ewt(mu1) + ewt(mu2)) / mu1
+#               = (rtol*(mu1 + mu2) + f1 + f2) / mu1
+#
+# The two uncertainties ADD because the numerator is their difference;
+# dividing by mu1 converts the result from moment units into b1c units.
+# Every input is a scale this function already carries for other reasons --
+# the deck's declared rtol, and the SAME r81 per-moment floors the dead
+# band itself rests on -- so nothing here is tunable against a test.
+# CONE_B1_NOISE_REL_FLOOR is the degenerate-case floor UNDER both terms,
+# not the band: sqrt(machine eps), this file's own scale for "this
+# difference is rounding noise, not signal" (MU3_CLOSURE_BOUNDARY_REL, used
+# identically one moment down at _safe_mu3_from_mu012's mu0 - mu1 guard,
+# line ~1176, and for FD step sizing, line ~5736). Nothing is resolvable
+# below it however tight the tolerances are asked to be.
+#
+# The band must be RELATIVE (a width in b1c - 1), not absolute (a width in
+# mu2 - mu1), and that is not a stylistic choice -- it is what the divergent
+# -bound argument is about. The obvious absolute alternative is seductive:
+# measure mu2 - mu1 against the SAME CONE_MARGIN_M_LO floors-count this gate
+# applies to Q10 = mu1 - mu0 one line earlier, which introduces no constant
+# at all. It is REFUTED, by measurement rather than taste:
+# test_bundle_limiter_two_regime_unit_pins drives the TAIL case at
+# mu = (1.9, 26, 610)*1e-15 -- mu2 - mu1 = 58 floors, so "noise" by that
+# standard, yet b1c - 1 = 22.46, where S_cone is a perfectly finite 1.07e-15
+# and the completion has nothing to repair. The absolute form returns a
+# nonzero site there and the pin correctly refuses it. An absolute width
+# says "b1c is near 1" only while mu1 is far from its floor; the relative
+# width says it always.
 TAIL_CONC_MIN = 1e-9  # Minimum concentration (mol/m^3) to actuate handshake
 
 # Gas constant for the radical_qssa_unzip Arrhenius evaluations, J/(mol K).
@@ -1772,6 +1822,11 @@ class HybridPolymerSystem(ReactionSystem):
         self._pool_worst_trial_excursion = None
         self._pool_mu_floors = None
         self._exhaustion_census_emitted = set()
+        # I-090 cone-margin dead-band narrowing: the rtol half of the b1c - 1
+        # noise band, rebound from the live tolerances by
+        # initiate_tolerances. The base-class default stands in so the law is
+        # well-defined on a system whose tolerances were never initiated.
+        self._cone_b1_rtol = 1.0e-8
 
     def initiate_tolerances(self, atol=1e-16, rtol=1e-8, sensitivity=False,
                             sens_atol=1e-6, sens_rtol=1e-4):
@@ -1794,6 +1849,13 @@ class HybridPolymerSystem(ReactionSystem):
         """
         ReactionSystem.initiate_tolerances(self, atol, rtol, sensitivity,
                                            sens_atol, sens_rtol)
+        # I-090: bind the rtol half of the cone-margin dead-band b1c noise
+        # band to the tolerance actually in force. Taken from the scalar rtol
+        # here for the same reason _softclamp_lam takes the scalar atol --
+        # these are scalar-tolerance decks; the per-state generalization is
+        # deferred with its sibling's. The floor half of the band comes from
+        # the pool's own r81 floors, read at the call site.
+        self._cone_b1_rtol = float(rtol)
         n_weak = 0
         for pool in self.polymer_pools:
             q = pool.radical_qssa_unzip
@@ -5971,8 +6033,56 @@ class HybridPolymerSystem(ReactionSystem):
         # remaining discontinuity from an unresolvable noise scale
         # (Q10 == 0) up to the resolvable M_LO band edge, where DASSL's
         # corrector can actually take a step across it.
+        #
+        # I-090 NARROWING. That argument has a domain: it holds wherever
+        # S_cone = q10/(V_poly*(b1c - 1)) is a bound at all. It is VOID on
+        # the b1c == 1 surface, where S_cone DIVERGES and therefore caps
+        # nothing -- there the hard zero is not "declining to trust noise",
+        # it is discarding a rate this gate has no business capping, and
+        # doing it across a jump (s_free on the b1c <= 1 side of the
+        # surface, 0.0 on the other) that the corrector cannot step over.
+        # That jump is the measured never-returns signature: the poly_102
+        # mod_2..mod_5 pools ride |b1c - 1| <= 5e-5 through the crash
+        # window and DASPK's step size collapses against it indefinitely.
+        #
+        # So the dead band now runs the divergence-repairing completion
+        # softmin_p(s_free, S_cone) on a noise-scale neighbourhood of
+        # b1c == 1 ONLY, and hands back to the SAME exact hard zero outside
+        # it. Both handoffs are C1, so the narrowing gives back nothing the
+        # completion bought and introduces no new edge:
+        #   * b1c -> 1+ : S_cone -> +inf so the completion -> s_free, and
+        #     u -> 1 with u' = 0, so the law meets the b1c <= 1 branch's
+        #     s_free continuously and with matching slope.
+        #   * b1c - 1 -> b1_band : u -> 0 with u' = 0, so the law meets the
+        #     N5b hard zero continuously, and BIT-FOR-BIT 0.0 beyond it --
+        #     not merely small. Everything at O(1) b1c - 1 (all bulk
+        #     cone-shrinking debits) is unchanged from round-62.
+        #   * across the M_LO band edge the law is now no WORSE and near
+        #     the surface strictly better: the pre-existing edge jump is
+        #     scaled by (1 - u), so it vanishes exactly where u -> 1.
+        # The neighbourhood half-width is derived, not fitted: it is the
+        # propagated error weight of the two moments b1c is built from, and
+        # it must be RELATIVE rather than absolute -- see the I-090 block
+        # comment near CONE_B1_NOISE_REL_FLOOR. (mirrored in the numpy
+        # oracle consumer's MIRRORED SOLVER LAW block and in _s_eff in
+        # solverPolymerTest.py -- keep all three in sync)
         if m_dist <= CONE_MARGIN_M_LO:
-            return 0.0
+            b1_band = ((self._cone_b1_rtol * (y1c + y2c)
+                        + floors[pool_idx, 1] + floors[pool_idx, 2]) / y1c)
+            if b1_band < CONE_B1_NOISE_REL_FLOOR:
+                b1_band = CONE_B1_NOISE_REL_FLOOR
+            b1_n = (b1c - 1.0) / b1_band
+            if b1_n >= 1.0:
+                return 0.0      # b1c - 1 is resolved signal: the N5b regime
+            s_cone = q10 / (V_poly * (b1c - 1.0))
+            if s_free <= 0.0:
+                return s_free
+            m = s_cone if s_cone < s_free else s_free
+            p = BUNDLE_LIMITER_SOFTMIN_P
+            acc = (m / s_free) ** p + (m / s_cone) ** p
+            cap = m * acc ** (-1.0 / p)
+            u = 1.0 - b1_n * b1_n * (3.0 - 2.0 * b1_n)
+            return u * cap
         s_cone = q10 / (V_poly * (b1c - 1.0))
         if s_free <= 0.0:
             return s_free
