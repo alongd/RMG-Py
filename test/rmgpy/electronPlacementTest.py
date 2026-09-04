@@ -49,7 +49,7 @@ from rmgpy import settings
 from rmgpy.data.kinetics.common import get_molecularity
 from rmgpy.data.kinetics.database import KineticsDatabase
 from rmgpy.data.kinetics.family import TemplateReaction
-from rmgpy.electron_balance import check_electron_balance
+from rmgpy.electron_balance import check_electron_balance, get_plasma_rate_order
 from rmgpy.electron_placement import FAMILY_ELECTRON_PLACEMENT, resolve_electron_placement
 from rmgpy.exceptions import (
     ElectronPlacementError,
@@ -1314,3 +1314,165 @@ class TestNewPlasmaFamiliesDatabase:
         check_electron_balance(view, view.reactants, view.products, str(view))
         assert reaction.electrons == -1
         assert not any(spc.is_electron() for spc in reaction.reactants)
+
+
+# ---------------------------------------------------------------------------
+# I-208: the conserved-electron gate.
+#
+# A reaction whose electron is CONSERVED -- one incident, one liberated, net
+# zero (``AB + e- -> A + B + e-``, translated to ``AB -> A + B`` with the
+# electron carried as neither an explicit participant nor a metadata count) --
+# was skipped by ``PlasmaReactor._resolve_electron_placements``'s gate, which
+# selected reactions with ``if getattr(rxn, 'electrons', 0):`` alone. Net zero
+# closes that gate, so the resolver was never consulted and the reaction kept
+# ONE reactant while its coefficient is second order (``cm^3/(mol*s)``) --
+# first-order evaluation of a second-order rate, wrong by a factor of the
+# electron density.
+#
+# No net-zero placement is shipped in ``FAMILY_ELECTRON_PLACEMENT`` (that is a
+# separate ticket). These tests monkeypatch a synthetic net-zero ``(1, 1)``
+# owner into the registry -- the same technique i113IonisationPlacementTest.py
+# uses to exercise the code path without shipping the data -- so they measure
+# the GATE, not any family's declaration.
+# ---------------------------------------------------------------------------
+
+#: A synthetic owner declaring a conserved-electron ``(1, 1)`` placement. Never
+#: shipped in the real registry; monkeypatched in per test.
+NET_ZERO_FAMILY = "TestNetZeroElectronImpactDissociation"
+
+
+def _o():
+    return Species(label="O").from_smiles("[O]")
+
+
+def _two_temp_order2():
+    """A second-order (``cm^3/(mol*s)``) two-temperature plasma coefficient --
+    the electron-impact dissociation shape, order 2 by its units."""
+    return TwoTemperaturePlasma(
+        A=(1.05e17, "cm^3/(mol*s)"), n=-1.24,
+        Ea_g=(0.0, "kJ/mol"), Ea_e=(12.59, "eV/molecule"))
+
+
+def _net_zero_dissociation(**overrides):
+    """A canonical conserved-electron dissociation ``AB -> A + B``: net zero
+    electrons (no metadata count), no explicit electron, second-order plasma
+    coefficient. This is exactly the shape the ``electrons != 0`` gate skipped."""
+    kwargs = dict(
+        reactants=[_o2()],
+        products=[_o(), _o()],
+        family=NET_ZERO_FAMILY,
+        electrons=0,
+        reversible=False,
+        is_forward=True,
+        kinetics=_two_temp_order2(),
+    )
+    kwargs.update(overrides)
+    return TemplateReaction(**kwargs)
+
+
+class TestNetZeroElectronPlacementGate:
+    """The gate ``PlasmaReactor._resolve_electron_placements`` uses to select
+    reactions for the resolver. A conserved-electron reaction must reach the
+    resolver; ordinary neutrals must not.
+
+    None of these tests ship a net-zero placement declaration -- each
+    monkeypatches a synthetic ``(1, 1)`` owner in, so they measure the gate."""
+
+    def _reactor(self):
+        imf = {_electron(): Y_E0, _o2(): 1.0}
+        return PlasmaReactor(T_GAS, P0, imf, (T_E, "K"), n_sims=1, termination=[])
+
+    def _reaction_and_species(self):
+        reaction = _net_zero_dissociation()
+        electron = _electron()
+        species = [electron, reaction.reactants[0]] + list(reaction.products)
+        return reaction, species
+
+    def test_net_zero_carrier_reaches_the_resolver(self, monkeypatch):
+        """The defect, closed: with a net-zero ``(1, 1)`` declared for its owner,
+        a conserved-electron reaction is RESOLVED, not passed through by
+        identity. Before the gate fix it is returned unchanged (RED)."""
+        monkeypatch.setitem(FAMILY_ELECTRON_PLACEMENT, NET_ZERO_FAMILY, (1, 1))
+        reaction, species = self._reaction_and_species()
+        reactor = self._reactor()
+        resolved = reactor._resolve_electron_placements([reaction], species, [])
+        assert resolved[0] is not reaction  # not the identity pass-through
+
+    def test_resolved_order_matches_the_coefficient_units(self, monkeypatch):
+        """The resolved rate law's ORDER matches its coefficient's UNITS. The
+        view has two reactants (``AB`` + ``e-``); the coefficient is
+        ``cm^3/(mol*s)``, which ``get_plasma_rate_order`` reads as order 2.
+        Order and units shown together -- 'it resolved' is not this."""
+        monkeypatch.setitem(FAMILY_ELECTRON_PLACEMENT, NET_ZERO_FAMILY, (1, 1))
+        reaction, species = self._reaction_and_species()
+        reactor = self._reactor()
+        view = reactor._resolve_electron_placements([reaction], species, [])[0]
+        # one incident electron placed on each side; net still zero
+        assert sum(1 for s in view.reactants if s.is_electron()) == 1
+        assert sum(1 for s in view.products if s.is_electron()) == 1
+        # the order the solver will evaluate == the order the units imply
+        assert view.kinetics.A.units == "cm^3/(mol*s)"
+        assert get_plasma_rate_order(view.kinetics) == 2
+        assert len(view.reactants) == get_plasma_rate_order(view.kinetics) == 2
+
+    def test_resolver_is_actually_consulted(self, monkeypatch):
+        """A spy on the module resolver records exactly one call, with the
+        canonical reaction. Before the fix the spy is never called (RED)."""
+        monkeypatch.setitem(FAMILY_ELECTRON_PLACEMENT, NET_ZERO_FAMILY, (1, 1))
+        calls = []
+        original = electron_placement.resolve_electron_placement
+
+        def spy(rxn, species_list):
+            calls.append(rxn)
+            return original(rxn, species_list)
+
+        monkeypatch.setattr(electron_placement, "resolve_electron_placement", spy)
+        reaction, species = self._reaction_and_species()
+        reactor = self._reactor()
+        reactor._resolve_electron_placements([reaction], species, [])
+        assert len(calls) == 1
+        assert calls[0] is reaction
+
+    def test_canonical_reaction_not_mutated(self, monkeypatch):
+        """Resolution builds a non-mutating view: the canonical net-zero
+        reaction keeps ``electrons=0`` and its heavy-only participant lists."""
+        monkeypatch.setitem(FAMILY_ELECTRON_PLACEMENT, NET_ZERO_FAMILY, (1, 1))
+        reaction, species = self._reaction_and_species()
+        reactants_before = list(reaction.reactants)
+        products_before = list(reaction.products)
+        reactor = self._reactor()
+        reactor._resolve_electron_placements([reaction], species, [])
+        assert reaction.electrons == 0
+        assert reaction.reactants == reactants_before
+        assert reaction.products == products_before
+        assert not any(s.is_electron() for s in reaction.reactants)
+        assert not any(s.is_electron() for s in reaction.products)
+
+    # --- the gate must NOT widen to ordinary neutrals -----------------------
+
+    def test_neutral_undeclared_still_passes_through(self):
+        """The widened gate must not put a named failure in front of every
+        neutral: an ordinary neutral (``electrons=0``, undeclared owner, no
+        electron) is returned by identity. Green before AND after the fix."""
+        thermal = _net_zero_dissociation(family="Some_Undeclared_Neutral_Family")
+        electron = _electron()
+        species = [electron, thermal.reactants[0]] + list(thermal.products)
+        reactor = self._reactor()
+        resolved = reactor._resolve_electron_placements([thermal], species, [])
+        assert resolved[0] is thermal
+
+    def test_declared_owner_already_explicit_passes_through(self, monkeypatch):
+        """A declared-owner reaction that ALREADY carries its electron
+        explicitly (``electrons=0``) is in reactor form: the gate passes it
+        through rather than routing it to a 'nothing to resolve' refusal. Green
+        before AND after the fix."""
+        monkeypatch.setitem(FAMILY_ELECTRON_PLACEMENT, NET_ZERO_FAMILY, (1, 1))
+        reactor_form = _net_zero_dissociation(
+            reactants=[_o2(), _electron()],
+            products=[_o(), _o(), _electron()],
+        )
+        assert any(s.is_electron() for s in reactor_form.reactants)
+        reactor = self._reactor()
+        resolved = reactor._resolve_electron_placements(
+            [reactor_form], [_electron()], [])
+        assert resolved[0] is reactor_form

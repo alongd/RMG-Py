@@ -182,13 +182,14 @@ __all__ = [
 #: ``(0, 0)`` is malformed.
 #:
 #: The other four families I-154 examined are ABSENT, and each absence is a
-#: measurement rather than an oversight. Two are held back from the database
-#: entirely — ``Plasma_Collisional_Ionization`` and
-#: ``Plasma_Electron_Impact_Dissociation`` both make a SPECTATOR a template
+#: measurement rather than an oversight. ``Plasma_Collisional_Ionization`` is
+#: held back from the database entirely because it makes a SPECTATOR a template
 #: participant, which RMG's family model cannot express (see
 #: ``docs/i154-carry-chemistry.md`` in RMG-database), so declaring a placement
 #: for an owner the database does not contain would be a claim about nothing.
-#: The remaining two would be absent even if they were carried:
+#: ``Plasma_Electron_Impact_Dissociation`` is absent for a different reason,
+#: corrected at I-208 — see the note below; it is NOT a spectator case. The
+#: remaining two would be absent even if they were carried:
 #:
 #: * ``Plasma_Charge_Transfer`` (``A+ + B- -> A + B``) and
 #:   ``Plasma_Ion_Molecule_Association`` (``Li+ + H -> LiH+``) involve no free
@@ -196,17 +197,32 @@ __all__ = [
 #:   resolver is never reached and a declaration here would be a claim about a
 #:   reaction shape that does not exist.
 #:
-#: One limit of this table is worth recording, because
+#: One shape is worth recording, because
 #: ``Plasma_Electron_Impact_Dissociation`` is the case that found it.
 #: ``AB + e- -> A + B + e-`` DOES carry an incident electron, but the electron is
-#: CONSERVED, so its net count is zero — and
-#: ``PlasmaReactor._resolve_electron_placements`` is gated on ``electrons != 0``.
-#: A ``(1, 1)`` declaration therefore could not be honoured even if someone wrote
-#: it: the resolver would never consult the table for that shape. Such a family
-#: has to carry its electron as an explicit template participant instead, which
-#: is what that one does — and which is separately why it is held back from the
-#: database (RMG's family model cannot express a spectator participant; see the
-#: report). The gap is real and is recorded rather than papered over.
+#: CONSERVED, so its net count is zero. Until I-208
+#: ``PlasmaReactor._resolve_electron_placements`` was gated on ``electrons != 0``
+#: alone, so a ``(1, 1)`` declaration could not be honoured by the reactor even if
+#: someone wrote it — the resolver was never consulted for a net-zero reaction.
+#: (The export helpers ``expand_electrons`` and ``get_electron_placement_counts``
+#: are separate consumers with their own rules; the latter already reads a net-zero
+#: declaration.) I-208 lifted that reactor gate: it now routes a conserved-electron
+#: reaction to the resolver whenever its owner declares a placement, and the
+#: resolver already handles ``(1, 1)`` (``expected_net = product_count -
+#: reactant_count = 0`` matches ``electrons = 0``, and the E-balance holds with one
+#: electron on each side). The reason this family is still absent from the table is
+#: therefore NOT a spectator — its recipe (``BREAK_BOND *1-*2``, ``GAIN_RADICAL
+#: *1``, ``GAIN_RADICAL *2``; RMG-database branch ``plasma``,
+#: ``docs/plasma_electron_impact_dissociation_staged/groups.py`` lines 18 and
+#: 26–30) touches both heavy centres, so no heavy spectator arises, and the
+#: electron is absent from the template by convention rather than left as one. It
+#: is absent only because no ``(1, 1)`` entry has been added yet; adding it is a
+#: data change owned by a separate ticket — and that ticket must ALSO lift
+#: ``expand_electrons``'s ``electrons == 0`` early return AND teach
+#: ``check_electron_reactant_order`` to read the order of a generic Arrhenius from
+#: its ``A.units``, or the writers export ``AB => A + B`` with a bimolecular
+#: coefficient and no electron, SILENTLY (see the I-208 report for the two blind
+#: export paths).
 #:
 #: I-206 adds the last two, and they are the first entries here that share a shape
 #: with an owner already declared for the SAME chemistry:

@@ -358,16 +358,30 @@ cdef class PlasmaReactor(ReactionSystem):
         is passed through unchanged, by identity.
 
         The order in which the electron is placed is NOT derived here from the
-        net electron count: presence of a metadata electron is only the gate
-        that selects a reaction for resolution; the side and count come from
-        the family-level declaration inside
-        :func:`rmgpy.electron_placement.resolve_electron_placement`, which
-        hard-fails by name (``ElectronPlacementError``) for any family, shape,
-        direction, or kinetics it does not authorise -- including the
+        net electron count: the gate below only SELECTS a reaction for
+        resolution; the side and count come from the family-level declaration
+        inside :func:`rmgpy.electron_placement.resolve_electron_placement`,
+        which hard-fails by name (``ElectronPlacementError``) for any family,
+        shape, direction, or kinetics it does not authorise -- including the
         ionisation-shaped case, whose net electron production does not
         determine incident-electron order. The resolver is looked up on the
         module at call time so a test can spy on it; the canonical reaction
         objects handed in are never mutated.
+
+        The gate is :meth:`_needs_electron_placement`. It admits two shapes and
+        only these: a metadata-electron reaction (``electrons != 0``), which is
+        the historical case; AND a CONSERVED-electron reaction (``electrons ==
+        0``) whose owner declares a placement and which carries no explicit
+        electron yet -- ``AB + e- -> A + B + e-`` translated to ``AB -> A + B``,
+        net zero. That second shape was skipped until I-208, because a net of
+        zero closed the old ``if getattr(rxn, 'electrons', 0)`` gate; the
+        resolver was never consulted and the reaction kept its heavy-only
+        molecularity while its coefficient was second order -- a first-order
+        evaluation of a second-order rate, wrong by a factor of the electron
+        density. Everything else (an ordinary neutral with no electron and no
+        declaration; a reaction already in reactor form with its electron
+        explicit) is passed through by identity: a neutral must NOT reach the
+        resolver, or it would fail by name.
         """
         from rmgpy import electron_placement
 
@@ -376,12 +390,50 @@ cdef class PlasmaReactor(ReactionSystem):
         species_list = list(core_species or []) + list(edge_species or [])
         resolved = []
         for rxn in reactions:
-            if getattr(rxn, 'electrons', 0):
+            if self._needs_electron_placement(rxn):
                 resolved.append(
                     electron_placement.resolve_electron_placement(rxn, species_list))
             else:
                 resolved.append(rxn)
         return resolved
+
+    def _needs_electron_placement(self, rxn):
+        """True if `rxn` must be handed to the electron-placement resolver.
+
+        The predicate that widened at I-208. A metadata-electron reaction
+        (``electrons != 0``) always goes -- unchanged from before, so an
+        undeclared owner still fails BY NAME inside the resolver rather than
+        passing silently through, and a double representation is still caught
+        there. A CONSERVED-electron reaction (``electrons == 0``) goes only when
+        its owner declares a placement AND it does not already carry an explicit
+        electron; that is the ``(reactant_count, product_count)`` net-zero shape
+        the old ``electrons != 0`` gate dropped. Resolved on the same
+        :func:`rmgpy.electron_balance.get_placement_owner` the resolver keys on,
+        so the gate and the resolver cannot disagree about which owner a
+        reaction belongs to.
+
+        Everything else is passed through: an ordinary neutral (no electron
+        anywhere, no declaration) must not reach the resolver or it would fail
+        by name, and a reaction already carrying its electron explicitly is
+        already in reactor form with nothing to place.
+        """
+        from rmgpy import electron_placement
+        from rmgpy.electron_balance import get_placement_owner
+
+        if getattr(rxn, 'electrons', 0):
+            return True
+        owner = get_placement_owner(rxn)
+        if owner is None or owner not in electron_placement.FAMILY_ELECTRON_PLACEMENT:
+            return False
+        # Use the resolver's own defensive electron test (catches AttributeError/
+        # IndexError on a malformed participant) so the gate and the resolver
+        # agree on what an electron is, and a malformed reaction fails INSIDE the
+        # resolver with the named ElectronPlacementError rather than at the gate
+        # with a raw error.
+        for spc in itertools.chain(rxn.reactants or [], rxn.products or []):
+            if electron_placement._is_electron(spc):
+                return False  # already in reactor form; nothing to place
+        return True
 
     def _validate_electron_state(self, list core_species, list edge_species):
         """
