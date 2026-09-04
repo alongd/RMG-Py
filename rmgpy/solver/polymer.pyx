@@ -151,6 +151,24 @@ ATTRIBUTION_TRUST_K = 100.0
 # max(..., SMALL_EPS). Generic solver infrastructure OUTSIDE the 2.8 kernel
 # contract -- the sidecar recipe strings are deliberately untouched.
 EXHAUSTION_FLOOR_K = 100.0
+# i061 MOMENT ERROR-WEIGHT FLOOR (DASPK step-collapse fix). The moment-
+# coordinate state slots (a pool's mu0/mu1/mu2 positions and any is_moment_dummy
+# core species) are BOOKKEEPING coordinates carrying dmu/dt, not molar species
+# amounts. The chemistry already declares any moment at |mu_k| <= EXHAUSTION_
+# FLOOR_K*atol to be AT THE FLOOR -- indistinguishable from zero for the r81
+# negative-moment tripwire, the exhaustion census, the softclamp and the
+# attribution trust band. Yet with the deck atol (e.g. 1e-14) DASPK's error
+# weight ewt = rtol*|y| + atol still demands the integrator resolve those slots
+# to atol, i.e. TWO DECADES BELOW the model's own accepted-state floor. At the
+# all-monomer moment boundary ~43/70 slots sit there at once and DDASPK
+# collapses its step to ~1e-9 s chasing noise the chemistry discards (i061:
+# ~40-55 days to reach terminationTime). We therefore floor the DASPK atol of
+# the MOMENT slots ONLY to the model's own accepted-state floor, so error
+# control stops one decade before the chemistry does. Anchored to EXHAUSTION_
+# FLOOR_K's rationale but a SEPARATE constant per the idiom above (error control
+# and chemistry exhaustion are two jobs that may diverge). NEVER applied to a
+# physical species -- see the include-mask scoping in initialize_model.
+MOMENT_EWT_FLOOR_K = 100.0
 # Near-exhaustion bundle limiter band (P1-A, round-27 re-adjudication of the
 # P1-1 hard-min): the cross-pool bundle cap S_cap is TAIL-ONLY. The band is
 # measured by the debited pool's ACCEPTED-STATE FLOOR DISTANCE
@@ -1720,6 +1738,11 @@ class HybridPolymerSystem(ReactionSystem):
         # (pydas' own atol/rtol arrays are cdef-private).
         self._jac_wt_atol = None
         self._jac_wt_rtol = None
+        # i061: pre-floor copy of atol_array (see MOMENT_EWT_FLOOR_K). The
+        # moment error-weight floor raises atol_array on the mu-slots for DASPK
+        # error control; chemistry noise-floor consumers read this preserved
+        # array so their behaviour is bitwise unchanged. Set in initialize_model.
+        self._chem_atol_array = None
 
         self._scratch_C_gas = None
         self._scratch_C_poly = None
@@ -4148,12 +4171,144 @@ class HybridPolymerSystem(ReactionSystem):
         # proven; detection does NOT re-run per step). Runs on every
         # rebuild so the layout validation tracks the live model.
         self._setup_scoped_jacobian()
+
+        # i061 moment error-weight floor (see MOMENT_EWT_FLOOR_K). Applied HERE,
+        # AFTER _pool_mu_floors (4060), _softclamp_lam (4082) and the scoped
+        # Jacobian's _jac_wt_atol have all been computed from the ORIGINAL
+        # atol_array, and immediately BEFORE initialize_solver hands the array to
+        # DASPK -- so the only consumer that sees the floored value is DASPK's
+        # own error weight. Chemistry noise-floor consumers are left bitwise
+        # unchanged: _chem_atol_array preserves the pre-floor array for the one
+        # LIVE reader (attribution trust, get_polymer_pool_stats). Scope is the
+        # complement of _char_rate_include_mask -- exactly the pool mu_indices
+        # and is_moment_dummy core positions (bookkeeping coordinates), NEVER a
+        # physical species -- a claim that i075 turned into a GUARD rather than
+        # a comment: _assert_moment_slots_carry_no_molar_amount refuses the
+        # floor outright if any slot in the mask complement looks like real
+        # chemistry. Inert when there are no moment slots.
+        self._chem_atol_array = np.array(self.atol_array, dtype=float)
+        if self._char_rate_include_mask is not None:
+            _floor = MOMENT_EWT_FLOOR_K * atol
+            _moment_slots = [i for i in range(self.num_core_species)
+                             if not self._char_rate_include_mask[i]]
+            self._assert_moment_slots_carry_no_molar_amount(
+                _moment_slots, core_species, _floor)
+            _floored = []
+            for i in _moment_slots:
+                if self.atol_array[i] < _floor:
+                    self.atol_array[i] = _floor
+                    _floored.append(i)
+            if _floored:
+                _labels = ", ".join(
+                    "%d:%s" % (i, getattr(core_species[i], "label", "?"))
+                    for i in _floored)
+                logging.info(
+                    "i061 moment error-weight floor: raised DASPK atol to "
+                    "%.3e on %d moment-coordinate slot(s) [%s]; physical "
+                    "species untouched.", _floor, len(_floored), _labels)
+
         ReactionSystem.initialize_solver(self)
 
         self.diagnose_polymer_mapping(core_species)
 
+    def _assert_moment_slots_carry_no_molar_amount(self, moment_slots,
+                                                   core_species, floor):
+        """i075 d3: refuse the moment error-weight floor on anything that could
+        be a physical species.
 
+        The floor's scope is the complement of _char_rate_include_mask. That
+        complement is NOT provably free of physical species from the mask's own
+        construction:
 
+          * the flag arm (`is_moment_dummy`) is a plain mutable Species
+            attribute, set at exactly one site (rmgpy/rmg/model.py) but never
+            re-validated afterwards; and
+          * the authoritative arm, a pool's `mu_indices`, is resolved by LABEL
+            -- polymer_input.to_config maps `mu_species` through the core
+            spc_map, and those mu_species come from
+            `species_dict["{proxy}_mu{k}"]`. `_register_polymer` deliberately
+            SKIPS creating the dummy when a species of that label "already
+            exists (e.g., from the input file)", and no code path checks
+            `is_moment_dummy` on the species it reuses. A deck that names a
+            real species `PS_mu0` therefore binds it as a moment coordinate.
+
+        So the claim is enforced here instead of assumed. Three properties of a
+        bookkeeping coordinate, each independent of the mask that selected the
+        slot and each a direct statement that the slot carries a REAL MOLAR
+        AMOUNT when it fails:
+
+          1. it takes part in no reaction anywhere in the network -- a moment
+             coordinate carries dmu/dt, never a chemical flux;
+          2. the deck declares no mole fraction for it -- a moment coordinate's
+             t=0 value comes from initial_polymer_moments, never from
+             initial_mole_fractions;
+          3. it is not classified GAS -- moment coordinates are condensed-phase
+             bookkeeping, and a gas slot is by definition a molar amount in the
+             gas volume.
+
+        Any of the three failing means relaxing DASPK's error control -- two
+        decades, silently -- on something that is not a bookkeeping coordinate,
+        which is exactly the failure this guard exists to make impossible. Hard
+        error, never a warning: the alternative is a quietly under-resolved
+        species.
+
+        NOT checked, deliberately: `reactive`. Moment dummies are created
+        reactive=False by rmgpy/rmg/model.py, but nothing in the solver contract
+        requires it, and every synthetic pool fixture in the solver test suite
+        builds its mu-species with the Species default (reactive=True). Keying
+        on it would refuse legal models. LIMIT of what is checked: a species
+        that is genuinely inert, carries no deck loading and is condensed --
+        an unreacting condensed diluent -- would still pass all three arms if it
+        were mis-bound into a mu slot. That case is unreachable through
+        polymer_input (a mu slot is bound only from `{proxy}_mu{k}`), but it is
+        not excluded by this guard.
+        """
+        cdef int i
+        if not moment_slots:
+            return
+        _network_species = None
+        _mf = getattr(self, "initial_mole_fractions", None) or {}
+        _mf_labels = set()
+        for _k in _mf:
+            _lbl = getattr(_k, "label", None)
+            _mf_labels.add(_lbl if _lbl is not None else _k)
+        gas_mask = self.gas_species_mask
+        for i in moment_slots:
+            spc = core_species[i] if i < len(core_species) else None
+            label = getattr(spc, "label", "?")
+            reason = None
+            if _network_species is None:
+                _network_species = set()
+                for arr in (self.reactant_indices, self.product_indices):
+                    if arr is None:
+                        continue
+                    flat = np.asarray(arr).ravel()
+                    _network_species.update(int(v) for v in flat[flat >= 0])
+            if i in _network_species:
+                reason = ("it appears in the reaction network "
+                          "(reactant_indices/product_indices), so it carries "
+                          "chemical flux")
+            elif spc is not None and (spc in _mf or label in _mf_labels):
+                reason = ("the deck declares an initial MOLE FRACTION for it; "
+                          "a moment coordinate is loaded through "
+                          "initial_polymer_moments")
+            elif (gas_mask is not None and i < len(gas_mask)
+                    and bool(gas_mask[i])):
+                reason = ("it is classified GAS, so its state slot is a molar "
+                          "amount in the gas volume, not condensed-phase "
+                          "bookkeeping")
+            if reason is not None:
+                raise ValueError(
+                    "i061 moment error-weight floor: core slot %d (%r) is in "
+                    "the complement of _char_rate_include_mask -- the solver "
+                    "is treating it as a moment COORDINATE and would relax "
+                    "its DASPK atol to %.3e -- but %s. A physical species must "
+                    "never receive the moment floor. Fix the pool's "
+                    "mu_indices / is_moment_dummy binding rather than the "
+                    "floor: a species labelled like a moment dummy but "
+                    "carrying real molar amounts is already being integrated "
+                    "as dmu/dt."
+                    % (i, label, float(floor), reason))
 
     def diagnose_polymer_mapping(self, core_species):
         w = 90
@@ -4902,7 +5057,15 @@ class HybridPolymerSystem(ReactionSystem):
         # SMALL_EPS (pre-floor behavior, honest).
         n_pools = len(self.polymer_pools)
         e_n_by_pool = [0.0] * n_pools
-        atol_arr = getattr(self, "atol_array", None)
+        # i061: the attribution trust band is a CHEMISTRY noise floor and must
+        # stay anchored to the deck atol, so read the PRE-floor copy. The moment
+        # error-weight floor (initialize_model) raised atol_array on the mu-slots
+        # for DASPK error control only. Falls back to atol_array when no floor
+        # was applied (e.g. a snapshot before initialize_model, atol_mu0->0.0,
+        # the pre-existing honest degeneracy).
+        atol_arr = getattr(self, "_chem_atol_array", None)
+        if atol_arr is None:
+            atol_arr = getattr(self, "atol_array", None)
         for p in range(n_pools):
             i0 = self.pool_mu0_indices[p]
             i1 = self.pool_mu1_indices[p]
