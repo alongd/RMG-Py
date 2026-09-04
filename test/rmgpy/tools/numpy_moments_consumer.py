@@ -48,9 +48,11 @@ BUNDLE_LIMITER_SOFTMIN_P = 8.0
 # generating solver's CONE_MARGIN_M_LO/_M_HI): dimensionless margin
 # distance M = Q10/f with Q10 = mu1 - mu0 and f the r81 floor. For
 # cone-shrinking debits (b1 > b0 = 1): Q10 <= 0 returns 0 REGARDLESS of
-# E; M >= M_HI returns S_free exactly; M <= M_LO applies
-# softmin_p(S_free, S_cone), S_cone = Q10/(V_poly*(b1 - 1)); between: C1
-# smoothstep blend.
+# E; M >= M_HI returns S_free exactly; M <= M_LO returns 0 EXACTLY
+# (round-62 N5b dead band -- see the MIRRORED SOLVER LAW block in
+# _bundle_limited_site, the one place that law lives here); between: C1
+# smoothstep blend of S_free and softmin_p(S_free, S_cone),
+# S_cone = Q10/(V_poly*(b1 - 1)).
 CONE_MARGIN_M_LO = 1.0e2
 CONE_MARGIN_M_HI = 1.0e4
 
@@ -634,9 +636,10 @@ class ArtifactConsumer:
             E >= E_hi returns s_base EXACTLY (bulk law untouched).
         Stage 2 (M band, INDEPENDENT of E; only cone-shrinking debits,
         b1 > b0 = 1): Q10 = mu1 - mu0 <= 0 -> 0 regardless of E;
-        M = Q10/floor >= M_hi -> S_free exactly; M <= M_lo ->
-        softmin_p(S_free, S_cone) with S_cone = Q10/(V_poly*(b1 - 1));
-        between: C1 v-smoothstep blend."""
+        M = Q10/floor >= M_hi -> S_free exactly; M <= M_lo -> 0 EXACTLY
+        (round-62 N5b dead band, was softmin_p(S_free, S_cone)); between:
+        C1 v-smoothstep blend of S_free and softmin_p(S_free, S_cone) with
+        S_cone = Q10/(V_poly*(b1 - 1))."""
         # stage 1: exhaustion tail limiter
         e_dist = self._floor_distance(pool, y)
         if e_dist >= BUNDLE_LIMITER_E_HI:
@@ -678,9 +681,24 @@ class ArtifactConsumer:
         s_cone = q10 / (self.V_poly * (b1c - 1.0))
         if s_free <= 0.0:
             return s_free
-        cap = softmin_p([s_free, s_cone])
         if m_dist <= CONE_MARGIN_M_LO:
-            return cap
+            # -- MIRRORED SOLVER LAW ------------------------------------
+            # rmgpy/solver/polymer.pyx, _bundle_limited_site, stage-2
+            # cone-margin drain gate, revision round-62 ("N5b cone-gate
+            # dead-band fix", commit d86201ec2). THE ONE PLACE this
+            # branch's law lives: below M_LO the solver returns the exact
+            # hard zero, because q10 = mu1 - mu0 is itself sub-floor-scale
+            # catastrophic-cancellation noise down there (~15 orders below
+            # any deck observable), so softmin_p(S_free, S_cone) -- what
+            # this oracle returned until then, and what the solver
+            # returned before round-62 -- trusts that noise's magnitude
+            # AND its sign. Pinned against the solver at every point of
+            # the M axis by TestConeMarginBandParity in
+            # polymerMomentsConsumerTest.py; if the solver's law here
+            # changes again, that test fails and this block is its
+            # counterpart. Do NOT re-derive the value, mirror it.
+            return 0.0
+        cap = softmin_p([s_free, s_cone])
         v_n = ((m_dist - CONE_MARGIN_M_LO)
                / (CONE_MARGIN_M_HI - CONE_MARGIN_M_LO))
         v = v_n * v_n * (3.0 - 2.0 * v_n)
