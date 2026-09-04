@@ -820,23 +820,48 @@ cdef class ReactionSystem(DASx):
         # When RMG_STALL_TRACE names a file, append (wall, iter, self.t,
         # step_time) periodically so the simulated-time-advance-per-wall-clock
         # can be measured externally. Off unless the env var is set.
-        _stall_trace_path = os.environ.get('RMG_STALL_TRACE')
-        _stall_trace_fh = open(_stall_trace_path, 'a', buffering=1) if _stall_trace_path else None
+        #
+        # i075 d1: EVERYTHING about the diagnostic, including reading
+        # RMG_STALL_TRACE_EVERY, is gated on RMG_STALL_TRACE. A malformed
+        # cadence can therefore never touch a run that did not ask for the
+        # trace, and in a run that DID ask it degrades to the default cadence
+        # with one warning instead of raising -- a non-positive value used to
+        # divide by zero at the modulo below.
+        #
+        # i075 d2: no handle is held across the loop. Each record is appended
+        # under a `with`, so the descriptor's lifetime is a single write and no
+        # exit path -- normal return, the resurrection early return, or an
+        # exception out of step() -- can leave one open.
+        _stall_trace_path = os.environ.get('RMG_STALL_TRACE') or None
         _stall_iter = 0
         _stall_wall0 = time.time()
-        _stall_every = int(os.environ.get('RMG_STALL_TRACE_EVERY', '2000'))
+        _stall_every = 2000
         _stall_prev_t = self.t
         _stall_dumped = False
+        if _stall_trace_path is not None:
+            _stall_every_raw = os.environ.get('RMG_STALL_TRACE_EVERY')
+            if _stall_every_raw is not None:
+                try:
+                    _stall_every = int(_stall_every_raw)
+                except (TypeError, ValueError):
+                    _stall_every = 0
+                if _stall_every <= 0:
+                    logging.warning(
+                        'RMG_STALL_TRACE_EVERY=%r is not a positive integer; '
+                        'falling back to the default stall-trace cadence of '
+                        '2000 iterations.', _stall_every_raw)
+                    _stall_every = 2000
 
         while not terminated:
             # Integrate forward in time by one time step
-            if _stall_trace_fh is not None:
+            if _stall_trace_path is not None:
                 _stall_iter += 1
                 _dt_adv = self.t - _stall_prev_t
                 if _stall_iter == 1 or _stall_iter % _stall_every == 0:
-                    _stall_trace_fh.write(
-                        'wall=%.4f iter=%d t=%.12e step_time=%.6e last_dadv=%.3e\n'
-                        % (time.time() - _stall_wall0, _stall_iter, self.t, step_time, _dt_adv))
+                    with open(_stall_trace_path, 'a', buffering=1) as _stall_fh:
+                        _stall_fh.write(
+                            'wall=%.4f iter=%d t=%.12e step_time=%.6e last_dadv=%.3e\n'
+                            % (time.time() - _stall_wall0, _stall_iter, self.t, step_time, _dt_adv))
                 # one-shot dump when the step advances but negligibly: name the
                 # state components with the tightest error-weight headroom, which
                 # is what throttles the DASPK step size.
@@ -850,17 +875,19 @@ cdef class ReactionSystem(DASx):
                         _ewt = _rt * _y + _at
                         _npin = int(np.sum(_y <= 10.0 * _at))
                         _order = np.argsort(_y)
-                        _stall_trace_fh.write(
-                            'STAGNATION t=%.12e step_time=%.6e dt_adv=%.3e neq=%d ncore=%d n_at_floor=%d\n'
-                            % (self.t, step_time, _dt_adv, self.neq, self.num_core_species, _npin))
-                        _idxs = list(_order[:15]) + list(_order[-3:])
-                        for _k in _idxs:
-                            _lbl = core_species[_k].label if _k < len(core_species) else '(state#%d beyond core: moment/edge)' % _k
-                            _stall_trace_fh.write(
-                                '  idx=%d y=%.6e ewt=%.6e |y|/ewt=%.3e  %s\n'
-                                % (_k, _y[_k], _ewt[_k], _y[_k] / _ewt[_k] if _ewt[_k] > 0 else -1.0, _lbl))
+                        with open(_stall_trace_path, 'a', buffering=1) as _stall_fh:
+                            _stall_fh.write(
+                                'STAGNATION t=%.12e step_time=%.6e dt_adv=%.3e neq=%d ncore=%d n_at_floor=%d\n'
+                                % (self.t, step_time, _dt_adv, self.neq, self.num_core_species, _npin))
+                            _idxs = list(_order[:15]) + list(_order[-3:])
+                            for _k in _idxs:
+                                _lbl = core_species[_k].label if _k < len(core_species) else '(state#%d beyond core: moment/edge)' % _k
+                                _stall_fh.write(
+                                    '  idx=%d y=%.6e ewt=%.6e |y|/ewt=%.3e  %s\n'
+                                    % (_k, _y[_k], _ewt[_k], _y[_k] / _ewt[_k] if _ewt[_k] > 0 else -1.0, _lbl))
                     except Exception as _e:
-                        _stall_trace_fh.write('STAGNATION dump failed: %r\n' % (_e,))
+                        with open(_stall_trace_path, 'a', buffering=1) as _stall_fh:
+                            _stall_fh.write('STAGNATION dump failed: %r\n' % (_e,))
                 _stall_prev_t = self.t
 
             if not first_time:
