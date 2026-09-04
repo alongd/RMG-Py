@@ -394,6 +394,11 @@ EXPECTED = {
         r"mu0\*mu2 - mu1\^2 went NEGATIVE on \d+ of \d+ steps",
     "test_degenerate_cutoffs_still_respect_the_variance_cone":
         r"drains Q at .* per unit Q against the k",
+    # round 3
+    "test_the_handshake_refuses_an_off_cone_moment_triple":
+        r"and the handshake still ran at F = ",
+    "test_budget_kinks_are_crossed_by_the_production_integrator":
+        r"never changed which term bound the flux",
 }
 
 
@@ -454,8 +459,13 @@ PY
 verdict "$?" "the exact expected set fails before, each for its own reason, and all pass after"
 
 ################################################################################
-step "4. the full existing suite, both arms, pass/fail sets named"
+step "4. the polymer + input suites, both arms, pass/fail sets named"
 ################################################################################
+# NOT the whole repository suite, and this step does not claim to be: it is the
+# five files that can see this change (the polymer solver tests, the polymer
+# Jacobian and conduit tests, the polymer model tests, and the RMG input tests
+# that build polymer decks), minus one non-terminating test. The scope is
+# printed below so the number in the report cannot be read as more than it is.
 # --no-cov: the repo config enables --cov by default and the suite does not
 #           finish in reasonable time with it. The coverage CONFIG is not edited.
 # -k "not <SLOW>": the poly_102 crash-window replay does not terminate in
@@ -467,13 +477,21 @@ SUITE=(test/rmgpy/solver/solverPolymerTest.py
        test/rmgpy/solver/solverPolymerConduitTest.py
        test/rmgpy/polymerTest.py
        test/rmgpy/rmg/inputTest.py)
+printf '  scope: %d files, deselecting %s\n' "${#SUITE[@]}" "$SLOW"
+for s in "${SUITE[@]}"; do printf '    %s\n' "$s"; done
 for arm in unfixed fixed; do
   case $arm in fixed) P=$FIXED ;; unfixed) P=$UNFIXED ;; esac
   PATHS=(); for s in "${SUITE[@]}"; do PATHS+=("$FIXED/$s"); done
   (cd /tmp && PYTHONPATH="$P" python -m pytest "${PATHS[@]}" \
      --no-cov -q --tb=no -p no:cacheprovider -k "not $SLOW" \
      --junitxml="$T/suite.$arm.xml" >"$T/suite.$arm.log" 2>&1)
-  printf '  %-8s %s\n' "$arm" "$(tail -1 "$T/suite.$arm.log")"
+  # pytest's own summary line, NOT tail -1: the suite emits DASPK convergence
+  # chatter on stderr (from pre-existing failures such as the r81 floor-crossing
+  # and rtol-canary tests -- identical on BOTH arms), and tail -1 printed that
+  # instead, which reads as though this change had killed the integrator.
+  printf '  %-8s %s\n' "$arm" \
+    "$(grep -E '^[0-9]+ (passed|failed)|=+ .*(passed|failed).* =+$' \
+         "$T/suite.$arm.log" | tail -1)"
 done
 python - "$T/suite.unfixed.xml" "$T/suite.fixed.xml" <<'PY'
 import sys, xml.etree.ElementTree as ET

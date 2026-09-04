@@ -7715,12 +7715,39 @@ class HybridPolymerSystem(ReactionSystem):
                     if xs > 1:
                         N_boundary = min(N_boundary, (mu1 - mu0) / (xs - 1))
                     m2_about_xs = mu2 - 2.0 * xs * mu1 + xs * xs * mu0
+                    q_cone = mu0 * mu2 - mu1 * mu1
                     if m2_about_xs > 0.0:
-                        N_boundary = min(N_boundary,
-                                         (mu0 * mu2 - mu1 * mu1) / m2_about_xs)
-                    # Off the cone every budget above is negative, and a
-                    # negative N_boundary would run the handshake BACKWARDS,
-                    # inventing tail chains out of the explicit species.
+                        N_boundary = min(N_boundary, q_cone / m2_about_xs)
+                    elif m2_about_xs < 0.0 or q_cone < 0.0:
+                        # m2_about_xs is SUM (n - xs)^2 c_n, a sum of squares
+                        # against non-negative concentrations: it cannot be
+                        # negative for ANY realizable tail. Reaching here means
+                        # the triple is already off the cone, so no budget
+                        # above describes a realizable population -- and the
+                        # one that would have caught it was skipped by the
+                        # m2 <= 0 test itself. Do NOT read the other clamps as
+                        # protection here: at xs = 2, (mu0, mu1, mu2) =
+                        # (1, 3.5, 9) has q_cone = -3.25 and m2_about_xs = -1,
+                        # every other budget is positive, and before this
+                        # branch existed the handshake ran there at its full
+                        # unclamped rate (measured F = 1.000000e-01).
+                        #
+                        # m2_about_xs == 0 with q_cone == 0 is the one
+                        # degenerate case that IS realizable -- the whole tail
+                        # sitting exactly at n = xs -- and it falls through to
+                        # the clamps above, which are correct for it.
+                        # m2_about_xs == 0 forces q_cone = -m1^2 <= 0, so
+                        # q_cone > 0 cannot occur in this branch at all.
+                        #
+                        # Refusing the flux is the conservative reading, not a
+                        # diagnosis. Whether an accepted off-cone state should
+                        # be fatal rather than warned about belongs to the
+                        # variance census, which owns that call.
+                        N_boundary = 0.0
+                    # A negative N_boundary would run the handshake BACKWARDS,
+                    # inventing tail chains out of the explicit species. It
+                    # arises where a budget IS computed and comes out negative:
+                    # q_cone < 0 with m2_about_xs > 0, or mu1 < mu0.
                     if N_boundary < 0.0:
                         N_boundary = 0.0
 

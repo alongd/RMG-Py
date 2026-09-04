@@ -11489,6 +11489,150 @@ class TestTailExhaustionHandshake:
                         f"k = {k:g} the budget permits")
             assert live >= 5, f"xs={xs}: only {live} live states"
 
+    def test_the_handshake_refuses_an_off_cone_moment_triple(self):
+        """Round-3 review finding. The Q budget is guarded by
+        ``if m2_about_xs > 0.0`` -- and m2_about_xs = SUM (n-xs)^2 c_n cannot
+        be negative for any realizable tail, so the ONLY way to reach the
+        else-branch is with a triple that is already off the cone. There the
+        budget was skipped, and the other clamps do not cover for it: at
+        xs = 2, (mu0, mu1, mu2) = (1, 3.5, 9) has Q = -3.25 and
+        m2_about_xs = -1, while mu0 = 1, mu1/xs = 1.75, mu2/xs^2 = 2.25 and
+        (mu1-mu0)/(xs-1) = 2.5 are ALL positive. The handshake ran there at
+        its full unclamped rate on an invalid state.
+
+        The earlier comment claimed 'off the cone every budget above is
+        negative'. That is true only when a budget is computed at all; the
+        m2 <= 0 corner is exactly where one is not."""
+        off_cone = [(1.0, 3.5, 9.0), (1.0, 2.5, 5.0), (1.0, 3.6, 10.0),
+                    (1.0, 4.0, 12.0)]
+        for mu0, mu1, mu2 in off_cone:
+            m2 = mu2 - 2.0 * self.XS * mu1 + self.XS * self.XS * mu0
+            q = mu0 * mu2 - mu1 * mu1
+            assert q < 0.0, f"({mu0}, {mu1}, {mu2}) is not off the cone"
+            assert m2 <= 0.0, (
+                f"({mu0}, {mu1}, {mu2}) has m2_about_xs = {m2:g} > 0, so it "
+                f"does not exercise the skipped-budget corner")
+            f, _dn = self._flux_at(mu0, mu1, mu2)
+            assert f == 0.0, (
+                f"off-cone triple ({mu0}, {mu1}, {mu2}): Q = {q:g}, "
+                f"m2_about_xs = {m2:g}, and the handshake still ran at "
+                f"F = {f:g} -- no budget bounds it there, because the one "
+                f"that would have is skipped by the m2 <= 0 test itself")
+        # ...and refusing that corner must not touch anything on the cone
+        rng = np.random.default_rng(20260904)
+        live = 0
+        for _ in range(300):
+            mu0 = 1.0
+            mu1 = mu0 * rng.uniform(self.XS + 0.01, 8.0)
+            mu2 = rng.uniform(1.001, 2.5) * mu1 * mu1 / mu0
+            if mu0 * mu2 - mu1 * mu1 < 0.0:
+                continue
+            if mu2 - 2.0 * self.XS * mu1 + self.XS * self.XS * mu0 < 0.0:
+                continue
+            f, _dn = self._flux_at(mu0, mu1, mu2)
+            assert f >= 0.0, f"({mu0}, {mu1}, {mu2}) -> F = {f:g}"
+            if f > 0.0:
+                live += 1
+        assert live >= 200, (
+            f"only {live} of the on-cone states still carry flux -- the "
+            f"off-cone refusal has reached states it has no business in")
+
+    def test_budget_kinks_are_crossed_by_the_production_integrator(self):
+        """Round-3 review finding, and the one that needed measuring rather
+        than arguing. Every other I-060 test drives ``residual()`` directly or
+        through ``solve_ivp(LSODA)``. The budgets are hard ``min()``s, so each
+        one puts a derivative KINK on its activation surface, and this file
+        carries softmin_p machinery (polymer.pyx:221) adopted because hard
+        switches 'fed DASPK's quasi-Newton the regen-#3 intermittent IDID=-7'
+        (polymer.pyx:231). Whether DASPK survives these kinks is therefore an
+        open question that LSODA cannot answer.
+
+        Measured, not assumed: this fixture crosses TWO activation surfaces --
+        the closure law binds at mean DP 20, the excess budget takes over at
+        mean ~1.44, and the closure takes it back near exhaustion -- and DASPK
+        integrates through both. Note the three hard mins on mu0, mu1/xs and
+        mu2/xs^2 predate I-060 (they are on `polymer`), so this is not a new
+        shape in the block, only newly load-bearing.
+
+        The test is a real ``simulate()``: the production integrator, not a
+        scipy stand-in."""
+        import contextlib
+        import io as _io
+        from rmgpy.rmg.settings import ModelSettings, SimulatorSettings
+        from rmgpy.solver.base import TerminationTime
+        k_unzip = 0.1
+        mu0, mean, pdi = 1.0, 20.0, 1.5
+        mu1 = mu0 * mean
+        core, mask, pools, moments = _kunzip_core_and_pools(
+            k_unzip, moments=(mu0, mu1, pdi * mu1 * mu1 / mu0),
+            k_scission=0.02, explicit={self.XS: self.EXPLICIT})
+        with contextlib.redirect_stdout(_io.StringIO()):
+            rs = _khom_system(core, mask, pools, moments, T=800.0)
+        binder_start = self._binding_budget(rs.y, k_unzip)
+
+        # 100 s lands INSIDE the excess-budget regime. The pool starts on the
+        # closure law at mean DP 20, the excess budget takes over near mean
+        # 1.44 (t ~ 40 s), and hands back to the closure near exhaustion
+        # (t ~ 246 s) -- so a run to 300 s would start and finish on the
+        # closure and prove nothing, having crossed the surface twice.
+        rs.termination.append(TerminationTime((100.0, "s")))
+        ms = ModelSettings(tol_keep_in_edge=0.0, tol_move_to_core=1.0e-3,
+                           tol_interrupt_simulation=1.0e8)
+        with contextlib.redirect_stdout(_io.StringIO()):
+            rs.simulate(list(core), [], [], [], [], [], model_settings=ms,
+                        simulator_settings=SimulatorSettings())
+
+        y = rs.y
+        mu0, mu1, mu2 = y[self.MU0], y[self.MU1], y[self.MU2]
+        binder_end = self._binding_budget(y, k_unzip)
+        assert binder_start != binder_end, (
+            f"the run never changed which term bound the flux "
+            f"({binder_start} throughout), so it did not cross a budget "
+            f"activation surface and settles nothing about the kinks")
+        assert "B_" in binder_start or "B_" in binder_end, (
+            f"neither end had a realizability budget binding "
+            f"({binder_start} -> {binder_end}): the kinks under test were "
+            f"never active")
+        # DASPK got to the end, and the state it left is still realizable
+        assert mu1 >= mu0 >= 0.0, (mu0, mu1)
+        assert mu0 * mu2 - mu1 * mu1 >= 0.0, (
+            f"DASPK finished off the variance cone: mu0*mu2 - mu1^2 = "
+            f"{mu0 * mu2 - mu1 * mu1:g}")
+        assert y[self.EXPLICIT] > 0.0, (
+            f"the explicit DP={self.XS} rung never filled "
+            f"({y[self.EXPLICIT]:g}) -- the tail had no outlet through "
+            f"exhaustion on the production path either")
+
+    def _flux_at(self, mu0, mu1, mu2, k_unzip=0.1, k_scission=0.0):
+        """The handshake flux at one moment triple, off the shared reactor."""
+        key = (k_unzip, k_scission)
+        rs = self._rs_cache.get(key)
+        if rs is None:
+            rs = self._rs_cache[key] = self._rs(
+                5.0, k_unzip=k_unzip, k_scission=k_scission)
+        y = rs.y.copy()
+        y[self.MU0], y[self.MU1], y[self.MU2] = mu0, mu1, mu2
+        y[self.EXPLICIT] = 0.0
+        dn = rs.residual(0.0, y, np.zeros_like(y))[0]
+        return float(dn[self.EXPLICIT]), dn
+
+    def _binding_budget(self, y, k_unzip):
+        """Which term the flux is sitting on: a budget name, or 'closure' when
+        the closure law itself is below every budget and none of them bind."""
+        mu0, mu1, mu2 = y[self.MU0], y[self.MU1], y[self.MU2]
+        m2 = mu2 - 2.0 * self.XS * mu1 + self.XS * self.XS * mu0
+        q = mu0 * mu2 - mu1 * mu1
+        cands = {"mu0": mu0, "mu1/xs": mu1 / self.XS,
+                 "mu2/xs2": mu2 / (self.XS * self.XS),
+                 "B_excess": (mu1 - mu0) / (self.XS - 1),
+                 "B_Q": q / m2 if m2 > 0.0 else float("inf")}
+        n = self._flux_at(mu0, mu1, mu2, k_unzip=k_unzip,
+                          k_scission=0.02)[0] / k_unzip
+        low = min(cands, key=lambda name: cands[name])
+        if abs(n - cands[low]) <= 1e-9 * max(1e-30, abs(n)):
+            return low
+        return "closure"
+
 
 class TestAcceptedStateVarianceCensus:
     """I-065 defect 2. The accepted-state census covered half of three-moment
