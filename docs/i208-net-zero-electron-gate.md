@@ -13,8 +13,15 @@ with `if getattr(rxn, 'electrons', 0):` alone (`rmgpy/solver/plasma.pyx:379`). T
 net of zero, so a **conserved**-electron reaction (`AB + e- -> A + B + e-`, one electron in, one out)
 never reached the resolver and kept its heavy-only molecularity while its coefficient is second
 order — a first-order evaluation of a second-order rate, wrong by one factor of the electron density.
-The gate now also admits a net-zero reaction whose owner declares a placement and which carries no
-explicit electron yet. Everything else still passes through untouched.
+The gate now also admits a reaction whose owner declares a placement, whose `electrons` scalar is 0,
+and which carries no explicit electron yet. The net-zero conserved-electron reaction is the
+**motivation** for that clause, not its boundary: because the clause keys on `electrons == 0` for any
+declared owner, it also admits a declared **nonzero** owner (e.g. `Plasma_Electron_Attachment` at
+`(1, 0)`) arriving with a defaulted or corrupt zero `electrons` scalar and no explicit electron. Such
+a reaction now hard-fails **by name** at the resolver's net-mismatch check instead of passing through
+silently as the old one-line gate let it — that loud failure is intentional. Everything outside this
+clause (an ordinary neutral with no electron and no declaration; a reaction already carrying its
+electron explicitly) still passes through untouched.
 
 ## Questions 1–4 (measured)
 
@@ -327,8 +334,14 @@ duplicate validation across sites. Flagged for the resolver-hardening owner.
 **Seed-mechanism reload drops a reaction's metadata electron count.** `make_seed_mech`
 (`rmgpy/rmg/main.py:2051,2072`) writes each seed entry's `label = reaction.to_labeled_str()`, and
 `to_labeled_str` (`rmgpy/reaction.py:199`) builds the equation from participant labels only — no
-electron folding. `save_entry` in `rmgpy/data/kinetics/library.py` never serializes
-`entry.item.electrons` (verified: no `electrons` reference in it). So a seed reload reconstructs the
+electron folding. On the seed write path, `save_entry` (`rmgpy/data/kinetics/common.py:75-90`)
+serializes the reaction item as an explicit field whitelist — `degeneracy`, `duplicate`,
+`reversible`, `allow_pdep_route`, `elementary_high_p`, `allow_max_rate_violation` — and `electrons` is
+not among them; the item is never `repr`'d on this path, so its metadata count is not written. (This
+is the specific path that loses it, not a blanket absence: `LibraryReaction.__repr__`
+(`rmgpy/data/kinetics/library.py:145`) *does* emit `electrons=` when nonzero, so a code path that
+serialized `repr(entry.item)` would preserve it — the seed path is not that path.) So a seed reload,
+reconstructing the equation from the electron-free `label`, rebuilds the
 reaction as `Reaction(electrons=0)` and recovers the electron order **only** when `entry.data` (the
 kinetics) carries its own electron information: `VoronovEIArrhenius`/`BadnellRRArrhenius` do (they set
 `uses_electron_density` etc.), so they survive the round trip; a **generic family estimate** that

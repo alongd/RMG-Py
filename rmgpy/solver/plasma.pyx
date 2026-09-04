@@ -368,25 +368,35 @@ cdef class PlasmaReactor(ReactionSystem):
         module at call time so a test can spy on it; the canonical reaction
         objects handed in are never mutated.
 
-        The gate is :meth:`_needs_electron_placement`. It admits two shapes and
-        only these: a metadata-electron reaction (``electrons != 0``), which is
-        the historical case; AND a CONSERVED-electron reaction (``electrons ==
-        0``) whose owner declares a placement and which carries no explicit
-        electron yet -- ``AB + e- -> A + B + e-`` translated to ``AB -> A + B``,
-        net zero. That second shape was skipped until I-208, because a net of
-        zero closed the old ``if getattr(rxn, 'electrons', 0)`` gate; the
-        resolver was never consulted and the reaction kept its heavy-only
-        molecularity while its coefficient was second order -- a first-order
-        evaluation of a second-order rate, wrong by a factor of the electron
-        density. (On the full reactor path with plasma-flagged kinetics this
-        wrong order does not reach the solver: ``_validate_reactions`` refuses a
-        missing incident electron and RAISES. The genuinely silent form of this
-        hazard is the EXPORT path with generic Arrhenius-like kinetics, whose
-        order the writers' guard cannot read; that lives outside this gate and
-        is recorded in the I-208 report.) Everything else (an ordinary neutral
-        with no electron and no declaration; a reaction already in reactor form
-        with its electron explicit) is passed through by identity: a neutral
-        must NOT reach the resolver, or it would fail by name.
+        The gate is :meth:`_needs_electron_placement`. It admits two clauses: a
+        metadata-electron reaction (``electrons != 0``), which is the historical
+        case; AND a reaction whose owner declares a placement, whose
+        ``electrons`` scalar is 0, and which carries no explicit electron yet.
+        The MOTIVATING case for the second clause is the CONSERVED-electron
+        reaction -- ``AB + e- -> A + B + e-`` translated to ``AB -> A + B``, net
+        zero -- which was skipped until I-208 because a net of zero closed the
+        old ``if getattr(rxn, 'electrons', 0)`` gate; the resolver was never
+        consulted and the reaction kept its heavy-only molecularity while its
+        coefficient was second order -- a first-order evaluation of a
+        second-order rate, wrong by a factor of the electron density. But net
+        zero is the MOTIVATION for the clause, not its boundary: the clause keys
+        on ``electrons == 0`` for ANY declared owner, so it ALSO admits a
+        declared NONZERO owner (e.g. ``Plasma_Electron_Attachment`` at
+        ``(1, 0)``) that arrives with a defaulted or corrupt zero ``electrons``
+        scalar and no explicit electron. Such a reaction now hard-fails BY NAME
+        at the resolver's net-mismatch check rather than passing through
+        silently as the old one-line gate let it -- that loud failure is
+        intentional, and :meth:`_needs_electron_placement` documents why the
+        clause is deliberately not narrowed to exclude it. (On the full reactor
+        path with plasma-flagged kinetics a wrong incident order does not reach
+        the solver: ``_validate_reactions`` refuses a missing incident electron
+        and RAISES. The genuinely silent form of this hazard is the EXPORT path
+        with generic Arrhenius-like kinetics, whose order the writers' guard
+        cannot read; that lives outside this gate and is recorded in the I-208
+        report.) Everything else (an ordinary neutral with no electron and no
+        declaration; a reaction already in reactor form with its electron
+        explicit) is passed through by identity: a neutral must NOT reach the
+        resolver, or it would fail by name.
         """
         from rmgpy import electron_placement
 
