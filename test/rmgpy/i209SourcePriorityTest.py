@@ -119,9 +119,13 @@ class TestSourcePriorityIsOrdering:
     def setup_class(cls):
         path = os.path.join(settings["test_data.directory"], "testing_database")
         cls.database = KineticsDatabase()
+        # H_Abstraction is the family used to build the "estimate" reactions;
+        # Disproportionation is the only other family the two libraries' auto-
+        # generated rate-rule entries reference, so loading both lets every
+        # library reaction resolve its owner exactly as it would in a real run.
         cls.database.load(
             os.path.join(path, "kinetics"),
-            families=[FAMILY],
+            families=[FAMILY, "Disproportionation"],
             libraries=[SOURCED_LIBRARY, SEED_LIBRARY],
         )
 
@@ -253,3 +257,100 @@ class TestSourcePriorityIsOrdering:
             assert returned is registered_seed
             assert returned.kinetics.A.value_si == ESTIMATE.A.value_si
             assert returned.kinetics.A.value_si != SOURCED.A.value_si
+
+    @staticmethod
+    def _registry_key_of(cerm, rxn):
+        """The reaction_dict key under which `rxn` is registered, or None if it
+        is not in the global registry at all."""
+        for family in cerm.reaction_dict:
+            for k1 in cerm.reaction_dict[family]:
+                for k2 in cerm.reaction_dict[family][k1]:
+                    if rxn in cerm.reaction_dict[family][k1][k2]:
+                        return family
+        return None
+
+    def test_edge_pruning_erases_a_library_incumbent(self):
+        """The headline reachability path: "first registration wins" is NOT
+        permanent, because edge pruning deletes reactions -- LIBRARY reactions
+        included -- from the global registry.
+
+        ``remove_species_from_edge`` (model.py ~1576) walks EVERY key in
+        ``reaction_dict`` unfiltered by owner type and removes entries for the
+        pruned species, so a sourced library reaction registered under a
+        ``KineticsLibrary`` key is erased when one of its edge species is pruned
+        (triggered by ``tol_keep_in_edge`` or the ``maximum_edge_species`` cap,
+        model.py ~1471). Afterwards a re-proposed reaction over the same species
+        faces NO incumbent, so a family estimate would install as the operative
+        rate. This inverts "the library loads first so the sourced value always
+        wins" without any seed mechanism, for any chemistry.
+
+        Driven without a full ``rmg.py`` run: species enter via
+        ``make_new_species`` (as in a run) and pruning is invoked directly with an
+        empty ``reaction_systems`` list and pressure dependence off."""
+        with self._singleton():
+            cerm = CoreEdgeReactionModel()
+            a = cerm.make_new_species(Species().from_smiles("[H]"), generate_thermo=False)[0]
+            b = cerm.make_new_species(Species().from_smiles("C=C[CH2]C"), generate_thermo=False)[0]
+            c = cerm.make_new_species(Species().from_smiles("C=C=CC"), generate_thermo=False)[0]
+            d = cerm.make_new_species(Species().from_smiles("[H][H]"), generate_thermo=False)[0]
+            for spc in (a, b, c, d):
+                cerm.add_species_to_edge(spc)
+
+            sourced = self._library([a, b], [c, d], SOURCED_LIBRARY, SOURCED)
+            incumbent, is_new = cerm.make_new_reaction(
+                sourced, generate_thermo=False, generate_kinetics=False)
+            assert is_new is True
+            # The sourced library reaction is registered under a library key.
+            assert self._registry_key_of(cerm, incumbent) == SOURCED_LIBRARY
+
+            estimate = self._template([a, b], [c, d], ESTIMATE)
+            estimate.reactants.sort()
+            estimate.products.sort()
+            found_before, kept_before = cerm.check_for_existing_reaction(estimate)
+            assert found_before is True
+            assert kept_before is incumbent
+
+            # Prune an edge species that participates in the library reaction.
+            cerm.remove_species_from_edge([], b)
+
+            # The library incumbent is gone from the global registry.
+            assert self._registry_key_of(cerm, incumbent) is None
+            estimate_again = self._template([a, b], [c, d], ESTIMATE)
+            estimate_again.reactants.sort()
+            estimate_again.products.sort()
+            found_after, kept_after = cerm.check_for_existing_reaction(estimate_again)
+            assert found_after is False
+            assert kept_after is None
+
+    def test_library_vs_library_collision_is_identity_confirmed(self):
+        """Second face of the same bug, confirmed through the identity path the
+        model actually uses (``are_identical_species_references``, which compares
+        species by reference after ``make_new_species`` unifies them). Two real
+        libraries that both carry the same small-molecule reactions collide: the
+        first-registered library's reaction is the incumbent and the second
+        library's differently-rated copy comes back ``is_new=False``.
+
+        This is NOT a name/formula proxy -- each library defines its own Species
+        objects, and the collision is resolved only after ``make_new_reaction``
+        de-duplicates them, exactly as in a run. Records today's count so a change
+        to the duplicate path (e.g. one that stopped folding differently-sourced
+        copies together) is caught."""
+        with self._singleton():
+            cerm = CoreEdgeReactionModel()
+            first = self.database.libraries[SOURCED_LIBRARY].get_library_reactions()
+            second = self.database.libraries[SEED_LIBRARY].get_library_reactions()
+
+            for rxn in first:
+                cerm.make_new_reaction(rxn, generate_thermo=False, generate_kinetics=False)
+
+            collisions = []
+            for rxn in second:
+                returned, is_new = cerm.make_new_reaction(
+                    rxn, generate_thermo=False, generate_kinetics=False)
+                if not is_new:
+                    collisions.append(returned)
+
+            # 14 of ethane-oxidation's 18 reactions collide with GRI-Mech3.0,
+            # which was registered first; every survivor is the GRI incumbent.
+            assert len(collisions) == 14
+            assert all(getattr(r, "library", None) == SOURCED_LIBRARY for r in collisions)
