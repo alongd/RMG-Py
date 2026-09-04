@@ -278,11 +278,12 @@
    20000.0
   ],
   "provenance": {
+   "arrhenius_module": "/home/alon/Code/RMG-Py-99-ref/rmgpy/kinetics/arrhenius.cpython-39-x86_64-linux-gnu.so",
    "badnell_yaml_sha256": "9d79f9d6ace2e3e785ca34bc3f2acfdc474050c2f9279a3b84a6af30ffe5f28e",
-   "database": "RMG-database plasma; input/kinetics tables",
-   "generated_from": "origin/99 @ a9c3e8d148be898e6c36c22a5462e8efe46008d9",
-   "generator": "test/rmgpy/kinetics/plasma_kinetics_differential_gen.py",
-   "note": "Reference k(T)/k(Te) computed from origin/99's compiled arrhenius module for the four plasma kinetics classes. See plasmaKineticsConsolidationTest.py.",
+   "database_directory": "/home/alon/Code/RMG-database-plasma/input",
+   "generated_from_sha": "a9c3e8d148be898e6c36c22a5462e8efe46008d9",
+   "note": "Reference k(T)/k(Te) for the four plasma kinetics classes, computed from the imported arrhenius module. All fields above are computed by compute_provenance(), not transcribed. See plasmaKineticsConsolidationTest.py.",
+   "rmgpy_checkout": "/home/alon/Code/RMG-Py-99-ref",
    "voronov_yaml_sha256": "41278176941ea53c83a43276950b59d60bb0de46de6620ccf0654bc223efaaa8"
   },
   "spread_T": [

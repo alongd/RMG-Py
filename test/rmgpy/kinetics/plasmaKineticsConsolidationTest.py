@@ -35,20 +35,50 @@ plasma kinetics" rests on a measurement rather than a presence check. The four
 classes are declared on both branches; declaring the same class is not evidence
 of computing the same number. Here the *fixture*
 (``plasma_kinetics_origin99_reference.json``) is the number ``origin/99``
-actually computes, captured from its compiled module at commit
-``a9c3e8d148``; the *live* import is the side under test.
+actually computes, captured from its compiled module (the fixture's
+``meta.provenance`` block records the git SHA and path it was generated from,
+all computed by the generator, not transcribed); the *live* import is the side
+under test.
 
-The rate bodies of these classes are byte-identical source compiled by the same
-toolchain, so agreement is expected to machine precision. The tolerance is
-``rtol = 1e-12`` — a few ulps of double precision, room only for benign
-floating-point reassociation, not for a real difference. The observed maximum
-relative deviation over every spread point is ~3.3e-16 (about 1.5 ulp).
+WHAT THIS ARTIFACT LICENSES, precisely: *the sampled rate-coefficient paths
+(``get_rate_coefficient`` and, where present, ``get_rate_coefficient_two_temp`` /
+``get_rate_coefficient_electron_temp``) of the four plasma kinetics classes
+reproduce the committed ``origin/99`` reference within* ``rtol = 1e-12`` *across
+the sampled T/Te spread, and the known Voronov* ``m^3/(molecule*s)`` *divergence
+is deliberately kept on the dimensionally-correct* ``plasma`` *side.* It does NOT
+license "the classes are fully consolidated", "all behaviour is identical", "all
+table rows are unaffected", or "the provenance is independently proven".
+
+WHAT IT DOES NOT COVER (each a real difference or an untested surface, not a
+claim of equivalence): ``__repr__``/``eval`` round-trip, ``__reduce__``,
+pickle/``copy``, ``is_identical_to``/equality, ``change_rate``, ``change_t0``,
+``to_arrhenius``/``to_arrhenius_ep``, ``to_two_temp_plasma``, Cantera export,
+default/zero-argument constructors, error branches (e.g. Voronov now *raises* on
+``dE=None`` where ``origin/99`` defaulted it to 10.0), zero/negative and extreme
+T/Te, A-factor spellings beyond the six probed, optional Badnell ``C``/``T2``
+absence, the ``electrons``/``uses_electron_density`` metadata, and Cython
+ABI/struct layout.
+
+On tolerance and the "byte-identical" premise: at *statement* level the sampled
+rate-coefficient bodies are unchanged source, and the observed maximum relative
+deviation over every spread point is ~3.3e-16 (about 1.5 ulp). But at *class*
+scope the premise is false — Badnell and Voronov gain an ``_electrons`` attribute
+and a new ``get_rate_coefficient_electron_temp`` method; Voronov turns
+``dE=None`` from a default of 10.0 into a hard error; ``TwoTemperaturePlasma``
+fixes a ``TO``->``T0`` typo and folds ``T0`` into its equality;
+``ElectronCollisionPlasma`` gains exact identity comparison. ``rtol = 1e-12`` is
+therefore stated as a deliberately loose *scientific guard* (~4500 double
+epsilons), not as a machine-precision proof; it is tight enough that a 1e-9
+perturbation of any fixture point trips it, so it cannot absorb a real
+difference.
 
 The one genuine divergence is the ``VoronovEIArrhenius`` A-factor unit setter for
 the ``m^3/(molecule*s)`` spelling: ``origin/99`` relabels metre as centimetre and
 understates the rate by exactly 10**6, while ``plasma`` normalizes it correctly
-(multiply by Avogadro's number). :meth:`test_voronov_A_setter_divergence` pins
-that divergence with ``plasma`` on the dimensionally-correct side.
+(multiply by Avogadro's number). No database or repo input constructs a
+Voronov/Badnell A in that spelling (all use ``cm^3/(molecule*s)``), so the
+divergence is *latent*, not live. :meth:`test_voronov_A_setter_divergence` pins
+it with ``plasma`` on the dimensionally-correct side.
 
 The table-driven (Z,N) cases require the plasma RMG-database and are marked
 ``database``; they check that the Badnell/Voronov data tables — one physical file
@@ -68,6 +98,18 @@ import rmgpy.kinetics.arrhenius as arrhenius_module
 from rmgpy.kinetics.arrhenius import BadnellRRArrhenius, VoronovEIArrhenius
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
+# Repo root of THIS worktree: test/rmgpy/kinetics -> up three.
+_REPO_ROOT = os.path.abspath(os.path.join(_HERE, os.pardir, os.pardir, os.pardir))
+
+# Resolution guard, asserted BEFORE any value is taken: the compiled arrhenius
+# module under test must be the one in THIS worktree, not another checkout that a
+# stale PYTHONPATH happened to resolve. A green result against the wrong tree
+# would be meaningless, so this fails import/collection rather than a late test.
+_ARRHENIUS_FILE = os.path.abspath(arrhenius_module.__file__)
+assert _ARRHENIUS_FILE.endswith((".so", ".pyx", ".py")), _ARRHENIUS_FILE
+assert os.path.commonpath([_REPO_ROOT, _ARRHENIUS_FILE]) == _REPO_ROOT, (
+    f"arrhenius resolved to {_ARRHENIUS_FILE}, outside this worktree {_REPO_ROOT}; "
+    f"set PYTHONPATH to this checkout before running.")
 
 # The generator/shared-parameters module sits beside this test under ``test/`` and
 # is not part of the installed ``rmgpy`` package, so load it by path.
@@ -123,12 +165,17 @@ class PlasmaKineticsConsolidationTest:
 
     @pytest.mark.parametrize("case", RATE_CASES)
     def test_rate_paths_reproduce_origin99(self, case):
-        """k(T)/k(Te)/k(T,Te) match origin/99 to machine precision across the spread."""
+        """k(T)/k(Te)/k(T,Te) match origin/99 within rtol across the whole spread."""
         live, ref = LIVE[case], REFERENCE[case]
-        keys = set(live) & set(ref)
-        assert keys, f"no shared points for {case}"
+        # Exact key-set equality: a point missing from either side is a failure,
+        # not something to quietly drop by intersecting.
+        assert set(live) == set(ref), (
+            f"{case}: sampled points differ — "
+            f"live-only {sorted(set(live) - set(ref))}, "
+            f"ref-only {sorted(set(ref) - set(live))}")
+        assert live, f"{case}: no points sampled"
         worst = 0.0
-        for k in keys:
+        for k in live:
             lv, rv = live[k], ref[k]
             assert not isinstance(lv, str), f"{case}[{k}] live errored: {lv}"
             assert not isinstance(rv, str), f"{case}[{k}] ref errored: {rv}"
@@ -218,7 +265,29 @@ class PlasmaKineticsConsolidationTest:
                 lv = v.get_rate_coefficient(float(Te_str))
                 assert math.isclose(lv, rv, rel_tol=RTOL), f"Voronov ({Z},{N}) @ {Te_str}"
 
-    def test_module_is_the_build_under_test(self):
-        """A live guard that the compiled arrhenius module was actually imported."""
-        assert arrhenius_module.__file__.endswith(".so") or \
-            arrhenius_module.__file__.endswith(".pyx"), arrhenius_module.__file__
+    def test_module_under_test_is_in_this_worktree(self):
+        """The arrhenius module compared against origin/99 must be THIS worktree's.
+
+        The load-bearing form of this check runs at import, before ``LIVE`` is
+        computed (see the module-level guard on ``_ARRHENIUS_FILE``); re-asserted
+        here so the guarantee is visible in the test report.
+        """
+        assert os.path.commonpath([_REPO_ROOT, _ARRHENIUS_FILE]) == _REPO_ROOT, \
+            _ARRHENIUS_FILE
+        assert _ARRHENIUS_FILE.endswith(".so"), (
+            f"expected a compiled arrhenius .so, got {_ARRHENIUS_FILE} — rebuild "
+            f"with `python setup.py build_ext --inplace`")
+
+    def test_fixture_provenance_is_computed(self):
+        """The fixture carries a computed provenance block, not a bare spread.
+
+        Guards against a fixture regenerated by an older generator that did not
+        stamp where it came from.
+        """
+        prov = REFERENCE["meta"]["provenance"]
+        for key in ("generated_from_sha", "rmgpy_checkout", "arrhenius_module",
+                    "database_directory", "badnell_yaml_sha256", "voronov_yaml_sha256"):
+            assert key in prov and prov[key], key
+        assert len(prov["generated_from_sha"]) == 40, prov["generated_from_sha"]
+        for key in ("badnell_yaml_sha256", "voronov_yaml_sha256"):
+            assert len(prov[key]) == 64, prov[key]

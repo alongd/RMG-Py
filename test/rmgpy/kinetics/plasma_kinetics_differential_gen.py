@@ -39,27 +39,48 @@ differential test: the fixture is the reference side, the live import is the
 side under test.
 
 To regenerate the reference side against ``origin/99`` (not needed for the test
-itself, only to refresh the committed fixture):
+itself, only to refresh the committed fixture). Note ``rmgpy.settings`` reads
+``rmgrc`` from the *process working directory* first, so the generator MUST run
+with its working directory inside the reference checkout, not this one — else
+this checkout's ``./rmgrc`` selects the database and the ``rmgrc`` you copied is
+ignored. The generator resolves ``settings['database.directory']`` itself,
+asserts the Badnell/Voronov tables exist under it, and records the resolved path
+plus computed table hashes in the fixture; a wrong working directory therefore
+fails loudly rather than silently reading the wrong tree::
 
+    GEN=$(pwd)/test/rmgpy/kinetics/plasma_kinetics_differential_gen.py
     git worktree add --detach ../RMG-Py-99-ref origin/99
     cp rmgrc ../RMG-Py-99-ref/rmgrc        # database.directory -> plasma DB
-    ( cd ../RMG-Py-99-ref && python utilities.py check-pydas \\
-        && PYTHONPATH=$PWD python setup.py build_ext --inplace -j 8 )
-    PYTHONPATH=../RMG-Py-99-ref python test/rmgpy/kinetics/plasma_kinetics_differential_gen.py out.json
+    ( cd ../RMG-Py-99-ref \\
+        && python utilities.py check-pydas \\
+        && PYTHONPATH=$PWD python setup.py build_ext --inplace -j 8 \\
+        && PYTHONPATH=$PWD python "$GEN" \\
+             $OLDPWD/test/rmgpy/kinetics/plasma_kinetics_origin99_reference.json )
 
-The same script, run against the current tree, produces the "under test" side;
-the test does that in-process via :func:`evaluate` rather than shelling out.
+The same :func:`evaluate` function, run against the current tree, produces the
+"under test" side; the test calls it in-process rather than shelling out.
 
 The construction parameters below are the single source of truth shared by the
 fixture and the live comparison; the test module imports them from here.
+
+Every field of the fixture's ``meta.provenance`` block is COMPUTED by
+:func:`compute_provenance` at generation time — the git SHA and absolute path of
+the checkout ``rmgpy`` was imported from, the imported ``arrhenius`` module file,
+the resolved ``database.directory``, and the sha256 of each table read from disk.
+Nothing in it is transcribed by hand, so a reader who does not trust the author
+can re-run the recipe and diff the block.
 """
+import hashlib
 import json
 import math
+import os
+import subprocess
 import sys
 
 import numpy as np
 
 import rmgpy.constants as constants
+import rmgpy.kinetics.arrhenius as arrhenius_module
 from rmgpy.kinetics.arrhenius import (
     TwoTemperaturePlasma,
     ElectronCollisionPlasma,
@@ -101,6 +122,55 @@ def call_opt(obj, method, *a):
     if fn is None:
         return "NO_METHOD"
     return safe(fn, *a)
+
+
+def _sha256(path):
+    with open(path, "rb") as fh:
+        return hashlib.sha256(fh.read()).hexdigest()
+
+
+def compute_provenance():
+    """Compute (never transcribe) the provenance block for the fixture.
+
+    Everything here is derived from the running process: the git SHA and path of
+    the checkout ``rmgpy`` was imported from, the imported ``arrhenius`` module
+    file, the resolved ``database.directory``, and the on-disk table hashes. It
+    asserts the tables exist under the resolved database directory, so a wrong
+    working directory (``rmgrc`` resolving to the wrong tree) fails loudly.
+    """
+    from rmgpy import settings
+
+    rmgpy_pkg = os.path.dirname(os.path.abspath(constants.__file__))
+    checkout = os.path.dirname(rmgpy_pkg)  # repo root containing rmgpy/
+    try:
+        sha = subprocess.check_output(
+            ["git", "-C", checkout, "rev-parse", "HEAD"],
+            stderr=subprocess.DEVNULL).decode().strip()
+    except Exception:  # noqa: BLE001
+        sha = "UNKNOWN"
+
+    db_dir = os.path.abspath(settings["database.directory"])
+    kinetics_dir = os.path.join(db_dir, "kinetics")
+    badnell = os.path.join(kinetics_dir, "badnell.yaml")
+    voronov = os.path.join(kinetics_dir, "voronov.yaml")
+    for path in (badnell, voronov):
+        assert os.path.exists(path), (
+            f"data table not found: {path} — the resolved database.directory is "
+            f"{db_dir!r}; run the generator with its working directory inside the "
+            f"reference checkout so its rmgrc is used.")
+
+    return {
+        "generated_from_sha": sha,
+        "rmgpy_checkout": checkout,
+        "arrhenius_module": os.path.abspath(arrhenius_module.__file__),
+        "database_directory": db_dir,
+        "badnell_yaml_sha256": _sha256(badnell),
+        "voronov_yaml_sha256": _sha256(voronov),
+        "note": ("Reference k(T)/k(Te) for the four plasma kinetics classes, "
+                 "computed from the imported arrhenius module. All fields above "
+                 "are computed by compute_provenance(), not transcribed. See "
+                 "plasmaKineticsConsolidationTest.py."),
+    }
 
 
 def evaluate(include_yaml=True):
@@ -163,7 +233,15 @@ def evaluate(include_yaml=True):
 
 if __name__ == "__main__":
     dst = sys.argv[1] if len(sys.argv) > 1 else "plasma_kinetics_dump.json"
+    data = evaluate(include_yaml=True)
+    data["meta"]["provenance"] = compute_provenance()
     with open(dst, "w") as fh:
-        json.dump(evaluate(), fh, indent=1, sort_keys=True)
-    import rmgpy.kinetics.arrhenius as _arr
-    print("WROTE", dst, "from", _arr.__file__)
+        json.dump(data, fh, indent=1, sort_keys=True)
+    prov = data["meta"]["provenance"]
+    print("WROTE", dst)
+    print("  generated_from_sha:", prov["generated_from_sha"])
+    print("  rmgpy_checkout:    ", prov["rmgpy_checkout"])
+    print("  arrhenius_module:  ", prov["arrhenius_module"])
+    print("  database_directory:", prov["database_directory"])
+    print("  badnell_yaml_sha256:", prov["badnell_yaml_sha256"])
+    print("  voronov_yaml_sha256:", prov["voronov_yaml_sha256"])
