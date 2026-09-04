@@ -11092,24 +11092,44 @@ class TestTailExhaustionHandshake:
         the run: the explicit species froze and the pool's whole sub-cutoff
         residue left as gas monomer instead.
 
-    The condition itself was right -- one handshake event removes a chain
-    and xs repeat units with it, so it must be paid for -- but the currency
-    is the pool's EXCESS mu1 - mu0, of which the event spends (xs - 1). The
-    boolean is replaced by the smooth form of that solvency test, in the
-    shape _release_units_gate already carries for the 1-unit chain-end
-    release channels:
+    The condition tested a real thing -- can the pool afford the chain the
+    handshake is about to remove? -- with the wrong instrument. An average
+    over the whole tail cannot answer a question about the population at one
+    DP. The boolean is replaced by explicit BUDGETS on that population, one
+    from each realizability inequality, each an absolute upper bound on
+    c_xs, each attained by a real distribution (so neither is droppable):
 
-        gate = _release_units_gate((xs - 1)*mu0, mu1 - mu0),
-        t = (mean - 1)/(xs - 1)
+        (a) mu1 - mu0 = SUM (n-1) c_n >= (xs-1)*c_xs
+              =>  c_xs <= (mu1 - mu0)/(xs - 1)
+        (b) with m_k = SUM (n-xs)^k c_n, Q := mu0*mu2 - mu1^2 = m_0 m_2 - m_1^2
+            and c_xs*m_2 <= Q  (Cauchy-Schwarz off the n = xs atom)
+              =>  c_xs <= Q / m_2
 
-    EXACTLY 1.0 for mean >= xs (bit-for-bit inert on every state the boolean
-    admitted), EXACTLY 0.0 at mu1 <= mu0, C2 between. The zero at the cone
-    edge is load-bearing and is not decoration: d(mu1 - mu0)/dt carries
-    -(xs - 1)*F, which the I-055 chain-termination debit cannot answer (its
-    own release term vanishes at the edge, p1 -> 1, but F does not). Gating
-    on the UNITS rather than the excess -- _release_units_gate(xs*mu0, mu1),
-    which has the SAME 1.0 region -- was tried and measured to walk the same
-    pool out of the cone at min(mu1 - mu0) = -1.27e-02.
+    (a) makes mu1 = mu0 an invariant set: d(mu1-mu0)/dt carries -(xs-1)*F,
+    which the I-055 chain-termination debit cannot answer (its own release
+    term vanishes at the edge, p1 -> 1, but F did not). (b) makes Q = 0 one:
+    a handshake event leaves m_1 and m_2 alone -- it removes chains where
+    (n - xs) = 0 -- so dQ/dt = -F*m_2 <= 0 for EVERY realizable state, and
+    the cap turns that into dQ/dt >= -k*Q.
+
+    ROUND 2. The first version of this fix carried (a) as a C2 quintic and
+    did not carry (b) at all. Both were wrong:
+      * a smooth multiplier that is exactly 1.0 above the boundary must
+        exceed the budget just below it (the quintic has h(t) > t for
+        t > 0.5), so it was a bound by measurement and not by construction;
+      * the Q drain is unconditional, and it is PRE-EXISTING -- 295 of 4088
+        swept realizable states on the unfixed build attempt to remove more
+        chains than Q/m_2 allows, and ALL 295 are at mean DP > xs, i.e. in
+        the region the old boolean admitted, so this was never about the
+        exhausting regime. From one such state (mean = xs + 1.5, PDI
+        1.0000001, k_scission = 0 so the handshake is the only channel that
+        can drain Q) the unfixed build takes Q negative in 2e-5 s and keeps
+        going.
+
+    Consequence for the no-op claim, stated rather than glossed: the fix is
+    bit-for-bit inert wherever no budget binds, and where one binds it
+    STRICTLY REDUCES the flux. It is not inert above the cutoff, because
+    that is exactly where the pre-existing over-removal lives.
 
     NOTE on what this is NOT. The handshake is not the I-055
     chain-termination debit and never was: that debit lives on the k_unzip,
@@ -11131,25 +11151,75 @@ class TestTailExhaustionHandshake:
             explicit={self.XS: self.EXPLICIT})
         return _khom_system(core, mask, pools, moments, T=800.0)
 
-    def _flux(self, mean, **kw):
-        rs = self._rs(mean, **kw)
-        dn = rs.residual(0.0, rs.y, np.zeros_like(rs.y))[0]
+    # A reactor per state costs an initialize_model, and the sweeps below run
+    # hundreds of states. The pool CONFIG does not depend on the moments --
+    # they are only the initial y -- so one reactor per (k_unzip, k_scission)
+    # is built and the moment slots are overwritten per state, which is what
+    # the residual reads anyway.
+    _rs_cache = {}
+
+    def _flux(self, mean, pdi=1.5, mu0=1.0, k_unzip=0.1, k_scission=0.0):
+        key = (k_unzip, k_scission)
+        rs = self._rs_cache.get(key)
+        if rs is None:
+            rs = self._rs_cache[key] = self._rs(
+                5.0, k_unzip=k_unzip, k_scission=k_scission)
+        y = rs.y.copy()
+        mu1 = mu0 * mean
+        y[self.MU0], y[self.MU1], y[self.MU2] = mu0, mu1, pdi * mu1 * mu1 / mu0
+        y[self.EXPLICIT] = 0.0
+        dn = rs.residual(0.0, y, np.zeros_like(y))[0]
         return float(dn[self.EXPLICIT]), dn
 
-    def test_gate_is_exactly_one_above_the_cutoff_and_exactly_zero_at_the_edge(self):
-        """The two exactness claims the whole fix rests on, stated on the
-        composition actually used. Equality, not approx: 1.0 is what makes
-        the change a bit-for-bit no-op above the cutoff (x*1.0 == x), and
-        0.0 is what makes mu1 = mu0 an invariant set of the handshake."""
-        from rmgpy.solver.polymer import _release_units_gate as g
+    @staticmethod
+    def _budgets(xs, mu0, mu1, mu2):
+        """The two realizability budgets on c_xs, and the moment about xs
+        the second one divides by."""
+        m2 = mu2 - 2.0 * xs * mu1 + xs * xs * mu0
+        q = mu0 * mu2 - mu1 * mu1
+        b_exc = (mu1 - mu0) / (xs - 1) if xs > 1 else float("inf")
+        b_q = q / m2 if m2 > 0.0 else float("inf")
+        return b_exc, b_q, m2, q
+
+    def test_the_budgets_are_upper_bounds_on_c_xs_and_are_tight(self):
+        """Arithmetic, no solver: the two bounds are stated as facts about
+        distributions, so they are checked as facts about distributions --
+        over explicit finite populations, including the two-atom case that
+        attains the Q bound exactly."""
         xs = self.XS
-        for mu0, mean in ((1.0, xs), (1.0, xs + 1e-9), (1.0, 5.0),
-                          (1e-3, 20.0), (0.116, xs)):
-            mu1 = mu0 * mean
-            assert g((xs - 1) * mu0, mu1 - mu0) == 1.0, (mu0, mean)
-        for mu0, mean in ((1.0, 1.0), (0.5, 1.0), (1.0, 0.5), (1.0, 0.0)):
-            mu1 = mu0 * mean
-            assert g((xs - 1) * mu0, mu1 - mu0) == 0.0, (mu0, mean)
+
+        def moments(pop):                       # pop: {DP: concentration}
+            return (sum(pop.values()),
+                    sum(n * c for n, c in pop.items()),
+                    sum(n * n * c for n, c in pop.items()))
+
+        pops = [{xs: 0.4, xs + 1: 0.6}, {xs: 0.1, xs + 5: 0.9},
+                {xs: 0.5, xs + 1: 0.2, xs + 2: 0.3}, {xs + 1: 1.0},
+                {1: 0.2, xs: 0.3, xs + 7: 0.5}, {xs: 1.0}]
+        for pop in pops:
+            mu0, mu1, mu2 = moments(pop)
+            c_xs = pop.get(xs, 0.0)
+            b_exc, b_q, m2, q = self._budgets(xs, mu0, mu1, mu2)
+            assert c_xs <= b_exc + 1e-12, (pop, c_xs, b_exc)
+            assert c_xs <= b_q + 1e-12, (pop, c_xs, b_q)
+            assert q >= -1e-12 and m2 >= -1e-12, (pop, q, m2)
+        # TIGHT: one atom at xs plus one atom anywhere else returns c_xs
+        # exactly, so the bound is not slack that could be loosened.
+        for d in (1, 2, 7):
+            for a, b in ((0.4, 0.6), (0.05, 0.95), (0.9, 0.1)):
+                mu0, mu1, mu2 = moments({xs: a, xs + d: b})
+                _, b_q, _, _ = self._budgets(xs, mu0, mu1, mu2)
+                assert b_q == pytest.approx(a, rel=1e-12), (d, a, b, b_q)
+        # ...and the two bounds are independent: at the cone edge the excess
+        # budget is zero while the Q budget is not, and at low PDI above the
+        # cutoff the Q budget is the small one.
+        mu0, mu1 = 1.0, 1.0
+        mu2 = 1.5
+        b_exc, b_q, _, _ = self._budgets(xs, mu0, mu1, mu2)
+        assert b_exc == 0.0 and b_q > 0.0
+        mu0, mu1, mu2 = 1.0, 4.0, 1.000001 * 16.0
+        b_exc, b_q, _, _ = self._budgets(xs, mu0, mu1, mu2)
+        assert b_q < b_exc
 
     def test_handshake_survives_the_boundary_crossing(self):
         """THE DEFECT. At and below the cutoff the tail is full of chains
@@ -11172,28 +11242,87 @@ class TestTailExhaustionHandshake:
             f"residual jumps across the cutoff: F(xs+{eps:g}) = {hi!r} vs "
             f"F(xs-{eps:g}) = {lo!r}")
 
-    def test_flux_is_bit_for_bit_the_ungated_law_above_the_cutoff(self):
-        """No kinetics change where the boolean was already true. Recomputed
-        from the module's own closure helpers against the residual, with ==
-        rather than approx -- an approximate comparison would hide exactly
-        the regression this fix is most likely to introduce."""
+    def _closure_law(self, mean, pdi, mu0=1.0):
+        """The flux the closure asks for, before any realizability budget --
+        recomputed from the module's own helpers, not restated."""
         from rmgpy.solver.polymer import (_gamma_params_from_mu012,
                                           _gamma_prob_conditional_hybrid)
+        xs = self.XS
+        mu1 = mu0 * mean
+        mu2 = pdi * mu1 * mu1 / mu0
+        params = _gamma_params_from_mu012(mu0, mu1, mu2)
+        if params:
+            kk, theta = params
+            p_cond = _gamma_prob_conditional_hybrid(xs + 1, xs, kk, theta)
+        elif xs + 1.0 < mean < xs + 2.0:
+            # the monodisperse leg the solver falls back to when PDI is at or
+            # below 1 + 1e-6 and the gamma fit refuses
+            p_cond = 1.0 - abs(mean - (xs + 1.5)) / 0.5
+        else:
+            p_cond = 0.0
+        p_cond = min(1.0, max(0.0, p_cond))
+        return min(mu0 * p_cond, mu0, mu1 / xs, mu2 / (xs * xs))
+
+    def test_flux_is_bit_for_bit_the_closure_law_where_no_budget_binds(self):
+        """No kinetics change on states the old boolean admitted AND where
+        neither realizability budget binds. Every state below satisfies
+        mean > xs + 1e-9 strictly, which is what the old `tail_mean >
+        xs + 1e-9` actually required -- states AT the cutoff belong to
+        test_the_cutoff_slack_is_a_declared_change, not here. Recomputed and
+        compared with == rather than approx: an approximate comparison would
+        hide exactly the regression this fix is most likely to introduce."""
         xs, k = self.XS, 0.1
-        for mean, pdi in ((xs, 1.5), (xs + 1e-9, 1.5), (3.0, 1.5),
-                          (5.0, 2.0), (40.0, 1.2)):
+        checked = 0
+        for mean, pdi in ((3.0, 1.5), (5.0, 2.0), (40.0, 1.2), (2.5, 1.8),
+                          (12.0, 3.0), (xs + 1e-3, 1.6)):
+            assert mean > xs + 1e-9, mean
             mu0 = 1.0
             mu1 = mu0 * mean
             mu2 = pdi * mu1 * mu1 / mu0
+            n = self._closure_law(mean, pdi, mu0)
+            b_exc, b_q, _, _ = self._budgets(xs, mu0, mu1, mu2)
+            if n > min(b_exc, b_q):
+                continue                    # a budget binds; not this test
+            checked += 1
             f, _ = self._flux(mean, pdi=pdi, mu0=mu0, k_unzip=k)
-            kk, theta = _gamma_params_from_mu012(mu0, mu1, mu2)
-            p_cond = _gamma_prob_conditional_hybrid(xs + 1, xs, kk, theta)
-            p_cond = min(1.0, max(0.0, p_cond))
-            n = min(mu0 * p_cond, mu0, mu1 / xs, mu2 / (xs * xs))
             assert f == k * n, (
-                f"flux at mean={mean}, PDI={pdi} is {f!r}, ungated law gives "
-                f"{k * n!r} -- a gate factor other than exactly 1.0 entered "
-                f"above the cutoff")
+                f"flux at mean={mean}, PDI={pdi} is {f!r}, closure law gives "
+                f"{k * n!r} -- something entered where no budget binds")
+        assert checked >= 5, f"only {checked} states exercised the no-op claim"
+
+    def test_flux_never_rises_where_the_old_boolean_was_true(self):
+        """The other half of the no-op claim, and the honest one: where a
+        budget DOES bind above the cutoff the flux changes, and the direction
+        is guaranteed. Budgets are mins, so the flux can only fall -- it can
+        never exceed the closure law it caps."""
+        xs, k = self.XS, 0.1
+        bound = 0
+        for mean in (2.001, 2.01, 2.5, 3.0, 4.0, 6.0, 20.0):
+            for pdi in (1.000001, 1.0001, 1.01, 1.2, 2.0, 4.0):
+                n = self._closure_law(mean, pdi)
+                f, _ = self._flux(mean, pdi=pdi, k_unzip=k)
+                assert f <= k * n + 1e-15, (
+                    f"flux {f!r} EXCEEDS the closure law {k * n!r} at "
+                    f"mean={mean}, PDI={pdi}")
+                if f < k * n - 1e-15:
+                    bound += 1
+        assert bound > 0, (
+            "no state above the cutoff had a budget bind -- this test is "
+            "not exercising the declared change")
+
+    def test_the_cutoff_slack_is_a_declared_change(self):
+        """The two states the old strict `tail_mean > xs + 1e-9` excluded but
+        that sit AT the cutoff. Declared, not smuggled into the no-op claim:
+        the flux here goes from exactly 0.0 to the closure law, which is the
+        whole point of removing the boolean."""
+        xs, k = self.XS, 0.1
+        for mean in (xs, xs + 1e-9):
+            n = self._closure_law(mean, 1.5)
+            f, _ = self._flux(mean, pdi=1.5, k_unzip=k)
+            assert n > 0.0
+            assert f == pytest.approx(k * n, rel=1e-12), (
+                f"at mean={mean} (the old boolean's own boundary) the flux is "
+                f"{f!r}, closure law {k * n!r}")
 
     def test_cone_edge_is_an_invariant_set_of_the_handshake(self):
         """mu1 = mu0 is where a fully-exhausted pool legitimately ENDS. The
@@ -11245,6 +11374,120 @@ class TestTailExhaustionHandshake:
                 + mu1s[-1])
         assert held == pytest.approx(held0, rel=1e-9), (
             f"repeat-unit ledger: {held:g} accounted vs {held0:g} started")
+
+    # ---- round 2: the other half of the cone --------------------------
+
+    def test_handshake_q_drain_is_bounded_by_k_times_q(self):
+        """The Q budget, stated as the property that makes Q = 0 invariant.
+        dQ/dt from the handshake is exactly -F*m_2, so capping the removal at
+        Q/m_2 is exactly the statement -dQ/dt <= k*Q. Swept over the corner
+        that is adversarial for Q -- LOW PDI, where Q = mu0^2*Var is small --
+        which is a different corner from the one adversarial for mu1 - mu0."""
+        xs, k = self.XS, 0.1
+        worst = 0.0
+        live = 0
+        for mean in (1.05, 1.3, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 9.0, 30.0):
+            for pdi in (1.0000001, 1.000002, 1.0001, 1.001, 1.01, 1.1, 1.5,
+                        3.0):
+                mu0 = 1.0
+                mu1 = mu0 * mean
+                mu2 = pdi * mu1 * mu1 / mu0
+                f, _ = self._flux(mean, pdi=pdi, mu0=mu0, k_unzip=k)
+                if f <= 0.0:
+                    continue
+                live += 1
+                _, _, m2, q = self._budgets(xs, mu0, mu1, mu2)
+                assert q > 0.0
+                worst = max(worst, f * m2 / q)
+        assert live >= 40, f"only {live} live states swept"
+        assert worst <= k * (1.0 + 1e-9), (
+            f"the handshake drains Q at up to {worst:g} per unit Q, against "
+            f"the k = {k:g} the budget permits -- {worst / k:.3g}x over")
+
+    def test_handshake_cannot_drive_the_variance_cone_negative(self):
+        """THE ROUND-2 DEFECT, integrated. The state a seeded search over 30k
+        realizable states named as the worst case for Q on this fixture:
+        mean DP 3.456452 at PDI 1.0000001, k_scission = 0 so the handshake is
+        the ONLY channel that can drain Q. The removal there runs at 1.6e5
+        times Q per second, so Q is gone in ~6e-6 s.
+
+        Note the mean is ABOVE the cutoff, so the removed boolean was TRUE
+        here: this trajectory is untouched by the round-1 change, and the
+        defect is pre-existing rather than a regression it introduced."""
+        from scipy.integrate import solve_ivp
+        mean, pdi = 3.456452, 1.0000001026
+        assert mean > self.XS + 1e-9
+        rs = self._rs(mean, pdi=pdi, mu0=1.0, k_unzip=0.1, k_scission=0.0)
+        y0 = rs.y.copy()
+        zeros = np.zeros_like(y0)
+        t_end = 5.0e-5
+        sol = solve_ivp(lambda t, y: rs.residual(t, y, zeros)[0],
+                        (0.0, t_end), y0, method="LSODA",
+                        t_eval=np.linspace(0.0, t_end, 201),
+                        rtol=1e-12, atol=1e-18, max_step=t_end / 200.0)
+        assert sol.status == 0, sol.message
+        q = (sol.y[self.MU0] * sol.y[self.MU2] - sol.y[self.MU1] ** 2)
+        assert q[0] > 0.0, "the start state is already off the variance cone"
+        assert q.min() >= 0.0, (
+            f"mu0*mu2 - mu1^2 went NEGATIVE on {int((q < 0).sum())} of "
+            f"{len(q)} steps, min {q.min():g} at t={sol.t[q.argmin()]:g} -- "
+            f"the handshake drained the variance cone from a fully "
+            f"realizable start at mean DP {mean:g} > xs = {self.XS}")
+        # ...and the other half of the cone is still held at every step
+        assert (sol.y[self.MU1] - sol.y[self.MU0]).min() >= 0.0
+
+    def test_degenerate_cutoffs_still_respect_the_variance_cone(self):
+        """xs <= 1 owes no excess budget -- a DP<=1 chain carries none, and
+        d(mu1-mu0)/dt gets -(xs-1)*F, which is >= 0 there -- so the review's
+        reading that those cutoffs have 'no cone protection at all' would
+        hold if the Q budget were skipped too. It is not: it is applied for
+        every xs and it is the binding one here. validate_configuration does
+        NOT reject xs <= 1 (only the deck path does), so the solver has to
+        hold this on its own.
+
+        Asserted pointwise rather than by integration on purpose: off the
+        cone the closure is undefined and LSODA grinds, so an integrating
+        version of this test does not terminate on the unfixed build (it ran
+        past 240 s). The pointwise law -F*m_2 >= -k*Q is what makes Q = 0
+        invariant, and it is the thing actually being fixed."""
+        k = 0.1
+        for xs in (0, 1):
+            Inert = _spc("N#N", "N2")
+            Mono = _spc("C=CC", "propene_gas")
+            core = [Inert, Mono, _spc("[CH2]CC", "pd"),
+                    _spc("CCO", "pd_mu0"), _spc("CC=O", "pd_mu1"),
+                    _spc("CC#N", "pd_mu2"), _spc("CCC", "pd_dpxs")]
+            pools = [PolymerPoolConfig(
+                label="pd", xs=xs, explicit_dp_to_species_index={xs: 6},
+                mu_indices=(3, 4, 5), monomer_poly_index=1,
+                monomer_mw_g_mol=42.08, k_scission=0.0, k_unzip=k,
+                tail_kinetics=None)]
+            mask = np.array([s.label in ("N2", "propene_gas") for s in core],
+                            dtype=bool)
+            rs = _khom_system(core, mask, pools,
+                              {"pd": (1.0, 2.0, 4.5)}, T=800.0)
+            live = 0
+            for mean in (1.2, 1.5, 2.0, 2.5, 3.0, 4.0, 8.0, 25.0):
+                for pdi in (1.0000001, 1.000002, 1.0001, 1.01, 1.3, 2.5):
+                    mu0 = 1.0
+                    mu1 = mu0 * mean
+                    mu2 = pdi * mu1 * mu1 / mu0
+                    y = rs.y.copy()
+                    y[3], y[4], y[5] = mu0, mu1, mu2
+                    y[6] = 0.0
+                    dn = rs.residual(0.0, y, np.zeros_like(y))[0]
+                    f = float(dn[6])
+                    if f <= 0.0:
+                        continue
+                    live += 1
+                    m2 = mu2 - 2.0 * xs * mu1 + xs * xs * mu0
+                    q = mu0 * mu2 - mu1 * mu1
+                    assert q > 0.0 and m2 > 0.0
+                    assert f * m2 <= k * q * (1.0 + 1e-9), (
+                        f"xs={xs}, mean={mean}, PDI={pdi}: the handshake "
+                        f"drains Q at {f * m2 / q:g} per unit Q against the "
+                        f"k = {k:g} the budget permits")
+            assert live >= 5, f"xs={xs}: only {live} live states"
 
 
 class TestAcceptedStateVarianceCensus:

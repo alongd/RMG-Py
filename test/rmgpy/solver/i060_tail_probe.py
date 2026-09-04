@@ -119,6 +119,85 @@ def field_scan(pdi=1.5, mu0=1.0, means=None):
     return rows
 
 
+def q_scan(seed=20260904, n_rand=4000, k_unzip=K_UNZIP):
+    """Round 2: the OTHER half of the cone, Q := mu0*mu2 - mu1^2 >= 0.
+
+    A handshake event removes one chain at exactly n = xs, so with moments
+    taken about xs (m_k = SUM (n-xs)^k c_n) it moves m_0 by -F and leaves m_1
+    and m_2 alone, giving dQ/dt = -F*m_2 <= 0 for every realizable state. The
+    budget that keeps Q >= 0 is c_xs <= Q/m_2 (Cauchy-Schwarz on the measure
+    with the n = xs atom removed), and it is TIGHT.
+
+    Reports, per state: the attempted chain removal N = F/k against that
+    budget, and the ratio F*m_2/Q, which the budget caps at exactly k. A
+    hand-picked PDI x mean grid plus a seeded random sweep; low PDI is what
+    is adversarial for Q (Q = mu0^2 * Var, so the budget vanishes as the
+    distribution narrows), which is a different corner from the one that is
+    adversarial for mu1 - mu0.
+    """
+    rs = build_system(1.0, 20.0, 600.0, k_scission=0.0, k_unzip=k_unzip)
+    f = _rhs(rs)
+
+    def one(mu0, mean, pdi, tag):
+        mu1 = mu0 * mean
+        mu2 = pdi * mu1 * mu1 / mu0
+        y = rs.y.copy()
+        y[IDX_MU0], y[IDX_MU1], y[IDX_MU2] = mu0, mu1, mu2
+        y[IDX_PXS] = 0.0
+        d = f(0.0, y)
+        F = float(d[IDX_PXS])
+        Q = mu0 * mu2 - mu1 * mu1
+        m2 = mu2 - 2.0 * XS * mu1 + XS * XS * mu0
+        dQ = float(mu2 * d[IDX_MU0] + mu0 * d[IDX_MU2] - 2.0 * mu1 * d[IDX_MU1])
+        return dict(tag=tag, mean=mean, pdi=pdi, mu0=mu0, mu1=mu1, mu2=mu2,
+                    F=F, Q=Q, m2=m2, dQ_total=dQ,
+                    N=F / k_unzip,
+                    B_Q=(Q / m2) if m2 > 0.0 else float("inf"),
+                    B_excess=((mu1 - mu0) / (XS - 1)) if XS > 1 else float("inf"))
+
+    rows = []
+    for pdi in (1.000000102, 1.000002, 1.001, 1.01, 1.05, 1.2, 1.5, 3.0):
+        for mean in (1.2, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, XS + 1.5, 6.0, 12.0, 40.0):
+            rows.append(one(1.0, mean, pdi, "grid"))
+    rng = np.random.RandomState(seed)
+    for _ in range(n_rand):
+        mean = float(np.exp(rng.uniform(np.log(1.0001), np.log(60.0))))
+        pdi = 1.0 + float(np.exp(rng.uniform(np.log(1e-7), np.log(5.0))))
+        rows.append(one(1.0, mean, pdi, "rand"))
+    return rows
+
+
+def q_trajectory(t_end=2.0e-4, n_out=201):
+    """The state q_scan's search names as the worst realizable case for Q,
+    integrated. mean DP = 4.503939 is xs + 1.5 -- ABOVE the cutoff, so the
+    removed boolean was TRUE here and this trajectory is untouched by the
+    round-1 change. k_scission = 0 so the handshake is the only channel that
+    can drain Q, and nothing else is in the way of reading the result.
+    """
+    from scipy.integrate import solve_ivp
+    mu0, mean, pdi = 1.0, 4.503939, 1.000000102
+    mu1 = mu0 * mean
+    mu2 = pdi * mu1 * mu1 / mu0
+    rs = build_system(mu0, mu1, mu2, k_scission=0.0, k_unzip=K_UNZIP)
+    f = _rhs(rs)
+    sol = solve_ivp(f, (0.0, t_end), rs.y.copy(), method="LSODA",
+                    t_eval=np.linspace(0.0, t_end, n_out),
+                    rtol=1e-12, atol=1e-18, max_step=t_end / 400.0)
+    rows = []
+    for i, t in enumerate(sol.t):
+        y = sol.y[:, i]
+        a, b, c = float(y[IDX_MU0]), float(y[IDX_MU1]), float(y[IDX_MU2])
+        d = f(t, y)
+        rows.append(dict(t=float(t), mu0=a, mu1=b, mu2=c,
+                         mean=b / a if a > 0 else float("nan"),
+                         Q=a * c - b * b, e_1=b - a,
+                         handshake=float(d[IDX_PXS]),
+                         dQ=float(c * d[IDX_MU0] + a * d[IDX_MU2]
+                                  - 2.0 * b * d[IDX_MU1])))
+    return dict(status=int(sol.status), message=str(sol.message),
+                mu=[mu0, mu1, mu2], rows=rows)
+
+
 def _row(f, mu0, mu1, mu2, rs, tag):
     y = rs.y.copy()
     y[IDX_MU0], y[IDX_MU1], y[IDX_MU2] = mu0, mu1, mu2
@@ -234,6 +313,8 @@ def main():
         field_mono=field_scan(pdi=1.0),
         random=random_states(),
         traj=trajectory(),
+        q_field=q_scan(),
+        q_traj=q_trajectory(),
     )
     if len(sys.argv) > 2:
         with open(sys.argv[2]) as fh:
