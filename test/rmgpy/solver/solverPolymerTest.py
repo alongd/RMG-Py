@@ -10931,6 +10931,238 @@ class TestLegacyUnzipRealizability:
             rs._assert_pool_moments_accepted()
 
 
+class TestReleaseAvailabilityGate:
+    """I-065 defect 1. Every chain-end monomer-release channel set its EVENT
+    rate from the chain count (one active end per chain) and never from the
+    repeat units on offer. Inside the realizable cone mu1 >= mu0 >= 0 that is
+    correct -- every chain holds at least one unit, so every event has one to
+    give. OUTSIDE it the legacy k_unzip channel emitted k_unzip*mu0 of gas
+    monomer at mu1 = 0 with no repeat unit behind it, and drove mu1 further
+    negative: the solver reporting mass it never had.
+
+    That state is off the realizable cone, which I-055 exists to keep the
+    solver on, so this is defence in depth rather than a live bug on a valid
+    trajectory -- the cone invariant must not be the only thing between the
+    solver and fabricated mass.
+
+    The gate is a C2 quintic in t = mu1/mu0, EXACTLY 1.0 for t >= 1 and
+    EXACTLY 0.0 for t <= 0. Both exactness claims are load-bearing: 1.0
+    makes the fix a bit-for-bit no-op on every valid state (x*1.0 == x), and
+    0.0 is what makes mu1 = 0 an invariant of the release channel. The
+    quintic rather than a min() clamp because min() puts a first-derivative
+    kink exactly on the boundary a fully-unzipping pool ENDS on, which is
+    the cliff test_deprop_smooth_exhaustion_gate_no_cliff refuses."""
+
+    MU0, MU1, MU2, GAS = 3, 4, 5, 1
+
+    def test_gate_is_exactly_one_on_the_cone_and_exactly_zero_with_no_units(self):
+        """Direct unit test of the gate, since both exactness claims are what
+        the rest of this class rests on. Equality, not approx."""
+        from rmgpy.solver.polymer import _release_units_gate as g
+        # EXACTLY 1.0 everywhere inside/on the cone -> bit-for-bit no-op
+        for mu0, mu1 in ((1.0, 5.0), (1.0, 1.0), (0.116, 0.116),
+                         (1e-30, 1e-30), (0.099, 0.7378)):
+            assert g(mu0, mu1) == 1.0, (mu0, mu1)
+        # EXACTLY 0.0 when the pool holds no repeat units, or no chains
+        for mu0, mu1 in ((0.5, 0.0), (0.5, -1e-3), (0.0, 0.0), (-1e-9, 5.0)):
+            assert g(mu0, mu1) == 0.0, (mu0, mu1)
+        # interior: strictly monotone, in (0, 1), C2 endpoints (h' = h'' = 0)
+        ts = [i / 64.0 for i in range(1, 64)]
+        vals = [g(1.0, t) for t in ts]
+        assert all(0.0 < v < 1.0 for v in vals)
+        assert all(b > a for a, b in zip(vals, vals[1:]))
+        # C2 at t = 1: the one-sided jump in the release rate across the
+        # boundary is O(eps^3), i.e. the property a min() clamp destroys
+        eps = 1e-3
+        assert 1.0 - g(1.0, 1.0 - eps) < 20.0 * eps ** 3
+
+    def test_legacy_unzip_fabricated_gas_without_repeat_units(self):
+        """THE DEFECT. mu0 > 0, mu1 = 0: the pool holds chains but not one
+        repeat unit between them, and the legacy channel emitted gas anyway.
+        Now exactly zero -- gas, unit drain and variance drain all -- while
+        the I-055 chain-termination debit keeps draining at full strength,
+        which is what lets the state heal back toward the cone instead of
+        stalling (r74: a permanent dmu0 = 0 freezes the residue)."""
+        k = 0.7
+        core, mask, pools, moments = _kunzip_core_and_pools(
+            k, moments=(0.5, 0.0, 0.0))
+        rs = _khom_system(core, mask, pools, moments, T=800.0)
+        dn = rs.residual(0.0, rs.y, np.zeros_like(rs.y))[0]
+        assert dn[self.GAS] == 0.0, (
+            f"fabricated {dn[self.GAS]!r} mol/s of gas monomer from a pool "
+            f"holding zero repeat units")
+        assert dn[self.MU1] == 0.0
+        assert dn[self.MU2] == 0.0
+        assert dn[self.MU0] == pytest.approx(-k * 0.5, rel=1e-12), (
+            "chain termination must keep draining at -k*mu0 off the cone")
+
+    def test_release_is_bit_for_bit_unchanged_inside_the_cone(self):
+        """The gate must not change the kinetics of a single valid state.
+        Recomputed against the ungated law, with == not approx."""
+        k = 7.0
+        for mu in ((1.0, 5.0, 30.0), (0.4, 0.4, 0.4), (0.25, 0.3, 0.5),
+                   (0.116, 0.117, 0.14), (0.099, 0.7378, 8.0)):
+            core, mask, pools, moments = _kunzip_core_and_pools(k, moments=mu)
+            rs = _khom_system(core, mask, pools, moments, T=800.0)
+            dn = rs.residual(0.0, rs.y, np.zeros_like(rs.y))[0]
+            assert dn[self.GAS] == k * mu[0], f"gas throttled at mu={mu}"
+            assert dn[self.MU1] == -k * mu[0], f"mu1 drain changed at mu={mu}"
+            assert dn[self.MU2] == -k * (2.0 * mu[1] - mu[0]), (
+                f"mu2 drain changed at mu={mu}")
+
+    def test_no_gas_is_emitted_beyond_the_units_the_pool_held(self):
+        """The ledger statement, integrated rather than asserted pointwise:
+        from an off-cone start the channel may release at most the repeat
+        units actually present, and mu1 = 0 is invariant (the gate vanishes
+        cubically, so the trajectory cannot cross it)."""
+        from scipy.integrate import solve_ivp
+        k = 7.0
+        mu = (0.5, 0.2, 0.15)
+        core, mask, pools, moments = _kunzip_core_and_pools(k, moments=mu)
+        rs = _khom_system(core, mask, pools, moments, T=800.0)
+        y0 = rs.y.copy()
+        zeros = np.zeros_like(y0)
+        sol = solve_ivp(lambda t, y: rs.residual(t, y, zeros)[0],
+                        (0.0, 50.0), y0, method="LSODA",
+                        rtol=1e-10, atol=1e-14, max_step=0.05)
+        assert sol.status == 0, sol.message
+        assert sol.y[self.MU1].min() >= -1e-12, (
+            f"mu1 crossed zero: {sol.y[self.MU1].min():g}")
+        released = sol.y[self.GAS][-1] - sol.y[self.GAS][0]
+        assert released <= mu[1] + 1e-12, (
+            f"released {released:g} mol of monomer from a pool that held "
+            f"only {mu[1]:g} mol of repeat units")
+
+    def test_deprop_sibling_emits_exactly_zero_without_repeat_units(self):
+        """Sibling channel at the same law. The r74 SS5 exhaustion gate
+        already bounded this one -- it bottoms out at W^2/(1 + W^2) = 1e-4,
+        not at zero -- so it fabricated k_dep*mu0*1e-4 rather than
+        k_dep*mu0. Bounded fabrication is still fabrication; it is now
+        exactly zero, with the chain drain untouched."""
+        k = _kdep_arrhenius(800.0)
+        core, mask, pools, moments = _kdep_core_and_pools(
+            k_depropagation=_kdep_triplet(), moments=(0.5, 0.0, 0.0))
+        rs = _khom_system(core, mask, pools, moments, T=800.0)
+        dn = rs.residual(0.0, rs.y, np.zeros_like(rs.y))[0]
+        assert dn[TestEndRadicalDepropagationKernel.GAS] == 0.0
+        assert np.isclose(dn[TestEndRadicalDepropagationKernel.MU0],
+                          -k * 0.5, rtol=1e-9), (
+            "chain count must still drain at -k*mu0 (r74: no stall)")
+
+    def test_qssa_sibling_is_already_gated_by_its_initiation_term(self):
+        """The third release path. Its rate is r ~ sqrt(B) with
+        B = max(mu1 - mu0, 0), and the block is gated `elif B > 0`, so it is
+        ALREADY identically zero everywhere the availability gate is < 1 --
+        it never had the defect. The gate is applied there anyway, because
+        the two channels are pinned equivalent and a release law holds on
+        both or on neither; this pins that it is a no-op, i.e. that the
+        equivalence is not disturbed by carrying it."""
+        t = TestHybridPolymerReactor()
+        # off the cone: no release at all, from B alone
+        diff = t._qssa_channel_diff(_qssa_channel(), moments=(1.0, 0.0, 0.0))
+        assert diff[2] == 0.0 and diff[1] == 0.0
+        # inside the cone: the gate is exactly 1.0, so the channel is
+        # untouched and the I-055 chain-debit law still holds exactly
+        mu0, mu1, mu2 = 1.0, 5.0, 30.0
+        diff = t._qssa_channel_diff(_qssa_channel(), moments=(mu0, mu1, mu2))
+        p1 = _kdep_expected_p1(mu0, mu1, mu2)
+        assert diff[2] < 0.0
+        assert diff[1] == pytest.approx(diff[2] * p1, rel=1e-9)
+
+
+class TestAcceptedStateVarianceCensus:
+    """I-065 defect 2. The accepted-state census covered half of three-moment
+    realizability: it checked mu1 >= mu0 >= 0 and nothing checked
+    Cauchy-Schwarz, mu0*mu2 >= mu1^2. A state below that line has a NEGATIVE
+    chain-length variance -- no distribution has one -- so the gamma closure
+    has no parameters and the mu3 log-Lagrange closure describes nothing,
+    and it passed unnoticed because every moment can still be positive and
+    mu1 can still exceed mu0.
+
+    Warn-once census, never a raise, exactly like the cone half: r81 keeps
+    sole ownership of raising, and promoting either census to a hard error
+    is a policy change to adjudicate on its own."""
+
+    MU0, MU1, MU2 = 3, 4, 5
+
+    @staticmethod
+    def _census(rs, mu0, mu1, mu2, needle, fresh=True):
+        class _Grab(logging.Handler):
+            def __init__(self):
+                super().__init__()
+                self.msgs = []
+
+            def emit(self, record):
+                self.msgs.append(record.getMessage())
+
+        if fresh:
+            rs._realizability_warned = set()
+        rs.y[3], rs.y[4], rs.y[5] = mu0, mu1, mu2
+        h = _Grab()
+        root = logging.getLogger()
+        root.addHandler(h)
+        old = root.level
+        root.setLevel(logging.WARNING)
+        try:
+            rs._assert_pool_moments_accepted()
+        finally:
+            root.removeHandler(h)
+            root.setLevel(old)
+        return [m for m in h.msgs if needle in m]
+
+    def _system(self):
+        core, mask, pools, moments = _kunzip_core_and_pools(
+            1.0, moments=(1.0, 5.0, 30.0))
+        return _khom_system(core, mask, pools, moments, T=800.0)
+
+    def test_variance_census_fires_on_an_unrealizable_second_moment(self):
+        rs = self._system()
+        # realizable: mu0*mu2 = 30 >= mu1^2 = 25 -> silent
+        assert self._census(rs, 1.0, 5.0, 30.0, "VARIANCE CENSUS") == []
+        # equality (monodisperse) is realizable and must NOT fire
+        assert self._census(rs, 1.0, 5.0, 25.0, "VARIANCE CENSUS") == []
+        # mu0*mu2 = 20 < mu1^2 = 25: negative variance, invisible to both
+        # the mu1 >= mu0 half and the r81 negative check
+        hits = self._census(rs, 1.0, 5.0, 20.0, "VARIANCE CENSUS")
+        assert len(hits) == 1, (
+            "nothing reported a physically impossible second moment")
+        assert "poly_pe" in hits[0]
+        assert "2.000000e+01" in hits[0] and "2.500000e+01" in hits[0]
+
+    def test_variance_census_is_warn_once_and_independent_of_the_cone_half(self):
+        rs = self._system()
+        assert len(self._census(rs, 1.0, 5.0, 20.0, "VARIANCE CENSUS")) == 1
+        assert self._census(rs, 1.0, 5.0, 20.0, "VARIANCE CENSUS",
+                            fresh=False) == []
+        # a pool that already reported a CONE exit must still be able to
+        # report a variance violation: the two are keyed separately
+        rs._realizability_warned = set()
+        assert len(self._census(rs, 1.0, 0.5, 30.0, "CONE CENSUS",
+                                fresh=False)) == 1
+        assert len(self._census(rs, 1.0, 5.0, 20.0, "VARIANCE CENSUS",
+                                fresh=False)) == 1
+
+    def test_variance_census_never_raises_and_r81_still_does(self):
+        rs = self._system()
+        rs._realizability_warned = set()
+        rs.y[3], rs.y[4], rs.y[5] = 1.0, 5.0, 20.0
+        rs._assert_pool_moments_accepted()          # census only: no raise
+        rs.y[3], rs.y[4], rs.y[5] = -1.0, -2.0, -3.0
+        with pytest.raises(ValueError, match="beyond the exhaustion floor"):
+            rs._assert_pool_moments_accepted()
+
+    def test_variance_census_is_silent_on_an_exhausted_pool_at_the_floors(self):
+        """No false positive from exhaustion: a pool sitting at its own
+        atol-scale floors must not trip the check, which is what the
+        propagated tolerance is for."""
+        rs = self._system()
+        f0, f1, f2 = (rs._pool_mu_floors[0, 0], rs._pool_mu_floors[0, 1],
+                      rs._pool_mu_floors[0, 2])
+        for state in ((0.0, 0.0, 0.0), (f0, f1, 0.0), (f0, f1, f2),
+                      (-f0, -f1, -f2), (1e-30, 1e-30, 1e-30)):
+            assert self._census(rs, *state, "VARIANCE CENSUS") == [], state
+
+
 class TestDepropagationDaughterWiring:
     """Deck param -> spawned end-radical daughter pools (probe finding c):
     k_depropagation is declared on the PARENT pool's k_homolysis context;
