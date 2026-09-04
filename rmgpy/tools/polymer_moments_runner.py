@@ -2799,6 +2799,167 @@ def _parse_side_group_v2_block(lab, pool_entry):
     return out
 
 
+#: I-059 chain_mass_defect_provenance -- the exact key set the producer
+#: emits (rmgpy/polymer.py, _pool_to_sidecar_dict). Closed, so a hand-edited
+#: block cannot smuggle an extra field past the arithmetic.
+_DEFECT_PROVENANCE_KEYS = frozenset((
+    "source", "parent_pool", "inherited_g_mol", "shed_g_mol"))
+
+
+def validate_chain_mass_defect_provenance(pools):
+    """I-059 evidence check for ``chain_mass_defect_g_mol``.
+
+    A pool's per-chain mass defect is subtracted from the condensed mass on
+    every mass path (``mu1*monomer_mw - mu0*defect``), so an unverifiable
+    defect is a silent per-chain mass subtraction. Historically the record
+    carried the RESULT and the spawn CHANNEL but nothing that let a reader
+    check the NUMBER -- a channel name cannot tell 1.008 g/mol from 16.
+
+    Where a pool carries ``chain_mass_defect_provenance``, this validates the
+    evidence and returns the set of pool labels whose defect is thereby
+    CONFIRMED:
+
+    * the block is a dict with exactly ``{source, parent_pool,
+      inherited_g_mol, shed_g_mol}``;
+    * ``source`` is a non-empty string that CROSS-PINS the pool's own
+      ``spawn_event_metadata.source`` -- a block claiming a different channel
+      from the pool it sits on is forged, never adapted. No closed vocabulary
+      of channel names: the evidence is arithmetic, so a new spawn channel
+      needs no coordination here;
+    * ``inherited_g_mol >= 0`` and ``shed_g_mol >= 0``, both finite;
+    * ``inherited_g_mol + shed_g_mol == chain_mass_defect_g_mol`` EXACTLY --
+      the producer added these same two IEEE doubles, so re-adding them
+      reproduces the sum bit-for-bit and no tolerance is needed or wanted;
+    * lineage closure: when ``parent_pool`` names a pool present in the
+      artifact, that pool's own defect (0.0 when absent) equals
+      ``inherited_g_mol``.
+
+    Every failure above RAISES: a present-but-wrong block is worse than no
+    block, because it would otherwise buy silence for a number nobody
+    checked.
+
+    Returned separately, never raised on, is the set of labels whose
+    ``parent_pool`` is NOT in the artifact: the arithmetic holds but the
+    lineage cannot be closed, so the caller must keep treating those as
+    unconfirmed rather than accept them.
+
+    Absence of the block is LEGAL and returns nothing for that pool -- every
+    artifact written before I-059 is in that state, and downgrading them to
+    unreadable would be a regression.
+
+    Returns:
+        (confirmed_labels, unresolved_parent): a set of labels whose defect
+        is fully validated, and a dict {label: parent_pool} for blocks whose
+        arithmetic holds but whose named parent is absent from the artifact.
+    """
+    by_label = {p.get("label"): p for p in pools}
+    confirmed = set()
+    unresolved = {}
+    for p in pools:
+        if "chain_mass_defect_provenance" not in p:
+            continue
+        lbl = p.get("label")
+        prov = p.get("chain_mass_defect_provenance")
+        if "chain_mass_defect_g_mol" not in p:
+            raise ValueError(
+                f"Pool {lbl!r}: carries a chain_mass_defect_provenance block "
+                f"({prov!r}) but NO chain_mass_defect_g_mol. The block is "
+                f"evidence FOR a defect; standing alone it explains a value "
+                f"that is not there. Fix the artifact.")
+        if not isinstance(prov, dict) or set(prov) != _DEFECT_PROVENANCE_KEYS:
+            raise ValueError(
+                f"Pool {lbl!r}: chain_mass_defect_provenance must be a dict "
+                f"with exactly the keys "
+                f"{sorted(_DEFECT_PROVENANCE_KEYS)}, got {prov!r}. Fix the "
+                f"artifact.")
+        source = prov.get("source")
+        if not isinstance(source, str) or not source.strip():
+            raise ValueError(
+                f"Pool {lbl!r}: chain_mass_defect_provenance source="
+                f"{source!r} must be a non-empty string naming the spawn "
+                f"channel that shed the mass. Fix the artifact.")
+        meta = p.get("spawn_event_metadata")
+        meta_source = meta.get("source") if isinstance(meta, dict) else None
+        # Cross-pin the block's channel against the pool's own spawn event --
+        # but only where the pool HAS one. 'input' is the serializer's
+        # absence sentinel: Polymer.copy() deliberately does not carry
+        # spawn_metadata (wing-daughter detection depends on that), while it
+        # DOES carry the defect and, now, its evidence. So a copied
+        # defect-bearing pool legitimately serializes as
+        # spawn_event_metadata={'source': 'input'} with a block naming the
+        # channel that created the defect on the pool it was copied from.
+        # Demanding equality there would hard-reject a real producer shape.
+        # The block's source describes where the DEFECT came from, not the
+        # copy's own birth; the arithmetic and the lineage closure below bind
+        # unconditionally and are the evidence proper.
+        if meta_source not in (source, "input", None):
+            raise ValueError(
+                f"Pool {lbl!r}: chain_mass_defect_provenance source="
+                f"{source!r} contradicts the pool's own spawn_event_metadata "
+                f"source ({meta_source!r}). The defect's evidence must name "
+                f"the same spawn event the pool does; a block claiming "
+                f"another channel is hand-edited. Fix the artifact.")
+        vals = {}
+        for key in ("inherited_g_mol", "shed_g_mol"):
+            v = prov.get(key)
+            if (isinstance(v, bool) or not isinstance(v, (int, float))
+                    or not math.isfinite(float(v)) or float(v) < 0.0):
+                raise ValueError(
+                    f"Pool {lbl!r}: chain_mass_defect_provenance {key}={v!r} "
+                    f"must be a finite value >= 0 g/mol. Fix the artifact.")
+            vals[key] = float(v)
+        defect = p.get("chain_mass_defect_g_mol")
+        if (isinstance(defect, bool)
+                or not isinstance(defect, (int, float))
+                or not math.isfinite(float(defect))):
+            raise ValueError(
+                f"Pool {lbl!r}: chain_mass_defect_g_mol={defect!r} is not a "
+                f"finite number, so its provenance cannot be checked "
+                f"against it. Fix the artifact.")
+        total = vals["inherited_g_mol"] + vals["shed_g_mol"]
+        if total != float(defect):
+            raise ValueError(
+                f"Pool {lbl!r}: chain_mass_defect_provenance does not "
+                f"reconstruct the defect -- inherited_g_mol="
+                f"{vals['inherited_g_mol']!r} + shed_g_mol="
+                f"{vals['shed_g_mol']!r} = {total!r}, but "
+                f"chain_mass_defect_g_mol={float(defect)!r}. The producer "
+                f"adds exactly these two doubles, so a well-formed artifact "
+                f"agrees bit-for-bit. This block does not evidence this "
+                f"defect. Fix the artifact.")
+        parent = prov.get("parent_pool")
+        if not isinstance(parent, str) or not parent.strip():
+            raise ValueError(
+                f"Pool {lbl!r}: chain_mass_defect_provenance parent_pool="
+                f"{parent!r} must be a non-empty pool label -- "
+                f"inherited_g_mol is a claim ABOUT a specific parent and is "
+                f"uncheckable without it. Fix the artifact.")
+        parent_entry = by_label.get(parent)
+        if parent_entry is None:
+            unresolved[lbl] = parent
+            continue
+        parent_defect = float(
+            parent_entry.get("chain_mass_defect_g_mol", 0.0) or 0.0)
+        if parent_defect != vals["inherited_g_mol"]:
+            raise ValueError(
+                f"Pool {lbl!r}: chain_mass_defect_provenance claims it "
+                f"inherited {vals['inherited_g_mol']!r} g/mol from pool "
+                f"{parent!r}, but that pool's serialized "
+                f"chain_mass_defect_g_mol is {parent_defect!r}. The lineage "
+                f"does not close -- one of the two values is wrong and the "
+                f"defect cannot be trusted. Fix the artifact.")
+        confirmed.add(lbl)
+    return confirmed, unresolved
+
+
+def _check_chain_mass_defect_provenance(artifact):
+    """Artifact-level entry point for :func:`validate_chain_mass_defect_
+    provenance` (I-059). Raises on any present-but-invalid evidence block;
+    silent on absence."""
+    pools = [p for p in artifact.get("pools", []) if isinstance(p, dict)]
+    validate_chain_mass_defect_provenance(pools)
+
+
 def _check_side_group_homolysis(artifact):
     """Vocabulary/version cross-check + closure guard for the SGH kernel-v2
     side_group_homolysis vocabulary (schema 3.0), the strict mirror of the
@@ -2842,6 +3003,9 @@ def _check_side_group_homolysis(artifact):
                     f"{defect!r} must be a finite value > 0 (the exact "
                     f"per-chain X-loss mass; the emitter never writes any "
                     f"other shape). Fix the artifact.")
+    # I-059: where a defect carries its evidence block, the evidence must
+    # hold. Absence stays legal (every artifact written before I-059).
+    _check_chain_mass_defect_provenance(artifact)
     # Legacy /1 negative control FIRST (loud, never adapt). Any pool carrying
     # the v1 X-loss feature-pool spawn provenance is an OLD feature-pool
     # artifact -- v2 spawns none.
