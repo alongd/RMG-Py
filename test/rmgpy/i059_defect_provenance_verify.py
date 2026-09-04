@@ -717,6 +717,15 @@ def main():
         fixed = sorted(before - after)
         drift = sorted(before ^ RMG_BASE_FAILURES_STALE_9E7E0C4D5)
         print(f"  base failures: {len(before)}   after: {len(after)}")
+        # Print the IDENTITIES, not just the counts. The first version of this
+        # check printed counts only, so when the base set moved from 28 (DASSL
+        # @9e7e0c4d5) to 13 (DASPK @d78c7211f) there was no record of WHICH 15
+        # went away -- and the junitxml lives in a tmp dir this script deletes.
+        # A count is not a failure set.
+        for lbl, s in (("base", before), ("after", after)):
+            print(f"  --- {lbl} failing ids ({len(s)}) ---")
+            for t in sorted(s):
+                print(f"      {t}")
         print(f"  (informational) base-set drift vs the stale 9e7e0c4d5/DASSL "
               f"constant: {len(drift)} entries differ")
         print(f"  failures now: {len(after)}   NEW vs {RMG_BASE_SHA}: "
