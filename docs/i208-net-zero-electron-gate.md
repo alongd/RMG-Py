@@ -116,6 +116,70 @@ No placement declaration added to `FAMILY_ELECTRON_PLACEMENT`; the two-number ma
 validation rule, and existing entries untouched; RMG-database not modified; nothing else repaired;
 nothing pushed or merged.
 
+## Addendum — the third call site (adversarial review of I-206)
+
+A review flagged a third consumer of the placement declarations,
+`rmgpy/electron_balance.py:284 get_electron_placement_counts()`. Verified against the code:
+
+**(a) Site 3 is genuinely ungated, and a `(1,1)` resolves there for a net-zero reaction.**
+`get_electron_placement_counts` calls `get_placement_declaration(reaction)` at line 284 with **no**
+`electrons != 0` guard. For a net-zero reaction whose owner declares `(1,1)`: `declaration=(1,1)`,
+`electrons=0`, and line 287 `product_count - reactant_count == electrons` → `1 - 1 == 0` → returns
+`(1, 1)`. Confirmed. So the blanket premise "a net-zero declaration could never be consulted anywhere"
+is **false** — site 3 consults it today. (The I-208 code docstring's narrower statement is scoped to
+`resolve_electron_placement`/`_resolve_electron_placements` — "the resolver" — and remains accurate:
+that consumer, site 1, was the one gated out.)
+
+The three sites, and what each answers for a net-zero reaction:
+
+| # | Site | Gate on net-zero | Net-zero `(1,1)` declared |
+|---|------|------------------|---------------------------|
+| 1 | `plasma.pyx` `_resolve_electron_placements` (reactor) | **was** `electrons != 0`; I-208 lifts it | now resolves → places `(1,1)` |
+| 2 | `electron_balance.py` `expand_electrons` (export) | `if electrons == 0: return` early (line 351) | **early-returns, places nothing** |
+| 3 | `electron_balance.py` `get_electron_placement_counts` (identity) | **none** | consults declaration → `(1,1)` |
+
+**(b) Consequence of the current state (no net-zero owner declared) — a distinct, latent defect.**
+`are_identical_species_references` (`rmgpy/rmg/model.py:2356`) compares heavy-species references (in
+either direction) **and** the two `get_electron_placement_counts` pairs — and nothing else (not
+family, not kinetics). With no net-zero declaration, a catalytic-electron reaction falls through site
+3 to `(0, 0)`. A thermal `AB => A + B` and a plasma net-zero `AB => A + B` then present identical
+heavy references **and** identical `(0,0)` counts, so the predicate declares them the same reaction
+and the model silently keeps whichever was offered first.
+
+- **Reachable?** The predicate has no family/kinetics discriminator, so the collapse is reachable *in
+  principle*. It is **not** reachable with shipped data: it needs a plasma net-zero dissociation
+  family/library to coexist with a thermal reaction over the same heavy species, and no such family
+  is in the database (i204 staged `Plasma_Electron_Impact_Dissociation` out of `input/`).
+- **Distinct from I-208?** Yes — this is an **identity collapse at the model builder**, separate from
+  I-208's rate-**order** symptom at the reactor. Same root cause, though: the missing `(1,1)`
+  declaration. Adding it makes site 3 return `(1,1) ≠ (0,0)`, which distinguishes the two reactions —
+  so the separate data ticket closes this at the same stroke it closes the order defect. Named here;
+  **not fixed** (touches `rmgpy/rmg/model.py`, and fixing it without the declaration is untestable).
+
+**(c) Does `_needs_electron_placement` make sites 1/2/3 agree? No — and I am not widening scope to
+force it.** The predicate is a site-1-only change.
+
+- **Today (no net-zero declaration): all three agree.** A well-formed net-zero reaction is "no
+  placement" at every site — site 1 passes it through (owner undeclared, so the new declaration
+  conjunct is false), site 2 early-returns, site 3 returns `(0,0)`. My change does not disturb this:
+  it routes a net-zero reaction only when its owner is declared, of which there are none, plus a
+  *malformed* declared-owner-with-zero-net reaction, which the resolver then refuses by name.
+- **When the data ticket adds `(1,1)`: sites 1 and 3 agree (both place `(1,1)`); site 2 does not.**
+  `expand_electrons` retains its `electrons == 0` early return, so it would export `AB => A + B` with
+  no electron. That is **not** silent: the export path pairs it with `check_electron_reactant_order`
+  (`chemkin.pyx:1949`+`1966`/`1993`; `yaml_cantera2.py:917`+`936`), which sees an order-2
+  `cm^3/(mol*s)` coefficient against one reactant and raises `MechanismWriterError`. So site 2 must
+  also have its `electrons == 0` gate lifted **as part of the data ticket** — but only then, because
+  lifting it now (with no net-zero declaration) changes nothing and cannot be tested end to end. That
+  is exactly the gate-change/data-change confounding this ticket's non-goals forbid.
+
+**Ruling — the narrow site-1 fix stands, defended.** Site 3 is not broken; it is the reference-correct
+behaviour (ungated, already honours net-zero declarations), and changing it would be the regression.
+Site 2's early return and the site-(b) identity collapse are both gated on the same *missing
+declaration*, are inert with shipped data, and belong with the data ticket that adds `(1,1)` — which
+is where all three sites must be shown to agree end to end. I-208 delivers one necessary precondition
+(site 1) and does not claim more.
+
 ## Reported, not fixed
 
 `rmgpy/molecule/`, `rmgpy/kinetics/`, `rmgpy/data/` are gated and were not entered. The reactor
