@@ -7693,7 +7693,54 @@ class HybridPolymerSystem(ReactionSystem):
 
             # Hybrid Handshake
             tail_mean = mu1 / mu0 if mu0 > SMALL_EPS else 0.0
-            valid_tail = (mu0 > TAIL_CONC_MIN) and (tail_mean > xs + 1e-9)
+            # I-060. `mu0 > TAIL_CONC_MIN` is the half that does real work
+            # and it is kept unchanged: below 1e-9 mol/m^3 the tail is
+            # numerically empty, every quantity the handshake computes comes
+            # through the division mu1/mu0, and depositing that quotient into
+            # a REAL core species would seed an oligomer out of round-off.
+            #
+            # The other half, `tail_mean > xs + 1e-9`, asked a real question --
+            # can the pool afford the chain the handshake is about to remove?
+            # -- and answered it with an average, as a hard boolean, on the
+            # wrong side of the flux's own maximum. Measured on a scission-fed
+            # k_unzip pool (xs=3, k_unzip/k_scission = 5, PDI 1.5): the flux is
+            # LARGEST just above the threshold and the boolean took it to zero
+            # there -- F(mean = xs + 1e-6) = 3.8390e-02, F(mean = xs) = 0.0,
+            # a finite JUMP in the residual on a surface the trajectory
+            # crosses, with dmu0 flipping sign across it
+            # (-2.1377e-02 -> +1.7013e-02). That is a zeroth-order
+            # discontinuity, strictly worse than the first-derivative kink the
+            # _release_units_gate quintic exists to avoid, and downstream of
+            # it the handshake -- the tail's ONLY outlet into the explicit
+            # ladder -- stayed off for the rest of the run: the DP=xs species
+            # froze and the whole sub-cutoff residue left as gas monomer.
+            #
+            # The boolean is therefore removed here and replaced, at the flux
+            # below, by explicit per-state BUDGETS on the boundary population
+            # -- one from each realizability inequality, derived there. An
+            # average over the whole tail was never the right instrument: the
+            # question is how many chains sit at DP = xs, and mean DP > xs is
+            # neither necessary nor sufficient for that.
+            #
+            # Not to be confused with the tail's REPRESENTATION invariant,
+            # which is a different inequality: the tail holds chains with
+            # n > xs (module docstring 'Moment Tail: ... chains with DP > xs';
+            # polymer_input.PolymerPool xs doc), so its support starts at xs+1
+            # and it satisfies mu1 >= (xs+1)*mu0. The handshake is the only
+            # term that pushes THAT quantity back up -- dmu0 -= F and
+            # dmu1 -= xs*F give d(mu1 - (xs+1)*mu0)/dt += +F exactly -- which
+            # is why losing it below the boundary is a defect and not merely
+            # a branch not taken.
+            #
+            # Removing the condition and putting nothing in its place was
+            # tried and is WRONG: at full strength below the boundary the
+            # handshake removes chains it has no units for, and the pool is
+            # driven clean out of the mu1 >= mu0 cone (min(mu1 - mu0) =
+            # -1.51e-01 on the trajectory above, against +1.85e-20 unfixed).
+            # So was a smooth availability FRACTION -- the budgets below are
+            # absolute chain counts, and a fraction of the wrong base is not
+            # a bound (see the derivation at the flux clamp).
+            valid_tail = mu0 > TAIL_CONC_MIN
 
             # Per-chain unzip frequency feeding the handshake: the legacy
             # k_unzip IS that frequency; the QSSA equivalent is
@@ -7733,6 +7780,139 @@ class HybridPolymerSystem(ReactionSystem):
                     if xs > 0:
                         N_boundary = min(N_boundary, mu1 / xs)
                         N_boundary = min(N_boundary, mu2 / (xs * xs))
+                    # I-060 REALIZABILITY BUDGETS.
+                    #
+                    # p_cond above is the gamma closure's ESTIMATE of what
+                    # fraction of the tail sits at the boundary. The three
+                    # clamps above are the elementary bounds on the same
+                    # population: mu0 = SUM c_n >= c_xs, mu1 = SUM n c_n >=
+                    # xs*c_xs, mu2 = SUM n^2 c_n >= xs^2*c_xs. The two below
+                    # are the bounds the two REALIZABILITY inequalities give,
+                    # and neither is implied by those three. Each is an
+                    # absolute upper bound on c_xs; each is ATTAINED by an
+                    # explicit realizable distribution, so neither is slack
+                    # that could be dropped; and a handshake respecting all
+                    # five can never remove chains the pool provably is not
+                    # holding.
+                    #
+                    # (a) From mu1 >= mu0 -- every chain carries at least one
+                    #     repeat unit:
+                    #         mu1 - mu0 = SUM (n - 1) c_n >= (xs - 1)*c_xs
+                    #     so c_xs <= (mu1 - mu0)/(xs - 1). One event spends
+                    #     (xs - 1) of that excess, so this IS the excess
+                    #     budget, and it makes mu1 = mu0 an invariant set:
+                    #     d(mu1 - mu0)/dt carries -(xs - 1)*F with F now
+                    #     bounded by k*(mu1 - mu0), which vanishes there. The
+                    #     I-055 chain-termination debit cannot supply that --
+                    #     its own release term vanishes at the edge (p1 -> 1)
+                    #     while F did not. xs <= 1 spends no excess per event,
+                    #     so no budget is owed and none is applied.
+                    #
+                    # (b) From mu0*mu2 >= mu1^2 (Cauchy-Schwarz). Take moments
+                    #     about xs, m_k = SUM (n - xs)^k c_n. Then
+                    #     Q := mu0*mu2 - mu1^2 = m_0*m_2 - m_1^2, since Q is
+                    #     mu0^2 * Var and so translation invariant. A
+                    #     handshake event takes m_0 -> m_0 - F and leaves m_1
+                    #     and m_2 untouched, because it removes chains at
+                    #     exactly n = xs, where (n - xs) = 0. Hence
+                    #         dQ/dt = -F * m_2 = -F * SUM (n - xs)^2 c_n <= 0
+                    #     for EVERY realizable state -- unconditional, not a
+                    #     corner case. That sign is not itself the defect:
+                    #     deleting a monodisperse sub-population is supposed
+                    #     to cut the variance, and what is left of a real
+                    #     distribution is still a real distribution. The
+                    #     defect is running the drain past its budget. Split
+                    #     m_0 = c_xs + r over the n = xs atom and the rest;
+                    #     m_1 and m_2 see only the rest, so
+                    #         Q = c_xs*m_2 + (r*m_2 - m_1^2) >= c_xs*m_2
+                    #     by Cauchy-Schwarz on the restricted measure, giving
+                    #         c_xs <= Q / m_2.
+                    #     TIGHT: for an atom c_xs at xs plus an atom at
+                    #     xs + d it returns exactly c_xs. Capping here makes
+                    #     Q = 0 an invariant set (dQ/dt >= -k*Q) without
+                    #     clamping Q itself, which would hide the drain
+                    #     rather than stop it. m_2 = 0 means the pool is
+                    #     monodisperse at exactly xs: Q = 0, dQ/dt = 0 for any
+                    #     F, no budget is owed and the whole pool may
+                    #     legitimately cross -- so the bound is skipped rather
+                    #     than evaluated as 0/0.
+                    #
+                    # On the BASIS question these replace. Round 1 wrote (a) as
+                    # _release_units_gate((xs-1)*mu0, mu1-mu0), i.e. as a
+                    # FRACTION with mu0 in the denominator, and review asked
+                    # whether the denominator should have been N_boundary --
+                    # the population the rate is actually drawn from -- rather
+                    # than all tail chains. By _release_units_gate's own
+                    # semantics (units on offer / units the event rate implies)
+                    # review is right that mu0 is the wrong base: the demand is
+                    # (xs-1)*N_boundary. But N_boundary is not the fix either.
+                    # A gate of the form N*h(B/N) is self-referential -- it
+                    # DECREASES as the attempt grows, going to zero like
+                    # 10*B^3/N^2 -- and it still is not a bound, since
+                    # h(t) > t for t > 0.5. The error was not the choice of
+                    # base; it was treating a BUDGET as a fraction at all. A
+                    # budget is an absolute count of chains, so the operator
+                    # that respects it is min(attempt, budget), which needs no
+                    # denominator and is what is written here.
+                    #
+                    # Hard min rather than the C2 quintic _release_units_gate
+                    # carries for the 1-unit release channels, and the choice
+                    # is forced: a smooth multiplier that is exactly 1.0 above
+                    # the boundary must exceed the budget just below it (the
+                    # quintic has h(t) > t for t > 0.5), so it cannot be both
+                    # inert above and a bound below. Round 1 shipped the
+                    # quintic and was a bound only by measurement, not by
+                    # construction. Inertness is not given up: (a) is exactly
+                    # slack for mean >= xs, where (mu1 - mu0)/(xs - 1) >= mu0
+                    # >= N_boundary. (b) is NOT slack there and does change
+                    # the flux above the cutoff -- deliberately, since the
+                    # over-budget removal is a pre-existing defect that the
+                    # old boolean never addressed (measured: 8 of 77 swept
+                    # states on the unfixed build, all at mean >= xs + 0.5).
+                    # The kink a binding min leaves is first-order, against
+                    # the zeroth-order jump the old boolean put on a surface
+                    # the trajectory crosses; the three clamps above are
+                    # already min() in this same expression; and the no-cliff
+                    # pin (test_deprop_smooth_exhaustion_gate_no_cliff) is
+                    # about the release rate at mean = 1, not this population.
+                    if xs > 1:
+                        N_boundary = min(N_boundary, (mu1 - mu0) / (xs - 1))
+                    m2_about_xs = mu2 - 2.0 * xs * mu1 + xs * xs * mu0
+                    q_cone = mu0 * mu2 - mu1 * mu1
+                    if m2_about_xs > 0.0:
+                        N_boundary = min(N_boundary, q_cone / m2_about_xs)
+                    elif m2_about_xs < 0.0 or q_cone < 0.0:
+                        # m2_about_xs is SUM (n - xs)^2 c_n, a sum of squares
+                        # against non-negative concentrations: it cannot be
+                        # negative for ANY realizable tail. Reaching here means
+                        # the triple is already off the cone, so no budget
+                        # above describes a realizable population -- and the
+                        # one that would have caught it was skipped by the
+                        # m2 <= 0 test itself. Do NOT read the other clamps as
+                        # protection here: at xs = 2, (mu0, mu1, mu2) =
+                        # (1, 3.5, 9) has q_cone = -3.25 and m2_about_xs = -1,
+                        # every other budget is positive, and before this
+                        # branch existed the handshake ran there at its full
+                        # unclamped rate (measured F = 1.000000e-01).
+                        #
+                        # m2_about_xs == 0 with q_cone == 0 is the one
+                        # degenerate case that IS realizable -- the whole tail
+                        # sitting exactly at n = xs -- and it falls through to
+                        # the clamps above, which are correct for it.
+                        # m2_about_xs == 0 forces q_cone = -m1^2 <= 0, so
+                        # q_cone > 0 cannot occur in this branch at all.
+                        #
+                        # Refusing the flux is the conservative reading, not a
+                        # diagnosis. Whether an accepted off-cone state should
+                        # be fatal rather than warned about belongs to the
+                        # variance census, which owns that call.
+                        N_boundary = 0.0
+                    # A negative N_boundary would run the handshake BACKWARDS,
+                    # inventing tail chains out of the explicit species. It
+                    # arises where a budget IS computed and comes out negative:
+                    # q_cone < 0 with m2_about_xs > 0, or mu1 < mu0.
+                    if N_boundary < 0.0:
+                        N_boundary = 0.0
 
                     F = k_chain_handshake * N_boundary
 

@@ -39,6 +39,7 @@ import os.path
 import random
 import math
 import re
+import time
 import warnings
 from collections import OrderedDict
 from copy import deepcopy
@@ -88,6 +89,86 @@ DROPPED_REVERSE_LOG_PATH = None
 
 # Per-family counts of reactions dropped via TOLERATE_MISSING_REVERSE, keyed by family label.
 _dropped_reverse_counts = {}
+
+# ---------------------------------------------------------------------------
+# Wasted-build profile (I-067)
+# ---------------------------------------------------------------------------
+#
+# A size constraint is consulted AFTER apply_recipe has already built the product,
+# so every structure the constraints refuse was paid for in full first. This
+# accumulator answers what that costs as a fraction of the generation leg's wall
+# time -- the number that decides whether pre-screening reactant combinations
+# before apply_recipe is worth its own ticket.
+#
+# OFF by default and gated on an environment variable, so the default hot path
+# gains one module-global boolean test per call and nothing else. It only
+# measures; it changes no ordering, no recipe, and no refusal.
+PROFILE_WASTED_BUILDS = os.environ.get('RMG_I067_PROFILE') == '1'
+
+def _new_wasted_build_profile():
+    """A zeroed wasted-build accumulator.
+
+    The `*_total_s` buckets are a COMPLETE partition of the time spent inside
+    `_generate_product_structures` from the moment its timer starts: every exit path from
+    that point on charges exactly one of them. Round 1 only had `refused` and `accepted`,
+    so four other exits -- an empty product set, InvalidActionError/KekulizationError, a
+    forbidden product structure, and any other exception -- were charged to nothing at all
+    and silently vanished from the accounting. They are individually small, but a bucket
+    scheme that loses time cannot be used to argue about where time goes, which is the only
+    thing this profiler exists to do.
+
+    `degeneracy_total_s` is broken out separately because `get_reaction_degeneracy`
+    (family.py:2036) re-enters `_generate_product_structures` with
+    `apply_species_constraints=False` on reactions that were ALREADY generated. That is
+    bookkeeping, not model growth, and round 1 charged it to `accepted_total_s`, which
+    overstated the cost of the products RMG actually kept.
+    """
+    return {
+        'recipe_calls': 0, 'recipe_s': 0.0,           # every apply_recipe that returned
+        'refused_calls': 0, 'refused_recipe_s': 0.0,  # ...whose product was then refused
+        # --- complete partition of _generate_product_structures wall time ---
+        'refused_total_s': 0.0,      # exited via species-constraint refusal
+        'accepted_total_s': 0.0,     # returned products, constraints enforced
+        'degeneracy_total_s': 0.0,   # returned products, constraints NOT enforced (bookkeeping)
+        'empty_total_s': 0.0,        # recipe produced nothing
+        'action_error_total_s': 0.0, # InvalidActionError / KekulizationError
+        'forbidden_total_s': 0.0,    # product matched a forbidden structure
+        'other_error_total_s': 0.0,  # any other exception out of the timed region
+        # --- validity ---
+        'procnum': 1,                # generation parallelism this profile was gathered under
+    }
+
+
+_wasted_build_profile = _new_wasted_build_profile()
+
+
+def get_wasted_build_profile():
+    """Return the live wasted-build accumulator (not a copy)."""
+    return _wasted_build_profile
+
+
+def reset_wasted_build_profile():
+    """Zero the wasted-build accumulator. Called from RMG.initialize.
+
+    Without this, a second RMG run in the same process inherits the first run's totals and
+    reports them as its own. The test suite drives several runs per process.
+    """
+    _wasted_build_profile.clear()
+    _wasted_build_profile.update(_new_wasted_build_profile())
+
+
+def note_generation_procnum(procnum):
+    """Record the generation parallelism, so the profile can refuse to be misread.
+
+    The accumulator is a plain module global. Under `procnum > 1` reaction generation runs
+    in forked worker processes (rmgpy/rmg/react.py:69), each of which mutates its OWN copy
+    and discards it at exit, so the parent's totals would come back near zero while the
+    wall time they are divided by stays real. That does not yield a slightly-off number, it
+    yields an arbitrarily small one. The profile records the value and the reporter refuses
+    to print a fraction when it is not 1.
+    """
+    if PROFILE_WASTED_BUILDS:
+        _wasted_build_profile['procnum'] = max(_wasted_build_profile.get('procnum', 1), int(procnum))
 
 
 class TemplateReaction(Reaction):
@@ -1662,14 +1743,36 @@ class KineticsFamily(Database):
                 raise ForbiddenStructureException()
 
         # Generate the product structures by applying the forward reaction recipe
+        #
+        # Every exit from here on charges exactly one `*_total_s` bucket, so the buckets sum
+        # to the whole timed region. `_charge` is called on each path rather than from a
+        # `finally`, because a `finally` cannot tell which path it is unwinding and that is
+        # precisely the distinction being measured.
+        _t_gps = time.perf_counter() if PROFILE_WASTED_BUILDS else 0.0
+        _t_recipe = 0.0
+
+        def _charge(bucket):
+            if PROFILE_WASTED_BUILDS:
+                _wasted_build_profile[bucket] += time.perf_counter() - _t_gps
+
         try:
-            product_structures = self.apply_recipe(reactant_structures, forward=forward, relabel_atoms=relabel_atoms)
+            if PROFILE_WASTED_BUILDS:
+                _t0 = time.perf_counter()
+                product_structures = self.apply_recipe(reactant_structures, forward=forward, relabel_atoms=relabel_atoms)
+                _t_recipe = time.perf_counter() - _t0
+                _wasted_build_profile['recipe_calls'] += 1
+                _wasted_build_profile['recipe_s'] += _t_recipe
+            else:
+                product_structures = self.apply_recipe(reactant_structures, forward=forward, relabel_atoms=relabel_atoms)
             if not product_structures:
+                _charge('empty_total_s')
                 return None
         except (InvalidActionError, KekulizationError):
             # If unable to apply the reaction recipe, then return no product structures
+            _charge('action_error_total_s')
             return None
         except ActionError:
+            _charge('other_error_total_s')
             logging.error('Could not generate product structures for reaction family {0} in {1} '
                           'direction'.format(self.label, 'forward' if forward else 'reverse'))
             logging.info('Reactant structures:')
@@ -1680,6 +1783,7 @@ class KineticsFamily(Database):
         # Apply the generated species constraints (if given)
         for struct in product_structures:
             if self.is_molecule_forbidden(struct):
+                _charge('forbidden_total_s')
                 raise ForbiddenStructureException()
             if any(spc.is_polymer_proxy for spc in reactant_structures + product_structures):
                 for spc in reactant_structures + product_structures:
@@ -1687,12 +1791,23 @@ class KineticsFamily(Database):
             if apply_species_constraints:
                 reason = fails_species_constraints(struct)
                 if reason:
+                    if PROFILE_WASTED_BUILDS:
+                        # This build is now known to be wasted: the recipe ran, the
+                        # product exists, and it is being thrown away. Charge the
+                        # recipe time and the whole call to the wasted bucket.
+                        _wasted_build_profile['refused_calls'] += 1
+                        _wasted_build_profile['refused_recipe_s'] += _t_recipe
+                    _charge('refused_total_s')
                     raise ForbiddenStructureException(
                         "Species constraints forbids product species {0}. Please "
                         "reformulate constraints, or explicitly "
                         "allow it. Reason: {1}".format(struct, reason)
                     )
 
+        # Constraints off means this is get_reaction_degeneracy re-deriving products for a
+        # reaction that already exists -- bookkeeping, not model growth. Charging it to
+        # `accepted` (as round 1 did) overstates what the kept products cost.
+        _charge('accepted_total_s' if apply_species_constraints else 'degeneracy_total_s')
         return product_structures
 
     def is_molecule_forbidden(self, molecule):

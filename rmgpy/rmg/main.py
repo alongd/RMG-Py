@@ -53,9 +53,16 @@ import rmgpy.util as util
 from rmgpy import settings
 from rmgpy.cantera import CanteraWriter
 from rmgpy.chemkin import ChemkinWriter
-from rmgpy.constraints import fails_species_constraints, reset_polymer_warning, validate_explicit_dp_oligomers
+from rmgpy.constraints import (
+    fails_species_constraints,
+    log_generation_census,
+    reset_generation_census,
+    reset_polymer_warning,
+    validate_explicit_dp_oligomers,
+)
 from rmgpy.polymer_conduit import reset_conduit_state
 from rmgpy.data.base import Entry
+from rmgpy.data.kinetics.family import reset_wasted_build_profile
 from rmgpy.data.kinetics.library import KineticsLibrary
 from rmgpy.data.rmg import RMGDatabase
 from rmgpy.data.vaporLiquidMassTransfer import vapor_liquid_mass_transfer
@@ -94,6 +101,11 @@ solvent = None
 
 # Maximum number of user defined processors
 maxproc = 1
+
+# Most species named per EDGE FLUX census. Measured on the phenolic-resin deck at
+# an 800-species edge, the census is ~25% of the log's lines and +13% of its bytes;
+# this caps the tail rather than letting it scale with maximumEdgeSpecies.
+EDGE_FLUX_CENSUS_CAP = 2000
 
 
 class RMG(util.Subject):
@@ -527,6 +539,14 @@ class RMG(util.Subject):
 
         # Reset the once-per-run unbounded-polymer warning.
         reset_polymer_warning()
+
+        # Reset the run-scoped constraint-refusal census (I-067), so a bound's
+        # truncation is reported per run and not accumulated across an in-process
+        # sequence of runs (the test suite drives several). The wasted-build profiler
+        # is a module global for the same reason and needs the same reset: without it
+        # the second run in a process reports the first run's totals as its own.
+        reset_generation_census()
+        reset_wasted_build_profile()
 
         # M18.3 run-boundary HARD reset (polymer conduit, DESIGN §3.3):
         # clear the candidate ledger AND the warn-once census sets that
@@ -1105,6 +1125,15 @@ class RMG(util.Subject):
                                 self.reaction_model.polymer_flux_snapshot = None
                                 logging.warning(
                                     "Polymer spawn-gate snapshot failed (all spawns will defer): %s", exc)
+
+                        # I-067: record every edge species' peak flux ratio -- the
+                        # very quantity compared against toleranceMoveToCore -- so
+                        # that a species a size bound removes can be shown to have
+                        # carried no meaningful flux in the unbounded run. Without
+                        # this the evidence does not exist: saveEdgeSpecies writes
+                        # the edge mechanism but not the flux that justified or
+                        # condemned it.
+                        self.log_edge_flux_census(reaction_system, index + 1)
 
                         self.rmg_memories[index].add_t_conv_N(t, x, len(obj))
                         self.rmg_memories[index].generate_cond()
@@ -1826,6 +1855,70 @@ class RMG(util.Subject):
             labels.add(potential_label)
 
         return old_labels
+
+    ################################################################################
+    def log_edge_flux_census(self, reaction_system, system_number):
+        """
+        Log every edge species' peak flux ratio for this simulation (I-067).
+
+        The number reported is ``max_edge_species_rate_ratios`` -- the species'
+        largest rate normalised by the characteristic rate over the whole
+        integration, which is exactly what RMG compares against
+        ``toleranceMoveToCore`` when deciding whether a species is worth keeping.
+        It is therefore the right and only honest answer to "did the species this
+        bound removed carry meaningful flux?".
+
+        Written as one ``EDGE FLUX`` line per species, tab-separated, so it can be
+        parsed straight out of the log; a species that a bound excludes in another
+        run is looked up here by SMILES. ``inf`` marks a species that left the edge
+        for the core during this cycle (``base.pyx:set_prunable_indices``) and so
+        has no finite ratio; it is reported verbatim rather than dropped.
+
+        Degrades honestly: if the ratio array and the prunable-species list are not
+        aligned (they can diverge when a prunable species leaves the edge mid-cycle)
+        the census says so and emits nothing, rather than pairing a flux with the
+        wrong species.
+        """
+        ratios = getattr(reaction_system, "max_edge_species_rate_ratios", None)
+        prunable = getattr(reaction_system, "prunable_species", None)
+        if ratios is None or not prunable:
+            logging.info("EDGE FLUX CENSUS (system %d): no edge flux ratios available.", system_number)
+            return
+        if len(ratios) != len(prunable):
+            logging.warning(
+                "EDGE FLUX CENSUS (system %d): %d flux ratios for %d prunable species -- "
+                "misaligned, emitting nothing rather than mispairing.",
+                system_number, len(ratios), len(prunable))
+            return
+
+        # One line per edge species is the point -- a flux record that omits the
+        # species a bound removed is not evidence. It is capped all the same: past
+        # EDGE_FLUX_CENSUS_CAP species only the highest-flux ones are named, since
+        # a bound is only ever wrong about a species that carried flux, and the
+        # count of what was dropped is printed so the omission is not silent.
+        pairs = sorted(zip(prunable, ratios), key=lambda p: -p[1])
+        dropped = max(0, len(pairs) - EDGE_FLUX_CENSUS_CAP)
+        logging.info("EDGE FLUX CENSUS (system %d): %d edge species%s; "
+                     "columns are ratio, heavy atoms, carbons, is_polymer_proxy, label, SMILES",
+                     system_number, len(prunable),
+                     "; naming the %d highest-flux, %d not named" % (EDGE_FLUX_CENSUS_CAP, dropped)
+                     if dropped else "")
+        for spec, ratio in pairs[:EDGE_FLUX_CENSUS_CAP]:
+            mols = getattr(spec, "molecule", None)
+            if mols:
+                heavy = mols[0].get_num_atoms() - mols[0].get_num_atoms("H")
+                carbon = mols[0].get_num_atoms("C")
+                try:
+                    smiles = mols[0].to_smiles()
+                except Exception:
+                    smiles = "<unrenderable>"
+            else:
+                heavy = carbon = -1
+                smiles = "<no structure>"
+            logging.info("EDGE FLUX\t%.6e\t%d\t%d\t%d\t%s\t%s",
+                         ratio, heavy, carbon,
+                         1 if getattr(spec, "is_polymer_proxy", False) else 0,
+                         spec.label, smiles)
 
     ################################################################################
     def process_to_species_networks(self, obj):
