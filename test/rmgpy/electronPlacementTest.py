@@ -1476,3 +1476,20 @@ class TestNetZeroElectronPlacementGate:
         resolved = reactor._resolve_electron_placements(
             [reactor_form], [_electron()], [])
         assert resolved[0] is reactor_form
+
+    def test_gate_electron_test_is_defensive_like_the_resolver(self, monkeypatch):
+        """MUST-FIX 2 (round 16): the gate detects electrons with the resolver's
+        own defensive ``electron_placement._is_electron`` (which catches
+        ``AttributeError``/``IndexError``), not a bare ``spc.is_electron()``. A
+        declared-owner net-zero reaction carrying a malformed participant (no
+        structure, so ``is_electron()`` raises ``IndexError``) must therefore be
+        ROUTED to the resolver, not fail at the gate with a raw error -- so gate
+        and resolver agree on what an electron is and fail the same way."""
+        monkeypatch.setitem(FAMILY_ELECTRON_PLACEMENT, NET_ZERO_FAMILY, (1, 1))
+        malformed = Species(label="malformed")  # empty molecule => is_electron() raises
+        reaction = _net_zero_dissociation(reactants=[malformed])
+        reactor = self._reactor()
+        # same helper, same verdict: the unreadable participant is "not an electron"
+        assert electron_placement._is_electron(malformed) is False
+        # the gate does not raise; it routes (no explicit electron present)
+        assert reactor._needs_electron_placement(reaction) is True

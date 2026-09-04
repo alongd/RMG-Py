@@ -1,8 +1,10 @@
 # I-208 — let a conserved-electron reaction resolve its electron placement
 
-**Worktree:** `/home/alon/Code/RMG-Py-i208-gate`, branch `i208-gate`, cut from `plasma` (0 behind).
+**Worktree:** `/home/alon/Code/RMG-Py-i208-gate`, branch `i208-gate`, rebased onto `plasma`
+@ `8751394fe` (after I-206 landed the two family declarations).
 **Database (read-only):** `/home/alon/Code/RMG-database-plasma` @ `plasma`.
-**Nothing pushed, nothing merged.** Adversarial review expected before this lands.
+**Nothing pushed, nothing merged.** Manager confirmed the gate merges (D-048, round 16); this revision
+answers the round's four follow-ups.
 
 ## The one-line change
 
@@ -52,9 +54,11 @@ sibling references are not gates of the same kind:
 - The resolver itself (`electron_placement.py`) needs **no change**. Tracing `(1,1)`, `electrons=0`:
   step 5 `expected_net = product_count - reactant_count = 0` matches; step 10 E-balance holds with
   one electron each side; step 11 order `= len(view.reactants) = 2` matches the `cm^3/(mol*s)`
-  coefficient. The export path (`expand_electrons`, Chemkin, Cantera) already reads
-  `FAMILY_ELECTRON_PLACEMENT` per `Reaction.family` (I-126) and needs no gate change — it places by
-  declaration, not by net.
+  coefficient. **The export path is a separate concern with its own defect for the net-zero shape**,
+  corrected below in the addendum (round 16): `expand_electrons` early-returns at `electrons == 0`
+  *before* it reads the declaration, so it does NOT place by declaration for a net-zero reaction.
+  I-208 does not change the export path; the round established that the export path also needs work,
+  as a HARD PREREQUISITE for the data ticket — see the addendum.
 
 ### 3. What the gate protects, and the correct predicate
 
@@ -96,19 +100,46 @@ reactions newly reach and resolve — the intended outcome.
 
 `rmgpy/electron_placement.py`'s module docstring attributed
 `Plasma_Electron_Impact_Dissociation`'s absence to a **spectator** the family model cannot express.
-That is stale for the net-zero shape: the recipe (`BREAK_BOND *1-*2`, `GAIN_RADICAL *1`,
-`GAIN_RADICAL *2`) touches both heavy centres, so no heavy spectator arises, and the electron is
-absent from the template by convention. The real blocker was the `:379` gate — now lifted. The
-docstring now says so, and records that the family is still out of the table only because no `(1,1)`
-declaration has been added yet (a separate data ticket). `Plasma_Collisional_Ionization`'s spectator
-note is left intact (out of scope; not re-measured here).
+That is stale for the net-zero shape. The real blocker was the `:379` gate — now lifted. The docstring
+now says so, and records that the family is still out of the table only because no `(1,1)` declaration
+has been added yet (a separate data ticket). `Plasma_Collisional_Ionization`'s spectator note is left
+intact (out of scope; not re-measured here).
+
+**Recipe provenance (round-16 REPORT-4 — this reason has inverted twice, so the citation is exact).**
+The "touches both heavy centres, no heavy spectator" claim is read directly from the family's own
+recipe. It is **not** in RMG-Py, and **not** in the database's active `input/` tree — the family is
+staged out — which is why a reviewer standing in RMG-Py could not check it. It lives in the
+**RMG-database `plasma` branch**, at
+`docs/plasma_electron_impact_dissociation_staged/groups.py` (a second copy sits at
+`docs/i154-carry-chemistry/held-back/Plasma_Electron_Impact_Dissociation/groups.py`). Verbatim:
+
+```python
+template(reactants=["AB"], products=["A", "B"], ownReverse=False)   # line 18
+...
+electrons = 0                                                        # line 24
+recipe(actions=[                                                     # lines 26–30
+    ['BREAK_BOND', '*1', 1, '*2'],
+    ['GAIN_RADICAL', '*1', 1],
+    ['GAIN_RADICAL', '*2', 1],
+])
+```
+
+Both labelled centres `*1` and `*2` are members of the single reactant group `AB`, and every action
+operates on one or both of them (`BREAK_BOND *1-*2`, `GAIN_RADICAL *1`, `GAIN_RADICAL *2`). There is
+no third labelled atom, so no heavy participant is a spectator; and `electrons = 0` with no electron
+in the template confirms the net-zero, template-implicit electron. The claim is therefore verified at
+its source, and the docstring now carries this path so the next reader can check it without leaving
+the code.
 
 ## Files changed
 
 - `rmgpy/solver/plasma.pyx` — `_resolve_electron_placements` calls the new `_needs_electron_placement`
-  predicate; docstrings updated.
-- `rmgpy/electron_placement.py` — module docstring corrected (spectator → gate), two passages.
-- `test/rmgpy/electronPlacementTest.py` — `TestNetZeroElectronPlacementGate` (6 tests) + one import.
+  predicate, which uses the resolver's defensive `_is_electron` helper (round-16 MUST-FIX 2);
+  docstrings updated.
+- `rmgpy/electron_placement.py` — module docstring corrected (spectator → gate) with the recipe
+  citation; two passages, rebased to co-exist with I-206's two-family note.
+- `test/rmgpy/electronPlacementTest.py` — `TestNetZeroElectronPlacementGate` (6 tests) + one import;
+  reassembled after I-206's tests to keep both suites.
 
 ## Non-goals honoured
 
@@ -165,20 +196,93 @@ force it.** The predicate is a site-1-only change.
   it routes a net-zero reaction only when its owner is declared, of which there are none, plus a
   *malformed* declared-owner-with-zero-net reaction, which the resolver then refuses by name.
 - **When the data ticket adds `(1,1)`: sites 1 and 3 agree (both place `(1,1)`); site 2 does not.**
-  `expand_electrons` retains its `electrons == 0` early return, so it would export `AB => A + B` with
-  no electron. That is **not** silent: the export path pairs it with `check_electron_reactant_order`
-  (`chemkin.pyx:1949`+`1966`/`1993`; `yaml_cantera2.py:917`+`936`), which sees an order-2
-  `cm^3/(mol*s)` coefficient against one reactant and raises `MechanismWriterError`. So site 2 must
-  also have its `electrons == 0` gate lifted **as part of the data ticket** — but only then, because
-  lifting it now (with no net-zero declaration) changes nothing and cannot be tested end to end. That
-  is exactly the gate-change/data-change confounding this ticket's non-goals forbid.
+  `expand_electrons` retains its `electrons == 0` early return, so it exports `AB => A + B` with no
+  electron and a bimolecular coefficient.
 
-**Ruling — the narrow site-1 fix stands, defended.** Site 3 is not broken; it is the reference-correct
-behaviour (ungated, already honours net-zero declarations), and changing it would be the regression.
-Site 2's early return and the site-(b) identity collapse are both gated on the same *missing
-declaration*, are inert with shipped data, and belong with the data ticket that adds `(1,1)` — which
-is where all three sites must be shown to agree end to end. I-208 delivers one necessary precondition
-(site 1) and does not claim more.
+**CORRECTION (round 16) — my earlier claim that this fails loudly was WRONG, and I verified the
+correction against the code myself.** I had written that the export path pairs `expand_electrons` with
+`check_electron_reactant_order`, which would raise `MechanismWriterError` on the order mismatch. That
+is false for exactly the kinetics a net-zero dissociation family uses, and two export paths never call
+the guard at all:
+
+1. **The order guard goes silent for generic Arrhenius.** `check_electron_reactant_order`
+   (`rmgpy/electron_balance.py:503`) has two raise paths. The first needs `kinetics.uses_electron_density`
+   (only `BadnellRRArrhenius`/`VoronovEIArrhenius` set it). The second computes
+   `required_order = get_plasma_rate_order(kinetics)` and then `if required_order is None or
+   required_order == len(reactants): return`. `get_plasma_rate_order` (`:479`) returns a number only
+   for `TwoTemperaturePlasma`, `ElectronCollisionPlasma`, `BadnellRRArrhenius`, `VoronovEIArrhenius`;
+   for a generic `Arrhenius`/`ArrheniusEP` it returns **`None`**, so the guard **returns silently**.
+   My test used `TwoTemperaturePlasma` (order-recognised), which is precisely why the guard fired in
+   my head — I generalised "loud" from the one kinetics class that happens to be covered. The two
+   data-less families I-206 shipped carry **`ArrheniusEP`** rules with `m^3/(mol*s)` units, and a
+   future `(1,1)` dissociation family is the same shape — the exact blind spot.
+2. **`Reaction.to_cantera()` never calls the guard.** `rmgpy/reaction.py:319` folds electrons via
+   `expand_electrons` and builds the in-memory Cantera reaction, with no `check_electron_reactant_order`
+   anywhere in the method (verified: the only calls are in `chemkin.pyx` and `yaml_cantera2.py`).
+3. **`CanteraWriter1` walks past its front gate.** `yaml_cantera1.py:138` refuses a mechanism only when
+   `next((rxn for rxn in rxns if getattr(rxn, 'electrons', 0)), None)` is truthy. A conserved-electron
+   reaction has `electrons == 0`, so it is not selected and the writer emits `AB => A + B` via
+   `_build_equation_string` from the raw participant lists — electron omitted, silently.
+
+So a future net-zero family would export `AB => A + B` with a bimolecular coefficient and no electron,
+**silently** — the exact defect class I-208 exists to prevent, one layer out.
+
+**HARD PREREQUISITE for the `(1,1)` data ticket (recorded so it is not missed).** Adding the
+declaration alone is a silent wrong export. Whoever adds it must ALSO, in the same change:
+- **(P1)** lift `expand_electrons`'s `electrons == 0` early return so it consults the declaration for a
+  net-zero owner (placing the electron on both sides in the declared numbers); and
+- **(P2)** extend `check_electron_reactant_order` to recognise a generic `Arrhenius`/`ArrheniusEP`
+  whose `A.units` imply an order higher than the exported reactant count — i.e. read the order from the
+  units, not only from the four plasma classes — so the guard stops being blind to the shape the data
+  ticket will actually use. `to_cantera()` and `CanteraWriter1` should route through the same guard or
+  be documented as unsupported for plasma mechanisms.
+
+These are inert today (no net-zero declaration exists) and cannot be tested end to end without the
+declaration, which is why they belong with the data ticket and not here — but they are its
+preconditions, not optional follow-ups.
+
+**Ruling — the narrow site-1 fix stands, and the deferral now rests on the correct reason.** Site 3 is
+not broken; it is the reference-correct behaviour (ungated, already honours net-zero declarations), and
+changing it would be the regression. Site 2's early return, its silent export blind spots, and the
+site-(b) identity collapse are all gated on the same *missing declaration*, are inert with shipped
+data, and belong with the data ticket that adds `(1,1)` — carried above as hard prerequisites P1/P2 so
+that ticket cannot land a silent wrong export. I-208 delivers one necessary precondition (site 1) and
+does not claim more; my earlier "fails loud" safety claim was the round's real finding and it was
+wrong.
+
+## Round-16 MUST-FIX 2 — the gate uses the resolver's defensive electron test
+
+`_needs_electron_placement` called `spc.is_electron()` behind a `callable(getattr(...))` guard, which
+catches a *missing* method but not an `IndexError` from `spc.molecule[0]` on a malformed participant —
+so a declared-owner net-zero reaction with a malformed species failed **at the gate** with a raw
+`IndexError` instead of reaching the resolver and failing with the named `ElectronPlacementError`. Now
+the gate calls the resolver's own `electron_placement._is_electron` (`rmgpy/electron_placement.py:250`),
+which catches `(AttributeError, IndexError)`. Gate and resolver now agree on what an electron is *and*
+fail the same way. Folded into the gate commit.
+
+## Round-16 REPORT-3 — two more shapes the round raised (decided, not fixed)
+
+**(a) Partial explicit form `AB -> A + B + e-` with `electrons == 0` and a declared owner.** The gate
+treats *any* explicit electron as already-reactor-form and passes it through, so this one-sided form is
+neither resolved nor refused. **Decision: no gate change.** The gate cannot tell a well-formed
+reactor-form reaction (balanced explicit electrons, the reachable case — a resolver view fed back)
+from a one-sided partial (unreachable from the resolver or normal generation) without re-implementing
+the resolver's balance logic inside the gate — which is precisely the multi-site-disagreement smell
+this round is about. For the reachable case (balanced) pass-through is correct; for the partial case,
+if its kinetics is plasma-flagged the reactor still refuses it at `_validate_reactions:739`
+(`n_electron_reactants == 0`), and if it is generic Arrhenius it is the same silent-order gap already
+recorded under the export prerequisites — not a new one. Optimising the gate for the unreachable case
+would regress the reachable one.
+
+**(b) Species-less declared net-zero reaction (`reactants=[]`, `products=[]`).** Under the predicate
+it is routed (declared owner, no explicit electron), and the resolver builds placement into `e- => e-`,
+which reactor validation then accepts — malformed input made runnable. **Decision: no gate change;
+reported as a resolver-hardening gap.** The object that *builds* `e- => e-` from empty lists is the
+resolver, not the gate; the right refusal ("a placement that leaves no heavy participant is
+malformed") belongs there (or at reaction construction), and adding it is resolver-scope, outside this
+ticket's remit and its non-goals. A degenerate empty-participant reaction is not produced by RMG
+generation; it is hand-constructed. Putting an emptiness check in the routing gate would, again,
+duplicate validation across sites. Flagged for the resolver-hardening owner.
 
 ## Reported, not fixed
 
