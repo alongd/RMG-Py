@@ -305,8 +305,24 @@ def check_2(runs, fails):
     print()
     print("species named in the baseline log:  {0}".format(len(base.labels())))
     print("species named in the candidate log: {0}".format(len(cand.labels())))
-    print("EXCLUDED by the bound (in baseline, not in candidate): {0}".format(len(excluded)))
-    print("present in candidate but not baseline:                 {0}".format(len(added)))
+    print("labels in the baseline but not the candidate: {0}".format(len(excluded)))
+    print("labels in the candidate but not the baseline: {0}".format(len(added)))
+
+    # A label is a SMILES of ONE resonance structure, and which one RMG picks as
+    # representative is not stable between runs. Species identity is graph
+    # isomorphism over the resonance family, never string equality, so the raw
+    # label difference is resolved structurally before anything is called excluded.
+    same, excluded = pair_by_isomorphism(excluded, added)
+    if same:
+        print()
+        print("of those, {0} pair up as the SAME species carrying a different resonance".format(
+            len(same)))
+        print("representative in each run -- not an exclusion:")
+        for a, b in same:
+            print("    {0}\n  = {1}".format(a, b))
+    print()
+    print("EXCLUDED by the bound, after resolving identity by isomorphism: {0}".format(
+        len(excluded)))
     b, c = base.final, cand.final
     if b and c:
         print()
@@ -323,6 +339,62 @@ def check_2(runs, fails):
         print("refuses, generatedSpeciesConstraints refused too. It is a DECLARATION of")
         print("where polymer-tier chemistry stops, not a reduction of today's mechanism.")
     return excluded
+
+
+ISOMORPHISM_PAIRING_CAP = 400
+
+
+def pair_by_isomorphism(only_a, only_b):
+    """
+    Match labels that name the same species under a different resonance
+    representative. Returns (matched pairs, labels of `only_a` left unmatched).
+
+    Runs only over the symmetric difference, and refuses above
+    ISOMORPHISM_PAIRING_CAP rather than turning the verifier into an O(n^2)
+    isomorphism sweep -- above that it returns everything as unmatched, which is
+    the conservative direction: an unmatched label is reported as excluded and
+    goes on to have its flux checked.
+    """
+    only_a, only_b = sorted(only_a), sorted(only_b)
+    if not only_a or not only_b:
+        return [], set(only_a)
+    if len(only_a) > ISOMORPHISM_PAIRING_CAP or len(only_b) > ISOMORPHISM_PAIRING_CAP:
+        print("  (label difference exceeds {0}; skipping isomorphism pairing and treating "
+              "every unmatched label as excluded)".format(ISOMORPHISM_PAIRING_CAP))
+        return [], set(only_a)
+    from rmgpy.molecule import Molecule
+    from rmgpy.species import Species
+
+    def resolve(label):
+        try:
+            s = Species(molecule=[Molecule(smiles=label)])
+            s.generate_resonance_structures()
+            return s
+        except Exception:
+            return None
+
+    a_spc = {l: resolve(l) for l in only_a}
+    b_spc = {l: resolve(l) for l in only_b}
+    pairs, unmatched, taken = [], set(), set()
+    for la in only_a:
+        sa = a_spc[la]
+        hit = None
+        if sa is not None:
+            for lb in only_b:
+                if lb in taken or b_spc[lb] is None:
+                    continue
+                try:
+                    if sa.is_isomorphic(b_spc[lb]):
+                        hit = lb
+                        break
+                except Exception:
+                    continue
+        if hit:
+            taken.add(hit)
+            pairs.append((la, hit))
+        else:
+            unmatched.add(la)
+    return pairs, unmatched
 
 
 def check_3(runs, excluded, fails):
@@ -426,13 +498,23 @@ def check_3r(runs, fails):
             reasons.append("excluded {0} species that reached the baseline core: {1}".format(
                 len(cut), sorted(cut)[:6]))
         rc, crash = run_outcome(r.dir)
-        if rc not in (None, 0):
+        # 124 is the harness's own wall-clock timeout, which EVERY configuration
+        # hit -- no configuration completed a full generation. It is not evidence
+        # against any one of them, so it is reported and not counted.
+        if rc == 124:
+            print("   (timed out at the harness wall limit, like every other configuration)")
+        elif rc not in (None, 0):
             reasons.append("did not complete (exit {0}){1}".format(
                 rc, ": " + crash if crash else ""))
-        f = r.final
-        if f and base.final and f["edge_s"] * 4 < base.final["edge_s"]:
-            reasons.append("edge collapsed to {0} species against the baseline's {1}".format(
-                f["edge_s"], base.final["edge_s"]))
+        # Compare at the depth BOTH runs reached: a run that got further has a
+        # bigger edge for reasons that have nothing to do with its bound.
+        depth = min(len(r.enlargements), len(base.enlargements))
+        if depth:
+            mine, theirs = r.enlargements[depth - 1], base.enlargements[depth - 1]
+            if mine["edge_s"] * 4 < theirs["edge_s"]:
+                reasons.append("edge collapsed to {0} species against the baseline's {1} at the "
+                               "same enlargement (#{2})".format(
+                                   mine["edge_s"], theirs["edge_s"], depth))
         if reasons:
             for reason in reasons:
                 print("   REJECTED:", reason)
@@ -556,6 +638,15 @@ def check_4(runs, fails):
     print()
     print("cpu s is the sum of the per-enlargement CPU times: it is the generation leg only,")
     print("and unlike wall time it does not measure the machine's other tenants.")
+    print()
+    print("how each run ended (124 = the harness's own wall-clock limit):")
+    for name in CURVE:
+        r = runs.get(name)
+        if r is None or not r.exists:
+            continue
+        rc, crash = run_outcome(r.dir)
+        print("  {0:<8} exit {1:<6} {2}".format(
+            name, "running" if rc is None else rc, crash[:100]))
     if n_with_data < 3:
         fails.append("check 4: fewer than three configurations produced data ({0})".format(n_with_data))
 
@@ -731,6 +822,19 @@ def check_7(fails, pytest_report):
             if m:
                 bgot[tag] = int(m[-1])
         print("baseline (unmodified tree, same HEAD): {0}".format(bgot))
+        # Counts can match while the SET moves -- one test fixed and one broken
+        # nets to zero. Compare the named failures too.
+        named = lambda t: sorted({l.split()[1] for l in t.splitlines()
+                                  if l.startswith("FAILED ") and len(l.split()) > 1})
+        bfail, afail = named(btext), named(text)
+        newly = sorted(set(afail) - set(bfail))
+        fixed = sorted(set(bfail) - set(afail))
+        print("named failures: {0} before, {1} after".format(len(bfail), len(afail)))
+        print("newly failing:  {0}".format(newly or "none"))
+        print("newly passing:  {0}".format(fixed or "none"))
+        if newly:
+            fails.append("check 7: {0} test(s) fail that did not before: {1}".format(
+                len(newly), newly))
         if got.get("passed", -1) < bgot.get("passed", 0):
             fails.append("check 7: passed count fell from {0} to {1}".format(
                 bgot.get("passed"), got.get("passed")))
