@@ -29,6 +29,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 
 # Every check that cannot reach a verdict records itself here. Kept module-global rather
 # than threaded through every check signature so that adding a check cannot accidentally
@@ -618,7 +619,20 @@ WASTED = re.compile(
     r"(?P<refused_recipe_s>[\d.]+) s in apply_recipe and (?P<refused_total_s>[\d.]+) s across "
     r"the whole product-generation call\. Refused share of the (?P<wall>[\d.]+) s enlargement: "
     r"(?P<pct_recipe>[\d.nan]+)% \(apply_recipe only\) / (?P<pct_total>[\d.nan]+)% "
-    r"\(product generation\)\. Accepted product generation: (?P<accepted_s>[\d.]+) s\.")
+    r"\(product generation\)")
+
+# The bucket breakdown moved to its own line when the partition was completed, because
+# `accepted` alone stopped being the whole of the non-refused side.
+WASTED_PART = re.compile(
+    r"WASTED BUILD PROFILE \(partition, this enlargement\): refused (?P<refused_total_s>[\d.]+) s, "
+    r"accepted (?P<accepted_s>[\d.]+) s, degeneracy-recompute (?P<degeneracy_s>[\d.]+) s, "
+    r"empty (?P<empty_s>[\d.]+) s, action-error (?P<action_error_s>[\d.]+) s, "
+    r"forbidden (?P<forbidden_s>[\d.]+) s, other-error (?P<other_error_s>[\d.]+) s; "
+    r"attributed (?P<attributed_s>[\d.]+) s of (?P<wall>[\d.]+) s enlargement, "
+    r"residual (?P<residual_s>-?[\d.]+) s")
+
+# A profile gathered under forked generation reports itself invalid instead of a share.
+WASTED_INVALID = re.compile(r"WASTED BUILD PROFILE: NOT VALID -- .*procnum=(?P<procnum>\d+)")
 
 
 def check_9(root, fails):
@@ -636,8 +650,30 @@ def check_9(root, fails):
         print("NOT ESTABLISHED: no profiling run at {0}".format(log))
         fails.append("check 9: no RMG_I067_PROFILE run to measure the wasted-build share")
         return
-    rows = [m.groupdict() for m in
-            (WASTED.search(l) for l in open(log, errors="replace")) if m]
+    text = open(log, errors="replace").read().splitlines()
+
+    # A profile taken under forked generation is not a small error, it is an arbitrarily
+    # small one -- each worker mutates its own copy of the accumulator and discards it.
+    # The run says so itself; refuse to report a fraction from such a log.
+    invalid = [m for m in (WASTED_INVALID.search(l) for l in text) if m]
+    if invalid:
+        print("the profiling run reports its own profile INVALID (procnum={0}); no share of "
+              "wall time can be derived from it.".format(invalid[0].group("procnum")))
+        fails.append("check 9: profiling run used procnum>1, so the wasted-build share is "
+                     "not measurable from it")
+        return
+
+    rows = [m.groupdict() for m in (WASTED.search(l) for l in text) if m]
+    parts = [m.groupdict() for m in (WASTED_PART.search(l) for l in text) if m]
+    if len(rows) != len(parts):
+        print("the profile emits {0} summary lines and {1} partition lines; they are written "
+              "together, so a mismatch means the log is truncated or the format moved."
+              .format(len(rows), len(parts)))
+        fails.append("check 9: profile summary and partition lines do not correspond")
+        return
+    # Carry the bucket breakdown onto the summary row it was emitted with.
+    for r, p in zip(rows, parts):
+        r.update({k: v for k, v in p.items() if k not in r})
     rows = [r for r in rows if float(r["wall"]) > 0.5]     # cheap core-add steps: no leg work
     if not rows:
         print("NOT ESTABLISHED: the profiling run has not yet reached an enlargement with")
@@ -676,9 +712,39 @@ def check_9(root, fails):
         tot_ref_total, 100.0 * tot_ref_total / tot_wall))
     print("  whole product generation, accepted products     {0:8.1f} s  {1:5.1f}%".format(
         tot_acc, 100.0 * tot_acc / tot_wall))
-    residual = tot_wall - tot_ref_total - tot_acc
+
+    # The remaining buckets. Round 1 had only `refused` and `accepted` and inferred the rest
+    # as a subtraction, which quietly folded degeneracy recomputation into `accepted` and
+    # everything unattributed into one residual nobody could name.
+    other = {k: sum(float(r[k]) for r in rows) for k in
+             ("degeneracy_s", "empty_s", "action_error_s", "forbidden_s", "other_error_s")}
+    labels = {"degeneracy_s": "degeneracy recompute (bookkeeping, not growth)",
+              "empty_s": "recipe produced no product",
+              "action_error_s": "InvalidAction / Kekulization",
+              "forbidden_s": "forbidden product structure",
+              "other_error_s": "other exception"}
+    for k, v in other.items():
+        print("  {0:<45} {1:8.1f} s  {2:5.1f}%".format(labels[k], v, 100.0 * v / tot_wall))
+
+    attributed = tot_ref_total + tot_acc + sum(other.values())
+    residual = tot_wall - attributed
     print("  everything else in enlarge()                    {0:8.1f} s  {1:5.1f}%".format(
         residual, 100.0 * residual / tot_wall))
+    print("  {0:<45} {1:8.1f} s  {2:5.1f}%".format(
+        "-> attributed + residual (must equal wall)", attributed + residual,
+        100.0 * (attributed + residual) / tot_wall))
+
+    # The partition is the whole point: if these buckets do not close on the independently
+    # measured enlargement wall clock, the fractions above are describing a different total
+    # than the one they are divided by.
+    drift = abs(attributed + residual - tot_wall)
+    if drift > 0.05 * tot_wall:
+        fails.append("check 9: the time buckets do not close on the enlargement wall clock "
+                     "({0:.1f} s adrift over {1:.1f} s)".format(drift, tot_wall))
+    if residual < -0.01 * tot_wall:
+        fails.append("check 9: buckets attribute {0:.1f} s more than the {1:.1f} s of wall "
+                     "clock available -- they are double-counting".format(attributed, tot_wall))
+
     print()
     print("'everything else' is subgraph matching of reactants against family templates,")
     print("thermo estimation, species/reaction bookkeeping and duplicate marking. Matching")
@@ -965,12 +1031,41 @@ def check_8(fails, snapshot_dir):
         newer = subprocess.run(
             ["find", EVIDENCE_TREE, "-newer", stamp, "-not", "-type", "d"],
             capture_output=True, text=True).stdout.split()
-        print("{0}: {1} file(s) modified since this session's start stamp".format(
+
+        # The evidence tree is SHARED: other workers start their own runs in it while this
+        # session is alive, and "mtime newer than my start stamp" cannot tell their new run
+        # from me modifying the evidence I was told to preserve. Discriminate on the run
+        # directory's own creation time. A run directory that did not exist when this
+        # session began is not evidence this session was asked to leave alone -- it is
+        # somebody else's work in progress. Anything inside a PRE-EXISTING run directory
+        # still counts, which is the direction that matters.
+        preexisting, foreign = [], {}
+        for p in newer:
+            rel = os.path.relpath(p, EVIDENCE_TREE).split(os.sep)
+            run_dir = os.path.join(EVIDENCE_TREE, *rel[:2]) if len(rel) > 1 else None
+            if run_dir and os.path.isdir(run_dir) and os.path.getmtime(run_dir) > os.path.getmtime(stamp) \
+                    and os.path.getctime(run_dir) > os.path.getmtime(stamp):
+                foreign.setdefault(run_dir, 0)
+                foreign[run_dir] += 1
+            else:
+                preexisting.append(p)
+
+        print("{0}: {1} file(s) newer than this session's start stamp".format(
             EVIDENCE_TREE, len(newer)))
-        for p in newer[:20]:
+        if foreign:
+            print("  of those, {0} are in run directories CREATED after this session began, "
+                  "i.e. other workers' new runs, not evidence this session could have "
+                  "modified:".format(sum(foreign.values())))
+            for d, n in sorted(foreign.items()):
+                print("    {0}  ({1} files, created {2})".format(
+                    d, n, time.strftime("%F %T", time.localtime(os.path.getctime(d)))))
+        print("  in PRE-EXISTING run directories (the ones that are evidence): {0}".format(
+            len(preexisting)))
+        for p in preexisting[:20]:
             print("   ", p)
-        if newer:
-            fails.append("check 8: {0} file(s) written under {1}".format(len(newer), EVIDENCE_TREE))
+        if preexisting:
+            fails.append("check 8: {0} file(s) written under pre-existing evidence in {1}"
+                         .format(len(preexisting), EVIDENCE_TREE))
     else:
         print("NOT ESTABLISHED: no session start stamp at {0}".format(stamp))
         fails.append("check 8: no start stamp to date writes under {0} against".format(EVIDENCE_TREE))
