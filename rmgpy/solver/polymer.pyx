@@ -61,6 +61,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 cimport cython
 from libc.math cimport exp as _c_exp
+from libc.math cimport fabs
 import numpy as np
 cimport numpy as np
 
@@ -1259,11 +1260,14 @@ def _discrete_gamma_fallback(target: int, xs: int, k: float, theta: float) -> fl
 # The gate g = 1 - sp(1 - mean) is therefore EXACTLY 1 in the realizable
 # region mean >= 1 (the healthy law is exact, no perturbation) and rolls
 # off C2-smoothly below it (r74 SS5: no hard max(...,0) cliff at
-# exhaustion -- the DASPK grind / IDID=-7 class). Residual monomer release
-# from a pathological mu1 = 0, mu0 > 0 noise state is bounded by
-# k_dep*mu0*W^2 (documented honest degradation; the chain count keeps
-# draining at the full -k_dep*mu0 there, so the state cannot become a
-# stiff no-outlet grind).
+# exhaustion -- the DASPK grind / IDID=-7 class). This gate alone left a
+# residual monomer release of k_dep*mu0*W^2 at the pathological mu1 = 0,
+# mu0 > 0 noise state (it bottoms out at W^2/(1 + W^2), not at zero);
+# since I-065 that residual is closed to EXACTLY zero by the additional
+# _release_units_gate factor, which is itself C2 and exactly 1.0 for
+# mean >= 1 so it costs the smoothness nothing. The chain count still
+# drains at the full -k_dep*mu0 there, so the state cannot become a stiff
+# no-outlet grind.
 KDEP_GATE_WIDTH = 1.0e-2
 
 
@@ -1274,6 +1278,54 @@ def _smooth_pos(x: float, w: float) -> float:
     if x <= 0.0:
         return 0.0
     return x * x * x / (x * x + w * w)
+
+
+def _release_units_gate(mu0: float, mu1: float) -> float:
+    """Availability gate on chain-end monomer RELEASE: the fraction of the
+    chain-end event rate the pool actually holds repeat units for.
+
+    Every chain-end release channel sets its event rate from the CHAIN count
+    (one active end per chain), never from the repeat units on offer. Inside
+    the realizable cone mu1 >= mu0 >= 0 that is right -- every chain carries
+    at least one unit, so every event has one to give. OUTSIDE the cone it
+    fabricates: at mu1 = 0, mu0 > 0 the rate is still k*mu0 > 0, which
+    debits mu1 further negative AND emits that much gas monomer with no
+    repeat unit behind it. Defence in depth for I-055: the realizable-cone
+    invariant should not be the only thing between the solver and mass it
+    never had.
+
+    Returns a C2 quintic smootherstep in t = mu1/mu0:
+        t <= 0  -> 0.0 EXACTLY  (no units, no release, no gas)
+        t >= 1  -> 1.0 EXACTLY  (on/inside the cone: bit-for-bit no-op,
+                                 x*1.0 == x in IEEE-754)
+        else    -> 10t^3 - 15t^4 + 6t^5, with value, first AND second
+                   derivative continuous at both ends.
+    The quintic is not decoration. A hard min(mu0, mu1) limiter is exactly
+    zero at mu1 = 0 too, but introduces a first-derivative kink at mean
+    DP = 1 -- the boundary a fully-unzipping pool legitimately ENDS on --
+    and that kink is a real cliff: it fails the existing
+    test_deprop_smooth_exhaustion_gate_no_cliff pin (release rate must move
+    by < 1e-4 relative across mean = 1; a linear rolloff moves it by 1e-3)
+    and reopens the DASPK grind / IDID=-7 class the r74 SS5 gate was
+    designed against. The quintic is C2 there and exactly 1.0 above it.
+
+    mu0 <= 0 returns 0.0: no chains means no chain ends, hence no events.
+    On the legacy channel that replaces a NEGATIVE release rate (k*mu0 < 0,
+    i.e. gas emitted as a negative amount) with none at all.
+
+    Applies to the release only, never to the I-055 chain-termination debit
+    on mu0: that debit must keep draining at full strength off the cone, or
+    a mean-DP < 1 noise state has no way back (r74: dmu0 = 0 stalls the
+    residue instead of terminating it)."""
+    cdef double t
+    if mu0 <= 0.0:
+        return 0.0
+    if mu1 >= mu0:
+        return 1.0
+    if mu1 <= 0.0:
+        return 0.0
+    t = mu1 / mu0
+    return t * t * t * (10.0 + t * (6.0 * t - 15.0))
 
 
 def _deprop_dp1_fraction(mu0: float, mu1: float, mu2: float) -> float:
@@ -5159,6 +5211,92 @@ class HybridPolymerSystem(ReactionSystem):
             raw0 = y[idx0]
             raw1 = y[idx1]
             raw2 = y[idx2]
+            # CONE census on the ACCEPTED state. The negative check below
+            # fires on mu1 < 0, which is DOWNSTREAM of the actual violation:
+            # the realizable set is mu1 >= mu0 >= 0 (a k>=1 distribution has
+            # at least one repeat unit per chain), and a pool exits it at
+            # mu1 = mu0, strictly before mu1 = 0. Measured on the legacy
+            # k_unzip kernel against a scission-fed pool, the two are ~10 ms
+            # apart at k_unzip/k_scission = 100 -- but the mu1 = 0 crossing
+            # exists ONLY above k_unzip = k_scission/4 (there the (mu0, mu1)
+            # subsystem's eigenvalues go complex and the trajectory spirals
+            # through zero), whereas the cone exit happens at EVERY positive
+            # k_unzip. Below that ratio a pool could leave the realizable
+            # cone and no accepted-state check would ever fire.
+            # Deliberately a warn-once CENSUS, not a raise: leaving the cone
+            # says a moment SOURCE TERM is wrong, which is the diagnosis the
+            # (default-off) debug_check_realizability warning already
+            # carries, whereas the r81 raise below is scoped to integrator
+            # corruption. A pool that fully unzips legitimately ENDS at the
+            # boundary mu1 = mu0, so promoting this to a hard error would
+            # kill runs on boundary ULP noise; that is a policy change to
+            # adjudicate on its own, not a rider on a kernel fix. The
+            # tolerance is the SUM of the two moments' own exhaustion
+            # floors -- each is trusted to within its floor, so their
+            # difference is trusted to within both. No existing floor,
+            # tolerance or check is altered.
+            if (raw1 < raw0 - (f0 + f1)
+                    and self.polymer_pools[p].label
+                    not in self._realizability_warned):
+                pool = self.polymer_pools[p]
+                self._realizability_warned.add(pool.label)
+                logging.warning(
+                    "POOL CONE CENSUS: pool %s left the realizable cone on an "
+                    "ACCEPTED state: mu1=%.6e < mu0=%.6e mol (gap %.6e, "
+                    "tolerance %.6e = f_mu0 + f_mu1). Require mu1 >= mu0 >= 0 "
+                    "-- every chain carries at least one repeat unit. This is "
+                    "a moment SOURCE TERM defect, not exhaustion, and it "
+                    "precedes any negative moment; census only, the r81 "
+                    "negative check below is unchanged.",
+                    pool.label, raw1, raw0, raw1 - raw0, f0 + f1)
+
+            # VARIANCE census on the ACCEPTED state -- the OTHER half of
+            # three-moment realizability, which nothing checked (I-065
+            # defect 2). mu1 >= mu0 >= 0 above is necessary but not
+            # sufficient: any distribution also satisfies Cauchy-Schwarz,
+            #     mu0*mu2 >= mu1^2   (equivalently Var[n] = mu2/mu0 -
+            #     (mu1/mu0)^2 >= 0, i.e. a NON-NEGATIVE chain-length
+            #     variance), with equality only for a monodisperse pool.
+            # A state that violates it has an imaginary spread: PDI < 1,
+            # _gamma_params_from_mu012 returns no params, and the mu3
+            # log-Lagrange closure mu0*(mu2/mu1)^3 stops describing any
+            # distribution at all -- the same class of corruption the cone
+            # exit is, and just as invisible to the mu1 < 0 raise below.
+            # Tolerance is first-order propagation of the moments' own
+            # exhaustion floors through the product, plus the two
+            # second-order terms so an all-at-floor state cannot trip it:
+            #     d(mu0*mu2 - mu1^2) <= f0*|mu2| + f2*|mu0| + 2*f1*|mu1|
+            #                           + f0*f2 + f1*f1
+            # No existing floor, tolerance or check is altered, and the
+            # same warn-once/never-raise policy as the cone census applies
+            # -- promoting either to a hard error is a policy change to
+            # adjudicate on its own, not a rider on a kernel fix. Keyed
+            # separately in the warn set so a pool that already reported a
+            # cone exit can still report a variance violation.
+            if (raw0 * raw2 < raw1 * raw1 - (f0 * fabs(raw2)
+                                             + f2 * fabs(raw0)
+                                             + 2.0 * f1 * fabs(raw1)
+                                             + f0 * f2 + f1 * f1)
+                    and (self.polymer_pools[p].label, "variance")
+                    not in self._realizability_warned):
+                pool = self.polymer_pools[p]
+                self._realizability_warned.add((pool.label, "variance"))
+                logging.warning(
+                    "POOL VARIANCE CENSUS: pool %s violated moment "
+                    "realizability on an ACCEPTED state: mu0*mu2=%.6e < "
+                    "mu1^2=%.6e (mu0=%.6e, mu1=%.6e, mu2=%.6e mol, deficit "
+                    "%.6e, tolerance %.6e). Cauchy-Schwarz requires "
+                    "mu0*mu2 >= mu1^2 for ANY chain-length distribution; "
+                    "below it the chain-length variance is negative, the "
+                    "gamma closure has no parameters and the mu3 "
+                    "log-Lagrange closure describes nothing. This is a "
+                    "moment SOURCE TERM defect; census only, the r81 "
+                    "negative check below is unchanged.",
+                    pool.label, raw0 * raw2, raw1 * raw1, raw0, raw1, raw2,
+                    raw0 * raw2 - raw1 * raw1,
+                    (f0 * fabs(raw2) + f2 * fabs(raw0) + 2.0 * f1 * fabs(raw1)
+                     + f0 * f2 + f1 * f1))
+
             if raw0 < -f0 or raw1 < -f1 or raw2 < -f2:
                 pool = self.polymer_pools[p]
                 raise ValueError(
@@ -6826,9 +6964,74 @@ class HybridPolymerSystem(ReactionSystem):
                         dmu2_dt += pool.k_scission * (mu1 - mu3) / 3.0
 
                 if pool.k_unzip > 0:
+                    # Chain-end monomer release: one active end per chain, so
+                    # events occur at k_unzip*mu0 and each removes ONE repeat
+                    # unit from its chain.
+                    #   dmu1 = -k_u*mu0
+                    #   dmu2 = -k_u*(2*mu1 - mu0)   (a DP=n chain loses 2n-1)
+                    #   dmu0 = -k_u*N1              (see below)
+                    # The dmu0 term is what the legacy form never carried. At
+                    # the all-monomer boundary mu1 = mu0 every chain has
+                    # length 1, and unzipping its last unit removes a CHAIN,
+                    # not just a unit. Without that debit the drain -k_u*mu0
+                    # stays at full strength as mu1 falls to mu0, so mu1 is
+                    # pushed THROUGH mu0, out of the realizable cone
+                    # (mu1 >= mu0 >= 0 for any k>=1 distribution) and then
+                    # through zero -- the accepted-state r81 raise, not a
+                    # trial-state excursion. With it the boundary is an
+                    # INVARIANT set of the vector field:
+                    #   d(mu1 - mu0)/dt = -k_u*mu0*(1 - p1) -> 0 as p1 -> 1,
+                    # which is the same self-limiting structure the scission
+                    # kernel above gets from its (mu1 - mu0) factor.
+                    # N1 = mu0*p1 comes from the SAME closure the
+                    # k_depropagation sibling uses (_deprop_dp1_fraction:
+                    # gamma leg plus a smooth terminal floor with p1 == 1 for
+                    # mean DP <= 1). That floor is also what keeps this a
+                    # TERMINATION rather than a stall: the last repeat unit
+                    # per chain still drains, at dmu0 = -k_u*mu0, instead of
+                    # freezing the residue (r74).
+                    # Deliberately NOT gated: the unit drain, the mu2 drain
+                    # and the released-monomer flux are unchanged, bit for
+                    # bit, so this fixes realizability without touching how
+                    # much mass the unzip channel removes.
+                    #
+                    # The debit is written as (release rate)*N1 because that
+                    # is the CHANNEL-INDEPENDENT form of the law: releases
+                    # occur one per active chain end, so a fraction N1 of
+                    # them land on a DP=1 chain and remove it. The QSSA
+                    # channel below carries the SAME term against its own
+                    # release rate r_qssa -- the two are the same chain-end
+                    # event, and the solver PINS them equivalent, so the
+                    # debit must be applied to both or to neither.
+                    # NOT gated on the explicit-tail handshake. The handshake
+                    # removes chains at DP=xs and hands them to an explicit
+                    # species; this removes chains at DP=1 that unzipped
+                    # their last unit -- different populations, both real. A
+                    # gate on the handshake's map entry was tried and is
+                    # WRONG: it makes the debit differ between two configs
+                    # that differ ONLY in whether the tail is explicit, which
+                    # breaks the auto-gen path's ON/OFF differencing pin.
+                    #
+                    # I-065 defect 1: the EVENT rate is set by the chain
+                    # count, so off the cone (mu1 = 0, mu0 > 0) it drained
+                    # mu1 further negative and emitted k_unzip*mu0 of gas
+                    # monomer with no repeat unit behind it -- the solver
+                    # reporting mass it never had. _release_units_gate is
+                    # EXACTLY 1.0 for mu1 >= mu0, so on every state inside
+                    # the realizable cone this is a bit-for-bit no-op
+                    # (x*1.0 == x), and it is exactly 0.0 at mu1 <= 0. It
+                    # scales the RELEASE -- the mu1 drain, the mu2 drain and
+                    # the gas emission, which must move together or the
+                    # ledger fabricates/destroys mass -- and deliberately
+                    # NOT the I-055 chain-termination debit on mu0 below,
+                    # which keeps draining at full strength so a mean-DP < 1
+                    # state heals back toward the cone instead of stalling.
                     r_events = pool.k_unzip * mu0
-                    dmu1_dt -= r_events
-                    dmu2_dt -= pool.k_unzip * (2.0 * mu1 - mu0)
+                    r_release = r_events * _release_units_gate(mu0, mu1)
+                    dmu1_dt -= r_release
+                    dmu2_dt -= (pool.k_unzip * (2.0 * mu1 - mu0)
+                                * _release_units_gate(mu0, mu1))
+                    dmu0_dt -= r_events * _deprop_dp1_fraction(mu0, mu1, mu2)
                     if pool.monomer_poly_index is not None:
                         # Released monomer is emitted to the GAS species
                         # amount basis (incident 2026-07-03, design B-prime):
@@ -6836,7 +7039,7 @@ class HybridPolymerSystem(ReactionSystem):
                         # dn_dt += r*V_poly [mol/s] on the gas-masked
                         # monomer_poly_index. Mass conservation: one gas
                         # monomer mole per drained mu1 repeat unit.
-                        small_src[pool.monomer_poly_index] = r_events
+                        small_src[pool.monomer_poly_index] = r_release
 
             # Radical-homolysis initiation kernel (Stage 1, adjudicated round
             # 66). Independent of tail_kinetics (a custom tail closure does
@@ -7197,25 +7400,57 @@ class HybridPolymerSystem(ReactionSystem):
                         R_ss = math.sqrt(fkiB / kt_qssa)
                     r_qssa = self.qssa_monomer_yield[pool_i] * kdp_qssa * R_ss
                 if r_qssa > 0.0:
-                    # Chain-END monomer release signature: mu0 untouched (no
-                    # chain created/destroyed), mu1 drains one unit per
-                    # release, mu2 drains (2 E[n] - 1) per release with the
-                    # same-pool-VE clamp (>0 only: the drain must never make
-                    # mu2 increase; mu0 ~ 0 guarded by the eps clamp).
+                    # Chain-END monomer release signature: mu1 drains one
+                    # unit per release, mu2 drains (2 E[n] - 1) per release
+                    # with the same-pool-VE clamp (>0 only: the drain must
+                    # never make mu2 increase; mu0 ~ 0 guarded by the eps
+                    # clamp).
                     # monomer_yield already scales r_qssa, so the moment
                     # drain and the gas emission below scale TOGETHER --
                     # scaling only one side would fabricate/destroy mass.
-                    dmu1_dt -= r_qssa
+                    # I-055 (see the k_unzip kernel above for the derivation).
+                    # This channel used to leave mu0 untouched ("no
+                    # chain created/destroyed"), which is wrong for the same
+                    # reason it was wrong on the legacy k_unzip channel
+                    # above -- a release that consumes a DP=1 chain's LAST
+                    # repeat unit destroys the CHAIN, not just the unit.
+                    # Without the debit mu1 is driven down through mu0, out
+                    # of the realizable cone mu1 >= mu0 >= 0, and then
+                    # negative: the accepted-state r81 raise that killed run
+                    # poly_104. A fraction N1 of releases land on a DP=1
+                    # chain, so the debit is r_qssa*N1 -- the SAME
+                    # (release rate)*N1 law the legacy channel carries.
+                    # It must be applied to both channels or to neither:
+                    # the solver pins them equivalent
+                    # (test_qssa_handshake_equivalence_with_k_unzip), and
+                    # fixing only one breaks that pin.
+                    # I-065 defect 1, sibling channel. The availability gate
+                    # carried by the legacy channel above is applied here
+                    # too, because the two are pinned equivalent and a
+                    # release law must hold on both or on neither. On THIS
+                    # channel it is provably dead code today: the release
+                    # rate is r_qssa ~ sqrt(B_qssa) with
+                    # B_qssa = max(mu1 - mu0, 0) and the whole block is
+                    # gated `elif B_qssa > 0.0`, so the channel is already
+                    # identically zero everywhere the gate is < 1, and
+                    # exactly 1.0 (bit-for-bit no-op) everywhere it fires.
+                    # It is kept because that safety is B_qssa's accident,
+                    # not this kernel's contract: loosen the initiation
+                    # gate and the fabrication returns.
+                    r_release_qssa = r_qssa * _release_units_gate(mu0, mu1)
+                    dmu1_dt -= r_release_qssa
+                    dmu0_dt -= r_qssa * _deprop_dp1_fraction(mu0, mu1, mu2)
                     qssa_mu2_dec = 2.0 * (mu1 / max(mu0, SMALL_EPS)) - 1.0
                     if qssa_mu2_dec > 0.0:
-                        dmu2_dt -= r_qssa * qssa_mu2_dec
+                        dmu2_dt -= r_release_qssa * qssa_mu2_dec
                     # monomer_poly_index is non-None whenever enabled (M1
                     # invariant); emission flows through the SAME small_src
                     # -> dn_dt * V_poly path as the k_unzip channel, i.e.
                     # to the GAS species amount basis (incident 2026-07-03,
                     # design B-prime).
                     small_src[pool.monomer_poly_index] = (
-                        small_src.get(pool.monomer_poly_index, 0.0) + r_qssa)
+                        small_src.get(pool.monomer_poly_index, 0.0)
+                        + r_release_qssa)
 
             # End-radical DEPROPAGATION kernel (adjudicated round 74 SS2, the
             # run-6 no-outlet wall fix). Reads ONLY the flattened kdep_*
@@ -7228,6 +7463,8 @@ class HybridPolymerSystem(ReactionSystem):
             # Law, per radical-end pool (ONE active radical end per chain),
             # k_dep(T) = A*T^n*exp(-Ea/(R_gas*T)) at the RUNTIME T:
             #   R    = k_dep * mu0 * g   unzip events == monomer release
+            #        (g carries BOTH the r74 exhaustion gate and the I-065
+            #         availability gate; both are exactly 1 for mean >= 1)
             #   gas  = +R at kdep_gas    (the SAME float as the mu1 drain:
             #                             d(condensed) + d(gas monomer) = 0
             #                             EXACTLY under MW multiplication)
@@ -7265,7 +7502,21 @@ class HybridPolymerSystem(ReactionSystem):
                         f"Ea={self.kdep_Ea[pool_i]:g} J/mol. Refusing to "
                         f"integrate a poisoned kernel.")
                 mean_kdep = mu1 / mu0
-                g_kdep = 1.0 - _smooth_pos(1.0 - mean_kdep, KDEP_GATE_WIDTH)
+                # I-065 defect 1, sibling channel. The r74 SS5 exhaustion
+                # gate g is exactly 1 for mean >= 1 but bottoms out at
+                # W^2/(1 + W^2) = 1e-4, so at the mu1 = 0, mu0 > 0 noise
+                # state this channel still emitted k_dep*mu0*1e-4 of gas
+                # with no repeat unit behind it -- bounded fabrication, but
+                # fabrication. _release_units_gate takes it to EXACTLY zero
+                # there while staying EXACTLY 1.0 (bit-for-bit no-op) for
+                # mean >= 1, and is C2 at the boundary, so the no-cliff
+                # property g was designed for survives
+                # (test_deprop_smooth_exhaustion_gate_no_cliff).
+                # dmu0 below stays UNGATED, as r74 requires: chains keep
+                # draining at -k_dep*mu0 so a mean < 1 state heals back
+                # toward the cone rather than grinding.
+                g_kdep = ((1.0 - _smooth_pos(1.0 - mean_kdep, KDEP_GATE_WIDTH))
+                          * _release_units_gate(mu0, mu1))
                 r_kdep = k_dep * mu0 * g_kdep
                 if r_kdep > 0.0:
                     dmu1_dt -= r_kdep
