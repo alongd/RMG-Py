@@ -110,8 +110,7 @@ The "touches both heavy centres, no heavy spectator" claim is read directly from
 recipe. It is **not** in RMG-Py, and **not** in the database's active `input/` tree — the family is
 staged out — which is why a reviewer standing in RMG-Py could not check it. It lives in the
 **RMG-database `plasma` branch**, at
-`docs/plasma_electron_impact_dissociation_staged/groups.py` (a second copy sits at
-`docs/i154-carry-chemistry/held-back/Plasma_Electron_Impact_Dissociation/groups.py`). Verbatim:
+`docs/plasma_electron_impact_dissociation_staged/groups.py`. Verbatim:
 
 ```python
 template(reactants=["AB"], products=["A", "B"], ownReverse=False)   # line 18
@@ -130,6 +129,16 @@ no third labelled atom, so no heavy participant is a spectator; and `electrons =
 in the template confirms the net-zero, template-implicit electron. The claim is therefore verified at
 its source, and the docstring now carries this path so the next reader can check it without leaving
 the code.
+
+**One artifact to NOT copy from (round-17 ITEM 4).** A second staged copy exists at
+`docs/i154-carry-chemistry/held-back/Plasma_Electron_Impact_Dissociation/groups.py`, and it is **not
+equivalent** — its template is `template(reactants=["AB", "e-"], products=["A", "B", "e-"])` with the
+electron declared as an explicit template participant (entry label `"e-"`, `1 *3 e u1 p0 c-1`). A
+reaction generated from *that* form carries an explicit electron and therefore **bypasses this gate
+entirely** (the gate passes explicit-electron reactions through as already-reactor-form). The
+`plasma_electron_impact_dissociation_staged` copy cited above — electron template-implicit,
+`electrons = 0` — is the one the net-zero gate is designed for. Anyone adding the `(1,1)` entry must
+copy from the template-implicit copy, not the explicit-electron one.
 
 ## Files changed
 
@@ -283,6 +292,50 @@ malformed") belongs there (or at reaction construction), and adding it is resolv
 ticket's remit and its non-goals. A degenerate empty-participant reaction is not produced by RMG
 generation; it is hand-constructed. Putting an emptiness check in the routing gate would, again,
 duplicate validation across sites. Flagged for the resolver-hardening owner.
+
+## Round-17 tightening (D-048)
+
+- **ITEM 1 — the gate is wider than net-zero, kept and documented.** `_needs_electron_placement`
+  admits `electrons == 0` for **any** owner in `FAMILY_ELECTRON_PLACEMENT`, not only owners whose
+  declared net is zero. So a declared **nonzero** owner (e.g. `Plasma_Electron_Attachment` at `(1,0)`)
+  that arrives with `electrons = 0` and no explicit electron — a corrupt reaction — now routes to the
+  resolver and hard-fails by name at the net-mismatch check (declared net `-1` ≠ metadata `0`), where
+  the old one-line gate passed it through **silently**. That is a strict improvement (loud failure of
+  corrupt input) and is now stated as intentional in the `_needs_electron_placement` docstring. The
+  width is deliberately **not** narrowed with a `product_count == reactant_count` condition — that
+  would restore the silent pass-through for exactly the corrupt input it should catch. New tripwire
+  test: `test_declared_nonzero_owner_with_zero_metadata_fails_by_name`.
+- **ITEM 2 — the defensive-gate test now pins the follow-through.**
+  `test_gate_electron_test_is_defensive_like_the_resolver` no longer asserts only that the gate returns
+  `True`; it now calls `_resolve_electron_placements` and asserts the malformed participant reaches the
+  resolver and raises `ElectronPlacementError` (the E-balance step wraps the `IndexError`,
+  `electron_placement.py:646–650`) — the named failure the gate defers to, actually observed.
+- **ITEM 3 — "silent" narrowed in code/test comments.** The `_resolve_electron_placements` docstring
+  and the test comment block now say explicitly that on the full reactor path with plasma-flagged
+  kinetics the wrong order is caught at `_validate_reactions` (which RAISES), and that the genuinely
+  silent form is the export path with generic Arrhenius-like kinetics — matching this report rather
+  than implying the reactor mis-evaluates silently.
+- **ITEM 4 — the wrong-to-copy staged artifact is called out.** See the Docstring-correction section:
+  the second staged copy
+  (`docs/i154-carry-chemistry/held-back/Plasma_Electron_Impact_Dissociation/groups.py`) declares the
+  electron as an **explicit** template participant, so a reaction from it would bypass this gate
+  entirely; the `(1,1)` data ticket must copy from the template-implicit
+  `plasma_electron_impact_dissociation_staged` copy.
+
+## Pre-existing defect surfaced (round-17, NOT fixed here — reported)
+
+**Seed-mechanism reload drops a reaction's metadata electron count.** `make_seed_mech`
+(`rmgpy/rmg/main.py:2051,2072`) writes each seed entry's `label = reaction.to_labeled_str()`, and
+`to_labeled_str` (`rmgpy/reaction.py:199`) builds the equation from participant labels only — no
+electron folding. `save_entry` in `rmgpy/data/kinetics/library.py` never serializes
+`entry.item.electrons` (verified: no `electrons` reference in it). So a seed reload reconstructs the
+reaction as `Reaction(electrons=0)` and recovers the electron order **only** when `entry.data` (the
+kinetics) carries its own electron information: `VoronovEIArrhenius`/`BadnellRRArrhenius` do (they set
+`uses_electron_density` etc.), so they survive the round trip; a **generic family estimate** that
+carried its electron as a metadata `electrons` scalar does not — it reloads as neutral, first order.
+This is independent of the I-208 gate and pre-exists it; surfaced while tracing the placement
+consumers. Owner: whoever holds seed-mechanism serialization. Not touched here (main.py / data/ are
+outside this ticket).
 
 ## Reported, not fixed
 

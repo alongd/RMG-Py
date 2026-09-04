@@ -1327,7 +1327,10 @@ class TestNewPlasmaFamiliesDatabase:
 # closes that gate, so the resolver was never consulted and the reaction kept
 # ONE reactant while its coefficient is second order (``cm^3/(mol*s)``) --
 # first-order evaluation of a second-order rate, wrong by a factor of the
-# electron density.
+# electron density. (For the full reactor path with plasma-flagged kinetics this
+# wrong order is caught downstream at ``_validate_reactions``, which RAISES; the
+# genuinely silent form is the export path with generic Arrhenius-like kinetics
+# -- see the I-208 report. These tests measure the routing gate, not either.)
 #
 # No net-zero placement is shipped in ``FAMILY_ELECTRON_PLACEMENT`` (that is a
 # separate ticket). These tests monkeypatch a synthetic net-zero ``(1, 1)``
@@ -1493,3 +1496,39 @@ class TestNetZeroElectronPlacementGate:
         assert electron_placement._is_electron(malformed) is False
         # the gate does not raise; it routes (no explicit electron present)
         assert reactor._needs_electron_placement(reaction) is True
+        # and the claimed follow-through actually happens: routing reaches the
+        # resolver, which fails with its NAMED error (the malformed participant
+        # trips the E-balance step, wrapped as ElectronPlacementError), NOT a raw
+        # AttributeError/IndexError at the gate.
+        species = [_electron(), malformed] + list(reaction.products)
+        with pytest.raises(ElectronPlacementError):
+            reactor._resolve_electron_placements([reaction], species, [])
+
+    def test_declared_nonzero_owner_with_zero_metadata_fails_by_name(self):
+        """ITEM 1 (round 17): the widening is not restricted to net-zero owners.
+        The gate admits ``electrons == 0`` for ANY owner in the registry -- and
+        that is intentional. A declared owner with a NONZERO net
+        (``Plasma_Electron_Attachment`` at ``(1, 0)``, a real shipped entry, NOT
+        monkeypatched) that arrives with ``electrons = 0`` and no explicit
+        electron is a corrupt reaction; the old one-line gate passed it through
+        SILENTLY, and it now routes to the resolver and hard-fails BY NAME at the
+        net-mismatch check (declared net -1 != metadata 0). Loud failure of the
+        corruption is the point; this test is the tripwire against anyone
+        narrowing the clause back to ``product_count == reactant_count``."""
+        corrupt = TemplateReaction(
+            reactants=[_o2()],
+            products=[_o()],
+            family='Plasma_Electron_Attachment',   # shipped (1, 0), net -1
+            electrons=0,                            # corrupt: no metadata count
+            reversible=False,
+            is_forward=True,
+            kinetics=_two_temp_order2(),
+        )
+        reactor = self._reactor()
+        # the gate routes it (declared owner, no explicit electron) ...
+        assert reactor._needs_electron_placement(corrupt) is True
+        # ... and the resolver refuses it by name rather than the reactor keeping
+        # it silently first-order, as the old gate did.
+        species = [_electron(), corrupt.reactants[0]] + list(corrupt.products)
+        with pytest.raises(ElectronPlacementError):
+            reactor._resolve_electron_placements([corrupt], species, [])

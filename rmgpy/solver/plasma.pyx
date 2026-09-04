@@ -378,10 +378,15 @@ cdef class PlasmaReactor(ReactionSystem):
         resolver was never consulted and the reaction kept its heavy-only
         molecularity while its coefficient was second order -- a first-order
         evaluation of a second-order rate, wrong by a factor of the electron
-        density. Everything else (an ordinary neutral with no electron and no
-        declaration; a reaction already in reactor form with its electron
-        explicit) is passed through by identity: a neutral must NOT reach the
-        resolver, or it would fail by name.
+        density. (On the full reactor path with plasma-flagged kinetics this
+        wrong order does not reach the solver: ``_validate_reactions`` refuses a
+        missing incident electron and RAISES. The genuinely silent form of this
+        hazard is the EXPORT path with generic Arrhenius-like kinetics, whose
+        order the writers' guard cannot read; that lives outside this gate and
+        is recorded in the I-208 report.) Everything else (an ordinary neutral
+        with no electron and no declaration; a reaction already in reactor form
+        with its electron explicit) is passed through by identity: a neutral
+        must NOT reach the resolver, or it would fail by name.
         """
         from rmgpy import electron_placement
 
@@ -411,6 +416,18 @@ cdef class PlasmaReactor(ReactionSystem):
         :func:`rmgpy.electron_balance.get_placement_owner` the resolver keys on,
         so the gate and the resolver cannot disagree about which owner a
         reaction belongs to.
+
+        This clause admits ``electrons == 0`` for ANY declared owner, not only
+        owners whose declared net is zero -- and that width is INTENTIONAL. A
+        declared owner with a NONZERO net (e.g. ``Plasma_Electron_Attachment`` at
+        ``(1, 0)``) that arrives with its ``electrons`` scalar missing or
+        defaulted to 0 and no explicit electron is a CORRUPT reaction; it now
+        routes to the resolver and hard-fails BY NAME at the net-mismatch check,
+        where the old one-line gate passed it through silently. Loud failure of
+        that corruption is the point. Narrowing the clause with a
+        ``product_count == reactant_count`` condition would restore the silent
+        pass-through for exactly the corrupt input this is meant to catch, so it
+        is deliberately absent.
 
         Everything else is passed through: an ordinary neutral (no electron
         anywhere, no declaration) must not reach the resolver or it would fail
