@@ -22,7 +22,19 @@
 # made I-055's first no-regression measurement meaningless).
 set -uo pipefail
 
-FIXED=/home/alon/Code/RMG-Py-i065-merge-blockers
+# FIXED is the tree UNDER TEST, and it is derived from this script's own
+# location -- never hardcoded. A verifier that names its birth worktree keeps
+# testing that worktree after the change is merged, so it reports the branch's
+# result while claiming to report mainline's, and it dies outright once the
+# branch worktree is deleted. Deriving it means this script always measures
+# whatever tree it is shipped in, which is the only reading that stays true
+# after this lands. Override with I065_FIXED_DIR only to test a foreign tree.
+FIXED=${I065_FIXED_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd -P)}
+# The two UNFIXED arms are the opposite case: they are pinned to specific
+# commits ON PURPOSE, because they are the "before" builds the comparison is
+# against, and they must NOT follow mainline. They are read-only siblings; if
+# either worktree is ever deleted, step 0 fails loudly rather than silently
+# comparing a build against itself.
 UNFIXED=/home/alon/Code/RMG-Py-i055-unzip-floor          # READ ONLY
 UNFIXED_SHA=b34c787ecc05ae16740a3bd9b8dce55a8be5687a
 UNFIXED57=/home/alon/Code/RMG-Py-i057-mass-reconcile     # READ ONLY
@@ -276,9 +288,10 @@ esac
 ################################################################################
 step "6. the ordering constraint holds: the disagreement warning is still alive"
 ################################################################################
-(cd /tmp && PYTHONPATH="$FIXED" python - <<'PY6'
-import logging, sys
-sys.path.insert(0, "/home/alon/Code/RMG-Py-i065-merge-blockers/test/rmgpy")
+(cd /tmp && PYTHONPATH="$FIXED" I065_FIXED="$FIXED" python - <<'PY6'
+import logging, os, sys
+# Derived from FIXED, not hardcoded: see the note at the top of this script.
+sys.path.insert(0, os.path.join(os.environ["I065_FIXED"], "test", "rmgpy"))
 from polymerTest import _build_compile_inputs
 from rmgpy.rmg.polymer_input import compile_polymer_phase
 

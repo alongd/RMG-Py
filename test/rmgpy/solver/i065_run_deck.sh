@@ -3,7 +3,10 @@
 #   run_deck.sh <deck-dir> <wall-seconds>
 set -uo pipefail
 DIR="$1"; WALL="$2"
-WT=/home/alon/Code/RMG-Py-i065-merge-blockers
+# Derived from this script's own location, never hardcoded: a deck runner that
+# names its birth worktree keeps running the branch build after the change is
+# merged, and dies once that worktree is deleted.
+WT=${I065_FIXED_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd -P)}
 
 source /home/alon/anaconda3/etc/profile.d/conda.sh
 conda activate rmg_env
