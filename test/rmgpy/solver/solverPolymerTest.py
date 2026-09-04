@@ -11070,6 +11070,183 @@ class TestReleaseAvailabilityGate:
         assert diff[1] == pytest.approx(diff[2] * p1, rel=1e-9)
 
 
+class TestTailExhaustionHandshake:
+    """I-060. The Hybrid Handshake is the ONLY route by which chain
+    population leaves a pool's moment tail and enters its explicit DP=xs
+    oligomer species. It was gated on
+
+        valid_tail = (mu0 > TAIL_CONC_MIN) and (tail_mean > xs + 1e-9)
+
+    -- a hard boolean that took the flux to zero the moment the tail's mean
+    DP reached the cutoff, which is precisely when the tail is dominated by
+    chains that belong in the explicit ladder. Two consequences, both
+    measured on a scission-fed k_unzip pool:
+
+      * a finite JUMP in the residual on a surface the trajectory crosses.
+        The flux is at its LARGEST just above the threshold, so the boolean
+        discards a maximum: F(mean = xs + 1e-6) = 3.84e-02 against
+        F(mean = xs) = 0.0, with dmu0 flipping sign across it. That is a
+        zeroth-order discontinuity, strictly worse than the first-derivative
+        kink test_deprop_smooth_exhaustion_gate_no_cliff refuses.
+      * downstream of the crossing the outlet stayed shut for the rest of
+        the run: the explicit species froze and the pool's whole sub-cutoff
+        residue left as gas monomer instead.
+
+    The condition itself was right -- one handshake event removes a chain
+    and xs repeat units with it, so it must be paid for -- but the currency
+    is the pool's EXCESS mu1 - mu0, of which the event spends (xs - 1). The
+    boolean is replaced by the smooth form of that solvency test, in the
+    shape _release_units_gate already carries for the 1-unit chain-end
+    release channels:
+
+        gate = _release_units_gate((xs - 1)*mu0, mu1 - mu0),
+        t = (mean - 1)/(xs - 1)
+
+    EXACTLY 1.0 for mean >= xs (bit-for-bit inert on every state the boolean
+    admitted), EXACTLY 0.0 at mu1 <= mu0, C2 between. The zero at the cone
+    edge is load-bearing and is not decoration: d(mu1 - mu0)/dt carries
+    -(xs - 1)*F, which the I-055 chain-termination debit cannot answer (its
+    own release term vanishes at the edge, p1 -> 1, but F does not). Gating
+    on the UNITS rather than the excess -- _release_units_gate(xs*mu0, mu1),
+    which has the SAME 1.0 region -- was tried and measured to walk the same
+    pool out of the cone at min(mu1 - mu0) = -1.27e-02.
+
+    NOTE on what this is NOT. The handshake is not the I-055
+    chain-termination debit and never was: that debit lives on the k_unzip,
+    QSSA and k_depropagation channels, outside this guard, and polymer.pyx
+    says in as many words that gating it on the handshake was tried and is
+    wrong. The invariant the handshake protects is the tail's own support:
+    the moment tail holds chains with n > xs, so mu1 >= (xs + 1)*mu0, and
+    dmu0 -= F with dmu1 -= xs*F gives d(mu1 - (xs+1)*mu0)/dt += +F exactly.
+    That is the term the boolean deleted."""
+
+    MU0, MU1, MU2, GAS, EXPLICIT = 3, 4, 5, 1, 6
+    XS = 2  # _kunzip_core_and_pools' cutoff; poly_pe_dp2 is the explicit rung
+
+    def _rs(self, mean, pdi=1.5, mu0=1.0, k_unzip=0.1, k_scission=0.0):
+        mu1 = mu0 * mean
+        mu2 = pdi * mu1 * mu1 / mu0
+        core, mask, pools, moments = _kunzip_core_and_pools(
+            k_unzip, moments=(mu0, mu1, mu2), k_scission=k_scission,
+            explicit={self.XS: self.EXPLICIT})
+        return _khom_system(core, mask, pools, moments, T=800.0)
+
+    def _flux(self, mean, **kw):
+        rs = self._rs(mean, **kw)
+        dn = rs.residual(0.0, rs.y, np.zeros_like(rs.y))[0]
+        return float(dn[self.EXPLICIT]), dn
+
+    def test_gate_is_exactly_one_above_the_cutoff_and_exactly_zero_at_the_edge(self):
+        """The two exactness claims the whole fix rests on, stated on the
+        composition actually used. Equality, not approx: 1.0 is what makes
+        the change a bit-for-bit no-op above the cutoff (x*1.0 == x), and
+        0.0 is what makes mu1 = mu0 an invariant set of the handshake."""
+        from rmgpy.solver.polymer import _release_units_gate as g
+        xs = self.XS
+        for mu0, mean in ((1.0, xs), (1.0, xs + 1e-9), (1.0, 5.0),
+                          (1e-3, 20.0), (0.116, xs)):
+            mu1 = mu0 * mean
+            assert g((xs - 1) * mu0, mu1 - mu0) == 1.0, (mu0, mean)
+        for mu0, mean in ((1.0, 1.0), (0.5, 1.0), (1.0, 0.5), (1.0, 0.0)):
+            mu1 = mu0 * mean
+            assert g((xs - 1) * mu0, mu1 - mu0) == 0.0, (mu0, mean)
+
+    def test_handshake_survives_the_boundary_crossing(self):
+        """THE DEFECT. At and below the cutoff the tail is full of chains
+        that belong in the explicit ladder, and the outlet was shut."""
+        for mean in (self.XS, self.XS - 1e-6, self.XS - 0.5, 1.5):
+            f, _ = self._flux(mean)
+            assert f > 0.0, (
+                f"handshake flux is {f!r} at tail mean DP = {mean} "
+                f"(cutoff xs = {self.XS}): the tail's only outlet into the "
+                f"explicit ladder is shut in the exhausting regime")
+
+    def test_handshake_flux_is_continuous_across_the_cutoff(self):
+        """The boolean discarded the flux at its own maximum, so the jump was
+        not small: the relative step across mean = xs was 1.0 (F -> 0)."""
+        eps = 1e-6
+        hi, _ = self._flux(self.XS + eps)
+        lo, _ = self._flux(self.XS - eps)
+        assert hi > 0.0
+        assert abs(hi - lo) / hi < 1e-4, (
+            f"residual jumps across the cutoff: F(xs+{eps:g}) = {hi!r} vs "
+            f"F(xs-{eps:g}) = {lo!r}")
+
+    def test_flux_is_bit_for_bit_the_ungated_law_above_the_cutoff(self):
+        """No kinetics change where the boolean was already true. Recomputed
+        from the module's own closure helpers against the residual, with ==
+        rather than approx -- an approximate comparison would hide exactly
+        the regression this fix is most likely to introduce."""
+        from rmgpy.solver.polymer import (_gamma_params_from_mu012,
+                                          _gamma_prob_conditional_hybrid)
+        xs, k = self.XS, 0.1
+        for mean, pdi in ((xs, 1.5), (xs + 1e-9, 1.5), (3.0, 1.5),
+                          (5.0, 2.0), (40.0, 1.2)):
+            mu0 = 1.0
+            mu1 = mu0 * mean
+            mu2 = pdi * mu1 * mu1 / mu0
+            f, _ = self._flux(mean, pdi=pdi, mu0=mu0, k_unzip=k)
+            kk, theta = _gamma_params_from_mu012(mu0, mu1, mu2)
+            p_cond = _gamma_prob_conditional_hybrid(xs + 1, xs, kk, theta)
+            p_cond = min(1.0, max(0.0, p_cond))
+            n = min(mu0 * p_cond, mu0, mu1 / xs, mu2 / (xs * xs))
+            assert f == k * n, (
+                f"flux at mean={mean}, PDI={pdi} is {f!r}, ungated law gives "
+                f"{k * n!r} -- a gate factor other than exactly 1.0 entered "
+                f"above the cutoff")
+
+    def test_cone_edge_is_an_invariant_set_of_the_handshake(self):
+        """mu1 = mu0 is where a fully-exhausted pool legitimately ENDS. The
+        handshake spends (xs-1) of mu1 - mu0 per event, so it must be
+        exactly zero there or the edge is not invariant and the pool is
+        walked out of the realizable cone by its own outlet."""
+        for mu0 in (1.0, 0.116, 1e-6):
+            f, dn = self._flux(1.0, mu0=mu0)
+            assert f == 0.0, f"handshake flux {f!r} at mu1 == mu0 == {mu0}"
+
+    def test_scission_fed_pool_keeps_its_outlet_through_exhaustion(self):
+        """The consequence, integrated. A pool with both k_scission (which
+        manufactures short chains inside the tail) and k_unzip runs its mean
+        DP down through the cutoff. Before the fix the explicit species
+        froze at the crossing and every remaining repeat unit left as gas;
+        after it the outlet stays open, and the realizable cone and the mass
+        ledger both survive the whole descent."""
+        from scipy.integrate import solve_ivp
+        rs = self._rs(20.0, mu0=1.0, k_unzip=0.1, k_scission=0.02)
+        y0 = rs.y.copy()
+        zeros = np.zeros_like(y0)
+        held0 = float(y0[self.MU1])
+        sol = solve_ivp(lambda t, y: rs.residual(t, y, zeros)[0],
+                        (0.0, 300.0), y0, method="LSODA",
+                        t_eval=np.linspace(0.0, 300.0, 601),
+                        rtol=1e-10, atol=1e-14, max_step=0.75)
+        assert sol.status == 0, sol.message
+        mu0s, mu1s, mu2s = (sol.y[self.MU0], sol.y[self.MU1], sol.y[self.MU2])
+        means = mu1s / mu0s
+        crossed = np.nonzero(means <= self.XS)[0]
+        assert crossed.size, (
+            f"the trajectory never reached the cutoff (min mean DP "
+            f"{means.min():g}); this test does not exercise the defect")
+        i = int(crossed[0])
+        assert i < len(sol.t) - 5, "crossing is at the very end of the run"
+        # the outlet is still delivering AFTER the crossing
+        grew = sol.y[self.EXPLICIT][-1] - sol.y[self.EXPLICIT][i]
+        assert grew > 0.05 * sol.y[self.EXPLICIT][i], (
+            f"explicit DP={self.XS} species gained only {grew:g} mol after "
+            f"the tail crossed its own cutoff at t={sol.t[i]:g} s -- the "
+            f"outlet shut and the residue left as gas instead")
+        # and the fix does not buy that by leaving the realizable cone
+        assert (mu1s - mu0s).min() >= 0.0, (
+            f"pool left the cone mu1 >= mu0: min {float((mu1s - mu0s).min()):g}")
+        assert (mu0s * mu2s - mu1s * mu1s).min() >= 0.0, (
+            "pool violated mu0*mu2 >= mu1^2")
+        # ...nor by fabricating or destroying repeat units
+        held = (self.XS * sol.y[self.EXPLICIT][-1] + sol.y[self.GAS][-1]
+                + mu1s[-1])
+        assert held == pytest.approx(held0, rel=1e-9), (
+            f"repeat-unit ledger: {held:g} accounted vs {held0:g} started")
+
+
 class TestAcceptedStateVarianceCensus:
     """I-065 defect 2. The accepted-state census covered half of three-moment
     realizability: it checked mu1 >= mu0 >= 0 and nothing checked

@@ -7530,7 +7530,56 @@ class HybridPolymerSystem(ReactionSystem):
 
             # Hybrid Handshake
             tail_mean = mu1 / mu0 if mu0 > SMALL_EPS else 0.0
-            valid_tail = (mu0 > TAIL_CONC_MIN) and (tail_mean > xs + 1e-9)
+            # I-060. `mu0 > TAIL_CONC_MIN` is the half that does real work
+            # and it is kept unchanged: below 1e-9 mol/m^3 the tail is
+            # numerically empty, every quantity the handshake computes comes
+            # through the division mu1/mu0, and depositing that quotient into
+            # a REAL core species would seed an oligomer out of round-off.
+            #
+            # The other half, `tail_mean > xs + 1e-9`, tested the right thing
+            # and tested it the wrong way. A handshake event removes ONE
+            # chain and xs repeat units with it, so the availability question
+            # is whether the tail holds xs units per chain -- exactly the
+            # question _release_units_gate already answers for the 1-unit
+            # chain-end release channels, at event size xs instead of 1:
+            #     gate = _release_units_gate(xs*mu0, mu1),  t = mean/xs.
+            # Written as a hard boolean it was a CLIFF, and on the wrong side
+            # of the flux's own maximum. Measured on a scission-fed k_unzip
+            # pool (xs=3, k_unzip/k_scission = 5, PDI 1.5): the flux is at its
+            # LARGEST just above the threshold and the boolean took it to zero
+            # there -- F(mean = xs + 1e-6) = 3.8390e-02, F(mean = xs) = 0.0,
+            # a finite JUMP in the residual on a surface the trajectory
+            # crosses, with dmu0 flipping sign across it
+            # (-2.1377e-02 -> +1.7013e-02). That is a zeroth-order
+            # discontinuity, strictly worse than the first-derivative kink the
+            # _release_units_gate quintic exists to avoid, and downstream of
+            # it the handshake -- the tail's ONLY outlet into the explicit
+            # ladder -- stayed off for the rest of the run: the DP=xs species
+            # froze and the whole sub-cutoff residue left as gas monomer.
+            #
+            # The boolean is therefore replaced by the smooth form of the same
+            # condition, applied to the flux below. It is EXACTLY 1.0 (and so
+            # bit-for-bit inert, x*1.0 == x) wherever the old boolean was
+            # true, exactly 0.0 at mu1 <= 0, and C2 in between.
+            #
+            # Not to be confused with the tail's REPRESENTATION invariant,
+            # which is a different inequality: the tail holds chains with
+            # n > xs (module docstring 'Moment Tail: ... chains with DP > xs';
+            # polymer_input.PolymerPool xs doc), so its support starts at xs+1
+            # and it satisfies mu1 >= (xs+1)*mu0. The handshake is the only
+            # term that pushes THAT quantity back up -- dmu0 -= F and
+            # dmu1 -= xs*F give d(mu1 - (xs+1)*mu0)/dt += +F exactly -- which
+            # is why losing it below the boundary is a defect and not merely
+            # a branch not taken.
+            #
+            # Removing the condition outright rather than smoothing it was
+            # tried and is WRONG: at full strength below the boundary the
+            # handshake removes chains it has no units for, and the pool is
+            # driven clean out of the mu1 >= mu0 cone (min(mu1 - mu0) =
+            # -1.51e-01 on the trajectory above, against +1.85e-20 unfixed).
+            # The gate is what keeps the outlet open without paying for it in
+            # the harder invariant.
+            valid_tail = mu0 > TAIL_CONC_MIN
 
             # Per-chain unzip frequency feeding the handshake: the legacy
             # k_unzip IS that frequency; the QSSA equivalent is
@@ -7570,6 +7619,46 @@ class HybridPolymerSystem(ReactionSystem):
                     if xs > 0:
                         N_boundary = min(N_boundary, mu1 / xs)
                         N_boundary = min(N_boundary, mu2 / (xs * xs))
+                    # I-060 availability gate: the smooth form of the boolean
+                    # removed above (see the guard). One handshake event
+                    # removes ONE chain and xs repeat units with it, so it
+                    # spends (xs - 1) of the pool's EXCESS mu1 - mu0 -- the
+                    # only budget the realizable cone mu1 >= mu0 >= 0 gives
+                    # it. The gate is therefore the fraction of that spend the
+                    # pool can actually pay, in exactly the form
+                    # _release_units_gate already carries for the 1-unit
+                    # chain-end release channels (units on offer / units the
+                    # event rate implies), with the excess in place of the
+                    # units:
+                    #     t = (mu1 - mu0) / ((xs - 1)*mu0) = (mean - 1)/(xs - 1)
+                    # EXACTLY 1.0 for mean >= xs -- every state the old
+                    # boolean admitted, so this is bit-for-bit inert there
+                    # (x*1.0 == x) -- EXACTLY 0.0 at mu1 <= mu0, and C2
+                    # between. The zero at the cone edge is the point: without
+                    # it the boundary mu1 = mu0 is not invariant, because
+                    # d(mu1 - mu0)/dt carries -(xs - 1)*F, which the I-055
+                    # chain-termination debit has no way to answer (its own
+                    # release term vanishes there, p1 -> 1, but F does not).
+                    # Gating on the UNITS instead of the excess,
+                    # _release_units_gate(xs*mu0, mu1), has the same 1.0
+                    # region and was measured to leak: it still walks a
+                    # scission-fed pool out of the cone, min(mu1 - mu0) =
+                    # -1.27e-02 against +1.85e-20 unfixed. Since gate ~ 10*t^3
+                    # near the edge, F vanishes as (mu1 - mu0)^3 and the edge
+                    # is an invariant set of the vector field, the same
+                    # structure the scission and k_unzip kernels get from
+                    # their own (mu1 - mu0) and p1 factors.
+                    #
+                    # It scales the flux, so all four terms it drives -- the
+                    # explicit-species deposit and the mu0/mu1/mu2 debits --
+                    # move TOGETHER; scaling any subset would fabricate or
+                    # destroy repeat-unit mass across the boundary. xs <= 1
+                    # spends no excess per event (a DP<=1 chain carries none),
+                    # so the gate is not defined there and is not applied;
+                    # the mu1/xs and mu2/xs^2 clamps above still bound it.
+                    if xs > 1:
+                        N_boundary *= _release_units_gate((xs - 1) * mu0,
+                                                          mu1 - mu0)
 
                     F = k_chain_handshake * N_boundary
 
