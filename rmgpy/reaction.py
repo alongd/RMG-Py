@@ -100,9 +100,16 @@ def _reverse_rate_at_reference_potential(kinetics, T, P):
     even bind a charge-transfer child to its `cdef Arrhenius` loop variable. Asks each object for the
     property it holds (V0 -> a charge-transfer leaf; pressures -> a pressure-interpolating wrapper;
     arrhenius -> a summing wrapper) rather than enumerating kinetics types; a future potential-taking
-    or wrapper type is handled by construction. Every non-charge-transfer object reaches the final
-    branch and is evaluated exactly as before, and for a non-charge-transfer wrapper the recursion
-    reproduces the wrapper's own value numerically.
+    or wrapper KineticsModel subclass is handled by construction. (The summing branch does assume any
+    object exposing `.arrhenius` also exposes `.is_pressure_dependent()` -- true for every
+    KineticsModel subclass, but not guaranteed for an arbitrary duck-typed wrapper.)
+
+    A non-charge-transfer leaf reaches the final branch and is evaluated exactly as before. A
+    non-charge-transfer wrapper reproduces its own value numerically EXCEPT for a nested
+    pressure-dependent child: native passes only T to children, so a nested PDepArrhenius child would
+    receive P=0 and raise, whereas this helper threads the real P and evaluates it. That is a
+    deliberate divergence -- more permissive than native, chosen for correctness (see
+    docs/i201-wrapper-report.md, Round 15) -- not an equivalence.
 
     Note: PDepArrhenius.get_adjacent_expressions is declared `cdef` (arrhenius.pxd:177), not `cpdef`,
     so it is not reachable via attribute access from this module (reaction.py does not cimport
