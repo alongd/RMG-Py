@@ -255,7 +255,11 @@ class TestTheUndeclaredOwnerContract:
 
     def test_the_two_sided_owner_is_the_only_one_that_moves(self):
         two_sided = sorted(o for o, d in FAMILY_ELECTRON_PLACEMENT.items() if 0 not in d)
-        assert two_sided == [IONISATION], two_sided
+        # I-206 added the Plasma_Electron_Impact_Ionization FAMILY at (1, 2), a
+        # second two-sided owner mirroring the IONISATION library's pair for the
+        # same chemistry. Both "move" -- their placement differs from the net
+        # rule -- which is what this test checks via the IONISATION reaction below.
+        assert two_sided == [IONISATION, 'Plasma_Electron_Impact_Ionization'], two_sided
         rxn = _reaction([_species('[Li]')], [_species('[Li+]')],
                         electrons=1, family=IONISATION)
         assert get_electron_placement_counts(rxn) == (1, 2)
