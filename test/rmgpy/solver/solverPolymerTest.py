@@ -44,6 +44,15 @@ from rmgpy.thermo import NASA, NASAPolynomial
 
 from rmgpy.solver.polymer import HybridPolymerSystem, MassTransferConfig, PolymerPoolConfig
 
+# The solver binds its integrator error class at compile time (base.pyx binds
+# DASxError to pydas.daspk.DASPKError or pydas.dassl.DASSLError from the same
+# `include "settings.pxi"` branch that selects the integrator itself), and the
+# two classes are disjoint -- neither subclasses the other. Failure-injecting
+# test doubles must therefore raise the alias, not a hardcoded backend class,
+# or `except DASxError` in simulate() cannot catch what they throw and the
+# guard under test is never entered.
+from rmgpy.solver.base import DASxError
+
 
 def _spc(smiles: str, label: str) -> Species:
     s = Species(molecule=[Molecule().from_smiles(smiles)])
@@ -13656,10 +13665,9 @@ class _R81FailingStepSystem(HybridPolymerSystem):
     attempted integration step dies with the IDID=-7 convergence failure."""
 
     def step(self, step_time):
-        from pydas.dassl import DASSLError
-        raise DASSLError(
-            "DASSL returned with an IDID = -7, Repeated convergence test "
-            "failures occurred on the last attempted step in DDASSL.")
+        raise DASxError(
+            "The solver returned with an IDID = -7, Repeated convergence "
+            "test failures occurred on the last attempted step.")
 
 
 def _r81_resurrection_rs(edge_reactant_key):
@@ -13751,7 +13759,7 @@ class TestR81ResurrectionZeroMetricGuard:
 
 class _StiffPastCrossingSystem(HybridPolymerSystem):
     """Bounded stand-in for the FR1 tf100 signature (r86): the
-    post-conversion region is a stiff wall -- any DASSL continuation whose
+    post-conversion region is a stiff wall -- any continuation whose
     OUTER TARGET time lies beyond ``t_wall`` (which sits PAST the
     conversion crossing) dies inside the integrator before the post-step
     termination check can run. Integrates normally otherwise, so tests
@@ -13761,10 +13769,9 @@ class _StiffPastCrossingSystem(HybridPolymerSystem):
 
     def step(self, step_time):
         if step_time > self.t_wall:
-            from pydas.dassl import DASSLError
-            raise DASSLError(
-                "DASSL returned with an IDID = -1, 500 steps taken on this "
-                "call before reaching TOUT (the tf100 wall past the "
+            raise DASxError(
+                "The solver returned with an IDID = -1, 500 steps taken on "
+                "this call before reaching TOUT (the tf100 wall past the "
                 "polymer-conversion crossing).")
         return HybridPolymerSystem.step(self, step_time)
 
