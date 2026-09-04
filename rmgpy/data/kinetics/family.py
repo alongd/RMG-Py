@@ -39,6 +39,7 @@ import os.path
 import random
 import math
 import re
+import time
 import warnings
 from collections import OrderedDict
 from copy import deepcopy
@@ -88,6 +89,33 @@ DROPPED_REVERSE_LOG_PATH = None
 
 # Per-family counts of reactions dropped via TOLERATE_MISSING_REVERSE, keyed by family label.
 _dropped_reverse_counts = {}
+
+# ---------------------------------------------------------------------------
+# Wasted-build profile (I-067)
+# ---------------------------------------------------------------------------
+#
+# A size constraint is consulted AFTER apply_recipe has already built the product,
+# so every structure the constraints refuse was paid for in full first. This
+# accumulator answers what that costs as a fraction of the generation leg's wall
+# time -- the number that decides whether pre-screening reactant combinations
+# before apply_recipe is worth its own ticket.
+#
+# OFF by default and gated on an environment variable, so the default hot path
+# gains one module-global boolean test per call and nothing else. It only
+# measures; it changes no ordering, no recipe, and no refusal.
+PROFILE_WASTED_BUILDS = os.environ.get('RMG_I067_PROFILE') == '1'
+
+_wasted_build_profile = {
+    'recipe_calls': 0, 'recipe_s': 0.0,          # every apply_recipe
+    'refused_calls': 0, 'refused_recipe_s': 0.0,  # ...whose product was then refused
+    'refused_total_s': 0.0,                       # whole _generate_product_structures, refused
+    'accepted_total_s': 0.0,                      # ...accepted
+}
+
+
+def get_wasted_build_profile():
+    """Return the live wasted-build accumulator (not a copy)."""
+    return _wasted_build_profile
 
 
 class TemplateReaction(Reaction):
@@ -1662,8 +1690,17 @@ class KineticsFamily(Database):
                 raise ForbiddenStructureException()
 
         # Generate the product structures by applying the forward reaction recipe
+        _t_gps = time.perf_counter() if PROFILE_WASTED_BUILDS else 0.0
+        _t_recipe = 0.0
         try:
-            product_structures = self.apply_recipe(reactant_structures, forward=forward, relabel_atoms=relabel_atoms)
+            if PROFILE_WASTED_BUILDS:
+                _t0 = time.perf_counter()
+                product_structures = self.apply_recipe(reactant_structures, forward=forward, relabel_atoms=relabel_atoms)
+                _t_recipe = time.perf_counter() - _t0
+                _wasted_build_profile['recipe_calls'] += 1
+                _wasted_build_profile['recipe_s'] += _t_recipe
+            else:
+                product_structures = self.apply_recipe(reactant_structures, forward=forward, relabel_atoms=relabel_atoms)
             if not product_structures:
                 return None
         except (InvalidActionError, KekulizationError):
@@ -1687,12 +1724,21 @@ class KineticsFamily(Database):
             if apply_species_constraints:
                 reason = fails_species_constraints(struct)
                 if reason:
+                    if PROFILE_WASTED_BUILDS:
+                        # This build is now known to be wasted: the recipe ran, the
+                        # product exists, and it is being thrown away. Charge the
+                        # recipe time and the whole call to the wasted bucket.
+                        _wasted_build_profile['refused_calls'] += 1
+                        _wasted_build_profile['refused_recipe_s'] += _t_recipe
+                        _wasted_build_profile['refused_total_s'] += time.perf_counter() - _t_gps
                     raise ForbiddenStructureException(
                         "Species constraints forbids product species {0}. Please "
                         "reformulate constraints, or explicitly "
                         "allow it. Reason: {1}".format(struct, reason)
                     )
 
+        if PROFILE_WASTED_BUILDS:
+            _wasted_build_profile['accepted_total_s'] += time.perf_counter() - _t_gps
         return product_structures
 
     def is_molecule_forbidden(self, molecule):

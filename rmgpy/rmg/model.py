@@ -46,7 +46,13 @@ from rmgpy import settings
 
 from rmgpy.constraints import fails_species_constraints, log_generation_census, pass_cutting_threshold
 from rmgpy.data.kinetics.depository import DepositoryReaction
-from rmgpy.data.kinetics.family import KineticsFamily, TemplateReaction, _handshake_structures
+from rmgpy.data.kinetics.family import (
+    KineticsFamily,
+    PROFILE_WASTED_BUILDS,
+    TemplateReaction,
+    get_wasted_build_profile,
+    _handshake_structures,
+)
 from rmgpy.polymer import MassFluxAccumulator, Polymer, PolymerCrosslinkError, PolymerFluxArchetype, collect_polymer_pool_registry, compute_concerted_loss_evidence, compute_h_loss_shape_evidence, is_end_group_reaction, merge_polymer_adjudication_stamps, readjudicate_conduit_admission, restamp_flipped_polymer_archetype, stamp_gas_association_refusal, stamp_polymer_flux_archetype
 from rmgpy.data.kinetics.library import KineticsLibrary, LibraryReaction
 from rmgpy.data.rmg import get_db
@@ -1747,6 +1753,31 @@ class CoreEdgeReactionModel:
         )
 
         log_generation_census(header="    CONSTRAINT REFUSAL CENSUS")
+
+        # What share of this enlargement went into building products that were then
+        # refused. Only populated under RMG_I067_PROFILE; see family.py.
+        if PROFILE_WASTED_BUILDS:
+            p = get_wasted_build_profile()
+            prev = getattr(self, "_last_wasted_profile", {})
+            d = {k: p[k] - prev.get(k, 0) for k in p}
+            self._last_wasted_profile = dict(p)
+            denom = wall_seconds if wall_seconds > 0 else float("nan")
+            logging.info(
+                "    WASTED BUILD PROFILE (this enlargement): apply_recipe %d calls / %.2f s; "
+                "of those %d were refused, costing %.2f s in apply_recipe and %.2f s across the "
+                "whole product-generation call. Refused share of the %.2f s enlargement: "
+                "%.1f%% (apply_recipe only) / %.1f%% (product generation). Accepted product "
+                "generation: %.2f s.",
+                d["recipe_calls"], d["recipe_s"], d["refused_calls"], d["refused_recipe_s"],
+                d["refused_total_s"], wall_seconds,
+                100.0 * d["refused_recipe_s"] / denom, 100.0 * d["refused_total_s"] / denom,
+                d["accepted_total_s"])
+            logging.info(
+                "    WASTED BUILD PROFILE (cumulative): apply_recipe %d calls / %.2f s; "
+                "%d refused costing %.2f s in apply_recipe, %.2f s across product generation; "
+                "accepted product generation %.2f s.",
+                p["recipe_calls"], p["recipe_s"], p["refused_calls"], p["refused_recipe_s"],
+                p["refused_total_s"], p["accepted_total_s"])
 
     def add_species_to_core(self, spec, requires_rms=False):
         """

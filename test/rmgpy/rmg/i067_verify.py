@@ -22,8 +22,16 @@ import subprocess
 import sys
 
 BASELINE = "U2"
-CANDIDATE = os.environ.get("I067_CANDIDATE", "P30")
+# P35 mirrors generatedSpeciesConstraints exactly: size routing moves every
+# structure of >= polymerSizeThreshold heavy atoms into the polymer tier, and the
+# limits there are the gas tier's. Chosen over the tighter P30 because the
+# measurement shows no retained species between the two, so the extra tightness
+# buys nothing and couples the deck's polymer tier to its `cutoff`.
+CANDIDATE = os.environ.get("I067_CANDIDATE", "P35")
 CURVE = ["U2", "P35", "P32", "P30", "P29", "P24", "P18", "R1", "R1P30"]
+
+# The run made with RMG_I067_PROFILE=1: same unbounded deck, timers on.
+PROFILE_RUN = "PROF"
 
 # Configurations proposed and then refuted by the evidence. They stay in the
 # curve, and check 3R re-derives WHY each was rejected from that run's own log,
@@ -218,7 +226,42 @@ def check_1(runs, fails):
         print()
         print("structures the constraint tiers refused, cumulative: total {total}, "
               "gas tier {gas}, polymer tier {poly}".format(**c))
+
+    # The size at which a bound should sit is not a matter of taste: it is the
+    # size of the largest species the mechanism can actually reach. Read that off
+    # the emitted core, which is the set of species RMG judged worth keeping.
+    print()
+    print(core_size_report(base.dir))
     return base
+
+
+def core_size_report(run_dir):
+    """Heavy-atom profile of the run's emitted CORE, from its species dictionary."""
+    path = os.path.join(run_dir, "chemkin", "species_dictionary.txt")
+    if not os.path.isfile(path):
+        return "NOT ESTABLISHED: no species dictionary at {0}".format(path)
+    from rmgpy.chemkin import load_species_dictionary
+    d = load_species_dictionary(path)
+    rows = []
+    for label, spc in d.items():
+        m = spc.molecule[0]
+        rows.append((m.get_num_atoms() - m.get_num_atoms("H"), m.get_num_atoms("C"),
+                     m.get_formula(), label))
+    rows.sort(reverse=True)
+    hist = collections.Counter(r[0] for r in rows)
+    out = ["core species actually promoted, by heavy-atom count ({0} species):".format(len(rows)),
+           "  " + fmt_hist(hist)]
+    out.append("  largest core species:")
+    top = rows[0][0] if rows else 0
+    for r in rows[:10]:
+        out.append("    heavy={0:<3d} C={1:<3d} {2:<12} {3}".format(*r))
+    below = sorted({r[0] for r in rows if r[0] < top}, reverse=True)
+    if below:
+        out.append("  the largest core species has {0} heavy atoms; the next size down in the "
+                   "core is {1}.".format(top, below[0]))
+        out.append("  a polymer tier set at {0} heavy atoms admits the entire reachable core "
+                   "and refuses everything above it.".format(top))
+    return "\n".join(out)
 
 
 def check_2(runs, fails):
@@ -415,6 +458,81 @@ def run_outcome(run_dir):
                 crash = l[:220]
                 break
     return rc, crash
+
+
+WASTED = re.compile(
+    r"WASTED BUILD PROFILE \(this enlargement\): apply_recipe (?P<calls>\d+) calls / "
+    r"(?P<recipe_s>[\d.]+) s; of those (?P<refused>\d+) were refused, costing "
+    r"(?P<refused_recipe_s>[\d.]+) s in apply_recipe and (?P<refused_total_s>[\d.]+) s across "
+    r"the whole product-generation call\. Refused share of the (?P<wall>[\d.]+) s enlargement: "
+    r"(?P<pct_recipe>[\d.nan]+)% \(apply_recipe only\) / (?P<pct_total>[\d.nan]+)% "
+    r"\(product generation\)\. Accepted product generation: (?P<accepted_s>[\d.]+) s\.")
+
+
+def check_9(root, fails):
+    """
+    Where the generation leg's wall time actually goes.
+
+    A size constraint is consulted after apply_recipe has already built the
+    product, so every refused structure was paid for in full. This reports what
+    that costs as a fraction of the leg -- the number that decides whether
+    pre-screening reactant combinations before apply_recipe is worth a ticket.
+    """
+    hr("CHECK 9 -- where the generation leg's wall time actually goes")
+    log = os.path.join(root, PROFILE_RUN, "RMG.log")
+    if not os.path.isfile(log):
+        print("NOT ESTABLISHED: no profiling run at {0}".format(log))
+        fails.append("check 9: no RMG_I067_PROFILE run to measure the wasted-build share")
+        return
+    rows = [m.groupdict() for m in
+            (WASTED.search(l) for l in open(log, errors="replace")) if m]
+    rows = [r for r in rows if float(r["wall"]) > 0.5]     # cheap core-add steps: no leg work
+    if not rows:
+        print("NOT ESTABLISHED: the profiling run has not yet reached an enlargement with")
+        print("measurable wall time; nothing to attribute.")
+        fails.append("check 9: profiling run produced no substantive enlargement")
+        return
+
+    print("method: wall-clock accumulators around apply_recipe and around the whole")
+    print("_generate_product_structures call in rmgpy/data/kinetics/family.py, gated on")
+    print("RMG_I067_PROFILE. No recipe, ordering or refusal was changed; the gate also")
+    print("suppresses this work's own to_smiles() on refused structures so the census")
+    print("does not inflate the fraction it is measuring.")
+    print()
+    print("  {0:<5} {1:>10} {2:>9} {3:>9} {4:>12} {5:>12} {6:>11} {7:>11}".format(
+        "enl", "wall s", "recipes", "refused", "recipe s", "refused s", "%wall(recipe)",
+        "%wall(total)"))
+    tot_wall = tot_recipe = tot_ref_recipe = tot_ref_total = tot_acc = 0.0
+    tot_calls = tot_refused = 0
+    for k, r in enumerate(rows, 1):
+        print("  {0:<5} {1:>10.1f} {2:>9} {3:>9} {4:>12.2f} {5:>12.2f} {6:>11.1f} {7:>11.1f}".format(
+            k, float(r["wall"]), r["calls"], r["refused"], float(r["recipe_s"]),
+            float(r["refused_total_s"]), float(r["pct_recipe"]), float(r["pct_total"])))
+        tot_wall += float(r["wall"]); tot_recipe += float(r["recipe_s"])
+        tot_ref_recipe += float(r["refused_recipe_s"]); tot_ref_total += float(r["refused_total_s"])
+        tot_acc += float(r["accepted_s"])
+        tot_calls += int(r["calls"]); tot_refused += int(r["refused"])
+
+    print()
+    print("over {0} substantive enlargements, {1:.1f} s of generation-leg wall time:".format(
+        len(rows), tot_wall))
+    print("  apply_recipe, all {0} calls                  {1:8.1f} s  {2:5.1f}%".format(
+        tot_calls, tot_recipe, 100.0 * tot_recipe / tot_wall))
+    print("  apply_recipe on the {0} REFUSED products     {1:8.1f} s  {2:5.1f}%   <-- the wasted build".format(
+        tot_refused, tot_ref_recipe, 100.0 * tot_ref_recipe / tot_wall))
+    print("  whole product generation, refused products      {0:8.1f} s  {1:5.1f}%   <-- upper bound of a pre-screen".format(
+        tot_ref_total, 100.0 * tot_ref_total / tot_wall))
+    print("  whole product generation, accepted products     {0:8.1f} s  {1:5.1f}%".format(
+        tot_acc, 100.0 * tot_acc / tot_wall))
+    residual = tot_wall - tot_ref_total - tot_acc
+    print("  everything else in enlarge()                    {0:8.1f} s  {1:5.1f}%".format(
+        residual, 100.0 * residual / tot_wall))
+    print()
+    print("'everything else' is subgraph matching of reactants against family templates,")
+    print("thermo estimation, species/reaction bookkeeping and duplicate marking. Matching")
+    print("happens BEFORE apply_recipe, so a pre-screen on reactant sizes would also avoid")
+    print("part of it -- how much is NOT measured here, and the upper bound above therefore")
+    print("understates what such a screen could save.")
 
 
 def check_4(runs, fails):
@@ -682,6 +800,7 @@ def main():
     check_6(runs, fails)
     check_7(fails, pytest_report)
     check_8(fails, snapshot_dir)
+    check_9(root, fails)
 
     hr("VERDICT")
     if fails:

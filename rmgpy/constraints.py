@@ -28,6 +28,7 @@
 ###############################################################################
 
 import logging
+import os
 
 from collections import Counter
 
@@ -59,6 +60,12 @@ _unbounded_polymer_warned = False
 # cheaper and exact.
 
 _CENSUS_SMILES_CAP = 20000
+
+# Under RMG_I067_PROFILE the census stops rendering SMILES. The wasted-build
+# profile times the refusal path, and to_smiles() on a refused structure is this
+# census's own cost, not the generator's -- leaving it in would inflate the very
+# fraction the profile exists to measure. Counts are unaffected.
+_CENSUS_SMILES_OFF = os.environ.get('RMG_I067_PROFILE') == '1'
 
 _census = {}
 
@@ -93,6 +100,8 @@ def _record_refusal(struct, tier, reason):
     _census['refused'][tier] += 1
     _census['by_heavy'][tier][heavy] += 1
     _census['by_reason']['{0}/{1}'.format(tier, reason.split(':')[0])] += 1
+    if _CENSUS_SMILES_OFF:
+        return
     bucket = _census['smiles'][tier]
     if len(bucket) >= _CENSUS_SMILES_CAP:
         _census['smiles_capped'] = True

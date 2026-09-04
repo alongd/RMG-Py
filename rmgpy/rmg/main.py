@@ -101,6 +101,11 @@ solvent = None
 # Maximum number of user defined processors
 maxproc = 1
 
+# Most species named per EDGE FLUX census. Measured on the phenolic-resin deck at
+# an 800-species edge, the census is ~25% of the log's lines and +13% of its bytes;
+# this caps the tail rather than letting it scale with maximumEdgeSpecies.
+EDGE_FLUX_CENSUS_CAP = 2000
+
 
 class RMG(util.Subject):
     """
@@ -1882,10 +1887,19 @@ class RMG(util.Subject):
                 system_number, len(ratios), len(prunable))
             return
 
-        logging.info("EDGE FLUX CENSUS (system %d): %d edge species; "
+        # One line per edge species is the point -- a flux record that omits the
+        # species a bound removed is not evidence. It is capped all the same: past
+        # EDGE_FLUX_CENSUS_CAP species only the highest-flux ones are named, since
+        # a bound is only ever wrong about a species that carried flux, and the
+        # count of what was dropped is printed so the omission is not silent.
+        pairs = sorted(zip(prunable, ratios), key=lambda p: -p[1])
+        dropped = max(0, len(pairs) - EDGE_FLUX_CENSUS_CAP)
+        logging.info("EDGE FLUX CENSUS (system %d): %d edge species%s; "
                      "columns are ratio, heavy atoms, carbons, is_polymer_proxy, label, SMILES",
-                     system_number, len(prunable))
-        for spec, ratio in zip(prunable, ratios):
+                     system_number, len(prunable),
+                     "; naming the %d highest-flux, %d not named" % (EDGE_FLUX_CENSUS_CAP, dropped)
+                     if dropped else "")
+        for spec, ratio in pairs[:EDGE_FLUX_CENSUS_CAP]:
             mols = getattr(spec, "molecule", None)
             if mols:
                 heavy = mols[0].get_num_atoms() - mols[0].get_num_atoms("H")
