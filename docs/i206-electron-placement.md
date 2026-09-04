@@ -194,10 +194,39 @@ as every prior extension (I-116, I-119, I-154) did:
    the reversal in-place. The two owners declare the **same** pair `(1, 2)` — no placement
    disagreement.
 
-3. **A model-generation concern this ticket does not resolve (report, not fix).** With both
-   `PlasmaElectronImpactIonization` (library, Voronov) and `Plasma_Electron_Impact_Ionization`
-   (family, Arrhenius estimate) present for the same chemistry, whether RMG generates the reaction
-   from **both** — a duplicate with conflicting rates — is a question the `i205-dataless` database
-   branch owns, not this placement module. Placement is agnostic to which owner a reaction carries
-   (both declare `(1, 2)`); no current RMG-Py test exercises the dual-owner generation path (the
-   family exists only in the unmerged database). Left for the database-branch review.
+3. **A verified HIGH: this declaration silently collapses the sourced library reaction and the
+   data-less family reaction into one — and the declaration is what creates the collapse.** Not an
+   open question; the mechanism is named and confirmed against code (`collision_probe.py`), and the
+   disposition is with the owner.
+
+   - `rmgpy/rmg/model.py:2378-2391` — `are_identical_species_references(rxn1, rxn2)` compares the
+     reactant/product **references**, `specific_collider`, and
+     `get_electron_placement_counts(...)` per side. It does **not** compare owner (family/library),
+     kinetics, or provenance.
+   - `rmgpy/rmg/model.py:481` (and `:523` for the cross-library case, `library != rxn.family`) —
+     `check_for_existing_reaction` returns `(True, incumbent)` on the first identity match.
+   - `rmgpy/rmg/model.py:600-602` — `make_new_reaction` does `found, rxn =
+     check_for_existing_reaction(forward); if found: return rxn, False`: it keeps the incumbent and
+     drops the newcomer **silently, with no rate comparison**.
+
+   So the sourced `PlasmaElectronImpactIonization` reaction (Voronov) and the data-less
+   `Plasma_Electron_Impact_Ionization` family reaction (order-of-magnitude Arrhenius estimate)
+   present the **same heavy species** and, after this ticket, the **same `(1, 2)`** placement
+   counts — they compare identical, and whichever RMG offers first wins while the other is dropped
+   with no notice.
+
+   **The declaration introduces the collision; it does not merely coexist with it.** *Before* this
+   entry the family carried no declaration, so `get_electron_placement_counts` fell back to the net
+   rule and returned `(0, 1)`, which is `!= (1, 2)` — they did **not** collide. *After* it the
+   family resolves to `(1, 2)` and they do. Measured both ways:
+
+   ```
+   AFTER  (entry present): family (1, 2) == library (1, 2)  -> are_identical = True
+   BEFORE (entry removed):  family (0, 1) != library (1, 2)  -> are_identical = False
+   ```
+
+   This is not this ticket's to fix — the placement declaration is required regardless, or the
+   family raises on first use — and no current RMG-Py test exercises the dual-owner generation path
+   (the family exists only in the unmerged `i205-dataless` database). The disposition (which owner
+   should generate the reaction, or whether the two must be prevented from co-loading) is put to the
+   owner of the family carry.

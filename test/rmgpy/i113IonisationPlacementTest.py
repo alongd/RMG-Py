@@ -60,13 +60,18 @@ rate law is load-bearing:
   and the export path stay in step;
 * attachment and cation recombination coming out numerically unchanged.
 
-No ionisation family is added to :data:`FAMILY_ELECTRON_PLACEMENT` here: which
-family (or library) should own Li ionisation is a data question and a separate
-ticket. The declaration is injected under a synthetic label, as the I-108
-measurement did. (That separate ticket has since answered: I-116 declared the
-``PlasmaElectronImpactIonization`` kinetics library at ``(1, 2)``. This file
-keeps its synthetic label and its injection, so what it tests stays the code
-path rather than the shipped data.)
+This FILE adds no ionisation family to :data:`FAMILY_ELECTRON_PLACEMENT`: which
+family (or library) should own Li ionisation was a data question for separate
+tickets, and this file injects its declaration under a synthetic label, as the
+I-108 measurement did, so what it tests stays the code path rather than the
+shipped data. Those separate tickets have since answered, and the shipped table
+has moved on twice: I-116 declared the ``PlasmaElectronImpactIonization``
+kinetics library at ``(1, 2)``, and I-206 added the
+``Plasma_Electron_Impact_Ionization`` FAMILY at ``(1, 2)`` when that data-less
+family was carried onto this branch. (An earlier version of this note said "No
+ionisation family is added to FAMILY_ELECTRON_PLACEMENT here"; I-206 made that
+false for the shipped table, though it stays true of this file, which keeps its
+synthetic label and its injection regardless.)
 """
 
 import pytest

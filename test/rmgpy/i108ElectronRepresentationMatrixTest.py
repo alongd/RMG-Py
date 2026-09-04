@@ -827,7 +827,7 @@ def test_family_electron_placement_is_still_the_exact_declared_table():
     The row is renamed accordingly. Its old name asserted "exactly two consuming
     entries", which has become false, and a test whose name lies is worse than
     one that fails. What it still pins is the property I-108 cared about: the
-    table is a closed, hand-maintained list, so an ELEVENTH entry nobody decided
+    table is a closed, hand-maintained list, so a TENTH entry nobody decided
     on still fails here.
     """
     from rmgpy.electron_placement import FAMILY_ELECTRON_PLACEMENT
