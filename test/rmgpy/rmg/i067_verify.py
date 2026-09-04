@@ -8,7 +8,16 @@ work; every number printed below is parsed or recomputed at the moment it is
 printed.
 
 Usage:  i067_verify.py <runs-root>
-        exits 0 if every check passes, non-zero otherwise.
+        exit 0  every check passed
+        exit 1  at least one check FAILED
+        exit 2  at least one check could not be ESTABLISHED
+
+Exit 2 exists because round 1 of this verifier printed "NOT ESTABLISHED" for a check
+and then exited 0 anyway, so a verifier that had verified nothing reported success. An
+unestablished check is not a pass. It is reported separately from a failure because the
+two call for different responses -- a failure means the branch is wrong, an unestablished
+check means the evidence is missing, most often because this is not the host that has the
+measurement artifacts -- but neither of them is success and neither exits 0.
 
 <runs-root> holds one directory per configuration; each has input.py and, once
 run, RMG.log. The configuration named by BASELINE is the unbounded run every
@@ -21,6 +30,22 @@ import re
 import subprocess
 import sys
 
+# Every check that cannot reach a verdict records itself here. Kept module-global rather
+# than threaded through every check signature so that adding a check cannot accidentally
+# omit the wiring -- the failure mode this list exists to prevent.
+UNESTABLISHED = []
+
+
+def not_established(msg, detail=None):
+    """Report a check that could not reach a verdict, and make it count against the exit."""
+    UNESTABLISHED.append(msg)
+    print("NOT ESTABLISHED: {0}".format(msg))
+    if detail:
+        for line in detail:
+            print("   ", line)
+    return False
+
+
 BASELINE = "U2"
 # P35 mirrors generatedSpeciesConstraints exactly: size routing moves every
 # structure of >= polymerSizeThreshold heavy atoms into the polymer tier, and the
@@ -31,7 +56,7 @@ CANDIDATE = os.environ.get("I067_CANDIDATE", "P35")
 CURVE = ["U2", "P35", "P32", "P30", "P29", "P24", "P18", "R1", "R1P30"]
 
 # The run made with RMG_I067_PROFILE=1: same unbounded deck, timers on.
-PROFILE_RUN = "PROF"
+PROFILE_RUN = os.environ.get("I067_PROFILE_RUN", "PROF")
 
 # Configurations proposed and then refuted by the evidence. They stay in the
 # curve, and check 3R re-derives WHY each was rejected from that run's own log,
@@ -239,7 +264,9 @@ def core_size_report(run_dir):
     """Heavy-atom profile of the run's emitted CORE, from its species dictionary."""
     path = os.path.join(run_dir, "chemkin", "species_dictionary.txt")
     if not os.path.isfile(path):
-        return "NOT ESTABLISHED: no species dictionary at {0}".format(path)
+        not_established("check 1: no species dictionary at {0}, so the core's size "
+                        "distribution was not characterised".format(path))
+        return "(core size distribution unavailable)"
     from rmgpy.chemkin import load_species_dictionary
     d = load_species_dictionary(path)
     rows = []
@@ -449,6 +476,29 @@ def check_3(runs, excluded, fails):
             unmeasured.append(lab)
         else:
             rows.append((ent[0], ent[1], ent[2], ent[3], lab))
+
+    # `base.flux` is keyed by the SMILES the flux census rendered, and `excluded` holds the
+    # SMILES the species dictionary rendered. Both name a species by ONE resonance
+    # structure, and the choice need not agree between the two -- the same defect that made
+    # round 1 report five species as excluded that both runs had generated (804ce0c26).
+    # Check 2 resolves identity by isomorphism; a raw dict lookup here would silently
+    # reintroduce string identity on the flux path and inflate `unmeasured`, which is the
+    # bucket that now blocks the exit code. Retry the misses structurally before believing
+    # them.
+    if unmeasured:
+        print()
+        print("{0} excluded species did not match a flux-census key by SMILES string; "
+              "retrying by isomorphism".format(len(unmeasured)))
+        pairs, still = pair_by_isomorphism(unmeasured, list(base.flux))
+        for lab, flux_key in pairs:
+            ent = base.flux[flux_key]
+            rows.append((ent[0], ent[1], ent[2], ent[3], lab))
+            print("  matched {0}  ->  flux key {1}".format(lab[:48], flux_key[:48]))
+        if pairs:
+            print("  recovered {0} flux measurement(s) that string equality had missed"
+                  .format(len(pairs)))
+        unmeasured = sorted(still)
+
     rows.sort(reverse=True)
     print()
     print("excluded species with a measured flux: {0}; without one: {1}".format(
@@ -460,19 +510,39 @@ def check_3(runs, excluded, fails):
     if len(rows) > 25:
         print("  ... {0} more, all at or below {1:.6e}".format(len(rows) - 25, rows[25][0]))
 
-    if rows:
-        worst = rows[0][0]
+    # `inf` in the census does not mean "enormous flux"; it marks a species that left the
+    # edge for the core during that cycle and so has no finite ratio (base.pyx::
+    # set_prunable_indices). Comparing it against the bar would report a real problem under
+    # a misleading headline, so separate it and name what it actually is.
+    promoted = [r for r in rows if r[0] == float("inf")]
+    finite = [r for r in rows if r[0] != float("inf")]
+    if promoted:
         print()
-        print("maximum flux among excluded species: {0:.6e}  (bar {1:.6e})".format(worst, FLUX_BAR))
+        print("{0} excluded species have NO finite flux ratio: they were promoted from the "
+              "edge to the core during the cycle.".format(len(promoted)))
+        for r in promoted[:10]:
+            print("  promoted to core: {0}".format(r[4][:70]))
+        fails.append("check 3: the bound excluded {0} species that RMG promoted to the core "
+                     "-- by RMG's own criterion they mattered, so the bound must be raised"
+                     .format(len(promoted)))
+    if finite:
+        worst = finite[0][0]
+        print()
+        print("maximum finite flux among excluded species: {0:.6e}  (bar {1:.6e})".format(
+            worst, FLUX_BAR))
         if not worst < FLUX_BAR:
             fails.append("check 3: an excluded species carried flux {0:.6e} >= bar {1:.6e} -- "
                          "the bound is too tight and must be raised".format(worst, FLUX_BAR))
     if unmeasured:
         print()
-        print("NOT ESTABLISHED for {0} excluded species: they never appeared in an edge-flux".format(
-            len(unmeasured)))
-        print("census, because the baseline run stopped before a simulation covered them.")
-        print("First 15: {0}".format(sorted(unmeasured)[:15]))
+        # This is the check the whole ticket turns on -- "nothing with meaningful flux was
+        # cut". A species the flux census never covered has NOT been shown to carry no
+        # flux; it has been shown only that nobody looked. Round 1 printed this and passed.
+        not_established(
+            "check 3: {0} excluded species were never covered by an edge-flux census, so "
+            "their flux is unknown -- not zero".format(len(unmeasured)),
+            detail=["the baseline run stopped before a simulation covered them",
+                    "first 15: {0}".format(sorted(unmeasured)[:15])])
 
 
 def check_3r(runs, fails):
@@ -686,6 +756,30 @@ def check_5(runs, fails):
     print(msg2)
     if ok2 is False:
         fails.append("check 5: core concentrations disagree beyond rtol={0:g}".format(CONC_RTOL))
+    elif ok2 is None:
+        # No profile CSV exists -- SimulationProfileWriter writes on
+        # reaction_system.notify(), which the hybrid polymer reactor never calls.
+        #
+        # Whether that leaves anything UNESTABLISHED depends on the check above it. If the
+        # two runs' core mechanism snapshots are byte-identical, then the two simulations
+        # are the same species, the same thermo, the same rate coefficients and the same
+        # initial state handed to the same integrator, and their concentrations are equal
+        # by construction rather than to a tolerance. That determinism is not assumed here,
+        # it was observed: P29/P24/P18 -- three runs with DIFFERENT edges but an identical
+        # 47-species core -- reached bit-identical pool moments and bit-identical
+        # thermo-fit rcond values before failing at the same point.
+        #
+        # So a missing CSV is only a gap when mechanism identity did NOT hold. Recording it
+        # as unestablished in the identical case would not be strictness, it would be
+        # double-counting a question the stronger check already answered.
+        if ok is True:
+            print()
+            print("check 5: the concentration comparison is SUBSUMED, not skipped -- the core "
+                  "mechanisms are byte-identical, which fixes the concentrations exactly.")
+        else:
+            not_established(
+                "check 5: the core mechanisms were not shown identical AND no simulation "
+                "profile CSV exists, so concentration agreement rests on nothing")
 
 
 def compare_core_mechanism(dir_a, dir_b):
@@ -895,6 +989,29 @@ def main():
     print("configurations: ", ", ".join(
         "{0}{1}".format(n, "" if runs[n].exists else "(missing)") for n in CURVE))
 
+    # Preflight. The measurement artifacts live in a session scratchpad, not in the repo,
+    # so on any other host -- or after that scratchpad is cleaned -- every check below
+    # would find nothing to read. Round 1 would have printed a wall of "NOT ESTABLISHED"
+    # and exited 0, which reads as "verified" to anyone who checks the exit code. Say
+    # plainly that this verifier is host-bound and stop.
+    hr("PREFLIGHT -- the measurement artifacts this verifier reads")
+    if not os.path.isdir(root):
+        not_established(
+            "preflight: runs root {0} does not exist on this host. This verifier "
+            "recomputes from RMG run directories produced in a session scratchpad; it "
+            "cannot be run anywhere else without first reproducing those runs.".format(root))
+        hr("VERDICT")
+        print("verifier could not run: no measurement artifacts.")
+        return 2
+    missing = [n for n in CURVE if not runs[n].exists]
+    if missing:
+        not_established(
+            "preflight: {0} of {1} configurations have no RMG.log ({2}). The cost curve "
+            "and the exclusion comparison both need them.".format(
+                len(missing), len(CURVE), ", ".join(missing)))
+    else:
+        print("all {0} configurations present under {1}".format(len(CURVE), root))
+
     check_1(runs, fails)
     excluded = check_2(runs, fails)
     check_3(runs, excluded, fails)
@@ -910,10 +1027,16 @@ def main():
     if fails:
         for f in fails:
             print("FAIL:", f)
+    if UNESTABLISHED:
+        for u in UNESTABLISHED:
+            print("UNESTABLISHED:", u)
+    if fails or UNESTABLISHED:
         print()
-        print("{0} check(s) failed.".format(len(fails)))
-        return 1
-    print("all checks passed.")
+        print("{0} check(s) failed, {1} could not be established.".format(
+            len(fails), len(UNESTABLISHED)))
+        print("An unestablished check is not a pass -- the evidence for it is missing.")
+        return 1 if fails else 2
+    print("all checks passed, and every check reached a verdict.")
     return 0
 
 
