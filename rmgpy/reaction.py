@@ -166,6 +166,19 @@ def _reverse_rate_at_reference_potential(kinetics, T, P):
         return klow * 10 ** (math.log10(P / plow) / math.log10(phigh / plow) * math.log10(khigh / klow))
     children = getattr(kinetics, 'arrhenius', None)
     if children is not None:
+        # Precondition, mirroring native MultiPDepArrhenius.get_rate_coefficient's own P==0 guard
+        # (arrhenius.pyx:2912-2913): a pressure-dependent summing wrapper needs a real pressure to
+        # place its children, so raise rather than silently sum an empty list to 0.0 or sum children
+        # that were never bracketed against a pressure. MultiArrhenius is NOT pressure-dependent and
+        # native has no such guard for it (it ignores P entirely), so gate on the object's own
+        # is_pressure_dependent() rather than on its type -- a valid MultiPDepArrhenius wrapping
+        # PDepArrhenius children would already raise via that child's own P==0 guard during recursion
+        # (an "agree by accident" case), but an empty `arrhenius=[]` or non-PDep children would not,
+        # so this guard is still needed at this level.
+        if P == 0 and kinetics.is_pressure_dependent():
+            raise ValueError(
+                'No pressure specified to pressure-dependent {0}.get_rate_coefficient().'.format(
+                    type(kinetics).__name__))
         # A summing wrapper (MultiArrhenius / MultiPDepArrhenius): total rate is the sum of children.
         # Recurse so each charge-transfer child is evaluated at its own V0; a non-charge-transfer
         # child reaches the final branch and receives the pressure, matching the native wrapper.

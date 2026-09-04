@@ -4332,3 +4332,139 @@ class TestReverseRateAtReferencePotentialRound13:
         violators = rxn.check_collision_limit_violation(
             t_min=1000.0, t_max=1000.0, p_min=_REVERSE_PRESSURE, p_max=_REVERSE_PRESSURE)
         assert violators == []
+
+
+class _RecordingReverseACTPair(ArrheniusChargeTransfer):
+    """A ``_RecordingReverseACT`` variant that records the pair ``(self.V0.value_si, V_received)``
+    instead of just ``V_received``. Round-13's ``_RecordingReverseACT`` uses one class-level list
+    shared by every instance, so it cannot tell WHICH child (V0=0.3 vs V0=0.5) was evaluated at which
+    potential -- only that some V0 appeared somewhere in the recorded list. Recording the pair makes a
+    swap (child A evaluated at child B's V0) visible: a swap still produces the same *set* of received
+    potentials, but the pair becomes ``(0.3, 0.5)`` or ``(0.5, 0.3)`` instead of ``(x, x)``."""
+    recorded = []
+
+    def get_rate_coefficient(self, T, V=0.0):
+        type(self).recorded.append((self.V0.value_si, V))
+        return ArrheniusChargeTransfer.get_rate_coefficient(self, T, V)
+
+
+class TestReverseRateAtReferencePotentialRound15:
+    """i201 round-15 rework, adversarial review of ``170a13099``.
+
+    MUST-FIX 1: the summing branch (MultiArrhenius / MultiPDepArrhenius) had no top-level P==0 guard,
+    unlike native MultiPDepArrhenius.get_rate_coefficient (arrhenius.pyx:2912-2913). MultiArrhenius is
+    not pressure-dependent and native has no such guard for it, so the new guard is gated on the
+    object's own is_pressure_dependent() rather than on type.
+
+    MUST-FIX 2: every existing charge-transfer interpolation test used a grid containing P, so
+    plow == phigh and only one child was ever evaluated -- the interpolation branch, which is the
+    entire point of threading a per-child reference potential, was never exercised for a
+    charge-transfer child. These tests use a [1e4, 1e6] grid with P=1e5 so both children are
+    evaluated, with distinct V0 per child so a swap is caught.
+    """
+
+    # ---- MUST-FIX 1 ----
+
+    def test_multi_pdep_arrhenius_empty_children_p_zero_raises_matching_native(self):
+        """MUST-FIX 1. Sum of zero children would silently be 0.0; native raises instead because
+        MultiPDepArrhenius.is_pressure_dependent() is True and P == 0.
+        RED-before (170a13099): helper returns 0.0, no raise."""
+        from rmgpy.reaction import _reverse_rate_at_reference_potential
+
+        T = 1000.0
+        empty = MultiPDepArrhenius(arrhenius=[])
+        assert empty.is_pressure_dependent()  # premise
+
+        with pytest.raises(ValueError):
+            empty.get_rate_coefficient(T, 0)  # native oracle
+        with pytest.raises(ValueError):
+            _reverse_rate_at_reference_potential(empty, T, 0)
+
+    def test_multi_pdep_arrhenius_p_zero_raises_matching_native(self):
+        """MUST-FIX 1. A well-formed MultiPDepArrhenius wrapping one ordinary Arrhenius-backed
+        PDepArrhenius child, evaluated at P == 0: native raises before iterating; the helper must too.
+        Already green on 170a13099 -- the recursion into the PDepArrhenius child hits THAT branch's
+        own pre-existing P==0 guard before reaching the top of the recursion, so this case agrees with
+        native by accident rather than by the new top-level guard (this is the exact "agree by
+        accident" case the brief calls out). Kept as a same-family regression guard alongside the
+        genuinely RED empty-children case above."""
+        from rmgpy.reaction import _reverse_rate_at_reference_potential
+
+        T = 1000.0
+        a1 = Arrhenius(A=(1.0e10, 'cm^3/(mol*s)'), n=0.0, Ea=(20.0, 'kJ/mol'))
+        pdep = PDepArrhenius(pressures=([1.0e4, 1.0e6], 'Pa'), arrhenius=[a1, a1])
+        multi_pdep = MultiPDepArrhenius(arrhenius=[pdep])
+        assert multi_pdep.is_pressure_dependent()  # premise
+
+        with pytest.raises(ValueError):
+            multi_pdep.get_rate_coefficient(T, 0)  # native oracle
+        with pytest.raises(ValueError):
+            _reverse_rate_at_reference_potential(multi_pdep, T, 0)
+
+    def test_multi_arrhenius_p_zero_does_not_raise_over_broadening_guard(self):
+        """MUST-FIX 1 regression guard against over-broadening. MultiArrhenius is NOT
+        pressure-dependent, and native ignores P entirely -- the new guard must not fire for it. Green
+        both before and after this round's fix."""
+        from rmgpy.reaction import _reverse_rate_at_reference_potential
+
+        T = 1000.0
+        a1 = Arrhenius(A=(1.0e10, 'cm^3/(mol*s)'), n=0.0, Ea=(20.0, 'kJ/mol'))
+        a2 = Arrhenius(A=(2.0e10, 'cm^3/(mol*s)'), n=0.1, Ea=(25.0, 'kJ/mol'))
+        multi = MultiArrhenius(arrhenius=[a1, a2])
+        assert not multi.is_pressure_dependent()  # premise
+
+        # Native oracle: no raise.
+        native = multi.get_rate_coefficient(T, 0)
+        assert _reverse_rate_at_reference_potential(multi, T, 0) == pytest.approx(native)
+
+    # ---- MUST-FIX 2 ----
+
+    def test_pdep_arrhenius_charge_transfer_children_evaluated_at_own_v0_through_interpolation(self):
+        """MUST-FIX 2. Two charge-transfer children on a [1e4, 1e6] grid with P=1e5 strictly between
+        them: plow != phigh, so BOTH children are evaluated (bracket scan) and the interpolation
+        formula actually runs on their results. V0=0.3 (low, at 1e4) and V0=0.5 (high, at 1e6) are
+        distinct, so a swap (low child evaluated at 0.5, or vice versa) produces a recorded pair whose
+        components differ, and this test would fail."""
+        from rmgpy.reaction import _reverse_rate_at_reference_potential
+
+        T = 1000.0
+        P = 1.0e5
+        _RecordingReverseACTPair.recorded = []
+        act_low = _RecordingReverseACTPair(
+            A=(1.0e10, 'm^3/(mol*s)'), n=0.0, Ea=(20.0, 'kJ/mol'),
+            V0=(0.3, 'V'), alpha=0.5, electrons=-1)
+        act_high = _RecordingReverseACTPair(
+            A=(2.0e10, 'm^3/(mol*s)'), n=0.1, Ea=(25.0, 'kJ/mol'),
+            V0=(0.5, 'V'), alpha=0.5, electrons=-1)
+        pdep = PDepArrhenius(pressures=([1.0e4, 1.0e6], 'Pa'), arrhenius=[act_low, act_high])
+
+        _reverse_rate_at_reference_potential(pdep, T, P)
+
+        assert len(_RecordingReverseACTPair.recorded) == 2, _RecordingReverseACTPair.recorded
+        for expected_v0, received_v in _RecordingReverseACTPair.recorded:
+            assert expected_v0 == received_v, _RecordingReverseACTPair.recorded
+        assert {v0 for v0, _ in _RecordingReverseACTPair.recorded} == {0.3, 0.5}, \
+            _RecordingReverseACTPair.recorded
+
+    def test_pdep_arrhenius_mixed_charge_transfer_and_ordinary_children_through_interpolation(self):
+        """MUST-FIX 2. A mixed grid -- one charge-transfer child, one ordinary Arrhenius child --
+        proving the two branches (V0-leaf vs pressure-taking-leaf) can coexist as siblings under the
+        same interpolation. The Arrhenius child must still receive the pressure P, not a potential;
+        the charge-transfer child must still receive its own V0, not P and not 0."""
+        from rmgpy.reaction import _reverse_rate_at_reference_potential
+
+        T = 1000.0
+        P = 1.0e5
+        _RecordingReverseACT.recorded = []
+        _RecordingReverseArrhenius.recorded = []
+        act_low = _RecordingReverseACT(
+            A=(1.0e10, 'm^3/(mol*s)'), n=0.0, Ea=(20.0, 'kJ/mol'),
+            V0=(_REVERSE_V0, 'V'), alpha=0.5, electrons=-1)
+        ordinary_high = _RecordingReverseArrhenius(
+            A=(2.0e10, 'cm^3/(mol*s)'), n=0.1, Ea=(25.0, 'kJ/mol'))
+        pdep = PDepArrhenius(pressures=([1.0e4, 1.0e6], 'Pa'), arrhenius=[act_low, ordinary_high])
+
+        _reverse_rate_at_reference_potential(pdep, T, P)
+
+        assert _RecordingReverseACT.recorded == [_REVERSE_V0], _RecordingReverseACT.recorded
+        assert _RecordingReverseArrhenius.recorded == [P], _RecordingReverseArrhenius.recorded

@@ -354,3 +354,180 @@ full-suite runs for the wrapper-recursion fix it covered. This round's evidence 
 appended to, the *round-13* contract (`docs/contracts/i201-wrapper-r13.md`) instead — re-appending
 duplicate round-13 evidence to a closed, unrelated contract would misattribute it. Flagging the path
 discrepancy here rather than mutating a closed contract file.
+
+## Round 15 rework
+
+Round-15 adversarial review cleared all CRITICAL/HIGH from round 13; two MEDs remained must-fix, three
+items report-only. Base of this round: `170a13099` (round-13 rework). Scope: `rmgpy/reaction.py` and
+`test/rmgpy/reactionTest.py` only.
+
+### Must-fix 1 — top-level `P == 0` guard on the summing wrapper
+
+Native `MultiPDepArrhenius.get_rate_coefficient` raises *before* iterating when `P == 0`
+(`rmgpy/kinetics/arrhenius.pyx:2912-2913`):
+```python
+raise ValueError('No pressure specified to pressure-dependent MultiPDepArrhenius.get_rate_coefficient().')
+```
+The helper's summing branch (`_reverse_rate_at_reference_potential`, near `reaction.py:167`) had no
+such guard — `sum(...)` over an empty `arrhenius=[]` silently returns `0.0` instead of raising, the
+exact "reimplementation drops the caller's guard" defect class round 13 caught one level down (in the
+pressure branch). `MultiArrhenius` is *not* pressure-dependent and native has no such guard for it
+(it ignores `P` entirely), so the guard must fire only for the pressure-dependent summing wrapper —
+discriminated via `kinetics.is_pressure_dependent()` (verified: `True` for `MultiPDepArrhenius`/
+`PDepArrhenius`, `False` for `MultiArrhenius`, via `rmgpy/kinetics/model.pyx:179,348`), never by type:
+
+```python
+    children = getattr(kinetics, 'arrhenius', None)
+    if children is not None:
+        if P == 0 and kinetics.is_pressure_dependent():
+            raise ValueError(
+                'No pressure specified to pressure-dependent {0}.get_rate_coefficient().'.format(
+                    type(kinetics).__name__))
+        return sum(_reverse_rate_at_reference_potential(child, T, P) for child in children)
+```
+
+The `ValueError` is not caught at the call site (`reaction.py:2166`), matching native/pre-commit
+behavior of letting it propagate, per the brief.
+
+### Must-fix 2 — charge-transfer children through PDep log10-interpolation
+
+Every existing charge-transfer test used a grid *containing* `P` exactly, so `plow == phigh` and only
+one child was ever evaluated — the log10-interpolation branch was dead for charge-transfer children in
+every prior test, even though threading a per-child reference potential through interpolation is the
+entire point of this ticket. Added `TestReverseRateAtReferencePotentialRound15` tests on a
+`([1.0e4, 1.0e6], 'Pa')` grid with `P = 1.0e5` (strictly between, so both children are evaluated),
+using distinct `V0` per child (`0.3` low, `0.5` high) and a swap-proof recorder
+(`_RecordingReverseACTPair`) that appends `(self.V0.value_si, V_received)` so a swap, a `V=0`
+evaluation, or a leaked pressure all fail the assertion — plus a MIXED case (one charge-transfer child,
+one ordinary `Arrhenius` child) confirming each receives the right kind of second argument (its own
+`V0` vs. `P`).
+
+### Verifier
+
+Build tail (after the fix, `python setup.py build_ext --inplace -j 8`):
+```
+gcc ... -o build/lib.linux-x86_64-cpython-39/rmgpy/reaction.cpython-39-x86_64-linux-gnu.so
+...
+copying build/lib.linux-x86_64-cpython-39/rmgpy/reaction.cpython-39-x86_64-linux-gnu.so -> rmgpy
+```
+Exit 0.
+
+RED (against unmodified `170a13099`, i.e. before the code fix was applied — the new tests were written
+first and run against the pre-fix helper, no `git stash`/checkout needed since `170a13099` was already
+HEAD):
+```
+$ python -m pytest test/rmgpy/reactionTest.py -p no:cacheprovider -o addopts="" -q -k "TestReverseRateAtReferencePotentialRound15"
+F....
+FAILED test/rmgpy/reactionTest.py::...::test_multi_pdep_arrhenius_empty_children_p_zero_raises_matching_native
+  Failed: DID NOT RAISE <class 'ValueError'>
+1 failed, 4 passed, 111 deselected in 0.94s
+```
+Only the `arrhenius=[]` case is genuinely RED. The well-formed-wrapper case
+(`test_multi_pdep_arrhenius_p_zero_raises_matching_native`) already passed pre-fix "by accident": its
+`MultiPDepArrhenius` wraps a `PDepArrhenius` child, and recursion into that child hits *that* branch's
+own pre-existing `P == 0` guard before the new top-level guard is ever needed — exactly the scenario
+the brief warned about. The over-broadening regression guard
+(`test_multi_arrhenius_p_zero_does_not_raise_over_broadening_guard`) and both MUST-FIX-2 interpolation
+tests passed both before and after, as expected (MUST-FIX 2 is a test-coverage gap, not a code gap;
+the regression guard must hold on both sides).
+
+GREEN (fix applied, rebuilt):
+```
+$ python -m pytest test/rmgpy/reactionTest.py -p no:cacheprovider -o addopts="" -q -k "TestReverseRateAtReferencePotentialRound15"
+.....
+5 passed, 111 deselected in 1.31s
+```
+
+Full-file suite. Baseline is `170a13099` unmodified, which round 13's own verifier already established
+as `109 passed, 2 skipped` (that number is what an unmodified `170a13099` produces; re-deriving it here
+would just reproduce the round-13 report's own "after" figure). After (test additions + fix, rebuilt):
+```
+$ python -m pytest test/rmgpy/reactionTest.py -p no:cacheprovider -o addopts="" -q
+114 passed, 2 skipped in 1.06s
+```
+109 + 5 new tests = 114 — no unrelated new failures or skips.
+
+### Report-only 3 — nested pressure-dependent child diverges from native (decision: keep)
+
+Native `PDepArrhenius.get_rate_coefficient` calls its children with only `T` in both the
+exact-pressure and interpolation branches (`arrhenius.pyx:2661`, `:2664-2665`:
+`alow.get_rate_coefficient(T)`), so a nested `PDepArrhenius` child would receive the default `P = 0`
+and raise. The helper recurses with the real `P` (`reaction.py:160,163`), so a nested `PDepArrhenius`
+child *succeeds* under the helper where it would fail natively — more permissive than native.
+
+**Reachability**: confirmed via `generate_reverse_rate_coefficient`'s `PDepArrhenius` branch
+(`reaction.py:1652-1660`):
+```python
+elif isinstance(kf, PDepArrhenius):
+    kr = PDepArrhenius()
+    kr.pressures = kf.pressures
+    kr.arrhenius = []
+    rxn = Reaction(reactants=self.reactants, products=self.products)
+    for kinetics in kf.arrhenius:
+        rxn.kinetics = kinetics
+        kr.arrhenius.append(rxn.generate_reverse_rate_coefficient(kf.Tmin, kf.Tmax))
+    return kr
+```
+This branch does not type-check what `kf.arrhenius` holds — it iterates `kf.arrhenius` and dispatches
+each child through the same `isinstance` chain (including this same `PDepArrhenius` branch again). So
+if a `PDepArrhenius` were constructed with a `PDepArrhenius` child in its `arrhenius` list (unusual,
+not something the database naturally emits, but not blocked by this method or by `PDepArrhenius`'s own
+`__init__`), the recursive call would build a *nested* `kr` (a `PDepArrhenius` whose `arrhenius` list
+contains another `PDepArrhenius`) — reachable today through this real forward path, not just a
+synthetic test construction.
+
+**Decision: keep the real-`P` recursion**, i.e. do not change the helper to match native's `T`-only
+call. Reasoning:
+- The helper's stated purpose (per its docstring and the round-13/round-15 fix history) is a corrected
+  re-implementation for the collision-limit check, not a byte-for-byte port of native's dispatch —
+  round 13 already diverges favorably from native on the `pressures=None` segfault-shaped case (native
+  crashes; the helper raises cleanly), so favorable divergence is already the established pattern here,
+  not a new one this round introduces.
+- Native's `T`-only call is very plausibly itself a bug (a nested `PDepArrhenius` child should
+  logically still receive a pressure to interpolate at, since it is being asked to produce a rate, not
+  just a curve) rather than an intentional restriction; matching it here would mean deliberately
+  reproducing a native defect for a shape (nested `PDepArrhenius`) that no test in this codebase
+  exercises as a "supported" combination either way.
+- The two behaviors are observably different only for a nested-`PDepArrhenius` construction, which is
+  reachable but not something `generate_reverse_rate_coefficient` (or the database) is documented to
+  produce; keeping the more-permissive behavior costs nothing for every shape this helper is actually
+  exercised against today, and is strictly safer (raises less often) than matching native.
+This is a judgment call, not a forced one — recorded here per the brief's instruction, not fixed as
+code (report-only).
+
+### Report-only — confirmed pre-existing findings (not fixed)
+
+Both confirmed via `git blame` against the current line numbers in this worktree (line numbers shifted
+slightly from the brief's `1643/1646/1652/1661` after round-13's own edits; content is the same code
+the brief pointed at):
+
+**(a) Dropped `electrons` in wrapper-recursion `Reaction(...)` construction.** The `PDepArrhenius`,
+`MultiArrhenius`, and `MultiPDepArrhenius` wrapper-recursion branches each build a fresh
+`Reaction(reactants=self.reactants, products=self.products)` without passing `electrons`, defaulting it
+to `0`, while the leaf reversers (`reverse_surface_charge_transfer_rate` at `reaction.py:1549`,
+`reverse_arrhenius_charge_transfer_rate` at `reaction.py:1573`) correctly set
+`electrons=-1*self.electrons`. Confirmed blame:
+```
+$ git blame -L 1656,1656 -- rmgpy/reaction.py
+b03f0604ea7 (Max Liu 2019-07-21 16:13:31 -0400 1656)             rxn = Reaction(reactants=self.reactants, products=self.products)
+$ git blame -L 1665,1665 -- rmgpy/reaction.py
+242643786e6 (Max Liu 2019-08-13 16:32:53 -0400 1665)             rxn = Reaction(reactants=self.reactants, products=self.products)
+$ git blame -L 1674,1674 -- rmgpy/reaction.py
+242643786e6 (Max Liu 2019-08-13 16:32:53 -0400 1674)             rxn = Reaction(reactants=self.reactants, products=self.products)
+```
+`b03f0604ea7` (Max Liu, 2019-07-21) introduced the `PDepArrhenius` branch's `rxn = Reaction(...)` line;
+`242643786e6` (Max Liu, 2019-08-13) introduced the same pattern for both the `MultiArrhenius` and
+`MultiPDepArrhenius` branches. Both predate `efe072877`. Not fixed — out of scope per the brief.
+
+**(b) Positional-arg mismatch in `generate_reverse_rate_coefficient(kf.Tmin, kf.Tmax)`.** The
+`PDepArrhenius` wrapper-recursion branch calls
+`rxn.generate_reverse_rate_coefficient(kf.Tmin, kf.Tmax)` positionally against the signature
+`generate_reverse_rate_coefficient(self, network_kinetics=False, Tmin=None, Tmax=None,
+surface_site_density=0)`, so `kf.Tmin` binds to `network_kinetics` (always truthy, since it's a
+`Quantity`) and `kf.Tmax` binds to `Tmin`, leaving the real `Tmax` at its default `None`. Confirmed
+blame:
+```
+$ git blame -L 1659,1659 -- rmgpy/reaction.py
+0ee066a16b0 (Max Liu 2019-09-23 13:15:36 -0400 1659)                 kr.arrhenius.append(rxn.generate_reverse_rate_coefficient(kf.Tmin, kf.Tmax))
+```
+`0ee066a16b0` (Max Liu, 2019-09-23). Predates `efe072877`. Not fixed — out of scope per the brief.
