@@ -17,10 +17,21 @@
 #             is the proof the binary matches the source. (The build is
 #             byte-reproducible on this toolchain; if it ever stops being, this
 #             check fails loudly rather than passing quietly.)
-#   UNFIXED = /home/alon/Code/RMG-Py-i065-mainline @ 9e7e0c4d5, EXACTLY this
-#             branch's base with none of the fix. Pinned to a sha ON PURPOSE (a
-#             "before" build must not follow mainline), asserted clean, and READ
-#             ONLY -- so it is not rebuilt; its binary is pinned by hash below.
+#   UNFIXED = /home/alon/Code/RMG-Py-i060-baseline @ d78c7211f, mainline with
+#             none of the fix. Pinned to a sha ON PURPOSE (a "before" build must
+#             not follow mainline), asserted clean, and READ ONLY -- so it is
+#             not rebuilt; its binary is pinned by hash below.
+#
+#             REPOINTED when polymer moved to d78c7211f (the i061 DASPK moment
+#             error-weight floor, which touches this same file) and this branch
+#             merged it. The old baseline, /home/alon/Code/RMG-Py-i065-mainline
+#             @ 9e7e0c4d5, was this branch's ORIGINAL base and stopped being a
+#             valid "before" the moment that merge landed: the arms then
+#             differed by this fix AND by the error-weight floor. Step 4 duly
+#             failed, naming test_floor_crossing_pool_wake_up_integrates_
+#             smoothly as failure -> passed -- the incoming merge's own fix,
+#             misattributed to this branch. The BASELINE moved so the arms
+#             differ by exactly this change. The check was not relaxed.
 #
 # Every python invocation runs from /tmp: `python -m pytest` and `python -c` put
 # the cwd FIRST on sys.path, ahead of PYTHONPATH, so running from the worktree
@@ -29,9 +40,9 @@
 set -uo pipefail
 
 FIXED=${I060_FIXED_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd -P)}
-UNFIXED=${I060_UNFIXED_DIR:-/home/alon/Code/RMG-Py-i065-mainline}   # READ ONLY
-UNFIXED_SHA=9e7e0c4d5e9572b2a67c1b1d8bb8880287a793e1
-UNFIXED_SO_SHA=435bc01c205f3369099627e790f9dab326463adda482224bec5107a5b9d1c051
+UNFIXED=${I060_UNFIXED_DIR:-/home/alon/Code/RMG-Py-i060-baseline}   # READ ONLY
+UNFIXED_SHA=d78c7211f67c22fbefa01e1ca919e74f45f38c74
+UNFIXED_SO_SHA=505a3d5a22a59670c3eec3b285bcde1be82b72160abbca9624d90aa371e1e8c9
 XS=3                      # the probe fixture's cutoff (i060_tail_probe.XS)
 T=${TMPDIR:-/tmp}/i060_verify.$$
 mkdir -p "$T"
