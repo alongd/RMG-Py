@@ -156,3 +156,201 @@ final build tail is quoted in section 1 above; `rmgpy.cpython-39-x86_64-linux-gn
 was recompiled and copied on each rebuild, and `from rmgpy.reaction import
 _reverse_rate_at_reference_potential` succeeds against the final `.so` (used directly by the
 regression-guard test, which imports it and passed in the GREEN/final runs).
+
+## Round 13 rework (adversarial review, base `efe072877`)
+
+Rework brief: `docs/contracts/i201-wrapper-r13.md`. Four HIGH defects fixed in
+`_reverse_rate_at_reference_potential` (module-level helper, `rmgpy/reaction.py`) and its call site in
+`check_collision_limit_violation`; two pre-existing defects verified and written up report-only below
+(not fixed, per brief).
+
+### MUST-FIX 1 — restored the native `P == 0` raise
+
+The reimplemented `PDepArrhenius` pressure branch had no `P == 0` guard: the bracket scan clamps
+`ilow = ihigh = 0` when `P == 0` (`plist[i] >= 0` is true at `i=0`), silently returning the
+lowest-pressure child instead of raising, unlike native `PDepArrhenius.get_rate_coefficient`
+(`rmgpy/kinetics/arrhenius.pyx:2656-2657`). Added, as the first statement inside the pressure branch:
+
+```python
+if P == 0:
+    raise ValueError(
+        'No pressure specified to pressure-dependent PDepArrhenius.get_rate_coefficient().')
+```
+
+Not caught at the call site — it propagates, matching pre-`efe072877` behavior.
+
+### MUST-FIX 2 — oracle interpolation tests
+
+Every prior test used `P` equal to the grid midpoint, so `plow == phigh` and the log10-interpolation
+line never ran. Added six oracle tests in `TestReverseRateAtReferencePotentialRound13` asserting the
+helper agrees with native `PDepArrhenius.get_rate_coefficient` on ordinary (non-charge-transfer)
+`Arrhenius` children: `P` strictly between two grid pressures, below the lowest, above the highest,
+single-entry grid, duplicate-pressure grid, and (paired with MUST-FIX 1) `P == 0` raising `ValueError`.
+
+### MUST-FIX 3 — malformed `PDepArrhenius(pressures=None, ...)` no longer summed
+
+`quantity.Pressure(None)` returns `None`, so `PDepArrhenius(pressures=None, arrhenius=[...])` has
+`.pressures is None`; the old `getattr(k, 'pressures', None) is not None` test was `False` for this
+case and fell through to the summation branch, treating it like a `MultiArrhenius`. Fixed with a
+module-level sentinel so *presence* of the attribute (not its truthiness) selects the branch:
+
+```python
+_MISSING = object()
+...
+pressures = getattr(kinetics, 'pressures', _MISSING)
+if pressures is not _MISSING:
+    ...
+    plist = pressures.value_si   # None -> AttributeError
+```
+
+**Deviation from the brief, found and verified in this rework:** the brief's test plan asked to assert
+that native's own `PDepArrhenius(pressures=None, ...).get_rate_coefficient(T, P)` also raises
+`AttributeError`, as a same-failure-mode comparison. Verified interactively that it instead
+**segfaults the process** — confirmed via a standalone `python -c` reproduction outside pytest (a
+`pytest.raises` context cannot catch a segfault, so this had to be checked separately, and calling it
+inside a test crashed the whole pytest run):
+
+```
+$ python -c "
+from rmgpy.kinetics import Arrhenius, PDepArrhenius
+a1 = Arrhenius(A=(1.0e10, 'cm^3/(mol*s)'), n=0.0, Ea=(20.0, 'kJ/mol'))
+malformed = PDepArrhenius(pressures=None, arrhenius=[a1])
+malformed.get_rate_coefficient(1000.0, 1.0e5)
+"
+Segmentation fault (core dumped)
+```
+whereas the helper itself (pure Python `getattr` access, not compiled Cython typed access) raises
+cleanly:
+```
+>>> _reverse_rate_at_reference_potential(malformed, 1000.0, 1.0e5)
+AttributeError: 'NoneType' object has no attribute 'value_si'
+```
+This is a separate, pre-existing, out-of-scope latent defect in native
+`PDepArrhenius.get_rate_coefficient` (Cython typed access to `self.pressures.value_si` on a
+None-valued attribute with no null check) — **new ticket, not fixed here**: a malformed
+`PDepArrhenius(pressures=None, ...)` crashes the whole process instead of raising a catchable
+exception. The round-13 test (`test_pdep_arrhenius_with_none_pressures_not_summed`) therefore only
+exercises the helper, and documents the deviation in its own docstring.
+
+### MUST-FIX 4 — narrowed the V0 leaf contract; BM/BEP refuse instead of fabricating
+
+`getattr(k, 'V0', None) is not None` also matched the averaged charge-transfer forms
+(`ArrheniusChargeTransferBM`, `arrhenius.pyx:3375`; `SurfaceChargeTransferBEP`, `surface.pyx:1094`)
+whose plain `get_rate_coefficient`'s second argument is a reaction energy (dHrxn/dGrxn), not a
+potential — evaluating them "at V0" fabricated a number. Distinguished by
+`hasattr(kinetics, 'get_rate_coefficient_from_potential')` (present only on the averaged forms, absent
+on the concrete evaluable `ArrheniusChargeTransfer`/`SurfaceChargeTransfer`); refuses via
+`UnsupportedReverseRateError` instead. The refusal is folded into the same `try/except
+UnsupportedReverseRateError` that already wraps `generate_reverse_rate_coefficient()` at the call
+site, so the three parallel reverse lists (`collision_limit_r`, `kr_list`, `conditions_r`) stay in
+lockstep: `kr` is computed inside the `try` and all three appends happen only after success.
+
+### RED-before / GREEN-after
+
+RED demonstrated against a rebuild of the *unmodified* `efe072877` source (swapped in via `git show
+efe072877:rmgpy/reaction.py`, no `git stash` — restored afterward):
+
+```
+$ python -m pytest test/rmgpy/reactionTest.py -p no:cacheprovider -o addopts="" -q -k "TestReverseRateAtReferencePotentialRound13"
+...
+FAILED ...::test_pdep_arrhenius_p_zero_raises_matching_native            (MUST-FIX 1)
+FAILED ...::test_pdep_arrhenius_with_none_pressures_not_summed           (MUST-FIX 3)
+FAILED ...::test_arrhenius_charge_transfer_bm_leaf_refused               (MUST-FIX 4)
+FAILED ...::test_surface_charge_transfer_bep_leaf_refused                (MUST-FIX 4)
+FAILED ...::test_multi_arrhenius_wrapping_bm_child_refused               (MUST-FIX 4)
+FAILED ...::test_check_collision_limit_violation_skips_reverse_for_wrapped_bm (MUST-FIX 4 integration)
+6 failed, 8 passed, 97 deselected in 1.04s
+```
+(The 8 passes are the MUST-FIX 2 oracle-interpolation tests plus the MultiArrhenius/MultiPDepArrhenius
+sentinel regression guards and the concrete-ACT/SCT-not-refused guard — that logic was already correct
+in `efe072877`, just previously untested; expected to pass pre-rework too.)
+
+GREEN after the rework (rebuilt):
+```
+$ python -m pytest test/rmgpy/reactionTest.py -p no:cacheprovider -o addopts="" -q -k "TestReverseRateAtReferencePotentialRound13"
+14 passed, 97 deselected in 0.82s
+```
+
+Full-file suite, baseline (`efe072877`, unmodified, before this rework's test additions) reported
+`95 passed, 2 skipped` (see contract `docs/contracts/closed/i201-wrapper-v0.md` Evidence section).
+After this rework (14 new tests added, all four fixes applied):
+```
+$ python -m pytest test/rmgpy/reactionTest.py -p no:cacheprovider -o addopts="" -q
+109 passed, 2 skipped in 0.84s
+```
+95 + 14 = 109 — no unrelated failures, all five pre-existing `TestReverseCollisionLimitPotentialWrappers`
+tests and the i197 `TestReverseCollisionLimitPotential` leaf tests still pass unchanged.
+
+### Report-only item 5 — dropped `electrons` in wrapper-recursion `Reaction(...)` construction
+
+Verified against source. `Reaction.__init__`'s `electrons` parameter defaults to `electrons=0`
+(`rmgpy/reaction.py:231`). The three wrapper-recursion branches in `generate_reverse_rate_coefficient`
+each build a fresh helper `Reaction` without passing `electrons`:
+```
+rmgpy/reaction.py:1643   rxn = Reaction(reactants=self.reactants, products=self.products)   # PDepArrhenius branch
+rmgpy/reaction.py:1652   rxn = Reaction(reactants=self.reactants, products=self.products)   # MultiArrhenius branch
+rmgpy/reaction.py:1661   rxn = Reaction(reactants=self.reactants, products=self.products)   # MultiPDepArrhenius branch
+```
+so each `rxn.electrons` is `0`, regardless of `self.electrons`. Meanwhile the two per-child reverse-rate
+builders that a recursive call into one of these branches can reach set electrons explicitly to the
+negated original:
+```
+rmgpy/reaction.py:1536   kr = SurfaceChargeTransfer(alpha=kf.alpha.value, electrons=-1*self.electrons, V0=(V0,'V'))
+rmgpy/reaction.py:1560   kr = ArrheniusChargeTransfer(alpha=kf.alpha.value, electrons=-1*self.electrons, V0=(V0,'V'))
+```
+but `self` inside those methods is the *helper* `rxn`, whose `electrons` is `0` (not the real
+reaction's `electrons`), because the wrapper branch never propagated it. So a wrapped reverse
+charge-transfer child generated through this real path gets `electrons = -1*0 = 0` instead of the
+correct `-1*self.electrons` of the real reaction — the electron-transfer metadata on that generated
+kinetics object is silently wrong (`0` instead of ∓1 etc.), even though the collision-limit check
+itself (this round's four fixes) can look fine, since it only reads `V0` and the rate, not `electrons`.
+**New ticket, not fixed here.**
+
+### Report-only item 6 — positional-arg mismatch in `generate_reverse_rate_coefficient(kf.Tmin, kf.Tmax)`
+
+Verified against source. `generate_reverse_rate_coefficient`'s signature:
+```
+rmgpy/reaction.py:1565   def generate_reverse_rate_coefficient(self, network_kinetics=False, Tmin=None, Tmax=None, surface_site_density=0):
+```
+The `PDepArrhenius` wrapper-recursion branch calls it positionally:
+```
+rmgpy/reaction.py:1646   kr.arrhenius.append(rxn.generate_reverse_rate_coefficient(kf.Tmin, kf.Tmax))
+```
+so `kf.Tmin` binds to the first positional parameter, `network_kinetics` (not `Tmin`), and `kf.Tmax`
+binds to `Tmin` (not `Tmax`); `Tmax` is left at its default `None`. `kf.Tmin` is a `Quantity`, which is
+truthy, so `network_kinetics` is effectively always "on" for this call, and the intended
+temperature-range restriction (`Tmax`) is silently dropped. **New ticket, not fixed here.**
+
+### Report-only item 7 — native `log10(0)` / `klow == 0` hazard is inherited, not introduced
+
+Confirmed the same hazard class exists natively (`rmgpy/kinetics/arrhenius.pyx:2664-2667`):
+```python
+klow = alow.get_rate_coefficient(T)
+khigh = ahigh.get_rate_coefficient(T)
+if klow == khigh == 0.0: return 0.0
+k = klow * 10 ** (log10(P / Plow) / log10(Phigh / Plow) * log10(khigh / klow))
+```
+Native only special-cases `klow == khigh == 0.0`; a `klow == 0.0` with `khigh != 0.0` (or vice versa)
+still divides by/logs zero. The round-13 helper's own interpolation branch reproduces this same
+formula for exact agreement with native (that is the point of the MUST-FIX 2 oracle tests). Left as-is
+per the brief: "fixing" it here would break native-agreement semantics; it is native's own hazard,
+not one this rework introduced.
+
+### Build
+
+`python setup.py build_ext --inplace -j 8` rebuilt `rmgpy/reaction.cpython-39-x86_64-linux-gnu.so`
+four times this session (initial rework GREEN build; RED build against unmodified `efe072877`; RED
+full-file suite confirmation on the same build; final restore-and-rebuild GREEN confirmation), each
+completing with the standard `copying build/lib.../rmgpy/reaction.cpython-39-x86_64-linux-gnu.so ->
+rmgpy` tail and exit 0. Full RED/GREEN and full-file-suite output for this round is in
+`docs/contracts/i201-wrapper-r13.md`'s Evidence section.
+
+### Note on the r13 brief's second contract-evidence target
+
+The r13 brief also asked to append verifier output to `docs/contracts/i201-wrapper-v0.md`; the
+actual path is `docs/contracts/closed/i201-wrapper-v0.md` — that is the prior, already-closed i201
+contract (base `4910d8c52`), whose own Evidence section already documents its own RED/GREEN and
+full-suite runs for the wrapper-recursion fix it covered. This round's evidence belongs to, and was
+appended to, the *round-13* contract (`docs/contracts/i201-wrapper-r13.md`) instead — re-appending
+duplicate round-13 evidence to a closed, unrelated contract would misattribute it. Flagging the path
+discrepancy here rather than mutating a closed contract file.

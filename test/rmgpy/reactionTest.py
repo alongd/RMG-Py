@@ -46,6 +46,7 @@ import rmgpy.constants as constants
 from rmgpy.kinetics import (
     Arrhenius,
     ArrheniusChargeTransfer,
+    ArrheniusChargeTransferBM,
     ArrheniusEP,
     ElectronCollisionPlasma,
     MultiArrhenius,
@@ -58,7 +59,9 @@ from rmgpy.kinetics import (
     SurfaceArrhenius,
     StickingCoefficient,
     SurfaceChargeTransfer,
+    SurfaceChargeTransferBEP,
 )
+from rmgpy.exceptions import UnsupportedReverseRateError
 from rmgpy.transport import TransportData
 from rmgpy.molecule import Molecule
 from rmgpy.quantity import Quantity
@@ -4082,3 +4085,250 @@ class TestReverseCollisionLimitPotentialWrappers:
         top_level.test_arrhenius_charge_transfer_reverse_evaluated_at_reference_potential()
         top_level.test_surface_charge_transfer_reverse_evaluated_at_reference_potential()
         top_level.test_non_charge_transfer_reverse_still_receives_pressure()
+
+
+class TestReverseRateAtReferencePotentialRound13:
+    """i201 round-13 rework. Four HIGH defects found in ``_reverse_rate_at_reference_potential``
+    (module-level, above ``class Reaction``) by adversarial review of ``efe072877``:
+
+    1. The reimplemented PDepArrhenius pressure branch dropped native's ``P == 0`` raise
+       (``PDepArrhenius.get_rate_coefficient``, ``arrhenius.pyx:2656-2657``) and instead silently
+       returned the lowest-pressure child (the bracket scan clamps ``ilow=ihigh=0`` when ``P == 0``).
+    2. Every existing test used ``P`` equal to the grid's middle pressure, so ``plow == phigh`` and
+       the log10-interpolation line never ran. This class adds oracle tests against the NATIVE
+       ``PDepArrhenius.get_rate_coefficient`` on ordinary (non-charge-transfer) children, which
+       exercises interpolation, low-clamp, high-clamp, single-entry, and duplicate-pressure grids.
+    3. ``getattr(kinetics, 'pressures', None) is not None`` cannot distinguish "no pressures
+       attribute" from "pressures=None" (``PDepArrhenius(pressures=None, ...)``, which
+       ``quantity.Pressure(None) is None`` makes possible), so a malformed wrapper fell through to
+       the summation branch instead of failing like native.
+    4. ``getattr(kinetics, 'V0', None) is not None`` is too broad: it also matches the averaged
+       charge-transfer forms (``ArrheniusChargeTransferBM``, ``SurfaceChargeTransferBEP``) whose
+       plain ``get_rate_coefficient`` takes a reaction energy, not a potential, so evaluating them
+       "at V0" fabricates a number. The fix refuses via ``UnsupportedReverseRateError`` instead,
+       discriminated by ``hasattr(kinetics, 'get_rate_coefficient_from_potential')`` (present only on
+       the averaged forms).
+    """
+
+    def test_pdep_arrhenius_p_zero_raises_matching_native(self):
+        """MUST-FIX 1. Both native PDepArrhenius.get_rate_coefficient(T, 0) and the helper must raise
+        ValueError at P == 0 -- ties MUST-FIX 1 to the native oracle per the brief."""
+        from rmgpy.reaction import _reverse_rate_at_reference_potential
+
+        T = 1000.0
+        a1 = Arrhenius(A=(1.0e10, 'cm^3/(mol*s)'), n=0.0, Ea=(20.0, 'kJ/mol'))
+        a2 = Arrhenius(A=(2.0e10, 'cm^3/(mol*s)'), n=0.1, Ea=(25.0, 'kJ/mol'))
+        pdep = PDepArrhenius(pressures=([1.0e4, 1.0e6], 'Pa'), arrhenius=[a1, a2])
+
+        with pytest.raises(ValueError):
+            pdep.get_rate_coefficient(T, 0)
+        with pytest.raises(ValueError):
+            _reverse_rate_at_reference_potential(pdep, T, 0)
+
+    def test_pdep_arrhenius_interpolation_matches_native_oracle(self):
+        """MUST-FIX 2. P strictly between two grid pressures -- the real log10-interpolation branch.
+        Arrhenius.get_rate_coefficient ignores P, so the helper's recursive
+        child.get_rate_coefficient(T, P) equals native's child.get_rate_coefficient(T); agreement with
+        the native oracle is exact up to float."""
+        from rmgpy.reaction import _reverse_rate_at_reference_potential
+
+        T = 1000.0
+        P = 1.0e5  # strictly between the two grid pressures below
+        a1 = Arrhenius(A=(1.0e10, 'cm^3/(mol*s)'), n=0.0, Ea=(20.0, 'kJ/mol'))
+        a2 = Arrhenius(A=(2.0e10, 'cm^3/(mol*s)'), n=0.1, Ea=(25.0, 'kJ/mol'))
+        pdep = PDepArrhenius(pressures=([1.0e4, 1.0e6], 'Pa'), arrhenius=[a1, a2])
+
+        assert _reverse_rate_at_reference_potential(pdep, T, P) == pytest.approx(
+            pdep.get_rate_coefficient(T, P))
+
+    def test_pdep_arrhenius_below_grid_clamps_low_matching_native(self):
+        """MUST-FIX 2. P below the lowest grid pressure clamps to the lowest child."""
+        from rmgpy.reaction import _reverse_rate_at_reference_potential
+
+        T = 1000.0
+        P = 1.0e2  # below the lowest grid pressure
+        a1 = Arrhenius(A=(1.0e10, 'cm^3/(mol*s)'), n=0.0, Ea=(20.0, 'kJ/mol'))
+        a2 = Arrhenius(A=(2.0e10, 'cm^3/(mol*s)'), n=0.1, Ea=(25.0, 'kJ/mol'))
+        pdep = PDepArrhenius(pressures=([1.0e4, 1.0e6], 'Pa'), arrhenius=[a1, a2])
+
+        assert _reverse_rate_at_reference_potential(pdep, T, P) == pytest.approx(
+            pdep.get_rate_coefficient(T, P))
+
+    def test_pdep_arrhenius_above_grid_clamps_high_matching_native(self):
+        """MUST-FIX 2. P above the highest grid pressure clamps to the highest child."""
+        from rmgpy.reaction import _reverse_rate_at_reference_potential
+
+        T = 1000.0
+        P = 1.0e8  # above the highest grid pressure
+        a1 = Arrhenius(A=(1.0e10, 'cm^3/(mol*s)'), n=0.0, Ea=(20.0, 'kJ/mol'))
+        a2 = Arrhenius(A=(2.0e10, 'cm^3/(mol*s)'), n=0.1, Ea=(25.0, 'kJ/mol'))
+        pdep = PDepArrhenius(pressures=([1.0e4, 1.0e6], 'Pa'), arrhenius=[a1, a2])
+
+        assert _reverse_rate_at_reference_potential(pdep, T, P) == pytest.approx(
+            pdep.get_rate_coefficient(T, P))
+
+    def test_pdep_arrhenius_single_entry_matches_native(self):
+        """MUST-FIX 2. A single-entry pressure list -- ilow == ihigh == 0 for any P, plow == phigh."""
+        from rmgpy.reaction import _reverse_rate_at_reference_potential
+
+        T = 1000.0
+        P = 1.0e5
+        a1 = Arrhenius(A=(1.0e10, 'cm^3/(mol*s)'), n=0.0, Ea=(20.0, 'kJ/mol'))
+        pdep = PDepArrhenius(pressures=([1.0e5], 'Pa'), arrhenius=[a1])
+
+        assert _reverse_rate_at_reference_potential(pdep, T, P) == pytest.approx(
+            pdep.get_rate_coefficient(T, P))
+
+    def test_pdep_arrhenius_duplicate_pressures_matches_native(self):
+        """MUST-FIX 2. Duplicate grid pressures -- plow == phigh even though two distinct children
+        exist at that pressure; the bracket scan's ilow/ihigh selection must match native's."""
+        from rmgpy.reaction import _reverse_rate_at_reference_potential
+
+        T = 1000.0
+        P = 1.0e5
+        a1 = Arrhenius(A=(1.0e10, 'cm^3/(mol*s)'), n=0.0, Ea=(20.0, 'kJ/mol'))
+        a2 = Arrhenius(A=(2.0e10, 'cm^3/(mol*s)'), n=0.1, Ea=(25.0, 'kJ/mol'))
+        pdep = PDepArrhenius(pressures=([1.0e5, 1.0e5], 'Pa'), arrhenius=[a1, a2])
+
+        assert _reverse_rate_at_reference_potential(pdep, T, P) == pytest.approx(
+            pdep.get_rate_coefficient(T, P))
+
+    def test_pdep_arrhenius_with_none_pressures_not_summed(self):
+        """MUST-FIX 3. A malformed PDepArrhenius(pressures=None, ...) must not be silently routed to
+        the summation branch (as if it were a MultiArrhenius): the sentinel keeps it on the pressure
+        branch, where `pressures.value_si` on `None` raises AttributeError -- it never returns a
+        number.
+
+        Deviation from the brief: the brief expected native's own
+        `PDepArrhenius.get_rate_coefficient(T, P)` to also raise AttributeError on this malformed
+        object, as a same-failure-mode comparison. Verified instead that native SEGFAULTS the process
+        (Cython typed access to `self.pressures.value_si` on a None-valued extension-type attribute,
+        no null check) -- confirmed interactively, not just here, since a segfault cannot be asserted
+        with pytest.raises. That native crash is a separate, pre-existing, out-of-scope latent defect
+        (written up in the round-13 report); this test therefore only exercises the helper, which
+        fails cleanly instead of crashing."""
+        from rmgpy.reaction import _reverse_rate_at_reference_potential
+
+        T = 1000.0
+        P = 1.0e5
+        a1 = Arrhenius(A=(1.0e10, 'cm^3/(mol*s)'), n=0.0, Ea=(20.0, 'kJ/mol'))
+        malformed = PDepArrhenius(pressures=None, arrhenius=[a1])
+        assert malformed.pressures is None  # premise
+
+        with pytest.raises(AttributeError):
+            _reverse_rate_at_reference_potential(malformed, T, P)
+
+    def test_multi_arrhenius_without_pressures_still_summed(self):
+        """MUST-FIX 3 regression guard. MultiArrhenius has no `pressures` attribute at all (the
+        `_MISSING` sentinel case), so it must still be routed to the summation branch, not the
+        pressure branch."""
+        from rmgpy.reaction import _reverse_rate_at_reference_potential
+
+        T = 1000.0
+        P = 1.0e5
+        a1 = Arrhenius(A=(1.0e10, 'cm^3/(mol*s)'), n=0.0, Ea=(20.0, 'kJ/mol'))
+        a2 = Arrhenius(A=(2.0e10, 'cm^3/(mol*s)'), n=0.1, Ea=(25.0, 'kJ/mol'))
+        multi = MultiArrhenius(arrhenius=[a1, a2])
+        assert not hasattr(multi, 'pressures')  # premise
+
+        assert _reverse_rate_at_reference_potential(multi, T, P) == pytest.approx(
+            multi.get_rate_coefficient(T, P))
+
+    def test_multi_pdep_arrhenius_without_pressures_still_summed(self):
+        """MUST-FIX 3 regression guard. MultiPDepArrhenius also has no top-level `pressures`
+        attribute (only its PDepArrhenius children do), so it must still be routed to summation."""
+        from rmgpy.reaction import _reverse_rate_at_reference_potential
+
+        T = 1000.0
+        P = 1.0e5
+        a1 = Arrhenius(A=(1.0e10, 'cm^3/(mol*s)'), n=0.0, Ea=(20.0, 'kJ/mol'))
+        a2 = Arrhenius(A=(2.0e10, 'cm^3/(mol*s)'), n=0.1, Ea=(25.0, 'kJ/mol'))
+        pdep = PDepArrhenius(pressures=([1.0e4, 1.0e6], 'Pa'), arrhenius=[a1, a2])
+        multi_pdep = MultiPDepArrhenius(arrhenius=[pdep])
+        assert not hasattr(multi_pdep, 'pressures')  # premise
+
+        assert _reverse_rate_at_reference_potential(multi_pdep, T, P) == pytest.approx(
+            multi_pdep.get_rate_coefficient(T, P))
+
+    def _bm(self):
+        return ArrheniusChargeTransferBM(
+            A=(1.0e10, 'm^3/(mol*s)'), n=0, w0=(100.0, 'kJ/mol'), E0=(20.0, 'kJ/mol'),
+            V0=(_REVERSE_V0, 'V'), alpha=0.5, electrons=-1,
+        )
+
+    def _bep(self):
+        return SurfaceChargeTransferBEP(
+            A=(2.483e21, 'cm^3/(mol*s)'), n=0.0, E0=(10.0, 'kJ/mol'), V0=(_REVERSE_V0, 'V'),
+            alpha=0.5, electrons=-1, Tmin=(300, 'K'), Tmax=(3000, 'K'),
+        )
+
+    def test_arrhenius_charge_transfer_bm_leaf_refused(self):
+        """MUST-FIX 4. ArrheniusChargeTransferBM carries a V0 but its get_rate_coefficient takes a
+        reaction energy, not a potential -- must refuse via UnsupportedReverseRateError, never
+        fabricate a number by evaluating it at V0."""
+        from rmgpy.reaction import _reverse_rate_at_reference_potential
+
+        bm = self._bm()
+        assert hasattr(bm, 'get_rate_coefficient_from_potential')  # premise: the discriminator
+        with pytest.raises(UnsupportedReverseRateError):
+            _reverse_rate_at_reference_potential(bm, 1000.0, _REVERSE_PRESSURE)
+
+    def test_surface_charge_transfer_bep_leaf_refused(self):
+        """MUST-FIX 4, SurfaceChargeTransferBEP coverage."""
+        from rmgpy.reaction import _reverse_rate_at_reference_potential
+
+        bep = self._bep()
+        assert hasattr(bep, 'get_rate_coefficient_from_potential')  # premise: the discriminator
+        with pytest.raises(UnsupportedReverseRateError):
+            _reverse_rate_at_reference_potential(bep, 1000.0, _REVERSE_PRESSURE)
+
+    def test_concrete_charge_transfer_leaves_not_refused(self):
+        """MUST-FIX 4 regression guard. The concrete, directly-evaluable ArrheniusChargeTransfer /
+        SurfaceChargeTransfer must NOT hit the new refusal -- they carry V0 but have no
+        get_rate_coefficient_from_potential, so they still reach the leaf `return
+        kinetics.get_rate_coefficient(T, v0.value_si)` branch."""
+        from rmgpy.reaction import _reverse_rate_at_reference_potential
+
+        act = ArrheniusChargeTransfer(
+            A=(1.0e10, 'm^3/(mol*s)'), n=0.0, Ea=(20.0, 'kJ/mol'),
+            V0=(_REVERSE_V0, 'V'), alpha=0.5, electrons=-1)
+        sct = SurfaceChargeTransfer(
+            A=(1.0e10, 'm^2/(mol*s)'), n=0.0, Ea=(20.0, 'kJ/mol'),
+            V0=(_REVERSE_V0, 'V'), alpha=0.5, electrons=-1)
+        assert not hasattr(act, 'get_rate_coefficient_from_potential')  # premise
+        assert not hasattr(sct, 'get_rate_coefficient_from_potential')  # premise
+
+        assert _reverse_rate_at_reference_potential(act, 1000.0, _REVERSE_PRESSURE) == \
+            act.get_rate_coefficient(1000.0, _REVERSE_V0)
+        assert _reverse_rate_at_reference_potential(sct, 1000.0, _REVERSE_PRESSURE) == \
+            sct.get_rate_coefficient(1000.0, _REVERSE_V0)
+
+    def test_multi_arrhenius_wrapping_bm_child_refused(self):
+        """MUST-FIX 4. A wrapped BM child must propagate UnsupportedReverseRateError out of the
+        recursion, not silently sum a fabricated number in with the rest."""
+        from rmgpy.reaction import _reverse_rate_at_reference_potential
+
+        wrapped = MultiArrhenius(arrhenius=[self._bm()])
+        with pytest.raises(UnsupportedReverseRateError):
+            _reverse_rate_at_reference_potential(wrapped, 1000.0, _REVERSE_PRESSURE)
+
+    def test_check_collision_limit_violation_skips_reverse_for_wrapped_bm(self):
+        """MUST-FIX 4 integration test, via the existing _ReverseSpyReaction spy. spy_kinetics is a
+        MultiArrhenius holding a BM child: check_collision_limit_violation must not crash, and must
+        skip the reverse direction (empty violator list; no reverse entries recorded) rather than
+        raising UnsupportedReverseRateError out to the caller."""
+        reactant = _reverse_check_species('R', '1 O u2 p2 c0')
+        p1 = _reverse_check_species('P1', '1 O u2 p2 c0')
+        p2 = _reverse_check_species('P2', '1 O u2 p2 c0')
+        rxn = _ReverseSpyReaction(
+            reactants=[reactant], products=[p1, p2], electrons=-1, reversible=False,
+            kinetics=ArrheniusChargeTransfer(
+                A=(1.0e10, 'm^3/(mol*s)'), n=0.0, Ea=(20.0, 'kJ/mol'),
+                V0=(_REVERSE_V0, 'V'), alpha=0.5, electrons=-1),
+        )
+        rxn.spy_kinetics = MultiArrhenius(arrhenius=[self._bm()])
+
+        # Must not raise.
+        violators = rxn.check_collision_limit_violation(
+            t_min=1000.0, t_max=1000.0, p_min=_REVERSE_PRESSURE, p_max=_REVERSE_PRESSURE)
+        assert violators == []
