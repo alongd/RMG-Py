@@ -79,6 +79,7 @@ def reset_generation_census():
         'by_reason': Counter(),                                  # 'tier/constraint' -> n
         'smiles': {'gas': {}, 'polymer': {}},                    # tier -> smiles -> [n, heavy, C]
         'smiles_capped': False,
+        'smiles_dropped': 0,      # refusals not rendered because the cap was already hit
     })
 
 
@@ -91,7 +92,15 @@ def get_generation_census():
 
 
 def _record_refusal(struct, tier, reason):
-    """Record one constraint refusal. Reached only when a structure is rejected."""
+    """Record one constraint refusal. Reached only when a structure is rejected.
+
+    `to_smiles()` is NOT called on `struct` itself. Measured (round-2 review, probe in
+    scratchpad/probe_to_smiles_mutation.py): it reorders `mol.atoms` in place and stamps
+    `sorting_label` on the shared atom objects -- on 6 of 7 representative inputs including
+    plain phenol and cresol. The refused structure is about to be discarded, but its atom
+    objects can be shared with the reactant structures the generator still holds, and an
+    instrument that permutes what it measures cannot be reasoned about. Render a copy.
+    """
     try:
         heavy = struct.get_num_atoms() - struct.get_num_atoms('H')
         carbon = struct.get_num_atoms('C')
@@ -102,12 +111,20 @@ def _record_refusal(struct, tier, reason):
     _census['by_reason']['{0}/{1}'.format(tier, reason.split(':')[0])] += 1
     if _CENSUS_SMILES_OFF:
         return
+
     bucket = _census['smiles'][tier]
-    if len(bucket) >= _CENSUS_SMILES_CAP:
+    at_cap = len(bucket) >= _CENSUS_SMILES_CAP
+    if at_cap:
+        # Past the cap, stop rendering: to_smiles() plus a deep copy is the expensive part
+        # and it would run on every refusal for the rest of the run. Record that repeats of
+        # ALREADY-KNOWN structures are being dropped too, so the per-structure counts below
+        # are known to be lower bounds rather than silently believed to be exact. The
+        # by_heavy and by_reason counters are unaffected and stay exact.
         _census['smiles_capped'] = True
+        _census['smiles_dropped'] = _census.get('smiles_dropped', 0) + 1
         return
     try:
-        smi = struct.to_smiles()
+        smi = struct.copy(deep=True).to_smiles()
     except Exception:
         return
     entry = bucket.get(smi)
@@ -127,10 +144,17 @@ def log_generation_census(header='GENERATION CENSUS'):
     if not total:
         logging.info('%s: no structure was refused by any constraint tier.', header)
         return
+    if _census['smiles_capped']:
+        cap_note = ('; SMILES capture CAPPED at {0} distinct -- {1} later refusals were not '
+                    'rendered at all, so the per-structure counts below are LOWER BOUNDS and '
+                    'the distinct-structure counts are truncated. The by-heavy-atom and '
+                    'by-constraint counts are unaffected and remain exact.'.format(
+                        _CENSUS_SMILES_CAP, _census.get('smiles_dropped', 0)))
+    else:
+        cap_note = ''
     logging.info('%s: %d structure-refusals (gas tier %d, polymer tier %d)%s',
                  header, total, _census['refused']['gas'], _census['refused']['polymer'],
-                 '; SMILES capture CAPPED at {0} distinct'.format(_CENSUS_SMILES_CAP)
-                 if _census['smiles_capped'] else '')
+                 cap_note)
     for tier in ('gas', 'polymer'):
         hist = _census['by_heavy'][tier]
         if not hist:

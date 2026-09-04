@@ -62,6 +62,7 @@ from rmgpy.constraints import (
 )
 from rmgpy.polymer_conduit import reset_conduit_state
 from rmgpy.data.base import Entry
+from rmgpy.data.kinetics.family import reset_wasted_build_profile
 from rmgpy.data.kinetics.library import KineticsLibrary
 from rmgpy.data.rmg import RMGDatabase
 from rmgpy.data.vaporLiquidMassTransfer import vapor_liquid_mass_transfer
@@ -541,8 +542,11 @@ class RMG(util.Subject):
 
         # Reset the run-scoped constraint-refusal census (I-067), so a bound's
         # truncation is reported per run and not accumulated across an in-process
-        # sequence of runs (the test suite drives several).
+        # sequence of runs (the test suite drives several). The wasted-build profiler
+        # is a module global for the same reason and needs the same reset: without it
+        # the second run in a process reports the first run's totals as its own.
         reset_generation_census()
+        reset_wasted_build_profile()
 
         # M18.3 run-boundary HARD reset (polymer conduit, DESIGN §3.3):
         # clear the candidate ledger AND the warn-once census sets that
