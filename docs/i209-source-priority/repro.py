@@ -5,8 +5,9 @@ not even permanent, because edge pruning erases the incumbent.
 Run in rmg_env from the repo root against the committed testing_database:
     python docs/i209-source-priority/repro.py
 
-Three demonstrations, all through the real model path (make_new_species dedup +
-check_for_existing_reaction), none needing a full rmg.py run:
+Three demonstrations, none needing a full rmg.py run. CASE 2 and CASE 3 go
+through the real make_new_species dedup path; CASE 1 does NOT -- it shares species
+objects and registers/checks directly, to isolate the ordering predicate:
 
   CASE 1  Order decides the winner. The predicate keeps whichever reaction was
           registered FIRST, ignoring kinetics and provenance. Library first ->
@@ -16,11 +17,14 @@ check_for_existing_reaction), none needing a full rmg.py run:
           path, which reloads family estimates as family-keyed TemplateReactions
           that the seed sweep skips -- see report.md, Correction 1.)
 
-  CASE 2  Pruning erases a library incumbent (the headline). A sourced library
-          reaction registered first is deleted from the global registry when one
-          of its edge species is pruned, after which a re-proposed reaction faces
-          NO incumbent -- so a later family estimate installs as the operative
-          rate.
+  CASE 2  Pruning erases a library incumbent (the headline). This confirms the
+          two observed steps: (i) a sourced library reaction registered first is
+          deleted from the global registry when one of its edge species is pruned;
+          (ii) a subsequent duplicate check over the same species then finds NO
+          incumbent. The joined live sequence that would follow -- a family
+          enlargement regenerating the same reaction and the estimate installing
+          as the operative rate in a running model -- is NOT exercised here; it is
+          a named gap (see report.md).
 
   CASE 3  Library-vs-library collisions are real, confirmed through the identity
           path the model actually uses (Species.__eq__ is reference equality, so
