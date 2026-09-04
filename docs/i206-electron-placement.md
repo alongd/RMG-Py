@@ -194,39 +194,50 @@ as every prior extension (I-116, I-119, I-154) did:
    the reversal in-place. The two owners declare the **same** pair `(1, 2)` — no placement
    disagreement.
 
-3. **A verified HIGH: this declaration silently collapses the sourced library reaction and the
-   data-less family reaction into one — and the declaration is what creates the collapse.** Not an
-   open question; the mechanism is named and confirmed against code (`collision_probe.py`), and the
-   disposition is with the owner.
+3. **The declaration PREVENTS a duplicate, and the specific pair `(1, 2)` is what makes the sourced
+   value win.** The dual-owner path was measured against the code (by the `i205-dataless` worker and
+   re-checked here); the mechanism is real but its valence is the opposite of a hazard. This entry is
+   load-bearing twice: it lets the family run at all, and `(1, 2)` is what resolves the lithium
+   collision in favour of the sourced datum.
 
-   - `rmgpy/rmg/model.py:2378-2391` — `are_identical_species_references(rxn1, rxn2)` compares the
-     reactant/product **references**, `specific_collider`, and
-     `get_electron_placement_counts(...)` per side. It does **not** compare owner (family/library),
-     kinetics, or provenance.
-   - `rmgpy/rmg/model.py:481` (and `:523` for the cross-library case, `library != rxn.family`) —
-     `check_for_existing_reaction` returns `(True, incumbent)` on the first identity match.
-   - `rmgpy/rmg/model.py:600-602` — `make_new_reaction` does `found, rxn =
-     check_for_existing_reaction(forward); if found: return rxn, False`: it keeps the incumbent and
-     drops the newcomer **silently, with no rate comparison**.
+   The identity predicate, `rmgpy/rmg/model.py:2356` `are_identical_species_references`
+   (body 2378-2391), compares the reactant/product **references**, `specific_collider`, and
+   `get_electron_placement_counts(...)` per side — and **nothing else**: no owner, no kinetics, no
+   provenance. Work the two cases for the one species where the library and the family overlap:
 
-   So the sourced `PlasmaElectronImpactIonization` reaction (Voronov) and the data-less
-   `Plasma_Electron_Impact_Ionization` family reaction (order-of-magnitude Arrhenius estimate)
-   present the **same heavy species** and, after this ticket, the **same `(1, 2)`** placement
-   counts — they compare identical, and whichever RMG offers first wins while the other is dropped
-   with no notice.
+   - **WITHOUT this declaration.** The family reaction falls back to the net rule and gets `(0, 1)`;
+     the library reaction has `(1, 2)`. They do **not** compare identical, so RMG keeps **both** — a
+     genuine duplicate for the same chemistry with conflicting rates, one sourced (Voronov) and one
+     an order-of-magnitude estimate. (And the family reaction separately raises
+     `ElectronPlacementError` at the reactor, since it has no declaration.)
+   - **WITH this declaration.** Both are `(1, 2)`, they compare identical, and
+     `check_for_existing_reaction` (`model.py:481`, and `:523` cross-library) returns the
+     **incumbent**; `make_new_reaction` (`model.py:600-602`) does `if found: return rxn, False`,
+     dropping the newcomer with no rate comparison. The incumbent is **always the sourced Voronov
+     library reaction**, because reaction libraries are pre-loaded to the edge —
+     `rmgpy/rmg/main.py:795-796` `add_reaction_library_to_edge` — strictly before the
+     family-enlargement loop (`main.py:869`/`872`, `1016-1037`). So the collapse resolves in favour
+     of the sourced value, every time.
 
-   **The declaration introduces the collision; it does not merely coexist with it.** *Before* this
-   entry the family carried no declaration, so `get_electron_placement_counts` fell back to the net
-   rule and returned `(0, 1)`, which is `!= (1, 2)` — they did **not** collide. *After* it the
-   family resolves to `(1, 2)` and they do. Measured both ways:
+   Measured both ways:
 
    ```
-   AFTER  (entry present): family (1, 2) == library (1, 2)  -> are_identical = True
-   BEFORE (entry removed):  family (0, 1) != library (1, 2)  -> are_identical = False
+   WITH    (entry present): family (1, 2) == library (1, 2)  -> are_identical = True  (library wins)
+   WITHOUT (entry removed):  family (0, 1) != library (1, 2)  -> are_identical = False (both kept)
    ```
 
-   This is not this ticket's to fix — the placement declaration is required regardless, or the
-   family raises on first use — and no current RMG-Py test exercises the dual-owner generation path
-   (the family exists only in the unmerged `i205-dataless` database). The disposition (which owner
-   should generate the reaction, or whether the two must be prevented from co-loading) is put to the
-   owner of the family carry.
+   **The overlap is lithium and only lithium.** The `PlasmaElectronImpactIonization` library has
+   exactly one entry, `[Li] => [Li+]`. The family also generates `N => N+`, `O => O+`, and so on,
+   where the library is silent and the family is the sole source with nothing to displace. The
+   family generalizes the chemistry and collides only where the library already speaks.
+
+   **The protection rests on registration ORDER, not a source-priority rule** — the part a future
+   reader needs and will not otherwise find. `are_identical_species_references` knows nothing of
+   which owner is authoritative; the sourced value wins purely because it is registered first
+   (`main.py:795-796` before enlargement). Two named conditions therefore make the *estimate* the
+   operative Li rate: **(a)** a deck that loads the family but not the library — no sourced value is
+   present to displace; **(b)** a family estimate baked into a seed mechanism, which lands in core at
+   `main.py:790-791` (`add_seed_mechanism_to_core`) **ahead** of libraries at `:795-796` —
+   pathological and self-inflicted. Neither is reachable by any current RMG-Py test (the family
+   exists only in the unmerged `i205-dataless` database); both are recorded here for whoever
+   sequences the family carry.
