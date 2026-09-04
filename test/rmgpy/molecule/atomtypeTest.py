@@ -1061,7 +1061,9 @@ class TestGetAtomType:
         """
         Test that get_atomtype() returns appropriate types for other misc inerts.
         """
-        assert self.atom_type(self.mol6, 0) == "Ar"
+        # Argon resolves to the charge-specific Ar0, not the generic Ar: the generic is now
+        # the parent of Ar0/Ar+/Ar++, and 'Ar' is no longer in nonSpecifics.
+        assert self.atom_type(self.mol6, 0) == "Ar0"
         assert self.atom_type(self.mol7, 0) == "He"
         assert self.atom_type(self.mol8, 0) == "Ne"
 
@@ -1241,3 +1243,116 @@ class TestChargeClassParents:
                                     f"{parent} resolves {symbol} u{radicals} p{pairs} c{charge:+d} "
                                     f"with {order} bond orders, carrying {electrons} electrons"
                                 )
+
+
+class TestActionGraphClosure:
+    """
+    Both-ways closure of the atom-type action graph, generated from ATOMTYPES itself.
+
+    Every ``set_actions`` entry declares, per action, the atom types an atom of this type
+    becomes when the action is applied. Reversibility of chemistry requires the graph to close
+    both ways: if type A names type B under an action, B must name A under that action's inverse,
+    or the recipe that reaches B can never come back and B is a one-way sink (or source). This is
+    the defect the restored alkali anions carried -- ``Li-``/``Na-``/``K-`` declared
+    ``decrement_lone_pair``/``increment_charge`` toward the neutral, but the neutral declared
+    neither inverse back -- and it is invisible to per-species assertions, so the check is
+    generated from the table rather than written per entry.
+
+    The check runs over the WHOLE table. A number of PRE-EXISTING asymmetries predate i159 and are
+    out of its scope (see docs/i159-atomtypes/report.md, "closure findings"); they are recorded in
+    ``KNOWN_PREEXISTING`` so the test passes today while still failing the instant a NEW asymmetry
+    is introduced -- which is exactly what would happen if the alkali anions were re-added without
+    their inverse edges, or if an argon action were dropped.
+    """
+
+    INVERSE_ACTIONS = [
+        ("increment_bond", "decrement_bond"),
+        ("form_bond", "break_bond"),
+        ("increment_radical", "decrement_radical"),
+        ("increment_lone_pair", "decrement_lone_pair"),
+        ("increment_charge", "decrement_charge"),
+    ]
+
+    # Pre-existing one-way edges, measured on i159's base (4f18dc389) and left untouched per the
+    # ticket's non-goal "not a fix for anything your closure check finds that is pre-existing".
+    # Each tuple is (atom_type, action, named_neighbour) whose inverse edge is missing.
+    KNOWN_PREEXISTING = {
+        ("C2sc", "decrement_lone_pair", "Cs"),
+        ("CO", "increment_bond", "C2tc"),
+        ("CS", "increment_bond", "C2tc"),
+        ("Ca0d", "increment_charge", "Ca+"),
+        ("Cbf", "break_bond", "Cb"),
+        ("Cd", "increment_bond", "C2tc"),
+        ("Cs", "decrement_lone_pair", "C2s"),
+        ("Csc", "decrement_lone_pair", "C2sc"),
+        ("Csc", "increment_lone_pair", "C2sc"),
+        ("Ct", "decrement_bond", "CO"),
+        ("Ct", "decrement_bond", "CS"),
+        ("Mg0d", "increment_charge", "Mg+"),
+        ("N0sc", "decrement_lone_pair", "N1sc"),
+        ("Nm1", "increment_lone_pair", "Nm1"),
+        ("Nm2", "increment_lone_pair", "Nm2"),
+        ("Nm3", "increment_lone_pair", "Nm3"),
+        ("O0sc", "decrement_lone_pair", "O2sc"),
+        ("O2d", "decrement_lone_pair", "O4tc"),
+        ("Oa", "decrement_lone_pair", "O2sc"),
+        ("P1sc", "increment_bond", "P1dc"),
+        ("P3t", "decrement_lone_pair", "P5tc"),
+        ("P5d", "increment_bond", "P5ddc"),
+        ("P5d", "increment_bond", "P5tc"),
+        ("P5s", "increment_bond", "P5dc"),
+        ("S4d", "increment_bond", "S4dc"),
+        ("S4dc", "increment_bond", "S4tdc"),
+        ("S4dd", "increment_bond", "S4dc"),
+        ("S4s", "increment_bond", "S4dc"),
+        ("S4sc", "form_bond", "S4s"),
+        ("S4tdc", "increment_lone_pair", "S6tdc"),
+        ("S6d", "increment_bond", "S6tdc"),
+        ("S6dd", "form_bond", "S6dc"),
+        ("S6s", "decrement_charge", "S6sc"),
+        ("S6s", "increment_bond", "S6dc"),
+        ("S6sc", "increment_lone_pair", "S4s"),
+        ("S6sc", "increment_lone_pair", "S4sc"),
+        ("S6td", "increment_bond", "S6tdc"),
+    }
+
+    @classmethod
+    def _all_violations(cls):
+        """Every (atom_type, action, neighbour) whose inverse edge is missing, over the table."""
+        from rmgpy.molecule.atomtype import ATOMTYPES
+
+        def names(action_list):
+            return [t.label for t in action_list]
+
+        violations = set()
+        for label, atomtype in ATOMTYPES.items():
+            for fwd, rev in cls.INVERSE_ACTIONS:
+                for action, inverse in ((fwd, rev), (rev, fwd)):
+                    for neighbour in names(getattr(atomtype, action)):
+                        if label not in names(getattr(ATOMTYPES[neighbour], inverse)):
+                            violations.add((label, action, neighbour))
+        return violations
+
+    def test_no_new_action_graph_asymmetry(self):
+        """The action graph introduces no closure violation beyond the documented pre-existing set."""
+        new = self._all_violations() - self.KNOWN_PREEXISTING
+        assert new == set(), (
+            "new one-way action-graph edges (each needs its inverse declared back): "
+            f"{sorted(new)}"
+        )
+
+    def test_known_preexisting_still_present(self):
+        """Guard the allowlist against silent drift: a listed asymmetry that disappears should be
+        removed from KNOWN_PREEXISTING deliberately, not left stale."""
+        stale = self.KNOWN_PREEXISTING - self._all_violations()
+        assert stale == set(), (
+            f"KNOWN_PREEXISTING lists asymmetries that no longer exist -- prune them: {sorted(stale)}"
+        )
+
+    def test_argon_and_alkali_families_close_both_ways(self):
+        """The families i159 touched must be fully closed -- no entry may sit in the allowlist."""
+        touched = {"Ar", "Ar0", "Ar+", "Ar++", "Li", "Li0", "Li+", "Na", "Na0", "Na+", "K", "K0", "K+"}
+        offenders = {v for v in self._all_violations() if v[0] in touched or v[2] in touched}
+        assert offenders == set(), (
+            f"argon/alkali action graph is not both-ways closed: {sorted(offenders)}"
+        )
