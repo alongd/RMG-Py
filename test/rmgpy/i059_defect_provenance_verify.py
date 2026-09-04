@@ -56,8 +56,22 @@ TA_ROOT = Path(os.environ.get(
 # --- PINNED pre-fix bases. By SHA on purpose: computing these against
 #     mainline would make them mean "whatever is current", i.e. nothing, the
 #     moment this change lands.
-RMG_BASE_SHA = "9e7e0c4d5"     # RMG-Py polymer branch, pre-I-059
+#     Moved from 9e7e0c4d5 to d78c7211f when this branch was rebased onto the
+#     polymer mainline that carries the i061 DASPK moment error-weight floor.
+#     RMG_BASE_FAILURES was measured against the OLD base on DASSL binaries and
+#     is therefore stale on BOTH counts; see its docstring.
+RMG_BASE_SHA = "d78c7211f"     # RMG-Py polymer mainline, pre-I-059
 TA_BASE_SHA = "e29642b"        # TA main, pre-I-059
+
+#: The solver backend is chosen at COMPILE time from ``rmgpy/solver/
+#: settings.pxi``, which is GITIGNORED -- so it is invisible to every
+#: tracked-content check, and a worktree whose extensions are symlinked to
+#: another checkout silently inherits THAT checkout's backend. poly_106 rev 1
+#: was integrated on DASSL for exactly this reason while every tracked source
+#: compared equal. Any suite comparison must therefore hold the backend fixed
+#: across the two trees, or backend differences surface as phantom new
+#: failures.
+REQUIRED_BACKEND = "pydas.daspk"
 
 CONDA_SH = os.environ.get(
     "I059_CONDA_SH", os.path.expanduser("~/anaconda3/etc/profile.d/conda.sh"))
@@ -75,17 +89,25 @@ UNRESOLVED_MARKER = "is NOT present in this artifact"
 FAILURES = []
 NOTES = []
 
-#: The RMG unit suite's failure set MEASURED at the pinned pre-fix base
-#: (``RMG_BASE_SHA``), with ``pytest -m "not functional and not database"``:
-#: 28 failed, 3472 passed, 40 skipped, 39 deselected, in 1:33:52. These are
-#: PRE-EXISTING and untouched by this ticket -- solver cone/realizability and
-#: variance-census failures, three polymer family-generation failures, and
-#: two simulate failures. The suite is not green at the base, so demanding
-#: green here would be a claim this ticket cannot make and did not cause; the
-#: bar is that the after-set introduces nothing NEW. Recorded as a constant
-#: attributed to a named sha, not recomputed against mainline, so it keeps
-#: meaning the same thing after this lands.
-RMG_BASE_FAILURES = frozenset((
+#: STALE -- DO NOT TRUST UNTIL RE-MEASURED. Retained only so the re-measured
+#: set can be diffed against it.
+#:
+#: This set was measured at the OLD base 9e7e0c4d5 (28 failed, 3472 passed, 40
+#: skipped, 39 deselected, 1:33:52) on binaries that were SYMLINKS into
+#: /home/alon/Code/RMG-Py -- i.e. on DASSL. Two things invalidate it:
+#:
+#:   1. the base moved to d78c7211f, which carries the i061 DASPK moment
+#:      error-weight floor and whatever else landed with it;
+#:   2. the measurement was taken on the wrong solver backend, so several of
+#:      the solver cone/realizability and variance-census entries below may be
+#:      DASSL artefacts rather than real pre-existing failures.
+#:
+#: The bar itself is unchanged and still correct: the suite is not green at the
+#: base, so demanding green would be a claim this ticket cannot make and did
+#: not cause; the bar is that the after-set introduces nothing NEW. But both
+#: sides of that comparison must now be re-measured at d78c7211f with
+#: REQUIRED_BACKEND, in trees that each built their own extensions.
+RMG_BASE_FAILURES_STALE_9E7E0C4D5 = frozenset((
     "test.rmgpy.data.kinetics.familyTest.TestGenerateReactions::test_beta_scission_generates_polymer_fragments",
     "test.rmgpy.data.kinetics.familyTest.TestGenerateReactions::test_generate_reactions_retains_polymer_identity",
     "test.rmgpy.data.kinetics.familyTest.TestGenerateReactions::test_h_abs_reaction_generation_with_polymer_input",
@@ -115,6 +137,30 @@ RMG_BASE_FAILURES = frozenset((
     "test.rmgpy.tools.simulateTest.SimulateTest::test_liquid",
     "test.rmgpy.tools.simulateTest.SimulateTest::test_minimal",
 ))
+
+
+def _solver_backend(tree):
+    """Which integrator did ``tree``'s built extensions actually link?
+
+    Read off the emitted binary, not off ``settings.pxi``: the flag is what
+    the source SAYS and the symbol is what the compiler DID, and poly_106
+    rev 1 is the case where the two disagreed. Also refuses a tree whose
+    extensions are symlinks out to another checkout -- that is the mechanism
+    by which a foreign, gitignored build flag wins silently.
+    """
+    tree = Path(tree)
+    sos = sorted(tree.glob("rmgpy/solver/base*.so"))
+    if not sos:
+        return None, "no built base*.so"
+    so = sos[0]
+    if so.is_symlink():
+        return None, f"SYMLINK to {os.readlink(so)}"
+    out = subprocess.run(["strings", str(so)], capture_output=True,
+                         text=True).stdout
+    found = sorted({m for m in ("pydas.daspk", "pydas.dassl") if m in out})
+    if len(found) != 1:
+        return None, f"ambiguous backend symbols: {found}"
+    return found[0], str(so)
 
 
 def _junit_failures(xml_path):
@@ -607,30 +653,72 @@ def main():
                   "verify the suites")
             return 1 if FAILURES else 0
         print("\n  --- CHECK 6: test suites ------------------------------")
-        print("  The RMG unit suite is NOT green at the pinned pre-fix base:")
-        print(f"  {RMG_BASE_SHA} measured 28 failed / 3472 passed / 40 "
-              f"skipped (1:33:52). Those 28 are listed below and are")
-        print("  PRE-EXISTING -- solver/cone, family, and simulate failures "
-              "that predate this ticket. So the bar here is NOT")
-        print("  'green', which would be a claim this ticket cannot make; "
-              "it is 'introduces no NEW failure'. The after-set is")
-        print("  recomputed live; the before-set is a measured constant "
-              "attributed to a named sha, so it keeps meaning the")
-        print("  same thing once this lands.")
+        print("  The RMG unit suite is NOT green at the pinned base, so the "
+              "bar is 'introduces no NEW failure', not")
+        print("  'green' -- the latter would be a claim this ticket cannot "
+              "make and did not cause. BOTH sides are now")
+        print("  measured live: the before-set was previously a constant, and "
+              "that constant was invalidated twice over")
+        print("  (the base moved to d78c7211f, and it had been measured on "
+              "DASSL binaries -- see RMG_BASE_FAILURES_STALE).")
+        print("  Both trees are asserted to be on the SAME backend first, "
+              "because the backend comes from a gitignored")
+        print("  settings.pxi and a mismatch would surface as phantom new "
+              "failures.")
+
+        # Backend parity FIRST -- an unequal comparison is worse than none.
+        base_tree = Path(os.environ.get(
+            "I059_RMG_BASE_TREE",
+            os.path.expanduser("~/Code/RMG-Py-i059-baseline")))
+        ok6 = True
+        for name, tree, want_sha in (("tree under test", RMG_ROOT, None),
+                                     ("pinned base", base_tree,
+                                      RMG_BASE_SHA)):
+            bknd, why = _solver_backend(tree)
+            head = subprocess.run(
+                ["git", "-C", str(tree), "rev-parse", "HEAD"],
+                capture_output=True, text=True).stdout.strip()
+            sha_ok = want_sha is None or head.startswith(want_sha)
+            ok6 &= check(
+                f"6-pre. {name} ({tree.name}): own extensions, backend "
+                f"{REQUIRED_BACKEND}"
+                + (f", HEAD == {want_sha}" if want_sha else ""),
+                bknd == REQUIRED_BACKEND and sha_ok,
+                f"backend={bknd} ({why})  HEAD={head[:9]}")
+        if not ok6:
+            check("6. no NEW RMG failure vs the pinned base, and the TA "
+                  "suite is green", False,
+                  "NOT RUN -- the two trees are not comparable (see 6-pre). "
+                  "Running them anyway would produce a number that looks "
+                  "like evidence and is not.")
+            return 1
+
         rmg_xml = tmp / "rmg_after.xml"
-        rmg_cmd = (f"source {CONDA_SH} && conda activate "
-                   f"{os.environ.get('CONDA_DEFAULT_ENV', 'rmg_env')} && "
-                   f"cd {RMG_ROOT} && python -m pytest "
+        base_xml = tmp / "rmg_base.xml"
+        env_name = os.environ.get('CONDA_DEFAULT_ENV', 'rmg_env')
+
+        def _suite(tree, xml):
+            cmd = (f"source {CONDA_SH} && conda activate {env_name} && "
+                   f"cd {tree} && python -m pytest "
                    f'-m "not functional and not database" '
-                   f"-q --tb=no -p no:cacheprovider --junitxml={rmg_xml}")
-        rmg = subprocess.run(["bash", "-c", rmg_cmd], capture_output=True,
-                             text=True)
-        rmg_tail = [x for x in rmg.stdout.strip().splitlines() if x][-1:]
-        print(f"\n  RMG (full unit suite): "
-              f"{rmg_tail[0] if rmg_tail else '<no output>'}")
+                   f"-q --tb=no -p no:cacheprovider --junitxml={xml}")
+            r = subprocess.run(["bash", "-c", cmd], capture_output=True,
+                               text=True)
+            tail = [x for x in r.stdout.strip().splitlines() if x][-1:]
+            return r, (tail[0] if tail else "<no output>")
+
+        base_run, base_tail = _suite(base_tree, base_xml)
+        print(f"\n  RMG BASE  ({RMG_BASE_SHA}, {base_tree.name}): {base_tail}")
+        before = _junit_failures(base_xml)
+        rmg, rmg_tail = _suite(RMG_ROOT, rmg_xml)
+        print(f"  RMG AFTER ({RMG_ROOT.name}): {rmg_tail}")
         after = _junit_failures(rmg_xml)
-        new_fail = sorted(after - RMG_BASE_FAILURES)
-        fixed = sorted(RMG_BASE_FAILURES - after)
+        new_fail = sorted(after - before)
+        fixed = sorted(before - after)
+        drift = sorted(before ^ RMG_BASE_FAILURES_STALE_9E7E0C4D5)
+        print(f"  base failures: {len(before)}   after: {len(after)}")
+        print(f"  (informational) base-set drift vs the stale 9e7e0c4d5/DASSL "
+              f"constant: {len(drift)} entries differ")
         print(f"  failures now: {len(after)}   NEW vs {RMG_BASE_SHA}: "
               f"{len(new_fail)}   no longer failing: {len(fixed)}")
         for f in new_fail:
