@@ -4130,12 +4130,17 @@ class HybridPolymerSystem(ReactionSystem):
         # LIVE reader (attribution trust, get_polymer_pool_stats). Scope is the
         # complement of _char_rate_include_mask -- exactly the pool mu_indices
         # and is_moment_dummy core positions (bookkeeping coordinates), NEVER a
-        # physical species. Inert when there are no moment slots.
+        # physical species -- a claim that i075 turned into a GUARD rather than
+        # a comment: _assert_moment_slots_carry_no_molar_amount refuses the
+        # floor outright if any slot in the mask complement looks like real
+        # chemistry. Inert when there are no moment slots.
         self._chem_atol_array = np.array(self.atol_array, dtype=float)
         if self._char_rate_include_mask is not None:
             _floor = MOMENT_EWT_FLOOR_K * atol
             _moment_slots = [i for i in range(self.num_core_species)
                              if not self._char_rate_include_mask[i]]
+            self._assert_moment_slots_carry_no_molar_amount(
+                _moment_slots, core_species, _floor)
             _floored = []
             for i in _moment_slots:
                 if self.atol_array[i] < _floor:
@@ -4154,8 +4159,104 @@ class HybridPolymerSystem(ReactionSystem):
 
         self.diagnose_polymer_mapping(core_species)
 
+    def _assert_moment_slots_carry_no_molar_amount(self, moment_slots,
+                                                   core_species, floor):
+        """i075 d3: refuse the moment error-weight floor on anything that could
+        be a physical species.
 
+        The floor's scope is the complement of _char_rate_include_mask. That
+        complement is NOT provably free of physical species from the mask's own
+        construction:
 
+          * the flag arm (`is_moment_dummy`) is a plain mutable Species
+            attribute, set at exactly one site (rmgpy/rmg/model.py) but never
+            re-validated afterwards; and
+          * the authoritative arm, a pool's `mu_indices`, is resolved by LABEL
+            -- polymer_input.to_config maps `mu_species` through the core
+            spc_map, and those mu_species come from
+            `species_dict["{proxy}_mu{k}"]`. `_register_polymer` deliberately
+            SKIPS creating the dummy when a species of that label "already
+            exists (e.g., from the input file)", and no code path checks
+            `is_moment_dummy` on the species it reuses. A deck that names a
+            real species `PS_mu0` therefore binds it as a moment coordinate.
+
+        So the claim is enforced here instead of assumed. Three properties of a
+        bookkeeping coordinate, each independent of the mask that selected the
+        slot and each a direct statement that the slot carries a REAL MOLAR
+        AMOUNT when it fails:
+
+          1. it takes part in no reaction anywhere in the network -- a moment
+             coordinate carries dmu/dt, never a chemical flux;
+          2. the deck declares no mole fraction for it -- a moment coordinate's
+             t=0 value comes from initial_polymer_moments, never from
+             initial_mole_fractions;
+          3. it is not classified GAS -- moment coordinates are condensed-phase
+             bookkeeping, and a gas slot is by definition a molar amount in the
+             gas volume.
+
+        Any of the three failing means relaxing DASPK's error control -- two
+        decades, silently -- on something that is not a bookkeeping coordinate,
+        which is exactly the failure this guard exists to make impossible. Hard
+        error, never a warning: the alternative is a quietly under-resolved
+        species.
+
+        NOT checked, deliberately: `reactive`. Moment dummies are created
+        reactive=False by rmgpy/rmg/model.py, but nothing in the solver contract
+        requires it, and every synthetic pool fixture in the solver test suite
+        builds its mu-species with the Species default (reactive=True). Keying
+        on it would refuse legal models. LIMIT of what is checked: a species
+        that is genuinely inert, carries no deck loading and is condensed --
+        an unreacting condensed diluent -- would still pass all three arms if it
+        were mis-bound into a mu slot. That case is unreachable through
+        polymer_input (a mu slot is bound only from `{proxy}_mu{k}`), but it is
+        not excluded by this guard.
+        """
+        cdef int i
+        if not moment_slots:
+            return
+        _network_species = None
+        _mf = getattr(self, "initial_mole_fractions", None) or {}
+        _mf_labels = set()
+        for _k in _mf:
+            _lbl = getattr(_k, "label", None)
+            _mf_labels.add(_lbl if _lbl is not None else _k)
+        gas_mask = self.gas_species_mask
+        for i in moment_slots:
+            spc = core_species[i] if i < len(core_species) else None
+            label = getattr(spc, "label", "?")
+            reason = None
+            if _network_species is None:
+                _network_species = set()
+                for arr in (self.reactant_indices, self.product_indices):
+                    if arr is None:
+                        continue
+                    flat = np.asarray(arr).ravel()
+                    _network_species.update(int(v) for v in flat[flat >= 0])
+            if i in _network_species:
+                reason = ("it appears in the reaction network "
+                          "(reactant_indices/product_indices), so it carries "
+                          "chemical flux")
+            elif spc is not None and (spc in _mf or label in _mf_labels):
+                reason = ("the deck declares an initial MOLE FRACTION for it; "
+                          "a moment coordinate is loaded through "
+                          "initial_polymer_moments")
+            elif (gas_mask is not None and i < len(gas_mask)
+                    and bool(gas_mask[i])):
+                reason = ("it is classified GAS, so its state slot is a molar "
+                          "amount in the gas volume, not condensed-phase "
+                          "bookkeeping")
+            if reason is not None:
+                raise ValueError(
+                    "i061 moment error-weight floor: core slot %d (%r) is in "
+                    "the complement of _char_rate_include_mask -- the solver "
+                    "is treating it as a moment COORDINATE and would relax "
+                    "its DASPK atol to %.3e -- but %s. A physical species must "
+                    "never receive the moment floor. Fix the pool's "
+                    "mu_indices / is_moment_dummy binding rather than the "
+                    "floor: a species labelled like a moment dummy but "
+                    "carrying real molar amounts is already being integrated "
+                    "as dmu/dt."
+                    % (i, label, float(floor), reason))
 
     def diagnose_polymer_mapping(self, core_species):
         w = 90
