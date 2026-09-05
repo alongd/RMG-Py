@@ -44,6 +44,32 @@ from rmgpy.thermo import NASA, NASAPolynomial
 
 from rmgpy.solver.polymer import HybridPolymerSystem, MassTransferConfig, PolymerPoolConfig
 
+# _s_eff below is copy 3 of the near-exhaustion bundle-limiter law (the solver's
+# _bundle_limited_site is copy 1, the numpy oracle consumer copy 2). It used to
+# spell the band edges out as literals, which meant the existing constants pin
+# could not reach it: moving an edge in the solver would have left ~30 expected
+# -value assertions here silently evaluating the OLD band. The names below are
+# imported so the third copy follows the first. Values are unchanged.
+from rmgpy.solver.polymer import (
+    BUNDLE_LIMITER_E_HI,
+    BUNDLE_LIMITER_E_LO,
+    BUNDLE_LIMITER_SOFTMIN_P,
+    CONE_B1_NOISE_REL_FLOOR,
+    CONE_MARGIN_M_HI,
+    CONE_MARGIN_M_LO,
+    EXHAUSTION_FLOOR_K,
+    SMALL_EPS,
+)
+
+# The solver binds its integrator error class at compile time (base.pyx binds
+# DASxError to pydas.daspk.DASPKError or pydas.dassl.DASSLError from the same
+# `include "settings.pxi"` branch that selects the integrator itself), and the
+# two classes are disjoint -- neither subclasses the other. Failure-injecting
+# test doubles must therefore raise the alias, not a hardcoded backend class,
+# or `except DASxError` in simulate() cannot catch what they throw and the
+# guard under test is never entered.
+from rmgpy.solver.base import DASxError
+
 
 def _spc(smiles: str, label: str) -> Species:
     s = Species(molecule=[Molecule().from_smiles(smiles)])
@@ -83,9 +109,9 @@ def _two_pool_rs(rxn, core, mask, mom_a, mom_b):
     return rs
 
 
-def _softmin_p(terms, p=8.0):
-    """Reciprocal p-norm soft-min over positive terms (round-29 N2; keep p
-    in sync with the solver's BUNDLE_LIMITER_SOFTMIN_P):
+def _softmin_p(terms, p=BUNDLE_LIMITER_SOFTMIN_P):
+    """Reciprocal p-norm soft-min over positive terms (round-29 N2; p is the
+    solver's BUNDLE_LIMITER_SOFTMIN_P, imported, not a second copy of it):
     softmin_p(x_i) = (sum x_i^(-p))^(-1/p), evaluated in the overflow-safe
     factored form m*(sum (m/x_i)^p)^(-1/p). Any non-positive term zeroes
     the result (softmin_p <= min)."""
@@ -95,28 +121,41 @@ def _softmin_p(terms, p=8.0):
     return m * sum((m / x) ** p for x in terms) ** (-1.0 / p)
 
 
-def _s_eff(mu, end_group=False, s_base=None, v_poly=1.0, atol=1e-16):
+def _s_eff(mu, end_group=False, s_base=None, v_poly=1.0, atol=1e-16,
+           rtol=1e-8):
     """Near-exhaustion bundle limiter (tail-only smoothstep; C1 soft-min,
     cone-margin drain guard), round-27 P1-A throttle + round-29 N2
     soft-min + round-30 N1 independent cone gate (keep in sync with
     HybridPolymerSystem._bundle_limited_site): the debited direction of a
     cross-pool VE/MIGRATION leg runs TWO independent gates in series.
 
+    Every band edge, the soft-min exponent and the b1-noise floor below are
+    IMPORTED from rmgpy.solver.polymer (E_lo = BUNDLE_LIMITER_E_LO etc.), so
+    this copy follows the solver's constants instead of carrying its own. The
+    docstring names them rather than spelling their values out, for the same
+    reason: a value written here is a value that can go stale silently.
+
     Stage 1 (exhaustion, E band):
         S_cap  = softmin_p(mu0/b0, mu1/b1, mu2/b2)/v_poly (POSITIVE terms)
-        E      = softmin_p(mu0, mu1, mu2)/max(1e-30, 100*atol)
-        w      = 3e^2 - 2e^3 on e = clamp((E - 1e2)/(1e4 - 1e2), 0, 1)
+        E      = softmin_p(mu0, mu1, mu2)/max(SMALL_EPS, EXHAUSTION_FLOOR_K*atol)
+        w      = 3e^2 - 2e^3 on e = clamp((E - E_lo)/(E_hi - E_lo), 0, 1)
         S_free = w*S_base + (1-w)*softmin_p(S_base, S_cap)
-                 (== S_base EXACTLY at E >= 1e4 floors: bulk untouched)
+                 (== S_base EXACTLY at E >= E_hi floors: bulk untouched)
 
     Stage 2 (cone margin, M band -- INDEPENDENT of E; applies ONLY to
     non-end-group, length-biased cone-shrinking debits b1 > b0 = 1):
         Q10 = mu1 - mu0 <= 0        -> 0 REGARDLESS of E
-        M = Q10[mol]/floor >= 1e4   -> S_free EXACTLY (margin safely bulk)
-        M <= 1e2                    -> 0 EXACTLY (N5b round-62 DASSL-hang
-                                       dead band: below M_lo, Q10 is itself
-                                       sub-floor-scale cancellation noise;
-                                       was softmin_p(S_free, S_cone))
+        M = Q10[mol]/floor >= M_hi  -> S_free EXACTLY (margin safely bulk)
+        M <= M_lo                   -> NARROWED dead band (I-090), on the
+                                       b1 axis: 0 EXACTLY once b1 - 1 has
+                                       left the RELATIVE width the state
+                                       cannot resolve,
+                                       (ewt(mu1)+ewt(mu2))/mu1 -- the N5b
+                                       round-62 answer, unchanged for every
+                                       O(1) b1 - 1 -- handing back through a
+                                       C1 smoothstep to softmin_p(S_free,
+                                       S_cone) as b1 -> 1+, where S_cone
+                                       DIVERGES and so bounds nothing
         between                     -> C1 v-smoothstep blend of S_free and
                                        softmin_p(S_free, S_cone)
     End-group rows (round-62 N5b adjudicated fix) SKIP stage 2 entirely
@@ -131,19 +170,19 @@ def _s_eff(mu, end_group=False, s_base=None, v_poly=1.0, atol=1e-16):
     ``s_base`` defaults to the leg's plain site (mu1, or mu0 end-group);
     ``atol`` must match what the reaction system was initialized with."""
     mu0, mu1, mu2 = (max(0.0, m) / v_poly for m in mu)
-    floor = max(1e-30, 100.0 * atol)
+    floor = max(SMALL_EPS, EXHAUSTION_FLOOR_K * atol)
     e_dist = _softmin_p([max(0.0, m) for m in mu]) / floor
     base = ((mu0 if end_group else mu1) if s_base is None else s_base)
     # stage 1: exhaustion tail limiter
-    if e_dist >= 1.0e4:
+    if e_dist >= BUNDLE_LIMITER_E_HI:
         s_free = base
     else:
         if end_group:
-            if mu0 <= 1e-30:
+            if mu0 <= SMALL_EPS:
                 return 0.0
             b1, b2 = mu1 / mu0, mu2 / mu0
         else:
-            if mu1 <= 1e-30:
+            if mu1 <= SMALL_EPS:
                 return 0.0
             with np.errstate(over="ignore"):
                 mu3 = (mu0 * (np.float64(mu2) / mu1) ** 3
@@ -156,10 +195,11 @@ def _s_eff(mu, end_group=False, s_base=None, v_poly=1.0, atol=1e-16):
         if b2 > 0.0:
             terms.append(mu2 / b2)
         cap = _softmin_p(terms)
-        if e_dist <= 1.0e2:
+        if e_dist <= BUNDLE_LIMITER_E_LO:
             s_free = cap
         else:
-            e_n = (e_dist - 1.0e2) / (1.0e4 - 1.0e2)
+            e_n = ((e_dist - BUNDLE_LIMITER_E_LO)
+                   / (BUNDLE_LIMITER_E_HI - BUNDLE_LIMITER_E_LO))
             w = e_n * e_n * (3.0 - 2.0 * e_n)
             s_free = w * base + (1.0 - w) * cap
     # stage 2: cone-margin drain gate (independent of E)
@@ -172,7 +212,7 @@ def _s_eff(mu, end_group=False, s_base=None, v_poly=1.0, atol=1e-16):
         # S_free directly, rather than evaluating the q10/b1c cancellation
         # surface for a gate that can never fire.
         return s_free
-    if mu1 <= 1e-30:
+    if mu1 <= SMALL_EPS:
         return s_free
     b1c = mu2 / mu1
     if b1c <= 1.0:                    # b0 = 1: debit does not shrink Q10
@@ -181,18 +221,42 @@ def _s_eff(mu, end_group=False, s_base=None, v_poly=1.0, atol=1e-16):
     if q10 <= 0.0:
         return 0.0
     m_dist = q10 * v_poly / floor     # margin in MOLES vs the mol floor
-    if m_dist >= 1.0e4:
+    if m_dist >= CONE_MARGIN_M_HI:
         return s_free
-    # N5b round-62 DASSL-hang dead band: below M_lo, q10 is itself
-    # sub-floor-scale cancellation noise -- return the exact hard zero
-    # instead of trusting cap/s_cone's noise-scale magnitude down there.
-    if m_dist <= 1.0e2:
-        return 0.0
+    # N5b round-62 DASSL-hang dead band, as NARROWED by I-090 (keep in sync
+    # with HybridPolymerSystem._bundle_limited_site and the numpy oracle
+    # consumer -- three copies, one law). Below M_lo q10 is itself
+    # sub-floor-scale cancellation noise, so the exact hard zero beats
+    # trusting cap/s_cone's noise-scale magnitude AND sign down there --
+    # EXCEPT on the b1 == 1 surface, where s_cone = q10/(b1 - 1) diverges
+    # and therefore bounds nothing: there the hard zero discards a live rate
+    # across a jump the corrector cannot step over. The completion is kept
+    # on a noise-scale neighbourhood of that surface only and handed back to
+    # the same exact zero, C1 at both ends. The neighbourhood is the RELATIVE
+    # width the accepted state cannot resolve, (ewt(mu1) + ewt(mu2))/mu1 with
+    # the integrator's own error weight ewt(mu_k) = rtol*mu_k + floor,
+    # floored at sqrt(machine eps). Moments here are per-volume while `floor`
+    # is in moles, so the band is formed on the MOLE basis (b1 is
+    # basis-invariant). Derivation in the solver's I-090 block comment.
+    if m_dist <= CONE_MARGIN_M_LO:
+        b1_band = ((rtol * (mu1 + mu2) * v_poly + floor + floor)
+                   / (mu1 * v_poly))
+        b1_band = max(b1_band, CONE_B1_NOISE_REL_FLOOR)
+        b1_n = (b1c - 1.0) / b1_band
+        if b1_n >= 1.0:
+            return 0.0
+        s_cone = q10 / (b1c - 1.0)
+        if s_free <= 0.0:
+            return s_free
+        cap = _softmin_p([s_free, s_cone])
+        u = 1.0 - b1_n * b1_n * (3.0 - 2.0 * b1_n)
+        return u * cap
     s_cone = q10 / (b1c - 1.0)
     if s_free <= 0.0:
         return s_free
     cap = _softmin_p([s_free, s_cone])
-    v_n = (m_dist - 1.0e2) / (1.0e4 - 1.0e2)
+    v_n = ((m_dist - CONE_MARGIN_M_LO)
+           / (CONE_MARGIN_M_HI - CONE_MARGIN_M_LO))
     v = v_n * v_n * (3.0 - 2.0 * v_n)
     return v * s_free + (1.0 - v) * cap
 
@@ -11242,6 +11306,38 @@ class TestTailExhaustionHandshake:
             f"residual jumps across the cutoff: F(xs+{eps:g}) = {hi!r} vs "
             f"F(xs-{eps:g}) = {lo!r}")
 
+    def _monodisperse_p_cond(self, mean):
+        """The monodisperse leg, CONSTRUCTED from the definition of p_cond
+        rather than transcribed from polymer.pyx.
+
+        The distinction is load-bearing. The three tests below assert a
+        RELATIONSHIP between the compiled flux and this oracle (never above
+        it; equal to it where no budget binds). If the oracle were a copy of
+        the implementation it is checking, that relationship would be a
+        tautology and the tests could no longer catch an error in the law.
+        So the law is re-derived here and
+        test_monodisperse_leg_agrees_with_the_law_the_solver_compiled asserts
+        that the two constructions land on the same function.
+
+        The derivation. p_cond is the fraction of tail chains in the boundary
+        bin, and the boundary bin is the tail's LOWEST site: the tail holds
+        chains with DP > xs, so its support is the integer lattice
+        {xs+1, xs+2, ...}. The solver falls back here exactly when the
+        closure reports the variance has collapsed, so the distribution to
+        assume is the minimum-variance one on that lattice with this mean --
+        unique, and equal to all the mass on the two sites bracketing the
+        mean, split so the mean is reproduced. Build that distribution, then
+        read off the boundary bin. A mean below the support's minimum is not
+        realizable at all; the nearest state that is puts everything on the
+        minimum, which is also what continuity from above demands.
+        """
+        lo_site = self.XS + 1
+        m = max(float(mean), float(lo_site))
+        n_lo = int(math.floor(m))
+        frac = m - n_lo
+        bracket = {n_lo: 1.0 - frac, n_lo + 1: frac}
+        return bracket.get(lo_site, 0.0)
+
     def _closure_law(self, mean, pdi, mu0=1.0):
         """The flux the closure asks for, before any realizability budget --
         recomputed from the module's own helpers, not restated."""
@@ -11254,12 +11350,8 @@ class TestTailExhaustionHandshake:
         if params:
             kk, theta = params
             p_cond = _gamma_prob_conditional_hybrid(xs + 1, xs, kk, theta)
-        elif xs + 1.0 < mean < xs + 2.0:
-            # the monodisperse leg the solver falls back to when PDI is at or
-            # below 1 + 1e-6 and the gamma fit refuses
-            p_cond = 1.0 - abs(mean - (xs + 1.5)) / 0.5
         else:
-            p_cond = 0.0
+            p_cond = self._monodisperse_p_cond(mean)
         p_cond = min(1.0, max(0.0, p_cond))
         return min(mu0 * p_cond, mu0, mu1 / xs, mu2 / (xs * xs))
 
@@ -11323,6 +11415,117 @@ class TestTailExhaustionHandshake:
             assert f == pytest.approx(k * n, rel=1e-12), (
                 f"at mean={mean} (the old boolean's own boundary) the flux is "
                 f"{f!r}, closure law {k * n!r}")
+
+    def _composed_law(self, p_cond, mu0, mu1, mu2):
+        """p_cond put through the elementary clamps and the two realizability
+        budgets, i.e. the whole boundary population the handshake is allowed
+        to move. The budgets come from _budgets, which is checked against
+        explicit finite populations above -- they are not what this
+        composition is testing."""
+        xs = self.XS
+        n = min(mu0 * min(1.0, max(0.0, p_cond)), mu0, mu1 / xs,
+                mu2 / (xs * xs))
+        b_exc, b_q, m2, q = self._budgets(xs, mu0, mu1, mu2)
+        n = min(n, b_exc)
+        if m2 > 0.0:
+            n = min(n, b_q)
+        elif m2 < 0.0 or q < 0.0:
+            n = 0.0
+        return max(0.0, n)
+
+    def test_monodisperse_leg_agrees_with_the_law_the_solver_compiled(self):
+        """I-098. _monodisperse_p_cond is DERIVED from the definition of
+        p_cond (build the minimum-variance lattice distribution, read the
+        boundary bin); polymer.pyx carries a closed form arrived at
+        separately. This is the assertion that the two are the same
+        function -- and it is what stops the three tests around it from
+        comparing the solver against a copy of itself.
+
+        The comparison runs through the compiled flux, since p_cond has no
+        export. Two things are asserted, and the second matters as much as
+        the first: that the derived law composed with the budgets reproduces
+        the flux bit-for-bit, AND that a non-trivial number of the swept
+        states are ones where a WRONG p_cond would have produced a different
+        flux. Without the second the first is satisfiable by a law that is
+        never consulted, which is the failure mode this regime invites --
+        the Cauchy-Schwarz budget is small wherever PDI -> 1, so it masks
+        p_cond on most of the domain."""
+        xs, k, mu0 = self.XS, 0.1, 1.0
+        # PDI at or below 1 + 1e-6 is exactly where _gamma_params_from_mu012
+        # refuses, so every state below takes the monodisperse leg. Stopping
+        # short of 1 + 1e-6 is deliberate: the closure recomputes PDI from
+        # the moments it is handed, and mu2 = pdi*mu1^2/mu0 rounds a nominal
+        # 1 + 1e-6 to just ABOVE the trigger at some means. The assertion in
+        # the loop is what actually holds the claim.
+        pdis = (1.0, 1.0 + 1e-9, 1.0 + 1e-7, 1.0 + 5e-7)
+        means = [xs - 0.5, xs, xs + 1e-9, xs + 0.5, xs + 1.0, xs + 1.25,
+                 xs + 1.5, xs + 1.75, xs + 2.0 - 1e-6, xs + 2.0, xs + 2.5,
+                 xs + 4.0]
+        from rmgpy.solver.polymer import _gamma_params_from_mu012
+        discriminating = 0
+        checked = 0
+        for mean in means:
+            for pdi in pdis:
+                mu1 = mu0 * mean
+                mu2 = pdi * mu1 * mu1 / mu0
+                assert _gamma_params_from_mu012(mu0, mu1, mu2) is None, (
+                    f"mean={mean}, PDI={pdi} did not take the monodisperse "
+                    f"leg -- this state does not test what it claims to")
+                p = self._monodisperse_p_cond(mu1 / mu0)
+                want = self._composed_law(p, mu0, mu1, mu2)
+                got, _ = self._flux(mean, pdi=pdi, mu0=mu0, k_unzip=k)
+                assert got == pytest.approx(k * want, rel=1e-12, abs=1e-300), (
+                    f"at mean={mean}, PDI={pdi} the solver's flux is {got!r} "
+                    f"but the derived law composed with the budgets gives "
+                    f"{k * want!r} (derived p_cond = {p!r})")
+                checked += 1
+                # would a wrong p_cond have shown here? perturb it both ways
+                if any(self._composed_law(q, mu0, mu1, mu2) != want
+                       for q in (0.0, 1.0, 0.5 * p, min(1.0, p + 0.25))):
+                    discriminating += 1
+        assert checked == len(means) * len(pdis)
+        assert discriminating >= 8, (
+            f"only {discriminating} of {checked} swept states can see p_cond "
+            f"at all -- the agreement claim is close to vacuous")
+
+    def test_monodisperse_leg_is_correct_at_the_support_edge(self):
+        """The one value in this regime that needs no distributional
+        assumption. The tail holds chains with DP > xs, so its support
+        starts at xs+1; tail_mean = xs+1 is therefore the mean equalling the
+        minimum, which on a non-negative lattice forces every chain onto
+        that minimum. p_cond is exactly 1.0 there, and tends to 1.0 from
+        above. The law that stood here before returned 0.0 at that point and
+        2.0e-12 in the limit -- monotone in the wrong direction across the
+        whole lower half of its own support."""
+        xs = self.XS
+        assert self._monodisperse_p_cond(xs + 1.0) == 1.0
+        for d in (1e-12, 1e-9, 1e-6, 1e-4):
+            assert self._monodisperse_p_cond(xs + 1.0 + d) == pytest.approx(
+                1.0 - d, rel=0.0, abs=1e-15)
+        # ...and it is the compiled solver that says so, not just the oracle:
+        # at the edge the old law took the flux to exactly zero. PDI must be
+        # strictly above 1 for the Cauchy-Schwarz budget to leave anything at
+        # all (at PDI == 1 it is exactly 0 and no p_cond can show), and below
+        # the trigger so this is the monodisperse leg and not the gamma one.
+        from rmgpy.solver.polymer import _gamma_params_from_mu012
+        pdi, mu0, mean = 1.0 + 5e-7, 1.0, xs + 1.0
+        mu1 = mu0 * mean
+        assert _gamma_params_from_mu012(mu0, mu1, pdi * mu1 * mu1 / mu0) is None
+        f, _ = self._flux(mean, pdi=pdi, mu0=mu0, k_unzip=0.1)
+        assert f > 0.0, (
+            f"handshake flux is {f!r} at tail_mean = xs+1, where every chain "
+            f"in the tail provably sits in the boundary bin")
+
+    def test_monodisperse_leg_is_monotone_non_increasing(self):
+        """The true answer is: mass on the support's lowest site can only
+        fall as the mean moves off it. The triangle was not monotone -- it
+        ROSE from 0.0 at xs+1 to 1.0 at xs+1.5 before falling."""
+        xs = self.XS
+        vals = [self._monodisperse_p_cond(xs + 1.0 + i * 0.005)
+                for i in range(0, 401)]
+        assert vals[0] == 1.0 and vals[-1] == 0.0
+        assert all(b <= a + 1e-15 for a, b in zip(vals, vals[1:])), (
+            "p_cond rises somewhere on [xs+1, xs+3]")
 
     def test_cone_edge_is_an_invariant_set_of_the_handshake(self):
         """mu1 = mu0 is where a fully-exhausted pool legitimately ENDS. The
@@ -13656,10 +13859,9 @@ class _R81FailingStepSystem(HybridPolymerSystem):
     attempted integration step dies with the IDID=-7 convergence failure."""
 
     def step(self, step_time):
-        from pydas.dassl import DASSLError
-        raise DASSLError(
-            "DASSL returned with an IDID = -7, Repeated convergence test "
-            "failures occurred on the last attempted step in DDASSL.")
+        raise DASxError(
+            "The solver returned with an IDID = -7, Repeated convergence "
+            "test failures occurred on the last attempted step.")
 
 
 def _r81_resurrection_rs(edge_reactant_key):
@@ -13751,7 +13953,7 @@ class TestR81ResurrectionZeroMetricGuard:
 
 class _StiffPastCrossingSystem(HybridPolymerSystem):
     """Bounded stand-in for the FR1 tf100 signature (r86): the
-    post-conversion region is a stiff wall -- any DASSL continuation whose
+    post-conversion region is a stiff wall -- any continuation whose
     OUTER TARGET time lies beyond ``t_wall`` (which sits PAST the
     conversion crossing) dies inside the integrator before the post-step
     termination check can run. Integrates normally otherwise, so tests
@@ -13761,10 +13963,9 @@ class _StiffPastCrossingSystem(HybridPolymerSystem):
 
     def step(self, step_time):
         if step_time > self.t_wall:
-            from pydas.dassl import DASSLError
-            raise DASSLError(
-                "DASSL returned with an IDID = -1, 500 steps taken on this "
-                "call before reaching TOUT (the tf100 wall past the "
+            raise DASxError(
+                "The solver returned with an IDID = -1, 500 steps taken on "
+                "this call before reaching TOUT (the tf100 wall past the "
                 "polymer-conversion crossing).")
         return HybridPolymerSystem.step(self, step_time)
 

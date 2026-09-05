@@ -14,6 +14,7 @@ import sys
 import numpy as np
 import pytest
 
+import rmgpy.solver.polymer as solver_mod
 from rmgpy.kinetics import Arrhenius
 from rmgpy.molecule import Molecule
 from rmgpy.polymer import Polymer, PolymerFluxArchetype, build_polymer_moments_artifact
@@ -27,7 +28,8 @@ from rmgpy.thermo import NASA, NASAPolynomial
 _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
-from numpy_moments_consumer import ArtifactConsumer  # noqa: E402
+from numpy_moments_consumer import ArtifactConsumer, softmin_p  # noqa: E402
+import numpy_moments_consumer as consumer_mod  # noqa: E402
 
 T_K = 800.0
 P_PA = 1.0e5
@@ -1144,3 +1146,150 @@ class TestConduitBundleConsumer:
         from numpy_moments_consumer import safe_mu3
         mu3 = safe_mu3(y[i_mu[0]], y[i_mu[1]], y[i_mu[2]])
         assert np.isfinite(mu3)
+
+
+# ---------------------------------------------------------------------------
+# (f) ONE law across the cone-margin band (M): oracle vs compiled solver
+#
+# Everything above compares the two implementations through a TRAJECTORY,
+# which only ever visits bulk-scale margins -- and the compiled solver's
+# stage-2 cone-margin drain gate takes its M >= M_hi early return there, so a
+# trajectory comparison cannot see the gate's law at all. The band below M_lo
+# is exactly where the two drifted apart (the solver's round-62 N5b dead band
+# vs the oracle's pre-round-62 softmin cap), and it went unnoticed for months
+# because nothing drove BOTH sides inside it. This section does.
+# ---------------------------------------------------------------------------
+
+def _cone_band_pair():
+    """One single-pool deck built twice -- the compiled HybridPolymerSystem
+    and the numpy ArtifactConsumer that must reproduce it -- sharing mu slots
+    (1, 2, 3), V_poly and the r81 floor (1e-14 at the default atol=1e-16), so
+    _bundle_limited_site can be driven on both sides with ONE y vector."""
+    inert = _spc("N#N", "N2")
+    monomer = _spc("C", "M")
+    core = [inert, _mu("poly_mu0"), _mu("poly_mu1"), _mu("poly_mu2"), monomer]
+    mask = np.array([True, False, False, False, True], dtype=bool)
+    mom0 = (1.0, 5.0, 30.0)
+    pool_cfg = PolymerPoolConfig(label="poly", xs=2,
+                                 explicit_dp_to_species_index={},
+                                 mu_indices=(1, 2, 3), monomer_poly_index=4,
+                                 k_scission=1.0, k_unzip=0.0, tail_kinetics=None)
+    rs = HybridPolymerSystem(
+        T=T_K, P=P_PA, initial_mole_fractions={inert: 1.0}, V_poly=V_POLY,
+        polymer_pools=[pool_cfg], mass_transfer=[], gas_species_mask=mask,
+        constant_gas_volume=False,
+        initial_polymer_moments={"poly": mom0}, termination=[])
+    rs.initialize_model(core, [], [], [])
+
+    registry_pool = Polymer(label="poly", monomer="[CH2][CH2]",
+                            end_groups=["[H]", "[H]"], cutoff=3,
+                            moments=list(mom0), initial_mass=0.0,
+                            k_scission=1.0, k_unzip=0.0)
+    artifact = build_polymer_moments_artifact(
+        [registry_pool], core_species=core, core_reactions=[],
+        configured_pool_labels=["poly"], condensed_species=core[1:4],
+        monomer_routing_by_pool={"poly": _yaml_label(monomer)},
+        cantera_index_map={})
+    artifact = json.loads(json.dumps(artifact))
+    consumer = ArtifactConsumer(artifact, [_yaml_label(s) for s in core],
+                                P=P_PA, V_poly=V_POLY)
+    return rs, consumer
+
+
+# (m_dist target in floor units, region of the M axis it must land in)
+_M_BAND_CASES = [
+    (1.0e-2, "dead"),                    # deep inside the dead band
+    (4.0e1, "dead"),                     # inside the dead band
+    (1.0e2 * (1.0 - 1.0e-6), "dead"),    # just INSIDE the M_lo edge
+    (1.0e2 * (1.0 + 1.0e-6), "blend"),   # just OUTSIDE the M_lo edge
+    (1.0e3, "blend"),                    # mid-band v-smoothstep
+    (1.0e4 * (1.0 - 1.0e-6), "blend"),   # just INSIDE the M_hi edge
+    (1.0e4 * (1.0 + 1.0e-6), "bulk"),    # just OUTSIDE the M_hi edge
+    (1.0e6, "bulk"),                     # bulk margin, gate inactive
+]
+
+
+class TestConeMarginBandParity:
+    """The oracle and the compiled solver must implement ONE law for
+    _bundle_limited_site's stage-2 cone-margin drain gate at EVERY point of
+    the M axis -- the m_dist <= CONE_MARGIN_M_LO dead band included.
+
+    Scope and shape of the pin:
+
+    * Stage 1 is held bulk-inactive in every case (E ~ 9e5 >> E_hi = 1e4), so
+      what is compared is stage 2 alone rather than a stage-1 fold.
+    * Non-end-group rows only (b1 = mu2/mu1 = 50 > 1, q10 = mu1 - mu0 > 0), so
+      every case reaches the M-band decision instead of an early return.
+    * The DEAD-BAND cases are the discriminating ones. Since round-62
+      (rmgpy/solver/polymer.pyx, "N5b cone-gate dead-band fix", commit
+      d86201ec2) the solver returns the exact hard zero there; the oracle
+      returned softmin_p(S_free, S_cone) -- a nonzero, noise-scale number --
+      until this test was written. The blend and bulk cases already agreed
+      bitwise; they are here to prove the pin brackets the band rather than
+      merely asserting zero everywhere.
+    """
+
+    def test_band_constants_agree(self):
+        """The oracle mirrors the solver's band edges, not its own copy of
+        them: if the solver moves an edge, this fails before any law test
+        gets the chance to compare across the wrong boundary."""
+        assert consumer_mod.CONE_MARGIN_M_LO == solver_mod.CONE_MARGIN_M_LO
+        assert consumer_mod.CONE_MARGIN_M_HI == solver_mod.CONE_MARGIN_M_HI
+        assert (consumer_mod.BUNDLE_LIMITER_E_LO
+                == solver_mod.BUNDLE_LIMITER_E_LO)
+        assert (consumer_mod.BUNDLE_LIMITER_E_HI
+                == solver_mod.BUNDLE_LIMITER_E_HI)
+        assert (consumer_mod.BUNDLE_LIMITER_SOFTMIN_P
+                == solver_mod.BUNDLE_LIMITER_SOFTMIN_P)
+
+    @pytest.mark.parametrize("m_target,region", _M_BAND_CASES,
+                             ids=[f"m={c[0]:g}_{c[1]}" for c in _M_BAND_CASES])
+    def test_solver_and_oracle_agree_across_the_M_band(self, m_target, region):
+        rs, consumer = _cone_band_pair()
+        floor = 1.0e-14                     # max(SMALL_EPS, 100*atol)
+        assert np.all(np.asarray(rs._pool_mu_floors) == floor)
+        assert consumer.mu_floor == floor
+        i0, i1, i2 = consumer.pools["poly"]["mu"]
+        assert tuple(rs.polymer_pools[0].mu_indices) == (i0, i1, i2)
+
+        y = np.asarray(rs.y, dtype=np.float64).copy()
+        mu0 = 1.0e6 * floor                 # bulk-scale: stage 1 inactive
+        mu1 = mu0 + m_target * floor
+        mu2 = 50.0 * mu1                    # b1 = mu2/mu1 = 50 > 1
+        y[i0], y[i1], y[i2] = mu0, mu1, mu2
+        s_base = mu1
+
+        # the state lands where this case says it does -- asserted from the
+        # SAME cancellation the two laws see, never from m_target
+        e_dist = softmin_p([mu0, mu1, mu2]) / floor
+        assert e_dist >= consumer_mod.BUNDLE_LIMITER_E_HI
+        q10 = mu1 - mu0
+        m_dist = q10 / floor
+        if region == "dead":
+            assert m_dist <= consumer_mod.CONE_MARGIN_M_LO
+        elif region == "blend":
+            assert (consumer_mod.CONE_MARGIN_M_LO < m_dist
+                    < consumer_mod.CONE_MARGIN_M_HI)
+        else:
+            assert m_dist >= consumer_mod.CONE_MARGIN_M_HI
+
+        solver_val = rs._bundle_limited_site(0, y, V_POLY, False, s_base)
+        oracle_val = consumer._bundle_limited_site("poly", y, False, s_base)
+
+        # ONE law: bitwise, not within a tolerance. Above M_lo the two
+        # evaluate the identical soft-min in the identical order, so anything
+        # short of equality is a divergence, not rounding.
+        assert oracle_val == solver_val
+
+        if region == "dead":
+            assert solver_val == 0.0
+            # ...and the zero is a CHOICE, not a degenerate state: the
+            # pre-round-62 law the oracle used to run here is strictly
+            # positive at this very point, so a test that passed both ways
+            # would be vacuous.
+            s_cone = q10 / (V_POLY * (mu2 / mu1 - 1.0))
+            assert softmin_p([s_base, s_cone]) > 0.0
+        elif region == "bulk":
+            assert solver_val == s_base      # gate inactive: exact passthrough
+        else:
+            assert 0.0 < solver_val < s_base

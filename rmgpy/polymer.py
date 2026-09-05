@@ -6533,7 +6533,9 @@ RADICAL_QSSA_SIDECAR_RECIPE_WEAKLINK = {
 # is transcribed from the implemented oracle:
 #   * boundary_flux — the hybrid handshake in rmgpy/solver/polymer.pyx
 #     (:3475-3524 at the stage-B commit): gamma-conditional boundary
-#     population with the triangular fallback and the mu0/mu1/mu2 flux
+#     population with the monodisperse fallback (I-098: the minimum-variance
+#     lattice bracket, mass at DP = xs+1; NOT the triangle peaking at
+#     xs+1.5 that stood here before) and the mu0/mu1/mu2 flux
 #     clamps; gamma moment-matching in _gamma_params_from_mu012 /
 #     _gamma_prob_conditional_hybrid (polymer.pyx:491-525).
 #   * k_chain — the per-chain handshake frequency arm selection
@@ -6573,10 +6575,15 @@ EXPLICIT_DP_SIDECAR_RECIPE = {
                       "(k = 1/(PDI - 1), theta = mean/k; half-integer bins: "
                       "[F((xs+1.5)/theta) - F((xs+0.5)/theta)] / "
                       "[1 - F((xs+0.5)/theta)] with F the regularized lower "
-                      "incomplete gamma); triangular fallback on tail_mean "
-                      "in (xs+1, xs+2) peaking 1.0 at xs+1.5 when the gamma "
-                      "is unrealizable (any moment <= 1e-30, PDI <= 1+1e-6, "
-                      "or non-finite params); p_cond clamped to [0, 1]; "
+                      "incomplete gamma); monodisperse fallback when the "
+                      "gamma is unrealizable (any moment <= 1e-30, PDI <= "
+                      "1+1e-6, or non-finite params): p_cond = "
+                      "clip((xs+2) - tail_mean, 0, 1), the mass at "
+                      "DP = xs+1 of the minimum-variance distribution on "
+                      "the tail's integer support {xs+1, xs+2, ...} with "
+                      "that mean -- 1.0 at tail_mean <= xs+1, falling "
+                      "linearly to 0.0 at tail_mean >= xs+2; p_cond "
+                      "clamped to [0, 1]; "
                       "N_boundary = min(mu0*p_cond, mu0, mu1/xs, mu2/xs^2) "
                       "[mol/m^3]; F_flux = k_chain * N_boundary; "
                       "dn(species[xs])/dt += F_flux*V_poly; dmu0 -= F_flux; "
