@@ -1,0 +1,15 @@
+[17:23:30] Explicit valence for atom # 0 Ar, 1, is greater than permitted
+INFO:root:Loading thermodynamics group database from /home/alon/Code/RMG-database-plasma/input/thermo/groups...
+INFO:root:Loading thermodynamics SIDTs from /home/alon/Code/RMG-database-plasma/input/thermo/sidt...
+ERROR:root:Could not update atomtypes for this molecule:
+multiplicity 2
+1 Ar u0 p3 c0 {2,S} {3,S}
+2 Ar u0 p3 c+1 {1,S}
+3 H  u0 p0 c0 {1,S}
+
+ERROR:root:Could not update atomtypes for this molecule:
+multiplicity 2
+1 Ar u0 p3 c0 {2,S} {3,S}
+2 Ar u0 p3 c+1 {1,S}
+3 H  u0 p0 c0 {1,S}
+
