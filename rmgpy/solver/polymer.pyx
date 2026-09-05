@@ -7873,12 +7873,85 @@ class HybridPolymerSystem(ReactionSystem):
                         k_shape, theta = params
                         p_cond = _gamma_prob_conditional_hybrid(xs + 1, xs, k_shape, theta)
                     else:
-                        if tail_mean <= xs + 1.0:
-                            p_cond = 0.0
-                        elif tail_mean >= xs + 2.0:
-                            p_cond = 0.0
-                        else:
-                            p_cond = 1.0 - abs(tail_mean - (xs + 1.5)) / 0.5
+                        # I-098 MONODISPERSE FALLBACK.
+                        #
+                        # The closure has declined -- any moment <=
+                        # SMALL_EPS, PDI <= 1 + 1e-6, or non-finite params --
+                        # so there is no fitted distribution here and the
+                        # distributional assumption has to be STATED. It is
+                        # the substance of this branch, not a footnote.
+                        #
+                        # What p_cond means. The gamma leg above computes
+                        # P(DP = xs+1 | DP > xs): the fraction of tail chains
+                        # in the BOUNDARY BIN. The tail's support starts at
+                        # xs + 1 (module docstring; the representation
+                        # invariant mu1 >= (xs+1)*mu0 is spelled out at the
+                        # valid_tail note above), so the boundary bin IS the
+                        # support's minimum. Hence tail_mean = xs + 1 is the
+                        # mean equalling the minimum, which on a non-negative
+                        # lattice forces EVERY chain onto that minimum:
+                        # p_cond = 1 exactly, with no assumption at all.
+                        #
+                        # The triangle that stood here returned 0.0 there and
+                        # peaked at xs + 1.5, i.e. it ran monotone in the
+                        # wrong direction across the entire lower half of its
+                        # support. Measured against this branch's own inputs:
+                        # 0.0000 at xs+1 (truth 1.0), 2.0e-12 as
+                        # tail_mean -> (xs+1)+, 1.0 at xs+1.5 (truth 0.5).
+                        #
+                        # THE ASSUMPTION. The closure refuses precisely
+                        # because the variance collapsed, so take the
+                        # MINIMUM-VARIANCE distribution on the tail's integer
+                        # support {xs+1, xs+2, ...} with this mean. On a
+                        # lattice that distribution is unique -- all mass on
+                        # the two sites bracketing the mean, split so the
+                        # mean is reproduced -- and its mass at xs + 1 is
+                        # 1 - (tail_mean - (xs+1)) on [xs+1, xs+2], 0 above,
+                        # 1 below (a mean under the support's minimum is not
+                        # realizable; the nearest state that is puts
+                        # everything on the minimum). That is the single
+                        # clamped expression below. Its only constants are
+                        # the lattice offsets 1 and 2, in units of one repeat
+                        # unit; nothing is fitted, and nothing needs a scale
+                        # this function does not already carry.
+                        #
+                        # Why this is not merely one defensible choice among
+                        # many: the trigger is itself a realizability filter.
+                        # A lattice distribution with mean n + f has variance
+                        # >= f*(1-f), so PDI - 1 >= f*(1-f)/mean^2, and
+                        # reaching PDI <= 1 + 1e-6 needs f <= 1.6e-5 at
+                        # xs = 3 (4.0e-6 at xs = 1, 2.6e-3 at xs = 50). Every
+                        # state that can actually arrive here therefore sits
+                        # within ~1e-5 of an INTEGER mean, where the answer is
+                        # not an interpolation at all: 1 at xs+1, 0 at xs+2
+                        # and beyond. The old triangle returned 0 at BOTH of
+                        # those. The interior is lattice-unrealizable, and the
+                        # linear form is the unique CONTINUOUS interpolant of
+                        # the two realizable endpoints -- continuity is not
+                        # optional, since a step would put a zeroth-order jump
+                        # in the residual on a surface the trajectory crosses,
+                        # which is the defect the I-060 note above exists to
+                        # record.
+                        #
+                        # Meeting the gamma leg. As PDI -> 1+ the gamma leg
+                        # tends to nearest-lattice-site ROUNDING -- its
+                        # half-integer bins give 1.0 below xs+1.5, 0.0 above,
+                        # 0.500133 at it -- and this bracket is exactly that
+                        # step's continuous interpolant, so the two agree at
+                        # frac = 0, 0.5 and 1. Measured across the trigger at
+                        # fixed mean (PDI = 1+1e-6 vs 1+1e-6+1e-9), over the
+                        # lattice-realizable states that can reach it,
+                        # sup|fallback - gamma| falls from 1.000000 to
+                        # 1.0e-05. Over the whole interval including the
+                        # unrealizable interior it falls from 1.000000 to
+                        # 0.475000; that residue is the gamma leg's own
+                        # rounding step at frac = 0.5, which a continuous law
+                        # cannot reproduce and should not try to.
+                        #
+                        # Monotone non-increasing, as the truth is: the mass
+                        # on the lowest site can only fall as the mean leaves
+                        # it. The triangle was not.
+                        p_cond = max(0.0, min(1.0, (xs + 2.0) - tail_mean))
 
                     p_cond = min(1.0, max(0.0, p_cond))
 

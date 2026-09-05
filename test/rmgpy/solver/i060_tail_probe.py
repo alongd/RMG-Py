@@ -308,8 +308,9 @@ def main():
         tail_conc_min=float(polymer_mod.TAIL_CONC_MIN),
         field=field_scan(),
         # PDI == 1 exactly: _gamma_params_from_mu012 refuses (pdi <= 1+1e-6),
-        # so p_cond comes from the in-block monodisperse triangle fallback
-        # instead of the gamma leg. Second instance of the same guard shape.
+        # so p_cond comes from the in-block monodisperse fallback (the
+        # minimum-variance lattice bracket, I-098) instead of the gamma leg.
+        # Second instance of the same guard shape.
         field_mono=field_scan(pdi=1.0),
         random=random_states(),
         traj=trajectory(),
