@@ -24,6 +24,7 @@ unit and leaving a shorter chain-end radical.  That is exactly one unzip event.
 
 Run:  python test/rmgpy/solver/i099_unzip_basis_probe.py
 """
+import math
 import os
 import sys
 
@@ -46,6 +47,15 @@ SHORT_END_RADICAL = "C[CH]c1ccccc1"                  # 1-phenylethyl
 
 # Temperatures the polymer decks actually run at.
 TEMPERATURES = (298.15, 700.0, 900.0, 1100.0)
+
+
+def _family_obj(db, fam):
+    """`rxn.family` is a label string after find_degenerate_reactions."""
+    return db.kinetics.families[fam] if isinstance(fam, str) else fam
+
+
+def _family_label(fam):
+    return fam if isinstance(fam, str) else fam.label
 
 
 def _smiles(obj):
@@ -112,11 +122,12 @@ def main():
     by_family = {}
     for rxn in rxns:
         by_family.setdefault(rxn.family, []).append(rxn)
+    by_family = {_family_label(k): v for k, v in by_family.items()}
     for fam in sorted(by_family):
         print(f"    {fam}: {len(by_family[fam])}")
     print("  product sets generated:")
     for rxn in rxns:
-        print(f"    {rxn.family:32s} -> {' + '.join(sorted(_smiles(p) for p in rxn.products))}")
+        print(f"    {_family_label(rxn.family):32s} -> {' + '.join(sorted(_smiles(p) for p in rxn.products))}")
 
     target = {_smiles(styrene), _smiles(short)}
     hits = 0
@@ -126,13 +137,16 @@ def main():
             continue
         hits += 1
         try:
-            rxn.kinetics = rxn.family.get_kinetics_for_template(
-                rxn.template, degeneracy=rxn.degeneracy)[0]
+            _fam = _family_obj(db, rxn.family)
+            _tmpl = (rxn.template if not isinstance(rxn.template[0], str)
+                     else _fam.retrieve_template(rxn.template))
+            rxn.kinetics = _fam.get_kinetics_for_template(
+                _tmpl, degeneracy=rxn.degeneracy)[0]
         except Exception as exc:  # noqa: BLE001
-            print(f"  family {rxn.family.label}: kinetics lookup failed "
+            print(f"  family {_family_label(rxn.family)}: kinetics lookup failed "
                   f"({type(exc).__name__}: {exc})")
             continue
-        print(f"  family {rxn.family.label}: {rxn.kinetics}")
+        print(f"  family {_family_label(rxn.family)}: {rxn.kinetics}")
         for T in TEMPERATURES:
             try:
                 print(f"      k({T:7.2f} K) = "
@@ -140,9 +154,70 @@ def main():
             except Exception as exc:  # noqa: BLE001
                 print(f"      k({T:7.2f} K) unavailable: {exc}")
     if hits == 0:
-        print("  NO family produced this elementary step from the model "
-              "reactant. That is itself\n  the finding: the settling route is "
-              "not available off the shelf here.")
+        print("  NO family produced this step in the SCISSION direction from "
+              "the model reactant.\n  RMG's families are written in the "
+              "addition direction, so ask the reverse question.")
+
+    # Depropagation is the exact reverse of propagation, and propagation IS a
+    # template of R_Addition_MultipleBond (radical + monomer -> chain radical).
+    # Asking in that direction is asking RMG for its own rate rule; the
+    # depropagation rate then follows from that rate and the equilibrium
+    # constant built out of the thermochemistry printed above. No fit, no QM.
+    print("\n--- the reverse (propagation) direction: radical + styrene ---")
+    prop = []
+    for family in db.kinetics.families.values():
+        try:
+            prop.extend(family.generate_reactions(
+                [short.molecule[0], styrene.molecule[0]]))
+        except Exception as exc:  # noqa: BLE001
+            print(f"  (family {family.label} raised {type(exc).__name__}: {exc})")
+    prop = find_degenerate_reactions(prop, set(), kinetics_database=db.kinetics)
+    print(f"  positive control: {len(prop)} bimolecular reaction(s) generated")
+    want = {_smiles(reactant)}
+    for rxn in prop:
+        if {_smiles(p) for p in rxn.products} != want:
+            continue
+        try:
+            _fam = _family_obj(db, rxn.family)
+            _tmpl = (rxn.template if not isinstance(rxn.template[0], str)
+                     else _fam.retrieve_template(rxn.template))
+            rxn.kinetics = _fam.get_kinetics_for_template(
+                _tmpl, degeneracy=rxn.degeneracy)[0]
+        except Exception as exc:  # noqa: BLE001
+            print(f"  family {_family_label(rxn.family)}: kinetics lookup failed "
+                  f"({type(exc).__name__}: {exc})")
+            continue
+        print(f"  PROPAGATION via {_family_label(rxn.family)}: {rxn.kinetics}")
+        for T in TEMPERATURES:
+            try:
+                kf = rxn.kinetics.get_rate_coefficient(T)
+                print(f"      k_propagation({T:7.2f} K) = {kf:.4e} "
+                      f"(family units)")
+            except Exception as exc:  # noqa: BLE001
+                print(f"      k({T:7.2f} K) unavailable: {exc}")
+        # Close the loop: k_depropagation = k_propagation / Kc, with Kc built
+        # from the SAME thermochemistry printed above. This is the arithmetic
+        # the settling route consists of -- reported to scope the route, NOT
+        # adopted as a deck value (see the caveat printed after it).
+        R_SI = 8.314462618
+        P_STD = 1.0e5
+        print("      -- closing the loop through Kc (per-chain-end s^-1) --")
+        for T in TEMPERATURES:
+            dG_dep = ((styrene.thermo.get_enthalpy(T) + short.thermo.get_enthalpy(T)
+                       - reactant.thermo.get_enthalpy(T))
+                      - T * (styrene.thermo.get_entropy(T) + short.thermo.get_entropy(T)
+                             - reactant.thermo.get_entropy(T)))
+            # propagation is the reverse of depropagation; dn = -1 (2 -> 1)
+            Kp_prop = math.exp(dG_dep / (R_SI * T))     # = exp(-dG_prop/RT)
+            Kc_prop = Kp_prop * (R_SI * T / P_STD)      # m^3/mol
+            kf_si = rxn.kinetics.get_rate_coefficient(T) * 1.0e-6   # cm^3 -> m^3
+            print(f"      k_depropagation({T:7.2f} K) = {kf_si / Kc_prop:.4e} s^-1"
+                  f"   [Kc_prop = {Kc_prop:.4e} m^3/mol]")
+        print("      CAVEAT: the rate rule above is a generic [R_R;YJ] fallback "
+              "at Euclidean\n      distance 7.81 with E0 = 0.5 kcal/mol and "
+              "A = 1e13 cm^3/(mol s). Literature\n      styrene propagation is "
+              "nearer A ~ 1e10 cm^3/(mol s), Ea ~ 2 kcal/mol, so this\n      "
+              "number scopes the ROUTE and must not be adopted as a deck value.")
 
 
 if __name__ == "__main__":
