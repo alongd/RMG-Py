@@ -1356,3 +1356,33 @@ class TestActionGraphClosure:
         assert offenders == set(), (
             f"argon/alkali action graph is not both-ways closed: {sorted(offenders)}"
         )
+
+
+class TestNoDuplicateAtomTypeDefinitions:
+    """
+    Guards against the same ``ATOMTYPES[...]`` label being defined more than once.
+
+    Two byte-identical definitions differ in nothing observable at runtime -- the second silently
+    overwrites the first with the same value -- so a dict inspection cannot catch them. The defect
+    is latent: whoever later edits one copy finds their change silently discarded or silently
+    winning depending on which copy they opened. This test reads the source of atomtype.py and
+    fails if any label is assigned an ``AtomType`` more than once, so a duplicate cannot recur.
+    """
+
+    def test_each_atomtype_label_defined_once(self):
+        import os
+        import re
+
+        # atomtype is cythonized, so __file__ points at the compiled .so and inspect.getsource
+        # is unavailable; read the .py sitting beside it instead.
+        source_path = os.path.join(os.path.dirname(rmgpy.molecule.atomtype.__file__), "atomtype.py")
+        with open(source_path) as f:
+            source = f.read()
+        labels = re.findall(r"""ATOMTYPES\[(['"])(?P<label>[^'"]+)\1\]\s*=\s*AtomType\(""", source)
+        seen = {}
+        duplicates = {}
+        for _quote, label in labels:
+            seen[label] = seen.get(label, 0) + 1
+            if seen[label] > 1:
+                duplicates[label] = seen[label]
+        assert not duplicates, f"ATOMTYPES labels defined more than once: {duplicates}"
