@@ -320,6 +320,23 @@ class Polymer(Species):
         # of the spawning channel's gas_product by
         # generate_side_loss_daughters; 0.0 on ordinary pools.
         self.chain_mass_defect_g_mol = 0.0
+        # EVIDENCE for the value above (I-059): the arithmetic the producer
+        # actually performed to reach it, written down so the serialized
+        # record is self-describing and a downstream consumer can VALIDATE
+        # the defect instead of trusting it. None on ordinary pools; set by
+        # every spawn path that creates or grows a defect (see
+        # :meth:`_defect_provenance`) to
+        #     {"source": <spawn source>, "parent_pool": <parent label>,
+        #      "inherited_g_mol": <the parent's defect>,
+        #      "shed_g_mol": <this event's shed mass>}
+        # carrying the exact-arithmetic invariant
+        #     inherited_g_mol + shed_g_mol == chain_mass_defect_g_mol
+        # -- the same two IEEE doubles the producer added, so a consumer's
+        # re-addition reproduces the sum bit-for-bit. Deliberately NOT a
+        # closed source vocabulary: the evidence is the arithmetic plus the
+        # lineage closure through parent_pool, not the channel name, so a new
+        # spawn channel needs no consumer coordination.
+        self.chain_mass_defect_provenance = None
         # Concerted-loss feature-pool identity (regen5 route): sorted tuple
         # of ejected-gas formulas accumulated along this pool's
         # concerted-elimination lineage (e.g. ('H2O',) after one
@@ -702,6 +719,14 @@ class Polymer(Species):
         other.side_loss_channel = getattr(self, 'side_loss_channel', None)
         other.chain_mass_defect_g_mol = getattr(
             self, 'chain_mass_defect_g_mol', 0.0)
+        # I-059: the evidence travels with the value it explains. This copy
+        # carries the defect (line above), so it must carry the block that
+        # makes the defect checkable -- a copy that kept the number and
+        # dropped its provenance is exactly the artifact shape the consumer
+        # cannot validate. deepcopy for the same aliasing reason as the
+        # channel dicts above.
+        other.chain_mass_defect_provenance = deepcopy(getattr(
+            self, 'chain_mass_defect_provenance', None))
         # Concerted-loss pool identity (regen5 route): like side_loss_channel
         # this is a fingerprint input -- losing it on copy would collapse a
         # gas-loss feature pool back onto its source pool.
@@ -1911,6 +1936,42 @@ class Polymer(Species):
         return self._born_at_zero_mod_daughter(feature,
                                                source="radical_feature_h_loss")
 
+    def _defect_provenance(self, source: str, inherited_g_mol: float,
+                           shed_g_mol: float) -> dict:
+        """
+        The evidence block for a per-chain mass defect this pool's spawn event
+        produced (I-059): the operands of the addition the caller is about to
+        perform, recorded next to its result.
+
+        The defect is derived correctly at every spawn site and was then
+        never reconciled into what got written down -- the serialized record
+        carried the RESULT (``chain_mass_defect_g_mol``) and the spawn
+        CHANNEL (``spawn_event_metadata.source``) but nothing that lets a
+        different program, in a different environment, check the NUMBER. A
+        channel name cannot distinguish 1.008 g/mol from 16 g/mol.
+
+        So the block records the addition itself::
+
+            inherited_g_mol + shed_g_mol == chain_mass_defect_g_mol
+
+        exactly (the consumer re-adds the same two IEEE doubles), together
+        with ``parent_pool`` so ``inherited_g_mol`` closes against the
+        parent's own serialized defect. Those two checks are the whole
+        contract; there is deliberately no closed vocabulary of ``source``
+        values, so adding a spawn channel needs no consumer coordination.
+
+        ``inherited_g_mol`` is the SOURCE pool's defect (0.0 for a first-
+        generation daughter) and ``shed_g_mol`` is what THIS event removes
+        (0.0 for a daughter that only inherits, e.g. an H-loss child whose
+        structural delta falls outside the atom-transfer gate).
+        """
+        return {
+            "source": str(source),
+            "parent_pool": self.label,
+            "inherited_g_mol": float(inherited_g_mol),
+            "shed_g_mol": float(shed_g_mol),
+        }
+
     def _born_at_zero_mod_daughter(self, feature_monomer: Molecule,
                                    source: str) -> 'Polymer':
         """
@@ -1965,12 +2026,21 @@ class Polymer(Species):
         defect_src = float(getattr(self, "chain_mass_defect_g_mol", 0.0)
                            or 0.0)
         daughter.chain_mass_defect_g_mol = defect_src
+        shed_g = 0.0
         if basis is not None and feature_monomer is not None:
             delta_g = (basis.get_molecular_weight()
                        - feature_monomer.get_molecular_weight()) * 1000.0
             if (0.0 < delta_g
                     < _VE_ATOM_TRANSFER_UNITS * self.monomer_mw_g_mol):
                 daughter.chain_mass_defect_g_mol = defect_src + delta_g
+                shed_g = delta_g
+        # I-059: record the addition, not just its result, so the sidecar
+        # carries the evidence for the defect rather than asking the consumer
+        # to trust it. Only where there IS a defect -- a zero defect needs no
+        # evidence and an empty block would be noise.
+        if daughter.chain_mass_defect_g_mol > 0.0:
+            daughter.chain_mass_defect_provenance = self._defect_provenance(
+                source, defect_src, shed_g)
         return daughter
 
     def _create_concerted_loss_feature_copy(self, product: Molecule,
@@ -2079,6 +2149,11 @@ class Polymer(Species):
         defect_src = float(getattr(self, "chain_mass_defect_g_mol", 0.0)
                            or 0.0)
         daughter.chain_mass_defect_g_mol = defect_src + gas_mw_g_mol
+        # I-059 evidence block: same contract as the H-loss path -- the two
+        # operands of the sum above, plus the parent whose defect
+        # ``inherited_g_mol`` must equal.
+        daughter.chain_mass_defect_provenance = self._defect_provenance(
+            CONCERTED_LOSS_SPAWN_SOURCE, defect_src, gas_mw_g_mol)
         return daughter
 
     def _stitch_wing(self, side: str) -> Molecule:
@@ -7924,6 +7999,37 @@ def _serialize_pool_for_sidecar(pool: 'Polymer',
     _pool_defect = getattr(pool, "chain_mass_defect_g_mol", 0.0) or 0.0
     if float(_pool_defect) > 0.0:
         d["chain_mass_defect_g_mol"] = float(_pool_defect)
+        # I-059 EVIDENCE for that value. The defect class this closes is "a
+        # field derived correctly and then never reconciled into what was
+        # written down", so the write is itself the reconciliation point: the
+        # block only reaches the artifact if its arithmetic still closes
+        # against the number being emitted one line above. A block that has
+        # drifted from its own defect is a producer bug that must not be
+        # laundered into a consumer's mass balance, so it fails LOUD here
+        # rather than travelling as unverifiable evidence.
+        _prov = getattr(pool, "chain_mass_defect_provenance", None)
+        if _prov is not None:
+            _inherited = float(_prov.get("inherited_g_mol"))
+            _shed = float(_prov.get("shed_g_mol"))
+            if _inherited + _shed != float(_pool_defect):
+                raise ValueError(
+                    f"Pool {getattr(pool, 'label', '')!r}: "
+                    f"chain_mass_defect_provenance does not reconstruct "
+                    f"chain_mass_defect_g_mol -- inherited_g_mol="
+                    f"{_inherited!r} + shed_g_mol={_shed!r} = "
+                    f"{_inherited + _shed!r}, but the pool carries "
+                    f"{float(_pool_defect)!r}. The block records the exact "
+                    f"addition the spawn path performed, so the two are the "
+                    f"same IEEE doubles and must agree bit-for-bit; a "
+                    f"divergence means the defect was mutated after spawn "
+                    f"without updating its evidence. Refusing to serialize "
+                    f"unverifiable provenance.")
+            d["chain_mass_defect_provenance"] = {
+                "source": str(_prov.get("source")),
+                "parent_pool": _prov.get("parent_pool"),
+                "inherited_g_mol": _inherited,
+                "shed_g_mol": _shed,
+            }
     phase_species: List[str] = []
     bookkeeping_species: List[str] = []
     if core_species:
