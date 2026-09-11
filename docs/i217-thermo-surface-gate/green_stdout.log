@@ -1,0 +1,11 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+rootdir: /home/alon/Code/RMG-Py-i217-thermo-surface-gate
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 2 items
+
+test/rmgpy/data/rmgTest.py::RMGDatabaseLoadSurfaceTest::test_load_surface_false_populates_thermo_without_adsorption_groups_loaded PASSED
+test/rmgpy/data/rmgTest.py::RMGDatabaseLoadSurfaceTest::test_load_surface_true_populates_thermo_with_adsorption_groups_loaded PASSED
+
+============================== 2 passed in 4.23s ===============================
