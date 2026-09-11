@@ -1,0 +1,93 @@
+ERROR:root:Could not update atomtypes for this molecule:
+multiplicity 3
+1 Ar u2 p2 c+2
+
+ERROR:root:Could not update atomtypes for this molecule:
+multiplicity 3
+1 Ar u2 p2 c+2
+
+ERROR:root:Could not update atomtypes for this molecule:
+multiplicity 3
+1 Ar u2 p3 c0
+
+ERROR:root:Could not update atomtypes for this molecule:
+multiplicity 3
+1 Ar u2 p2 c+1 {2,S}
+2 H  u0 p0 c0 {1,S}
+
+ERROR:root:Could not update atomtypes for this molecule:
+multiplicity 3
+1 Ar u2 p2 c+1 {2,S}
+2 H  u0 p0 c0 {1,S}
+
+ERROR:root:Could not update atomtypes for this molecule:
+multiplicity 2
+1 Ar u1 p2 c+2 {2,S}
+2 H  u0 p0 c0 {1,S}
+
+ERROR:root:Could not update atomtypes for this molecule:
+multiplicity 2
+1 Ar u1 p2 c+2 {2,S}
+2 H  u0 p0 c0 {1,S}
+
+ERROR:root:Could not update atomtypes for this molecule:
+multiplicity 2
+1 Ar u1 p3 c0 {2,S}
+2 H  u0 p0 c0 {1,S}
+
+ERROR:root:Could not update atomtypes for this molecule:
+multiplicity 3
+1 Ar u2 p1 c+2 {2,S} {3,S}
+2 H  u0 p0 c0 {1,S}
+3 H  u0 p0 c0 {1,S}
+
+ERROR:root:Could not update atomtypes for this molecule:
+multiplicity 3
+1 Ar u2 p1 c+2 {2,S} {3,S}
+2 H  u0 p0 c0 {1,S}
+3 H  u0 p0 c0 {1,S}
+
+ERROR:root:Could not update atomtypes for this molecule:
+multiplicity 3
+1 Ar u2 p2 c0 {2,S} {3,S}
+2 H  u0 p0 c0 {1,S}
+3 H  u0 p0 c0 {1,S}
+
+ERROR:root:Could not update atomtypes for this molecule:
+multiplicity 3
+1 Ar u2 p2 c0 {2,S} {3,S}
+2 H  u0 p0 c0 {1,S}
+3 H  u0 p0 c0 {1,S}
+
+ERROR:root:Could not update atomtypes for this molecule:
+multiplicity 2
+1 Ar u1 p2 c+1 {2,S} {3,S}
+2 H  u0 p0 c0 {1,S}
+3 H  u0 p0 c0 {1,S}
+
+ERROR:root:Could not update atomtypes for this molecule:
+multiplicity 2
+1 Ar u1 p2 c+1 {2,S} {3,S}
+2 H  u0 p0 c0 {1,S}
+3 H  u0 p0 c0 {1,S}
+
+ERROR:root:Could not update atomtypes for this molecule:
+1 Ar u0 p2 c+2 {2,S} {3,S}
+2 H  u0 p0 c0 {1,S}
+3 H  u0 p0 c0 {1,S}
+
+ERROR:root:Could not update atomtypes for this molecule:
+1 Ar u0 p2 c+2 {2,S} {3,S}
+2 H  u0 p0 c0 {1,S}
+3 H  u0 p0 c0 {1,S}
+
+ERROR:root:Could not update atomtypes for this molecule:
+1 Ar u0 p3 c0 {2,S} {3,S}
+2 H  u0 p0 c0 {1,S}
+3 H  u0 p0 c0 {1,S}
+
+ERROR:root:Could not update atomtypes for this molecule:
+1 Ar u0 p3 c0 {2,S} {3,S}
+2 H  u0 p0 c0 {1,S}
+3 H  u0 p0 c0 {1,S}
+

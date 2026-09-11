@@ -147,7 +147,13 @@ class TestAtomType:
     it tries to make a 6-membered ring (not realizing it should be 5-membered)
     and then gets the wrong number of pi electrons.
     """
-    EXPECTED_FAILING_ATOMTYPES = ["O4b", "S4b"]
+    # Ar0s fails for an unrelated and inherent reason: a neutral argon holding one covalent bond
+    # necessarily carries an unpaired electron (8 valence electrons = 1 bond + 3 lone pairs + 1
+    # radical), so the type has NO closed-shell instance. make_sample_molecule reads the group's
+    # `ux` as u0, builds `Ar u0 p3 {H,S}`, and update_charge then makes that a cation -- which the
+    # generator itself correctly refuses against Ar0s's declared charge=[0]. This is a limitation
+    # of the sample generator, not of the atom type; see docs/i213-bonded-argon-atomtype/report.md.
+    EXPECTED_FAILING_ATOMTYPES = ["O4b", "S4b", "Ar0s"]
 
     def test_make_sample_molecule(self):
         """

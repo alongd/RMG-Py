@@ -1,0 +1,153 @@
+
+==============================================================================
+PROVENANCE
+==============================================================================
+cwd                 = /home/alon/Code/RMG-Py-i213-bonded-argon-atomtype
+python              = /home/alon/anaconda3/envs/rmg_env/bin/python
+rmgpy.__file__      = /home/alon/Code/RMG-Py-i213-bonded-argon-atomtype/rmgpy/__init__.py
+atomtype.__file__   = /home/alon/Code/RMG-Py-i213-bonded-argon-atomtype/rmgpy/molecule/atomtype.cpython-39-x86_64-linux-gnu.so
+atomtype compiled   = True
+argon labels LOADED = ['Ar', 'Ar+', 'Ar++', 'Ar0', 'Ar0s']
+    Ar     single=[] lone_pairs=[] charge=[0, 1, 2] specific=['Ar0', 'Ar0s', 'Ar+', 'Ar++']
+    Ar+    single=[0, 1] lone_pairs=[3] charge=[1] specific=[]
+    Ar++   single=[0, 1, 2] lone_pairs=[3] charge=[2] specific=[]
+    Ar0    single=[0] lone_pairs=[4] charge=[0] specific=[]
+    Ar0s   single=[0, 1] lone_pairs=[3] charge=[0] specific=[]
+database.directory  = /home/alon/Code/RMG-database-plasma/input
+  exists            = True
+  realpath          = /home/alon/Code/RMG-database-plasma/input
+
+==============================================================================
+1. Ar2+ FROM A LOCALISED-CHARGE ADJACENCY LIST
+==============================================================================
+adjacency list under test:
+1 Ar u0 p3 c+1 {2,S}
+2 Ar u1 p3 c0 {1,S}
+
+[OK]     Molecule().from_adjacency_list(Ar2+): <Molecule "[Ar][Ar+]">
+
+==============================================================================
+1b. SINGLE-ATOM CONTROLS
+==============================================================================
+[OK]     get_atomtype(bare Ar, u0 p4 c0): Ar0
+[OK]     get_atomtype(bare Ar+, u1 p3 c+1): Ar+
+[OK]     get_atomtype(BONDED Ar+ centre, positive control): Ar+
+[OK]     get_atomtype(BONDED neutral Ar centre, the gap): Ar0s
+
+==============================================================================
+2. UPDATE, ROUND-TRIP, FORMULA, BALANCE
+==============================================================================
+[OK]     atom types: ['Ar0s', 'Ar+']
+[OK]     mol.update(): ['Ar0s', 'Ar+']
+[OK]     get_formula(): Ar2
+[OK]     get_net_charge(): 1
+[OK]     get_radical_count(): 1
+[OK]     multiplicity: 2
+[OK]     is_linear(): True
+[OK]     get_molecular_weight(): 0.07975500077009201
+[OK]     to_adjacency_list -> from_adjacency_list: 
+---
+multiplicity 2
+1 Ar u1 p3 c0 {2,S}
+2 Ar u0 p3 c+1 {1,S}
+--- isomorphic back: True
+[OK]     is_balanced in a trial reaction: Ar+ + Ar <=> Ar2+ : True | negative control Ar+ <=> Ar2+ + e- : False
+
+==============================================================================
+3. SMILES / InChI ROUND-TRIP
+==============================================================================
+[OK]     SMILES round-trip (Ar2+): to_smiles() = '[Ar][Ar+]' -> from_smiles gives [('Ar', 1, 0, 3), ('Ar', 1, 0, 3)] net charge 2 | isomorphic back: False
+[OK]     SMILES round-trip control (monatomic Ar+): to_smiles() = '[Ar+]' -> back net charge 2 (expected +1) | isomorphic back: False
+[OK]     to_inchi(): InChI=1S/Ar2/c1-2/q+1
+
+==============================================================================
+4. THERMOCHEMISTRY: DOES GROUP ADDITIVITY RETURN A SILENT NUMBER?
+==============================================================================
+[RAISED] thermo.get_thermo_data_from_groups(Ar2+)
+Traceback (most recent call last):
+  File "/home/alon/Code/RMG-Py-i213-bonded-argon-atomtype/docs/i213-bonded-argon-atomtype/probe.py", line 28, in report
+    value = fn()
+  File "/home/alon/Code/RMG-Py-i213-bonded-argon-atomtype/docs/i213-bonded-argon-atomtype/probe.py", line 206, in <lambda>
+    lambda: _describe(db.thermo.get_thermo_data_from_groups(_ar2_species())))
+  File "/home/alon/Code/RMG-Py-i213-bonded-argon-atomtype/rmgpy/data/thermo.py", line 2114, in get_thermo_data_from_groups
+    tdata = self.estimate_thermo_via_group_additivity(molecule)
+  File "/home/alon/Code/RMG-Py-i213-bonded-argon-atomtype/rmgpy/data/thermo.py", line 2354, in estimate_thermo_via_group_additivity
+    thermo_data = self.estimate_radical_thermo_via_hbi(molecule, self.compute_group_additivity_thermo)
+  File "/home/alon/Code/RMG-Py-i213-bonded-argon-atomtype/rmgpy/data/thermo.py", line 2247, in estimate_radical_thermo_via_hbi
+    added = saturated_struct.saturate_radicals()
+  File "rmgpy/molecule/molecule.py", line 2512, in rmgpy.molecule.molecule.Molecule.saturate_radicals
+    def saturate_radicals(self, raise_atomtype_exception=True):
+  File "rmgpy/molecule/molecule.py", line 2534, in rmgpy.molecule.molecule.Molecule.saturate_radicals
+    self.update_atomtypes(raise_exception=raise_atomtype_exception)
+  File "rmgpy/molecule/molecule.py", line 1571, in rmgpy.molecule.molecule.Molecule.update_atomtypes
+    def update_atomtypes(self, log_species=True, raise_exception=True):
+  File "rmgpy/molecule/molecule.py", line 1592, in rmgpy.molecule.molecule.Molecule.update_atomtypes
+    raise
+  File "rmgpy/molecule/molecule.py", line 1587, in rmgpy.molecule.molecule.Molecule.update_atomtypes
+    atom.atomtype = get_atomtype(atom, atom.edges)
+  File "rmgpy/molecule/atomtype.py", line 1052, in rmgpy.molecule.atomtype.get_atomtype
+    def get_atomtype(atom, bonds):
+  File "rmgpy/molecule/atomtype.py", line 1080, in rmgpy.molecule.atomtype.get_atomtype
+    raise AtomTypeError(
+rmgpy.exceptions.AtomTypeError: Unable to determine atom type for atom Ar, which has 2 single bonds, 0 double bonds (0 to O, 0 to S, 0 others), 0 triple bonds, 0 quadruple bonds, 0 benzene bonds, 3 lone pairs, and +0 charge.
+[RAISED] thermo.get_thermo_data(Ar2+)
+Traceback (most recent call last):
+  File "/home/alon/Code/RMG-Py-i213-bonded-argon-atomtype/docs/i213-bonded-argon-atomtype/probe.py", line 28, in report
+    value = fn()
+  File "/home/alon/Code/RMG-Py-i213-bonded-argon-atomtype/docs/i213-bonded-argon-atomtype/probe.py", line 209, in <lambda>
+    lambda: _describe(db.thermo.get_thermo_data(_ar2_species())))
+  File "/home/alon/Code/RMG-Py-i213-bonded-argon-atomtype/rmgpy/data/thermo.py", line 1497, in get_thermo_data
+    tdata = self.estimate_radical_thermo_via_hbi(molecule, self.get_thermo_data_from_libraries)
+  File "/home/alon/Code/RMG-Py-i213-bonded-argon-atomtype/rmgpy/data/thermo.py", line 2247, in estimate_radical_thermo_via_hbi
+    added = saturated_struct.saturate_radicals()
+  File "rmgpy/molecule/molecule.py", line 2512, in rmgpy.molecule.molecule.Molecule.saturate_radicals
+    def saturate_radicals(self, raise_atomtype_exception=True):
+  File "rmgpy/molecule/molecule.py", line 2534, in rmgpy.molecule.molecule.Molecule.saturate_radicals
+    self.update_atomtypes(raise_exception=raise_atomtype_exception)
+  File "rmgpy/molecule/molecule.py", line 1571, in rmgpy.molecule.molecule.Molecule.update_atomtypes
+    def update_atomtypes(self, log_species=True, raise_exception=True):
+  File "rmgpy/molecule/molecule.py", line 1592, in rmgpy.molecule.molecule.Molecule.update_atomtypes
+    raise
+  File "rmgpy/molecule/molecule.py", line 1587, in rmgpy.molecule.molecule.Molecule.update_atomtypes
+    atom.atomtype = get_atomtype(atom, atom.edges)
+  File "rmgpy/molecule/atomtype.py", line 1052, in rmgpy.molecule.atomtype.get_atomtype
+    def get_atomtype(atom, bonds):
+  File "rmgpy/molecule/atomtype.py", line 1080, in rmgpy.molecule.atomtype.get_atomtype
+    raise AtomTypeError(
+rmgpy.exceptions.AtomTypeError: Unable to determine atom type for atom Ar, which has 2 single bonds, 0 double bonds (0 to O, 0 to S, 0 others), 0 triple bonds, 0 quadruple bonds, 0 benzene bonds, 3 lone pairs, and +0 charge.
+[RAISED] thermo.compute_group_additivity_thermo(Ar2+) [HBI bypassed]
+Traceback (most recent call last):
+  File "/home/alon/Code/RMG-Py-i213-bonded-argon-atomtype/docs/i213-bonded-argon-atomtype/probe.py", line 28, in report
+    value = fn()
+  File "/home/alon/Code/RMG-Py-i213-bonded-argon-atomtype/docs/i213-bonded-argon-atomtype/probe.py", line 213, in <lambda>
+    lambda: _describe(db.thermo.compute_group_additivity_thermo(mol.copy(deep=True))))
+  File "/home/alon/Code/RMG-Py-i213-bonded-argon-atomtype/rmgpy/data/thermo.py", line 2370, in compute_group_additivity_thermo
+    assert not molecule.is_radical(), "This method is only for saturated non-radical species."
+AssertionError: This method is only for saturated non-radical species.
+[OK]     CONTROL thermo.get_thermo_data_from_groups(ethane): 
+    !!! A NUMBER WAS RETURNED FOR Ar2+ !!!
+    H298    = -20.400 kcal/mol
+    S298    = 60.820 cal/mol/K
+    Cp(300) = 12.380 cal/mol/K
+    comment = 'Thermo group additivity estimation: group(Cs-CsHHH) + group(Cs-CsHHH)'
+[RAISED] CONTROL thermo.get_thermo_data_from_groups(monatomic Ar)
+Traceback (most recent call last):
+  File "/home/alon/Code/RMG-Py-i213-bonded-argon-atomtype/docs/i213-bonded-argon-atomtype/probe.py", line 28, in report
+    value = fn()
+  File "/home/alon/Code/RMG-Py-i213-bonded-argon-atomtype/docs/i213-bonded-argon-atomtype/probe.py", line 222, in <lambda>
+    lambda: _describe(db.thermo.get_thermo_data_from_groups(argon)))
+  File "/home/alon/Code/RMG-Py-i213-bonded-argon-atomtype/rmgpy/data/thermo.py", line 2114, in get_thermo_data_from_groups
+    tdata = self.estimate_thermo_via_group_additivity(molecule)
+  File "/home/alon/Code/RMG-Py-i213-bonded-argon-atomtype/rmgpy/data/thermo.py", line 2356, in estimate_thermo_via_group_additivity
+    thermo_data = self.compute_group_additivity_thermo(molecule)
+  File "/home/alon/Code/RMG-Py-i213-bonded-argon-atomtype/rmgpy/data/thermo.py", line 2392, in compute_group_additivity_thermo
+    data_added = self._add_group_thermo_data(thermo_data, self.groups['group'], molecule, {'*': atom})[1]
+  File "/home/alon/Code/RMG-Py-i213-bonded-argon-atomtype/rmgpy/data/thermo.py", line 2772, in _add_group_thermo_data
+    raise DatabaseError(f'Unable to determine thermo parameters for atom {atom} in molecule {molecule}: '
+rmgpy.exceptions.DatabaseError: Unable to determine thermo parameters for atom {'*': <Atom 'Ar'>} in molecule <Molecule "[Ar]">: no data for node R or any of its ancestors in database group.
+1 Ar u0 p4 c0
+
+
+==============================================================================
+DONE
+==============================================================================

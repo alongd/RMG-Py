@@ -1,0 +1,68 @@
+
+==============================================================================
+PROVENANCE
+==============================================================================
+cwd                 = /home/alon/Code/RMG-Py-i213-bonded-argon-atomtype
+python              = /home/alon/anaconda3/envs/rmg_env/bin/python
+rmgpy.__file__      = /home/alon/Code/RMG-Py-i213-bonded-argon-atomtype/rmgpy/__init__.py
+atomtype.__file__   = /home/alon/Code/RMG-Py-i213-bonded-argon-atomtype/rmgpy/molecule/atomtype.cpython-39-x86_64-linux-gnu.so
+atomtype compiled   = True
+argon labels LOADED = ['Ar', 'Ar+', 'Ar++', 'Ar0']
+    Ar     single=[] lone_pairs=[] charge=[0, 1, 2] specific=['Ar0', 'Ar+', 'Ar++']
+    Ar+    single=[0, 1] lone_pairs=[3] charge=[1] specific=[]
+    Ar++   single=[0, 1, 2] lone_pairs=[3] charge=[2] specific=[]
+    Ar0    single=[0] lone_pairs=[4] charge=[0] specific=[]
+database.directory  = /home/alon/Code/RMG-database-plasma/input
+  exists            = True
+  realpath          = /home/alon/Code/RMG-database-plasma/input
+
+==============================================================================
+1. Ar2+ FROM A LOCALISED-CHARGE ADJACENCY LIST
+==============================================================================
+adjacency list under test:
+1 Ar u0 p3 c+1 {2,S}
+2 Ar u1 p3 c0 {1,S}
+
+[RAISED] Molecule().from_adjacency_list(Ar2+)
+Traceback (most recent call last):
+  File "/home/alon/Code/RMG-Py-i213-bonded-argon-atomtype/docs/i213-bonded-argon-atomtype/probe.py", line 28, in report
+    value = fn()
+  File "/home/alon/Code/RMG-Py-i213-bonded-argon-atomtype/docs/i213-bonded-argon-atomtype/probe.py", line 85, in <lambda>
+    lambda: Molecule().from_adjacency_list(AR2_PLUS_ADJLIST),
+  File "rmgpy/molecule/molecule.py", line 1942, in rmgpy.molecule.molecule.Molecule.from_adjacency_list
+    def from_adjacency_list(self, adjlist, saturate_h=False, raise_atomtype_exception=True,
+  File "rmgpy/molecule/molecule.py", line 1953, in rmgpy.molecule.molecule.Molecule.from_adjacency_list
+    self.update_atomtypes(raise_exception=raise_atomtype_exception)
+  File "rmgpy/molecule/molecule.py", line 1571, in rmgpy.molecule.molecule.Molecule.update_atomtypes
+    def update_atomtypes(self, log_species=True, raise_exception=True):
+  File "rmgpy/molecule/molecule.py", line 1592, in rmgpy.molecule.molecule.Molecule.update_atomtypes
+    raise
+  File "rmgpy/molecule/molecule.py", line 1587, in rmgpy.molecule.molecule.Molecule.update_atomtypes
+    atom.atomtype = get_atomtype(atom, atom.edges)
+  File "rmgpy/molecule/atomtype.py", line 1041, in rmgpy.molecule.atomtype.get_atomtype
+    def get_atomtype(atom, bonds):
+  File "rmgpy/molecule/atomtype.py", line 1069, in rmgpy.molecule.atomtype.get_atomtype
+    raise AtomTypeError(
+rmgpy.exceptions.AtomTypeError: Unable to determine atom type for atom Ar., which has 1 single bonds, 0 double bonds (0 to O, 0 to S, 0 others), 0 triple bonds, 0 quadruple bonds, 0 benzene bonds, 3 lone pairs, and +0 charge.
+
+==============================================================================
+1b. SINGLE-ATOM CONTROLS
+==============================================================================
+[OK]     get_atomtype(bare Ar, u0 p4 c0): Ar0
+[OK]     get_atomtype(bare Ar+, u1 p3 c+1): Ar+
+[OK]     get_atomtype(BONDED Ar+ centre, positive control): Ar+
+[RAISED] get_atomtype(BONDED neutral Ar centre, the gap)
+Traceback (most recent call last):
+  File "/home/alon/Code/RMG-Py-i213-bonded-argon-atomtype/docs/i213-bonded-argon-atomtype/probe.py", line 28, in report
+    value = fn()
+  File "/home/alon/Code/RMG-Py-i213-bonded-argon-atomtype/docs/i213-bonded-argon-atomtype/probe.py", line 106, in bonded_neutral_argon
+    return get_atomtype(m.atoms[1], m.atoms[1].bonds).label
+  File "rmgpy/molecule/atomtype.py", line 1041, in rmgpy.molecule.atomtype.get_atomtype
+    def get_atomtype(atom, bonds):
+  File "rmgpy/molecule/atomtype.py", line 1069, in rmgpy.molecule.atomtype.get_atomtype
+    raise AtomTypeError(
+rmgpy.exceptions.AtomTypeError: Unable to determine atom type for atom Ar., which has 1 single bonds, 0 double bonds (0 to O, 0 to S, 0 others), 0 triple bonds, 0 quadruple bonds, 0 benzene bonds, 3 lone pairs, and +0 charge.
+
+==============================================================================
+DONE
+==============================================================================
