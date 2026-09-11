@@ -1,0 +1,12 @@
+database.directory = /home/alon/Code/RMG-database-plasma/input
+start_method = fork
+PARENT fingerprint (before creating Pool): {'tag': 'parent-before-pool', 'pid': 7, 'database_is_none': False, 'id(database)': 137186340713712, 'thermo_is_none': False, 'library_keys': ['primaryThermoLibrary'], 'n_entries_primaryThermoLibrary': 48}
+WORKER fingerprint: {'tag': 'worker', 'pid': 52, 'database_is_none': False, 'id(database)': 137186340713712, 'thermo_is_none': False, 'library_keys': ['primaryThermoLibrary'], 'n_entries_primaryThermoLibrary': 48, 'task_index': 0}
+WORKER fingerprint: {'tag': 'worker', 'pid': 53, 'database_is_none': False, 'id(database)': 137186340713712, 'thermo_is_none': False, 'library_keys': ['primaryThermoLibrary'], 'n_entries_primaryThermoLibrary': 48, 'task_index': 1}
+WORKER fingerprint: {'tag': 'worker', 'pid': 54, 'database_is_none': False, 'id(database)': 137186340713712, 'thermo_is_none': False, 'library_keys': ['primaryThermoLibrary'], 'n_entries_primaryThermoLibrary': 48, 'task_index': 2}
+WORKER fingerprint: {'tag': 'worker', 'pid': 52, 'database_is_none': False, 'id(database)': 137186340713712, 'thermo_is_none': False, 'library_keys': ['primaryThermoLibrary'], 'n_entries_primaryThermoLibrary': 48, 'task_index': 3}
+WORKER fingerprint: {'tag': 'worker', 'pid': 52, 'database_is_none': False, 'id(database)': 137186340713712, 'thermo_is_none': False, 'library_keys': ['primaryThermoLibrary'], 'n_entries_primaryThermoLibrary': 48, 'task_index': 4}
+WORKER fingerprint: {'tag': 'worker', 'pid': 54, 'database_is_none': False, 'id(database)': 137186340713712, 'thermo_is_none': False, 'library_keys': ['primaryThermoLibrary'], 'n_entries_primaryThermoLibrary': 48, 'task_index': 5}
+PARENT fingerprint (after pool closed/joined): {'tag': 'parent-after-pool', 'pid': 7, 'database_is_none': False, 'id(database)': 137186340713712, 'thermo_is_none': False, 'library_keys': ['primaryThermoLibrary'], 'n_entries_primaryThermoLibrary': 48}
+RESULT any_worker_id_matches_parent_id = True
+RESULT all_workers_library_keys_match_parent = True

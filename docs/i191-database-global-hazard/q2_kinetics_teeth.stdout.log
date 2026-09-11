@@ -1,0 +1,16 @@
+database.directory = /home/alon/Code/RMG-database-plasma/input
+id(db_a) = 125673657540272
+db_a.kinetics.families.keys() = ['H_Abstraction']
+id(db_b) = 125673657540080
+db_b.kinetics.families.keys() = ['R_Recombination']
+
+id(rmgpy.data.rmg.database) = 125673657540080
+id(get_db('kinetics'))       = 125673657540128
+get_db('kinetics') is db_a.kinetics: False
+get_db('kinetics') is db_b.kinetics: True
+
+--- reproducing rmgpy/rmg/model.py:1073  get_db('kinetics').families[reaction.family] ---
+Lookup RAISED KeyError: 'H_Abstraction'
+This is the production code path -- a reaction whose .family was set
+while DB_A was live now fails a dict lookup against DB_B's families,
+because DB_B never loaded H_Abstraction at all.

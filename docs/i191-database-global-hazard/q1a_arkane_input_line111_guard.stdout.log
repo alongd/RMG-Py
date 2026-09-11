@@ -1,0 +1,29 @@
+database.directory = /home/alon/Code/RMG-database-plasma/input
+rmgpy.data.rmg.database at process start: None
+
+=== PART 1: database(...) called directly, unprotected, fresh process ===
+database(...) call RAISED: DatabaseError - Could not get database with name: 
+Confirms: unprotected, on a fresh process, arkane/input.py:111's
+`get_db() or RMGDatabase()` crashes with an uncaught DatabaseError
+on the FIRST call -- get_db() raises rather than returning a
+falsy value for `or` to fall through on, so the RMGDatabase()
+fallback branch is unreachable via short-circuit evaluation.
+
+=== PART 2: real ordering -- load_necessary_databases() first, matching
+    arkane/input.py:653's load_input_file(), THEN database(...) ===
+rmgpy.data.rmg.database after load_necessary_databases(): <rmgpy.data.rmg.RMGDatabase object at 0x70839bdedfd0>
+database(...) call SUCCEEDED
+rmgpy.data.rmg.database now: <rmgpy.data.rmg.RMGDatabase object at 0x70839bdedfd0>
+
+Confirms: in the real call order, load_necessary_databases() (called
+by load_input_file BEFORE the input file's statements are exec'd)
+constructs the global database first (in its except DatabaseError:
+branch), so get_db() no longer raises by the time the input file's
+own database(...) directive runs. The `or RMGDatabase()` at
+arkane/input.py:111 is reached in this ordering, but vacuously --
+get_db() already returns a truthy object, so RMGDatabase() (the
+right-hand side) is never evaluated. Net: line 111's OWN
+RMGDatabase() branch is unreachable in normal Arkane usage; not
+because it doesn't need to be (get_db() truly can raise), but
+because load_necessary_databases() -- a different construction
+site -- always runs first and prevents get_db() from raising.

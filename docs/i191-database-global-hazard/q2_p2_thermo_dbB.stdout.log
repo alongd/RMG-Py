@@ -1,0 +1,4 @@
+database.directory = /home/alon/Code/RMG-database-plasma/input
+id(db) = 123327495720912
+H298 (kJ/mol) = -74.89359999999998
+comment = 'Thermo group additivity estimation: group(Cs-HHHH)'

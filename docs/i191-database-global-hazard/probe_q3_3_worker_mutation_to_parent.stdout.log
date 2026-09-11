@@ -1,0 +1,22 @@
+database.directory = /home/alon/Code/RMG-database-plasma/input
+start_method = fork
+(a) PARENT id(database) before pool = 126333935367312
+(a) PARENT has sentinel BEFORE pool = False
+(a) WORKER result: {'pid': 52, 'task_index': 0, 'sentinel_present_in_worker_immediately_after_mutation': True, 'id(database)': 126333935367312}
+(a) WORKER result: {'pid': 53, 'task_index': 1, 'sentinel_present_in_worker_immediately_after_mutation': True, 'id(database)': 126333935367312}
+(a) WORKER result: {'pid': 52, 'task_index': 2, 'sentinel_present_in_worker_immediately_after_mutation': True, 'id(database)': 126333935367312}
+(a) WORKER result: {'pid': 52, 'task_index': 3, 'sentinel_present_in_worker_immediately_after_mutation': True, 'id(database)': 126333935367312}
+(a) WORKER result: {'pid': 52, 'task_index': 4, 'sentinel_present_in_worker_immediately_after_mutation': True, 'id(database)': 126333935367312}
+(a) WORKER result: {'pid': 54, 'task_index': 5, 'sentinel_present_in_worker_immediately_after_mutation': True, 'id(database)': 126333935367312}
+(a) PARENT id(database) after pool = 126333935367312
+(a) PARENT has sentinel AFTER pool = False
+(a) RESULT in_place_worker_mutation_visible_to_parent = False
+(b) PARENT id(database) before pool = 126329933224784
+(b) WORKER result: {'pid': 58, 'task_index': 0, 'old_id(database)': 126329933224784, 'new_id(database)_in_worker': 126329535277760, 'rebind_took_effect_in_worker': True}
+(b) WORKER result: {'pid': 59, 'task_index': 1, 'old_id(database)': 126329933224784, 'new_id(database)_in_worker': 126329535277520, 'rebind_took_effect_in_worker': True}
+(b) WORKER result: {'pid': 60, 'task_index': 2, 'old_id(database)': 126329933224784, 'new_id(database)_in_worker': 126329535277280, 'rebind_took_effect_in_worker': True}
+(b) WORKER result: {'pid': 58, 'task_index': 3, 'old_id(database)': 126329535277760, 'new_id(database)_in_worker': 126329535277664, 'rebind_took_effect_in_worker': True}
+(b) WORKER result: {'pid': 58, 'task_index': 4, 'old_id(database)': 126329535277664, 'new_id(database)_in_worker': 126329535277760, 'rebind_took_effect_in_worker': True}
+(b) WORKER result: {'pid': 60, 'task_index': 5, 'old_id(database)': 126329535277280, 'new_id(database)_in_worker': 126329535277184, 'rebind_took_effect_in_worker': True}
+(b) PARENT id(database) after pool = 126329933224784
+(b) RESULT rebind_in_worker_visible_to_parent = False

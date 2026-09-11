@@ -1,0 +1,16 @@
+database.directory = /home/alon/Code/RMG-database-plasma/input
+id(db_a) = 131364409237456
+species created; spc.thermo = None
+id(db_b) = 131364409234816
+
+id(rmgpy.data.rmg.database) = 131364409234816
+id(get_db('thermo'))        = 131360461320096
+id(db_a.thermo)              = 131364409235344
+id(db_b.thermo)              = 131360461320096
+get_db('thermo') is db_a.thermo: False
+get_db('thermo') is db_b.thermo: True
+
+H298 (kJ/mol) = -74.89359999999998
+comment = 'Thermo group additivity estimation: group(Cs-HHHH)'
+
+Matches P1 (library, -74.534 kJ/mol, 'Thermo library: primaryThermoLibrary') or P2 (group additivity, -74.894 kJ/mol, 'Thermo group additivity estimation: group(Cs-HHHH)')? See comment string above.
