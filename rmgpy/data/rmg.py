@@ -249,8 +249,16 @@ def get_db(name=''):
     Returns the RMG database object that corresponds
     to the parameter name.
 
-    First, the module level is queried. If this variable
-    is empty, the broadcasted variables are queried.
+    The module-level ``database`` variable is the only source consulted, and
+    there is no fallback: ``RMGDatabase.__init__`` rebinds it to the most
+    recently constructed instance, and if it is unset a :class:`DatabaseError`
+    is raised.
+
+    With ``name=''`` the :class:`RMGDatabase` instance itself is returned. Any
+    other recognized name returns the corresponding sub-database attribute,
+    which is ``None`` if that component was never loaded -- that case is *not*
+    an error here, so callers must handle ``None``. An unrecognized name raises
+    :class:`ValueError`.
     """
     global database
 
