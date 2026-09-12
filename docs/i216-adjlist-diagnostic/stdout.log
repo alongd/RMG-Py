@@ -1,0 +1,1001 @@
+Traceback (most recent call last):
+  File "<string>", line 9, in <module>
+ModuleNotFoundError: No module named 'rmgpy.settings'
+adjlist: /home/alon/Code/RMG-Py-i216-adjlist-diagnostic/rmgpy/molecule/adjlist.py
+atomtype: /home/alon/Code/RMG-Py-i216-adjlist-diagnostic/rmgpy/molecule/atomtype.cpython-39-x86_64-linux-gnu.so
+check_partial_charge source file: /home/alon/Code/RMG-Py-i216-adjlist-diagnostic/rmgpy/molecule/adjlist.py
+
+    @staticmethod
+    def check_partial_charge(atom):
+        """
+        Checks whether the partial charge attribute of the atom checks out with
+        the theoretical one:
+
+        """
+        if atom.symbol in {'X','L','R','e','H+','Li'}:
+            return  # because we can't check it.
+
+        valence = PeriodicSystem.valence_electrons[atom.symbol]
+        order = atom.get_total_bond_order()
+
+        theoretical = valence - order - atom.radical_electrons - 2 * atom.lone_pairs
+
+        if not (-0.301 < atom.charge - theoretical < 0.301):
+            # It should be 0, but -0.1 is caused by a Hydrogen bond
+            raise InvalidAdjacencyListError(
+                'Invalid valency for atom {symbol} ({type}) with {radicals} unpaired electrons, '
+                '{lone_pairs} pairs of electrons, {charge} charge, and bonds [{bonds}].'.format(
+                    symbol=atom.symbol,
+                    type=get_atomtype(atom, atom.edges).label,
+                    radicals=atom.radical_electrons,
+                    lone_pairs=atom.lone_pairs,
+                    charge=atom.charge,
+                    bonds=','.join([str(bond.order) for bond in atom.bonds.values()])
+                )
+            )
+
+{'database.directory': '/home/alon/Code/RMG-database/input', 'test_data.directory': '/home/alon/Code/RMG-Py-i216-adjlist-diagnostic/test/rmgpy/test_data'}
+/home/alon/Code/RMG-database/input
+Traceback (most recent call last):
+  File "<string>", line 8, in <module>
+  File "rmgpy/molecule/molecule.py", line 1942, in rmgpy.molecule.molecule.Molecule.from_adjacency_list
+    def from_adjacency_list(self, adjlist, saturate_h=False, raise_atomtype_exception=True,
+  File "rmgpy/molecule/molecule.py", line 1951, in rmgpy.molecule.molecule.Molecule.from_adjacency_list
+    self.vertices, self.multiplicity, self.metal, self.facet = from_adjacency_list(adjlist, group=False, saturate_h=saturate_h,
+  File "/home/alon/Code/RMG-Py-i216-adjlist-diagnostic/rmgpy/molecule/adjlist.py", line 873, in from_adjacency_list
+    ConsistencyChecker.check_partial_charge(atom)
+  File "/home/alon/Code/RMG-Py-i216-adjlist-diagnostic/rmgpy/molecule/adjlist.py", line 109, in check_partial_charge
+    type=get_atomtype(atom, atom.edges).label,
+  File "rmgpy/molecule/atomtype.py", line 1041, in rmgpy.molecule.atomtype.get_atomtype
+    def get_atomtype(atom, bonds):
+  File "rmgpy/molecule/atomtype.py", line 1069, in rmgpy.molecule.atomtype.get_atomtype
+    raise AtomTypeError(
+rmgpy.exceptions.AtomTypeError: Unable to determine atom type for atom Ar, which has 1 single bonds, 0 double bonds (0 to O, 0 to S, 0 others), 0 triple bonds, 0 quadruple bonds, 0 benzene bonds, 4 lone pairs, and +0 charge.
+=== REPRO: masking (Ar with bond, bad valency + untypeable) ===
+
+=== CONTROL: bad valency + ordinary typeable atom (pre-fix) ===
+AtomTypeError Unable to determine atom type for atom H, which has 1 single bonds, 0 double bonds (0 to O, 0 to S, 0 others), 0 triple bonds, 0 quadruple bonds, 0 benzene bonds, 2 lone pairs, and +0 charge.
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+cachedir: .pytest_cache
+rootdir: /home/alon/Code/RMG-Py-i216-adjlist-diagnostic
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 33 items / 31 deselected / 2 selected
+
+test/rmgpy/molecule/adjlistTest.py::TestConsistencyChecker::test_check_partial_charge_bad_valency_untypeable_atom FAILED
+test/rmgpy/molecule/adjlistTest.py::TestConsistencyChecker::test_check_partial_charge_bad_valency_typeable_atom PASSED
+
+=================================== FAILURES ===================================
+_ TestConsistencyChecker.test_check_partial_charge_bad_valency_untypeable_atom _
+
+self = <adjlistTest.TestConsistencyChecker object at 0x781fc6195850>
+
+    def test_check_partial_charge_bad_valency_untypeable_atom(self):
+        """
+        adjlist: An atom that both fails the valency check and cannot be assigned an
+        atom type (I-216) must still raise InvalidAdjacencyListError naming the atom
+        by element symbol, not let the atom-type lookup's AtomTypeError mask it.
+    
+        An Ar atom given a bond matches none of Ar/Ar0/Ar+/Ar++ (all zero-bond noble
+        gas types), so get_atomtype cannot label it, while its valency is also wrong.
+        """
+        adjlist = "1 Ar u0 p4 c0 {2,S}\n2 Ar u0 p4 c0 {1,S}\n"
+        with pytest.raises(InvalidAdjacencyListError, match=r"Invalid valency for atom Ar \(Ar\)"):
+>           Molecule().from_adjacency_list(adjlist)
+
+test/rmgpy/molecule/adjlistTest.py:951: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+rmgpy/molecule/molecule.py:1942: in rmgpy.molecule.molecule.Molecule.from_adjacency_list
+    def from_adjacency_list(self, adjlist, saturate_h=False, raise_atomtype_exception=True,
+rmgpy/molecule/molecule.py:1951: in rmgpy.molecule.molecule.Molecule.from_adjacency_list
+    self.vertices, self.multiplicity, self.metal, self.facet = from_adjacency_list(adjlist, group=False, saturate_h=saturate_h,
+rmgpy/molecule/adjlist.py:873: in from_adjacency_list
+    ConsistencyChecker.check_partial_charge(atom)
+rmgpy/molecule/adjlist.py:109: in check_partial_charge
+    type=get_atomtype(atom, atom.edges).label,
+rmgpy/molecule/atomtype.py:1041: in rmgpy.molecule.atomtype.get_atomtype
+    def get_atomtype(atom, bonds):
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+>   raise AtomTypeError(
+        f'Unable to determine atom type for atom {atom}, which has {single:d} single bonds, '
+        f'{all_double:d} double bonds ({o_double:d} to O, {s_double:d} to S, '
+        f'{r_double:d} others), {triple:d} triple bonds, {quadruple:d} quadruple bonds, '
+        f'{benzene:d} benzene bonds, {lone_pairs:d} lone pairs, and {charge:+d} charge.')
+E   rmgpy.exceptions.AtomTypeError: Unable to determine atom type for atom Ar, which has 1 single bonds, 0 double bonds (0 to O, 0 to S, 0 others), 0 triple bonds, 0 quadruple bonds, 0 benzene bonds, 4 lone pairs, and +0 charge.
+
+rmgpy/molecule/atomtype.py:1069: AtomTypeError
+------------------------------ Captured log setup ------------------------------
+WARNING  matplotlib:__init__.py:537 /home/alon/.config/matplotlib is not a writable directory
+WARNING  matplotlib:__init__.py:550 Matplotlib created a temporary cache directory at /tmp/claude-1000/matplotlib-5g2jfe6d because there was an issue with the default path (/home/alon/.config/matplotlib); it is highly recommended to set the MPLCONFIGDIR environment variable to a writable directory, in particular to speed up the import of Matplotlib and to better support multiprocessing.
+=========================== short test summary info ============================
+FAILED test/rmgpy/molecule/adjlistTest.py::TestConsistencyChecker::test_check_partial_charge_bad_valency_untypeable_atom
+================== 1 failed, 1 passed, 31 deselected in 2.02s ==================
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+cachedir: .pytest_cache
+rootdir: /home/alon/Code/RMG-Py-i216-adjlist-diagnostic
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 33 items / 31 deselected / 2 selected
+
+test/rmgpy/molecule/adjlistTest.py::TestConsistencyChecker::test_check_partial_charge_bad_valency_untypeable_atom PASSED
+test/rmgpy/molecule/adjlistTest.py::TestConsistencyChecker::test_check_partial_charge_bad_valency_typeable_atom PASSED
+
+======================= 2 passed, 31 deselected in 1.55s =======================
+=== POST-FIX: untypeable atom ===
+'Invalid valency for atom Ar (Ar) with 0 unpaired electrons, 4 pairs of electrons, 0 charge, and bonds [1.0].'
+=== POST-FIX: typeable atom (control) ===
+'Invalid valency for atom C (Cs) with 2 unpaired electrons, 0 pairs of electrons, 0 charge, and bonds [1.0,1.0,1.0,1.0].'
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_h2s PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_pyridine PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_pyrimidine [10:51:24] WARNING: Charges neutralized
+
+[10:51:24] WARNING: Charges neutralized
+
+PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_nitrate SKIPPED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_no [10:51:24] WARNING: Accepted unusual valence(s): N(2)
+
+[10:51:24] WARNING: Accepted unusual valence(s): N(2)
+
+PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_isotopic_molecule_1 PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_isotopic_molecule_2 PASSED
+test/rmgpy/molecule/utilTest.py::ElementCountTest::test_inchi_count PASSED
+test/rmgpy/molecule/utilTest.py::ElementCountTest::test_inchi_count_disconnected PASSED
+test/rmgpy/molecule/utilTest.py::PartitionTest::test_singleton PASSED
+test/rmgpy/molecule/utilTest.py::PartitionTest::test_2_elements_in_1_layer PASSED
+test/rmgpy/molecule/utilTest.py::PartitionTest::test_2_elements_in_2_layers PASSED
+test/rmgpy/molecule/utilTest.py::PartitionTest::test_3_elements_in_2_layers PASSED
+test/rmgpy/molecule/utilTest.py::PartitionTest::test_3_elements_in_2_layers_1_singleton PASSED
+test/rmgpy/molecule/utilTest.py::AgglomerateTest::test_normal PASSED
+test/rmgpy/molecule/utilTest.py::ComboGeneratorTest::test_2_elements PASSED
+test/rmgpy/molecule/utilTest.py::SwapTest::test_2_elements_sets PASSED
+test/rmgpy/molecule/vf2Test.py::TestVF2::test_import_graph PASSED
+test/rmgpy/molecule/vf2Test.py::TestVF2::test_feasible PASSED
+test/rmgpy/molecule/vf2Test.py::TestVF2::test_clear_mapping PASSED
+
+======================= 792 passed, 14 skipped in 7.91s ========================
+test/rmgpy/molecule/utilTest.py::PartitionTest::test_3_elements_in_2_layers PASSED
+test/rmgpy/molecule/utilTest.py::PartitionTest::test_3_elements_in_2_layers_1_singleton PASSED
+test/rmgpy/molecule/utilTest.py::AgglomerateTest::test_normal PASSED
+test/rmgpy/molecule/utilTest.py::ComboGeneratorTest::test_2_elements PASSED
+test/rmgpy/molecule/utilTest.py::SwapTest::test_2_elements_sets PASSED
+test/rmgpy/molecule/vf2Test.py::TestVF2::test_import_graph PASSED
+test/rmgpy/molecule/vf2Test.py::TestVF2::test_feasible PASSED
+test/rmgpy/molecule/vf2Test.py::TestVF2::test_clear_mapping PASSED
+
+================ 791 passed, 14 skipped, 1 deselected in 7.84s =================
+
+>   raise AtomTypeError(
+        f'Unable to determine atom type for atom {atom}, which has {single:d} single bonds, '
+        f'{all_double:d} double bonds ({o_double:d} to O, {s_double:d} to S, '
+        f'{r_double:d} others), {triple:d} triple bonds, {quadruple:d} quadruple bonds, '
+        f'{benzene:d} benzene bonds, {lone_pairs:d} lone pairs, and {charge:+d} charge.')
+E   rmgpy.exceptions.AtomTypeError: Unable to determine atom type for atom Ar, which has 1 single bonds, 0 double bonds (0 to O, 0 to S, 0 others), 0 triple bonds, 0 quadruple bonds, 0 benzene bonds, 4 lone pairs, and +0 charge.
+
+rmgpy/molecule/atomtype.py:1069: AtomTypeError
+------------------------------ Captured log setup ------------------------------
+WARNING  matplotlib:__init__.py:537 /home/alon/.config/matplotlib is not a writable directory
+WARNING  matplotlib:__init__.py:550 Matplotlib created a temporary cache directory at /tmp/claude-1000/matplotlib-7ayx0o2p because there was an issue with the default path (/home/alon/.config/matplotlib); it is highly recommended to set the MPLCONFIGDIR environment variable to a writable directory, in particular to speed up the import of Matplotlib and to better support multiprocessing.
+=========================== short test summary info ============================
+FAILED test/rmgpy/molecule/adjlistTest.py::TestConsistencyChecker::test_check_partial_charge_bad_valency_untypeable_atom
+======================= 1 failed, 32 deselected in 1.74s =======================
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+cachedir: .pytest_cache
+rootdir: /home/alon/Code/RMG-Py-i216-adjlist-diagnostic
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 806 items
+
+test/rmgpy/molecule/adjlistTest.py::TestGroupAdjLists::test_from_old_adjacency_list1 PASSED
+test/rmgpy/molecule/adjlistTest.py::TestGroupAdjLists::test_from_adjacency_list PASSED
+test/rmgpy/molecule/adjlistTest.py::TestGroupAdjLists::test_from_adjacency_list_multiplicity PASSED
+test/rmgpy/molecule/adjlistTest.py::TestGroupAdjLists::test_from_adjacency_list_multiplicity_list PASSED
+test/rmgpy/molecule/adjlistTest.py::TestGroupAdjLists::test_to_adjacency_list PASSED
+test/rmgpy/molecule/adjlistTest.py::TestGroupAdjLists::test_atom_props PASSED
+test/rmgpy/molecule/adjlistTest.py::TestGroupAdjLists::test_metal_facet_site_morphology PASSED
+test/rmgpy/molecule/adjlistTest.py::TestMoleculeAdjLists::test_from_adjacency_list1 PASSED
+test/rmgpy/molecule/adjlistTest.py::TestMoleculeAdjLists::test_from_adjacency_list2 PASSED
+test/rmgpy/molecule/adjlistTest.py::TestMoleculeAdjLists::test_from_adjacency_list3 PASSED
+test/rmgpy/molecule/adjlistTest.py::TestMoleculeAdjLists::test_from_adjacency_list4 PASSED
+test/rmgpy/molecule/adjlistTest.py::TestMoleculeAdjLists::test_from_adjacency_list5 PASSED
+test/rmgpy/molecule/adjlistTest.py::TestMoleculeAdjLists::test_various_spin_adjlists PASSED
+test/rmgpy/molecule/adjlistTest.py::TestMoleculeAdjLists::test_wildcard_adjlists PASSED
+test/rmgpy/molecule/adjlistTest.py::TestMoleculeAdjLists::test_incorrect_adjlists PASSED
+test/rmgpy/molecule/adjlistTest.py::TestMoleculeAdjLists::test_helium PASSED
+test/rmgpy/molecule/adjlistTest.py::TestMoleculeAdjLists::test_to_adjacency_list PASSED
+test/rmgpy/molecule/adjlistTest.py::TestMoleculeAdjLists::test_to_adjacency_list_for_non_integer_bonds PASSED
+test/rmgpy/molecule/adjlistTest.py::TestMoleculeAdjLists::test_from_adjacency_list_for_non_integer_bonds SKIPPED
+test/rmgpy/molecule/adjlistTest.py::TestMoleculeAdjLists::test_from_intermediate_adjacency_list1 PASSED
+test/rmgpy/molecule/adjlistTest.py::TestMoleculeAdjLists::test_from_old_adjacency_list1 PASSED
+test/rmgpy/molecule/adjlistTest.py::TestMoleculeAdjLists::test_from_old_adjacency_list2 PASSED
+test/rmgpy/molecule/adjlistTest.py::TestMoleculeAdjLists::test_from_old_adjacency_list3 PASSED
+test/rmgpy/molecule/adjlistTest.py::TestMoleculeAdjLists::test_from_old_adjacency_list4 PASSED
+test/rmgpy/molecule/adjlistTest.py::TestMoleculeAdjLists::test_from_old_adjacency_list5 SKIPPED
+test/rmgpy/molecule/adjlistTest.py::TestMoleculeAdjLists::test_from_old_adjacency_list6 PASSED
+test/rmgpy/molecule/adjlistTest.py::TestMoleculeAdjLists::test_adjacency_list PASSED
+test/rmgpy/molecule/adjlistTest.py::TestMoleculeAdjLists::test_group_adjacency_list PASSED
+test/rmgpy/molecule/adjlistTest.py::TestConsistencyChecker::test_check_hund_rule_fail PASSED
+test/rmgpy/molecule/adjlistTest.py::TestConsistencyChecker::test_check_hund_rule_success PASSED
+test/rmgpy/molecule/adjlistTest.py::TestConsistencyChecker::test_check_multiplicity PASSED
+test/rmgpy/molecule/adjlistTest.py::TestConsistencyChecker::test_check_partial_charge_bad_valency_untypeable_atom PASSED
+test/rmgpy/molecule/adjlistTest.py::TestConsistencyChecker::test_check_partial_charge_bad_valency_typeable_atom PASSED
+test/rmgpy/molecule/atomtypeSevenTest.py::test_kept_argon_makes_correct_sample_atom[Ar0] PASSED
+test/rmgpy/molecule/atomtypeSevenTest.py::test_kept_argon_makes_correct_sample_atom[Ar+] PASSED
+test/rmgpy/molecule/atomtypeSevenTest.py::test_kept_argon_makes_correct_sample_atom[Ar++] PASSED
+test/rmgpy/molecule/atomtypeSevenTest.py::test_dropped_types_are_absent[Li-] PASSED
+test/rmgpy/molecule/atomtypeSevenTest.py::test_dropped_types_are_absent[Na-] PASSED
+test/rmgpy/molecule/atomtypeSevenTest.py::test_dropped_types_are_absent[K-] PASSED
+test/rmgpy/molecule/atomtypeSevenTest.py::test_dropped_types_are_absent[N3dc] PASSED
+test/rmgpy/molecule/atomtypeSevenTest.py::test_concrete_argon_species_type_specifically[1 Ar u0 p4 c0-Ar0] PASSED
+test/rmgpy/molecule/atomtypeSevenTest.py::test_concrete_argon_species_type_specifically[1 Ar u1 p3 c+1-Ar+] PASSED
+test/rmgpy/molecule/atomtypeSevenTest.py::test_generic_argon_group_matches_specific_argon_atom PASSED
+test/rmgpy/molecule/atomtypeSevenTest.py::test_argon_action_graph_closes_both_ways PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestAtomType::test_pickle PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestAtomType::test_output PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestAtomType::test_equivalent PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestAtomType::test_is_specfic_case_of PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestAtomType::test_set_actions PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestAtomType::test_make_sample_molecule PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestAtomType::test_make_sample_molecule_wip SKIPPED
+test/rmgpy/molecule/atomtypeTest.py::TestAtomType::test_make_sample_molecule_right SKIPPED
+test/rmgpy/molecule/atomtypeTest.py::TestGetAtomType::test_hydrogen_type PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGetAtomType::test_hydride_type PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGetAtomType::test_hydride_survives_update PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGetAtomType::test_carbon_types PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGetAtomType::test_nitrogen_types PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGetAtomType::test_oxygen_types PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGetAtomType::test_silicon_types PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGetAtomType::test_phosphorus_types PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGetAtomType::test_sulfur_types PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGetAtomType::test_chlorine_types PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGetAtomType::test_bromine_types PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGetAtomType::test_iodine_types PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGetAtomType::test_fluorine_types PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGetAtomType::test_sf6_anion_types PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGetAtomType::test_lithium_types PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGetAtomType::test_other_types PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGetAtomType::test_occupied_surface_atom_type PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGetAtomType::test_vacant_surface_site_atom_type PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGetAtomType::test_electron PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGetAtomType::test_proton PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestAnionRecipes::test_hydride_from_recipe PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestAnionRecipes::test_chloride_from_recipe PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestAnionRecipes::test_bromide_from_recipe PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGenericLonePairActions::test_generic_lone_pair_actions_are_wired PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGenericLonePairActions::test_gain_pair_on_generic_root_group PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGenericLonePairActions::test_gain_pair_on_halogen_radical_yields_anion PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestChargeClassParents::test_parents_are_reachable_as_group_labels PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestChargeClassParents::test_parents_do_not_shadow_their_leaves PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestChargeClassParents::test_parents_admit_no_octet_violation PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestActionGraphClosure::test_no_new_action_graph_asymmetry PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestActionGraphClosure::test_known_preexisting_still_present PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestActionGraphClosure::test_argon_and_alkali_families_close_both_ways PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestNoDuplicateAtomTypeDefinitions::test_each_atomtype_label_defined_once PASSED
+test/rmgpy/molecule/converterTest.py::RDKitTest::test_debugger PASSED
+test/rmgpy/molecule/converterTest.py::RDKitTest::test_lone_pair_retention PASSED
+test/rmgpy/molecule/converterTest.py::RDKitTest::test_atom_mapping_1 PASSED
+test/rmgpy/molecule/converterTest.py::RDKitTest::test_atom_mapping_2 PASSED
+test/rmgpy/molecule/converterTest.py::RDKitTest::test_atom_mapping_3 PASSED
+test/rmgpy/molecule/converterTest.py::RDKitTest::test_ignoring_bonds PASSED
+test/rmgpy/molecule/converterTest.py::ConverterTest::test_rdkit_round_trip PASSED
+test/rmgpy/molecule/converterTest.py::ConverterTest::test_ob_round_trip PASSED
+test/rmgpy/molecule/drawTest.py::TestMoleculeDrawer::test_draw_png PASSED
+test/rmgpy/molecule/drawTest.py::TestMoleculeDrawer::test_draw_pdf PASSED
+test/rmgpy/molecule/drawTest.py::TestMoleculeDrawer::test_draw_polycycle PASSED
+test/rmgpy/molecule/drawTest.py::TestMoleculeDrawer::test_draw_pdf_without_file PASSED
+test/rmgpy/molecule/drawTest.py::TestMoleculeDrawer::test_draw_non_standard_bonds PASSED
+test/rmgpy/molecule/drawTest.py::TestMoleculeDrawer::test_draw_hydrogen_bond_adsorbate PASSED
+test/rmgpy/molecule/drawTest.py::TestMoleculeDrawer::test_draw_bidentate_adsorbate PASSED
+test/rmgpy/molecule/drawTest.py::TestMoleculeDrawer::test_draw_bidentate_with_charge_separation PASSED
+test/rmgpy/molecule/drawTest.py::TestMoleculeDrawer::test_draw_cation PASSED
+test/rmgpy/molecule/drawTest.py::TestMoleculeDrawer::test_draw_anion PASSED
+test/rmgpy/molecule/drawTest.py::TestMoleculeDrawer::test_draw_zwitterion PASSED
+test/rmgpy/molecule/drawTest.py::TestMoleculeDrawer::test_draw_cation_on_surface PASSED
+test/rmgpy/molecule/drawTest.py::TestMoleculeDrawer::test_draw_anion_on_surface PASSED
+test/rmgpy/molecule/elementTest.py::TestElement::test_pickle PASSED
+test/rmgpy/molecule/elementTest.py::TestElement::test_output PASSED
+test/rmgpy/molecule/elementTest.py::TestElement::test_get_element PASSED
+test/rmgpy/molecule/elementTest.py::TestElement::test_get_element_isotope PASSED
+test/rmgpy/molecule/elementTest.py::TestElement::test_chemkin_name PASSED
+test/rmgpy/molecule/filtrationTest.py::FiltrationTest::test_penalty_birads_replacing_lone_pairs PASSED
+test/rmgpy/molecule/filtrationTest.py::FiltrationTest::test_penalty_for_s_triple_s PASSED
+test/rmgpy/molecule/filtrationTest.py::FiltrationTest::test_radical_site PASSED
+test/rmgpy/molecule/filtrationTest.py::FiltrationTest::test_electronegativity PASSED
+test/rmgpy/molecule/filtrationTest.py::FiltrationTest::test_aromaticity PASSED
+test/rmgpy/molecule/fragmentTest.py::TestCuttingLabel::test_symbol PASSED
+test/rmgpy/molecule/fragmentTest.py::TestCuttingLabel::test_copy PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_fragment_isomorphism PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_from_smiles_like_string1 PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_from_SMILES_like_string2 PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_from_SMILES_like_string3 PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_is_subgraph_isomorphic1 PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_is_subgraph_isomorphic2 PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_is_subgraph_isomorphic3 PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_is_subgraph_isomorphic4 PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_assign_representative_species_1 PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_assign_representative_species_2 PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_assign_representative_molecule PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_get_molecular_weight1 PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_get_molecular_weight2 PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_update_atomtypes PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_update PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_to_adjacency_list1 PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_to_adjacency_list2 PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_to_adjacency_list3 PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_to_adjacency_list4 PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_from_adjacency_list1 PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_from_adjacency_list2 PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_from_adjacency_list3 PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_get_aromatic_rings PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_generate_resonance_structures1 PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_generate_resonance_structures2 PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_fragment_is_identical PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_fragment_get_formula PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_fragment_is_linear PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_fragment_get_element_count PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_fragment_get_num_atoms PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_fragment_get_num_heavy_atoms PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_fragment_to_smiles PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_sliceitup_arom1 PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_sliceitup_arom2 PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_sliceitup_aliph PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_cut_molecule1 PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_cut_molecule2 PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_calculate_symmetry_number1 PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_calculate_symmetry_number2 PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_get_symmetry_number1 PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_get_symmetry_number2 PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_is_radical PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_is_aromatic PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_get_representative_molecule PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_to_rdkit_mol PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_is_in_cycle_ethane PASSED
+test/rmgpy/molecule/fragmentTest.py::TestFragment::test_is_in_cycle_cyclohexane PASSED
+test/rmgpy/molecule/graphTest.py::TestGraph::test_vertices PASSED
+test/rmgpy/molecule/graphTest.py::TestGraph::test_add_vertex PASSED
+test/rmgpy/molecule/graphTest.py::TestGraph::test_add_edge PASSED
+test/rmgpy/molecule/graphTest.py::TestGraph::test_get_edge PASSED
+test/rmgpy/molecule/graphTest.py::TestGraph::test_get_edges PASSED
+test/rmgpy/molecule/graphTest.py::TestGraph::test_get_all_edges PASSED
+test/rmgpy/molecule/graphTest.py::TestGraph::test_has_vertex PASSED
+test/rmgpy/molecule/graphTest.py::TestGraph::test_has_edge PASSED
+test/rmgpy/molecule/graphTest.py::TestGraph::test_remove_vertex PASSED
+test/rmgpy/molecule/graphTest.py::TestGraph::test_remove_edge PASSED
+test/rmgpy/molecule/graphTest.py::TestGraph::test_copy PASSED
+test/rmgpy/molecule/graphTest.py::TestGraph::test_copy_and_map PASSED
+test/rmgpy/molecule/graphTest.py::TestGraph::test_split PASSED
+test/rmgpy/molecule/graphTest.py::TestGraph::test_merge PASSED
+test/rmgpy/molecule/graphTest.py::TestGraph::test_reset_connectivity_values PASSED
+test/rmgpy/molecule/graphTest.py::TestGraph::test_update_connectivity_values PASSED
+test/rmgpy/molecule/graphTest.py::TestGraph::test_sort_vertices PASSED
+test/rmgpy/molecule/graphTest.py::TestGraph::test_vertex_connectivity_values PASSED
+test/rmgpy/molecule/graphTest.py::TestGraph::test_isomorphism PASSED
+test/rmgpy/molecule/graphTest.py::TestGraph::test_isomorphism_disconnected PASSED
+test/rmgpy/molecule/graphTest.py::TestGraph::test_subgraph_isomorphism PASSED
+test/rmgpy/molecule/graphTest.py::TestGraph::test_pickle PASSED
+test/rmgpy/molecule/graphTest.py::TestGraph::test_is_cyclic PASSED
+test/rmgpy/molecule/graphTest.py::TestGraph::test_is_vertex_in_cycle PASSED
+test/rmgpy/molecule/graphTest.py::TestGraph::test_is_edge_in_cycle PASSED
+test/rmgpy/molecule/graphTest.py::TestGraph::test_get_all_cyclic_vertices PASSED
+test/rmgpy/molecule/graphTest.py::TestGraph::test_get_all_cycles PASSED
+test/rmgpy/molecule/graphTest.py::TestGraph::test_get_all_cycles_of_size PASSED
+test/rmgpy/molecule/graphTest.py::TestGraph::test_get_all_simple_cycles_of_size PASSED
+test/rmgpy/molecule/graphTest.py::TestGraph::test_sort_cyclic_vertices PASSED
+test/rmgpy/molecule/graphTest.py::TestGraph::test_sort_cyclic_vertices_invalid PASSED
+test/rmgpy/molecule/graphTest.py::TestGraph::test_sort_cyclic_vertices_noncyclic PASSED
+test/rmgpy/molecule/graphTest.py::TestGraph::test_sort_cyclic_vertices_unconnected PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupAtom::test_apply_action_break_bond PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupAtom::test_apply_action_form_bond PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupAtom::test_apply_action_increment_bond PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupAtom::test_apply_action_decrement_bond PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupAtom::test_apply_action_gain_radical PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupAtom::test_apply_action_lose_radical PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupAtom::test_apply_action_gain_charge PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupAtom::test_apply_action_lose_charge PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupAtom::test_apply_action_gain_pair PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupAtom::test_is_electron PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupAtom::test_is_proton PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupAtom::test_apply_action_lose_pair PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupAtom::test_equivalent PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupAtom::test_is_specific_case_of PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupAtom::test_copy PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupAtom::test_pickle PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupAtom::test_count_bonds PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupAtom::test_has_wildcards PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupAtom::test_make_sample_atom PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupBond::test_get_order_str PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupBond::test_apply_action_gain_charge PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupBond::test_apply_action_lose_charge PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupBond::test_set_order_str PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupBond::test_get_order_num PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupBond::test_set_order_num PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupBond::test_is_single PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupBond::test_is_double PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupBond::test_is_triple PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupBond::test_is_benzene PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupBond::test_apply_action_break_bond PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupBond::test_apply_action_form_bond PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupBond::test_apply_action_increment_bond PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupBond::test_apply_action_decrement_bond PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupBond::test_apply_action_gain_radical PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupBond::test_apply_action_lose_radical PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupBond::test_equivalent PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupBond::test_is_specific_case_of PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupBond::test_copy PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupBond::test_pickle PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_clear_labeled_atoms PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_contains_labeled_atom PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_contains_surface_site PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_is_surface_site PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_is_electron PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_is_proton PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_get_labeled_atom PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_get_labeled_atoms PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_from_adjacency_list PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_to_adjacency_list PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_is_isomorphic PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_find_isomorphism PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_is_subgraph_isomorphic PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_find_subgraph_isomorphisms PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_generate_extensions PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_generated_extensions_subgraphs PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_pickle PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_create_and_connect_atom PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_add_implicit_atoms_from_atom_type PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_classify_benzene_carbons PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_sort_by_connectivity PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_add_implicit_benzene PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_pick_wildcards PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_make_sample_molecule PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_is_benzene_explicit PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_repr_png PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_draw_group PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_merge_groups PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_get_element_count PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_is_reaction_bond PASSED
+test/rmgpy/molecule/inchiTest.py::InChITest::test_constructor PASSED
+test/rmgpy/molecule/inchiTest.py::InChITest::test_compare PASSED
+test/rmgpy/molecule/inchiTest.py::AugmentedInChITest::test_constructor PASSED
+test/rmgpy/molecule/inchiTest.py::AugmentedInChITest::test_compare PASSED
+test/rmgpy/molecule/inchiTest.py::AugmentedInChITest::test_reduce SKIPPED
+test/rmgpy/molecule/inchiTest.py::IgnorePrefixTest::test_ignore PASSED
+test/rmgpy/molecule/inchiTest.py::ComposeTest::test_compose_aug_inchi PASSED
+test/rmgpy/molecule/inchiTest.py::Parse_H_LayerTest::test_oco PASSED
+test/rmgpy/molecule/inchiTest.py::Parse_E_LayerTest::test_no_equivalence_layer PASSED
+test/rmgpy/molecule/inchiTest.py::Parse_E_LayerTest::test_c8h22 PASSED
+test/rmgpy/molecule/inchiTest.py::Parse_E_LayerTest::test_c7h17 PASSED
+test/rmgpy/molecule/inchiTest.py::ParseNLayerTest::test_occc PASSED
+test/rmgpy/molecule/inchiTest.py::DecomposeTest::test_inchi PASSED
+test/rmgpy/molecule/inchiTest.py::DecomposeTest::test_inchi_u_layer PASSED
+test/rmgpy/molecule/inchiTest.py::DecomposeTest::test_inchi_p_layer PASSED
+test/rmgpy/molecule/inchiTest.py::DecomposeTest::test_inchi_u_layer_p_layer PASSED
+test/rmgpy/molecule/inchiTest.py::DecomposeTest::test_inchi_p_layer_zero_lp PASSED
+test/rmgpy/molecule/inchiTest.py::CreateULayerTest::test_c4h6 PASSED
+test/rmgpy/molecule/inchiTest.py::ExpectedLonePairsTest::test_singlet_carbon PASSED
+test/rmgpy/molecule/inchiTest.py::ExpectedLonePairsTest::test_normal_carbon PASSED
+test/rmgpy/molecule/inchiTest.py::ExpectedLonePairsTest::test_normal_oxygen PASSED
+test/rmgpy/molecule/inchiTest.py::ExpectedLonePairsTest::test_oxygen_3_lone_pairs PASSED
+test/rmgpy/molecule/inchiTest.py::CreateAugmentedLayersTest::test_methane PASSED
+test/rmgpy/molecule/inchiTest.py::CreateAugmentedLayersTest::test_singlet_methylene PASSED
+test/rmgpy/molecule/inchiTest.py::CreateAugmentedLayersTest::test_triplet_methylene PASSED
+test/rmgpy/molecule/inchiTest.py::CreateAugmentedLayersTest::test_nitrate SKIPPED
+test/rmgpy/molecule/inchiTest.py::ResetLonePairsTest::test_methane PASSED
+test/rmgpy/molecule/inchiTest.py::ResetLonePairsTest::test_singlet_methylene PASSED
+test/rmgpy/molecule/isomorphismTest.py::test_parameters PASSED
+test/rmgpy/molecule/isomorphismTest.py::test_multiplicity_mol_mol_distinct_multiplicity PASSED
+test/rmgpy/molecule/isomorphismTest.py::test_multiplicity_mol_mol_identical_multiplicity PASSED
+test/rmgpy/molecule/isomorphismTest.py::test_multiplicity_mol_not_specified_mol_specified PASSED
+test/rmgpy/molecule/isomorphismTest.py::test_multiplicity_mol_not_specified_mol_not_specified PASSED
+test/rmgpy/molecule/isomorphismTest.py::test_isomorphism__r PASSED
+test/rmgpy/molecule/isomorphismTest.py::test_isomorphism_mol_group_not_identical PASSED
+test/rmgpy/molecule/isomorphismTest.py::test_isomorphism_group_group PASSED
+test/rmgpy/molecule/isomorphismTest.py::test_isomorphism_sulfur_group_sulfur_molecule PASSED
+test/rmgpy/molecule/isomorphismTest.py::test_isotope_subgraph_isomorphism_molecule_and_group PASSED
+test/rmgpy/molecule/isomorphismTest.py::test_isomorphism_wrong_mapping PASSED
+test/rmgpy/molecule/kekulizeTest.py::KekulizeTest::test_aromatic_ring PASSED
+test/rmgpy/molecule/kekulizeTest.py::KekulizeTest::test_aromatic_bond PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_mass PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_number PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_symbol PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_equality PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_less_than PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_greater_than PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_hash PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_is_hydrogen PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_is_proton PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_is_electron PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_is_non_hydrogen PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_is_halogen PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_is_carbon PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_is_silicon PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_is_oxygen PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_is_nitrogen PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_is_phosphorus PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_is_sulfur PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_is_fluorine PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_is_chlorine PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_is_bromine PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_is_iodine PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_is_nos PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_is_surface_site PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_is_bonded_to_surface PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_is_bonded_to_halogen PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_increment_radical PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_decrement_radical PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_apply_action_break_bond PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_apply_action_form_bond PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_apply_action_increment_bond PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_apply_action_decrement_bond PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_apply_action_gain_radical PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_apply_action_lose_radical PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_apply_action_gain_charge PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_apply_action_lose_charge PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_equivalent PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_is_specific_case_of PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_copy PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_pickle PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_isotope_equivalent PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_get_bond_orders_for_atom PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_equality PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_less_than PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_greater_than PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_hash PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_get_order_str PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_set_order_str PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_get_order_num PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_set_order_num PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_is_order PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_is_single PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_is_single_can_take_floating_point_addition PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_is_double PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_is_triple PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_is_benzene PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_is_quadruple PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_increment_order PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_decrement_order PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_apply_action_break_bond PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_apply_action_form_bond PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_apply_action_increment_bond PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_apply_action_decrement_bond PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_apply_action_gain_radical PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_apply_action_lose_radical PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_equivalent PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_is_specific_case_of PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_copy PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_pickle PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_update_lone_pairs PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_get_bond_string PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_is_proton PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_is_electron PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_equality PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_less_than PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_greater_than PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_hash PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_clear_labeled_atoms PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_contains_labeled_atom PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_get_labeled_atom PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_get_labeled_atoms PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_get_formula PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_radical_count PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_get_molecular_weight PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_from_adjacency_list PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_to_adjacency_list PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_isomorphism PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_subgraph_isomorphism PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_subgraph_isomorphism_again PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_subgraph_isomorphism_many_labels PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_subgraph_isomorphism_rings PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_lax_isomorphism PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_adjacency_list PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_generate_h_bonded_structures PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_remove_h_bonds PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_sssr PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_is_in_cycle_ethane PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_is_in_cycle_cyclohexane PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_from_smiles_h PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_from_inchi_h PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_pickle PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_radical_ch PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_radical_ch2 PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_radical_ch2ch2ch2 PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_singlet_carbene PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_triplet_carbene PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_singlet_carbon PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_smiles PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_kekule_to_smiles PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_kekule_round_trip_smiles PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_inchi_key PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_augmented_inchi PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_augmented_inchi_key PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_linear_methane PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_linear_ethane PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_linear_propane PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_linear_neopentane PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_linear_hydrogen PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_linear_oxygen PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_linear_carbon_dioxide PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_linear_acetylene PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_linear135_hexatriyne PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_aromatic_benzene PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_aromatic_naphthalene PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_aromatic_cyclohexane PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_heterocyclic_cyclohexanol PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_heterocyclic_furan PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_heterocyclic_pyridine PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_count_internal_rotors_ethane PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_count_internal_rotors_propane PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_count_internal_rotors_neopentane PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_count_internal_rotors_methyl_cyclohexane PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_count_internal_rotors_ethylene PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_count_internal_rotors_acetylene PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_carbene_identifiers PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_get_symmetry_number PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_molecule_props PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_molecule_props_object_attribute PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_count_internal_rotors_dimethyl_acetylene SKIPPED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_saturate_aromatic_radical PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_replace_halogen_with_hydrogen PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_surface_molecules PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_get_num_heavy_atoms PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_is_multidentate PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_malformed_augmented_inchi PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_malformed_augmented_inchi_wrong_inchi_layer PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_malformed_augmented_inchi_wrong_mult PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_malformed_augmented_inchi_wrong_indices PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_update_lone_pairs PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_large_mol_update PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_large_mol_creation PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_get_polycyclic_rings PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_get_polycyclic_rings_common_molecules PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_get_monocyclic_rings PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_get_disparate_rings PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_get_smallest_set_of_smallest_rings PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_to_group PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_to_adjacency_list_with_isotopes PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_from_adjacency_list_with_isotopes PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_aromaticity_perception_benzene PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_aromaticity_perception_tetralin PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_aromaticity_perception_biphenyl PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_aromaticity_perception_azulene PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_aromaticity_perception_furan PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_aromaticity_perception_benzonaphthalene PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_aromaticity_perception_save_order PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_aryl_radical_true PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_has_halogen PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_aryl_radical_false PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_aryl_radical_birad PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_identical_true PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_identical_true2 PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_identical_false PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_identical_false2 PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_atom_id_valid PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_atom_id_valid2 PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_atom_id_valid3 PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_assign_atom_id PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_fingerprint_property PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_fingerprint_property_more_elements PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_saturate_unfilled_valence PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_get_element_count PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_ring_perception PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_enumerate_bonds PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_count_aromatic_rings PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_remove_van_der_waals_bond PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_remove_van_der_waals_bonds_bidentate PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_has_covalent_surface_bond PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_has_vdw_surface_bond PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_get_relevant_cycles PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_cycle_list_order_sssr PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_get_max_cycle_overlap PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_get_all_polycyclic_vertices PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_get_largest_ring PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_get_ring_count_in_largest_fused_ring_system PASSED
+test/rmgpy/molecule/pathfinderTest.py::FindButadieneTest::test_13butadiene PASSED
+test/rmgpy/molecule/pathfinderTest.py::FindButadieneTest::test_acrolein PASSED
+test/rmgpy/molecule/pathfinderTest.py::FindButadieneTest::test_135hexatriene PASSED
+test/rmgpy/molecule/pathfinderTest.py::FindButadieneTest::test_13cyclohexadiene PASSED
+test/rmgpy/molecule/pathfinderTest.py::FindButadieneTest::test_14cyclohexadiene PASSED
+test/rmgpy/molecule/pathfinderTest.py::FindButadieneTest::test_benzene PASSED
+test/rmgpy/molecule/pathfinderTest.py::FindButadieneTest::test_c4h4 PASSED
+test/rmgpy/molecule/pathfinderTest.py::FindAllylEndWithChargeTest::test_c2h2o3 PASSED
+test/rmgpy/molecule/pathfinderTest.py::FindAllylEndWithChargeTest::test_c3h2 PASSED
+test/rmgpy/molecule/pathfinderTest.py::FindAllylEndWithChargeTest::test_c3h4 PASSED
+test/rmgpy/molecule/pathfinderTest.py::FindAllylEndWithChargeTest::test_c3h2o3 PASSED
+test/rmgpy/molecule/pathfinderTest.py::FindAllylEndWithChargeTest::test_c3h4o4 PASSED
+test/rmgpy/molecule/pathfinderTest.py::FindAllylEndWithChargeTest::test_c5h6o PASSED
+test/rmgpy/molecule/pathfinderTest.py::FindButadieneEndWithChargeTest::test_co PASSED
+test/rmgpy/molecule/pathfinderTest.py::FindButadieneEndWithChargeTest::test_c2h2o3 PASSED
+test/rmgpy/molecule/pathfinderTest.py::FindButadieneEndWithChargeTest::test_c3h2o3 PASSED
+test/rmgpy/molecule/pathfinderTest.py::FindButadieneEndWithChargeTest::test_c4h6o PASSED
+test/rmgpy/molecule/pathfinderTest.py::FindButadieneEndWithChargeTest::test_c5h6o2 PASSED
+test/rmgpy/molecule/pathfinderTest.py::FindButadieneEndWithChargeTest::test_c8h14o4 PASSED
+test/rmgpy/molecule/pathfinderTest.py::FindButadieneEndWithChargeTest::test_c6h6o6 PASSED
+test/rmgpy/molecule/pathfinderTest.py::ShortestPathTest::test_ccc PASSED
+test/rmgpy/molecule/pathfinderTest.py::ShortestPathTest::test_cyclohexane PASSED
+test/rmgpy/molecule/pathfinderTest.py::ShortestPathTest::test_bicyclo420octane PASSED
+test/rmgpy/molecule/pathfinderTest.py::DistanceComputingTest::test_2_atoms PASSED
+test/rmgpy/molecule/pathfinderTest.py::DistanceComputingTest::test_3_atoms PASSED
+test/rmgpy/molecule/pathfinderTest.py::FindAllylDelocalizationPathsTest::test_allyl_radical PASSED
+test/rmgpy/molecule/pathfinderTest.py::FindAllylDelocalizationPathsTest::test_nitrogenated_birad PASSED
+test/rmgpy/molecule/pathfinderTest.py::FindLonePairMultipleBondPathsTest::test_azide PASSED
+test/rmgpy/molecule/pathfinderTest.py::FindLonePairMultipleBondPathsTest::test_nh2cho PASSED
+test/rmgpy/molecule/pathfinderTest.py::FindLonePairMultipleBondPathsTest::test_n2oa PASSED
+test/rmgpy/molecule/pathfinderTest.py::FindLonePairMultipleBondPathsTest::test_n2ob PASSED
+test/rmgpy/molecule/pathfinderTest.py::FindLonePairMultipleBondPathsTest::test_hn3 PASSED
+test/rmgpy/molecule/pathfinderTest.py::FindLonePairMultipleBondPathsTest::test_sn2 PASSED
+test/rmgpy/molecule/pathfinderTest.py::FindLonePairMultipleBondPathsTest::test_h2nnoo PASSED
+test/rmgpy/molecule/pathfinderTest.py::FindAdjLonePairRadicalDelocalizationPathsTest::test_no2a PASSED
+test/rmgpy/molecule/pathfinderTest.py::FindAdjLonePairRadicalDelocalizationPathsTest::test_no2b PASSED
+test/rmgpy/molecule/pathfinderTest.py::FindAdjLonePairRadicalDelocalizationPathsTest::test_hoso PASSED
+test/rmgpy/molecule/pathfinderTest.py::FindAdjLonePairRadicalDelocalizationPathsTest::test_double_bond PASSED
+test/rmgpy/molecule/pathfinderTest.py::FindAdjLonePairMultipleBondDelocalizationPathsTest::test_sho3 PASSED
+test/rmgpy/molecule/pathfinderTest.py::FindAdjLonePairRadicalMultipleBondDelocalizationPathsTest::test_ns PASSED
+test/rmgpy/molecule/pathfinderTest.py::FindAdjLonePairRadicalMultipleBondDelocalizationPathsTest::test_hso3 PASSED
+test/rmgpy/molecule/pathfinderTest.py::FindN5dcRadicalDelocalizationPathsTest::test_hnnoo PASSED
+test/rmgpy/molecule/pathfinderTest.py::FindAdsorbateDelocalizationPathsTest::test_xcxch PASSED
+test/rmgpy/molecule/pathfinderTest.py::FindAdsorbateDelocalizationPathsTest::test_xcxch2 PASSED
+test/rmgpy/molecule/pathfinderTest.py::FindAdsorbateConjugateDelocalizationPathsTest::test_xchchxc PASSED
+test/rmgpy/molecule/pathfinderTest.py::FindAdsorbateConjugateDelocalizationPathsTest::test_xchch2xch2 PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_allyl_shift PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_trirad_allyl_shift PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_oxime PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_ring_allyl_shift PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_carbene_allyl_shift PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_ch2chcho PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_nco PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_no2 PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_n2o PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_azide PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_ozone PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_hco_vs_hcs PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_no PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_n5dc_radical PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_n5dc PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_styryl1 PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_styryl2 PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_naphthyl PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_methyl_napthalene PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_methyl_phenanthrene PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_methyl_phenanthrene_radical PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_aromatic_with_lone_pair_resonance PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_aromatic_with_n_resonance PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_aromatic_with_o_n_resonance PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_no_clar_structures PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_c13h11_rad PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_c8h8 PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_c8h7_j PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_c8h7_j2 PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_c9h9_aro PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_c9h9_kek PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_benzene_aro PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_benzene_kek PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_c9h11_aro PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_c10h11_aro PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_c9h10_aro PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_c10h12_aro PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_c9h10_aro_2 PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_aryne_1_ring PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_aryne_2_rings PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_aryne_3_rings PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_fused_aromatic1 PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_fused_aromatic2 PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_aromatic_resonance_structures PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_bridged_aromatic PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_polycyclic_aromatic_with_non_aromatic_ring PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_polycyclic_aromatic_with_non_aromatic_ring2 PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_kekulize_benzene PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_kekulize_naphthalene PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_kekulize_phenanthrene PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_kekulize_pyrene PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_kekulize_corannulene PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_kekulize_coronene PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_kekulize_bridged_aromatic PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_multiple_kekulized_resonance_isomers_rad PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_keep_isomorphic_structures_functions_when_true PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_keep_isomorphic_structures_functions_when_false PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_false_negative_aromaticity_perception PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_false_negative_polycyclic_aromaticity_perception PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_false_negative_polycylic_aromaticity_perception2 PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_inconsistent_aromatic_structure_generation PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_resonance_without_changing_atom_order1 PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_resonance_without_changing_atom_order2 PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_adsorbate_resonance_cc1 PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_adsorbate_resonance_cc2 PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_adsorbate_resonance_cc3 PASSED
+test/rmgpy/molecule/resonanceTest.py::ResonanceTest::test_adsorbate_resonance_chchc PASSED
+test/rmgpy/molecule/resonanceTest.py::ClarTest::test_clar_optimization PASSED
+test/rmgpy/molecule/resonanceTest.py::ClarTest::test_phenanthrene PASSED
+test/rmgpy/molecule/resonanceTest.py::ClarTest::test_phenalene PASSED
+test/rmgpy/molecule/resonanceTest.py::ClarTest::test_corannulene PASSED
+test/rmgpy/molecule/resonanceTest.py::ClarTest::test_exocyclic_db PASSED
+test/rmgpy/molecule/resonanceTest.py::ClarTest::test_surface_o PASSED
+test/rmgpy/molecule/resonanceTest.py::ClarTest::test_surface_radical PASSED
+test/rmgpy/molecule/resonanceTest.py::ClarTest::test_sulfur_triple_bond PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_atom_symmetry_number_methane PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_atom_symmetry_number_methyl PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_atom_symmetry_number_ethane PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_atom_symmetry_number_ethane_with_deuterium_tritium PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_atom_symmetry_number_with_two_chiral_centers PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_atom_symmetry_number_propane PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_atom_symmetry_number_isobutane PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_bond_symmetry_number_ethane PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_bond_symmetry_number_propane PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_bond_symmetry_number_butane PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_bond_symmetry_number_ethylene PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_bond_symmetry_number_acetylene PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_axis_symmetry_number_ethylene PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_axis_symmetry_number_propadiene PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_axis_symmetry_number_butatriene PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_axis_symmetry_number_butatrienyl PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_axis_symmetry_number_propadienyl PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_axis_symmetry_number_12_butadienyl PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_axis_symmetry_number_12_hexadienyl PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_axis_symmetry_number1 PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_axis_symmetry_number2 PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_axis_symmetry_number3 SKIPPED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_axis_symmetry_number4 PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_axis_symmetry_number5 PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_axis_symmetry_number6 PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_axis_symmetry_number7 PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_axis_symmetry_oxygen_singlet PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_cyclic_symmetry_number_cyclohexane PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_cyclic_symmetry_number_cyclohexanone PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_cyclic_symmetry_number_cyclohexan_tri_one PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_total_symmetry_number_benzene PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_total_symmetry_numberbute_di_yl PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_total_symmetry_number_allyl PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_total_symmetry_number_pentenyl PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_species_symmetry_number_is_not_molecule_symmetry_number PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_axis_symmetry_number_allyl PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_middle_carbon_atom_symmetry_number_allyl_using_resonance_hybrid PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_edge_carbon_atom_symmetry_number_allyl PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_edge_carbon_atom_symmetry_number_allyl_using_resonance_hybrid PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_atom_symmetry_number_allyl PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_bond_symmetry_number_allyl PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_total_symmetry_number_toluene PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_total_symmetry_number_special_cyclic PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_total_symmetry_number_chlorobenzene PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_total_symmetry_number_phenoxy_kecle PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_total_symmetry_number_phenoxy_benzene PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_total_symmetry_number12_dimethylbenzene PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_total_symmetry_number14_dimethylbenzene PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_total_symmetry_number_ethane PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_total_symmetry_number1 PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_total_symmetry_number2 SKIPPED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_symmetry_number_hydroxyl PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_symmetry_number_oxygen PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_symmetry_number_dicarbon PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_symmetry_number_hydrogen PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_symmetry_number_acetylene PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_symmetry_number_butadiyne PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_symmetry_number_methane PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_symmetry_number_formaldehyde PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_symmetry_number_methyl PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_symmetry_number_water PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_symmetry_number_ethylene PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_symmetry_number_ethenyl PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_symmetry_number_cyclic PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_symmetry_number__s1_total PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_cyclic_symmetry_number_s1 PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_cyclic_symmetry_number_methyl_cyclo_propane PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_cyclic_symmetry_number_methyl_cyclo_propene PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_cyclic_symmetry_number_methyl_cyclo_butene PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_cyclic_symmetry_number_methyl_cyclo_butane PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_cyclic_symmetry_number_di_methyl_cyclo_butane PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_symmetry_number_dimethylcylcobutane_total PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_indistinguishable PASSED
+test/rmgpy/molecule/symmetryTest.py::TestMoleculeSymmetry::test_indistinguishable_2 PASSED
+test/rmgpy/molecule/translatorTest.py::TranslatorTest::test_empty_molecule PASSED
+test/rmgpy/molecule/translatorTest.py::TranslatorTest::test_failure_message SKIPPED
+test/rmgpy/molecule/translatorTest.py::InChIGenerationTest::test_c5h5 PASSED
+test/rmgpy/molecule/translatorTest.py::InChIGenerationTest::test_c7h8 PASSED
+test/rmgpy/molecule/translatorTest.py::InChIGenerationTest::test_c8h8 PASSED
+test/rmgpy/molecule/translatorTest.py::InChIGenerationTest::test_benzyne PASSED
+test/rmgpy/molecule/translatorTest.py::InChIGenerationTest::test_h PASSED
+test/rmgpy/molecule/translatorTest.py::InChIGenerationTest::test_c6h8 PASSED
+test/rmgpy/molecule/translatorTest.py::InChIGenerationTest::test_c6h10_tetrarad PASSED
+test/rmgpy/molecule/translatorTest.py::InChIGenerationTest::test_buta13diyl_triplet PASSED
+test/rmgpy/molecule/translatorTest.py::InChIGenerationTest::test_ch2o2 PASSED
+test/rmgpy/molecule/translatorTest.py::InChIGenerationTest::test_c7h10 PASSED
+test/rmgpy/molecule/translatorTest.py::InChIGenerationTest::test_c5h6o PASSED
+test/rmgpy/molecule/translatorTest.py::InChIGenerationTest::test_c7h9 PASSED
+test/rmgpy/molecule/translatorTest.py::InChIGenerationTest::test_c11h16 PASSED
+test/rmgpy/molecule/translatorTest.py::InChIGenerationTest::test_singlet_vs_triplet PASSED
+test/rmgpy/molecule/translatorTest.py::InChIGenerationTest::test_c5h6_singlet PASSED
+test/rmgpy/molecule/translatorTest.py::InChIGenerationTest::test_aromatic_resonance_structures PASSED
+test/rmgpy/molecule/translatorTest.py::InChIGenerationTest::test_disconnected_molecule PASSED
+test/rmgpy/molecule/translatorTest.py::InChIGenerationTest::test_isotopic_molecule_1 PASSED
+test/rmgpy/molecule/translatorTest.py::InChIGenerationTest::test_isotopic_molecule_2 PASSED
+test/rmgpy/molecule/translatorTest.py::InChIGenerationTest::test_surface_molecule_rdkit PASSED
+test/rmgpy/molecule/translatorTest.py::InChIGenerationTest::test_surface_molecule_ob PASSED
+test/rmgpy/molecule/translatorTest.py::SMILESGenerationTest::test_ch4 PASSED
+test/rmgpy/molecule/translatorTest.py::SMILESGenerationTest::test_c PASSED
+test/rmgpy/molecule/translatorTest.py::SMILESGenerationTest::test_various PASSED
+test/rmgpy/molecule/translatorTest.py::SMILESGenerationTest::test_aromatics PASSED
+test/rmgpy/molecule/translatorTest.py::SMILESGenerationTest::test_surface_molecule_rdkit PASSED
+test/rmgpy/molecule/translatorTest.py::SMILESGenerationTest::test_surface_molecule_ob PASSED
+test/rmgpy/molecule/translatorTest.py::ChargedSMILESGenerationTest::test_monatomic_anions PASSED
+test/rmgpy/molecule/translatorTest.py::ChargedSMILESGenerationTest::test_monatomic_cations PASSED
+test/rmgpy/molecule/translatorTest.py::ChargedSMILESGenerationTest::test_polyatomic_anion_collision PASSED
+test/rmgpy/molecule/translatorTest.py::ChargedSMILESGenerationTest::test_polyatomic_anion_control PASSED
+test/rmgpy/molecule/translatorTest.py::ChargedSMILESGenerationTest::test_net_neutral_ion_pairs PASSED
+test/rmgpy/molecule/translatorTest.py::ChargedSMILESGenerationTest::test_charge_signature PASSED
+test/rmgpy/molecule/translatorTest.py::ChargedSMILESGenerationTest::test_cyclic_and_open_ozone_are_distinct PASSED
+test/rmgpy/molecule/translatorTest.py::ChargedSMILESGenerationTest::test_carbene_and_charge_separated_co_are_distinct PASSED
+test/rmgpy/molecule/translatorTest.py::ChargedSMILESGenerationTest::test_electron PASSED
+test/rmgpy/molecule/translatorTest.py::ChargedSMILESGenerationTest::test_neutral_shortcuts_unchanged PASSED
+test/rmgpy/molecule/translatorTest.py::ChargedSMILESGenerationTest::test_charge_separated_shortcuts PASSED
+test/rmgpy/molecule/translatorTest.py::ChargedSMILESGenerationTest::test_get_smiles_charges PASSED
+test/rmgpy/molecule/translatorTest.py::ChargedSMILESGenerationTest::test_get_smiles_net_charge PASSED
+test/rmgpy/molecule/translatorTest.py::ParsingTest::test_from_augmented_inchi PASSED
+test/rmgpy/molecule/translatorTest.py::ParsingTest::test_from_smiles PASSED
+test/rmgpy/molecule/translatorTest.py::ParsingTest::test_from_inchi PASSED
+test/rmgpy/molecule/translatorTest.py::ParsingTest::test_from_smarts PASSED
+test/rmgpy/molecule/translatorTest.py::ParsingTest::test_incorrect_identifier_type PASSED
+test/rmgpy/molecule/translatorTest.py::ParsingTest::test_read_inchikey_error PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_ethane_parsing PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_ethyl_parsing PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_ch3_parsing PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_h2_parsing PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_c2h4_biradical_parsing PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_c2h3_triradical_parsing PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_c3h6_biradical_parsing PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_c2h3o3 PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_c2h2 PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_o2 PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_tri_radical_zwitter_mult4 PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_tri_radical_double_bond_mult4 PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_tri_radical2_double_bond_mult4 PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_quadri_radical_double_bond_zwitter_mult5 PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_quadri2_double_bond_mult5 PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_c5h6o PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_c5h6o2 PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_c5h6o3 PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_co SKIPPED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_triplet_methylene PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_singlet_methylene PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_c4h6o PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_c6h6 PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_c4h6o2 PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_co_triplet PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_ccco_triplet PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_c3h4 PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_c6h8o2 PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_c3h3o3 PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_ch2o2 PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_c2h2o3 PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_c3h4o4 PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_c6h6o4 SKIPPED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_c3h2o3 PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_c6h6o6 PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_c3h2 PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_c6h8 PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_c6h10 PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_ammonia PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_ammonium SKIPPED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_h2s PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_pyridine PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_pyrimidine PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_nitrate SKIPPED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_no PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_isotopic_molecule_1 PASSED
+test/rmgpy/molecule/translatorTest.py::InChIParsingTest::test_isotopic_molecule_2 PASSED
+test/rmgpy/molecule/utilTest.py::ElementCountTest::test_inchi_count PASSED
+test/rmgpy/molecule/utilTest.py::ElementCountTest::test_inchi_count_disconnected PASSED
+test/rmgpy/molecule/utilTest.py::PartitionTest::test_singleton PASSED
+test/rmgpy/molecule/utilTest.py::PartitionTest::test_2_elements_in_1_layer PASSED
+test/rmgpy/molecule/utilTest.py::PartitionTest::test_2_elements_in_2_layers PASSED
+test/rmgpy/molecule/utilTest.py::PartitionTest::test_3_elements_in_2_layers PASSED
+test/rmgpy/molecule/utilTest.py::PartitionTest::test_3_elements_in_2_layers_1_singleton PASSED
+test/rmgpy/molecule/utilTest.py::AgglomerateTest::test_normal PASSED
+test/rmgpy/molecule/utilTest.py::ComboGeneratorTest::test_2_elements PASSED
+test/rmgpy/molecule/utilTest.py::SwapTest::test_2_elements_sets PASSED
+test/rmgpy/molecule/vf2Test.py::TestVF2::test_import_graph PASSED
+test/rmgpy/molecule/vf2Test.py::TestVF2::test_feasible PASSED
+test/rmgpy/molecule/vf2Test.py::TestVF2::test_clear_mapping PASSED
+
+======================= 792 passed, 14 skipped in 7.92s ========================

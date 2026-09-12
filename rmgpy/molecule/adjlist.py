@@ -35,7 +35,7 @@ import logging
 import re
 import warnings
 
-from rmgpy.exceptions import InvalidAdjacencyListError
+from rmgpy.exceptions import AtomTypeError, InvalidAdjacencyListError
 from rmgpy.molecule.atomtype import get_atomtype
 from rmgpy.molecule.element import get_element, PeriodicSystem
 from rmgpy.molecule.group import GroupAtom, GroupBond
@@ -102,11 +102,18 @@ class ConsistencyChecker(object):
 
         if not (-0.301 < atom.charge - theoretical < 0.301):
             # It should be 0, but -0.1 is caused by a Hydrogen bond
+            try:
+                atom_type_label = get_atomtype(atom, atom.edges).label
+            except AtomTypeError:
+                # The atom type can't be perceived (often *because* of the bad valency
+                # being reported here). Fall back to the element symbol so the valency
+                # error itself isn't masked by an unrelated AtomTypeError.
+                atom_type_label = atom.symbol
             raise InvalidAdjacencyListError(
                 'Invalid valency for atom {symbol} ({type}) with {radicals} unpaired electrons, '
                 '{lone_pairs} pairs of electrons, {charge} charge, and bonds [{bonds}].'.format(
                     symbol=atom.symbol,
-                    type=get_atomtype(atom, atom.edges).label,
+                    type=atom_type_label,
                     radicals=atom.radical_electrons,
                     lone_pairs=atom.lone_pairs,
                     charge=atom.charge,

@@ -936,3 +936,32 @@ class TestConsistencyChecker:
             )
         except InvalidAdjacencyListError:
             assert False, "InvalidAdjacencyListError thrown unexpectedly for singlet [N]=C=[N]!"
+
+    def test_check_partial_charge_bad_valency_untypeable_atom(self):
+        """
+        adjlist: An atom that both fails the valency check and cannot be assigned an
+        atom type (I-216) must still raise InvalidAdjacencyListError naming the atom
+        by element symbol, not let the atom-type lookup's AtomTypeError mask it.
+
+        An Ar atom given a bond matches none of Ar/Ar0/Ar+/Ar++ (all zero-bond noble
+        gas types), so get_atomtype cannot label it, while its valency is also wrong.
+        """
+        adjlist = "1 Ar u0 p4 c0 {2,S}\n2 Ar u0 p4 c0 {1,S}\n"
+        with pytest.raises(InvalidAdjacencyListError, match=r"Invalid valency for atom Ar \(Ar\)"):
+            Molecule().from_adjacency_list(adjlist)
+
+    def test_check_partial_charge_bad_valency_typeable_atom(self):
+        """
+        adjlist: Control for I-216. An ordinary, perfectly typeable atom with a bad
+        valency must keep naming its specific atom type in the error message, exactly
+        as before the fix (the fallback to element symbol must not fire here).
+        """
+        adjlist = (
+            "1 C u2 p0 c0 {2,S} {3,S} {4,S} {5,S}\n"
+            "2 H u0 p0 c0 {1,S}\n"
+            "3 H u0 p0 c0 {1,S}\n"
+            "4 H u0 p0 c0 {1,S}\n"
+            "5 H u0 p0 c0 {1,S}\n"
+        )
+        with pytest.raises(InvalidAdjacencyListError, match=r"Invalid valency for atom C \(Cs\)"):
+            Molecule().from_adjacency_list(adjlist)
