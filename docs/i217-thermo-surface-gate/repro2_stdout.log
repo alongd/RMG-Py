@@ -1,0 +1,2 @@
+db.thermo = None
+DOWNSTREAM SYMPTOM (mirrors rmg/main.py:1980): 'NoneType' object has no attribute 'libraries'

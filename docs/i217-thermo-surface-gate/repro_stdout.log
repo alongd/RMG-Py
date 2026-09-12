@@ -1,0 +1,4 @@
+database.directory = /home/alon/Code/RMG-database-plasma/input
+db.thermo = None
+REPRODUCED: db.thermo is None after load(surface=False), nothing raised
+DOWNSTREAM SYMPTOM: AttributeError 'RMGDatabase' object has no attribute 'get_thermo_data'

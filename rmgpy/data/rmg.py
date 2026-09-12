@@ -109,8 +109,7 @@ class RMGDatabase(object):
         if solvation:
             self.load_solvation(os.path.join(path, 'solvation'))
 
-        if surface:
-            self.load_thermo(os.path.join(path, 'thermo'), thermo_libraries, depository, surface, adsorption_groups)
+        self.load_thermo(os.path.join(path, 'thermo'), thermo_libraries, depository, surface, adsorption_groups)
 
 
 

@@ -1,0 +1,3 @@
+groups keys (surface=True): ['adsorptionLi', 'adsorptionPt111', 'group', 'longDistanceInteraction_cyclic', 'longDistanceInteraction_noncyclic', 'other', 'polycyclic', 'radical', 'ring']
+surface value keys: ['metal']
+<class 'rmgpy.data.surface.MetalDatabase'>

@@ -1,0 +1,5 @@
+db.thermo is not None: True
+groups keys: ['adsorptionLi', 'adsorptionPt111', 'group', 'longDistanceInteraction_cyclic', 'longDistanceInteraction_noncyclic', 'other', 'polycyclic', 'radical', 'ring']
+libraries keys: ['primaryThermoLibrary']
+db.thermo.surface (adsorption/metal DB): {}
+CONTROL A (surface=False) PASSED: thermo populated, adsorption/metal surface DB NOT loaded

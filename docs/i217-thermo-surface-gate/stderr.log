@@ -1,0 +1,24 @@
+Traceback (most recent call last):
+  File "<stdin>", line 3, in <module>
+  File "/home/alon/Code/RMG-Py-i217-thermo-surface-gate/rmgpy/data/rmg.py", line 38, in <module>
+    from rmgpy.data.base import ForbiddenStructures
+  File "/home/alon/Code/RMG-Py-i217-thermo-surface-gate/rmgpy/data/base.py", line 44, in <module>
+    from rmgpy.kinetics.uncertainties import RateUncertainty
+  File "/home/alon/Code/RMG-Py-i217-thermo-surface-gate/rmgpy/kinetics/__init__.py", line 30, in <module>
+    from rmgpy.kinetics.model import KineticsModel, PDepKineticsModel, TunnelingModel, \
+ModuleNotFoundError: No module named 'rmgpy.kinetics.model'
+[11:02:01] SMILES Parse Error: syntax error while parsing: 
+[11:02:01] SMILES Parse Error: check for mistakes around position 1:
+[11:02:01] 
+[11:02:01] ^
+[11:02:01] SMILES Parse Error: Failed parsing SMILES '
+' for input: '
+'
+==============================
+*** Open Babel Error  in ParseSimple
+  SMILES string contains a character 'r' which is invalid
+[11:02:01] SMILES Parse Error: syntax error while parsing: ring
+[11:02:01] SMILES Parse Error: check for mistakes around position 1:
+[11:02:01] ring
+[11:02:01] ^
+[11:02:01] SMILES Parse Error: Failed parsing SMILES 'ring' for input: 'ring'
