@@ -1,0 +1,4 @@
+database.directory = /home/alon/Code/RMG-database-plasma/input
+id(db) = 134556624015312
+H298 (kJ/mol) = -74.53377599999996
+comment = 'Thermo library: primaryThermoLibrary'

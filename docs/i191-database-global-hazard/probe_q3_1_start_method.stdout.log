@@ -1,0 +1,4 @@
+database.directory = /home/alon/Code/RMG-database-plasma/input
+multiprocessing.get_start_method() = fork
+multiprocessing.get_start_method(allow_none=True) = fork
+platform default via get_all_start_methods() = ['fork', 'spawn', 'forkserver']

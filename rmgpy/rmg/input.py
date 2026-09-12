@@ -2550,8 +2550,9 @@ def get_input(name):
     Returns the RMG input object that corresponds
     to the parameter name.
 
-    First, the module level is queried. If this variable
-    is empty, the broadcasted variables are queried.
+    The module-level ``rmg`` variable is the only source consulted, and there is
+    no fallback: if it is unset, an exception is raised. An unrecognized name
+    also raises.
     """
     global rmg
 

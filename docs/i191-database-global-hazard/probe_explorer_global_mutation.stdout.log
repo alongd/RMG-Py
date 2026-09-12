@@ -1,0 +1,25 @@
+database.directory = /home/alon/Code/RMG-database-plasma/input
+resolved = /home/alon/Code/RMG-database-plasma/input
+cwd = /home/alon/Code/RMG-Py-i191-database-global-hazard
+
+loaded libraries      : ['GRI-Mech3.0', 'primaryThermoLibrary']
+library_order (t=0)   : ['primaryThermoLibrary', 'GRI-Mech3.0']
+
+-- baseline, before any explorer job --
+  [baseline] H298 = -74.534 kJ/mol | comment = Thermo library: primaryThermoLibrary
+
+-- after explorer job #1 --
+library_order         : ['thermojobs', 'primaryThermoLibrary', 'GRI-Mech3.0']
+  [after explorer #1] H298 = -74.605 kJ/mol | comment = Thermo library: thermojobs
+
+-- after explorer job #2 --
+library_order         : ['thermojobs', 'thermojobs', 'primaryThermoLibrary', 'GRI-Mech3.0']
+'thermojobs' appears 2 time(s) in library_order
+  [after explorer #2] H298 = -74.605 kJ/mol | comment = Thermo library: thermojobs
+
+=== findings ===
+resolution changed by explorer job #1 : True
+  baseline           : -74.534 kJ/mol | Thermo library: primaryThermoLibrary
+  after explorer #1  : -74.605 kJ/mol | Thermo library: thermojobs
+library_order duplicate accumulation  : 2 entries named 'thermojobs' after 2 explorer jobs
+mutation ever undone                  : no (no reset exists; grep 'thermojobs')

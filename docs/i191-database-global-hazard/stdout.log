@@ -1,0 +1,29 @@
+database.directory = /home/alon/Code/RMG-database-plasma/input
+exists: True
+cwd: /home/alon/Code/RMG-Py-i191-database-global-hazard
+molecule module file: /home/alon/Code/RMG-Py-i191-database-global-hazard/rmgpy/molecule/molecule.cpython-39-x86_64-linux-gnu.so
+
+    Returns the RMG database object that corresponds
+    to the parameter name.
+
+    The module-level ``database`` variable is the only source consulted, and
+    there is no fallback: ``RMGDatabase.__init__`` rebinds it to the most
+    recently constructed instance, and if it is unset a :class:`DatabaseError`
+    is raised.
+
+    With ``name=''`` the :class:`RMGDatabase` instance itself is returned. Any
+    other recognized name returns the corresponding sub-database attribute,
+    which is ``None`` if that component was never loaded -- that case is *not*
+    an error here, so callers must handle ``None``. An unrecognized name raises
+    :class:`ValueError`.
+    
+---
+
+    Returns the RMG input object that corresponds
+    to the parameter name.
+
+    The module-level ``rmg`` variable is the only source consulted, and there is
+    no fallback: if it is unset, an exception is raised. An unrecognized name
+    also raises.
+    
+OK: no broadcast fallback promised in either docstring

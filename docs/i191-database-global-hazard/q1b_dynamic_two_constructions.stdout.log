@@ -1,0 +1,13 @@
+database.directory = /home/alon/Code/RMG-database/input
+database.directory = /home/alon/Code/RMG-database-plasma/input
+--- first load_database() call (mimics simulate.py:83, diffusion-limited liquid branch) ---
+id(rmgpy.data.rmg.database) after call #1 = 125004333387248
+id(rmg.database) after call #1            = 125004333387248
+--- second load_database() call (mimics simulate.py:87-88, uncertainty branch) ---
+id(rmgpy.data.rmg.database) after call #2 = 124999935625008
+id(rmg.database) after call #2            = 124999935625008
+
+RESULT: identity changed across the two calls in ONE process: True
+
+--- captured logging.warning output (filtered to the re-initialization line) ---
+An instance of RMGDatabase already exists. Re-initializing it.

@@ -1,0 +1,18 @@
+database.directory = /home/alon/Code/RMG-database-plasma/input
+db.transport is None
+db.statmech is None
+
+--- calling get_db('transport') on a database whose .transport is None ---
+get_db('transport') returned (no exception): None
+
+--- calling get_db('statmech') on a database whose .statmech is None ---
+get_db('statmech') returned (no exception): None
+
+RESULT: get_db returns None silently (does not raise) when the attribute
+is None but the global `database` object itself exists: True
+
+--- consequence for arkane/input.py:load_necessary_databases() ---
+Reproducing its exact guard logic against this partially-populated database:
+No exception raised -> the `except DatabaseError` branch that would
+construct+load transport/statmech databases is NEVER entered.
+transport/statmech remain None: db.transport = None  db.statmech = None
