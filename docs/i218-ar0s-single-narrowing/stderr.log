@@ -1,0 +1,556 @@
+warning: rmgpy/solver/surface.pyx:415:61: Unreachable code
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/kinetics/arrhenius.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/kinetics/chebyshev.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+rmgpy/kinetics/chebyshev.c: In function ‘__pyx_f_5rmgpy_8kinetics_9chebyshev_9Chebyshev_chebyshev’:
+rmgpy/kinetics/chebyshev.c:6543:10: warning: ‘__pyx_v_T’ may be used uninitialized [-Wmaybe-uninitialized]
+ 6543 |   return __pyx_r;
+      |          ^~~~~~~
+rmgpy/kinetics/chebyshev.c:6317:10: note: ‘__pyx_v_T’ was declared here
+ 6317 |   double __pyx_v_T;
+      |          ^~~~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/kinetics/kineticsdata.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/kinetics/falloff.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/kinetics/model.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/kinetics/tunneling.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+rmgpy/kinetics/tunneling.c: In function ‘__pyx_f_5rmgpy_8kinetics_9tunneling_6Eckart_calculate_tunneling_function’:
+rmgpy/kinetics/tunneling.c:7802:42: warning: ‘__pyx_v_r0’ may be used uninitialized [-Wmaybe-uninitialized]
+ 7802 |   for (__pyx_t_7 = __pyx_v_r0; __pyx_t_7 < __pyx_t_14; __pyx_t_7+=1) {
+      |                                ~~~~~~~~~~^~~~~~~~~~~~
+rmgpy/kinetics/tunneling.c:7413:7: note: ‘__pyx_v_r0’ was declared here
+ 7413 |   int __pyx_v_r0;
+      |       ^~~~~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/kinetics/surface.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/kinetics/uncertainties.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/molecule/group.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/molecule/molecule.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/molecule/symmetry.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/molecule/converter.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/molecule/translator.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/molecule/inchi.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/molecule/resonance.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/molecule/pathfinder.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/molecule/kekulize.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/pdep/collision.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+rmgpy/pdep/collision.c: In function ‘__pyx_pf_5rmgpy_4pdep_9collision_21SingleExponentialDown_8generate_collision_matrix’:
+rmgpy/pdep/collision.c:6612:47: warning: ‘__pyx_v_start’ may be used uninitialized [-Wmaybe-uninitialized]
+ 6612 |   for (__pyx_t_19 = __pyx_v_start; __pyx_t_19 < __pyx_t_18; __pyx_t_19+=1) {
+      |                                    ~~~~~~~~~~~^~~~~~~~~~~~
+rmgpy/pdep/collision.c:6076:7: note: ‘__pyx_v_start’ was declared here
+ 6076 |   int __pyx_v_start;
+      |       ^~~~~~~~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/pdep/configuration.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+rmgpy/pdep/configuration.c: In function ‘__pyx_pf_5rmgpy_4pdep_13configuration_13Configuration_36map_sum_of_states’:
+rmgpy/pdep/configuration.c:14380:15: warning: ‘__pyx_v_r’ may be used uninitialized [-Wmaybe-uninitialized]
+14380 |   __pyx_t_9 = __Pyx_PyObject_GetSlice(((PyObject *)__pyx_v_self->e_list), __pyx_v_r, 0, NULL, NULL, NULL, 1, 0, 0); if (unlikely(!__pyx_t_9)) __PYX_ERR(0, 441, __pyx_L1_error)
+      |               ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+rmgpy/pdep/configuration.c:14223:7: note: ‘__pyx_v_r’ was declared here
+14223 |   int __pyx_v_r;
+      |       ^~~~~~~~~
+rmgpy/pdep/configuration.c:15185:48: warning: ‘__pyx_v_r0’ may be used uninitialized [-Wmaybe-uninitialized]
+15185 |       for (__pyx_t_21 = __pyx_v_r0; __pyx_t_21 < __pyx_t_20; __pyx_t_21+=1) {
+      |                                     ~~~~~~~~~~~^~~~~~~~~~~~
+rmgpy/pdep/configuration.c:14222:7: note: ‘__pyx_v_r0’ was declared here
+14222 |   int __pyx_v_r0;
+      |       ^~~~~~~~~~
+rmgpy/pdep/configuration.c: In function ‘__pyx_pf_5rmgpy_4pdep_13configuration_13Configuration_34map_density_of_states’:
+rmgpy/pdep/configuration.c:13089:15: warning: ‘__pyx_v_r’ may be used uninitialized [-Wmaybe-uninitialized]
+13089 |   __pyx_t_9 = __Pyx_PyObject_GetSlice(((PyObject *)__pyx_v_self->e_list), __pyx_v_r, 0, NULL, NULL, NULL, 1, 0, 0); if (unlikely(!__pyx_t_9)) __PYX_ERR(0, 373, __pyx_L1_error)
+      |               ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+rmgpy/pdep/configuration.c:12932:7: note: ‘__pyx_v_r’ was declared here
+12932 |   int __pyx_v_r;
+      |       ^~~~~~~~~
+rmgpy/pdep/configuration.c:13876:48: warning: ‘__pyx_v_r0’ may be used uninitialized [-Wmaybe-uninitialized]
+13876 |       for (__pyx_t_22 = __pyx_v_r0; __pyx_t_22 < __pyx_t_21; __pyx_t_22+=1) {
+      |                                     ~~~~~~~~~~~^~~~~~~~~~~~
+rmgpy/pdep/configuration.c:12931:7: note: ‘__pyx_v_r0’ was declared here
+12931 |   int __pyx_v_r0;
+      |       ^~~~~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/pdep/me.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/pdep/msc.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/pdep/reaction.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/pdep/rs.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/pdep/cse.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/statmech/conformer.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/statmech/mode.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/statmech/rotation.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/statmech/schrodinger.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/statmech/torsion.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+rmgpy/statmech/torsion.c: In function ‘__pyx_f_5rmgpy_8statmech_7torsion_13HinderedRotor_fit_fourier_potential_to_data’:
+rmgpy/statmech/torsion.c:15349:6: warning: ‘__pyx_v_V0’ may be used uninitialized [-Wmaybe-uninitialized]
+15349 |   if (__pyx_t_8) {
+      |      ^
+rmgpy/statmech/torsion.c:14313:10: note: ‘__pyx_v_V0’ was declared here
+14313 |   double __pyx_v_V0;
+      |          ^~~~~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/statmech/translation.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/statmech/vibration.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/thermo/thermodata.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+rmgpy/thermo/thermodata.c: In function ‘__pyx_f_5rmgpy_6thermo_10thermodata_10ThermoData_get_heat_capacity’:
+rmgpy/thermo/thermodata.c:7652:10: warning: ‘__pyx_r’ may be used uninitialized [-Wmaybe-uninitialized]
+ 7652 |   return __pyx_r;
+      |          ^~~~~~~
+rmgpy/thermo/thermodata.c:7051:10: note: ‘__pyx_r’ was declared here
+ 7051 |   double __pyx_r;
+      |          ^~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/thermo/model.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/thermo/nasa.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/thermo/wilhoit.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/quantity.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/reaction.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+rmgpy/reaction.c: In function ‘__pyx_f_5rmgpy_8reaction_8Reaction_generate_reverse_rate_coefficient’:
+rmgpy/reaction.c:39109:35: warning: comparison of integer expressions of different signedness: ‘size_t’ {aka ‘long unsigned int’} and ‘Py_ssize_t’ {aka ‘long int’} [-Wsign-compare]
+39109 |     for (__pyx_t_7 = 0; __pyx_t_7 < __pyx_t_11; __pyx_t_7+=1) {
+      |                                   ^
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/species.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/chemkin.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/solver/base.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+rmgpy/solver/base.c: In function ‘__pyx_f_5rmgpy_6solver_4base_14ReactionSystem_simulate’:
+rmgpy/solver/base.c:19887:24: warning: ‘__pyx_v_RTP’ may be used uninitialized [-Wmaybe-uninitialized]
+19887 |           __pyx_t_19 = PyFloat_FromDouble(__pyx_v_RTP); if (unlikely(!__pyx_t_19)) __PYX_ERR(0, 856, __pyx_L1_error)
+      |                        ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+rmgpy/solver/base.c:16248:10: note: ‘__pyx_v_RTP’ was declared here
+16248 |   double __pyx_v_RTP;
+      |          ^~~~~~~~~~~
+rmgpy/solver/base.c:19993:40: warning: ‘__pyx_pybuffernd_sens_species_indices.diminfo[0].shape’ may be used uninitialized [-Wmaybe-uninitialized]
+19993 |         if (__pyx_t_24 < 0) __pyx_t_24 += __pyx_pybuffernd_sens_species_indices.diminfo[0].shape;
+      |                             ~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+rmgpy/solver/base.c:16392:21: note: ‘__pyx_pybuffernd_sens_species_indices.diminfo[0].shape’ was declared here
+16392 |   __Pyx_LocalBuf_ND __pyx_pybuffernd_sens_species_indices;
+      |                     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+rmgpy/solver/base.c:2974:73: warning: ‘__pyx_pybuffernd_sens_species_indices.diminfo[0].strides’ may be used uninitialized [-Wmaybe-uninitialized]
+ 2974 | #define __Pyx_BufPtrStrided1d(type, buf, i0, s0) (type)((char*)buf + i0 * s0)
+      |                                                                         ^
+rmgpy/solver/base.c:19994:24: note: in expansion of macro ‘__Pyx_BufPtrStrided1d’
+19994 |         __pyx_t_40 = (*__Pyx_BufPtrStrided1d(__pyx_t_5numpy_int_t *, __pyx_pybuffernd_sens_species_indices.rcbuffer->pybuffer.buf, __pyx_t_24, __pyx_pybuffernd_sens_species_indices.diminfo[0].strides));
+      |                        ^~~~~~~~~~~~~~~~~~~~~
+rmgpy/solver/base.c:16392:21: note: ‘__pyx_pybuffernd_sens_species_indices.diminfo[0].strides’ was declared here
+16392 |   __Pyx_LocalBuf_ND __pyx_pybuffernd_sens_species_indices;
+      |                     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/solver/simple.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+rmgpy/solver/simple.c: In function ‘__pyx_pf_5rmgpy_6solver_6simple_13SimpleReactor_20residual’:
+rmgpy/solver/simple.c:11392:12: warning: ‘__pyx_v_j’ may be used uninitialized [-Wmaybe-uninitialized]
+11392 |         if (__pyx_t_21 < 0) __pyx_t_21 += __pyx_pybuffernd_kf.diminfo[0].shape;
+      |            ^
+rmgpy/solver/simple.c:10328:14: note: ‘__pyx_v_j’ was declared here
+10328 |   Py_ssize_t __pyx_v_j;
+      |              ^~~~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/solver/liquid.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/solver/mbSampled.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/solver/surface.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+rmgpy/solver/surface.c: In function ‘__pyx_pf_5rmgpy_6solver_7surface_14SurfaceReactor_18residual’:
+rmgpy/solver/surface.c:2842:73: warning: ‘__pyx_pybuffernd_coverages.diminfo[0].strides’ may be used uninitialized [-Wmaybe-uninitialized]
+ 2842 | #define __Pyx_BufPtrStrided1d(type, buf, i0, s0) (type)((char*)buf + i0 * s0)
+      |                                                                         ^
+rmgpy/solver/surface.c:14908:41: note: in expansion of macro ‘__Pyx_BufPtrStrided1d’
+14908 |       __pyx_v_surface_site_fraction = (*__Pyx_BufPtrStrided1d(__pyx_t_5numpy_float64_t *, __pyx_pybuffernd_coverages.rcbuffer->pybuffer.buf, __pyx_t_14, __pyx_pybuffernd_coverages.diminfo[0].strides));
+      |                                         ^~~~~~~~~~~~~~~~~~~~~
+rmgpy/solver/surface.c:13549:21: note: ‘__pyx_pybuffernd_coverages.diminfo[0].strides’ was declared here
+13549 |   __Pyx_LocalBuf_ND __pyx_pybuffernd_coverages;
+      |                     ^~~~~~~~~~~~~~~~~~~~~~~~~~
+rmgpy/solver/surface.c:14907:38: warning: ‘__pyx_pybuffernd_coverages.diminfo[0].shape’ may be used uninitialized [-Wmaybe-uninitialized]
+14907 |       if (__pyx_t_14 < 0) __pyx_t_14 += __pyx_pybuffernd_coverages.diminfo[0].shape;
+      |                           ~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+rmgpy/solver/surface.c:13549:21: note: ‘__pyx_pybuffernd_coverages.diminfo[0].shape’ was declared here
+13549 |   __Pyx_LocalBuf_ND __pyx_pybuffernd_coverages;
+      |                     ^~~~~~~~~~~~~~~~~~~~~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/solver/plasma.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+[08:49:45] WARNING: Accepted unusual valence(s): C(3)
+
+[08:49:45] WARNING: Accepted unusual valence(s): C(3)
+
+[08:49:45] WARNING: Accepted unusual valence(s): C(3)
+
+[08:49:45] WARNING: Accepted unusual valence(s): C(3)
+
+[08:49:45] WARNING: Accepted unusual valence(s): C(2)
+
+[08:49:45] WARNING: Accepted unusual valence(s): C(2)
+
+[08:49:45] WARNING: Accepted unusual valence(s): C(2)
+
+[08:49:45] WARNING: Accepted unusual valence(s): C(2)
+
+==============================
+*** Open Babel Error  in InChI code
+  Reading InChI failed
+[08:49:45] ERROR: 
+
+[08:50:02] WARNING: Accepted unusual valence(s): C(3)
+
+[08:50:02] WARNING: Accepted unusual valence(s): C(3)
+
+[08:50:02] WARNING: Accepted unusual valence(s): C(3)
+
+[08:50:02] WARNING: Accepted unusual valence(s): C(3)
+
+[08:50:02] WARNING: Accepted unusual valence(s): C(2)
+
+[08:50:02] WARNING: Accepted unusual valence(s): C(2)
+
+[08:50:02] WARNING: Accepted unusual valence(s): C(2)
+
+[08:50:02] WARNING: Accepted unusual valence(s): C(2)
+
+==============================
+*** Open Babel Error  in InChI code
+  Reading InChI failed
+[08:50:02] ERROR: 
+
+ERROR:root:Could not update atomtypes for this molecule:
+multiplicity 3
+1 Ar u2 p3 c0
+
+[08:54:43] WARNING: Accepted unusual valence(s): C(3)
+
+[08:54:43] WARNING: Accepted unusual valence(s): C(3)
+
+[08:54:43] WARNING: Accepted unusual valence(s): C(3)
+
+[08:54:43] WARNING: Accepted unusual valence(s): C(3)
+
+[08:54:43] WARNING: Accepted unusual valence(s): C(2)
+
+[08:54:43] WARNING: Accepted unusual valence(s): C(2)
+
+[08:54:43] WARNING: Accepted unusual valence(s): C(2)
+
+[08:54:43] WARNING: Accepted unusual valence(s): C(2)
+
+==============================
+*** Open Babel Error  in InChI code
+  Reading InChI failed
+[08:54:43] ERROR: 
+
+[08:55:39] WARNING: Accepted unusual valence(s): C(3)
+
+[08:55:39] WARNING: Accepted unusual valence(s): C(3)
+
+[08:55:39] WARNING: Accepted unusual valence(s): C(3)
+
+[08:55:39] WARNING: Accepted unusual valence(s): C(3)
+
+[08:55:39] WARNING: Accepted unusual valence(s): C(2)
+
+[08:55:39] WARNING: Accepted unusual valence(s): C(2)
+
+[08:55:39] WARNING: Accepted unusual valence(s): C(2)
+
+[08:55:39] WARNING: Accepted unusual valence(s): C(2)
+
+==============================
+*** Open Babel Error  in InChI code
+  Reading InChI failed
+[08:55:39] ERROR: 
+
+[08:59:53] WARNING: Accepted unusual valence(s): C(3)
+
+[08:59:53] WARNING: Accepted unusual valence(s): C(3)
+
+[08:59:53] WARNING: Accepted unusual valence(s): C(3)
+
+[08:59:53] WARNING: Accepted unusual valence(s): C(3)
+
+[08:59:53] WARNING: Accepted unusual valence(s): C(2)
+
+[08:59:53] WARNING: Accepted unusual valence(s): C(2)
+
+[08:59:53] WARNING: Accepted unusual valence(s): C(2)
+
+[08:59:53] WARNING: Accepted unusual valence(s): C(2)
+
+==============================
+*** Open Babel Error  in InChI code
+  Reading InChI failed
+[08:59:53] ERROR: 
+
+[09:03:11] WARNING: Accepted unusual valence(s): C(3)
+
+[09:03:11] WARNING: Accepted unusual valence(s): C(3)
+
+[09:03:11] WARNING: Accepted unusual valence(s): C(3)
+
+[09:03:11] WARNING: Accepted unusual valence(s): C(3)
+
+[09:03:11] WARNING: Accepted unusual valence(s): C(2)
+
+[09:03:11] WARNING: Accepted unusual valence(s): C(2)
+
+[09:03:11] WARNING: Accepted unusual valence(s): C(2)
+
+[09:03:11] WARNING: Accepted unusual valence(s): C(2)
+
+==============================
+*** Open Babel Error  in InChI code
+  Reading InChI failed
+[09:03:11] ERROR: 
+

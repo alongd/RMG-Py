@@ -1,0 +1,1043 @@
+
+Checking for solvers before compiling...
+
+DASPK solver found. Compiling with DASPK and sensitivity analysis capability...
+
+Compiling rmgpy/rmgobject.pyx because it changed.
+Compiling rmgpy/kinetics/arrhenius.pyx because it changed.
+Compiling rmgpy/kinetics/chebyshev.pyx because it changed.
+Compiling rmgpy/kinetics/kineticsdata.pyx because it changed.
+Compiling rmgpy/kinetics/falloff.pyx because it changed.
+Compiling rmgpy/kinetics/model.pyx because it changed.
+Compiling rmgpy/kinetics/tunneling.pyx because it changed.
+Compiling rmgpy/kinetics/surface.pyx because it changed.
+Compiling rmgpy/kinetics/uncertainties.pyx because it changed.
+Compiling rmgpy/molecule/atomtype.py because it changed.
+Compiling rmgpy/molecule/element.py because it changed.
+Compiling rmgpy/molecule/graph.pyx because it changed.
+Compiling rmgpy/molecule/group.py because it changed.
+Compiling rmgpy/molecule/molecule.py because it changed.
+Compiling rmgpy/molecule/symmetry.py because it changed.
+Compiling rmgpy/molecule/vf2.pyx because it changed.
+Compiling rmgpy/molecule/converter.py because it changed.
+Compiling rmgpy/molecule/translator.py because it changed.
+Compiling rmgpy/molecule/util.py because it changed.
+Compiling rmgpy/molecule/inchi.py because it changed.
+Compiling rmgpy/molecule/resonance.py because it changed.
+Compiling rmgpy/molecule/pathfinder.py because it changed.
+Compiling rmgpy/molecule/kekulize.pyx because it changed.
+Compiling rmgpy/pdep/collision.pyx because it changed.
+Compiling rmgpy/pdep/configuration.pyx because it changed.
+Compiling rmgpy/pdep/me.pyx because it changed.
+Compiling rmgpy/pdep/msc.pyx because it changed.
+Compiling rmgpy/pdep/reaction.pyx because it changed.
+Compiling rmgpy/pdep/rs.pyx because it changed.
+Compiling rmgpy/pdep/cse.pyx because it changed.
+Compiling rmgpy/statmech/conformer.pyx because it changed.
+Compiling rmgpy/statmech/mode.pyx because it changed.
+Compiling rmgpy/statmech/rotation.pyx because it changed.
+Compiling rmgpy/statmech/schrodinger.pyx because it changed.
+Compiling rmgpy/statmech/torsion.pyx because it changed.
+Compiling rmgpy/statmech/translation.pyx because it changed.
+Compiling rmgpy/statmech/vibration.pyx because it changed.
+Compiling rmgpy/thermo/thermodata.pyx because it changed.
+Compiling rmgpy/thermo/model.pyx because it changed.
+Compiling rmgpy/thermo/nasa.pyx because it changed.
+Compiling rmgpy/thermo/wilhoit.pyx because it changed.
+Compiling rmgpy/constants.py because it changed.
+Compiling rmgpy/quantity.py because it changed.
+Compiling rmgpy/reaction.py because it changed.
+Compiling rmgpy/species.py because it changed.
+Compiling rmgpy/chemkin.pyx because it changed.
+Compiling rmgpy/solver/base.pyx because it changed.
+Compiling rmgpy/solver/simple.pyx because it changed.
+Compiling rmgpy/solver/liquid.pyx because it changed.
+Compiling rmgpy/solver/mbSampled.pyx because it changed.
+Compiling rmgpy/solver/surface.pyx because it changed.
+Compiling rmgpy/solver/plasma.pyx because it changed.
+[ 1/52] Cythonizing rmgpy/chemkin.pyx
+[ 2/52] Cythonizing rmgpy/constants.py
+[ 3/52] Cythonizing rmgpy/kinetics/arrhenius.pyx
+[ 4/52] Cythonizing rmgpy/kinetics/chebyshev.pyx
+[ 5/52] Cythonizing rmgpy/kinetics/falloff.pyx
+[ 6/52] Cythonizing rmgpy/kinetics/kineticsdata.pyx
+[ 7/52] Cythonizing rmgpy/kinetics/model.pyx
+[ 8/52] Cythonizing rmgpy/kinetics/surface.pyx
+[ 9/52] Cythonizing rmgpy/kinetics/tunneling.pyx
+[10/52] Cythonizing rmgpy/kinetics/uncertainties.pyx
+[11/52] Cythonizing rmgpy/molecule/atomtype.py
+[12/52] Cythonizing rmgpy/molecule/converter.py
+[13/52] Cythonizing rmgpy/molecule/element.py
+[14/52] Cythonizing rmgpy/molecule/graph.pyx
+[15/52] Cythonizing rmgpy/molecule/group.py
+[16/52] Cythonizing rmgpy/molecule/inchi.py
+[17/52] Cythonizing rmgpy/molecule/kekulize.pyx
+[18/52] Cythonizing rmgpy/molecule/molecule.py
+[19/52] Cythonizing rmgpy/molecule/pathfinder.py
+[20/52] Cythonizing rmgpy/molecule/resonance.py
+[21/52] Cythonizing rmgpy/molecule/symmetry.py
+[22/52] Cythonizing rmgpy/molecule/translator.py
+[23/52] Cythonizing rmgpy/molecule/util.py
+[24/52] Cythonizing rmgpy/molecule/vf2.pyx
+[25/52] Cythonizing rmgpy/pdep/collision.pyx
+[26/52] Cythonizing rmgpy/pdep/configuration.pyx
+[27/52] Cythonizing rmgpy/pdep/cse.pyx
+[28/52] Cythonizing rmgpy/pdep/me.pyx
+[29/52] Cythonizing rmgpy/pdep/msc.pyx
+[30/52] Cythonizing rmgpy/pdep/reaction.pyx
+[31/52] Cythonizing rmgpy/pdep/rs.pyx
+[32/52] Cythonizing rmgpy/quantity.py
+[33/52] Cythonizing rmgpy/reaction.py
+[34/52] Cythonizing rmgpy/rmgobject.pyx
+[35/52] Cythonizing rmgpy/solver/base.pyx
+[36/52] Cythonizing rmgpy/solver/liquid.pyx
+[37/52] Cythonizing rmgpy/solver/mbSampled.pyx
+[38/52] Cythonizing rmgpy/solver/plasma.pyx
+[39/52] Cythonizing rmgpy/solver/simple.pyx
+[40/52] Cythonizing rmgpy/solver/surface.pyx
+[41/52] Cythonizing rmgpy/species.py
+[42/52] Cythonizing rmgpy/statmech/conformer.pyx
+[43/52] Cythonizing rmgpy/statmech/mode.pyx
+[44/52] Cythonizing rmgpy/statmech/rotation.pyx
+[45/52] Cythonizing rmgpy/statmech/schrodinger.pyx
+[46/52] Cythonizing rmgpy/statmech/torsion.pyx
+[47/52] Cythonizing rmgpy/statmech/translation.pyx
+[48/52] Cythonizing rmgpy/statmech/vibration.pyx
+[49/52] Cythonizing rmgpy/thermo/model.pyx
+[50/52] Cythonizing rmgpy/thermo/nasa.pyx
+[51/52] Cythonizing rmgpy/thermo/thermodata.pyx
+[52/52] Cythonizing rmgpy/thermo/wilhoit.pyx
+running build_ext
+building 'rmgpy.rmgobject' extension
+creating build/rmgpy
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/rmgobject.c -o build/rmgpy/rmgobject.o
+creating build/lib.linux-x86_64-cpython-39/rmgpy
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/rmgobject.o -o build/lib.linux-x86_64-cpython-39/rmgpy/rmgobject.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.kinetics.arrhenius' extension
+creating build/rmgpy/kinetics
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/kinetics/arrhenius.c -o build/rmgpy/kinetics/arrhenius.o
+creating build/lib.linux-x86_64-cpython-39/rmgpy/kinetics
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/kinetics/arrhenius.o -o build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/arrhenius.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.kinetics.chebyshev' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/kinetics/chebyshev.c -o build/rmgpy/kinetics/chebyshev.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/kinetics/chebyshev.o -o build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/chebyshev.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.kinetics.kineticsdata' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/kinetics/kineticsdata.c -o build/rmgpy/kinetics/kineticsdata.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/kinetics/kineticsdata.o -o build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/kineticsdata.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.kinetics.falloff' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/kinetics/falloff.c -o build/rmgpy/kinetics/falloff.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/kinetics/falloff.o -o build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/falloff.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.kinetics.model' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/kinetics/model.c -o build/rmgpy/kinetics/model.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/kinetics/model.o -o build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/model.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.kinetics.tunneling' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/kinetics/tunneling.c -o build/rmgpy/kinetics/tunneling.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/kinetics/tunneling.o -o build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/tunneling.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.kinetics.surface' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/kinetics/surface.c -o build/rmgpy/kinetics/surface.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/kinetics/surface.o -o build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/surface.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.kinetics.uncertainties' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/kinetics/uncertainties.c -o build/rmgpy/kinetics/uncertainties.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/kinetics/uncertainties.o -o build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/uncertainties.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.molecule.atomtype' extension
+creating build/rmgpy/molecule
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/molecule/atomtype.c -o build/rmgpy/molecule/atomtype.o
+creating build/lib.linux-x86_64-cpython-39/rmgpy/molecule
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/molecule/atomtype.o -o build/lib.linux-x86_64-cpython-39/rmgpy/molecule/atomtype.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.molecule.element' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/molecule/element.c -o build/rmgpy/molecule/element.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/molecule/element.o -o build/lib.linux-x86_64-cpython-39/rmgpy/molecule/element.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.molecule.graph' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/molecule/graph.c -o build/rmgpy/molecule/graph.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/molecule/graph.o -o build/lib.linux-x86_64-cpython-39/rmgpy/molecule/graph.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.molecule.group' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/molecule/group.c -o build/rmgpy/molecule/group.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/molecule/group.o -o build/lib.linux-x86_64-cpython-39/rmgpy/molecule/group.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.molecule.molecule' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/molecule/molecule.c -o build/rmgpy/molecule/molecule.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/molecule/molecule.o -o build/lib.linux-x86_64-cpython-39/rmgpy/molecule/molecule.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.molecule.symmetry' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/molecule/symmetry.c -o build/rmgpy/molecule/symmetry.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/molecule/symmetry.o -o build/lib.linux-x86_64-cpython-39/rmgpy/molecule/symmetry.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.molecule.vf2' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/molecule/vf2.c -o build/rmgpy/molecule/vf2.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/molecule/vf2.o -o build/lib.linux-x86_64-cpython-39/rmgpy/molecule/vf2.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.molecule.converter' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/molecule/converter.c -o build/rmgpy/molecule/converter.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/molecule/converter.o -o build/lib.linux-x86_64-cpython-39/rmgpy/molecule/converter.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.molecule.translator' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/molecule/translator.c -o build/rmgpy/molecule/translator.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/molecule/translator.o -o build/lib.linux-x86_64-cpython-39/rmgpy/molecule/translator.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.molecule.util' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/molecule/util.c -o build/rmgpy/molecule/util.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/molecule/util.o -o build/lib.linux-x86_64-cpython-39/rmgpy/molecule/util.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.molecule.inchi' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/molecule/inchi.c -o build/rmgpy/molecule/inchi.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/molecule/inchi.o -o build/lib.linux-x86_64-cpython-39/rmgpy/molecule/inchi.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.molecule.resonance' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/molecule/resonance.c -o build/rmgpy/molecule/resonance.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/molecule/resonance.o -o build/lib.linux-x86_64-cpython-39/rmgpy/molecule/resonance.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.molecule.pathfinder' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/molecule/pathfinder.c -o build/rmgpy/molecule/pathfinder.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/molecule/pathfinder.o -o build/lib.linux-x86_64-cpython-39/rmgpy/molecule/pathfinder.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.molecule.kekulize' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/molecule/kekulize.c -o build/rmgpy/molecule/kekulize.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/molecule/kekulize.o -o build/lib.linux-x86_64-cpython-39/rmgpy/molecule/kekulize.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.pdep.collision' extension
+creating build/rmgpy/pdep
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/pdep/collision.c -o build/rmgpy/pdep/collision.o
+creating build/lib.linux-x86_64-cpython-39/rmgpy/pdep
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/pdep/collision.o -o build/lib.linux-x86_64-cpython-39/rmgpy/pdep/collision.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.pdep.configuration' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/pdep/configuration.c -o build/rmgpy/pdep/configuration.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/pdep/configuration.o -o build/lib.linux-x86_64-cpython-39/rmgpy/pdep/configuration.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.pdep.me' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/pdep/me.c -o build/rmgpy/pdep/me.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/pdep/me.o -o build/lib.linux-x86_64-cpython-39/rmgpy/pdep/me.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.pdep.msc' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/pdep/msc.c -o build/rmgpy/pdep/msc.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/pdep/msc.o -o build/lib.linux-x86_64-cpython-39/rmgpy/pdep/msc.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.pdep.reaction' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/pdep/reaction.c -o build/rmgpy/pdep/reaction.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/pdep/reaction.o -o build/lib.linux-x86_64-cpython-39/rmgpy/pdep/reaction.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.pdep.rs' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/pdep/rs.c -o build/rmgpy/pdep/rs.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/pdep/rs.o -o build/lib.linux-x86_64-cpython-39/rmgpy/pdep/rs.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.pdep.cse' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/pdep/cse.c -o build/rmgpy/pdep/cse.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/pdep/cse.o -o build/lib.linux-x86_64-cpython-39/rmgpy/pdep/cse.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.statmech.conformer' extension
+creating build/rmgpy/statmech
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/statmech/conformer.c -o build/rmgpy/statmech/conformer.o
+creating build/lib.linux-x86_64-cpython-39/rmgpy/statmech
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/statmech/conformer.o -o build/lib.linux-x86_64-cpython-39/rmgpy/statmech/conformer.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.statmech.mode' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/statmech/mode.c -o build/rmgpy/statmech/mode.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/statmech/mode.o -o build/lib.linux-x86_64-cpython-39/rmgpy/statmech/mode.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.statmech.rotation' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/statmech/rotation.c -o build/rmgpy/statmech/rotation.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/statmech/rotation.o -o build/lib.linux-x86_64-cpython-39/rmgpy/statmech/rotation.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.statmech.schrodinger' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/statmech/schrodinger.c -o build/rmgpy/statmech/schrodinger.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/statmech/schrodinger.o -o build/lib.linux-x86_64-cpython-39/rmgpy/statmech/schrodinger.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.statmech.torsion' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/statmech/torsion.c -o build/rmgpy/statmech/torsion.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/statmech/torsion.o -o build/lib.linux-x86_64-cpython-39/rmgpy/statmech/torsion.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.statmech.translation' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/statmech/translation.c -o build/rmgpy/statmech/translation.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/statmech/translation.o -o build/lib.linux-x86_64-cpython-39/rmgpy/statmech/translation.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.statmech.vibration' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/statmech/vibration.c -o build/rmgpy/statmech/vibration.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/statmech/vibration.o -o build/lib.linux-x86_64-cpython-39/rmgpy/statmech/vibration.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.thermo.thermodata' extension
+creating build/rmgpy/thermo
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/thermo/thermodata.c -o build/rmgpy/thermo/thermodata.o
+creating build/lib.linux-x86_64-cpython-39/rmgpy/thermo
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/thermo/thermodata.o -o build/lib.linux-x86_64-cpython-39/rmgpy/thermo/thermodata.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.thermo.model' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/thermo/model.c -o build/rmgpy/thermo/model.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/thermo/model.o -o build/lib.linux-x86_64-cpython-39/rmgpy/thermo/model.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.thermo.nasa' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/thermo/nasa.c -o build/rmgpy/thermo/nasa.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/thermo/nasa.o -o build/lib.linux-x86_64-cpython-39/rmgpy/thermo/nasa.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.thermo.wilhoit' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/thermo/wilhoit.c -o build/rmgpy/thermo/wilhoit.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/thermo/wilhoit.o -o build/lib.linux-x86_64-cpython-39/rmgpy/thermo/wilhoit.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.constants' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/constants.c -o build/rmgpy/constants.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/constants.o -o build/lib.linux-x86_64-cpython-39/rmgpy/constants.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.quantity' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/quantity.c -o build/rmgpy/quantity.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/quantity.o -o build/lib.linux-x86_64-cpython-39/rmgpy/quantity.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.reaction' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/reaction.c -o build/rmgpy/reaction.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/reaction.o -o build/lib.linux-x86_64-cpython-39/rmgpy/reaction.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.species' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/species.c -o build/rmgpy/species.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/species.o -o build/lib.linux-x86_64-cpython-39/rmgpy/species.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.chemkin' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/chemkin.c -o build/rmgpy/chemkin.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/chemkin.o -o build/lib.linux-x86_64-cpython-39/rmgpy/chemkin.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.solver.base' extension
+creating build/rmgpy/solver
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/solver/base.c -o build/rmgpy/solver/base.o
+creating build/lib.linux-x86_64-cpython-39/rmgpy/solver
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/solver/base.o -o build/lib.linux-x86_64-cpython-39/rmgpy/solver/base.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.solver.simple' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/solver/simple.c -o build/rmgpy/solver/simple.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/solver/simple.o -o build/lib.linux-x86_64-cpython-39/rmgpy/solver/simple.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.solver.liquid' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/solver/liquid.c -o build/rmgpy/solver/liquid.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/solver/liquid.o -o build/lib.linux-x86_64-cpython-39/rmgpy/solver/liquid.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.solver.mbSampled' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/solver/mbSampled.c -o build/rmgpy/solver/mbSampled.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/solver/mbSampled.o -o build/lib.linux-x86_64-cpython-39/rmgpy/solver/mbSampled.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.solver.surface' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/solver/surface.c -o build/rmgpy/solver/surface.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/solver/surface.o -o build/lib.linux-x86_64-cpython-39/rmgpy/solver/surface.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.solver.plasma' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/solver/plasma.c -o build/rmgpy/solver/plasma.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/solver/plasma.o -o build/lib.linux-x86_64-cpython-39/rmgpy/solver/plasma.cpython-39-x86_64-linux-gnu.so
+copying build/lib.linux-x86_64-cpython-39/rmgpy/rmgobject.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/arrhenius.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/chebyshev.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/kineticsdata.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/falloff.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/model.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/tunneling.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/surface.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/uncertainties.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/atomtype.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/element.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/graph.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/group.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/molecule.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/symmetry.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/vf2.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/converter.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/translator.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/util.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/inchi.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/resonance.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/pathfinder.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/kekulize.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/collision.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/configuration.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/me.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/msc.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/reaction.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/rs.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/cse.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/conformer.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/mode.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/rotation.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/schrodinger.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/torsion.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/translation.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/vibration.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/thermo/thermodata.cpython-39-x86_64-linux-gnu.so -> rmgpy/thermo
+copying build/lib.linux-x86_64-cpython-39/rmgpy/thermo/model.cpython-39-x86_64-linux-gnu.so -> rmgpy/thermo
+copying build/lib.linux-x86_64-cpython-39/rmgpy/thermo/nasa.cpython-39-x86_64-linux-gnu.so -> rmgpy/thermo
+copying build/lib.linux-x86_64-cpython-39/rmgpy/thermo/wilhoit.cpython-39-x86_64-linux-gnu.so -> rmgpy/thermo
+copying build/lib.linux-x86_64-cpython-39/rmgpy/constants.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/quantity.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/reaction.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/species.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/chemkin.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/base.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/simple.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/liquid.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/mbSampled.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/surface.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/plasma.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+MODULE FILE: /home/alon/Code/RMG-Py-i218-ar0s-single-narrowing/rmgpy/molecule/atomtype.cpython-39-x86_64-linux-gnu.so
+IS .so     : True
+rmgpy pkg  : /home/alon/Code/RMG-Py-i218-ar0s-single-narrowing/rmgpy/__init__.py
+group file : /home/alon/Code/RMG-Py-i218-ar0s-single-narrowing/rmgpy/molecule/group.cpython-39-x86_64-linux-gnu.so
+'Ar0s' in ATOMTYPES: True
+Ar    single=[] lone_pairs=[] charge=[0, 1, 2]
+Ar0   single=[0] lone_pairs=[4] charge=[0]
+Ar0s  single=[0, 1] lone_pairs=[3] charge=[0]
+Ar+   single=[0, 1] lone_pairs=[3] charge=[1]
+Ar++  single=[0, 1, 2] lone_pairs=[3] charge=[2]
+database.directory: /home/alon/Code/RMG-database-plasma/input
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+rootdir: /home/alon/Code/RMG-Py-i218-ar0s-single-narrowing
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 236 items
+
+test/rmgpy/molecule/atomtypeTest.py::TestAtomType::test_pickle PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestAtomType::test_output PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestAtomType::test_equivalent PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestAtomType::test_is_specfic_case_of PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestAtomType::test_set_actions PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestAtomType::test_make_sample_molecule PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestAtomType::test_make_sample_molecule_wip SKIPPED
+test/rmgpy/molecule/atomtypeTest.py::TestAtomType::test_make_sample_molecule_right SKIPPED
+test/rmgpy/molecule/atomtypeTest.py::TestGetAtomType::test_hydrogen_type PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGetAtomType::test_hydride_type PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGetAtomType::test_hydride_survives_update PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGetAtomType::test_carbon_types PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGetAtomType::test_nitrogen_types PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGetAtomType::test_oxygen_types PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGetAtomType::test_silicon_types PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGetAtomType::test_phosphorus_types PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGetAtomType::test_sulfur_types PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGetAtomType::test_chlorine_types PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGetAtomType::test_bromine_types PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGetAtomType::test_iodine_types PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGetAtomType::test_fluorine_types PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGetAtomType::test_sf6_anion_types PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGetAtomType::test_lithium_types PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGetAtomType::test_other_types PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGetAtomType::test_occupied_surface_atom_type PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGetAtomType::test_vacant_surface_site_atom_type PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGetAtomType::test_electron PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGetAtomType::test_proton PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestAnionRecipes::test_hydride_from_recipe PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestAnionRecipes::test_chloride_from_recipe PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestAnionRecipes::test_bromide_from_recipe PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGenericLonePairActions::test_generic_lone_pair_actions_are_wired PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGenericLonePairActions::test_gain_pair_on_generic_root_group PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestGenericLonePairActions::test_gain_pair_on_halogen_radical_yields_anion PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestChargeClassParents::test_parents_are_reachable_as_group_labels PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestChargeClassParents::test_parents_do_not_shadow_their_leaves PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestChargeClassParents::test_parents_admit_no_octet_violation PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestActionGraphClosure::test_no_new_action_graph_asymmetry PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestActionGraphClosure::test_known_preexisting_still_present PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestActionGraphClosure::test_argon_and_alkali_families_close_both_ways PASSED
+test/rmgpy/molecule/atomtypeTest.py::TestNoDuplicateAtomTypeDefinitions::test_each_atomtype_label_defined_once PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_mass PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_number PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_symbol PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_equality PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_less_than PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_greater_than PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_hash PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_is_hydrogen PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_is_proton PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_is_electron PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_is_non_hydrogen PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_is_halogen PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_is_carbon PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_is_silicon PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_is_oxygen PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_is_nitrogen PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_is_phosphorus PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_is_sulfur PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_is_fluorine PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_is_chlorine PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_is_bromine PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_is_iodine PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_is_nos PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_is_surface_site PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_is_bonded_to_surface PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_is_bonded_to_halogen PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_increment_radical PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_decrement_radical PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_apply_action_break_bond PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_apply_action_form_bond PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_apply_action_increment_bond PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_apply_action_decrement_bond PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_apply_action_gain_radical PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_apply_action_lose_radical PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_apply_action_gain_charge PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_apply_action_lose_charge PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_equivalent PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_is_specific_case_of PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_copy PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_pickle PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_isotope_equivalent PASSED
+test/rmgpy/molecule/moleculeTest.py::TestAtom::test_get_bond_orders_for_atom PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_equality PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_less_than PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_greater_than PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_hash PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_get_order_str PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_set_order_str PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_get_order_num PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_set_order_num PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_is_order PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_is_single PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_is_single_can_take_floating_point_addition PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_is_double PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_is_triple PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_is_benzene PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_is_quadruple PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_increment_order PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_decrement_order PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_apply_action_break_bond PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_apply_action_form_bond PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_apply_action_increment_bond PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_apply_action_decrement_bond PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_apply_action_gain_radical PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_apply_action_lose_radical PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_equivalent PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_is_specific_case_of PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_copy PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_pickle PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_update_lone_pairs PASSED
+test/rmgpy/molecule/moleculeTest.py::TestBond::test_get_bond_string PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_is_proton PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_is_electron PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_equality PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_less_than PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_greater_than PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_hash PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_clear_labeled_atoms PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_contains_labeled_atom PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_get_labeled_atom PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_get_labeled_atoms PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_get_formula PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_radical_count PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_get_molecular_weight PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_from_adjacency_list PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_to_adjacency_list PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_isomorphism PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_subgraph_isomorphism PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_subgraph_isomorphism_again PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_subgraph_isomorphism_many_labels PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_subgraph_isomorphism_rings PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_lax_isomorphism PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_adjacency_list PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_generate_h_bonded_structures PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_remove_h_bonds PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_sssr PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_is_in_cycle_ethane PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_is_in_cycle_cyclohexane PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_from_smiles_h PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_from_inchi_h PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_pickle PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_radical_ch PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_radical_ch2 PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_radical_ch2ch2ch2 PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_singlet_carbene PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_triplet_carbene PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_singlet_carbon PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_smiles PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_kekule_to_smiles PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_kekule_round_trip_smiles PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_inchi_key PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_augmented_inchi PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_augmented_inchi_key PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_linear_methane PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_linear_ethane PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_linear_propane PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_linear_neopentane PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_linear_hydrogen PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_linear_oxygen PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_linear_carbon_dioxide PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_linear_acetylene PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_linear135_hexatriyne PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_aromatic_benzene PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_aromatic_naphthalene PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_aromatic_cyclohexane PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_heterocyclic_cyclohexanol PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_heterocyclic_furan PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_heterocyclic_pyridine PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_count_internal_rotors_ethane PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_count_internal_rotors_propane PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_count_internal_rotors_neopentane PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_count_internal_rotors_methyl_cyclohexane PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_count_internal_rotors_ethylene PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_count_internal_rotors_acetylene PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_carbene_identifiers PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_get_symmetry_number PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_molecule_props PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_molecule_props_object_attribute PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_count_internal_rotors_dimethyl_acetylene SKIPPED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_saturate_aromatic_radical PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_replace_halogen_with_hydrogen PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_surface_molecules PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_get_num_heavy_atoms PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_is_multidentate PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_malformed_augmented_inchi PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_malformed_augmented_inchi_wrong_inchi_layer PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_malformed_augmented_inchi_wrong_mult PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_malformed_augmented_inchi_wrong_indices PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_update_lone_pairs PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_large_mol_update PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_large_mol_creation PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_get_polycyclic_rings PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_get_polycyclic_rings_common_molecules PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_get_monocyclic_rings PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_get_disparate_rings PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_get_smallest_set_of_smallest_rings PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_to_group PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_to_adjacency_list_with_isotopes PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_from_adjacency_list_with_isotopes PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_aromaticity_perception_benzene PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_aromaticity_perception_tetralin PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_aromaticity_perception_biphenyl PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_aromaticity_perception_azulene PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_aromaticity_perception_furan PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_aromaticity_perception_benzonaphthalene PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_aromaticity_perception_save_order PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_aryl_radical_true PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_has_halogen PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_aryl_radical_false PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_aryl_radical_birad PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_identical_true PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_identical_true2 PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_identical_false PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_identical_false2 PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_atom_id_valid PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_atom_id_valid2 PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_atom_id_valid3 PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_assign_atom_id PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_fingerprint_property PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_fingerprint_property_more_elements PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_saturate_unfilled_valence PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_get_element_count PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_ring_perception PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_enumerate_bonds PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_count_aromatic_rings PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_remove_van_der_waals_bond PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_remove_van_der_waals_bonds_bidentate PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_has_covalent_surface_bond PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_has_vdw_surface_bond PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_get_relevant_cycles PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_cycle_list_order_sssr PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_get_max_cycle_overlap PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_get_all_polycyclic_vertices PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_get_largest_ring PASSED
+test/rmgpy/molecule/moleculeTest.py::TestMolecule::test_get_ring_count_in_largest_fused_ring_system PASSED
+
+======================== 233 passed, 3 skipped in 5.79s ========================
+======================== 39 passed, 2 skipped in 1.64s =========================
+======================== 194 passed, 1 skipped in 5.36s ========================
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+rootdir: /home/alon/Code/RMG-Py-i218-ar0s-single-narrowing
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 1 item
+
+test/rmgpy/molecule/atomtypeTest.py::TestAtomType::test_make_sample_molecule FAILED
+
+=================================== FAILURES ===================================
+____________________ TestAtomType.test_make_sample_molecule ____________________
+
+self = <atomtypeTest.TestAtomType object at 0x7fe770b1c970>
+
+    def test_make_sample_molecule(self):
+        """
+        Test we can make a sample molecule for most atom type without crashing.
+        """
+        failed = []
+        for name, atom_type in rmgpy.molecule.atomtype.ATOMTYPES.items():
+            if name in self.EXPECTED_FAILING_ATOMTYPES:
+                continue  # These are known to fail. See next WIP test
+            adjlist = f"1 {name} ux"
+            group = rmgpy.molecule.Group().from_adjacency_list(adjlist)
+            try:
+                result = group.make_sample_molecule()
+                # logging.info(f"For {name} made\n{result.to_adjacency_list()}")
+            except:
+                logging.exception(f"Couldn't make sample molecule for atomType {name}")
+                failed.append(name)
+>       assert len(failed) == 0, f"Couldn't make sample molecules for types {', '.join(failed)}"
+E       AssertionError: Couldn't make sample molecules for types Ar0s
+E       assert 1 == 0
+E        +  where 1 = len(['Ar0s'])
+
+test/rmgpy/molecule/atomtypeTest.py:174: AssertionError
+------------------------------ Captured log setup ------------------------------
+WARNING  matplotlib:__init__.py:537 /home/alon/.config/matplotlib is not a writable directory
+WARNING  matplotlib:__init__.py:550 Matplotlib created a temporary cache directory at /tmp/claude-1000/matplotlib-ws62_z_z because there was an issue with the default path (/home/alon/.config/matplotlib); it is highly recommended to set the MPLCONFIGDIR environment variable to a writable directory, in particular to speed up the import of Matplotlib and to better support multiprocessing.
+------------------------------ Captured log call -------------------------------
+ERROR    root:atomtypeTest.py:172 Couldn't make sample molecule for atomType Ar0s
+Traceback (most recent call last):
+  File "/home/alon/Code/RMG-Py-i218-ar0s-single-narrowing/test/rmgpy/molecule/atomtypeTest.py", line 169, in test_make_sample_molecule
+    result = group.make_sample_molecule()
+  File "rmgpy/molecule/group.py", line 2928, in rmgpy.molecule.group.Group.make_sample_molecule
+    def make_sample_molecule(self):
+  File "rmgpy/molecule/group.py", line 3022, in rmgpy.molecule.group.Group.make_sample_molecule
+    raise UnexpectedChargeError(graph=new_molecule)
+rmgpy.exceptions.UnexpectedChargeError
+=========================== short test summary info ============================
+FAILED test/rmgpy/molecule/atomtypeTest.py::TestAtomType::test_make_sample_molecule
+============================== 1 failed in 1.91s ===============================
+MODULE : /home/alon/Code/RMG-Py-i218-ar0s-single-narrowing/rmgpy/molecule/atomtype.cpython-39-x86_64-linux-gnu.so
+Ar0s single=[0, 1] lone_pairs=[3] charge=[0]
+
+=== make_sample_molecule('1 Ar0s ux') ===
+after pick_wildcards, radical_electrons = []
+atoms after add_implicit_atoms_from_atomtype = 1
+make_sample_atom -> symbol=Ar u=0 p=3 c=0
+after update_charge with 0 bonds -> charge = 2
+make_sample_molecule RAISED UnexpectedChargeError
+offending graph:
+1 Ar u0 p3 c+1 {2,S}
+2 H  u0 p0 c0 {1,S}
+
+
+=== Control A: Ar2+ ===
+Ar2+ atom types = ['Ar0s', 'Ar+']
+Ar2+ net charge = 1
+Ar2+ SMILES-ish multiplicity = 2
+CONTROL A PASS
+
+=== Control B: bare argon atom ===
+bare argon type = Ar0
+get_atomtype(bare Ar) = Ar0
+CONTROL B PASS
+
+=== Control C: Ar+ / Ar++ ===
+Ar u1 p3 c+1 -> Ar+
+Ar u0 p3 c+2 -> Ar++
+CONTROL C PASS
+
+=== Group matching surface ===
+  Ar0s is_specific_case_of(R        ) = True
+  Ar0s is_specific_case_of(R!H      ) = True
+  Ar0s is_specific_case_of(R!H!Val7 ) = True
+  Ar0s is_specific_case_of(Rx       ) = True
+  Ar0s is_specific_case_of(Rx!H     ) = True
+  Ar0s is_specific_case_of(Ar       ) = True
+  Ar2+ subgraph-isomorphic to '1 Ar0s ux' : True
+  Ar2+ subgraph-isomorphic to '1 R ux'    : True
+  bare Ar subgraph-isomorphic to '1 Ar0 ux' : True
+  bare Ar subgraph-isomorphic to '1 Ar0s ux': False
+
+ALL CONTROLS DONE
+Compiling rmgpy/molecule/atomtype.py because it changed.
+[1/1] Cythonizing rmgpy/molecule/atomtype.py
+running build_ext
+building 'rmgpy.molecule.atomtype' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/molecule/atomtype.c -o build/rmgpy/molecule/atomtype.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/molecule/atomtype.o -o build/lib.linux-x86_64-cpython-39/rmgpy/molecule/atomtype.cpython-39-x86_64-linux-gnu.so
+copying build/lib.linux-x86_64-cpython-39/rmgpy/rmgobject.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/arrhenius.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/chebyshev.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/kineticsdata.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/falloff.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/model.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/tunneling.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/surface.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/uncertainties.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/atomtype.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/element.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/graph.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/group.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/molecule.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/symmetry.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/vf2.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/converter.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/translator.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/util.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/inchi.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/resonance.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/pathfinder.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/kekulize.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/collision.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/configuration.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/me.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/msc.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/reaction.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/rs.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/cse.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/conformer.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/mode.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/rotation.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/schrodinger.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/torsion.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/translation.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/vibration.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/thermo/thermodata.cpython-39-x86_64-linux-gnu.so -> rmgpy/thermo
+copying build/lib.linux-x86_64-cpython-39/rmgpy/thermo/model.cpython-39-x86_64-linux-gnu.so -> rmgpy/thermo
+copying build/lib.linux-x86_64-cpython-39/rmgpy/thermo/nasa.cpython-39-x86_64-linux-gnu.so -> rmgpy/thermo
+copying build/lib.linux-x86_64-cpython-39/rmgpy/thermo/wilhoit.cpython-39-x86_64-linux-gnu.so -> rmgpy/thermo
+copying build/lib.linux-x86_64-cpython-39/rmgpy/constants.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/quantity.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/reaction.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/species.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/chemkin.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/base.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/simple.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/liquid.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/mbSampled.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/surface.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/plasma.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+MODULE : /home/alon/Code/RMG-Py-i218-ar0s-single-narrowing/rmgpy/molecule/atomtype.cpython-39-x86_64-linux-gnu.so
+Ar0s single=[1] lone_pairs=[3] charge=[0]
+
+=== make_sample_molecule('1 Ar0s ux') ===
+after pick_wildcards, radical_electrons = []
+atoms after add_implicit_atoms_from_atomtype = 1
+make_sample_atom -> symbol=Ar u=0 p=3 c=0
+after update_charge with 0 bonds -> charge = 2
+make_sample_molecule RAISED UnexpectedChargeError
+offending graph:
+1 Ar u0 p3 c+1 {2,S}
+2 H  u0 p0 c0 {1,S}
+
+
+=== Control A: Ar2+ ===
+Ar2+ atom types = ['Ar0s', 'Ar+']
+Ar2+ net charge = 1
+Ar2+ SMILES-ish multiplicity = 2
+CONTROL A PASS
+
+=== Control B: bare argon atom ===
+bare argon type = Ar0
+get_atomtype(bare Ar) = Ar0
+CONTROL B PASS
+
+=== Control C: Ar+ / Ar++ ===
+Ar u1 p3 c+1 -> Ar+
+Ar u0 p3 c+2 -> Ar++
+CONTROL C PASS
+
+=== Group matching surface ===
+  Ar0s is_specific_case_of(R        ) = True
+  Ar0s is_specific_case_of(R!H      ) = True
+  Ar0s is_specific_case_of(R!H!Val7 ) = True
+  Ar0s is_specific_case_of(Rx       ) = True
+  Ar0s is_specific_case_of(Rx!H     ) = True
+  Ar0s is_specific_case_of(Ar       ) = True
+  Ar2+ subgraph-isomorphic to '1 Ar0s ux' : True
+  Ar2+ subgraph-isomorphic to '1 R ux'    : True
+  bare Ar subgraph-isomorphic to '1 Ar0 ux' : True
+  bare Ar subgraph-isomorphic to '1 Ar0s ux': False
+
+ALL CONTROLS DONE
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+rootdir: /home/alon/Code/RMG-Py-i218-ar0s-single-narrowing
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 1 item
+
+test/rmgpy/molecule/atomtypeTest.py::TestAtomType::test_make_sample_molecule FAILED
+
+=================================== FAILURES ===================================
+____________________ TestAtomType.test_make_sample_molecule ____________________
+
+self = <atomtypeTest.TestAtomType object at 0x755e9cb2c190>
+
+    def test_make_sample_molecule(self):
+        """
+        Test we can make a sample molecule for most atom type without crashing.
+        """
+        failed = []
+        for name, atom_type in rmgpy.molecule.atomtype.ATOMTYPES.items():
+            if name in self.EXPECTED_FAILING_ATOMTYPES:
+                continue  # These are known to fail. See next WIP test
+            adjlist = f"1 {name} ux"
+            group = rmgpy.molecule.Group().from_adjacency_list(adjlist)
+            try:
+                result = group.make_sample_molecule()
+                # logging.info(f"For {name} made\n{result.to_adjacency_list()}")
+            except:
+                logging.exception(f"Couldn't make sample molecule for atomType {name}")
+                failed.append(name)
+>       assert len(failed) == 0, f"Couldn't make sample molecules for types {', '.join(failed)}"
+E       AssertionError: Couldn't make sample molecules for types Ar0s
+E       assert 1 == 0
+E        +  where 1 = len(['Ar0s'])
+
+test/rmgpy/molecule/atomtypeTest.py:174: AssertionError
+------------------------------ Captured log setup ------------------------------
+WARNING  matplotlib:__init__.py:537 /home/alon/.config/matplotlib is not a writable directory
+WARNING  matplotlib:__init__.py:550 Matplotlib created a temporary cache directory at /tmp/claude-1000/matplotlib-lfbm3u70 because there was an issue with the default path (/home/alon/.config/matplotlib); it is highly recommended to set the MPLCONFIGDIR environment variable to a writable directory, in particular to speed up the import of Matplotlib and to better support multiprocessing.
+------------------------------ Captured log call -------------------------------
+ERROR    root:atomtypeTest.py:172 Couldn't make sample molecule for atomType Ar0s
+Traceback (most recent call last):
+  File "/home/alon/Code/RMG-Py-i218-ar0s-single-narrowing/test/rmgpy/molecule/atomtypeTest.py", line 169, in test_make_sample_molecule
+    result = group.make_sample_molecule()
+  File "rmgpy/molecule/group.py", line 2928, in rmgpy.molecule.group.Group.make_sample_molecule
+    def make_sample_molecule(self):
+  File "rmgpy/molecule/group.py", line 3022, in rmgpy.molecule.group.Group.make_sample_molecule
+    raise UnexpectedChargeError(graph=new_molecule)
+rmgpy.exceptions.UnexpectedChargeError
+=========================== short test summary info ============================
+FAILED test/rmgpy/molecule/atomtypeTest.py::TestAtomType::test_make_sample_molecule
+============================== 1 failed in 1.83s ===============================
+### NARROWED single=[1] ###
+Ar0s single=[1]
+  1 Ar u0 p3 c0    -> InvalidAdjacencyListError: Invalid valency for atom Ar (Ar) with 0 unpaired electrons, 3 pairs of electrons, 0 charge, and bonds [].
+  1 Ar u1 p3 c0    -> InvalidAdjacencyListError: Invalid valency for atom Ar (Ar) with 1 unpaired electrons, 3 pairs of electrons, 0 charge, and bonds [].
+  1 Ar u2 p3 c0    -> AtomTypeError: Unable to determine atom type for atom Ar.., which has 0 single bonds, 0 double bonds (0 to O, 0 to S, 0 others), 0 triple bonds, 0 quadruple bonds, 0 benzene bonds, 3 lone pairs, and +0 charge.
+  1 Ar u0 p4 c0    -> Ar0
+  '1 Ar u0 p4 c0' matches '1 Ar0s ux' : False
+  '1 Ar u0 p4 c0' matches '1 Ar0 ux' : True
+  Ar2+ types = ['Ar0s', 'Ar+']
+Compiling rmgpy/molecule/atomtype.py because it changed.
+[1/1] Cythonizing rmgpy/molecule/atomtype.py
+running build_ext
+building 'rmgpy.molecule.atomtype' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/molecule/atomtype.c -o build/rmgpy/molecule/atomtype.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/molecule/atomtype.o -o build/lib.linux-x86_64-cpython-39/rmgpy/molecule/atomtype.cpython-39-x86_64-linux-gnu.so
+copying build/lib.linux-x86_64-cpython-39/rmgpy/rmgobject.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/arrhenius.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/chebyshev.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/kineticsdata.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/falloff.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/model.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/tunneling.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/surface.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/uncertainties.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/atomtype.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/element.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/graph.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/group.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/molecule.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/symmetry.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/vf2.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/converter.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/translator.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/util.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/inchi.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/resonance.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/pathfinder.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/kekulize.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/collision.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/configuration.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/me.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/msc.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/reaction.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/rs.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/cse.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/conformer.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/mode.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/rotation.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/schrodinger.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/torsion.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/translation.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/vibration.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/thermo/thermodata.cpython-39-x86_64-linux-gnu.so -> rmgpy/thermo
+copying build/lib.linux-x86_64-cpython-39/rmgpy/thermo/model.cpython-39-x86_64-linux-gnu.so -> rmgpy/thermo
+copying build/lib.linux-x86_64-cpython-39/rmgpy/thermo/nasa.cpython-39-x86_64-linux-gnu.so -> rmgpy/thermo
+copying build/lib.linux-x86_64-cpython-39/rmgpy/thermo/wilhoit.cpython-39-x86_64-linux-gnu.so -> rmgpy/thermo
+copying build/lib.linux-x86_64-cpython-39/rmgpy/constants.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/quantity.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/reaction.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/species.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/chemkin.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/base.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/simple.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/liquid.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/mbSampled.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/surface.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/plasma.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+### BASELINE single=[0,1] ###
+Ar0s single=[0, 1]
+  1 Ar u0 p3 c0    -> InvalidAdjacencyListError: Invalid valency for atom Ar (Ar0s) with 0 unpaired electrons, 3 pairs of electrons, 0 charge, and bonds [].
+  1 Ar u1 p3 c0    -> InvalidAdjacencyListError: Invalid valency for atom Ar (Ar0s) with 1 unpaired electrons, 3 pairs of electrons, 0 charge, and bonds [].
+  1 Ar u2 p3 c0    -> Ar0s
+  1 Ar u0 p4 c0    -> Ar0
+  '1 Ar u0 p4 c0' matches '1 Ar0s ux' : False
+  '1 Ar u0 p4 c0' matches '1 Ar0 ux' : True
+  Ar2+ types = ['Ar0s', 'Ar+']
+======================== 39 passed, 2 skipped in 1.69s =========================
+======================== 194 passed, 1 skipped in 5.31s ========================
+============================== 69 passed in 1.79s ==============================
+============================== 11 passed in 2.23s ==============================
+Compiling rmgpy/molecule/atomtype.py because it changed.
+[1/1] Cythonizing rmgpy/molecule/atomtype.py
+running build_ext
+building 'rmgpy.molecule.atomtype' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/molecule/atomtype.c -o build/rmgpy/molecule/atomtype.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/molecule/atomtype.o -o build/lib.linux-x86_64-cpython-39/rmgpy/molecule/atomtype.cpython-39-x86_64-linux-gnu.so
+copying build/lib.linux-x86_64-cpython-39/rmgpy/rmgobject.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/arrhenius.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/chebyshev.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/kineticsdata.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/falloff.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/model.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/tunneling.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/surface.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/uncertainties.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/atomtype.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/element.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/graph.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/group.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/molecule.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/symmetry.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/vf2.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/converter.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/translator.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/util.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/inchi.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/resonance.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/pathfinder.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/kekulize.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/collision.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/configuration.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/me.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/msc.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/reaction.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/rs.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/cse.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/conformer.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/mode.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/rotation.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/schrodinger.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/torsion.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/translation.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/vibration.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/thermo/thermodata.cpython-39-x86_64-linux-gnu.so -> rmgpy/thermo
+copying build/lib.linux-x86_64-cpython-39/rmgpy/thermo/model.cpython-39-x86_64-linux-gnu.so -> rmgpy/thermo
+copying build/lib.linux-x86_64-cpython-39/rmgpy/thermo/nasa.cpython-39-x86_64-linux-gnu.so -> rmgpy/thermo
+copying build/lib.linux-x86_64-cpython-39/rmgpy/thermo/wilhoit.cpython-39-x86_64-linux-gnu.so -> rmgpy/thermo
+copying build/lib.linux-x86_64-cpython-39/rmgpy/constants.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/quantity.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/reaction.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/species.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/chemkin.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/base.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/simple.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/liquid.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/mbSampled.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/surface.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/plasma.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+======================== 39 passed, 2 skipped in 1.82s =========================
+======================== 194 passed, 1 skipped in 5.45s ========================
+============================== 69 passed in 1.81s ==============================
+============================== 11 passed in 2.44s ==============================
+Compiling rmgpy/molecule/atomtype.py because it changed.
+[1/1] Cythonizing rmgpy/molecule/atomtype.py
+running build_ext
+building 'rmgpy.molecule.atomtype' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/molecule/atomtype.c -o build/rmgpy/molecule/atomtype.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/rmgpy/molecule/atomtype.o -o build/lib.linux-x86_64-cpython-39/rmgpy/molecule/atomtype.cpython-39-x86_64-linux-gnu.so
+copying build/lib.linux-x86_64-cpython-39/rmgpy/rmgobject.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/arrhenius.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/chebyshev.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/kineticsdata.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/falloff.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/model.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/tunneling.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/surface.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/uncertainties.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/atomtype.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/element.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/graph.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/group.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/molecule.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/symmetry.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/vf2.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/converter.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/translator.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/util.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/inchi.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/resonance.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/pathfinder.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/kekulize.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/collision.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/configuration.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/me.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/msc.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/reaction.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/rs.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/cse.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/conformer.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/mode.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/rotation.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/schrodinger.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/torsion.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/translation.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/vibration.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/thermo/thermodata.cpython-39-x86_64-linux-gnu.so -> rmgpy/thermo
+copying build/lib.linux-x86_64-cpython-39/rmgpy/thermo/model.cpython-39-x86_64-linux-gnu.so -> rmgpy/thermo
+copying build/lib.linux-x86_64-cpython-39/rmgpy/thermo/nasa.cpython-39-x86_64-linux-gnu.so -> rmgpy/thermo
+copying build/lib.linux-x86_64-cpython-39/rmgpy/thermo/wilhoit.cpython-39-x86_64-linux-gnu.so -> rmgpy/thermo
+copying build/lib.linux-x86_64-cpython-39/rmgpy/constants.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/quantity.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/reaction.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/species.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/chemkin.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/base.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/simple.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/liquid.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/mbSampled.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/surface.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/plasma.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+======================== 39 passed, 2 skipped in 1.65s =========================
+======================== 194 passed, 1 skipped in 5.61s ========================
+============================== 69 passed in 1.82s ==============================
+============================== 11 passed in 2.41s ==============================
+=================== 1 failed, 38 passed, 2 skipped in 1.80s ====================
