@@ -1392,3 +1392,63 @@ class TestNoDuplicateAtomTypeDefinitions:
             if seen[label] > 1:
                 duplicates[label] = seen[label]
         assert not duplicates, f"ATOMTYPES labels defined more than once: {duplicates}"
+
+
+class TestArgonSingleBondNarrowing:
+    """
+    Pins ``Ar0s`` to ``single=[1]`` -- the bonded neutral argon, and only the bonded one.
+
+    ``Ar0s`` was declared ``single=[0, 1]``, which let a bond-free neutral argon type as ``Ar0s``
+    even though ``Ar0`` owns the bond-free neutral. The two were separated by nothing but lone-pair
+    count and ``specific``-list ordering, so widening ``single`` back would silently restore the
+    overlap and no other test would notice: the failure is a misassignment, not an error. These
+    tests fail if it is widened. See docs/i218-ar0s-single-narrowing/report.md.
+    """
+
+    def test_ar0s_admits_only_the_bonded_case(self):
+        """The declaration itself: one single bond, never zero."""
+        assert rmgpy.molecule.atomtype.ATOMTYPES["Ar0s"].single == [1]
+
+    def test_ar2_cation_types_as_ar0s_and_ar_plus(self):
+        """Ar2+ is why Ar0s exists; narrowing `single` must leave it intact."""
+        ar2_cation = Molecule().from_adjacency_list(
+            """1 Ar u1 p3 c0  {2,S}
+               2 Ar u0 p3 c+1 {1,S}"""
+        )
+        ar2_cation.update_atomtypes()
+        assert [atom.atomtype.label for atom in ar2_cation.atoms] == ["Ar0s", "Ar+"]
+        assert ar2_cation.get_net_charge() == 1
+
+    def test_bond_free_triplet_argon_has_no_atom_type(self):
+        """
+        ``Ar u2 p3 c0`` is the one bond-free state that balanced against Ar0s's declared charge,
+        so it is the state a widened ``single`` would hand to Ar0s. It must have no type at all.
+        """
+        from rmgpy.exceptions import AtomTypeError
+        from rmgpy.molecule import Atom
+
+        atom = Atom(element="Ar", radical_electrons=2, lone_pairs=3, charge=0)
+        with pytest.raises(AtomTypeError):
+            get_atomtype(atom, {})
+
+    def test_bond_free_neutral_argon_still_belongs_to_ar0(self):
+        """The other side of the same boundary: Ar0 keeps the closed-shell bond-free atom."""
+        from rmgpy.molecule import Atom
+
+        atom = Atom(element="Ar", radical_electrons=0, lone_pairs=4, charge=0)
+        assert get_atomtype(atom, {}).label == "Ar0"
+
+    def test_untypeable_argon_degrades_to_generic_R_when_typing_is_tolerant(self):
+        """
+        Records a HAZARD, not a desideratum. ``Molecule.update_atomtypes`` catches AtomTypeError
+        and assigns ``ATOMTYPES['R']`` when ``raise_exception`` is False, with the logging gated
+        behind a separate ``log_species`` flag -- so an untypeable atom can silently become the
+        wildcard that matches everything. ``Species.get_resonance_hybrid`` passes both flags off.
+        This test exists so that whoever adds an argon metastable type sees the consequence in CI
+        rather than in a generated model; if the silent fallback is ever fixed, change it.
+        """
+        from rmgpy.molecule import Atom
+
+        molecule = Molecule(atoms=[Atom(element="Ar", radical_electrons=2, lone_pairs=3, charge=0)])
+        molecule.update_atomtypes(log_species=False, raise_exception=False)
+        assert molecule.atoms[0].atomtype.label == "R"

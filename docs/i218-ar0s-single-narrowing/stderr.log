@@ -443,7 +443,7 @@ In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packa
 ==============================
 *** Open Babel Error  in InChI code
   Reading InChI failed
-[08:49:45] ERROR: 
+[08:49:45] ERROR:
 
 [08:50:02] WARNING: Accepted unusual valence(s): C(3)
 
@@ -464,7 +464,7 @@ In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packa
 ==============================
 *** Open Babel Error  in InChI code
   Reading InChI failed
-[08:50:02] ERROR: 
+[08:50:02] ERROR:
 
 ERROR:root:Could not update atomtypes for this molecule:
 multiplicity 3
@@ -489,7 +489,7 @@ multiplicity 3
 ==============================
 *** Open Babel Error  in InChI code
   Reading InChI failed
-[08:54:43] ERROR: 
+[08:54:43] ERROR:
 
 [08:55:39] WARNING: Accepted unusual valence(s): C(3)
 
@@ -510,7 +510,7 @@ multiplicity 3
 ==============================
 *** Open Babel Error  in InChI code
   Reading InChI failed
-[08:55:39] ERROR: 
+[08:55:39] ERROR:
 
 [08:59:53] WARNING: Accepted unusual valence(s): C(3)
 
@@ -531,7 +531,7 @@ multiplicity 3
 ==============================
 *** Open Babel Error  in InChI code
   Reading InChI failed
-[08:59:53] ERROR: 
+[08:59:53] ERROR:
 
 [09:03:11] WARNING: Accepted unusual valence(s): C(3)
 
@@ -552,5 +552,4 @@ multiplicity 3
 ==============================
 *** Open Babel Error  in InChI code
   Reading InChI failed
-[09:03:11] ERROR: 
-
+[09:03:11] ERROR:

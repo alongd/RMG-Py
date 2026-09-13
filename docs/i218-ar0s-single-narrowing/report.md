@@ -15,6 +15,12 @@ Narrowing closes consequence 1 (the `Ar0`/`Ar0s` overlap on the bond-free neutra
 consequence 2 (the sample builder) exactly as it was. The narrowing is kept on this branch for
 consequence 1 alone; it buys nothing toward the allowlist entry.
 
+Alongside the negative, the branch carries three things worth reading on their own: a correction to
+a campaign premise that had propagated into three briefs (§2), a committed guard confirmed red
+before green (§8), and a forward hazard — soft atom typing silently substitutes the `R` wildcard
+for an untypeable atom (§9). The database group/family matching surface remains unmeasured (§10),
+so this is not a merge-ready result on its own.
+
 ## 1. Rebuild, and the evidence that it took
 
 The worktree contained **zero** `.so` files at the start — contrary to the brief, which stated that
@@ -205,15 +211,16 @@ CONTROL C PASS   (both builds)
 Each file in its own scope, compared against its own collection count. Allowlist entry present
 (`["O4b", "S4b", "Ar0s"]`) in all rows.
 
-| suite | collected | before (`single=[0,1]`) | after (`single=[1]`) |
+| suite | before (`single=[0,1]`) | after (`single=[1]`) | with the new guard (§8) |
 |---|---|---|---|
-| `test/rmgpy/molecule/atomtypeTest.py` | 41 | 39 passed, 2 skipped | **39 passed, 2 skipped** |
-| `test/rmgpy/molecule/moleculeTest.py` | 195 | 194 passed, 1 skipped | **194 passed, 1 skipped** |
-| `test/rmgpy/molecule/groupTest.py` | 69 | 69 passed | **69 passed** |
-| `test/rmgpy/molecule/atomtypeSevenTest.py` | 11 | 11 passed | **11 passed** |
+| `test/rmgpy/molecule/atomtypeTest.py` | 39 passed, 2 skipped (41 collected) | **39 passed, 2 skipped** | **44 passed, 2 skipped** (46 collected) |
+| `test/rmgpy/molecule/moleculeTest.py` | 194 passed, 1 skipped (195) | **194 passed, 1 skipped** | 194 passed, 1 skipped |
+| `test/rmgpy/molecule/groupTest.py` | 69 passed (69) | **69 passed** | 69 passed |
+| `test/rmgpy/molecule/atomtypeSevenTest.py` | 11 passed (11) | **11 passed** | 11 passed |
 
-313 passed, 3 skipped across the four suites, identical before and after. The narrowing is inert on
-this surface.
+313 passed, 3 skipped across the four suites, identical before and after the narrowing: it is inert
+on this surface. The final committed state adds the five guard tests of §8, for 318 passed,
+3 skipped.
 
 The reproduction rows, where the allowlist entry is removed, are the point of the whole ticket —
 and they too are unchanged by the narrowing:
@@ -227,7 +234,86 @@ and they too are unchanged by the narrowing:
 The full file with the entry removed was run on the narrowed build only; on the baseline build the
 single test node was run. Both failures are the same `UnexpectedChargeError` quoted in §3.
 
-## 8. What this may and may not be claimed to show
+## 8. The guard that pins this
+
+Everything above is evidence in `docs/`. Nothing in `docs/` runs in CI, so on its own this ticket
+would let the next person widen `Ar0s` back to `[0, 1]` with no test complaining — the failure mode
+is a *misassignment*, not an error, which is precisely the kind nothing notices. `TestArgonSingleBondNarrowing`
+in `test/rmgpy/molecule/atomtypeTest.py` promotes the hand-run controls to committed tests:
+
+| test | pins |
+|---|---|
+| `test_ar0s_admits_only_the_bonded_case` | `ATOMTYPES['Ar0s'].single == [1]` |
+| `test_ar2_cation_types_as_ar0s_and_ar_plus` | `Ar2+` types `['Ar0s', 'Ar+']`, net charge 1 |
+| `test_bond_free_triplet_argon_has_no_atom_type` | `Ar u2 p3 c0` raises `AtomTypeError` |
+| `test_bond_free_neutral_argon_still_belongs_to_ar0` | `Ar u0 p4 c0` types `Ar0` |
+| `test_untypeable_argon_degrades_to_generic_R_when_typing_is_tolerant` | the §9 hazard |
+
+Each asserts on a **value** — a label, a list, a raised type — never on the absence of an exception.
+
+**Confirmed RED before being accepted as green.** The declaration was widened back to
+`single=[0, 1]`, the extension rebuilt (`LOADED single = [0, 1]`), and the class re-run:
+
+```
+FAILED ...::TestArgonSingleBondNarrowing::test_ar0s_admits_only_the_bonded_case
+FAILED ...::TestArgonSingleBondNarrowing::test_bond_free_triplet_argon_has_no_atom_type
+FAILED ...::TestArgonSingleBondNarrowing::test_untypeable_argon_degrades_to_generic_R_when_typing_is_tolerant
+E       AssertionError: assert 'Ar0s' == 'R'
+========================= 3 failed, 2 passed in 1.72s ==========================
+```
+
+The two that stayed green are the two that *should* be invariant under either declaration
+(`Ar2+` and the `Ar0` boundary at `p4`). The declaration was then restored and rebuilt
+(`LOADED single = [1]`), and all five pass. A guard never observed red is not a guard.
+
+## 9. Forward hazard — soft atom typing does not fail, it assigns the wildcard
+
+This is the most consequential thing the merge-gate round turned up, and it is not specific to
+argon.
+
+`Molecule.update_atomtypes` (`rmgpy/molecule/molecule.py:1571`) has the signature
+`update_atomtypes(self, log_species=True, raise_exception=True)`, and its handler reads:
+
+```python
+            except AtomTypeError:                                       # molecule.py:1588
+                if log_species:                                         # :1589
+                    logging.error("Could not update atomtypes for this molecule:\n{0}".format(...))
+                if raise_exception:                                     # :1591
+                    raise
+                atom.atomtype = ATOMTYPES['R']                          # :1593
+```
+
+An atom that cannot be typed does not become untyped — it becomes **`R`, the generic wildcard that
+matches everything**. And the logging is gated behind `log_species`, a flag *separate* from
+`raise_exception`, so a caller that passes both as `False` gets the substitution in complete
+silence. Exactly one call site in the tree does that: `Species.get_resonance_hybrid`
+(`rmgpy/species.py:765`, `update_atomtypes(log_species=False, raise_exception=False)`).
+
+One sharpening of the gate's framing, measured rather than assumed: the ~15 call sites in
+`rmgpy/molecule/resonance.py` pass `log_species=False` but leave `raise_exception=True`, so they
+*raise* — they suppress the log, not the failure. The fully-silent path is the single site above,
+which makes the hazard narrower and easier to reason about than "generate_resonance_structures and
+friends", but no less real.
+
+The consequence for this ticket cuts in the narrowing's favour and raises the stakes for whoever
+comes next. The `Ar u2 p3 c0` that the narrowing now correctly refuses will, on that tolerant path,
+silently become `R` rather than erroring. So:
+
+- the narrowing is **strictly more correct** — before it, that atom was confidently mistyped as
+  `Ar0s`; after it, it is either a loud `AtomTypeError` or a wildcard, and a wildcard at least
+  cannot masquerade as a specific argon type;
+- but the wildcard is its own hazard, because `R` matches *every* group node. Whoever adds an argon
+  metastable atom type later must add it as a real type, not rely on the refusal being loud. It is
+  not loud on the tolerant path.
+
+This is the campaign's silent-failure class appearing in a new place: a guard that refuses correctly
+upstream, and a downstream caller that converts the refusal into the most permissive possible
+answer. `test_untypeable_argon_degrades_to_generic_R_when_typing_is_tolerant` (§8) records the
+current behaviour so that the substitution is visible in CI rather than in a generated model. It
+pins a hazard, not a desideratum; if the silent fallback is ever fixed, that test should change with
+it.
+
+## 10. What this may and may not be claimed to show
 
 **Measured: direct atom-type perception, and a narrow slice of group matching.**
 
@@ -238,33 +324,56 @@ single test node was run. Both failures are the same `UnexpectedChargeError` quo
   `Molecule.is_subgraph_isomorphic()` of `Ar2+` and of a bare argon against the `Ar0s`, `Ar0` and
   `R` group patterns (unchanged).
 
-**NOT measured: the database group/family matching surface.** The brief's warning stands and is not
-answered by this work. Adding `Ar0s` to the broad generic lists widened group matching through
-`equivalent()` / `is_specific_case_of()`; `groupTest.py` and the molecule suites exercise the
-*machinery* of group matching on hand-built groups, not the RMG-database group trees, kinetics
-family templates, or thermo group estimation. No reaction family was driven, no database was
-loaded, no model was generated. A narrowing that is inert on 313 unit tests can still move which
-template a real family node matches.
+**NOT measured, and not closable here: the database group/family matching surface.** The brief's
+warning stands and this work does not answer it. Adding `Ar0s` to the broad generic lists (`R`,
+`R!H`, `R!H!Val7`, `Rx`, `Rx!H`) widened group matching through `equivalent()` /
+`is_specific_case_of()`, and that widening is consumed by the *loaded database trees*, not by the
+matching machinery in isolation:
 
-**This is therefore not a merge-ready result**, and nothing here should be read as verifying the
-branch. It answers one question — narrowing does not lift the allowlist entry — and closes one
-declaration/name mismatch. Clearing it for merge needs an adversarial round over the family- and
-thermo-group matching surface.
+- `Database.match_node_to_structure` (`rmgpy/data/base.py:950`) decides whether a structure matches
+  a node of a loaded tree;
+- `Database.descend_tree` (`rmgpy/data/base.py:1068`) walks that tree, and on **overlapping**
+  matches takes `next_node[0]` — **first child wins**. The warning that would have announced the
+  overlap is commented out (`base.py:1069-1071`), so an ambiguous match is resolved silently and by
+  declaration order.
+
+`groupTest.py` and the molecule suites exercise the *mechanics* of group matching on hand-built
+groups; they never load a database tree. No reaction family was driven, no database was loaded, no
+model was generated, no thermo group estimation was run. A narrowing inert on 318 unit tests can
+still move which template a real family node matches, and `descend_tree`'s first-child-wins would
+not say so.
+
+What can be said today is that **no installed argon species exercises that surface**: the only
+argon species in `RMG-database-plasma` are `Ar u0 p4 c0` (`Ar0`) and `Ar u1 p3 c+1` (`Ar+`), and
+neither's typing changes under the narrowing (§5, §6). The unmeasured surface is unmeasured, not
+known-good — it is currently uninhabited by anything argon.
+
+**This is therefore not a merge-ready result on its own**, and nothing here should be read as
+verifying the branch. It answers one question — narrowing does not lift the allowlist entry —
+closes one declaration/name mismatch, pins both invariants in CI, and records one forward hazard.
+Clearing it for merge is the owner's call over the family- and thermo-group matching surface.
 
 Also unverified by construction: the `u` states `Ar0s` admits were measured through the adjacency
 list consistency check, which is what actually rejects them, not through the atom type — as the
 brief required. The atom type itself still ignores radical electrons.
 
-## 9. What changed on this branch
+## 11. What changed on this branch
 
 ```
-rmgpy/molecule/atomtype.py   single=[0,1] -> single=[1] on Ar0s, plus a comment block recording
-                             why it is [1] and why that does NOT lift the allowlist entry
-docs/i218-ar0s-single-narrowing/  this report, stdout.log, stderr.log
-docs/contracts/i218-ar0s-single-narrowing.md
+rmgpy/molecule/atomtype.py            single=[0,1] -> single=[1] on Ar0s, plus a comment block
+                                      recording why it is [1] and why that does NOT lift the
+                                      allowlist entry
+test/rmgpy/molecule/atomtypeTest.py   + class TestArgonSingleBondNarrowing (5 tests, §8)
+docs/i218-ar0s-single-narrowing/      report.md, stdout.log, stderr.log,
+                                      repro_sample_and_controls.py, repro_bondfree_overlap.py
 ```
 
 `EXPECTED_FAILING_ATOMTYPES` is **unchanged** — it was edited only for the reproduction in §3 and
-restored. No action edge was added or removed on any atom type. `Ar0`, `Ar+`, `Ar++`, `Mg0s` and
-`Ca0s` are untouched, as is `atomtypeSevenTest.py`. `rmgpy/solver/settings.pxi` is build output and
-is not committed. Nothing was pushed and nothing was merged.
+restored, and its existing comment explaining the sample-builder limitation is left intact. No
+action edge was added or removed on any atom type. `Ar0`, `Ar+`, `Ar++`, `Mg0s` and `Ca0s` are
+untouched, as is `atomtypeSevenTest.py`. `rmgpy/solver/settings.pxi` is build output and is not
+committed. `docs/contracts/` is self-ignored by `docs/contracts/.gitignore` and is **not** tracked
+on this branch — an earlier revision of this report listed it as a changed file, which was wrong.
+`stderr.log` was whitespace-normalised (trailing spaces on six OpenBabel `ERROR:` lines and a
+trailing blank line) so that `git diff --check` passes; no line was removed. Nothing was pushed and
+nothing was merged.
