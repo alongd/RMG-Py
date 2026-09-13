@@ -440,8 +440,17 @@ ATOMTYPES['Ar0'] = AtomType('Ar0', generic=['R', 'R!H', 'R!H!Val7', 'Rx', 'Rx!H'
 # Neutral Ar brings 8 valence electrons; one of them goes into the bond, leaving 7 non-bonding,
 # i.e. 3 lone pairs and one unpaired electron -- so lone_pairs is 3 here and not Ar0's 4.
 # It is the neutral half of Ar2+ (`Ar0s`-`Ar+`); the cationic half already types as Ar+.
+# `single` is [1], not [0, 1]: admitting zero bonds would let a bond-free neutral argon type as
+# Ar0s (it perceives as Ar0s at u2 p3 c0), overlapping Ar0, which owns the bond-free neutral at
+# lone_pairs=[4]. With [1] that atom is refused by get_atomtype instead, and Ar0 is unambiguous.
+# This does NOT lift the Ar0s entry from EXPECTED_FAILING_ATOMTYPES in atomtypeTest.py, and
+# narrowing `single` never could: add_implicit_atoms_from_atomtype adds double/triple/quadruple
+# partners but never a single-bonded one, so make_sample_atom still builds a bond-free Ar at
+# p3 u0, whose update_charge gives c+2. The saturation loop caps added hydrogens at max(single),
+# which is 1 either way, leaving c+1 and an UnexpectedChargeError. The sample builder would have
+# to pick u1 to balance a singly-bonded neutral argon, and it has no rule that does. See I-218.
 ATOMTYPES['Ar0s'] = AtomType('Ar0s', generic=['R', 'R!H', 'R!H!Val7', 'Rx', 'Rx!H', 'Ar'], specific=[],
-                            single=[0,1], all_double=[0], r_double=[0], o_double=[0], s_double=[0], triple=[0], quadruple=[0], benzene=[0], lone_pairs=[3], charge=[0])
+                            single=[1], all_double=[0], r_double=[0], o_double=[0], s_double=[0], triple=[0], quadruple=[0], benzene=[0], lone_pairs=[3], charge=[0])
 ATOMTYPES['Ar+'] = AtomType('Ar+', generic=['R', 'R!H', 'R!H!Val7', 'Rx', 'Rx!H', 'Ar'], specific=[],
                             single=[0,1], all_double=[0], r_double=[0], o_double=[0], s_double=[0], triple=[0], quadruple=[0], benzene=[0], lone_pairs=[3], charge=[1])
 ATOMTYPES['Ar++'] = AtomType('Ar++', generic=['R', 'R!H', 'R!H!Val7', 'Rx', 'Rx!H', 'Ar'], specific=[],
