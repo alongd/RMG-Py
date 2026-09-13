@@ -17,8 +17,8 @@ consequence 1 alone; it buys nothing toward the allowlist entry.
 
 Alongside the negative, the branch carries three things worth reading on their own: a correction to
 a campaign premise that had propagated into three briefs (§2), a committed guard confirmed red
-before green (§8), and a forward hazard — soft atom typing silently substitutes the `R` wildcard
-for an untypeable atom (§9). The database group/family matching surface remains unmeasured (§10),
+before green (§8), and two forward hazards in soft atom typing — an untypeable atom is silently
+relabelled as the `R` wildcard at one call site, and silently dropped at eleven others (§9). The database group/family matching surface remains unmeasured (§10),
 so this is not a merge-ready result on its own.
 
 ## 1. Rebuild, and the evidence that it took
@@ -286,32 +286,60 @@ argon.
 An atom that cannot be typed does not become untyped — it becomes **`R`, the generic wildcard that
 matches everything**. And the logging is gated behind `log_species`, a flag *separate* from
 `raise_exception`, so a caller that passes both as `False` gets the substitution in complete
-silence. Exactly one call site in the tree does that: `Species.get_resonance_hybrid`
-(`rmgpy/species.py:765`, `update_atomtypes(log_species=False, raise_exception=False)`).
+silence.
 
-One sharpening of the gate's framing, measured rather than assumed: the ~15 call sites in
-`rmgpy/molecule/resonance.py` pass `log_species=False` but leave `raise_exception=True`, so they
-*raise* — they suppress the log, not the failure. The fully-silent path is the single site above,
-which makes the hazard narrower and easier to reason about than "generate_resonance_structures and
-friends", but no less real.
+### Two classes, failing in opposite directions
+
+What follows is a **complete census of wildcard substitution** and only a **partial census of
+swallowed atom-typing failure**. The two are different hazards and must not be conflated.
+
+**Class 1 — wildcard substitution. Exactly one site, and that is a complete count.** Only
+`Species.get_resonance_hybrid` (`rmgpy/species.py:765`) passes *both* flags off
+(`update_atomtypes(log_species=False, raise_exception=False)`), so it is the only place in the tree
+where an untypeable atom is silently relabelled `R`. Grep over `rmgpy/` and `arkane/` returns no
+other `raise_exception=False` call.
+
+**Class 2 — swallowed atom-typing failure. Several sites, and this is not a complete count.** The
+14 call sites in `rmgpy/molecule/resonance.py` pass `log_species=False` but leave
+`raise_exception=True`, so they *raise* rather than substitute — and then 13 of the 14 sit inside a
+`try` whose `except AtomTypeError` discards the result:
+
+| behaviour | sites in `resonance.py` |
+|---|---|
+| candidate structure **dropped** (`pass  # Don't append resonance structure if it creates an undefined atomtype`) | 392, 432, 473, 517, 574, 611, 827, 1182, 1216, 1256, 1295 — **11** |
+| aromaticity **rolled back** (bond orders restored, ring deferred; no structure lost) | 727, 744 — **2** |
+| unguarded | 752 — the re-type *inside* the rollback handler at 745; an `AtomTypeError` here would propagate |
+
+The gate flagged 392, 473, 611 and 827; those are correct, and the sweep above shows they are four
+of eleven drops. The census is called partial because it covers `resonance.py` only — the same
+`try`/`except AtomTypeError` shape may exist elsewhere and was not swept for.
+
+**Why the distinction matters for metastable argon.** The two classes fail in *opposite*
+directions. A dropped resonance structure **loses** a species that should have existed; an
+`R`-typed atom **over-matches**, since `R` matches every group node. Whoever adds an argon
+metastable atom type will hit both, and a fix aimed at one does nothing for the other.
 
 The consequence for this ticket cuts in the narrowing's favour and raises the stakes for whoever
-comes next. The `Ar u2 p3 c0` that the narrowing now correctly refuses will, on that tolerant path,
-silently become `R` rather than erroring. So:
+comes next. The `Ar u2 p3 c0` that the narrowing now correctly refuses meets a *different* fate on
+each of the two paths: through `get_resonance_hybrid` it silently becomes `R`; through any of the
+eleven `resonance.py` drop sites the candidate structure is silently discarded. Neither path
+reports anything. So:
 
 - the narrowing is **strictly more correct** — before it, that atom was confidently mistyped as
-  `Ar0s`; after it, it is either a loud `AtomTypeError` or a wildcard, and a wildcard at least
-  cannot masquerade as a specific argon type;
-- but the wildcard is its own hazard, because `R` matches *every* group node. Whoever adds an argon
-  metastable atom type later must add it as a real type, not rely on the refusal being loud. It is
-  not loud on the tolerant path.
+  `Ar0s`; after it, it is a loud `AtomTypeError` on the strict path, and on the tolerant paths it is
+  at worst a wildcard or a dropped candidate, neither of which can masquerade as a specific argon
+  type;
+- but both tolerant outcomes are hazards in their own right, and opposite ones. Whoever adds an
+  argon metastable atom type later must add it as a real type rather than rely on the refusal being
+  loud — it is not loud on either tolerant path.
 
 This is the campaign's silent-failure class appearing in a new place: a guard that refuses correctly
-upstream, and a downstream caller that converts the refusal into the most permissive possible
-answer. `test_untypeable_argon_degrades_to_generic_R_when_typing_is_tolerant` (§8) records the
-current behaviour so that the substitution is visible in CI rather than in a generated model. It
-pins a hazard, not a desideratum; if the silent fallback is ever fixed, that test should change with
-it.
+upstream, and downstream callers that convert the refusal into either the most permissive possible
+answer or no answer at all. `test_untypeable_argon_degrades_to_generic_R_when_typing_is_tolerant`
+(§8) records the class-1 behaviour so that the substitution is visible in CI rather than in a
+generated model. It pins a hazard, not a desideratum; if the silent fallback is ever fixed, that
+test should change with it. Class 2 is **not** pinned by any test here — the drop sites are reached
+only through real resonance generation, which this ticket did not drive.
 
 ## 10. What this may and may not be claimed to show
 
