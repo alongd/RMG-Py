@@ -260,7 +260,7 @@ ATOMTYPES['Rx'] = AtomType(label='Rx', generic=[], specific=[
     'Rx!H',
     'R!H!Val7',
     'Val4','Val5','Val6','Val7',
-    'He','Ne','Ar','Ar0','Ar0s','Ar+','Ar++',
+    'He','Ne','Ar','Ar0','Ar0s','Ar0e','Ar+','Ar++',
     'C','Catom','Cs','Csc','Cd','CO','CS','Cdd','Cdc','Ctc','Ct','Cb','Cbf','Cq','C2s','C2sc','C2d','C2dc','C2tc',
     'N','N0sc','N1s','N1sc','N1dc','N3s','N3sc','N3d','N3t','N3b','N5sc','N5dc','N5ddc','N5dddc','N5tc','N5b','N5bd','Nm1','Nm2','Nm3',
     'O','Oa','O0sc','O2s','O2sc','O2d','O4sc','O4dc','O4tc','O4b','Om1','Om2',
@@ -276,7 +276,7 @@ ATOMTYPES['Rx!H'] = AtomType(label='Rx!H', generic=['Rx'], specific=[
     'R!H',
     'R!H!Val7',
     'Val4','Val5','Val6','Val7',
-    'He','Ne','Ar','Ar0','Ar0s','Ar+','Ar++',
+    'He','Ne','Ar','Ar0','Ar0s','Ar0e','Ar+','Ar++',
     'C','Catom','Cs','Csc','Cd','CO','CS','Cdd','Cdc','Ctc','Ct','Cb','Cbf','Cq','C2s','C2sc','C2d','C2dc','C2tc',
     'N','N0sc','N1s','N1sc','N1dc','N3s','N3sc','N3d','N3t','N3b','N5sc','N5dc','N5ddc','N5dddc','N5tc','N5b','N5bd','Nm1','Nm2','Nm3',
     'O','Oa','O0sc','O2s','O2sc','O2d','O4sc','O4dc','O4tc','O4b','Om1','Om2',
@@ -310,7 +310,7 @@ ATOMTYPES['R'] = AtomType(label='R', generic=['Rx'], specific=[
     'R!H',
     'R!H!Val7',
     'Val4','Val5','Val6','Val7',
-    'He','Ne','Ar','Ar0','Ar0s','Ar+','Ar++',
+    'He','Ne','Ar','Ar0','Ar0s','Ar0e','Ar+','Ar++',
     'C','Catom','Cs','Csc','Cd','CO','CS','Cdd','Cdc','Ctc','Ct','Cb','Cbf','Cq','C2s','C2sc','C2d','C2dc','C2tc',
     'N','N0sc','N1s','N1sc','N1dc','N3s','N3sc','N3d','N3t','N3b','N5sc','N5dc','N5ddc','N5dddc','N5tc','N5b','N5bd','Nm1','Nm2','Nm3',
     'O','Oa','O0sc','O2s','O2sc','O2d','O4sc','O4dc','O4tc','O4b','Om1','Om2',
@@ -324,7 +324,7 @@ ATOMTYPES['R'] = AtomType(label='R', generic=['Rx'], specific=[
 
 ATOMTYPES['R!H'] = AtomType(label='R!H', generic=['R', 'Rx', 'Rx!H'], specific=[
     'Val4','Val5','Val6','Val7',
-    'He','Ne','Ar','Ar0','Ar0s','Ar+','Ar++',
+    'He','Ne','Ar','Ar0','Ar0s','Ar0e','Ar+','Ar++',
     'metal','alkali','alkaline',
     'Li','Li0','Li+','Na','Na0','Na+','K','K0','K+',
     'Mg','Mg0s','Mg0d','Mg+','Mg+2','Ca','Ca0s','Ca0d','Ca+','Ca+2',
@@ -341,7 +341,7 @@ ATOMTYPES['R!H'] = AtomType(label='R!H', generic=['R', 'Rx', 'Rx!H'], specific=[
 
 ATOMTYPES['R!H!Val7'] = AtomType(label='R!H!Val7', generic=['R', 'Rx', 'Rx!H'], specific=[
     'Val4','Val5','Val6',
-    'He','Ne','Ar','Ar0','Ar0s','Ar+','Ar++',
+    'He','Ne','Ar','Ar0','Ar0s','Ar0e','Ar+','Ar++',
     'metal','alkali','alkaline',
     'Li','Li0','Li+','Na','Na0','Na+','K','K0','K+',
     'Mg','Mg0s','Mg0d','Mg+','Mg+2','Ca','Ca0s','Ca0d','Ca+','Ca+2',
@@ -433,7 +433,7 @@ ATOMTYPES['Ca+2'] = AtomType('Ca+2', generic=['Ca', 'R', 'R!H', 'R!H!Val7', 'met
 
 ATOMTYPES['He'] = AtomType('He', generic=['R', 'R!H', 'R!H!Val7', 'Rx', 'Rx!H'], specific=[], charge=[0, 1, 2])
 ATOMTYPES['Ne'] = AtomType('Ne', generic=['R', 'R!H', 'R!H!Val7', 'Rx', 'Rx!H'], specific=[], charge=[0, 1, 2])
-ATOMTYPES['Ar'] = AtomType('Ar', generic=['R', 'R!H', 'R!H!Val7', 'Rx', 'Rx!H'], specific=['Ar0', 'Ar0s', 'Ar+', 'Ar++'], charge=[0, 1, 2])
+ATOMTYPES['Ar'] = AtomType('Ar', generic=['R', 'R!H', 'R!H!Val7', 'Rx', 'Rx!H'], specific=['Ar0', 'Ar0s', 'Ar0e', 'Ar+', 'Ar++'], charge=[0, 1, 2])
 ATOMTYPES['Ar0'] = AtomType('Ar0', generic=['R', 'R!H', 'R!H!Val7', 'Rx', 'Rx!H', 'Ar'], specific=[],
                             single=[0], all_double=[0], r_double=[0], o_double=[0], s_double=[0], triple=[0], quadruple=[0], benzene=[0], lone_pairs=[4], charge=[0])
 # Ar0s is the singly-bonded neutral argon, named as Mg0s/Ca0s are: 0 is the charge, s the single bond.
@@ -451,6 +451,25 @@ ATOMTYPES['Ar0'] = AtomType('Ar0', generic=['R', 'R!H', 'R!H!Val7', 'Rx', 'Rx!H'
 # to pick u1 to balance a singly-bonded neutral argon, and it has no rule that does. See I-218.
 ATOMTYPES['Ar0s'] = AtomType('Ar0s', generic=['R', 'R!H', 'R!H!Val7', 'Rx', 'Rx!H', 'Ar'], specific=[],
                             single=[1], all_double=[0], r_double=[0], o_double=[0], s_double=[0], triple=[0], quadruple=[0], benzene=[0], lone_pairs=[3], charge=[0])
+# Ar0e is the bond-free neutral argon carrying only three lone pairs -- metastable argon, Ar*.
+# The `e` marks the electronically excited configuration; `0` is the charge, as it is for Ar0 and
+# Ar0s. It is deliberately not a bond descriptor (s/d/t/q/b are), because Ar0e has no bonds at all,
+# and deliberately not `Ar2` (the valence-2 reading of the naming convention at the top of this
+# file), because this file also discusses the Ar2+ dimer and `Ar2` would read as that dimer.
+# The label is a dictionary key that appears verbatim in group adjacency lists, so it is kept
+# alphanumeric.
+#
+# Neutral Ar brings 8 valence electrons. With no bonds and three lone pairs, six are paired and two
+# are left over, so charge balance admits exactly one radical state, u2 -- the triplet metastable.
+# get_atomtype never sees `u` (it matches on bonds, lone pairs and charge only), so u is not what
+# selects this type; the adjacency-list charge check is what refuses u0, u1 and u3 at p3 c0.
+#
+# Against its siblings, no two argon types can match one atom: Ar0 is the same neutral bond-free
+# atom at lone_pairs=[4]; Ar0s is the same neutral p3 atom with single=[1] rather than [0]; Ar+ and
+# Ar++ carry charge [1] and [2]. Each pair differs in at least one of the three features
+# get_atomtype consults, so the order of ATOMTYPES['Ar'].specific cannot change any answer.
+ATOMTYPES['Ar0e'] = AtomType('Ar0e', generic=['R', 'R!H', 'R!H!Val7', 'Rx', 'Rx!H', 'Ar'], specific=[],
+                            single=[0], all_double=[0], r_double=[0], o_double=[0], s_double=[0], triple=[0], quadruple=[0], benzene=[0], lone_pairs=[3], charge=[0])
 ATOMTYPES['Ar+'] = AtomType('Ar+', generic=['R', 'R!H', 'R!H!Val7', 'Rx', 'Rx!H', 'Ar'], specific=[],
                             single=[0,1], all_double=[0], r_double=[0], o_double=[0], s_double=[0], triple=[0], quadruple=[0], benzene=[0], lone_pairs=[3], charge=[1])
 ATOMTYPES['Ar++'] = AtomType('Ar++', generic=['R', 'R!H', 'R!H!Val7', 'Rx', 'Rx!H', 'Ar'], specific=[],
@@ -869,6 +888,16 @@ ATOMTYPES['Ar0'].set_actions(increment_bond=[], decrement_bond=[], form_bond=[],
 # back on Ar+ / Ar0, and those entries are outside this atom type. Adding one side alone would open
 # a one-way edge, which TestActionGraphClosure refuses.
 ATOMTYPES['Ar0s'].set_actions(increment_bond=[], decrement_bond=[], form_bond=[], break_bond=[], increment_radical=[], decrement_radical=[], increment_lone_pair=[], decrement_lone_pair=[], increment_charge=[], decrement_charge=[])
+# Ar0e declares no action edges, as Ar0s does not. Measured on a concrete u2 p3 c0 argon atom, the
+# single actions that land anywhere at all land on a SIBLING: GAIN_CHARGE gives Ar+, and FORM_BOND
+# gives Ar0s. Declaring either would need its inverse (Ar+ `decrement_charge`, Ar0s `break_bond`)
+# written back on that sibling, which is outside this atom type; declaring one side alone is the
+# one-way edge TestActionGraphClosure refuses. GAIN_PAIR, LOSE_PAIR and LOSE_CHARGE land on states
+# no argon type owns. The only edges declarable here without touching a sibling are the radical
+# self-edges (GAIN_RADICAL and LOSE_RADICAL both return Ar0e, since perception ignores u), and the
+# whole argon family already omits those -- Ar0, Ar+ and Ar++ each map to themselves under
+# GAIN_RADICAL and each declare `increment_radical=[]`.
+ATOMTYPES['Ar0e'].set_actions(increment_bond=[], decrement_bond=[], form_bond=[], break_bond=[], increment_radical=[], decrement_radical=[], increment_lone_pair=[], decrement_lone_pair=[], increment_charge=[], decrement_charge=[])
 ATOMTYPES['Ar+'].set_actions(increment_bond=[], decrement_bond=[], form_bond=[], break_bond=[], increment_radical=[], decrement_radical=[], increment_lone_pair=['Ar0'], decrement_lone_pair=[], increment_charge=['Ar++'], decrement_charge=['Ar0'])
 ATOMTYPES['Ar++'].set_actions(increment_bond=[], decrement_bond=[], form_bond=[], break_bond=[], increment_radical=[], decrement_radical=[], increment_lone_pair=[], decrement_lone_pair=[], increment_charge=[], decrement_charge=['Ar+'])
 

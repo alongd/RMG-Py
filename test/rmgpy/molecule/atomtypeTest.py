@@ -153,7 +153,12 @@ class TestAtomType:
     # `ux` as u0, builds `Ar u0 p3 {H,S}`, and update_charge then makes that a cation -- which the
     # generator itself correctly refuses against Ar0s's declared charge=[0]. This is a limitation
     # of the sample generator, not of the atom type; see docs/i213-bonded-argon-atomtype/report.md.
-    EXPECTED_FAILING_ATOMTYPES = ["O4b", "S4b", "Ar0s"]
+    # Ar0e joins Ar0s here for the same measured reason, not a new one: make_sample_atom takes the
+    # first entry of each feature list and has no rule for picking `u`, so it builds Ar at p3 with
+    # radical_electrons=0, whose update_charge gives c+2 against the type's declared c0. Balancing a
+    # bond-free neutral argon at p3 needs u2, and the sample builder cannot choose it. See I-222 and
+    # docs/i222-metastable-argon-atomtype/report.md.
+    EXPECTED_FAILING_ATOMTYPES = ["O4b", "S4b", "Ar0s", "Ar0e"]
 
     def test_make_sample_molecule(self):
         """
@@ -1419,17 +1424,22 @@ class TestArgonSingleBondNarrowing:
         assert [atom.atomtype.label for atom in ar2_cation.atoms] == ["Ar0s", "Ar+"]
         assert ar2_cation.get_net_charge() == 1
 
-    def test_bond_free_triplet_argon_has_no_atom_type(self):
+    def test_bond_free_triplet_argon_types_as_ar0e_not_ar0s(self):
         """
         ``Ar u2 p3 c0`` is the one bond-free state that balanced against Ar0s's declared charge,
-        so it is the state a widened ``single`` would hand to Ar0s. It must have no type at all.
+        so it is the state a widened ``single`` would hand to Ar0s. It must never be Ar0s.
+
+        BEHAVIOUR CHANGED DELIBERATELY by I-222 (commit ``__I222_COMMIT__``, branch
+        i222-metastable-argon-atomtype). As written for I-218 this test asserted that the atom had
+        no type at all -- correct while the narrowing had made room for a metastable type that did
+        not yet exist. I-222 supplies that type, ``Ar0e``, so the assertion moves from "no type" to
+        "the metastable type, and specifically not Ar0s". What this test pins is unchanged: the
+        bond-free p3 neutral does not belong to Ar0s. See docs/i222-metastable-argon-atomtype/report.md.
         """
-        from rmgpy.exceptions import AtomTypeError
         from rmgpy.molecule import Atom
 
         atom = Atom(element="Ar", radical_electrons=2, lone_pairs=3, charge=0)
-        with pytest.raises(AtomTypeError):
-            get_atomtype(atom, {})
+        assert get_atomtype(atom, {}).label == "Ar0e"
 
     def test_bond_free_neutral_argon_still_belongs_to_ar0(self):
         """The other side of the same boundary: Ar0 keeps the closed-shell bond-free atom."""
@@ -1438,17 +1448,220 @@ class TestArgonSingleBondNarrowing:
         atom = Atom(element="Ar", radical_electrons=0, lone_pairs=4, charge=0)
         assert get_atomtype(atom, {}).label == "Ar0"
 
-    def test_untypeable_argon_degrades_to_generic_R_when_typing_is_tolerant(self):
+    def test_metastable_argon_no_longer_degrades_to_generic_R_when_typing_is_tolerant(self):
         """
-        Records a HAZARD, not a desideratum. ``Molecule.update_atomtypes`` catches AtomTypeError
-        and assigns ``ATOMTYPES['R']`` when ``raise_exception`` is False, with the logging gated
-        behind a separate ``log_species`` flag -- so an untypeable atom can silently become the
-        wildcard that matches everything. ``Species.get_resonance_hybrid`` passes both flags off.
-        This test exists so that whoever adds an argon metastable type sees the consequence in CI
-        rather than in a generated model; if the silent fallback is ever fixed, change it.
+        BEHAVIOUR CHANGED DELIBERATELY by I-222 (commit ``__I222_COMMIT__``, branch
+        i222-metastable-argon-atomtype), on this test's own written instruction. As written for
+        I-218 it asserted ``"R"`` and its docstring said: "This test exists so that whoever adds an
+        argon metastable type sees the consequence in CI rather than in a generated model; if the
+        silent fallback is ever fixed, change it." I-222 is that ticket, and ``Ar0e`` is that type.
+
+        The hazard the old assertion recorded is real and is NOT fixed here: ``Molecule.update_atomtypes``
+        still catches AtomTypeError and assigns ``ATOMTYPES['R']`` when ``raise_exception`` is False,
+        with the logging gated behind a separate ``log_species`` flag, and ``Species.get_resonance_hybrid``
+        still passes both flags off. What changed is only that ``Ar u2 p3 c0`` is no longer untypeable,
+        so it no longer reaches that fallback. Any argon state that IS still untypeable degrades to
+        the wildcard exactly as before -- ``TestMetastableArgonAtomType`` below keeps that path
+        pinned on an argon state that still has no type. This class keeps its original five tests;
+        the replacement coverage lives in the new class rather than here.
+        See docs/i222-metastable-argon-atomtype/report.md.
         """
         from rmgpy.molecule import Atom
 
         molecule = Molecule(atoms=[Atom(element="Ar", radical_electrons=2, lone_pairs=3, charge=0)])
         molecule.update_atomtypes(log_species=False, raise_exception=False)
+        assert molecule.atoms[0].atomtype.label == "Ar0e"
+
+
+class TestMetastableArgonAtomType:
+    """
+    Pins ``Ar0e`` -- the bond-free neutral argon at three lone pairs, i.e. metastable argon Ar*.
+
+    Every assertion here names the atom type it expects. A test that merely asserted "nothing
+    raised" would pass on the generic wildcard ``R``, which is what ``Molecule.update_atomtypes``
+    silently assigns when perception fails and ``raise_exception`` is False -- the exact failure
+    mode this type was added to remove. See docs/i222-metastable-argon-atomtype/report.md.
+    """
+
+    ADJLIST = "1 Ar u2 p3 c0"
+
+    def test_declaration_is_the_bond_free_p3_neutral(self):
+        """
+        Value-assert the declaration. atomtype.py is cythonized, so a stale ``.so`` is what a green
+        suite alone would hide; asserting the loaded values is what catches it.
+        """
+        from rmgpy.molecule.atomtype import ATOMTYPES
+
+        at = ATOMTYPES["Ar0e"]
+        assert at.single == [0]
+        assert at.all_double == [0]
+        assert at.triple == [0]
+        assert at.quadruple == [0]
+        assert at.benzene == [0]
+        assert at.lone_pairs == [3]
+        assert at.charge == [0]
+
+    def test_metastable_argon_builds_as_a_molecule(self):
+        """The ordinary path: what raised AtomTypeError before I-222 now builds and types as Ar0e."""
+        molecule = Molecule().from_adjacency_list(self.ADJLIST)
+        assert molecule.atoms[0].atomtype.label == "Ar0e"
+        assert molecule.get_net_charge() == 0
+        assert molecule.multiplicity == 3
+
+    def test_metastable_argon_builds_as_a_species(self):
+        """The same through Species, which is the object a model actually carries."""
+        from rmgpy.species import Species
+
+        species = Species().from_adjacency_list(self.ADJLIST)
+        assert [atom.atomtype.label for atom in species.molecule[0].atoms] == ["Ar0e"]
+
+    def test_tolerant_typing_yields_ar0e_and_not_the_wildcard(self):
+        """
+        The second bad outcome I-222 removes. Before, the tolerant path
+        (``raise_exception=False``, the flags ``Species.get_resonance_hybrid`` passes) assigned the
+        universal wildcard ``R`` to this atom, which then matched radical-bearing templates as a
+        wildcard rather than as argon.
+        """
+        molecule = Molecule().from_adjacency_list(self.ADJLIST, raise_atomtype_exception=False)
+        molecule.update_atomtypes(log_species=False, raise_exception=False)
+        assert molecule.atoms[0].atomtype.label == "Ar0e"
+        assert molecule.atoms[0].atomtype.label != "R"
+
+    def test_untypeable_argon_still_degrades_to_the_wildcard(self):
+        """
+        The hazard ``TestArgonSingleBondNarrowing`` used to carry on ``Ar u2 p3 c0``, kept alive on
+        an argon state that no atom type owns -- the argon anion, since every argon type declares a
+        non-negative charge. I-222 did not fix the silent fallback; it only made one specific atom
+        stop reaching it.
+
+        The atom is built at c-1 rather than at some odd lone-pair count because
+        ``update_atomtypes`` runs ``update_lone_pairs`` first, which recomputes p from the charge
+        and the radicals; a bogus p is silently corrected before perception ever sees it.
+        """
+        from rmgpy.molecule import Atom
+
+        molecule = Molecule(atoms=[Atom(element="Ar", radical_electrons=0, lone_pairs=3, charge=-1)])
+        molecule.update_atomtypes(log_species=False, raise_exception=False)
         assert molecule.atoms[0].atomtype.label == "R"
+
+    def test_no_two_argon_types_can_match_one_atom(self):
+        """
+        Mutual exclusivity, generated from the declarations rather than argued in prose.
+
+        ``get_atomtype`` consults bond counts, lone pairs and charge only, and returns the FIRST
+        entry of ``ATOMTYPES['Ar'].specific`` whose every feature range contains the atom's value.
+        So two argon types are safe iff no assignment of features satisfies both -- which also makes
+        the order of that list unable to change any answer.
+        """
+        from itertools import combinations, product
+
+        from rmgpy.molecule.atomtype import ATOMTYPES
+
+        features = ("single", "all_double", "r_double", "o_double", "s_double",
+                    "triple", "quadruple", "benzene", "lone_pairs", "charge")
+        labels = ["Ar0", "Ar0s", "Ar0e", "Ar+", "Ar++"]
+
+        def admits(label):
+            at = ATOMTYPES[label]
+            return {f: set(getattr(at, f)) for f in features}
+
+        for a, b in combinations(labels, 2):
+            ranges_a, ranges_b = admits(a), admits(b)
+            # An empty range is a wildcard: it constrains nothing and cannot separate two types.
+            separating = [f for f in features
+                          if ranges_a[f] and ranges_b[f] and not (ranges_a[f] & ranges_b[f])]
+            assert separating, (
+                f"{a} and {b} can match the same atom: no feature separates them "
+                f"({ {f: (sorted(ranges_a[f]), sorted(ranges_b[f])) for f in features} })"
+            )
+
+    def test_each_realizable_argon_atom_types_specifically(self):
+        """The exclusivity argument driven through get_atomtype on the concrete atoms themselves."""
+        from rmgpy.molecule import Atom, Bond
+
+        # bond-free ground state, metastable, cation, dication
+        for radicals, pairs, charge, expected in (
+            (0, 4, 0, "Ar0"),
+            (2, 3, 0, "Ar0e"),
+            (1, 3, 1, "Ar+"),
+            (0, 3, 2, "Ar++"),
+        ):
+            atom = Atom(element="Ar", radical_electrons=radicals, lone_pairs=pairs, charge=charge)
+            assert get_atomtype(atom, {}).label == expected
+
+        # the singly-bonded neutral, which is the Ar0s half of Ar2+
+        bonded = Atom(element="Ar", radical_electrons=1, lone_pairs=3, charge=0)
+        partner = Atom(element="Ar", radical_electrons=0, lone_pairs=3, charge=1)
+        assert get_atomtype(bonded, {partner: Bond(bonded, partner, order=1)}).label == "Ar0s"
+
+    def test_only_u2_is_constructible_at_p3_c0(self):
+        """
+        ``get_atomtype`` ignores radical electrons entirely, so ``Ar0e`` cannot discriminate by u.
+        What refuses the other u states is the adjacency list's valency check, not perception --
+        measured here through the path that actually rejects them.
+        """
+        from rmgpy.exceptions import InvalidAdjacencyListError
+
+        assert Molecule().from_adjacency_list("1 Ar u2 p3 c0").atoms[0].atomtype.label == "Ar0e"
+        for u in (0, 1, 3, 4):
+            with pytest.raises(InvalidAdjacencyListError):
+                Molecule().from_adjacency_list(f"1 Ar u{u} p3 c0")
+
+    def test_perception_admits_unrealizable_u_states(self):
+        """
+        Records a HAZARD, not a desideratum, and the one behaviour I-222 knowingly widens.
+
+        Because perception ignores u, ``Ar0e`` answers for ``u1 p3 c0`` and ``u3 p3 c0`` as well --
+        states no molecule can hold (the test above shows the adjacency list refuses them). Before
+        I-222 those raised AtomTypeError. They are reachable only mid-recipe, e.g. LOSE_CHARGE
+        applied to Ar+ leaves u1 p3 c0, which now types as Ar0e instead of erroring. Nothing in the
+        declaration can exclude them; if that silence ever costs something, this is the test to read.
+        """
+        from rmgpy.molecule import Atom
+
+        for radicals in (1, 3):
+            atom = Atom(element="Ar", radical_electrons=radicals, lone_pairs=3, charge=0)
+            assert get_atomtype(atom, {}).label == "Ar0e"
+
+    def test_ar0e_declares_no_action_edges(self):
+        """
+        All ten action lists are empty, as Ar0s's are. Every action that lands anywhere lands on a
+        sibling (GAIN_CHARGE gives Ar+, FORM_BOND gives Ar0s), and declaring either without its
+        inverse on that sibling is the one-way edge ``TestActionGraphClosure`` refuses; the sibling
+        entries are outside this ticket. The closure of the graph itself is checked there, not here.
+        """
+        from rmgpy.molecule.atomtype import ATOMTYPES
+
+        at = ATOMTYPES["Ar0e"]
+        for action in ("increment_bond", "decrement_bond", "form_bond", "break_bond",
+                       "increment_radical", "decrement_radical", "increment_lone_pair",
+                       "decrement_lone_pair", "increment_charge", "decrement_charge"):
+            assert getattr(at, action) == [], f"Ar0e declares a {action} edge"
+
+    def test_ar0e_is_linked_into_the_type_hierarchy_both_ways(self):
+        """
+        get_atomtype only ever returns entries of ``ATOMTYPES['Ar'].specific``, and a group written
+        against a generic label only reaches the leaf if the leaf is in that generic's specific
+        list. Both directions are asserted, for Ar and for each generic Ar0 already carries.
+        """
+        from rmgpy.molecule.atomtype import ATOMTYPES
+
+        ar0e = ATOMTYPES["Ar0e"]
+        for generic in ("Ar", "R", "R!H", "R!H!Val7", "Rx", "Rx!H"):
+            assert ATOMTYPES[generic] in ar0e.generic, f"Ar0e does not name {generic} as generic"
+            assert ar0e in ATOMTYPES[generic].specific, f"{generic} does not list Ar0e as specific"
+        assert ar0e.is_specific_case_of(ATOMTYPES["Ar"])
+
+    def test_ar0e_is_usable_as_a_group_adjacency_list_label(self):
+        """The label is a dictionary key that a group definition writes verbatim."""
+        from rmgpy.molecule.group import Group
+
+        group = Group().from_adjacency_list("1 *1 Ar0e u2 p3 c0")
+        assert [at.label for at in group.atoms[0].atomtype] == ["Ar0e"]
+
+        molecule = Molecule().from_adjacency_list(self.ADJLIST)
+        assert molecule.is_subgraph_isomorphic(group)
+
+        # and the generic argon group still reaches it
+        generic = Group().from_adjacency_list("1 *1 Ar ux px cx")
+        assert molecule.is_subgraph_isomorphic(generic)
