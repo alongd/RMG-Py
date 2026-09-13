@@ -1429,7 +1429,7 @@ class TestArgonSingleBondNarrowing:
         ``Ar u2 p3 c0`` is the one bond-free state that balanced against Ar0s's declared charge,
         so it is the state a widened ``single`` would hand to Ar0s. It must never be Ar0s.
 
-        BEHAVIOUR CHANGED DELIBERATELY by I-222 (commit ``__I222_COMMIT__``, branch
+        BEHAVIOUR CHANGED DELIBERATELY by I-222 (commit 8a8ce2751, branch
         i222-metastable-argon-atomtype). As written for I-218 this test asserted that the atom had
         no type at all -- correct while the narrowing had made room for a metastable type that did
         not yet exist. I-222 supplies that type, ``Ar0e``, so the assertion moves from "no type" to
@@ -1450,7 +1450,7 @@ class TestArgonSingleBondNarrowing:
 
     def test_metastable_argon_no_longer_degrades_to_generic_R_when_typing_is_tolerant(self):
         """
-        BEHAVIOUR CHANGED DELIBERATELY by I-222 (commit ``__I222_COMMIT__``, branch
+        BEHAVIOUR CHANGED DELIBERATELY by I-222 (commit 8a8ce2751, branch
         i222-metastable-argon-atomtype), on this test's own written instruction. As written for
         I-218 it asserted ``"R"`` and its docstring said: "This test exists so that whoever adds an
         argon metastable type sees the consequence in CI rather than in a generated model; if the
