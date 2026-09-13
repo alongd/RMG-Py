@@ -1,0 +1,522 @@
+============================= test session starts ==============================
+collecting ... collected 3499 items / 3380 deselected / 119 selected
+
+test/database/databaseTest.py::TestDatabase::test_kinetics These entries were skipped because too big benzene rings:
+R6H_BBBBB
+These entries were skipped because of an ImplicitBenzeneError:
+R6H_BBBBB
+PASSED
+test/database/databaseTest.py::TestDatabase::test_thermo These entries were skipped because too big benzene rings:
+Cbf-CbfCbfCbf
+Li-OCring
+These entries were skipped because too big benzene rings:
+CsOOOring
+PASSED
+test/database/databaseTest.py::TestDatabase::test_solvation These entries were skipped because too big benzene rings:
+Cbf-CbfCbfCbf
+Cb-O2rs
+Cb-S2rs
+Cb-N3rs
+Cb-N3rd
+Cb-Cr
+Cb-(Cs-Cr)
+Crds-OdN3rsCr
+Cds-OdN3rsCs
+Cds-OdN3rsCd
+Cds-OdN3sCrd
+Crds-OdN3rdCr
+Crds-OdN3rsN3rs
+Cds-OdN3rsN3s
+Crds-OdN3rsN3rd
+Cds-OdN3rsOs
+Cds-Od(Crds-Crd)(OsH)
+Crds-OdCrsOrs
+Cds-OdCrsOs
+Crds-OdCrdsOrs
+Cds-OdCrdsOs
+Crds-OdCrsCrs
+Cds-OdCrsCrs
+Cds-OdCrsCs
+Crds-O2d(Crds-Crd)Crs
+Cds-O2d(Crds-Crd)Cs
+Crds-O2d(Crds-Cd)(Crds-O2d)
+Crds-O2d(Crds-Cd)(Crds-Cd)
+Crds-OdCbCrs
+Crds-OdCb(Crds-Cd)
+Cds-OdCb(Crds-Cd)
+Crds-OdCb(Crds-N3rd)
+Crds-OdCbCb
+Crds-N3rdCbCrs
+Crds-N3rdCbCs
+Crds-N3rdCrsCs
+Crds-N3dCrsCrs
+Crds-N3rd(Crd-N3rd)Cs
+Crds-N3rd(Crd-Crd)Cs
+Crds-N3rdCrdCrd
+Crds-N3rdCrdCd
+Crds-N3rdCrO
+Crds-N3rdCOr
+Crds-N3rdCrS
+Crds-N3rdCSr
+Crds-N3rdCbH
+Crds-N3rdCrdH
+Cds-N3dCrdH
+Crds-N3rdCrsH
+Crds-N3rdN3rsN3s
+Crds-N3rdN3rdN3s
+Crds-N3rdN3rsN5dc
+Crds-N3rdN3rdN5dc
+Crds-N3rdN3rsCr
+Crds-N3rdN3rsC
+Crds-N3rdN3sCr
+Crds-N3rdN3rdCr
+Crds-N3rdN3rdC
+Crds-N3rdNrO
+Crds-N3rdNOr
+Crds-N3rdNrS
+Crds-N3rdNSr
+Crds-N3rdN3rsH
+Crds-N3rdN3rdH
+Crds-N3rdOrH
+Crds-N3rdSrS
+Crds-N3rdSrH
+Crds-N5rdc
+Cds-CrdsHH
+Crds-CrdsOrsH
+Crds-CrdsOrsOs
+Crds-CrdN3rsH
+Crds-CrdN3rdH
+Crds-CrdN5rdcH
+Crds-CrdN3rsN3rd
+Crds-CrdN3sN3rd
+Crds-CrdsS2rH
+Crds-CrdsCrsH
+Cds-CrdsCsH
+Cds-CdsCrsH
+Crds-Crd(Crd-O2d)H
+Crds-Crd(Crd-N3rd)H
+Cds-Cd(Crd-N3rd)H
+Crds-Crds(Crds-Crds)H
+Crds-Crds(Crds-Cds)H
+Cds-Cds(Crds-Crds)H
+Crds-CrdsCbH
+Crds-Crds(Crds-O2d)O2s
+Crds-Crds(Crds-O2d)(O2s-H)
+Crds-Crds(Crds-O2d)(O2s-R)
+Crds-Crds(Cds-O2d)O2rs
+Crds-Crds(Crds-Nr3d)(O2s-H)
+Crds-CrdsCbOrs
+Crds-CrdsCbOs
+Crds-CrdsCsOrs
+Crds-CrdCtOrs
+Crds-CrdsCsS2r
+Cds-CdsCS6dd
+Crds-CrdsCrsCrs
+Crds-CrdsCrsCs
+Cds-CrdsCsCs
+Cds-CdsCrsCs
+Crds-Crd(Crds-O2d)Cs
+Crds-Crd(Crds-N3rd)Cs
+Crds-Crds(Crds-Crds)Cs
+Crds-Cds(Crds-Crds)Crs
+Crds-Crds(Crds-O2d)(Cds-O2d)
+Crds-Crds(Cds-O2d)(Crds-Crds)
+Crds-Crds(Crds-O2d)(Crds-N3rd)
+Crds-Crds(Cds-O2d)(Crds-N3rd)
+Crds-Crds(Crds-Crd)(Crds-N3rd)
+Crds-CrdsCbCrs
+Crds-CrdsCbCs
+Crds-CrdsCb(Crds-O2d)
+Cs-N3rsHHH
+Cs-N3rsOHH
+Crs-NrCbHH
+Cs-NrCbHH
+Crs-N3rsCrsHH
+Cs-N3rsCsHH
+Crs-N3rsCrsCrsH
+Crs-N3sCrsCrsH
+Crs-N3rsCrsCsH
+Crs-OrsOrsHH
+Crs-CrCrHH
+Crs-CrsCrsHH
+Crs-CrdsCrsHH
+Crs-(Crds-Cd)CrsHH
+Crs-(Crds-Crd)CrsHH
+Crs-(Crds-O2d)CrsHH
+Crs-(Crds-Nd)CrsHH
+Crs-(Crds-Nrd)CrsHH
+Crs-(Crds-N3rd)CrsHH
+Crs-(Crds-N3d)CrsHH
+Crs-CrdsCrdsHH
+Crs-CbCrsHH
+Crs-CbCrdsHH
+Crs-CbCbHH
+Crs-CrCrCrH
+Crs-CrsCrsCrsH
+Crs-CrdCrsCrsH
+Crs-(Crd-Cd)CrsCrsH
+Crs-(Crd-Crd)CrsCrsH
+Crs-(Crd-O2d)CrsCrsH
+Crs-CbCrsCrsH
+Crs-CrdCrdCrsH
+Crs-CbCrdCrsH
+Crs-CbCrdCrdH
+Crs-CbCbCrsH
+Crs-CrCrCH
+Crs-CrsCrsCsH
+Crs-CrsCrsCdH
+Crs-CrsCrsCtH
+Crs-CrsCrs(Ct-N3t)H
+Crs-CrsCrs(Ct-Ct)H
+Crs-CrdCrsCsH
+Crs-CrdCrsCdH
+Crs-CrdCrdCsH
+Crs-CrdCrdCdH
+Crs-CbCrsCsH
+Crs-CbCbCsH
+Crs-CrCrCrCr
+Crs-CrsCrsCrsCrs
+Crs-CbCrsCrsCrs
+Crs-CrdCrsCrsCrs
+Crs-CbCrdCrsCrs
+Crs-CrCrCrC
+Crs-CrsCrsCrsCs
+Crs-CbCrsCrsCs
+Crs-CbCrsCrsCd
+Crs-CbCrdCrsCd
+Crs-CbCbCrsCs
+Crs-CrsCrsCrsCd
+Crs-CrsCrsCrs(Cd-O2d)
+Crs-CrdCrsCrsCs
+Crs-(Crd-O2d)CrsCrsCs
+Crs-(Crd-Cd)CrsCrsCs
+Crs-(Crd-Crd)CrsCrsCs
+Crs-CrdCrdCrsCs
+Crs-CrdCrdCbCs
+Crs-CrdCrdCrdCs
+Crs-CrCrCC
+Crs-CrsCrsCsCs
+Crs-CbCrsCsCs
+Crs-CrdCrsCsCs
+Crs-CrdCrdCsCs
+Crs-(Crd-O2d)(Crd-O2d)CsCs
+Crs-CrdCrdCdCs
+Crs-(Crd-O2d)(Crd-O2d)CdCs
+Crs-CrsCrsCdCs
+Cs-(Cds-O2d)(Crds-Crds)CbCs
+Crs-CrsCrsCrs(Os-H)
+Crs-CrsCrsCs(Os-H)
+Crs-CrsCrsCrs(Ors-R)
+Crs-CrsCrsCs(Ors-R)
+Crs-CrsCrsCs(Os-R)
+Crs-CrsCsCs(Ors-R)
+Crs-(Cds-O2d)CrsCrs(Os-H)
+Crs-CCOsOs
+Crs-OrsOrsCC
+Crs-CrOrsOsC
+Crs-COsOsH
+Crs-OrsOrsCH
+Crs-CrOrsOsH
+Crs-CrsCrs(Os-H)H
+Crs-CrsCrs(Ors-R)H
+Crs-CrsCs(Ors-R)H
+Crs-CrsCrs(Os-R)H
+Crs-Crs(Ors-R)HH
+Crs-CrSrHH
+Cs-CS4dHH
+O2d-Crd
+O2rs-CrsCrs
+O2rs-CrsCb
+O2rs-CbCb
+S2rs-CrsCrs
+S2rs-CrdCrd
+S2rs-CrdCb
+S2rs-CbCb
+S6dd-OdOdCrCr
+N3s-CrsHH
+N3s-(Crd-Crd)HH
+N3s-(Crd-N3rd)HH
+N3rs-N3rdCrdH
+N3rs-N3rd(Crd-O2d)H
+N3rs-N3rd(Crd-Cd)H
+N3rs-N3rd(Crd-Nd)H
+N3rs-NrCrCr
+N3rs-NrCrCb
+N3rs-Nr(Crd-O2d)Cb
+N3rs-NrCrC
+N3rs-NCrCr
+N3rs-N3dCrCr
+N3rs-(N3d-O2d)CrCr
+N3rs-N5dcCrCr
+N3rs-NrNrC
+N3rs-NrNrO
+N3rs-N3rdN3rdO
+N3rs-N3rdN3rd(O2s-H)
+N3rs-CrsCrsH
+N3rs-CbCrsH
+N3rs-CbCbH
+N3rs-(Crd-N3rd)CrsH
+N3rs-(Crd-Crd)CbH
+N3s-(Crd-Crd)CbH
+N3rs-(Crd-N3rd)CbH
+N3s-(Crd-N3rd)CbH
+N3rs-(Crd-Crd)(Crd-Crd)H
+N3rs-(Crd-N3rd)(Crd-Crd)H
+N3rs-(Crd-O2d)(Crd-Crd)H
+N3s-(Cd-O2d)(Crd-Crd)H
+N3rs-(Crd-Sd)(Crd-Crd)H
+N3rs-(Crd-O2d)(Crd-O2d)H
+N3rs-(Crd-O2d)(Crd-N3rd)H
+N3s-(Cd-O2d)(Crd-N3rd)H
+N3rs-(Crd-O2d)(Crd-Sd)H
+N3s-CrS6ddH
+N3s-CrdS6ddH
+N3rs-CrsCrsCrs
+N3rs-CrsCrsCs
+N3rs-Cb(Cd-O2d)(Crd-Crd)
+N3rs-CbCbCs
+N3rs-(Crd-N3rd)CrsCrs
+N3s-(Crd-N3rd)CsCs
+N3rs-(Crd-O2d)CrsCrs
+N3rs-(Cd-O2d)CrsCrs
+N3rs-(Crd-O2d)CrsCs
+N3rs-(Crd-Crd)CrsCs
+N3s-(Crd-Crd)CsCs
+N3rs-(Crd-O2d)CbCrs
+N3rs-(Crd-O2d)CbCs
+N3rs-(Cd-O2d)CbCrs
+N3rs-(Crd-Crd)CbCs
+N3rs-(Crd-Nrd)CbCs
+N3rs-(Crd-O2d)(Crd-O2d)Cs
+N3rs-(Crd-O2d)(Cd-O2d)Crs
+N3rs-(Crd-O2d)(Crd-Crd)Cs
+N3rs-(Crd-O2d)(Crd-Nrd)Cs
+N3rs-(Crd-Crd)(Crd-Crd)Cs
+N3rs-(Crd-Crd)(Crd-Nrd)Cs
+N3rs-(Crd-Crd)(Crd-S2d)Cs
+N3rs-(Crd-Nrd)(Crd-Nrd)Cs
+N3rd-CrdN3rd
+N3rd-Crd(Or-R)
+N3rd-CrdS2rs
+N3rd-CrdCrs
+N3rd-CrdCb
+N3rd-Crd(Crd-O2d)
+N3rd-Crd(Crd-N3rd)
+N3d-Cd(Crd-N3rd)
+N3rd-Crd(Crd-Crd)
+N3rd-N3rdN3rs
+N3rd-N3rd(N3rd-Crd)
+N5dc-OdO0sc(Crd-Crd)
+N5dc-OdO0sc(Crd-N3rd)
+N5dc-CdO0sc(Crd-Crd)
+Li-OCring
+These entries were skipped because too big benzene rings:
+s2_6_6_s2_6_6_s2_6_6_benzacridine1
+s2_6_6_s2_6_6_s2_6_6_benzacridine2
+s2_6_6_s2_6_6_s2_6_6_benzacridine3
+s2_6_6_s2_6_6_s2_6_6_benzacridine4
+s2_6_6_s2_6_6_s2_6_6_benzacridine5
+s2_6_6_s2_6_6_s2_6_6_benzacridine
+s2_6_7_ben_s2_7_6_ben_iminodibenzyl1
+s2_6_7_ben_s2_7_6_ben_iminodibenzyl2
+s2_6_7_ben_s2_7_6_ben_iminodibenzyl3
+s2_6_7_ben_s2_7_6_ben_iminodibenzyl4
+s2_6_7_ben_s2_7_6_ben_iminodibenzyl5
+s2_6_7_ben_s2_7_6_ben_iminodibenzyl6
+s2_6_7_ben_s2_7_6_ben_iminodibenzyl
+s2_6_6_s2_6_6_aromatic1
+s2_6_6_s2_6_6_aromatic2
+s2_6_6_s2_6_6_aromatic3
+s2_6_6_s2_6_6_aromatic4
+s2_6_6_s2_6_6_all_ben
+s2_6_6_s2_6_6_heteroaromatic
+s2_5_6_heteroaromatic1
+s2_5_6_heteroaromatic2
+s2_5_6_heteroaromatic3
+s2_5_6_purine1
+s2_5_6_purine2
+s2_5_6_purine3
+s2_5_6_purine4
+s2_5_6_purine5
+s2_5_6_purine6
+s2_5_6_purine7
+s2_5_6_purine8
+s2_5_6_purine
+s2_5_6_hypoxanthine1
+s2_5_6_hypoxanthine2
+s2_5_6_hypoxanthine
+s2_5_6_heteroaromatic
+s2_6_6_ben_heteroaromatic1
+s2_6_6_ben_heteroaromatic2
+s2_6_6_ben_heteroaromatic3
+s2_6_6_ben_heteroaromatic4
+s2_6_6_quinoline1
+s2_6_6_quinoline2
+s2_6_6_8-Hydroxyquinoline1
+s2_6_6_8-Hydroxyquinoline2
+s2_6_6_8-Hydroxyquinoline
+s2_6_6_quinoline_nitro1
+s2_6_6_quinoline_nitro2
+s2_6_6_quinoline_nitro
+s2_6_6_quinoline
+s2_6_6_isoquinoline1
+s2_6_6_isoquinoline2
+s2_6_6_isoquinoline
+s2_6_6_ben_heteroaromatic
+These entries were skipped because too big benzene rings:
+F-(Crd-CrdCr)
+F-(Crd-CrdCrd)
+F-(Cd-CrdNr)
+F-(Crd-N3rd)
+Cl-(Crs-CrsCrsZ)
+Cl-(Crs-CrsCrsH)
+Cl-(Crs-CrsCrsX)
+Cl-(Crs-CrsCrsF)
+Cl-(Crs-CrsCrsCl)
+Cl-(Crs-CrCrCr)
+Cl-(Crd-CrdCr)
+Cl-(Crd-CrdCrs)
+Cl-(Crd-CrdCrd)
+Cl-(Crd-Crd(Crd-Crd))
+Cl-(Crd-Crd(Crd-Nrd))
+Cl-(Crd-Crd(Crd-O2d))
+Cl-(Crd-CrdNr)
+Cl-(Crd-CrdSr)
+Cl-(Crd-NrdCr)
+Cl-(Crd-NrdNr)
+Br-(Crd-CrdCrd)
+Br-(Crd-CrdN3rd)
+Br-(Crd-CrdO2rs)
+Br-(Crd-N3rdN3rd)
+I-(Crd-CrdCr)
+I-(Crd-CrdNr)
+I-(Crd-NrdNr)
+PASSED
+test/database/databaseTest.py::TestDatabase::test_statmech PASSED
+test/database/databaseTest.py::TestDatabase::test_transport PASSED
+test/database/databaseTest.py::TestDatabase::test_metal_libraries PASSED
+test/rmgpy/data/kinetics/cationReverseElectronSignTest.py::TestCationReverseElectronSign::test_reaction_shape_and_direction PASSED
+test/rmgpy/data/kinetics/cationReverseElectronSignTest.py::TestCationReverseElectronSign::test_net_electron_change_is_minus_one PASSED
+test/rmgpy/data/kinetics/cationReverseElectronSignTest.py::TestCationReverseElectronSign::test_reactant_side_electron_participation_is_one PASSED
+test/rmgpy/data/kinetics/cationReverseElectronSignTest.py::TestCationReverseElectronSign::test_molecularity_counts_the_consumed_electron PASSED
+test/rmgpy/data/kinetics/cationReverseElectronSignTest.py::TestCationReverseElectronSign::test_expanded_equation_balances_in_E_and_charge PASSED
+test/rmgpy/data/kinetics/neutralReactantTest.py::TestChargedReactantFamiliesUnaffected::test_charge_consuming_family_still_accepts_charged_reactants[Cation_R_Recombination] PASSED
+test/rmgpy/data/kinetics/neutralReactantTest.py::TestChargedReactantFamiliesUnaffected::test_charge_consuming_family_still_accepts_charged_reactants[Cation_Addition_MultipleBond] PASSED
+test/rmgpy/data/kinetics/neutralReactantTest.py::TestChargedReactantFamiliesUnaffected::test_charge_consuming_family_still_accepts_charged_reactants[Surface_Proton_Electron_Reduction_Alpha] PASSED
+test/rmgpy/data/kinetics/neutralReactantTest.py::TestChargedReactantFamiliesUnaffected::test_charge_consuming_family_still_accepts_charged_reactants[Surface_Proton_Electron_Reduction_Beta] PASSED
+test/rmgpy/data/kinetics/neutralReactantTest.py::TestChargedReactantFamiliesUnaffected::test_shipped_attachment_family_is_armed_by_the_database PASSED
+test/rmgpy/data/kinetics/neutralReactantTest.py::TestChargedReactantFamiliesUnaffected::test_shipped_attachment_family_still_generates_neutral_attachment PASSED
+test/rmgpy/data/kinetics/neutralReactantTest.py::TestChargedReactantFamiliesUnaffected::test_shipped_attachment_family_generates_no_dianion PASSED
+test/rmgpy/data/kinetics/plasmaAttachmentGenerationTest.py::TestPlasmaAttachmentGeneration::test_attachment_reaction_is_generated PASSED
+test/rmgpy/data/kinetics/plasmaAttachmentGenerationTest.py::TestPlasmaAttachmentGeneration::test_reaction_is_o2_plus_electron_to_superoxide PASSED
+test/rmgpy/data/kinetics/plasmaAttachmentGenerationTest.py::TestPlasmaAttachmentGeneration::test_provenance_is_the_family_not_a_library PASSED
+test/rmgpy/data/kinetics/plasmaAttachmentGenerationTest.py::TestPlasmaAttachmentGeneration::test_reaction_consumes_one_electron PASSED
+test/rmgpy/data/kinetics/plasmaAttachmentGenerationTest.py::TestPlasmaAttachmentGeneration::test_molecularity_is_correct PASSED
+test/rmgpy/data/kinetics/plasmaAttachmentGenerationTest.py::TestPlasmaAttachmentGeneration::test_rate_coefficient_units_match_the_molecularity PASSED
+test/rmgpy/data/kinetics/plasmaAttachmentGenerationTest.py::TestPlasmaAttachmentGeneration::test_reactant_is_neutral_and_product_is_anionic PASSED
+test/rmgpy/data/kinetics/plasmaAttachmentGenerationTest.py::TestPlasmaAttachmentGeneration::test_charged_reactant_rejection_is_active PASSED
+test/rmgpy/data/kinetics/plasmaAttachmentGenerationTest.py::TestPlasmaAttachmentGeneration::test_generated_anion_does_not_reattach PASSED
+test/rmgpy/data/kinetics/plasmaAttachmentGenerationTest.py::TestPlasmaAttachmentGeneration::test_family_level_returns_two_identical_reactions PASSED
+test/rmgpy/data/kinetics/plasmaAttachmentGenerationTest.py::TestPlasmaAttachmentGeneration::test_database_level_collapses_to_one PASSED
+test/rmgpy/data/kinetics/plasmaAttachmentGenerationTest.py::TestPlasmaAttachmentGeneration::test_family_is_a_member_of_no_recommended_set PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRealQuarantinedFamily::test_the_family_is_quarantined_with_the_ruling_s_words PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRealQuarantinedFamily::test_the_affected_set_is_enumerated_from_the_database PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRealQuarantinedFamily::test_nothing_was_deleted PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRealQuarantinedFamily::test_the_rates_themselves_were_not_touched PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheDoorLeftOpen::test_the_database_still_loads PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheDoorLeftOpen::test_the_family_is_still_registered_and_still_generates_reactions PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheDoorLeftOpen::test_the_rate_law_still_evaluates PASSED
+test/rmgpy/electronPlacementTest.py::TestAttachmentPlacementDatabase::test_generated_reaction_resolves_nondestructively PASSED
+test/rmgpy/electronPlacementTest.py::TestAttachmentPlacementDatabase::test_molecularity_reconciliation_on_generated_reaction PASSED
+test/rmgpy/electronPlacementTest.py::TestAttachmentPlacementDatabase::test_reactor_autoresolves_canonical_form PASSED
+test/rmgpy/electronPlacementTest.py::TestAttachmentPlacementDatabase::test_reactor_accepts_resolved_view PASSED
+test/rmgpy/electronPlacementTest.py::TestCationRecombinationPlacement::test_00_reaction_is_reverse_generated_and_reversible PASSED
+test/rmgpy/electronPlacementTest.py::TestCationRecombinationPlacement::test_01_electron_placed_on_reactant_side_exactly_once PASSED
+test/rmgpy/electronPlacementTest.py::TestCationRecombinationPlacement::test_02_view_balances_in_charge_and_E_pseudo_element PASSED
+test/rmgpy/electronPlacementTest.py::TestCationRecombinationPlacement::test_03_canonical_reaction_is_not_mutated PASSED
+test/rmgpy/electronPlacementTest.py::TestCationRecombinationPlacement::test_04_view_stays_reversible PASSED
+test/rmgpy/electronPlacementTest.py::TestCationRecombinationPlacement::test_05_reactor_still_refuses_the_reversible_view_by_name PASSED
+test/rmgpy/electronPlacementTest.py::TestNewPlasmaFamiliesDatabase::test_electron_impact_ionization_generated_resolves PASSED
+test/rmgpy/electronPlacementTest.py::TestNewPlasmaFamiliesDatabase::test_radiative_recombination_generated_resolves PASSED
+test/rmgpy/i116IonisationRegistryTest.py::TestStage1LibraryLoads::test_library_carries_exactly_the_one_covered_reaction PASSED
+test/rmgpy/i116IonisationRegistryTest.py::TestStage1LibraryLoads::test_entry_carries_the_real_voronov_fit PASSED
+test/rmgpy/i116IonisationRegistryTest.py::TestStage1LibraryLoads::test_the_loader_propagates_the_rate_law_electron_count PASSED
+test/rmgpy/i116IonisationRegistryTest.py::TestStage1LibraryLoads::test_canonical_form_carries_no_explicit_electron PASSED
+test/rmgpy/i116IonisationRegistryTest.py::TestStage1LibraryLoads::test_the_reaction_is_attributed_to_the_library PASSED
+test/rmgpy/i116IonisationRegistryTest.py::TestStage2ReactionBalances::test_canonical_reaction_balances PASSED
+test/rmgpy/i116IonisationRegistryTest.py::TestStage3ResolvesThroughPlacement::test_view_has_one_reactant_and_two_product_electrons PASSED
+test/rmgpy/i116IonisationRegistryTest.py::TestStage3ResolvesThroughPlacement::test_view_is_the_reactor_facing_form PASSED
+test/rmgpy/i116IonisationRegistryTest.py::TestStage3ResolvesThroughPlacement::test_resolution_leaves_the_canonical_reaction_untouched PASSED
+test/rmgpy/i116IonisationRegistryTest.py::TestStage3ResolvesThroughPlacement::test_view_balances_in_the_electron_pseudo_element PASSED
+test/rmgpy/i116IonisationRegistryTest.py::TestStage4ScalarValidatesAgainstDeclaration::test_scalar_equals_the_declared_net_change PASSED
+test/rmgpy/i116IonisationRegistryTest.py::TestStage4ScalarValidatesAgainstDeclaration::test_a_perturbed_scalar_is_refused_by_name[-1-attachment-shaped] PASSED
+test/rmgpy/i116IonisationRegistryTest.py::TestStage4ScalarValidatesAgainstDeclaration::test_a_perturbed_scalar_is_refused_by_name[0-excitation-shaped] PASSED
+test/rmgpy/i116IonisationRegistryTest.py::TestStage4ScalarValidatesAgainstDeclaration::test_a_perturbed_scalar_is_refused_by_name[2-ionization-shaped] PASSED
+test/rmgpy/i116IonisationRegistryTest.py::TestStage4ScalarValidatesAgainstDeclaration::test_a_disagreeing_rate_law_electron_count_is_refused PASSED
+test/rmgpy/i116IonisationRegistryTest.py::TestRateOrderCrossCheckResolved::test_order_resolves_to_a_real_integer_for_this_kinetics_class PASSED
+test/rmgpy/i116IonisationRegistryTest.py::TestRateOrderCrossCheckResolved::test_the_check_compared_two_numbers PASSED
+test/rmgpy/i116IonisationRegistryTest.py::TestRateOrderCrossCheckResolved::test_the_view_records_agreement_and_not_abstention PASSED
+test/rmgpy/i116IonisationRegistryTest.py::TestRateOrderCrossCheckResolved::test_an_unresolvable_order_is_reported_as_its_own_outcome PASSED
+test/rmgpy/i116IonisationRegistryTest.py::TestOrderComesFromDeclarationNotScalar::test_the_placement_primitive_never_reads_the_scalar PASSED
+test/rmgpy/i116IonisationRegistryTest.py::TestOrderComesFromDeclarationNotScalar::test_the_reactant_count_tracks_the_declaration_with_the_scalar_fixed[declaration0-1] PASSED
+test/rmgpy/i116IonisationRegistryTest.py::TestOrderComesFromDeclarationNotScalar::test_the_reactant_count_tracks_the_declaration_with_the_scalar_fixed[declaration1-3] PASSED
+test/rmgpy/i116IonisationRegistryTest.py::TestStage6ReactorAccepts::test_reactor_accepts_the_canonical_reaction PASSED
+test/rmgpy/i116IonisationRegistryTest.py::TestStage6ReactorAccepts::test_the_accepted_rate_is_the_voronov_coefficient_at_te PASSED
+test/rmgpy/i116IonisationRegistryTest.py::TestStage6ReactorAccepts::test_no_reverse_rate_is_manufactured PASSED
+test/rmgpy/i116IonisationRegistryTest.py::TestStage6ReactorAccepts::test_the_reactor_leaves_the_canonical_reaction_untouched PASSED
+test/rmgpy/i116IonisationRegistryTest.py::TestStage6ReactorAccepts::test_the_reactors_own_validation_is_live_on_this_reaction PASSED
+test/rmgpy/i116IonisationRegistryTest.py::TestUncoveredSpeciesGetsNothing::test_the_library_exposes_no_group_or_template_matcher PASSED
+test/rmgpy/i116IonisationRegistryTest.py::TestUncoveredSpeciesGetsNothing::test_an_uncovered_species_gets_no_reaction[Ar-[Ar]] PASSED
+test/rmgpy/i116IonisationRegistryTest.py::TestUncoveredSpeciesGetsNothing::test_an_uncovered_species_gets_no_reaction[He-[He]] PASSED
+test/rmgpy/i116IonisationRegistryTest.py::TestUncoveredSpeciesGetsNothing::test_the_covered_species_does_get_one_through_the_same_call PASSED
+test/rmgpy/i116IonisationRegistryTest.py::TestUncoveredSpeciesGetsNothing::test_the_lookup_route_does_not_resolve_but_fails_loudly PASSED
+test/rmgpy/i116IonisationRegistryTest.py::TestWrongDeclarationIsRefused::test_a_wrong_declaration_is_refused_against_the_actual_count[wrong0] PASSED
+test/rmgpy/i116IonisationRegistryTest.py::TestWrongDeclarationIsRefused::test_a_wrong_declaration_is_refused_against_the_actual_count[wrong1] PASSED
+test/rmgpy/i116IonisationRegistryTest.py::TestWrongDeclarationIsRefused::test_the_shipped_declaration_is_back_and_still_resolves PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestChargedFamilyReactionsAreNotConfused::test_the_family_is_charged_and_its_reactions_carry_the_declaration PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestChargedFamilyReactionsAreNotConfused::test_its_true_reverse_still_collapses PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestChargedFamilyReactionsAreNotConfused::test_the_same_direction_charge_reversal_survives PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestChargedFamilyReactionsAreNotConfused::test_the_neutral_transformation_over_the_same_heavy_species_survives PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestChargedFamilyReactionsAreNotConfused::test_the_model_keeps_both_through_the_real_path PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestLithiumChargeNetworkReachesTheModel::test_the_two_channels_are_not_a_reverse_pair PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestLithiumChargeNetworkReachesTheModel::test_both_channels_enter_the_model[True] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestLithiumChargeNetworkReachesTheModel::test_both_channels_enter_the_model[False] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestLithiumChargeNetworkReachesTheModel::test_the_cation_has_a_loss_channel_in_the_model PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheLibraryLoadLandmineIsNotReachedFromHere::test_a_loaded_entry_carries_no_owner PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheLibraryLoadLandmineIsNotReachedFromHere::test_the_owner_appears_when_the_entry_becomes_a_library_reaction PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheLibraryLoadLandmineIsNotReachedFromHere::test_one_library_carrying_both_channels_can_be_loaded XFAIL
+test/rmgpy/kinetics/plasmaKineticsConsolidationTest.py::PlasmaKineticsConsolidationTest::test_table_driven_rates_reproduce_origin99 PASSED
+test/rmgpy/preflightDeckFamilyExclusionTest.py::PlasmaDeckFamilyExclusionTest::test_plasma_deck_generates_no_reaction_from_family[docs/i123-integration/input.py] PASSED
+test/rmgpy/preflightDeckFamilyExclusionTest.py::PlasmaDeckFamilyExclusionTest::test_plasma_deck_generates_no_reaction_from_family[docs/i123e-audit/evidence/input_rmsyaml_true.py] PASSED
+test/rmgpy/preflightDeckFamilyExclusionTest.py::PlasmaDeckFamilyExclusionTest::test_plasma_deck_generates_no_reaction_from_family[docs/i169-charge-neutral/after-neutral/input.py] PASSED
+test/rmgpy/preflightDeckFamilyExclusionTest.py::PlasmaDeckFamilyExclusionTest::test_plasma_deck_generates_no_reaction_from_family[docs/i169-charge-neutral/after-nonneutral/input.py] PASSED
+test/rmgpy/preflightDeckFamilyExclusionTest.py::PlasmaDeckFamilyExclusionTest::test_plasma_deck_generates_no_reaction_from_family[docs/i169-charge-neutral/before-nonneutral/input.py] PASSED
+test/rmgpy/preflightDeckFamilyExclusionTest.py::PlasmaDeckFamilyExclusionTest::test_plasma_deck_generates_no_reaction_from_family[docs/i170-steady-state/design-case-lithium.py] PASSED
+test/rmgpy/preflightDeckFamilyExclusionTest.py::PlasmaDeckFamilyExclusionTest::test_plasma_deck_generates_no_reaction_from_family[docs/i194-ar5torr-plasma-lineage/input.py] PASSED
+test/rmgpy/preflightDeckFamilyExclusionTest.py::PlasmaDeckFamilyExclusionTest::test_plasma_deck_generates_no_reaction_from_family[docs/m7-preflight/input.py] PASSED
+test/rmgpy/preflightDeckFamilyExclusionTest.py::PlasmaDeckFamilyExclusionTest::test_plasma_deck_generates_no_reaction_from_family[docs/m7-preflight/input_placement.py] PASSED
+test/rmgpy/preflightDeckFamilyExclusionTest.py::PlasmaDeckFamilyExclusionTest::test_plasma_deck_generates_no_reaction_from_family[docs/m7-preflight/input_secondary.py] PASSED
+test/rmgpy/preflightDeckFamilyExclusionTest.py::ElectrochemicalFamilyPreservedTest::test_family_still_generates_the_sei_reaction PASSED
+test/rmgpy/reactionChargeTransferTest.py::TestRealDatabaseChargeTransferReaction::test_the_families_really_supply_charge_transfer_kinetics PASSED
+test/rmgpy/reactionChargeTransferTest.py::TestRealDatabaseChargeTransferReaction::test_real_rate_rules_evaluate_and_ignore_pressure PASSED
+test/rmgpy/reactionChargeTransferTest.py::TestRealDatabaseChargeTransferReaction::test_evaluation_does_not_mutate_the_stored_records PASSED
+test/rmgpy/reactionChargeTransferTest.py::TestRealDatabaseChargeTransferReaction::test_stored_electron_sign_and_alpha_are_what_the_records_say PASSED
+test/rmgpy/reactionChargeTransferTest.py::TestRealDatabaseChargeTransferReaction::test_real_reactions_evaluate_at_v0_and_ignore_pressure PASSED
+test/rmgpy/reactionChargeTransferTest.py::TestRealDatabaseChargeTransferReaction::test_real_reactions_were_broken_before_the_fix PASSED
+test/rmgpy/reactionMarcusTest.py::TestRealDatabaseMarcusFamily::test_the_family_really_is_all_marcus PASSED
+test/rmgpy/reactionMarcusTest.py::TestRealDatabaseMarcusFamily::test_real_reorganization_energies_are_small PASSED
+test/rmgpy/reactionMarcusTest.py::TestRealDatabaseMarcusFamily::test_real_rate_rules_ignore_pressure_and_answer_to_thermo PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaDatabaseSmokeTest::test_database_loaded_hydrogen_plasma_smoke PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaElectronThermoTest::test_u1_electron_resolves_to_canonical_electron_thermo PASSED
+
+=============================== warnings summary ===============================
+test/rmgpy/electronPlacementTest.py::TestCationRecombinationPlacement::test_00_reaction_is_reverse_generated_and_reversible
+  /home/alon/Code/RMG-Py-i222-metastable-argon-atomtype/rmgpy/data/kinetics/family.py:1155: DeprecationWarning: add_rules_from_training should be only called for non-ATG families, but Cation_R_Recombination is an ATG family. Skip this function call. Calling add_rules_from_training on ATG families may be deprecated in RMG-Py 3.2
+    warnings.warn(f'add_rules_from_training should be only called for non-ATG families, '
+
+test/rmgpy/electronPlacementTest.py::TestCationRecombinationPlacement::test_00_reaction_is_reverse_generated_and_reversible
+  /home/alon/Code/RMG-Py-i222-metastable-argon-atomtype/rmgpy/data/kinetics/family.py:1366: DeprecationWarning: fill_rules_by_averaging_up should be only called for non-ATG families, but Cation_R_Recombination is an ATG family. Skip this function call. Calling fill_rules_by_averaging_up on ATG families may be deprecated in RMG-Py 3.2
+    warnings.warn(f'fill_rules_by_averaging_up should be only called for non-ATG families, '
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=== 118 passed, 3380 deselected, 1 xfailed, 2 warnings in 2308.78s (0:38:28) ===

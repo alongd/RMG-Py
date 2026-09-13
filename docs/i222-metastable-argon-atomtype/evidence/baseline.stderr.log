@@ -1,0 +1,16 @@
+Traceback (most recent call last):
+  File "/home/alon/Code/RMG-Py-i222-metastable-argon-atomtype/logs/probe_baseline.py", line 10, in <module>
+    print("database.directory =", settings.settings.get("database.directory"))
+AttributeError: 'Settings' object has no attribute 'settings'
+ERROR:root:Could not update atomtypes for this molecule:
+multiplicity 3
+1 Ar u2 p3 c0
+
+ERROR:root:Could not update atomtypes for this molecule:
+multiplicity 3
+1 Ar u2 p3 c0
+
+ERROR:root:Could not update atomtypes for this molecule:
+multiplicity 3
+1 Ar u2 p3 c0
+

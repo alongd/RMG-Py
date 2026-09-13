@@ -1,0 +1,16 @@
+database.directory = /home/alon/Code/RMG-database-plasma/input
+loaded atomtype module __file__ = /home/alon/Code/RMG-Py-i222-metastable-argon-atomtype/rmgpy/molecule/atomtype.cpython-39-x86_64-linux-gnu.so
+loaded molecule module __file__ = /home/alon/Code/RMG-Py-i222-metastable-argon-atomtype/rmgpy/molecule/molecule.cpython-39-x86_64-linux-gnu.so
+
+Ar0s.single       = [1]
+Ar0s.lone_pairs   = [3]
+Ar0.lone_pairs    = [4]
+existing Ar types = ['Ar', 'Ar0', 'Ar0s', 'Ar+', 'Ar++']
+
+Molecule().from_adjacency_list('1 Ar u2 p3 c0') -> RAISES AtomTypeError
+    Unable to determine atom type for atom Ar.., which has 0 single bonds, 0 double bonds (0 to O, 0 to S, 0 others), 0 triple bonds, 0 quadruple bonds, 0 benzene bonds, 3 lone pairs, and +0 charge.
+Species().from_adjacency_list('1 Ar u2 p3 c0') -> RAISES AtomTypeError
+    Unable to determine atom type for atom Ar.., which has 0 single bonds, 0 double bonds (0 to O, 0 to S, 0 others), 0 triple bonds, 0 quadruple bonds, 0 benzene bonds, 3 lone pairs, and +0 charge.
+
+tolerant update_atomtypes(log_species=False, raise_exception=False) -> atomtype = R
+  and that argon matches "1 *1 R u[1,2,3,4] px c[0,+1,...]" -> True
