@@ -60,6 +60,7 @@ cdef class TwoTemperaturePlasma(KineticsModel):
     cdef public ScalarQuantity _Ea_g
     cdef public ScalarQuantity _Ea_e
     cdef public ScalarQuantity _T0
+    cdef public ScalarQuantity _electrons
     cdef public bint uses_electron_temperature
 
     cpdef change_t0(self, double T0)

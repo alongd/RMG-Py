@@ -146,12 +146,16 @@ __all__ = [
 #: below. Radiative recombination is a second-order forward channel with a photon;
 #: the true inverse of electron-impact ionisation is three-body recombination
 #: ``A+ + 2 e- -> A + e-``, which would declare ``(2, 1)``. That declaration is
-#: absent because the channel cannot be stored at all — ``TwoTemperaturePlasma``,
-#: the only Te-aware third-order rate law, carries no ``electrons`` field, so such
-#: an entry fails ``KineticsLibrary.load``'s balance check before any question of
-#: data arises. Measured, with what would be needed to lift it, in
-#: ``docs/i119-recombination-loss.md`` in RMG-database — which also carries the
-#: coverage arithmetic that narrows 318 Badnell stages to the single usable Li+.
+#: absent, but the reason narrowed with I-178. It used to be that the channel
+#: could not be stored at all — ``TwoTemperaturePlasma``, the only Te-aware
+#: third-order rate law, carried no ``electrons`` field, so such an entry failed
+#: ``KineticsLibrary.load``'s balance check before any question of data arose.
+#: I-178 gave that class a signed-net ``electrons`` field (below), so the storage
+#: blocker is lifted; what remains absent is this placement declaration and a
+#: sourced third-order coefficient, neither of which I-178 adds. Measured, with
+#: what would be needed to lift it, in ``docs/i119-recombination-loss.md`` in
+#: RMG-database — which also carries the coverage arithmetic that narrows 318
+#: Badnell stages to the single usable Li+.
 #:
 #: The fourth, ``PlasmaElectronImpactIonization``, declares ``(1, 2)`` — one
 #: electron incident, two liberated — and is the only declaration whose two
@@ -273,7 +277,24 @@ RATE_ORDER_UNRESOLVABLE = 'rate-order cross-check: order not resolvable'
 #: different quantity that no declaration in this table speaks to; reconciling it
 #: would be guessing. Kept as a closed list for the same reason
 #: :data:`FAMILY_ELECTRON_PLACEMENT` is.
-_NET_ELECTRON_KINETICS_CLASSES = ('BadnellRRArrhenius', 'VoronovEIArrhenius')
+#:
+#: ``TwoTemperaturePlasma`` (I-178) is the third member, and it qualifies on the
+#: same test the first two do: its ``electrons`` field is documented as the net
+#: change in free electron number, signed to the reaction as written. The
+#: discriminator against the charge-transfer laws is where the field appears in
+#: the rate. Those laws use ``electrons`` as a live parameter of the
+#: Butler-Volmer term ``alpha * electrons * F * (V - V0)``, where it means
+#: "electrons transferred across the interface" and cannot be assumed equal to
+#: the net free-electron change; that entanglement is exactly what makes them
+#: unreconcilable. The Kossyi form ``k = A * Te^n * exp(-Ea_g/RT) *
+#: exp(Ea_e(Te-T)/(R*T*Te))`` carries no electron-count term at all, so its field
+#: has nothing to double as and is pure net-stoichiometry bookkeeping -- the same
+#: quantity as :attr:`Reaction.electrons`, validatable against the declaration
+#: exactly as the reaction scalar is. This is the runtime half of what makes
+#: dissociative and three-body recombination representable; see
+#: ``docs/i119-recombination-loss.md`` in RMG-database for the other half.
+_NET_ELECTRON_KINETICS_CLASSES = ('BadnellRRArrhenius', 'VoronovEIArrhenius',
+                                  'TwoTemperaturePlasma')
 
 
 def _is_electron(spc):
@@ -554,16 +575,16 @@ def resolve_electron_placement(reaction, species_list):
                 reaction, family, kinetics.__class__.__name__))
     #
     #    A kinetics-level electron count is normally a SECOND placement source
-    #    and fatal. The two plasma rate laws are the exception, and only because
-    #    they say so themselves: ``BadnellRRArrhenius.electrons`` and
-    #    ``VoronovEIArrhenius.electrons`` are documented as "the net change in
-    #    free electron number, signed to the reaction as written", i.e. the same
-    #    quantity as ``Reaction.electrons``. For those, the count is validated
-    #    against the declaration exactly as the reaction scalar was at step 5 —
-    #    a third source that must AGREE, not a second one that must be absent.
-    #    Everything else (the charge-transfer forms, whose ``electrons`` counts
-    #    electrons transferred, a different quantity no declaration here speaks
-    #    to) stays refused, unchanged.
+    #    and fatal. The three plasma rate laws are the exception, and only because
+    #    they say so themselves: ``BadnellRRArrhenius.electrons``,
+    #    ``VoronovEIArrhenius.electrons`` and ``TwoTemperaturePlasma.electrons``
+    #    are documented as "the net change in free electron number, signed to the
+    #    reaction as written", i.e. the same quantity as ``Reaction.electrons``.
+    #    For those, the count is validated against the declaration exactly as the
+    #    reaction scalar was at step 5 — a third source that must AGREE, not a
+    #    second one that must be absent. Everything else (the charge-transfer
+    #    forms, whose ``electrons`` counts electrons transferred, a different
+    #    quantity no declaration here speaks to) stays refused, unchanged.
     kinetics_electrons = getattr(kinetics, 'electrons', None)
     if kinetics_electrons and not _declares_net_electron_count(kinetics):
         raise ElectronPlacementError(

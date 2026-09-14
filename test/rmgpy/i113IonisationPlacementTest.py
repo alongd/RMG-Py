@@ -550,13 +550,22 @@ class TestDeclaredFamiliesNumericallyUnchanged:
         spc = _species()
         r = Species(label='CH3').from_smiles('[CH3]')
         rli = Species(label='LiCH3').from_smiles('[Li]C')
+        # I-178 gave TwoTemperaturePlasma a signed-net ``electrons`` field and put
+        # it in ``_NET_ELECTRON_KINETICS_CLASSES``, so the resolver now validates
+        # the rate law's net against the family declaration exactly as it does for
+        # Badnell/Voronov. A net-list rate law attached to a declared family must
+        # therefore declare a consistent net; the generic default of 0 would
+        # (correctly) disagree with this family's -1. Declaring it leaves the
+        # numerics untouched -- electrons does not enter the Kossyi rate form -- so
+        # the view below is still byte-for-byte the base-commit result.
         reaction = TemplateReaction(
             reactants=[spc['Liplus'], r], products=[rli],
             family=RECOMBINATION_FAMILY, electrons=-1, reversible=False,
             is_forward=True,
             kinetics=TwoTemperaturePlasma(A=(1.0e4, 'm^6/(mol^2*s)'), n=-1.0,
                                           Ea_g=(0.0, 'J/mol'),
-                                          Ea_e=(0.0, 'J/mol')))
+                                          Ea_e=(0.0, 'J/mol'),
+                                          electrons=-1))
         view = resolve_electron_placement(reaction, [spc['e'], spc['Liplus'], r, rli])
 
         assert [str(s) for s in view.reactants] == ['Liplus', 'CH3', 'e']
