@@ -1,0 +1,137 @@
+=== databaseTest.py WITH BOTH REPAIRS  2026-09-14T21:44:08+03:00
+branch: databaseTest-cd-atom-type-repair @ 311818121 (off plasma)
+db:     20cfc36cc
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+rootdir: /home/alon/Code/RMG-Py-databaseTest-cd-atom-type-repair
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 6 items
+
+test/database/databaseTest.py::TestDatabase::test_kinetics These entries were skipped because too big benzene rings:
+R6H_BBBBB
+These entries were skipped because of an ImplicitBenzeneError:
+R6H_BBBBB
+PASSED
+test/database/databaseTest.py::TestDatabase::test_thermo These entries were skipped because too big benzene rings:
+Cbf-CbfCbfCbf
+Li-OCring
+These entries were skipped because too big benzene rings:
+CsOOOring
+PASSED
+test/database/databaseTest.py::TestDatabase::test_solvation FAILED
+test/database/databaseTest.py::TestDatabase::test_statmech PASSED
+test/database/databaseTest.py::TestDatabase::test_transport PASSED
+test/database/databaseTest.py::TestDatabase::test_metal_libraries PASSED
+
+=================================== FAILURES ===================================
+_________________________ TestDatabase.test_solvation __________________________
+
+self = <databaseTest.TestDatabase object at 0x7c152bf7ba00>
+
+    def test_solvation(self):
+        for group_name, group in self.database.solvation.groups.items():
+            with check:
+                assert self.general_check_nodes_found_in_tree(
+                    group_name, group
+                ), "Solvation groups {0}: nodes are in the tree with proper parents?".format(group_name)
+    
+            with check:
+                assert self.general_check_groups_nonidentical(group_name, group), "Solvation groups {0}: nodes are nonidentical?".format(group_name)
+    
+            with check:
+                assert self.general_check_child_parent_relationships(
+                    group_name, group
+                ), "Solvation groups {0}: parent-child relationships are correct?".format(group_name)
+    
+            with check:
+                assert self.general_check_siblings_for_parents(group_name, group), "Solvation groups {0}: sibling relationships are correct?".format(
+                    group_name
+                )
+    
+            with check:
+>               assert self.general_check_cd_atom_type(group_name, group), "Solvation groups {0}: Cd atomtype used correctly?".format(group_name)
+
+test/database/databaseTest.py:293: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <databaseTest.TestDatabase object at 0x7c152bf7ba00>
+group_name = 'group'
+group = <rmgpy.data.solvation.SoluteGroups object at 0x7c14f1757070>
+
+        def general_check_cd_atom_type(self, group_name, group):
+            """
+            This test checks that groups containing Cd, CO, CS and Cdd atomtypes are used
+            correctly according to their strict definitions
+            """
+            target_label = ["Cd", "CO", "CS", "Cdd"]
+            target_atom_types = [ATOMTYPES[x] for x in target_label]
+            tst = []
+            for entry_name, entry in group.entries.items():
+                if isinstance(entry.item, Group):
+                    for index, atom in enumerate(entry.item.atoms):
+                        for atomtype1 in atom.atomtype:
+                            if atomtype1 in target_atom_types:
+                                break
+                        else:
+                            # If Cd not found in atomTypes, go to next atom
+                            continue
+                        # figure out what the correct atomtype is
+                        correct_atom_list = []
+                        # A Group bond stores `order` as a list of numbers, never of bond-order
+                        # letters, so the `x.order[0] == "D"` this line used to carry was never
+                        # true: `num_of_d_bonds` was always 0 and this check could not fail for
+                        # anything. The branch below has always used the numeric test; they now agree.
+                        num_of_d_bonds = sum([1 if len(x.order) == 1 and abs(2 - x.order[0]) < 1e-7 else 0 for x in atom.bonds.values()])
+                        if num_of_d_bonds == 2:
+                            correct_atom_list.append("Cdd")
+                        elif num_of_d_bonds == 1:
+                            for ligand, bond in atom.bonds.items():
+                                # Ignore ligands that are not double bonded
+                                if any([abs(2 - order) < 1e-7 for order in bond.order]):
+                                    for lig_atom_type in ligand.atomtype:
+                                        if ligand.atomtype[0].is_specific_case_of(ATOMTYPES["O"]):
+                                            correct_atom_list.append("CO")
+                                        elif ligand.atomtype[0].is_specific_case_of(ATOMTYPES["S"]):
+                                            correct_atom_list.append("CS")
+    
+                        # remove duplicates from correctAtom:
+                        correct_atom_list = list(set(correct_atom_list))
+                        for correctAtom in correct_atom_list:
+                            tst.append(
+                                (
+                                    ATOMTYPES[correctAtom] in atom.atomtype,
+                                    """
+    In group {0}, node {1} is missing the atomtype {2} in atom {3} and may be misusing the atomtype Cd, CO, CS, or Cdd.
+    The following adjList may have atoms in a different ordering than the input file:
+    {4}""".format(
+                                        group_name,
+                                        entry,
+                                        correctAtom,
+                                        index + 1,
+                                        entry.item.to_adjacency_list(),
+                                    ),
+                                )
+                            )
+    
+            boo = False
+            for i in range(len(tst)):
+                if not tst[i][0]:
+                    logging.error(tst[i][1])
+                    boo = True
+    
+            if boo:
+>               raise ValueError("Error Occurred")
+E               ValueError: Error Occurred
+
+test/database/databaseTest.py:2071: ValueError
+------------------------------ Captured log call -------------------------------
+ERROR    root:databaseTest.py:2067 
+In group group, node O2d-Cdd is missing the atomtype CO in atom 2 and may be misusing the atomtype Cd, CO, CS, or Cdd.
+The following adjList may have atoms in a different ordering than the input file:
+1 * O2d u0 {2,D}
+2   Cdd u0 {1,D}
+=========================== short test summary info ============================
+FAILED test/database/databaseTest.py::TestDatabase::test_solvation - ValueErr...
+=================== 1 failed, 5 passed in 310.90s (0:05:10) ====================
+EXIT=1

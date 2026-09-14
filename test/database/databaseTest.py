@@ -1161,7 +1161,11 @@ class TestDatabase:
                         continue
                     # Create list of all the atomTypes that should be present in addition or instead of Cd
                     correct_atom_list = []
-                    num_of_d_bonds = sum([1 if x.order[0] == "D" and len(x.order) == 1 else 0 for x in atom.bonds.values()])
+                    # A Group bond stores `order` as a list of numbers, never of bond-order
+                    # letters, so the `x.order[0] == "D"` this line used to carry was never
+                    # true: `num_of_d_bonds` was always 0 and this check could not fail for
+                    # anything. The branch below has always used the numeric test; they now agree.
+                    num_of_d_bonds = sum([1 if len(x.order) == 1 and abs(2 - x.order[0]) < 1e-7 else 0 for x in atom.bonds.values()])
                     if num_of_d_bonds == 2:
                         correct_atom_list.append("Cdd")
                     elif num_of_d_bonds == 1:
@@ -2021,7 +2025,11 @@ Origin Group AdjList:
                         continue
                     # figure out what the correct atomtype is
                     correct_atom_list = []
-                    num_of_d_bonds = sum([1 if x.order[0] == "D" and len(x.order) == 1 else 0 for x in atom.bonds.values()])
+                    # A Group bond stores `order` as a list of numbers, never of bond-order
+                    # letters, so the `x.order[0] == "D"` this line used to carry was never
+                    # true: `num_of_d_bonds` was always 0 and this check could not fail for
+                    # anything. The branch below has always used the numeric test; they now agree.
+                    num_of_d_bonds = sum([1 if len(x.order) == 1 and abs(2 - x.order[0]) < 1e-7 else 0 for x in atom.bonds.values()])
                     if num_of_d_bonds == 2:
                         correct_atom_list.append("Cdd")
                     elif num_of_d_bonds == 1:

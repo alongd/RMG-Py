@@ -1,0 +1,1 @@
+ERROR conda.cli.main_run:execute(142): `conda run python -m pytest /tmp/claude-1000/redarm/cdAtomTypeTest.py -p no:cacheprovider --no-cov -q` failed. (See above for error)
