@@ -1,0 +1,11 @@
+loaded from: /home/alon/Code/RMG-Py-i222-metastable-argon-atomtype/rmgpy/molecule/atomtype.cpython-39-x86_64-linux-gnu.so
+Ar0e single/lone_pairs/charge: [0] [3] [0]
+Ar0s.single: [1]
+Ar.specific: ['Ar0', 'Ar0s', 'Ar0e', 'Ar+', 'Ar++']
+Ar+.decrement_charge: ['Ar0e', 'Ar0s']
+Ar0.increment_charge: []
+Ar0.decrement_lone_pair: ['Ar++']
+Ar++.increment_lone_pair: ['Ar0']
+Molecule perceived: Ar0e
+Species  perceived: Ar0e
+ground Ar: Ar0

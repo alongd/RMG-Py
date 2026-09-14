@@ -1,0 +1,30 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+cachedir: .pytest_cache
+rootdir: /home/alon/Code/RMG-Py-i222-metastable-argon-atomtype
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 20 items
+
+test/rmgpy/molecule/atomtypeSevenTest.py::test_kept_argon_makes_correct_sample_atom[Ar0] PASSED
+test/rmgpy/molecule/atomtypeSevenTest.py::test_kept_argon_makes_correct_sample_atom[Ar+] PASSED
+test/rmgpy/molecule/atomtypeSevenTest.py::test_kept_argon_makes_correct_sample_atom[Ar++] PASSED
+test/rmgpy/molecule/atomtypeSevenTest.py::test_dropped_types_are_absent[Li-] PASSED
+test/rmgpy/molecule/atomtypeSevenTest.py::test_dropped_types_are_absent[Na-] PASSED
+test/rmgpy/molecule/atomtypeSevenTest.py::test_dropped_types_are_absent[K-] PASSED
+test/rmgpy/molecule/atomtypeSevenTest.py::test_dropped_types_are_absent[N3dc] PASSED
+test/rmgpy/molecule/atomtypeSevenTest.py::test_concrete_argon_species_type_specifically[1 Ar u0 p4 c0-Ar0] PASSED
+test/rmgpy/molecule/atomtypeSevenTest.py::test_concrete_argon_species_type_specifically[1 Ar u1 p3 c+1-Ar+] PASSED
+test/rmgpy/molecule/atomtypeSevenTest.py::test_generic_argon_group_matches_specific_argon_atom PASSED
+test/rmgpy/molecule/atomtypeSevenTest.py::test_argon_action_graph_closes_both_ways PASSED
+test/rmgpy/molecule/atomtypeSevenTest.py::test_argon_leaf_set_is_exactly_these_five PASSED
+test/rmgpy/molecule/atomtypeSevenTest.py::test_added_argon_types_make_correct_sample_atom[Ar0s] PASSED
+test/rmgpy/molecule/atomtypeSevenTest.py::test_added_argon_types_make_correct_sample_atom[Ar0e] PASSED
+test/rmgpy/molecule/atomtypeSevenTest.py::test_added_argon_types_share_one_sample_atom PASSED
+test/rmgpy/molecule/atomtypeSevenTest.py::test_added_argon_types_cannot_make_a_sample_molecule[Ar0s] PASSED
+test/rmgpy/molecule/atomtypeSevenTest.py::test_added_argon_types_cannot_make_a_sample_molecule[Ar0e] PASSED
+test/rmgpy/molecule/atomtypeSevenTest.py::test_argon_leaves_without_a_database_species[Ar0s] PASSED
+test/rmgpy/molecule/atomtypeSevenTest.py::test_argon_leaves_without_a_database_species[Ar0e] PASSED
+test/rmgpy/molecule/atomtypeSevenTest.py::test_argon_leaves_without_a_database_species[Ar++] PASSED
+
+============================== 20 passed in 2.57s ==============================

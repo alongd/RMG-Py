@@ -470,6 +470,17 @@ ATOMTYPES['Ar0s'] = AtomType('Ar0s', generic=['R', 'R!H', 'R!H!Val7', 'Rx', 'Rx!
 # atom at lone_pairs=[4]; Ar0s is the same neutral p3 atom with single=[1] rather than [0]; Ar+ and
 # Ar++ carry charge [1] and [2]. Each pair differs in at least one of the three features
 # get_atomtype consults, so the order of ATOMTYPES['Ar'].specific cannot change any answer.
+#
+# WARNING TO GROUP AUTHORS: THIS LABEL CANNOT CONSTRAIN `u`, SO IT CANNOT MEAN "METASTABLE" ALONE.
+# `Ar0e` constrains lone pairs, charge and bond count -- and nothing else. What makes the species
+# metastable is u2, and u is not part of an atom type. In a MOLECULE adjacency list that is
+# harmless: the valency check refuses every u at p3 c0 except u2. A GROUP adjacency list gets no
+# such check, so `1 Ar0e ux p3 c0` is legal and matches u1 argon -- ordinary, non-metastable,
+# doubly-ionisable argon -- as readily as the u2 metastable it appears to name. Measured: at p3 c0
+# that spelling matches u1 and u2 (u0 renormalises to p4 and types Ar0; u3 and u4 fall to generic
+# R). See docs/i222-metastable-argon-atomtype/evidence/probe_spar48.stdout.log and
+# test_group_spelled_ar0e_matches_more_than_the_metastable_triplet in atomtypeTest.py.
+# A group that means metastable argon must write `u2` explicitly: `1 Ar0e u2 p3 c0`.
 ATOMTYPES['Ar0e'] = AtomType('Ar0e', generic=['R', 'R!H', 'R!H!Val7', 'Rx', 'Rx!H', 'Ar'], specific=[],
                             single=[0], all_double=[0], r_double=[0], o_double=[0], s_double=[0], triple=[0], quadruple=[0], benzene=[0], lone_pairs=[3], charge=[0])
 ATOMTYPES['Ar+'] = AtomType('Ar+', generic=['R', 'R!H', 'R!H!Val7', 'Rx', 'Rx!H', 'Ar'], specific=[],
@@ -929,6 +940,26 @@ ATOMTYPES['Ar0e'].set_actions(increment_bond=[], decrement_bond=[], form_bond=[]
 # leaves u1 p3 c0, which is Ar0e, and bonded Ar+ (u0 p3 c+1, one single) leaves u0 p3 c0 with that
 # bond, which is Ar0s. Ar0 sits at p4 and a bare charge action does not move lone pairs.
 # GAIN_PAIR leaves u1 p4 c-1, which no argon type owns, so `increment_lone_pair` is empty.
+#
+# THE UNION BELOW IS UNCONDITIONAL AND THE RESULT IT STANDS FOR IS NOT.  Which of the two you get
+# is decided by bond count, and an action list has no grammar for a condition -- it is a set of
+# labels, so both are named.  On the MOLECULE path that costs nothing: the recipe mutates the
+# concrete atom and get_atomtype re-perceives it, arriving at whichever answer the bond count
+# earns.  The residual is on the GROUP path, and it is twofold:
+#   * overbreadth -- GroupAtom._lose_charge (group.py:386) maps the group atom through this list
+#     and keeps BOTH entries, never inspecting bond count, so a group derived by applying
+#     LOSE_CHARGE to an Ar+ group atom means "Ar0e or Ar0s" where the molecule it came from meant
+#     one of them;
+#   * order-sensitivity -- that method ends `self.atomtype = list(set(atomtype))` (group.py:408),
+#     and AtomType defines no __hash__, so the set is keyed on object identity and the declared
+#     order is not carried through it.  Two consumers then read element [0] and only element [0]:
+#     GroupAtom.make_sample_atom (group.py:829) and Group.pick_wildcards (group.py:2858-2864).
+#     Measured, six fresh interpreters returned ['Ar0e', 'Ar0s'] six times -- so this is a missing
+#     guarantee rather than an observed flip, which is also why nothing has caught it.  Writing
+#     the labels in a different order here, or adding a third, may change what those two consumers
+#     build.
+# Conditioning the action table on bond count would be a change to the action grammar and is
+# deliberately not attempted here.  See docs/i222-metastable-argon-atomtype/report.md section 3.4.
 ATOMTYPES['Ar+'].set_actions(increment_bond=[], decrement_bond=[], form_bond=[], break_bond=[], increment_radical=[], decrement_radical=[], increment_lone_pair=[], decrement_lone_pair=[], increment_charge=['Ar++'], decrement_charge=['Ar0e', 'Ar0s'])
 # Ar++: GAIN_PAIR on u0 p3 c+2 leaves u0 p4 c0, which is Ar0 -- the inverse of Ar0's LOSE_PAIR above.
 ATOMTYPES['Ar++'].set_actions(increment_bond=[], decrement_bond=[], form_bond=[], break_bond=[], increment_radical=[], decrement_radical=[], increment_lone_pair=['Ar0'], decrement_lone_pair=[], increment_charge=[], decrement_charge=['Ar+'])

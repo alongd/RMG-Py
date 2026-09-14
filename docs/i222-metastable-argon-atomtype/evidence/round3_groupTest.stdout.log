@@ -1,0 +1,79 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+cachedir: .pytest_cache
+rootdir: /home/alon/Code/RMG-Py-i222-metastable-argon-atomtype
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 69 items
+
+test/rmgpy/molecule/groupTest.py::TestGroupAtom::test_apply_action_break_bond PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupAtom::test_apply_action_form_bond PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupAtom::test_apply_action_increment_bond PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupAtom::test_apply_action_decrement_bond PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupAtom::test_apply_action_gain_radical PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupAtom::test_apply_action_lose_radical PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupAtom::test_apply_action_gain_charge PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupAtom::test_apply_action_lose_charge PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupAtom::test_apply_action_gain_pair PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupAtom::test_is_electron PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupAtom::test_is_proton PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupAtom::test_apply_action_lose_pair PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupAtom::test_equivalent PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupAtom::test_is_specific_case_of PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupAtom::test_copy PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupAtom::test_pickle PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupAtom::test_count_bonds PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupAtom::test_has_wildcards PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupAtom::test_make_sample_atom PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupBond::test_get_order_str PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupBond::test_apply_action_gain_charge PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupBond::test_apply_action_lose_charge PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupBond::test_set_order_str PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupBond::test_get_order_num PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupBond::test_set_order_num PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupBond::test_is_single PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupBond::test_is_double PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupBond::test_is_triple PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupBond::test_is_benzene PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupBond::test_apply_action_break_bond PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupBond::test_apply_action_form_bond PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupBond::test_apply_action_increment_bond PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupBond::test_apply_action_decrement_bond PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupBond::test_apply_action_gain_radical PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupBond::test_apply_action_lose_radical PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupBond::test_equivalent PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupBond::test_is_specific_case_of PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupBond::test_copy PASSED
+test/rmgpy/molecule/groupTest.py::TestGroupBond::test_pickle PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_clear_labeled_atoms PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_contains_labeled_atom PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_contains_surface_site PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_is_surface_site PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_is_electron PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_is_proton PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_get_labeled_atom PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_get_labeled_atoms PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_from_adjacency_list PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_to_adjacency_list PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_is_isomorphic PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_find_isomorphism PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_is_subgraph_isomorphic PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_find_subgraph_isomorphisms PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_generate_extensions PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_generated_extensions_subgraphs PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_pickle PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_create_and_connect_atom PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_add_implicit_atoms_from_atom_type PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_classify_benzene_carbons PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_sort_by_connectivity PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_add_implicit_benzene PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_pick_wildcards PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_make_sample_molecule PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_is_benzene_explicit PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_repr_png PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_draw_group PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_merge_groups PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_get_element_count PASSED
+test/rmgpy/molecule/groupTest.py::TestGroup::test_is_reaction_bond PASSED
+
+============================== 69 passed in 1.72s ==============================

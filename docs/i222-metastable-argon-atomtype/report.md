@@ -9,8 +9,39 @@ argon — now builds as a `Molecule` and as a `Species` through the ordinary pat
 **`Ar0e`**. The tolerant path no longer degrades it to the generic wildcard `R`. Four of the six
 declared argon action edges were measurably false and are now corrected.
 
-This document covers **two rounds**. The second was opened by an adversarial review that found three
-things, all of which held up:
+> ## Scope notice — this branch changes pre-existing argon behaviour
+>
+> **It is not only an addition.** Alongside the new `Ar0e`, it rewrites the action table of all four
+> argon leaves that already existed. Anything already written against `Ar0`, `Ar0s`, `Ar+` or `Ar++`
+> — any group template advanced through the group path by a charge or lone-pair action — is affected
+> independently of metastable argon.
+>
+> | leaf | before | after |
+> |---|---|---|
+> | `Ar0` | `decrement_lone_pair=['Ar+']`, `increment_charge=['Ar+']` | `decrement_lone_pair=['Ar++']`, `increment_charge=[]` |
+> | `Ar0s` | `increment_charge=[]` | `increment_charge=['Ar+']` |
+> | `Ar+` | `increment_lone_pair=['Ar0']`, `decrement_charge=['Ar0']` | `increment_lone_pair=[]`, `decrement_charge=['Ar0e','Ar0s']` |
+> | `Ar++` | `increment_lone_pair=[]` | `increment_lone_pair=['Ar0']` |
+>
+> **Every old edge was false**, so these are corrections, not changes of intent. The arithmetic, one
+> line each — `Ar0` is `p4 c0`, bond-free, radical-free:
+>
+> - **`Ar0` `LOSE_PAIR`**: removing a lone pair leaves six valence electrons paired, so charge
+>   recomputes to **+2**. That is `Ar++`. The old edge was off by a charge unit.
+> - **`Ar0` `GAIN_CHARGE`**: would be `p4 c+1`, which **no argon leaf admits**. Removing the edge is
+>   the only truthful option; ionising ground-state argon is a *compound* of `GAIN_CHARGE` with
+>   `LOSE_PAIR`/`GAIN_RADICAL`, and no single primitive stands for it.
+> - **`Ar+` `GAIN_PAIR`**: likewise `p4 c-1`, owned by no leaf.
+> - **`Ar+` `LOSE_CHARGE`**: leaves `p3 c0`, which is `Ar0e` or `Ar0s` — never `Ar0`, which sits at
+>   `p4`. This was the finding an earlier adversarial round raised against the ticket.
+>
+> The non-goal forbidding edits to `Ar0`/`Ar0s`/`Ar+`/`Ar++` was lifted by the owner for exactly this
+> repair, after the census was presented (§3.2). Re-measured in
+> `evidence/probe_spar48.stdout.log`; pinned by
+> `TestArgonActionPathsAgree::test_no_declared_argon_edge_is_false`.
+
+This document covers **three rounds**. The second was opened by an adversarial review that found
+three things, all of which held up:
 
 | | finding | where |
 |---|---|---|
@@ -21,6 +52,16 @@ things, all of which held up:
 Two claims from the first round are **corrected** rather than quietly edited: the inertness argument
 (§3) and "the one behaviour I-222 knowingly widens" (§8). A third, a `§8`/`§9` contradiction about
 whether wider suites had been run, is resolved in favour of §9 — they were run, twice.
+
+The third round found **no correctness defect**. It returned four disclosure items — three of them
+about what this branch *says* versus what it *does* — and changed no behaviour:
+
+| | item | where |
+|---|---|---|
+| 1 | The five-leaf action-table rewrite was announced only in a commit body, where a reviewer would have to diff for it. | the scope notice above |
+| 2 | `Ar+.decrement_charge = ['Ar0e','Ar0s']` states a bond-conditioned result as an unconditional union, and the group path both overbroadens and unorders it. | §3.4 |
+| 3 | `Ar0e` is a metastability label that cannot constrain `u`, and is now a label a database author can type. | §2, and `Ar0e`'s own declaration comment |
+| 4 | `ARGON_DB_SIGNATURES` is a hand-written literal whose docstring claimed a database-coverage reach it does not have. | §7.1 |
 
 Supporting document: [`argon-atom-type-census.md`](argon-atom-type-census.md), a complete
 declared-vs-measured census of all five argon leaves.
@@ -206,6 +247,18 @@ Asked the other way round — by **direct perception** rather than by adjacency-
 either side: perception admits five, construction admits one. `Ar0`, `Ar+` and `Ar++` have the
 identical 5:1 ratio (§8).
 
+**So the label cannot mean "metastable" by itself, and it is now a label database authors can
+type.** That `get_atomtype` ignores `u` was known from the brief; what making `Ar0e` a real
+dictionary key adds is that a group adjacency list may now spell it. Group adjacency lists get no
+valency check, so `1 Ar0e ux p3 c0` is legal, and matches `u1` argon — ordinary, non-metastable —
+as readily as the `u2` it appears to name. Measured at `p3 c0`: that spelling matches `u1` and `u2`;
+`u0` renormalises to `p4` and types `Ar0`; `u3` and `u4` fall to generic `R`
+(`evidence/probe_spar48.stdout.log` §3, `test_group_spelled_ar0e_matches_more_than_the_metastable_triplet`).
+
+A group meaning metastable argon must therefore write `u2` explicitly — `1 Ar0e u2 p3 c0` — and the
+warning saying so lives in `Ar0e`'s own declaration comment in `atomtype.py`, where an author
+looking the label up will meet it, not only here.
+
 ---
 
 ## 3. `set_actions` — and what it does *not* control
@@ -295,6 +348,46 @@ not false statements: the group path refuses an action the molecule path perform
 an omitted edge fail differently, and only the false ones were in scope. Generic `Ar`'s
 self-preserving declarations are likewise untouched.
 
+### 3.4 `Ar+.decrement_charge` is a union standing for a condition the grammar cannot express
+
+The repaired edge names **two** targets, and which one is right depends on the bond count:
+
+```
+bare Ar+            (u1 p3 c+1, no bonds)      --LOSE_CHARGE-->  Ar0e
+singly-bonded Ar+   (u0 p3 c+1, one single)    --LOSE_CHARGE-->  Ar0s
+```
+
+An action list is a set of labels with no grammar for a condition, so both are named. As a *set*
+that is correct, and it is the only truthful thing the table can say.
+
+**On the molecule path this costs nothing.** The recipe mutates the concrete atom and
+`get_atomtype` re-perceives it, arriving at whichever answer that atom's bond count earns. Nothing
+consults the list (§3.1).
+
+**The residual is on the group path, and it is twofold:**
+
+- **Overbreadth.** `GroupAtom._lose_charge` (`group.py:386`) maps the group atom through this list
+  and keeps *both* entries — it never inspects bond count. A group derived by applying
+  `LOSE_CHARGE` to an `Ar+` group atom therefore means "`Ar0e` or `Ar0s`" where the molecule it
+  stands for meant one of them. Measured: the resulting atom-type list is `['Ar0e', 'Ar0s']`.
+- **Order-sensitivity.** That method ends `self.atomtype = list(set(atomtype))` (`group.py:408`),
+  and `AtomType` defines no `__hash__`, so the set is keyed on object identity and carries **no
+  order guarantee**. Two consumers then read element `[0]` and nothing else:
+  `GroupAtom.make_sample_atom` (`group.py:829`) and `Group.pick_wildcards`
+  (`group.py:2858`, `2863-2864`).
+
+  > **Measured, and weaker than it sounds.** Six fresh interpreters returned `['Ar0e', 'Ar0s']` six
+  > times out of six (`evidence/probe_spar48.stdout.log`, §2b/2c). So this is a **missing guarantee,
+  > not an observed flip** — which is also why nothing has caught it. The declared order happens to
+  > survive; nothing promises it will, and adding a third target or reordering these two may change
+  > what those two consumers build.
+
+**Deliberately not repaired here.** Conditioning an action edge on bond count is a change to the
+action grammar, well beyond this ticket. A sibling ticket is at present resolving a bug in another
+family caused by exactly this class — an atom-type list whose first element decided a sample — so
+the note is not hypothetical. Recorded in the table's own comment in `atomtype.py` as well as here,
+because the next person to edit that line will be reading the code, not this report.
+
 ---
 
 ## 4. What changed, by file
@@ -307,7 +400,11 @@ self-preserving declarations are likewise untouched.
   and the requirement that an edge state what its primitive produces (§3.2);
 - the seven action-edge assignments of §3.2, touching `Ar0`, `Ar0s`, `Ar0e`, `Ar+` and `Ar++`. No
   feature range (`single`, `lone_pairs`, `charge`, bond counts) of any pre-existing type is
-  changed — `Ar0s` is still `single=[1]`.
+  changed — `Ar0s` is still `single=[1]`;
+- *(third round, comments only)* the `u`-cannot-be-constrained warning in `Ar0e`'s declaration
+  comment (§2) and the bond-conditioned-union note above `Ar+`'s `set_actions` line (§3.4). No
+  executable line changed; the extension was rebuilt and re-value-asserted so source and `.so`
+  stay in step.
 
 `test/rmgpy/molecule/atomtypeTest.py`
 - `EXPECTED_FAILING_ATOMTYPES` gains `"Ar0e"` (see §5). `"Ar0s"` stays.
@@ -321,7 +418,9 @@ self-preserving declarations are likewise untouched.
 `test/rmgpy/molecule/atomtypeSevenTest.py` — brought up to the five-leaf reality: the closure test
 covered only `Ar`/`Ar0`/`Ar+`/`Ar++`, so `Ar0s` and `Ar0e` sat outside it exactly while this ticket
 rewired the charge edges through them; a registry census now fails if a sixth leaf appears; and the
-three leaves with no database species are named outright. Details in §7.1.
+three leaves with no database species are named outright. The third round narrowed
+`ARGON_DB_SIGNATURES`' comment and two docstrings to what they actually check — no test added, no
+test removed. Details in §7.1.
 
 Nothing under `rmgpy/data/`, no reactor, no `electron_placement.py`, no RMG-database, no family, no
 species, no cross-section. The change did not turn out to require any of them.
@@ -447,6 +546,17 @@ replaced by a test rather than by an edited comment:
   `test_argon_leaves_without_a_database_species` states that outright and tells the next ticket to
   move `Ar0e` into `ARGON_DB_SIGNATURES` when a metastable species lands.
 
+  > **`ARGON_DB_SIGNATURES` does not scan a database, and no longer claims to.** It is two literal
+  > adjacency lists transcribed by hand from a grep on 2026-09-13, in a file that loads no database
+  > at all. So it cannot notice a database that gains a metastable argon species tomorrow; the test
+  > above would keep passing. The third round narrowed the constant's comment and both docstrings to
+  > that reach: the label is registered, and it is not what either literal types as. Keeping it a
+  > literal is the deliberate choice — a scan would need `@pytest.mark.database` and a cloned
+  > database at a compatible branch, in a file that is otherwise pure unit test. The cost is that
+  > the date is the last moment the completeness claim was checked, and refreshing it is a manual
+  > grep. A test that overstates its own reach is the failure mode this campaign keeps recording,
+  > so the overstatement was removed rather than the limitation hidden.
+
 It also now pins that `Ar0s` and `Ar0e` produce the *same* sample atom (`Ar u0 p3 c0`) — they differ
 only in `single`, the one feature `make_sample_atom` does not act on — which is the shared root
 cause of both sitting in `EXPECTED_FAILING_ATOMTYPES` (§5).
@@ -510,6 +620,13 @@ Named explicitly, because most of the value of `Ar0e` is downstream of everythin
 reach metastable argon.** The repair is a database change and that lane is gated; the owner has
 taken it. Recorded because it belongs in this change's evidence trail.
 
+> **Status as of the third round: fixed on a sibling database branch, and it leaves a merge-ordering
+> constraint that is the owner's to carry.** Both top groups there now read `alkaline u2 px cx`, and
+> `alkaline` resolves to Mg and Ca only, so argon cannot match. The constraint: **the database
+> narrowing must land before or with this branch**, because this branch alone makes `Ar0e`
+> constructible while the *installed* family still has the wildcard top. Nothing in this worktree
+> changes, and RMG-database remains untouched by it.
+
 In `RMG-database-plasma/input/kinetics/families/Plasma_Associative_Ionization_Alkaline_Alkaline/groups.py`:
 
 - line 35, top group `A`: `1 *1 R u[2,3,4] px cx` — which `Ar0e` matches on every field;
@@ -552,6 +669,12 @@ downstream depended on the four false action edges.
 | unit — `pytest test -m "not functional and not database"` | 3298 passed, 48 skipped (`evidence/full_unit.stdout.log`) | **3317 passed, 48 skipped** (`evidence/full_unit2.stdout.log`) |
 | database — `pytest test -m "database"` against `../RMG-database-plasma/input` | 118 passed, 1 xfailed, 2308s (`evidence/db_suite.stdout.log`) | **118 passed, 1 xfailed**, 2595s (`evidence/db_suite2.stdout.log`) |
 
+The third round added no test and changed no executable line, so its job was to show the counts
+standing still: **3317 passed, 48 skipped** again after the rebuild
+(`evidence/full_unit3.stdout.log`), and 68 / 195 / 69 / 20 collected across the four molecule files
+(`evidence/round3_perfile.stdout.log`) — identical to the row below. The database suite was not
+re-run in that round: nothing it exercises changed.
+
 Zero failures anywhere. The unit count rises by the 19 new tests. The database count is unchanged at
 118 — **no database test changed state when four declared argon edges were corrected**, which is the
 evidence that nothing was relying on them. The single `xfail` is
@@ -580,3 +703,7 @@ untouched by this branch — `git diff 78f306665 HEAD --` on them is empty, and 
 runs above therefore carry `--ignore=test/rmgpy/rmg/rmgTest.py`; that file was **not** exercised by
 either run, which is a gap in this evidence rather than a claim about it. Worth its own ticket: as
 things stand, `make test-all` cannot collect this tree in one pass.
+
+The third-round review checked the ignore independently rather than taking it: mainline at
+`78f306665` produces the identical error with none of this branch's changes present, and both
+colliding files are in the base tree. Recorded here so it is not re-litigated.

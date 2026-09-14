@@ -45,10 +45,11 @@ by an edited comment:
 * the registry census (``test_argon_leaf_set_is_exactly_these_five``) fails if a
   sixth leaf appears or one of the five disappears, which the old membership
   assertions could not see;
-* ``ARGON_DB_SIGNATURES`` still holds the only two argon species that occur in
-  RMG-database (plasma) -- verified by grep at the time of writing, ``Ar u0 p4 c0``
-  and ``Ar u1 p3 c+1``. Three of the five leaves therefore have NO concrete
-  database species, which is now stated outright rather than left implied;
+* ``ARGON_DB_SIGNATURES`` holds two argon adjacency lists transcribed BY HAND from a
+  grep of RMG-database (plasma) on 2026-09-13, ``Ar u0 p4 c0`` and ``Ar u1 p3 c+1``.
+  Nothing here reads a database, so these tests check what those two literals type
+  to and cannot notice a database that gains a third argon species -- see the
+  constant's own comment;
 * the action-closure test covered only ``Ar``/``Ar0``/``Ar+``/``Ar++``, so the two
   newer leaves were outside it exactly while i222 was rewiring the charge edges
   through them. It now covers all five.
@@ -77,14 +78,24 @@ DROPPED = ["Li-", "Na-", "K-", "N3dc"]
 # Ar0s and Ar0e share a sample atom -- see test_added_argon_types_share_one_sample_atom.
 ARGON_SAMPLE = {"Ar0": (0, 4), "Ar+": (1, 3), "Ar++": (2, 3), "Ar0s": (0, 3), "Ar0e": (0, 3)}
 
-# The only two argon signatures that occur as concrete species in RMG-database
-# (plasma): neutral ground-state argon and the Ar+ radical cation.
+# Two argon signatures TRANSCRIBED BY HAND from a grep of RMG-database (plasma) on
+# 2026-09-13: neutral ground-state argon and the Ar+ radical cation. They were the
+# only two argon species there on that date.
+#
+# THIS IS A LITERAL, NOT A DATABASE SCAN. No test in this file loads a database, so
+# none of them can notice a database that gains a metastable (or any other) argon
+# species; they check only what these two adjacency lists perceive as. Keeping it a
+# literal is deliberate -- the file is otherwise pure unit test, and a scan would make
+# it depend on a cloned RMG-database at a compatible branch. The cost is that the date
+# above is the last moment the claim "these are the only two" was checked, and
+# refreshing it is a manual grep.
 ARGON_DB_SIGNATURES = {
     "1 Ar u0 p4 c0": "Ar0",
     "1 Ar u1 p3 c+1": "Ar+",
 }
-# The leaves no database species reaches. Ar0s and Ar0e need a bonded Ar2+ and a
-# metastable species respectively, both owned by other tickets; Ar++ has never had one.
+# The leaves neither of those two signatures reaches -- i.e. unreached as of the same
+# hand-check. Ar0s and Ar0e need a bonded Ar2+ and a metastable species respectively,
+# both owned by other tickets; Ar++ has never had one.
 ARGON_WITHOUT_DB_SPECIES = ["Ar0s", "Ar0e", "Ar++"]
 
 # The inverse-action pairs that define both-ways action-graph closure.
@@ -182,9 +193,9 @@ def test_dropped_types_are_absent(label):
 
 @pytest.mark.parametrize("adjlist,expected", sorted(ARGON_DB_SIGNATURES.items()))
 def test_concrete_argon_species_type_specifically(adjlist, expected):
-    """The two argon signatures that occur in the database type to their specific
-    argon atom type -- not to the lumped generic ``Ar`` -- now that ``Ar`` is out
-    of ``nonSpecifics``."""
+    """The two hand-transcribed argon signatures type to their specific argon atom
+    type -- not to the lumped generic ``Ar`` -- now that ``Ar`` is out of
+    ``nonSpecifics``. Scope: these two literals, not a database scan."""
     mol = Molecule().from_adjacency_list(adjlist)
     atom = mol.atoms[0]
     atomtype = get_atomtype(atom, {b: bd for b, bd in atom.bonds.items()})
@@ -285,13 +296,17 @@ def test_added_argon_types_cannot_make_a_sample_molecule(label):
 
 @pytest.mark.parametrize("label", ARGON_WITHOUT_DB_SPECIES)
 def test_argon_leaves_without_a_database_species(label):
-    """Three of the five leaves are declared but unexercised by any database species.
+    """Three of the five leaves are reached by neither hand-transcribed signature.
 
-    Stated outright so the gap is visible: ``ARGON_DB_SIGNATURES`` is the whole set
-    of argon species in RMG-database (plasma), and it produces only Ar0 and Ar+.
-    Whatever these three do is therefore pinned by unit tests alone -- the point the
-    i222 report makes under "what this could not reach". When a metastable argon
-    species lands, move ``Ar0e`` into ``ARGON_DB_SIGNATURES`` and delete it here."""
+    What this actually asserts: the label is registered, and it is not what either
+    adjacency list in ``ARGON_DB_SIGNATURES`` perceives as. It does NOT assert that
+    no database species reaches the label -- that constant is a literal, not a scan
+    (see its comment), so this test would keep passing on a database that had gained
+    a metastable argon species yesterday. The claim it supports is the weaker and
+    still useful one the i222 report makes under "what this could not reach":
+    whatever these three leaves do is pinned by unit tests alone. When a metastable
+    argon species lands, move ``Ar0e`` into ``ARGON_DB_SIGNATURES`` and delete it
+    here -- by hand, because nothing here will prompt you."""
     typed = set()
     for adjlist in ARGON_DB_SIGNATURES:
         mol = Molecule().from_adjacency_list(adjlist)
