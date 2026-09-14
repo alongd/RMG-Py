@@ -1,0 +1,19 @@
+repaired arm drives the real checks from /home/alon/Code/RMG-Py-databaseTest-cd-atom-type-repair/test/database/databaseTest.py
+
+--- negative control ---
+  Cd double-bonded to O, typed Cd but not CO:
+      as shipped complains:  False   (must be False -- the bug)
+      repaired complains:    True   (must be True)
+  Cdd carbon with one of its two double bonds drawn (the solvation O2d-Cdd shape):
+      repaired complains:    False  (must be False -- CO is impossible there)
+  control PASSES
+
+kinetics families scanned:           140
+group databases scanned:             19
+complaints, checks AS SHIPPED:       0
+targets the REAL repaired checks fail: 0
+
+reach (a zero above is only meaningful if these are not zero):
+  Group entries scanned:             17333
+  atoms typed Cd/CO/CS/Cdd:          15775
+  ...of those, with a double bond:   12851

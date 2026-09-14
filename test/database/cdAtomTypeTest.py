@@ -76,6 +76,19 @@ MISUSED_CD = "1 Cd  u0 {2,D}\n2 O2d u0 {1,D}\n"
 #: The same structure, typed correctly.
 CORRECT_CO = "1 CO  u0 {2,D}\n2 O2d u0 {1,D}\n"
 
+#: The shape the repair exposed, taken from the solvation group database's ``O2d-Cdd`` node. Atom 2
+#: is declared ``Cdd`` -- a carbon with *two* double bonds -- and a group subgraph draws only one of
+#: them. The check must not demand ``CO`` here: ``CO`` and ``Cdd`` are mutually exclusive, so that
+#: demand is unsatisfiable.
+CDD_WITH_ONE_DRAWN_BOND = "1 * O2d u0 {2,D}\n2   Cdd u0 {1,D}\n"
+
+#: The same trap on the sulfur branch of the same inference.
+CDD_WITH_ONE_DRAWN_SULFUR_BOND = "1 * S2d u0 {2,D}\n2   Cdd u0 {1,D}\n"
+
+#: Two drawn double bonds on an atom typed only ``Cd``. The `num_of_d_bonds == 2` branch is sound
+#: even for a subgraph -- a carbon cannot have more than two -- so this must still be caught.
+MISUSED_CDD = "1 Cd  u0 {2,D} {3,D}\n2 O2d u0 {1,D}\n3 O2d u0 {1,D}\n"
+
 
 def make_entry(label, adjlist):
     return types.SimpleNamespace(label=label, item=Group().from_adjacency_list(adjlist), children=[])
@@ -118,6 +131,54 @@ class TestCdAtomTypeCheckIsLive:
     def test_kinetics_check_accepts_a_correctly_typed_group(self):
         harness, family_name = kinetics_harness("good", CORRECT_CO)
         assert DatabaseChecks.kinetics_check_cd_atom_type(harness, family_name)
+
+
+class TestCdAtomTypeInferenceIsSoundForSubgraphs:
+    """
+    A group is a subgraph, so the count of *drawn* double bonds is a lower bound on the atom's real
+    count. The `num_of_d_bonds == 1 implies CO/CS` inference is therefore unsound whenever the atom
+    could carry a second, undrawn double bond -- which an atom declared ``Cdd`` does by definition.
+
+    Repairing the dead predicate is what made this reachable: it turned `test_solvation` red on the
+    real node ``O2d-Cdd``, and the demand there was unsatisfiable rather than merely unmet.
+    """
+
+    def test_a_cdd_atom_with_one_drawn_bond_to_oxygen_is_not_asked_for_co(self):
+        assert DatabaseChecks.general_check_cd_atom_type(
+            None, "O2d-Cdd", group_database("O2d-Cdd", CDD_WITH_ONE_DRAWN_BOND)
+        )
+
+    def test_a_cdd_atom_with_one_drawn_bond_to_sulfur_is_not_asked_for_cs(self):
+        assert DatabaseChecks.general_check_cd_atom_type(
+            None, "S2d-Cdd", group_database("S2d-Cdd", CDD_WITH_ONE_DRAWN_SULFUR_BOND)
+        )
+
+    def test_the_kinetics_check_makes_the_same_allowance(self):
+        harness, family_name = kinetics_harness("O2d-Cdd", CDD_WITH_ONE_DRAWN_BOND)
+        assert DatabaseChecks.kinetics_check_cd_atom_type(harness, family_name)
+
+    def test_co_and_cdd_really_are_mutually_exclusive(self):
+        """The premise the allowance rests on. If this ever changes, the allowance is wrong."""
+        from rmgpy.molecule.atomtype import ATOMTYPES
+
+        assert not ATOMTYPES["CO"].is_specific_case_of(ATOMTYPES["Cdd"])
+        assert not ATOMTYPES["Cdd"].is_specific_case_of(ATOMTYPES["CO"])
+
+    def test_the_allowance_did_not_switch_the_check_off(self):
+        """
+        The narrowing must buy exactly the `Cdd` case and nothing else. A `Cd`-typed atom with one
+        drawn double bond to oxygen is still missing `CO` and must still be caught.
+        """
+        with pytest.raises(ValueError):
+            DatabaseChecks.general_check_cd_atom_type(None, "MisusedCd", group_database("bad", MISUSED_CD))
+
+    def test_two_drawn_double_bonds_still_demand_cdd(self):
+        """
+        The `num_of_d_bonds == 2` branch is untouched and stays sound for a subgraph, because a
+        carbon cannot carry more than two double bonds -- so two drawn is two total.
+        """
+        with pytest.raises(ValueError):
+            DatabaseChecks.general_check_cd_atom_type(None, "MisusedCdd", group_database("bad", MISUSED_CDD))
 
 
 class TestCdAtomTypeCheckCannotRegress:
