@@ -462,7 +462,9 @@ ATOMTYPES['Ar0s'] = AtomType('Ar0s', generic=['R', 'R!H', 'R!H!Val7', 'Rx', 'Rx!
 # Neutral Ar brings 8 valence electrons. With no bonds and three lone pairs, six are paired and two
 # are left over, so charge balance admits exactly one radical state, u2 -- the triplet metastable.
 # get_atomtype never sees `u` (it matches on bonds, lone pairs and charge only), so u is not what
-# selects this type; the adjacency-list charge check is what refuses u0, u1 and u3 at p3 c0.
+# selects this type; the adjacency-list valency check is what refuses u0, u1, u3 and u4 at p3 c0.
+# Ar0e therefore answers for five (u, p, c) triples and only one of them is constructible -- the
+# same 5:1 ratio Ar0, Ar+ and Ar++ have always had, not something this type introduces.
 #
 # Against its siblings, no two argon types can match one atom: Ar0 is the same neutral bond-free
 # atom at lone_pairs=[4]; Ar0s is the same neutral p3 atom with single=[1] rather than [0]; Ar+ and
@@ -881,25 +883,55 @@ ATOMTYPES['Ca+2'].set_actions(increment_bond=[], decrement_bond=[], form_bond=[]
 
 ATOMTYPES['He'].set_actions(increment_bond=[], decrement_bond=[], form_bond=[], break_bond=[], increment_radical=['He'], decrement_radical=['He'], increment_lone_pair=[], decrement_lone_pair=[], increment_charge=[], decrement_charge=[])
 ATOMTYPES['Ne'].set_actions(increment_bond=[], decrement_bond=[], form_bond=[], break_bond=[], increment_radical=['Ne'], decrement_radical=['Ne'], increment_lone_pair=[], decrement_lone_pair=[], increment_charge=[], decrement_charge=[])
+# WHAT set_actions DOES AND DOES NOT CONTROL.  There are two distinct paths that apply an action,
+# and only one of them reads these lists:
+#
+#   * the GROUP path.  GroupAtom.apply_action maps a group atom's atom types through these lists,
+#     and raises ActionError when the list is empty ("Unknown atom type produced from set ...").
+#     This is what generates and extends templates.
+#   * the MOLECULE path.  Atom.apply_action mutates radical_electrons / lone_pairs / charge / bonds
+#     directly and the molecule is re-typed afterwards by get_atomtype.  It NEVER consults these
+#     lists.  This is what a recipe does to a concrete species.
+#
+# So an empty list here prevents a template SPELLED with this leaf from being advanced through the
+# group graph.  It prevents nothing at all on a concrete molecule.  In particular, generic `Ar` and
+# generic `R` below declare every action self-preserving, a template written against either matches
+# argon of every leaf type, and the recipe then acts on the concrete atom through the molecule path
+# -- so an empty leaf list is not, and cannot be, a guard against argon being reacted.  See
+# docs/i222-metastable-argon-atomtype/report.md.
+#
+# THESE LISTS MUST STATE WHAT THE PRIMITIVE ACTUALLY PRODUCES.  TestActionGraphClosure checks that
+# the graph is symmetric -- that every edge has its inverse -- and cannot check that an edge is
+# true.  Four of the six argon edges declared here used to be false in exactly that way, as two
+# mutually-closing (and therefore invisible) pairs; each entry below is now the measured result of
+# applying the primitive to a concrete atom.  See the census in
+# docs/i222-metastable-argon-atomtype/argon-atom-type-census.md, and the agreement test in
+# atomtypeTest.py that pins every argon edge against perception.
 ATOMTYPES['Ar'].set_actions(increment_bond=['Ar'], decrement_bond=['Ar'], form_bond=['Ar'], break_bond=['Ar'], increment_radical=['Ar'], decrement_radical=['Ar'], increment_lone_pair=['Ar'], decrement_lone_pair=['Ar'], increment_charge=['Ar'], decrement_charge=['Ar'])
-ATOMTYPES['Ar0'].set_actions(increment_bond=[], decrement_bond=[], form_bond=[], break_bond=[], increment_radical=[], decrement_radical=[], increment_lone_pair=[], decrement_lone_pair=['Ar+'], increment_charge=['Ar+'], decrement_charge=[])
-# Ar0s declares no action edges, as Ar++ does not: the edges that would be chemically right --
-# Ar0s -> increment_charge -> Ar+, and Ar0 -> form_bond -> Ar0s -- each need their inverse declared
-# back on Ar+ / Ar0, and those entries are outside this atom type. Adding one side alone would open
-# a one-way edge, which TestActionGraphClosure refuses.
-ATOMTYPES['Ar0s'].set_actions(increment_bond=[], decrement_bond=[], form_bond=[], break_bond=[], increment_radical=[], decrement_radical=[], increment_lone_pair=[], decrement_lone_pair=[], increment_charge=[], decrement_charge=[])
-# Ar0e declares no action edges, as Ar0s does not. Measured on a concrete u2 p3 c0 argon atom, the
-# single actions that land anywhere at all land on a SIBLING: GAIN_CHARGE gives Ar+, and FORM_BOND
-# gives Ar0s. Declaring either would need its inverse (Ar+ `decrement_charge`, Ar0s `break_bond`)
-# written back on that sibling, which is outside this atom type; declaring one side alone is the
-# one-way edge TestActionGraphClosure refuses. GAIN_PAIR, LOSE_PAIR and LOSE_CHARGE land on states
-# no argon type owns. The only edges declarable here without touching a sibling are the radical
-# self-edges (GAIN_RADICAL and LOSE_RADICAL both return Ar0e, since perception ignores u), and the
-# whole argon family already omits those -- Ar0, Ar+ and Ar++ each map to themselves under
-# GAIN_RADICAL and each declare `increment_radical=[]`.
-ATOMTYPES['Ar0e'].set_actions(increment_bond=[], decrement_bond=[], form_bond=[], break_bond=[], increment_radical=[], decrement_radical=[], increment_lone_pair=[], decrement_lone_pair=[], increment_charge=[], decrement_charge=[])
-ATOMTYPES['Ar+'].set_actions(increment_bond=[], decrement_bond=[], form_bond=[], break_bond=[], increment_radical=[], decrement_radical=[], increment_lone_pair=['Ar0'], decrement_lone_pair=[], increment_charge=['Ar++'], decrement_charge=['Ar0'])
-ATOMTYPES['Ar++'].set_actions(increment_bond=[], decrement_bond=[], form_bond=[], break_bond=[], increment_radical=[], decrement_radical=[], increment_lone_pair=[], decrement_lone_pair=[], increment_charge=[], decrement_charge=['Ar+'])
+# Ar0: LOSE_PAIR leaves u0 p3 c+2, which is Ar++ and never Ar+ -- a bare charge-free pair loss puts
+# two electrons' worth of charge on the atom. GAIN_CHARGE leaves u0 p4 c+1, which no argon type
+# owns, so `increment_charge` is empty: ionising ground-state argon is a compound of GAIN_CHARGE
+# with LOSE_PAIR/GAIN_RADICAL, and a single primitive cannot stand for it.
+ATOMTYPES['Ar0'].set_actions(increment_bond=[], decrement_bond=[], form_bond=[], break_bond=[], increment_radical=[], decrement_radical=[], increment_lone_pair=[], decrement_lone_pair=['Ar++'], increment_charge=[], decrement_charge=[])
+# Ar0s: GAIN_CHARGE on either concrete Ar0s (u1 or u0, one single bond) leaves one single bond at
+# p3 c+1, which is Ar+ -- the bonded half of Ar2+ ionising further. The other actions are left
+# undeclared: BREAK_BOND and CHANGE_BOND -1 do produce Ar0e, but the inverses would have to be
+# declared on Ar0e's form_bond / increment_bond, and bond-order edges on a noble gas are not
+# chemistry this branch has a consumer for.
+ATOMTYPES['Ar0s'].set_actions(increment_bond=[], decrement_bond=[], form_bond=[], break_bond=[], increment_radical=[], decrement_radical=[], increment_lone_pair=[], decrement_lone_pair=[], increment_charge=['Ar+'], decrement_charge=[])
+# Ar0e: GAIN_CHARGE on u2 p3 c0 leaves u2 p3 c+1, which is Ar+ -- metastable argon ionising. Its
+# inverse is Ar+'s decrement_charge, declared below. GAIN_PAIR, LOSE_PAIR and LOSE_CHARGE land on
+# states no argon type owns. FORM_BOND gives Ar0s, left undeclared for the reason above. The radical
+# self-edges (GAIN_RADICAL and LOSE_RADICAL both return Ar0e, since perception ignores u) are
+# omitted as they are for every other argon leaf.
+ATOMTYPES['Ar0e'].set_actions(increment_bond=[], decrement_bond=[], form_bond=[], break_bond=[], increment_radical=[], decrement_radical=[], increment_lone_pair=[], decrement_lone_pair=[], increment_charge=['Ar+'], decrement_charge=[])
+# Ar+: LOSE_CHARGE has TWO measured answers and Ar0 is neither of them -- bare Ar+ (u1 p3 c+1)
+# leaves u1 p3 c0, which is Ar0e, and bonded Ar+ (u0 p3 c+1, one single) leaves u0 p3 c0 with that
+# bond, which is Ar0s. Ar0 sits at p4 and a bare charge action does not move lone pairs.
+# GAIN_PAIR leaves u1 p4 c-1, which no argon type owns, so `increment_lone_pair` is empty.
+ATOMTYPES['Ar+'].set_actions(increment_bond=[], decrement_bond=[], form_bond=[], break_bond=[], increment_radical=[], decrement_radical=[], increment_lone_pair=[], decrement_lone_pair=[], increment_charge=['Ar++'], decrement_charge=['Ar0e', 'Ar0s'])
+# Ar++: GAIN_PAIR on u0 p3 c+2 leaves u0 p4 c0, which is Ar0 -- the inverse of Ar0's LOSE_PAIR above.
+ATOMTYPES['Ar++'].set_actions(increment_bond=[], decrement_bond=[], form_bond=[], break_bond=[], increment_radical=[], decrement_radical=[], increment_lone_pair=['Ar0'], decrement_lone_pair=[], increment_charge=[], decrement_charge=['Ar+'])
 
 ATOMTYPES['C'].set_actions(increment_bond=['C'], decrement_bond=['C'], form_bond=['C'], break_bond=['C'], increment_radical=['C'], decrement_radical=['C'], increment_lone_pair=['C'], decrement_lone_pair=['C'],increment_charge=[], decrement_charge=[])
 ATOMTYPES['Catom'].set_actions(increment_bond=[], decrement_bond=[], form_bond=[], break_bond=[], increment_radical=[], decrement_radical=[], increment_lone_pair=[], decrement_lone_pair=['C2s'],increment_charge=[], decrement_charge=[])
