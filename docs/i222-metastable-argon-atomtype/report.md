@@ -4,9 +4,26 @@ Branch `i222-metastable-argon-atomtype`, worktree
 `/home/alon/Code/RMG-Py-i222-metastable-argon-atomtype`, base `78f306665`.
 Nothing pushed, nothing merged.
 
-**Outcome: the type is added.** `Ar u2 p3 c0` — metastable argon — now builds as a `Molecule` and
-as a `Species` through the ordinary path and types as **`Ar0e`**. The tolerant path no longer
-degrades it to the generic wildcard `R`.
+**Outcome: the type is added, and the argon action graph is repaired.** `Ar u2 p3 c0` — metastable
+argon — now builds as a `Molecule` and as a `Species` through the ordinary path and types as
+**`Ar0e`**. The tolerant path no longer degrades it to the generic wildcard `R`. Four of the six
+declared argon action edges were measurably false and are now corrected.
+
+This document covers **two rounds**. The second was opened by an adversarial review that found three
+things, all of which held up:
+
+| | finding | where |
+|---|---|---|
+| HIGH 1 | `Ar0e` is **not** inert. Empty `set_actions` binds the group path only; generic `Ar`/`R` templates match metastable argon and the molecule path acts on it regardless. My first-round claim to the contrary was wrong. | §3.1 |
+| HIGH 2 | An alkaline-earth family can now reach metastable argon. **Not repaired here** — a database change, gated, taken by the owner; recorded as a consequence of this change. | §8.1 |
+| HIGH 3 | `Ar+.decrement_charge` named a type its primitive cannot produce. The census found a second, equally false pair. Both repaired under a lift of the original non-goal. | §3.2 |
+
+Two claims from the first round are **corrected** rather than quietly edited: the inertness argument
+(§3) and "the one behaviour I-222 knowingly widens" (§8). A third, a `§8`/`§9` contradiction about
+whether wider suites had been run, is resolved in favour of §9 — they were run, twice.
+
+Supporting document: [`argon-atom-type-census.md`](argon-atom-type-census.md), a complete
+declared-vs-measured census of all five argon leaves.
 
 One thing in the brief was wrong and is reported first, because it changed what was authorised.
 
@@ -183,66 +200,114 @@ Exactly one radical state is constructible, `u2` — the triplet metastable. Tha
 not the declaration: neutral Ar brings 8 valence electrons, three lone pairs consume six, no bond
 consumes any, so two are left unpaired.
 
+Asked the other way round — by **direct perception** rather than by adjacency-list rejection —
+`get_atomtype` returns `Ar0e` for all five `u` values at `p3 c0`
+(`test_perception_admits_unrealizable_u_states`). The two measurements are the same fact from
+either side: perception admits five, construction admits one. `Ar0`, `Ar+` and `Ar++` have the
+identical 5:1 ratio (§8).
+
 ---
 
-## 3. `set_actions`
+## 3. `set_actions` — and what it does *not* control
 
-`Ar0e` declares **no** action edges — all ten lists empty, as `Ar0s` does. This is not a default; it
-is what the measurement forces. Applying each single action to a concrete `u2 p3 c0` argon atom
-(`evidence/actions.stdout.log`):
+> **This section was rewritten in the rework round.** Its first version argued that `Ar0e` should
+> declare no action edges, and drew from that the implication that `Ar0e` was therefore inert. The
+> first half was under-measured and the second half was simply wrong. Both are corrected below; the
+> full argon census is in [`argon-atom-type-census.md`](argon-atom-type-census.md).
 
-| action                | resulting state | types as   |
-|-----------------------|-----------------|------------|
-| `GAIN_PAIR`           | `u2 p4 c-2`     | *no type*  |
-| `LOSE_PAIR`           | `u2 p2 c+2`     | *no type*  |
-| `LOSE_CHARGE`         | `u2 p3 c-1`     | *no type*  |
-| `GAIN_CHARGE`         | `u2 p3 c+1`     | **`Ar+`**  |
-| `FORM_BOND` (single)  | `u2 p3 c0`, 1 bond | **`Ar0s`** |
-| `GAIN_RADICAL`        | `u3 p3 c0`      | `Ar0e`     |
-| `LOSE_RADICAL`        | `u1 p3 c0`      | `Ar0e`     |
+### 3.1 Two paths apply an action, and only one reads these lists
 
-So every action that lands anywhere at all lands on a **sibling**. Declaring
-`increment_charge=['Ar+']` needs `Ar+` to declare `decrement_charge=['Ar0e']` back; declaring
-`form_bond=['Ar0s']` needs `Ar0s` to declare `break_bond=['Ar0e']`. Both inverse entries live on
-atom types this ticket may not modify, and one side alone is precisely the one-way edge
-`TestActionGraphClosure` refuses. This is the same reason `Ar0s` declares nothing, recorded there
-for I-218.
+- **the GROUP path** — `GroupAtom.apply_action` maps a group atom's types through `set_actions` and
+  raises `ActionError` on an empty list. This is what generates and extends templates.
+- **the MOLECULE path** — `Atom.apply_action` mutates `radical_electrons` / `lone_pairs` / `charge`
+  / bonds directly, and the result is re-typed afterwards by `get_atomtype`. It **never** consults
+  `set_actions`.
 
-The only edges declarable without touching a sibling are the radical **self**-edges, which would
-close trivially. They are omitted for consistency: `Ar0`, `Ar+` and `Ar++` each map to themselves
-under `GAIN_RADICAL` too, and each declares `increment_radical=[]`. The whole argon family omits
-them.
+So an empty list stops a template *spelled with that leaf* from being advanced through the group
+graph, and stops nothing at all on a concrete molecule. Measured, both halves
+(`test_empty_set_actions_binds_the_group_path_only`):
 
-Because no edge is added, the action graph is unchanged and all three closure tests stay green,
-including `test_argon_and_alkali_families_close_both_ways`, which fails on any argon entry landing
-in the pre-existing allowlist.
+```
+GroupAtom([Ar0e]).apply_action(FORM_BOND)  -> ActionError: Unknown atom type produced from set ...
+ReactionRecipe([FORM_BOND]) on two concrete Ar0e atoms -> succeeds; both atoms retype to R
+```
 
-### Two pre-existing declarations the probe exposed, and did not touch
+**`Ar0e` is therefore not inert, and empty lists never made it so.** Generic `Ar` (`atomtype.py:884`)
+and generic `R` declare *every* action self-preserving — `increment_bond=['Ar']`, `form_bond=['Ar']`,
+`increment_charge=['Ar']`, and so on for all ten. Every generic group tested matches a concrete
+metastable argon:
 
-Both are out of scope (`Ar0`, `Ar+` are named non-goals) and neither is affected by this change.
-Recorded because the probe measured them and the next argon ticket will meet them:
+```
+'1 *1 R ux px cx'        -> matches Ar0e: True
+'1 *1 R u[2,3,4] px cx'  -> matches Ar0e: True
+'1 *1 Ar ux px cx'       -> matches Ar0e: True
+'1 *1 Rx ux px cx'       -> matches Ar0e: True
+'1 *1 R!H ux px cx'      -> matches Ar0e: True
+```
 
-- `ATOMTYPES['Ar0'].set_actions(..., increment_charge=['Ar+'], ...)` — but `GAIN_CHARGE` on a real
-  `Ar0` atom (`u0 p4 c0`) gives `u0 p4 c+1`, which types as **nothing at all**, not `Ar+`.
-- `ATOMTYPES['Ar+'].set_actions(..., decrement_charge=['Ar0'], ...)` — but `LOSE_CHARGE` on a real
-  `Ar+` atom (`u1 p3 c+1`) gives `u1 p3 c0`, which types as **`Ar0e`** now (and as nothing before
-  this change), not `Ar0`. `Ar0` is at `p4`; a bare charge action does not move lone pairs.
-- Likewise `Ar0.decrement_lone_pair = ['Ar+']`, where `LOSE_PAIR` on `Ar0` actually gives
-  `u0 p3 c+2` = `Ar++`.
+and the recipe then acts on the concrete atom through the molecule path, which the leaf's own lists
+cannot veto. `test_a_generic_template_matches_and_reacts_metastable_argon` pins this end to end.
 
-These are label symmetries that satisfy the closure test while naming states the actions do not
-produce. Closure checks that the graph is symmetric, not that its edges are true.
+### 3.2 The declared edges must state what the primitive produces
+
+`TestActionGraphClosure` checks that the graph is **symmetric** — every edge has its inverse. It
+cannot check that an edge is **true**. Four of the six declared argon edges were false in exactly
+the way that hides from a symmetry check: as two mutually-closing pairs, each entry the inverse of
+the other, neither matching the primitive. The census measured all six:
+
+| declared edge | primitive measures | verdict |
+|---|---|---|
+| `Ar+.increment_charge = ['Ar++']` | `Ar++` | true |
+| `Ar++.decrement_charge = ['Ar+']` | `Ar+` | true |
+| `Ar0.increment_charge = ['Ar+']` | **no type at all** | FALSE |
+| `Ar+.decrement_charge = ['Ar0']` | bare → **`Ar0e`**, bonded → **`Ar0s`** | FALSE |
+| `Ar0.decrement_lone_pair = ['Ar+']` | **`Ar++`** | FALSE |
+| `Ar+.increment_lone_pair = ['Ar0']` | **no type at all** | FALSE |
+
+The owner lifted the `Ar0`/`Ar0s`/`Ar+`/`Ar++` non-goal for this repair after the census was
+presented. Seven assignments, each the measured result:
+
+```python
+Ar+.decrement_charge      ['Ar0']  ->  ['Ar0e', 'Ar0s']   # two answers; bonding decides which
+Ar0e.increment_charge     []       ->  ['Ar+']            # metastable argon ionising
+Ar0s.increment_charge     []       ->  ['Ar+']            # the bonded half of Ar2+ ionising
+Ar0.increment_charge      ['Ar+']  ->  []                 # produces an atom with no type
+Ar0.decrement_lone_pair   ['Ar+']  ->  ['Ar++']           # a bare pair loss costs two charges
+Ar++.increment_lone_pair  []       ->  ['Ar0']            # its inverse
+Ar+.increment_lone_pair   ['Ar0']  ->  []                 # produces an atom with no type
+```
+
+Both sets close both ways by construction, so every closure test stays green with no new allowlist
+entry. `TestArgonActionPathsAgree::test_no_declared_argon_edge_is_false` is the assertion closure
+could not make: for every argon leaf and every declared edge, the declared target set must equal the
+set of types the primitive actually produces from a concrete atom of that type.
+
+`Ar0e` ends with exactly one declared edge, `increment_charge -> Ar+`. `GAIN_PAIR`, `LOSE_PAIR` and
+`LOSE_CHARGE` land on states no argon type owns. `FORM_BOND` does give `Ar0s`, and is left
+undeclared: its inverse would be a bond-order edge on a noble gas, which is chemistry this branch
+has no consumer for. The radical self-edges are omitted as they are for every other argon leaf.
+
+### 3.3 Still not repaired
+
+The **forty-four empty slots** where the primitive does produce a valid type — `Ar0e` `FORM_BOND` →
+`Ar0s`, `Ar0s` `BREAK_BOND` → `Ar0e`, `Ar++` `GAIN_PAIR` → `Ar0` and others. Those are *omissions*,
+not false statements: the group path refuses an action the molecule path performs. A false edge and
+an omitted edge fail differently, and only the false ones were in scope. Generic `Ar`'s
+self-preserving declarations are likewise untouched.
 
 ---
 
 ## 4. What changed, by file
 
 `rmgpy/molecule/atomtype.py`
-- new `ATOMTYPES['Ar0e']` declaration and its all-empty `set_actions`, each with the reasoning above
-  as comments;
+- new `ATOMTYPES['Ar0e']` declaration, with the reasoning above as comments;
 - `'Ar0e'` added to `ATOMTYPES['Ar'].specific` and to the `specific` lists of `R`, `R!H`,
-  `R!H!Val7`, `Rx`, `Rx!H`.
-- `Ar0`, `Ar0s`, `Ar+`, `Ar++` are **unmodified**; `git diff` shows no line of any of them changed.
+  `R!H!Val7`, `Rx`, `Rx!H`;
+- a comment block above the argon `set_actions` stating the group-path/molecule-path split (§3.1)
+  and the requirement that an edge state what its primitive produces (§3.2);
+- the seven action-edge assignments of §3.2, touching `Ar0`, `Ar0s`, `Ar0e`, `Ar+` and `Ar++`. No
+  feature range (`single`, `lone_pairs`, `charge`, bond counts) of any pre-existing type is
+  changed — `Ar0s` is still `single=[1]`.
 
 `test/rmgpy/molecule/atomtypeTest.py`
 - `EXPECTED_FAILING_ATOMTYPES` gains `"Ar0e"` (see §5). `"Ar0s"` stays.
@@ -250,7 +315,13 @@ produce. Closure checks that the graph is symmetric, not that its edges are true
   `test_bond_free_triplet_argon_has_no_atom_type` → `test_bond_free_triplet_argon_types_as_ar0e_not_ar0s`,
   `test_untypeable_argon_degrades_to_generic_R_when_typing_is_tolerant` →
   `test_metastable_argon_no_longer_degrades_to_generic_R_when_typing_is_tolerant`;
-- new class `TestMetastableArgonAtomType`, 12 tests.
+- new class `TestMetastableArgonAtomType`, 15 tests;
+- new class `TestArgonActionPathsAgree`, 8 tests (5 of them one parametrisation).
+
+`test/rmgpy/molecule/atomtypeSevenTest.py` — brought up to the five-leaf reality: the closure test
+covered only `Ar`/`Ar0`/`Ar+`/`Ar++`, so `Ar0s` and `Ar0e` sat outside it exactly while this ticket
+rewired the charge edges through them; a registry census now fails if a sixth leaf appears; and the
+three leaves with no database species are named outright. Details in §7.1.
 
 Nothing under `rmgpy/data/`, no reactor, no `electron_placement.py`, no RMG-database, no family, no
 species, no cross-section. The change did not turn out to require any of them.
@@ -283,61 +354,102 @@ is a real improvement — it belongs to whoever owns `group.py`, not to this tic
 
 ## 6. Revert-and-rerun: the new tests confirmed RED first
 
-`rmgpy/molecule/atomtype.py` was restored to `git show 78f306665:...` — tests left in place — and
-the extension rebuilt. The loaded module was checked by value, not by mtime:
+Every arm reverts **only** `rmgpy/molecule/atomtype.py`, leaves the tests in place, rebuilds the
+extension, and checks the loaded module by value rather than by mtime.
+
+### Arm A — the original round: base `78f306665`, no `Ar0e` at all
 
 ```
 LOADED: .../rmgpy/molecule/atomtype.cpython-39-x86_64-linux-gnu.so
 Ar0e in ATOMTYPES: False
 ```
 
-Result (`evidence/revert_red.stdout.log`): **13 failed, 43 passed, 2 skipped**. All 11 `Ar0e`
-assertions in the new class fail, and so do both rewritten tripwires:
+`evidence/revert_red.stdout.log`: **13 failed, 43 passed, 2 skipped** — the 11 `Ar0e` assertions
+then in the new class, plus both rewritten tripwires.
+
+### Arm B — the rework: previous commit `f14de2663`, `Ar0e` present, old action graph
 
 ```
-FAILED TestArgonSingleBondNarrowing::test_bond_free_triplet_argon_types_as_ar0e_not_ar0s
-FAILED TestArgonSingleBondNarrowing::test_metastable_argon_no_longer_degrades_to_generic_R_when_typing_is_tolerant
-FAILED TestMetastableArgonAtomType::test_declaration_is_the_bond_free_p3_neutral
-FAILED TestMetastableArgonAtomType::test_metastable_argon_builds_as_a_molecule
-FAILED TestMetastableArgonAtomType::test_metastable_argon_builds_as_a_species
-FAILED TestMetastableArgonAtomType::test_tolerant_typing_yields_ar0e_and_not_the_wildcard
-FAILED TestMetastableArgonAtomType::test_no_two_argon_types_can_match_one_atom
-FAILED TestMetastableArgonAtomType::test_each_realizable_argon_atom_types_specifically
-FAILED TestMetastableArgonAtomType::test_only_u2_is_constructible_at_p3_c0
-FAILED TestMetastableArgonAtomType::test_perception_admits_unrealizable_u_states
-FAILED TestMetastableArgonAtomType::test_ar0e_declares_no_action_edges
-FAILED TestMetastableArgonAtomType::test_ar0e_is_linked_into_the_type_hierarchy_both_ways
-FAILED TestMetastableArgonAtomType::test_ar0e_is_usable_as_a_group_adjacency_list_label
+Ar0e present: True | Ar+.decrement_charge = ['Ar0']
 ```
 
-The twelfth new test, `test_untypeable_argon_still_degrades_to_the_wildcard`, **passed** against the
-reverted tree — as it must. It is the preserved coverage of the generic-`R` fallback, and its whole
-value is that it holds on both sides of the change.
+`evidence/red_arm_a.stdout.log`: **4 failed, 82 passed, 2 skipped**. Exactly the repair assertions
+fail, and nothing else does:
 
-`atomtype.py` was then restored and rebuilt; `atomtypeTest.py` returned to 56 passed / 2 skipped.
+```
+FAILED TestMetastableArgonAtomType::test_ar0e_declares_exactly_the_ionisation_edge
+FAILED TestArgonActionPathsAgree::test_no_declared_argon_edge_is_false[Ar0]
+FAILED TestArgonActionPathsAgree::test_no_declared_argon_edge_is_false[Ar+]
+FAILED TestArgonActionPathsAgree::test_the_two_repaired_pairs_state_their_measured_targets
+```
+
+This is the arm that matters for the rework: it isolates the seven action-edge assignments from the
+declaration, and confirms the agreement test fails on precisely the two leaves that carried false
+edges (`Ar0` and `Ar+`) while passing on the three that did not.
+
+### Arm C — the whole rework against base `78f306665`
+
+`evidence/red_arm_b.stdout.log`: **27 failed, 59 passed, 2 skipped** across both test files.
+
+### The tests that pass on both sides, by design
+
+Four parametrisations pass in arm B *and* after the change, and that is their point — they are
+`Ar0s`-only cases that do not depend on `Ar0e`
+(`test_no_declared_argon_edge_is_false[Ar0s]`, `test_added_argon_types_make_correct_sample_atom[Ar0s]`,
+`test_added_argon_types_cannot_make_a_sample_molecule[Ar0s]`,
+`test_argon_leaves_without_a_database_species[Ar0s]`). So does
+`test_untypeable_argon_still_degrades_to_the_wildcard`, the preserved generic-`R` coverage.
+
+**Stated plainly rather than papered over:** `test_empty_set_actions_binds_the_group_path_only` and
+`test_a_generic_template_matches_and_reacts_metastable_argon` are behaviour *pins*, not repairs.
+They go red in arm C only because `Ar0e` does not exist there, not because the behaviour they
+describe changes. A pin of existing behaviour has no tree against which it can legitimately go red,
+and manufacturing one would have proved nothing.
+
+After every arm, `atomtype.py` was restored and rebuilt and the suites returned to green.
 
 ---
 
 ## 7. Suite counts, per file against its own collected total
 
-| file | collected (base) | result (base) | collected (now) | result (now) |
+| file | collected (base `78f306665`) | collected (first round) | collected (now) | result (now) |
 |---|---|---|---|---|
-| `atomtypeTest.py`      | 46  | — | **58** | 56 passed, 2 skipped |
-| `moleculeTest.py`      | 195 | — | **195** | 194 passed, 1 skipped |
-| `groupTest.py`         | 69  | — | **69** | 69 passed |
-| `atomtypeSevenTest.py` | 11  | — | **11** | 11 passed |
-| four together          | 321 | 318 passed, 3 skipped | **333** | **330 passed, 3 skipped** |
+| `atomtypeTest.py`      | 46  | 58  | **68** | 66 passed, 2 skipped |
+| `moleculeTest.py`      | 195 | 195 | **195** | 194 passed, 1 skipped |
+| `groupTest.py`         | 69  | 69  | **69** | 69 passed |
+| `atomtypeSevenTest.py` | 11  | 11  | **20** | 20 passed |
+| four together          | 321 (318 passed, 3 skipped) | 333 (330 passed, 3 skipped) | **352** | **349 passed, 3 skipped** |
 
-`atomtypeTest.py` grows by exactly 12 — the new class. No other file's collected total moves, and no
-test anywhere goes from passing to failing. The two skips in `atomtypeTest.py` are the pre-existing
-`@pytest.mark.skip(reason="WIP")` sample-molecule tests; the third skip is
+`atomtypeTest.py` grows by 22 over base — 15 in `TestMetastableArgonAtomType` and 8 in
+`TestArgonActionPathsAgree`, less one test that the rework merged away. `atomtypeSevenTest.py` grows
+by 9 (§7.1). No other file's collected total moves, and no test anywhere goes from passing to
+failing. The two skips in `atomtypeTest.py` are the pre-existing `@pytest.mark.skip(reason="WIP")`
+sample-molecule tests; the third skip is
 `moleculeTest.py::test_count_internal_rotors_dimethyl_acetylene`, also pre-existing.
 
-Full unit suite (`pytest test -m "not functional and not database"`): see §9.
-
 Both streams were captured for every measurement; `evidence/` holds the matching `*.stdout.log` and
-`*.stderr.log` for the baseline probe, the action probe, the baseline suite, the post-change suite
-and the revert run.
+`*.stderr.log` for every probe, suite and revert arm.
+
+### 7.1 `atomtypeSevenTest.py`, brought up to the five-leaf reality
+
+The file dated from I-159, when argon had three leaves. It had gone stale in three ways, each now
+replaced by a test rather than by an edited comment:
+
+- **its argon closure test covered only `Ar`/`Ar0`/`Ar+`/`Ar++`** — so `Ar0s` and `Ar0e` were
+  outside it exactly while this ticket rewired the charge edges *through* them. Now covers all five.
+- **no census of the leaf set.** `test_argon_leaf_set_is_exactly_these_five` fails if a sixth leaf
+  appears or one of the five goes missing, and checks each is linked to generic `Ar` both ways —
+  which per-type membership assertions could not see.
+- **"the only two argon signatures in the database" was left implied as complete coverage.** It is
+  still factually right (re-verified by grep: `Ar u0 p4 c0` and `Ar u1 p3 c+1` are the only argon
+  species in `RMG-database-plasma`), but it means **three of the five leaves — `Ar0s`, `Ar0e`,
+  `Ar++` — have no database species at all**, and whatever they do is pinned by unit tests alone.
+  `test_argon_leaves_without_a_database_species` states that outright and tells the next ticket to
+  move `Ar0e` into `ARGON_DB_SIGNATURES` when a metastable species lands.
+
+It also now pins that `Ar0s` and `Ar0e` produce the *same* sample atom (`Ar u0 p3 c0`) — they differ
+only in `single`, the one feature `make_sample_atom` does not act on — which is the shared root
+cause of both sitting in `EXPECTED_FAILING_ATOMTYPES` (§5).
 
 ---
 
@@ -359,26 +471,70 @@ Named explicitly, because most of the value of `Ar0e` is downstream of everythin
   `Species.get_resonance_hybrid` (`species.py:765`) is still the one site passing both tolerant
   flags — verified during this ticket, not widened. One atom stopped reaching it; the mechanism is
   untouched.
-- **A widening this change knowingly introduces.** Because perception ignores `u`, `Ar0e` also
-  answers for `u1 p3 c0` and `u3 p3 c0` — states no molecule can hold, since the adjacency list
-  refuses them. Before this change they raised `AtomTypeError`. They are reachable mid-recipe:
-  `LOSE_CHARGE` on `Ar+` leaves `u1 p3 c0`, which now types as `Ar0e` instead of erroring. Nothing
-  in the declaration can exclude them — `single`, `lone_pairs` and `charge` are the only knobs
-  perception has. `test_perception_admits_unrealizable_u_states` pins this as a hazard so that a
-  later cost has a test to read rather than a surprise to debug. Whether any live recipe reaches it
-  was **not** measured, because that needs a family, which is out of scope.
+- **Perception is five times wider than construction — for every argon type, not just `Ar0e`.**
+  Because `get_atomtype` ignores `u`, `Ar0e` answers for all five `u` values at `p3 c0`; the
+  adjacency list builds one. `Ar0`, `Ar+` and `Ar++` each have the same 5:1 ratio and have had it
+  since they were declared (census §2, `test_every_argon_type_perceives_five_u_states`). `Ar0e` did
+  add four new perceive-but-not-construct states — `u0`, `u1`, `u3`, `u4` at `p3 c0`, which
+  previously raised `AtomTypeError` — and they are reachable mid-recipe: `LOSE_RADICAL` on a
+  metastable argon leaves `u1 p3 c0`, which now types as `Ar0e` rather than erroring.
+
+  > **Correction.** The first version of this report called this "the one behaviour I-222 knowingly
+  > widens". That was overstated: the pattern is family-wide and pre-existing. `Ar0e` is a fifth
+  > instance of it, not the introduction of it.
+
+  Nothing in a declaration can exclude those states — `single`, `lone_pairs` and `charge` are the
+  only knobs perception has. Whether any live recipe reaches one was **not** measured; that needs a
+  family, which is out of scope.
+- **A group spelled `Ar0e` means more than the metastable triplet.** Group adjacency lists get no
+  valency-consistency check, so `1 Ar0e ux p3 c0` matches `u1` as readily as `u2`
+  (`test_group_spelled_ar0e_matches_more_than_the_metastable_triplet`). `u0` and `u3`+ escape only
+  because `update_atomtypes` runs `update_lone_pairs` first and renormalises `p` — arithmetic in a
+  different function, not a constraint the label carries. A database group author cannot rely on it.
 - **`Ar0e` cannot be built by the sample-molecule machinery** (§5), so any tree-generation or
   group-extension path that relies on `make_sample_molecule` will not produce it. Same limitation
-  `Ar0s` has carried since I-218.
-- **The three pre-existing false action edges in §3 were measured but not fixed**, per the non-goal.
-  One of them, `Ar+.decrement_charge = ['Ar0']`, now names a *different* wrong type than it did
-  before this change — the action produces `Ar0e`, where before it produced nothing typeable. The
-  declaration was wrong both ways; this change moved which way.
-- **No database, functional or regression test was run.** The type is new, so nothing in
-  RMG-database references it yet; but that is an argument, not a measurement.
+  `Ar0s` has carried since I-218, and for the same reason: the two share a sample atom.
+- **Forty-four action slots stay empty where the primitive does produce a type** (§3.3). Those are
+  omissions rather than false statements, and were out of scope. Generic `Ar`'s ten self-preserving
+  declarations are likewise untouched — they are what make `Ar0e` reactable at all (§3.1), and
+  whether that is right is a question about generic `Ar`, not about this leaf.
 - **`Ar0e` was chosen and defended, not validated by use.** No group definition, family or library
   spells the label yet, so its ergonomics as an adjacency-list key are demonstrated only by the test
   that writes one.
+- **No functional or regression test was run.** Unit and database suites were (§9); functional and
+  `test/regression/` were not.
+
+### 8.1 A consequence of this change, referred to the owner
+
+**Not repaired here, and deliberately so: `Plasma_Associative_Ionization_Alkaline_Alkaline` can now
+reach metastable argon.** The repair is a database change and that lane is gated; the owner has
+taken it. Recorded because it belongs in this change's evidence trail.
+
+In `RMG-database-plasma/input/kinetics/families/Plasma_Associative_Ionization_Alkaline_Alkaline/groups.py`:
+
+- line 35, top group `A`: `1 *1 R u[2,3,4] px cx` — which `Ar0e` matches on every field;
+- line 55, group `B`: `1 *2 R u[2,3,4] px cx`;
+- lines 23–28, the recipe: `LOSE_RADICAL *1 2`, `LOSE_RADICAL *2 1`, `FORM_BOND *1 1 *2`,
+  `GAIN_CHARGE *1 1`;
+- `rules.py` is 8 lines and carries **zero** `entry(` rate rules.
+
+Driven by hand on two metastable argons, that exact recipe produces a well-formed Ar₂⁺ —
+`Ar+` bonded to `Ar0s`, net charge +1 — inside a family named for alkaline-earth chemistry:
+
+```
+before: ['Ar0e', 'Ar0e']
+after:  ['u0 p3 c+1 -> Ar+', 'u1 p3 c0 -> Ar0s']   net charge 1
+```
+
+Before `Ar0e`, this was unreachable because metastable argon could not be constructed at all. The
+mechanism is §3.1: the family's top group is generic `R`, so the leaf's own `set_actions` never
+enter the decision. `test_a_generic_template_matches_and_reacts_metastable_argon` pins the
+behaviour, deliberately as behaviour and not as a desideratum — whether that family *should* reach
+argon is a database question.
+
+One incidental observation from the same run, not chased: the product molecule kept
+`multiplicity 5` from its two `u2` reactants although its atoms end at `u0` and `u1`.
+`update_atomtypes` does not recompute multiplicity. Unrelated to argon; noted for whoever meets it.
 
 ---
 
@@ -388,22 +544,22 @@ The brief scoped the count comparison to four files. Both wider suites were run 
 atom-type addition is exactly the change that can disturb group-tree loading somewhere the four
 named files never look. Both are clean.
 
-**Unit suite** — `pytest test -m "not functional and not database"`
-(`evidence/full_unit.stdout.log`):
+Both were run in **both rounds**, and the second round's database run is the check that nothing
+downstream depended on the four false action edges.
 
-```
-3298 passed, 48 skipped, 153 deselected, 63 warnings in 153.77s
-```
+| suite | first round | after the action-graph repair |
+|---|---|---|
+| unit — `pytest test -m "not functional and not database"` | 3298 passed, 48 skipped (`evidence/full_unit.stdout.log`) | **3317 passed, 48 skipped** (`evidence/full_unit2.stdout.log`) |
+| database — `pytest test -m "database"` against `../RMG-database-plasma/input` | 118 passed, 1 xfailed, 2308s (`evidence/db_suite.stdout.log`) | **118 passed, 1 xfailed**, 2595s (`evidence/db_suite2.stdout.log`) |
 
-**Database suite** — `pytest test -m "database"`, against `../RMG-database-plasma/input`
-(`evidence/db_suite.stdout.log`):
-
-```
-118 passed, 3380 deselected, 1 xfailed, 2 warnings in 2308.78s
-```
-
-Zero failures in either. The single `xfail` is
+Zero failures anywhere. The unit count rises by the 19 new tests. The database count is unchanged at
+118 — **no database test changed state when four declared argon edges were corrected**, which is the
+evidence that nothing was relying on them. The single `xfail` is
 `i134DuplicateElectronsTest::test_one_library_carrying_both_channels_can_be_loaded`, pre-existing.
+
+Risk was also checked statically before the edit: `grep -rln "Ar0\|Ar++" input/kinetics/families/`
+over `RMG-database-plasma` returns nothing, so no family spells an argon leaf and none could be
+orphaned by dropping `Ar0.increment_charge`.
 
 **One pre-existing collection error, unrelated and not caused here.** Collecting the whole `test`
 tree in one pytest run fails before any test executes:

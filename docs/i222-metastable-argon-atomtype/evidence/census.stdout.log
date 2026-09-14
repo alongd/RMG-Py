@@ -1,0 +1,174 @@
+database.directory = /home/alon/Code/RMG-database-plasma/input
+loaded atomtype module __file__ = /home/alon/Code/RMG-Py-i222-metastable-argon-atomtype/rmgpy/molecule/atomtype.cpython-39-x86_64-linux-gnu.so
+
+================================================================================================
+1. DECLARATIONS
+================================================================================================
+type      single all_doubl  r_double  o_double  s_double    triple quadruple   benzene lone_pair    charge
+----------------------------------------------------------------------------------------------------------
+Ar            []        []        []        []        []        []        []        []        [] [0, 1, 2]
+Ar0          [0]       [0]       [0]       [0]       [0]       [0]       [0]       [0]       [4]       [0]
+Ar0s         [1]       [0]       [0]       [0]       [0]       [0]       [0]       [0]       [3]       [0]
+Ar0e         [0]       [0]       [0]       [0]       [0]       [0]       [0]       [0]       [3]       [0]
+Ar+       [0, 1]       [0]       [0]       [0]       [0]       [0]       [0]       [0]       [3]       [1]
+Ar++   [0, 1, 2]       [0]       [0]       [0]       [0]       [0]       [0]       [0]       [3]       [2]
+
+hierarchy links:
+  Ar     generic=['R', 'R!H', 'R!H!Val7', 'Rx', 'Rx!H']
+         specific=['Ar0', 'Ar0s', 'Ar0e', 'Ar+', 'Ar++']
+  Ar0    generic=['R', 'R!H', 'R!H!Val7', 'Rx', 'Rx!H', 'Ar']
+         specific=[]
+  Ar0s   generic=['R', 'R!H', 'R!H!Val7', 'Rx', 'Rx!H', 'Ar']
+         specific=[]
+  Ar0e   generic=['R', 'R!H', 'R!H!Val7', 'Rx', 'Rx!H', 'Ar']
+         specific=[]
+  Ar+    generic=['R', 'R!H', 'R!H!Val7', 'Rx', 'Rx!H', 'Ar']
+         specific=[]
+  Ar++   generic=['R', 'R!H', 'R!H!Val7', 'Rx', 'Rx!H', 'Ar']
+         specific=[]
+
+================================================================================================
+2. WHICH CONCRETE ATOMS PERCEIVE AS WHICH TYPE
+================================================================================================
+atom                               perceives as  constructible via adjacency list?
+------------------------------------------------------------------------------------------------
+  Ar0   bare                       Ar0           yes
+  Ar0s  bonded u1                  Ar0s          n/a (needs a partner)
+  Ar0s  bonded u0                  Ar0s          n/a (needs a partner)
+  Ar0e  bare u2                    Ar0e          yes
+  Ar+   bare u1                    Ar+           yes
+  Ar+   bonded u0                  Ar+           n/a (needs a partner)
+  Ar++  bare u0                    Ar++          yes
+  Ar++  bonded u1                  Ar++          n/a (needs a partner)
+
+  exhaustive sweep of bond-free argon, u0..u4 x p0..p4 x c-1..+3:
+   u  p   c  perceives  adjlist   
+   0  3  +0  Ar0e       refused   
+   0  3  +1  Ar+        refused   
+   0  3  +2  Ar++       builds    
+   0  4  +0  Ar0        builds    
+   1  3  +0  Ar0e       refused   
+   1  3  +1  Ar+        builds    
+   1  3  +2  Ar++       refused   
+   1  4  +0  Ar0        refused   
+   2  3  +0  Ar0e       builds    
+   2  3  +1  Ar+        refused   
+   2  3  +2  Ar++       refused   
+   2  4  +0  Ar0        refused   
+   3  3  +0  Ar0e       refused   
+   3  3  +1  Ar+        refused   
+   3  3  +2  Ar++       refused   
+   3  4  +0  Ar0        refused   
+   4  3  +0  Ar0e       refused   
+   4  3  +1  Ar+        refused   
+   4  3  +2  Ar++       refused   
+   4  4  +0  Ar0        refused   
+
+  summary -- how many (u,p,c) triples perceive as each type, and how many of those build:
+    Ar+      5 triples perceive,   1 of them constructible
+    Ar++     5 triples perceive,   1 of them constructible
+    Ar0      5 triples perceive,   1 of them constructible
+    Ar0e     5 triples perceive,   1 of them constructible
+
+================================================================================================
+3. ACTION GRAPH -- DECLARED vs MEASURED
+================================================================================================
+
+  Ar
+    action               primitive      DECLARED           MEASURED (per representative)
+    ------------------------------------------------------------------------------------------
+    increment_bond       CHANGE_BOND +1 ['Ar']                <<< DISAGREES
+    decrement_bond       CHANGE_BOND -1 ['Ar']                <<< DISAGREES
+    form_bond            FORM_BOND      ['Ar']                <<< DISAGREES
+    break_bond           BREAK_BOND     ['Ar']                <<< DISAGREES
+    increment_radical    GAIN_RADICAL   ['Ar']                <<< DISAGREES
+    decrement_radical    LOSE_RADICAL   ['Ar']                <<< DISAGREES
+    increment_lone_pair  GAIN_PAIR      ['Ar']                <<< DISAGREES
+    decrement_lone_pair  LOSE_PAIR      ['Ar']                <<< DISAGREES
+    increment_charge     GAIN_CHARGE    ['Ar']                <<< DISAGREES
+    decrement_charge     LOSE_CHARGE    ['Ar']                <<< DISAGREES
+
+  Ar0
+    action               primitive      DECLARED           MEASURED (per representative)
+    ------------------------------------------------------------------------------------------
+    increment_bond       CHANGE_BOND +1 []                 bare:n/a
+    decrement_bond       CHANGE_BOND -1 []                 bare:n/a
+    form_bond            FORM_BOND      []                 bare:<none>
+    break_bond           BREAK_BOND     []                 bare:n/a
+    increment_radical    GAIN_RADICAL   []                 bare:Ar0   <<< DISAGREES
+    decrement_radical    LOSE_RADICAL   []                 bare:ActionError
+    increment_lone_pair  GAIN_PAIR      []                 bare:<none>
+    decrement_lone_pair  LOSE_PAIR      ['Ar+']            bare:Ar++   <<< DISAGREES
+    increment_charge     GAIN_CHARGE    ['Ar+']            bare:<none>   <<< DISAGREES
+    decrement_charge     LOSE_CHARGE    []                 bare:<none>
+
+  Ar0s
+    action               primitive      DECLARED           MEASURED (per representative)
+    ------------------------------------------------------------------------------------------
+    increment_bond       CHANGE_BOND +1 []                 bonded u1:<none>, bonded u0:<none>
+    decrement_bond       CHANGE_BOND -1 []                 bonded u1:Ar0e, bonded u0:Ar0e   <<< DISAGREES
+    form_bond            FORM_BOND      []                 bonded u1:<none>, bonded u0:<none>
+    break_bond           BREAK_BOND     []                 bonded u1:Ar0e, bonded u0:Ar0e   <<< DISAGREES
+    increment_radical    GAIN_RADICAL   []                 bonded u1:Ar0s, bonded u0:Ar0s   <<< DISAGREES
+    decrement_radical    LOSE_RADICAL   []                 bonded u1:Ar0s, bonded u0:ActionError   <<< DISAGREES
+    increment_lone_pair  GAIN_PAIR      []                 bonded u1:<none>, bonded u0:<none>
+    decrement_lone_pair  LOSE_PAIR      []                 bonded u1:<none>, bonded u0:<none>
+    increment_charge     GAIN_CHARGE    []                 bonded u1:Ar+, bonded u0:Ar+   <<< DISAGREES
+    decrement_charge     LOSE_CHARGE    []                 bonded u1:<none>, bonded u0:<none>
+
+  Ar0e
+    action               primitive      DECLARED           MEASURED (per representative)
+    ------------------------------------------------------------------------------------------
+    increment_bond       CHANGE_BOND +1 []                 bare:n/a
+    decrement_bond       CHANGE_BOND -1 []                 bare:n/a
+    form_bond            FORM_BOND      []                 bare u2:Ar0s   <<< DISAGREES
+    break_bond           BREAK_BOND     []                 bare:n/a
+    increment_radical    GAIN_RADICAL   []                 bare u2:Ar0e   <<< DISAGREES
+    decrement_radical    LOSE_RADICAL   []                 bare u2:Ar0e   <<< DISAGREES
+    increment_lone_pair  GAIN_PAIR      []                 bare u2:<none>
+    decrement_lone_pair  LOSE_PAIR      []                 bare u2:<none>
+    increment_charge     GAIN_CHARGE    []                 bare u2:Ar+   <<< DISAGREES
+    decrement_charge     LOSE_CHARGE    []                 bare u2:<none>
+
+  Ar+
+    action               primitive      DECLARED           MEASURED (per representative)
+    ------------------------------------------------------------------------------------------
+    increment_bond       CHANGE_BOND +1 []                 bare:n/a, bonded u0:<none>
+    decrement_bond       CHANGE_BOND -1 []                 bare:n/a, bonded u0:Ar+   <<< DISAGREES
+    form_bond            FORM_BOND      []                 bare u1:Ar+, bonded u0:<none>   <<< DISAGREES
+    break_bond           BREAK_BOND     []                 bare:n/a, bonded u0:Ar+   <<< DISAGREES
+    increment_radical    GAIN_RADICAL   []                 bare u1:Ar+, bonded u0:Ar+   <<< DISAGREES
+    decrement_radical    LOSE_RADICAL   []                 bare u1:Ar+, bonded u0:ActionError   <<< DISAGREES
+    increment_lone_pair  GAIN_PAIR      ['Ar0']            bare u1:<none>, bonded u0:<none>   <<< DISAGREES
+    decrement_lone_pair  LOSE_PAIR      []                 bare u1:<none>, bonded u0:<none>
+    increment_charge     GAIN_CHARGE    ['Ar++']           bare u1:Ar++, bonded u0:Ar++
+    decrement_charge     LOSE_CHARGE    ['Ar0']            bare u1:Ar0e, bonded u0:Ar0s   <<< DISAGREES
+
+  Ar++
+    action               primitive      DECLARED           MEASURED (per representative)
+    ------------------------------------------------------------------------------------------
+    increment_bond       CHANGE_BOND +1 []                 bare:n/a, bonded u1:<none>
+    decrement_bond       CHANGE_BOND -1 []                 bare:n/a, bonded u1:Ar++   <<< DISAGREES
+    form_bond            FORM_BOND      []                 bare u0:Ar++, bonded u1:Ar++   <<< DISAGREES
+    break_bond           BREAK_BOND     []                 bare:n/a, bonded u1:Ar++   <<< DISAGREES
+    increment_radical    GAIN_RADICAL   []                 bare u0:Ar++, bonded u1:Ar++   <<< DISAGREES
+    decrement_radical    LOSE_RADICAL   []                 bare u0:ActionError, bonded u1:Ar++   <<< DISAGREES
+    increment_lone_pair  GAIN_PAIR      []                 bare u0:Ar0, bonded u1:<none>   <<< DISAGREES
+    decrement_lone_pair  LOSE_PAIR      []                 bare u0:<none>, bonded u1:<none>
+    increment_charge     GAIN_CHARGE    []                 bare u0:<none>, bonded u1:<none>
+    decrement_charge     LOSE_CHARGE    ['Ar+']            bare u0:Ar+, bonded u1:Ar+
+
+================================================================================================
+4. THE OPEN QUESTION -- Ar+ LOSE_CHARGE
+================================================================================================
+  declared Ar+.decrement_charge : ['Ar0']
+  measured Ar+   bare u1        LOSE_CHARGE -> u1 p3 c+0 0 single -> Ar0e
+  measured Ar+   bonded u0      LOSE_CHARGE -> u0 p3 c+0 1 single -> Ar0s
+  measured Ar++  bare u0        LOSE_CHARGE -> u0 p3 c+1 0 single -> Ar+
+  measured Ar++  bonded u1      LOSE_CHARGE -> u1 p3 c+1 1 single -> Ar+
+
+  what each candidate inverse would have to declare back (GAIN_CHARGE):
+    Ar0   bare           (Ar0   ) GAIN_CHARGE -> <none>
+    Ar0s  bonded u1      (Ar0s  ) GAIN_CHARGE -> Ar+
+    Ar0s  bonded u0      (Ar0s  ) GAIN_CHARGE -> Ar+
+    Ar0e  bare u2        (Ar0e  ) GAIN_CHARGE -> Ar+
