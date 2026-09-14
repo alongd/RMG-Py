@@ -1,0 +1,42 @@
+
+0. what is loaded
+-----------------
+atomtype module: /home/alon/Code/RMG-Py-i222-metastable-argon-atomtype/rmgpy/molecule/atomtype.cpython-39-x86_64-linux-gnu.so
+Ar+.decrement_charge as declared: ['Ar0e', 'Ar0s']
+
+1. the four edges 62f61558f replaced, re-measured on concrete atoms
+-------------------------------------------------------------------
+Ar0 LOSE_PAIR    -> Ar++      (old edge said Ar+)
+Ar0 GAIN_CHARGE  -> NO TYPE   (old edge said Ar+)
+Ar+ GAIN_PAIR    -> NO TYPE   (old edge said Ar0)
+Ar+ LOSE_CHARGE  -> Ar0e      (old edge said Ar0)
+
+2a. LOSE_CHARGE on a concrete Ar+ has TWO answers, chosen by bond count
+-----------------------------------------------------------------------
+bare Ar+          ->  Ar0e
+singly-bonded Ar+ ->  Ar0s
+
+2b/2c. LOSE_CHARGE on a GroupAtom spelled Ar+, via the GROUP path
+-----------------------------------------------------------------
+resulting atomtype list: ['Ar0e', 'Ar0s']
+bond count was never consulted -- _lose_charge reads decrement_charge and nothing else
+fresh interpreter 0: ['Ar0e', 'Ar0s']
+fresh interpreter 1: ['Ar0e', 'Ar0s']
+fresh interpreter 2: ['Ar0e', 'Ar0s']
+fresh interpreter 3: ['Ar0e', 'Ar0s']
+fresh interpreter 4: ['Ar0e', 'Ar0s']
+fresh interpreter 5: ['Ar0e', 'Ar0s']
+
+2d. the consumers that read element [0] of that list
+----------------------------------------------------
+make_sample_atom       line 818: [(829, 'atomtype = self.atomtype[0]')]
+pick_wildcards         line 2850: [(2858, 'atom1.atomtype = [atom1.atomtype[0]]'), (2863, 'atom1_features = atom1.atomtype[0].get_features()'), (2864, 'atom2_features = atom2.atomtype[0].get_features()')]
+_lose_charge           line 386: [(408, 'self.atomtype = list(set(atomtype))')]
+
+3. a group spelled `Ar0e ux p3 c0`, against every u at p3 c0
+------------------------------------------------------------
+u0 p3 c0 -> perceived Ar0   matched by the group: False
+u1 p3 c0 -> perceived Ar0e  matched by the group: True
+u2 p3 c0 -> perceived Ar0e  matched by the group: True
+u3 p3 c0 -> perceived R     matched by the group: False
+u4 p3 c0 -> perceived R     matched by the group: False

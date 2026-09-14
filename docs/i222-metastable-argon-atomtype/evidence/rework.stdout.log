@@ -1,0 +1,101 @@
+database.directory = /home/alon/Code/RMG-database-plasma/input
+loaded atomtype module __file__ = /home/alon/Code/RMG-Py-i222-metastable-argon-atomtype/rmgpy/molecule/atomtype.cpython-39-x86_64-linux-gnu.so
+
+==============================================================================
+HIGH 1 -- what generic Ar / generic R declare, and what the molecule path does
+==============================================================================
+  ATOMTYPES['Ar'].set_actions:
+      increment_bond         ['Ar']
+      decrement_bond         ['Ar']
+      form_bond              ['Ar']
+      break_bond             ['Ar']
+      increment_radical      ['Ar']
+      decrement_radical      ['Ar']
+      increment_lone_pair    ['Ar']
+      decrement_lone_pair    ['Ar']
+      increment_charge       ['Ar']
+      decrement_charge       ['Ar']
+
+  ATOMTYPES['R'].set_actions:
+      increment_bond         ['R']
+      decrement_bond         ['R']
+      form_bond              ['R']
+      break_bond             ['R']
+      increment_radical      ['R']
+      decrement_radical      ['R']
+      increment_lone_pair    ['R']
+      decrement_lone_pair    ['R']
+      increment_charge       ['R']
+      decrement_charge       ['R']
+
+  ATOMTYPES['Ar0e'].set_actions:
+      increment_bond         []
+      decrement_bond         []
+      form_bond              []
+      break_bond             []
+      increment_radical      []
+      decrement_radical      []
+      increment_lone_pair    []
+      decrement_lone_pair    []
+      increment_charge       []
+      decrement_charge       []
+
+-- do generic groups match a concrete Ar0e molecule? --
+   Ar0e molecule atomtype: Ar0e
+   '1 *1 R ux px cx'            -> matches Ar0e: True
+   '1 *1 R u[2,3,4] px cx'      -> matches Ar0e: True
+   '1 *1 Ar ux px cx'           -> matches Ar0e: True
+   '1 *1 Rx ux px cx'           -> matches Ar0e: True
+   '1 *1 R!H ux px cx'          -> matches Ar0e: True
+
+-- GROUP path (GroupAtom.apply_action, which DOES read set_actions) --
+   GroupAtom([R]) GAIN_CHARGE -> ['R']
+   GroupAtom([Ar]) GAIN_CHARGE -> ['Ar']
+   GroupAtom([Ar0e]) GAIN_CHARGE -> ActionError: Unable to update GroupAtom due to GAIN_CHARGE action: Unknown atom type produced from set "[<AtomType "Ar0e">]
+
+-- MOLECULE path (ReactionRecipe on a concrete Ar0e atom) --
+   [['GAIN_CHARGE', '*1', 1]]                       -> u2 p2 c+1 -> R
+   [['LOSE_RADICAL', '*1', 1]]                      -> u1 p3 c+0 -> Ar0e
+   [['LOSE_RADICAL', '*1', 2], ['GAIN_PAIR', '*1', 1]] -> u0 p4 c+0 -> Ar0
+
+-- the alkaline-family-shaped recipe on two metastable argons --
+   before: ['Ar0e', 'Ar0e']
+   after:  ['u1 p2 c+1 -> R', 'u1 p3 c+0 -> Ar0s'] net charge 1
+
+==============================================================================
+HIGH 3 -- what LOSE_CHARGE on Ar+ actually produces
+==============================================================================
+  declared Ar+.decrement_charge = ['Ar0']
+  declared Ar0.increment_charge = ['Ar+']
+
+  bare Ar+   u1 p3 c+1            perceives as Ar+
+    LOSE_CHARGE -> u1 p3 c+0 -> Ar0e
+  bonded Ar+ u0 p3 c+1 (1 single) perceives as Ar+
+    LOSE_CHARGE -> u0 p3 c+0 1 single -> Ar0s
+
+  inverses (GAIN_CHARGE), to see what would have to close back:
+    Ar0      (Ar0  ) GAIN_CHARGE -> u0 p4 c+1 -> <no type>
+    Ar0e     (Ar0e ) GAIN_CHARGE -> u2 p3 c+1 -> Ar+
+    Ar0s u1  (Ar0s ) GAIN_CHARGE -> u1 p3 c+1 -> Ar+
+    Ar0s u0  (Ar0s ) GAIN_CHARGE -> u0 p3 c+1 -> Ar+
+
+==============================================================================
+SMALLER -- perception at p3 c0 across every u; group `Ar0e ux p3 c0`
+==============================================================================
+  direct perception of Ar u0 p3 c0 (no bonds) -> Ar0e
+  direct perception of Ar u1 p3 c0 (no bonds) -> Ar0e
+  direct perception of Ar u2 p3 c0 (no bonds) -> Ar0e
+  direct perception of Ar u3 p3 c0 (no bonds) -> Ar0e
+  direct perception of Ar u4 p3 c0 (no bonds) -> Ar0e
+
+  group `1 *1 Ar0e ux p3 c0` built; atomtypes = ['Ar0e'] radical_electrons = []
+    molecule built directly at u0: after update -> u0 p4 c+0 type=Ar0; matches group: False
+    molecule built directly at u1: after update -> u1 p3 c+0 type=Ar0e; matches group: True
+    molecule built directly at u2: after update -> u2 p3 c+0 type=Ar0e; matches group: True
+    molecule built directly at u3: after update -> u3 p2 c+0 type=R; matches group: False
+    molecule built directly at u4: after update -> u4 p2 c+0 type=R; matches group: False
+
+  and the same group against the other argon molecules:
+    Ar0  '1 Ar u0 p4 c0'    type=Ar0 matches: False
+    Ar+  '1 Ar u1 p3 c+1'   type=Ar+ matches: False
+    Ar++ '1 Ar u0 p3 c+2'   type=Ar++ matches: False

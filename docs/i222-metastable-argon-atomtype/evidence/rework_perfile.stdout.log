@@ -1,0 +1,4 @@
+atomtypeTest: 68 tests collected | 66 passed, 2 skipped in 1.79s 
+moleculeTest: 195 tests collected | 194 passed, 1 skipped in 5.26s 
+groupTest: 69 tests collected | 69 passed in 1.72s 
+atomtypeSevenTest: 20 tests collected | 20 passed in 2.74s 

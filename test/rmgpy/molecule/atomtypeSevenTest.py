@@ -31,6 +31,28 @@ scanning ``allElements``; when no element matches, ``element`` stays ``None`` an
 the ``mol.Atom(element=None)`` that follows can take the interpreter down rather
 than raise. So the kept types are each exercised in their **own subprocess**: one
 crash cannot hide the others.
+
+The argon leaf set has since GROWN, and this file guards the new shape as well as
+the i159 verdict:
+
+* i218 added ``Ar0s``, the singly-bonded neutral -- the neutral half of Ar2+.
+* i222 added ``Ar0e``, the bond-free neutral at three lone pairs -- metastable Ar*.
+
+So "the argon three" is now the argon **five**, and three statements this file used
+to make are no longer the whole truth. Each has been replaced by a test rather than
+by an edited comment:
+
+* the registry census (``test_argon_leaf_set_is_exactly_these_five``) fails if a
+  sixth leaf appears or one of the five disappears, which the old membership
+  assertions could not see;
+* ``ARGON_DB_SIGNATURES`` holds two argon adjacency lists transcribed BY HAND from a
+  grep of RMG-database (plasma) on 2026-09-13, ``Ar u0 p4 c0`` and ``Ar u1 p3 c+1``.
+  Nothing here reads a database, so these tests check what those two literals type
+  to and cannot notice a database that gains a third argon species -- see the
+  constant's own comment;
+* the action-closure test covered only ``Ar``/``Ar0``/``Ar+``/``Ar++``, so the two
+  newer leaves were outside it exactly while i222 was rewiring the charge edges
+  through them. It now covers all five.
 """
 
 import os
@@ -43,20 +65,38 @@ from rmgpy.molecule import Molecule
 from rmgpy.molecule.group import Group
 from rmgpy.molecule.atomtype import ATOMTYPES, get_atomtype
 
-# The three argon types that were kept.
+# The three argon types that were kept by i159.
 ARGON_KEPT = ["Ar0", "Ar+", "Ar++"]
+# Added after i159: the singly-bonded neutral (i218) and the metastable (i222).
+ARGON_ADDED = ["Ar0s", "Ar0e"]
+# Every argon leaf that must be registered, in the order ATOMTYPES['Ar'].specific holds them.
+ARGON_ALL = ["Ar0", "Ar0s", "Ar0e", "Ar+", "Ar++"]
 # The four types dropped as unused / off-theme / isolated.
 DROPPED = ["Li-", "Na-", "K-", "N3dc"]
 
-# make_sample_atom expectations for the kept argon types: (charge, lone_pairs).
-ARGON_SAMPLE = {"Ar0": (0, 4), "Ar+": (1, 3), "Ar++": (2, 3)}
+# make_sample_atom expectations, per argon leaf: (charge, lone_pairs).
+# Ar0s and Ar0e share a sample atom -- see test_added_argon_types_share_one_sample_atom.
+ARGON_SAMPLE = {"Ar0": (0, 4), "Ar+": (1, 3), "Ar++": (2, 3), "Ar0s": (0, 3), "Ar0e": (0, 3)}
 
-# The only two argon signatures that occur as concrete species in RMG-database
-# (plasma): neutral ground-state argon and the Ar+ radical cation.
+# Two argon signatures TRANSCRIBED BY HAND from a grep of RMG-database (plasma) on
+# 2026-09-13: neutral ground-state argon and the Ar+ radical cation. They were the
+# only two argon species there on that date.
+#
+# THIS IS A LITERAL, NOT A DATABASE SCAN. No test in this file loads a database, so
+# none of them can notice a database that gains a metastable (or any other) argon
+# species; they check only what these two adjacency lists perceive as. Keeping it a
+# literal is deliberate -- the file is otherwise pure unit test, and a scan would make
+# it depend on a cloned RMG-database at a compatible branch. The cost is that the date
+# above is the last moment the claim "these are the only two" was checked, and
+# refreshing it is a manual grep.
 ARGON_DB_SIGNATURES = {
     "1 Ar u0 p4 c0": "Ar0",
     "1 Ar u1 p3 c+1": "Ar+",
 }
+# The leaves neither of those two signatures reaches -- i.e. unreached as of the same
+# hand-check. Ar0s and Ar0e need a bonded Ar2+ and a metastable species respectively,
+# both owned by other tickets; Ar++ has never had one.
+ARGON_WITHOUT_DB_SPECIES = ["Ar0s", "Ar0e", "Ar++"]
 
 # The inverse-action pairs that define both-ways action-graph closure.
 _INVERSE_ACTIONS = [
@@ -153,9 +193,9 @@ def test_dropped_types_are_absent(label):
 
 @pytest.mark.parametrize("adjlist,expected", sorted(ARGON_DB_SIGNATURES.items()))
 def test_concrete_argon_species_type_specifically(adjlist, expected):
-    """The two argon signatures that occur in the database type to their specific
-    argon atom type -- not to the lumped generic ``Ar`` -- now that ``Ar`` is out
-    of ``nonSpecifics``."""
+    """The two hand-transcribed argon signatures type to their specific argon atom
+    type -- not to the lumped generic ``Ar`` -- now that ``Ar`` is out of
+    ``nonSpecifics``. Scope: these two literals, not a database scan."""
     mol = Molecule().from_adjacency_list(adjlist)
     atom = mol.atoms[0]
     atomtype = get_atomtype(atom, {b: bd for b, bd in atom.bonds.items()})
@@ -175,11 +215,104 @@ def test_generic_argon_group_matches_specific_argon_atom():
 
 
 def test_argon_action_graph_closes_both_ways():
-    """The argon subgraph (generic ``Ar`` + Ar0/Ar+/Ar++) closes both ways: every
-    declared action has its inverse declared back. This is the property the alkali
-    anions violated (one-way sink) and the reason they, unlike argon, were not
-    kept with only their forward actions."""
-    violations = _closure_violations(["Ar", "Ar0", "Ar+", "Ar++"])
+    """The argon subgraph closes both ways: every declared action has its inverse
+    declared back. This is the property the alkali anions violated (one-way sink)
+    and the reason they, unlike argon, were not kept with only their forward actions.
+
+    Covers all five leaves. It used to cover only Ar/Ar0/Ar+/Ar++, which left Ar0s
+    and Ar0e outside the check exactly while i222 rewired the charge edges through
+    them -- ``Ar+.decrement_charge`` now names both."""
+    violations = _closure_violations(["Ar"] + ARGON_ALL)
     assert violations == set(), (
         "argon action graph is not both-ways closed: {0}".format(sorted(violations))
+    )
+
+
+def test_argon_leaf_set_is_exactly_these_five():
+    """The registry census: exactly five argon leaves, each linked to generic ``Ar``
+    in both directions, and generic ``Ar`` naming them in the order it resolves them.
+
+    ``get_atomtype`` only ever returns entries of ``ATOMTYPES['Ar'].specific``, so a
+    leaf missing from that list is unreachable however well it is declared, and a
+    leaf present but unregistered is an AttributeError waiting to happen. A plain
+    membership assertion per type cannot see a SIXTH leaf arriving; this can."""
+    assert [t.label for t in ATOMTYPES["Ar"].specific] == ARGON_ALL
+    for label in ARGON_ALL:
+        assert label in ATOMTYPES, "{0} is not registered".format(label)
+        assert ATOMTYPES["Ar"] in ATOMTYPES[label].generic, (
+            "{0} does not name generic Ar".format(label)
+        )
+        assert ATOMTYPES[label].specific == [], (
+            "{0} is a leaf and must have no specifics".format(label)
+        )
+
+
+@pytest.mark.parametrize("label", ARGON_ADDED)
+def test_added_argon_types_make_correct_sample_atom(label):
+    """The two leaves added after i159 resolve to a real sample atom too, each in its
+    own subprocess, for the reason in the module docstring."""
+    proc = _run_child(label)
+    assert proc.returncode == 0, (
+        "atom type {0!r} failed: returncode={1}\nstdout: {2}\nstderr: {3}".format(
+            label, proc.returncode, proc.stdout, proc.stderr
+        )
+    )
+    charge, lone_pairs = ARGON_SAMPLE[label]
+    assert "charge={0}".format(charge) in proc.stdout, proc.stdout
+    assert "lone_pairs={0}".format(lone_pairs) in proc.stdout, proc.stdout
+
+
+def test_added_argon_types_share_one_sample_atom():
+    """Ar0s and Ar0e are indistinguishable to the sample builder, and that is why
+    both sit in ``EXPECTED_FAILING_ATOMTYPES`` in atomtypeTest.py.
+
+    ``make_sample_atom`` takes the first entry of each feature list and has no rule
+    for choosing ``u`` or for adding a single-bonded partner, so it builds the same
+    ``Ar u0 p3 c0`` for both -- charge-inconsistent for either, which is what makes
+    ``make_sample_molecule`` raise. The two types differ only in ``single``, the one
+    feature the builder does not act on."""
+    from rmgpy.molecule.group import GroupAtom
+
+    samples = {}
+    for label in ARGON_ADDED:
+        atom = GroupAtom(atomtype=[ATOMTYPES[label]]).make_sample_atom()
+        samples[label] = (atom.symbol, atom.radical_electrons, atom.lone_pairs, atom.charge)
+    assert samples["Ar0s"] == samples["Ar0e"] == ("Ar", 0, 3, 0)
+    assert ATOMTYPES["Ar0s"].single == [1] and ATOMTYPES["Ar0e"].single == [0]
+
+
+@pytest.mark.parametrize("label", ARGON_ADDED)
+def test_added_argon_types_cannot_make_a_sample_molecule(label):
+    """The consequence of the above, pinned as behaviour: the sample atom is
+    charge-inconsistent, so building a molecule from it raises. If this ever starts
+    passing, ``make_sample_atom`` has learned to pick ``u`` and both labels should
+    come out of ``EXPECTED_FAILING_ATOMTYPES``."""
+    from rmgpy.exceptions import UnexpectedChargeError
+
+    group = Group().from_adjacency_list("1 {0} ux".format(label))
+    with pytest.raises(UnexpectedChargeError):
+        group.make_sample_molecule()
+
+
+@pytest.mark.parametrize("label", ARGON_WITHOUT_DB_SPECIES)
+def test_argon_leaves_without_a_database_species(label):
+    """Three of the five leaves are reached by neither hand-transcribed signature.
+
+    What this actually asserts: the label is registered, and it is not what either
+    adjacency list in ``ARGON_DB_SIGNATURES`` perceives as. It does NOT assert that
+    no database species reaches the label -- that constant is a literal, not a scan
+    (see its comment), so this test would keep passing on a database that had gained
+    a metastable argon species yesterday. The claim it supports is the weaker and
+    still useful one the i222 report makes under "what this could not reach":
+    whatever these three leaves do is pinned by unit tests alone. When a metastable
+    argon species lands, move ``Ar0e`` into ``ARGON_DB_SIGNATURES`` and delete it
+    here -- by hand, because nothing here will prompt you."""
+    typed = set()
+    for adjlist in ARGON_DB_SIGNATURES:
+        mol = Molecule().from_adjacency_list(adjlist)
+        atom = mol.atoms[0]
+        typed.add(get_atomtype(atom, {b: bd for b, bd in atom.bonds.items()}).label)
+    assert label in ATOMTYPES, "{0} is not registered".format(label)
+    assert label not in typed, (
+        "{0} now has a database species -- move it into ARGON_DB_SIGNATURES".format(label)
     )

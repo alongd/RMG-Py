@@ -1,0 +1,48 @@
+database.directory = /home/alon/Code/RMG-database-plasma/input
+loaded atomtype module __file__ = /home/alon/Code/RMG-Py-i222-metastable-argon-atomtype/rmgpy/molecule/atomtype.cpython-39-x86_64-linux-gnu.so
+
+--- single actions applied to a concrete Ar0e atom (u2 p3 c0, no bonds) ---
+  GAIN_PAIR (increment_lone_pair)      u2 p4 c-2 bonds=[] -> <no type>
+  LOSE_PAIR (decrement_lone_pair)      u2 p2 c+2 bonds=[] -> <no type>
+  GAIN_RADICAL (increment_radical)     u3 p3 c+0 bonds=[] -> Ar0e
+  LOSE_RADICAL (decrement_radical)     u1 p3 c+0 bonds=[] -> Ar0e
+  GAIN_CHARGE (increment_charge)       u2 p3 c+1 bonds=[] -> Ar+
+  LOSE_CHARGE (decrement_charge)       u2 p3 c-1 bonds=[] -> <no type>
+  FORM_BOND (single, to H)             u2 p3 c+0 bonds=[1.0] -> Ar0s
+
+--- reverse direction: which declared argon types reach Ar0e in one action? ---
+  Ar0   single=[0] lone_pairs=[4] charge=[0]
+      GAIN_PAIR (increment_lone_pair)      u0 p5 c-2 bonds=[] -> <no type>
+      LOSE_PAIR (decrement_lone_pair)      u0 p3 c+2 bonds=[] -> Ar++
+      GAIN_RADICAL (increment_radical)     u1 p4 c+0 bonds=[] -> Ar0
+      LOSE_RADICAL (decrement_radical)     REFUSED: ActionError
+      GAIN_CHARGE (increment_charge)       u0 p4 c+1 bonds=[] -> <no type>
+      LOSE_CHARGE (decrement_charge)       u0 p4 c-1 bonds=[] -> <no type>
+  Ar0s  single=[1] lone_pairs=[3] charge=[0]
+      GAIN_PAIR (increment_lone_pair)      u1 p4 c-1 bonds=[1.0] -> <no type>
+      LOSE_PAIR (decrement_lone_pair)      u1 p2 c+3 bonds=[1.0] -> <no type>
+      GAIN_RADICAL (increment_radical)     u2 p3 c+0 bonds=[1.0] -> Ar0s
+      LOSE_RADICAL (decrement_radical)     u0 p3 c+0 bonds=[1.0] -> Ar0s
+      GAIN_CHARGE (increment_charge)       u1 p3 c+1 bonds=[1.0] -> Ar+
+      LOSE_CHARGE (decrement_charge)       u1 p3 c-1 bonds=[1.0] -> <no type>
+  Ar+   single=[0, 1] lone_pairs=[3] charge=[1]
+      GAIN_PAIR (increment_lone_pair)      u1 p4 c-1 bonds=[] -> <no type>
+      LOSE_PAIR (decrement_lone_pair)      u1 p2 c+3 bonds=[] -> <no type>
+      GAIN_RADICAL (increment_radical)     u2 p3 c+1 bonds=[] -> Ar+
+      LOSE_RADICAL (decrement_radical)     u0 p3 c+1 bonds=[] -> Ar+
+      GAIN_CHARGE (increment_charge)       u1 p3 c+2 bonds=[] -> Ar++
+      LOSE_CHARGE (decrement_charge)       u1 p3 c+0 bonds=[] -> Ar0e  <== Ar0e
+  Ar++  single=[0, 1, 2] lone_pairs=[3] charge=[2]
+      GAIN_PAIR (increment_lone_pair)      u0 p4 c+0 bonds=[] -> Ar0
+      LOSE_PAIR (decrement_lone_pair)      u0 p2 c+4 bonds=[] -> <no type>
+      GAIN_RADICAL (increment_radical)     u1 p3 c+2 bonds=[] -> Ar++
+      LOSE_RADICAL (decrement_radical)     REFUSED: ActionError
+      GAIN_CHARGE (increment_charge)       u0 p3 c+3 bonds=[] -> <no type>
+      LOSE_CHARGE (decrement_charge)       u0 p3 c+1 bonds=[] -> Ar+
+
+--- which u states does the adjacency-list path admit at Ar p3 c0 (no bonds)? ---
+  '1 Ar u0 p3 c0'        -> InvalidAdjacencyListError: Invalid valency for atom Ar (Ar0e) with 0 unpaired electrons, 3 pairs of electrons, 0 charge, and bonds [].
+  '1 Ar u1 p3 c0'        -> InvalidAdjacencyListError: Invalid valency for atom Ar (Ar0e) with 1 unpaired electrons, 3 pairs of electrons, 0 charge, and bonds [].
+  '1 Ar u2 p3 c0'        -> OK, atomtype = Ar0e
+  '1 Ar u3 p3 c0'        -> InvalidAdjacencyListError: Invalid valency for atom Ar (Ar0e) with 3 unpaired electrons, 3 pairs of electrons, 0 charge, and bonds [].
+  '1 Ar u4 p3 c0'        -> InvalidAdjacencyListError: Invalid valency for atom Ar (Ar0e) with 4 unpaired electrons, 3 pairs of electrons, 0 charge, and bonds [].

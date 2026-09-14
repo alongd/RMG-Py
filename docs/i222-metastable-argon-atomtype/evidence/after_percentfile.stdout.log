@@ -1,0 +1,4 @@
+atomtypeTest: collected=58 tests collected | result========================= 56 passed, 2 skipped in 1.52s =========================
+moleculeTest: collected=195 tests collected | result========================= 194 passed, 1 skipped in 4.89s ========================
+groupTest: collected=69 tests collected | result=============================== 69 passed in 1.69s ==============================
+atomtypeSevenTest: collected=11 tests collected | result=============================== 11 passed in 2.14s ==============================
