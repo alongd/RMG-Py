@@ -216,3 +216,56 @@ was noticed; re-verified after that change landed and after the fresh rebuild re
 above: md5sum of rmgpy/solver/plasma.pyx equals the current baseline
 (bb4ce4dfb37a74bba012795cff779180), and the full plasmaWallTest.py suite (19 tests,
 including this one) PASSED ("19 passed in 2.78s").
+
+================================================================================
+15. test_charge_row_scale_is_positive_finite_and_leaves_the_solution_unchanged
+================================================================================
+
+Edit (in residual, the quasineutrality electron row):
+
+--- a/rmgpy/solver/plasma.pyx
++++ b/rmgpy/solver/plasma.pyx
+@@ residual
+-            delta[self.electron_index] = self.charge_row_scale * self._net_charge(y)
++            delta[self.electron_index] = self.charge_row_scale * self.charge_row_scale * self._net_charge(y)
+
+Rationale: squares the row-scale multiplier in the residual only (the Jacobian still applies it
+to the first power at line ~1851), breaking the design invariant that charge_row_scale is an
+EXACT row scaling of the DAE. This makes the analytic Jacobian inconsistent with the residual it
+is supposed to linearise, so DASPK's Newton iteration on the algebraic electron row is no longer
+consistent between the two reactors compared in the test (ra.charge_row_scale=1.0 vs
+rb.charge_row_scale=1.0e6): the ra case is unaffected (1.0**2 == 1.0) but the rb case's residual
+row is now scaled 1e6x relative to what its Jacobian predicts, driving the corrector to fail.
+
+Failing pytest output (rebuilt .so, ran the single test node):
+
+    test/rmgpy/solver/plasmaWallTest.py::test_charge_row_scale_is_positive_finite_and_leaves_the_solution_unchanged FAILED
+
+    =================================== FAILURES ===================================
+    __ test_charge_row_scale_is_positive_finite_and_leaves_the_solution_unchanged __
+
+        ...
+        for t in np.logspace(-9, -7, 6):
+            ra.advance(t)
+    >       rb.advance(t)
+
+    test/rmgpy/solver/plasmaWallTest.py:547:
+    ...
+    rmgpy/solver/plasma.pyx:1340: in rmgpy.solver.plasma.PlasmaReactor.advance
+    rmgpy/solver/plasma.pyx:1348: in rmgpy.solver.plasma.PlasmaReactor.advance
+        result = ReactionSystem.advance(self, tout)
+    pydas/daspk.pyx:439: in pydas.daspk.DASPK.advance
+    E   pydas.daspk.DASPKError: DASPK returned with an IDID = -7, Repeated convergence test
+    failures occurred on the last attempted step in DDASPK.  An inaccurate or ill-conditioned
+    Jacobian or preconditioner may be the problem.  If you are absolutely certain you want to
+    continue, you should restart the integration.
+
+    =========================== short test summary info ============================
+    FAILED test/rmgpy/solver/plasmaWallTest.py::test_charge_row_scale_is_positive_finite_and_leaves_the_solution_unchanged
+    ============================== 1 failed in 5.12s ===============================
+
+Revert: edit reverted via the exact inverse string replacement
+(self.charge_row_scale * self.charge_row_scale * self._net_charge(y) ->
+self.charge_row_scale * self._net_charge(y)), rebuilt, md5sum of rmgpy/solver/plasma.pyx
+confirmed equal to the current baseline (bb4ce4dfb37a74bba012795cff779180), and the full
+plasmaWallTest.py suite (20 tests, including this one) PASSED ("20 passed in 3.86s").
