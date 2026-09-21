@@ -2,6 +2,14 @@
 # measurement can be re-read later, and it must stay byte-identical to what the tool
 # actually printed. Rewriting it to satisfy a whitespace check would falsify it. Turn the
 # check off for those paths instead, so `git diff --check` stays useful everywhere else.
-docs/**/logs/**       -whitespace
-docs/**/*.log         -whitespace
-docs/**/*-diff.txt    -whitespace
+#
+# `-whitespace` is not the whole check. `git diff --check` reports a leftover conflict
+# marker independently of the whitespace attribute, and a pytest failure log quotes the
+# source it failed on -- which is how a committed log came to contain a line of seven `<`
+# and be reported as an unresolved merge. The lever for that half is the marker LENGTH:
+# setting it far above the seven characters git looks for means no line in a log can be
+# mistaken for one. Verified: with `-whitespace` alone a log containing `<<<<<<< HEAD` is
+# still reported; with `conflict-marker-size` set it is not.
+docs/**/logs/**       -whitespace conflict-marker-size=200
+docs/**/*.log         -whitespace conflict-marker-size=200
+docs/**/*-diff.txt    -whitespace conflict-marker-size=200
