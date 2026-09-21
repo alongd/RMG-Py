@@ -48,8 +48,8 @@ from rmgpy.data.base import Entry
 from rmgpy.data.kinetics.family import TemplateReaction
 from rmgpy.data.kinetics.library import LibraryReaction
 from rmgpy.electron_balance import (check_electron_balance, check_electron_reactant_order,
-                                    expand_electrons, get_electron_species,
-                                    potential_dependence_is_inert)
+                                    expand_electrons, get_electron_placement_counts,
+                                    get_electron_species, potential_dependence_is_inert)
 from rmgpy.exceptions import ChemkinError, MechanismWriterError
 from rmgpy.molecule.element import get_element
 from rmgpy.quantity import Quantity, QuantityError
@@ -2328,6 +2328,34 @@ def mark_duplicate_reaction(test_reaction, reaction_list):
     If the test_reaction is a duplicate (in Chemkin terms) of one in reaction_list, then set `duplicate=True` on both instances.
     `reaction_list` can be any iterator.
     It does not add the testReaction to the reactionList - you probably want to do this yourself afterwards.
+
+    **Electrons are participants, and they are compared per side.** RMG keeps a charged
+    reaction's free electrons out of ``reactants``/``products`` and in the scalar
+    ``Reaction.electrons``, so the reference comparisons below see only the heavy species.
+    Two reactions that differ *only* in how many electrons stand on each side therefore
+    compare equal there -- and marking them ``DUPLICATE`` writes a deck Chemkin rejects,
+    because a duplicate pair must share a stoichiometry and these do not. The pair that
+    exposed it:
+
+        Li + e-  =>  Li+ + 2 e-    placement (1, 2)    2 reactants, 3 products
+        Li       =>  Li+ +   e-    placement (0, 1)    1 reactant,  2 products
+
+    Both carry ``electrons = +1``, so the NET scalar cannot separate them; only the per-side
+    pair can. :func:`~rmgpy.electron_balance.get_electron_placement_counts` is that
+    comparison, already used by :meth:`rmgpy.reaction.Reaction.is_isomorphic` and
+    :func:`rmgpy.rmg.model.are_identical_species_references`; this was the one identity
+    comparison on the export path that had not been given it. The warning is what hid the
+    bug: it prints the electron-free canonical form, in which the two really are identical.
+
+    The refinement is applied to the branch that MARKS and nowhere else, which is what makes
+    it strict: adding a conjunct there can only turn a ``True`` into a ``False``. The two
+    branches that *un*-mark a pair keep reading the unrefined match flags, so a pair they
+    would have unmarked before is still unmarked now -- narrowing their condition would have
+    left wrongly-marked duplicates in place, which is the opposite of the repair.
+
+    For every reaction outside the plasma families and libraries the counts are ``(0, 0)``
+    on both sides, so the marking verdict is unchanged bit for bit; see
+    ``get_electron_placement_counts`` for why that reduction is exact.
     """
     reaction1 = test_reaction
     for reaction2 in reaction_list:
@@ -2353,9 +2381,19 @@ def mark_duplicate_reaction(test_reaction, reaction_list):
                     reaction1.duplicate = False
                     reaction2.duplicate = False
             else:
-                if (reaction1.kinetics.is_pressure_dependent() == reaction2.kinetics.is_pressure_dependent()
+                # The heavy species match; now ask whether the electrons do, per side and in
+                # the orientation the heavy species matched in. Same-direction: side for side.
+                # Opposite-direction: each side against the other reaction's opposite side.
+                # See this function's docstring for why the net `electrons` scalar cannot do
+                # this job.
+                electrons1 = get_electron_placement_counts(reaction1)
+                electrons2 = get_electron_placement_counts(reaction2)
+                same_dir_duplicate = same_dir_match and electrons1 == electrons2
+                opposite_dir_duplicate = opposite_dir_match and electrons1 == (electrons2[1], electrons2[0])
+                if ((same_dir_duplicate or opposite_dir_duplicate)
+                        and reaction1.kinetics.is_pressure_dependent() == reaction2.kinetics.is_pressure_dependent()
                         and ((reaction1.reversible and reaction2.reversible)
-                             or (same_dir_match and not reaction1.reversible and not reaction2.reversible))):
+                             or (same_dir_duplicate and not reaction1.reversible and not reaction2.reversible))):
                     # Only mark as duplicate if both reactions are pressure dependent or both are
                     # not pressure dependent. Also, they need to both be reversible or both be
                     # irreversible in the same direction.  Do not mark as duplicates otherwise.
