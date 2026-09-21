@@ -316,7 +316,7 @@ sub-threshold density is known no better than the background ionisation rate is.
 | 11 | sweeps reproduce the crossover, both sides | 347 / 241; similarity collapse to 1.4e-4 |
 | 12 | **no target electron density in the implementation or criteria** | the wall code introduces exactly two numeric constants: the Loschmidt density (a unit convention — the density the tabulated mobility is normalised to) and a dimensionless ionisation-degree ceiling. Asserted in the harness. Every transport parameter's source is in `envelope.md` §1 |
 | 13 | ordinary reactors unchanged | see §7 |
-| 14 | every new test has a demonstrated red state | delegated with the implementation's own negative controls shown above; see §8 |
+| 14 | every new test has a **demonstrated red state** | **16 of 16**, in `logs/red-states.log`: test name, the exact diff hunk of the breakage, the captured failing output, and the revert confirmed by checksum against `bb4ce4dfb37a74bba012795cff779180` |
 | 15 | `git status` clean; both streams captured | all runs logged to `logs/*.stdout.log` + `logs/*.stderr.log` |
 
 Verifier 10 deserves a note. At `h/|y| = 1e-7` **every** configuration disagrees at ~1e-3 —
@@ -324,18 +324,35 @@ including the pre-existing no-wall path — because `res[0]` is O(1) while the p
 it by O(1e-14). A single step size proves nothing about a Jacobian; the control arm is what
 attributes the number.
 
+Two notes on verifier 14, both of which the red-state work turned up:
+
+- **`test_diffusion_length_and_mobility_must_be_declared_together`** fails when its guard is
+  removed, but with an `AttributeError` rather than the `PlasmaStateError` it expects. The test
+  correctly rejects that — a `pytest.raises(PlasmaStateError)` is not satisfied by an
+  `AttributeError` — so it is a valid demonstration, and it incidentally shows what the guard is
+  worth: without it the code crashes anyway, just unreadably. Turning a crash into a message is
+  exactly the guard's job.
+- The cycles are only meaningful because each one rebuilds. `plasma.pyx` is cythonized; a
+  breakage without a rebuild runs the old `.so`, the test passes, and a red state gets logged that
+  never happened. Every entry records the rebuild in both directions.
+
 ---
 
 ## 7. Suites
 
 ```
 $ pytest test/rmgpy/solver/ test/rmgpy/rmg/ test/rmgpy/kinetics/ -p no:cacheprovider --no-cov -q
-658 passed, 2 skipped, 11 warnings, 1 error in 106.71s
+678 passed, 2 skipped, 11 warnings in 157.99s
 ```
 
-The single error is a **teardown**, not a test: `mainTest.TestMain` tries to
-`shutil.rmtree` `RMG-database-plasma/input/kinetics/libraries/testSeed`, and the database checkout
-is read-only for this ticket. It is unrelated to this change and the database was not written to.
+678 = the 658 that pass on the branch base, plus the 20 new wall test IDs. Zero failures, zero
+errors.
+
+An earlier run of the same three suites reported **one additional error**, and it is worth
+recording because it is environmental rather than a flake: `mainTest.TestMain`'s *teardown* tries
+to `shutil.rmtree` `RMG-database-plasma/input/kinetics/libraries/testSeed`, i.e. the test harness
+writes into the database directory, which is read-only for this ticket. It did not recur on the
+final run, it is unrelated to this change, and the database was not written to either way.
 
 Note for anyone reproducing: a fresh worktree has **no `rmgrc`**, and without it these three suites
 report 26 failures and 21 errors that are entirely database-resolution, nothing to do with the

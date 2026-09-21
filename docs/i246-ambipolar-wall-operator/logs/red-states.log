@@ -269,3 +269,663 @@ Revert: edit reverted via the exact inverse string replacement
 self.charge_row_scale * self._net_charge(y)), rebuilt, md5sum of rmgpy/solver/plasma.pyx
 confirmed equal to the current baseline (bb4ce4dfb37a74bba012795cff779180), and the full
 plasmaWallTest.py suite (20 tests, including this one) PASSED ("20 passed in 3.86s").
+
+------------------------------------------------------------ item 5
+
+test_net_charge_drift_zero_under_full_residual
+
+Breakage: rmgpy/solver/plasma.pyx, _apply_wall_terms, gave the electron a
+wall-loss frequency 3% different from the common ion frequency, breaking the
+exact electron/ion cancellation that makes the full-residual charge drift
+zero.
+
+--- a/rmgpy/solver/plasma.pyx
++++ b/rmgpy/solver/plasma.pyx
+@@ -1713,7 +1713,7 @@
+         for j in range(self.num_core_species):
+             if self.species_charges[j] == 0:
+                 continue
+-            loss = nu * y[j]
++            loss = (nu * 0.97 if j == self.electron_index else nu) * y[j]
+             res[j] -= loss
+             wall[j] -= loss
+             if j == self.electron_index:
+
+Rebuild: python setup.py build_ext --inplace -j 8 (exit 0).
+
+Captured failure:
+
+    test/rmgpy/solver/plasmaWallTest.py::test_net_charge_drift_zero_under_full_residual FAILED
+
+    =================================== FAILURES ===================================
+    ________________ test_net_charge_drift_zero_under_full_residual ________________
+
+        def test_net_charge_drift_zero_under_full_residual():
+            """d(net charge)/dt from the full residual (chemistry + wall) is zero."""
+            r, _, _ = _build_reactor(wall=True, with_chemistry=True)
+            y = _state_at(r, 1.0e-6)
+            dc, _ = r.residual(0.0, y, np.zeros(r.num_core_species, float))
+            drift = float(np.sum(r.species_charges * dc))
+            scale = float(np.sum(np.abs(r.species_charges * dc)))
+    >       assert abs(drift) <= 1e-12 * max(scale, 1.0)
+    E       assert 5.554979374267077e-06 <= (1e-12 * 94.04010185332174)
+    E        +  where 5.554979374267077e-06 = abs(-5.554979374267077e-06)
+    E        +  and   94.04010185332174 = max(94.04010185332174, 1.0)
+
+    test/rmgpy/solver/plasmaWallTest.py:257: AssertionError
+    =========================== short test summary info ============================
+    FAILED test/rmgpy/solver/plasmaWallTest.py::test_net_charge_drift_zero_under_full_residual
+    ============================== 1 failed in 3.63s ===============================
+
+Revert: git checkout -- rmgpy/solver/plasma.pyx, rebuilt, md5sum of
+rmgpy/solver/plasma.pyx confirmed equal to the baseline
+(bb4ce4dfb37a74bba012795cff779180), and the single test PASSED
+("1 passed in 3.37s").
+
+------------------------------------------------------------ item 6
+
+test_heavy_atom_recycling_conservation
+
+Breakage: rmgpy/solver/plasma.pyx, _apply_wall_terms, inverted the recycling
+fraction on the neutralised-heavy-core return term from wall_recycling to
+(1 - wall_recycling), breaking the (1-gamma)*nu_wall*N_ion heavy-atom loss
+relation the test pins at gamma = 1.0, 0.5, 0.0.
+
+--- a/rmgpy/solver/plasma.pyx
++++ b/rmgpy/solver/plasma.pyx
+@@ -1722,8 +1722,8 @@
+             if target >= 0 and self.wall_recycling > 0.0:
+                 # gamma of the neutralised heavy core returns to the gas; the
+                 # remaining (1-gamma) stays on the wall and leaves the gas phase.
+-                res[target] += self.wall_recycling * loss
+-                wall[target] += self.wall_recycling * loss
++                res[target] += (1.0 - self.wall_recycling) * loss
++                wall[target] += (1.0 - self.wall_recycling) * loss
+
+Rebuild: python setup.py build_ext --inplace -j 8 (exit 0).
+
+Captured failure:
+
+    test/rmgpy/solver/plasmaWallTest.py::test_heavy_atom_recycling_conservation FAILED
+
+    =================================== FAILURES ===================================
+    ____________________ test_heavy_atom_recycling_conservation ____________________
+
+        def test_heavy_atom_recycling_conservation():
+            """Heavy atoms leave the gas at exactly (1-gamma)*nu_wall*N_ion, checked
+            at gamma = 1.0, 0.5, 0.0."""
+            r0, _, _ = _build_reactor(wall=True, with_chemistry=False)
+            y = _state_at(r0, 1.0e-6)
+            for gamma in (1.0, 0.5, 0.0):
+                rg, _, _ = _build_reactor(wall=True, with_chemistry=False, gamma=gamma)
+                ieg, i_arg, i_arpg = _indices(rg)
+                dg, _ = rg.residual(0.0, y, np.zeros(rg.num_core_species, float))
+                d_heavy = dg[i_arg] + dg[i_arpg]
+                nug = rg.nu_wall
+                expected = -(1.0 - gamma) * nug * y[i_arpg]
+    >           assert abs(d_heavy - expected) <= 1e-12 * max(abs(expected), abs(nug * y[i_arpg]))
+    E           assert 0.00018516597908671485 <= (1e-12 * 0.00018516597908671485)
+    E            +  where 0.00018516597908671485 = abs((-0.00018516597908671485 - -0.0))
+    E            +  and   0.00018516597908671485 = max(0.0, 0.00018516597908671485)
+    E            +    where 0.0 = abs(-0.0)
+    E            +    and   0.00018516597908671485 = abs((185.16597908671486 * 1e-06))
+
+    test/rmgpy/solver/plasmaWallTest.py:275: AssertionError
+    =========================== short test summary info ============================
+    FAILED test/rmgpy/solver/plasmaWallTest.py::test_heavy_atom_recycling_conservation
+    ============================== 1 failed in 3.58s ===============================
+
+Revert: git checkout -- rmgpy/solver/plasma.pyx, rebuilt, md5sum of
+rmgpy/solver/plasma.pyx confirmed equal to the baseline
+(bb4ce4dfb37a74bba012795cff779180), and the single test PASSED
+("1 passed in 2.78s").
+
+------------------------------------------------------------ item 7
+
+test_no_wall_residual_and_jacobian_bitwise_reproducible
+
+Note: this test's own first assertions are `ra.has_wall is False` /
+`rb.has_wall is False`, before any residual/Jacobian comparison, so the most
+direct minimal edit is the has_wall discriminator itself in _configure_wall,
+rather than something inside _apply_wall_terms/_apply_wall_jacobian (which
+only run when has_wall is True and therefore cannot leak into a wall=False
+reactor's numerics by construction -- any edit confined to those two methods
+is invisible to this test, consistent with the brief's warning).
+
+Breakage: rmgpy/solver/plasma.pyx, _configure_wall, inverted the has_wall
+discriminator from `diffusion_length is not None` to `diffusion_length is
+None`, so a wall=False reactor (diffusion_length/ion_reduced_mobility both
+None) now reports has_wall=True.
+
+--- a/rmgpy/solver/plasma.pyx
++++ b/rmgpy/solver/plasma.pyx
+@@ -318,7 +318,7 @@
+             raise PlasmaStateError("a charged-particle wall needs BOTH a diffusion "
+                 "length and an ion reduced mobility ...")
+-        self.has_wall = diffusion_length is not None
++        self.has_wall = diffusion_length is None
+
+Rebuild: python setup.py build_ext --inplace -j 8 (exit 0).
+
+Captured failure (surfaces as a construction-time AttributeError rather than
+an assertion, because the inverted has_wall now routes the wall=False
+reactor into the diffusion_length/ion_reduced_mobility validation branch
+with both still None -- still a genuine failure of this test, not another
+one, since _build_reactor(wall=False, ...) is this test's own first line):
+
+    test/rmgpy/solver/plasmaWallTest.py::test_no_wall_residual_and_jacobian_bitwise_reproducible FAILED
+
+    =================================== FAILURES ===================================
+    ___________ test_no_wall_residual_and_jacobian_bitwise_reproducible ____________
+
+        def test_no_wall_residual_and_jacobian_bitwise_reproducible():
+            """A reactor with no wall declared produces residual and Jacobian values
+            bit-for-bit identical to one whose wall parameters are absent -- built
+            twice, independently, from the same equations. Uses ==, not approx."""
+    >       ra, _, _ = _build_reactor(wall=False, with_chemistry=True)
+
+    test/rmgpy/solver/plasmaWallTest.py:285:
+    _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+    test/rmgpy/solver/plasmaWallTest.py:119: in _build_reactor
+        reactor = PlasmaReactor(
+    rmgpy/solver/plasma.pyx:287: in rmgpy.solver.plasma.PlasmaReactor.__init__
+        self._configure_wall(diffusion_length, ion_reduced_mobility,
+    _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    >   value = quantity_obj.value_si
+    E   AttributeError: 'NoneType' object has no attribute 'value_si'
+
+    rmgpy/solver/plasma.pyx:329: AttributeError
+    =========================== short test summary info ============================
+    FAILED test/rmgpy/solver/plasmaWallTest.py::test_no_wall_residual_and_jacobian_bitwise_reproducible
+    ============================== 1 failed in 3.55s ===============================
+
+Revert: git checkout -- rmgpy/solver/plasma.pyx, rebuilt, md5sum of
+rmgpy/solver/plasma.pyx confirmed equal to the baseline
+(bb4ce4dfb37a74bba012795cff779180), and the single test PASSED
+("1 passed in 3.91s").
+
+------------------------------------------------------------ item 8
+
+test_below_threshold_decays_to_extinction_without_negative_amounts
+
+Breakage: rmgpy/solver/plasma.pyx, compute_nu_wall, squared n_neutral in the
+ion-mobility denominator (mu_i ~ 1/n_neutral^2 instead of 1/n_neutral),
+crushing nu_wall at the 5 torr argon density this test runs at, so it no
+longer dominates nu_ion below threshold.
+
+--- a/rmgpy/solver/plasma.pyx
++++ b/rmgpy/solver/plasma.pyx
+@@ -1290,7 +1290,7 @@
+         n_neutral = y_neutral * constants.Na / V
+-        mu_i = self.ion_reduced_mobility.value_si * self.mobility_reference_density / n_neutral
++        mu_i = self.ion_reduced_mobility.value_si * self.mobility_reference_density / (n_neutral * n_neutral)
+
+Rebuild: python setup.py build_ext --inplace -j 8 (exit 0).
+
+Captured failure:
+
+    test/rmgpy/solver/plasmaWallTest.py::test_below_threshold_decays_to_extinction_without_negative_amounts FAILED
+
+    =================================== FAILURES ===================================
+    ______ test_below_threshold_decays_to_extinction_without_negative_amounts ______
+
+        def test_below_threshold_decays_to_extinction_without_negative_amounts():
+            """Below threshold (Te = 0.5 eV, no external source) the electron
+            population decays toward extinction and no negative species amount is
+            produced anywhere on the way."""
+            te_lo = 0.5
+            r, _, _ = _build_reactor(te_ev=te_lo, wall=True, with_chemistry=True,
+                                     x_ion=1.0e-9, source=None)
+            ie, i_ar, i_arp = _indices(r)
+            y0 = r.y0.copy()
+            V0 = r.compute_volume(y0)
+            nu_wall = r.compute_nu_wall(y0, V0)
+            n_ar = y0[i_ar] * constants.Na / V0
+            n_e = y0[ie] * constants.Na / V0
+            kinetics = VoronovEIArrhenius(Z=18, N=18, yaml_path_or_obj=VORONOV_YAML)
+            k_ion = kinetics.get_rate_coefficient(te_lo * EV_TO_K) / constants.Na
+            nu_ion = k_ion * n_ar
+    >       assert nu_wall > nu_ion, (
+                "this test's premise is that the wall wins below threshold; "
+                "nu_wall={0!r}, nu_ion={1!r}".format(nu_wall, nu_ion))
+    E       AssertionError: this test's premise is that the wall wins below threshold; nu_wall=1.905479624410468e-22, nu_ion=9.384385105299945e-05
+    E       assert 1.905479624410468e-22 > 9.384385105299945e-05
+
+    test/rmgpy/solver/plasmaWallTest.py:321: AssertionError
+    =========================== short test summary info ============================
+    FAILED test/rmgpy/solver/plasmaWallTest.py::test_below_threshold_decays_to_extinction_without_negative_amounts
+    ============================== 1 failed in 2.93s ===============================
+
+Revert: git checkout -- rmgpy/solver/plasma.pyx, rebuilt, md5sum of
+rmgpy/solver/plasma.pyx confirmed equal to the baseline
+(bb4ce4dfb37a74bba012795cff779180), and the single test PASSED
+("1 passed in 3.77s").
+
+------------------------------------------------------------ item 9
+
+test_analytic_jacobian_matches_finite_difference_scan (parametrized x5)
+
+Breakage: rmgpy/solver/plasma.pyx, _apply_wall_jacobian, dropped the diagonal
+self-loss correction (`if k == i: dloss += nu`) from the wall-loss Jacobian
+term, so pd[i, i] is missing the direct d(loss_i)/dy_i contribution whenever
+a wall is configured. The no-wall control arm never calls
+_apply_wall_jacobian, so it is unaffected by design.
+
+--- a/rmgpy/solver/plasma.pyx
++++ b/rmgpy/solver/plasma.pyx
+@@ -1878,8 +1878,6 @@
+                 dloss = loss * dnu_rel
+-                if k == i:
+-                    dloss += nu
+                 pd[i, k] -= dloss
+
+Rebuild: python setup.py build_ext --inplace -j 8 (exit 0).
+
+Captured failure:
+
+    test/rmgpy/solver/plasmaWallTest.py::test_analytic_jacobian_matches_finite_difference_scan[no wall at all (pre-existing equations)-kwargs0] PASSED
+    test/rmgpy/solver/plasmaWallTest.py::test_analytic_jacobian_matches_finite_difference_scan[wall, integrated electron-kwargs1] FAILED
+    test/rmgpy/solver/plasmaWallTest.py::test_analytic_jacobian_matches_finite_difference_scan[wall, quasineutral electron-kwargs2] FAILED
+    test/rmgpy/solver/plasmaWallTest.py::test_analytic_jacobian_matches_finite_difference_scan[wall + external source-kwargs3] FAILED
+    test/rmgpy/solver/plasmaWallTest.py::test_analytic_jacobian_matches_finite_difference_scan[gamma = 0.5 (partially pumping)-kwargs4] FAILED
+
+    =================================== FAILURES ===================================
+    _ test_analytic_jacobian_matches_finite_difference_scan[wall, integrated electron-kwargs1] _
+    E       AssertionError: wall, integrated electron: best relative disagreement 0.9752302819936368
+    E       assert 0.9752302819936368 < 1e-05
+    _ test_analytic_jacobian_matches_finite_difference_scan[wall, quasineutral electron-kwargs2] _
+    E       AssertionError: wall, quasineutral electron: best relative disagreement 0.9752302819936368
+    E       assert 0.9752302819936368 < 1e-05
+    _ test_analytic_jacobian_matches_finite_difference_scan[wall + external source-kwargs3] _
+    E       AssertionError: wall + external source: best relative disagreement 0.9752302819936368
+    E       assert 0.9752302819936368 < 1e-05
+    _ test_analytic_jacobian_matches_finite_difference_scan[gamma = 0.5 (partially pumping)-kwargs4] _
+    E       AssertionError: gamma = 0.5 (partially pumping): best relative disagreement 0.9752302819936368
+    E       assert 0.9752302819936368 < 1e-05
+    =========================== short test summary info ============================
+    FAILED test/rmgpy/solver/plasmaWallTest.py::test_analytic_jacobian_matches_finite_difference_scan[wall, integrated electron-kwargs1]
+    FAILED test/rmgpy/solver/plasmaWallTest.py::test_analytic_jacobian_matches_finite_difference_scan[wall, quasineutral electron-kwargs2]
+    FAILED test/rmgpy/solver/plasmaWallTest.py::test_analytic_jacobian_matches_finite_difference_scan[wall + external source-kwargs3]
+    FAILED test/rmgpy/solver/plasmaWallTest.py::test_analytic_jacobian_matches_finite_difference_scan[gamma = 0.5 (partially pumping)-kwargs4]
+    ========================= 4 failed, 1 passed in 4.80s ==========================
+
+Revert: git checkout -- rmgpy/solver/plasma.pyx, rebuilt, md5sum of
+rmgpy/solver/plasma.pyx confirmed equal to the baseline
+(bb4ce4dfb37a74bba012795cff779180), and all 5 parametrizations PASSED
+("5 passed in 3.66s").
+
+------------------------------------------------------------ item 10
+
+test_jacobian_scan_negative_control_can_fail
+
+This is itself a negative control: it asserts that a deliberately
+inconsistent Jacobian IS caught (mutating self.wall_recycling between the
+analytic Jacobian capture and the finite-difference residual evaluations
+must make best > FD_TOLERANCE). Its red state is therefore the INVERSE of
+the usual cycle: make the residual path insensitive to the live mutation of
+wall_recycling, so the inconsistency the test relies on stops existing and
+its own "the scan can fail" assertion fails instead.
+
+Breakage: rmgpy/solver/plasma.pyx. Added a frozen snapshot
+wall_recycling_frozen, captured once in __init__ right after
+self.wall_recycling is validated, and made _apply_wall_terms (the function
+residual()/the FD scan actually exercises) read the frozen snapshot instead
+of the live self.wall_recycling. _apply_wall_jacobian is untouched and still
+reads self.wall_recycling live. Net effect: a post-construction mutation of
+wall_recycling no longer changes what residual() computes, so the analytic
+Jacobian (captured before the mutation, when wall_recycling was still at its
+original value) and the finite difference (computed after the mutation, but
+now still evaluating the frozen gamma) agree again.
+
+--- a/rmgpy/solver/plasma.pyx
++++ b/rmgpy/solver/plasma.pyx
+@@ -186,3 +186,4 @@
+     cdef public double wall_recycling
++    cdef public double wall_recycling_frozen
+     # Volumetric external ion-electron pair source (m^-3 s^-1): the declared
+@@ -352,3 +353,4 @@
+                 "({1})".format(self.wall_recycling, self._identity()))
++        self.wall_recycling_frozen = self.wall_recycling
+@@ -1719,6 +1721,6 @@
+             target = self.wall_recycle_target[j]
+-            if target >= 0 and self.wall_recycling > 0.0:
++            if target >= 0 and self.wall_recycling_frozen > 0.0:
+                 # gamma of the neutralised heavy core returns to the gas; the
+                 # remaining (1-gamma) stays on the wall and leaves the gas phase.
+-                res[target] += self.wall_recycling * loss
+-                wall[target] += self.wall_recycling * loss
++                res[target] += self.wall_recycling_frozen * loss
++                wall[target] += self.wall_recycling_frozen * loss
+
+Rebuild: python setup.py build_ext --inplace -j 8 (exit 0).
+
+Captured failure:
+
+    test/rmgpy/solver/plasmaWallTest.py::test_jacobian_scan_negative_control_can_fail FAILED
+
+    =================================== FAILURES ===================================
+    _________________ test_jacobian_scan_negative_control_can_fail _________________
+
+        def test_jacobian_scan_negative_control_can_fail():
+            r, _, _ = _build_reactor(wall=True, with_chemistry=True, x_ion=1.0e-7, gamma=0.5)
+            y = _state_at(r, 1.0e-7)
+
+            def _break_gamma(reactor):
+                reactor.wall_recycling = 0.6
+
+            best = _jacobian_scan(r, y, mutate=_break_gamma)
+    >       assert best > FD_TOLERANCE
+    E       assert 9.98682924953905e-07 > 1e-05
+
+    test/rmgpy/solver/plasmaWallTest.py:398: AssertionError
+    ============================== 1 failed in 4.26s ===============================
+
+Note: the mutation of self.wall_recycling to 0.6 no longer reaches
+residual(), so the FD scan against the (frozen-gamma) analytic Jacobian
+agrees to 1e-6, well under FD_TOLERANCE=1e-5 — exactly the "consistent again
+where the test expects inconsistency" case the brief names.
+
+Revert: git checkout -- rmgpy/solver/plasma.pyx, rebuilt, md5sum of
+rmgpy/solver/plasma.pyx confirmed equal to the baseline
+(bb4ce4dfb37a74bba012795cff779180), and the single test PASSED
+("1 passed in 3.52s").
+
+------------------------------------------------------------ item 11
+
+test_ionisation_degree_ceiling_raises_naming_ionisation_degree
+
+Breakage: rmgpy/solver/plasma.pyx, check_wall_support, disabled the
+ionisation-degree ceiling check (`alpha > self.max_ionisation_degree`) by
+short-circuiting it with `False and`, so an ionisation degree above the
+ceiling no longer raises.
+
+--- a/rmgpy/solver/plasma.pyx
++++ b/rmgpy/solver/plasma.pyx
+@@ -1328,3 +1328,3 @@
+         alpha = y[self.electron_index] / y_neutral
+-        if alpha > self.max_ionisation_degree:
++        if False and alpha > self.max_ionisation_degree:
+
+Rebuild: python setup.py build_ext --inplace -j 8 (exit 0).
+
+Captured failure:
+
+    test/rmgpy/solver/plasmaWallTest.py::test_ionisation_degree_ceiling_raises_naming_ionisation_degree FAILED
+
+    =================================== FAILURES ===================================
+    ________ test_ionisation_degree_ceiling_raises_naming_ionisation_degree ________
+
+        r, _, _ = _build_reactor(wall=True, with_chemistry=False)
+        y_hot = _state_at(r, 1.0e-2)   # alpha = 1e-2 > default ceiling 1e-3
+        with pytest.raises(PlasmaStateError, match="ionisation degree"):
+    >       r.check_wall_support(y_hot)
+    E       Failed: DID NOT RAISE <class 'rmgpy.exceptions.PlasmaStateError'>
+
+    test/rmgpy/solver/plasmaWallTest.py:417: Failed
+    ============================== 1 failed in 2.65s ===============================
+
+Revert: git checkout -- rmgpy/solver/plasma.pyx, rebuilt (exit 0), md5sum
+confirmed equal to baseline (bb4ce4dfb37a74bba012795cff779180), and the
+single test PASSED ("1 passed in 3.89s").
+
+------------------------------------------------------------ item 12
+
+test_nonneutral_initial_state_raises_under_quasineutral_electron
+
+Breakage: rmgpy/solver/plasma.pyx, the initial-composition charge-neutrality
+check, short-circuited the out-of-tolerance condition with `False and`, so a
+non-neutral initial state under quasineutral_electron=True is only logged as
+a warning and never raises.
+
+--- a/rmgpy/solver/plasma.pyx
++++ b/rmgpy/solver/plasma.pyx
+@@ -1420,3 +1420,3 @@
+             net = self._net_charge(self.y0)
+-            if abs(net) > max(PLASMA_NET_CHARGE_ATOL, PLASMA_NET_CHARGE_RTOL * magnitude):
++            if False and abs(net) > max(PLASMA_NET_CHARGE_ATOL, PLASMA_NET_CHARGE_RTOL * magnitude):
+
+Rebuild: python setup.py build_ext --inplace -j 8 (exit 0).
+
+Captured failure:
+
+    test/rmgpy/solver/plasmaWallTest.py::test_nonneutral_initial_state_raises_under_quasineutral_electron FAILED
+
+    =================================== FAILURES ===================================
+    _______ test_nonneutral_initial_state_raises_under_quasineutral_electron _______
+
+        with pytest.raises(PlasmaStateError, match="net charge"):
+    >       bad.initialize_model([electron, ar, arp], [], [], [])
+    E       Failed: DID NOT RAISE <class 'rmgpy.exceptions.PlasmaStateError'>
+
+    test/rmgpy/solver/plasmaWallTest.py:438: Failed
+    ------------------------------ Captured log call -------------------------------
+    WARNING  root:plasmaWallTest.py:438 PlasmaReactor initial composition is NOT
+    charge neutral: net charge = -1e-08 per mole ... This is a warning, not an
+    error ...
+    ============================== 1 failed in 3.65s ===============================
+
+Revert: git checkout -- rmgpy/solver/plasma.pyx, rebuilt (exit 0), md5sum
+confirmed equal to baseline (bb4ce4dfb37a74bba012795cff779180), and the
+single test PASSED ("1 passed in 2.62s").
+
+------------------------------------------------------------ item 13
+
+test_diffusion_length_and_mobility_must_be_declared_together
+
+Breakage: rmgpy/solver/plasma.pyx, _configure_wall, disabled the XOR
+declaration check with `False and`, so supplying only one of
+diffusion_length / ion_reduced_mobility no longer raises the intended
+PlasmaStateError at that site. (The test still fails: with only
+diffusion_length given, has_wall becomes True and the code goes on to try
+Quantity(None).value_si for the missing mobility, raising an unrelated
+AttributeError instead of the intended PlasmaStateError, which
+pytest.raises(PlasmaStateError) correctly rejects. This still demonstrates
+the test detects the loss of the intended guard.)
+
+--- a/rmgpy/solver/plasma.pyx
++++ b/rmgpy/solver/plasma.pyx
+@@ -311,3 +311,3 @@
+ 
+-        if (diffusion_length is None) != (ion_reduced_mobility is None):
++        if False and (diffusion_length is None) != (ion_reduced_mobility is None):
+             raise PlasmaStateError(
+
+Rebuild: python setup.py build_ext --inplace -j 8 (exit 0).
+
+Captured failure:
+
+    test/rmgpy/solver/plasmaWallTest.py::test_diffusion_length_and_mobility_must_be_declared_together FAILED
+
+    =================================== FAILURES ===================================
+    _________ test_diffusion_length_and_mobility_must_be_declared_together _________
+
+        with pytest.raises(PlasmaStateError):
+    >       PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+                          (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
+                          diffusion_length=(_diffusion_length(), 'm'))
+
+    test/rmgpy/solver/plasmaWallTest.py:450:
+    _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+    rmgpy/solver/plasma.pyx:287: in rmgpy.solver.plasma.PlasmaReactor.__init__
+        self._configure_wall(diffusion_length, ion_reduced_mobility,
+    _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    >   value = quantity_obj.value_si
+    E   AttributeError: 'NoneType' object has no attribute 'value_si'
+
+    rmgpy/solver/plasma.pyx:329: AttributeError
+    =========================== short test summary info ============================
+    FAILED test/rmgpy/solver/plasmaWallTest.py::test_diffusion_length_and_mobility_must_be_declared_together
+    ============================== 1 failed in 3.44s ===============================
+
+Revert: git checkout -- rmgpy/solver/plasma.pyx, rebuilt (exit 0), md5sum
+confirmed equal to baseline (bb4ce4dfb37a74bba012795cff779180), and the
+single test PASSED ("1 passed in 3.74s").
+
+------------------------------------------------------------ item 14
+
+test_wall_parameter_bounds_each_raise
+
+This test asserts four independent bound checks each raise: wall_recycling
+outside [0,1], a non-positive diffusion_length, a non-positive
+ion_reduced_mobility, and a negative ionisation_source. Each was broken and
+demonstrated in its own isolated sub-cycle (so that disabling one guard did
+not mask the others), then reverted before moving to the next, so the file
+was only ever one edit away from baseline at any time. All four edits are
+shown below; only one was ever applied at a time.
+
+Breakage (a) — wall_recycling bounds, in _configure_wall:
+
+--- a/rmgpy/solver/plasma.pyx
++++ b/rmgpy/solver/plasma.pyx
+@@ -352,3 +352,3 @@
+         self.wall_recycling = float(wall_recycling)
+-        if not np.isfinite(self.wall_recycling) or not (0.0 <= self.wall_recycling <= 1.0):
++        if False and (not np.isfinite(self.wall_recycling) or not (0.0 <= self.wall_recycling <= 1.0)):
+             raise PlasmaStateError(
+
+Rebuild: python setup.py build_ext --inplace -j 8 (exit 0).
+
+Captured failure:
+
+    test/rmgpy/solver/plasmaWallTest.py::test_wall_parameter_bounds_each_raise FAILED
+
+    =================================== FAILURES ===================================
+    ____________________ test_wall_parameter_bounds_each_raise _____________________
+
+        with pytest.raises(PlasmaStateError):
+    >       _make(wall_recycling=1.5)
+    E       Failed: DID NOT RAISE <class 'rmgpy.exceptions.PlasmaStateError'>
+
+    test/rmgpy/solver/plasmaWallTest.py:480: Failed
+    =========================== short test summary info ============================
+    FAILED test/rmgpy/solver/plasmaWallTest.py::test_wall_parameter_bounds_each_raise
+    ============================== 1 failed in 3.29s ===============================
+
+Revert: git checkout -- rmgpy/solver/plasma.pyx, rebuilt (exit 0), md5sum
+confirmed equal to baseline (bb4ce4dfb37a74bba012795cff779180), and the
+single test PASSED ("1 passed in 3.53s").
+
+Breakage (b) — diffusion_length positivity, in the shared positivity
+for-loop of _configure_wall (isolated to only the diffusion_length branch
+so the ion_reduced_mobility check stayed live):
+
+--- a/rmgpy/solver/plasma.pyx
++++ b/rmgpy/solver/plasma.pyx
+@@ -328,3 +328,3 @@
+                 value = quantity_obj.value_si
+-                if not np.isfinite(value) or value <= 0.0:
++                if name != 'diffusion_length' and (not np.isfinite(value) or value <= 0.0):
+                     raise PlasmaStateError(
+
+Rebuild: python setup.py build_ext --inplace -j 8 (exit 0).
+
+Captured failure:
+
+    test/rmgpy/solver/plasmaWallTest.py::test_wall_parameter_bounds_each_raise FAILED
+
+        with pytest.raises(PlasmaStateError):
+    >       _make(diffusion_length=(-_diffusion_length(), 'm'))
+    E       Failed: DID NOT RAISE <class 'rmgpy.exceptions.PlasmaStateError'>
+
+    test/rmgpy/solver/plasmaWallTest.py:483: Failed
+    ============================== 1 failed in 3.33s ===============================
+
+Revert: git checkout -- rmgpy/solver/plasma.pyx, rebuilt (exit 0), md5sum
+confirmed equal to baseline (bb4ce4dfb37a74bba012795cff779180), and the
+single test PASSED ("1 passed in 3.97s").
+
+Breakage (c) — ion_reduced_mobility positivity, same loop, isolated to
+only the ion_reduced_mobility branch:
+
+--- a/rmgpy/solver/plasma.pyx
++++ b/rmgpy/solver/plasma.pyx
+@@ -328,3 +328,3 @@
+                 value = quantity_obj.value_si
+-                if not np.isfinite(value) or value <= 0.0:
++                if name != 'ion_reduced_mobility' and (not np.isfinite(value) or value <= 0.0):
+                     raise PlasmaStateError(
+
+Rebuild: python setup.py build_ext --inplace -j 8 (exit 0).
+
+Captured failure:
+
+    test/rmgpy/solver/plasmaWallTest.py::test_wall_parameter_bounds_each_raise FAILED
+
+        with pytest.raises(PlasmaStateError):
+    >       _make(ion_reduced_mobility=(-MU0_AR_IN_AR, 'm^2/(V*s)'))
+    E       Failed: DID NOT RAISE <class 'rmgpy.exceptions.PlasmaStateError'>
+
+    test/rmgpy/solver/plasmaWallTest.py:486: Failed
+    ============================== 1 failed in 3.61s ===============================
+
+Revert: git checkout -- rmgpy/solver/plasma.pyx, rebuilt (exit 0), md5sum
+confirmed equal to baseline (bb4ce4dfb37a74bba012795cff779180), and the
+single test PASSED ("1 passed in 3.03s").
+
+Breakage (d) — ionisation_source non-negativity, in _configure_wall:
+
+--- a/rmgpy/solver/plasma.pyx
++++ b/rmgpy/solver/plasma.pyx
+@@ -363,3 +363,3 @@
+-        if not np.isfinite(self.ionisation_source.value_si) or self.ionisation_source.value_si < 0.0:
++        if False and (not np.isfinite(self.ionisation_source.value_si) or self.ionisation_source.value_si < 0.0):
+             raise PlasmaStateError(
+
+Rebuild: python setup.py build_ext --inplace -j 8 (exit 0).
+
+Captured failure:
+
+    test/rmgpy/solver/plasmaWallTest.py::test_wall_parameter_bounds_each_raise FAILED
+
+        with pytest.raises(PlasmaStateError):
+    >       _make(ionisation_source=(-1.0e5, 'm^-3/s'))
+    E       Failed: DID NOT RAISE <class 'rmgpy.exceptions.PlasmaStateError'>
+
+    test/rmgpy/solver/plasmaWallTest.py:489: Failed
+    ============================== 1 failed in 3.80s ===============================
+
+Revert: git checkout -- rmgpy/solver/plasma.pyx, rebuilt (exit 0), md5sum
+confirmed equal to baseline (bb4ce4dfb37a74bba012795cff779180), and the
+single test PASSED ("1 passed in 3.99s").
+
+------------------------------------------------------------ item 15
+
+test_quasineutral_electron_row_is_net_charge_with_no_dydt_dependence
+
+Breakage: rmgpy/solver/plasma.pyx, residual(), disabled the quasineutral
+electron-row substitution so the electron row falls back to the ordinary
+differential residual res[e] - dydt[e], which both depends on dydt and is
+not equal to the net charge.
+
+--- a/rmgpy/solver/plasma.pyx
++++ b/rmgpy/solver/plasma.pyx
+@@ -1643,3 +1643,3 @@
+-        if self.quasineutral_electron:
++        if False and self.quasineutral_electron:
+             delta[self.electron_index] = self.charge_row_scale * self._net_charge(y)
+
+Rebuild: python setup.py build_ext --inplace -j 8 (exit 0).
+
+Captured failure:
+
+    test/rmgpy/solver/plasmaWallTest.py::test_quasineutral_electron_row_is_net_charge_with_no_dydt_dependence FAILED
+
+    =================================== FAILURES ===================================
+    _____ test_quasineutral_electron_row_is_net_charge_with_no_dydt_dependence _____
+
+        dydt_a = np.zeros(r.num_core_species, float)
+        delta_a, _ = r.residual(0.0, y.copy(), dydt_a)
+        net_charge = float(np.sum(r.species_charges * y))
+    >   assert delta_a[ie] == net_charge
+    E   assert 4.702503172398506 == 0.0
+
+    test/rmgpy/solver/plasmaWallTest.py:507: AssertionError
+    =========================== short test summary info ============================
+    FAILED test/rmgpy/solver/plasmaWallTest.py::test_quasineutral_electron_row_is_net_charge_with_no_dydt_dependence
+    ============================== 1 failed in 3.35s ===============================
+
+Revert: git checkout -- rmgpy/solver/plasma.pyx, rebuilt (exit 0), md5sum
+confirmed equal to baseline (bb4ce4dfb37a74bba012795cff779180), and the
+single test PASSED ("1 passed in 3.18s").
