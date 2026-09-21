@@ -739,8 +739,9 @@ test/rmgpy/reactionMarcusTest.py::TestPressureDoesNotReachTheRateLaw::test_rate_
 test/rmgpy/reactionMarcusTest.py::TestPressureDoesNotReachTheRateLaw::test_omitted_pressure_and_supplied_pressure_agree PASSED
 test/rmgpy/reactionMarcusTest.py::TestRateRespondsToTheReactionsOwnThermo::test_free_energy_of_reaction_reaches_the_rate_law PASSED
 test/rmgpy/reactionMarcusTest.py::TestRateRespondsToTheReactionsOwnThermo::test_endothermic_is_slower_and_exothermic_is_faster PASSED
-test/rmgpy/reactionMarcusTest.py::TestRateRespondsToTheReactionsOwnThermo::test_barriers_match_the_marcus_parabola_by_hanPASSED
-test/rmgpy/preflightDeckFamilyExclusionTest.py::PlasmaDeckFamilyExclusionTest::test_plasma_deck_generates_no_reaction_from_family[docs/m7-preflight/input_secondary.py] ndling::test_no_electrode_means_no_field PASSED
+test/rmgpy/reactionMarcusTest.py::TestRateRespondsToTheReactionsOwnThermo::test_barriers_match_the_marcus_parabola_by_hand PASSED
+test/rmgpy/reactionMarcusTest.py::TestRateRespondsToTheReactionsOwnThermo::test_inverted_region_is_reproduced PASSED
+test/rmgpy/reactionMarcusTest.py::TestPotentialHandling::test_no_electrode_means_no_field PASSED
 test/rmgpy/reactionMarcusTest.py::TestPotentialHandling::test_applied_potential_shifts_the_driving_force PASSED
 test/rmgpy/reactionMarcusTest.py::TestPotentialHandling::test_potential_is_ignored_when_no_electrons_are_transferred PASSED
 test/rmgpy/reactionMarcusTest.py::TestMissingThermoRaises::test_missing_thermo_raises_instead_of_inventing_a_free_energy PASSED
@@ -1022,4 +1023,4 @@ test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnTheRate::test_exported_rate_do
     return ct.Interface(path, phase_names[-1])
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-========== 995 passed, 2 skipped, 81 deselected, 6 warnings in 52.13s ==========
+========== 995 passed, 2 skipped, 81 deselected, 6 warnings in 53.64s ==========
