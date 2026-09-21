@@ -516,6 +516,182 @@ def simple_reactor(temperature,
 PLASMA_ELECTRON_PRESSURE_MARGIN = 1.0e-9
 
 
+#: Characteristic diffusion length of the lowest diffusion eigenmode of each
+#: supported chamber shape, as 1/Lambda**2 in terms of the shape's dimensions.
+#: These are geometry, not fitted quantities: the cylinder's 2.405 is the first
+#: zero of J0 and the pi's are the first zeros of the slab and sphere modes.
+_PLASMA_CHAMBER_SHAPES = {
+    'cylinder': ('radius', 'length'),
+    'sphere': ('radius',),
+    'slab': ('gap',),
+}
+
+
+def _plasma_inverse_lambda_squared(shape, dims):
+    """1/Lambda**2 in m^-2 for a named chamber shape, from its SI dimensions."""
+    if shape == 'cylinder':
+        return (2.405 / dims['radius']) ** 2 + (np.pi / dims['length']) ** 2
+    if shape == 'sphere':
+        return (np.pi / dims['radius']) ** 2
+    if shape == 'slab':
+        return (np.pi / dims['gap']) ** 2
+    raise InputError('unreachable chamber shape {0!r}'.format(shape))
+
+
+def _plasma_wall_kwargs(chamberGeometry, ionReducedMobility, mobilityReferenceDensity,
+                        wallRecycling, ionisationSource, maxIonisationDegree):
+    """
+    Turn the ``plasmaReactor(...)`` wall keywords into :class:`PlasmaReactor`
+    constructor arguments, resolving a named chamber shape into a diffusion length.
+
+    Validation lives here, at the directive, for the same reason ``electronDensity``'s
+    does: a deck that names an unknown shape, or declares half a wall, should be told
+    so while its input file is being read -- naming the block that is wrong -- rather
+    than several minutes into a run.
+    """
+    if chamberGeometry is None and ionReducedMobility is None:
+        # No wall. Every other wall keyword is then inert, and silently ignoring a
+        # deck that set one would hide a typo in the geometry keyword.
+        for name, value, inert in (('wallRecycling', wallRecycling, 1.0),
+                                   ('ionisationSource', ionisationSource, None),
+                                   ('mobilityReferenceDensity', mobilityReferenceDensity, None),
+                                   ('maxIonisationDegree', maxIonisationDegree, None)):
+            if value != inert:
+                raise InputError(
+                    "{0}={1!r} was given but no charged-particle wall was declared, so it "
+                    "would have no effect. A wall needs BOTH chamberGeometry and "
+                    "ionReducedMobility; supply them, or remove {0}.".format(name, value))
+        return {}
+
+    if chamberGeometry is None or ionReducedMobility is None:
+        raise InputError(
+            "a charged-particle wall needs BOTH chamberGeometry and ionReducedMobility "
+            "-- nu_wall = D_a / Lambda**2 is undefined without each of them -- but only "
+            "one was supplied (chamberGeometry={0!r}, ionReducedMobility={1!r}).".format(
+                chamberGeometry, ionReducedMobility))
+
+    if not isinstance(chamberGeometry, dict):
+        raise InputError(
+            "chamberGeometry must be a dict naming a shape and its dimensions, e.g. "
+            "{{'shape': 'cylinder', 'radius': (5, 'cm'), 'length': (30, 'cm')}}, or "
+            "{{'diffusionLength': (2.03, 'cm')}} to state Lambda directly; got "
+            "{0!r}.".format(chamberGeometry))
+
+    geometry = dict(chamberGeometry)
+    if 'diffusionLength' in geometry:
+        if len(geometry) != 1:
+            raise InputError(
+                "chamberGeometry gives diffusionLength together with {0!r}. The "
+                "diffusion length IS what a shape is used to compute, so these are two "
+                "sources of truth for one number and may disagree. Give the shape and "
+                "its dimensions, or the diffusion length alone.".format(
+                    sorted(set(geometry) - {'diffusionLength'})))
+        lam = Quantity(geometry['diffusionLength'])
+        shape_description = 'diffusionLength stated directly'
+    else:
+        shape = geometry.pop('shape', None)
+        if shape not in _PLASMA_CHAMBER_SHAPES:
+            raise InputError(
+                "chamberGeometry names shape {0!r}; the supported shapes are {1}. To use "
+                "a geometry not on that list, compute its characteristic diffusion length "
+                "yourself and give it as {{'diffusionLength': (value, 'm')}}.".format(
+                    shape, sorted(_PLASMA_CHAMBER_SHAPES)))
+        required = _PLASMA_CHAMBER_SHAPES[shape]
+        missing = [k for k in required if k not in geometry]
+        extra = sorted(set(geometry) - set(required))
+        if missing or extra:
+            raise InputError(
+                "chamberGeometry for shape {0!r} needs exactly {1} and got {2}{3}.".format(
+                    shape, list(required), sorted(geometry),
+                    '' if not extra else ' (unexpected: {0})'.format(extra)))
+        dims = {}
+        for key in required:
+            q = Quantity(geometry[key])
+            if q.units not in ('m', 'cm', 'mm'):
+                raise InputError(
+                    "chamberGeometry {0!r} must be a length in 'm', 'cm' or 'mm'; got "
+                    "units {1!r}.".format(key, q.units))
+            if not np.isfinite(q.value_si) or q.value_si <= 0.0:
+                raise InputError(
+                    "chamberGeometry {0!r} must be finite and strictly positive; got "
+                    "{1!r} m.".format(key, q.value_si))
+            dims[key] = q.value_si
+        lam = Quantity((1.0 / np.sqrt(_plasma_inverse_lambda_squared(shape, dims)), 'm'))
+        shape_description = '{0} with {1}'.format(
+            shape, ', '.join('{0}={1!r} m'.format(k, v) for k, v in sorted(dims.items())))
+
+    if not np.isfinite(lam.value_si) or lam.value_si <= 0.0:
+        raise InputError(
+            "the characteristic diffusion length resolved to {0!r} m, which is not a "
+            "length; a zero Lambda is an infinite wall loss frequency.".format(lam.value_si))
+
+    mobility = Quantity(ionReducedMobility)
+    mobility_dimensionality = pq.Quantity(1.0, 'm**2/(V*s)').simplified.dimensionality
+    try:
+        given_dimensionality = pq.Quantity(1.0, mobility.units).simplified.dimensionality
+    except Exception:
+        given_dimensionality = None
+    if given_dimensionality != mobility_dimensionality:
+        raise InputError(
+            "ionReducedMobility must have the dimensions of a mobility, e.g. "
+            "(1.535e-4, 'm^2/(V*s)') or (1.535, 'cm^2/(V*s)'); got units {0!r}. A "
+            "diffusivity (m^2/s) is NOT a mobility and is rejected -- reading one as "
+            "the other would silently rescale the wall loss by k_B*T_e/e.".format(
+                mobility.units))
+    if not np.isfinite(mobility.value_si) or mobility.value_si <= 0.0:
+        raise InputError(
+            "ionReducedMobility must be finite and strictly positive; got {0!r} "
+            "m^2/(V*s).".format(mobility.value_si))
+
+    kwargs = {
+        'diffusion_length': (lam.value_si, 'm'),
+        'ion_reduced_mobility': (mobility.value_si, 'm^2/(V*s)'),
+        'wall_recycling': wallRecycling,
+    }
+
+    if mobilityReferenceDensity is not None:
+        ref = Quantity(mobilityReferenceDensity)
+        number_density_dimensionality = (1.0 / pq.m ** 3).simplified.dimensionality
+        try:
+            ref_dimensionality = pq.Quantity(1.0, ref.units).simplified.dimensionality
+        except Exception:
+            ref_dimensionality = None
+        if ref_dimensionality != number_density_dimensionality:
+            raise InputError(
+                "mobilityReferenceDensity must be a count density in inverse-volume "
+                "units ('m^-3', 'cm^-3'); got units {0!r}. It is the density the "
+                "tabulated reduced mobility is normalised to, so a wrong dimension "
+                "rescales every wall loss frequency.".format(ref.units))
+        kwargs['mobility_reference_density'] = float(ref.value_si)
+
+    if ionisationSource is not None:
+        source = Quantity(ionisationSource)
+        rate_density_dimensionality = (1.0 / (pq.m ** 3 * pq.s)).simplified.dimensionality
+        try:
+            source_dimensionality = pq.Quantity(1.0, source.units).simplified.dimensionality
+        except Exception:
+            source_dimensionality = None
+        if source_dimensionality != rate_density_dimensionality:
+            raise InputError(
+                "ionisationSource is a volumetric production rate of ion-electron pairs "
+                "and must have inverse-volume-per-time units ('m^-3/s', 'cm^-3/s'); got "
+                "units {0!r}. A bare number density (m^-3) is a population, not a "
+                "source, and is rejected.".format(source.units))
+        kwargs['ionisation_source'] = (source.value_si, 'm^-3/s')
+
+    if maxIonisationDegree is not None:
+        kwargs['max_ionisation_degree'] = float(maxIonisationDegree)
+
+    logging.info(
+        'plasmaReactor: charged-particle wall declared. Geometry: %s -> Lambda = %r m. '
+        'Ion reduced mobility %r m^2/(V*s). Recycling coefficient gamma = %r. '
+        'External pair source %r m^-3 s^-1.',
+        shape_description, lam.value_si, mobility.value_si, wallRecycling,
+        kwargs.get('ionisation_source', (0.0,))[0])
+
+    return kwargs
+
+
 def _plasma_species_charge(label, species_dict, why):
     """
     Return the net charge of the declared species `label`, as an int, raising
@@ -547,6 +723,13 @@ def plasma_reactor(temperature,
                    electronTemperature,
                    electronDensity=None,
                    chargeBalanceSpecies=None,
+                   chamberGeometry=None,
+                   ionReducedMobility=None,
+                   mobilityReferenceDensity=None,
+                   wallRecycling=1.0,
+                   ionisationSource=None,
+                   maxIonisationDegree=None,
+                   quasineutralElectron=False,
                    terminationConversion=None,
                    terminationTime=None,
                    terminationRateRatio=None,
@@ -617,6 +800,74 @@ def plasma_reactor(temperature,
     never settles would otherwise integrate without limit. When the backstop fires first,
     the log says at warning level that steady state was not reached and names the residual
     it got to.
+
+    Charged-particle wall boundary
+    ------------------------------
+
+    Without the keywords below the reactor is what it has always been: zero-dimensional,
+    with no boundary, so every ion and electron it makes stays in the gas forever. They
+    give it a wall.
+
+    ``chamberGeometry`` and ``ionReducedMobility`` together declare a wall, and neither
+    means anything without the other -- ``nu_wall = D_a / Lambda**2`` needs both -- so
+    supplying one alone is refused rather than defaulted.
+
+    ``chamberGeometry`` is a dict naming a shape and its dimensions, from which the
+    characteristic diffusion length ``Lambda`` is computed::
+
+        chamberGeometry={'shape': 'cylinder', 'radius': (5, 'cm'), 'length': (30, 'cm')}
+        chamberGeometry={'shape': 'sphere', 'radius': (5, 'cm')}
+        chamberGeometry={'shape': 'slab', 'gap': (2, 'cm')}
+        chamberGeometry={'diffusionLength': (2.03, 'cm')}     # stated directly
+
+    The first three use the lowest diffusion eigenmode of that shape
+    (``1/Lambda**2 = (2.405/R)**2 + (pi/L)**2`` for a finite cylinder, ``(pi/R)**2`` for a
+    sphere, ``(pi/d)**2`` for an infinite slab). The fourth is the escape hatch for a
+    geometry not on the list. **Geometry is an input, never a fitted quantity**: do not
+    adjust it until a computed electron density matches an expected one.
+
+    ``ionReducedMobility`` is the measured zero-field reduced mobility of the dominant ion
+    in its parent gas, e.g. ``(1.535e-4, 'm^2/(V*s)')`` for Ar+ in Ar (Ellis, McDaniel &
+    Albritton, At. Data Nucl. Data Tables 17 (1976) 177). It is quoted at
+    ``mobilityReferenceDensity``, which defaults to the Loschmidt constant -- the density
+    such compilations normalise to. Changing that default means reading the tabulated
+    mobility as something it is not.
+
+    ``wallRecycling`` is gamma, the fraction of wall-neutralised ions whose heavy core
+    returns to the gas: ``1.0`` (the default) is a fully recycling wall, ``0.0`` a fully
+    pumping one. For a noble gas 1.0 is the physical value -- the ion is Auger-neutralised
+    with probability near one and the atom does not chemisorb. The gas is a closed batch
+    with no makeup stream, so gamma < 1 removes heavy atoms from it permanently.
+
+    ``ionisationSource`` is a volumetric external production rate of ion-electron pairs,
+    ``(6.6e4, 'm^-3/s')`` or ``(0.066, 'cm^-3/s')`` -- a *declared physical mechanism*
+    such as the cosmic-ray background, which for a noble gas at these pressures is of
+    order 1e4-1e5 m^-3 s^-1. It is what lets a discharge ignite from a neutral gas instead
+    of from a numerical seed, and it is what creates the sub-threshold steady branch
+    ``n_e = S_ext / (nu_wall - nu_ion)`` that exists below the sustainment boundary.
+
+    ``maxIonisationDegree`` is the ceiling on ``n_e / n_neutral`` above which the
+    ion-*neutral* ambipolar model is outside its own assumptions (Coulomb collisions take
+    over the ion mobility and the 1/n_neutral scaling is simply wrong). The run **stops**
+    above it rather than extrapolating. It is a statement about the transport model's
+    domain, not a tuning knob.
+
+    ``quasineutralElectron`` removes the electron from the integrated state and carries it
+    on an algebraic charge-conservation row instead, so ``n_e`` is whatever makes the
+    composition neutral. This eliminates the stiff direction in which ``n_e`` is a small
+    difference of large ionisation and recombination fluxes. It requires a charge-neutral
+    initial composition and **refuses a non-neutral one**, because with the electron
+    carried algebraically a non-neutral state is not something the equations can represent
+    -- without that refusal the solver fails with an unrelated-looking convergence error.
+    ``chargeBalanceSpecies`` is the easy way to satisfy it.
+
+    .. note::
+        The wall operator determines the loss frequency and hence the sustainment /
+        extinction boundary. It does **not** determine an absolute steady-state electron
+        density: with the electron temperature prescribed rather than solved for, the
+        electron density cancels out of the particle balance, and what remains is a
+        condition on the neutral density alone. Choosing a wall parameter to make an
+        electron density come out right would work, and would mean nothing.
     """
     logging.debug('Found PlasmaReactor reaction system')
 
@@ -950,6 +1201,13 @@ def plasma_reactor(temperature,
     if len(termination) == 0:
         raise InputError('No termination conditions specified for reaction system #{0}.'.format(len(rmg.reaction_systems) + 2))
 
+    # The charged-particle wall. Resolved here, at the directive, so a deck that
+    # names an unknown chamber shape or half a wall is told so while its input file
+    # is being read rather than minutes into a run.
+    wall_kwargs = _plasma_wall_kwargs(
+        chamberGeometry, ionReducedMobility, mobilityReferenceDensity,
+        wallRecycling, ionisationSource, maxIonisationDegree)
+
     # Every argument passed by keyword: PlasmaReactor's fourth positional argument is
     # Te, not n_sims as in simple_reactor -- do not copy that call shape.
     system = PlasmaReactor(
@@ -959,6 +1217,8 @@ def plasma_reactor(temperature,
         Te=electronTemperature,
         n_sims=1,
         termination=termination,
+        quasineutral_electron=bool(quasineutralElectron),
+        **wall_kwargs,
         # Carry the balancing-ion LABEL, not its computed fraction, to the reactor.
         # Reachability -- whether any loaded reaction source actually produces this
         # ion -- is undecidable here: at parse time only the NAMES of the reaction
@@ -2403,6 +2663,28 @@ def save_input_file(path, rmg):
             f.write('    initialMoleFractions={\n')
             f.write(format_initial_mole_fractions(system))
         f.write('    },\n')
+
+        # Charged-particle wall. The reactor stores the characteristic diffusion
+        # length, not the chamber shape it was computed from, so the round trip emits
+        # diffusionLength directly. That is exact in physics and lossy only in
+        # description -- the same principle by which electronDensity is not
+        # reconstructed and the mole fractions are treated as the ground truth.
+        if isinstance(system, PlasmaReactor):
+            if system.quasineutral_electron:
+                f.write('    quasineutralElectron = True,\n')
+            if system.has_wall:
+                f.write('    chamberGeometry = {{"diffusionLength": ({0!r},"m")}},\n'
+                        ''.format(system.diffusion_length.value_si))
+                f.write('    ionReducedMobility = ({0!r},"m^2/(V*s)"),\n'
+                        ''.format(system.ion_reduced_mobility.value_si))
+                f.write('    mobilityReferenceDensity = ({0!r},"m^-3"),\n'
+                        ''.format(system.mobility_reference_density))
+                f.write('    wallRecycling = {0!r},\n'.format(system.wall_recycling))
+                if system.ionisation_source.value_si:
+                    f.write('    ionisationSource = ({0!r},"m^-3/s"),\n'
+                            ''.format(system.ionisation_source.value_si))
+                f.write('    maxIonisationDegree = {0!r},\n'
+                        ''.format(system.max_ionisation_degree))
 
         # Termination criteria
         conversions = ''

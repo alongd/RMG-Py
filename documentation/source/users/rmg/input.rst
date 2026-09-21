@@ -609,6 +609,108 @@ non-neutral initial composition is never an error -- it may be deliberate -- but
 silent: ``PlasmaReactor`` logs a warning naming the net charge per mole whenever the initial
 composition is not neutral, whether or not this keyword was used.
 
+.. _plasmawall:
+
+Charged-Particle Wall Boundary
+==============================
+
+Without the keywords in this section a ``plasmaReactor`` is zero-dimensional: it has no geometry
+and no boundary, so every ion and electron it makes stays in the gas forever and the only fate
+available to a charged particle is more chemistry.  Together they give it a wall, as a reactor-level
+ambipolar transport sink, first order in each charged species::
+
+	plasmaReactor(
+	    temperature=(298.15, 'K'),
+	    pressure=(5, 'torr'),
+	    electronTemperature=(34813.5, 'K'),
+	    initialMoleFractions={'Ar': 1.0, 'Arp': 6.2e-8},
+	    chargeBalanceSpecies='Arp',
+	    chamberGeometry={'shape': 'cylinder', 'radius': (5, 'cm'), 'length': (30, 'cm')},
+	    ionReducedMobility=(1.535e-4, 'm^2/(V*s)'),
+	    ionisationSource=(6.6e4, 'm^-3/s'),
+	    terminationTime=(1e-2, 's'),
+	)
+
+The loss frequency is shared by **every** charged species -- the electron and every ion alike::
+
+	mu_i    = ionReducedMobility * mobilityReferenceDensity / n_neutral
+	D_a     = mu_i * k_B * Te / e
+	nu_wall = D_a / Lambda**2
+	loss_i  = nu_wall * n_i
+
+One common frequency, not a separate lifetime per species: because the net charge then decays at a
+rate proportional to the net charge itself, which is zero in a quasineutral gas, no charge is
+created or destroyed at the wall and the zero-net-current (floating wall) condition holds by
+construction rather than by cancellation.
+
+``chamberGeometry`` and ``ionReducedMobility`` declare the wall, and neither means anything without
+the other, so supplying one alone is refused rather than defaulted.  ``chamberGeometry`` is a dict
+naming a shape and its dimensions, from which the characteristic diffusion length ``Lambda`` is
+computed as the lowest diffusion eigenmode of that shape:
+
+============================  =========================================================
+shape                         ``1/Lambda**2``
+============================  =========================================================
+``'cylinder'``                ``(2.405/radius)**2 + (pi/length)**2``
+``'sphere'``                  ``(pi/radius)**2``
+``'slab'``                    ``(pi/gap)**2``
+============================  =========================================================
+
+For a geometry not on that list, state the length directly with
+``chamberGeometry={'diffusionLength': (2.03, 'cm')}``.  Giving both a shape and a
+``diffusionLength`` is refused -- they are two sources of truth for one number.
+
+.. warning::
+	**Geometry is an input, never a calibrated quantity.**  The wall parameters --
+	``chamberGeometry``, ``ionReducedMobility``, ``wallRecycling`` -- must each come from the
+	chamber's actual dimensions or from measured transport data.  Adjusting any of them until a
+	computed electron density matches an expected one will work, and will mean nothing: with the
+	electron temperature prescribed rather than solved for, the electron density cancels out of
+	the particle balance and a free wall coefficient can reproduce any target you like.
+
+The remaining keywords are all optional:
+
+* ``mobilityReferenceDensity`` -- the gas density at which ``ionReducedMobility`` is quoted,
+  defaulting to the Loschmidt constant (2.6867811e25 m^-3), which is what ion-mobility
+  compilations normalise to.  This is a unit convention; changing it means reading the tabulated
+  mobility as something it is not.
+
+* ``wallRecycling`` -- gamma, the fraction of wall-neutralised ions whose heavy core returns to
+  the gas.  ``1.0`` (the default) is a fully recycling wall; ``0.0`` a fully pumping one.  For a
+  noble gas 1.0 is the physical value: the ion is Auger-neutralised with probability near one and
+  the atom does not chemisorb.  The reactor is a closed batch with no makeup stream, so
+  ``gamma < 1`` removes heavy atoms from the gas permanently.  Every ion must have a neutral
+  counterpart in the core for its heavy core to return to, and a cation with no such counterpart,
+  or with an ambiguous one, is refused rather than guessed at.
+
+* ``ionisationSource`` -- a volumetric external production rate of ion-electron pairs,
+  ``(6.6e4, 'm^-3/s')`` or ``(0.066, 'cm^-3/s')``.  This is where a *declared physical mechanism*
+  such as the cosmic-ray background goes; for a noble gas at a few torr it is of order
+  1e4 - 1e5 m^-3 s^-1.  It lets a discharge ignite from a neutral gas instead of from a numerical
+  seed, and it is what creates the sub-threshold steady branch ``n_e = S_ext/(nu_wall - nu_ion)``
+  below the sustainment boundary.
+
+* ``maxIonisationDegree`` -- the ceiling on ``n_e/n_neutral`` above which the ion-*neutral*
+  ambipolar model is outside its own assumptions, defaulting to 1e-3.  Above it, Coulomb
+  collisions take over the ion mobility and the ``1/n_neutral`` scaling is the wrong functional
+  form, not merely an inaccurate one.  The run **stops**, with a message naming the ionisation
+  degree, rather than extrapolating.  The check is applied to every accepted solver step and to
+  the initial composition.
+
+* ``quasineutralElectron`` -- when ``True``, the electron is removed from the integrated state and
+  carried on an algebraic charge-conservation row instead, so ``n_e`` is whatever makes the
+  composition neutral.  This eliminates the stiff direction in which ``n_e`` is a small difference
+  of large ionisation and recombination fluxes.  It requires a charge-neutral initial composition
+  and **refuses a non-neutral one** -- with the electron carried algebraically, a non-neutral
+  state is not something the equations can represent.  ``chargeBalanceSpecies`` is the easy way to
+  satisfy it.
+
+.. note::
+	The wall operator determines the loss frequency, and with it the sustainment/extinction
+	boundary -- which for a fixed gas obeys a similarity law in the product of pressure and
+	diffusion length.  It does **not** determine an absolute steady-state electron density.  That
+	requires closing the discharge power balance, which is a separate matter from transport.
+
 .. _simulatortolerances:
 
 Simulator Tolerances
