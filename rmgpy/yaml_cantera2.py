@@ -427,10 +427,29 @@ def _collect_reaction_entries(rxns, species_list, chemkin_counter):
     MultiArrhenius/MultiPDepArrhenius reactions, which expand into several
     YAML entries, each sub-entry gets its own Chemkin number but shares
     the parent RMG index.
+
+    ``duplicate`` is recomputed here, over this list, and passed to each entry.
+    Cantera's rule is Chemkin's: every reaction whose equation another writes must
+    say ``duplicate: true``, and one that says it alone is rejected by
+    ``Kinetics::checkDuplicates``. That makes it a property of the mechanism being
+    written, not of the reaction object -- and the object's own flag cannot serve,
+    because :mod:`rmgpy.rmg.model` sets it during model growth over the whole
+    core+edge list, long before any writer runs. Reading it here handed a core-only
+    export the core+edge answer: a lone ``duplicate: true`` on a reaction whose only
+    mate is on the edge, which Cantera refuses to load. Gas and surface reactions
+    are collected by separate calls, so each keys only against its own phase.
     """
+    # Imported here rather than at module scope: rmgpy.chemkin is a compiled
+    # extension that pulls in a large part of the package, and this module is
+    # imported by it indirectly through the writer registry.
+    from rmgpy.chemkin import chemkin_duplicate_flags
+
+    rxns = list(rxns)
+    duplicate_flags = chemkin_duplicate_flags(rxns)
+
     entries = []
-    for rxn in rxns:
-        rxn_entries = reaction_to_dict_list(rxn, species_list)
+    for rxn, duplicate in zip(rxns, duplicate_flags):
+        rxn_entries = reaction_to_dict_list(rxn, species_list, duplicate=duplicate)
         for entry in rxn_entries:
             chemkin_counter[0] += 1
             index_line = (
@@ -625,10 +644,19 @@ def _two_temperature_plasma_entry(A, b, Ea_gas, Ea_electron):
     }
 
 
-def reaction_to_dict_list(reaction, species_list=None):
+def reaction_to_dict_list(reaction, species_list=None, duplicate=None):
     """
     Convert an RMG Reaction object to a LIST of Cantera YAML dictionaries.
     A 'note' field is always added with source and kinetics comment.
+
+    `duplicate` is the answer for the mechanism this entry is being written into,
+    normally supplied by :func:`_collect_reaction_entries`, which keys it over the
+    whole list. It is a separate argument because it is not a property of
+    `reaction`: the same reaction is a duplicate in a core+edge mechanism and not
+    in the core alone. Left as ``None`` it falls back to ``reaction.duplicate``,
+    which keeps a single-reaction caller working but inherits whatever last wrote
+    that flag -- for a reaction that has been through model growth, that is the
+    core+edge answer.
     """
     # Check for MultiKinetics (duplicates grouped in one RMG object)
     if isinstance(reaction.kinetics, (MultiArrhenius, MultiPDepArrhenius)):
@@ -654,7 +682,11 @@ def reaction_to_dict_list(reaction, species_list=None):
                 specific_collider=reaction.specific_collider,
                 pairs=reaction.pairs,
             )
-            sub_result = reaction_to_dict_list(sub_rxn, species_list)
+            # Unconditionally duplicate, whatever the group answer for the parent
+            # was: this one RMG reaction is being written as several entries that
+            # all carry the same equation, so each of them has a mate by
+            # construction. The Chemkin writer emits its MULTI block the same way.
+            sub_result = reaction_to_dict_list(sub_rxn, species_list, duplicate=True)
             if sub_result:
                 entries.extend(sub_result)
         return entries
@@ -678,7 +710,9 @@ def reaction_to_dict_list(reaction, species_list=None):
             f"containing plasma reaction rates. Add the electron to the species list."
         )
 
-    if reaction.duplicate:
+    if duplicate is None:
+        duplicate = reaction.duplicate
+    if duplicate:
         entry['duplicate'] = True
 
     # --- Kinetics Serialization ---

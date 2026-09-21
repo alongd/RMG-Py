@@ -1213,7 +1213,46 @@ class TestConventionalReferenceTemperatureIsUnchanged:
     RMG writes ``T0 = 1 K``. These tests are the proof that nothing moved for
     that case: the exported files still match, byte for byte, what the writer
     produced before the change.
+
+    **The goldens were regenerated in I-244 round 74, and here is why.** They were
+    captured before the Cantera writer computed ``duplicate`` over the mechanism it
+    was writing, so they recorded the answer that happened to be sitting on each
+    reaction object. ``t0_one_gas.yaml`` therefore held three entries writing
+    ``O(2) + O2(3) => O3(4)`` with only two of them marked, which is a mechanism
+    ``cantera.Solution`` REJECTS -- *"Undeclared duplicate reactions detected"*. A
+    byte-identity test cannot see that: it compares text against text, and both
+    sides were equally invalid.
+
+    Regenerating them moved nothing this class is about. The only content
+    difference is added ``duplicate: true`` lines -- three in the gas golden, two in
+    the surface one -- plus the ``generator:`` line, which
+    :func:`_normalize_generator` already strips. No rate constant, reference
+    temperature or thermo coefficient changed, so the ``T0 = 1 K`` invariant these
+    tests exist to guard is untouched.
+
+    :meth:`test_the_goldens_are_mechanisms_cantera_can_load` is the tripwire that
+    would have caught it, and is why a future regeneration cannot quietly reinstate
+    an invalid deck.
     """
+
+    def test_the_goldens_are_mechanisms_cantera_can_load(self):
+        """
+        A golden is only a useful baseline if it is a mechanism in the first place.
+        Comparing an export against a text file proves the writer is consistent with
+        itself; it says nothing about whether either is loadable, which is how an
+        invalid deck sat here as the reference answer.
+        """
+        import cantera as ct
+
+        for name in ('t0_one_gas.yaml', 't0_one_surface.yaml'):
+            path = os.path.join(_GOLDEN_DIR, name)
+            try:
+                ct.Solution(path, transport_model=None)
+            except Exception as exc:
+                raise AssertionError(
+                    "the golden {0} is not a loadable mechanism, so it cannot serve as "
+                    "a baseline:\n{1}".format(name, exc)
+                )
 
     def test_gas_export_is_byte_identical_to_the_base_commit(self, gas_forms_species, tmp_out):
         path = os.path.join(tmp_out, 'chem.yaml')

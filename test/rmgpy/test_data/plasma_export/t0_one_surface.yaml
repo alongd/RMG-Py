@@ -1,6 +1,6 @@
 description: RMG-Py Generated Mechanism
-generator: 'RMG-Py CanteraWriter2 at /tmp/claude-1000/-home-alon-Code-RMG-Py-i011-export/c749ae22-1662-45b6-95ef-a975635dc2fd/scratchpad/basewriter/yaml_cantera2_base.py
-  (git commit: )'
+generator: 'RMG-Py CanteraWriter2 at /home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware/rmgpy/yaml_cantera2.py
+  (git commit: 242431e)'
 cantera-version: '3.1'
 units: {length: m, time: s, quantity: mol, activation-energy: J/mol}
 elements:
@@ -79,11 +79,13 @@ species:
 gas-reactions: []
 surface-reactions:
 - equation: H2(3) + X(4) => H2X(6)
+  duplicate: true
   type: sticking-Arrhenius
   sticking-coefficient: {A: 0.1, b: 2.0, Ea: 10000.0}
   note: |
     Reaction index: Chemkin #1; RMG #1
 - equation: H2(3) + X(4) => H2X(6)
+  duplicate: true
   type: interface-Arrhenius
   rate-constant: {A: 1000.0, b: 2.0, Ea: 10000.0}
   note: |

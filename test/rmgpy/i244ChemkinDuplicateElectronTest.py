@@ -946,26 +946,43 @@ class TestTheAnswerBelongsToTheDeck:
             kinetics=Arrhenius(A=(3.0e12, "s^-1"), n=0.0, Ea=(0.0, "kcal/mol")),
         )
         before = [first.duplicate, second.duplicate, lonely.duplicate]
-        _write_deck(tmp_path, list(permutation_species), [first, second, lonely])
+        text = _write_deck(tmp_path, list(permutation_species), [first, second, lonely])
         after = [first.duplicate, second.duplicate, lonely.duplicate]
 
+        # The deck first, then the flags. Asserting only that nothing changed is a
+        # check a renderer that did nothing at all would also satisfy -- including
+        # one that wrote no entries, since all three flags arrive True and the
+        # expectation is that all three stay True. Pinning the deck makes the
+        # render have to have happened, and makes the answer it wrote differ from
+        # the flags it left alone: `lonely` is written without DUPLICATE while its
+        # own flag stays True, which is the whole point of not storing the answer.
+        entries = _deck_entries(text)
+        assert [marked for _, marked in entries] == [True, True, False], (
+            "the render did not produce the deck this test is about:\n{0}".format(text)
+        )
         assert after == before == [True, True, True], (
             "rendering a deck rewrote the reactions' flags: {0} -> {1}".format(before, after)
         )
 
-    def test_a_core_plus_edge_save_does_not_mark_a_core_only_cantera_entry(self, tmp_path,
-                                                                          permutation_species):
+    def test_a_core_plus_edge_save_does_not_store_its_answer_on_the_reactions(
+            self, tmp_path, permutation_species):
         """
         An RMG run saves the core deck, then the core+edge deck, over the same
-        reaction objects, and the Cantera YAML writer runs afterwards on the core
-        alone. A core reaction whose only mate lives on the edge is a duplicate in
-        the second deck and not in the first. If the second save stores its answer,
-        the Cantera writer reads it and emits a lone ``duplicate: true``, which
-        Cantera rejects for the same reason a lone ``DUPLICATE`` line is a Chemkin
-        error.
-        """
-        from rmgpy.yaml_cantera2 import reaction_to_dict_list
+        reaction objects. A core reaction whose only mate lives on the edge is a
+        duplicate in the second deck and not in the first, so a save that stored
+        its answer would leave the core+edge verdict lying on a core reaction.
 
+        **Scope, stated because this test used to overclaim.** It builds its
+        reactions unmarked and calls the writers directly, so it reaches the
+        Chemkin save and nothing before it. That proves the Chemkin writer does not
+        CREATE the leak; it cannot prove the leak is gone, because in a real run the
+        flags are already set when the save begins -- ``rmgpy.rmg.model`` marks them
+        during model growth. Its earlier name promised a statement about the Cantera
+        writer and it closed by calling ``reaction_to_dict_list`` on objects that
+        had never been marked by anything, which no implementation could fail.
+        The production path is
+        :class:`TestProductionMarkingDoesNotReachTheCanteraWriter`.
+        """
         h, oh, h2, o = permutation_species
         core = _library_reaction(
             [h, oh], [h2, o], "NeutralLibA",
@@ -1000,10 +1017,9 @@ class TestTheAnswerBelongsToTheDeck:
         assert [marked for _, marked in _deck_entries(edge_text)] == [True, True], (
             "the core+edge deck's genuine pair was not marked:\n{0}".format(edge_text))
 
-        entry = reaction_to_dict_list(core, list(permutation_species))[0]
-        assert not entry.get("duplicate", False), (
-            "the core+edge save leaked its answer to the Cantera writer, which emitted "
-            "a lone duplicate:true for {0}".format(entry["equation"])
+        assert [core.duplicate, edge.duplicate] == [False, False], (
+            "the saves stored their answer on the reactions: {0}".format(
+                [core.duplicate, edge.duplicate])
         )
 
     def test_a_generator_of_reactions_is_written_not_consumed(self, tmp_path,
@@ -1031,3 +1047,262 @@ class TestTheAnswerBelongsToTheDeck:
         assert len(_deck_entries(from_generator)) == len(_deck_entries(from_list)), (
             "a generator argument lost the mechanism:\n{0}".format(from_generator)
         )
+
+    def test_a_cross_class_pair_is_not_cleared_into_a_deck_cantera_rejects(
+            self, tmp_path, permutation_species):
+        """
+        Chemkin writes an equation, not a Python class. A ``LibraryReaction`` and
+        a ``TemplateReaction`` over the same participants therefore render the
+        same line, and a deck carrying both needs ``DUPLICATE`` on each.
+
+        The key used to carry ``reaction.__class__``, which split this pair into
+        two singleton groups and let the singleton path clear both -- while
+        logging *"no other reaction writes its Chemkin equation"*, a sentence
+        that is false as it is printed, because the other entry does.
+
+        The third reaction is what keeps this check honest. Both members of the
+        pair arrive marked and must STAY marked, so an authority that returned
+        its input unchanged would satisfy them; ``lonely`` arrives marked and must
+        be CLEARED, so nothing passes here without the recompute actually running.
+        """
+        from rmgpy.data.kinetics.family import TemplateReaction
+
+        h, oh, h2, o = permutation_species
+        library = _library_reaction(
+            [h, oh], [h2, o], "NeutralLibA", duplicate=True,
+            kinetics=Arrhenius(A=(1.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+        template = TemplateReaction(
+            reactants=[h, oh], products=[h2, o], family="NeutralFamily",
+            reversible=False, duplicate=True,
+            kinetics=Arrhenius(A=(2.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+        lonely = _library_reaction(
+            [h2], [h, h], "NeutralLibC", duplicate=True,
+            kinetics=Arrhenius(A=(3.0e12, "s^-1"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+
+        text = _write_deck(tmp_path, list(permutation_species),
+                           [library, template, lonely])
+        entries = _deck_entries(text)
+
+        assert len(entries) == 3, text
+        assert entries[0][0] == entries[1][0], (
+            "the premise of this test is that the two classes render the SAME "
+            "equation; they rendered {0} and {1}".format(entries[0][0], entries[1][0])
+        )
+        assert [marked for _, marked in entries] == [True, True, False], (
+            "a cross-class pair writing one equation was not kept duplicate, or the "
+            "lone entry was not cleared:\n{0}".format(text)
+        )
+
+        rejection = self._load_with_cantera(tmp_path, text)
+        assert rejection is None, rejection
+
+    def test_a_three_body_is_not_grouped_with_a_falloff_that_writes_another_equation(
+            self, tmp_path, permutation_species):
+        """
+        A ``ThirdBody`` writes ``A+B+M=>C+M``; a ``Troe`` or ``Lindemann`` writes
+        ``A+B(+M)=>C(+M)``. Different equations, so different duplicate groups --
+        but the key carried only a pressure-dependence BOOLEAN, which is true for
+        both, so it put them in one group. With the group able to clear and set
+        flags, that marked the three-body entry as a duplicate of an equation
+        nothing else writes, and ``Kinetics::checkDuplicates`` refuses a lone
+        ``DUPLICATE`` exactly as it refuses an undeclared pair.
+
+        Two falloff entries are present so the group the three-body was wrongly
+        joining is a real one: the answer must be "those two, not this one", which
+        is a stronger statement than "nothing is a duplicate".
+        """
+        from rmgpy.kinetics import Lindemann, ThirdBody, Troe
+
+        h, oh, h2, o = permutation_species
+        three_body = _library_reaction(
+            [h, h], [h2], "NeutralLibA",
+            kinetics=ThirdBody(arrheniusLow=Arrhenius(
+                A=(1.0e6, "m^6/(mol^2*s)"), n=0.0, Ea=(10.0, "kJ/mol"))),
+        )
+        falloff_a = _library_reaction(
+            [h, h], [h2], "NeutralLibB",
+            kinetics=Troe(arrheniusHigh=Arrhenius(A=(1.0e6, "m^3/(mol*s)"), n=0.0,
+                                                  Ea=(10.0, "kJ/mol")),
+                          arrheniusLow=Arrhenius(A=(2.0e6, "m^6/(mol^2*s)"), n=0.0,
+                                                 Ea=(10.0, "kJ/mol")),
+                          alpha=0.5, T3=(100.0, "K"), T1=(200.0, "K"), T2=(300.0, "K")),
+        )
+        falloff_b = _library_reaction(
+            [h, h], [h2], "NeutralLibC",
+            kinetics=Lindemann(arrheniusHigh=Arrhenius(A=(3.0e6, "m^3/(mol*s)"), n=0.0,
+                                                       Ea=(10.0, "kJ/mol")),
+                               arrheniusLow=Arrhenius(A=(4.0e6, "m^6/(mol^2*s)"), n=0.0,
+                                                      Ea=(10.0, "kJ/mol"))),
+        )
+
+        text = _write_deck(tmp_path, list(permutation_species),
+                           [three_body, falloff_a, falloff_b])
+        entries = _deck_entries(text)
+
+        assert len(entries) == 3, text
+        assert entries[0][0] != entries[1][0], (
+            "the premise of this test is that the three-body and the falloff write "
+            "DIFFERENT equations; both rendered {0}".format(entries[0][0])
+        )
+        assert entries[1][0] == entries[2][0], (
+            "the two falloff entries must write the same equation to be a group: "
+            "{0} and {1}".format(entries[1][0], entries[2][0])
+        )
+        assert [marked for _, marked in entries] == [False, True, True], (
+            "the three-body was grouped with the falloff pair, or the pair was "
+            "not grouped at all:\n{0}".format(text)
+        )
+
+        rejection = self._load_with_cantera(tmp_path, text)
+        assert rejection is None, rejection
+
+
+class TestProductionMarkingDoesNotReachTheCanteraWriter:
+    """
+    The renderers were taught not to CREATE the leak. They are not the only writer.
+
+    ``rmgpy.rmg.model`` marks duplicates on the shared core and edge reaction
+    objects while the model grows -- three calls, at ``model.py:838``, ``:842``
+    and ``:1967`` -- long before any deck is written. Those marks are correct for
+    the core+edge list they were computed over and wrong for the core alone. The
+    Chemkin renderers are unaffected because each keys its own list and passes the
+    answer per entry, and they deliberately leave the objects' flags alone. That
+    is precisely what lets the production marks survive the render, so a writer
+    that still reads ``Reaction.duplicate`` gets the core+edge answer for a
+    core-only export.
+
+    Everything below therefore starts from production marking, not from freshly
+    constructed unmarked objects, and ends at ``cantera.Solution``. A test that
+    builds its own unmarked reactions and calls the writers directly cannot reach
+    this path at all -- it proves the Chemkin writer stopped creating the leak,
+    which is a different claim.
+    """
+
+    @staticmethod
+    def _production_mark(reactions):
+        """
+        The marking loop ``rmgpy.rmg.model`` runs as the model grows, in its shape:
+        each new reaction is offered the reactions already checked, then joins them.
+        """
+        from rmgpy.chemkin import mark_duplicate_reaction
+
+        checked_reactions = []
+        for rxn in reactions:
+            mark_duplicate_reaction(rxn, checked_reactions)
+            checked_reactions.append(rxn)
+
+    def test_the_production_marking_this_rests_on_still_exists(self):
+        """
+        A tie-back, so this class fails loudly rather than vacuously if model
+        growth stops marking. Without it, deleting the production calls would make
+        every test below pass for the wrong reason.
+        """
+        import inspect
+        import rmgpy.rmg.model
+
+        source = inspect.getsource(rmgpy.rmg.model)
+        assert source.count("mark_duplicate_reaction(rxn, checked_reactions)") == 3, (
+            "rmgpy.rmg.model no longer marks duplicates the way this class "
+            "reproduces; re-derive the premise before trusting these results"
+        )
+
+    def test_a_core_only_cantera_export_is_loadable_after_production_marking(
+            self, tmp_path, permutation_species):
+        """
+        Core and edge each hold one of a genuine pair. Model growth marks both.
+        The core-only Cantera mechanism then contains one of them, alone -- and a
+        lone ``duplicate: true`` is rejected by ``Kinetics::checkDuplicates`` for
+        exactly the reason a lone ``DUPLICATE`` line is a Chemkin error.
+
+        Asserted by LOADING the mechanism. The YAML is written whether or not the
+        flag is wrong, so reading the file back and looking at its text is the
+        check that passes while the export is invalid.
+        """
+        import cantera as ct
+        from rmgpy.rmg.model import ReactionModel
+        from rmgpy.yaml_cantera2 import save_cantera_model
+
+        h, oh, h2, o = permutation_species
+        core = _library_reaction(
+            [h, oh], [h2, o], "NeutralLibA",
+            kinetics=Arrhenius(A=(1.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+        edge = _library_reaction(
+            [h, oh], [h2, o], "NeutralLibB",
+            kinetics=Arrhenius(A=(2.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+
+        self._production_mark([core, edge])
+        assert [core.duplicate, edge.duplicate] == [True, True], (
+            "precondition: production marking must have marked both, or this test "
+            "passes without ever reaching the defect it is about"
+        )
+
+        core_only = ReactionModel(species=list(permutation_species), reactions=[core])
+        path = os.path.join(str(tmp_path), "core.yaml")
+        save_cantera_model(core_only, path)
+
+        # transport_model=None because these four species carry no transport data
+        # and the phase this writer emits declares a transport model, so
+        # GasTransport::getTransportData objects before Kinetics::checkDuplicates
+        # is ever reached. That rejection has nothing to do with duplicates, and
+        # reporting it as one is the same defect this ticket is about -- a failure
+        # attributed to the stage that was asked rather than the stage that threw.
+        # Kinetics, and therefore the duplicate check, still run.
+        try:
+            ct.Solution(path, transport_model=None)
+        except Exception as exc:
+            raise AssertionError(
+                "the core-only Cantera mechanism does not load:\n{0}".format(exc)
+            )
+
+    def test_a_chemkin_render_does_not_launder_the_production_marks(
+            self, tmp_path, permutation_species):
+        """
+        The Chemkin save is what runs between production marking and the Cantera
+        export in a real run, and it must change nothing on the way past: it may
+        not clear the marks (the core+edge deck needs them) and it may not write
+        its own answer back (the core deck's answer differs). Both decks are
+        loaded, so this also pins that the renderer still gets its own lists right.
+        """
+        h, oh, h2, o = permutation_species
+        core = _library_reaction(
+            [h, oh], [h2, o], "NeutralLibA",
+            kinetics=Arrhenius(A=(1.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+        edge = _library_reaction(
+            [h, oh], [h2, o], "NeutralLibB",
+            kinetics=Arrhenius(A=(2.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+        self._production_mark([core, edge])
+        before = [core.duplicate, edge.duplicate]
+        assert before == [True, True], before
+
+        model = SimpleNamespace(
+            core=SimpleNamespace(species=list(permutation_species), reactions=[core]),
+            edge=SimpleNamespace(species=[], reactions=[edge]),
+            output_species_list=[],
+            output_reaction_list=[],
+            surface_site_density=None,
+        )
+        core_path = os.path.join(str(tmp_path), "chem.inp")
+        edge_path = os.path.join(str(tmp_path), "chem_edge.inp")
+        save_chemkin(model, core_path, os.path.join(str(tmp_path), "chem_annotated.inp"),
+                     save_edge_species=False)
+        save_chemkin(model, edge_path, os.path.join(str(tmp_path), "chem_edge_annotated.inp"),
+                     save_edge_species=True)
+
+        assert [core.duplicate, edge.duplicate] == before, (
+            "the Chemkin save rewrote the production marks: {0} -> {1}".format(
+                before, [core.duplicate, edge.duplicate])
+        )
+
+        with open(core_path) as f:
+            core_text = f.read()
+        with open(edge_path) as f:
+            edge_text = f.read()
+        assert [m for _, m in _deck_entries(core_text)] == [False], core_text
+        assert [m for _, m in _deck_entries(edge_text)] == [True, True], edge_text

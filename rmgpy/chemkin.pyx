@@ -1971,16 +1971,13 @@ def write_reaction_string(reaction, java_library=False, species_list=None):
                            'that support different reaction orders for the Low and High pressures limits. '
                            'You should revise reaction {0}'.format(reaction.label))
 
-    third_body = ''
-    if kinetics.is_pressure_dependent():
-        if (isinstance(kinetics, _kinetics.ThirdBody) and
-                not isinstance(kinetics, (_kinetics.Lindemann, _kinetics.Troe))):
-            third_body = '+M'
-        elif isinstance(kinetics, (_kinetics.PDepArrhenius, _kinetics.MultiPDepArrhenius)):
-            third_body = ''
-        else:
-            third_body = '(+{0})'.format(
-                get_species_identifier(reaction.specific_collider)) if reaction.specific_collider else '(+M)'
+    # The shape of the token comes from chemkin_third_body_token_shape, so that the
+    # duplicate key groups exactly the entries this writer renders alike. Only the
+    # specific collider's identifier is substituted here, since resolving it needs the
+    # species list that the key is not given.
+    third_body = chemkin_third_body_token_shape(kinetics)
+    if third_body == '(+M)' and reaction.specific_collider:
+        third_body = '(+{0})'.format(get_species_identifier(reaction.specific_collider))
 
     reaction_string = '+'.join([get_species_identifier(reactant) for reactant in reactants])
     reaction_string += third_body
@@ -2338,6 +2335,33 @@ def write_kinetics_entry(reaction, species_list, verbose=True, java_library=Fals
 ################################################################################
 
 
+def chemkin_third_body_token_shape(kinetics):
+    """
+    Return the shape of the third-body token `kinetics` puts into a Chemkin equation:
+    ``'+M'``, ``'(+M)'``, or ``''``.
+
+    This is the *shape* only. The writer substitutes a specific collider's identifier into
+    the parenthesised form, which is why the duplicate key can use this while still keying
+    the collider itself separately -- it must not call
+    :func:`get_species_identifier`, which needs the deck's species list and can raise.
+
+    It exists so that :func:`write_kinetics_entry` and
+    :func:`chemkin_duplicate_group_key` cannot disagree about what reaches the equation.
+    They did: the key carried only a pressure-dependence *boolean*, which put a
+    ``ThirdBody`` writing ``A+B+M=>C+M`` in the same group as a ``Troe`` writing
+    ``A+B(+M)=>C(+M)``. Two different equations, one group, and with the group able to
+    clear flags that is a deck Cantera rejects.
+    """
+    if kinetics is None or not kinetics.is_pressure_dependent():
+        return ''
+    if (isinstance(kinetics, _kinetics.ThirdBody) and
+            not isinstance(kinetics, (_kinetics.Lindemann, _kinetics.Troe))):
+        return '+M'
+    if isinstance(kinetics, (_kinetics.PDepArrhenius, _kinetics.MultiPDepArrhenius)):
+        return ''
+    return '(+M)'
+
+
 def chemkin_duplicate_group_key(reaction):
     """
     Return a hashable key identifying the Chemkin *duplicate group* `reaction` belongs to.
@@ -2349,8 +2373,6 @@ def chemkin_duplicate_group_key(reaction):
 
     What goes into the key is exactly what makes two entries indistinguishable in a deck:
 
-    * ``reaction.__class__`` -- TemplateReaction, LibraryReaction and PDepReaction are never
-      duplicates of one another (a long-standing rule of this module, preserved verbatim).
     * ``specific_collider`` -- compared by identity, as :class:`~rmgpy.species.Species`
       itself is (``Species.__eq__`` is ``self is other``).
     * the participants of each side, by identity and as a **multiset** -- the identities
@@ -2405,6 +2427,32 @@ def chemkin_duplicate_group_key(reaction):
       An irreversible pair therefore keys by direction, while a reversible one keys on the
       unordered pair of sides, since ``A<=>B`` and ``B<=>A`` are the same entry.
 
+    **What is deliberately not in the key: the reaction's class.** An earlier version of
+    this function keyed on ``reaction.__class__``, described there as "a long-standing rule
+    of this module, preserved verbatim". It was preserved verbatim, from the pairwise
+    predicate, which skipped any pair of unlike classes with the comment *"TemplateReaction,
+    LibraryReaction, and PDepReaction cannot be duplicates of one another"* -- followed
+    immediately by its own author asking, and never answering, *"why can't TemplateReaction
+    be duplicate of LibraryReaction, in Chemkin terms? I guess it shouldn't happen in RMG."*
+
+    It is the wrong question to inherit, because the term does not survive the move from a
+    pairwise predicate to a group key. In the predicate a class mismatch means ``continue``:
+    the pair is never marked, and equally never *cleared*. In a group key the same term
+    splits that pair into two singleton groups, and the singleton path clears both. One
+    term, opposite consequences, and the second one produces a deck
+    ``Kinetics::checkDuplicates`` rejects -- while this module logs *"no other reaction
+    writes its Chemkin equation"* about an entry whose equation another entry is writing on
+    the very next line. The warning asserted precisely what the key had failed to notice.
+
+    Class is absent from Chemkin serialization altogether: a ``LibraryReaction`` and a
+    ``TemplateReaction`` over the same participants render one identical line, and Chemkin
+    requires ``DUPLICATE`` on both. Dropping the term is also safe by construction rather
+    than by survey -- removing a term from a key can only *merge* groups, never split them,
+    so it can only add ``DUPLICATE`` lines and never remove one; and every property that
+    changes the rendered equation (the participant multisets, the collider, pressure
+    dependence, reversibility, electron placement) is still keyed, so the entries it merges
+    are exactly the entries that render alike.
+
     **How far the electron term actually reaches**, counted rather than asserted. Of the
     140 kinetics families in the database this branch builds against, 123 carry
     ``electrons = 0`` and key ``(0, 0)`` on both sides, so for them the term cannot move
@@ -2434,8 +2482,9 @@ def chemkin_duplicate_group_key(reaction):
         sides = tuple(sorted([reactant_side, product_side]))
     else:
         sides = (reactant_side, product_side)
-    return (reaction.__class__, id(reaction.specific_collider),
-            pressure_dependent, bool(reaction.reversible), sides)
+    return (id(reaction.specific_collider),
+            pressure_dependent, chemkin_third_body_token_shape(kinetics),
+            bool(reaction.reversible), sides)
 
 
 def mark_duplicate_reaction(test_reaction, reaction_list):
@@ -2537,9 +2586,14 @@ def chemkin_duplicate_flags(reactions):
     :func:`mark_duplicate_reactions` is the mutating form, for callers that want the flags
     left on the objects.
 
-    Two passes -- one to build the groups, one to walk them -- and linear in the number of
-    reactions plus the number of participant occurrences, since each key sorts its own two
-    sides. Either way, not quadratic as the previous pairwise sweep was.
+    Two passes -- one to build the groups, one to walk them. The earlier wording called
+    that "linear in the number of reactions plus the number of participant occurrences,
+    since each key sorts its own two sides"; the subordinate clause contradicts the claim it
+    is attached to, and the claim is the part that is wrong. Each key sorts each side, so
+    the cost is ``sum over reactions of k log k`` in the participants per side, not linear
+    in them. It is linear in the number of *reactions*, which is the term that matters here:
+    the point of the rewrite was to stop the sweep being quadratic in the deck size, and
+    that it does.
     """
     reactions = list(reactions)
     groups = {}
