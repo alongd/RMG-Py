@@ -1,0 +1,31 @@
+ DASPK--  AT T (=R1) AND STEPSIZE H (=R2) THE                                    
+      In above,  R1 =  0.0000000000000D+00   R2 =  0.5585209015989D-15
+ DASPK--  ERROR TEST FAILED REPEATEDLY OR WITH ABS(H)=HMIN                       
+rmgpy from : /home/alon/Code/RMG-Py-i246-ambipolar-wall-operator/rmgpy/__init__.py
+backend    : DASPK
+
+D1  positive control: two differential rows
+  ODE, consistent y0=[1,1]                       OK   y = [4.978706430653e-02, 4.978706430653e-02]
+                                                      dydt0 used = [3. 3.]
+                                                      rel err vs exp(-Kt) = 8.157e-08; |y1-y0|/y0 = 0.000e+00
+
+D2  the substitution: row 1 algebraic (y1 - y0 = 0)
+  DAE, consistent y0=[1,1]                       OK   y = [4.978707363421e-02, 4.978707363421e-02]
+                                                      dydt0 used = [ 3. -0.]
+                                                      rel err vs exp(-Kt) = 1.058e-07; |y1-y0|/y0 = 1.101e-13
+
+D3  inconsistent initial state on the algebraic row (y1 != y0)
+  DAE, INCONSISTENT y0=[1,1.5]                   FAIL DASPK returned with an IDID = -6, Repeated error test failures occurred on the last attempted step in DDASPK.  A singularity in the solution may be present.  If you are absolutely certain you want to continue, you should restart the integration.  (Provide initial values of Y and YPRIME which are consistent.)
+
+D4  the dydt0 sign: RMG's -residual(y0,0) against the true derivative
+  DAE, dydt0 sign flipped                        OK   y = [4.978707502178e-02, 4.978707502196e-02]
+                                                      dydt0 used = [-3.  0.]
+                                                      rel err vs exp(-Kt) = 1.336e-07; |y1-y0|/y0 = 3.545e-12
+
+==============================================================================
+D1 differential control integrates : True
+D2 ALGEBRAIC ROW INTEGRATES        : True
+   D1 vs D2 agreement on y0        : 1.874e-07 relative
+D3 inconsistent IC                 : False (refused by the solver)
+D4 dydt0 sign sensitivity          : True (insensitive)
+==============================================================================

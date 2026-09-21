@@ -1,0 +1,130 @@
+plasma module: /home/alon/Code/RMG-Py-i246-ambipolar-wall-operator/rmgpy/solver/plasma.cpython-39-x86_64-linux-gnu.so
+
+============================================================================================
+A  JACOBIAN CONDITION NUMBER: INTEGRATED vs ALGEBRAIC ELECTRON
+============================================================================================
+Same chemistry, same wall, same state, same cj. cond_2 of d(delta)/dy.
+
+The RAW condition number is not the quantity to look at and is reported only
+so that saying so is checkable: the state vector spans twelve decades (y_Ar ~ 1
+against y_e ~ 1e-12), so cond_2 of the bare matrix is dominated by that spread
+and comes out at 1e23 or infinite for BOTH configurations. What the solver
+actually solves is the equilibrated system, columns scaled by the error weight
+w_j = atol + rtol*|y_j| and rows by the same. That is the number below.
+
+Three measures, because the choice of row scaling for an ALGEBRAIC row is a real
+judgement call and the answer must not depend on my making it:
+  raw   -- no scaling. This is literally the matrix DASPK factors (LU with
+           partial pivoting, no equilibration), so it is not merely academic.
+  ewt   -- rows and columns scaled by the error weight w = atol + rtol*|y|.
+           Arguable for the algebraic row, whose residual has units of y rather
+           than of dy/dt.
+  equil -- full equilibration: columns by w, then each row by its own largest
+           entry. Chooses nothing; it is the scaling-neutral comparison.
+
+    alpha   raw integ   raw quasi   ewt integ   ewt quasi    eq integ    eq quasi
+--------------------------------------------------------------------------------------------
+  1.0e-12   5.388e+05   6.637e+05   3.592e+05   4.110e+05   2.540e+05   2.618e+00
+  1.0e-10   5.388e+05   6.637e+05   3.592e+05   4.110e+05   2.540e+05   2.618e+00
+  1.0e-08   5.388e+05   6.637e+05   3.592e+05   4.110e+05   2.540e+05   2.618e+00
+  1.0e-06   5.386e+05   6.636e+05   3.591e+05   4.109e+05   2.617e+05   2.695e+00
+  1.0e-05   5.369e+05   6.622e+05   3.579e+05   4.102e+05   3.128e+05   6.948e+00
+  1.0e-04   5.203e+05   6.485e+05   3.469e+05   4.037e+05   3.005e+05   6.417e+01
+  5.0e-04   4.541e+05   5.949e+05   3.048e+05   3.787e+05   2.628e+05   2.810e+02
+
+ratio (integrated / quasineutral); BELOW 1 means the algebraic electron is
+WORSE conditioned, above 1 means better:
+  error-weight scaled    min 0.8048   median 0.8739   max 0.874
+  equilibrated           min 935.2   median 9.702e+04   max 9.711e+04
+
+The three scalings DISAGREE, by a lot, and the disagreement is the finding.
+
+Equilibrated, the algebraic system is about 1e5 times better conditioned
+(cond ~ 2.6 against ~2.5e5): the charge row is exactly linear and perfectly
+conditioned in itself, so intrinsically the substitution does what it was
+supposed to do. Raw and error-weight-scaled, it is about the same as the
+integrated system, and at first it was 175x WORSE.
+
+That 175x was a pure row-scaling artefact, and it is worth stating because it
+was a live defect rather than a curiosity. The charge row's entries are the
+charges themselves, exactly +1 and -1, while the differential rows carry entries
+of order of the rates, 1e2-1e5. DASPK factors the iteration matrix with partial
+pivoting and NO equilibration, so leaving an order-1 row among them costs real
+accuracy. Scaling that row by a constant -- an exact operation on a DAE, which
+changes the factored matrix and nothing about the solution -- removes all of it.
+PlasmaReactor now does that automatically (charge_row_scale, set once at
+initialization from the differential rows), which is why the raw column above
+reads ~6.6e5 rather than ~9.4e7.
+
+So the honest summary of A: with its row scaled, the algebraic electron is
+conditioning-NEUTRAL in the matrix the solver actually factors, and a large
+improvement in the matrix an equilibrating solver would factor. It is also,
+independently, CORRECT: the two configurations agree on the ionisation degree at
+the stopping point to 13 significant figures (Q3 of confirm_branches). And the
+electron stops being a differential unknown, so its error test and its step-size
+vote are gone. None of that is the 784x.
+
+============================================================================================
+B  d ln n_e / d ln Te, BY BRACKETING ALONG EACH BRANCH
+============================================================================================
+A 0.01% perturbation in Te, exactly as the governing ruling applied it,
+with the resulting change in n_e stated as a FACTOR so it is comparable
+to the 784x directly.
+
+--- B1  the unbounded growth branch: no wall, fixed integration time ---
+This is the regime the 784x was measured in: nothing stops the growth, so
+n_e at a fixed time is an exponential of a rate that depends on Te.
+   Te (eV)     N_e(t) at Te N_e(t) at Te*1.0001         factor      dln/dln
+--------------------------------------------------------------------------------------------
+      1.20     1.460853e-12     1.461601e-12     1.0005e+00   5.1188e+00
+      1.50     2.956116e-10     2.974474e-10     1.0062e+00   6.1909e+01
+
+--- B2  the sub-threshold source-sustained branch, WITH the wall ---
+n_e = S_ext / (nu_wall - nu_ion): a bounded, unique steady state. The
+sensitivity is taken by bracketing along the branch, never across the
+boundary at the top of it.
+   Te (eV)      n_e (m^-3) n_e at Te*1.0001         factor      dln/dln  distance to boundary
+--------------------------------------------------------------------------------------------------------------
+    0.5000    1.953284e+03    1.953088e+03       0.999900  -9.9986e-01  3.525e-01 eV
+    0.7000    1.423882e+03    1.423803e+03       0.999945  -5.4942e-01  1.525e-01 eV
+    0.8000    1.767192e+03    1.768526e+03       1.000755   7.5484e+00  5.252e-02 eV
+    0.8400    4.974250e+03    5.003526e+03       1.005885   5.8681e+01  1.252e-02 eV
+    0.8500    2.229563e+04    2.305415e+04       1.034021   3.3455e+02  2.518e-03 eV
+    0.8520    1.061540e+05    1.269422e+05       1.195831   1.7884e+03  5.179e-04 eV
+
+threshold Te = 0.852518 eV at 5 torr, R = 0.05 m
+
+--- B3  where the 784x actually lives ---
+Sweeping the distance to the boundary, on the branch, to find where a
+0.01% Te perturbation moves n_e by a factor of 784:
+Te_thr - Te (eV)    factor on n_e             C_Te
+--------------------------------------------------------------------------------------------
+       1.0e-01     1.000108e+00       1.0777e+00
+       1.0e-02     1.007619e+00       7.5905e+01
+       1.0e-03     1.092106e+00       8.8108e+02
+       1.0e-04     6.769855e+00       1.9125e+04
+       1.0e-05      branch ends                -
+       1.0e-06      branch ends                -
+
+============================================================================================
+READING
+============================================================================================
+
+A 0.01% move in Te produces a factor on n_e that is ~1 far from the boundary and
+diverges as the boundary is approached. The 784x is therefore not a property of
+the model, of the solver, or of the Jacobian: it is a reading taken at a
+particular distance from the sustainment boundary, and it can be made any number
+at all by moving along the branch. What IS a property of the model is that the
+sensitivity diverges at the boundary and is O(1) away from it -- so the useful
+statement is a distance, not a factor.
+
+Whatever the algebraic electron does to A, it does nothing for B, and that is
+correct rather than disappointing: B is set by the physics of the balance, not
+by how the state vector is packed. No repacking of the unknowns can make a
+quantity determined that the equations do not determine.
+
+So: nothing here beats the 784x, and a wall operator was never going to. What
+would is closing the discharge power balance -- which would determine Te instead
+of prescribing it, and so fix the distance to the boundary, which is the only
+thing the sensitivity actually depends on.
+

@@ -1,0 +1,62 @@
+plasma module: /home/alon/Code/RMG-Py-i246-ambipolar-wall-operator/rmgpy/solver/plasma.cpython-39-x86_64-linux-gnu.so
+
+==============================================================================================
+WHERE A REAL GLOW DISCHARGE SITS ON THE ABOVE-THRESHOLD BRANCH
+==============================================================================================
+Comparison point (NOT a criterion): n_e = 1e+16 - 1e+17 m^-3.
+
+----------------------------------------------------------------------------------------------
+p = 5.0 torr, R = 0.05 m, Lambda = 2.0314 cm, n_Ar,0 = 1.6194e+23 m^-3, Te_thr = 0.852518 eV
+
+    n_e (m^-3)           f*       alpha* Te needed(eV) Te-Te_thr(eV)      C_wall
+----------------------------------------------------------------------------------------------
+      1.00e+16   2.1107e-06   6.1751e-08      0.852518     2.015e-07  2.3688e+05
+      1.00e+17   2.1107e-05   6.1753e-07      0.852520     2.015e-06  2.3688e+04
+      1.00e+18   2.1107e-04   6.1764e-06      0.852538     2.015e-05  2.3683e+03
+      1.00e+20   2.1107e-02   6.3083e-04      0.854559     2.042e-03  2.3188e+01
+      1.62e+20   3.4181e-02   1.0354e-03      0.855851     3.333e-03  1.4128e+01
+----------------------------------------------------------------------------------------------
+p = 1.0 torr, R = 0.05 m, Lambda = 2.0314 cm, n_Ar,0 = 3.2388e+22 m^-3, Te_thr = 1.040790 eV
+
+    n_e (m^-3)           f*       alpha* Te needed(eV) Te-Te_thr(eV)      C_wall
+----------------------------------------------------------------------------------------------
+      1.00e+16   1.2816e-05   3.0876e-07      1.040792     1.838e-06  3.9012e+04
+      1.00e+17   1.2816e-04   3.0880e-06      1.040808     1.838e-05  3.9008e+03
+      1.00e+18   1.2816e-03   3.0915e-05      1.040974     1.840e-04  3.8963e+02
+      1.00e+20   1.2816e-01   3.5414e-03      1.060847     2.006e-02  3.4013e+00
+      3.24e+19   4.1509e-02   1.0433e-03      1.046906     6.117e-03  1.1545e+01
+----------------------------------------------------------------------------------------------
+p = 5.0 torr, R = 0.01 m, Lambda = 0.4154 cm, n_Ar,0 = 1.6194e+23 m^-3, Te_thr = 1.037615 eV
+
+    n_e (m^-3)           f*       alpha* Te needed(eV) Te-Te_thr(eV)      C_wall
+----------------------------------------------------------------------------------------------
+      1.00e+16   2.5556e-06   6.1751e-08      1.037615     3.642e-07  1.9565e+05
+      1.00e+17   2.5556e-05   6.1753e-07      1.037618     3.642e-06  1.9564e+04
+      1.00e+18   2.5556e-04   6.1767e-06      1.037651     3.643e-05  1.9560e+03
+      1.00e+20   2.5556e-02   6.3371e-04      1.041318     3.703e-03  1.9065e+01
+      1.62e+20   4.1386e-02   1.0432e-03      1.043675     6.060e-03  1.1581e+01
+----------------------------------------------------------------------------------------------
+
+READING
+
+A real glow-discharge electron density IS on this model's branch. It is inside
+the transport model's validity ceiling, so the model is not "five to seven orders
+away" in the sense of being unable to reach the number -- it reaches it.
+
+What it cannot do is DETERMINE it. At n_e = 1e16 m^-3 the conditioning number
+C_wall = |d ln n_e / d ln nu_wall| is of order 1e5, thousands of times past the
+limit predeclared in envelope.md. Concretely: the ion mobility this model is
+built on is known to +/-3 per cent (Ellis et al. 1976), and a 3 per cent error in
+nu_wall there moves n_e by a factor of exp(0.03 * C_wall) -- which is not a
+correction, it is a different universe.
+
+Equivalently, and this is the more useful statement: the electron temperature
+needed to sit at a glow-discharge density differs from the threshold temperature
+by a few parts in ten thousand of an eV. Te is PRESCRIBED in this model, not
+solved for. Nobody knows it that well, and no wall operator can supply it.
+
+So the gap does not close by choosing a wall coefficient -- it closes, if at all,
+by closing the discharge power balance, which is what would determine Te instead
+of prescribing it. That is the next milestone and it is out of scope here, by
+design. This is the result.
+

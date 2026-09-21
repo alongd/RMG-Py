@@ -1,0 +1,698 @@
+diff --git a/rmgpy/solver/plasma.pyx b/rmgpy/solver/plasma.pyx
+index 442a97cc2..348b32cfa 100644
+--- a/rmgpy/solver/plasma.pyx
++++ b/rmgpy/solver/plasma.pyx
+@@ -91,6 +91,32 @@ PLASMA_NET_CHARGE_ATOL = 1.0e-12
+ PLASMA_NET_CHARGE_RTOL = 1.0e-6
+ 
+ 
++# --- charged-particle wall transport ---------------------------------------
++#
++# Reduced (zero-field) ion mobilities in the literature are quoted at the
++# Loschmidt constant: the number density of an ideal gas at 273.15 K and
++# 101325 Pa. This is that constant (CODATA), and it is a UNIT CONVENTION, not a
++# fitted parameter -- it is the density the tabulated mu_0 is normalised to, and
++# changing it would mean reading the tabulated number as something it is not.
++PLASMA_LOSCHMIDT = 2.6867811e25          # m^-3
++
++# Default ceiling on the ionisation degree n_e / n_neutral above which the
++# ion-neutral ambipolar model implemented here is outside its own assumptions
++# and the reactor refuses to continue rather than extrapolate.
++#
++# The model takes the ion's momentum-transfer collisions to be with NEUTRALS, so
++# mu_i scales as 1/n_neutral. Coulomb collisions with the other charged particles
++# are neglected entirely. The ion-ion Coulomb momentum-transfer cross section
++# exceeds the Ar+/Ar resonant-charge-transfer cross section (~5e-19 m^2) once the
++# charged fraction rises past roughly 1e-3 at these temperatures, so above that
++# the neglected channel is no longer small and the 1/n_neutral scaling is simply
++# wrong -- it diverges as n_neutral -> 0, which is a singularity of the
++# PARAMETRISATION, not of the physics. This ceiling is a statement about where
++# the transport model stops being the right one. It is NOT chosen from, and does
++# not depend on, any electron density the model is expected to produce.
++PLASMA_WALL_MAX_IONISATION_DEGREE = 1.0e-3
++
++
+ cdef class PlasmaReactor(ReactionSystem):
+     """
+     A two-temperature plasma reaction system: a homogeneous, isobaric batch
+@@ -142,9 +168,62 @@ cdef class PlasmaReactor(ReactionSystem):
+     # across the many initialize_model calls a model-generation run makes.
+     cdef public bint _balance_reachability_settled
+ 
++    # --- charged-particle wall boundary -------------------------------------
++    # All of these are None/0/False on a reactor with no declared wall, and in that
++    # state the residual and Jacobian take EXACTLY the paths they took before the
++    # wall existed: `has_wall` gates every added term, so a wall-less reactor
++    # reproduces the volume-only equations bit for bit, not approximately.
++    cdef public bint has_wall
++    # Lambda, the characteristic diffusion length (m). Geometry enters here and
++    # ONLY here: nu_wall = D_a / Lambda**2. The plasmaReactor(...) directive
++    # computes it from a named chamber shape; the reactor takes the length itself,
++    # the way SurfaceReactor takes surface_volume_ratio rather than a shape.
++    cdef public ScalarQuantity diffusion_length
++    # Reduced zero-field ion mobility mu_0, m^2/(V*s), quoted at
++    # mobility_reference_density. A measured transport property of the ion in its
++    # parent gas; never fitted here.
++    cdef public ScalarQuantity ion_reduced_mobility
++    cdef public double mobility_reference_density        # m^-3
++    # gamma: the fraction of ions neutralised at the wall whose heavy core returns
++    # to the gas. 1.0 = fully recycling wall, 0.0 = fully pumping wall.
++    cdef public double wall_recycling
++    # Volumetric external ion-electron pair source (m^-3 s^-1): the declared
++    # physical mechanism that replaces a numerical seed.
++    cdef public ScalarQuantity ionisation_source
++    cdef public double max_ionisation_degree
++    # When True the electron stops being an integrated state and is carried by an
++    # algebraic quasineutrality row instead. Independent of has_wall on purpose, so
++    # the two can be A/B-ed against each other and the conditioning claim is a
++    # measurement rather than an assertion.
++    cdef public bint quasineutral_electron
++
++    # --- resolved at initialize_model, all indexed by core species -----------
++    cdef public np.ndarray species_charges        # int, net charge z_j
++    cdef public np.ndarray neutral_heavy_mask     # uint8, 1 for uncharged non-electrons
++    cdef public np.ndarray wall_recycle_target    # int, index of the neutral this
++                                                  # cation returns as, or -1
++    cdef public np.ndarray source_cation_target   # int, for a neutral, the index of
++                                                  # its singly-charged cation, or -1
++    # Diagnostics written by every residual evaluation, so a caller can integrate
++    # the wall flux INDEPENDENTLY of the gas-phase deficit and compare the two.
++    cdef public np.ndarray wall_loss_rates        # mol/s, per core species, signed
++    cdef public double nu_wall                    # s^-1, at the last evaluation
++    # Purely NUMERICAL floor on the neutral population inside compute_nu_wall, set
++    # from the initial composition. It exists so that a Newton TRIAL state with no
++    # neutrals left yields a large-but-finite loss frequency that the solver can
++    # reject, instead of an infinity that corrupts the iteration matrix. It is not
++    # a physical statement and it never binds inside the supported regime: it is
++    # reached only at ionisation degrees a million times the validity ceiling.
++    cdef public double wall_neutral_floor
++
+     def __init__(self, T, P, initial_mole_fractions, Te, n_sims=1, termination=None, sensitive_species=None,
+                  sensitivity_threshold=1e-3, sens_conditions=None, const_spc_names=None,
+-                 charge_balance_species=None):
++                 charge_balance_species=None,
++                 diffusion_length=None, ion_reduced_mobility=None,
++                 mobility_reference_density=None, wall_recycling=1.0,
++                 ionisation_source=None,
++                 max_ionisation_degree=PLASMA_WALL_MAX_IONISATION_DEGREE,
++                 quasineutral_electron=False):
+         ReactionSystem.__init__(self, termination, sensitive_species, sensitivity_threshold)
+ 
+         if isinstance(T, list) or isinstance(P, list) or isinstance(Te, list):
+@@ -191,6 +270,96 @@ cdef class PlasmaReactor(ReactionSystem):
+         self.charge_balance_species = charge_balance_species
+         self._balance_reachability_settled = False
+ 
++        self._configure_wall(diffusion_length, ion_reduced_mobility,
++                             mobility_reference_density, wall_recycling,
++                             ionisation_source, max_ionisation_degree,
++                             quasineutral_electron)
++
++    def _configure_wall(self, diffusion_length, ion_reduced_mobility,
++                        mobility_reference_density, wall_recycling,
++                        ionisation_source, max_ionisation_degree,
++                        quasineutral_electron):
++        """
++        Validate and store the charged-particle wall boundary parameters.
++
++        A wall exists only when BOTH a diffusion length and an ion mobility are
++        given: nu_wall = D_a / Lambda**2 needs both, and half of the pair is a
++        deck error, not a default to be filled in. Every parameter is a declared
++        geometric or transport quantity; none of them is permitted to be chosen
++        by looking at an electron density.
++        """
++        self.wall_loss_rates = None
++        self.nu_wall = 0.0
++        self.species_charges = None
++        self.neutral_heavy_mask = None
++        self.wall_recycle_target = None
++        self.source_cation_target = None
++
++        if (diffusion_length is None) != (ion_reduced_mobility is None):
++            raise PlasmaStateError(
++                "a charged-particle wall needs BOTH a diffusion length and an ion "
++                "reduced mobility -- nu_wall = D_a / Lambda**2 is not defined "
++                "without each of them -- but only one was supplied "
++                "(diffusion_length={0!r}, ion_reduced_mobility={1!r}). Supply both "
++                "to declare a wall, or neither for the volume-only reactor. "
++                "({2})".format(diffusion_length, ion_reduced_mobility, self._identity()))
++
++        self.has_wall = diffusion_length is not None
++        self.quasineutral_electron = bool(quasineutral_electron)
++
++        if self.has_wall:
++            self.diffusion_length = Quantity(diffusion_length)
++            self.ion_reduced_mobility = Quantity(ion_reduced_mobility)
++            for name, quantity_obj in (('diffusion_length', self.diffusion_length),
++                                       ('ion_reduced_mobility', self.ion_reduced_mobility)):
++                value = quantity_obj.value_si
++                if not np.isfinite(value) or value <= 0.0:
++                    raise PlasmaStateError(
++                        "PlasmaReactor requires a finite, strictly positive {0}; got "
++                        "{1!r}. A zero diffusion length is an infinite loss frequency "
++                        "and a zero mobility is no transport at all; neither is a wall. "
++                        "({2})".format(name, value, self._identity()))
++        else:
++            self.diffusion_length = None
++            self.ion_reduced_mobility = None
++
++        if mobility_reference_density is None:
++            self.mobility_reference_density = PLASMA_LOSCHMIDT
++        else:
++            self.mobility_reference_density = float(Quantity(mobility_reference_density).value_si
++                                                    if not isinstance(mobility_reference_density, float)
++                                                    else mobility_reference_density)
++        if not np.isfinite(self.mobility_reference_density) or self.mobility_reference_density <= 0.0:
++            raise PlasmaStateError(
++                "mobility_reference_density must be a finite, strictly positive number "
++                "density (m^-3); got {0!r}. ({1})".format(
++                    self.mobility_reference_density, self._identity()))
++
++        self.wall_recycling = float(wall_recycling)
++        if not np.isfinite(self.wall_recycling) or not (0.0 <= self.wall_recycling <= 1.0):
++            raise PlasmaStateError(
++                "wall_recycling (gamma) is the fraction of wall-neutralised ions whose "
++                "heavy core returns to the gas and must lie in [0, 1]; got {0!r}. "
++                "({1})".format(self.wall_recycling, self._identity()))
++
++        if ionisation_source is None:
++            self.ionisation_source = Quantity((0.0, 'm^-3/s'))
++        else:
++            self.ionisation_source = Quantity(ionisation_source)
++        if not np.isfinite(self.ionisation_source.value_si) or self.ionisation_source.value_si < 0.0:
++            raise PlasmaStateError(
++                "ionisation_source is a volumetric production rate of ion-electron "
++                "pairs and must be finite and non-negative (m^-3 s^-1); got {0!r}. "
++                "({1})".format(self.ionisation_source.value_si, self._identity()))
++
++        self.max_ionisation_degree = float(max_ionisation_degree)
++        if not np.isfinite(self.max_ionisation_degree) or self.max_ionisation_degree <= 0.0:
++            raise PlasmaStateError(
++                "max_ionisation_degree bounds the regime in which the ion-neutral "
++                "ambipolar transport model is valid and must be finite and strictly "
++                "positive; got {0!r}. ({1})".format(
++                    self.max_ionisation_degree, self._identity()))
++
+     def convert_initial_keys_to_species_objects(self, species_dict):
+         """
+         Convert the ``initial_mole_fractions`` dictionary from species labels into
+@@ -309,6 +478,12 @@ cdef class PlasmaReactor(ReactionSystem):
+                     self.electron_index, self.num_core_species, self._identity()))
+         self._plasma_validated = True
+ 
++        # Resolve the charge bookkeeping the wall operator and the quasineutrality
++        # row both read. Runs unconditionally (it is cheap and its results are used
++        # by diagnostics either way) but only RAISES when a wall or the algebraic
++        # electron is actually configured.
++        self._resolve_wall_state(core_species)
++
+         # Set initial conditions (also re-checks the packed electron amount)
+         self.set_initial_conditions()
+ 
+@@ -907,6 +1082,255 @@ cdef class PlasmaReactor(ReactionSystem):
+                     self.kb[j] = 0.0
+                     self.Keq[j] = np.inf
+ 
++    def _resolve_wall_state(self, list core_species):
++        """
++        Build the per-core-species charge bookkeeping the wall operator needs, and
++        refuse -- loudly, here, before the first residual -- any configuration the
++        operator cannot represent honestly.
++
++        Three maps come out of this:
++
++        ``species_charges``
++            the net charge z_j of every core species, read from the species itself.
++
++        ``wall_recycle_target``
++            for every positive ion, the index of the NEUTRAL core species its heavy
++            core returns as when it is neutralised at the wall. Matched on element
++            composition, so Ar+ -> Ar. Resolved once, here, rather than guessed per
++            step.
++
++        ``source_cation_target``
++            for every neutral heavy species, the index of its SINGLY-charged cation,
++            which is what the external ionisation source produces. Background
++            ionising radiation makes predominantly singly-charged ions; that is a
++            statement about the mechanism, not a convenience.
++
++        An ambiguous match is refused rather than resolved by a tie-break: two
++        neutral argon states in the core (ground and metastable, both Ar, both
++        uncharged) would make "the neutral Ar+ returns as" a coin flip that silently
++        moves population between two species with different chemistry.
++        """
++        cdef Py_ssize_t n = self.num_core_species
++        cdef Py_ssize_t i, j
++
++        charges = np.zeros(n, dtype=np.int_)
++        neutral_mask = np.zeros(n, dtype=np.uint8)
++        recycle = np.full(n, -1, dtype=np.int_)
++        source_cation = np.full(n, -1, dtype=np.int_)
++
++        formulas = [None] * n
++        for i in range(n):
++            spc = core_species[i]
++            try:
++                charges[i] = int(spc.get_net_charge())
++            except Exception as exc:
++                raise PlasmaStateError(
++                    "PlasmaReactor could not determine the net charge of core species "
++                    "{0!r}, which the wall operator and the quasineutrality row both "
++                    "require: {1}. ({2})".format(spc, exc, self._identity()))
++            if i == self.electron_index:
++                continue
++            if charges[i] == 0:
++                neutral_mask[i] = 1
++            try:
++                formulas[i] = tuple(sorted(spc.molecule[0].get_element_count().items()))
++            except Exception:
++                formulas[i] = None
++
++        # ion -> neutral counterpart (same heavy composition, zero charge). Anions
++        # recycle by the same rule as cations: an anion neutralised at a wall leaves
++        # the same heavy core behind, and leaving them out would make their atoms
++        # vanish silently.
++        for i in range(n):
++            if i == self.electron_index or charges[i] == 0 or formulas[i] is None:
++                continue
++            matches = [j for j in range(n)
++                       if neutral_mask[j] and formulas[j] is not None and formulas[j] == formulas[i]]
++            if len(matches) == 1:
++                recycle[i] = matches[0]
++            elif len(matches) > 1 and self.has_wall and self.wall_recycling > 0.0:
++                raise PlasmaStateError(
++                    "the wall recycling fate of cation {0!r} is ambiguous: {1} neutral "
++                    "core species share its heavy composition ({2}), so 'the neutral it "
++                    "returns as' has no single answer. Recycling would silently move "
++                    "population into one of them. Set wall_recycling=0.0 to make the "
++                    "wall fully pumping, or remove the duplicate neutral state from the "
++                    "core. ({3})".format(
++                        core_species[i], len(matches),
++                        ', '.join(repr(core_species[j]) for j in matches), self._identity()))
++
++        # neutral -> its singly-charged cation (what the external source makes)
++        for i in range(n):
++            if not neutral_mask[i] or formulas[i] is None:
++                continue
++            matches = [j for j in range(n)
++                       if charges[j] == 1 and j != self.electron_index
++                       and formulas[j] is not None and formulas[j] == formulas[i]]
++            if len(matches) == 1:
++                source_cation[i] = matches[0]
++            elif len(matches) > 1 and self.has_wall and self.ionisation_source.value_si > 0.0:
++                raise PlasmaStateError(
++                    "the external ionisation source's product is ambiguous for neutral "
++                    "{0!r}: {1} singly-charged cations in the core share its heavy "
++                    "composition ({2}). Remove the duplicate cation, or set "
++                    "ionisation_source to zero. ({3})".format(
++                        core_species[i], len(matches),
++                        ', '.join(repr(core_species[j]) for j in matches), self._identity()))
++
++        if self.has_wall:
++            if not neutral_mask.any():
++                raise PlasmaStateError(
++                    "a charged-particle wall was declared but the core carries no "
++                    "neutral heavy species; the ion mobility used here scales as "
++                    "1/n_neutral and is undefined without a neutral gas to collide "
++                    "with. ({0})".format(self._identity()))
++            if self.wall_recycling > 0.0:
++                orphans = [core_species[i] for i in range(n)
++                           if charges[i] != 0 and i != self.electron_index and recycle[i] < 0]
++                if orphans:
++                    raise PlasmaStateError(
++                        "wall_recycling={0!r} asks the wall to return the heavy core of "
++                        "every neutralised ion to the gas, but {1} ion(s) have no "
++                        "neutral counterpart among the core species: {2}. Their heavy "
++                        "atoms would vanish. Add the neutral(s) to the model, or declare "
++                        "a fully pumping wall with wall_recycling=0.0 and account for "
++                        "the loss in the wall inventory. ({3})".format(
++                            self.wall_recycling, len(orphans),
++                            ', '.join(repr(s) for s in orphans), self._identity()))
++            if self.ionisation_source.value_si > 0.0 and not (source_cation >= 0).any():
++                raise PlasmaStateError(
++                    "ionisation_source={0!r} m^-3 s^-1 was declared but no neutral core "
++                    "species has a singly-charged cation in the core, so there is no "
++                    "ion-electron pair for the source to make. Add the cation, or set "
++                    "ionisation_source to zero. ({1})".format(
++                        self.ionisation_source.value_si, self._identity()))
++
++        self.species_charges = charges
++        self.neutral_heavy_mask = neutral_mask
++        self.wall_recycle_target = recycle
++        self.source_cation_target = source_cation
++        self.wall_loss_rates = np.zeros(n, float)
++
++    cpdef double compute_nu_wall(self, np.ndarray y, double V) except -1.0:
++        """
++        The common ambipolar loss frequency, s^-1, shared by EVERY charged species:
++
++        .. math::
++
++            \\mu_i = \\mu_0 \\frac{N_{ref}}{n_{neutral}}, \\quad
++            D_a \\simeq \\mu_i \\frac{k_B T_e}{e}, \\quad
++            \\nu_{wall} = \\frac{D_a}{\\Lambda^2}
++
++        One frequency for all charged species, not one lifetime each: independent
++        lifetimes let the net charge drift, whereas a common nu removes charge at a
++        rate proportional to the net charge itself, which is exactly zero in a
++        quasineutral gas. This is what makes the zero-net-wall-current rule hold by
++        construction rather than by cancellation.
++
++        ``D_a = mu_i * k_B*T_e/e`` is the ``T_e >> T_i`` limit of
++        ``D_a = D_i (1 + T_e/T_i)``; it drops a factor ``(1 + T_i/T_e)``, which at
++        the ratios this reactor runs at is an underestimate of order 1%. That
++        approximation is carried as part of the transport interval, not corrected
++        away silently.
++
++        The ion mobility scales as ``1/n_neutral``, so ``nu_wall`` rises without
++        bound as the neutral gas is consumed. That divergence is an artefact of
++        assuming ion-NEUTRAL collisions dominate, which stops being true well before
++        the neutrals run out. The domain is therefore enforced -- and the run stopped
++        -- by :meth:`check_wall_support`, at the ACCEPTED-STEP boundary.
++
++        **This method never raises, and that is deliberate.** An earlier version of
++        it raised ``PlasmaStateError`` from here when the ionisation degree exceeded
++        the ceiling. It does not work: the solver evaluates the residual at Newton
++        TRIAL states, which are not physical states and routinely sit far outside the
++        domain on their way to a converged step. A Python exception raised inside the
++        Fortran callback is not propagated -- DASPK carries on with a corrupted
++        iteration matrix ("All zero matrix", "ITERATION MATRIX IS SINGULAR") and the
++        run finally dies with an unrelated-looking ``SystemError``, which is the exact
++        opposite of the loud, readable failure the domain check exists to give. The
++        check belongs where Python owns the stack and the state is one the solver has
++        actually accepted.
++        """
++        cdef double y_neutral = 0.0, n_neutral, mu_i, d_a, lam
++        cdef Py_ssize_t j
++        if not self.has_wall:
++            return 0.0
++        for j in range(self.num_core_species):
++            if self.neutral_heavy_mask[j]:
++                y_neutral += y[j]
++        # Numerical floor only; see wall_neutral_floor. Keeps a trial state with no
++        # neutrals left finite so the solver can reject it on its own terms.
++        if not (y_neutral > self.wall_neutral_floor):
++            y_neutral = self.wall_neutral_floor
++        n_neutral = y_neutral * constants.Na / V
++        mu_i = self.ion_reduced_mobility.value_si * self.mobility_reference_density / n_neutral
++        # k_B*T_e/e in volts. constants.R / constants.Na is the same Boltzmann
++        # constant compute_volume's EOS is built from, so the two never disagree.
++        d_a = mu_i * (constants.R / constants.Na) * self.T.value_si / constants.e
++        lam = self.diffusion_length.value_si
++        return d_a / (lam * lam)
++
++    cpdef check_wall_support(self, np.ndarray y):
++        """
++        Refuse an ACCEPTED state that lies outside the transport model's domain.
++
++        The ion mobility used by :meth:`compute_nu_wall` assumes the ion's
++        momentum-transfer collisions are with NEUTRALS, so it scales as
++        ``1/n_neutral``. Above an ionisation degree of ``max_ionisation_degree``
++        that assumption fails -- Coulomb collisions with the other charged particles
++        take over -- and the 1/n_neutral scaling is not merely inaccurate but the
++        wrong functional form, diverging where the physics does not.
++
++        Called on the initial composition and after every accepted solver step, never
++        from inside the residual: see the note in :meth:`compute_nu_wall` for why a
++        Newton trial state must not be allowed to trigger this.
++        """
++        cdef double y_neutral = 0.0, alpha
++        cdef Py_ssize_t j
++        if not self.has_wall or self.neutral_heavy_mask is None:
++            return
++        for j in range(self.num_core_species):
++            if self.neutral_heavy_mask[j]:
++                y_neutral += y[j]
++        if not np.isfinite(y_neutral) or y_neutral <= 0.0:
++            raise PlasmaStateError(
++                "the accepted state has a neutral heavy population of {0!r} mol. The "
++                "ion mobility this wall model uses scales as 1/n_neutral and is "
++                "undefined without a neutral gas to collide with, so the run stops "
++                "here rather than extrapolating. ({1})".format(
++                    y_neutral, self._identity()))
++        alpha = y[self.electron_index] / y_neutral
++        if alpha > self.max_ionisation_degree:
++            raise PlasmaStateError(
++                "ionisation degree n_e/n_neutral = {0!r} exceeds the declared validity "
++                "ceiling {1!r} of the ion-neutral ambipolar transport model: above it "
++                "Coulomb collisions dominate the ion mobility and the 1/n_neutral "
++                "scaling used here is the wrong functional form, not merely an "
++                "inaccurate one. Refusing to extrapolate. Raise max_ionisation_degree "
++                "only together with a transport model that covers the regime. "
++                "({2})".format(alpha, self.max_ionisation_degree, self._identity()))
++
++    cpdef advance(self, double tout):
++        """Advance, then refuse the accepted state if it left the wall model's domain.
++
++        ``cpdef``, matching the base class, so the check runs whether the caller
++        reaches this through Python or through a C-level call: a ``def`` override of
++        a ``cpdef`` method is bypassed entirely by C-level callers, which would leave
++        :meth:`ReactionSystem.simulate` running unguarded.
++        """
++        result = ReactionSystem.advance(self, tout)
++        self.check_wall_support(self.y)
++        return result
++
++    cpdef step(self, double tout):
++        """Step, then refuse the accepted state if it left the wall model's domain.
++
++        This is the one :meth:`ReactionSystem.simulate` actually calls.
++        """
++        result = ReactionSystem.step(self, tout)
++        self.check_wall_support(self.y)
++        return result
++
+     cpdef double compute_volume(self, np.ndarray y) except -1:
+         """
+         The single equation-of-state implementation:
+@@ -955,11 +1379,54 @@ cdef class PlasmaReactor(ReactionSystem):
+                 "{0!r} at index {1}. ({2})".format(
+                     self.y0[self.electron_index], self.electron_index, self._identity()))
+ 
++        # The quasineutrality row is an algebraic constraint, so the packed initial
++        # state must SATISFY it. A state that does not is not merely inaccurate: the
++        # solver reports it as "repeated error test failures ... a singularity in the
++        # solution may be present" with no mention of charge, which is unreadable.
++        # Refuse here, where the composition and the number are both in hand.
++        #
++        # Unlike _warn_if_not_charge_neutral, which warns because a deliberately
++        # non-neutral initial condition can be legitimate for an INTEGRATED electron,
++        # this raises: with the electron carried algebraically there is no such thing
++        # as a non-neutral state, so a non-neutral initial condition is a request the
++        # equations cannot represent.
++        if self.quasineutral_electron and self.species_charges is not None:
++            net = self._net_charge(self.y0)
++            magnitude = float(np.sum(np.abs(self.species_charges * self.y0[:self.num_core_species])))
++            if abs(net) > max(PLASMA_NET_CHARGE_ATOL, PLASMA_NET_CHARGE_RTOL * magnitude):
++                raise PlasmaStateError(
++                    "quasineutral_electron=True carries the electron on an algebraic "
++                    "charge-conservation row, but the initial composition has a net "
++                    "charge of {0!r} mol (total charge magnitude {1!r}), which that row "
++                    "does not admit. The solver would fail with an unrelated-looking "
++                    "convergence error. Make the initial composition neutral -- "
++                    "chargeBalanceSpecies='<ion>' in the plasmaReactor(...) block does "
++                    "it -- or integrate the electron instead. ({2})".format(
++                        net, magnitude, self._identity()))
++
+         # Two-temperature ideal gas law, same implementation as residual/Jacobian
+         self.V = self.compute_volume(self.y0)
+         for j in range(self.num_core_species):
+             self.core_species_concentrations[j] = self.y0[j] / self.V
+ 
++        # The wall's numerical neutral floor, and the domain check on the initial
++        # state. The floor is a millionth of the initial neutral population: it is
++        # reached only at ionisation degrees a million times the validity ceiling,
++        # so it can never bind on a state the domain check would accept.
++        if self.has_wall and self.neutral_heavy_mask is not None:
++            y_neutral0 = 0.0
++            for j in range(self.num_core_species):
++                if self.neutral_heavy_mask[j]:
++                    y_neutral0 += self.y0[j]
++            if y_neutral0 <= 0.0:
++                raise PlasmaStateError(
++                    "a charged-particle wall was declared but the initial composition "
++                    "contains no neutral heavy species ({0!r} mol); the ion mobility "
++                    "scales as 1/n_neutral and has nothing to scale against. "
++                    "({1})".format(y_neutral0, self._identity()))
++            self.wall_neutral_floor = 1.0e-6 * y_neutral0
++            self.check_wall_support(self.y0)
++
+     @cython.boundscheck(False)
+     def residual(self, double t, np.ndarray[np.float64_t, ndim=1] y, np.ndarray[np.float64_t, ndim=1] dydt,
+                  np.ndarray[np.float64_t, ndim=1] senpar = np.zeros(1, float)):
+@@ -1122,11 +1589,100 @@ cdef class PlasmaReactor(ReactionSystem):
+ 
+         res = core_species_rates * V
+ 
++        # --- charged-particle wall boundary and external ionisation source ----
++        #
++        # Deliberately applied to `res` and NOT folded into core_species_rates:
++        # that array is the gas-phase CHEMISTRY diagnostic that model enlargement
++        # and the rate-ratio termination criteria compare edge fluxes against, and
++        # a transport term is not a reaction flux. Keeping them apart is also what
++        # constraint "separate wall transport from gas-phase mechanism chemistry"
++        # asks for, in the one place it can actually be enforced.
++        #
++        # res is in mol/s and equals (dC/dt)*V with C = y/V, so a first-order loss
++        # nu*C contributes exactly -nu*y_i: the volume cancels ALGEBRAICALLY here.
++        # It is written as -nu*y_i rather than -nu*(y_i/V)*V so that the
++        # cancellation is exact in floating point too, not merely to one ulp.
++        if self.has_wall:
++            self._apply_wall_terms(y, V, res)
++
+         delta = res - dydt
+ 
++        # --- quasineutrality replaces the electron's differential row ---------
++        # delta[e] carries NO dydt term: the electron amount is not integrated, it
++        # is whatever makes the packed state charge neutral. This is an index-1
++        # algebraic constraint (d delta[e] / d y_e = z_e = -1, never singular), and
++        # it removes from the Jacobian the stiff direction in which n_e is a small
++        # difference of large ionisation and recombination fluxes.
++        if self.quasineutral_electron:
++            delta[self.electron_index] = self._net_charge(y)
++
+         # Return DELTA, IRES.  IRES is set to 1 in order to tell DASPK to evaluate the sensitivity residuals
+         return delta, 1
+ 
++    cdef double _net_charge(self, np.ndarray[np.float64_t, ndim=1] y):
++        """Net charge of the packed state, in mol of elementary charge."""
++        cdef double net = 0.0
++        cdef Py_ssize_t j
++        for j in range(self.num_core_species):
++            if self.species_charges[j] != 0:
++                net += self.species_charges[j] * y[j]
++        return net
++
++    cdef _apply_wall_terms(self, np.ndarray[np.float64_t, ndim=1] y, double V,
++                           np.ndarray[np.float64_t, ndim=1] res):
++        """
++        Add the wall loss, its recycled return, and the external pair source to
++        ``res`` (mol/s), and record the per-species wall flux in
++        ``self.wall_loss_rates`` so a caller can integrate the flux INDEPENDENTLY
++        of the gas-phase deficit and compare the two.
++        """
++        cdef double nu, loss, y_neutral = 0.0, source_total, rate
++        cdef Py_ssize_t j, target
++        cdef np.ndarray[np.float64_t, ndim=1] wall
++
++        nu = self.compute_nu_wall(y, V)
++        self.nu_wall = nu
++        wall = self.wall_loss_rates
++        for j in range(self.num_core_species):
++            wall[j] = 0.0
++            if self.neutral_heavy_mask[j]:
++                y_neutral += y[j]
++
++        # One common nu for every charged species -- electron and every ion alike.
++        # The net charge therefore decays at rate nu*(net charge), which is zero in
++        # a neutral gas, so no charge is created or destroyed at the wall.
++        for j in range(self.num_core_species):
++            if self.species_charges[j] == 0:
++                continue
++            loss = nu * y[j]
++            res[j] -= loss
++            wall[j] -= loss
++            if j == self.electron_index:
++                continue
++            target = self.wall_recycle_target[j]
++            if target >= 0 and self.wall_recycling > 0.0:
++                # gamma of the neutralised heavy core returns to the gas; the
++                # remaining (1-gamma) stays on the wall and leaves the gas phase.
++                res[target] += self.wall_recycling * loss
++                wall[target] += self.wall_recycling * loss
++
++        # External volumetric source of ion-electron pairs (the declared physical
++        # mechanism that replaces the numerical seed). Its total production is
++        # S_ext * V pairs per second, apportioned across the ionisable neutrals in
++        # proportion to their number density -- which is what an ionising radiation
++        # field does, at the stated assumption of equal per-particle ionisation
++        # probability. For a single-neutral gas the apportionment is the identity.
++        source_total = self.ionisation_source.value_si * V / constants.Na
++        if source_total > 0.0 and y_neutral > 0.0:
++            for j in range(self.num_core_species):
++                target = self.source_cation_target[j]
++                if not self.neutral_heavy_mask[j] or target < 0:
++                    continue
++                rate = source_total * y[j] / y_neutral
++                res[j] -= rate
++                res[target] += rate
++                res[self.electron_index] += rate
++
+     @cython.boundscheck(False)
+     def jacobian(self, double t, np.ndarray[np.float64_t, ndim=1] y, np.ndarray[np.float64_t, ndim=1] dydt,
+                  double cj, np.ndarray[np.float64_t, ndim=1] senpar = np.zeros(1, float)):
+@@ -1213,5 +1769,74 @@ cdef class PlasmaReactor(ReactionSystem):
+                         for s in plist:
+                             pd[s, i] -= corr * dVdy[i]
+ 
++        # --- the wall operator's Jacobian, term for term with the residual ----
++        #
++        # nu_wall is NOT a constant: the ion mobility scales as 1/n_neutral, so
++        #     nu = K * V / (Na * Y),   Y = sum of the neutral heavy moles
++        # and therefore
++        #     d nu / d y_k = nu * ( dVdy_k / V  -  [k is neutral heavy] / Y ).
++        # This is where the brief's warning that a wall term "also perturbs V" is
++        # real. It is NOT real through the C = y/V conversion, which cancels V
++        # exactly; it is real through the MOBILITY, and only for a
++        # composition-dependent one.
++        if self.has_wall:
++            self._apply_wall_jacobian(y, V, dVdy, pd)
++
+         self.jacobian_matrix = pd + cj * np.identity(num_core_species, float)
++
++        # The quasineutrality row is purely algebraic: d delta[e] / d dydt[e] = 0,
++        # so it carries no -cj term and must be written AFTER the accumulation
++        # above (which started every row at -cj*I).
++        if self.quasineutral_electron:
++            for i in range(num_core_species):
++                pd[self.electron_index, i] = <double> self.species_charges[i]
++                self.jacobian_matrix[self.electron_index, i] = <double> self.species_charges[i]
++
+         return pd
++
++    cdef _apply_wall_jacobian(self, np.ndarray[np.float64_t, ndim=1] y, double V,
++                              np.ndarray[np.float64_t, ndim=1] dVdy,
++                              np.ndarray[np.float64_t, ndim=2] pd):
++        """Partial derivatives of exactly the terms :meth:`_apply_wall_terms` adds."""
++        cdef double nu, y_neutral = 0.0, loss, dnu_rel, dloss, source_total, term, dterm
++        cdef Py_ssize_t i, k, target
++        cdef double gamma = self.wall_recycling
++
++        nu = self.compute_nu_wall(y, V)
++        for k in range(self.num_core_species):
++            if self.neutral_heavy_mask[k]:
++                y_neutral += y[k]
++
++        for i in range(self.num_core_species):
++            if self.species_charges[i] == 0:
++                continue
++            loss = nu * y[i]
++            target = self.wall_recycle_target[i] if i != self.electron_index else -1
++            for k in range(self.num_core_species):
++                # d(nu)/dy_k, relative to nu
++                dnu_rel = dVdy[k] / V
++                if self.neutral_heavy_mask[k]:
++                    dnu_rel -= 1.0 / y_neutral
++                dloss = loss * dnu_rel
++                if k == i:
++                    dloss += nu
++                pd[i, k] -= dloss
++                if target >= 0 and gamma > 0.0:
++                    pd[target, k] += gamma * dloss
++
++        source_total = self.ionisation_source.value_si * V / constants.Na
++        if source_total > 0.0 and y_neutral > 0.0:
++            for i in range(self.num_core_species):
++                target = self.source_cation_target[i]
++                if not self.neutral_heavy_mask[i] or target < 0:
++                    continue
++                term = source_total * y[i] / y_neutral
++                for k in range(self.num_core_species):
++                    dterm = term * dVdy[k] / V
++                    if self.neutral_heavy_mask[k]:
++                        dterm -= term / y_neutral
++                    if k == i:
++                        dterm += source_total / y_neutral
++                    pd[i, k] -= dterm
++                    pd[target, k] += dterm
++                    pd[self.electron_index, k] += dterm

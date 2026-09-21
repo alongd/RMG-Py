@@ -1,0 +1,48 @@
+extracted pre-change source: 1217 lines from 311818121
+Compiling rmgpy/solver/plasma_base_i246.pyx because it changed.
+[1/1] Cythonizing rmgpy/solver/plasma_base_i246.pyx
+running build_ext
+building 'rmgpy.solver.plasma_base_i246' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I. -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/solver/plasma_base_i246.c -o build/temp.linux-x86_64-cpython-39/rmgpy/solver/plasma_base_i246.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/temp.linux-x86_64-cpython-39/rmgpy/solver/plasma_base_i246.o -o build/lib.linux-x86_64-cpython-39/rmgpy/solver/plasma_base_i246.cpython-39-x86_64-linux-gnu.so
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/plasma_base_i246.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+built rmgpy/solver/plasma_base_i246
+==============================================================================
+CHECK 7: ZERO-WALL BIT-FOR-BIT RECOVERY OF THE PRE-CHANGE EQUATIONS
+plasma module (this branch): /home/alon/Code/RMG-Py-i246-ambipolar-wall-operator/rmgpy/solver/plasma.cpython-39-x86_64-linux-gnu.so
+plasma module (base 311818121): /home/alon/Code/RMG-Py-i246-ambipolar-wall-operator/rmgpy/solver/plasma_base_i246.cpython-39-x86_64-linux-gnu.so
+==============================================================================
+
+new reactor has_wall = False, quasineutral_electron = False
+
+--- identical initial packing -----------------------------------------
+y0 identical                 : True
+  new  y0 = [1e-07, 0.9999998, 1e-07]
+  base y0 = [1e-07, 0.9999998, 1e-07]
+dydt0 identical              : True
+compute_volume identical     : True  (3.7187886082360726)
+
+--- residual and Jacobian over a range of states ----------------------
+       alpha max|d residual| max|d jacobian| res bitwise jac bitwise
+------------------------------------------------------------------------------
+     0.0e+00      0.000e+00      0.000e+00       True       True
+     1.0e-12      0.000e+00      0.000e+00       True       True
+     1.0e-09      0.000e+00      0.000e+00       True       True
+     1.0e-07      0.000e+00      0.000e+00       True       True
+     1.0e-05      0.000e+00      0.000e+00       True       True
+     1.0e-04      0.000e+00      0.000e+00       True       True
+     5.0e-04      0.000e+00      0.000e+00       True       True
+
+jacobian_matrix identical    : True
+
+--- NEGATIVE CONTROL --------------------------------------------------
+The comparison above must be able to FAIL. Declare a wall on the new
+reactor, with the SAME chemistry and the SAME state, and re-run it:
+  a walled reactor DOES differ from base: True   max|delta| = 1.851464e-05 mol/s
+
+==============================================================================
+CHECK 7 PASSED -- residual, Jacobian, jacobian_matrix, y0, dydt0 and the EOS
+are bit-for-bit identical to the pre-change build on a wall-less reactor,
+across 7 ionisation degrees x 3 cj values, with a non-zero dydt, and the
+negative control confirms the comparison can fail.
+==============================================================================

@@ -1,0 +1,31 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python3.9
+rootdir: /home/alon/Code/RMG-Py-i246-ambipolar-wall-operator
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 1 item
+
+test/rmgpy/solver/plasmaWallTest.py::test_nu_wall_matches_closed_form_rederivation FAILED
+
+=================================== FAILURES ===================================
+________________ test_nu_wall_matches_closed_form_rederivation _________________
+
+    def test_nu_wall_matches_closed_form_rederivation():
+        """nu_wall = D_a/Lambda**2 matches an independent closed-form re-derivation
+        to machine precision."""
+        r, _, _ = _build_reactor(wall=True, with_chemistry=False)
+        ie, i_ar, i_arp = _indices(r)
+        y = _state_at(r, 1.0e-6)
+        V = r.compute_volume(y)
+        nu = r.compute_nu_wall(y, V)
+        n_neutral = y[i_ar] * constants.Na / V
+        lam = r.diffusion_length.value_si
+        closed = _nu_wall_closed_form(TE_NOMINAL_EV, n_neutral, lam)
+>       assert abs(nu / closed - 1.0) < 1e-12
+E       assert 0.9914358069597823 < 1e-12
+E        +  where 0.9914358069597823 = abs(((1.585797189379533 / 185.16597908671486) - 1.0))
+
+test/rmgpy/solver/plasmaWallTest.py:161: AssertionError
+=========================== short test summary info ============================
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_nu_wall_matches_closed_form_rederivation
+============================== 1 failed in 1.88s ===============================

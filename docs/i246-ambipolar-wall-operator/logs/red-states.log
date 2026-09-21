@@ -1,0 +1,218 @@
+Red-state log for test/rmgpy/solver/plasmaWallTest.py
+Format per test: name, exact one-line edit (diff hunk), failing pytest output, revert confirmation.
+File under test: rmgpy/solver/plasma.pyx
+Baseline md5sum (clean, all edits reverted): e9e2c6129548a7609c5346a7bdeaa54b
+
+================================================================================
+1. test_nu_wall_matches_closed_form_rederivation
+================================================================================
+
+Edit (in compute_nu_wall):
+
+--- a/rmgpy/solver/plasma.pyx
++++ b/rmgpy/solver/plasma.pyx
+@@ compute_nu_wall
+-        d_a = mu_i * (constants.R / constants.Na) * self.Te.value_si / constants.e
++        d_a = mu_i * (constants.R / constants.Na) * self.T.value_si / constants.e
+
+Rationale: uses the neutral-gas temperature instead of the electron temperature in the ambipolar
+diffusivity, which is exactly the closed-form quantity the test independently re-derives and
+compares against to machine precision.
+
+Failing pytest output (rebuilt .so, ran the single test node):
+
+    test/rmgpy/solver/plasmaWallTest.py::test_nu_wall_matches_closed_form_rederivation FAILED
+
+    =================================== FAILURES ===================================
+    ________________ test_nu_wall_matches_closed_form_rederivation _________________
+
+        def test_nu_wall_matches_closed_form_rederivation():
+            """nu_wall = D_a/Lambda**2 matches an independent closed-form re-derivation
+            to machine precision."""
+            r, _, _ = _build_reactor(wall=True, with_chemistry=False)
+            ie, i_ar, i_arp = _indices(r)
+            y = _state_at(r, 1.0e-6)
+            V = r.compute_volume(y)
+            nu = r.compute_nu_wall(y, V)
+            n_neutral = y[i_ar] * constants.Na / V
+            lam = r.diffusion_length.value_si
+            closed = _nu_wall_closed_form(TE_NOMINAL_EV, n_neutral, lam)
+    >       assert abs(nu / closed - 1.0) < 1e-12
+    E       assert 0.9914358069597823 < 1e-12
+    E        +  where 0.9914358069597823 = abs(((1.585797189379533 / 185.16597908671486) - 1.0))
+
+    test/rmgpy/solver/plasmaWallTest.py:161: AssertionError
+    =========================== short test summary info ============================
+    FAILED test/rmgpy/solver/plasmaWallTest.py::test_nu_wall_matches_closed_form_rederivation
+    ============================== 1 failed in 1.88s ===============================
+
+Revert: edit reverted via the exact inverse string replacement (self.T.value_si -> self.Te.value_si),
+rebuilt, md5sum of rmgpy/solver/plasma.pyx confirmed equal to the baseline
+(e9e2c6129548a7609c5346a7bdeaa54b), and the test re-run PASSED (1 passed in 3.09s).
+
+================================================================================
+2. test_nu_wall_geometry_scaling
+================================================================================
+
+Edit (in compute_nu_wall):
+
+--- a/rmgpy/solver/plasma.pyx
++++ b/rmgpy/solver/plasma.pyx
+@@ compute_nu_wall
+-        return d_a / (lam * lam)
++        return d_a / lam
+
+Rationale: drops the square on Lambda, so nu_wall scales as 1/Lambda instead of 1/Lambda**2 --
+breaking both the "halving Lambda**2 doubles nu_wall" assertion and the "nu_wall*Lambda**2 constant
+across radii" assertion.
+
+Failing pytest output (rebuilt .so, ran the single test node):
+
+    test/rmgpy/solver/plasmaWallTest.py::test_nu_wall_geometry_scaling FAILED
+
+    =================================== FAILURES ===================================
+    ________________________ test_nu_wall_geometry_scaling _________________________
+
+        def test_nu_wall_geometry_scaling():
+            """Halving Lambda**2 exactly doubles nu_wall; nu_wall*Lambda**2 is constant
+            across a range of chamber radii (the diffusivity itself carries no geometry)."""
+            r, _, _ = _build_reactor(wall=True, with_chemistry=False)
+            y = _state_at(r, 1.0e-6)
+            lam = r.diffusion_length.value_si
+            nu = r.compute_nu_wall(y, r.compute_volume(y))
+
+            lam_half_sq = lam / np.sqrt(2.0)      # halves Lambda^2
+            r2, _, _ = _build_reactor(wall=True, with_chemistry=False, lam=lam_half_sq)
+            nu2 = r2.compute_nu_wall(y, r2.compute_volume(y))
+    >       assert abs(nu2 / nu - 2.0) < 1e-12
+    E       assert 0.5857864376269049 < 1e-12
+    E        +  where 0.5857864376269049 = abs(((5.319552351806697 / 3.761491540839362) - 2.0))
+
+    test/rmgpy/solver/plasmaWallTest.py:178: AssertionError
+    =========================== short test summary info ============================
+    FAILED test/rmgpy/solver/plasmaWallTest.py::test_nu_wall_geometry_scaling - a...
+    ============================== 1 failed in 2.71s ===============================
+
+Revert: edit reverted via the exact inverse string replacement (d_a / lam -> d_a / (lam * lam)),
+rebuilt, md5sum of rmgpy/solver/plasma.pyx confirmed equal to the baseline
+(e9e2c6129548a7609c5346a7bdeaa54b), and the test re-run PASSED (1 passed in 2.24s).
+
+================================================================================
+3. test_wall_loss_is_first_order_in_electron_population
+================================================================================
+
+Edit (in _apply_wall_terms, the charged-species loss loop):
+
+--- a/rmgpy/solver/plasma.pyx
++++ b/rmgpy/solver/plasma.pyx
+@@ _apply_wall_terms
+-            loss = nu * y[j]
++            loss = nu * y[j] * y[j]
+
+Rationale: makes the per-species wall loss quadratic in the species' own amount instead of
+linear, breaking the pinned "-(wall flux)/N_e == nu_wall exactly" identity (first order in the
+electron population).
+
+Failing pytest output (rebuilt .so, ran the single test node):
+
+    test/rmgpy/solver/plasmaWallTest.py::test_wall_loss_is_first_order_in_electron_population FAILED
+
+    =================================== FAILURES ===================================
+    _____________ test_wall_loss_is_first_order_in_electron_population _____________
+
+        def test_wall_loss_is_first_order_in_electron_population():
+            """The wall loss is first order in the ELECTRON population:
+            -(wall flux)/N_e == nu_wall exactly. Normalising to the neutral population
+            instead gives a number orders of magnitude away -- a mis-normalisation
+            error made earlier in this project."""
+            r, _, _ = _build_reactor(wall=True, with_chemistry=False)
+            ie, i_ar, i_arp = _indices(r)
+            y = _state_at(r, 1.0e-6)
+            V = r.compute_volume(y)
+            nu = r.compute_nu_wall(y, V)
+            r.residual(0.0, y, np.zeros(r.num_core_species, float))
+            wall = r.wall_loss_rates
+
+            loss_per_electron = -wall[ie] / y[ie]
+    >       assert abs(loss_per_electron / nu - 1.0) < 1e-14
+    E       assert 0.999999 < 1e-14
+    E        +  where 0.999999 = abs(((0.00018516597908671485 / 185.16597908671486) - 1.0))
+
+    test/rmgpy/solver/plasmaWallTest.py:205: AssertionError
+    =========================== short test summary info ============================
+    FAILED test/rmgpy/solver/plasmaWallTest.py::test_wall_loss_is_first_order_in_electron_population
+    ============================== 1 failed in 3.76s ===============================
+
+Revert: edit reverted via the exact inverse string replacement (nu * y[j] * y[j] -> nu * y[j]),
+rebuilt, md5sum of rmgpy/solver/plasma.pyx confirmed equal to the baseline
+(e9e2c6129548a7609c5346a7bdeaa54b), and the test re-run PASSED (1 passed in 3.81s).
+
+================================================================================
+BASELINE UPDATE (concurrent, legitimate change -- not a stray red-state edit)
+================================================================================
+
+Between items 3 and 4, the coordinator landed a concurrent, independent change to
+rmgpy/solver/plasma.pyx on this same working tree: a new public attribute
+`charge_row_scale`, which multiplies the quasineutrality electron row of both the
+residual and the Jacobian for conditioning (see `_set_charge_row_scale`). This was
+verified by inspection (grep for the 4 leftover-edit signatures from items 1-3: none
+present; grep for `charge_row_scale`/`_set_charge_row_scale`: present, matching the
+coordinator's description) -- not a leftover red-state edit of mine.
+
+After rebuilding, all 19 tests in test/rmgpy/solver/plasmaWallTest.py still PASS
+(`pytest test/rmgpy/solver/plasmaWallTest.py -p no:cacheprovider --no-cov -q`: "19
+passed in 2.78s"). The one existing test that touches the electron residual row,
+test_quasineutral_electron_row_is_net_charge_with_no_dydt_dependence, remains valid
+unmodified: its state is charge-neutral by construction (net_charge == 0.0 exactly),
+so `charge_row_scale * 0.0 == 0.0` regardless of the scale's value -- confirmed
+empirically that charge_row_scale != 1.0 for that reactor (47024667.78...) while the
+test still passes, i.e. the test was already scale-invariant and needed no edit.
+
+New baseline md5sum of rmgpy/solver/plasma.pyx (clean, all red-state edits reverted,
+post charge_row_scale landing): bb4ce4dfb37a74bba012795cff779180.
+All red-state cycles from item 4 onward are verified against THIS baseline, not the
+item-1-3 baseline above (which predates the coordinator's change and is no longer the
+live state of the file).
+
+================================================================================
+4. test_net_charge_flux_zero_on_neutral_nonzero_on_nonneutral
+================================================================================
+
+Edit (in _apply_wall_terms, the charged-species loss loop):
+
+--- a/rmgpy/solver/plasma.pyx
++++ b/rmgpy/solver/plasma.pyx
+@@ _apply_wall_terms
+-            loss = nu * y[j]
++            loss = (nu * 1.01 if j == self.electron_index else nu) * y[j]
+
+Rationale: gives the electron a slightly different wall loss frequency than the ions,
+breaking the "one common ambipolar loss frequency for every charged species" design and
+making the net charge flux to the wall on an initially-neutral state non-zero instead of
+zero (an electron-preferential loss un-neutralises the plasma at the wall).
+
+Failing pytest output (rebuilt .so, ran the single test node):
+
+    test/rmgpy/solver/plasmaWallTest.py::test_net_charge_flux_zero_on_neutral_nonzero_on_nonneutral FAILED
+
+    =================================== FAILURES ===================================
+    ______ test_net_charge_flux_zero_on_neutral_nonzero_on_nonneutral ______
+
+        def test_net_charge_flux_zero_on_neutral_nonzero_on_nonneutral():
+            ...
+            net_wall_current = float(np.sum(r.species_charges * r.wall_loss_rates))
+    >       assert net_wall_current == 0.0
+    E       assert 1.8516597908671572e-06 == 0.0
+
+    test/rmgpy/solver/plasmaWallTest.py:225: AssertionError
+    =========================== short test summary info ============================
+    FAILED test/rmgpy/solver/plasmaWallTest.py::test_net_charge_flux_zero_on_neutral_nonzero_on_nonneutral
+    ============================== 1 failed in ~3s ==============================
+
+Revert: edit reverted via the exact inverse string replacement
+((nu * 1.01 if j == self.electron_index else nu) * y[j] -> nu * y[j]), rebuilt. This
+revert-rebuild happened just before the coordinator's concurrent charge_row_scale change
+was noticed; re-verified after that change landed and after the fresh rebuild recorded
+above: md5sum of rmgpy/solver/plasma.pyx equals the current baseline
+(bb4ce4dfb37a74bba012795cff779180), and the full plasmaWallTest.py suite (19 tests,
+including this one) PASSED ("19 passed in 2.78s").
