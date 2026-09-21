@@ -1,0 +1,172 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+cachedir: .pytest_cache
+rootdir: /home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 29 items
+
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestElectronPlacementSeparatesDuplicates::test_two_owners_of_one_ionisation_channel_are_not_duplicates PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestElectronPlacementSeparatesDuplicates::test_matching_placement_is_still_a_duplicate PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestThreeBodyRecombinationShape::test_the_duplicate_check_separates_the_pair PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestThreeBodyRecombinationShape::test_the_export_boundary_refuses_a_reversed_declared_reaction PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestThreeBodyRecombinationShape::test_an_undeclared_three_body_owner_is_still_folded_onto_the_radiative_channel PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestOrdinaryDuplicateHandlingIsUntouched::test_neutral_duplicate_pair_is_still_marked PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestOrdinaryDuplicateHandlingIsUntouched::test_opposite_direction_irreversible_branch_still_unmarks PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestOrdinaryDuplicateHandlingIsUntouched::test_mixed_pressure_dependence_branch_still_unmarks PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestDuplicateIsAGroupPredicate::test_a_pre_marked_placement_mismatched_pair_is_cleared PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestDuplicateIsAGroupPredicate::test_a_cross_group_comparison_does_not_clear_another_groups_flags PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestDuplicateIsAGroupPredicate::test_a_lone_flag_that_names_no_mate_is_cleared PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestDuplicateIsAGroupPredicate::test_a_pre_marked_mixed_reversibility_pair_is_cleared PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestDuplicateIsAGroupPredicate::test_the_verdict_does_not_depend_on_the_flags_it_arrives_with PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestDuplicateIsAGroupPredicate::test_the_production_save_path_recomputes_the_flags PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestPlacementTruthTable::test_same_direction_rows[0-0-NeutralLibA-NeutralLibB-True-(0, 0) vs (0, 0) -- all neutral chemistry, unchanged] PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestPlacementTruthTable::test_same_direction_rows[1-1-PlasmaElectronImpactIonization-PlasmaElectronImpactIonization-True-(1, 2) vs (1, 2) -- a genuine duplicate of a declared channel] PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestPlacementTruthTable::test_same_direction_rows[1-1-AnUndeclaredKineticsLibrary-AnotherUndeclaredLibrary-True-(0, 1) vs (0, 1) -- a genuine duplicate under the net-derived rule] PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestPlacementTruthTable::test_same_direction_rows[1-1-PlasmaElectronImpactIonization-AnUndeclaredKineticsLibrary-False-(1, 2) vs (0, 1) -- equal net count, different incident order] PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestPlacementTruthTable::test_same_direction_rows[1-1-AnUndeclaredKineticsLibrary-PlasmaElectronImpactIonization-False-(0, 1) vs (1, 2) -- the same row with the arguments swapped] PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestTheAnswerBelongsToTheDeck::test_a_permuted_pair_is_not_cleared_into_a_deck_cantera_rejects PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestTheAnswerBelongsToTheDeck::test_the_lone_flag_case_still_clears PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestTheAnswerBelongsToTheDeck::test_a_render_leaves_every_reactions_flag_exactly_as_it_found_it PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestTheAnswerBelongsToTheDeck::test_a_core_plus_edge_save_does_not_store_its_answer_on_the_reactions PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestTheAnswerBelongsToTheDeck::test_a_generator_of_reactions_is_written_not_consumed PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestTheAnswerBelongsToTheDeck::test_a_cross_class_pair_is_not_cleared_into_a_deck_cantera_rejects FAILED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestTheAnswerBelongsToTheDeck::test_a_three_body_is_not_grouped_with_a_falloff_that_writes_another_equation PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestProductionMarkingDoesNotReachTheCanteraWriter::test_the_production_marking_this_rests_on_still_exists PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestProductionMarkingDoesNotReachTheCanteraWriter::test_a_core_only_cantera_export_is_loadable_after_production_marking PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestProductionMarkingDoesNotReachTheCanteraWriter::test_a_chemkin_render_does_not_launder_the_production_marks PASSED
+
+=================================== FAILURES ===================================
+_ TestTheAnswerBelongsToTheDeck.test_a_cross_class_pair_is_not_cleared_into_a_deck_cantera_rejects _
+
+self = <i244ChemkinDuplicateElectronTest.TestTheAnswerBelongsToTheDeck object at 0x740a9e7c03a0>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-380/test_a_cross_class_pair_is_not0')
+permutation_species = (Species(index=1, label="H", thermo=NASA(polynomials=[NASAPolynomial(coeffs=[2.5,0,0,0,0,-745.375,-11.7246], Tmin=(200...x=(6000,'K'))], Tmin=(200,'K'), Tmax=(6000,'K')), molecule=[Molecule(smiles="[O]")], molecular_weight=(15.9994,'amu')))
+
+    def test_a_cross_class_pair_is_not_cleared_into_a_deck_cantera_rejects(
+            self, tmp_path, permutation_species):
+        """
+        Chemkin writes an equation, not a Python class. A ``LibraryReaction`` and
+        a ``TemplateReaction`` over the same participants therefore render the
+        same line, and a deck carrying both needs ``DUPLICATE`` on each.
+    
+        The key used to carry ``reaction.__class__``, which split this pair into
+        two singleton groups and let the singleton path clear both -- while
+        logging *"no other reaction writes its Chemkin equation"*, a sentence
+        that is false as it is printed, because the other entry does.
+    
+        The third reaction is what keeps this check honest. Both members of the
+        pair arrive marked and must STAY marked, so an authority that returned
+        its input unchanged would satisfy them; ``lonely`` arrives marked and must
+        be CLEARED, so nothing passes here without the recompute actually running.
+        """
+        from rmgpy.data.kinetics.family import TemplateReaction
+    
+        h, oh, h2, o = permutation_species
+        library = _library_reaction(
+            [h, oh], [h2, o], "NeutralLibA", duplicate=True,
+            kinetics=Arrhenius(A=(1.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+        template = TemplateReaction(
+            reactants=[h, oh], products=[h2, o], family="NeutralFamily",
+            reversible=False, duplicate=True,
+            kinetics=Arrhenius(A=(2.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+        lonely = _library_reaction(
+            [h2], [h, h], "NeutralLibC", duplicate=True,
+            kinetics=Arrhenius(A=(3.0e12, "s^-1"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+    
+        text = _write_deck(tmp_path, list(permutation_species),
+                           [library, template, lonely])
+        entries = _deck_entries(text)
+    
+        assert len(entries) == 3, text
+        assert entries[0][0] == entries[1][0], (
+            "the premise of this test is that the two classes render the SAME "
+            "equation; they rendered {0} and {1}".format(entries[0][0], entries[1][0])
+        )
+>       assert [marked for _, marked in entries] == [True, True, False], (
+            "a cross-class pair writing one equation was not kept duplicate, or the "
+            "lone entry was not cleared:\n{0}".format(text)
+        )
+E       AssertionError: a cross-class pair writing one equation was not kept duplicate, or the lone entry was not cleared:
+E         ELEMENTS
+E         	H
+E         	O
+E         END
+E         
+E         SPECIES
+E             H(1)            
+E             OH(2)           
+E             H2(3)           
+E             O(4)            
+E         END
+E         
+E         
+E         
+E         THERM ALL
+E            300.000  1000.000  5000.000
+E         
+E         H(1)                    H   1               G   200.000  6000.000 1000.00      1
+E          2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2
+E         -7.45375000E+02-1.17246000E+01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3
+E          0.00000000E+00 0.00000000E+00-7.45375000E+02-1.17246000E+01                   4
+E         
+E         OH(2)                   H   1O   1          G   200.000  6000.000 1000.00      1
+E          2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2
+E         -7.45375000E+02-1.17246000E+01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3
+E          0.00000000E+00 0.00000000E+00-7.45375000E+02-1.17246000E+01                   4
+E         
+E         H2(3)                   H   2               G   200.000  6000.000 1000.00      1
+E          2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2
+E         -7.45375000E+02-1.17246000E+01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3
+E          0.00000000E+00 0.00000000E+00-7.45375000E+02-1.17246000E+01                   4
+E         
+E         O(4)                    O   1               G   200.000  6000.000 1000.00      1
+E          2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2
+E         -7.45375000E+02-1.17246000E+01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3
+E          0.00000000E+00 0.00000000E+00-7.45375000E+02-1.17246000E+01                   4
+E         
+E         END
+E         
+E         
+E         
+E         REACTIONS    KCAL/MOLE   MOLES
+E         
+E         H(1)+OH(2)=>H2(3)+O(4)                              1.000000e+12 0.000     0.000    
+E         
+E         H(1)+OH(2)=>H2(3)+O(4)                              2.000000e+12 0.000     0.000    
+E         
+E         H2(3)=>H(1)+H(1)                                    3.000000e+12 0.000     0.000    
+E         
+E         END
+E         
+E         
+E       assert [False, False, False] == [True, True, False]
+E         
+E         At index 0 diff: False != True
+E         
+E         Full diff:
+E           [
+E         -     True,
+E         -     True,...
+E         
+E         ...Full output truncated (4 lines hidden), use '-vv' to show
+
+test/rmgpy/i244ChemkinDuplicateElectronTest.py:1094: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  root:i244ChemkinDuplicateElectronTest.py:176 Marked reaction H(1) + OH(2) => H2(3) + O(4) as not duplicate because no other reaction writes its Chemkin equation.
+WARNING  root:i244ChemkinDuplicateElectronTest.py:176 Marked reaction H(1) + OH(2) => H2(3) + O(4) as not duplicate because no other reaction writes its Chemkin equation.
+WARNING  root:i244ChemkinDuplicateElectronTest.py:176 Marked reaction H2(3) => H(1) + H(1) as not duplicate because no other reaction writes its Chemkin equation.
+=============================== warnings summary ===============================
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestTheAnswerBelongsToTheDeck::test_a_permuted_pair_is_not_cleared_into_a_deck_cantera_rejects
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestTheAnswerBelongsToTheDeck::test_the_lone_flag_case_still_clears
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestTheAnswerBelongsToTheDeck::test_a_three_body_is_not_grouped_with_a_falloff_that_writes_another_equation
+  /home/alon/Code/Cantera/build/python/cantera/ck2yaml.py:2288: UserWarning: To be removed after Cantera 3.1; renamed to 'convert'
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestTheAnswerBelongsToTheDeck::test_a_cross_class_pair_is_not_cleared_into_a_deck_cantera_rejects
+=================== 1 failed, 28 passed, 3 warnings in 6.63s ===================

@@ -1,0 +1,285 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+cachedir: .pytest_cache
+rootdir: /home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 28 items / 24 deselected / 4 selected
+
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestTheAnswerBelongsToTheDeck::test_a_cross_class_pair_is_not_cleared_into_a_deck_cantera_rejects FAILED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestProductionMarkingDoesNotReachTheCanteraWriter::test_the_production_marking_this_rests_on_still_exists PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestProductionMarkingDoesNotReachTheCanteraWriter::test_a_core_only_cantera_export_is_loadable_after_production_marking FAILED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestProductionMarkingDoesNotReachTheCanteraWriter::test_a_chemkin_render_does_not_launder_the_production_marks PASSED
+
+=================================== FAILURES ===================================
+_ TestTheAnswerBelongsToTheDeck.test_a_cross_class_pair_is_not_cleared_into_a_deck_cantera_rejects _
+
+self = <i244ChemkinDuplicateElectronTest.TestTheAnswerBelongsToTheDeck object at 0x7b8136408940>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-325/test_a_cross_class_pair_is_not0')
+permutation_species = (Species(index=1, label="H", thermo=NASA(polynomials=[NASAPolynomial(coeffs=[2.5,0,0,0,0,-745.375,-11.7246], Tmin=(200...x=(6000,'K'))], Tmin=(200,'K'), Tmax=(6000,'K')), molecule=[Molecule(smiles="[O]")], molecular_weight=(15.9994,'amu')))
+
+    def test_a_cross_class_pair_is_not_cleared_into_a_deck_cantera_rejects(
+            self, tmp_path, permutation_species):
+        """
+        Chemkin writes an equation, not a Python class. A ``LibraryReaction`` and
+        a ``TemplateReaction`` over the same participants therefore render the
+        same line, and a deck carrying both needs ``DUPLICATE`` on each.
+    
+        The key used to carry ``reaction.__class__``, which split this pair into
+        two singleton groups and let the singleton path clear both -- while
+        logging *"no other reaction writes its Chemkin equation"*, a sentence
+        that is false as it is printed, because the other entry does.
+    
+        The third reaction is what keeps this check honest. Both members of the
+        pair arrive marked and must STAY marked, so an authority that returned
+        its input unchanged would satisfy them; ``lonely`` arrives marked and must
+        be CLEARED, so nothing passes here without the recompute actually running.
+        """
+        from rmgpy.data.kinetics.family import TemplateReaction
+    
+        h, oh, h2, o = permutation_species
+        library = _library_reaction(
+            [h, oh], [h2, o], "NeutralLibA", duplicate=True,
+            kinetics=Arrhenius(A=(1.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+        template = TemplateReaction(
+            reactants=[h, oh], products=[h2, o], family="NeutralFamily",
+            reversible=False, duplicate=True,
+            kinetics=Arrhenius(A=(2.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+        lonely = _library_reaction(
+            [h2], [h, h], "NeutralLibC", duplicate=True,
+            kinetics=Arrhenius(A=(3.0e12, "s^-1"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+    
+        text = _write_deck(tmp_path, list(permutation_species),
+                           [library, template, lonely])
+        entries = _deck_entries(text)
+    
+        assert len(entries) == 3, text
+        assert entries[0][0] == entries[1][0], (
+            "the premise of this test is that the two classes render the SAME "
+            "equation; they rendered {0} and {1}".format(entries[0][0], entries[1][0])
+        )
+>       assert [marked for _, marked in entries] == [True, True, False], (
+            "a cross-class pair writing one equation was not kept duplicate, or the "
+            "lone entry was not cleared:\n{0}".format(text)
+        )
+E       AssertionError: a cross-class pair writing one equation was not kept duplicate, or the lone entry was not cleared:
+E         ELEMENTS
+E         	H
+E         	O
+E         END
+E         
+E         SPECIES
+E             H(1)            
+E             OH(2)           
+E             H2(3)           
+E             O(4)            
+E         END
+E         
+E         
+E         
+E         THERM ALL
+E            300.000  1000.000  5000.000
+E         
+E         H(1)                    H   1               G   200.000  6000.000 1000.00      1
+E          2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2
+E         -7.45375000E+02-1.17246000E+01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3
+E          0.00000000E+00 0.00000000E+00-7.45375000E+02-1.17246000E+01                   4
+E         
+E         OH(2)                   H   1O   1          G   200.000  6000.000 1000.00      1
+E          2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2
+E         -7.45375000E+02-1.17246000E+01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3
+E          0.00000000E+00 0.00000000E+00-7.45375000E+02-1.17246000E+01                   4
+E         
+E         H2(3)                   H   2               G   200.000  6000.000 1000.00      1
+E          2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2
+E         -7.45375000E+02-1.17246000E+01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3
+E          0.00000000E+00 0.00000000E+00-7.45375000E+02-1.17246000E+01                   4
+E         
+E         O(4)                    O   1               G   200.000  6000.000 1000.00      1
+E          2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2
+E         -7.45375000E+02-1.17246000E+01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3
+E          0.00000000E+00 0.00000000E+00-7.45375000E+02-1.17246000E+01                   4
+E         
+E         END
+E         
+E         
+E         
+E         REACTIONS    KCAL/MOLE   MOLES
+E         
+E         H(1)+OH(2)=>H2(3)+O(4)                              1.000000e+12 0.000     0.000    
+E         
+E         H(1)+OH(2)=>H2(3)+O(4)                              2.000000e+12 0.000     0.000    
+E         
+E         H2(3)=>H(1)+H(1)                                    3.000000e+12 0.000     0.000    
+E         
+E         END
+E         
+E         
+E       assert [False, False, False] == [True, True, False]
+E         
+E         At index 0 diff: False != True
+E         
+E         Full diff:
+E           [
+E         -     True,
+E         -     True,...
+E         
+E         ...Full output truncated (4 lines hidden), use '-vv' to show
+
+test/rmgpy/i244ChemkinDuplicateElectronTest.py:1078: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  root:i244ChemkinDuplicateElectronTest.py:176 Marked reaction H(1) + OH(2) => H2(3) + O(4) as not duplicate because no other reaction writes its Chemkin equation.
+WARNING  root:i244ChemkinDuplicateElectronTest.py:176 Marked reaction H(1) + OH(2) => H2(3) + O(4) as not duplicate because no other reaction writes its Chemkin equation.
+WARNING  root:i244ChemkinDuplicateElectronTest.py:176 Marked reaction H2(3) => H(1) + H(1) as not duplicate because no other reaction writes its Chemkin equation.
+_ TestProductionMarkingDoesNotReachTheCanteraWriter.test_a_core_only_cantera_export_is_loadable_after_production_marking _
+
+self = <i244ChemkinDuplicateElectronTest.TestProductionMarkingDoesNotReachTheCanteraWriter object at 0x7b813643a610>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-325/test_a_core_only_cantera_expor0')
+permutation_species = (Species(index=1, label="H", thermo=NASA(polynomials=[NASAPolynomial(coeffs=[2.5,0,0,0,0,-745.375,-11.7246], Tmin=(200...x=(6000,'K'))], Tmin=(200,'K'), Tmax=(6000,'K')), molecule=[Molecule(smiles="[O]")], molecular_weight=(15.9994,'amu')))
+
+    def test_a_core_only_cantera_export_is_loadable_after_production_marking(
+            self, tmp_path, permutation_species):
+        """
+        Core and edge each hold one of a genuine pair. Model growth marks both.
+        The core-only Cantera mechanism then contains one of them, alone -- and a
+        lone ``duplicate: true`` is rejected by ``Kinetics::checkDuplicates`` for
+        exactly the reason a lone ``DUPLICATE`` line is a Chemkin error.
+    
+        Asserted by LOADING the mechanism. The YAML is written whether or not the
+        flag is wrong, so reading the file back and looking at its text is the
+        check that passes while the export is invalid.
+        """
+        import cantera as ct
+        from rmgpy.rmg.model import ReactionModel
+        from rmgpy.yaml_cantera2 import save_cantera_model
+    
+        h, oh, h2, o = permutation_species
+        core = _library_reaction(
+            [h, oh], [h2, o], "NeutralLibA",
+            kinetics=Arrhenius(A=(1.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+        edge = _library_reaction(
+            [h, oh], [h2, o], "NeutralLibB",
+            kinetics=Arrhenius(A=(2.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+    
+        self._production_mark([core, edge])
+        assert [core.duplicate, edge.duplicate] == [True, True], (
+            "precondition: production marking must have marked both, or this test "
+            "passes without ever reaching the defect it is about"
+        )
+    
+        core_only = ReactionModel(species=list(permutation_species), reactions=[core])
+        path = os.path.join(str(tmp_path), "core.yaml")
+        save_cantera_model(core_only, path)
+    
+        try:
+>           ct.Solution(path)
+
+test/rmgpy/i244ChemkinDuplicateElectronTest.py:1173: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+build/python/cantera/solutionbase.pyx:37: in cantera.solutionbase._SolutionBase.__cinit__
+    ???
+build/python/cantera/solutionbase.pyx:75: in cantera.solutionbase._SolutionBase._cinit
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+>   ???
+E   cantera._utils.CanteraError: 
+E   *******************************************************************************
+E   InputFileError thrown by Kinetics::checkDuplicates:
+E   Error on line 48 of /tmp/claude-1000/pytest-of-alon/pytest-325/test_a_core_only_cantera_expor0/core.yaml:
+E   No duplicate found for declared duplicate reaction number 0 (H(1) + OH(2) => H2(3) + O(4))
+E   |  Line |
+E   |    43 |     temperature-ranges: [200.0, 1000.0, 6000.0]
+E   |    44 |     data:
+E   |    45 |     - [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, -11.7246]
+E   |    46 |     - [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, -11.7246]
+E   |    47 | reactions:
+E   >    48 > - equation: H(1) + OH(2) => H2(3) + O(4)
+E               ^
+E   |    49 |   duplicate: true
+E   |    50 |   rate-constant: {A: 1000000.0000000001, b: 0.0, Ea: 0.0}
+E   |    51 |   note: |
+E   *******************************************************************************
+
+build/python/cantera/solutionbase.pyx:160: CanteraError
+
+During handling of the above exception, another exception occurred:
+
+self = <i244ChemkinDuplicateElectronTest.TestProductionMarkingDoesNotReachTheCanteraWriter object at 0x7b813643a610>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-325/test_a_core_only_cantera_expor0')
+permutation_species = (Species(index=1, label="H", thermo=NASA(polynomials=[NASAPolynomial(coeffs=[2.5,0,0,0,0,-745.375,-11.7246], Tmin=(200...x=(6000,'K'))], Tmin=(200,'K'), Tmax=(6000,'K')), molecule=[Molecule(smiles="[O]")], molecular_weight=(15.9994,'amu')))
+
+    def test_a_core_only_cantera_export_is_loadable_after_production_marking(
+            self, tmp_path, permutation_species):
+        """
+        Core and edge each hold one of a genuine pair. Model growth marks both.
+        The core-only Cantera mechanism then contains one of them, alone -- and a
+        lone ``duplicate: true`` is rejected by ``Kinetics::checkDuplicates`` for
+        exactly the reason a lone ``DUPLICATE`` line is a Chemkin error.
+    
+        Asserted by LOADING the mechanism. The YAML is written whether or not the
+        flag is wrong, so reading the file back and looking at its text is the
+        check that passes while the export is invalid.
+        """
+        import cantera as ct
+        from rmgpy.rmg.model import ReactionModel
+        from rmgpy.yaml_cantera2 import save_cantera_model
+    
+        h, oh, h2, o = permutation_species
+        core = _library_reaction(
+            [h, oh], [h2, o], "NeutralLibA",
+            kinetics=Arrhenius(A=(1.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+        edge = _library_reaction(
+            [h, oh], [h2, o], "NeutralLibB",
+            kinetics=Arrhenius(A=(2.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+    
+        self._production_mark([core, edge])
+        assert [core.duplicate, edge.duplicate] == [True, True], (
+            "precondition: production marking must have marked both, or this test "
+            "passes without ever reaching the defect it is about"
+        )
+    
+        core_only = ReactionModel(species=list(permutation_species), reactions=[core])
+        path = os.path.join(str(tmp_path), "core.yaml")
+        save_cantera_model(core_only, path)
+    
+        try:
+            ct.Solution(path)
+        except Exception as exc:
+>           raise AssertionError(
+                "the core-only Cantera mechanism does not load; production marking "
+                "reached the Cantera writer:\n{0}".format(exc)
+            )
+E           AssertionError: the core-only Cantera mechanism does not load; production marking reached the Cantera writer:
+E           
+E           *******************************************************************************
+E           InputFileError thrown by Kinetics::checkDuplicates:
+E           Error on line 48 of /tmp/claude-1000/pytest-of-alon/pytest-325/test_a_core_only_cantera_expor0/core.yaml:
+E           No duplicate found for declared duplicate reaction number 0 (H(1) + OH(2) => H2(3) + O(4))
+E           |  Line |
+E           |    43 |     temperature-ranges: [200.0, 1000.0, 6000.0]
+E           |    44 |     data:
+E           |    45 |     - [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, -11.7246]
+E           |    46 |     - [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, -11.7246]
+E           |    47 | reactions:
+E           >    48 > - equation: H(1) + OH(2) => H2(3) + O(4)
+E                       ^
+E           |    49 |   duplicate: true
+E           |    50 |   rate-constant: {A: 1000000.0000000001, b: 0.0, Ea: 0.0}
+E           |    51 |   note: |
+E           *******************************************************************************
+
+test/rmgpy/i244ChemkinDuplicateElectronTest.py:1175: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  root:i244ChemkinDuplicateElectronTest.py:1118 Marked reaction H(1) + OH(2) => H2(3) + O(4) as duplicate of H(1) + OH(2) => H2(3) + O(4) for saving to Chemkin file.
+=========================== short test summary info ============================
+FAILED test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestTheAnswerBelongsToTheDeck::test_a_cross_class_pair_is_not_cleared_into_a_deck_cantera_rejects
+FAILED test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestProductionMarkingDoesNotReachTheCanteraWriter::test_a_core_only_cantera_export_is_loadable_after_production_marking
+================== 2 failed, 2 passed, 24 deselected in 2.01s ==================

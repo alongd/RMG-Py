@@ -1,0 +1,209 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+cachedir: .pytest_cache
+rootdir: /home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 29 items
+
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestElectronPlacementSeparatesDuplicates::test_two_owners_of_one_ionisation_channel_are_not_duplicates PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestElectronPlacementSeparatesDuplicates::test_matching_placement_is_still_a_duplicate PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestThreeBodyRecombinationShape::test_the_duplicate_check_separates_the_pair PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestThreeBodyRecombinationShape::test_the_export_boundary_refuses_a_reversed_declared_reaction PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestThreeBodyRecombinationShape::test_an_undeclared_three_body_owner_is_still_folded_onto_the_radiative_channel PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestOrdinaryDuplicateHandlingIsUntouched::test_neutral_duplicate_pair_is_still_marked PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestOrdinaryDuplicateHandlingIsUntouched::test_opposite_direction_irreversible_branch_still_unmarks PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestOrdinaryDuplicateHandlingIsUntouched::test_mixed_pressure_dependence_branch_still_unmarks PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestDuplicateIsAGroupPredicate::test_a_pre_marked_placement_mismatched_pair_is_cleared PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestDuplicateIsAGroupPredicate::test_a_cross_group_comparison_does_not_clear_another_groups_flags PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestDuplicateIsAGroupPredicate::test_a_lone_flag_that_names_no_mate_is_cleared PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestDuplicateIsAGroupPredicate::test_a_pre_marked_mixed_reversibility_pair_is_cleared PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestDuplicateIsAGroupPredicate::test_the_verdict_does_not_depend_on_the_flags_it_arrives_with PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestDuplicateIsAGroupPredicate::test_the_production_save_path_recomputes_the_flags PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestPlacementTruthTable::test_same_direction_rows[0-0-NeutralLibA-NeutralLibB-True-(0, 0) vs (0, 0) -- all neutral chemistry, unchanged] PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestPlacementTruthTable::test_same_direction_rows[1-1-PlasmaElectronImpactIonization-PlasmaElectronImpactIonization-True-(1, 2) vs (1, 2) -- a genuine duplicate of a declared channel] PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestPlacementTruthTable::test_same_direction_rows[1-1-AnUndeclaredKineticsLibrary-AnotherUndeclaredLibrary-True-(0, 1) vs (0, 1) -- a genuine duplicate under the net-derived rule] PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestPlacementTruthTable::test_same_direction_rows[1-1-PlasmaElectronImpactIonization-AnUndeclaredKineticsLibrary-False-(1, 2) vs (0, 1) -- equal net count, different incident order] PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestPlacementTruthTable::test_same_direction_rows[1-1-AnUndeclaredKineticsLibrary-PlasmaElectronImpactIonization-False-(0, 1) vs (1, 2) -- the same row with the arguments swapped] PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestTheAnswerBelongsToTheDeck::test_a_permuted_pair_is_not_cleared_into_a_deck_cantera_rejects PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestTheAnswerBelongsToTheDeck::test_the_lone_flag_case_still_clears PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestTheAnswerBelongsToTheDeck::test_a_render_leaves_every_reactions_flag_exactly_as_it_found_it PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestTheAnswerBelongsToTheDeck::test_a_core_plus_edge_save_does_not_store_its_answer_on_the_reactions PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestTheAnswerBelongsToTheDeck::test_a_generator_of_reactions_is_written_not_consumed PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestTheAnswerBelongsToTheDeck::test_a_cross_class_pair_is_not_cleared_into_a_deck_cantera_rejects PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestTheAnswerBelongsToTheDeck::test_a_three_body_is_not_grouped_with_a_falloff_that_writes_another_equation PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestProductionMarkingDoesNotReachTheCanteraWriter::test_the_production_marking_this_rests_on_still_exists PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestProductionMarkingDoesNotReachTheCanteraWriter::test_a_core_only_cantera_export_is_loadable_after_production_marking FAILED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestProductionMarkingDoesNotReachTheCanteraWriter::test_a_chemkin_render_does_not_launder_the_production_marks PASSED
+
+=================================== FAILURES ===================================
+_ TestProductionMarkingDoesNotReachTheCanteraWriter.test_a_core_only_cantera_export_is_loadable_after_production_marking _
+
+self = <i244ChemkinDuplicateElectronTest.TestProductionMarkingDoesNotReachTheCanteraWriter object at 0x77297fba4880>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-381/test_a_core_only_cantera_expor0')
+permutation_species = (Species(index=1, label="H", thermo=NASA(polynomials=[NASAPolynomial(coeffs=[2.5,0,0,0,0,-745.375,-11.7246], Tmin=(200...x=(6000,'K'))], Tmin=(200,'K'), Tmax=(6000,'K')), molecule=[Molecule(smiles="[O]")], molecular_weight=(15.9994,'amu')))
+
+    def test_a_core_only_cantera_export_is_loadable_after_production_marking(
+            self, tmp_path, permutation_species):
+        """
+        Core and edge each hold one of a genuine pair. Model growth marks both.
+        The core-only Cantera mechanism then contains one of them, alone -- and a
+        lone ``duplicate: true`` is rejected by ``Kinetics::checkDuplicates`` for
+        exactly the reason a lone ``DUPLICATE`` line is a Chemkin error.
+    
+        Asserted by LOADING the mechanism. The YAML is written whether or not the
+        flag is wrong, so reading the file back and looking at its text is the
+        check that passes while the export is invalid.
+        """
+        import cantera as ct
+        from rmgpy.rmg.model import ReactionModel
+        from rmgpy.yaml_cantera2 import save_cantera_model
+    
+        h, oh, h2, o = permutation_species
+        core = _library_reaction(
+            [h, oh], [h2, o], "NeutralLibA",
+            kinetics=Arrhenius(A=(1.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+        edge = _library_reaction(
+            [h, oh], [h2, o], "NeutralLibB",
+            kinetics=Arrhenius(A=(2.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+    
+        self._production_mark([core, edge])
+        assert [core.duplicate, edge.duplicate] == [True, True], (
+            "precondition: production marking must have marked both, or this test "
+            "passes without ever reaching the defect it is about"
+        )
+    
+        core_only = ReactionModel(species=list(permutation_species), reactions=[core])
+        path = os.path.join(str(tmp_path), "core.yaml")
+        save_cantera_model(core_only, path)
+    
+        # transport_model=None because these four species carry no transport data
+        # and the phase this writer emits declares a transport model, so
+        # GasTransport::getTransportData objects before Kinetics::checkDuplicates
+        # is ever reached. That rejection has nothing to do with duplicates, and
+        # reporting it as one is the same defect this ticket is about -- a failure
+        # attributed to the stage that was asked rather than the stage that threw.
+        # Kinetics, and therefore the duplicate check, still run.
+        try:
+>           ct.Solution(path, transport_model=None)
+
+test/rmgpy/i244ChemkinDuplicateElectronTest.py:1256: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+build/python/cantera/solutionbase.pyx:37: in cantera.solutionbase._SolutionBase.__cinit__
+    ???
+build/python/cantera/solutionbase.pyx:75: in cantera.solutionbase._SolutionBase._cinit
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+>   ???
+E   cantera._utils.CanteraError: 
+E   *******************************************************************************
+E   InputFileError thrown by Kinetics::checkDuplicates:
+E   Error on line 48 of /tmp/claude-1000/pytest-of-alon/pytest-381/test_a_core_only_cantera_expor0/core.yaml:
+E   No duplicate found for declared duplicate reaction number 0 (H(1) + OH(2) => H2(3) + O(4))
+E   |  Line |
+E   |    43 |     temperature-ranges: [200.0, 1000.0, 6000.0]
+E   |    44 |     data:
+E   |    45 |     - [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, -11.7246]
+E   |    46 |     - [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, -11.7246]
+E   |    47 | reactions:
+E   >    48 > - equation: H(1) + OH(2) => H2(3) + O(4)
+E               ^
+E   |    49 |   duplicate: true
+E   |    50 |   rate-constant: {A: 1000000.0000000001, b: 0.0, Ea: 0.0}
+E   |    51 |   note: |
+E   *******************************************************************************
+
+build/python/cantera/solutionbase.pyx:160: CanteraError
+
+During handling of the above exception, another exception occurred:
+
+self = <i244ChemkinDuplicateElectronTest.TestProductionMarkingDoesNotReachTheCanteraWriter object at 0x77297fba4880>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-381/test_a_core_only_cantera_expor0')
+permutation_species = (Species(index=1, label="H", thermo=NASA(polynomials=[NASAPolynomial(coeffs=[2.5,0,0,0,0,-745.375,-11.7246], Tmin=(200...x=(6000,'K'))], Tmin=(200,'K'), Tmax=(6000,'K')), molecule=[Molecule(smiles="[O]")], molecular_weight=(15.9994,'amu')))
+
+    def test_a_core_only_cantera_export_is_loadable_after_production_marking(
+            self, tmp_path, permutation_species):
+        """
+        Core and edge each hold one of a genuine pair. Model growth marks both.
+        The core-only Cantera mechanism then contains one of them, alone -- and a
+        lone ``duplicate: true`` is rejected by ``Kinetics::checkDuplicates`` for
+        exactly the reason a lone ``DUPLICATE`` line is a Chemkin error.
+    
+        Asserted by LOADING the mechanism. The YAML is written whether or not the
+        flag is wrong, so reading the file back and looking at its text is the
+        check that passes while the export is invalid.
+        """
+        import cantera as ct
+        from rmgpy.rmg.model import ReactionModel
+        from rmgpy.yaml_cantera2 import save_cantera_model
+    
+        h, oh, h2, o = permutation_species
+        core = _library_reaction(
+            [h, oh], [h2, o], "NeutralLibA",
+            kinetics=Arrhenius(A=(1.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+        edge = _library_reaction(
+            [h, oh], [h2, o], "NeutralLibB",
+            kinetics=Arrhenius(A=(2.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+    
+        self._production_mark([core, edge])
+        assert [core.duplicate, edge.duplicate] == [True, True], (
+            "precondition: production marking must have marked both, or this test "
+            "passes without ever reaching the defect it is about"
+        )
+    
+        core_only = ReactionModel(species=list(permutation_species), reactions=[core])
+        path = os.path.join(str(tmp_path), "core.yaml")
+        save_cantera_model(core_only, path)
+    
+        # transport_model=None because these four species carry no transport data
+        # and the phase this writer emits declares a transport model, so
+        # GasTransport::getTransportData objects before Kinetics::checkDuplicates
+        # is ever reached. That rejection has nothing to do with duplicates, and
+        # reporting it as one is the same defect this ticket is about -- a failure
+        # attributed to the stage that was asked rather than the stage that threw.
+        # Kinetics, and therefore the duplicate check, still run.
+        try:
+            ct.Solution(path, transport_model=None)
+        except Exception as exc:
+>           raise AssertionError(
+                "the core-only Cantera mechanism does not load:\n{0}".format(exc)
+            )
+E           AssertionError: the core-only Cantera mechanism does not load:
+E           
+E           *******************************************************************************
+E           InputFileError thrown by Kinetics::checkDuplicates:
+E           Error on line 48 of /tmp/claude-1000/pytest-of-alon/pytest-381/test_a_core_only_cantera_expor0/core.yaml:
+E           No duplicate found for declared duplicate reaction number 0 (H(1) + OH(2) => H2(3) + O(4))
+E           |  Line |
+E           |    43 |     temperature-ranges: [200.0, 1000.0, 6000.0]
+E           |    44 |     data:
+E           |    45 |     - [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, -11.7246]
+E           |    46 |     - [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, -11.7246]
+E           |    47 | reactions:
+E           >    48 > - equation: H(1) + OH(2) => H2(3) + O(4)
+E                       ^
+E           |    49 |   duplicate: true
+E           |    50 |   rate-constant: {A: 1000000.0000000001, b: 0.0, Ea: 0.0}
+E           |    51 |   note: |
+E           *******************************************************************************
+
+test/rmgpy/i244ChemkinDuplicateElectronTest.py:1258: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  root:i244ChemkinDuplicateElectronTest.py:1194 Marked reaction H(1) + OH(2) => H2(3) + O(4) as duplicate of H(1) + OH(2) => H2(3) + O(4) for saving to Chemkin file.
+=============================== warnings summary ===============================
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestTheAnswerBelongsToTheDeck::test_a_permuted_pair_is_not_cleared_into_a_deck_cantera_rejects
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestTheAnswerBelongsToTheDeck::test_the_lone_flag_case_still_clears
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestTheAnswerBelongsToTheDeck::test_a_cross_class_pair_is_not_cleared_into_a_deck_cantera_rejects
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestTheAnswerBelongsToTheDeck::test_a_three_body_is_not_grouped_with_a_falloff_that_writes_another_equation
+  /home/alon/Code/Cantera/build/python/cantera/ck2yaml.py:2288: UserWarning: To be removed after Cantera 3.1; renamed to 'convert'
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestProductionMarkingDoesNotReachTheCanteraWriter::test_a_core_only_cantera_export_is_loadable_after_production_marking
+=================== 1 failed, 28 passed, 4 warnings in 9.34s ===================

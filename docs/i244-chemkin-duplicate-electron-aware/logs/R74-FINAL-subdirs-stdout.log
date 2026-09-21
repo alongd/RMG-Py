@@ -1,0 +1,20 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+cachedir: .pytest_cache
+rootdir: /home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 785 items / 1 error / 57 deselected / 728 selected
+
+==================================== ERRORS ====================================
+_________________ ERROR collecting test/rmgpy/data/rmgTest.py __________________
+import file mismatch:
+imported module 'rmgTest' has this __file__ attribute:
+  /home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware/test/rmgpy/rmg/rmgTest.py
+which is not the same as the test file we want to collect:
+  /home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware/test/rmgpy/data/rmgTest.py
+HINT: remove __pycache__ / .pyc files and/or use a unique basename for your test file modules
+=========================== short test summary info ============================
+ERROR test/rmgpy/data/rmgTest.py
+!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+================== 57 deselected, 1 error in 90.47s (0:01:30) ==================
