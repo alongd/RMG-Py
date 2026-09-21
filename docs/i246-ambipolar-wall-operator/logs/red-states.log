@@ -1121,3 +1121,169 @@ test/rmgpy/solver/plasmaWallTest.py:624: AssertionError
 =========================== short test summary info ============================
 FAILED test/rmgpy/solver/plasmaWallTest.py::test_jacobian_matches_residual_below_the_neutral_floor
 ======================= 1 failed, 21 deselected in 1.34s =======================
+
+================================================================================
+RED STATE 19-21  2026-09-21T17:47:01Z
+tests: test_round_trip_preserves_the_wall_by_value[pickle]
+       test_round_trip_preserves_the_wall_by_value[deepcopy]
+       test_reduce_enumerates_every_constructor_parameter
+defect: PlasmaReactor.__reduce__ (plasma.pyx:403) enumerates 11 constructor
+        arguments by hand and carries NONE of the 7 wall parameters. A pickle
+        or deepcopy round trip returns a valid PlasmaReactor that has silently
+        lost its wall (diffusion_length 0.0203142 m -> None). deepcopy is hit
+        too, via __reduce_ex__. Relayed from /spar round-3; verified by value
+        by the manager; reproduced here.
+note:   the wall-less negative arm PASSES in this red state, as it must -- a
+        reactor with no wall has no wall to lose. Only the walled arm is red.
+build under test: 9ebb4a37f913f3db7b17cddfa3b2344983a6116d (pre-fix)
+--------------------------------------------------------------------------------
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+rootdir: /home/alon/Code/RMG-Py-i246-ambipolar-wall-operator
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 27 items / 22 deselected / 5 selected
+
+test/rmgpy/solver/plasmaWallTest.py::test_round_trip_preserves_the_wall_by_value[pickle] FAILED
+test/rmgpy/solver/plasmaWallTest.py::test_round_trip_preserves_the_wall_by_value[deepcopy] FAILED
+test/rmgpy/solver/plasmaWallTest.py::test_round_trip_of_a_wall_less_reactor_stays_wall_less[pickle] PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_round_trip_of_a_wall_less_reactor_stays_wall_less[deepcopy] PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_reduce_enumerates_every_constructor_parameter FAILED
+
+=================================== FAILURES ===================================
+_____________ test_round_trip_preserves_the_wall_by_value[pickle] ______________
+
+copy_name = 'pickle'
+
+    @pytest.mark.parametrize("copy_name", ["pickle", "deepcopy"])
+    def test_round_trip_preserves_the_wall_by_value(copy_name):
+        """A copied wall-enabled reactor must still HAVE its wall, checked by value.
+    
+        ``__reduce__`` enumerates the constructor arguments by hand. A hand-written
+        enumeration that predates a parameter silently drops it: the copy is a valid
+        PlasmaReactor, it initialises, it integrates, and it has no wall at all. So
+        asserting that the object survives the trip proves nothing -- the assertion
+        has to read the wall parameters back out and compare them.
+    
+        deepcopy is covered alongside pickle because it routes through
+        ``__reduce_ex__`` as well, so one omission breaks both.
+        """
+        source_rate = 1.0e5
+        gamma = 0.5
+        r, _, _ = _build_reactor(wall=True, with_chemistry=False, source=source_rate,
+                                 gamma=gamma, quasineutral=True, max_alpha=7.5e-4)
+    
+        before = _wall_fingerprint(r)
+        # Guard the test against itself: the fixture must really carry a wall, or a
+        # copy that drops it would trivially "match".
+        assert before['has_wall'] is True
+        assert before['diffusion_length'] is not None and before['diffusion_length'] > 0.0
+        assert before['ion_reduced_mobility'] is not None and before['ion_reduced_mobility'] > 0.0
+        assert before['ionisation_source'] == source_rate
+        assert before['wall_recycling'] == gamma
+        assert before['max_ionisation_degree'] == 7.5e-4
+        assert before['quasineutral_electron'] is True
+    
+        if copy_name == "pickle":
+            clone = pickle.loads(pickle.dumps(r))
+        else:
+            clone = copy.deepcopy(r)
+    
+        after = _wall_fingerprint(clone)
+    
+        mismatched = {k: (before[k], after[k]) for k in before if before[k] != after[k]}
+>       assert not mismatched, (
+            "{0} round trip did not preserve the wall. before -> after: {1}".format(
+                copy_name, mismatched))
+E       AssertionError: pickle round trip did not preserve the wall. before -> after: {'diffusion_length': (0.020314161161742474, None), 'ion_reduced_mobility': (0.0001535, None), 'ionisation_source': (100000.0, 0.0), 'wall_recycling': (0.5, 1.0), 'max_ionisation_degree': (0.00075, 0.001), 'quasineutral_electron': (True, False), 'has_wall': (True, False)}
+E       assert not {'diffusion_length': (0.020314161161742474, None), 'has_wall': (True, False), 'ion_reduced_mobility': (0.0001535, None), 'ionisation_source': (100000.0, 0.0), ...}
+
+test/rmgpy/solver/plasmaWallTest.py:722: AssertionError
+____________ test_round_trip_preserves_the_wall_by_value[deepcopy] _____________
+
+copy_name = 'deepcopy'
+
+    @pytest.mark.parametrize("copy_name", ["pickle", "deepcopy"])
+    def test_round_trip_preserves_the_wall_by_value(copy_name):
+        """A copied wall-enabled reactor must still HAVE its wall, checked by value.
+    
+        ``__reduce__`` enumerates the constructor arguments by hand. A hand-written
+        enumeration that predates a parameter silently drops it: the copy is a valid
+        PlasmaReactor, it initialises, it integrates, and it has no wall at all. So
+        asserting that the object survives the trip proves nothing -- the assertion
+        has to read the wall parameters back out and compare them.
+    
+        deepcopy is covered alongside pickle because it routes through
+        ``__reduce_ex__`` as well, so one omission breaks both.
+        """
+        source_rate = 1.0e5
+        gamma = 0.5
+        r, _, _ = _build_reactor(wall=True, with_chemistry=False, source=source_rate,
+                                 gamma=gamma, quasineutral=True, max_alpha=7.5e-4)
+    
+        before = _wall_fingerprint(r)
+        # Guard the test against itself: the fixture must really carry a wall, or a
+        # copy that drops it would trivially "match".
+        assert before['has_wall'] is True
+        assert before['diffusion_length'] is not None and before['diffusion_length'] > 0.0
+        assert before['ion_reduced_mobility'] is not None and before['ion_reduced_mobility'] > 0.0
+        assert before['ionisation_source'] == source_rate
+        assert before['wall_recycling'] == gamma
+        assert before['max_ionisation_degree'] == 7.5e-4
+        assert before['quasineutral_electron'] is True
+    
+        if copy_name == "pickle":
+            clone = pickle.loads(pickle.dumps(r))
+        else:
+            clone = copy.deepcopy(r)
+    
+        after = _wall_fingerprint(clone)
+    
+        mismatched = {k: (before[k], after[k]) for k in before if before[k] != after[k]}
+>       assert not mismatched, (
+            "{0} round trip did not preserve the wall. before -> after: {1}".format(
+                copy_name, mismatched))
+E       AssertionError: deepcopy round trip did not preserve the wall. before -> after: {'diffusion_length': (0.020314161161742474, None), 'ion_reduced_mobility': (0.0001535, None), 'ionisation_source': (100000.0, 0.0), 'wall_recycling': (0.5, 1.0), 'max_ionisation_degree': (0.00075, 0.001), 'quasineutral_electron': (True, False), 'has_wall': (True, False)}
+E       assert not {'diffusion_length': (0.020314161161742474, None), 'has_wall': (True, False), 'ion_reduced_mobility': (0.0001535, None), 'ionisation_source': (100000.0, 0.0), ...}
+
+test/rmgpy/solver/plasmaWallTest.py:722: AssertionError
+______________ test_reduce_enumerates_every_constructor_parameter ______________
+
+    def test_reduce_enumerates_every_constructor_parameter():
+        """``__reduce__`` must mention every parameter ``__init__`` accepts.
+    
+        The value checks above catch today's omission. This one is aimed at the NEXT
+        one: a parameter added to ``__init__`` without being added to ``__reduce__``
+        fails here, naming the parameter, instead of silently producing copies that
+        have quietly lost it.
+    
+        This is a source-level check, and says so: see ``_plasma_pyx_source``.
+        """
+        src = _plasma_pyx_source()
+    
+        init = re.search(r'\n    def __init__\(self,(.*?)\):\n', src, re.S)
+        assert init, "could not locate PlasmaReactor.__init__ in plasma.pyx"
+        params = re.findall(r'([A-Za-z_][A-Za-z_0-9]*)\s*(?:=[^,]*)?(?:,|$)',
+                            re.sub(r'#.*', '', init.group(1)))
+        params = [p for p in dict.fromkeys(params) if p not in ('self',)]
+        assert 'diffusion_length' in params, (
+            "parameter scrape failed; got {0!r}".format(params))
+    
+        reduce_body = re.search(r'\n    def __reduce__\(self\):(.*?)\n    (?:cpdef|def|cdef) ',
+                                src, re.S)
+        assert reduce_body, "could not locate PlasmaReactor.__reduce__ in plasma.pyx"
+        body = reduce_body.group(1)
+    
+        missing = [p for p in params if not re.search(r'\bself\.%s\b' % re.escape(p), body)]
+>       assert not missing, (
+            "__reduce__ does not carry {0} of __init__'s parameters, so a pickle or "
+            "deepcopy silently drops them: {1}".format(len(missing), missing))
+E       AssertionError: __reduce__ does not carry 7 of __init__'s parameters, so a pickle or deepcopy silently drops them: ['diffusion_length', 'ion_reduced_mobility', 'mobility_reference_density', 'wall_recycling', 'ionisation_source', 'max_ionisation_degree', 'quasineutral_electron']
+E       assert not ['diffusion_length', 'ion_reduced_mobility', 'mobility_reference_density', 'wall_recycling', 'ionisation_source', 'max_ionisation_degree', ...]
+
+test/rmgpy/solver/plasmaWallTest.py:786: AssertionError
+=========================== short test summary info ============================
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_round_trip_preserves_the_wall_by_value[pickle]
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_round_trip_preserves_the_wall_by_value[deepcopy]
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_reduce_enumerates_every_constructor_parameter
+================== 3 failed, 2 passed, 22 deselected in 0.97s ==================

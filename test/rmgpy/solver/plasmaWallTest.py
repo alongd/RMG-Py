@@ -41,10 +41,16 @@ No assertion below states a target electron density. Everything is expressed
 as a loss frequency, a charge, a ratio, or a conservation statement.
 """
 
+import copy
+import os
+import pickle
+import re
+
 import numpy as np
 import pytest
 
 import rmgpy.constants as constants
+import rmgpy.solver.plasma
 from rmgpy.exceptions import PlasmaStateError
 from rmgpy.kinetics import VoronovEIArrhenius
 from rmgpy.reaction import Reaction
@@ -651,3 +657,132 @@ def test_jacobian_finite_when_neutrals_are_exhausted():
 
     jac = np.asarray(r.jacobian(0.0, y, zeros, 0.0), float)
     assert np.all(np.isfinite(jac)), "Jacobian is not finite with no neutrals left"
+
+
+# ---------------------------------------------------------------- item 19
+
+
+_WALL_ATTRS_BY_VALUE = (
+    # (attribute, how to read a comparable value out of it)
+    ('diffusion_length', lambda r: None if r.diffusion_length is None
+     else r.diffusion_length.value_si),
+    ('ion_reduced_mobility', lambda r: None if r.ion_reduced_mobility is None
+     else r.ion_reduced_mobility.value_si),
+    ('ionisation_source', lambda r: None if r.ionisation_source is None
+     else r.ionisation_source.value_si),
+    ('mobility_reference_density', lambda r: r.mobility_reference_density),
+    ('wall_recycling', lambda r: r.wall_recycling),
+    ('max_ionisation_degree', lambda r: r.max_ionisation_degree),
+    ('quasineutral_electron', lambda r: r.quasineutral_electron),
+    ('has_wall', lambda r: r.has_wall),
+)
+
+
+def _wall_fingerprint(reactor):
+    return {name: read(reactor) for name, read in _WALL_ATTRS_BY_VALUE}
+
+
+@pytest.mark.parametrize("copy_name", ["pickle", "deepcopy"])
+def test_round_trip_preserves_the_wall_by_value(copy_name):
+    """A copied wall-enabled reactor must still HAVE its wall, checked by value.
+
+    ``__reduce__`` enumerates the constructor arguments by hand. A hand-written
+    enumeration that predates a parameter silently drops it: the copy is a valid
+    PlasmaReactor, it initialises, it integrates, and it has no wall at all. So
+    asserting that the object survives the trip proves nothing -- the assertion
+    has to read the wall parameters back out and compare them.
+
+    deepcopy is covered alongside pickle because it routes through
+    ``__reduce_ex__`` as well, so one omission breaks both.
+    """
+    source_rate = 1.0e5
+    gamma = 0.5
+    r, _, _ = _build_reactor(wall=True, with_chemistry=False, source=source_rate,
+                             gamma=gamma, quasineutral=True, max_alpha=7.5e-4)
+
+    before = _wall_fingerprint(r)
+    # Guard the test against itself: the fixture must really carry a wall, or a
+    # copy that drops it would trivially "match".
+    assert before['has_wall'] is True
+    assert before['diffusion_length'] is not None and before['diffusion_length'] > 0.0
+    assert before['ion_reduced_mobility'] is not None and before['ion_reduced_mobility'] > 0.0
+    assert before['ionisation_source'] == source_rate
+    assert before['wall_recycling'] == gamma
+    assert before['max_ionisation_degree'] == 7.5e-4
+    assert before['quasineutral_electron'] is True
+
+    if copy_name == "pickle":
+        clone = pickle.loads(pickle.dumps(r))
+    else:
+        clone = copy.deepcopy(r)
+
+    after = _wall_fingerprint(clone)
+
+    mismatched = {k: (before[k], after[k]) for k in before if before[k] != after[k]}
+    assert not mismatched, (
+        "{0} round trip did not preserve the wall. before -> after: {1}".format(
+            copy_name, mismatched))
+
+
+@pytest.mark.parametrize("copy_name", ["pickle", "deepcopy"])
+def test_round_trip_of_a_wall_less_reactor_stays_wall_less(copy_name):
+    """The negative arm: a reactor with no wall must not acquire one.
+
+    Without this, a ``__reduce__`` that hard-coded a wall would pass the test
+    above. The two together pin the round trip in both directions.
+    """
+    r, _, _ = _build_reactor(wall=False, with_chemistry=False)
+    assert r.has_wall is False
+
+    clone = (pickle.loads(pickle.dumps(r)) if copy_name == "pickle"
+             else copy.deepcopy(r))
+
+    assert clone.has_wall is False
+    assert clone.diffusion_length is None
+    assert clone.ion_reduced_mobility is None
+
+
+def _plasma_pyx_source():
+    """The .pyx this module is compiled from.
+
+    Read from source deliberately: ``PlasmaReactor`` is a Cython ``cdef class``,
+    and ``inspect.signature`` reports its ``__init__`` as ``(*args, **kwargs)``
+    -- the real parameter names are not introspectable at runtime at all. A
+    first draft of the test below compared argument COUNTS via ``inspect`` and
+    was red for that reason rather than for the defect, which is exactly the
+    false-positive this file is supposed to avoid.
+    """
+    path = os.path.join(os.path.dirname(rmgpy.solver.plasma.__file__), 'plasma.pyx')
+    with open(path) as f:
+        return f.read()
+
+
+def test_reduce_enumerates_every_constructor_parameter():
+    """``__reduce__`` must mention every parameter ``__init__`` accepts.
+
+    The value checks above catch today's omission. This one is aimed at the NEXT
+    one: a parameter added to ``__init__`` without being added to ``__reduce__``
+    fails here, naming the parameter, instead of silently producing copies that
+    have quietly lost it.
+
+    This is a source-level check, and says so: see ``_plasma_pyx_source``.
+    """
+    src = _plasma_pyx_source()
+
+    init = re.search(r'\n    def __init__\(self,(.*?)\):\n', src, re.S)
+    assert init, "could not locate PlasmaReactor.__init__ in plasma.pyx"
+    params = re.findall(r'([A-Za-z_][A-Za-z_0-9]*)\s*(?:=[^,]*)?(?:,|$)',
+                        re.sub(r'#.*', '', init.group(1)))
+    params = [p for p in dict.fromkeys(params) if p not in ('self',)]
+    assert 'diffusion_length' in params, (
+        "parameter scrape failed; got {0!r}".format(params))
+
+    reduce_body = re.search(r'\n    def __reduce__\(self\):(.*?)\n    (?:cpdef|def|cdef) ',
+                            src, re.S)
+    assert reduce_body, "could not locate PlasmaReactor.__reduce__ in plasma.pyx"
+    body = reduce_body.group(1)
+
+    missing = [p for p in params if not re.search(r'\bself\.%s\b' % re.escape(p), body)]
+    assert not missing, (
+        "__reduce__ does not carry {0} of __init__'s parameters, so a pickle or "
+        "deepcopy silently drops them: {1}".format(len(missing), missing))

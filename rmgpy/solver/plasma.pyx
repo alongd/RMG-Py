@@ -403,11 +403,32 @@ cdef class PlasmaReactor(ReactionSystem):
     def __reduce__(self):
         """
         A helper function used when pickling an object.
+
+        Every parameter ``__init__`` accepts has to appear here, including the
+        wall parameters. This is a hand-written enumeration of a signature, so
+        it does not fail loudly when it falls behind: a missing entry silently
+        yields a copy that reconstructs, initialises and integrates perfectly
+        while having quietly lost whatever was omitted. The wall parameters were
+        omitted exactly that way once already, and ``deepcopy`` inherited it
+        through ``__reduce_ex__``. ``test_reduce_enumerates_every_constructor_
+        parameter`` in test/rmgpy/solver/plasmaWallTest.py fails if this list
+        falls behind ``__init__`` again.
+
+        The stored ``Quantity`` objects are passed straight back:
+        ``Quantity(Quantity(x))`` is idempotent in both value and units, so the
+        copy reconstructs them exactly rather than round-tripping unit strings.
+        ``mobility_reference_density`` is a plain float here, which is the
+        branch of ``_configure_wall`` that preserves it as given rather than
+        re-deriving it.
         """
         return (self.__class__,
                 (self.T, self.P, self.initial_mole_fractions, self.Te, self.n_sims, self.termination,
                  self.sensitive_species, self.sensitivity_threshold, self.sens_conditions,
-                 self.const_spc_names, self.charge_balance_species))
+                 self.const_spc_names, self.charge_balance_species,
+                 self.diffusion_length, self.ion_reduced_mobility,
+                 self.mobility_reference_density, self.wall_recycling,
+                 self.ionisation_source, self.max_ionisation_degree,
+                 self.quasineutral_electron))
 
     cpdef initialize_model(self, list core_species, list core_reactions, list edge_species, list edge_reactions,
                           list surface_species=None, list surface_reactions=None, list pdep_networks=None,
