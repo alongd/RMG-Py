@@ -212,16 +212,61 @@ print("=" * 96)
 import csv, os
 with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sweep.csv')) as fh:
     rows = list(csv.DictReader(fh))
-sub = [r for r in rows if r['class'] == 'extinction' and r['nu_RR'] not in ('', 'nan')]
-if sub:
-    ratios = [float(r['nu_RR']) / float(r['nu_wall']) for r in sub]
-    ratios3 = [float(r['nu_3b']) / float(r['nu_wall']) for r in sub
-               if r['nu_3b'] not in ('', 'nan')]
-    print("On the {0} sub-threshold (in-support) points:".format(len(sub)))
-    print("  nu_RR/nu_wall : max {0:.3e}".format(max(ratios)))
-    print("  nu_3b/nu_wall : max {0:.3e}".format(max(ratios3)))
-    print("  -> volume recombination is utterly negligible against the wall wherever")
-    print("     the transport model is valid. The earlier 3.4e+04 maximum came only")
-    print("     from OUT-OF-SUPPORT points, where neither number means anything.")
+# "In support" means the ionisation degree AT THE STATE nu_RR WAS EVALUATED AT is
+# within the transport model's ceiling. ne_ref is ne_sub_hi below threshold and
+# ne_star above it (sweep.py:122), so the matching degree is alpha_sub_hi or
+# alpha_star respectively. An earlier version of this block filtered
+# class == 'extinction' instead, which silently equated "in support" with
+# "sub-threshold" and dropped every in-support point on the OTHER branch -- the
+# three near-threshold states, which are exactly where the claim fails. Codex
+# caught that in /spar round 3.
+def _ref_alpha(r):
+    dnu_neg = float(r['dnu']) < 0.0
+    key = 'alpha_sub_hi' if dnu_neg else 'alpha_star'
+    try:
+        return float(r[key])
+    except (TypeError, ValueError):
+        return float('nan')
+
+
+sub, above = [], []
+for r in rows:
+    if r['nu_RR'] in ('', 'nan'):
+        continue
+    a = _ref_alpha(r)
+    if not (a == a) or a > ALPHA_CEILING:      # NaN or out of support
+        continue
+    (sub if float(r['dnu']) < 0.0 else above).append(r)
+
+if sub or above:
+    def _report(label, group):
+        if not group:
+            print("{0}: none".format(label))
+            return None, None
+        rr = max(float(r['nu_RR']) / float(r['nu_wall']) for r in group)
+        t3 = max(float(r['nu_3b']) / float(r['nu_wall']) for r in group
+                 if r['nu_3b'] not in ('', 'nan'))
+        print("{0} ({1} points):".format(label, len(group)))
+        print("  nu_RR/nu_wall : max {0:.3e}".format(rr))
+        print("  nu_3b/nu_wall : max {0:.3e}".format(t3))
+        return rr, t3
+
+    rr_s, t3_s = _report("Sub-threshold, in support", sub)
+    rr_a, t3_a = _report("Above threshold, in support", above)
+    print()
+    print("READING")
+    print("  Below threshold, volume recombination is negligible against the wall by")
+    print("  ~12 and ~24 orders of magnitude: there the wall operator is the whole loss")
+    print("  story and the extinction rate it predicts is uncontaminated.")
+    if rr_a is not None:
+        print("  ABOVE threshold it is NOT negligible. At the in-support stationary")
+        print("  states nu_RR reaches {0:.3g} of nu_wall and nu_3b reaches {1:.3g} of it".format(rr_a, t3_a))
+        print("  -- at the densest point three-body recombination EXCEEDS the wall loss.")
+        print("  Those states are the near-threshold/ill-conditioned class, so this does")
+        print("  not touch the extinction or sustainment-boundary results; it means the")
+        print("  stationary DENSITY on that branch is not set by the wall alone, which is")
+        print("  a second, independent reason the absolute n_e is not the operator's to")
+        print("  predict. The claim that recombination is negligible holds SUB-THRESHOLD")
+        print("  only, and is stated that way.")
 print("=" * 96)
 sys.exit(0)

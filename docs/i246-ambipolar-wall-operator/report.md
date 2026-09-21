@@ -25,12 +25,24 @@ electron density:**
 | `Δν = ν_ion − ν_wall`, and the **sign** of it | classified at all 588 grid points, both sides sampled (347 / 241) |
 | the **sustainment boundary**, `Te_thr(p·Λ)` | located by bisection at 42 (p, R) pairs; **collapses onto a similarity curve in p·Λ** |
 | the **extinction decay rate** | equals `\|Δν\|` to 7.0e-6 relative, and is independent of the initial electron amount across 4 decades (spread 4.5e-5) |
-| that volume recombination is irrelevant | `ν_RR/ν_wall ≤ 2.6e-12` and `ν_3b/ν_wall ≤ 2.4e-24` over every in-support point |
+| that volume recombination is irrelevant **below threshold** | `ν_RR/ν_wall ≤ 2.6e-12` and `ν_3b/ν_wall ≤ 2.4e-24` over all 241 in-support sub-threshold points. **Not** true above threshold — see the correction below |
 
-**Not determined — and the ticket's central finding:**
+**Determined uniquely but unusably — and the ticket's central finding:**
 
-**The absolute electron density.** Not because the model cannot reach a realistic one — it can —
-but because at a realistic one it is hopelessly conditioned. At 5 torr, R = 0.05 m:
+**The absolute electron density.** The phrasing matters and is deliberate. Given exactly
+prescribed inputs the model *does* fix `n_e`: the stationary branch has a unique root, and the
+solver finds it. What it does not do is make that root *knowable*, for two independent reasons —
+the root's sensitivity to the wall coefficient is enormous, and, worse, the root **ceases to
+exist** under a perturbation far smaller than the uncertainty on the coefficient itself. "The
+model determines `n_e` uniquely but unusably" is the accurate claim; an earlier draft of this
+report said "does not determine", which understated the first half and overstated the second.
+
+*Observable: this claim is stated in `n_e`.* Where a claim below is stated in the ionisation
+fraction `f` or in the heavy-species composition instead, it is labelled — the two are not
+interchangeable, and `α = f/[(1 + Te/Tgas)(1−f)]` differs from `f` by a factor of ~34 at this
+deck's temperatures.
+
+At 5 torr, R = 0.05 m:
 
 ```
 n_e (m^-3)     Te needed (eV)   Te - Te_thr (eV)     C_wall = |dln n_e / dln nu_wall|
@@ -41,8 +53,24 @@ n_e (m^-3)     Te needed (eV)   Te - Te_thr (eV)     C_wall = |dln n_e / dln nu_
 
 A real argon glow discharge (n_e ~ 1e16–1e17 m⁻³) sits **2e-7 eV above the sustainment
 threshold**, at `C_wall ≈ 2.4e5`. The ion mobility this rests on is known to ±3 % — the accuracy
-of the Ellis/McDaniel/Albritton compilation itself — and 3 % on `ν_wall` there moves `n_e` by
-`exp(0.03 × 2.4e5)`. That is not an error bar; it is the absence of a prediction.
+of the Ellis/McDaniel/Albritton compilation itself.
+
+> **Correction (adversarial review, round 3).** An earlier version of this paragraph concluded
+> that 3 % on `ν_wall` "moves `n_e` by `exp(0.03 × 2.4e5)`". That is not a quantity and the
+> sentence is withdrawn. `C_wall` is a *local* logarithmic derivative; exponentiating it over a
+> finite perturbation assumes the branch survives the perturbation, and here it does not.
+> Re-solving the balance at the same operating point: at `ν_wall × 1.0000` the root exists at
+> `f = +8.7e-07`; at `ν_wall × 1.0001` it is `f = −4.9e-05` — **negative, so there is no physical
+> root at all.** The stationary state is gone by a **0.01 %** change in the wall coefficient,
+> **three hundred times smaller** than the mobility's own ±3 % uncertainty. The measurement is the
+> fold table printed by `glow_discharge_gap.py`
+> (`logs/glow-discharge-gap-postfix.stdout.log`).
+>
+> The correct statement is therefore not that `n_e` moves by some large factor. It is that the
+> stationary state **does not survive** the uncertainty already present in the inputs: past the
+> fold there is no `n_e` to quote, and no revised sensitivity figure should be substituted for the
+> withdrawn one. *Observable: stated in the ionisation fraction `f`, where the fold is visible as
+> a sign change; the corresponding statement in `n_e` is simply that the root ceases to exist.*
 
 The operationally useful form of the same statement: **`Te` would have to be known to a few parts
 in 10⁷ of an eV for the electron density to be determined, and `Te` is prescribed in this model,
@@ -112,7 +140,21 @@ and `ν_wall` are exactly degenerate directions** — any error in the wall coef
 indistinguishable from an error in `Te`. That is the mechanism by which a free wall coefficient
 can reproduce any target density, stated as algebra rather than as a warning. The factor of 2 in
 the denominator is the composition-dependent mobility partly self-correcting; a constant-mobility
-model would give `(1−f)/f`.
+model would give `(1−f)/f`. *Observable: stated in the ionisation fraction `f`.*
+
+> **Reconciliation with the predeclared envelope.** `envelope.md` is frozen at `14042eebb`, before
+> any measurement, and its justification paragraph evaluates the same observable as `(1−f)/f` —
+> the constant-mobility form. The **observable itself (O6) and the threshold (1e2) are unchanged**;
+> what was superseded is only the closed-form evaluation, once the mobility's own `1/n_neutral`
+> dependence was carried through. This is recorded rather than silently corrected because the
+> factor of 2 moves the classification boundary: `C_wall > 1e2` is `f < 0.99 %` under the
+> predeclared form and `f < 0.50 %` under the shipped one. What git can prove about the ordering:
+> `sweep.py` appears in exactly one commit and has carried `(1−f)/(2f)` in every version of it, so
+> the formula was never *revised* after a result was seen; and because `sweep.py` both classifies
+> and writes `sweep.csv` in the same run, re-running it reproduces the committed classification.
+> What git cannot prove is that no earlier uncommitted draft used the other form. The frozen
+> document states algebra the implementation does not use, and a reader comparing the two is
+> entitled to be told so rather than left to find it.
 
 ---
 
@@ -377,9 +419,23 @@ Known limitations, stated rather than discovered later:
 - **`D_a = μ_i·kTe/e`** drops `(1 + Ti/Te)` — a 0.85 % underestimate at these ratios, carried
   inside the stated interval rather than corrected away.
 - **Unmagnetised, no flow, closed batch**, infinite residence time.
-- **`ν_RR` and `ν_3b` use order-of-magnitude recombination coefficients.** Their only role is to
-  establish that volume recombination cannot compete with the wall in the supported regime
-  (≤ 2.6e-12), and no conclusion rests on their precision.
+- **`ν_RR` and `ν_3b` use order-of-magnitude recombination coefficients**, and the conclusion they
+  support is **sub-threshold only**. Over the 241 in-support sub-threshold points they are
+  negligible against the wall by ~12 and ~24 orders of magnitude, which is what licenses reading
+  the extinction rate as pure wall loss. **Above threshold they are not negligible**: at the three
+  in-support stationary states `ν_RR/ν_wall` reaches 7.2e-2 and `ν_3b/ν_wall` reaches 1.15 — at the
+  densest, three-body recombination *exceeds* the wall loss. An earlier version of this report
+  claimed negligibility "over every in-support point"; the verifier behind it
+  (`confirm_branches.py`) filtered `class == 'extinction'` under a heading reading "in-support",
+  silently equating the two and dropping precisely the points where the claim fails. Caught in
+  adversarial review; the filter now selects on the ionisation degree at the state `ν_RR` was
+  evaluated at, and reports the two branches separately.
+
+  This does not touch the extinction or sustainment-boundary results, which live sub-threshold. It
+  does add a **second, independent reason** the absolute `n_e` is not the wall operator's to
+  predict: on the above-threshold branch the density is not set by wall loss alone. *Observable:
+  stated in the ionisation degree `α` for the support filter, and in loss-frequency ratios for the
+  comparison.*
 - **Pre-existing, unrelated, not fixed here:** `ReactionSystem.set_initial_derivative` computes
   `dydt0 = -residual(t0, y0, 0)`, and every RMG reactor writes `delta = res - dydt`, so `dydt0`
   comes out as **minus** the true initial derivative. Project-wide, in `base.pyx`, and outside this

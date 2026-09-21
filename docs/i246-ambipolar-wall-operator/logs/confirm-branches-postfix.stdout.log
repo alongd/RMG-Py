@@ -1,0 +1,117 @@
+plasma module: /home/alon/Code/RMG-Py-i246-ambipolar-wall-operator/rmgpy/solver/plasma.cpython-39-x86_64-linux-gnu.so
+
+================================================================================================
+Q1  IS THERE AN IN-SUPPORT STEADY STATE ANYWHERE IN THE ENVELOPE?
+================================================================================================
+The constant-pressure stationary state is n_Ar* = sqrt(K/k_iz); the validity
+ceiling is alpha* = n_e*/n_Ar* <= 0.001. Scanning finely in Te at each
+(p, R), and reporting the WIDTH in Te of the band where alpha* is in support.
+
+  p(torr)     R(m)   Te_thr(eV) Te at alpha=1e-3 band width(eV) band width/Te C_wall there
+------------------------------------------------------------------------------------------------
+     0.50    0.005     1.778795       1.809130      3.033e-02     1.705e-02   7.0014e+00
+     0.50    0.050     1.150970       1.158969      7.999e-03     6.950e-03   1.0844e+01
+     0.50    0.200     0.982115       0.987065      4.950e-03     5.041e-03   1.2684e+01
+     1.00    0.005     1.523678       1.542499      1.882e-02     1.235e-02   8.1918e+00
+     1.00    0.050     1.040790       1.046688      5.899e-03     5.667e-03   1.1979e+01
+     1.00    0.200     0.901229       0.905050      3.821e-03     4.239e-03   1.3802e+01
+     5.00    0.005     1.146946       1.154861      7.915e-03     6.901e-03   1.0882e+01
+     5.00    0.050     0.852518       0.855751      3.233e-03     3.792e-03   1.4574e+01
+     5.00    0.200     0.757143       0.759408      2.264e-03     2.991e-03   1.6363e+01
+    10.00    0.005     1.037513       1.043356      5.843e-03     5.631e-03   1.2017e+01
+    10.00    0.050     0.791188       0.793772      2.583e-03     3.265e-03   1.5676e+01
+    10.00    0.200     0.708547       0.710403      1.856e-03     2.620e-03   1.7452e+01
+    50.00    0.005     0.850336       0.853544      3.208e-03     3.772e-03   1.4611e+01
+    50.00    0.050     0.678311       0.679940      1.629e-03     2.402e-03   1.8205e+01
+    50.00    0.200     0.616890       0.618117      1.227e-03     1.990e-03   1.9954e+01
+
+Every band is the sliver between the sustainment boundary and the point
+where the predicted state leaves the ion-neutral transport model's domain.
+Relative band width in Te: min 1.990e-03, max 1.705e-02.
+C_wall at the top of the band: min 7.001e+00, max 1.995e+01.
+
+C_wall = (1-f)/(2f) DIVERGES as f -> 0, which is the threshold itself, and
+falls as f grows. The measured values at the TOP of each band are 7 to 20 --
+comfortably INSIDE the predeclared limit of 1e2.
+
+That refutes an argument I had made from f alone, and the arithmetic is worth
+stating because the slip is easy: the ionisation FRACTION f and the ionisation
+DEGREE alpha are not the same variable, and they differ by the temperature
+ratio. With n_e = f*n_Ar,0*Tgas/(Tgas+Te) and n_Ar* = (1-f)*n_Ar,0,
+
+      alpha = n_e/n_Ar* = f / [ (1 + Te/Tgas) * (1-f) ]
+
+so at Te/Tgas ~ 33 an in-support alpha = 1e-3 corresponds to f ~ 0.033, NOT
+to f ~ 1e-3. Reading alpha as f overstates C_wall by the same factor ~34 and
+would have made the in-support band look unusable when it is not.
+
+  CHECK at Te=0.9 eV, 5.0 torr, R=0.05 m: f*=0.375418, 1+Te/Tgas=36.0296
+    alpha from that formula = 1.668270e-02; alpha computed in the sweep = 1.668270e-02; relative 0.00e+00
+
+C_wall = 100 at f = 0.004975, i.e. alpha = 1.4670e-04 at Te = 0.85 eV --
+which is 0.147x the validity ceiling 0.001. Since that is BELOW 1, there is
+a genuine window: states with alpha between 1.47e-04 and 0.001 are both
+in support AND conditioned inside the predeclared limit. The window is real,
+and it is narrow -- its width in Te is the band measured above.
+
+================================================================================================
+Q2  THE EXTINCTION BRANCH, FROM TWO DISTINCT INITIAL CONDITIONS
+================================================================================================
+Te = 0.7 eV, 5 torr, R = 0.05 m: nu_ion = 8.7024e-01, nu_wall = 4.3200e+01 s^-1
+predicted decay rate |Delta_nu| = 4.233007e+01 s^-1, e-folding time 2.3624e-02 s
+
+      x_ion(0)     N_e(0) (mol)     N_e(t=0.2 s) fitted rate (s^-1)
+------------------------------------------------------------------------------------------------
+       1.0e-09     1.000000e-09     2.105726e-13    -4.23286641e+01
+       1.0e-07     1.000000e-07     2.105014e-11    -4.23300781e+01
+       1.0e-05     1.000000e-05     2.104407e-09    -4.23305643e+01
+
+spread of the fitted decay rate across three initial conditions: 4.489e-05
+agreement with the predicted |Delta_nu|: -7.016e-06 relative
+VERDICT: the decay rate is the operator's own Delta_nu and is INDEPENDENT of the initial condition
+(the decay rate spans 4 decades of initial electron amount and moves by
+ 4.5e-05 relative -- the e-folding time is a property of the OPERATOR, not
+ of how much plasma was there to start with, which is what makes it the
+ quantity worth reporting.)
+
+================================================================================================
+Q3  THE GROWTH BRANCH RUNS OUT OF SUPPORT, AND THE REACTOR SAYS SO
+================================================================================================
+Te = 1.5 eV, 5 torr, R = 0.05 m -- above the threshold of 0.8525 eV.
+Integrating from a seed 9 orders below the ceiling. The expected behaviour
+is a LOUD, NAMED stop at the validity ceiling -- not a solver convergence
+error, and not a silently extrapolated answer.
+
+                       configuration  alpha reached         t (s)  how it ended
+----------------------------------------------------------------------------------------------------------------
+           wall, integrated electron     1.0998e-05     8.555e-05  PlasmaStateError: ionisation degree n_e/n_neutral = 0.003427608355820432 exceeds the declared validity ceiling 0.001 of the ion-neutral ambipolar transport model
+         wall, quasineutral electron     1.0998e-05     8.555e-05  PlasmaStateError: ionisation degree n_e/n_neutral = 0.0034276083558304185 exceeds the declared validity ceiling 0.001 of the ion-neutral ambipolar transport model
+            wall + cosmic-ray source     1.0998e-05     8.555e-05  PlasmaStateError: ionisation degree n_e/n_neutral = 0.003427608355822629 exceeds the declared validity ceiling 0.001 of the ion-neutral ambipolar transport model
+             CONTROL: no wall at all     2.1826e+34     1.000e+00  ran to t = 1 s (no wall: nothing stops the growth)
+
+VERDICT: every walled configuration stops with the named domain error; the wall-less control grows without limit, as it must
+
+================================================================================================
+Q4  VOLUME RECOMBINATION, RESTRICTED TO IN-SUPPORT STATES
+================================================================================================
+Sub-threshold, in support (241 points):
+  nu_RR/nu_wall : max 2.618e-12
+  nu_3b/nu_wall : max 2.436e-24
+Above threshold, in support (3 points):
+  nu_RR/nu_wall : max 7.158e-02
+  nu_3b/nu_wall : max 1.148e+00
+
+READING
+  Below threshold, volume recombination is negligible against the wall by
+  ~12 and ~24 orders of magnitude: there the wall operator is the whole loss
+  story and the extinction rate it predicts is uncontaminated.
+  ABOVE threshold it is NOT negligible. At the in-support stationary
+  states nu_RR reaches 0.0716 of nu_wall and nu_3b reaches 1.15 of it
+  -- at the densest point three-body recombination EXCEEDS the wall loss.
+  Those states are the near-threshold/ill-conditioned class, so this does
+  not touch the extinction or sustainment-boundary results; it means the
+  stationary DENSITY on that branch is not set by the wall alone, which is
+  a second, independent reason the absolute n_e is not the operator's to
+  predict. The claim that recombination is negligible holds SUB-THRESHOLD
+  only, and is stated that way.
+================================================================================================

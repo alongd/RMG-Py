@@ -929,3 +929,195 @@ Captured failure:
 Revert: git checkout -- rmgpy/solver/plasma.pyx, rebuilt (exit 0), md5sum
 confirmed equal to baseline (bb4ce4dfb37a74bba012795cff779180), and the
 single test PASSED ("1 passed in 3.18s").
+================================================================================
+RED STATE 17-18  2026-09-21T10:49:14Z
+tests: test_jacobian_matches_residual_below_the_neutral_floor
+       test_jacobian_finite_when_neutrals_are_exhausted
+defect: _apply_wall_jacobian accumulates y_neutral WITHOUT the floor that
+        compute_nu_wall applies, then divides by it. Below wall_neutral_floor
+        the analytic Jacobian reports a d(nu)/d(neutral) the residual does not
+        have; at zero neutrals it raises ZeroDivisionError instead of staying
+        finite. Found by Codex in /spar round-3, confirmed here.
+build under test: 8dbee234871ca44258977d8656e137d615bbdd7d (pre-fix)
+--------------------------------------------------------------------------------
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+rootdir: /home/alon/Code/RMG-Py-i246-ambipolar-wall-operator
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 22 items / 20 deselected / 2 selected
+
+test/rmgpy/solver/plasmaWallTest.py::test_jacobian_matches_residual_below_the_neutral_floor FAILED
+test/rmgpy/solver/plasmaWallTest.py::test_jacobian_finite_when_neutrals_are_exhausted FAILED
+
+=================================== FAILURES ===================================
+____________ test_jacobian_matches_residual_below_the_neutral_floor ____________
+
+    def test_jacobian_matches_residual_below_the_neutral_floor():
+        """The Jacobian must differentiate the residual the solver ACTUALLY evaluates,
+        including on the clamped branch below ``wall_neutral_floor``.
+    
+        ``compute_nu_wall`` floors the neutral moles, so below the floor nu_wall is
+        CONSTANT in the neutral amount and its derivative with respect to a neutral
+        species is exactly zero. A Jacobian that keeps differentiating the unclamped
+        1/y_neutral there reports a derivative for a dependence the residual does not
+        have, and the discrepancy diverges as y_neutral -> 0.
+    
+        This samples strictly BELOW the floor on purpose. The finite-difference check
+        in verify_operator.py sampled a normal state and is structurally blind to this:
+        above the floor the two branches agree exactly, so any state the earlier check
+        could reach reproduces the blind spot rather than closing it.
+        """
+        r, _, _ = _build_reactor(wall=True, with_chemistry=False)
+        ie, i_ar, i_arp = _indices(r)
+        floor = r.wall_neutral_floor
+        assert floor > 0.0, "the floor must exist for this test to mean anything"
+    
+        # A state whose neutral content is an order of magnitude BELOW the floor,
+        # so compute_nu_wall is on its clamped branch.
+        y = _state_at(r, 1.0e-6)
+        y[i_ar] = 0.1 * floor
+        assert _wall_neutral_moles(r, y) < floor
+    
+        V = r.compute_volume(y)
+        nu_here = r.compute_nu_wall(y, V)
+    
+        # The residual is genuinely flat in the neutral amount here: halving it
+        # leaves nu_wall untouched. This is what the Jacobian has to reproduce.
+        y_half = y.copy()
+        y_half[i_ar] = 0.05 * floor
+>       assert r.compute_nu_wall(y_half, r.compute_volume(y_half)) == nu_here, (
+            "precondition failed: nu_wall is not clamped below the floor")
+E       AssertionError: precondition failed: nu_wall is not clamped below the floor
+E       assert 21812.8478778191 == 21822.105086596082
+E        +  where 21812.8478778191 = compute_nu_wall(array([1.00000e-06, 4.99999e-08, 1.00000e-06]), 0.0004381248758469616)
+E        +    where compute_nu_wall = <rmgpy.solver.plasma.PlasmaReactor object at 0x5a7eb5da4410>.compute_nu_wall
+E        +    and   0.0004381248758469616 = compute_volume(array([1.00000e-06, 4.99999e-08, 1.00000e-06]))
+E        +      where compute_volume = <rmgpy.solver.plasma.PlasmaReactor object at 0x5a7eb5da4410>.compute_volume
+
+test/rmgpy/solver/plasmaWallTest.py:599: AssertionError
+_______________ test_jacobian_finite_when_neutrals_are_exhausted _______________
+
+    def test_jacobian_finite_when_neutrals_are_exhausted():
+        """A trial state with NO neutrals left must still produce a finite Jacobian.
+    
+        ``compute_nu_wall`` never raises there by design -- the floor keeps it finite
+        so DASPK can reject the state on its own terms. The Jacobian has to honour the
+        same contract; dividing by an unfloored y_neutral makes it raise instead, and
+        an exception inside the Fortran callback is exactly the failure mode the
+        accepted-step domain check was moved out of the residual to avoid.
+        """
+        r, _, _ = _build_reactor(wall=True, with_chemistry=False)
+        ie, i_ar, i_arp = _indices(r)
+    
+        y = _state_at(r, 1.0e-6)
+        y[i_ar] = 0.0
+        assert _wall_neutral_moles(r, y) == 0.0
+    
+        V = r.compute_volume(y)
+        assert np.isfinite(r.compute_nu_wall(y, V)), "residual side already broken"
+    
+        zeros = np.zeros(r.num_core_species, float)
+        res = np.asarray(r.residual(0.0, y, zeros)[0], float)
+        assert np.all(np.isfinite(res))
+    
+>       jac = np.asarray(r.jacobian(0.0, y, zeros, 0.0), float)
+
+test/rmgpy/solver/plasmaWallTest.py:647: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+rmgpy/solver/plasma.pyx:1842: in rmgpy.solver.plasma.PlasmaReactor.jacobian
+    self._apply_wall_jacobian(y, V, dVdy, pd)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+>   dnu_rel -= 1.0 / y_neutral
+E   ZeroDivisionError: float division
+
+rmgpy/solver/plasma.pyx:1879: ZeroDivisionError
+=========================== short test summary info ============================
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_jacobian_matches_residual_below_the_neutral_floor
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_jacobian_finite_when_neutrals_are_exhausted
+======================= 2 failed, 20 deselected in 1.20s =======================
+
+--- RED STATE 17 (corrected precondition; the earlier entry above failed on its
+    own precondition, which was itself wrong: nu_wall is NOT flat below the
+    floor, only the explicit 1/y_neutral is clamped) ---
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+rootdir: /home/alon/Code/RMG-Py-i246-ambipolar-wall-operator
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 22 items / 21 deselected / 1 selected
+
+test/rmgpy/solver/plasmaWallTest.py::test_jacobian_matches_residual_below_the_neutral_floor FAILED
+
+=================================== FAILURES ===================================
+____________ test_jacobian_matches_residual_below_the_neutral_floor ____________
+
+    def test_jacobian_matches_residual_below_the_neutral_floor():
+        """The Jacobian must differentiate the residual the solver ACTUALLY evaluates,
+        including on the clamped branch below ``wall_neutral_floor``.
+    
+        ``compute_nu_wall`` floors the neutral moles, so below the floor nu_wall is
+        CONSTANT in the neutral amount and its derivative with respect to a neutral
+        species is exactly zero. A Jacobian that keeps differentiating the unclamped
+        1/y_neutral there reports a derivative for a dependence the residual does not
+        have, and the discrepancy diverges as y_neutral -> 0.
+    
+        This samples strictly BELOW the floor on purpose. The finite-difference check
+        in verify_operator.py sampled a normal state and is structurally blind to this:
+        above the floor the two branches agree exactly, so any state the earlier check
+        could reach reproduces the blind spot rather than closing it.
+        """
+        r, _, _ = _build_reactor(wall=True, with_chemistry=False)
+        ie, i_ar, i_arp = _indices(r)
+        floor = r.wall_neutral_floor
+        assert floor > 0.0, "the floor must exist for this test to mean anything"
+    
+        # A state whose neutral content is an order of magnitude BELOW the floor,
+        # so compute_nu_wall is on its clamped branch.
+        y = _state_at(r, 1.0e-6)
+        y[i_ar] = 0.1 * floor
+        assert _wall_neutral_moles(r, y) < floor
+    
+        V = r.compute_volume(y)
+        nu_here = r.compute_nu_wall(y, V)
+    
+        # Precondition: the EXPLICIT 1/y_neutral is clamped here. nu_wall is NOT flat
+        # in the neutral amount below the floor -- nu ~ V/y_neutral_eff, and V keeps its
+        # EOS dependence on that species -- but with y_neutral_eff pinned to the floor,
+        # nu/V is identical at any two below-floor states. That ratio is the precise
+        # statement of "clamped", and the clamped term is the one the Jacobian omits.
+        y_half = y.copy()
+        y_half[i_ar] = 0.05 * floor
+        V_half = r.compute_volume(y_half)
+        assert np.isclose(r.compute_nu_wall(y_half, V_half) / V_half, nu_here / V,
+                          rtol=1e-12, atol=0.0), (
+            "precondition failed: nu_wall is not clamped below the floor")
+    
+        zeros = np.zeros(r.num_core_species, float)
+        jac = np.asarray(r.jacobian(0.0, y, zeros, 0.0), float)
+    
+        # Central finite difference of the residual with respect to the neutral,
+        # over steps small enough to stay under the floor.
+        col = i_ar
+        best = None
+        for h in (1.0e-3 * floor, 1.0e-4 * floor, 1.0e-5 * floor):
+            yp = y.copy(); yp[col] += h
+            ym = y.copy(); ym[col] -= h
+            assert _wall_neutral_moles(r, yp) < floor, "step left the clamped branch"
+            rp = np.asarray(r.residual(0.0, yp, zeros)[0], float)
+            rm = np.asarray(r.residual(0.0, ym, zeros)[0], float)
+            fd = (rp - rm) / (2.0 * h)
+            err = np.max(np.abs(jac[:, col] - fd)) / max(1.0, np.max(np.abs(fd)))
+            best = err if best is None else min(best, err)
+    
+>       assert best < 1.0e-6, (
+            "analytic Jacobian disagrees with the residual it claims to differentiate "
+            "below the neutral floor: relative error {0:.3e}".format(best))
+E       AssertionError: analytic Jacobian disagrees with the residual it claims to differentiate below the neutral floor: relative error 1.179e+03
+E       assert 1178.6546892910412 < 1e-06
+
+test/rmgpy/solver/plasmaWallTest.py:624: AssertionError
+=========================== short test summary info ============================
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_jacobian_matches_residual_below_the_neutral_floor
+======================= 1 failed, 21 deselected in 1.34s =======================

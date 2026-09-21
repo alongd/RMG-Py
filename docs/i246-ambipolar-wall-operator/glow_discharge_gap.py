@@ -84,6 +84,43 @@ for p_torr, radius in ((5.0, 0.05), (1.0, 0.05), (5.0, 0.01)):
             n_e, f, alpha, te_needed, te_needed - te_thr, c_wall))
 
 print("-" * 94)
+
+# ---------------------------------------------------------------------------
+# The fold. This is the measurement behind the retraction in the READING below:
+# it is what refutes quoting exp(delta * C_wall) as though it were a quantity.
+# ---------------------------------------------------------------------------
+print("\n" + "=" * 94)
+print("DOES THE STATIONARY BRANCH SURVIVE THE MOBILITY'S OWN UNCERTAINTY?")
+print("=" * 94)
+print("Perturb nu_wall and re-solve the balance at 5 torr, R = 0.05 m, at the Te")
+print("that puts n_e in the glow-discharge range. +/-3% is the Ellis et al. (1976)")
+print("accuracy on the reduced ion mobility -- an INPUT uncertainty, not an error.")
+print()
+
+pa = 5.0 * M.TORR_TO_PA
+lam = M.diffusion_length(0.05, M.L_NOMINAL)
+n_ar0 = pa / (KB * M.TGAS)
+te_fold = 0.852518
+te_k = te_fold * M.EV_TO_K
+print("{0:>16} {1:>15} {2:>16} {3:>13}".format(
+    "nu_wall factor", "f*", "n_e (m^-3)", "C_wall"))
+print("-" * 94)
+for scale in (1.0, 1.0001, 1.001, 1.01, 1.03):
+    K = wall_constant(te_fold, lam) * scale
+    n_ar_star = np.sqrt(K / M.k_ionisation(te_fold))
+    f = 1.0 - n_ar_star / n_ar0
+    if 0.0 < f < 1.0:
+        ne = ((pa / KB) - n_ar_star * M.TGAS) / (M.TGAS + te_k)
+        print("{0:>16.4f} {1:>+15.4e} {2:>16.4e} {3:>13.3e}".format(
+            scale, f, ne, (1.0 - f) / (2.0 * f)))
+    else:
+        print("{0:>16.4f} {1:>+15.4e} {2:>16} {3:>13}".format(
+            scale, f, "NO ROOT", "--"))
+print("-" * 94)
+print("The branch is gone by x1.0001 -- a 0.01% change in the wall coefficient, THREE")
+print("HUNDRED TIMES SMALLER than the +/-3% already on the mobility. Past that there")
+print("is no stationary n_e to quote, at any conditioning number.")
+
 print("""
 READING
 
@@ -91,12 +128,25 @@ A real glow-discharge electron density IS on this model's branch. It is inside
 the transport model's validity ceiling, so the model is not "five to seven orders
 away" in the sense of being unable to reach the number -- it reaches it.
 
-What it cannot do is DETERMINE it. At n_e = 1e16 m^-3 the conditioning number
+What it cannot do is make it KNOWABLE. The root is unique -- the model determines
+n_e, in that sense -- but at n_e = 1e16 m^-3 the conditioning number
 C_wall = |d ln n_e / d ln nu_wall| is of order 1e5, thousands of times past the
-limit predeclared in envelope.md. Concretely: the ion mobility this model is
-built on is known to +/-3 per cent (Ellis et al. 1976), and a 3 per cent error in
-nu_wall there moves n_e by a factor of exp(0.03 * C_wall) -- which is not a
-correction, it is a different universe.
+limit predeclared in envelope.md.
+
+RETRACTION (adversarial review, round 3). An earlier version of this text said a
+3 per cent error in nu_wall "moves n_e by a factor of exp(0.03 * C_wall)". That
+sentence is withdrawn and is NOT replaced by a corrected multiplier. C_wall is a
+LOCAL logarithmic derivative; exponentiating it over a finite perturbation
+presumes the branch survives that perturbation. It does not. Re-solving the
+balance at this operating point gives a root at f = +8.7e-07 for nu_wall x1.0000
+and f = -4.9e-05 for nu_wall x1.0001 -- negative, i.e. NO PHYSICAL ROOT. The
+stationary state is destroyed by a 0.01 per cent change in the wall coefficient,
+three hundred times smaller than the mobility's own +/-3 per cent uncertainty.
+The table printed above is the measurement.
+
+So the honest statement is not that n_e moves by a large factor. It is that past
+the fold there is no n_e to quote at all: the stationary state does not survive
+the uncertainty already present in the inputs.
 
 Equivalently, and this is the more useful statement: the electron temperature
 needed to sit at a glow-discharge density differs from the threshold temperature

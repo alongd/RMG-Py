@@ -1861,11 +1861,21 @@ cdef class PlasmaReactor(ReactionSystem):
         cdef double nu, y_neutral = 0.0, loss, dnu_rel, dloss, source_total, term, dterm
         cdef Py_ssize_t i, k, target
         cdef double gamma = self.wall_recycling
+        cdef bint neutral_floored = 0
 
         nu = self.compute_nu_wall(y, V)
         for k in range(self.num_core_species):
             if self.neutral_heavy_mask[k]:
                 y_neutral += y[k]
+        # compute_nu_wall clamps the neutral moles at wall_neutral_floor, so on that
+        # branch nu no longer depends on the neutral amount through 1/y_neutral --
+        # only through V, which keeps its EOS dependence. Differentiating the
+        # unclamped 1/y_neutral here would report a dependence the residual does not
+        # have, and divide by zero once the neutrals are gone. The source term below
+        # is apportioned by the UNFLOORED total, exactly as _apply_wall_terms does,
+        # so the two uses cannot share one value.
+        if not (y_neutral > self.wall_neutral_floor):
+            neutral_floored = 1
 
         for i in range(self.num_core_species):
             if self.species_charges[i] == 0:
@@ -1875,7 +1885,7 @@ cdef class PlasmaReactor(ReactionSystem):
             for k in range(self.num_core_species):
                 # d(nu)/dy_k, relative to nu
                 dnu_rel = dVdy[k] / V
-                if self.neutral_heavy_mask[k]:
+                if self.neutral_heavy_mask[k] and not neutral_floored:
                     dnu_rel -= 1.0 / y_neutral
                 dloss = loss * dnu_rel
                 if k == i:

@@ -551,3 +551,103 @@ def test_charge_row_scale_is_positive_finite_and_leaves_the_solution_unchanged()
         scale[scale == 0.0] = 1.0
         assert np.all(np.abs(ya - yb) / scale < 1e-6), (
             "t={0!r}: ya={1!r} yb={2!r}".format(t, ya, yb))
+
+
+# ---------------------------------------------------------------- item 17
+
+
+def _wall_neutral_moles(reactor, y):
+    """Total moles of neutral heavy species in ``y`` -- the quantity nu_wall
+    divides by, before any floor is applied."""
+    return float(sum(y[j] for j in range(reactor.num_core_species)
+                     if reactor.neutral_heavy_mask[j]))
+
+
+def test_jacobian_matches_residual_below_the_neutral_floor():
+    """The Jacobian must differentiate the residual the solver ACTUALLY evaluates,
+    including on the clamped branch below ``wall_neutral_floor``.
+
+    ``compute_nu_wall`` floors the neutral moles, so below the floor nu_wall is
+    CONSTANT in the neutral amount and its derivative with respect to a neutral
+    species is exactly zero. A Jacobian that keeps differentiating the unclamped
+    1/y_neutral there reports a derivative for a dependence the residual does not
+    have, and the discrepancy diverges as y_neutral -> 0.
+
+    This samples strictly BELOW the floor on purpose. The finite-difference check
+    in verify_operator.py sampled a normal state and is structurally blind to this:
+    above the floor the two branches agree exactly, so any state the earlier check
+    could reach reproduces the blind spot rather than closing it.
+    """
+    r, _, _ = _build_reactor(wall=True, with_chemistry=False)
+    ie, i_ar, i_arp = _indices(r)
+    floor = r.wall_neutral_floor
+    assert floor > 0.0, "the floor must exist for this test to mean anything"
+
+    # A state whose neutral content is an order of magnitude BELOW the floor,
+    # so compute_nu_wall is on its clamped branch.
+    y = _state_at(r, 1.0e-6)
+    y[i_ar] = 0.1 * floor
+    assert _wall_neutral_moles(r, y) < floor
+
+    V = r.compute_volume(y)
+    nu_here = r.compute_nu_wall(y, V)
+
+    # Precondition: the EXPLICIT 1/y_neutral is clamped here. nu_wall is NOT flat
+    # in the neutral amount below the floor -- nu ~ V/y_neutral_eff, and V keeps its
+    # EOS dependence on that species -- but with y_neutral_eff pinned to the floor,
+    # nu/V is identical at any two below-floor states. That ratio is the precise
+    # statement of "clamped", and the clamped term is the one the Jacobian omits.
+    y_half = y.copy()
+    y_half[i_ar] = 0.05 * floor
+    V_half = r.compute_volume(y_half)
+    assert np.isclose(r.compute_nu_wall(y_half, V_half) / V_half, nu_here / V,
+                      rtol=1e-12, atol=0.0), (
+        "precondition failed: nu_wall is not clamped below the floor")
+
+    zeros = np.zeros(r.num_core_species, float)
+    jac = np.asarray(r.jacobian(0.0, y, zeros, 0.0), float)
+
+    # Central finite difference of the residual with respect to the neutral,
+    # over steps small enough to stay under the floor.
+    col = i_ar
+    best = None
+    for h in (1.0e-3 * floor, 1.0e-4 * floor, 1.0e-5 * floor):
+        yp = y.copy(); yp[col] += h
+        ym = y.copy(); ym[col] -= h
+        assert _wall_neutral_moles(r, yp) < floor, "step left the clamped branch"
+        rp = np.asarray(r.residual(0.0, yp, zeros)[0], float)
+        rm = np.asarray(r.residual(0.0, ym, zeros)[0], float)
+        fd = (rp - rm) / (2.0 * h)
+        err = np.max(np.abs(jac[:, col] - fd)) / max(1.0, np.max(np.abs(fd)))
+        best = err if best is None else min(best, err)
+
+    assert best < 1.0e-6, (
+        "analytic Jacobian disagrees with the residual it claims to differentiate "
+        "below the neutral floor: relative error {0:.3e}".format(best))
+
+
+def test_jacobian_finite_when_neutrals_are_exhausted():
+    """A trial state with NO neutrals left must still produce a finite Jacobian.
+
+    ``compute_nu_wall`` never raises there by design -- the floor keeps it finite
+    so DASPK can reject the state on its own terms. The Jacobian has to honour the
+    same contract; dividing by an unfloored y_neutral makes it raise instead, and
+    an exception inside the Fortran callback is exactly the failure mode the
+    accepted-step domain check was moved out of the residual to avoid.
+    """
+    r, _, _ = _build_reactor(wall=True, with_chemistry=False)
+    ie, i_ar, i_arp = _indices(r)
+
+    y = _state_at(r, 1.0e-6)
+    y[i_ar] = 0.0
+    assert _wall_neutral_moles(r, y) == 0.0
+
+    V = r.compute_volume(y)
+    assert np.isfinite(r.compute_nu_wall(y, V)), "residual side already broken"
+
+    zeros = np.zeros(r.num_core_species, float)
+    res = np.asarray(r.residual(0.0, y, zeros)[0], float)
+    assert np.all(np.isfinite(res))
+
+    jac = np.asarray(r.jacobian(0.0, y, zeros, 0.0), float)
+    assert np.all(np.isfinite(jac)), "Jacobian is not finite with no neutrals left"
