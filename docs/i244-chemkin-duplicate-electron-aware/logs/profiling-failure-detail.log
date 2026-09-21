@@ -1,0 +1,30 @@
+    subprocess.check_call(["ps2pdf", "{0}.ps2".format(dot_file), "{0}.pdf".format(dot_file)])
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+popenargs = (['ps2pdf', '/home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware/rmgpy/../test/rmgpy/test_data/mainTest/RMG.p...e/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware/rmgpy/../test/rmgpy/test_data/mainTest/RMG.profile.dot.pdf'],)
+kwargs = {}, retcode = 1
+cmd = ['ps2pdf', '/home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware/rmgpy/../test/rmgpy/test_data/mainTest/RMG.pr...ome/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware/rmgpy/../test/rmgpy/test_data/mainTest/RMG.profile.dot.pdf']
+
+    def check_call(*popenargs, **kwargs):
+        """Run command with arguments.  Wait for command to complete.  If
+        the exit code was zero then return, otherwise raise
+        CalledProcessError.  The CalledProcessError object will have the
+        return code in the returncode attribute.
+    
+        The arguments are the same as for the call function.  Example:
+    
+        check_call(["ls", "-l"])
+        """
+        retcode = call(*popenargs, **kwargs)
+        if retcode:
+            cmd = kwargs.get("args")
+            if cmd is None:
+                cmd = popenargs[0]
+>           raise CalledProcessError(retcode, cmd)
+E           subprocess.CalledProcessError: Command '['ps2pdf', '/home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware/rmgpy/../test/rmgpy/test_data/mainTest/RMG.profile.dot.ps2', '/home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware/rmgpy/../test/rmgpy/test_data/mainTest/RMG.profile.dot.pdf']' returned non-zero exit status 1.
+
+../../anaconda3/envs/rmg_env/lib/python3.9/subprocess.py:373: CalledProcessError
+=========================== short test summary info ============================
+FAILED test/rmgpy/rmg/mainTest.py::TestProfiling::test_make_profile_graph - s...
+ERROR test/rmgpy/rmg/mainTest.py::TestProfiling::test_make_profile_graph - Fi...
+========================== 1 failed, 1 error in 2.26s ==========================

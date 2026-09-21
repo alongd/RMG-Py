@@ -1,0 +1,6 @@
+Error: /undefinedfilename in (/home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware/rmgpy/../test/rmgpy/test_data/mainTest/RMG.profile.dot.ps2)
+Operand stack:
+Execution stack:   %interp_exit   .runexec2   --nostringval--   --nostringval--   --nostringval--   2   %stopped_push   --nostringval--   --nostringval--   --nostringval--   false   1   %stopped_push
+Dictionary stack:   --dict:747/1123(ro)(G)--   --dict:0/20(G)--   --dict:85/200(L)--
+Current allocation mode is local
+Last OS error: No such file or directoryGPL Ghostscript 10.02.1: Unrecoverable error, exit code 1

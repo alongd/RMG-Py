@@ -1,0 +1,203 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python3.9
+rootdir: /home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 10 items
+
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestElectronPlacementSeparatesDuplicates::test_two_owners_of_one_ionisation_channel_are_not_duplicates PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestElectronPlacementSeparatesDuplicates::test_matching_placement_is_still_a_duplicate PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestOrdinaryDuplicateHandlingIsUntouched::test_neutral_duplicate_pair_is_still_marked PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestOrdinaryDuplicateHandlingIsUntouched::test_opposite_direction_irreversible_branch_still_unmarks FAILED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestOrdinaryDuplicateHandlingIsUntouched::test_mixed_pressure_dependence_branch_still_unmarks FAILED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestPlacementTruthTable::test_same_direction_rows[0-0-NeutralLibA-NeutralLibB-True-(0, 0) vs (0, 0) -- all neutral chemistry, unchanged] PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestPlacementTruthTable::test_same_direction_rows[1-1-PlasmaElectronImpactIonization-PlasmaElectronImpactIonization-True-(1, 2) vs (1, 2) -- a genuine duplicate of a declared channel] PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestPlacementTruthTable::test_same_direction_rows[1-1-AnUndeclaredKineticsLibrary-AnotherUndeclaredLibrary-True-(0, 1) vs (0, 1) -- a genuine duplicate under the net-derived rule] PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestPlacementTruthTable::test_same_direction_rows[1-1-PlasmaElectronImpactIonization-AnUndeclaredKineticsLibrary-False-(1, 2) vs (0, 1) -- equal net count, different incident order] PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestPlacementTruthTable::test_same_direction_rows[1-1-AnUndeclaredKineticsLibrary-PlasmaElectronImpactIonization-False-(0, 1) vs (1, 2) -- the same row with the arguments swapped] PASSED
+
+=================================== FAILURES ===================================
+_ TestOrdinaryDuplicateHandlingIsUntouched.test_opposite_direction_irreversible_branch_still_unmarks _
+
+self = <i244ChemkinDuplicateElectronTest.TestOrdinaryDuplicateHandlingIsUntouched object at 0x759020830460>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-38/test_opposite_direction_irreve0')
+charged_species = (Species(index=1, label="e-", thermo=NASA(polynomials=[NASAPolynomial(coeffs=[2.5,0,0,0,0,-745.375,-11.7246], Tmin=(20...x=(6000,'K'))], Tmin=(200,'K'), Tmax=(6000,'K')), molecule=[Molecule(smiles="[Li+]")], molecular_weight=(6.941,'amu')))
+
+    def test_opposite_direction_irreversible_branch_still_unmarks(self, tmp_path, charged_species):
+        """
+        The opposite-direction irreversible branch must keep unmarking a pair that
+        arrives already flagged -- INCLUDING one whose placements differ.
+    
+        This is why the refinement was applied only to the branch that marks. Had
+        the match flags themselves been narrowed, this pair would have stopped
+        matching at all, the branch would never have run, and two reactions that
+        are not duplicates would have kept their DUPLICATE lines: a mis-marked
+        deck produced by the very change meant to prevent one.
+        """
+        electron, li, lip = charged_species
+    
+        ionisation = _library_reaction(
+            [li], [lip], DECLARED_TWO_SIDED_OWNER, electrons=1, duplicate=True,
+            kinetics=Arrhenius(A=(1.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+        recombination = _library_reaction(
+            [lip], [li], DECLARED_ONE_SIDED_OWNER, electrons=-1, duplicate=True,
+            kinetics=Arrhenius(A=(2.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+        assert get_electron_placement_counts(ionisation) == (1, 2)
+        assert get_electron_placement_counts(recombination) == (1, 0)
+    
+        text = _write_deck(tmp_path, [electron, li, lip], [ionisation, recombination])
+        entries = _deck_entries(text)
+    
+        assert len(entries) == 2
+>       assert not any(marked for _, marked in entries), (
+            "the opposite-direction irreversible branch stopped unmarking:\n{0}".format(text)
+        )
+E       AssertionError: the opposite-direction irreversible branch stopped unmarking:
+E         ELEMENTS
+E         	E
+E         	Li
+E         END
+E         
+E         SPECIES
+E             e-(1)           
+E             Li(2)           
+E             Lip(3)          
+E         END
+E         
+E         
+E         
+E         THERM ALL
+E            300.000  1000.000  5000.000
+E         
+E         e-(1)                   E   1               G   200.000  6000.000 1000.00      1
+E          2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2
+E         -7.45375000E+02-1.17246000E+01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3
+E          0.00000000E+00 0.00000000E+00-7.45375000E+02-1.17246000E+01                   4
+E         
+E         Li(2)                   Li  1               G   200.000  6000.000 1000.00      1
+E          2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2
+E         -7.45375000E+02-1.17246000E+01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3
+E          0.00000000E+00 0.00000000E+00-7.45375000E+02-1.17246000E+01                   4
+E         
+E         Lip(3)                  E  -1Li  1          G   200.000  6000.000 1000.00      1
+E          2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2
+E         -7.45375000E+02-1.17246000E+01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3
+E          0.00000000E+00 0.00000000E+00-7.45375000E+02-1.17246000E+01                   4
+E         
+E         END
+E         
+E         
+E         
+E         REACTIONS    KCAL/MOLE   MOLES
+E         
+E         Li(2)+e-(1)=>Lip(3)+e-(1)+e-(1)                     1.000000e+12 0.000     0.000    
+E         DUPLICATE
+E         
+E         Lip(3)+e-(1)=>Li(2)                                 2.000000e+12 0.000     0.000    
+E         DUPLICATE
+E         
+E         END
+E         
+E         
+E       assert not True
+E        +  where True = any(<generator object TestOrdinaryDuplicateHandlingIsUntouched.test_opposite_direction_irreversible_branch_still_unmarks.<locals>.<genexpr> at 0x75901fbd7c10>)
+
+test/rmgpy/i244ChemkinDuplicateElectronTest.py:322: AssertionError
+_ TestOrdinaryDuplicateHandlingIsUntouched.test_mixed_pressure_dependence_branch_still_unmarks _
+
+self = <i244ChemkinDuplicateElectronTest.TestOrdinaryDuplicateHandlingIsUntouched object at 0x759020830670>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-38/test_mixed_pressure_dependence0')
+charged_species = (Species(index=1, label="e-", thermo=NASA(polynomials=[NASAPolynomial(coeffs=[2.5,0,0,0,0,-745.375,-11.7246], Tmin=(20...x=(6000,'K'))], Tmin=(200,'K'), Tmax=(6000,'K')), molecule=[Molecule(smiles="[Li+]")], molecular_weight=(6.941,'amu')))
+
+    def test_mixed_pressure_dependence_branch_still_unmarks(self, tmp_path, charged_species):
+        """
+        The mixed-pressure-dependence branch must keep unmarking an already-flagged
+        pair, with mismatched placements as well. Same reasoning as above.
+        """
+        electron, li, lip = charged_species
+    
+        declared = _library_reaction(
+            [li], [lip], DECLARED_TWO_SIDED_OWNER, electrons=1, duplicate=True,
+            kinetics=Arrhenius(A=(1.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+        undeclared = _library_reaction(
+            [li], [lip], UNDECLARED_OWNER, electrons=1, duplicate=True,
+            kinetics=Chebyshev(
+                coeffs=[[1.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
+                kunits="s^-1",
+                Tmin=(300, "K"), Tmax=(2000, "K"),
+                Pmin=(0.01, "bar"), Pmax=(100, "bar"),
+            ),
+        )
+        assert declared.kinetics.is_pressure_dependent() != undeclared.kinetics.is_pressure_dependent()
+    
+        text = _write_deck(tmp_path, [electron, li, lip], [declared, undeclared])
+        entries = _deck_entries(text)
+    
+        assert len(entries) == 2
+>       assert not any(marked for _, marked in entries), (
+            "the mixed-pressure-dependence branch stopped unmarking:\n{0}".format(text)
+        )
+E       AssertionError: the mixed-pressure-dependence branch stopped unmarking:
+E         ELEMENTS
+E         	E
+E         	Li
+E         END
+E         
+E         SPECIES
+E             e-(1)           
+E             Li(2)           
+E             Lip(3)          
+E         END
+E         
+E         
+E         
+E         THERM ALL
+E            300.000  1000.000  5000.000
+E         
+E         e-(1)                   E   1               G   200.000  6000.000 1000.00      1
+E          2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2
+E         -7.45375000E+02-1.17246000E+01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3
+E          0.00000000E+00 0.00000000E+00-7.45375000E+02-1.17246000E+01                   4
+E         
+E         Li(2)                   Li  1               G   200.000  6000.000 1000.00      1
+E          2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2
+E         -7.45375000E+02-1.17246000E+01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3
+E          0.00000000E+00 0.00000000E+00-7.45375000E+02-1.17246000E+01                   4
+E         
+E         Lip(3)                  E  -1Li  1          G   200.000  6000.000 1000.00      1
+E          2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2
+E         -7.45375000E+02-1.17246000E+01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3
+E          0.00000000E+00 0.00000000E+00-7.45375000E+02-1.17246000E+01                   4
+E         
+E         END
+E         
+E         
+E         
+E         REACTIONS    KCAL/MOLE   MOLES
+E         
+E         Li(2)+e-(1)=>Lip(3)+e-(1)+e-(1)                     1.000000e+12 0.000     0.000    
+E         DUPLICATE
+E         
+E         Li(2)(+M)=>Lip(3)+e-(1)(+M)                         1.000e+00 0.000     0.000    
+E             TCHEB/ 300.000   2000.000 /
+E             PCHEB/ 0.010     98.692   /
+E             CHEB/ 3 3/
+E             CHEB/ 1.000e+00    0.000e+00    0.000e+00   /
+E             CHEB/ 0.000e+00    0.000e+00    0.000e+00   /
+E             CHEB/ 0.000e+00    0.000e+00    0.000e+00   /
+E         DUPLICATE
+E         
+E         END
+E         
+E         
+E       assert not True
+E        +  where True = any(<generator object TestOrdinaryDuplicateHandlingIsUntouched.test_mixed_pressure_dependence_branch_still_unmarks.<locals>.<genexpr> at 0x75901f91c9e0>)
+
+test/rmgpy/i244ChemkinDuplicateElectronTest.py:353: AssertionError
+=========================== short test summary info ============================
+FAILED test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestOrdinaryDuplicateHandlingIsUntouched::test_opposite_direction_irreversible_branch_still_unmarks
+FAILED test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestOrdinaryDuplicateHandlingIsUntouched::test_mixed_pressure_dependence_branch_still_unmarks
+========================= 2 failed, 8 passed in 1.99s ==========================

@@ -1,0 +1,76 @@
+WARNING:matplotlib:/home/alon/.config/matplotlib is not a writable directory
+WARNING:matplotlib:Matplotlib created a temporary cache directory at /tmp/claude-1000/matplotlib-7rain52w because there was an issue with the default path (/home/alon/.config/matplotlib); it is highly recommended to set the MPLCONFIGDIR environment variable to a writable directory, in particular to speed up the import of Matplotlib and to better support multiprocessing.
+INFO:matplotlib.font_manager:Failed to extract font properties from /usr/share/fonts/truetype/noto/NotoColorEmoji.ttf: In FT2Font: Could not set the fontsize (invalid pixel size; error code 0x17)
+INFO:matplotlib.font_manager:generated new fontManager
+INFO:root:Loading transport group database from /home/alon/Code/RMG-database-plasma/input/transport/groups...
+INFO:root:Loading kinetics library PlasmaElectronImpactIonization from /home/alon/Code/RMG-database-plasma/input/kinetics/libraries/PlasmaElectronImpactIonization/reactions.py...
+INFO:root:Loading kinetics library PlasmaRadiativeRecombination from /home/alon/Code/RMG-database-plasma/input/kinetics/libraries/PlasmaRadiativeRecombination/reactions.py...
+INFO:root:Loading frequencies group database from /home/alon/Code/RMG-database-plasma/input/statmech/groups...
+INFO:root:Loading thermodynamics library from LithiumPrimaryThermo.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+INFO:root:Loading thermodynamics library from LithiumAdditionalThermo.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+INFO:root:Loading thermodynamics library from primaryThermoLibrary.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+INFO:root:Loading thermodynamics library from electrocatThermo.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+INFO:root:Loading thermodynamics group database from /home/alon/Code/RMG-database-plasma/input/thermo/groups...
+INFO:root:Loading thermodynamics SIDTs from /home/alon/Code/RMG-database-plasma/input/thermo/sidt...
+INFO:root:Adding reaction library PlasmaElectronImpactIonization to model edge...
+INFO:root:
+INFO:root:Summary of Model Enlargement
+INFO:root:---------------------------------
+INFO:root:Added 0 new core species
+INFO:root:Created 2 new edge species
+INFO:root:    [Li](2)
+INFO:root:    [Lip](3)
+INFO:root:Added 0 new core reactions
+INFO:root:Created 1 new edge reactions
+INFO:root:    [Li](2) => [Lip](3)
+INFO:root:
+INFO:root:After model enlargement:
+INFO:root:    The model core has 0 species and 0 reactions
+INFO:root:    The model edge has 3 species and 1 reactions
+INFO:root:
+INFO:root:Adding reaction library PlasmaRadiativeRecombination to model edge...
+INFO:root:
+INFO:root:Summary of Model Enlargement
+INFO:root:---------------------------------
+INFO:root:Added 0 new core species
+INFO:root:Created 0 new edge species
+INFO:root:Added 0 new core reactions
+INFO:root:Created 1 new edge reactions
+INFO:root:    [Lip](3) => [Li](2)
+INFO:root:
+INFO:root:After model enlargement:
+INFO:root:    The model core has 0 species and 0 reactions
+INFO:root:    The model edge has 3 species and 2 reactions
+INFO:root:
+INFO:root:Chemkin file contains 2 reactions.
+
+==== loaded reactions, BEFORE any duplicate marking ====
+  [Li](2) => [Lip](3)                      class=LibraryReaction  family='PlasmaElectronImpactIonization' library='PlasmaElectronImpactIonization' reversible=False electrons=+1 placement=(1, 2) duplicate=False
+  [Lip](3) => [Li](2)                      class=LibraryReaction  family='PlasmaRadiativeRecombination' library='PlasmaRadiativeRecombination' reversible=False electrons=-1 placement=(1, 0) duplicate=False
+
+==== species object identity after unification ====
+  e-(1)        id=135205155184064
+  [Li](2)      id=135205155184256
+  [Lip](3)     id=135204735525312
+  [Li](2) => [Lip](3)            reactant ids=[135205155184256] product ids=[135204735525312]
+  [Lip](3) => [Li](2)            reactant ids=[135204735525312] product ids=[135205155184256]
+
+==== render_chemkin_file(check_for_duplicates=True) ====
+
+---- REACTIONS block of the emitted deck ----
+REACTIONS    KCAL/MOLE   MOLES
+
+[Li](2)+e-(1)=>[Lip](3)+e-(1)+e-(1)                 1.490e+18 -0.267    162.150  
+    TDEP/e-(1)/   ! VoronovEIArrhenius exported as a modified-Arrhenius fit of k(Te) over 1.16e+04-2.321e+08 K; the original functional form is not representable in Chemkin
+
+[Lip](3)+e-(1)=>[Li](2)                             1.734e+14 -0.801    0.010    
+    TDEP/e-(1)/   ! BadnellRRArrhenius exported as a modified-Arrhenius fit of k(Te) over 10-1e+07 K; the original functional form is not representable in Chemkin
+
+END
+
+
+==== duplicate flags AFTER marking ====
+  [Li](2) => [Lip](3)                      duplicate=False placement=(1, 2)
+  [Lip](3) => [Li](2)                      duplicate=False placement=(1, 0)
+
+RESULT: 0 of 2 reactions marked DUPLICATE
