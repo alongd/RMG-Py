@@ -54,10 +54,13 @@ Chemkin reads and what the defect corrupts.
 whose equation another entry also writes to carry ``DUPLICATE``, and an entry
 carrying it alone is an error too -- while ``mark_duplicate_reaction`` answers a
 *pairwise* question. That mismatch is not closable by refining the pairwise
-predicate, so ``mark_duplicate_reactions`` recomputes every flag from
-``chemkin_duplicate_group_key`` over the whole list, and every writer calls it
-immediately before serializing. ``TestDuplicateIsAGroupPredicate`` holds that
-line.
+predicate, so ``chemkin_duplicate_flags`` recomputes every flag from
+``chemkin_duplicate_group_key`` over a whole list, and each Chemkin renderer calls
+it for the list it is about to serialize. ``TestDuplicateIsAGroupPredicate`` holds
+that line. Not *every* writer consults it -- :mod:`arkane.pdep` and
+:mod:`rmgpy.yaml_cantera2` do not -- which is why the answer is passed to the
+writer as an argument and never stored back on the reactions;
+``TestTheAnswerBelongsToTheDeck`` holds that line.
 
 The two *un*-marking branches of the pairwise ``mark_duplicate_reaction`` (mixed
 pressure dependence, opposite direction and irreversible) survive for its
@@ -130,6 +133,21 @@ def neutral_species():
     methyl = _make_species("CH3", 2, Molecule(smiles="[CH3]"))
     ethyl = _make_species("C2H5", 3, Molecule(smiles="C[CH2]"))
     return ethane, methyl, ethyl
+
+
+@pytest.fixture()
+def permutation_species():
+    """
+    ``H``, ``OH``, ``H2`` and ``O``: a neutral quartet whose reaction
+    ``H + OH => H2 + O`` is element-balanced and has two DISTINCT species on each
+    side, which is what a permutation case needs. Cantera checks the balance
+    before it checks the duplicates, so an unbalanced stand-in is rejected for a
+    reason that has nothing to do with this ticket.
+    """
+    return (_make_species("H", 1, Molecule(smiles="[H]")),
+            _make_species("OH", 2, Molecule(smiles="[OH]")),
+            _make_species("H2", 3, Molecule(smiles="[H][H]")),
+            _make_species("O", 4, Molecule(smiles="[O]")))
 
 
 def _library_reaction(reactants, products, owner, electrons=0, kinetics=None,
@@ -541,14 +559,24 @@ class TestDuplicateIsAGroupPredicate:
     def test_a_cross_group_comparison_does_not_clear_another_groups_flags(self, tmp_path,
                                                                           charged_species):
         """
-        Four legitimately pre-marked reactions in two groups of two: a ``(1, 2)``
-        pair that is not pressure dependent, and a ``(0, 1)`` pair that is.
+        Four reactions in two groups of two: a ``(1, 2)`` pair that is not pressure
+        dependent, and a ``(0, 1)`` pair that is.
 
         Comparing a member of one group against a member of the other reaches the
         mixed-pressure-dependence un-marking branch, which clears *both* flags --
         and one of them belonged to the group that was never in question. The deck
         then carried two identical equations with no ``DUPLICATE`` line at all,
         which Chemkin rejects for the opposite reason to the case above.
+
+        **One of the four arrives unflagged on purpose.** Written with all four
+        pre-marked and all four expected marked, this test passed against an
+        authority that did nothing at all -- every input already held the value
+        every assertion wanted, so it could only catch an authority that *cleared*,
+        never one that was absent. ``undeclared_b`` therefore starts ``False`` and
+        has to be *set* by the recompute, which is a state no no-op reaches. The
+        defect under test is unchanged by that: the cross-group contamination runs
+        between ``declared_a``/``declared_b`` and ``undeclared_a``, all three of
+        which still arrive flagged.
         """
         electron, li, lip = charged_species
 
@@ -572,11 +600,13 @@ class TestDuplicateIsAGroupPredicate:
             [li], [lip], UNDECLARED_OWNER, electrons=1, duplicate=True, kinetics=chebyshev(),
         )
         undeclared_b = _library_reaction(
-            [li], [lip], "AnotherUndeclaredKineticsLibrary", electrons=1, duplicate=True,
+            [li], [lip], "AnotherUndeclaredKineticsLibrary", electrons=1, duplicate=False,
             kinetics=chebyshev(),
         )
         reactions = [declared_a, declared_b, undeclared_a, undeclared_b]
-        assert all(rxn.duplicate for rxn in reactions)
+        assert [rxn.duplicate for rxn in reactions] == [True, True, True, False], (
+            "the incoming state must not already be the expected one, or a no-op passes"
+        )
 
         text = _write_deck(tmp_path, [electron, li, lip], reactions)
         entries = _deck_entries(text)
@@ -688,11 +718,14 @@ class TestDuplicateIsAGroupPredicate:
 
     def test_the_production_save_path_recomputes_the_flags(self, tmp_path, charged_species):
         """
-        ``save_chemkin`` -- the function an RMG run writes its deck with -- passes
-        ``check_for_duplicates=False`` to every render call it makes. So the repair
-        reaches a real run's deck only if ``save_chemkin`` itself recomputes; without
-        that, the flags a run ships are whatever ``rmgpy.rmg.model``'s incremental
-        pairwise calls left behind, and this pair ships marked.
+        ``save_chemkin`` is the function an RMG run writes its deck with. The repair
+        reaches a real run's deck only if the recompute happens somewhere on that
+        path; without it, the flags a run ships are whatever ``rmgpy.rmg.model``'s
+        incremental pairwise calls left behind, and this pair ships marked.
+
+        The recompute is per render call, over that render's own reaction list --
+        ``save_chemkin`` itself no longer does one. ``TestTheAnswerBelongsToTheDeck``
+        covers why.
         """
         electron, li, lip = charged_species
 
@@ -786,4 +819,215 @@ class TestPlacementTruthTable:
         marked = [flag for _, flag in entries]
         assert marked == [expect_marked, expect_marked], (
             "{0}: expected marked={1}, deck says {2}\n{3}".format(why, expect_marked, marked, text)
+        )
+
+
+class TestTheAnswerBelongsToTheDeck:
+    """
+    ``DUPLICATE`` is a statement about one deck, not about one reaction.
+
+    The group recompute gained the power to *clear* flags, which is what makes an
+    RMG edge deck loadable at all -- but the same power, pointed at the wrong key
+    or left lying on the wrong object, breaks decks that used to be fine. The
+    three cases below are the three ways that happened, each of them measured on
+    both engines before it was repaired (see
+    ``docs/i244-chemkin-duplicate-electron-aware/round73_repro.py``).
+
+    **Every duplicate claim here is asserted by loading the mechanism**, with
+    ``cantera.Solution``. Neither cheaper check sees these defects: the two
+    entries' rendered text genuinely differs (``CH3(2)+C2H5(3)=>...`` against
+    ``C2H5(3)+CH3(2)=>...``), so a text comparison finds nothing, and
+    ``ck2yaml.convert_mech`` writes the YAML without ever running
+    ``Kinetics::checkDuplicates``, so it reports success on an invalid deck.
+    """
+
+    @staticmethod
+    def _load_with_cantera(tmp_path, text, name="chem.inp"):
+        """
+        Convert `text` and then LOAD it. Returns ``None`` when Cantera accepts the
+        mechanism, or a one-line reason when it does not.
+        """
+        import cantera as ct
+        import cantera.ck2yaml as ck2yaml
+
+        inp = os.path.join(str(tmp_path), name)
+        out = os.path.join(str(tmp_path), name + ".yaml")
+        with open(inp, "w") as f:
+            f.write(text)
+        try:
+            ck2yaml.convert_mech(input_file=inp, out_name=out, quiet=True)
+        except Exception as exc:
+            return "ck2yaml.convert_mech rejected it: {0}".format(
+                str(exc).strip().splitlines()[0])
+        try:
+            ct.Solution(out)
+        except Exception as exc:
+            # The whole message, not a line grepped out of it. Cantera echoes the
+            # offending YAML into the error, so a filter for "duplicate" reliably
+            # matches the echo of `duplicate: true` and reports a duplicate
+            # complaint no matter what the actual objection was -- which is how an
+            # unbalanced test reaction first read as a duplicate failure here.
+            return "cantera.Solution rejected it:\n{0}".format(exc)
+        return None
+
+    @staticmethod
+    def _permuted_pair(species):
+        """
+        Two entries with the same participants on each side, whose reactant LISTS
+        differ only in order, both arriving already flagged. Chemkin and Cantera
+        normalise the reactant multiset, so these are one equation written twice
+        and both entries must keep ``DUPLICATE``.
+        """
+        h, oh, h2, o = species
+        first = _library_reaction(
+            [h, oh], [h2, o], "NeutralLibA", duplicate=True,
+            kinetics=Arrhenius(A=(1.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+        second = _library_reaction(
+            [oh, h], [h2, o], "NeutralLibB", duplicate=True,
+            kinetics=Arrhenius(A=(2.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+        return first, second
+
+    def test_a_permuted_pair_is_not_cleared_into_a_deck_cantera_rejects(self, tmp_path,
+                                                                        permutation_species):
+        """
+        The key keys each side as a multiset. Under an ORDERED key these two land
+        in different groups, each a singleton, both flags are cleared, and the deck
+        Cantera gets has one equation written twice with no ``DUPLICATE`` line --
+        which ``Kinetics::checkDuplicates`` refuses.
+        """
+        first, second = self._permuted_pair(permutation_species)
+        text = _write_deck(tmp_path, list(permutation_species), [first, second])
+        entries = _deck_entries(text)
+
+        assert len(entries) == 2, text
+        assert [marked for _, marked in entries] == [True, True], (
+            "a pair differing only in reactant order lost its DUPLICATE lines:\n{0}".format(text)
+        )
+        equations = [equation for equation, _ in entries]
+        assert equations[0] != equations[1], (
+            "this case only bites while the two entries render differently; if they "
+            "render alike the test has stopped covering it:\n{0}".format(text)
+        )
+        rejection = self._load_with_cantera(tmp_path, text)
+        assert rejection is None, rejection
+
+    def test_the_lone_flag_case_still_clears(self, tmp_path, permutation_species):
+        """
+        The guard against over-correcting the case above: widening the key must not
+        cost the clearing. A single flagged entry with no mate still loses its line,
+        and Cantera still accepts the result.
+        """
+        h, oh, h2, o = permutation_species
+        lonely = _library_reaction(
+            [h, oh], [h2, o], "NeutralLibA", duplicate=True,
+            kinetics=Arrhenius(A=(1.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+        text = _write_deck(tmp_path, list(permutation_species), [lonely])
+        entries = _deck_entries(text)
+
+        assert len(entries) == 1, text
+        assert entries[0][1] is False, "a lone entry kept its DUPLICATE line:\n{0}".format(text)
+        rejection = self._load_with_cantera(tmp_path, text)
+        assert rejection is None, rejection
+
+    def test_a_render_leaves_every_reactions_flag_exactly_as_it_found_it(self, tmp_path,
+                                                                        permutation_species):
+        """
+        The answer is per list, so it is passed to the writer and not stored. A
+        render that wrote its answer back would hand it to whichever writer ran
+        next over a different list.
+        """
+        h, oh, h2, o = permutation_species
+        first, second = self._permuted_pair(permutation_species)
+        lonely = _library_reaction(
+            [h2], [h, h], "NeutralLibC", duplicate=True,
+            kinetics=Arrhenius(A=(3.0e12, "s^-1"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+        before = [first.duplicate, second.duplicate, lonely.duplicate]
+        _write_deck(tmp_path, list(permutation_species), [first, second, lonely])
+        after = [first.duplicate, second.duplicate, lonely.duplicate]
+
+        assert after == before == [True, True, True], (
+            "rendering a deck rewrote the reactions' flags: {0} -> {1}".format(before, after)
+        )
+
+    def test_a_core_plus_edge_save_does_not_mark_a_core_only_cantera_entry(self, tmp_path,
+                                                                          permutation_species):
+        """
+        An RMG run saves the core deck, then the core+edge deck, over the same
+        reaction objects, and the Cantera YAML writer runs afterwards on the core
+        alone. A core reaction whose only mate lives on the edge is a duplicate in
+        the second deck and not in the first. If the second save stores its answer,
+        the Cantera writer reads it and emits a lone ``duplicate: true``, which
+        Cantera rejects for the same reason a lone ``DUPLICATE`` line is a Chemkin
+        error.
+        """
+        from rmgpy.yaml_cantera2 import reaction_to_dict_list
+
+        h, oh, h2, o = permutation_species
+        core = _library_reaction(
+            [h, oh], [h2, o], "NeutralLibA",
+            kinetics=Arrhenius(A=(1.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+        edge = _library_reaction(
+            [h, oh], [h2, o], "NeutralLibB",
+            kinetics=Arrhenius(A=(2.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+        model = SimpleNamespace(
+            core=SimpleNamespace(species=list(permutation_species), reactions=[core]),
+            edge=SimpleNamespace(species=[], reactions=[edge]),
+            output_species_list=[],
+            output_reaction_list=[],
+            surface_site_density=None,
+        )
+
+        core_path = os.path.join(str(tmp_path), "chem.inp")
+        edge_path = os.path.join(str(tmp_path), "chem_edge.inp")
+        save_chemkin(model, core_path, os.path.join(str(tmp_path), "chem_annotated.inp"),
+                     save_edge_species=False)
+        save_chemkin(model, edge_path, os.path.join(str(tmp_path), "chem_edge_annotated.inp"),
+                     save_edge_species=True)
+
+        with open(core_path) as f:
+            core_text = f.read()
+        with open(edge_path) as f:
+            edge_text = f.read()
+
+        assert [marked for _, marked in _deck_entries(core_text)] == [False], (
+            "the core deck's lone entry was marked:\n{0}".format(core_text))
+        assert [marked for _, marked in _deck_entries(edge_text)] == [True, True], (
+            "the core+edge deck's genuine pair was not marked:\n{0}".format(edge_text))
+
+        entry = reaction_to_dict_list(core, list(permutation_species))[0]
+        assert not entry.get("duplicate", False), (
+            "the core+edge save leaked its answer to the Cantera writer, which emitted "
+            "a lone duplicate:true for {0}".format(entry["equation"])
+        )
+
+    def test_a_generator_of_reactions_is_written_not_consumed(self, tmp_path,
+                                                              permutation_species):
+        """
+        ``mark_duplicate_reaction`` has promised for years that its reaction list
+        "can be any iterator". Keying the groups reads the argument once; writing
+        the entries reads it again. A generator passed in was therefore exhausted
+        by the first read and the writer emitted an empty mechanism -- and returned
+        success, so the loss was silent.
+        """
+        h, oh, h2, o = permutation_species
+
+        def one():
+            return _library_reaction(
+                [h, oh], [h2, o], "NeutralLibA",
+                kinetics=Arrhenius(A=(1.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+            )
+
+        from_list = _write_deck(tmp_path, list(permutation_species), [one()], name="list.inp")
+        from_generator = _write_deck(tmp_path, list(permutation_species),
+                                     (rxn for rxn in [one()]), name="gen.inp")
+
+        assert len(_deck_entries(from_list)) == 1, from_list
+        assert len(_deck_entries(from_generator)) == len(_deck_entries(from_list)), (
+            "a generator argument lost the mechanism:\n{0}".format(from_generator)
         )
