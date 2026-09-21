@@ -1,0 +1,21 @@
+arm                    : BRANCH
+chemkin module         : /home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware/rmgpy/chemkin.cpython-39-x86_64-linux-gnu.so
+group-level authority  : chemkin_duplicate_flags
+
+--- DEFECT 1: a pre-marked pair whose reactant LISTS differ only in order ---
+flags after the writer : (True, True)
+rendered equations     : ['H(1)+OH(2)=>H2(3)+O(4)', 'OH(2)+H(1)=>H2(3)+O(4)']
+identical as text?     : False
+DUPLICATE lines        : 2
+VERDICT                : ck2yaml.convert_mech ACCEPTED; cantera.Solution LOADED (deck is valid)
+
+--- DEFECT 3: a generator argument ---
+from a list            : 1 reaction(s)
+from a generator       : 1 reaction(s)
+VERDICT                : ok -- the generator is honoured
+
+--- DEFECT 2: core save, then core+edge save, over shared reaction objects ---
+after the core-only save  : (False, False)
+after the core+edge save  : (False, False)
+core-only Cantera entry   : duplicate=False  H(1) + OH(2) => H2(3) + O(4)
+VERDICT                   : ok

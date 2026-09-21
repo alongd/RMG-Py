@@ -1,0 +1,7 @@
+WARNING:matplotlib:/home/alon/.config/matplotlib is not a writable directory
+WARNING:matplotlib:Matplotlib created a temporary cache directory at /tmp/claude-1000/matplotlib-hy5eskc7 because there was an issue with the default path (/home/alon/.config/matplotlib); it is highly recommended to set the MPLCONFIGDIR environment variable to a writable directory, in particular to speed up the import of Matplotlib and to better support multiprocessing.
+INFO:matplotlib.font_manager:Failed to extract font properties from /usr/share/fonts/truetype/noto/NotoColorEmoji.ttf: In FT2Font: Could not set the fontsize (invalid pixel size; error code 0x17)
+INFO:matplotlib.font_manager:generated new fontManager
+INFO:root:Loading kinetics library NIST_Fluorine/full from /home/alon/Code/RMG-database-plasma/input/kinetics/libraries/NIST_Fluorine/full/reactions.py...
+WARNING:root:Only Arrhenius and PDepArrhenius kinetics supported for duplicate reactions.
+WARNING:root:Only Arrhenius and PDepArrhenius kinetics supported for duplicate reactions.

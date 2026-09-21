@@ -1,0 +1,14 @@
+WARNING:matplotlib:/home/alon/.config/matplotlib is not a writable directory
+WARNING:matplotlib:Matplotlib created a temporary cache directory at /tmp/claude-1000/matplotlib-2tgbqekn because there was an issue with the default path (/home/alon/.config/matplotlib); it is highly recommended to set the MPLCONFIGDIR environment variable to a writable directory, in particular to speed up the import of Matplotlib and to better support multiprocessing.
+INFO:matplotlib.font_manager:Failed to extract font properties from /usr/share/fonts/truetype/noto/NotoColorEmoji.ttf: In FT2Font: Could not set the fontsize (invalid pixel size; error code 0x17)
+INFO:matplotlib.font_manager:generated new fontManager
+INFO:root:Chemkin file contains 2 reactions.
+/home/alon/Code/Cantera/build/python/cantera/ck2yaml.py:2288: UserWarning: To be removed after Cantera 3.1; renamed to 'convert'
+  warnings.warn(
+INFO:root:Chemkin file contains 1 reactions.
+INFO:root:Chemkin file contains 1 reactions.
+INFO:root:Saving annotated version of Chemkin file...
+INFO:root:Chemkin file contains 1 reactions.
+INFO:root:Chemkin file contains 2 reactions.
+INFO:root:Saving annotated version of Chemkin file...
+INFO:root:Chemkin file contains 2 reactions.

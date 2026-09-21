@@ -1,0 +1,18 @@
+backed up rmgpy/chemkin.pyx -> rmgpy/chemkin.pyx.round73-backup
+patched rmgpy/chemkin.pyx for arm D4-noop-authority
+expected RED:
+    TestDuplicateIsAGroupPredicate::test_a_cross_group_comparison_does_not_clear_another_groups_flags
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/plasma.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+D1 permuted pair keys alike        : True
+D2 render leaves flags untouched   : True
+D3 generator survives the render   : True
+D4 authority overrides its input   : False
+--- the version at HEAD (4172ed954), all four inputs pre-marked True ---
+test/rmgpy/i244PreRepointCheckTest.py::TestDuplicateIsAGroupPredicate::test_a_cross_group_comparison_does_not_clear_another_groups_flags PASSED
+
+============================== 1 passed in 2.40s ===============================
+--- the repointed version, one input arriving False ---
+=========================== short test summary info ============================
+FAILED test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestDuplicateIsAGroupPredicate::test_a_cross_group_comparison_does_not_clear_another_groups_flags
+============================== 1 failed in 2.04s ===============================
+restored rmgpy/chemkin.pyx from its byte backup

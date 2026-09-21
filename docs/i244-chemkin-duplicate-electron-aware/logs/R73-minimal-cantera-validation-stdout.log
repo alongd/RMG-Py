@@ -1,0 +1,4 @@
+/tmp/claude-1000/min-BASE/chemkin/chem.inp                             DUPLICATE=0    cantera.Solution LOADED  (26 species, 66 reactions)
+/tmp/claude-1000/min-BASE/chemkin/chem_edge.inp                        DUPLICATE=11   cantera.Solution REJECTED: InputFileError thrown by Kinetics::checkDuplicates:
+/tmp/claude-1000/min-FIXED2/chemkin/chem.inp                           DUPLICATE=0    cantera.Solution LOADED  (26 species, 66 reactions)
+/tmp/claude-1000/min-FIXED2/chemkin/chem_edge.inp                      DUPLICATE=10   cantera.Solution LOADED  (172 species, 398 reactions)
