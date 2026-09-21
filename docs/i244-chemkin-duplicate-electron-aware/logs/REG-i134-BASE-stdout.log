@@ -1,0 +1,347 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python3.9
+rootdir: /home/alon/Code/RMG-Py-plasma
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 184 items
+
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_counts_are_the_net_rule[-3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_counts_are_the_net_rule[-2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_counts_are_the_net_rule[-1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_counts_are_the_net_rule[0] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_counts_are_the_net_rule[1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_counts_are_the_net_rule[2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_counts_are_the_net_rule[3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_a_reaction_with_no_family_attribute_at_all PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_an_unrecognised_owner_is_undeclared PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[-3--3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[-3--2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[-3--1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[-3-0] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[-3-1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[-3-2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[-3-3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[-2--3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[-2--2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[-2--1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[-2-0] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[-2-1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[-2-2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[-2-3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[-1--3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[-1--2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[-1--1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[-1-0] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[-1-1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[-1-2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[-1-3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[0--3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[0--2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[0--1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[0-0] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[0-1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[0-2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[0-3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[1--3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[1--2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[1--1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[1-0] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[1-1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[1-2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[1-3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[2--3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[2--2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[2--1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[2-0] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[2-1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[2-2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[2-3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[3--3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[3--2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[3--1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[3-0] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[3-1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[3-2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_forward_verdict_is_exactly_its_old_net_comparison[3-3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[-3--3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[-3--2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[-3--1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[-3-0] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[-3-1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[-3-2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[-3-3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[-2--3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[-2--2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[-2--1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[-2-0] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[-2-1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[-2-2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[-2-3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[-1--3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[-1--2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[-1--1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[-1-0] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[-1-1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[-1-2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[-1-3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[0--3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[0--2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[0--1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[0-0] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[0-1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[0-2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[0-3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[1--3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[1--2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[1--1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[1-0] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[1-1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[1-2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[1-3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[2--3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[2--2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[2--1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[2-0] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[2-1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[2-2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[2-3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[3--3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[3--2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[3--1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[3-0] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[3-1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[3-2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_is_isomorphic_reverse_verdict_is_exactly_its_old_net_comparison[3-3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[-3--3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[-3--2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[-3--1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[-3-0] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[-3-1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[-3-2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[-3-3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[-2--3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[-2--2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[-2--1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[-2-0] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[-2-1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[-2-2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[-2-3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[-1--3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[-1--2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[-1--1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[-1-0] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[-1-1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[-1-2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[-1-3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[0--3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[0--2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[0--1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[0-0] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[0-1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[0-2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[0-3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[1--3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[1--2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[1--1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[1-0] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[1-1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[1-2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[1-3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[2--3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[2--2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[2--1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[2-0] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[2-1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[2-2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[2-3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[3--3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[3--2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[3--1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[3-0] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[3-1] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[3-2] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_model_predicate_is_tightened_but_only_for_charged_reactions[3-3] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_one_sided_declared_owners_also_sit_on_the_net_rule[Cation_R_Recombination] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_one_sided_declared_owners_also_sit_on_the_net_rule[PlasmaRadiativeRecombination] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_one_sided_declared_owners_also_sit_on_the_net_rule[Plasma_Associative_Ionization_Alkali_Alkali] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_one_sided_declared_owners_also_sit_on_the_net_rule[Plasma_Associative_Ionization_Alkali_Alkaline] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_one_sided_declared_owners_also_sit_on_the_net_rule[Plasma_Associative_Ionization_Alkaline_Alkaline] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_one_sided_declared_owners_also_sit_on_the_net_rule[Plasma_Electron_Attachment] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_one_sided_declared_owners_also_sit_on_the_net_rule[Plasma_Radiative_Recombination] PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_the_two_sided_owner_is_the_only_one_that_moves PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_a_reversed_declared_reaction_reports_swapped_counts PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheUndeclaredOwnerContract::test_a_reaction_contradicting_its_owner_falls_back_rather_than_raising PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestGenuineDuplicatesStillCollapse::test_identical_neutral_reactions_collapse PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestGenuineDuplicatesStillCollapse::test_a_neutral_reaction_and_its_reverse_collapse PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestGenuineDuplicatesStillCollapse::test_identical_charged_reactions_collapse PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestGenuineDuplicatesStillCollapse::test_a_charged_reaction_and_its_true_reverse_collapse PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestGenuineDuplicatesStillCollapse::test_a_different_collider_still_separates_otherwise_identical_reactions PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestGenuineDuplicatesStillCollapse::test_a_repeated_reaction_from_a_declared_owner_still_collapses PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestChargedFamilyReactionsAreNotConfused::test_the_family_is_charged_and_its_reactions_carry_the_declaration PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestChargedFamilyReactionsAreNotConfused::test_its_true_reverse_still_collapses PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestChargedFamilyReactionsAreNotConfused::test_the_same_direction_charge_reversal_survives PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestChargedFamilyReactionsAreNotConfused::test_the_neutral_transformation_over_the_same_heavy_species_survives PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestChargedFamilyReactionsAreNotConfused::test_the_model_keeps_both_through_the_real_path PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestLithiumChargeNetworkReachesTheModel::test_the_two_channels_are_not_a_reverse_pair FAILED
+test/rmgpy/i134DuplicateElectronsTest.py::TestLithiumChargeNetworkReachesTheModel::test_both_channels_enter_the_model[True] FAILED
+test/rmgpy/i134DuplicateElectronsTest.py::TestLithiumChargeNetworkReachesTheModel::test_both_channels_enter_the_model[False] FAILED
+test/rmgpy/i134DuplicateElectronsTest.py::TestLithiumChargeNetworkReachesTheModel::test_the_cation_has_a_loss_channel_in_the_model FAILED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheLibraryLoadLandmineIsNotReachedFromHere::test_a_loaded_entry_carries_no_owner PASSED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheLibraryLoadLandmineIsNotReachedFromHere::test_the_owner_appears_when_the_entry_becomes_a_library_reaction FAILED
+test/rmgpy/i134DuplicateElectronsTest.py::TestTheLibraryLoadLandmineIsNotReachedFromHere::test_one_library_carrying_both_channels_can_be_loaded XFAIL
+
+=================================== FAILURES ===================================
+_ TestLithiumChargeNetworkReachesTheModel.test_the_two_channels_are_not_a_reverse_pair _
+
+self = <i134DuplicateElectronsTest.TestLithiumChargeNetworkReachesTheModel object at 0x7ab12d444910>
+
+    def test_the_two_channels_are_not_a_reverse_pair(self):
+        """The measurement the whole repair turns on. Their net counts are equal
+        and opposite -- the relation a reverse pair has -- but their placements
+        are not mirror images, because the reverse of the ionisation is the
+        three-body channel and not the radiative one."""
+        database = self._database()
+        ionisation = self._sole_reaction(database, IONISATION)
+>       recombination = self._sole_reaction(database, RECOMBINATION)
+
+test/rmgpy/i134DuplicateElectronsTest.py:450: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <i134DuplicateElectronsTest.TestLithiumChargeNetworkReachesTheModel object at 0x7ab12d444910>
+database = <rmgpy.data.kinetics.database.KineticsDatabase object at 0x7ab12d36ec70>
+label = 'PlasmaRadiativeRecombination'
+
+    def _sole_reaction(self, database, label):
+        reactions = database.libraries[label].get_library_reactions()
+>       assert len(reactions) == 1, '{0} has {1} entries, expected 1'.format(label,
+                                                                            len(reactions))
+E       AssertionError: PlasmaRadiativeRecombination has 2 entries, expected 1
+E       assert 2 == 1
+E        +  where 2 = len([LibraryReaction(reactants=[Species(label="[Lip]", molecule=[Molecule(smiles="[Li+]")], molecular_weight=(6.941,'amu'))], products=[Species(label="[Li]", molecule=[Molecule(smiles="[Li]")], molecular_weight=(6.941,'amu'))], kinetics=BadnellRRArrhenius(A=(8.7e-12,'cm^3/(molecule*s)'), B=0.364, T0=(147,'K'), T1=(7.153e+06,'K'), C=0.1508, T2=(715400,'K'), electrons=-1, Tmin=(10,'K'), Tmax=(1e+07,'K'), comment="""Badnell (2006) RR fit, Z=3, N=2"""), reversible=False, electrons=-1), LibraryReaction(reactants=[Species(label="[Arp]", molecule=[Molecule(smiles="[Ar+]")], molecular_weight=(39.8775,'amu'))], products=[Species(label="[Ar]", molecule=[Molecule(smiles="[Ar]")], molecular_weight=(39.8775,'amu'))], kinetics=TwoTemperaturePlasma(A=(3.77e-13,'cm^3/(molecule*s)'), n=-0.651, Ea_g=(0,'kJ/mol'), Ea_e=(0,'kJ/mol'), T0=(10000,'K'), electrons=-1, Tmin=(10000,'K'), Tmax=(1e+08,'K')), reversible=False, electrons=-1)])
+
+test/rmgpy/i134DuplicateElectronsTest.py:439: AssertionError
+_ TestLithiumChargeNetworkReachesTheModel.test_both_channels_enter_the_model[True] _
+
+self = <i134DuplicateElectronsTest.TestLithiumChargeNetworkReachesTheModel object at 0x7ab12d43ad30>
+source_first = True
+
+    @pytest.mark.parametrize('source_first', [True, False])
+    def test_both_channels_enter_the_model(self, source_first):
+        """Both orders, because the drop was order-dependent: whichever was
+        offered second was the one that disappeared."""
+        database = self._database()
+        order = [IONISATION, RECOMBINATION] if source_first else [RECOMBINATION, IONISATION]
+        verdicts = {}
+        with _GlobalKineticsDatabase(database):
+            model = CoreEdgeReactionModel()
+            model.kinetics_database = database
+            for label in order:
+>               _, is_new = model.make_new_reaction(self._sole_reaction(database, label),
+                                                    generate_thermo=False,
+                                                    generate_kinetics=False)
+
+test/rmgpy/i134DuplicateElectronsTest.py:471: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <i134DuplicateElectronsTest.TestLithiumChargeNetworkReachesTheModel object at 0x7ab12d43ad30>
+database = <rmgpy.data.kinetics.database.KineticsDatabase object at 0x7ab12d1fb1c0>
+label = 'PlasmaRadiativeRecombination'
+
+    def _sole_reaction(self, database, label):
+        reactions = database.libraries[label].get_library_reactions()
+>       assert len(reactions) == 1, '{0} has {1} entries, expected 1'.format(label,
+                                                                            len(reactions))
+E       AssertionError: PlasmaRadiativeRecombination has 2 entries, expected 1
+E       assert 2 == 1
+E        +  where 2 = len([LibraryReaction(reactants=[Species(label="[Lip]", molecule=[Molecule(smiles="[Li+]")], molecular_weight=(6.941,'amu'))], products=[Species(label="[Li]", molecule=[Molecule(smiles="[Li]")], molecular_weight=(6.941,'amu'))], kinetics=BadnellRRArrhenius(A=(8.7e-12,'cm^3/(molecule*s)'), B=0.364, T0=(147,'K'), T1=(7.153e+06,'K'), C=0.1508, T2=(715400,'K'), electrons=-1, Tmin=(10,'K'), Tmax=(1e+07,'K'), comment="""Badnell (2006) RR fit, Z=3, N=2"""), reversible=False, electrons=-1), LibraryReaction(reactants=[Species(label="[Arp]", molecule=[Molecule(smiles="[Ar+]")], molecular_weight=(39.8775,'amu'))], products=[Species(label="[Ar]", molecule=[Molecule(smiles="[Ar]")], molecular_weight=(39.8775,'amu'))], kinetics=TwoTemperaturePlasma(A=(3.77e-13,'cm^3/(molecule*s)'), n=-0.651, Ea_g=(0,'kJ/mol'), Ea_e=(0,'kJ/mol'), T0=(10000,'K'), electrons=-1, Tmin=(10000,'K'), Tmax=(1e+08,'K')), reversible=False, electrons=-1)])
+
+test/rmgpy/i134DuplicateElectronsTest.py:439: AssertionError
+_ TestLithiumChargeNetworkReachesTheModel.test_both_channels_enter_the_model[False] _
+
+self = <i134DuplicateElectronsTest.TestLithiumChargeNetworkReachesTheModel object at 0x7ab12d43a9d0>
+source_first = False
+
+    @pytest.mark.parametrize('source_first', [True, False])
+    def test_both_channels_enter_the_model(self, source_first):
+        """Both orders, because the drop was order-dependent: whichever was
+        offered second was the one that disappeared."""
+        database = self._database()
+        order = [IONISATION, RECOMBINATION] if source_first else [RECOMBINATION, IONISATION]
+        verdicts = {}
+        with _GlobalKineticsDatabase(database):
+            model = CoreEdgeReactionModel()
+            model.kinetics_database = database
+            for label in order:
+>               _, is_new = model.make_new_reaction(self._sole_reaction(database, label),
+                                                    generate_thermo=False,
+                                                    generate_kinetics=False)
+
+test/rmgpy/i134DuplicateElectronsTest.py:471: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <i134DuplicateElectronsTest.TestLithiumChargeNetworkReachesTheModel object at 0x7ab12d43a9d0>
+database = <rmgpy.data.kinetics.database.KineticsDatabase object at 0x7ab12d187eb0>
+label = 'PlasmaRadiativeRecombination'
+
+    def _sole_reaction(self, database, label):
+        reactions = database.libraries[label].get_library_reactions()
+>       assert len(reactions) == 1, '{0} has {1} entries, expected 1'.format(label,
+                                                                            len(reactions))
+E       AssertionError: PlasmaRadiativeRecombination has 2 entries, expected 1
+E       assert 2 == 1
+E        +  where 2 = len([LibraryReaction(reactants=[Species(label="[Lip]", molecule=[Molecule(smiles="[Li+]")], molecular_weight=(6.941,'amu'))], products=[Species(label="[Li]", molecule=[Molecule(smiles="[Li]")], molecular_weight=(6.941,'amu'))], kinetics=BadnellRRArrhenius(A=(8.7e-12,'cm^3/(molecule*s)'), B=0.364, T0=(147,'K'), T1=(7.153e+06,'K'), C=0.1508, T2=(715400,'K'), electrons=-1, Tmin=(10,'K'), Tmax=(1e+07,'K'), comment="""Badnell (2006) RR fit, Z=3, N=2"""), reversible=False, electrons=-1), LibraryReaction(reactants=[Species(label="[Arp]", molecule=[Molecule(smiles="[Ar+]")], molecular_weight=(39.8775,'amu'))], products=[Species(label="[Ar]", molecule=[Molecule(smiles="[Ar]")], molecular_weight=(39.8775,'amu'))], kinetics=TwoTemperaturePlasma(A=(3.77e-13,'cm^3/(molecule*s)'), n=-0.651, Ea_g=(0,'kJ/mol'), Ea_e=(0,'kJ/mol'), T0=(10000,'K'), electrons=-1, Tmin=(10000,'K'), Tmax=(1e+08,'K')), reversible=False, electrons=-1)])
+
+test/rmgpy/i134DuplicateElectronsTest.py:439: AssertionError
+_ TestLithiumChargeNetworkReachesTheModel.test_the_cation_has_a_loss_channel_in_the_model _
+
+self = <i134DuplicateElectronsTest.TestLithiumChargeNetworkReachesTheModel object at 0x7ab12d43a130>
+
+    def test_the_cation_has_a_loss_channel_in_the_model(self):
+        """The deliverable, stated as chemistry rather than as a count: the cation
+        appears on the reactant side of some reaction in the model."""
+        database = self._database()
+        with _GlobalKineticsDatabase(database):
+            model = CoreEdgeReactionModel()
+            model.kinetics_database = database
+            for label in (IONISATION, RECOMBINATION):
+>               model.make_new_reaction(self._sole_reaction(database, label),
+                                        generate_thermo=False, generate_kinetics=False)
+
+test/rmgpy/i134DuplicateElectronsTest.py:487: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <i134DuplicateElectronsTest.TestLithiumChargeNetworkReachesTheModel object at 0x7ab12d43a130>
+database = <rmgpy.data.kinetics.database.KineticsDatabase object at 0x7ab12d22f880>
+label = 'PlasmaRadiativeRecombination'
+
+    def _sole_reaction(self, database, label):
+        reactions = database.libraries[label].get_library_reactions()
+>       assert len(reactions) == 1, '{0} has {1} entries, expected 1'.format(label,
+                                                                            len(reactions))
+E       AssertionError: PlasmaRadiativeRecombination has 2 entries, expected 1
+E       assert 2 == 1
+E        +  where 2 = len([LibraryReaction(reactants=[Species(label="[Lip]", molecule=[Molecule(smiles="[Li+]")], molecular_weight=(6.941,'amu'))], products=[Species(label="[Li]", molecule=[Molecule(smiles="[Li]")], molecular_weight=(6.941,'amu'))], kinetics=BadnellRRArrhenius(A=(8.7e-12,'cm^3/(molecule*s)'), B=0.364, T0=(147,'K'), T1=(7.153e+06,'K'), C=0.1508, T2=(715400,'K'), electrons=-1, Tmin=(10,'K'), Tmax=(1e+07,'K'), comment="""Badnell (2006) RR fit, Z=3, N=2"""), reversible=False, electrons=-1), LibraryReaction(reactants=[Species(label="[Arp]", molecule=[Molecule(smiles="[Ar+]")], molecular_weight=(39.8775,'amu'))], products=[Species(label="[Ar]", molecule=[Molecule(smiles="[Ar]")], molecular_weight=(39.8775,'amu'))], kinetics=TwoTemperaturePlasma(A=(3.77e-13,'cm^3/(molecule*s)'), n=-0.651, Ea_g=(0,'kJ/mol'), Ea_e=(0,'kJ/mol'), T0=(10000,'K'), electrons=-1, Tmin=(10000,'K'), Tmax=(1e+08,'K')), reversible=False, electrons=-1)])
+
+test/rmgpy/i134DuplicateElectronsTest.py:439: AssertionError
+_ TestTheLibraryLoadLandmineIsNotReachedFromHere.test_the_owner_appears_when_the_entry_becomes_a_library_reaction _
+
+self = <i134DuplicateElectronsTest.TestTheLibraryLoadLandmineIsNotReachedFromHere object at 0x7ab12d4446d0>
+
+    def test_the_owner_appears_when_the_entry_becomes_a_library_reaction(self):
+        """And from there on, the placement is available and this repair applies."""
+        database = self._database()
+        placements = {}
+        for label in (IONISATION, RECOMBINATION):
+            reactions = database.libraries[label].get_library_reactions()
+>           assert len(reactions) == 1
+E           assert 2 == 1
+E            +  where 2 = len([LibraryReaction(reactants=[Species(label="[Lip]", molecule=[Molecule(smiles="[Li+]")], molecular_weight=(6.941,'amu'))], products=[Species(label="[Li]", molecule=[Molecule(smiles="[Li]")], molecular_weight=(6.941,'amu'))], kinetics=BadnellRRArrhenius(A=(8.7e-12,'cm^3/(molecule*s)'), B=0.364, T0=(147,'K'), T1=(7.153e+06,'K'), C=0.1508, T2=(715400,'K'), electrons=-1, Tmin=(10,'K'), Tmax=(1e+07,'K'), comment="""Badnell (2006) RR fit, Z=3, N=2"""), reversible=False, electrons=-1), LibraryReaction(reactants=[Species(label="[Arp]", molecule=[Molecule(smiles="[Ar+]")], molecular_weight=(39.8775,'amu'))], products=[Species(label="[Ar]", molecule=[Molecule(smiles="[Ar]")], molecular_weight=(39.8775,'amu'))], kinetics=TwoTemperaturePlasma(A=(3.77e-13,'cm^3/(molecule*s)'), n=-0.651, Ea_g=(0,'kJ/mol'), Ea_e=(0,'kJ/mol'), T0=(10000,'K'), electrons=-1, Tmin=(10000,'K'), Tmax=(1e+08,'K')), reversible=False, electrons=-1)])
+
+test/rmgpy/i134DuplicateElectronsTest.py:581: AssertionError
+=========================== short test summary info ============================
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestLithiumChargeNetworkReachesTheModel::test_the_two_channels_are_not_a_reverse_pair
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestLithiumChargeNetworkReachesTheModel::test_both_channels_enter_the_model[True]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestLithiumChargeNetworkReachesTheModel::test_both_channels_enter_the_model[False]
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestLithiumChargeNetworkReachesTheModel::test_the_cation_has_a_loss_channel_in_the_model
+FAILED test/rmgpy/i134DuplicateElectronsTest.py::TestTheLibraryLoadLandmineIsNotReachedFromHere::test_the_owner_appears_when_the_entry_becomes_a_library_reaction
+=================== 5 failed, 178 passed, 1 xfailed in 2.01s ===================

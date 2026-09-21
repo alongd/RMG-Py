@@ -1,0 +1,7 @@
+# Captured run output under docs/<ticket>/logs/ is evidence: it is committed so that a
+# measurement can be re-read later, and it must stay byte-identical to what the tool
+# actually printed. Rewriting it to satisfy a whitespace check would falsify it. Turn the
+# check off for those paths instead, so `git diff --check` stays useful everywhere else.
+docs/**/logs/**       -whitespace
+docs/**/*.log         -whitespace
+docs/**/*-diff.txt    -whitespace

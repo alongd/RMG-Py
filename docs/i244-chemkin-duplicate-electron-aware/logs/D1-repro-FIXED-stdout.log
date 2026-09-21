@@ -1,0 +1,61 @@
+engine worktree : /home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware
+chemkin module  : /home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware/rmgpy/chemkin.cpython-39-x86_64-linux-gnu.so
+fingerprint     : 'Electrons are participants' in docstring = False
+
+==============================================================================
+HALF A -- pre-marked bypass: the refinement sits in the else of the flag test
+==============================================================================
+  arrive (True, True)   counts (1, 2) vs (0, 1) -> flags (True, True)    DUPLICATE pair emitted
+  arrive (True, False)  counts (1, 2) vs (0, 1) -> flags (True, False)   one-sided
+  arrive (False, True)  counts (1, 2) vs (0, 1) -> flags (False, True)   one-sided
+  arrive (False, False) counts (1, 2) vs (0, 1) -> flags (False, False)  clean
+
+==============================================================================
+HALF A (deck) -- the same pre-marked pair written through the real writer
+==============================================================================
+  arrive (True, True)   -> deck Li(2)+e-(1)=>Lip(3)+e-(1)+e-(1) DUPLICATE=False, Li(2)=>Lip(3)+e-(1) DUPLICATE=False
+  arrive (False, False) -> deck Li(2)+e-(1)=>Lip(3)+e-(1)+e-(1) DUPLICATE=False, Li(2)=>Lip(3)+e-(1) DUPLICATE=False
+
+==============================================================================
+HALF B -- cross-group clearing: an un-marking branch clears another group's flags
+==============================================================================
+  arriving flags: A1 (1,2) non-pdep=True, A2 (1,2) non-pdep=True, B1 (0,1) pdep=True, B2 (0,1) pdep=True
+  placements:     A1=(1, 2), A2=(1, 2), B1=(0, 1), B2=(0, 1)
+  resulting flags: A1 (1,2) non-pdep=True, A2 (1,2) non-pdep=True, B1 (0,1) pdep=True, B2 (0,1) pdep=True
+  deck entries:
+    Li(2)+e-(1)=>Lip(3)+e-(1)+e-(1)          DUPLICATE=True
+    Li(2)+e-(1)=>Lip(3)+e-(1)+e-(1)          DUPLICATE=True
+    Li(2)(+M)=>Lip(3)+e-(1)(+M)              DUPLICATE=True
+    Li(2)(+M)=>Lip(3)+e-(1)(+M)              DUPLICATE=True
+    >>> 2 identical entries of 'Li(2)(+M)=>Lip(3)+e-(1)(+M)', DUPLICATE marks [True, True]
+    >>> 2 identical entries of 'Li(2)+e-(1)=>Lip(3)+e-(1)+e-(1)', DUPLICATE marks [True, True]
+
+  REACTIONS block:
+    | REACTIONS    KCAL/MOLE   MOLES
+    | 
+    | Li(2)+e-(1)=>Lip(3)+e-(1)+e-(1)                     1.000000e+12 0.000     0.000    
+    | DUPLICATE
+    | 
+    | Li(2)+e-(1)=>Lip(3)+e-(1)+e-(1)                     2.000000e+12 0.000     0.000    
+    | DUPLICATE
+    | 
+    | Li(2)(+M)=>Lip(3)+e-(1)(+M)                         1.000e+00 0.000     0.000    
+    |     TCHEB/ 300.000   2000.000 /
+    |     PCHEB/ 0.010     98.692   /
+    |     CHEB/ 3 3/
+    |     CHEB/ 1.000e+00    0.000e+00    0.000e+00   /
+    |     CHEB/ 0.000e+00    0.000e+00    0.000e+00   /
+    |     CHEB/ 0.000e+00    0.000e+00    0.000e+00   /
+    | DUPLICATE
+    | 
+    | Li(2)(+M)=>Lip(3)+e-(1)(+M)                         1.000e+00 0.000     0.000    
+    |     TCHEB/ 300.000   2000.000 /
+    |     PCHEB/ 0.010     98.692   /
+    |     CHEB/ 3 3/
+    |     CHEB/ 1.000e+00    0.000e+00    0.000e+00   /
+    |     CHEB/ 0.000e+00    0.000e+00    0.000e+00   /
+    |     CHEB/ 0.000e+00    0.000e+00    0.000e+00   /
+    | DUPLICATE
+    | 
+    | END
+

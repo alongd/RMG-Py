@@ -2369,11 +2369,19 @@ def are_identical_species_references(rxn1, rxn2):
     as a net scalar. See that function for why the net scalar is not sufficient
     here even though it looks as though it should be.
 
-    For every reaction whose owner declares no electron placement -- which is
-    every reaction outside the plasma families and libraries -- this is the same
+    For every reaction whose owner declares no electron placement this is the same
     verdict as before, exactly: the counts reduce to the net comparison the
     predicate never made explicitly, and the heavy-species comparison is
     untouched.
+
+    That set is NOT "everything outside the plasma families and libraries", as
+    this docstring used to say. Counted in the database this branch builds
+    against: 17 of 140 families carry a nonzero ``electrons``, and 11 of them are
+    not plasma families -- six ``Cation_*`` and five
+    ``Surface_Proton_Electron_Reduction_*``, all ``electrons = -1``. They place
+    one-sidedly, ``(1, 0)``, which is where the net rule puts them too, so the two
+    rules agree and the verdict still does not move for them; only a two-sided
+    declaration can move one, and the database carries two, both ``(1, 2)``.
     """
     identical_same_direction = rxn1.reactants == rxn2.reactants and rxn1.products == rxn2.products
     identical_opposite_directions = rxn1.reactants == rxn2.products and rxn1.products == rxn2.reactants

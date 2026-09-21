@@ -1,0 +1,28 @@
+families loaded            : 140
+families with electrons = 0: 123   (all of them compare (0, 0))
+families with nonzero e-   : 17
+  plasma-named             : 6
+  NOT plasma-named         : 11
+families whose counts are (0, 0): 123 of 140
+
+family                                                      e-  counts   declared?  shape
+Cation_Addition_MultipleBond                                -1  (1, 0)   no         one-sided
+Cation_Addition_MultipleBond_Disprop                        -1  (1, 0)   no         one-sided
+Cation_Li_Abstraction                                       -1  (1, 0)   no         one-sided
+Cation_NO_Ring_Opening                                      -1  (1, 0)   no         one-sided
+Cation_NO_Substitution                                      -1  (1, 0)   no         one-sided
+Cation_R_Recombination                                      -1  (1, 0)   yes        one-sided
+Plasma_Associative_Ionization_Alkali_Alkali                 +1  (0, 1)   yes        one-sided
+Plasma_Associative_Ionization_Alkali_Alkaline               +1  (0, 1)   yes        one-sided
+Plasma_Associative_Ionization_Alkaline_Alkaline             +1  (0, 1)   yes        one-sided
+Plasma_Electron_Attachment                                  -1  (1, 0)   yes        one-sided
+Plasma_Electron_Impact_Ionization                           +1  (1, 2)   yes        TWO-SIDED
+Plasma_Radiative_Recombination                              -1  (1, 0)   yes        one-sided
+Surface_Proton_Electron_Reduction_Alpha                     -1  (1, 0)   no         one-sided
+Surface_Proton_Electron_Reduction_Alpha_vdW                 -1  (1, 0)   no         one-sided
+Surface_Proton_Electron_Reduction_Beta                      -1  (1, 0)   no         one-sided
+Surface_Proton_Electron_Reduction_Beta_Dissociation         -1  (1, 0)   no         one-sided
+Surface_Proton_Electron_Reduction_Beta_vdW                  -1  (1, 0)   no         one-sided
+
+two-sided (the only shape that can move a verdict the net rule got): 1
+   Plasma_Electron_Impact_Ionization (1, 2)

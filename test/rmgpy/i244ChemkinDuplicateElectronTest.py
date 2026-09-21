@@ -46,22 +46,35 @@ per-side placement pair -- ``(1, 2)`` against ``(0, 1)`` -- can. The warning is
 what hid it: it prints the electron-free canonical form, in which the two really
 are identical.
 
-**Every assertion here is on the text of the emitted deck**, not on
+**Assertions about a deck are made on the text of the emitted deck**, not on
 ``Reaction.duplicate``. The flag is an implementation detail; the deck is what
 Chemkin reads and what the defect corrupts.
 
-The two *un*-marking branches of ``mark_duplicate_reaction`` (mixed pressure
-dependence, opposite direction and irreversible) are pinned here too, with
-placement-mismatched pairs, because the refinement was deliberately NOT applied
-to them: narrowing their condition would leave wrongly-marked duplicates marked,
-which is the opposite of the repair.
+``duplicate`` is nevertheless a *group* predicate -- Chemkin requires every entry
+whose equation another entry also writes to carry ``DUPLICATE``, and an entry
+carrying it alone is an error too -- while ``mark_duplicate_reaction`` answers a
+*pairwise* question. That mismatch is not closable by refining the pairwise
+predicate, so ``mark_duplicate_reactions`` recomputes every flag from
+``chemkin_duplicate_group_key`` over the whole list, and every writer calls it
+immediately before serializing. ``TestDuplicateIsAGroupPredicate`` holds that
+line.
+
+The two *un*-marking branches of the pairwise ``mark_duplicate_reaction`` (mixed
+pressure dependence, opposite direction and irreversible) survive for its
+incremental caller in :mod:`rmgpy.rmg.model`, and are pinned here by driving that
+function directly and asserting the branch-specific warning. A deck-level
+assertion cannot pin them any more: the group recompute would produce the same
+deck with either branch deleted.
 """
 
+import logging
 import os
+from types import SimpleNamespace
 
 import pytest
 
-from rmgpy.chemkin import save_chemkin_file
+from rmgpy.chemkin import (mark_duplicate_reaction, mark_duplicate_reactions, save_chemkin,
+                           save_chemkin_file)
 from rmgpy.data.kinetics.library import LibraryReaction
 from rmgpy.electron_balance import get_electron_placement_counts
 from rmgpy.kinetics import Arrhenius, Chebyshev
@@ -402,18 +415,21 @@ class TestOrdinaryDuplicateHandlingIsUntouched:
         )
         assert text.count("DUPLICATE") == 2
 
-    def test_opposite_direction_irreversible_branch_still_unmarks(self, tmp_path, charged_species):
+    def test_opposite_direction_irreversible_branch_still_unmarks(self, caplog, charged_species):
         """
-        The opposite-direction irreversible branch must keep unmarking a pair that
-        arrives already flagged -- INCLUDING one whose placements differ.
+        The opposite-direction irreversible branch of the *pairwise*
+        ``mark_duplicate_reaction`` must keep unmarking a pair that arrives already
+        flagged.
 
-        This is why the refinement was applied only to the branch that marks. Had
-        the match flags themselves been narrowed, this pair would have stopped
-        matching at all, the branch would never have run, and two reactions that
-        are not duplicates would have kept their DUPLICATE lines: a mis-marked
-        deck produced by the very change meant to prevent one.
+        This drives that function directly rather than writing a deck, because the
+        deck no longer exercises it: ``mark_duplicate_reactions`` recomputes every
+        flag from the group key, and would clear this pair whether the branch fired
+        or not. An outcome-only assertion through the writer would therefore pass
+        with the branch deleted. The distinctive warning the branch logs is what
+        pins the branch itself -- no other code emits that sentence.
         """
         electron, li, lip = charged_species
+        del electron
 
         ionisation = _library_reaction(
             [li], [lip], DECLARED_TWO_SIDED_OWNER, electrons=1, duplicate=True,
@@ -426,21 +442,24 @@ class TestOrdinaryDuplicateHandlingIsUntouched:
         assert get_electron_placement_counts(ionisation) == (1, 2)
         assert get_electron_placement_counts(recombination) == (1, 0)
 
-        text = _write_deck(tmp_path, [electron, li, lip], [ionisation, recombination])
-        entries = _deck_entries(text)
+        with caplog.at_level(logging.WARNING):
+            mark_duplicate_reaction(ionisation, [recombination])
 
-        assert len(entries) == 2
-        assert not any(marked for _, marked in entries), (
-            "the opposite-direction irreversible branch stopped unmarking:\n{0}".format(text)
+        assert any("irreversible in opposite directions" in record.getMessage()
+                   for record in caplog.records), (
+            "the opposite-direction irreversible branch did not run; messages were {0!r}".format(
+                [record.getMessage() for record in caplog.records])
         )
-        assert "DUPLICATE" not in text
+        assert (ionisation.duplicate, recombination.duplicate) == (False, False)
 
-    def test_mixed_pressure_dependence_branch_still_unmarks(self, tmp_path, charged_species):
+    def test_mixed_pressure_dependence_branch_still_unmarks(self, caplog, charged_species):
         """
-        The mixed-pressure-dependence branch must keep unmarking an already-flagged
-        pair, with mismatched placements as well. Same reasoning as above.
+        The mixed-pressure-dependence branch of the pairwise
+        ``mark_duplicate_reaction`` must keep unmarking an already-flagged pair.
+        Driven and pinned the same way, and for the same reason, as the test above.
         """
         electron, li, lip = charged_species
+        del electron
 
         declared = _library_reaction(
             [li], [lip], DECLARED_TWO_SIDED_OWNER, electrons=1, duplicate=True,
@@ -457,14 +476,254 @@ class TestOrdinaryDuplicateHandlingIsUntouched:
         )
         assert declared.kinetics.is_pressure_dependent() != undeclared.kinetics.is_pressure_dependent()
 
+        with caplog.at_level(logging.WARNING):
+            mark_duplicate_reaction(declared, [undeclared])
+
+        assert any("mixed pressure dependence" in record.getMessage()
+                   for record in caplog.records), (
+            "the mixed-pressure-dependence branch did not run; messages were {0!r}".format(
+                [record.getMessage() for record in caplog.records])
+        )
+        assert (declared.duplicate, undeclared.duplicate) == (False, False)
+
+
+class TestDuplicateIsAGroupPredicate:
+    """
+    ``Reaction.duplicate`` records membership in a duplicate *group*, and Chemkin's
+    rule is a group rule: every entry whose equation another entry also writes must
+    carry ``DUPLICATE``, and an entry carrying it alone is an error in its own
+    right. The pairwise ``mark_duplicate_reaction`` decides that group question one
+    pair at a time, off a boolean that cannot name *which* group it means, so it
+    cannot answer it -- no refinement of the pairwise predicate can.
+
+    These are the cases that mismatch produces. Every one of them puts
+    ``duplicate = True`` on at least one input before calling, because that is the
+    state the defect lives in: a pair that arrives unmarked was already handled.
+    """
+
+    def test_a_pre_marked_placement_mismatched_pair_is_cleared(self, tmp_path, charged_species):
+        """
+        The pair this ticket exists to separate -- ``(1, 2)`` against ``(0, 1)`` --
+        arriving with both flags already set.
+
+        The electron-placement refinement lives in the branch that marks, which is
+        the ``else`` of ``if reaction1.duplicate and reaction2.duplicate``. A
+        pre-marked pair never reaches it, so before the group-level recompute these
+        two shipped as duplicates of each other despite writing equations of
+        different stoichiometry.
+        """
+        electron, li, lip = charged_species
+
+        declared = _library_reaction(
+            [li], [lip], DECLARED_TWO_SIDED_OWNER, electrons=1, duplicate=True,
+            kinetics=Arrhenius(A=(1.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+        undeclared = _library_reaction(
+            [li], [lip], UNDECLARED_OWNER, electrons=1, duplicate=True,
+            kinetics=Arrhenius(A=(2.0e12, "s^-1"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+        assert (declared.duplicate, undeclared.duplicate) == (True, True)
+        assert get_electron_placement_counts(declared) == (1, 2)
+        assert get_electron_placement_counts(undeclared) == (0, 1)
+
         text = _write_deck(tmp_path, [electron, li, lip], [declared, undeclared])
         entries = _deck_entries(text)
 
         assert len(entries) == 2
-        assert not any(marked for _, marked in entries), (
-            "the mixed-pressure-dependence branch stopped unmarking:\n{0}".format(text)
+        assert {_stoichiometry(equation) for equation, _ in entries} == {(2, 3), (1, 2)}, (
+            "the two channels should write different stoichiometries:\n{0}".format(text)
         )
-        assert "DUPLICATE" not in text
+        assert not any(marked for _, marked in entries), (
+            "a pre-marked pair with different electron placements kept its DUPLICATE "
+            "lines:\n{0}".format(text)
+        )
+
+    def test_a_cross_group_comparison_does_not_clear_another_groups_flags(self, tmp_path,
+                                                                          charged_species):
+        """
+        Four legitimately pre-marked reactions in two groups of two: a ``(1, 2)``
+        pair that is not pressure dependent, and a ``(0, 1)`` pair that is.
+
+        Comparing a member of one group against a member of the other reaches the
+        mixed-pressure-dependence un-marking branch, which clears *both* flags --
+        and one of them belonged to the group that was never in question. The deck
+        then carried two identical equations with no ``DUPLICATE`` line at all,
+        which Chemkin rejects for the opposite reason to the case above.
+        """
+        electron, li, lip = charged_species
+
+        def chebyshev():
+            return Chebyshev(
+                coeffs=[[1.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
+                kunits="s^-1",
+                Tmin=(300, "K"), Tmax=(2000, "K"),
+                Pmin=(0.01, "bar"), Pmax=(100, "bar"),
+            )
+
+        declared_a = _library_reaction(
+            [li], [lip], DECLARED_TWO_SIDED_OWNER, electrons=1, duplicate=True,
+            kinetics=Arrhenius(A=(1.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+        declared_b = _library_reaction(
+            [li], [lip], DECLARED_TWO_SIDED_OWNER, electrons=1, duplicate=True,
+            kinetics=Arrhenius(A=(2.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+        undeclared_a = _library_reaction(
+            [li], [lip], UNDECLARED_OWNER, electrons=1, duplicate=True, kinetics=chebyshev(),
+        )
+        undeclared_b = _library_reaction(
+            [li], [lip], "AnotherUndeclaredKineticsLibrary", electrons=1, duplicate=True,
+            kinetics=chebyshev(),
+        )
+        reactions = [declared_a, declared_b, undeclared_a, undeclared_b]
+        assert all(rxn.duplicate for rxn in reactions)
+
+        text = _write_deck(tmp_path, [electron, li, lip], reactions)
+        entries = _deck_entries(text)
+
+        assert len(entries) == 4
+        by_equation = {}
+        for equation, marked in entries:
+            by_equation.setdefault(equation, []).append(marked)
+        assert len(by_equation) == 2, "expected two distinct equations:\n{0}".format(text)
+        for equation, marks in by_equation.items():
+            assert marks == [True, True], (
+                "{0!r} is written twice and must carry DUPLICATE on both entries, "
+                "got {1}:\n{2}".format(equation, marks, text)
+            )
+
+    def test_a_lone_flag_that_names_no_mate_is_cleared(self, tmp_path, charged_species):
+        """
+        A single reaction arriving flagged, with nothing in the deck that writes its
+        equation. A lone ``DUPLICATE`` line is a Chemkin error, and the pairwise
+        function can never clear it because it never sees the whole deck.
+        """
+        electron, li, lip = charged_species
+
+        lonely = _library_reaction(
+            [li], [lip], DECLARED_TWO_SIDED_OWNER, electrons=1, duplicate=True,
+            kinetics=Arrhenius(A=(1.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+        assert lonely.duplicate is True
+
+        text = _write_deck(tmp_path, [electron, li, lip], [lonely])
+        entries = _deck_entries(text)
+
+        assert len(entries) == 1
+        assert entries[0][1] is False, "a lone entry kept its DUPLICATE line:\n{0}".format(text)
+
+    def test_a_pre_marked_mixed_reversibility_pair_is_cleared(self, tmp_path, neutral_species):
+        """
+        The same defect class with no electrons in it at all: ``A<=>B`` and ``A=>B``
+        write different equations, so they are not duplicates -- and neither
+        un-marking branch covers mixed reversibility, so an already-flagged pair of
+        this shape kept two lone ``DUPLICATE`` lines.
+
+        Included because it shows the repair is about the group predicate rather
+        than about electrons; the electron placement is simply one more thing the
+        group key has to carry.
+        """
+        ethane, methyl, ethyl = neutral_species
+
+        reversible = _library_reaction(
+            [ethane], [methyl, methyl], "SomeNeutralLibrary", duplicate=True, reversible=True,
+            kinetics=Arrhenius(A=(1.0e16, "s^-1"), n=0.0, Ea=(80.0, "kcal/mol")),
+        )
+        irreversible = _library_reaction(
+            [ethane], [methyl, methyl], "SomeNeutralLibrary", duplicate=True, reversible=False,
+            kinetics=Arrhenius(A=(5.0e15, "s^-1"), n=0.2, Ea=(75.0, "kcal/mol")),
+        )
+        assert (reversible.duplicate, irreversible.duplicate) == (True, True)
+
+        text = _write_deck(tmp_path, [ethane, methyl, ethyl], [reversible, irreversible])
+        entries = _deck_entries(text)
+
+        assert len(entries) == 2
+        assert len({equation for equation, _ in entries}) == 2, (
+            "the two entries should write different equations:\n{0}".format(text)
+        )
+        assert not any(marked for _, marked in entries), (
+            "a mixed-reversibility pair kept its DUPLICATE lines:\n{0}".format(text)
+        )
+
+    def test_the_verdict_does_not_depend_on_the_flags_it_arrives_with(self, charged_species):
+        """
+        The recompute reads the reactions, not their flags. The same list must come
+        out the same way whether every flag arrives set or every flag arrives clear,
+        and a second pass must change nothing.
+
+        The pairwise sweep could not have this property: arriving all-set, it had no
+        branch that would clear the lone reaction below, and arriving all-clear it
+        had none that would set it. The two runs disagreed.
+        """
+        electron, li, lip = charged_species
+        del electron
+
+        def build(flag):
+            mate_a = _library_reaction(
+                [li], [lip], DECLARED_TWO_SIDED_OWNER, electrons=1, duplicate=flag,
+                kinetics=Arrhenius(A=(1.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+            )
+            mate_b = _library_reaction(
+                [li], [lip], DECLARED_TWO_SIDED_OWNER, electrons=1, duplicate=flag,
+                kinetics=Arrhenius(A=(2.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+            )
+            lonely = _library_reaction(
+                [li], [lip], UNDECLARED_OWNER, electrons=1, duplicate=flag,
+                kinetics=Arrhenius(A=(3.0e12, "s^-1"), n=0.0, Ea=(0.0, "kcal/mol")),
+            )
+            return [mate_a, mate_b, lonely]
+
+        from_set = build(True)
+        mark_duplicate_reactions(from_set)
+        from_clear = build(False)
+        mark_duplicate_reactions(from_clear)
+
+        expected = [True, True, False]
+        assert [rxn.duplicate for rxn in from_set] == expected
+        assert [rxn.duplicate for rxn in from_clear] == expected
+
+        mark_duplicate_reactions(from_set)
+        assert [rxn.duplicate for rxn in from_set] == expected, "the recompute is not idempotent"
+
+    def test_the_production_save_path_recomputes_the_flags(self, tmp_path, charged_species):
+        """
+        ``save_chemkin`` -- the function an RMG run writes its deck with -- passes
+        ``check_for_duplicates=False`` to every render call it makes. So the repair
+        reaches a real run's deck only if ``save_chemkin`` itself recomputes; without
+        that, the flags a run ships are whatever ``rmgpy.rmg.model``'s incremental
+        pairwise calls left behind, and this pair ships marked.
+        """
+        electron, li, lip = charged_species
+
+        declared = _library_reaction(
+            [li], [lip], DECLARED_TWO_SIDED_OWNER, electrons=1, duplicate=True,
+            kinetics=Arrhenius(A=(1.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+        undeclared = _library_reaction(
+            [li], [lip], UNDECLARED_OWNER, electrons=1, duplicate=True,
+            kinetics=Arrhenius(A=(2.0e12, "s^-1"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+        model = SimpleNamespace(
+            core=SimpleNamespace(species=[electron, li, lip], reactions=[declared, undeclared]),
+            edge=SimpleNamespace(species=[], reactions=[]),
+            output_species_list=[],
+            output_reaction_list=[],
+            surface_site_density=None,
+        )
+
+        path = os.path.join(str(tmp_path), "chem_annotated.inp")
+        verbose_path = os.path.join(str(tmp_path), "chem_annotated_verbose.inp")
+        save_chemkin(model, path, verbose_path)
+
+        with open(path, "r") as f:
+            text = f.read()
+        entries = _deck_entries(text)
+
+        assert len(entries) == 2
+        assert not any(marked for _, marked in entries), (
+            "save_chemkin shipped a placement-mismatched pair as duplicates:\n{0}".format(text)
+        )
 
 
 class TestPlacementTruthTable:

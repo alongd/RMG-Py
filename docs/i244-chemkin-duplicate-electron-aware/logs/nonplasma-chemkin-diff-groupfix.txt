@@ -1,0 +1,30 @@
+diff -r /tmp/claude-1000/-home-alon-Code-RMG-Py-i244-chemkin-duplicate-electron-aware/a8f6cc03-60ca-4b2c-9a46-73ae02eeb7f3/scratchpad/min-base/chemkin/chem_edge0019.inp /tmp/claude-1000/-home-alon-Code-RMG-Py-i244-chemkin-duplicate-electron-aware/a8f6cc03-60ca-4b2c-9a46-73ae02eeb7f3/scratchpad/min-fixed/chemkin/chem_edge0019.inp
+881d880
+< DUPLICATE
+diff -r /tmp/claude-1000/-home-alon-Code-RMG-Py-i244-chemkin-duplicate-electron-aware/a8f6cc03-60ca-4b2c-9a46-73ae02eeb7f3/scratchpad/min-base/chemkin/chem_edge0020.inp /tmp/claude-1000/-home-alon-Code-RMG-Py-i244-chemkin-duplicate-electron-aware/a8f6cc03-60ca-4b2c-9a46-73ae02eeb7f3/scratchpad/min-fixed/chemkin/chem_edge0020.inp
+1123d1122
+< DUPLICATE
+diff -r /tmp/claude-1000/-home-alon-Code-RMG-Py-i244-chemkin-duplicate-electron-aware/a8f6cc03-60ca-4b2c-9a46-73ae02eeb7f3/scratchpad/min-base/chemkin/chem_edge0021.inp /tmp/claude-1000/-home-alon-Code-RMG-Py-i244-chemkin-duplicate-electron-aware/a8f6cc03-60ca-4b2c-9a46-73ae02eeb7f3/scratchpad/min-fixed/chemkin/chem_edge0021.inp
+1215d1214
+< DUPLICATE
+diff -r /tmp/claude-1000/-home-alon-Code-RMG-Py-i244-chemkin-duplicate-electron-aware/a8f6cc03-60ca-4b2c-9a46-73ae02eeb7f3/scratchpad/min-base/chemkin/chem_edge0022.inp /tmp/claude-1000/-home-alon-Code-RMG-Py-i244-chemkin-duplicate-electron-aware/a8f6cc03-60ca-4b2c-9a46-73ae02eeb7f3/scratchpad/min-fixed/chemkin/chem_edge0022.inp
+1245d1244
+< DUPLICATE
+diff -r /tmp/claude-1000/-home-alon-Code-RMG-Py-i244-chemkin-duplicate-electron-aware/a8f6cc03-60ca-4b2c-9a46-73ae02eeb7f3/scratchpad/min-base/chemkin/chem_edge0023.inp /tmp/claude-1000/-home-alon-Code-RMG-Py-i244-chemkin-duplicate-electron-aware/a8f6cc03-60ca-4b2c-9a46-73ae02eeb7f3/scratchpad/min-fixed/chemkin/chem_edge0023.inp
+1293d1292
+< DUPLICATE
+diff -r /tmp/claude-1000/-home-alon-Code-RMG-Py-i244-chemkin-duplicate-electron-aware/a8f6cc03-60ca-4b2c-9a46-73ae02eeb7f3/scratchpad/min-base/chemkin/chem_edge0024.inp /tmp/claude-1000/-home-alon-Code-RMG-Py-i244-chemkin-duplicate-electron-aware/a8f6cc03-60ca-4b2c-9a46-73ae02eeb7f3/scratchpad/min-fixed/chemkin/chem_edge0024.inp
+1315d1314
+< DUPLICATE
+diff -r /tmp/claude-1000/-home-alon-Code-RMG-Py-i244-chemkin-duplicate-electron-aware/a8f6cc03-60ca-4b2c-9a46-73ae02eeb7f3/scratchpad/min-base/chemkin/chem_edge0025.inp /tmp/claude-1000/-home-alon-Code-RMG-Py-i244-chemkin-duplicate-electron-aware/a8f6cc03-60ca-4b2c-9a46-73ae02eeb7f3/scratchpad/min-fixed/chemkin/chem_edge0025.inp
+1393d1392
+< DUPLICATE
+diff -r /tmp/claude-1000/-home-alon-Code-RMG-Py-i244-chemkin-duplicate-electron-aware/a8f6cc03-60ca-4b2c-9a46-73ae02eeb7f3/scratchpad/min-base/chemkin/chem_edge0026.inp /tmp/claude-1000/-home-alon-Code-RMG-Py-i244-chemkin-duplicate-electron-aware/a8f6cc03-60ca-4b2c-9a46-73ae02eeb7f3/scratchpad/min-fixed/chemkin/chem_edge0026.inp
+1417d1416
+< DUPLICATE
+diff -r /tmp/claude-1000/-home-alon-Code-RMG-Py-i244-chemkin-duplicate-electron-aware/a8f6cc03-60ca-4b2c-9a46-73ae02eeb7f3/scratchpad/min-base/chemkin/chem_edge_annotated.inp /tmp/claude-1000/-home-alon-Code-RMG-Py-i244-chemkin-duplicate-electron-aware/a8f6cc03-60ca-4b2c-9a46-73ae02eeb7f3/scratchpad/min-fixed/chemkin/chem_edge_annotated.inp
+2750d2749
+< DUPLICATE
+diff -r /tmp/claude-1000/-home-alon-Code-RMG-Py-i244-chemkin-duplicate-electron-aware/a8f6cc03-60ca-4b2c-9a46-73ae02eeb7f3/scratchpad/min-base/chemkin/chem_edge.inp /tmp/claude-1000/-home-alon-Code-RMG-Py-i244-chemkin-duplicate-electron-aware/a8f6cc03-60ca-4b2c-9a46-73ae02eeb7f3/scratchpad/min-fixed/chemkin/chem_edge.inp
+1417d1416
+< DUPLICATE

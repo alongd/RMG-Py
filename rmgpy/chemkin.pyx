@@ -2323,41 +2323,112 @@ def write_kinetics_entry(reaction, species_list, verbose=True, java_library=Fals
 ################################################################################
 
 
+def chemkin_duplicate_group_key(reaction):
+    """
+    Return a hashable key identifying the Chemkin *duplicate group* `reaction` belongs to.
+
+    ``Reaction.duplicate`` is a group predicate: Chemkin's rule is that every entry whose
+    equation another entry also writes must carry ``DUPLICATE``, and an entry that carries
+    it alone is an error just as surely as a repeated pair that does not. So the flag is a
+    property of the group, and the group is the set of reactions this function keys alike.
+
+    What goes into the key is exactly what makes two entries indistinguishable in a deck:
+
+    * ``reaction.__class__`` -- TemplateReaction, LibraryReaction and PDepReaction are never
+      duplicates of one another (a long-standing rule of this module, preserved verbatim).
+    * ``specific_collider`` -- compared by identity, as :class:`~rmgpy.species.Species`
+      itself is (``Species.__eq__`` is ``self is other``).
+    * the participants of each side, by identity and **in list order**, so that this keys
+      exactly the pairs the previous ``reactants == reactants`` comparison matched. Two
+      reactions whose reactant lists are permutations of each other were not duplicates
+      before and are not now; that is a separate question from this one.
+    * the free electrons standing on each side, from
+      :func:`~rmgpy.electron_balance.get_electron_placement_counts`. RMG keeps a charged
+      reaction's electrons out of the participant lists and in the scalar
+      ``Reaction.electrons``, so a species-only key cannot see them. Two reactions that
+      differ only in where their electrons stand write *different* equations:
+
+          Li + e-  =>  Li+ + 2 e-    placement (1, 2)    2 reactants, 3 products
+          Li       =>  Li+ +   e-    placement (0, 1)    1 reactant,  2 products
+
+      Both carry ``electrons = +1``, so the NET scalar cannot separate them; only the
+      per-side pair can. This is the same comparison
+      :meth:`rmgpy.reaction.Reaction.is_isomorphic` and
+      :func:`rmgpy.rmg.model.are_identical_species_references` already make.
+    * pressure dependence, and reversibility. A fall-off entry and a plain one write
+      different equations (``A(+M)=>B`` against ``A=>B``), as do ``A<=>B`` and ``A=>B``.
+      An irreversible pair therefore keys by direction, while a reversible one keys on the
+      unordered pair of sides, since ``A<=>B`` and ``B<=>A`` are the same entry.
+
+    **How far the electron term actually reaches**, counted rather than asserted. Of the
+    140 kinetics families in the database this branch builds against, 123 carry
+    ``electrons = 0`` and key ``(0, 0)`` on both sides, so for them the term cannot move
+    anything. Seventeen carry a nonzero count, and **eleven of those are not plasma
+    families**: six ``Cation_*`` and five ``Surface_Proton_Electron_Reduction_*``, every one
+    of them ``electrons = -1``. An earlier version of this module said the counts were
+    ``(0, 0)`` for everything outside the plasma families and libraries; that is false, and
+    it is retracted here.
+
+    What is true is narrower and is what bounds the change. All eleven place one-sidedly,
+    ``(1, 0)``, which is exactly where the net-derived fallback would put them, so the
+    declared and derived answers agree and a verdict this term moves for them is moved
+    correctly. Only a TWO-SIDED declaration can produce an answer the net count could not,
+    and there are two in the database: the family ``Plasma_Electron_Impact_Ionization`` and
+    the library ``PlasmaElectronImpactIonization``, both ``(1, 2)``.
+
+    The key is built from ``id()`` values and is meaningful only for the duration of one
+    call, which is all any caller here needs; the reactions hold their species alive
+    throughout, so no identity can be recycled underneath it.
+    """
+    kinetics = reaction.kinetics
+    pressure_dependent = bool(kinetics is not None and kinetics.is_pressure_dependent())
+    reactant_electrons, product_electrons = get_electron_placement_counts(reaction)
+    reactant_side = (tuple([id(spc) for spc in reaction.reactants]), reactant_electrons)
+    product_side = (tuple([id(spc) for spc in reaction.products]), product_electrons)
+    if reaction.reversible:
+        sides = tuple(sorted([reactant_side, product_side]))
+    else:
+        sides = (reactant_side, product_side)
+    return (reaction.__class__, id(reaction.specific_collider),
+            pressure_dependent, bool(reaction.reversible), sides)
+
+
 def mark_duplicate_reaction(test_reaction, reaction_list):
     """
     If the test_reaction is a duplicate (in Chemkin terms) of one in reaction_list, then set `duplicate=True` on both instances.
     `reaction_list` can be any iterator.
     It does not add the testReaction to the reactionList - you probably want to do this yourself afterwards.
 
-    **Electrons are participants, and they are compared per side.** RMG keeps a charged
-    reaction's free electrons out of ``reactants``/``products`` and in the scalar
-    ``Reaction.electrons``, so the reference comparisons below see only the heavy species.
-    Two reactions that differ *only* in how many electrons stand on each side therefore
-    compare equal there -- and marking them ``DUPLICATE`` writes a deck Chemkin rejects,
-    because a duplicate pair must share a stoichiometry and these do not. The pair that
-    exposed it:
+    **This function is an incremental hint, not the export authority.** It is given one
+    reaction and a list, and it decides a *pairwise* question -- but ``duplicate`` answers a
+    *group* question (see :func:`chemkin_duplicate_group_key`). A boolean meaning "I am in
+    some duplicate group" cannot say *which* group, so a pair that arrives with both flags
+    already set is indistinguishable here from a pair that belongs together, and this
+    function has no way to tell them apart. Three consequences follow, and all three are
+    real:
 
-        Li + e-  =>  Li+ + 2 e-    placement (1, 2)    2 reactants, 3 products
-        Li       =>  Li+ +   e-    placement (0, 1)    1 reactant,  2 products
+    * a pre-marked pair never reaches the marking branch below at all, so its flags survive
+      whatever they are;
+    * the two un-marking branches below can clear a flag that records membership in a
+      *different* group than the pair being compared, leaving that other group's entries
+      unmarked;
+    * nothing here can clear a flag on a reaction that simply has no mate, because this
+      function never sees the whole deck.
 
-    Both carry ``electrons = +1``, so the NET scalar cannot separate them; only the per-side
-    pair can. :func:`~rmgpy.electron_balance.get_electron_placement_counts` is that
-    comparison, already used by :meth:`rmgpy.reaction.Reaction.is_isomorphic` and
-    :func:`rmgpy.rmg.model.are_identical_species_references`; this was the one identity
-    comparison on the export path that had not been given it. The warning is what hid the
-    bug: it prints the electron-free canonical form, in which the two really are identical.
+    None of that is repairable by narrowing the predicate, which is why the repair lives in
+    :func:`mark_duplicate_reactions` instead: it recomputes every flag from the group key
+    over the whole list, and it is what every writer calls immediately before serializing.
+    What this function guarantees is only this: **it never introduces a mark that
+    :func:`mark_duplicate_reactions` would not also make.** That is a bookkeeping property,
+    not a correctness property -- under-marking, not over-marking, is the direction that
+    makes Chemkin reject a file, and this function can under-mark.
 
-    The refinement is applied to the branch that MARKS and nowhere else, which is what makes
-    it strict: adding a conjunct there can only turn a ``True`` into a ``False``. The two
-    branches that *un*-mark a pair keep reading the unrefined match flags, so a pair they
-    would have unmarked before is still unmarked now -- narrowing their condition would have
-    left wrongly-marked duplicates in place, which is the opposite of the repair.
-
-    For every reaction outside the plasma families and libraries the counts are ``(0, 0)``
-    on both sides, so the marking verdict is unchanged bit for bit; see
-    ``get_electron_placement_counts`` for why that reduction is exact.
+    It is kept pairwise because :mod:`rmgpy.rmg.model` calls it incrementally while the
+    model is being enlarged, where ``reaction_list`` is only the reactions checked so far
+    and clearing a flag on that evidence would be wrong.
     """
     reaction1 = test_reaction
+    key1 = chemkin_duplicate_group_key(reaction1)
     for reaction2 in reaction_list:
         if reaction1.__class__ != reaction2.__class__:
             # TemplateReaction, LibraryReaction, and PDepReaction cannot be
@@ -2380,41 +2451,55 @@ def mark_duplicate_reaction(test_reaction, reaction_list):
                                     'in opposite directions for saving to Chemkin file.'.format(reaction1))
                     reaction1.duplicate = False
                     reaction2.duplicate = False
-            else:
-                # The heavy species match; now ask whether the electrons do, per side and in
-                # the orientation the heavy species matched in. Same-direction: side for side.
-                # Opposite-direction: each side against the other reaction's opposite side.
-                # See this function's docstring for why the net `electrons` scalar cannot do
-                # this job.
-                electrons1 = get_electron_placement_counts(reaction1)
-                electrons2 = get_electron_placement_counts(reaction2)
-                same_dir_duplicate = same_dir_match and electrons1 == electrons2
-                opposite_dir_duplicate = opposite_dir_match and electrons1 == (electrons2[1], electrons2[0])
-                if ((same_dir_duplicate or opposite_dir_duplicate)
-                        and reaction1.kinetics.is_pressure_dependent() == reaction2.kinetics.is_pressure_dependent()
-                        and ((reaction1.reversible and reaction2.reversible)
-                             or (same_dir_duplicate and not reaction1.reversible and not reaction2.reversible))):
-                    # Only mark as duplicate if both reactions are pressure dependent or both are
-                    # not pressure dependent. Also, they need to both be reversible or both be
-                    # irreversible in the same direction.  Do not mark as duplicates otherwise.
-                    logging.warning('Marked reaction {0} as duplicate of {1} for saving '
-                                    'to Chemkin file.'.format(reaction1, reaction2))
-                    reaction1.duplicate = True
-                    reaction2.duplicate = True
+            elif key1 == chemkin_duplicate_group_key(reaction2):
+                # The heavy species matched; the group key additionally asks whether the
+                # electrons, the pressure dependence and the direction do. It is the same
+                # question mark_duplicate_reactions asks, asked of one pair, so the two
+                # cannot drift apart about what "the same entry" means.
+                logging.warning('Marked reaction {0} as duplicate of {1} for saving '
+                                'to Chemkin file.'.format(reaction1, reaction2))
+                reaction1.duplicate = True
+                reaction2.duplicate = True
 
 
 def mark_duplicate_reactions(reactions):
     """
-    For a given list of `reactions`, mark all of the duplicate reactions as
-    understood by Chemkin.
-    
-    This is pretty slow (quadratic in size of reactions list) so only call it if you're really worried
-    you may have undetected duplicate reactions.
+    For a given list of `reactions`, recompute ``duplicate`` for every one of them, as
+    understood by Chemkin: an entry is a duplicate exactly when another entry in the same
+    list writes the same equation.
+
+    This is the **group-level** answer, and it is the authoritative one. It partitions the
+    list by :func:`chemkin_duplicate_group_key` and sets ``duplicate`` to whether the
+    reaction's group has more than one member -- so unlike the pairwise
+    :func:`mark_duplicate_reaction`, it both marks and clears, and it is not confused by
+    flags that arrive already set. A flag that arrives set on a reaction with no mate in
+    this list is cleared, because a lone ``DUPLICATE`` line is a Chemkin error in its own
+    right.
+
+    Flags are recomputed from the list, never read from it: calling this twice on the same
+    list is a no-op the second time, and calling it on a list whose flags are all wrong
+    still produces the right answer.
+
+    One pass, so linear in the size of the list rather than quadratic as the previous
+    pairwise sweep was.
     """
-    for index1 in range(len(reactions)):
-        reaction1 = reactions[index1]
-        remaining_list = reactions[index1 + 1:]
-        mark_duplicate_reaction(reaction1, remaining_list)
+    groups = {}
+    for reaction in reactions:
+        groups.setdefault(chemkin_duplicate_group_key(reaction), []).append(reaction)
+
+    for group in groups.values():
+        duplicate = len(group) > 1
+        for index, reaction in enumerate(group):
+            if reaction.duplicate == duplicate:
+                continue
+            if duplicate:
+                mate = group[1] if index == 0 else group[0]
+                logging.warning('Marked reaction {0} as duplicate of {1} for saving '
+                                'to Chemkin file.'.format(reaction, mate))
+            else:
+                logging.warning('Marked reaction {0} as not duplicate because no other reaction '
+                                'writes its Chemkin equation.'.format(reaction))
+            reaction.duplicate = duplicate
 
 
 def save_species_dictionary(path, species, old_style=False):
@@ -2747,6 +2832,14 @@ def save_chemkin(reaction_model, path, verbose_path, dictionary_path=None, trans
         species_list = reaction_model.core.species + reaction_model.output_species_list
         rxn_list = reaction_model.core.reactions + reaction_model.output_reaction_list
 
+    # Recompute the duplicate flags over exactly the list about to be written. Every
+    # render call below passes check_for_duplicates=False, so without this the flags a
+    # deck ships with are whatever rmgpy.rmg.model's incremental, pairwise
+    # mark_duplicate_reaction calls happened to leave -- and that function decides a
+    # group question one pair at a time, so it can leave a group's members disagreeing
+    # with each other. One group-level pass here is linear and settles it.
+    mark_duplicate_reactions(rxn_list)
+
     # Same elements list for all files (core and edge)
     elements_in_use = ReactionModel(species=species_list).get_elements()
 
@@ -2775,7 +2868,8 @@ def save_chemkin(reaction_model, path, verbose_path, dictionary_path=None, trans
             else:
                 gas_rxn_list.append(r)
 
-        # We should already have marked everything as duplicates by now so use check_for_duplicates=False
+        # The duplicate flags were recomputed above over rxn_list, so the renders below
+        # do not need to repeat the work: check_for_duplicates=False.
         staged = [
             (gas_path, render_chemkin_file(gas_species_list, gas_rxn_list, verbose=False,
                                            check_for_duplicates=False, elements_in_use=elements_in_use)),

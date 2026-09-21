@@ -1,0 +1,121 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python3.9
+rootdir: /home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 19 items
+
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestElectronPlacementSeparatesDuplicates::test_two_owners_of_one_ionisation_channel_are_not_duplicates PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestElectronPlacementSeparatesDuplicates::test_matching_placement_is_still_a_duplicate PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestThreeBodyRecombinationShape::test_the_duplicate_check_separates_the_pair PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestThreeBodyRecombinationShape::test_the_export_boundary_refuses_a_reversed_declared_reaction PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestThreeBodyRecombinationShape::test_an_undeclared_three_body_owner_is_still_folded_onto_the_radiative_channel PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestOrdinaryDuplicateHandlingIsUntouched::test_neutral_duplicate_pair_is_still_marked PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestOrdinaryDuplicateHandlingIsUntouched::test_opposite_direction_irreversible_branch_still_unmarks FAILED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestOrdinaryDuplicateHandlingIsUntouched::test_mixed_pressure_dependence_branch_still_unmarks FAILED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestDuplicateIsAGroupPredicate::test_a_pre_marked_placement_mismatched_pair_is_cleared PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestDuplicateIsAGroupPredicate::test_a_cross_group_comparison_does_not_clear_another_groups_flags PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestDuplicateIsAGroupPredicate::test_a_lone_flag_that_names_no_mate_is_cleared PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestDuplicateIsAGroupPredicate::test_a_pre_marked_mixed_reversibility_pair_is_cleared PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestDuplicateIsAGroupPredicate::test_the_verdict_does_not_depend_on_the_flags_it_arrives_with PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestDuplicateIsAGroupPredicate::test_the_production_save_path_recomputes_the_flags PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestPlacementTruthTable::test_same_direction_rows[0-0-NeutralLibA-NeutralLibB-True-(0, 0) vs (0, 0) -- all neutral chemistry, unchanged] PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestPlacementTruthTable::test_same_direction_rows[1-1-PlasmaElectronImpactIonization-PlasmaElectronImpactIonization-True-(1, 2) vs (1, 2) -- a genuine duplicate of a declared channel] PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestPlacementTruthTable::test_same_direction_rows[1-1-AnUndeclaredKineticsLibrary-AnotherUndeclaredLibrary-True-(0, 1) vs (0, 1) -- a genuine duplicate under the net-derived rule] PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestPlacementTruthTable::test_same_direction_rows[1-1-PlasmaElectronImpactIonization-AnUndeclaredKineticsLibrary-False-(1, 2) vs (0, 1) -- equal net count, different incident order] PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestPlacementTruthTable::test_same_direction_rows[1-1-AnUndeclaredKineticsLibrary-PlasmaElectronImpactIonization-False-(0, 1) vs (1, 2) -- the same row with the arguments swapped] PASSED
+
+=================================== FAILURES ===================================
+_ TestOrdinaryDuplicateHandlingIsUntouched.test_opposite_direction_irreversible_branch_still_unmarks _
+
+self = <i244ChemkinDuplicateElectronTest.TestOrdinaryDuplicateHandlingIsUntouched object at 0x71173e47d220>
+caplog = <_pytest.logging.LogCaptureFixture object at 0x71173d830d60>
+charged_species = (Species(index=1, label="e-", thermo=NASA(polynomials=[NASAPolynomial(coeffs=[2.5,0,0,0,0,-745.375,-11.7246], Tmin=(20...x=(6000,'K'))], Tmin=(200,'K'), Tmax=(6000,'K')), molecule=[Molecule(smiles="[Li+]")], molecular_weight=(6.941,'amu')))
+
+    def test_opposite_direction_irreversible_branch_still_unmarks(self, caplog, charged_species):
+        """
+        The opposite-direction irreversible branch of the *pairwise*
+        ``mark_duplicate_reaction`` must keep unmarking a pair that arrives already
+        flagged.
+    
+        This drives that function directly rather than writing a deck, because the
+        deck no longer exercises it: ``mark_duplicate_reactions`` recomputes every
+        flag from the group key, and would clear this pair whether the branch fired
+        or not. An outcome-only assertion through the writer would therefore pass
+        with the branch deleted. The distinctive warning the branch logs is what
+        pins the branch itself -- no other code emits that sentence.
+        """
+        electron, li, lip = charged_species
+        del electron
+    
+        ionisation = _library_reaction(
+            [li], [lip], DECLARED_TWO_SIDED_OWNER, electrons=1, duplicate=True,
+            kinetics=Arrhenius(A=(1.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+        recombination = _library_reaction(
+            [lip], [li], DECLARED_ONE_SIDED_OWNER, electrons=-1, duplicate=True,
+            kinetics=Arrhenius(A=(2.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+        assert get_electron_placement_counts(ionisation) == (1, 2)
+        assert get_electron_placement_counts(recombination) == (1, 0)
+    
+        with caplog.at_level(logging.WARNING):
+            mark_duplicate_reaction(ionisation, [recombination])
+    
+>       assert any("irreversible in opposite directions" in record.getMessage()
+                   for record in caplog.records), (
+            "the opposite-direction irreversible branch did not run; messages were {0!r}".format(
+                [record.getMessage() for record in caplog.records])
+        )
+E       AssertionError: the opposite-direction irreversible branch did not run; messages were []
+E       assert False
+E        +  where False = any(<generator object TestOrdinaryDuplicateHandlingIsUntouched.test_opposite_direction_irreversible_branch_still_unmarks.<locals>.<genexpr> at 0x71173e45dd60>)
+
+test/rmgpy/i244ChemkinDuplicateElectronTest.py:448: AssertionError
+_ TestOrdinaryDuplicateHandlingIsUntouched.test_mixed_pressure_dependence_branch_still_unmarks _
+
+self = <i244ChemkinDuplicateElectronTest.TestOrdinaryDuplicateHandlingIsUntouched object at 0x71173e47d400>
+caplog = <_pytest.logging.LogCaptureFixture object at 0x71173d522d30>
+charged_species = (Species(index=1, label="e-", thermo=NASA(polynomials=[NASAPolynomial(coeffs=[2.5,0,0,0,0,-745.375,-11.7246], Tmin=(20...x=(6000,'K'))], Tmin=(200,'K'), Tmax=(6000,'K')), molecule=[Molecule(smiles="[Li+]")], molecular_weight=(6.941,'amu')))
+
+    def test_mixed_pressure_dependence_branch_still_unmarks(self, caplog, charged_species):
+        """
+        The mixed-pressure-dependence branch of the pairwise
+        ``mark_duplicate_reaction`` must keep unmarking an already-flagged pair.
+        Driven and pinned the same way, and for the same reason, as the test above.
+        """
+        electron, li, lip = charged_species
+        del electron
+    
+        declared = _library_reaction(
+            [li], [lip], DECLARED_TWO_SIDED_OWNER, electrons=1, duplicate=True,
+            kinetics=Arrhenius(A=(1.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+        undeclared = _library_reaction(
+            [li], [lip], UNDECLARED_OWNER, electrons=1, duplicate=True,
+            kinetics=Chebyshev(
+                coeffs=[[1.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
+                kunits="s^-1",
+                Tmin=(300, "K"), Tmax=(2000, "K"),
+                Pmin=(0.01, "bar"), Pmax=(100, "bar"),
+            ),
+        )
+        assert declared.kinetics.is_pressure_dependent() != undeclared.kinetics.is_pressure_dependent()
+    
+        with caplog.at_level(logging.WARNING):
+            mark_duplicate_reaction(declared, [undeclared])
+    
+>       assert any("mixed pressure dependence" in record.getMessage()
+                   for record in caplog.records), (
+            "the mixed-pressure-dependence branch did not run; messages were {0!r}".format(
+                [record.getMessage() for record in caplog.records])
+        )
+E       AssertionError: the mixed-pressure-dependence branch did not run; messages were []
+E       assert False
+E        +  where False = any(<generator object TestOrdinaryDuplicateHandlingIsUntouched.test_mixed_pressure_dependence_branch_still_unmarks.<locals>.<genexpr> at 0x71173d5320b0>)
+
+test/rmgpy/i244ChemkinDuplicateElectronTest.py:482: AssertionError
+=========================== short test summary info ============================
+FAILED test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestOrdinaryDuplicateHandlingIsUntouched::test_opposite_direction_irreversible_branch_still_unmarks
+FAILED test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestOrdinaryDuplicateHandlingIsUntouched::test_mixed_pressure_dependence_branch_still_unmarks
+========================= 2 failed, 17 passed in 1.16s =========================

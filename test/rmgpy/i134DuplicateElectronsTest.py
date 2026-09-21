@@ -161,8 +161,15 @@ def _reaction(reactants, products, electrons=0, family=None):
 
 
 class TestTheUndeclaredOwnerContract:
-    """The contract for every reaction whose owner has never heard of electrons,
-    which is all of RMG outside the plasma families and libraries.
+    """The contract for every reaction whose owner has never heard of electrons.
+
+    That is not the same set as "all of RMG outside the plasma families and
+    libraries", which is what this docstring used to claim: 17 of the 140
+    families in the database declare a nonzero ``electrons`` and 11 of those are
+    not plasma families (six ``Cation_*``, five
+    ``Surface_Proton_Electron_Reduction_*``). They place one-sidedly, so the
+    declared and net-derived rules agree for them, which is why the bound below
+    still holds -- but it holds for a different reason than the one stated.
 
     This is stated as a test rather than left as an inference from the suite
     passing, because it is what bounds what the repair can move. The claim is not
