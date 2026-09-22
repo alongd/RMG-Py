@@ -42,6 +42,7 @@ as a loss frequency, a charge, a ratio, or a conservation statement.
 """
 
 import copy
+import logging
 import os
 import pickle
 import re
@@ -1780,10 +1781,16 @@ def test_neutral_floor_is_a_density_not_a_history_dependent_mole_count():
 
 def test_non_finite_wall_flux_is_not_reported_available():
     """MEDIUM: an availability flag must be checked at least as hard as the number it
-    vouches for. An extreme mobility makes nu_wall, hence wall_flux, non-finite; the flag
-    must read 'unavailable', not assert 'available' over an inf."""
-    r, _, _ = _build_reactor(wall=True, with_chemistry=False, mu0=1.0e308)
-    r._latch_wall_diagnostics(r.y0, r.compute_volume(r.y0), 0.0)
+    vouches for -- a non-finite wall_flux must read 'unavailable', not assert 'available'
+    over an inf. (Round 93's MEDIUM 1 now refuses the extreme mobility this once used at
+    CONSTRUCTION, so a non-finite wall_flux is instead produced by latching a hand-built
+    degenerate state -- a non-finite electron population -- which the accepted-step domain
+    check would reject but the latch must still describe honestly.)"""
+    r, _, _ = _build_reactor(wall=True, with_chemistry=False)
+    y = np.array(r.y0[:r.num_core_species], float)
+    V = r.compute_volume(y)
+    y[r.electron_index] = float('inf')
+    r._latch_wall_diagnostics(y, V, 0.0)
     assert not np.isfinite(np.asarray(r.wall_flux)).all()
     assert r.wall_energy_availability['wall_flux'] == 'unavailable'
 
@@ -1844,3 +1851,143 @@ def test_neutral_density_floor_is_independent_of_initial_inventory():
     y[i_arp1] = 1.0e-13
     y[ie1] = 1.0e-13
     assert r1.compute_nu_wall(y, r1.compute_volume(y)) == r2.compute_nu_wall(y, r2.compute_volume(y))
+
+
+# ====================================================================== round 93
+#
+# Ignition works (round 90) -- but it is a new dynamical regime, and two mechanisms
+# correct for a SEEDED run are wrong at the zero boundary. Two HIGH (algebraic-mode
+# ignition; a reached steady state the criterion cannot recognise), three MEDIUM
+# (finite inputs -> infinite nu_wall; a pure-parent mobility against a gas mixture;
+# a floor that moves under a physics-preserving reparameterisation) and a LOW (a
+# nonzero source flux lost to a squaring underflow). Each reproduced red-first on the
+# built module in evidence/round93_before.log.
+
+
+def test_external_source_ignites_a_zero_electron_deck_in_quasineutral_mode():
+    """HIGH 1: round 90 proved ignition from exactly zero electrons in the INTEGRATED
+    mode; the algebraic quasineutralElectron=True mode still refused. The algebraic
+    charge row is driven to the solver's ABSOLUTE accuracy, but check_wall_support tests
+    quasineutrality RELATIVELY. At the first microstep the entire charged inventory sits
+    ~2e-33 mol -- seventeen orders below the integrator's atol -- so the row's absolute
+    convergence noise reads as an ~11% relative imbalance and the guard refuses a state
+    the solver has merely not yet resolved. The relative guard must stand down while the
+    whole charged inventory is below the integrator's resolution; above it the row holds
+    net/magnitude at machine epsilon on its own. Demonstrated across the source range."""
+    for src in (1.0e5, 1.0e12, 1.0e20):
+        r, core, rxns = _build_reactor(wall=True, with_chemistry=False, x_ion=0.0,
+                                       source=src, quasineutral=True)
+        assert r.y0[r.electron_index] == 0.0, "the deck must start at exactly zero electrons"
+        r.termination = [TerminationTime((1.0e-4, 's'))]
+        _simulate(r, core, rxns)   # must not raise the quasineutrality refusal
+        assert r.y[r.electron_index] > 0.0, (
+            "source={0:g} did not ignite the algebraic-electron deck".format(src))
+
+
+def test_saturating_discharge_reports_a_steady_state_and_a_dead_one_does_not():
+    """HIGH 2: a source-driven discharge reaches n_e = S/nu_wall and holds it, yet the
+    criterion never armed. A saturating-from-zero trajectory has log-log slope bounded by
+    1 -- ``nu*t/(exp(nu*t)-1)`` -- so R>=1 never fires; and the electron saturates far
+    below the mole floor, so the generic residual reads only the inert neutrals (which a
+    weak discharge never perturbs, residual exactly 0 from t=0). The reactor supplies the
+    electron's own slope so firing waits for it to saturate, and arms on ``t*nu_wall>=1``
+    (the R=t/tau>=1 standard evaluated from the known relaxation time). Same criterion, a
+    model that never started -- no source -- must still report NOT a steady state."""
+    term = [TerminationSteadyState(tolerance=1.0e-8), TerminationTime((200.0, 's'))]
+    r, core, rxns = _build_reactor(wall=True, with_chemistry=False, x_ion=0.0,
+                                   source=1.0e5, termination=term)
+    _simulate(r, core, rxns)
+    yv = np.asarray(r.y[:r.num_core_species], float)
+    V = r.compute_volume(yv)
+    nu = r.compute_nu_wall(yv, V)
+    n_e_density = r.y[r.electron_index] * constants.Na / V
+    assert r.steady_state_reached, "the saturated discharge was not recognised as steady"
+    assert abs(n_e_density / (1.0e5 / nu) - 1.0) < 1.0e-3, (
+        "settled electron density {0!r} m^-3 is not S/nu_wall {1!r}".format(
+            n_e_density, 1.0e5 / nu))
+
+    term2 = [TerminationSteadyState(tolerance=1.0e-8), TerminationTime((200.0, 's'))]
+    r2, core2, rxns2 = _build_reactor(wall=False, with_chemistry=False, termination=term2)
+    _simulate(r2, core2, rxns2)
+    assert not r2.steady_state_reached, (
+        "a model that never started must not report a steady-state result")
+
+
+def test_finite_wall_inputs_that_make_nu_wall_infinite_are_refused_at_construction():
+    """MEDIUM 1: a finite reduced mobility (1e308) and a finite diffusion length whose
+    SQUARE is subnormal (Lambda=1e-160 -> Lambda^2=1e-320) both give nu_wall=inf, yet were
+    admitted -- the run then carries a non-finite residual. Marking the wall term
+    'unavailable' is not the same as refusing a state that cannot be integrated. Refuse at
+    construction: nu_wall evaluated at the reference density must be finite, and Lambda^2
+    must be a normal (not subnormal) divisor."""
+    with pytest.raises(PlasmaStateError):
+        _build_reactor(wall=True, with_chemistry=False, mu0=1.0e308)
+    with pytest.raises(PlasmaStateError):
+        _build_reactor(wall=True, with_chemistry=False, lam=1.0e-160)
+
+
+def test_neutral_mixture_warns_that_the_single_mobility_is_an_approximation(caplog):
+    """MEDIUM 2: the wall carries ONE ion reduced mobility (Ar+ in Ar) but n_neutral sums
+    every neutral heavy species, so a 50/50 Ar/He mixture applies the Ar+-in-Ar mobility to
+    the He fraction too. It is NOT refused -- refusing a multi-skeleton neutral bath would
+    forbid every multi-species plasma (an inert diluent, an isomeric neutral the wall must
+    not transmute into, multiple ionisable co-reactants), all supported and carrying
+    distinct skeletons by construction -- and it cannot be made composition-weighted without
+    a reduced mobility per bath gas, which the model does not carry. So the mixture is
+    accepted with a WARNING naming the gases and the approximation; input.rst says the same
+    at the mobility keyword. Ar and its metastable Ar* share one skeleton (one bath, exact)
+    and must NOT warn."""
+    e, ar, arp = _argon_species()
+    he = Species(label='He').from_adjacency_list('1 He u0 p1 c0')
+    he.thermo = _thermo_with_h298(0.0)
+    imf = {e: 1.0e-6, arp: 1.0e-6, ar: 0.5 - 1.0e-6, he: 0.5 - 1.0e-6}
+    with caplog.at_level(logging.WARNING):
+        reactor = PlasmaReactor(
+            (TGAS, 'K'), (P_NOMINAL, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+            n_sims=1, termination=[],
+            diffusion_length=(_diffusion_length(), 'm'),
+            ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'), wall_recycling=1.0)
+        reactor.initialize_model([e, ar, he, arp], [], [], [])   # accepted, not refused
+    assert 'spans more than one gas' in caplog.text, \
+        "a genuine bath mixture must warn that the single mobility is an approximation"
+
+    # the single-bath Ar/Ar* deliverable shares one skeleton and must NOT warn
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        _metastable_reactor(gamma=1.0, neutralization={'Ar+': 'Ar'})
+    assert 'spans more than one gas' not in caplog.text, \
+        "Ar and Ar* are one bath and must not warn"
+
+
+def test_density_floor_is_invariant_under_mobility_reparameterisation():
+    """MEDIUM 3: the transport law reads mu0*Nref as a product, so scaling
+    (Nref -> Nref*c, mu0 -> mu0/c) leaves nu_wall bit-identical -- but the acceptance floor
+    was FRACTION*Nref, which scaled by c. Physically identical inputs were then accepted or
+    refused differently. This is round 90's HIGH 2 in a new coordinate: the floor stopped
+    depending on history and now depended on parameterisation. It must be built from a
+    parameterisation-invariant density."""
+    def floor_of(c):
+        e, ar, arp = _argon_species()
+        imf = {e: 1.0e-6, arp: 1.0e-6, ar: 1.0 - 2.0e-6}
+        r = PlasmaReactor(
+            (TGAS, 'K'), (P_NOMINAL, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+            n_sims=1, termination=[],
+            diffusion_length=(_diffusion_length(), 'm'),
+            ion_reduced_mobility=(MU0_AR_IN_AR / c, 'm^2/(V*s)'),
+            mobility_reference_density=(PLASMA_LOSCHMIDT * c, 'm^-3'), wall_recycling=1.0)
+        r.initialize_model([e, ar, arp], [], [], [])
+        return r.wall_neutral_density_floor
+    base = floor_of(1.0)
+    for c in (1.0e3, 1.0e-3):
+        assert floor_of(c) == base, (
+            "the density floor moved under a physics-preserving reparameterisation (c={0:g})".format(c))
+
+
+def test_small_but_nonzero_source_flux_is_not_lost_to_a_squaring_underflow():
+    """LOW: get_non_chemical_char_rate squared the delivered per-species rates to form an
+    L2 norm, so a small source whose flux is representable but whose SQUARE underflows
+    (below ~sqrt(DBL_MIN)) reported exactly zero -- reading as an inert reactor while a
+    source was declared and admitted. The norm must be scale-robust so a nonzero flux
+    stays nonzero."""
+    r, core, rxns = _build_reactor(wall=True, with_chemistry=False, x_ion=0.0, source=1.0e-140)
+    assert r.get_non_chemical_char_rate() > 0.0
