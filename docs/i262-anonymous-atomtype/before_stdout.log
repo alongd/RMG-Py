@@ -1,0 +1,40 @@
+Loaded families: ['Birad_R_Recombination', 'Plasma_Radiative_Recombination', 'R_Recombination']
+family.py in use: /home/alon/Code/RMG-Py-i262-anonymous-atomtype/rmgpy/data/kinetics/family.py
+
+==============================================================================
+CELL: Ar_ground unimolecular   (expected family: Plasma_Radiative_Recombination)
+==============================================================================
+  EXCEPTION CLASS: rmgpy.exceptions.AtomTypeError
+  __cause__ CLASS: None
+  MESSAGE:
+    | Unable to determine atom type for atom Ar.-, which has 0 single bonds, 0 double bonds (0 to O, 0 to S, 0 others), 0 triple bonds, 0 quadruple bonds, 0 benzene bonds, 4 lone pairs, and -1 charge.
+  ROUND-TRIP of adjacency lists from driver-side reactants (base module has no attribute):
+    reactant[0] re-parsed OK -> Ar charge 0 mult 1
+
+==============================================================================
+CELL: Ar2+ + H   (expected family: R_Recombination)
+==============================================================================
+  EXCEPTION CLASS: rmgpy.exceptions.AtomTypeError
+  __cause__ CLASS: None
+  MESSAGE:
+    | Unable to determine atom type for atom Ar, which has 2 single bonds, 0 double bonds (0 to O, 0 to S, 0 others), 0 triple bonds, 0 quadruple bonds, 0 benzene bonds, 3 lone pairs, and +0 charge.
+  ROUND-TRIP of adjacency lists from driver-side reactants (base module has no attribute):
+    reactant[0] re-parsed OK -> Ar2 charge 1 mult 2
+    reactant[1] re-parsed OK -> H charge 0 mult 2
+
+==============================================================================
+CELL: Ar2+ + Ar_meta_3P2   (expected family: Birad_R_Recombination)
+==============================================================================
+  EXCEPTION CLASS: rmgpy.exceptions.AtomTypeError
+  __cause__ CLASS: None
+  MESSAGE:
+    | Unable to determine atom type for atom Ar, which has 2 single bonds, 0 double bonds (0 to O, 0 to S, 0 others), 0 triple bonds, 0 quadruple bonds, 0 benzene bonds, 3 lone pairs, and +0 charge.
+  ROUND-TRIP of adjacency lists from driver-side reactants (base module has no attribute):
+    reactant[0] re-parsed OK -> Ar2 charge 1 mult 2
+    reactant[1] re-parsed OK -> Ar charge 0 mult 3
+
+==============================================================================
+SUMMARY
+  cells that did NOT crash (bad): False
+  round-trip failures: []
+  OK: every cell refused loudly and every printed adjacency list round-tripped.
