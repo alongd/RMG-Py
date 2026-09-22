@@ -252,6 +252,31 @@ def _gate_calls_in_source(module, symbol_name, module_name):
     return found, True
 
 
+#: One message per manifest still using the pre-round-99 spelling of the field.
+_LEGACY_CALL_SITES_WARNED = set()
+
+
+def _warn_legacy_call_sites_field(path):
+    """
+    Report a manifest declaring ``requiresEngineCallSites``, once per manifest.
+
+    The field was renamed because its name claimed more than the check delivers -- it is a
+    static syntactic presence check, not a verification of call sites. The old spelling is
+    still read rather than ignored: manifests declaring it ship in database repositories
+    that this engine change cannot edit, and quietly dropping the field would disarm a pin
+    in a repository nobody is looking at. A warning, not a refusal, for the same reason.
+    """
+    if path in _LEGACY_CALL_SITES_WARNED:
+        return
+    _LEGACY_CALL_SITES_WARNED.add(path)
+    logging.warning(
+        'Quarantine manifest %s declares requiresEngineCallSites. That field is now '
+        'requiresEngineCallsInSource, which says what is actually checked: that the '
+        'named modules bind the gate and that their SOURCE TEXT contains a call to it. '
+        'It is a static syntactic check and never evidence that the call executes. The '
+        'old spelling is still honoured; rename it in the database when convenient.', path)
+
+
 def _check_engine_requirements(path, family_label, manifest):
     """
     Refuse to load a quarantine manifest whose declared engine capability is absent.
@@ -271,12 +296,21 @@ def _check_engine_requirements(path, family_label, manifest):
       attribute that merely exists proves nothing: ``math.pi`` is not a gate. Declaring a
       symbol without a module is refused rather than ignored, since it asks for a check
       that cannot be performed.
-    * ``requiresEngineCallSites`` -- module(s) that must bind the declared symbol to *the
-      same object* **and call it**. Binding alone was the first version of this check and
-      was not the property the field is named for: deleting every call while keeping the
-      import leaves a module that still binds the gate and runs nothing. The call check is
-      static (see :func:`_counts_calls_to`), so it proves a call exists in the source, not
-      that it executes on a given run.
+    * ``requiresEngineCallsInSource`` -- module(s) that must bind the declared symbol to
+      *the same object* and whose **source text contains a call to it** inside each of the
+      functions named in :data:`_GATE_CALL_SITES`. That is the whole of it: a **static
+      syntactic presence check**. It does not show the call executes, dominates the
+      admission it guards, receives the right arguments, or propagates what it raises --
+      :func:`_gate_calls_in_source` enumerates the shapes that satisfy it while gating
+      nothing, and five review rounds have each found one more. Binding alone is still
+      weaker and still refused: deleting every call while keeping the import leaves a
+      module that binds the gate and runs nothing.
+
+      Spelled ``requiresEngineCallSites`` until round 99. That name claimed the field
+      verified call *sites*, which is a property of a running program, and the ledger
+      inherited the claim. The old spelling is still honoured, with a warning, because
+      manifests that declare it ship in a database repository this change may not edit;
+      declaring both is refused rather than silently resolved.
     * ``requiresEngineCommit`` -- **not declarable**. An installed engine has no reliable
       commit to compare against, so the check would pass on every checkout. Record the
       commit as ``recordedEngineCommit`` instead, which this function reads as provenance
@@ -293,12 +327,22 @@ def _check_engine_requirements(path, family_label, manifest):
             'against, so the check would pass on every checkout and the manifest would read as '
             'pinned while pinning nothing. Rename it to recordedEngineCommit, which is kept as '
             'provenance, and pin the capability itself with requiresEngineModule, '
-            'requiresEngineSymbol and requiresEngineCallSites.'.format(
+            'requiresEngineSymbol and requiresEngineCallsInSource.'.format(
                 path=path, family=family_label))
 
     module_name = manifest.get('requiresEngineModule')
     symbol_name = manifest.get('requiresEngineSymbol')
-    call_sites = manifest.get('requiresEngineCallSites') or ()
+    call_sites = manifest.get('requiresEngineCallsInSource') or ()
+    legacy_sites = manifest.get('requiresEngineCallSites') or ()
+    if call_sites and legacy_sites:
+        raise DatabaseError(
+            'Quarantine manifest {path} (family {family}) declares both '
+            'requiresEngineCallsInSource and its old spelling requiresEngineCallSites. '
+            'Resolving that quietly would mean guessing which one the author meant to be '
+            'read; declare one.'.format(path=path, family=family_label))
+    if legacy_sites:
+        _warn_legacy_call_sites_field(path)
+        call_sites = legacy_sites
     if isinstance(call_sites, str):
         call_sites = (call_sites,)
 
@@ -325,9 +369,10 @@ def _check_engine_requirements(path, family_label, manifest):
     if not symbol_name:
         if call_sites:
             raise DatabaseError(
-                'Quarantine manifest {path} (family {family}) declares requiresEngineCallSites '
-                'without requiresEngineSymbol, so there is no symbol whose binding could be '
-                'checked at those call sites.'.format(path=path, family=family_label))
+                'Quarantine manifest {path} (family {family}) declares '
+                'requiresEngineCallsInSource without requiresEngineSymbol, so there is no '
+                'symbol whose calls could be looked for in those modules.'.format(
+                    path=path, family=family_label))
         return
 
     symbol = getattr(module, symbol_name, None)
@@ -507,7 +552,8 @@ def _warn_unsafe_manifest(family_path, reason):
     logging.error(
         'Refusing to read the quarantine manifest in %s: %s. A manifest is a regular file '
         'inside its own family directory, and it is EXECUTED -- so one that is a link to '
-        'somewhere else, or is not a file at all, is refused rather than followed. The '
+        'somewhere else, or is not a file at all, is refused rather than followed, and '
+        'one that cannot be examined at all is refused rather than assumed away. The '
         'family is treated as unanswered, not as unquarantined.', family_path, reason)
 
 
@@ -515,38 +561,61 @@ def _read_manifest(family_path):
     """
     Return the manifest's text from inside `family_path`, or ``None``.
 
-    The file at the end of this path is **executed**. Round 92 validated the family
-    *directory* and then opened ``<directory>/quarantine.py`` by name, which leaves two
-    holes the manager measured: the manifest itself may be a symlink to anywhere outside
-    the database, and the directory may be swapped between the validation and the open.
+    The file at the end of this path is **executed**, and that is what sets the standard
+    for how it may be addressed. Round 92 validated the family *directory* and then opened
+    ``<directory>/quarantine.py`` by name. Round 95 closed the manifest half of that by
+    reading the file through a descriptor on its directory -- and left the directory itself
+    named twice: :func:`_family_directory` resolves it with ``realpath`` and returns the
+    *unresolved* join, and this function then opened that string with ``O_DIRECTORY`` and
+    no ``O_NOFOLLOW``. Check and use were two independent resolutions of one name, so a
+    directory symlink swapped into the window between them was followed all the way to
+    ``exec()``. Round 95's claim here that "the descriptor pins the directory that was
+    validated" was simply false: a descriptor pins whatever the name resolved to when it
+    was opened, which is not the same thing as what was checked.
 
-    Both close the same way -- open the directory first and read the manifest through that
-    descriptor. The descriptor pins the directory that was validated, so a later rename
-    cannot redirect the read, and ``O_NOFOLLOW`` refuses a symlinked manifest outright
-    instead of resolving it. The result must also be a regular file: a FIFO would
-    otherwise block a run forever on the read, and a directory would raise from inside a
-    gate whose entire purpose is to keep running and refuse.
+    What closes it is structure, not a third check. The label is a single path component
+    by the time it arrives -- :func:`_family_directory` refuses separators -- so the whole
+    descent is two steps: open the parent, open the label through it with ``O_NOFOLLOW``,
+    open the manifest through *that* with ``O_NOFOLLOW``. Neither component can be a link
+    and neither is re-derived from a string after being examined, so "the executed file is
+    a direct child of a direct child of the families root" holds by construction and has
+    no window in it. The parent is deliberately still followed: it comes from
+    ``settings['database.directory']``, which is local configuration, and symlinking a
+    database checkout is ordinary. The label is the part a shipped ``family:`` line
+    controls, and the label is the part that is pinned.
+
+    The manifest must also be a regular file: a FIFO would otherwise block a run forever
+    on the read, and a directory would raise from inside a gate whose entire purpose is to
+    keep running and refuse.
 
     ``None`` covers three cases the caller separates by other means: no manifest (every
     ordinary family), a manifest refused as a file, and one that vanished mid-read.
     """
-    flags = os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0)
+    nofollow = getattr(os, 'O_NOFOLLOW', 0)
+    directory = getattr(os, 'O_DIRECTORY', 0)
+    parent, name = os.path.split(family_path.rstrip(os.sep) or family_path)
     fd = None
-    dir_fd = None
+    family_fd = None
+    parent_fd = None
     try:
         try:
-            if os.open in os.supports_dir_fd:
-                dir_fd = os.open(family_path,
-                                 os.O_RDONLY | getattr(os, 'O_DIRECTORY', 0))
-                fd = os.open(QUARANTINE_FILENAME, flags, dir_fd=dir_fd)
+            if name and os.open in os.supports_dir_fd:
+                parent_fd = os.open(parent or os.curdir, os.O_RDONLY | directory)
+                family_fd = os.open(name, os.O_RDONLY | directory | nofollow,
+                                    dir_fd=parent_fd)
+                fd = os.open(QUARANTINE_FILENAME, os.O_RDONLY | nofollow,
+                             dir_fd=family_fd)
             else:
                 # No directory descriptors on this platform: the symlinked-manifest hole
                 # still closes (O_NOFOLLOW), the directory-swap race does not.
-                fd = os.open(os.path.join(family_path, QUARANTINE_FILENAME), flags)
+                fd = os.open(os.path.join(family_path, QUARANTINE_FILENAME),
+                             os.O_RDONLY | nofollow)
         except (FileNotFoundError, NotADirectoryError):
             return None
         except OSError as error:
-            # ELOOP lands here, which is the symlinked manifest this exists to refuse.
+            # ELOOP lands here twice over: from a family directory that is a link, and
+            # from a manifest that is one. Both are refused rather than resolved, and the
+            # caller turns the refusal into an unanswered question, never a clean bill.
             _warn_unsafe_manifest(family_path, error)
             return None
 
@@ -559,7 +628,7 @@ def _read_manifest(family_path):
     except OSError:
         return None
     finally:
-        for descriptor in (fd, dir_fd):
+        for descriptor in (fd, family_fd, parent_fd):
             if descriptor is not None:
                 try:
                     os.close(descriptor)
@@ -861,11 +930,23 @@ def _family_directory(families_root, label):
     string to ``os.path.join`` unexamined meant an absolute label discarded the database
     prefix entirely, and ``..`` segments walked out of the database.
 
-    Two checks, because either alone is defeatable. The first is syntactic: the label must
-    be a single path component, so no separator, no ``..``, no drive letter, nothing
-    absolute. The second is positional and catches what syntax cannot -- a symlinked family
-    directory pointing outside the tree -- by requiring the resolved real path to sit under
-    the resolved real families root.
+    The checks here are **diagnostic**, and it is worth being exact about that, because
+    round 95 mistook them for the closure and left a race behind. Every one of them
+    examines a *name*; the file is opened from that name afterwards, and between the two
+    the filesystem can change. What actually keeps the executed file inside the database
+    is :func:`_read_manifest` opening the label as one ``O_NOFOLLOW`` component below the
+    families root, which cannot be raced because it never resolves the name twice. These
+    checks exist to refuse early and to say *why* in a message a database author can act
+    on -- "it contains a path separator" is worth a great deal more than ``ELOOP``.
+
+    Three of them. The first is syntactic: the label must be a single path component, so
+    no separator, no ``..``, no drive letter, nothing absolute, and no control character.
+    The second refuses a family directory that is a symbolic link, of any kind, pointing
+    anywhere -- a family directory is a real directory, a direct child of the families
+    root, which is a rule with no window in it. The third is positional and catches what
+    syntax cannot, by requiring the resolved real path to sit under the resolved real
+    families root; it is kept because it names the escape precisely when an intermediate
+    component is the link.
 
     Returns the joined path (which need not exist; the caller distinguishes "no such
     family" from "no manifest") or ``None`` when the label is not a name this database
@@ -892,6 +973,9 @@ def _family_directory(families_root, label):
         return None
 
     family_path = os.path.join(families_root, text)
+    if os.path.islink(family_path):
+        _warn_unsafe_label(label, 'the family directory is a symbolic link')
+        return None
     try:
         resolved_root = os.path.realpath(families_root)
         resolved_family = os.path.realpath(family_path)
@@ -931,21 +1015,47 @@ def _manifest_signature(family_path):
     """
     ``(family directory exists, manifest identity or None, what it is)`` for `family_path`.
 
-    The manifest identity is ``(mtime_ns, size, inode)``: enough that an edit, a
-    replacement, or a removal all change it, and cheap enough to re-take on every lookup.
+    The identity is ``(mtime_ns, ctime_ns, size, inode)``. ``ctime_ns`` is there because
+    the other three are all restorable: an in-place edit of the same length, followed by
+    ``os.utime`` putting the modification time back, leaves ``(mtime_ns, size, inode)``
+    byte-identical while the file says something different -- and the stale answer then
+    survives for the life of the run. No userspace call can set the inode change time, so
+    it moves on any write. It costs nothing; the ``lstat`` is already being taken.
+
+    Hashing the content would be stronger and is deliberately not done: it turns every
+    lookup of every family into a file read, to cover a case ``ctime`` already covers
+    anywhere ``ctime`` is real. Where it is not -- a filesystem that reports it as a copy
+    of ``mtime`` -- this is no weaker than it was.
+
+    ``kind`` is one of four, and the last is the point of the function:
+
+    * ``'absent'`` -- there is genuinely no manifest here. Every ordinary family.
+    * ``'regular'`` -- a manifest that may be read.
+    * ``'other'`` -- something is there and it is not a file this database may execute.
+    * ``'unreadable'`` -- a manifest **may or may not** be there and this process could not
+      find out: a permission error, an I/O error, a descriptor exhaustion. Round 99's
+      defect was mapping this onto ``'absent'``, which the caller turns into "this family
+      carries no manifest" -- a clean bill of health produced by the failure of the check
+      itself, and then cached. It is round 89's collapse of "no" into "I could not look",
+      one layer down, and the two are kept apart here for the same reason.
 
     Taken with :func:`os.lstat` rather than :func:`os.stat`, so that a manifest which is a
     *link* is seen as a link and reported as ``'other'`` instead of as an ordinary file.
-    That distinction is what keeps the caller from reading "refused as a file" as "carries
-    no manifest", which would be a clean bill of health handed out by the check that
-    refused it. Retargeting the link moves the link's own mtime, so the signature still
+    Retargeting the link moves the link's own timestamps, so the signature still
     invalidates.
     """
     try:
         info = os.lstat(os.path.join(family_path, QUARANTINE_FILENAME))
-    except (OSError, ValueError):
+    except (FileNotFoundError, NotADirectoryError):
         return os.path.isdir(family_path), None, 'absent'
-    identity = (info.st_mtime_ns, info.st_size, info.st_ino)
+    except ValueError:
+        # An embedded NUL cannot name a file on any filesystem, so there is nothing here
+        # to be unsure about. `_family_directory` refuses these by name; this is a
+        # backstop for the paths that do not come through it.
+        return os.path.isdir(family_path), None, 'absent'
+    except OSError:
+        return os.path.isdir(family_path), None, 'unreadable'
+    identity = (info.st_mtime_ns, info.st_ctime_ns, info.st_size, info.st_ino)
     kind = 'regular' if stat.S_ISREG(info.st_mode) else 'other'
     return os.path.isdir(family_path), identity, kind
 
@@ -1026,6 +1136,15 @@ def resolve_quarantine(label):
             # no longer there.
             return getattr(loaded, 'quarantine', None), True
         answer = (None, False)
+    elif kind == 'unreadable':
+        # There may or may not be a manifest here; this process could not find out. Saying
+        # "carries no manifest" would be a clean bill of health issued by the failure of
+        # the check itself, so it is an unanswered question -- and returned UNCACHED,
+        # because the condition that produced it (a permission, an I/O error, a descriptor
+        # exhaustion) is transient by nature and the next call may well succeed. Caching it
+        # would make a momentary failure permanent for the life of the run.
+        _warn_unsafe_manifest(family_path, 'it could not be examined')
+        return None, False
     elif manifest_stat is None:
         # The family is in this database and carries no manifest. That is an answer.
         answer = (None, True)

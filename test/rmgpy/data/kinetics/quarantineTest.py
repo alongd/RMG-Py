@@ -572,7 +572,8 @@ def _clear_gate_caches():
     from rmgpy.data.kinetics import quarantine as module
 
     for name in ("_UNATTRIBUTED_WARNED", "_UNANSWERED_WARNED", "_DISK_QUARANTINE_CACHE",
-                 "_DISK_ANY_QUARANTINE_CACHE", "_UNSAFE_LABELS_WARNED"):
+                 "_DISK_ANY_QUARANTINE_CACHE", "_UNSAFE_LABELS_WARNED",
+                 "_UNSAFE_MANIFESTS_WARNED", "_LEGACY_CALL_SITES_WARNED"):
         cache = getattr(module, name, None)
         if cache is not None:
             cache.clear()
@@ -1259,7 +1260,12 @@ class TestTheRealQuarantinedFamily:
         assert len(affected["training"]) == EXPECTED_TRAINING, \
             f"{len(affected['training'])} training entries affected, " \
             f"ruling recorded {EXPECTED_TRAINING}"
-        assert all(isinstance(e.data, Marcus) for e in affected["rules"] + affected["training"])
+        every = affected["rules"] + affected["training"]
+        assert every, (
+            "nothing was enumerated, and the class assertion below would then pass "
+            "vacuously -- `all()` over an empty list is the shape this campaign keeps "
+            "shipping as evidence")
+        assert all(isinstance(e.data, Marcus) for e in every)
 
     def test_nothing_was_deleted(self):
         """
@@ -1279,8 +1285,20 @@ class TestTheRealQuarantinedFamily:
         entry = self.family.rules.entries["Root_2R->C"][0]
         assert entry.data.A.value_si == pytest.approx(1.73e06)
         assert entry.data.n.value_si == pytest.approx(2)
-        assert entry.data.lmbd_i_coefs.value_si[0] == pytest.approx(51487.7)
         assert entry.data.lmbd_o.value_si == pytest.approx(0.0)
+        assert entry.data.beta.value_si == pytest.approx(1.2e10)
+        assert entry.data.wr.value_si == pytest.approx(0.0)
+        assert entry.data.wp.value_si == pytest.approx(0.0)
+        # The WHOLE polynomial, not its leading term. `lmbd_i_coefs` has four components
+        # and a refit moves the later ones hardest -- checking [0] alone is a collapsed
+        # assertion on a vector quantity, which passes for three of the four ways this
+        # could be rewritten.
+        coefficients = list(entry.data.lmbd_i_coefs.value_si)
+        assert len(coefficients) == 4, \
+            f"the reorganisation barrier polynomial has {len(coefficients)} coefficients, " \
+            f"and the ruling was recorded against four"
+        assert coefficients == pytest.approx(
+            [51487.7, -0.166019, -0.00176034, 4.42738e-07], rel=1e-6)
 
 
 @pytest.mark.database
@@ -2238,3 +2256,411 @@ class TestTheCarrierSurvivesATransform:
         reaction = self._built()
         assert reaction.entry is not None
         assert reaction.copy().entry is not None
+
+
+class TestTheDirectoryCannotBeSwappedUnderTheCheck:
+    """
+    Round 99. Round 95 validated the family directory and then opened it *by name*, so the
+    check and the use were two independent resolutions of the same string with a window
+    between them. A directory symlink swapped into that window was followed, and the file
+    at the end of it is `exec()`d.
+
+    The closure is structural rather than another check: the label is opened as a single
+    component through the families root's own descriptor with `O_NOFOLLOW`, and the
+    manifest through *that* descriptor. Nothing is re-derived from a string after being
+    checked, so there is no window left to race.
+
+    The price is that a family directory which is itself a symlink is refused even when it
+    points inside the database. Measured before taking it: zero symlinks anywhere under
+    `input/kinetics/families` in either database on this box.
+    """
+
+    def setup_method(self):
+        _clear_gate_caches()
+
+    def teardown_method(self):
+        _clear_gate_caches()
+
+    def _database(self, monkeypatch, tmp_path, label):
+        family = tmp_path / "kinetics" / "families" / label
+        family.mkdir(parents=True)
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+        return family
+
+    def test_a_directory_swapped_during_the_check_is_not_followed(self, monkeypatch,
+                                                                  tmp_path):
+        """
+        The window made deterministic, by swapping from inside the check itself.
+
+        `_family_directory` calls `os.path.realpath` on the family path; that call IS the
+        containment check. It is allowed to compute the true, in-tree answer, and the
+        directory is replaced with a link out of the database before that answer is
+        returned. The check therefore passes on the directory that was there, and anything
+        that reaches for the *name* afterwards gets the one that is there now.
+        """
+        label = "A_Family_Swapped_Under_The_Check"
+        family = self._database(monkeypatch, tmp_path, label)
+        outside = tmp_path.parent / "outside_{0}".format(tmp_path.name)
+        outside.mkdir()
+        write_manifest(str(outside))
+
+        state = {"fired": False}
+        original = os.path.realpath
+        target = os.path.abspath(str(family))
+
+        def realpath(path, *args, **kwargs):
+            answer = original(path, *args, **kwargs)
+            if not state["fired"] and os.path.abspath(path) == target:
+                state["fired"] = True
+                os.rename(target, target + ".was_here")
+                os.symlink(str(outside), target)
+            return answer
+
+        monkeypatch.setattr(os.path, "realpath", realpath)
+        quarantine, answered = resolve_quarantine(label)
+
+        assert state["fired"] is True, (
+            "this test did not exercise the race it is named for: the containment check "
+            "never resolved the family path, so nothing was swapped")
+        assert quarantine is None and answered is False, (
+            "a directory swapped between the containment check and the open was followed, "
+            "and a manifest from outside the database was executed; the refusal must also "
+            "leave the family UNanswered, since a refusal is not a clean bill of health")
+
+    def test_a_family_directory_that_is_a_symlink_is_refused_even_inside_the_tree(
+            self, monkeypatch, tmp_path):
+        """
+        The deliberate narrowing, pinned so it is not quietly relaxed back.
+
+        Admitting an in-tree link means containment is decided by resolving a name a
+        second time, which is the defect. A family directory is a real directory, a
+        direct child of the families root -- that rule is checkable in one sentence and
+        has no window in it.
+        """
+        real = "A_Real_Family"
+        link = "A_Family_Linked_To_Its_Sibling"
+        family = self._database(monkeypatch, tmp_path, real)
+        write_manifest(str(family))
+        families = tmp_path / "kinetics" / "families"
+        os.symlink(str(family), str(families / link))
+
+        assert resolve_quarantine(link) == (None, False), (
+            "a family directory that is a symbolic link was resolved and its manifest "
+            "executed; it is refused, and refused as unanswered")
+        assert resolve_quarantine(real)[1] is True, (
+            "the real family behind the link must still answer -- the refusal is of the "
+            "link, not of what it points at")
+
+    def test_a_database_root_that_is_itself_a_symlink_still_resolves(self, monkeypatch,
+                                                                     tmp_path):
+        """
+        The narrowing stops at the label. Everything above it is configuration.
+
+        `database.directory` is a local setting, not something a shipped `family:` line
+        can steer, and symlinking a whole checkout is ordinary. Refusing links all the way
+        up would turn this check into a wall for a case no entry can reach.
+        """
+        real_root = tmp_path / "real_root"
+        label = "A_Family_Under_A_Symlinked_Root"
+        family = real_root / "kinetics" / "families" / label
+        family.mkdir(parents=True)
+        write_manifest(str(family))
+        linked_root = tmp_path / "linked_root"
+        os.symlink(str(real_root), str(linked_root))
+        monkeypatch.setitem(settings, "database.directory", str(linked_root))
+
+        quarantine, answered = resolve_quarantine(label)
+        assert answered and quarantine is not None, (
+            "a database reached through a symlinked root stopped resolving its own "
+            "manifests; the pin belongs on the label, not on the path to the database")
+
+
+class TestAnUnreadableManifestIsNotAnAbsentOne:
+    """
+    Round 99's HIGH. `_manifest_signature` mapped **every** `OSError` from its `lstat` to
+    `'absent'` -- permission denied, an I/O error, a descriptor exhaustion -- and
+    `resolve_quarantine` turns "the family directory is there and carries no manifest"
+    into `(None, True)`: a clean bill of health, then cached for the life of the run.
+
+    This is round 89's HIGH 2 one layer down. That round separated "authorship
+    unrecoverable" from "manifest never consulted"; this path collapsed "there is no
+    manifest" into "I could not look". A manifest that exists and cannot be read is an
+    unanswered question and takes the unanswered path, uncached.
+
+    The demonstration is a permission error rather than a deleted file, because a deleted
+    file genuinely is absent and would prove nothing about the collapse.
+    """
+
+    def setup_method(self):
+        _clear_gate_caches()
+        self.restore = []
+
+    def teardown_method(self):
+        for path in self.restore:
+            try:
+                os.chmod(path, 0o755)
+            except OSError:
+                pass
+        _clear_gate_caches()
+
+    def _unreadable_family(self, monkeypatch, tmp_path, label):
+        family = tmp_path / "kinetics" / "families" / label
+        family.mkdir(parents=True)
+        write_manifest(str(family))
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+        os.chmod(str(family), 0o000)
+        self.restore.append(str(family))
+        if os.access(os.path.join(str(family), QUARANTINE_FILENAME), os.F_OK):
+            pytest.skip("this process can read through a 0o000 directory (running as "
+                        "root?), so a permission error cannot be produced here")
+        return family
+
+    def test_a_manifest_that_cannot_be_examined_is_unanswered_not_clean(self, monkeypatch,
+                                                                        tmp_path):
+        label = "A_Family_Whose_Manifest_Cannot_Be_Read"
+        self._unreadable_family(monkeypatch, tmp_path, label)
+
+        assert resolve_quarantine(label) == (None, False), (
+            "a manifest that exists and could not be examined was reported as a family "
+            "carrying no manifest at all -- a clean bill of health handed out by the "
+            "check that failed")
+
+    def test_the_unreadable_answer_is_not_entered_into_the_cache(self, monkeypatch,
+                                                                 tmp_path):
+        """
+        An answer produced by a failure is not a property of the cache key.
+
+        Measured limit, stated because the round's brief claimed more: the wrong answer
+        did **not** in fact survive the condition clearing, because restoring the
+        permission moves the signature from `(True, None, 'absent')` to
+        `(True, <identity>, 'regular')` and misses the cache anyway. What is pinned here
+        is the narrower true thing -- the key is not written at all -- which is the same
+        rule round 95 arrived at for the loaded-family fallback.
+        """
+        from rmgpy.data.kinetics import quarantine as module
+
+        label = "A_Family_Readable_Again_Later"
+        family = self._unreadable_family(monkeypatch, tmp_path, label)
+
+        assert resolve_quarantine(label) == (None, False)
+        assert not [key for key in module._DISK_QUARANTINE_CACHE if key[1] == label], (
+            "the answer taken from a permission error was cached, under a key naming a "
+            "directory and a label -- neither of which is what produced it")
+
+        os.chmod(str(family), 0o755)
+        second = resolve_quarantine(label)
+        assert second[1] is True and second[0] is not None, (
+            "the manifest stayed invisible after it became readable")
+
+
+class TestTheSignatureNoticesAnEqualLengthEdit:
+    """
+    Round 99's cache-identity MEDIUM. The identity was `(mtime_ns, size, inode)`, and an
+    in-place edit of the same length with the mtime put back preserves all three -- so a
+    manifest whose `state` or `reason` changed kept answering with the old text for the
+    rest of the run.
+
+    `st_ctime_ns` closes it: the inode change time moves on any write and, unlike mtime,
+    no userspace call can set it back. It costs nothing -- the `lstat` is already taken.
+    Hashing the content would be stronger still and is deliberately not done: it turns
+    every lookup of every family into a file read, for a case ctime already covers
+    everywhere ctime is real.
+    """
+
+    def setup_method(self):
+        _clear_gate_caches()
+
+    def teardown_method(self):
+        _clear_gate_caches()
+
+    def test_an_in_place_edit_of_the_same_length_with_mtime_restored_is_seen(
+            self, monkeypatch, tmp_path):
+        label = "A_Family_Edited_In_Place"
+        family = tmp_path / "kinetics" / "families" / label
+        family.mkdir(parents=True)
+        manifest = family / QUARANTINE_FILENAME
+        before = MANIFEST.replace("a reason that must reach the error message",
+                                  "reason A -- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+        after = MANIFEST.replace("a reason that must reach the error message",
+                                 "reason B -- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+        assert len(before) == len(after), "the edit must not change the file's length"
+        manifest.write_text(before)
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+
+        first = resolve_quarantine(label)
+        assert first[0] is not None and first[0].reason.startswith("reason A")
+
+        stamps = os.stat(str(manifest))
+        with open(str(manifest), "r+") as handle:
+            handle.seek(0)
+            handle.write(after)
+        os.utime(str(manifest), ns=(stamps.st_atime_ns, stamps.st_mtime_ns))
+        repeat = os.stat(str(manifest))
+        assert (repeat.st_mtime_ns, repeat.st_size, repeat.st_ino) == (
+            stamps.st_mtime_ns, stamps.st_size, stamps.st_ino), (
+            "this test did not exercise the case it is named for: the edit moved one of "
+            "the three fields the old identity was built from")
+
+        second = resolve_quarantine(label)
+        assert second[0] is not None and second[0].reason.startswith("reason B"), (
+            "an edited manifest kept answering with its old text: the cache identity is "
+            "preserved by an equal-length in-place edit with the mtime put back")
+
+
+class TestTheAffectedSetCannotPassVacuously:
+    """
+    Round 99's third test-quality MEDIUM. `affected_entries` returns two lists, and every
+    assertion made about their contents is an `all(...)` -- which is true of nothing.
+    Neither branch of the enumeration had ever been driven to empty, so nothing showed
+    what the guard against an empty result is.
+    """
+
+    def _family(self, rules, training):
+        class _Depository:
+            def __init__(self, label, entries):
+                self.label = label
+                self.entries = entries
+
+        class _Rules:
+            def __init__(self, entries):
+                self.entries = entries
+
+        class _Family:
+            def __init__(self):
+                self.rules = _Rules(rules)
+                self.depositories = [_Depository("X/training", training)]
+
+        return _Family()
+
+    def _entry(self, data):
+        return Entry(index=1, label="e", data=data)
+
+    def test_a_family_with_no_matching_entries_enumerates_nothing(self, quarantine):
+        affected = quarantine.affected_entries(self._family({}, {}))
+        assert affected == {"rules": [], "training": []}
+        assert all(isinstance(e.data, Marcus)
+                   for e in affected["rules"] + affected["training"]), (
+            "this is the vacuous pass itself, asserted so it is on the record: `all()` "
+            "over the empty enumeration is true, which is why a count or a non-emptiness "
+            "check has to sit beside it")
+
+    def test_the_enumeration_is_selective_within_each_of_the_two_branches(self, quarantine):
+        matching = self._entry(make_marcus())
+        other = self._entry(Arrhenius(A=(1.0, "cm^3/(mol*s)"), n=0, Ea=(0, "kJ/mol")))
+        family = self._family({"n": [matching, other]}, {"a": matching, "b": other})
+        affected = quarantine.affected_entries(family)
+        assert len(affected["rules"]) == 1 and affected["rules"][0] is matching
+        assert len(affected["training"]) == 1 and affected["training"][0] is matching
+
+    def test_a_family_with_rules_but_no_training_depository_is_not_an_error(self, quarantine):
+        class _Family:
+            rules = None
+            depositories = []
+
+        affected = quarantine.affected_entries(_Family())
+        assert affected == {"rules": [], "training": []}
+
+
+class TestTheCallSiteFieldIsNamedForWhatItChecks:
+    """
+    Round 99's rename. Five rounds have each produced one more construct that satisfies
+    `requiresEngineCallSites` while gating nothing -- `math.pi`, import-without-call, a
+    dead `if False:`, `False and check_quarantine(r)`, and a locally shadowed name. The
+    ruling was not to strengthen it a sixth time but to make the field say what it does:
+    a static syntactic presence check.
+
+    The old spelling stays readable on purpose. Manifests declaring it ship in database
+    repositories this engine change may not edit, and a renamed field that silently stops
+    being read disarms a pin nobody is watching -- which is the failure this whole field
+    group exists to prevent. Declaring both is refused rather than resolved by guessing.
+    """
+
+    def setup_method(self):
+        _clear_gate_caches()
+
+    def teardown_method(self):
+        _clear_gate_caches()
+
+    def _manifest(self, tmp_path, field):
+        return write_manifest(
+            str(tmp_path),
+            MANIFEST
+            + 'requiresEngineModule = "rmgpy.data.kinetics.quarantine"\n'
+            + 'requiresEngineSymbol = "check_quarantine"\n'
+            + '{0} = ("rmgpy.rmg.model",)\n'.format(field))
+
+    def test_the_new_spelling_is_honoured(self, tmp_path):
+        path = self._manifest(tmp_path, "requiresEngineCallsInSource")
+        assert load_family_quarantine("Fake_Quarantined_Family", path) is not None
+
+    def test_the_new_spelling_still_refuses_a_module_that_never_calls_the_gate(
+            self, tmp_path, monkeypatch):
+        """The rename must not have turned the check into a no-op under its new name."""
+        module_dir = tmp_path / "fake_site"
+        module_dir.mkdir()
+        (module_dir / "binds_but_never_calls.py").write_text(
+            "from rmgpy.data.kinetics.quarantine import check_quarantine\n")
+        monkeypatch.syspath_prepend(str(module_dir))
+
+        manifest_dir = tmp_path / "manifest"
+        manifest_dir.mkdir()
+        write_manifest(str(manifest_dir),
+                       MANIFEST
+                       + 'requiresEngineModule = "rmgpy.data.kinetics.quarantine"\n'
+                       + 'requiresEngineSymbol = "check_quarantine"\n'
+                       + 'requiresEngineCallsInSource = ("binds_but_never_calls",)\n')
+        with pytest.raises(DatabaseError) as exc:
+            load_family_quarantine("Fake_Quarantined_Family", str(manifest_dir))
+        assert "never calls it" in str(exc.value)
+
+    def test_the_old_spelling_is_still_honoured_and_says_so(self, tmp_path, caplog):
+        path = self._manifest(tmp_path, "requiresEngineCallSites")
+        with caplog.at_level(logging.WARNING):
+            assert load_family_quarantine("Fake_Quarantined_Family", path) is not None
+        assert "requiresEngineCallsInSource" in caplog.text, (
+            "a manifest using the old spelling was read without being told the new one; "
+            "a rename nobody is informed of is a rename that never happens in the data")
+
+    def test_the_old_spelling_still_refuses_what_it_always_refused(self, tmp_path):
+        """The alias must carry the check, not merely be accepted."""
+        body = (MANIFEST
+                + 'requiresEngineModule = "rmgpy.data.kinetics.quarantine"\n'
+                + 'requiresEngineSymbol = "check_quarantine"\n'
+                + 'requiresEngineCallSites = ("os",)\n')
+        with pytest.raises(DatabaseError) as exc:
+            load_family_quarantine("Fake_Quarantined_Family",
+                                   write_manifest(str(tmp_path), body))
+        assert "wired into" in str(exc.value)
+
+    def test_declaring_both_spellings_is_refused(self, tmp_path):
+        body = (MANIFEST
+                + 'requiresEngineModule = "rmgpy.data.kinetics.quarantine"\n'
+                + 'requiresEngineSymbol = "check_quarantine"\n'
+                + 'requiresEngineCallsInSource = ("rmgpy.rmg.model",)\n'
+                + 'requiresEngineCallSites = ("rmgpy.rmg.model",)\n')
+        with pytest.raises(DatabaseError) as exc:
+            load_family_quarantine("Fake_Quarantined_Family",
+                                   write_manifest(str(tmp_path), body))
+        assert "declare one" in str(exc.value)
+
+    def test_the_documentation_of_the_field_states_what_it_actually_checks(self):
+        """
+        Asserted positively, on the words that must be PRESENT.
+
+        Round 95 pinned the sibling docstring by checking that a false phrase was absent,
+        and the corrected text contained that phrase inside the sentence disowning it --
+        an assertion satisfied for the wrong reason. The content wanted here is a name
+        that matches the check and a sentence that states its limit, so that is what is
+        asserted.
+        """
+        from rmgpy.data.kinetics.quarantine import _check_engine_requirements
+
+        text = _check_engine_requirements.__doc__
+        assert "requiresEngineCallsInSource" in text
+        assert "static" in text and "syntactic" in text, (
+            "the field's own documentation must say it is a static syntactic check; "
+            "four rounds of overstatement came from prose that implied more")
+        for absent in ("executes", "dominates", "arguments", "propagates"):
+            assert absent in text, (
+                "the documentation must enumerate what the check does NOT verify -- it "
+                "does not mention {0!r}".format(absent))

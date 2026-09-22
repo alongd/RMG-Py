@@ -1,0 +1,69 @@
+
+[REPRODUCED] HIGH: a family directory swapped between the containment check and the open is followed, and the manifest outside the database is executed
+    resolve_quarantine('A_Family_Swapped_Under_The_Check') -> (KineticsQuarantine, True); reason = 'EXECUTED_FROM_OUTSIDE_THE_DATABASE_VIA_RACE'
+    the file that would have been executed is /tmp/claude-1000/round99-toctou-_1csn1iw/outside_the_database/quarantine.py
+    the database root it must have come from is /tmp/claude-1000/round99-toctou-_1csn1iw/race
+    the swap fired inside the containment check: True
+
+[REPRODUCED] HIGH: a manifest that exists and cannot be examined is reported as absent, which is a clean bill of health, and is then cached
+    with the family directory unreadable : resolve_quarantine -> (None, True)
+                          readable again : resolve_quarantine -> (KineticsQuarantine, True)
+    the first answer says the family carries no manifest; the manifest is there
+
+[REPRODUCED] HIGH (second half): the answer taken from a failure is entered into the cache, under a key that says nothing about the failure that produced it
+    _DISK_QUARANTINE_CACHE[('/tmp/claude-1000/round99-toctou-_1csn1iw/unreadable', 'A_Family_Whose_Manifest_Cannot_Be_Read')] = ((True, None, 'absent'), (None, True))
+
+[NOTED, not a finding] the cached clean answer does NOT survive the condition clearing
+    after the permission was restored: resolve_quarantine -> (KineticsQuarantine, True). The review said the clean answer is 'cached for the rest of the run'; measured, it is not. Restoring the permission moves the signature from (True, None, 'absent') to (True, <identity>, 'regular'), which misses the cache and forces a re-read. The entry is still wrong while the error lasts, and is still removed here on the principle that an answer produced by a failure is not a property of the key -- but the permanence in the review does not reproduce.
+
+[REPRODUCED] MEDIUM: an equal-length in-place edit with the mtime restored leaves the cached answer in place, so an edited manifest never takes effect
+    before the edit : reason = 'reason A -- xxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+    after the edit  : reason = 'reason A -- xxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+    (mtime_ns, size, inode) identical across the edit; st_ctime_ns moved
+
+[REPRODUCED] MEDIUM: a manifest pinning the gate under the field's corrected name is not read, so the pin is inert
+    load_family_quarantine with requiresEngineCallsInSource = ("os",) -> loaded, unrefused
+    `os` does not bind the gate, so this must be refused
+
+[HOLDS] control: the old spelling of the field still refuses a module that binds no gate
+    load_family_quarantine with requiresEngineCallSites = ("os",) -> refused
+
+[HOLDS] control: a manifest pinning the real call site still loads
+    load_family_quarantine -> loaded
+
+[NOTED, not a finding] the fifth construct that satisfies the call check while gating nothing
+    a local `check_quarantine = lambda: None` shadowing the import, then called: accepted. Not repaired -- the ruling was to rename the field, not to narrow the check again.
+
+[HOLDS] control: an ordinary label still resolves to its manifest and the manifest is read
+    resolve_quarantine('An_Ordinary_Family') -> (KineticsQuarantine, True)
+
+[HOLDS] control: a family that carries no manifest is still ANSWERED, not unanswered
+    resolve_quarantine('A_Family_With_No_Manifest') -> (None, True)
+
+[HOLDS] control: a family DIRECTORY symlinked out of the database is refused, unanswered
+    resolve_quarantine('A_Family_Directory_That_Points_Out') -> (None, False)
+
+[HOLDS] control: a manifest FILE symlinked out of the database is refused, unanswered
+    resolve_quarantine('A_Family_With_A_Symlinked_Manifest') -> (None, False)
+
+[HOLDS] control: a label carrying a NUL byte is refused by name, with nothing raised
+    resolve_quarantine('A_Family\x00.py') -> (None, False)
+
+[HOLDS] control: a label carrying a newline is refused by name, and its manifest is not read
+    resolve_quarantine('A_Family\nOhNo') -> (None, False); the directory exists and holds a manifest
+
+[NOTED, not a finding] a family directory symlinked to a sibling INSIDE the database
+    resolve_quarantine('A_Family_Linked_To_Its_Sibling') -> (KineticsQuarantine, True); reason = 'read through an in-tree symlink'
+
+[NOTED, not a finding] a database root that is itself a symlink still resolves
+    resolve_quarantine('A_Family_Under_A_Symlinked_Root') -> (KineticsQuarantine, True); reason = 'reached under a linked root'
+
+==============================================================================
+findings reproduced : 5 of 5
+controls holding    : 8 of 8
+noted, not findings : 4
+  REPRODUCED  HIGH: a family directory swapped between the containment check and the open is followed, and the manifest outside the database is executed
+  REPRODUCED  HIGH: a manifest that exists and cannot be examined is reported as absent, which is a clean bill of health, and is then cached
+  REPRODUCED  HIGH (second half): the answer taken from a failure is entered into the cache, under a key that says nothing about the failure that produced it
+  REPRODUCED  MEDIUM: an equal-length in-place edit with the mtime restored leaves the cached answer in place, so an edited manifest never takes effect
+  REPRODUCED  MEDIUM: a manifest pinning the gate under the field's corrected name is not read, so the pin is inert
