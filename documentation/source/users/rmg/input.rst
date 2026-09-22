@@ -500,6 +500,16 @@ Two things about it are worth knowing before you use it:
   once the integration has run for longer than the fastest relaxation time present. A model
   that carries no flux at all never arms; such a run terminates, but reports that no steady
   state was demonstrated, because a system that never started has converged to nothing.
+* **A discharge igniting from an** ``ionisationSource`` **is recognised even though its slope
+  never reaches** :math:`R = 1`. An electron population rising from zero to ``S/nu_wall`` is a
+  *saturating* exponential, whose log-log slope :math:`\nu t/(e^{\nu t}-1)` is bounded by 1 and
+  approaches it only as :math:`t \to 0` -- the opposite shape from a decaying transient -- and
+  the electron itself saturates far below the integrator's mole floor, so the generic residual
+  reads only the (flat) neutrals. The reactor therefore supplies the electron's own slope, so
+  firing waits until it has genuinely saturated to ``S/nu_wall``, and arms the criterion once
+  ``t * nu_wall >= 1`` -- the same "past the fastest relaxation time" standard, evaluated from
+  the relaxation time ``1/nu_wall`` the wall model knows. This never arms a discharge that never
+  started: a deck with no source has no such channel and is still reported as not a steady state.
 
 The run logs the residual it terminated at, so "we integrated to steady state, by this
 criterion, and here is the residual" is a claim a reader can check.
@@ -743,7 +753,12 @@ The remaining keywords are all optional:
   of large ionisation and recombination fluxes.  It requires a charge-neutral initial composition
   and **refuses a non-neutral one** -- with the electron carried algebraically, a non-neutral
   state is not something the equations can represent.  ``chargeBalanceSpecies`` is the easy way to
-  satisfy it.  Pass a genuine boolean, not a string: ``'False'`` is a non-empty string and would be
+  satisfy it.  Ignition from **exactly zero** charged particles works in this mode too, given an
+  ``ionisationSource``: the algebraic charge row admits a zero initial inventory, and while the
+  whole charged inventory is still below the integrator's absolute tolerance the quasineutrality
+  check stands down -- at that scale the row is enforced to an absolute accuracy and a *relative*
+  imbalance would measure the solver's noise, not a physical charge separation.  Once the inventory
+  clears that resolution the check resumes with full force.  Pass a genuine boolean, not a string: ``'False'`` is a non-empty string and would be
   truthy, so a boolean-like string is parsed by value and any other string is refused rather than
   silently enabling the mode.  Anything that is neither a boolean, ``None``, nor a boolean-like
   string -- a number such as ``2`` or ``0.5``, ``NaN``, an object, an empty list -- is likewise
@@ -769,8 +784,18 @@ The remaining keywords are all optional:
 	the wall -- the model refuses a core that carries an anion), a magnetised plasma, or any regime
 	where the sheath is a large fraction of the gap.  The model also assumes a single dominant
 	singly-charged cation and refuses a second ion species or a multiply-charged one, whose mobility
-	the single ``ionReducedMobility`` cannot represent.  The ``maxIonisationDegree`` ceiling is the
-	one edge the code enforces numerically; the regime limits above are the user's to respect.
+	the single ``ionReducedMobility`` cannot represent.  It likewise assumes a **single bath gas**:
+	``n_neutral`` in ``mu_i = ionReducedMobility * mobilityReferenceDensity / n_neutral`` is the
+	*summed* number density of all neutral heavy species, so the one reduced mobility is applied to
+	the whole neutral gas as if it were the reference bath.  That is exact for an electronic ground
+	state and its metastables (Ar and Ar\* share a heavy skeleton and scatter the ion identically),
+	and an **approximation** for a genuine mixture of chemically distinct neutrals (Ar with an He
+	diluent, or an isomeric co-species): the true mobility is composition-weighted (Blanc's law),
+	which needs a reduced mobility *per* bath gas that this model does not carry.  Such a mixture is
+	**not refused** -- doing so would forbid every multi-species plasma, including the inert-diluent
+	and isomeric-neutral cases the wall is built to handle -- but it emits a warning naming the gases
+	and the approximation.  The ``maxIonisationDegree`` ceiling is the one edge the code enforces
+	numerically; the regime limits above are the user's to respect.
 
 .. _simulatortolerances:
 

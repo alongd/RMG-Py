@@ -1369,9 +1369,20 @@ cdef class ReactionSystem(DASx):
             # the residual it got to whatever order the criteria were declared in.
             if steady_state_terms:
                 if steady_state_prev_y is not None:
+                    # A reactor may resolve a state variable BELOW the mole floor (a plasma
+                    # electron seeded from zero by an external source) that the generic
+                    # residual cannot see, and whose bounded saturating slope never reaches
+                    # the R>=1 arm. Fold in that channel's residual and let it arm from the
+                    # reactor's known relaxation time. Both default to none/False, so every
+                    # ordinary reactor is unchanged.
+                    ss_external_residual = self.steady_state_external_residual(
+                        self.t, y_core_species, steady_state_prev_t, steady_state_prev_y)
+                    ss_external_armed = self.steady_state_external_armed(self.t, y_core_species)
                     for term in steady_state_terms:
                         if term.update(y_core_species, self.t, steady_state_prev_y,
-                                       steady_state_prev_t, atol, core_species):
+                                       steady_state_prev_t, atol, core_species,
+                                       external_residual=ss_external_residual,
+                                       external_armed=ss_external_armed):
                             steady_state_satisfied = True
                 if not steady_state_satisfied:
                     steady_state_prev_y = y_core_species.copy()
@@ -1528,6 +1539,26 @@ cdef class ReactionSystem(DASx):
         change?" -- rather than about its chemistry diagnostic alone.
         """
         return 0.0
+
+    cpdef double steady_state_external_residual(self, double t_now, np.ndarray y_now,
+                                                double t_prev, np.ndarray y_prev):
+        """Steady-state residual of a state variable the reactor resolves BELOW the
+        integrator's mole floor, which :class:`TerminationSteadyState` therefore cannot see
+        (default: none, ``nan``).
+
+        A :class:`PlasmaReactor` whose electron is seeded from zero by an external source
+        saturates far under ``atol`` yet is meaningfully tracked; it overrides this to report
+        the electron's own slope, so the criterion fires when the electron converges rather
+        than reading only the inert neutrals.
+        """
+        return float('nan')
+
+    cpdef bint steady_state_external_armed(self, double t_now, np.ndarray y_now):
+        """Whether an externally-driven channel has passed its known relaxation time, so the
+        steady-state criterion may arm even though its bounded log-log slope never reaches
+        the generic ``R >= 1`` (default: no).
+        """
+        return False
 
     cpdef log_rates(self, double char_rate, object species, double species_rate, double max_dif_ln_accum_num, object network,
                     double network_rate):

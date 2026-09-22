@@ -157,7 +157,8 @@ class TerminationSteadyState:
         self.residual = float('nan')
         self.worst_label = None
 
-    def update(self, y_now, t_now, y_prev, t_prev, floor, labels=None):
+    def update(self, y_now, t_now, y_prev, t_prev, floor, labels=None,
+               external_residual=float('nan'), external_armed=False):
         """
         Fold one solver step into the criterion and report whether it is now satisfied.
 
@@ -167,11 +168,33 @@ class TerminationSteadyState:
         the DSL's own currency, and immune to the drift in total moles that a
         two-temperature equation of state produces without any chemistry happening.
 
+        `external_residual`/`external_armed` carry a channel this criterion cannot see on
+        its own: a state variable the reactor resolves BELOW `floor`. A plasma electron
+        seeded from zero by an external source saturates far under ``atol``, so
+        :meth:`compute_residual` (which excludes sub-floor species) reads only the inert
+        neutrals and would fire at ignition instead of at saturation. The reactor passes the
+        electron's own slope as `external_residual` -- folded into the residual by MAX, so
+        firing waits for it to go flat -- and `external_armed` to arm the criterion from the
+        reactor's known relaxation time, since a saturating-from-zero slope is bounded by 1
+        and never reaches the generic ``R >= 1`` arm. Both default to none/False, so an
+        ordinary reactor is unaffected.
+
         Returns True only if armed and the flat condition has held for `window` steps.
         """
         r, self.worst_label = self.compute_residual(y_now, t_now, y_prev, t_prev, floor,
                                                     labels=labels)
+        # Fold in the reactor's sub-floor channel by MAX: the composition is settled only
+        # when the slowest of everything -- neutrals AND the invisible electron -- is flat.
+        if np.isfinite(external_residual):
+            if not np.isfinite(r) or external_residual > r:
+                r = external_residual
+                self.worst_label = '<external channel>'
         self.residual = r
+        # An externally-driven channel arms on the reactor's known relaxation time (t/tau),
+        # independent of the empirical slope, which for a saturating-from-zero rise never
+        # reaches 1. The latch persists once set.
+        if external_armed:
+            self.armed = True
         if not np.isfinite(r):
             # Not evaluable (first step, zero/degenerate time interval, or no live
             # species yet): no information either way, so do not advance the streak and
