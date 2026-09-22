@@ -1,0 +1,29 @@
+INFO:root:At time 1.0000e-03 s, reached target termination time.
+INFO:root:At time 1.0000e-04 s, reached target termination time.
+=== HIGH 1: external source cannot ignite neutral gas (zero e-, source declared) ===
+  GREEN: zero-electron deck WITH a source integrates via simulate()
+
+=== HIGH 2: neutral floor is extensive (history-dependent), gating an intensive law ===
+  neutral moles=1.0e-07 mol, normal density n_neutral=1.6192e+23 m^-3
+  nu_wall=1.851660e+02  unclamped closed-form=1.851660e+02  clamped=False
+  check_wall_support verdict=accept
+  GREEN: judged on density — nu_wall unclamped and the state accepted
+
+=== MEDIUM 1a: non-finite nu_wall marked wall_flux 'available' ===
+  wall_flux finite=False, availability='unavailable'
+  GREEN: non-finite wall_flux is not 'available'
+
+=== MEDIUM 1b: sub-underflow diffusion length raises a raw ZeroDivisionError ===
+  GREEN(refused by name): diffusion_length=1e-200 m is finite and positive, but its square is 0.0, which is not a us
+
+=== MEDIUM 2: _coerce_bool_flag still ends in bool(value) ===
+  int 2        -> refused
+  float 0.5    -> refused
+  float NaN    -> refused
+  object()     -> refused
+  empty list   -> refused
+  empty dict   -> refused
+  GREEN: uninterpretable values are refused
+
+=== LOW: base.pyx char_rate=0 makes 0/0 NaN rate ratios (wall-only run) ===
+  GREEN: wall-only simulate() produced no invalid/divide float error

@@ -346,6 +346,84 @@ residual-scratch fields at the accepted state -- harmless (the next residual ove
 consumer reads them), but it means the seam is not side-effect-free; a future refactor that reads
 `wall_loss_rates` between a step and the next residual would need to know that.
 
+## Round 90
+
+Two HIGH, two MEDIUM, a LOW. HIGH 1 is a feature that did not do the thing it exists for; the rest are
+the round-83/88 defect classes again -- a guard reading a quantity adjacent to the one the physics
+governs, and an availability flag less sceptical than the number it vouches for.
+
+| site | read (defect) | governs (fix) |
+|------|---------------|---------------|
+| electron seed (`_validate_electron_state`, `set_initial_conditions`) | "n_e must be strictly positive" -- always | n_e may be **exactly zero when a zeroth-order `ionisation_source` is declared**: that source seeds the first electrons and the discharge ignites from neutral gas. Without a source the only production is n_e-proportional chemistry, so zero is a fixed point -- still refused. |
+| neutral floor (`compute_nu_wall`, `check_wall_support`, `jacobian`) | neutral **moles** ≤ 1e-6·(initial moles) -- extensive, history-dependent | neutral **number density** ≤ a fixed fraction of the reference density -- intensive, inventory-independent |
+| `wall_flux` availability (`_latch_wall_diagnostics`) | marked `available` unconditionally | `available` only when the flux is finite |
+| `diffusion_length` (constructor) | finite and positive | its **square** must also be usable -- a sub-underflow Λ (Λ²→0) is refused by name, not left to raise a raw `ZeroDivisionError` mid-solve |
+| `_coerce_bool_flag` | ended in `bool(value)` -- coerces any type by truthiness | refuses anything that is not a bool, `None`, or a recognised boolean string |
+| rate ratios (`base.pyx`) | `core/edge/network_rates / char_rate` with `char_rate=0` on a wall-only run → 0/0 NaN | divide by 1.0 when `char_rate==0`; the ratios stay chemistry-relative (only the inert/termination gates read the total) |
+
+**HIGH 1 -- the external source could not ignite neutral gas.** `ionisationSource` exists so a discharge
+starts from a declared physical mechanism rather than a numerical seed, but two guards (the
+initial-composition check and the packed-state check) demanded a strictly positive electron with no
+exception for a declared source. Every source test in the suite carried a seed, so the advertised path
+was untested *and* unreachable, and the docs claimed an ignition the code refused. **Decision (argued,
+not silent): admit exactly zero electrons when a strictly positive `ionisation_source` is present;
+keep the strict-positive requirement otherwise.** The discriminator is whether a zeroth-order electron
+production term exists: the source rate does not depend on n_e, so `dn_e/dt > 0` at n_e = 0 and the
+state leaves the origin; the gas-phase ionisation is ∝ n_e, so without a source n_e = 0 is a genuine
+fixed point. Both guards were relaxed in lockstep; the acceptance is a zero-electron deck with a source
+integrating through `simulate()` (`round90_after.log`, HIGH 1 GREEN), and `input.rst` now states the
+rule in the same commit.
+
+**HIGH 2 -- the neutral floor was extensive, gating an intensive law.** `nu_wall ∝ 1/n_neutral`, a number
+**density**, but the floor was `1e-6·(initial neutral moles)`. Round 74 found a pumping wall could
+deplete inventory below the floor; round 83 made the validator refuse that state -- but the refusal
+inherited the floor's wrong dimension, so *acceptance depended on how the deck got there*. The reactor
+is isobaric, so the neutral density is pinned near `P/kT` regardless of how many moles remain: the
+reviewer's depleting run held `n_neutral ≈ 1.6e23 m⁻³` the whole way down while the *moles* fell to the
+floor and were refused, and `nu_wall` differed 10× (18.5 vs 185) across that history boundary for one
+intensive state. Fix: the floor is a **density**, a fixed fraction (`1e-10`) of the mobility reference
+density -- intensive, inventory-independent, far below any density an ambipolar-diffusion discharge is
+run at. Consequence carried through: pinning the density makes `nu_wall` a *constant* on the clamped
+branch (no V dependence, unlike the old moles clamp), so the Jacobian drops **both** the `1/y_neutral`
+and the `dV/V` terms there, not just the first -- verified by a full-matrix finite-difference at a
+below-floor state. The physical collisionless-transition floor (mean free path ~ Λ) is M9/sheath scope,
+named not implemented. Acceptance: a small-moles/normal-density state is accepted with `nu_wall`
+unclamped, and the floor is provably independent of the initial inventory (two decks, identical floor).
+
+**MEDIUM -- availability honesty and strict coercion.** (a) An extreme mobility makes `nu_wall`, hence
+`wall_flux`, non-finite, yet it was marked `available`; the flag now reads `unavailable` unless the
+flux is finite (the round-88 lesson applied to a second field). A sub-underflow diffusion length
+(Λ=1e-200, Λ²→0) raised a raw `ZeroDivisionError` from the callback; it is now refused by name at
+construction. (b) `_coerce_bool_flag` ended in `bool(value)`, so `2`, `0.5`, `NaN`, `object()` enabled
+quasineutral mode and `[]`/`{}` disabled it; it now refuses anything not a bool, `None`, or a boolean
+string.
+
+**LOW -- a char_rate=0 divide.** `base.pyx` builds rate ratios by dividing by the *chemistry* `char_rate`;
+on a supported wall-only run every core rate is exactly 0, so `char_rate=0` and the ratios were 0/0
+NaN with an `invalid value encountered in divide` warning. The consumers were enumerated in the code:
+the ratios (and the branching numbers) are chemistry-relative enlargement signals and keep reading
+`char_rate`; only the inert/termination gates read the total (`total_char_rate`, round 88). The 0/0 is
+guarded by dividing by 1.0 when `char_rate==0`, so no NaN is laundered through `argmax`.
+
+Closed, each reproduced RED first (`evidence/round90_before.log`, 6 red on the built module) then GREEN
+on the rebuilt module (`round90_after.log`). Suites: 78 wall / 57 plasma / 101 input green, and the
+full reactor set (steady-state, zero-flux, base, simple, liquid, surface, reverse-reconstruction) --
+301 passed, 1 skipped -- unbroken by the `base.pyx` change. Charge and heavy-atom conservation
+re-measured with the metastable present at γ ∈ {1, 0.5, 0} (`round90_conservation.log`): net wall
+current exactly 0, heavy-atom loss exactly `−(1−γ)·(ion loss)`, `nu_wall=185.17` cross-checking the
+reviewer's 185.15.
+
+**What I could NOT reach.** The neutral-density floor's *value* (`1e-10·n_ref`) is a numerical floor, not
+a physical-validity edge: the rigorous floor is the collisionless transition (ion mean free path ≈ Λ),
+which needs a momentum-transfer cross-section and is M9/sheath scope -- named, deliberately not
+invented here. Because the reactor is isobaric, that density floor is effectively unreachable in normal
+operation (density is pinned at `P/kT` unless the gas is driven over the α ceiling, which is separately
+refused), so the `check_wall_support` density-floor refusal is now a guard against trial/hand-built
+degeneracy rather than a state a production run reaches -- correct, but it means the refusal path is not
+exercised by an end-to-end run, only by a constructed below-floor state. HIGH 1's zero-electron path is
+proven on the integrated-electron formulation; the algebraic (`quasineutralElectron=True`) formulation
+admits zero identically but was not driven end-to-end from zero.
+
 ## Files touched
 
 `rmgpy/solver/plasma.pyx`, `rmgpy/solver/base.pyx`, `rmgpy/solver/base.pxd`, `rmgpy/rmg/input.py`,
