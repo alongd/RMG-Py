@@ -505,10 +505,103 @@ nonzero at any scale.
   composition this is the instantaneous relaxation time, which is the right local reading but not a global
   guarantee about a wildly non-stationary `nu_wall`.
 
+## Round 96: the steady-state report was unsound in both directions — two HIGH, three MEDIUM, one LOW
+
+Round 93's physics was right — ignition works and the saturated state lands on `n_e = S/ν_wall` to
+seven figures — but the machinery that **reports** steadiness failed in *both* directions, and it
+was round 93's own additions that broke it. Every finding was reproduced RED on the built module
+first (`evidence/round96_before.log`: 6 failing) then GREEN (`round96_after.log`), one rebuild
+(`round96_build.log`, `.so` proven by value: `available-single-bath-approximation`, `run-time worst
+case`, `volumetric molar injection`, `not still rising`).
+
+**The one sentence the criterion now answers, in code (`termination.py`):** *the steady-state
+criterion measures the COMPOSITION — the mole fraction of every resolved state variable and its
+log-log slope `R = |d ln x / d ln t|` — and every residual folded into it, generic (neutrals) and
+external (the sub-floor electron), is that same intensive slope; arming and flatness are evaluated
+per channel on it.* Three of this branch's HIGHs have now been extensive/intensive mismatches (R90
+floor on initial *moles*, R93 floor on *mobility parameterisation*, R96 external residual on
+*electron moles*); stating the quantity and making every residual measure it is the through-line.
+
+**HIGH 1 — a false positive (the failure arming existed to prevent).** `steady_state_external_armed`
+set the *global* `armed` once `t·ν_wall ≥ 1`, so a slow neutral reaction that had not run through
+its own timescale was declared stationary the instant the electron saturated. Probed
+(`evidence/round96_discriminator.log`): a deck with a slow `Ar → X` drain (`k=1e-12`, X seeded at
+1e-2, filling on a ~1e12 s timescale) reported `steady=True` at 9 s while X's generic residual was
+`6.4e-10` and **rising** (`1e-11 → 2e-11 → … → 6.4e-10`, doubling with t). Arming is **per quantity**:
+the electron's arm vouches only for the electron and may license the system only while the generic
+residual is **not still rising** toward its own `R ≥ 1` arm. This is threshold-free — the
+discriminator is the *sign of the trend*, not a magnitude floor between the two decks (which would
+be exactly the tuned constant the reviewer warned against): the inert control's generic residual is
+`0.0` (flat → licenses), the drifting neutral's is rising (→ blocks). Acceptance both ways in one
+build: the drift deck reports NOT steady, the no-slow-chemistry control still reports steady.
+
+**HIGH 2 — the converse, a valid stationary composition that never terminated.** The generic residual
+is on mole *fractions*; `steady_state_external_residual` measured electron *moles*. On a pumped
+(`γ=0`) discharge whose fractions go stationary while the absolute inventory shrinks, the moles
+residual reads large motion where the fraction is flat and poisons the MAX fold, so the backstop
+fired `steady=False` on a stationary state. Fixed by measuring `x_e = n_e / Σy`. Where the neutral
+bath is fixed (isobaric) the two coincide, so round 93's saturating-from-zero recognition is
+unchanged; only the drifting-inventory case is corrected.
+
+**MEDIUM 1 — the guard evaluated the wrong expression.** The construction check computed `ν_wall` at
+the reference density (where `mu_i = mu0`), but run time forms `mu_i = mu0·Nref/n_neutral`. `mu0=1e20`
+with `Nref=1e308` leaves `mu0` finite while `mu0·Nref = inf`, so `ν_wall` is infinite for every real
+state yet the reference-density proxy read finite and admitted it. Now evaluated at the exact run-time
+expression's worst case (the neutral-density floor, where `mu_i` is largest).
+
+**MEDIUM 2 — a warning is not an availability state.** The reviewer rejected round 93's warn-only. A
+multi-skeleton neutral bath (Ar+He) is still not refused — refusing forbids every multi-species
+plasma, the premise the round-93 probe inverted — but the single-bath approximation is now recorded
+as a queryable **availability state**: `wall_energy_availability['wall_flux']` and the electron-energy
+flux become `available-single-bath-approximation` rather than plain `available`, so a consumer reading
+the latched fluxes sees the approximation without a log line. The downgrade touches only fields built
+from `ν_wall`, and only where they were otherwise `available` — it never launders a genuinely
+`unavailable` (NaN) field into a usable one. A single-skeleton bath (Ar, or Ar and its metastables)
+stays `available`. The warning is kept for the human.
+
+**MEDIUM 3 — persistence was a step count, not physical time.** The window counted three accepted
+solver steps, so persistence depended on the integrator's step controller. Now the flat run must also
+span at least one e-fold in time (`ln(t_now/t_flat_start) ≥ 1`), the native scale of a `d/d ln t`
+criterion. A residual of *exactly* zero is exempt: a structurally frozen composition is unambiguously
+steady, and requiring the extra span there would push a fully-pumped (`γ=0`) discharge — whose steady
+state is `n_e → 0` — past the mole floor into solver-noise-negative territory that the wall's domain
+guard then refuses. (That exemption is what keeps `test_wall_only_deck_integrates_past_t0` green.)
+
+**LOW — a subnormal source that injects nothing.** A positive but subnormal `ionisation_source`
+(`5e-324`, `1e-320`) — or any value whose volumetric molar rate `source/Na` underflows — read as
+`source > 0` and switched off the zero-electron ignition guard while `source·V/Na` injected exactly
+zero. Refused at construction; the threshold is on `source/Na` (the per-volume molar rate), so the
+normal-but-underflowing sibling (`1e-290`) is caught too.
+
+**Test-quality (both found true).** `test_reduce_enumerates_every_constructor_parameter` was a lexical
+surrogate — it searched the whole `__reduce__` body, so a parameter named only in a comment or the
+docstring would satisfy it; it now strips the docstring and comments and searches only the returned
+reconstruction tuple. And the blanket "every red state here is banked" header over-claimed: it is now
+scoped to the defect-reproduction tests, with the invariant/property checks (closed-form re-derivation,
+conservation, scaling, parameterisation invariance) named as asserting a positive property directly
+rather than reproducing a defect.
+
+### What I could NOT reach / chose not to do (Round 96)
+
+- **The HIGH-1/HIGH-2 discriminator is trend-based, and a trend on a noisy residual is a heuristic.**
+  A neutral whose residual is monotonically rising is caught; one that has already peaked and is
+  decaying through the sub-tolerance band is treated as settled (correctly). A pathological neutral
+  whose residual oscillated across tolerance without a clean trend is not something I exercised. The
+  probe showed the real decks are cleanly monotone (rising) or flat/zero, so the heuristic holds for
+  them; I did not prove it for an adversarially-constructed non-monotone residual.
+- **MEDIUM 2 is still a documented approximation, not a physics fix** — the availability state records
+  the approximation rather than removing it; a composition-weighted (Blanc's-law) mobility needs
+  per-gas transport data the model does not carry, and remains out of scope.
+- **MEDIUM 3's e-fold span is a natural unit, not a tuned one, but it does shift termination times.**
+  Ordinary reactors now terminate up to one e-fold later than before (verified: the full solver suite
+  stays green). The zero-residual exemption is what prevents that shift from colliding with the
+  electron-negativity guard on vanishing-species decks; a deck whose steady state is a species reaching
+  a small-but-nonzero floor rather than exactly zero was not separately exercised.
+
 ## Files touched
 
 `rmgpy/solver/plasma.pyx`, `rmgpy/solver/base.pyx`, `rmgpy/solver/base.pxd`,
 `rmgpy/solver/termination.py`, `rmgpy/rmg/input.py`, `documentation/source/users/rmg/input.rst`,
-`test/rmgpy/solver/plasmaWallTest.py`, and this `docs/i246-ambipolar-wall-operator/` directory. No file
-under `rmgpy/molecule/`, `rmgpy/kinetics/`, `rmgpy/data/` or the database was touched. Nothing pushed,
-merged or rebased.
+`test/rmgpy/solver/plasmaWallTest.py`, `test/rmgpy/solver/steadyStateTest.py`, and this
+`docs/i246-ambipolar-wall-operator/` directory. No file under `rmgpy/molecule/`, `rmgpy/kinetics/`,
+`rmgpy/data/` or the database was touched. Nothing pushed, merged or rebased.
