@@ -425,16 +425,46 @@ cdef class NASA(HeatCapacityModel):
         """
         Return the cantera equivalent NasaPoly2 object from this NASA object.
         """
-        
+
         from cantera import NasaPoly2
 
         cdef np.ndarray[np.float64_t, ndim=1] coeffs
-        
+        cdef double t_low, t_high, t_int
+
         polys = self.polynomials
-        assert len(polys) == 2, "Cantera NasaPoly2 objects only accept 2 polynomials"
-        assert len(polys[0].coeffs) == 7 and len(polys[1].coeffs) == 7, "Cantera NasaPoly2 polynomials can only contain 7 coefficients."
-        
-        # In RMG's NASA object, the first polynoamial is low temperature, and the second is 
+        if len(polys) not in (1, 2):
+            assert False, "Cantera NasaPoly2 objects only accept 1 or 2 polynomials, got {0}".format(len(polys))
+        assert all(len(poly.coeffs) == 7 for poly in polys), "Cantera NasaPoly2 polynomials can only contain 7 coefficients."
+
+        if len(polys) == 1:
+            # Cantera's Python object API has no NasaPoly1 -- NasaPoly2 is the only
+            # object it exposes, and it is intrinsically two-range (a mid-point
+            # temperature plus a low-range and a high-range coefficient set). A
+            # NASA object holding a single polynomial over the whole interval --
+            # e.g. a monatomic species, whose constant heat capacity makes one
+            # range exact rather than merely adequate -- has no second set to
+            # give it. Duplicate the single polynomial's coefficients across both
+            # ranges instead: evaluating the same coefficients on [Tmin, Tint]
+            # and on [Tint, Tmax] reproduces the original function exactly, and
+            # enthalpy/entropy are continuous at the breakpoint because both
+            # sides ARE the same polynomial. Tint is thermodynamically
+            # irrelevant here; mirror chemkin.pyx's choice of 1000 K, the
+            # conventional breakpoint, falling back to the midpoint only when
+            # 1000 K is not strictly inside (Tmin, Tmax).
+            single = polys[0]
+            t_low = single.Tmin.value_si
+            t_high = single.Tmax.value_si
+            if t_low < 1000.0 < t_high:
+                t_int = 1000.0
+            else:
+                t_int = 0.5 * (t_low + t_high)
+            coeffs = np.zeros(15)
+            coeffs[0] = t_int
+            coeffs[1:8] = single.coeffs  # high-range coefficients (same as low)
+            coeffs[8:15] = single.coeffs  # low-range coefficients
+            return NasaPoly2(t_low, t_high, 10000.0, coeffs)
+
+        # In RMG's NASA object, the first polynoamial is low temperature, and the second is
         # high temperature
         coeffs = np.zeros(15)
         coeffs[0] = polys[0].Tmax.value_si # mid point temperature between two polynomials
