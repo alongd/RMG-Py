@@ -35,6 +35,7 @@ import warnings
 
 import rmgpy.data.thermo
 import rmgpy.util as util
+from rmgpy.data.base import saturate_for_estimation
 from rmgpy.species import Species
 from rmgpy.tools.data import GenericData
 from rmgpy.tools.plot import parse_csv_data, plot_sensitivity, ReactionSensitivityPlot, ThermoSensitivityPlot
@@ -517,8 +518,7 @@ class Uncertainty(object):
 
         molecule = species.molecule[0]
         assert molecule.is_radical(), "Method only valid for radicals."
-        saturated_struct = molecule.copy(deep=True)
-        saturated_struct.saturate_radicals()
+        saturated_struct, _added = saturate_for_estimation(molecule, 'thermodynamic uncertainty')
         for otherSpecies in self.species_list:
             if otherSpecies.is_isomorphic(saturated_struct):
                 return otherSpecies, False

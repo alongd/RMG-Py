@@ -289,6 +289,27 @@ class ReservoirStateError(Exception):
     pass
 
 
+class SaturatedStructureError(Exception):
+    """
+    An exception raised when a species cannot be estimated because its *saturated form* --
+    the structure an estimator builds by replacing every radical electron with a bond to a
+    hydrogen atom -- is not a structure any atom type describes.
+
+    Estimators that work by hydrogen bond increments (thermo, transport, solute data) build
+    that form as an intermediate. For an ordinary radical it is an ordinary molecule. For a
+    species whose radical electrons are not chemical valences -- an electronically excited
+    atom such as metastable argon, whose two unpaired electrons sit in an open shell rather
+    than in bonds -- the saturated form is electron-count-consistent and yet owned by no atom
+    type, and no group additivity estimate can be made from it.
+
+    Raised in place of the :class:`AtomTypeError` that the saturation itself would otherwise
+    throw, so that the message names the species, the saturated form and the remedy, instead
+    of leaving a modeller with an atom-type failure raised many frames below the call they
+    actually made.
+    """
+    pass
+
+
 class SettingsError(Exception):
     """
     An exception raised when dealing with settings.

@@ -46,7 +46,7 @@ from pysidt.utils import find_shortest_paths
 import rmgpy.constants as constants
 import rmgpy.molecule
 import rmgpy.quantity
-from rmgpy.data.base import Database, Entry, make_logic_node, DatabaseError
+from rmgpy.data.base import Database, Entry, make_logic_node, saturate_for_estimation, DatabaseError
 from rmgpy.ml.estimator import MLEstimator
 from rmgpy.molecule import Molecule, Bond, Group
 from rmgpy.species import Species
@@ -2243,8 +2243,7 @@ class ThermoDatabase(object):
         if not molecule.is_radical():
             raise ValueError("Method only valid for radicals.")
 
-        saturated_struct = molecule.copy(deep=True)
-        added = saturated_struct.saturate_radicals()
+        saturated_struct, added = saturate_for_estimation(molecule, 'thermodynamic data')
         saturated_struct.props['saturated'] = True
 
         # Get thermo estimate for saturated form of structure
