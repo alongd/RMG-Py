@@ -2022,6 +2022,16 @@ def write_kinetics_entry(reaction, species_list, verbose=True, java_library=Fals
             if reaction.kinetics.comment:
                 for line in reaction.kinetics.comment.split("\n"):
                     string += "! {0}\n".format(line)
+        # Every leaf becomes its own entry writing the same equation, so each one carries
+        # DUPLICATE whatever the wrapper's own answer was -- but only when there is more
+        # than one leaf. ``MultiArrhenius([one])`` and ``MultiPDepArrhenius([one])`` are
+        # accepted constructors; the "each leaf has a mate by construction" premise is
+        # false for them, and the single DUPLICATE line they produced made a deck that
+        # ck2yaml converts happily and Cantera then rejects with "No duplicate found for
+        # declared duplicate reaction number 0". A one-leaf wrapper falls back to the
+        # group answer this call was given, which is what an unwrapped reaction writing
+        # that equation would get.
+        leaf_duplicate = len(reaction.kinetics.arrhenius) > 1 or duplicate
         for kinetics in reaction.kinetics.arrhenius:
             if isinstance(reaction, LibraryReaction):
                 new_reaction = LibraryReaction(index=reaction.index,
@@ -2041,12 +2051,12 @@ def write_kinetics_entry(reaction, species_list, verbose=True, java_library=Fals
                                         reversible=reaction.reversible,
                                         kinetics=kinetics,
                                         electrons=reaction.electrons)
-            # Each leaf rate law becomes its own entry writing the same equation, so every
-            # one of them carries DUPLICATE regardless of the wrapper's own answer -- hence
-            # duplicate=False on the inner call and the unconditional line here.
+            # duplicate=False on the inner call because the DUPLICATE line for a leaf is
+            # written here, not by the recursion.
             string += write_kinetics_entry(new_reaction, species_list, verbose, java_library,
                                            commented, duplicate=False)
-            string += "DUPLICATE\n"
+            if leaf_duplicate:
+                string += "DUPLICATE\n"
 
         if commented:
             # add comments to the start of each line
@@ -2511,12 +2521,44 @@ def mark_duplicate_reaction(test_reaction, reaction_list):
 
     None of that is repairable by narrowing the predicate, which is why the repair lives in
     :func:`chemkin_duplicate_flags` instead: it recomputes every flag from the group key
-    over a whole list. **Not every writer consults it.** The two renderers in this module
-    do, for the list each is about to serialize. Two writers do not, and both ship entries
-    carrying whatever this function last left behind: :mod:`arkane.pdep`, which calls
-    :func:`write_kinetics_entry` on one network reaction at a time with no list to key
-    over, and :mod:`rmgpy.yaml_cantera2`, which reads ``Reaction.duplicate`` directly. The
-    latter is a pre-existing gap, not introduced here, and is filed rather than fixed.
+    over a whole list.
+
+    **Which writers consult it**, enumerated rather than assumed -- an earlier version of
+    this paragraph named two writers that do not, and was wrong about both the list and
+    its length:
+
+    * :func:`save_chemkin_file` and :func:`save_chemkin_surface_file` recompute, each for
+      the list it is about to serialize;
+    * :func:`rmgpy.yaml_cantera2._collect_reaction_entries` recomputes (round 74);
+    * :func:`rmgpy.yaml_cantera1._collect_reactions` recomputes (round 75). Until then it
+      serialized ``Reaction.duplicate`` straight through
+      :meth:`rmgpy.reaction.Reaction.to_cantera`, so ``CanteraWriter1`` -- registered
+      alongside ``CanteraWriter2`` at ``rmgpy/rmg/main.py:913`` -- shipped the core+edge
+      answer into a core-only mechanism;
+    * :mod:`arkane.pdep` does NOT, because it calls :func:`write_kinetics_entry` on one
+      network reaction at a time and has no list to key over. Pre-existing, filed, not
+      fixed here;
+    * :func:`rmgpy.rmg.output.save_diff_html` sets the flag itself for display in the
+      ``diffModels.py`` HTML report. It writes no mechanism, so it cannot produce a deck
+      Cantera rejects.
+
+    **The class comparison this loop used to open with is gone**, and the decision is worth
+    recording because its provenance argues for keeping it. Stock RMG skipped any pair whose
+    ``__class__`` differed, on the reasoning that "TemplateReaction, LibraryReaction, and
+    PDepReaction cannot be duplicates of one another" -- carrying, in the same breath, its
+    author's own unanswered doubt: *"RHW question: why can't TemplateReaction be duplicate of
+    LibraryReaction, in Chemkin terms? I guess it shouldn't happen in RMG."* The answer is
+    that in Chemkin terms they certainly can: a class is not serialized, so two reactions of
+    different classes over the same participants write one and the same equation. Round 74
+    removed the term from :func:`chemkin_duplicate_group_key` for that reason. Leaving it
+    here made the two functions disagree about what "the same entry" means, and because
+    :mod:`rmgpy.rmg.model` grows the model through THIS function, a cross-class pair reached
+    the writers with both flags clear.
+
+    Both halves of the repair were needed and neither alone is sufficient: removing the term
+    here still leaves a writer trusting a hint computed over some other list, and making the
+    writers recompute still leaves ``Reaction.duplicate`` wrong for everything that reads it
+    without recomputing.
 
     What this function guarantees is only this: **it never introduces a mark that
     :func:`chemkin_duplicate_flags` would not also make.** That is a bookkeeping property,
@@ -2530,11 +2572,6 @@ def mark_duplicate_reaction(test_reaction, reaction_list):
     reaction1 = test_reaction
     key1 = chemkin_duplicate_group_key(reaction1)
     for reaction2 in reaction_list:
-        if reaction1.__class__ != reaction2.__class__:
-            # TemplateReaction, LibraryReaction, and PDepReaction cannot be
-            # duplicates of one another.
-            # RHW question: why can't TemplateReaction be duplicate of LibraryReaction, in Chemkin terms? I guess it shouldn't happen in RMG.
-            continue
         same_dir_match = (reaction1.reactants == reaction2.reactants and reaction1.products == reaction2.products)
         opposite_dir_match = (reaction1.products == reaction2.reactants and reaction1.reactants == reaction2.products)
         if (same_dir_match or opposite_dir_match) and (reaction1.specific_collider == reaction2.specific_collider):

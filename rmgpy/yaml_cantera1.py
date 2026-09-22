@@ -70,7 +70,7 @@ from rmgpy.kinetics.falloff import Lindemann, ThirdBody, Troe
 from rmgpy.kinetics.model import PDepKineticsModel
 from rmgpy.util import make_output_subdirectory
 from datetime import datetime
-from rmgpy.chemkin import get_species_identifier
+from rmgpy.chemkin import chemkin_duplicate_flags, get_species_identifier
 from rmgpy.data.kinetics.family import TemplateReaction
 from rmgpy.data.kinetics.library import LibraryReaction
 from rmgpy.rmg.pdep import PDepReaction
@@ -331,10 +331,22 @@ def _collect_reactions(rxn_list, spcs, chemkin_counter):
     global counter in the Chemkin writer. For MultiArrhenius/MultiPDepArrhenius
     reactions, which expand into several YAML entries, each sub-entry gets
     its own Chemkin number but shares the parent RMG index.
+
+    ``duplicate`` is recomputed here, over this list, exactly as
+    :func:`rmgpy.yaml_cantera2._collect_reaction_entries` does for the maintained
+    writer. It cannot be read off the reaction: :mod:`rmgpy.rmg.model` sets that flag
+    during model growth over the whole core+edge list, long before any writer runs, so
+    reading it handed a core-only export the core+edge answer -- a lone
+    ``duplicate: true`` whose only mate is on the edge, which
+    ``Kinetics::checkDuplicates`` rejects. This writer serialized the flag straight off
+    the object via :meth:`rmgpy.reaction.Reaction.to_cantera` until round 75.
     """
+    rxn_list = list(rxn_list)
+    duplicate_flags = chemkin_duplicate_flags(rxn_list)
+
     entries = []
-    for rmg_rxn in rxn_list:
-        rxn_entries = reaction_to_dicts(rmg_rxn, spcs)
+    for rmg_rxn, duplicate in zip(rxn_list, duplicate_flags):
+        rxn_entries = reaction_to_dicts(rmg_rxn, spcs, duplicate=duplicate)
         for entry in rxn_entries:
             chemkin_counter[0] += 1
             index_line = (
@@ -404,6 +416,11 @@ def _build_equation_string(obj):
     convention used by ck2yaml/CanteraWriter2: stoichiometry coefficients are
     not collapsed, third-body M (or specific collider) is appended without
     parentheses, and falloff colliders are written as '(+M)'.
+
+    A ``specific_collider`` is refused unless the kinetics is one of the three shapes
+    that can carry it into the equation. See
+    :func:`rmgpy.yaml_cantera2.get_reaction_equation` for why this is a refusal rather
+    than a silent drop.
     """
     reactants = " + ".join(r.to_chemkin() for r in obj.reactants)
     products = " + ".join(p.to_chemkin() for p in obj.products)
@@ -411,6 +428,13 @@ def _build_equation_string(obj):
     suffix = ""
     kin = obj.kinetics
     collider = getattr(obj, "specific_collider", None)
+    if collider is not None and not isinstance(kin, (ThirdBody, Lindemann, Troe)):
+        raise MechanismWriterError(
+            "Cannot write reaction {0!s} to Cantera YAML: it carries the specific third-body "
+            "collider {1!s}, but its kinetics type {2} has no place in the equation for one. "
+            "Writing it anyway would drop the collider, and two reactions differing only by "
+            "collider would then serialize to the same equation and be rejected by "
+            "Kinetics::checkDuplicates.".format(obj, collider.label, type(kin).__name__))
     if isinstance(kin, ThirdBody) and not isinstance(kin, (Lindemann, Troe)):
         m_label = collider.to_chemkin() if collider else "M"
         suffix = " + " + m_label
@@ -422,12 +446,24 @@ def _build_equation_string(obj):
     return reactants + suffix + arrow + products + suffix
 
 
-def reaction_to_dicts(obj, spcs):
+def reaction_to_dicts(obj, spcs, duplicate=None):
     """
     Takes an RMG reaction object (obj), returns a list of dictionaries
     for YAML properties. For most reaction objects the list will be of
     length 1, but a MultiArrhenius or MultiPDepArrhenius will be longer.
     A 'note' field is always added with source and kinetics comment.
+
+    `duplicate` is the answer for the mechanism this entry is being written into,
+    supplied by :func:`_collect_reactions`, which keys it over the whole list. It is an
+    argument rather than a read of ``obj.duplicate`` because it is a property of the
+    mechanism, not of the reaction. ``None`` falls back to the object's own flag, for a
+    caller holding one reaction and no list.
+
+    A wrapper that expands into SEVERAL entries is a duplicate whatever the group answer
+    for the wrapper was, since those entries all write the same equation -- but only if
+    there really are several. ``MultiArrhenius([one])`` is an accepted constructor and
+    yields exactly one entry, and marking that one entry produced a mechanism rejected
+    with "No duplicate found for declared duplicate reaction number 0".
     """
 
     reaction_list = []
@@ -440,6 +476,10 @@ def reaction_to_dicts(obj, spcs):
 
 
     rmg_equation = _build_equation_string(obj)
+
+    if duplicate is None:
+        duplicate = obj.duplicate
+    entry_duplicate = bool(duplicate) or len(list_of_cantera_reactions) > 1
 
     for reaction in list_of_cantera_reactions:
         reaction_data = reaction.input_data
@@ -501,6 +541,14 @@ def reaction_to_dicts(obj, spcs):
 
         # Convert any AnyMap objects to regular dicts before appending
         reaction_data = _convert_anymap_to_dict(reaction_data)
+
+        # Overwrite whatever Reaction.to_cantera put here. That method reads
+        # self.duplicate for a single entry and sets True unconditionally for every leaf
+        # of an expansion, and neither answer is the one this mechanism needs.
+        if entry_duplicate:
+            reaction_data["duplicate"] = True
+        else:
+            reaction_data.pop("duplicate", None)
 
         note_lines = []
         if isinstance(obj, TemplateReaction):

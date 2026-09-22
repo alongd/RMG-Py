@@ -80,7 +80,9 @@ from rmgpy.chemkin import (mark_duplicate_reaction, mark_duplicate_reactions, sa
                            save_chemkin_file)
 from rmgpy.data.kinetics.library import LibraryReaction
 from rmgpy.electron_balance import get_electron_placement_counts
-from rmgpy.kinetics import Arrhenius, Chebyshev
+from rmgpy.exceptions import MechanismWriterError
+from rmgpy.kinetics import (Arrhenius, Chebyshev, MultiArrhenius, MultiPDepArrhenius,
+                            PDepArrhenius)
 from rmgpy.molecule import Molecule
 from rmgpy.species import Species
 from rmgpy.thermo import NASA, NASAPolynomial
@@ -1184,29 +1186,95 @@ class TestProductionMarkingDoesNotReachTheCanteraWriter:
     @staticmethod
     def _production_mark(reactions):
         """
-        The marking loop ``rmgpy.rmg.model`` runs as the model grows, in its shape:
-        each new reaction is offered the reactions already checked, then joins them.
-        """
-        from rmgpy.chemkin import mark_duplicate_reaction
+        Mark through PRODUCTION code, over a list larger than the core.
 
-        checked_reactions = []
-        for rxn in reactions:
-            mark_duplicate_reaction(rxn, checked_reactions)
-            checked_reactions.append(rxn)
+        ``CoreEdgeReactionModel.mark_chemkin_duplicates`` is the model's own
+        marking entry point: it keys ``core.reactions + output_reaction_list`` and
+        writes the answer back onto the shared reaction objects. That is the
+        condition the leak needs -- flags computed over a list wider than the one
+        a core-only export will contain -- and running it means these tests go red
+        if the model stops marking, rather than passing vacuously.
 
-    def test_the_production_marking_this_rests_on_still_exists(self):
+        This used to be a hand-written copy of the loop in ``enlarge()``. A copy
+        measures the copy: it cannot notice production changing underneath it,
+        which is the whole point of the premise these tests rest on. The two
+        remaining pairwise call sites, ``model.py:833`` and ``model.py:1962``,
+        both sit inside database-dependent methods (``enlarge`` and
+        ``add_reaction_library_to_edge``) and so are out of reach of a unit test;
+        they are covered by ``test_the_pairwise_marking_production_uses_agrees_with_the_group_key``
+        below, which pins the function they call rather than the text that calls it.
         """
-        A tie-back, so this class fails loudly rather than vacuously if model
-        growth stops marking. Without it, deleting the production calls would make
-        every test below pass for the wrong reason.
-        """
-        import inspect
-        import rmgpy.rmg.model
+        from rmgpy.rmg.model import CoreEdgeReactionModel
 
-        source = inspect.getsource(rmgpy.rmg.model)
-        assert source.count("mark_duplicate_reaction(rxn, checked_reactions)") == 3, (
-            "rmgpy.rmg.model no longer marks duplicates the way this class "
-            "reproduces; re-derive the premise before trusting these results"
+        model = CoreEdgeReactionModel()
+        model.core.reactions = list(reactions[:1])
+        model.output_reaction_list = list(reactions[1:])
+        model.mark_chemkin_duplicates()
+
+    def test_the_production_marking_this_rests_on_really_marks(self, permutation_species):
+        """
+        A tie-back that fails when production BEHAVIOUR changes.
+
+        The previous version of this test asserted
+        ``inspect.getsource(...).count("mark_duplicate_reaction(rxn, checked_reactions)") == 3``.
+        A string count is satisfied by dead code, by a comment, and by any
+        rearrangement that keeps the text while changing what runs -- and it goes
+        red on a pure rename that changes nothing. It measured the source file,
+        not the system. This runs the production marker instead and asserts the
+        flags it leaves on the shared objects.
+        """
+        h, oh, h2, o = permutation_species
+        core = _library_reaction(
+            [h, oh], [h2, o], "NeutralLibA",
+            kinetics=Arrhenius(A=(1.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+        edge = _library_reaction(
+            [h, oh], [h2, o], "NeutralLibB",
+            kinetics=Arrhenius(A=(2.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+        assert [core.duplicate, edge.duplicate] == [False, False], (
+            "precondition: the pair must start unmarked, or this proves nothing"
+        )
+
+        self._production_mark([core, edge])
+
+        assert [core.duplicate, edge.duplicate] == [True, True], (
+            "production marking no longer writes the duplicate answer onto the "
+            "reaction objects; every test in this class rests on that, so "
+            "re-derive the premise before trusting their results"
+        )
+
+    def test_the_pairwise_marking_production_uses_agrees_with_the_group_key(
+            self, permutation_species):
+        """
+        Model growth marks incrementally through the PAIRWISE
+        ``mark_duplicate_reaction``, not through the group function, at
+        ``model.py:833`` and ``model.py:1962``. Both sit inside database-dependent
+        methods, so this pins the function they call.
+
+        The two must agree about what "the same entry" means. They did not: the
+        pairwise form skipped any pair whose ``__class__`` differed, so a
+        LibraryReaction and a TemplateReaction writing one and the same equation
+        reached the writers with both flags clear, and a writer that trusted them
+        emitted two identical unmarked equations. The Chemkin renderers and
+        CanteraWriter2 masked it by recomputing; CanteraWriter1 did not.
+        """
+        from rmgpy.chemkin import chemkin_duplicate_flags, mark_duplicate_reaction
+        from rmgpy.data.kinetics.family import TemplateReaction
+
+        h, oh, h2, o = permutation_species
+        kinetics = Arrhenius(A=(1.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol"))
+        library = _library_reaction([h, oh], [h2, o], "NeutralLibA", kinetics=kinetics)
+        template = TemplateReaction(reactants=[h, oh], products=[h2, o], family="FamA",
+                                    kinetics=kinetics, reversible=False)
+
+        mark_duplicate_reaction(template, [library])
+
+        pairwise = [library.duplicate, template.duplicate]
+        group = chemkin_duplicate_flags([library, template])
+        assert pairwise == group == [True, True], (
+            "the pairwise marker production grows the model with disagrees with "
+            "the group key: pairwise={0}, group={1}".format(pairwise, group)
         )
 
     def test_a_core_only_cantera_export_is_loadable_after_production_marking(
@@ -1306,3 +1374,281 @@ class TestProductionMarkingDoesNotReachTheCanteraWriter:
             edge_text = f.read()
         assert [m for _, m in _deck_entries(core_text)] == [False], core_text
         assert [m for _, m in _deck_entries(edge_text)] == [True, True], edge_text
+
+
+class TestEveryRegisteredCanteraWriterKeysItsOwnList:
+    """
+    Rounds 73 and 74 made the duplicate answer belong to the deck, and verified it
+    against ONE Cantera writer. There are two registered, side by side at
+    ``rmgpy/rmg/main.py:913`` and ``:919``:
+
+    * ``CanteraWriter2`` (``rmgpy.yaml_cantera2``), behind ``generateCanteraYAML2``;
+    * ``CanteraWriter1`` (``rmgpy.yaml_cantera1``), behind ``generateCanteraYAML1``.
+
+    Writer1 serialized ``Reaction.duplicate`` straight through
+    :meth:`rmgpy.reaction.Reaction.to_cantera`, so it inherited whatever model growth
+    had last written over the whole core+edge list. A repair verified against Writer2
+    alone relocates that defect rather than closing it, and a green suite says nothing
+    about it, because no test pointed at Writer1 either.
+
+    Every check here ends at ``cantera.Solution``. ``transport_model=None`` because
+    these fixtures carry no transport data and ``GasTransport::getTransportData``
+    aborts before ``Kinetics::checkDuplicates`` is reached -- a rejection attributed to
+    the wrong stage is the defect this ticket is about. Kinetics, and therefore the
+    duplicate check, still run.
+    """
+
+    @staticmethod
+    def _load(path):
+        import cantera as ct
+
+        try:
+            ct.Solution(path, transport_model=None)
+        except Exception as exc:
+            raise AssertionError("{0} does not load:\n{1}".format(path, exc))
+
+    @staticmethod
+    def _write_with_writer1(tmp_path, species, reactions, name="chem1.yaml"):
+        from rmgpy.yaml_cantera1 import write_cantera
+
+        path = os.path.join(str(tmp_path), name)
+        elements = {atom.element for spc in species for atom in spc.molecule[0].atoms}
+        write_cantera(species, reactions, elements_in_use=elements, path=path)
+        return path
+
+    @staticmethod
+    def _write_with_writer2(tmp_path, species, reactions, name="chem2.yaml"):
+        from rmgpy.rmg.model import ReactionModel
+        from rmgpy.yaml_cantera2 import save_cantera_model
+
+        path = os.path.join(str(tmp_path), name)
+        save_cantera_model(ReactionModel(species=list(species), reactions=list(reactions)),
+                           path)
+        return path
+
+    @staticmethod
+    def _production_mark(reactions):
+        from rmgpy.rmg.model import CoreEdgeReactionModel
+
+        model = CoreEdgeReactionModel()
+        model.core.reactions = list(reactions[:1])
+        model.output_reaction_list = list(reactions[1:])
+        model.mark_chemkin_duplicates()
+
+    def test_writer1_core_only_export_is_loadable_after_production_marking(
+            self, tmp_path, permutation_species):
+        """
+        The leak, pointed at the writer that still had it: core and edge each hold
+        one of a genuine pair, production marks both, and the core-only mechanism
+        then carries a lone ``duplicate: true`` whose mate is on the edge.
+        """
+        h, oh, h2, o = permutation_species
+        core = _library_reaction(
+            [h, oh], [h2, o], "NeutralLibA",
+            kinetics=Arrhenius(A=(1.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")))
+        edge = _library_reaction(
+            [h, oh], [h2, o], "NeutralLibB",
+            kinetics=Arrhenius(A=(2.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")))
+
+        self._production_mark([core, edge])
+        assert [core.duplicate, edge.duplicate] == [True, True], (
+            "precondition: production marking must mark both, or this test passes "
+            "without reaching the defect")
+
+        self._load(self._write_with_writer1(tmp_path, permutation_species, [core]))
+
+    def test_writer1_does_not_split_a_cross_class_pair_it_renders_alike(
+            self, tmp_path, permutation_species):
+        """
+        A LibraryReaction and a TemplateReaction over the same participants write one
+        and the same Cantera equation. Arriving unmarked -- which is what the pairwise
+        marker used to do to them -- a writer that trusts the flags emits two identical
+        undeclared equations.
+        """
+        from rmgpy.data.kinetics.family import TemplateReaction
+
+        h, oh, h2, o = permutation_species
+        library = _library_reaction(
+            [h, oh], [h2, o], "NeutralLibA",
+            kinetics=Arrhenius(A=(1.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")))
+        template = TemplateReaction(
+            reactants=[h, oh], products=[h2, o], family="FamA", reversible=False,
+            kinetics=Arrhenius(A=(2.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")))
+        assert [library.duplicate, template.duplicate] == [False, False], (
+            "precondition: both must arrive unmarked, which is the state the pairwise "
+            "marker left a cross-class pair in")
+
+        self._load(self._write_with_writer1(
+            tmp_path, permutation_species, [library, template], "cross1.yaml"))
+        self._load(self._write_with_writer2(
+            tmp_path, permutation_species, [library, template], "cross2.yaml"))
+
+    def test_writer1_refuses_a_collider_it_cannot_put_in_the_equation(
+            self, tmp_path, permutation_species):
+        """Writer1's equation builder drops an unrenderable collider exactly as
+        Writer2's did; it must refuse for the same reason."""
+        h, oh, h2, o = permutation_species
+        argon = _make_species("Ar", 5, Molecule(smiles="[Ar]"))
+        rxn = _library_reaction(
+            [h, oh], [h2, o], "NeutralLibA",
+            kinetics=PDepArrhenius(
+                pressures=([0.1, 10.0], "bar"),
+                arrhenius=[Arrhenius(A=(1.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+                           Arrhenius(A=(2.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol"))]))
+        rxn.specific_collider = argon
+
+        with pytest.raises(MechanismWriterError) as excinfo:
+            self._write_with_writer1(tmp_path, list(permutation_species) + [argon], [rxn])
+        assert "PDepArrhenius" in str(excinfo.value)
+
+
+class TestAMultiWrapperHoldingOneEntryIsNotADuplicate:
+    """
+    ``MultiArrhenius`` and ``MultiPDepArrhenius`` expand into one entry per leaf, and
+    every leaf writes the same equation -- so each is a duplicate of the others. Three
+    writers encoded that as *unconditional*: ``chemkin.write_kinetics_entry``,
+    ``yaml_cantera2.reaction_to_dict_list`` and ``rmgpy.reaction.Reaction.to_cantera``.
+
+    Both constructors accept a single-element list. The premise "each leaf has a mate
+    by construction" is false for those, and the single entry they produce declared
+    itself a duplicate with nothing to pair with. ``ck2yaml`` converts such a deck
+    without complaint, which is why deck text and ``convert_mech`` both pass while the
+    mechanism is invalid; only ``cantera.Solution`` runs ``Kinetics::checkDuplicates``.
+    """
+
+    @staticmethod
+    def _load(path):
+        import cantera as ct
+
+        try:
+            ct.Solution(path, transport_model=None)
+        except Exception as exc:
+            raise AssertionError("{0} does not load:\n{1}".format(path, exc))
+
+    @staticmethod
+    def _one_leaf(kind):
+        rate = Arrhenius(A=(1.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol"))
+        if kind == "MultiArrhenius":
+            return MultiArrhenius(arrhenius=[rate])
+        return MultiPDepArrhenius(arrhenius=[PDepArrhenius(
+            pressures=([0.1, 10.0], "bar"),
+            arrhenius=[rate, Arrhenius(A=(2.0e12, "cm^3/(mol*s)"), n=0.0,
+                                       Ea=(0.0, "kcal/mol"))])])
+
+    @pytest.mark.parametrize("kind", ["MultiArrhenius", "MultiPDepArrhenius"])
+    def test_the_chemkin_deck_cantera_converts_also_loads(self, tmp_path, kind,
+                                                          permutation_species):
+        from cantera import ck2yaml
+
+        h, oh, h2, o = permutation_species
+        lone = _library_reaction([h, oh], [h2, o], "NeutralLibA",
+                                 kinetics=self._one_leaf(kind))
+        deck = os.path.join(str(tmp_path), "chem.inp")
+        save_chemkin_file(deck, list(permutation_species), [lone], verbose=False)
+
+        with open(deck) as f:
+            text = f.read()
+        assert text.count("\nDUPLICATE\n") == 0, (
+            "a one-leaf {0} wrote a DUPLICATE line with nothing to pair with:\n{1}".format(
+                kind, text))
+
+        out = os.path.join(str(tmp_path), "chem.yaml")
+        ck2yaml.convert_mech(deck, out_name=out, quiet=True, permissive=True)
+        self._load(out)
+
+    @pytest.mark.parametrize("kind", ["MultiArrhenius", "MultiPDepArrhenius"])
+    def test_both_cantera_writers_load(self, tmp_path, kind, permutation_species):
+        from rmgpy.rmg.model import ReactionModel
+        from rmgpy.yaml_cantera1 import write_cantera
+        from rmgpy.yaml_cantera2 import save_cantera_model
+
+        h, oh, h2, o = permutation_species
+        lone = _library_reaction([h, oh], [h2, o], "NeutralLibA",
+                                 kinetics=self._one_leaf(kind))
+
+        path2 = os.path.join(str(tmp_path), "w2.yaml")
+        save_cantera_model(ReactionModel(species=list(permutation_species),
+                                         reactions=[lone]), path2)
+        self._load(path2)
+
+        path1 = os.path.join(str(tmp_path), "w1.yaml")
+        elements = {atom.element for spc in permutation_species
+                    for atom in spc.molecule[0].atoms}
+        write_cantera(list(permutation_species), [lone], elements_in_use=elements,
+                      path=path1)
+        self._load(path1)
+
+    def test_a_two_leaf_wrapper_is_still_marked(self, tmp_path, permutation_species):
+        """
+        The control. A repair that stops marking one-leaf wrappers must not stop
+        marking real ones -- that would swing the defect to the other side, where an
+        undeclared genuine pair is what Chemkin and Cantera reject.
+        """
+        h, oh, h2, o = permutation_species
+        pair = _library_reaction([h, oh], [h2, o], "NeutralLibA", kinetics=MultiArrhenius(
+            arrhenius=[Arrhenius(A=(1.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+                       Arrhenius(A=(3.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol"))]))
+        deck = os.path.join(str(tmp_path), "chem.inp")
+        save_chemkin_file(deck, list(permutation_species), [pair], verbose=False)
+        with open(deck) as f:
+            text = f.read()
+        assert text.count("\nDUPLICATE\n") == 2, text
+
+        from cantera import ck2yaml
+        out = os.path.join(str(tmp_path), "chem.yaml")
+        ck2yaml.convert_mech(deck, out_name=out, quiet=True, permissive=True)
+        self._load(out)
+
+    def test_a_one_leaf_wrapper_that_IS_a_group_duplicate_is_still_marked(
+            self, tmp_path, permutation_species):
+        """
+        The other control, and the one that decides the shape of the repair: the fix
+        is not "a one-leaf wrapper is never a duplicate", it is "a one-leaf wrapper
+        falls back to the group answer". Here the wrapper shares its equation with an
+        ordinary reaction, so both entries must be marked.
+        """
+        h, oh, h2, o = permutation_species
+        lone = _library_reaction([h, oh], [h2, o], "NeutralLibA",
+                                 kinetics=self._one_leaf("MultiArrhenius"))
+        plain = _library_reaction(
+            [h, oh], [h2, o], "NeutralLibB",
+            kinetics=Arrhenius(A=(5.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")))
+
+        deck = os.path.join(str(tmp_path), "chem.inp")
+        save_chemkin_file(deck, list(permutation_species), [lone, plain], verbose=False)
+        with open(deck) as f:
+            text = f.read()
+        assert [m for _, m in _deck_entries(text)] == [True, True], text
+
+        from cantera import ck2yaml
+        out = os.path.join(str(tmp_path), "chem.yaml")
+        ck2yaml.convert_mech(deck, out_name=out, quiet=True, permissive=True)
+        self._load(out)
+
+    def test_to_cantera_alone_does_not_mark_a_one_leaf_wrapper(self, permutation_species):
+        """
+        ``Reaction.to_cantera`` is the third site that marked leaves unconditionally, and
+        it is reached by callers that never touch a YAML writer -- notably
+        ``rmgpy.tools.canteramodel``, which builds Cantera reactions in memory.
+
+        This is asserted directly on ``to_cantera`` and not through a writer on purpose.
+        ``yaml_cantera1.reaction_to_dicts`` now overwrites the flag with its own
+        list-relative answer, so a defect left here is invisible from that direction: a
+        mutation test that only went through the writers would score this repair as
+        caught while it was not tested at all.
+        """
+        h, oh, h2, o = permutation_species
+        lone = _library_reaction([h, oh], [h2, o], "NeutralLibA",
+                                 kinetics=self._one_leaf("MultiArrhenius"))
+        pair = _library_reaction([h, oh], [h2, o], "NeutralLibA", kinetics=MultiArrhenius(
+            arrhenius=[Arrhenius(A=(1.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+                       Arrhenius(A=(3.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol"))]))
+
+        one = lone.to_cantera(list(permutation_species), use_chemkin_identifier=True)
+        two = pair.to_cantera(list(permutation_species), use_chemkin_identifier=True)
+
+        assert [r.duplicate for r in one] == [False], (
+            "a one-entry expansion has no mate, so declaring it a duplicate makes a "
+            "mechanism Cantera rejects")
+        assert [r.duplicate for r in two] == [True, True], (
+            "a real expansion must still be marked")

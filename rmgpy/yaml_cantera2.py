@@ -658,10 +658,26 @@ def reaction_to_dict_list(reaction, species_list=None, duplicate=None):
     that flag -- for a reaction that has been through model growth, that is the
     core+edge answer.
     """
+    # Refuse an unrenderable collider HERE as well as in get_reaction_equation, so the
+    # message names the kinetics type the caller actually wrote. A Multi* wrapper is
+    # expanded into Arrhenius/PDepArrhenius leaves before any equation is built, so
+    # refusing only downstream reports the leaf's type for a reaction nobody constructed.
+    _collider = getattr(reaction, 'specific_collider', None)
+    if _collider is not None and not isinstance(reaction.kinetics, (ThirdBody, Lindemann, Troe)):
+        raise MechanismWriterError(
+            f"Cannot write reaction {reaction!s} to Cantera YAML: it carries the specific "
+            f"third-body collider {_collider.label}, but its kinetics type "
+            f"{type(reaction.kinetics).__name__} has no place in the equation for one. "
+            f"Writing it anyway would drop the collider, and two reactions differing only "
+            f"by collider would then serialize to the same equation and be rejected by "
+            f"Kinetics::checkDuplicates.")
+
     # Check for MultiKinetics (duplicates grouped in one RMG object)
     if isinstance(reaction.kinetics, (MultiArrhenius, MultiPDepArrhenius)):
         entries = []
         sub_kinetics_list = reaction.kinetics.arrhenius
+        sub_duplicate = len(sub_kinetics_list) > 1 or bool(
+            reaction.duplicate if duplicate is None else duplicate)
 
         for sub_kin in sub_kinetics_list:
             sub_rxn = Reaction(
@@ -682,11 +698,17 @@ def reaction_to_dict_list(reaction, species_list=None, duplicate=None):
                 specific_collider=reaction.specific_collider,
                 pairs=reaction.pairs,
             )
-            # Unconditionally duplicate, whatever the group answer for the parent
-            # was: this one RMG reaction is being written as several entries that
-            # all carry the same equation, so each of them has a mate by
-            # construction. The Chemkin writer emits its MULTI block the same way.
-            sub_result = reaction_to_dict_list(sub_rxn, species_list, duplicate=True)
+            # Duplicate whatever the group answer for the parent was, because this one
+            # RMG reaction is being written as several entries that all carry the same
+            # equation -- but only when there really are several. ``MultiArrhenius([one])``
+            # and ``MultiPDepArrhenius([one])`` are accepted constructors, and the "each
+            # leaf has a mate by construction" premise is false for them: the single entry
+            # they produce declared itself a duplicate and Cantera rejected the mechanism
+            # with "No duplicate found for declared duplicate reaction number 0". A
+            # one-entry wrapper therefore falls back to the parent's group answer, which is
+            # what an unwrapped reaction writing that equation would get.
+            sub_result = reaction_to_dict_list(sub_rxn, species_list,
+                                               duplicate=sub_duplicate)
             if sub_result:
                 entries.extend(sub_result)
         return entries
@@ -947,7 +969,32 @@ def get_reaction_equation(reaction, species_list):
     species (see :mod:`rmgpy.electron_balance`); without it every charged
     reaction exports unbalanced in the ``E`` pseudo-element, because RMG keeps
     the electron stoichiometry out of the reactant/product lists.
+
+    **A ``specific_collider`` this function cannot render is refused, not dropped.**
+    Only three kinetics shapes have a place for one: ``ThirdBody`` writes it as an
+    ordinary participant on both sides, and ``Lindemann``/``Troe`` write it as the
+    chaperone ``(+collider)``. For anything else -- an ``Arrhenius``, a PLOG, a
+    Chebyshev, or the ``Arrhenius`` leaves a ``Multi*`` wrapper expands into -- there is
+    no order-preserving way to put the collider in the equation, and until round 75 it
+    was silently left out, recorded only in the note. That made the mechanism wrong in
+    two directions at once: the collider was gone from the chemistry, and two reactions
+    differing only by collider keyed apart (the duplicate key carries collider identity)
+    while serializing to the identical equation, so ``Kinetics::checkDuplicates``
+    rejected the file with "Undeclared duplicate reactions detected". The Chemkin writer
+    already refuses the same shapes at :func:`rmgpy.chemkin.get_reaction_string`; this
+    refusal is deliberately narrower than Chemkin's, which also rejects ``ThirdBody``
+    colliders that this writer renders correctly and that Cantera loads.
     """
+    collider = getattr(reaction, 'specific_collider', None)
+    if collider is not None and not isinstance(reaction.kinetics, (ThirdBody, Lindemann, Troe)):
+        raise MechanismWriterError(
+            f"Cannot write reaction {reaction!s} to Cantera YAML: it carries the specific "
+            f"third-body collider {collider.label}, but its kinetics type "
+            f"{type(reaction.kinetics).__name__} has no place in the equation for one. "
+            f"Writing it anyway would drop the collider, and two reactions differing only "
+            f"by collider would then serialize to the same equation and be rejected by "
+            f"Kinetics::checkDuplicates.")
+
     reactants, products = expand_electrons(reaction, species_list)
     reactants_str = " + ".join([get_label(r, species_list) for r in reactants])
     products_str = " + ".join([get_label(p, species_list) for p in products])
