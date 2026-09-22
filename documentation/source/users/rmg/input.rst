@@ -681,23 +681,37 @@ The remaining keywords are all optional:
   the atom does not chemisorb.  The reactor is a closed batch with no makeup stream, so
   ``gamma < 1`` removes heavy atoms from the gas permanently.  Every ion must have a neutral
   counterpart in the core for its heavy core to return to; a cation with no such counterpart is
-  refused rather than guessed at.  When two neutral core species share an ion's heavy composition
-  -- ground-state and metastable argon, both ``Ar`` -- the ion returns as the **electronic ground
-  state**, identified as the neutral of lowest formation enthalpy (wall neutralisation gives the
-  ionisation energy to the wall and the atom relaxes to its ground state; it is not the
-  electron-impact excitation that makes a metastable).  Two states within ``k_B*T_gas`` of each
-  other are treated as indistinguishable and refused, as is the case where the two neutrals are
-  genuine isomers or lack thermochemistry -- in each the ground state cannot be inferred, and the
-  message names ``wallNeutralizationProducts`` to resolve it.
+  refused rather than guessed at.  When exactly **one** neutral core species shares an ion's heavy
+  skeleton, the ion returns as it.  When **two or more** do -- ground-state and metastable argon,
+  both keyed ``Ar`` -- the wall **refuses** and requires a ``wallNeutralizationProducts`` declaration
+  (below), rather than picking one.  Formation enthalpy can order the candidates but cannot certify
+  which is the wall's product: the deck carries only relative enthalpies with no absolute
+  ground-state anchor, so the lowest present state is the ground state only if the ground state is
+  present, and an excited-only deck (metastables with the true ground absent) is indistinguishable
+  from ground+metastable.  The candidates need not even be electronic states of one another --
+  standard InChI merges tautomers such as 2-pyridone and 2-hydroxypyridine, distinct constitutional
+  species -- so a lowest-enthalpy pick could transmute one into the other.  Energy is therefore not
+  used to choose an identity at all; it is reported only in the wall-energy interface, as a
+  measurement.  A deck carrying two electronic states is making a modelling claim about which the
+  wall returns, and states it in one line.
+
+  There is one **inherent floor**, documented rather than hidden: when a skeleton has exactly one
+  neutral in the deck, the ion returns as it *because there is no alternative*, not because that
+  neutral is certified as the ground state.  If the only neutral present is a different tautomer or
+  an excited state (the true ground absent from the deck), the ion returns as that.  No rule can
+  tell "the only neutral present is the right product" from "the only neutral present is the wrong
+  one" from a single candidate -- the information is not in the deck.  A
+  ``wallNeutralizationProducts`` entry overrides it.
 
 * ``wallNeutralizationProducts`` -- an optional ``{ion label: neutral label}`` dict naming, per ion,
-  the neutral it returns as at the wall, e.g. ``{'Arp': 'Ar'}``.  It is the escape hatch for the
-  cases the energy rule cannot decide on its own: two neutral states closer than ``k_B*T_gas``, an
-  ion whose neutral has isomers, or an excited-only deck with no ground state present to compare
-  against.  The named neutral must be a declared species, uncharged, and share the ion's heavy
-  composition.  Omit it and the ground state is inferred from thermochemistry, which is the common
-  case -- the ~11.5 eV between ground and metastable argon is far above the threshold, so nothing
-  need be declared for a deck that carries both.
+  the neutral it returns as at the wall, e.g. ``{'Arp': 'Ar'}``.  It is **required** whenever two or
+  more neutral core species share an ion's heavy skeleton (two argon electronic states, or an ion
+  whose neutral has tautomers), and it is the override for the single-candidate floor above.  The
+  named neutral must be a declared species, uncharged, and share the ion's heavy composition; a key
+  that names no cation in the core (a typo) is refused rather than silently ignored.  Omit it for the
+  common case of a single neutral per skeleton -- a deck carrying only ground-state argon needs
+  nothing declared -- and include it, one line, for any deck that carries a metastable alongside its
+  ground state.
 
 * ``ionisationSource`` -- a volumetric external production rate of ion-electron pairs,
   ``(6.6e4, 'm^-3/s')`` or ``(0.066, 'cm^-3/s')``.  This is where a *declared physical mechanism*

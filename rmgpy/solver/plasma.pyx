@@ -369,6 +369,33 @@ cdef class PlasmaReactor(ReactionSystem):
         self.has_wall = diffusion_length is not None
         self.quasineutral_electron = bool(quasineutral_electron)
 
+        if not self.has_wall:
+            # Wall-only options are meaningless without a wall: there is no nu_wall to
+            # apply them through. They were being stored and silently ignored, so a deck
+            # that sets a recycling fraction or an ionisation source but forgets the
+            # diffusion length / mobility that DECLARE the wall ran as a plain volume
+            # reactor with none of them in effect, and was never told. Refuse, naming
+            # what was supplied. quasineutral_electron is deliberately NOT here: it is
+            # independent of the wall on purpose (see its attribute comment).
+            supplied = []
+            if mobility_reference_density is not None:
+                supplied.append('mobility_reference_density')
+            if wall_neutralization_products:
+                supplied.append('wall_neutralization_products')
+            if ionisation_source is not None:
+                supplied.append('ionisation_source')
+            if wall_recycling != 1.0:
+                supplied.append('wall_recycling')
+            if max_ionisation_degree != PLASMA_WALL_MAX_IONISATION_DEGREE:
+                supplied.append('max_ionisation_degree')
+            if supplied:
+                raise PlasmaStateError(
+                    "wall-only option(s) {0} were given, but there is no wall to apply "
+                    "them to: a wall needs BOTH diffusion_length and ion_reduced_mobility "
+                    "and neither was supplied. They would be stored and silently ignored. "
+                    "Declare the wall, or drop the wall-only option(s). ({1})".format(
+                        supplied, self._identity()))
+
         if self.has_wall:
             self.diffusion_length = Quantity(diffusion_length)
             self.ion_reduced_mobility = Quantity(ion_reduced_mobility)
@@ -406,10 +433,28 @@ cdef class PlasmaReactor(ReactionSystem):
 
         if mobility_reference_density is None:
             self.mobility_reference_density = PLASMA_LOSCHMIDT
+        elif isinstance(mobility_reference_density, float):
+            # Plain SI number: the __reduce__ round-trip path, which preserves the value
+            # as given (there are no units to check).
+            self.mobility_reference_density = mobility_reference_density
         else:
-            self.mobility_reference_density = float(Quantity(mobility_reference_density).value_si
-                                                    if not isinstance(mobility_reference_density, float)
-                                                    else mobility_reference_density)
+            q = Quantity(mobility_reference_density)
+            # Dimensions, not just sign and finiteness (as for diffusion_length above):
+            # (3, 'kg') has a finite positive SI value and would otherwise be taken as
+            # 3 m^-3, scaling the ion mobility from a mass.
+            want = pq.Quantity(1.0, 'm^-3').simplified.dimensionality
+            try:
+                got = pq.Quantity(1.0, q.units).simplified.dimensionality
+            except Exception:
+                got = None
+            if got != want:
+                raise PlasmaStateError(
+                    "mobility_reference_density is the neutral number density at which "
+                    "the ion reduced mobility was measured and must have the dimensions "
+                    "of a number density (m^-3); got units {0!r}. Reading it as a bare SI "
+                    "number would scale the ion mobility from the wrong quantity. "
+                    "({1})".format(q.units, self._identity()))
+            self.mobility_reference_density = float(q.value_si)
         if not np.isfinite(self.mobility_reference_density) or self.mobility_reference_density <= 0.0:
             raise PlasmaStateError(
                 "mobility_reference_density must be a finite, strictly positive number "
@@ -447,6 +492,21 @@ cdef class PlasmaReactor(ReactionSystem):
             self.ionisation_source = Quantity((0.0, 'm^-3/s'))
         else:
             self.ionisation_source = Quantity(ionisation_source)
+            # Dimensions: (7, 'kg') is a mass, not a rate density, and its SI value 7
+            # would otherwise be injected as 7 m^-3 s^-1. The reload path passes back the
+            # stored Quantity, whose units are already 'm^-3/s', so this admits it.
+            want = pq.Quantity(1.0, 'm^-3/s').simplified.dimensionality
+            try:
+                got = pq.Quantity(1.0, self.ionisation_source.units).simplified.dimensionality
+            except Exception:
+                got = None
+            if got != want:
+                raise PlasmaStateError(
+                    "ionisation_source is a volumetric production rate of ion-electron "
+                    "pairs and must have the dimensions of a number density per time "
+                    "(m^-3 s^-1); got units {0!r}. Reading it as a bare SI number would "
+                    "inject the declared source at the wrong rate. ({1})".format(
+                        self.ionisation_source.units, self._identity()))
         if not np.isfinite(self.ionisation_source.value_si) or self.ionisation_source.value_si < 0.0:
             raise PlasmaStateError(
                 "ionisation_source is a volumetric production rate of ion-electron "
@@ -513,9 +573,16 @@ cdef class PlasmaReactor(ReactionSystem):
                  self.sensitive_species, self.sensitivity_threshold, self.sens_conditions,
                  self.const_spc_names, self.charge_balance_species,
                  self.diffusion_length, self.ion_reduced_mobility,
-                 self.mobility_reference_density, self.wall_recycling,
+                 # Pass the wall-only densities back as their unset sentinel when there is
+                 # no wall: the stored values are the echoed defaults (a Loschmidt float,
+                 # a zero-rate Quantity), not None, and _configure_wall now refuses
+                 # wall-only options supplied without a wall. A wall-less reactor must
+                 # reconstruct as wall-less, not trip that guard on its own defaults.
+                 (self.mobility_reference_density if self.has_wall else None),
+                 self.wall_recycling,
                  self.wall_neutralization_products,
-                 self.ionisation_source, self.max_ionisation_degree,
+                 (self.ionisation_source if self.has_wall else None),
+                 self.max_ionisation_degree,
                  self.quasineutral_electron))
 
     cpdef initialize_model(self, list core_species, list core_reactions, list edge_species, list edge_reactions,
@@ -1281,20 +1348,30 @@ cdef class PlasmaReactor(ReactionSystem):
             ionising radiation makes predominantly singly-charged ions; that is a
             statement about the mechanism, not a convenience.
 
-        When two neutral core species share an ion's heavy composition -- ground Ar
-        and metastable Ar*, both 'Ar', both uncharged -- the ion returns as the
-        ELECTRONIC GROUND STATE: wall neutralisation is a surface charge-transfer that
-        gives the whole ionisation energy to the wall, not the electron-impact
-        excitation that makes a metastable, so the product relaxes to the ground
-        state. The ground state is identified by LOWEST formation enthalpy, which is
-        its definition and the only discriminator that generalises: multiplicity does
-        NOT (O2's ground state is the triplet and its metastable the singlet, so a
-        "lowest multiplicity" rule would pick the excited state). That comparison
-        needs thermochemistry; when it is missing, or the two lowest states are within
-        the k_B*T_gas degeneracy threshold, or the product is a genuine isomer, the
-        answer is not inferable and the code refuses -- naming a
-        ``wall_neutralization_products={'Ar+': 'Ar'}`` declaration to supply -- rather
-        than falling through to a silent pick.
+        When exactly ONE neutral core species shares an ion's heavy skeleton, the ion
+        returns as it. When TWO OR MORE do -- ground Ar and metastable Ar*, both keyed
+        ``InChI=1S/Ar`` -- the code REFUSES and names a
+        ``wall_neutralization_products={'Ar+': 'Ar'}`` declaration to supply, rather
+        than picking one. Formation enthalpy can ORDER the candidates but cannot certify
+        which is the wall's product: the deck carries only relative enthalpies with no
+        absolute ground-state anchor, so the lowest present state is the ground state
+        only if the ground state is present, and an excited-only deck (two metastables,
+        the true ground absent) is indistinguishable from ground+metastable. The
+        candidates may not even be electronic states of one another -- standard InChI
+        merges tautomers (2-pyridone and 2-hydroxypyridine key identically), distinct
+        constitutional species -- so a lowest-enthalpy pick can transmute one into the
+        other. Energy is therefore never used to choose an identity here; it survives
+        only in the wall-energy interface below, as a measurement of a quantity rather
+        than a vote about an identity. A deck carrying two electronic states IS making a
+        modelling claim about which the wall returns, so the modeller states it.
+
+        RESIDUAL FLOOR, named on purpose: the single-match case returns its one neutral
+        because there is no alternative, not because the neutral is certified as the
+        ground state. If a deck's only neutral of a skeleton is a different tautomer or
+        an excited state (the true ground absent), the ion returns as that -- no rule can
+        tell "the only neutral present is the right product" from "the only neutral
+        present is the wrong one" from a single candidate; the information is not in the
+        deck. A ``wall_neutralization_products`` declaration overrides it.
         """
         cdef Py_ssize_t n = self.num_core_species
         cdef Py_ssize_t i, j
@@ -1340,9 +1417,50 @@ cdef class PlasmaReactor(ReactionSystem):
                 recycle[i] = self._resolve_declared_neutral(
                     core_species, i, ion_label, neutralization[ion_label], matches)
             elif len(matches) == 1:
+                # One neutral shares the skeleton: return it. Forced, not certified --
+                # see the RESIDUAL FLOOR note in the docstring.
                 recycle[i] = matches[0]
             elif len(matches) > 1 and self.has_wall and self.wall_recycling > 0.0:
-                recycle[i] = self._resolve_ground_state_neutral(core_species, i, matches)
+                # Two or more share it and no declaration names the product: REFUSE, do
+                # not pick. Enthalpy orders these but does not identify the ground-state
+                # product (docstring). This one rule closes both the tautomer transmute
+                # and the excited-only crown -- they are the same defect: 2+ candidates,
+                # no certifiable ground.
+                raise PlasmaStateError(
+                    "the wall's neutralisation product for ion {0!r} is ambiguous: {1} "
+                    "neutral core species share its heavy skeleton ({2}). They may be "
+                    "electronic states of one species (where the lowest enthalpy is the "
+                    "ground state only if the ground state is present -- an excited-only "
+                    "deck is indistinguishable) or distinct tautomers/isomers that "
+                    "standard InChI merges (not electronic states at all); nothing in the "
+                    "deck certifies which is the ground-state product the wall returns. "
+                    "Formation enthalpy orders them but does not identify the ground, so "
+                    "the code does not pick. Declare it, e.g. "
+                    "wallNeutralizationProducts={{{3!r}: {4!r}}}. ({5})".format(
+                        core_species[i], len(matches),
+                        ', '.join(repr(core_species[j]) for j in matches),
+                        ion_label, getattr(core_species[matches[0]], 'label', None),
+                        self._identity()))
+
+        # Every declared ion key must name an actual cation in the core. A key that
+        # matches nothing -- a typo, 'Ar+2' for 'Ar+' -- was never consumed above and the
+        # ion fell back to inference, so the declaration the user wrote to be safe did
+        # nothing and no one was told. Refuse the unknown key.
+        if neutralization:
+            cation_labels = set()
+            for j in range(n):
+                if j != self.electron_index and charges[j] > 0:
+                    cation_labels.add(getattr(core_species[j], 'label', None))
+            unknown = [k for k in neutralization if k not in cation_labels]
+            if unknown:
+                raise PlasmaStateError(
+                    "wallNeutralizationProducts names ion key(s) {0} that are not a "
+                    "positive ion in the core (the cations are {1}). A key that matches no "
+                    "cation is silently ignored and the ion falls back to inference, so "
+                    "the declaration would do nothing. Fix the label(s). ({2})".format(
+                        sorted(repr(k) for k in unknown),
+                        sorted(repr(l) for l in cation_labels if l is not None),
+                        self._identity()))
 
         # neutral -> its singly-charged cation (what the external source makes)
         for i in range(n):
@@ -1514,82 +1632,6 @@ cdef class PlasmaReactor(ReactionSystem):
             "neutralisation product must be uncharged and conserve the heavy atoms of "
             "the ion. ({2})".format(ion_label, neutral_label, self._identity()))
 
-    def _resolve_ground_state_neutral(self, list core_species, Py_ssize_t i, list matches):
-        """
-        Resolve an ion to the ELECTRONIC GROUND STATE of its heavy composition: the
-        neutral core species of lowest formation enthalpy at the gas temperature.
-
-        Lowest energy IS the definition of the ground state and is the only
-        discriminator that generalises. Multiplicity does not -- O2's ground state is
-        the triplet and its metastable the singlet, so a "lowest multiplicity" rule
-        would return the excited state. The comparison needs thermochemistry:
-          - missing thermo makes the states unorderable, so the ground state cannot be
-            identified -> refuse, rather than fall through to a silent single pick;
-          - two states within k_B*T_gas of each other are appreciably co-populated at
-            the gas temperature (Boltzmann factor > 1/e), so neither is "the ground
-            state" and picking one would move population silently -> refuse.
-        Both refusals name the wall_neutralization_products declaration that resolves
-        them.
-        """
-        cdef double T = self.T.value_si
-        cdef double threshold, h0, h1
-        cdef Py_ssize_t j, j0, j1
-        enthalpies = []
-        missing = []
-        for j in matches:
-            thermo = getattr(core_species[j], 'thermo', None)
-            if thermo is None:
-                missing.append(core_species[j])
-                continue
-            try:
-                h = thermo.get_enthalpy(T)
-            except Exception:
-                missing.append(core_species[j])
-                continue
-            # A non-finite enthalpy is UNUSABLE, not merely present: NaN and inf sort
-            # unpredictably and every comparison against them is False, so a silent
-            # pick would follow. Route it to the same refusal as absent thermo -- the
-            # states cannot be ordered either way.
-            if not np.isfinite(h):
-                missing.append(core_species[j])
-                continue
-            enthalpies.append((h, j))
-        if missing:
-            raise PlasmaStateError(
-                "the wall returns ion {0!r} as the electronic GROUND STATE of its heavy "
-                "composition, but {1} of the {2} neutral core species sharing that "
-                "composition have no usable thermochemistry ({3}), so their energies "
-                "cannot be ordered and the ground state cannot be identified. Attach "
-                "thermo to every neutral state, or name the product with "
-                "wallNeutralizationProducts={{{4!r}: '<neutral label>'}}. ({5})".format(
-                    core_species[i], len(missing), len(matches),
-                    ', '.join(repr(s) for s in missing),
-                    getattr(core_species[i], 'label', None), self._identity()))
-        enthalpies.sort()
-        h0, j0 = enthalpies[0]
-        h1, j1 = enthalpies[1]
-        # k_B*T_gas per mole: below this the two states are appreciably co-populated
-        # (Boltzmann) and "ground state" is not a defensible label. See input.rst.
-        threshold = constants.R * T
-        if (h1 - h0) < threshold:
-            raise PlasmaStateError(
-                "the wall's ground-state neutral for ion {0!r} is ambiguous: its two "
-                "lowest-energy neutral states of that composition, {1!r} and {2!r}, "
-                "differ in formation enthalpy by {3:.4g} J/mol, below the thermal energy "
-                "k_B*T_gas = {4:.4g} J/mol at T_gas = {5:.6g} K. Below that scale both "
-                "states are appreciably populated and neither is the ground state, so "
-                "picking one would move population silently. Separate them in energy, or "
-                "name the product with wallNeutralizationProducts={{{6!r}: '<neutral "
-                "label>'}}. ({7})".format(
-                    core_species[i], core_species[j0], core_species[j1], h1 - h0,
-                    threshold, T, getattr(core_species[i], 'label', None), self._identity()))
-        logging.info(
-            "PlasmaReactor wall: cation %r neutralises to ground-state %r (formation "
-            "enthalpy %.4g J/mol; next neutral state %r is %.4g J/mol higher, above the "
-            "k_B*T_gas = %.4g J/mol degeneracy threshold).",
-            core_species[i], core_species[j0], h0, core_species[j1], h1 - h0, threshold)
-        return j0
-
     cpdef double compute_nu_wall(self, np.ndarray y, double V) except -1.0:
         """
         The common ambipolar loss frequency, s^-1, shared by EVERY charged species:
@@ -1664,23 +1706,41 @@ cdef class PlasmaReactor(ReactionSystem):
         from inside the residual: see the note in :meth:`compute_nu_wall` for why a
         Newton trial state must not be allowed to trigger this.
 
-        Three things are refused here, each a state whose acceptance would let the wall
-        loss be evaluated from something other than the physics: a neutral inventory at
-        or below the numerical floor :meth:`compute_nu_wall` clamps to (below which
-        ``nu_wall`` is read off the floor, not off ``n_neutral``); an electron
-        population that is not finite and non-negative (the ionisation-degree and
-        quasineutrality bookkeeping is undefined there); and an ionisation degree above
-        ``max_ionisation_degree``. The first two used to pass: the floor was reachable
-        while ``n_e/n_neutral`` still sat under the ceiling, because the ceiling bounds
-        the RATIO, not the absolute inventory, so a state with both populations driven
-        small passed while ``nu_wall`` silently came off the clamp.
+        Each refusal here is a state whose acceptance would let the wall loss (or the
+        source) be evaluated from something other than the physics. The governing
+        quantity, not a nearby one, is checked in each: a neutral inventory at or below
+        the numerical floor :meth:`compute_nu_wall` clamps to (below which ``nu_wall`` is
+        read off the floor, not off ``n_neutral``); an electron or ion population that is
+        not finite and non-negative; any INDIVIDUAL neutral population negative (the
+        aggregate can stay positive while one goes negative, and the source is
+        apportioned per species); a net charge outside quasineutrality (a cation species
+        can be present at zero MOLES, so the topology guard elsewhere does not see it),
+        which would let the common loss frequency remove electrons with no ion partner;
+        a declared ionisation source with no ionisable neutral inventory left to receive
+        it (it would deposit zero, silently); and an ionisation degree above
+        ``max_ionisation_degree``, gated on the CHARGED inventory rather than ``n_e``
+        alone. The floor and the finiteness checks used to pass under the ceiling because
+        the ceiling bounds the RATIO, not the absolute inventory.
         """
-        cdef double y_neutral = 0.0, alpha, n_e, n_ion = 0.0
+        cdef double y_neutral = 0.0, alpha, n_e, n_ion = 0.0, y_ionisable = 0.0, net, magnitude
         cdef Py_ssize_t j
         if not self.has_wall or self.neutral_heavy_mask is None:
             return
         for j in range(self.num_core_species):
             if self.neutral_heavy_mask[j]:
+                # Per-species, not the aggregate: an individual negative population is
+                # masked by a positive one in the sum, yet the residual apportions the
+                # wall source and recycle over per-species populations, where a negative
+                # one becomes a negative (injecting) allocation. Inventory governs per
+                # species, not in total.
+                if not np.isfinite(y[j]) or y[j] < 0.0:
+                    raise PlasmaStateError(
+                        "the accepted state has a negative or non-finite population {0!r} "
+                        "mol for neutral heavy species index {1}. The aggregate neutral "
+                        "inventory can stay positive while an individual population goes "
+                        "negative; the wall source and recycle are apportioned per "
+                        "species, so a negative one injects where it should draw. "
+                        "Refusing. ({2})".format(y[j], j, self._identity()))
                 y_neutral += y[j]
         if not np.isfinite(y_neutral) or y_neutral <= 0.0:
             raise PlasmaStateError(
@@ -1721,7 +1781,9 @@ cdef class PlasmaReactor(ReactionSystem):
         # ions with 1 ppm electrons reads as alpha = 1e-6 on n_e while the ions already
         # put the ion mobility outside its ion-neutral regime. Gate on whichever of the
         # two is larger, so neither a runaway ion nor a runaway electron count slips
-        # through the ceiling that claims to bound them.
+        # through the ceiling that claims to bound them. Checked BEFORE the
+        # quasineutrality bound below: an over-ceiling state is out of the transport
+        # regime whether or not it is neutral, and this is the more specific diagnosis.
         alpha = (n_e if n_e >= n_ion else n_ion) / y_neutral
         if alpha > self.max_ionisation_degree:
             raise PlasmaStateError(
@@ -1732,6 +1794,47 @@ cdef class PlasmaReactor(ReactionSystem):
                 "inaccurate one. Refusing to extrapolate. Raise max_ionisation_degree "
                 "only together with a transport model that covers the regime. "
                 "({2})".format(alpha, self.max_ionisation_degree, self._identity()))
+        # Quasineutrality is a PRECONDITION of this wall, not an accident of the deck.
+        # The common loss frequency is applied to every charged species alike, and its
+        # zero-net-wall-current property holds only because the net charge it removes is
+        # ~0 in a quasineutral gas. A state UNDER the ceiling can still be non-neutral --
+        # n_e = 1e-6, n_ion = 0 -- and there the wall would remove electrons with no ion
+        # partner and drive the net charge. The zero-cation TOPOLOGY guard in
+        # _resolve_wall_state cannot catch it, because a cation SPECIES can be declared
+        # and present at zero MOLES; inventory governs, and it is knowable only at a
+        # state. Anions and |z|>1 ions are already refused, so the net charge is exactly
+        # n_ion - n_e, its magnitude n_ion + n_e.
+        net = n_ion - n_e
+        magnitude = n_ion + n_e
+        if abs(net) > max(PLASMA_NET_CHARGE_ATOL, PLASMA_NET_CHARGE_RTOL * magnitude):
+            raise PlasmaStateError(
+                "the accepted state carries a net charge of {0!r} mol (positive-ion "
+                "inventory {1!r} mol, electron inventory {2!r} mol), outside the "
+                "quasineutrality the ambipolar wall requires. The common wall loss "
+                "frequency removes every charged species at one rate, which conserves "
+                "charge only when the net is ~0; here it would remove electrons with no "
+                "ion partner and drive the charge. A cation species present at zero moles "
+                "is the usual cause. Seed a commensurate positive-ion inventory "
+                "(chargeBalanceSpecies='<ion>' does it), or remove the wall. "
+                "({3})".format(net, n_ion, n_e, self._identity()))
+        # A declared source must have somewhere to deposit. The residual apportions it
+        # over the IONISABLE neutrals (those with a cation channel); when those are
+        # consumed but an unsupported bath gas remains, y_ionisable -> 0 and the residual
+        # silently delivers ZERO. A user who declared a source and receives none of it
+        # cannot see that in the output, so an accepted state there is refused.
+        if self.ionisation_source.value_si > 0.0:
+            for j in range(self.num_core_species):
+                if self.neutral_heavy_mask[j] and self.source_cation_target[j] >= 0:
+                    y_ionisable += y[j]
+            if not (y_ionisable > 0.0):
+                raise PlasmaStateError(
+                    "ionisation_source={0!r} m^-3 s^-1 is declared, but the accepted "
+                    "state has no ionisable neutral inventory left ({1!r} mol in the "
+                    "neutrals that have a cation to ionise into); only unsupported bath "
+                    "gas remains. The source is apportioned over the ionisable neutrals, "
+                    "so it would deposit ZERO and vanish silently. Refusing rather than "
+                    "delivering none of a declared source. ({2})".format(
+                        self.ionisation_source.value_si, y_ionisable, self._identity()))
 
     def _latch_wall_diagnostics(self, np.ndarray y, double V, double t):
         """
@@ -1808,12 +1911,21 @@ cdef class PlasmaReactor(ReactionSystem):
         return result
 
     cpdef step(self, double tout):
-        """Step, then refuse the accepted state if it left the wall model's domain.
+        """Step, then refuse the accepted state if it left the wall model's domain, and
+        LATCH the wall interface at it.
 
-        This is the one :meth:`ReactionSystem.simulate` actually calls.
+        This is the one :meth:`ReactionSystem.simulate` actually calls, so the latch
+        here is what publishes the wall interface in a production run. :meth:`advance`
+        latches too, but ``simulate`` never calls ``advance``; a latch wired only into
+        ``advance`` left every production simulation publishing diagnostics frozen at
+        initialisation -- a guarantee that never ran, which is worse than none because it
+        looks like one. Latched AFTER ``check_wall_support``, at the accepted step, the
+        same accepted-state gate ``advance`` uses -- never from inside the residual.
         """
         result = ReactionSystem.step(self, tout)
         self.check_wall_support(self.y)
+        if self.has_wall:
+            self._latch_wall_diagnostics(self.y, self.compute_volume(self.y), self.t)
         return result
 
     cpdef double compute_volume(self, np.ndarray y) except -1:
