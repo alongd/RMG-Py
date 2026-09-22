@@ -59,6 +59,7 @@ with a loud reason on a database that predates it.
 import inspect
 import logging
 import os
+import pickle
 
 import pytest
 
@@ -1545,10 +1546,18 @@ class TestTheDiskAnswerIsRevalidated:
         """
         The TOCTOU window, made deterministic.
 
-        The file is removed from inside the existence check, which is what a concurrent
-        database edit does at an unpredictable moment. The wrong answer here is the
-        dangerous one: "this family carries no manifest" is a clean bill of health, and
-        the old code cached it.
+        The file is removed from inside the check that decides the manifest is there,
+        which is what a concurrent database edit does at an unpredictable moment. The
+        wrong answer here is the dangerous one: "this family carries no manifest" is a
+        clean bill of health, and the first version of the code cached it.
+
+        The hook moved in round 95 and the reason is worth recording, because a race
+        harness that no longer sits on the code path is a test that passes while
+        measuring nothing. Round 92's window was between an `os.path.exists` and a later
+        `open`; round 95 replaced that `open` with a descriptor-based read that never
+        calls `exists`, and `_manifest_signature` with an `os.lstat`. Both stats are
+        hooked, so the same test exercises the same window on either engine and its red
+        state on an older one is a real answer rather than a harness mismatch.
         """
         from rmgpy.data.kinetics import quarantine as module
 
@@ -1556,18 +1565,25 @@ class TestTheDiskAnswerIsRevalidated:
         manifest_path = os.path.join(str(family), QUARANTINE_FILENAME)
         monkeypatch.setitem(settings, "database.directory", str(tmp_path))
 
-        real_exists = module.os.path.exists
         state = {"fired": False}
 
-        def racing_exists(path):
-            answer = real_exists(path)
-            if answer and path == manifest_path and not state["fired"]:
-                state["fired"] = True
-                os.remove(path)
-            return answer
+        def racing(real):
+            def hook(path, *args, **kwargs):
+                answer = real(path, *args, **kwargs)
+                if str(path) == manifest_path and not state["fired"]:
+                    state["fired"] = True
+                    os.remove(manifest_path)      # the race, made deterministic
+                return answer
+            return hook
 
-        monkeypatch.setattr(module.os.path, "exists", racing_exists)
-        assert resolve_quarantine(self.LABEL) == (None, False), (
+        monkeypatch.setattr(module.os, "lstat", racing(module.os.lstat))
+        monkeypatch.setattr(module.os, "stat", racing(module.os.stat))
+        assert state["fired"] is False
+        answer = resolve_quarantine(self.LABEL)
+        assert state["fired"] is True, (
+            "the manifest was never removed, so this test did not exercise the race it "
+            "is named for")
+        assert answer == (None, False), (
             "a manifest that vanished mid-read was reported as a family with no manifest")
         assert not module._DISK_QUARANTINE_CACHE, (
             "the race was cached, so every later lookup inherits it")
@@ -1821,3 +1837,404 @@ class TestTheSuppressionConsultsDiskToo:
 
         assert not [record for record in caplog.records
                     if "Cannot tell whether" in record.getMessage()]
+
+
+# ---------------------------------------------------------------------------------------
+# Round 95
+# ---------------------------------------------------------------------------------------
+
+#: Quarantined on disk, deliberately not loaded.
+QUARANTINED_FIRST = "A_Family_Quarantined_On_Disk"
+
+#: Loaded, ordinary, unquarantined -- and named in a SECOND `family:` line. That is the
+#: whole attack: the loader keeps the last label, and a loaded family is never converted
+#: to a library reaction, so the shape round 89 fixed is never entered.
+INNOCENT_SECOND = "An_Ordinary_Loaded_Family"
+
+
+def _library_declaring(label, family_labels, electrons=0, degeneracy=1, auto=True):
+    """
+    An auto-generated library whose one entry declares `family_labels`, in order.
+
+    `_auto_generated_library` declares exactly one. This one takes a list because the
+    defect is what happens when a longDesc carries more than one, and carries `electrons`
+    and `degeneracy` because the conversion used to drop both.
+    """
+    long_desc = ["Matched reaction 3 Lip + CH3 <=> CH3Li in {0}/rate rule [Root]".format(
+        family_labels[0]), "Euclidian distance = 0"]
+    long_desc += ["family: {0}".format(name) for name in family_labels]
+    library = KineticsLibrary(label=label, name=label)
+    library.auto_generated = auto
+    library.entries = {
+        1: Entry(
+            index=1,
+            label="Lip + CH3 <=> CH3Li",
+            item=Reaction(
+                reactants=[Species(label="Lip", molecule=[Molecule(smiles="[Li+]")],
+                                   reactive=False),
+                           Species(label="CH3", molecule=[Molecule(smiles="[CH3]")],
+                                   reactive=False)],
+                products=[Species(label="CH3Li", molecule=[Molecule(smiles="C[Li]")],
+                                  reactive=False)],
+                reversible=False, electrons=electrons, degeneracy=degeneracy),
+            data=_marcus_with(""),
+            long_desc="\n".join(long_desc),
+        )
+    }
+    return library
+
+
+class TestASecondFamilyLineCannotHideTheFirstOnEitherShape:
+    """
+    Round 95's HIGH. `authoring_families`' docstring has promised since round 87 that a
+    second ``family:`` line cannot hide the first, and that promise held for the library
+    shape only: a template reaction took a short path and returned the single
+    ``reaction.family`` slot, which the loader overwrites once per line.
+
+    Round 92 attached the entry to this shape and these tests are what make the attachment
+    load-bearing rather than decorative. The `add_reaction_to_core` test is the acceptance
+    the manager named: the real loader, the real admission method, no constructor probe.
+    """
+
+    def setup_method(self):
+        _clear_gate_caches()
+
+    def teardown_method(self):
+        _clear_gate_caches()
+
+    def _on_disk(self, tmp_path):
+        _quarantined_on_disk(tmp_path, QUARANTINED_FIRST)
+        (tmp_path / "kinetics" / "families" / INNOCENT_SECOND).mkdir(parents=True)
+
+    def test_authoring_families_reads_every_label_on_the_template_shape(
+            self, monkeypatch, tmp_path):
+        """The reader, on its own. Fixing only the loader would leave this open."""
+        self._on_disk(tmp_path)
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+        library = _library_declaring("a_seed", [QUARANTINED_FIRST, INNOCENT_SECOND])
+        reaction = library.get_library_reactions()[0]
+
+        assert isinstance(reaction, TemplateReaction)
+        assert QUARANTINED_FIRST in authoring_families(reaction), (
+            "the entry declares two families and the reader returned only the slot, so "
+            "a quarantined first label is invisible behind an innocent second one")
+
+    def test_the_hidden_label_is_refused_at_add_reaction_to_core(self, monkeypatch,
+                                                                 tmp_path):
+        """The acceptance: admitted at 9b89a937c, refused here, through the real method."""
+        self._on_disk(tmp_path)
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+        library = _library_declaring("a_seed", [QUARANTINED_FIRST, INNOCENT_SECOND])
+        _model_database(monkeypatch, {"a_seed": library},
+                        {INNOCENT_SECOND: _loaded_family(INNOCENT_SECOND)})
+        reaction = library.get_library_reactions()[0]
+
+        model = CoreEdgeReactionModel()
+        with pytest.raises(QuarantinedKineticsError) as raised:
+            model.add_reaction_to_core(reaction)
+        assert QUARANTINED_FIRST in str(raised.value)
+        assert not model.core.reactions
+
+    def test_the_family_slot_is_not_normalised(self, monkeypatch, tmp_path):
+        """
+        The round-89 addendum, at the site this round changed. The repair is in the
+        READER; the slot keeps holding the last label, because `model.py` compares it
+        against the loaded families and `electron_placement.py` reads it.
+        """
+        self._on_disk(tmp_path)
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+        library = _library_declaring("a_seed", [QUARANTINED_FIRST, INNOCENT_SECOND])
+        reaction = library.get_library_reactions()[0]
+
+        assert reaction.family == INNOCENT_SECOND, (
+            "the slot's meaning was changed instead of the reader's, which the round-89 "
+            "addendum forbids: the slot is what model.py and electron_placement.py read")
+
+    def test_the_library_shape_still_refuses_both_labels(self, monkeypatch, tmp_path):
+        """The guarantee that already held. It must keep holding."""
+        self._on_disk(tmp_path)
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+        library = _library_declaring("an_ordinary_library",
+                                     [QUARANTINED_FIRST, INNOCENT_SECOND], auto=False)
+        _model_database(monkeypatch, {"an_ordinary_library": library},
+                        {INNOCENT_SECOND: _loaded_family(INNOCENT_SECOND)})
+        reaction = library.get_library_reactions()[0]
+
+        assert isinstance(reaction, LibraryReaction)
+        with pytest.raises(QuarantinedKineticsError):
+            model = CoreEdgeReactionModel()
+            model.add_reaction_to_core(reaction)
+
+
+def _loaded_family(label, quarantine=None, path=None):
+    class _Family(object):
+        pass
+
+    family = _Family()
+    family.label = label
+    family.quarantine = quarantine
+    family.quarantine_path = path
+    return family
+
+
+class TestTheConversionCarriesEveryField:
+    """
+    Round 95's MEDIUM 3. Both conversions constructed their replacement `LibraryReaction`
+    with 8 of the 17 fields the class takes, so the rest reverted to defaults.
+
+    `electrons` is the one with teeth in this campaign: a plasma reaction carries a signed
+    electron count because that is what the charge-balance checks read, so
+    ``Ar + e- => Ar+ + 2e-`` converted through this path claimed zero net electrons.
+    """
+
+    def setup_method(self):
+        _clear_gate_caches()
+
+    def teardown_method(self):
+        _clear_gate_caches()
+
+    def test_a_converted_electron_transfer_reaction_keeps_its_electrons(
+            self, monkeypatch, tmp_path):
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+        (tmp_path / "kinetics" / "families").mkdir(parents=True)
+        library = _library_declaring("a_seed", ["A_Family_Nobody_Has"], electrons=1,
+                                     degeneracy=3)
+        _model_database(monkeypatch, {"a_seed": library}, {})
+
+        model = CoreEdgeReactionModel()
+        model.add_seed_mechanism_to_core("a_seed")
+
+        assert len(model.core.reactions) == 1
+        converted = model.core.reactions[0]
+        assert isinstance(converted, LibraryReaction)
+        assert converted.electrons == 1, (
+            "the conversion reset the electron count to 0, so a seed reaction that "
+            "produces a free electron arrived in the core claiming charge balance")
+        assert converted.degeneracy == 3
+
+    def test_every_field_the_class_takes_is_carried(self):
+        """
+        The enumeration, rather than a hand-written list of fields to check.
+
+        The defect being closed IS a hand-written field list falling behind the class it
+        builds, so a test that hard-codes its own list reproduces the defect one layer up.
+        This one reads `LibraryReaction.__init__`'s signature, so a field added to the
+        class later is covered without editing this file.
+        """
+        from rmgpy.rmg.model import as_library_reaction
+
+        source = TemplateReaction(
+            index=7,
+            reactants=[Species(label="Lip", molecule=[Molecule(smiles="[Li+]")])],
+            products=[Species(label="CH3Li", molecule=[Molecule(smiles="C[Li]")])],
+            family="A_Family", kinetics=make_marcus(), reversible=False,
+            duplicate=True, degeneracy=3, electrons=1,
+        )
+        source.allow_pdep_route = True
+        source.elementary_high_p = True
+        source.allow_max_rate_violation = True
+
+        converted = as_library_reaction(source, "a_library")
+
+        assert converted.library == "a_library"
+        for name in inspect.signature(LibraryReaction.__init__).parameters:
+            if name in ("self", "library", "reactants", "products"):
+                continue
+            was = getattr(source, name, None)
+            assert getattr(converted, name, None) == was, (
+                "the conversion dropped {0!r}: {1!r} became {2!r}".format(
+                    name, was, getattr(converted, name, None)))
+
+
+class TestTheManifestFileIsValidatedNotOnlyItsDirectory:
+    """
+    Round 95's path MEDIUM. Round 92 constrained the family *directory* to the database.
+    The manifest inside it is what gets **executed**, and it could still be a symlink to
+    anywhere; a label carrying a NUL raised an uncaught `ValueError` out of the gate, and
+    one carrying a newline selected a real directory and executed its manifest.
+    """
+
+    def setup_method(self):
+        _clear_gate_caches()
+
+    def teardown_method(self):
+        _clear_gate_caches()
+
+    def _database(self, monkeypatch, tmp_path, label):
+        family = tmp_path / "kinetics" / "families" / label
+        family.mkdir(parents=True)
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+        return family
+
+    def test_a_manifest_symlinked_out_of_the_database_is_refused(self, monkeypatch,
+                                                                 tmp_path):
+        label = "A_Family_With_A_Symlinked_Manifest"
+        family = self._database(monkeypatch, tmp_path, label)
+        outside = tmp_path.parent / "not_a_manifest_{0}.py".format(tmp_path.name)
+        outside.write_text(MANIFEST)
+        os.symlink(str(outside), str(family / QUARANTINE_FILENAME))
+
+        quarantine, answered = resolve_quarantine(label)
+        assert quarantine is None and answered is False, (
+            "the manifest was a link out of the database and it was followed and "
+            "executed; refusing it must also leave the family UNanswered, since a "
+            "refusal is not a clean bill of health")
+
+    def test_a_label_carrying_a_nul_byte_is_refused_rather_than_raising(self, monkeypatch,
+                                                                       tmp_path):
+        self._database(monkeypatch, tmp_path, "A_Family")
+        assert resolve_quarantine("A_Family\x00.py") == (None, False)
+
+    def test_a_label_carrying_a_newline_is_refused(self, monkeypatch, tmp_path):
+        label = "A_Family\nOhNo"
+        try:
+            family = self._database(monkeypatch, tmp_path, label)
+        except OSError:
+            pytest.skip("this filesystem will not hold a newline in a directory name")
+        write_manifest(str(family))
+
+        assert resolve_quarantine(label) == (None, False), (
+            "a newline in a family label selected a real directory and its manifest "
+            "was executed")
+
+    def test_an_ordinary_label_still_resolves(self, monkeypatch, tmp_path):
+        label = "An_Ordinary_Family"
+        family = self._database(monkeypatch, tmp_path, label)
+        write_manifest(str(family))
+
+        quarantine, answered = resolve_quarantine(label)
+        assert answered and quarantine is not None, (
+            "the hardening refused an ordinary manifest; the check has stopped being a "
+            "check and started being a wall")
+
+    def test_a_manifest_that_is_not_a_regular_file_is_refused(self, monkeypatch,
+                                                              tmp_path):
+        """A directory named quarantine.py would otherwise raise from inside the gate."""
+        label = "A_Family_Whose_Manifest_Is_A_Directory"
+        family = self._database(monkeypatch, tmp_path, label)
+        (family / QUARANTINE_FILENAME).mkdir()
+
+        assert resolve_quarantine(label) == (None, False)
+
+
+class TestALoadedFamilyRereadsItsManifest:
+    """
+    Round 95's cache MEDIUM. Round 92 made the *unloaded* half re-stat the manifest on
+    every lookup. The loaded half returned `family.quarantine` before it looked at disk,
+    so a manifest added, edited or removed after load was invisible for the life of the
+    process -- the same staleness, on the other branch of the same function.
+    """
+
+    LABEL = "A_Loaded_Family_Whose_Manifest_Appears"
+
+    def setup_method(self):
+        _clear_gate_caches()
+
+    def teardown_method(self):
+        _clear_gate_caches()
+
+    def _loaded(self, monkeypatch, tmp_path, quarantine=None):
+        family_dir = tmp_path / "kinetics" / "families" / self.LABEL
+        family_dir.mkdir(parents=True)
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+        _register_families(monkeypatch, {self.LABEL: quarantine})
+        return family_dir
+
+    def test_a_manifest_added_after_the_family_loaded_is_seen(self, monkeypatch,
+                                                              tmp_path):
+        family_dir = self._loaded(monkeypatch, tmp_path)
+        assert resolve_quarantine(self.LABEL) == (None, True)
+
+        write_manifest(str(family_dir))
+        quarantine, answered = resolve_quarantine(self.LABEL)
+        assert answered and quarantine is not None, (
+            "the family was loaded before the manifest existed and the gate went on "
+            "answering from the object for the life of the process")
+
+    def test_a_manifest_removed_after_the_family_loaded_is_seen(self, monkeypatch,
+                                                                tmp_path):
+        family_dir = self._loaded(monkeypatch, tmp_path)
+        write_manifest(str(family_dir))
+        assert resolve_quarantine(self.LABEL)[0] is not None
+
+        os.remove(str(family_dir / QUARANTINE_FILENAME))
+        assert resolve_quarantine(self.LABEL) == (None, True)
+
+
+class TestTheSuppressionRescansRatherThanTrustingACachedNo:
+    """
+    Round 95's second cache MEDIUM. `_DISK_ANY_QUARANTINE_CACHE` is keyed on the families
+    ROOT's signature, and writing a manifest inside an existing family directory does not
+    move it -- so a cached "this database quarantines nothing" outlived the fact, and
+    `_warn_unanswered` stayed silent in a database that had started quarantining something.
+    """
+
+    def setup_method(self):
+        _clear_gate_caches()
+
+    def teardown_method(self):
+        _clear_gate_caches()
+
+    def test_a_manifest_added_inside_an_existing_family_ends_the_suppression(
+            self, monkeypatch, tmp_path):
+        from rmgpy.data.kinetics.quarantine import _database_has_any_quarantine
+
+        family = tmp_path / "kinetics" / "families" / "A_Family_Gaining_A_Manifest"
+        family.mkdir(parents=True)
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+        _register_families(monkeypatch, {})
+
+        assert _database_has_any_quarantine() is False
+        write_manifest(str(family))
+        assert _database_has_any_quarantine() is True, (
+            "the negative was cached against the families root's mtime, which a write "
+            "inside an existing family does not move")
+
+
+class TestThePinDocumentsWhatItActuallyChecks:
+    """
+    Round 95's fourth finding on `requiresEngineCallSites`, and the option taken.
+
+    The manager's ruling was "either it verifies what its name says, or rename it and
+    correct the docstring to state exactly what it checks". The check is renamed
+    internally to `_gate_calls_in_source` and its documentation now enumerates what it
+    does NOT verify. It is deliberately NOT strengthened a fifth time.
+    """
+
+    def test_the_documentation_enumerates_what_it_does_not_verify(self):
+        from rmgpy.data.kinetics import quarantine as module
+
+        checker = getattr(module, "_gate_calls_in_source", None)
+        assert checker is not None, (
+            "the check still carries a name that promises reachability analysis")
+        text = ((checker.__doc__ or "")
+                + (module._check_engine_requirements.__doc__ or "")).lower()
+        for missing in ("execut", "dominat", "argument", "propagat", "short-circuit",
+                        "shadow", "lambda"):
+            assert missing in text, (
+                "the documentation does not say that the check fails to verify {0!r}; "
+                "a syntactic check whose prose implies more is the defect four rounds "
+                "have found".format(missing))
+
+
+class TestTheCarrierSurvivesATransform:
+    """
+    Round 95's LOW. `get_library_reactions` attaches the entry, and
+    `TemplateReaction.__reduce__` and `copy()` enumerate their fields by hand -- neither
+    listed it, so a pickle or a copy dropped the provenance. The same carrier-loss class
+    as the HIGH, one transform over.
+    """
+
+    def _built(self):
+        library = _library_declaring("a_seed", ["A_Family"])
+        return library.get_library_reactions()[0]
+
+    def test_the_entry_survives_a_pickle(self):
+        reaction = self._built()
+        assert reaction.entry is not None
+        assert pickle.loads(pickle.dumps(reaction)).entry is not None
+
+    def test_the_entry_survives_a_copy(self):
+        reaction = self._built()
+        assert reaction.entry is not None
+        assert reaction.copy().entry is not None

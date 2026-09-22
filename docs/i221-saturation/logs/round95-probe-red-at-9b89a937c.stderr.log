@@ -1,0 +1,31 @@
+WARNING:matplotlib:/home/alon/.config/matplotlib is not a writable directory
+WARNING:matplotlib:Matplotlib created a temporary cache directory at /tmp/claude-1000/matplotlib-fmxuudvo because there was an issue with the default path (/home/alon/.config/matplotlib); it is highly recommended to set the MPLCONFIGDIR environment variable to a writable directory, in particular to speed up the import of Matplotlib and to better support multiprocessing.
+INFO:matplotlib.font_manager:Failed to extract font properties from /usr/share/fonts/truetype/noto/NotoColorEmoji.ttf: In FT2Font: Could not set the fontsize (invalid pixel size; error code 0x17)
+INFO:matplotlib.font_manager:generated new fontManager
+INFO:root:Kinetics family A_Family_Quarantined_On_Disk is QUARANTINED FOR TESTING (Marcus): the rate is unsafe
+INFO:root:Kinetics family A_Family_Quarantined_On_Disk is QUARANTINED FOR TESTING (Marcus): the rate is unsafe
+INFO:root:Adding seed mechanism a_seed_with_fields to model core...
+WARNING:root:loading reaction Lip + CH3 => CH3Li originally from family A_Family_This_Database_Does_Not_Have as a library reaction
+INFO:root:
+INFO:root:Summary of Model Enlargement
+INFO:root:---------------------------------
+INFO:root:Added 3 new core species
+INFO:root:    Lip
+INFO:root:    CH3
+INFO:root:    CH3Li
+INFO:root:Created 0 new edge species
+INFO:root:Added 1 new core reactions
+INFO:root:    Lip + CH3 => CH3Li
+INFO:root:Created 0 new edge reactions
+INFO:root:
+INFO:root:After model enlargement:
+INFO:root:    The model core has 3 species and 1 reactions
+INFO:root:    The model edge has 0 species and 0 reactions
+INFO:root:
+INFO:root:Kinetics family A_Family_With_A_Symlinked_Manifest is QUARANTINED FOR TESTING (Marcus): EXECUTED_FROM_OUTSIDE_THE_DATABASE
+INFO:root:Kinetics family A_Family
+OhNo is QUARANTINED FOR TESTING (Marcus): EXECUTED_VIA_NEWLINE_LABEL
+INFO:root:Kinetics family An_Ordinary_Family is QUARANTINED FOR TESTING (Marcus): still readable
+ERROR:root:Refusing to look for a quarantine manifest under the family label 'A_Family_Directory_That_Points_Out': it resolves to /tmp/claude-1000/round95_31zpd5ei/outside_dir, outside the database. A family label names a directory inside the database's kinetics/families, and the manifest found there is executed. Rates attributed to this label are treated as having an unresolvable authorship.
+INFO:root:Kinetics family Synthetic is QUARANTINED FOR TESTING (Arrhenius): a reason
+INFO:root:Kinetics family Synthetic is QUARANTINED FOR TESTING (Arrhenius): a reason

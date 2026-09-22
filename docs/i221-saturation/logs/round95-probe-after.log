@@ -1,0 +1,87 @@
+
+[NOT REPRODUCED] HIGH: a second `family:` line hides a quarantined first one on the template shape
+    shape built                 : TemplateReaction
+    longDesc named              : A_Family_Quarantined_On_Disk then An_Ordinary_Loaded_Family
+    .family slot (last wins)    : 'An_Ordinary_Loaded_Family'
+    authoring_families()        : ['A_Family_Quarantined_On_Disk', 'An_Ordinary_Loaded_Family']
+    entry attached              : True
+    ADMITTED_TO_CORE            : False
+    refused with: QUARANTINED FOR TESTING: refusing to admit a quarantined rate at admission to the model core.
+
+[NOT REPRODUCED] HIGH (the reader): authoring_families ignores the attached entry for a TemplateReaction
+    the entry's longDesc holds both labels; authoring_families returned ['A_Family_Quarantined_On_Disk', 'An_Ordinary_Loaded_Family'].
+    quarantine.py's short path returns [reaction.family] whenever reaction.library is None,
+    and never reaches the entry branch four lines below.
+
+[HOLDS] control: round 92's single-label template shape is still refused at add_reaction_to_core
+    refused = True
+
+[HOLDS] control: a second `family:` line still cannot hide the first on the LibraryReaction shape
+    authoring_families = ['A_Family_Quarantined_On_Disk', 'An_Ordinary_Loaded_Family']; refused = True
+
+[NOT REPRODUCED] MEDIUM: the seed conversion drops every field it is not explicitly handed
+    LibraryReaction.__init__ takes 17 fields; the conversion passes 8.
+    fields changed by the conversion that should not have been:
+      (none)
+    converted .electrons = 1 (the source reaction declares 1)
+
+[HOLDS] control: the conversion still writes the library label into .family
+    reaction.family after conversion = 'a_seed_with_fields' (electron_placement reads this slot)
+
+[HOLDS] control: the entry round 92 carried is still on the converted reaction
+    entry = Entry
+
+[HOLDS] control: the conversion itself carries `index`; it is the admission that renumbers
+    source.index = -1; straight after conversion = -1; after admission = 1
+
+[NOT REPRODUCED] MEDIUM: a manifest that is a symlink out of the database is followed and executed
+    resolve_quarantine('A_Family_With_A_Symlinked_Manifest') -> (NoneType, False)
+    the file executed was /tmp/claude-1000/round95_lwj7o1j2/outside_the_database/not_a_manifest.py, which is outside the database root /tmp/claude-1000/round95_lwj7o1j2/symlink
+    its `reason` reached the caller, so it ran
+
+[NOT REPRODUCED] MEDIUM: a label carrying a NUL byte raises an uncaught exception out of the gate
+    returned (None, False)
+
+[NOT REPRODUCED] MEDIUM: a label carrying a newline selects a directory and its manifest is executed
+    resolve_quarantine('A_Family\nOhNo') -> (NoneType, False); reason = None
+
+[HOLDS] control: an ordinary label still resolves to its manifest
+    resolve_quarantine('An_Ordinary_Family') -> (KineticsQuarantine, True)
+
+[HOLDS] control: a family DIRECTORY symlinked out of the database is still refused
+    resolve_quarantine -> (None, False)
+
+[NOT REPRODUCED] MEDIUM: a loaded family never re-reads its manifest
+    loaded, before the manifest was written : (None, True)
+    loaded, after  the manifest was written : (<KineticsQuarantine 'A_Loaded_Family_Whose_Manifest_Appears' QUARANTINED FOR TESTING applies to Marcus>, True)
+    the file on disk says QUARANTINED FOR TESTING
+
+[NOT REPRODUCED] MEDIUM: the suppression cache misses a manifest added inside an existing family
+    _database_has_any_quarantine() before = False, after = True
+    the manifest is on disk; the families root's mtime did not move, so the cached negative stands
+    and _warn_unanswered stays silent
+
+[NOT REPRODUCED] MEDIUM: the call-site check's own documentation claims more than it verifies
+    the documentation does not state that it fails to verify: (nothing -- all stated)
+    checker in use: _gate_calls_in_source
+
+[NOTED, not a finding] `False and check_quarantine(...)` is accepted, and this round does NOT change that
+    accepted = True. No static check can prove a call executes; each further narrowing
+    makes the check look stronger without changing what it can promise. The repair is
+    the documentation, per the manager's own two options.
+
+[HOLDS] control: a module that really calls the gate in all four admission functions is accepted
+    accepted = True expected
+
+[HOLDS] control: a module gating only two of the four admission functions is still refused
+    accepted = False expected
+
+[NOT REPRODUCED] LOW: the provenance carrier does not survive __reduce__ or copy()
+    entry before = True; after pickle = True; after copy() = True
+    TemplateReaction.__reduce__ and copy() enumerate their fields by hand and neither lists `entry`.
+
+==============================================================================
+findings reproduced : 0 of 10
+controls holding    : 9 of 9
+noted, not findings : 1
+==============================================================================

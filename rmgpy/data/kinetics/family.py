@@ -109,6 +109,7 @@ class TemplateReaction(Reaction):
                  reverse=None,
                  is_forward=None,
                  electrons=0,
+                 entry=None,
                  ):
         Reaction.__init__(self,
                           index=index,
@@ -128,6 +129,12 @@ class TemplateReaction(Reaction):
         self.template = template
         self.estimator = estimator
         self.reverse = reverse
+        # The authoring `Entry` this reaction was built from, when a library built it.
+        # `family` above is one slot holding one label, and an entry's `longDesc` may
+        # declare several; the quarantine gate reads the entry so that a second `family:`
+        # line cannot hide the first. Carried through `__reduce__` and `copy()` below,
+        # because a carrier that a pickle or a copy silently drops is not a carrier.
+        self.entry = entry
         self.labeled_atoms = {'reactants': dict(), 'products': dict()}
 
     def __reduce__(self):
@@ -149,7 +156,8 @@ class TemplateReaction(Reaction):
                                    self.estimator,
                                    self.reverse,
                                    self.is_forward,
-                                   self.electrons
+                                   self.electrons,
+                                   self.entry,
                                    ))
 
     def __repr__(self):
@@ -213,6 +221,7 @@ class TemplateReaction(Reaction):
         other.estimator = self.estimator
         other.reverse = self.reverse
         other.is_forward = self.is_forward
+        other.entry = self.entry
 
         return other
 
@@ -621,6 +630,9 @@ class KineticsFamily(Database):
         # A KineticsQuarantine if the family directory carries a quarantine.py sidecar,
         # None for every ordinary family. See rmgpy.data.kinetics.quarantine.
         self.quarantine = None
+        # Where that answer came from, so `resolve_quarantine` can re-read the manifest
+        # against its own signature instead of trusting this object for the life of the run.
+        self.quarantine_path = None
 
     def __repr__(self):
         return '<ReactionFamily "{0}">'.format(self.label)
@@ -697,7 +709,8 @@ class KineticsFamily(Database):
 
         # Loaded here, before the `depository_labels == 'all'` branch below returns early, so
         # every way of loading a family sees the same quarantine state. Ordinary families have
-        # no manifest and this is one os.path.exists.
+        # no manifest and this is one failed open.
+        self.quarantine_path = path
         self.quarantine = load_family_quarantine(self.label, path)
 
         if self.reactant_num:

@@ -374,18 +374,17 @@ class KineticsLibrary(Database):
                                        specific_collider=entry.item.specific_collider, kinetics=entry.data,
                                        duplicate=entry.item.duplicate, reversible=entry.item.reversible,
                                        family=family, template=template, degeneracy=entry.item.degeneracy,
-                                       electrons=entry.item.electrons)
-                # The third shape, and the one that had no carrier. This reaction's `family`
-                # slot holds real authorship -- parsed out of `long_desc` immediately above --
-                # but `CoreEdgeReactionModel` rebuilds it as a `LibraryReaction` whenever that
-                # family is not loaded (the seed and reaction-library paths in `rmg/model.py`),
-                # and a `LibraryReaction`'s `family` slot means the LIBRARY. Carrying the entry
-                # is what survives that conversion, because the entry's `long_desc` is the same
-                # text the family was just parsed out of.
-                #
-                # Assigned rather than passed: `TemplateReaction.__init__` takes no `entry`, and
-                # `rmgpy/data/kinetics/family.py` is outside this change.
-                rxn.entry = entry
+                                       electrons=entry.item.electrons,
+                                       # The third shape, and the one that had no carrier. The
+                                       # `family` slot above holds real authorship -- parsed out
+                                       # of `long_desc` a few lines up -- but it holds only the
+                                       # LAST `family:` line, and `CoreEdgeReactionModel` rebuilds
+                                       # this object as a `LibraryReaction` whenever that family is
+                                       # not loaded, where the same slot means the LIBRARY. The
+                                       # entry is what survives both: it is the very text the
+                                       # family was parsed from, and it carries every label, not
+                                       # just the last. `authoring_families` reads it.
+                                       entry=entry)
             else:  # pdep or standard library reaction
                 rxn = LibraryReaction(reactants=entry.item.reactants[:], products=entry.item.products[:],
                                       library=self.label, specific_collider=entry.item.specific_collider,

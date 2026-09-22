@@ -1,0 +1,483 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+rootdir: /home/alon/Code/RMG-Py-round95-red
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 101 items
+
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_manifest_loads_its_fields PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_family_without_a_manifest_is_not_quarantined PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_an_unknown_kinetics_class_raises_rather_than_quarantining_nothing PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_declared_engine_requirement_is_honoured PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_declared_engine_symbol_is_honoured PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_satisfied_engine_requirement_loads PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_the_commit_field_is_not_declarable PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_the_recorded_commit_is_kept_as_provenance_and_reaches_a_reader PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_symbol_that_is_not_callable_is_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_symbol_without_a_module_is_refused_not_ignored PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_gate_that_exists_but_is_not_wired_in_is_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_call_site_that_imports_the_gate_and_never_calls_it_is_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_the_real_call_site_satisfies_the_wiring_check PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_manifest_missing_a_required_field_raises[state] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_manifest_missing_a_required_field_raises[appliesToKineticsClass] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_manifest_missing_a_required_field_raises[reason] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_the_criterion_is_selective PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_the_criterion_is_evaluated_against_the_data_not_a_stored_list PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_no_hard_coded_entry_list_exists_in_the_code PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRefusalNamesFiveThings::test_it_names_the_family PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRefusalNamesFiveThings::test_it_names_the_provenance PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRefusalNamesFiveThings::test_it_names_the_generated_reaction PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRefusalNamesFiveThings::test_it_names_the_kinetics_class PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRefusalNamesFiveThings::test_it_names_the_reason PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRefusalNamesFiveThings::test_it_names_the_campaign_state_and_the_manifest PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRefusalNamesFiveThings::test_provenance_is_never_blank PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheGateFires::test_at_kinetics_estimation_the_primary_site PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheGateFires::test_at_core_admission_the_backstop PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheGateFires::test_at_edge_admission_the_backstop PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheGateFires::test_ordinary_chemistry_is_untouched PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheGateFires::test_a_quarantined_family_still_admits_its_unquarantined_kinetics PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheGateFires::test_an_unloaded_database_does_not_crash_the_gate PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestProvenanceNotTheFamilySlot::test_a_quarantined_rate_copied_into_a_library_is_still_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestProvenanceNotTheFamilySlot::test_the_provenance_may_live_in_the_entry_instead_of_the_comment PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestProvenanceNotTheFamilySlot::test_every_declared_family_is_consulted_not_just_the_first PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestProvenanceNotTheFamilySlot::test_a_forged_label_is_bounded_by_the_criterion PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestProvenanceNotTheFamilySlot::test_a_library_named_like_a_quarantined_family_is_not_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestProvenanceNotTheFamilySlot::test_authoring_family_reads_authorship_not_the_slot PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestProvenanceNotTheFamilySlot::test_an_unattributable_rate_is_reported_and_not_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestProvenanceNotTheFamilySlot::test_an_ordinary_library_rate_says_nothing PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheProvenanceArrivesFromTheRealLoader::test_the_entry_travels_with_the_reaction PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheProvenanceArrivesFromTheRealLoader::test_the_entry_survives_the_pickle_the_parallel_path_uses PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheProvenanceArrivesFromTheRealLoader::test_an_ordinary_library_still_loads_with_no_authorship PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestAMissingFamilyIsAnUnansweredQuestion::test_an_unloaded_family_is_answered_from_disk PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestAMissingFamilyIsAnUnansweredQuestion::test_a_family_in_the_database_without_a_manifest_is_a_clean_answer PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestAMissingFamilyIsAnUnansweredQuestion::test_an_unanswerable_question_is_reported_not_swallowed PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestAMissingFamilyIsAnUnansweredQuestion::test_a_database_with_no_quarantine_at_all_stays_silent PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheFamilySlotIsLeftAloneForItsOtherReader::test_the_library_label_still_lands_in_the_family_slot PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheFamilySlotIsLeftAloneForItsOtherReader::test_placement_still_resolves_for_the_argon_ionisation_channel PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheFamilySlotIsLeftAloneForItsOtherReader::test_the_two_readers_disagree_about_the_same_object_and_both_are_right PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheFamilySlotIsLeftAloneForItsOtherReader::test_nothing_in_the_gate_writes_to_the_family_slot PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestEveryAdmissionPathIsGated::test_the_pressure_dependent_network_path_is_gated PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestEveryAdmissionPathIsGated::test_the_enumeration_in_the_docstring_names_every_gate_call PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_1_the_reaction_is_not_removed_after_generation PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_2_no_average_rule_is_substituted PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_3_it_is_never_evaluated_at_potential_zero PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_4_it_is_not_marked_irreversible PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_5_no_reverse_rate_is_derived PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_6_seeding_a_product_or_cation_does_not_bypass_it PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_7_no_generic_collision_rate_replaces_it PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRealQuarantinedFamily::test_the_family_is_quarantined_with_the_ruling_s_words SKIPPED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRealQuarantinedFamily::test_the_affected_set_is_enumerated_from_the_database SKIPPED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRealQuarantinedFamily::test_nothing_was_deleted SKIPPED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRealQuarantinedFamily::test_the_rates_themselves_were_not_touched SKIPPED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheDoorLeftOpen::test_the_database_still_loads SKIPPED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheDoorLeftOpen::test_the_family_is_still_registered_and_still_generates_reactions SKIPPED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheDoorLeftOpen::test_the_rate_law_still_evaluates SKIPPED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheThirdShapeSurvivesTheConversion::test_the_real_loader_attaches_the_entry_to_the_template_shape PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheThirdShapeSurvivesTheConversion::test_a_seed_conversion_leaves_the_rate_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheThirdShapeSurvivesTheConversion::test_a_reaction_library_conversion_leaves_the_rate_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheThirdShapeSurvivesTheConversion::test_the_conversion_still_writes_the_library_label_into_the_family_slot PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheDiskAnswerIsRevalidated::test_a_manifest_added_after_the_first_lookup_is_seen PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheDiskAnswerIsRevalidated::test_a_manifest_removed_after_the_first_lookup_is_seen PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheDiskAnswerIsRevalidated::test_a_manifest_that_vanishes_mid_read_is_unanswered_not_clean PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestAFamilyLabelIsNotAPath::test_an_absolute_label_is_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestAFamilyLabelIsNotAPath::test_a_dotdot_label_is_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestAFamilyLabelIsNotAPath::test_a_symlinked_family_pointing_outside_is_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestAFamilyLabelIsNotAPath::test_an_ordinary_label_still_resolves PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCallSitePinCoversEveryGate::test_a_call_in_a_dead_branch_does_not_satisfy_it PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCallSitePinCoversEveryGate::test_a_same_named_call_on_something_else_does_not_satisfy_it PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCallSitePinCoversEveryGate::test_deleting_three_of_the_four_gates_is_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCallSitePinCoversEveryGate::test_the_real_module_satisfies_it PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSuppressionConsultsDiskToo::test_a_database_whose_manifests_are_only_on_disk_still_warns PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSuppressionConsultsDiskToo::test_a_database_with_no_quarantine_anywhere_stays_quiet PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestASecondFamilyLineCannotHideTheFirstOnEitherShape::test_authoring_families_reads_every_label_on_the_template_shape FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestASecondFamilyLineCannotHideTheFirstOnEitherShape::test_the_hidden_label_is_refused_at_add_reaction_to_core FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestASecondFamilyLineCannotHideTheFirstOnEitherShape::test_the_family_slot_is_not_normalised PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestASecondFamilyLineCannotHideTheFirstOnEitherShape::test_the_library_shape_still_refuses_both_labels PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheConversionCarriesEveryField::test_a_converted_electron_transfer_reaction_keeps_its_electrons FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheConversionCarriesEveryField::test_every_field_the_class_takes_is_carried FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifestFileIsValidatedNotOnlyItsDirectory::test_a_manifest_symlinked_out_of_the_database_is_refused FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifestFileIsValidatedNotOnlyItsDirectory::test_a_label_carrying_a_nul_byte_is_refused_rather_than_raising FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifestFileIsValidatedNotOnlyItsDirectory::test_a_label_carrying_a_newline_is_refused FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifestFileIsValidatedNotOnlyItsDirectory::test_an_ordinary_label_still_resolves PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifestFileIsValidatedNotOnlyItsDirectory::test_a_manifest_that_is_not_a_regular_file_is_refused FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestALoadedFamilyRereadsItsManifest::test_a_manifest_added_after_the_family_loaded_is_seen FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestALoadedFamilyRereadsItsManifest::test_a_manifest_removed_after_the_family_loaded_is_seen FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSuppressionRescansRatherThanTrustingACachedNo::test_a_manifest_added_inside_an_existing_family_ends_the_suppression FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestThePinDocumentsWhatItActuallyChecks::test_the_documentation_enumerates_what_it_does_not_verify FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCarrierSurvivesATransform::test_the_entry_survives_a_pickle FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCarrierSurvivesATransform::test_the_entry_survives_a_copy FAILED
+
+=================================== FAILURES ===================================
+_ TestASecondFamilyLineCannotHideTheFirstOnEitherShape.test_authoring_families_reads_every_label_on_the_template_shape _
+
+self = <quarantineTest.TestASecondFamilyLineCannotHideTheFirstOnEitherShape object at 0x7e90438ac2e0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7e90434409a0>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-664/test_authoring_families_reads_0')
+
+    def test_authoring_families_reads_every_label_on_the_template_shape(
+            self, monkeypatch, tmp_path):
+        """The reader, on its own. Fixing only the loader would leave this open."""
+        self._on_disk(tmp_path)
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+        library = _library_declaring("a_seed", [QUARANTINED_FIRST, INNOCENT_SECOND])
+        reaction = library.get_library_reactions()[0]
+    
+        assert isinstance(reaction, TemplateReaction)
+>       assert QUARANTINED_FIRST in authoring_families(reaction), (
+            "the entry declares two families and the reader returned only the slot, so "
+            "a quarantined first label is invisible behind an innocent second one")
+E       AssertionError: the entry declares two families and the reader returned only the slot, so a quarantined first label is invisible behind an innocent second one
+E       assert 'A_Family_Quarantined_On_Disk' in ['An_Ordinary_Loaded_Family']
+E        +  where ['An_Ordinary_Loaded_Family'] = authoring_families(TemplateReaction(reactants=[Species(label="Lip", molecule=[Molecule(smiles="[Li+]")], reactive=False, molecular_weight=(6.941,'amu')), Species(label="CH3", molecule=[Molecule(smiles="[CH3]")], reactive=False, molecular_weight=(15.0346,'amu'))], products=[Species(label="CH3Li", molecule=[Molecule(smiles="[Li][CH3]")], reactive=False, molecular_weight=(21.9756,'amu'))], kinetics=Marcus(A=(1.73e+06,'m^3/(mol*s)'), n=2, lmbd_i_coefs=[21824.5,-0.0341626,-0.0013254,4.92966e-07], beta=(1.2e+10,'1/m'), wr=(0,'kJ/mol'), wp=(0,'kJ/mol'), lmbd_o=(0,'J/mol')), reversible=False, family='An_Ordinary_Loaded_Family', template=Root))
+
+test/rmgpy/data/kinetics/quarantineTest.py:1918: AssertionError
+_ TestASecondFamilyLineCannotHideTheFirstOnEitherShape.test_the_hidden_label_is_refused_at_add_reaction_to_core _
+
+self = <quarantineTest.TestASecondFamilyLineCannotHideTheFirstOnEitherShape object at 0x7e9043878a30>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7e90437522e0>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-664/test_the_hidden_label_is_refus0')
+
+    def test_the_hidden_label_is_refused_at_add_reaction_to_core(self, monkeypatch,
+                                                                 tmp_path):
+        """The acceptance: admitted at 9b89a937c, refused here, through the real method."""
+        self._on_disk(tmp_path)
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+        library = _library_declaring("a_seed", [QUARANTINED_FIRST, INNOCENT_SECOND])
+        _model_database(monkeypatch, {"a_seed": library},
+                        {INNOCENT_SECOND: _loaded_family(INNOCENT_SECOND)})
+        reaction = library.get_library_reactions()[0]
+    
+        model = CoreEdgeReactionModel()
+        with pytest.raises(QuarantinedKineticsError) as raised:
+>           model.add_reaction_to_core(reaction)
+E           Failed: DID NOT RAISE <class 'rmgpy.exceptions.QuarantinedKineticsError'>
+
+test/rmgpy/data/kinetics/quarantineTest.py:1934: Failed
+_ TestTheConversionCarriesEveryField.test_a_converted_electron_transfer_reaction_keeps_its_electrons _
+
+self = <quarantineTest.TestTheConversionCarriesEveryField object at 0x7e9043840760>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7e9037b23430>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-664/test_a_converted_electron_tran0')
+
+    def test_a_converted_electron_transfer_reaction_keeps_its_electrons(
+            self, monkeypatch, tmp_path):
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+        (tmp_path / "kinetics" / "families").mkdir(parents=True)
+        library = _library_declaring("a_seed", ["A_Family_Nobody_Has"], electrons=1,
+                                     degeneracy=3)
+        _model_database(monkeypatch, {"a_seed": library}, {})
+    
+        model = CoreEdgeReactionModel()
+        model.add_seed_mechanism_to_core("a_seed")
+    
+        assert len(model.core.reactions) == 1
+        converted = model.core.reactions[0]
+        assert isinstance(converted, LibraryReaction)
+>       assert converted.electrons == 1, (
+            "the conversion reset the electron count to 0, so a seed reaction that "
+            "produces a free electron arrived in the core claiming charge balance")
+E       AssertionError: the conversion reset the electron count to 0, so a seed reaction that produces a free electron arrived in the core claiming charge balance
+E       assert 0 == 1
+E        +  where 0 = LibraryReaction(index=1, reactants=[Species(label="Lip", molecule=[Molecule(smiles="[Li+]")], reactive=False, molecular_weight=(6.941,'amu'), energy_transfer_model=SingleExponentialDown(alpha0=(3.5886,'kJ/mol'), T0=(300,'K'), n=0.85)), Species(label="CH3", molecule=[Molecule(smiles="[CH3]")], reactive=False, molecular_weight=(15.0346,'amu'), energy_transfer_model=SingleExponentialDown(alpha0=(3.5886,'kJ/mol'), T0=(300,'K'), n=0.85))], products=[Species(label="CH3Li", molecule=[Molecule(smiles="[Li][CH3]")], reactive=False, molecular_weight=(21.9756,'amu'), energy_transfer_model=SingleExponentialDown(alpha0=(3.5886,'kJ/mol'), T0=(300,'K'), n=0.85))], kinetics=Marcus(A=(1.73e+06,'m^3/(mol*s)'), n=2, lmbd_i_coefs=[21824.5,-0.0341626,-0.0013254,4.92966e-07], beta=(1.2e+10,'1/m'), wr=(0,'kJ/mol'), wp=(0,'kJ/mol'), lmbd_o=(0,'J/mol')), reversible=False, pairs=[(Species(label="Lip", molecule=[Molecule(smiles="[Li+]")], reactive=False, molecular_weight=(6.941,'amu'), energy_transfer_model=SingleExponentialDown(alpha0=(3.5886,'kJ/mol'), T0=(300,'K'), n=0.85)), Species(label="CH3Li", molecule=[Molecule(smiles="[Li][CH3]")], reactive=False, molecular_weight=(21.9756,'amu'), energy_transfer_model=SingleExponentialDown(alpha0=(3.5886,'kJ/mol'), T0=(300,'K'), n=0.85))), (Species(label="CH3", molecule=[Molecule(smiles="[CH3]")], reactive=False, molecular_weight=(15.0346,'amu'), energy_transfer_model=SingleExponentialDown(alpha0=(3.5886,'kJ/mol'), T0=(300,'K'), n=0.85)), Species(label="CH3Li", molecule=[Molecule(smiles="[Li][CH3]")], reactive=False, molecular_weight=(21.9756,'amu'), energy_transfer_model=SingleExponentialDown(alpha0=(3.5886,'kJ/mol'), T0=(300,'K'), n=0.85)))]).electrons
+
+test/rmgpy/data/kinetics/quarantineTest.py:2010: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  root:model.py:1744 loading reaction Lip + CH3 => CH3Li originally from family A_Family_Nobody_Has as a library reaction
+_ TestTheConversionCarriesEveryField.test_every_field_the_class_takes_is_carried _
+
+self = <quarantineTest.TestTheConversionCarriesEveryField object at 0x7e9043840940>
+
+    def test_every_field_the_class_takes_is_carried(self):
+        """
+        The enumeration, rather than a hand-written list of fields to check.
+    
+        The defect being closed IS a hand-written field list falling behind the class it
+        builds, so a test that hard-codes its own list reproduces the defect one layer up.
+        This one reads `LibraryReaction.__init__`'s signature, so a field added to the
+        class later is covered without editing this file.
+        """
+>       from rmgpy.rmg.model import as_library_reaction
+E       ImportError: cannot import name 'as_library_reaction' from 'rmgpy.rmg.model' (/home/alon/Code/RMG-Py-round95-red/rmgpy/rmg/model.py)
+
+test/rmgpy/data/kinetics/quarantineTest.py:2024: ImportError
+_ TestTheManifestFileIsValidatedNotOnlyItsDirectory.test_a_manifest_symlinked_out_of_the_database_is_refused _
+
+self = <quarantineTest.TestTheManifestFileIsValidatedNotOnlyItsDirectory object at 0x7e9043840d30>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7e9037b2d310>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-664/test_a_manifest_symlinked_out_0')
+
+    def test_a_manifest_symlinked_out_of_the_database_is_refused(self, monkeypatch,
+                                                                 tmp_path):
+        label = "A_Family_With_A_Symlinked_Manifest"
+        family = self._database(monkeypatch, tmp_path, label)
+        outside = tmp_path.parent / "not_a_manifest_{0}.py".format(tmp_path.name)
+        outside.write_text(MANIFEST)
+        os.symlink(str(outside), str(family / QUARANTINE_FILENAME))
+    
+        quarantine, answered = resolve_quarantine(label)
+>       assert quarantine is None and answered is False, (
+            "the manifest was a link out of the database and it was followed and "
+            "executed; refusing it must also leave the family UNanswered, since a "
+            "refusal is not a clean bill of health")
+E       AssertionError: the manifest was a link out of the database and it was followed and executed; refusing it must also leave the family UNanswered, since a refusal is not a clean bill of health
+E       assert (<KineticsQuarantine 'A_Family_With_A_Symlinked_Manifest' QUARANTINED FOR TESTING applies to Marcus> is None)
+
+test/rmgpy/data/kinetics/quarantineTest.py:2078: AssertionError
+_ TestTheManifestFileIsValidatedNotOnlyItsDirectory.test_a_label_carrying_a_nul_byte_is_refused_rather_than_raising _
+
+self = <quarantineTest.TestTheManifestFileIsValidatedNotOnlyItsDirectory object at 0x7e9043840f70>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7e90437361f0>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-664/test_a_label_carrying_a_nul_by0')
+
+    def test_a_label_carrying_a_nul_byte_is_refused_rather_than_raising(self, monkeypatch,
+                                                                       tmp_path):
+        self._database(monkeypatch, tmp_path, "A_Family")
+>       assert resolve_quarantine("A_Family\x00.py") == (None, False)
+
+test/rmgpy/data/kinetics/quarantineTest.py:2086: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+rmgpy/data/kinetics/quarantine.py:852: in resolve_quarantine
+    family_path = _family_directory(families_root, label)
+rmgpy/data/kinetics/quarantine.py:762: in _family_directory
+    resolved_family = os.path.realpath(family_path)
+../../anaconda3/envs/rmg_env/lib/python3.9/posixpath.py:392: in realpath
+    path, ok = _joinrealpath(filename[:0], filename, strict, {})
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+path = '/tmp/claude-1000/pytest-of-alon/pytest-664/test_a_label_carrying_a_nul_by0/kinetics/families'
+rest = '', strict = False, seen = {}
+
+    def _joinrealpath(path, rest, strict, seen):
+        if isinstance(path, bytes):
+            sep = b'/'
+            curdir = b'.'
+            pardir = b'..'
+        else:
+            sep = '/'
+            curdir = '.'
+            pardir = '..'
+            getcwd = os.getcwd
+        if strict is ALLOW_MISSING:
+            ignored_error = FileNotFoundError
+        elif strict:
+            ignored_error = ()
+        else:
+            ignored_error = OSError
+    
+        maxlinks = None
+    
+        if isabs(rest):
+            rest = rest[1:]
+            path = sep
+    
+        while rest:
+            name, _, rest = rest.partition(sep)
+            if not name or name == curdir:
+                # current dir
+                continue
+            if name == pardir:
+                # parent dir
+                if path:
+                    path, name = split(path)
+                    if name == pardir:
+                        path = join(path, pardir, pardir)
+                else:
+                    path = pardir
+                continue
+            newpath = join(path, name)
+            try:
+>               st = os.lstat(newpath)
+E               ValueError: embedded null byte
+
+../../anaconda3/envs/rmg_env/lib/python3.9/posixpath.py:436: ValueError
+_ TestTheManifestFileIsValidatedNotOnlyItsDirectory.test_a_label_carrying_a_newline_is_refused _
+
+self = <quarantineTest.TestTheManifestFileIsValidatedNotOnlyItsDirectory object at 0x7e90438441f0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7e904321e7c0>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-664/test_a_label_carrying_a_newlin0')
+
+    def test_a_label_carrying_a_newline_is_refused(self, monkeypatch, tmp_path):
+        label = "A_Family\nOhNo"
+        try:
+            family = self._database(monkeypatch, tmp_path, label)
+        except OSError:
+            pytest.skip("this filesystem will not hold a newline in a directory name")
+        write_manifest(str(family))
+    
+>       assert resolve_quarantine(label) == (None, False), (
+            "a newline in a family label selected a real directory and its manifest "
+            "was executed")
+E       AssertionError: a newline in a family label selected a real directory and its manifest was executed
+E       assert (<KineticsQua...Marcus>, True) == (None, False)
+E         
+E         At index 0 diff: <KineticsQuarantine 'A_Family\nOhNo' QUARANTINED FOR TESTING applies to Marcus> != None
+E         
+E         Full diff:
+E           (
+E         -     None,
+E         -     False,...
+E         
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/rmgpy/data/kinetics/quarantineTest.py:2096: AssertionError
+_ TestTheManifestFileIsValidatedNotOnlyItsDirectory.test_a_manifest_that_is_not_a_regular_file_is_refused _
+
+self = <quarantineTest.TestTheManifestFileIsValidatedNotOnlyItsDirectory object at 0x7e9043844670>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7e90433216d0>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-664/test_a_manifest_that_is_not_a_0')
+
+    def test_a_manifest_that_is_not_a_regular_file_is_refused(self, monkeypatch,
+                                                              tmp_path):
+        """A directory named quarantine.py would otherwise raise from inside the gate."""
+        label = "A_Family_Whose_Manifest_Is_A_Directory"
+        family = self._database(monkeypatch, tmp_path, label)
+        (family / QUARANTINE_FILENAME).mkdir()
+    
+>       assert resolve_quarantine(label) == (None, False)
+
+test/rmgpy/data/kinetics/quarantineTest.py:2117: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+rmgpy/data/kinetics/quarantine.py:872: in resolve_quarantine
+    quarantine = load_family_quarantine(label, family_path)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+family_label = 'A_Family_Whose_Manifest_Is_A_Directory'
+family_path = '/tmp/claude-1000/pytest-of-alon/pytest-664/test_a_manifest_that_is_not_a_0/kinetics/families/A_Family_Whose_Manifest_Is_A_Directory'
+
+    def load_family_quarantine(family_label, family_path):
+        """
+        Load the quarantine manifest from a kinetics family directory, if it has one.
+    
+        Returns a :class:`KineticsQuarantine`, or ``None`` when the family carries no
+        manifest -- which is the case for every ordinary family, and is why this costs
+        a single :func:`os.path.exists` per family load.
+    
+        The manifest is executed the way the rest of the database is, with builtins
+        stripped, so it stays a declarative data file rather than a script.
+        """
+        path = os.path.join(family_path, QUARANTINE_FILENAME)
+        if not os.path.exists(path):
+            return None
+    
+        local_context = {'__builtins__': None}
+        global_context = {'__builtins__': None}
+        try:
+>           with open(path, 'r') as f:
+E           IsADirectoryError: [Errno 21] Is a directory: '/tmp/claude-1000/pytest-of-alon/pytest-664/test_a_manifest_that_is_not_a_0/kinetics/families/A_Family_Whose_Manifest_Is_A_Directory/quarantine.py'
+
+rmgpy/data/kinetics/quarantine.py:491: IsADirectoryError
+_ TestALoadedFamilyRereadsItsManifest.test_a_manifest_added_after_the_family_loaded_is_seen _
+
+self = <quarantineTest.TestALoadedFamilyRereadsItsManifest object at 0x7e9043844a90>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7e9043644b20>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-664/test_a_manifest_added_after_th1')
+
+    def test_a_manifest_added_after_the_family_loaded_is_seen(self, monkeypatch,
+                                                              tmp_path):
+        family_dir = self._loaded(monkeypatch, tmp_path)
+        assert resolve_quarantine(self.LABEL) == (None, True)
+    
+        write_manifest(str(family_dir))
+        quarantine, answered = resolve_quarantine(self.LABEL)
+>       assert answered and quarantine is not None, (
+            "the family was loaded before the manifest existed and the gate went on "
+            "answering from the object for the life of the process")
+E       AssertionError: the family was loaded before the manifest existed and the gate went on answering from the object for the life of the process
+E       assert (True and None is not None)
+
+test/rmgpy/data/kinetics/quarantineTest.py:2150: AssertionError
+_ TestALoadedFamilyRereadsItsManifest.test_a_manifest_removed_after_the_family_loaded_is_seen _
+
+self = <quarantineTest.TestALoadedFamilyRereadsItsManifest object at 0x7e9043844cd0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7e904321ee50>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-664/test_a_manifest_removed_after_1')
+
+    def test_a_manifest_removed_after_the_family_loaded_is_seen(self, monkeypatch,
+                                                                tmp_path):
+        family_dir = self._loaded(monkeypatch, tmp_path)
+        write_manifest(str(family_dir))
+>       assert resolve_quarantine(self.LABEL)[0] is not None
+E       assert None is not None
+
+test/rmgpy/data/kinetics/quarantineTest.py:2158: AssertionError
+_ TestTheSuppressionRescansRatherThanTrustingACachedNo.test_a_manifest_added_inside_an_existing_family_ends_the_suppression _
+
+self = <quarantineTest.TestTheSuppressionRescansRatherThanTrustingACachedNo object at 0x7e904384b100>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7e90433093a0>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-664/test_a_manifest_added_inside_a0')
+
+    def test_a_manifest_added_inside_an_existing_family_ends_the_suppression(
+            self, monkeypatch, tmp_path):
+        from rmgpy.data.kinetics.quarantine import _database_has_any_quarantine
+    
+        family = tmp_path / "kinetics" / "families" / "A_Family_Gaining_A_Manifest"
+        family.mkdir(parents=True)
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+        _register_families(monkeypatch, {})
+    
+        assert _database_has_any_quarantine() is False
+        write_manifest(str(family))
+>       assert _database_has_any_quarantine() is True, (
+            "the negative was cached against the families root's mtime, which a write "
+            "inside an existing family does not move")
+E       AssertionError: the negative was cached against the families root's mtime, which a write inside an existing family does not move
+E       assert False is True
+E        +  where False = <function _database_has_any_quarantine at 0x7e9046c0be50>()
+
+test/rmgpy/data/kinetics/quarantineTest.py:2189: AssertionError
+_ TestThePinDocumentsWhatItActuallyChecks.test_the_documentation_enumerates_what_it_does_not_verify _
+
+self = <quarantineTest.TestThePinDocumentsWhatItActuallyChecks object at 0x7e904384b370>
+
+    def test_the_documentation_enumerates_what_it_does_not_verify(self):
+        from rmgpy.data.kinetics import quarantine as module
+    
+        checker = getattr(module, "_gate_calls_in_source", None)
+>       assert checker is not None, (
+            "the check still carries a name that promises reachability analysis")
+E       AssertionError: the check still carries a name that promises reachability analysis
+E       assert None is not None
+
+test/rmgpy/data/kinetics/quarantineTest.py:2208: AssertionError
+______ TestTheCarrierSurvivesATransform.test_the_entry_survives_a_pickle _______
+
+self = <quarantineTest.TestTheCarrierSurvivesATransform object at 0x7e9043844340>
+
+    def test_the_entry_survives_a_pickle(self):
+        reaction = self._built()
+        assert reaction.entry is not None
+>       assert pickle.loads(pickle.dumps(reaction)).entry is not None
+E       AttributeError: 'TemplateReaction' object has no attribute 'entry'
+
+test/rmgpy/data/kinetics/quarantineTest.py:2235: AttributeError
+_______ TestTheCarrierSurvivesATransform.test_the_entry_survives_a_copy ________
+
+self = <quarantineTest.TestTheCarrierSurvivesATransform object at 0x7e9043840c40>
+
+    def test_the_entry_survives_a_copy(self):
+        reaction = self._built()
+        assert reaction.entry is not None
+>       assert reaction.copy().entry is not None
+E       AttributeError: 'TemplateReaction' object has no attribute 'entry'
+
+test/rmgpy/data/kinetics/quarantineTest.py:2240: AttributeError
+================================ tests coverage ================================
+_______________ coverage: platform linux, python 3.9.23-final-0 ________________
+
+Coverage HTML written to dir htmlcov
+=========================== short test summary info ============================
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestASecondFamilyLineCannotHideTheFirstOnEitherShape::test_authoring_families_reads_every_label_on_the_template_shape
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestASecondFamilyLineCannotHideTheFirstOnEitherShape::test_the_hidden_label_is_refused_at_add_reaction_to_core
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheConversionCarriesEveryField::test_a_converted_electron_transfer_reaction_keeps_its_electrons
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheConversionCarriesEveryField::test_every_field_the_class_takes_is_carried
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifestFileIsValidatedNotOnlyItsDirectory::test_a_manifest_symlinked_out_of_the_database_is_refused
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifestFileIsValidatedNotOnlyItsDirectory::test_a_label_carrying_a_nul_byte_is_refused_rather_than_raising
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifestFileIsValidatedNotOnlyItsDirectory::test_a_label_carrying_a_newline_is_refused
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifestFileIsValidatedNotOnlyItsDirectory::test_a_manifest_that_is_not_a_regular_file_is_refused
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestALoadedFamilyRereadsItsManifest::test_a_manifest_added_after_the_family_loaded_is_seen
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestALoadedFamilyRereadsItsManifest::test_a_manifest_removed_after_the_family_loaded_is_seen
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheSuppressionRescansRatherThanTrustingACachedNo::test_a_manifest_added_inside_an_existing_family_ends_the_suppression
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestThePinDocumentsWhatItActuallyChecks::test_the_documentation_enumerates_what_it_does_not_verify
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheCarrierSurvivesATransform::test_the_entry_survives_a_pickle
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheCarrierSurvivesATransform::test_the_entry_survives_a_copy
+================== 14 failed, 80 passed, 7 skipped in 12.20s ===================
