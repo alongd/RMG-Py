@@ -867,15 +867,24 @@ def test_reduce_enumerates_every_constructor_parameter():
 # electron-population validators, the single-cation enforcement, and the direct
 # diffusionLength dimension check.
 #
-# Two kinds of test live here, and the distinction is deliberate. The DEFECT
-# reproductions -- every test that exercises a refusal or a corrected behaviour a prior
-# build got wrong -- have their red state banked, on the built module, in the round's
-# evidence log (before.log and the round-90/93/96 logs). The INVARIANT checks -- a
-# closed-form re-derivation of nu_wall, a geometry scaling law, a charge/heavy-atom
-# conservation statement, a parameterisation invariance -- assert a positive property
-# directly and have no "red state" in the defect sense; a banked red log is not claimed
-# for them, because there is no defect they reproduce. The claim is scoped to the tests
-# that can meet it rather than asserted over all of them.
+# Two kinds of test live here, and which kind a test is can be read off its DOCSTRING --
+# the brief is scoped by an observable marker, not asserted in bulk over every function.
+#
+#  - A DEFECT REPRODUCTION names, in its docstring, the finding and the round it closes
+#    ("Round 96 HIGH 1", "MEDIUM: ...", "HIGH 3: ..."). THAT is the red-state claim, and it
+#    is banked: the test was run red on the built module BEFORE its fix, in that round's
+#    before.log (round90/93/96/100_before.log). If a test names a round/finding, its red
+#    state exists in that round's log; if it does not, it makes no such claim.
+#  - An INVARIANT / PROPERTY / ACCEPTANCE check -- a closed-form re-derivation of nu_wall, a
+#    geometry scaling law, a charge/heavy-atom conservation statement, a parameterisation
+#    invariance, a "the four verdicts hold together" acceptance -- asserts a positive
+#    property directly. It has no "red state" in the defect sense and NONE is claimed for
+#    it. Such a test either states the property it holds or carries no round/finding tag.
+#
+# So the standard is met by construction: the only tests that claim a banked red are the
+# ones whose docstring names a finding, and those are exactly the ones reproduced red in a
+# before.log. A reader auditing the claim checks the docstring tag against the round log,
+# not a separate per-test manifest that could fall out of step with either.
 
 EV_J_PER_MOL = 96485.33212
 
@@ -1077,10 +1086,13 @@ def test_wall_refuses_anion_in_core():
     cln = Species(label='Cl-').from_adjacency_list('1 Cl u0 p4 c-1')
     arp = Species(label='Ar+').from_adjacency_list('multiplicity 2\n1 Ar u1 p3 c+1')
     imf = {electron: 1e-6, arp: 1e-6, cln: 1e-6, cl: 1e-6, ground: 1.0 - 4e-6}
+    # Ar and Cl are distinct heavy skeletons, so the neutral bath is a mixture; opt into
+    # the single-bath approximation so this deck reaches the anion check it is about.
     reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
                             (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
                             diffusion_length=(_diffusion_length(), 'm'),
-                            ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'))
+                            ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
+                            wall_single_bath_approximation=True)
     with pytest.raises(PlasmaStateError) as exc:
         reactor.initialize_model([electron, ground, cl, cln, arp], [], [], [])
     assert 'does not support anions' in str(exc.value)
@@ -1135,7 +1147,10 @@ def _isomer_reactor(gamma=1.0, dme_kj=-184.0, eth_kj=-235.0, neutralization=None
     imf = {electron: 1.0e-6, dmep: 1.0e-6, eth: 1.0e-6, dme: 1.0 - 3.0e-6}
     kwargs = dict(diffusion_length=(_diffusion_length(), 'm'),
                   ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
-                  wall_recycling=gamma)
+                  wall_recycling=gamma,
+                  # DME and ethanol are distinct skeletons: opt into the single-bath
+                  # approximation so the recycle-target behaviour under test is reached.
+                  wall_single_bath_approximation=True)
     if neutralization is not None:
         kwargs['wall_neutralization_products'] = neutralization
     reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
@@ -1220,7 +1235,8 @@ def test_declared_source_is_delivered_in_full_in_a_mixture():
                             (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
                             diffusion_length=(_diffusion_length(), 'm'),
                             ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
-                            wall_recycling=0.0, ionisation_source=(source, 'm^-3/s'))
+                            wall_recycling=0.0, ionisation_source=(source, 'm^-3/s'),
+                            wall_single_bath_approximation=True)
     core = [electron, ar, he, arp]
     reactor.initialize_model(core, [], [], [])
     z = reactor.species_charges
@@ -1319,7 +1335,8 @@ def test_source_apportionment_jacobian_matches_fd_in_a_mixture():
                             (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
                             diffusion_length=(_diffusion_length(), 'm'),
                             ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
-                            wall_recycling=1.0, ionisation_source=(1.0e5, 'm^-3/s'))
+                            wall_recycling=1.0, ionisation_source=(1.0e5, 'm^-3/s'),
+                            wall_single_bath_approximation=True)
     core = [electron, ar, he, arp]
     reactor.initialize_model(core, [], [], [])
     z = reactor.species_charges
@@ -1429,7 +1446,8 @@ def test_declared_source_refused_when_no_ionisable_inventory_remains():
                             (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
                             diffusion_length=(_diffusion_length(), 'm'),
                             ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
-                            wall_recycling=1.0, ionisation_source=(1.0e18, 'm^-3/s'))
+                            wall_recycling=1.0, ionisation_source=(1.0e18, 'm^-3/s'),
+                            wall_single_bath_approximation=True)
     core = [electron, ar, he, arp]
     reactor.initialize_model(core, [], [], [])
     z = reactor.species_charges
@@ -1461,7 +1479,8 @@ def test_check_wall_support_refuses_an_individual_negative_neutral():
     reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
                             (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
                             diffusion_length=(_diffusion_length(), 'm'),
-                            ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'))
+                            ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
+                            wall_single_bath_approximation=True)
     core = [electron, ar, he, arp]
     reactor.initialize_model(core, [], [], [])
     z = reactor.species_charges
@@ -1948,30 +1967,45 @@ def test_finite_wall_inputs_that_make_nu_wall_infinite_are_refused_at_constructi
         _build_reactor(wall=True, with_chemistry=False, lam=1.0e-160)
 
 
-def test_neutral_mixture_warns_that_the_single_mobility_is_an_approximation(caplog):
-    """MEDIUM 2: the wall carries ONE ion reduced mobility (Ar+ in Ar) but n_neutral sums
-    every neutral heavy species, so a 50/50 Ar/He mixture applies the Ar+-in-Ar mobility to
-    the He fraction too. It is NOT refused -- refusing a multi-skeleton neutral bath would
-    forbid every multi-species plasma (an inert diluent, an isomeric neutral the wall must
-    not transmute into, multiple ionisable co-reactants), all supported and carrying
-    distinct skeletons by construction -- and it cannot be made composition-weighted without
-    a reduced mobility per bath gas, which the model does not carry. So the mixture is
-    accepted with a WARNING naming the gases and the approximation; input.rst says the same
-    at the mobility keyword. Ar and its metastable Ar* share one skeleton (one bath, exact)
-    and must NOT warn."""
+def test_neutral_mixture_is_refused_unless_the_single_bath_approximation_is_opted_into(caplog):
+    """MEDIUM 2 (round 100): the wall carries ONE ion reduced mobility (Ar+ in Ar) but
+    n_neutral sums every neutral heavy species, so a 50/50 Ar/He mixture applies the
+    Ar+-in-Ar mobility to the He fraction too -- transport that does not describe the gas. A
+    warning is not enough (a consumer of the latched fluxes cannot read a log line) and a
+    passive availability label is not enough (it documents the wrong transport rather than
+    gating on it). So the mixture is REFUSED at construction unless the user opts in via
+    wall_single_bath_approximation=True, consciously accepting the approximation. Refusing
+    outright would forbid every multi-species plasma, and running silently is wrong; the
+    opt-in is the honest middle. With the opt-in the run proceeds and WARNS, naming the
+    gases; input.rst says the same at the mobility keyword. Ar and its metastable Ar* share
+    one skeleton (one bath, exact) and neither refuse nor warn (separate test)."""
     e, ar, arp = _argon_species()
     he = Species(label='He').from_adjacency_list('1 He u0 p1 c0')
     he.thermo = _thermo_with_h298(0.0)
     imf = {e: 1.0e-6, arp: 1.0e-6, ar: 0.5 - 1.0e-6, he: 0.5 - 1.0e-6}
+
+    # Without the opt-in: refused at construction, naming the gases and the keyword.
+    with pytest.raises(PlasmaStateError) as exc:
+        r = PlasmaReactor(
+            (TGAS, 'K'), (P_NOMINAL, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+            n_sims=1, termination=[],
+            diffusion_length=(_diffusion_length(), 'm'),
+            ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'), wall_recycling=1.0)
+        r.initialize_model([e, ar, he, arp], [], [], [])
+    assert 'spans more than one gas' in str(exc.value)
+    assert 'wall_single_bath_approximation' in str(exc.value)
+
+    # With the opt-in: constructs and warns.
     with caplog.at_level(logging.WARNING):
         reactor = PlasmaReactor(
             (TGAS, 'K'), (P_NOMINAL, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
             n_sims=1, termination=[],
             diffusion_length=(_diffusion_length(), 'm'),
-            ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'), wall_recycling=1.0)
-        reactor.initialize_model([e, ar, he, arp], [], [], [])   # accepted, not refused
+            ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'), wall_recycling=1.0,
+            wall_single_bath_approximation=True)
+        reactor.initialize_model([e, ar, he, arp], [], [], [])   # accepted on opt-in
     assert 'spans more than one gas' in caplog.text, \
-        "a genuine bath mixture must warn that the single mobility is an approximation"
+        "an opted-in bath mixture must still warn that the single mobility is an approximation"
 
     # the single-bath Ar/Ar* deliverable shares one skeleton and must NOT warn
     caplog.clear()
@@ -2010,9 +2044,19 @@ def test_small_but_nonzero_source_flux_is_not_lost_to_a_squaring_underflow():
     L2 norm, so a small source whose flux is representable but whose SQUARE underflows
     (below ~sqrt(DBL_MIN)) reported exactly zero -- reading as an inert reactor while a
     source was declared and admitted. The norm must be scale-robust so a nonzero flux
-    stays nonzero."""
+    stays nonzero.
+
+    The scalar norm alone is a weak witness -- it is positive if EITHER pair member is
+    injected. Round 100 strengthens it: a pair source seeds an ion AND an electron, so
+    check the per-species residual delivers a positive rate into BOTH the electron and the
+    cation, not merely that some aggregate is nonzero."""
     r, core, rxns = _build_reactor(wall=True, with_chemistry=False, x_ion=0.0, source=1.0e-140)
     assert r.get_non_chemical_char_rate() > 0.0
+    ie, _i_ar, i_arp = _indices(r)
+    y = np.array(r.y0[:r.num_core_species], float)
+    delta, _ = r.residual(0.0, y, np.zeros(r.num_core_species, float))
+    assert delta[ie] > 0.0, "the source did not inject the electron of the pair"
+    assert delta[i_arp] > 0.0, "the source did not inject the cation of the pair"
 
 
 # ---------------------------------------------------------------- round 96
@@ -2042,7 +2086,10 @@ def _slow_neutral_drift_reactor(slow_k, xseed, source=1.0e5, gamma=1.0,
         (TGAS, 'K'), (P_NOMINAL, 'Pa'), imf, (te_ev * EV_TO_K, 'K'), n_sims=1,
         termination=termination or [], diffusion_length=(_diffusion_length(), 'm'),
         ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'), wall_recycling=gamma,
-        ionisation_source=(source, 'm^-3/s'))
+        ionisation_source=(source, 'm^-3/s'),
+        # Ar and X carry distinct skeletons: opt into the single-bath approximation, the
+        # transport is not what this drifting-neutral criterion test is about.
+        wall_single_bath_approximation=True)
     core = [e, ar, arp, x]
     slow = Reaction(reactants=[ar], products=[x], reversible=False,
                     kinetics=Arrhenius(A=(slow_k, 's^-1'), n=0, Ea=(0, 'J/mol')))
@@ -2113,10 +2160,11 @@ def test_the_wall_guard_evaluates_the_runtime_expression_not_a_reference_proxy()
 
 
 def test_multi_gas_bath_records_an_availability_state_not_just_a_warning():
-    """Round 96 MEDIUM 2: a warning is not an availability state -- a consumer reading the
-    latched wall fluxes cannot see a log line. When the neutral bath spans more than one
-    heavy skeleton the single ion mobility is applied to the summed density as an
-    approximation, so every nu_wall-derived flux is downgraded from 'available' to
+    """Round 96 MEDIUM 2, kept under round 100's opt-in: once the single-bath approximation
+    is opted into (wall_single_bath_approximation=True), a consumer reading the latched wall
+    fluxes must still see the approximation as a queryable STATE, not merely a log line. When
+    the neutral bath spans more than one heavy skeleton the single ion mobility is applied to
+    the summed density, so every nu_wall-derived flux is downgraded from 'available' to
     'available-single-bath-approximation' in the availability dict. A single-skeleton bath
     (Ar, or Ar and its metastable) reports plain 'available'. The downgrade never launders a
     genuinely unavailable (NaN) field into a usable one."""
@@ -2127,7 +2175,8 @@ def test_multi_gas_bath_records_an_availability_state_not_just_a_warning():
     reactor = PlasmaReactor(
         (TGAS, 'K'), (P_NOMINAL, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1,
         termination=[], diffusion_length=(_diffusion_length(), 'm'),
-        ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'), wall_recycling=1.0)
+        ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'), wall_recycling=1.0,
+        wall_single_bath_approximation=True)
     reactor.initialize_model([e, ar, he, arp], [], [], [])
     assert reactor.wall_bath_is_mixture is True
     y = np.array(reactor.y0[:reactor.num_core_species], float)
@@ -2154,3 +2203,87 @@ def test_a_subnormal_source_that_injects_nothing_is_refused():
         with pytest.raises(PlasmaStateError):
             _build_reactor(wall=True, with_chemistry=False, x_ion=0.0, source=bad)
     _build_reactor(wall=True, with_chemistry=False, x_ion=0.0, source=1.0e5)
+
+
+# ---------------------------------------------------------------- round 100
+#
+# The steady-state MECHANISM was unsound even though its behaviour was right: the
+# external arm was a two-point comparison with a permanent latch, persistence still
+# depended on accepted solver steps, and the physical window was anchored to absolute
+# log time instead of the system relaxation time. The source guard evaluated a
+# reference-density proxy, and the multi-gas mobility was documented rather than gated.
+# Each red state below was reproduced first on the built module and is banked in
+# docs/i246-ambipolar-wall-operator/evidence/round100_before.log.
+
+
+def test_the_source_guard_evaluates_the_runtime_expression_at_the_actual_volume():
+    """Round 100 MEDIUM: the __init__ source guard checks ionisation_source/Na, but the
+    residual injects ionisation_source*V/Na -- a different expression, the same shape as
+    round 96's nu_wall overflow. At an extreme-but-finite volume the runtime product
+    underflows to exactly zero (a declared source that injects nothing, switching off the
+    zero-electron ignition guard while n_e can never leave zero) though source/Na is a
+    normal double that passes __init__. The guard must evaluate the run-time expression at
+    the actual initial volume. The physical case at a normal volume still constructs."""
+    e, ar, arp = _argon_species()
+    imf = {e: 0.0, arp: 0.0, ar: 1.0}
+
+    def make(P, source):
+        r = PlasmaReactor((TGAS, 'K'), (P, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+                          n_sims=1, termination=[], diffusion_length=(_diffusion_length(), 'm'),
+                          ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
+                          wall_recycling=0.0, ionisation_source=(source, 'm^-3/s'))
+        r.initialize_model([e, ar, arp], [], [], [])
+        return r
+
+    # source/Na = 1.66e-284 is a normal double (passes __init__), but at V ~ 2.5e-37 m^3
+    # the runtime source*V/Na ~ 4e-321 underflows below the smallest normal double.
+    with pytest.raises(PlasmaStateError):
+        make(1.0e40, 1.0e-260)
+    make(P_NOMINAL, 1.0e5)          # the physical case constructs
+
+
+def test_wall_relaxation_time_is_one_over_nu_wall_and_absent_without_a_wall():
+    """Round 100 HIGH 3: the criterion anchors persistence to the SYSTEM relaxation time,
+    which the reactor supplies. A wall deck reports 1/nu_wall (finite, positive, evaluated
+    at the state); a wall-less deck reports nan, sending the criterion to its absolute-time
+    fallback so ordinary reactors are unchanged."""
+    r, core, _ = _build_reactor(wall=True, with_chemistry=False)
+    y = _state_at(r, 1.0e-6)
+    V = r.compute_volume(y)
+    nu = r.compute_nu_wall(y, V)
+    tau = r.steady_state_relaxation_time(1.0, y)
+    assert np.isfinite(tau) and tau > 0.0
+    assert np.isclose(tau, 1.0 / nu, rtol=1e-12)
+
+    r2, core2, _ = _build_reactor(wall=False, with_chemistry=False)
+    y2 = _state_at(r2, 1.0e-6)
+    assert not np.isfinite(r2.steady_state_relaxation_time(1.0, y2))
+
+
+def test_all_four_steady_state_verdicts_hold_together_in_one_build():
+    """Round 100 verifier: the four steady-state verdicts must coexist under ONE build -- a
+    fix for one must not buy itself by breaking another. (1) a slow-drifting neutral is NOT
+    steady; (2) a stationary composition over a shrinking inventory IS steady; (3) a
+    zero-seed ignition saturates to a steady state; (4) a genuinely inert deck is NOT
+    steady."""
+    t1 = [TerminationSteadyState(tolerance=1.0e-8), TerminationTime((300.0, 's'))]
+    r1, c1, x1 = _slow_neutral_drift_reactor(slow_k=1.0e-12, xseed=1.0e-2, termination=t1)
+    _simulate(r1, c1, x1)
+    assert not r1.steady_state_reached, "(1) a still-drifting neutral was wrongly called steady"
+
+    t2 = [TerminationSteadyState(tolerance=1.0e-8), TerminationTime((50.0, 's'))]
+    r2, c2, x2 = _build_reactor(wall=True, gamma=0.0, with_chemistry=False,
+                                x_ion=1.0e-4, source=1.0e22, termination=t2)
+    _simulate(r2, c2, x2)
+    assert r2.steady_state_reached, "(2) a stationary composition over a shrinking inventory was missed"
+
+    t3 = [TerminationSteadyState(tolerance=1.0e-8), TerminationTime((300.0, 's'))]
+    r3, c3, x3 = _build_reactor(wall=True, with_chemistry=False, x_ion=0.0,
+                                source=1.0e5, termination=t3)
+    _simulate(r3, c3, x3)
+    assert r3.steady_state_reached, "(3) a zero-seed ignition did not reach steady state"
+
+    t4 = [TerminationSteadyState(tolerance=1.0e-8), TerminationTime((1.0, 's'))]
+    r4, c4, x4 = _build_reactor(wall=False, with_chemistry=False, termination=t4)
+    _simulate(r4, c4, x4)
+    assert not r4.steady_state_reached, "(4) a genuinely inert deck was wrongly called steady"

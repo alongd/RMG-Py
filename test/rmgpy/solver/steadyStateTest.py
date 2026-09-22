@@ -164,29 +164,32 @@ class TerminationSteadyStateResidualTest:
 class TerminationSteadyStateLatchTest:
     """The arming latch and the window -- the part that keeps the criterion honest."""
 
-    @staticmethod
-    def _feed(term, residual_sequence):
+    def _feed(self, term, residual_sequence):
         """
         Drive `term` through a sequence of residuals by synthesising steps that produce
         them. One species at 1.0 and one at exp(+/-R) over an e-fold of time; the constant
         species dominates the total, so the mole fraction of the second tracks it.
 
         Physical time ADVANCES across steps -- ``t`` goes e^j -> e^(j+1), one e-fold per
-        step, with the clock ``term._feed_step`` persisting across successive _feed calls on
-        the same object. It is not held fixed at (1, e): a criterion whose persistence is
-        measured in physical time (so it does not depend on the integrator's step size)
-        cannot be exercised by a clock that never moves. Each step still spans exactly one
-        e-fold, so the residual it produces is unchanged; only the absolute time advances.
+        step -- because a criterion whose persistence is measured in physical time (so it
+        does not depend on the integrator's step size) cannot be exercised by a clock that
+        never moves. The clock belongs to THIS HARNESS, not to `term`: it is kept in
+        ``self._feed_clock`` per term, and `term` is driven only through its real
+        :meth:`update` API. An earlier version stamped the clock onto ``term._feed_step`` --
+        an attribute production never sets -- which proved nothing about how the criterion is
+        actually called; the harness owning the schedule is the honest arrangement.
         """
+        clocks = self.__dict__.setdefault('_feed_clock', {})
+        j = clocks.get(id(term), 0)
         fired_at = None
         for k, r in enumerate(residual_sequence):
-            j = getattr(term, '_feed_step', 0)
             big = 1e12
             y_prev = np.array([big, 1.0])
             y_now = np.array([big, float(np.exp(r))])
             t_prev = float(np.exp(j))
             t_now = float(np.exp(j + 1))
-            term._feed_step = j + 1
+            j += 1
+            clocks[id(term)] = j
             if term.update(y_now, t_now, y_prev, t_prev, ATOL):
                 fired_at = k
                 break
@@ -209,21 +212,31 @@ class TerminationSteadyStateLatchTest:
         assert term.residual < 1e-6      # ...and yet correctly refusing to fire
 
     def test_criterion_fires_once_armed_and_flat(self):
-        """Transient (R rises past 1), then the flat tail: this is a real steady state."""
+        """Transient (R rises past 1), then the flat tail: this is a real steady state.
+
+        With each synthesised step spanning one e-fold of time, two flat samples already
+        span the e-fold the physical persistence requires, so firing lands on the second
+        flat step (index 1), not on a third step counted by the old bare step window."""
         term = TerminationSteadyState(tolerance=1e-6, window=3)
         # rise through the measured peak of 15.5, then the measured collapse
         rise = [1e-9, 1e-4, 0.44, 2.13, 15.48, 3.45, 0.573, 3.328e-2, 1.355e-4]
         assert self._feed(term, rise) is None
         assert term.armed is True
-        assert self._feed(term, [1.036e-7, 2.889e-8, 4.845e-9]) == 2   # window of 3
+        assert self._feed(term, [1.036e-7, 2.889e-8, 4.845e-9]) == 1   # 2 samples span an e-fold
 
-    def test_window_is_enforced(self):
-        """Two flat steps are not three."""
+    def test_two_flat_samples_are_the_minimum_and_not_sufficient(self):
+        """Round 100 HIGH 2: the step count is no longer the criterion, only a fluke guard.
+        A single flat sample is not an interval and cannot terminate however long its step;
+        two samples are the minimum. But two samples are NOT sufficient on their own -- the
+        physical span must also hold (tested in test_persistence_is_physical_time...)."""
         term = TerminationSteadyState(tolerance=1e-6, window=3)
         assert self._feed(term, [2.0]) is None            # arm it
-        assert self._feed(term, [1e-9, 1e-9]) is None     # only two flat steps
-        assert term.streak == 2
-        assert self._feed(term, [1e-9]) == 0              # the third fires
+        # one flat sample: even though this synthesised step spans a full e-fold, streak is
+        # only 1, so the two-sample guard blocks it.
+        assert self._feed(term, [1e-9]) is None
+        assert term.streak == 1
+        # the second flat sample makes an interval, and the e-fold span already holds
+        assert self._feed(term, [1e-9]) == 0
 
     def test_a_single_moving_step_resets_the_window(self):
         term = TerminationSteadyState(tolerance=1e-6, window=3)
@@ -254,44 +267,147 @@ class TerminationSteadyStateLatchTest:
         assert self._feed(term, [0.0] * 51) is None
         assert term.armed is False
 
+    @staticmethod
+    def _feed_r(term, target_r, t_prev, t_now, relax=float('nan')):
+        """Produce a residual of exactly ``target_r`` at ANY step size: the residual is
+        |d ln x / d ln t|, so the composition change must scale with the time step,
+        d ln x = target_r * d ln t. (A fixed d ln x would make the residual blow up as the
+        step shrinks -- the very step dependence under test.)"""
+        big = 1e12
+        dlnt = np.log(t_now) - np.log(t_prev)
+        y_prev = np.array([big, 1.0])
+        y_now = np.array([big, float(np.exp(target_r * dlnt))])
+        return term.update(y_now, t_now, y_prev, t_prev, ATOL, relaxation_time=relax)
+
     def test_persistence_is_physical_time_not_a_bare_step_count(self):
-        """Round 96 MEDIUM 3: the flat streak counted accepted solver STEPS, so three steps
-        clustered in negligible physical time -- an artefact of tight step control -- filled
-        the window and fired. Persistence must be measured in physical time: the flat run
-        has to span at least an e-fold before firing, so neither the verdict nor the
-        termination time depends on the step controller. A residual of exactly zero (a
-        structurally frozen composition) is exempt -- it is unambiguously steady and fires
-        at once, which is what a fully-pumped discharge decaying to n_e = 0 relies on."""
-        def feed(term, target_r, t_prev, t_now):
-            # Produce a residual of exactly ``target_r`` at ANY step size: the residual is
-            # |d ln x / d ln t|, so the composition change must scale with the time step,
-            # d ln x = target_r * d ln t. (Feeding a fixed d ln x instead would make the
-            # residual blow up as the step shrinks -- the very step dependence under test.)
-            big = 1e12
-            dlnt = np.log(t_now) - np.log(t_prev)
-            y_prev = np.array([big, 1.0])
-            y_now = np.array([big, float(np.exp(target_r * dlnt))])
-            return term.update(y_now, t_now, y_prev, t_prev, ATOL)
-
-        # Arm (R >= 1), then three flat steps that together span less than one e-fold in
-        # time (factor 1.1 each: ln(1.21) ~ 0.19 < 1). The step window of three IS met.
+        """Round 100 HIGH 2: the flat streak counted accepted solver STEPS, so a plateau
+        spanning many steps in negligible physical time filled the window and fired while a
+        plateau spanning few steps over a genuine relaxation did not -- the verdict depended
+        on the step controller. The binding requirement is a physical span; the step count
+        survives only as a two-sample fluke guard, never sufficient. And there is NO
+        exact-zero waiver -- a residual of zero earns the same span confirmation as any other
+        flat tail, because equal endpoints do not prove a frozen structure. (No relaxation
+        time supplied here, so the span is one e-fold of absolute time.)"""
         term = TerminationSteadyState(tolerance=1e-6, window=3)
-        feed(term, 2.0, 1.0, np.e)                        # R >= 1 -> armed
-        assert not feed(term, 1e-7, np.e, 100.0)          # flat step 1 (t_flat_start = 100)
-        assert not feed(term, 1e-7, 100.0, 110.0)         # flat step 2 (span 0.095 e-fold)
-        assert not feed(term, 1e-7, 110.0, 121.0)         # flat step 3 (span 0.19 e-fold)
-        assert term.armed and term.streak >= term.window  # step window IS satisfied...
-        # ...yet the flat run has not spanned an e-fold, so none of the three fired above.
-        # The SAME flatness, once time has advanced past an e-fold, does fire.
-        assert feed(term, 1e-7, 121.0, 300.0)             # span ln(3) ~ 1.1 e-fold -> fires
+        self._feed_r(term, 2.0, 1.0, np.e)                  # arm
+        # Flat steps in factor-1.1 increments. The two-sample guard is met at step 2 and the
+        # bare step `window` of 3 at step 3, yet none fires until the flat run has spanned a
+        # full e-fold of time -- which factor-1.1 steps reach only after ceil(1/ln 1.1) of
+        # them. The verdict tracks the physical span, not the step count.
+        t = np.e
+        fired_step = None
+        for k in range(30):
+            t_next = t * 1.1
+            got = self._feed_r(term, 1e-7, t, t_next)
+            t = t_next
+            if got:
+                fired_step = k
+                break
+        assert term.streak >= term.window          # the step window filled long before...
+        assert fired_step == int(np.ceil(1.0 / np.log(1.1))) - 1   # ...it fired at the e-fold
 
-        # A residual of exactly zero is exempt from the span: three frozen steps that span
-        # less than an e-fold still fire once armed (a structurally frozen composition).
+        # A residual of exactly zero gets NO waiver: it must span the e-fold like any tail.
         term0 = TerminationSteadyState(tolerance=1e-6, window=3)
-        feed(term0, 2.0, 1.0, np.e)
-        feed(term0, 0.0, np.e, 100.0)
-        feed(term0, 0.0, 100.0, 110.0)
-        assert feed(term0, 0.0, 110.0, 121.0)
+        self._feed_r(term0, 2.0, 1.0, np.e)
+        assert not self._feed_r(term0, 0.0, np.e, np.e * 1.1)      # frozen, but < 1 e-fold
+        assert not self._feed_r(term0, 0.0, np.e * 1.1, np.e * 1.21)
+        assert self._feed_r(term0, 0.0, np.e * 1.21, np.e * 3.0)   # now spans an e-fold
+
+    def test_persistence_anchors_to_the_relaxation_time_when_supplied(self):
+        """Round 100 HIGH 3: with a system relaxation time the flat run must persist for one
+        tau of PHYSICAL time, not for a factor of e of absolute time. Anchored to tau, the
+        confirmation is the same however large the absolute clock is -- it does not demand
+        another 1.718*t0 just because the window opened late."""
+        tau = 5.0
+        # Window opens at a LARGE absolute time; only one tau of flatness is needed, not an
+        # e-fold of the (large) absolute time.
+        term = TerminationSteadyState(tolerance=1e-6, window=3)
+        self._feed_r(term, 2.0, 1.0e6, 1.0e6 * np.e, relax=tau)          # arm at large t
+        assert not self._feed_r(term, 1e-7, 1.0e6 * np.e, 1.0e6 * np.e + 2.0, relax=tau)  # 2 s < tau
+        # cross one tau of elapsed flat time -> fires, though the absolute span is a tiny
+        # fraction of an e-fold at t ~ 1e6.
+        assert self._feed_r(term, 1e-7, 1.0e6 * np.e + 2.0, 1.0e6 * np.e + 6.0, relax=tau)
+
+    def test_the_verdict_is_independent_of_when_the_flat_window_opens(self):
+        """Round 100 HIGH 3 acceptance: the same physics -- arm, then a flat run that lasts a
+        fixed number of relaxation times -- must reach the same verdict whether the flat
+        window opens early or late in absolute time. Anchored to tau (not to an absolute
+        e-fold, which would demand ever more elapsed time the later the window opens), it
+        does."""
+        tau = 3.0
+
+        def fires_when_opening_at(t0):
+            term = TerminationSteadyState(tolerance=1e-6, window=3)
+            self._feed_r(term, 2.0, t0, t0 + tau, relax=tau)          # arm near t0
+            t = t0 + tau
+            for _ in range(8):
+                t_next = t + 0.6 * tau
+                if self._feed_r(term, 1e-7, t, t_next, relax=tau):
+                    return True
+                t = t_next
+            return False
+
+        assert fires_when_opening_at(1.0) is True
+        assert fires_when_opening_at(1.0e3) is True     # far later in absolute time: same verdict
+        assert fires_when_opening_at(1.0e9) is True
+
+    def test_the_same_physics_gives_the_same_verdict_under_coarse_and_fine_stepping(self):
+        """Round 100 HIGH 2 acceptance: a flat plateau one relaxation time long must reach
+        the SAME verdict whether the integrator crossed it in few coarse steps or many fine
+        ones. Driven here as two schedules over the identical physical trajectory."""
+        tau = 4.0
+
+        def run(step):
+            term = TerminationSteadyState(tolerance=1e-6, window=3)
+            self._feed_r(term, 2.0, 1.0, np.e, relax=tau)   # arm
+            t = np.e
+            for _ in range(int(round(3.0 * tau / step)) + 2):
+                t_next = t + step
+                if self._feed_r(term, 1e-8, t, t_next, relax=tau):
+                    return True
+                t = t_next
+            return False
+
+        assert run(0.5) is True         # fine: many small steps across the tau plateau
+        assert run(3.9) is True         # coarse: a couple of big steps across the same plateau
+
+    def test_the_external_arm_does_not_vouch_for_a_generic_channel_still_rising(self):
+        """Round 100 HIGH 1: the external (electron) arm may license the criterion only while
+        the generic channel is not still departing, judged over a WINDOW of samples, not the
+        two most recent. A neutral residual rising throughout but carrying one flat/noisy
+        sample must NOT arm the criterion; a genuinely settled channel does."""
+        # rising sub-tolerance neutral with one flat sample, electron past relaxation
+        term = TerminationSteadyState(tolerance=1e-6, window=3)
+        rising = [1e-9, 2e-9, 3e-9, 3e-9, 4e-9, 5e-9, 6e-9, 7e-9, 8e-9, 9e-9]
+        for k, rg in enumerate(rising):
+            j = float(k)
+            y_prev = np.array([1e12, 1.0])
+            y_now = np.array([1e12, float(np.exp(rg))])
+            term.update(y_now, np.exp(j + 1), y_prev, np.exp(j), ATOL, external_armed=True)
+        assert term.armed_external is False and term.armed is False
+
+        # a genuinely settled neutral, electron past relaxation: DOES arm
+        term2 = TerminationSteadyState(tolerance=1e-6, window=3)
+        settled = [0.5, 0.9, 0.95, 1e-9, 1e-9, 1e-9, 1e-9]
+        for k, rg in enumerate(settled):
+            j = float(k)
+            y_prev = np.array([1e12, 1.0])
+            y_now = np.array([1e12, float(np.exp(rg))])
+            term2.update(y_now, np.exp(j + 1), y_prev, np.exp(j), ATOL, external_armed=True)
+        assert term2.armed_external is True
+
+    def test_the_external_arm_is_not_a_permanent_latch(self):
+        """Round 100 HIGH 1: the external arm is a conjunction with a LIVE condition (the
+        generic channel not departing), so it must be re-evaluated, not latched. A channel
+        that settles (arming it) and then resumes moving must un-arm."""
+        term = TerminationSteadyState(tolerance=1e-6, window=3)
+        seq = [1e-9, 1e-9, 1e-9, 1e-9, 2e-9, 3e-9, 4e-9, 5e-9]   # settles, then departs
+        for k, rg in enumerate(seq):
+            j = float(k)
+            y_prev = np.array([1e12, 1.0])
+            y_now = np.array([1e12, float(np.exp(rg))])
+            term.update(y_now, np.exp(j + 1), y_prev, np.exp(j), ATOL, external_armed=True)
+        assert term.armed_external is False   # the resumed rise dropped the arm
 
     def test_reset_clears_the_latch(self):
         """
