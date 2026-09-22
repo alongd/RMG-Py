@@ -424,9 +424,91 @@ exercised by an end-to-end run, only by a constructed below-floor state. HIGH 1'
 proven on the integrated-electron formulation; the algebraic (`quasineutralElectron=True`) formulation
 admits zero identically but was not driven end-to-end from zero.
 
+## Round 93: ignition is a new dynamical regime — two HIGH, three MEDIUM, one LOW
+
+Round 90 made ignition from zero electrons real. Round 93 is the consequence: the zero boundary is a
+**new dynamical regime**, and mechanisms that were correct for a *seeded* run are wrong there. Every
+premise below was probed on the built module before a line was written (`evidence/round93_probe.py`,
+`round93_probe_timing.py`); the six repairs were reproduced red-first (`round93_before.log`) and are
+green after (`round93_after.log`). The nu_wall cross-check holds: 185.14 at the operating point, 185.17
+at α=1e-6, against the reviewer's 185.15.
+
+| # | reads | governs |
+|---|-------|---------|
+| HIGH 1 | quasineutrality tested **relatively** at every scale | the algebraic charge row is enforced to an **absolute** accuracy; a relative test on a sub-`atol` inventory measures solver noise |
+| HIGH 2 | the criterion arms on an empirical slope reaching `R≥1` | a **saturating-from-zero** trajectory has a slope bounded by 1, and its electron is sub-`atol`: the two the arm was built for are inverted |
+| MED 1 | each wall input is finite on its own | their **combination** (`nu_wall`) can still be non-finite; a subnormal `Λ²` is a finite input and a lethal divisor |
+| MED 2 | one reduced mobility against the **summed** neutral density | the mobility is defined for **one bath gas**; a mixture needs a per-gas (Blanc's-law) mobility the model does not carry |
+| MED 3 | the density floor built from `mobility_reference_density` | the transport reads `mu0·Nref` as a **product**; the floor must be invariant under `(Nref·c, mu0/c)` |
+| LOW | `sqrt(Σ res²)` as the non-chemical rate | a representable-but-small flux **underflows when squared** and reads as inert while a source is declared |
+
+**HIGH 1 — algebraic-mode ignition, decided by the `atol` seam.** `quasineutralElectron=True` failed to
+ignite: at `t=3e-15 s` the whole charged inventory is ~2e-33 mol (seventeen orders under `atol=1e-16`),
+the algebraic charge row's absolute residual is ~2.6e-34, and the *relative* guard read that as an 11%
+imbalance and refused. Measured trajectory (`round93_probe.py`): below `atol` the relative imbalance sits
+at ~6%, and the instant the inventory clears `atol` it collapses to ≤2e-16 (machine epsilon) on the row's
+own. So the guard stands down **only while `magnitude < atol`, and only in the algebraic mode** — where
+the row is enforced absolutely. This is *not* the absolute floor round 88 removed: that floor was `1e-12`
+mol and admitted a genuinely-unpaired `1e-13` mol electron in the *integrated* mode; both sit above
+`atol`, so round 88's example stays refused and the integrated guard is byte-for-byte unchanged. The stand-
+down reads the actual `atol_array`, not a constant, so a user's tolerance choice moves it.
+
+**HIGH 2 — the campaign's goal, arriving and not being recognised.** At `S=1e5` the reactor reaches
+`n_e = S/nu_wall = 540.12 m⁻³` exactly and holds it, yet reported `reached=False`. Two causes, both
+measured. (a) The trajectory `n_e=(S/nu)(1-e^{-nu t})` has log-log slope `nu t/(e^{nu t}-1)`, **strictly
+below 1** for all t>0 — the arm (`R≥1`) can never fire, because it was designed for *decaying* transients
+whose slope is unbounded, and a saturating rise is the opposite shape. (b) The electron saturates at
+3.3e-21 mol, far under `atol`, so the generic residual sees only the neutrals — which a weak discharge
+never perturbs, giving `residual=0` from the first step (`round93_probe_timing.py`: `max residual = 0`,
+`streak=65`, `armed=False`). Arming-only would then fire at ignition, not saturation. The fix supplies the
+electron's **own** slope so firing waits for it to go flat (density = `S/nu_wall`, verified to 8 figures),
+and arms on **`t·nu_wall ≥ 1`** — the identical `t/tau≥1` standard, evaluated from the relaxation time the
+wall knows (`1/nu_wall`) rather than from the bounded empirical slope. Gated on a live discharge (source>0,
+electrons present), so a model that never started still reports not-reached — verified in the same test.
+Both hooks default to none/False in `base`, so every ordinary reactor is unchanged (all reactor suites:
+308 pass / 1 skip).
+
+**MED 1 — refuse, don't merely flag.** `mu0=1e308` (overflows `D_a`) and `Λ=1e-160` (`Λ²=1e-320`,
+subnormal) both give `nu_wall=inf`. Round 90 marked the term *unavailable*; that is not refusing a state
+that cannot be integrated. Now `nu_wall` at the reference density must be finite at construction, and `Λ²`
+must be a **normal** double. Round 90's availability test still stands — it now latches a *hand-built*
+non-finite state, since the extreme mobility is refused before it can be built.
+
+**MED 2 — the option the reviewer offered that the design forbids.** "Enforce single bath gas" would
+refuse any deck whose neutrals span more than one heavy skeleton — but that is *every* multi-species
+plasma: an inert He diluent, an isomeric neutral the wall must not transmute into, multiple ionisable
+co-reactants (the source-apportionment tests). Enforcement breaks the isomer-transmutation, diluent and
+apportionment tests by construction. "Composition-dependent mobility" (Blanc's law) needs a reduced
+mobility *per* bath gas, which the model does not carry. So neither offered option is viable; the honest
+resolution is to **warn**, once, naming the gases and the approximation, and state it at the mobility
+keyword in `input.rst`. The Ar/Ar* deliverable shares one skeleton and does not warn.
+
+**MED 3 — round 90's HIGH 2 in a new coordinate.** The transport reads `mu0·Nref` as a product, so
+`(Nref·c, mu0/c)` leaves every `nu_wall` bit-identical — but the floor was `FRACTION·Nref` and scaled by
+`c`, so physically identical inputs were accepted or refused differently. The floor is now
+`FRACTION·PLASMA_LOSCHMIDT`, a physical constant invariant under the reparameterisation (and unchanged for
+the default deck, where `Nref` *is* Loschmidt). Verified invariant across `c ∈ {1, 1e3, 1e-3}`.
+
+**LOW — a norm that loses a nonzero flux.** `get_non_chemical_char_rate` squared each term; a source
+delivering `res ~ S/Na` per species underflows to exactly zero once `res < sqrt(DBL_MIN) ≈ 1.5e-154`, so a
+declared-and-admitted source read as inert. Replaced with a max-scaled L2 norm, so a nonzero flux stays
+nonzero at any scale.
+
+### What I could NOT reach / chose not to do
+- **MED 2 is a documented approximation, not a physics fix.** A genuine Ar/He mixture still runs on the
+  Ar⁺-in-Ar mobility against the summed density; only a warning and the docs mark it. A composition-weighted
+  mobility is a real feature needing per-gas transport data and is out of this rework's scope.
+- **HIGH 2's firing time depends on the residual's tolerance.** The electron channel fires at `nu·t ≈ 23`
+  for `tol=1e-8` (`e^{-23} ≈ 1e-10`), so the reported density is `S/nu` to ~10 figures; a looser tolerance
+  reports a slightly-less-saturated density. This is the criterion's own tolerance semantics, not new.
+- The `t·nu_wall ≥ 1` arm uses `nu_wall` at the current step; for a discharge whose `nu_wall` drifts with
+  composition this is the instantaneous relaxation time, which is the right local reading but not a global
+  guarantee about a wildly non-stationary `nu_wall`.
+
 ## Files touched
 
-`rmgpy/solver/plasma.pyx`, `rmgpy/solver/base.pyx`, `rmgpy/solver/base.pxd`, `rmgpy/rmg/input.py`,
-`documentation/source/users/rmg/input.rst`, `test/rmgpy/solver/plasmaWallTest.py`, and this
-`docs/i246-ambipolar-wall-operator/` directory. No file under `rmgpy/molecule/`, `rmgpy/kinetics/`,
-`rmgpy/data/` or the database was touched. Nothing pushed, merged or rebased.
+`rmgpy/solver/plasma.pyx`, `rmgpy/solver/base.pyx`, `rmgpy/solver/base.pxd`,
+`rmgpy/solver/termination.py`, `rmgpy/rmg/input.py`, `documentation/source/users/rmg/input.rst`,
+`test/rmgpy/solver/plasmaWallTest.py`, and this `docs/i246-ambipolar-wall-operator/` directory. No file
+under `rmgpy/molecule/`, `rmgpy/kinetics/`, `rmgpy/data/` or the database was touched. Nothing pushed,
+merged or rebased.

@@ -1,0 +1,5 @@
+HIGH2: reached=True residual=2.05e-14 nu_wall=185.14418  n_e=540.1196 m^-3  S/nu=540.1196  ratio=1.00000000
+HIGH1 quasineutral=False : ignited True across sources
+HIGH1 quasineutral=True : ignited True across sources
+deliverable nu_wall (pure Ar, alpha=1e-6) = 185.16598 s^-1  (reviewer cross-check ~185.15)
+MEDIUM3 floors: c=1 -> 2.68678e+15 ; c=1e3 -> 2.68678e+15 ; c=1e-3 -> 2.68678e+15  (invariant=True)
