@@ -76,10 +76,12 @@ from rmgpy.data.kinetics.quarantine import (
     describe_provenance,
     get_quarantine,
     load_family_quarantine,
+    resolve_quarantine,
 )
 from rmgpy.exceptions import DatabaseError, QuarantinedKineticsError
 from rmgpy.kinetics.arrhenius import Arrhenius, Marcus
 from rmgpy.molecule import Molecule
+from rmgpy.reaction import Reaction
 from rmgpy.rmg.model import CoreEdgeReactionModel
 from rmgpy.species import Species
 
@@ -568,7 +570,8 @@ def _clear_gate_caches():
     """
     from rmgpy.data.kinetics import quarantine as module
 
-    for name in ("_UNATTRIBUTED_WARNED", "_UNANSWERED_WARNED", "_DISK_QUARANTINE_CACHE"):
+    for name in ("_UNATTRIBUTED_WARNED", "_UNANSWERED_WARNED", "_DISK_QUARANTINE_CACHE",
+                 "_DISK_ANY_QUARANTINE_CACHE", "_UNSAFE_LABELS_WARNED"):
         cache = getattr(module, name, None)
         if cache is not None:
             cache.clear()
@@ -1318,3 +1321,503 @@ class TestTheDoorLeftOpen:
         """
         kinetics = self.family.rules.entries["Root_2R->C"][0].data
         assert kinetics.get_rate_coefficient(1000.0, -1.0e4) > 0.0
+
+
+# ---------------------------------------------------------------------------------------
+# Round 92
+# ---------------------------------------------------------------------------------------
+
+
+def _auto_generated_library(label, family_label, auto=True, comment=""):
+    """
+    A real `KineticsLibrary` whose one entry produces the auto-generated TEMPLATE shape.
+
+    `get_library_reactions` builds three reaction shapes and this is the third: an entry
+    whose longDesc says "rate rule" gets a `TemplateReaction` with the authoring family
+    parsed out of that longDesc. The kinetics comment is left without a `family:` line on
+    purpose, so the entry is the only carrier -- which is the case the other two shapes
+    had covered since round 89 and this one did not.
+    """
+    library = KineticsLibrary(label=label, name=label)
+    library.auto_generated = auto
+    library.entries = {
+        1: Entry(
+            index=1,
+            label="Lip + CH3 <=> CH3Li",
+            item=Reaction(
+                reactants=[Species(label="Lip", molecule=[Molecule(smiles="[Li+]")],
+                                   reactive=False),
+                           Species(label="CH3", molecule=[Molecule(smiles="[CH3]")],
+                                   reactive=False)],
+                products=[Species(label="CH3Li", molecule=[Molecule(smiles="C[Li]")],
+                                  reactive=False)],
+                reversible=False),
+            data=_marcus_with(comment),
+            long_desc=("Matched reaction 3 Lip + CH3 <=> CH3Li in {0}/rate rule [Root]\n"
+                       "Euclidian distance = 0\n"
+                       "family: {0}".format(family_label)),
+        )
+    }
+    return library
+
+
+#: A family that is quarantined in the database on disk and NOT loaded -- which is the
+#: state that makes `CoreEdgeReactionModel` convert a template reaction in the first
+#: place, and the state in which the gate has to answer from disk.
+QUARANTINED_ON_DISK = "A_Family_Quarantined_On_Disk"
+
+
+def _quarantined_on_disk(root, label=QUARANTINED_ON_DISK):
+    """Lay out `root` as a database directory whose `label` family carries a manifest."""
+    family = root / "kinetics" / "families" / label
+    family.mkdir(parents=True)
+    write_manifest(family)
+    return family
+
+
+def _model_database(monkeypatch, libraries, families):
+    """
+    The pieces `add_seed_mechanism_to_core` and `add_reaction_library_to_edge` read.
+
+    Duck-typed, and the duck-typing is the point of the two tests below being run
+    against the REAL methods rather than a copy of them: everything the methods touch on
+    the way to the gate is here, and nothing else is stubbed.
+    """
+
+    class _Kinetics(object):
+        def __init__(self):
+            self.libraries = libraries
+            self.families = families
+            self.library_order = []
+
+        def load_libraries(self, path=None, libraries=None):
+            raise AssertionError("every library in this test is already known")
+
+    class _Forbidden(object):
+        def is_molecule_forbidden(self, molecule):
+            return False
+
+    class _Database(object):
+        def __init__(self):
+            self.kinetics = _Kinetics()
+            self.forbidden_structures = _Forbidden()
+
+    import rmgpy.data.rmg
+
+    monkeypatch.setattr(rmgpy.data.rmg, "database", _Database(), raising=False)
+
+
+class TestTheThirdShapeSurvivesTheConversion:
+    """
+    Round 92. `get_library_reactions` builds three reaction shapes; round 89 attached the
+    authoring entry to the two `LibraryReaction` ones. The third is a `TemplateReaction`,
+    and the two sites in `rmgpy/rmg/model.py` that rebuild one as a `LibraryReaction` when
+    its family is not loaded carried neither the entry nor the parsed family across -- one
+    statement after logging that family to the user. A rate the gate refused before the
+    conversion was admitted after it.
+
+    Every test here drives the REAL method. A constructor probe would have passed against
+    the defect, because the constructor was never where the value was lost.
+    """
+
+    FAMILY = "Fake_Quarantined_Family"
+
+    def setup_method(self):
+        _clear_gate_caches()
+
+    def teardown_method(self):
+        _clear_gate_caches()
+
+    def test_the_real_loader_attaches_the_entry_to_the_template_shape(self):
+        """The half no test covered: the shape where the HIGH lived."""
+        library = _auto_generated_library("a_seed", self.FAMILY)
+        reaction = library.get_library_reactions()[0]
+
+        assert isinstance(reaction, TemplateReaction)
+        assert reaction.family == self.FAMILY
+        assert getattr(reaction, "entry", None) is not None, (
+            "the auto-generated template shape reached the model with no entry, so the "
+            "longDesc that carries its authorship was unreachable")
+        assert reaction.entry.long_desc.count("family:") == 1
+
+    def test_a_seed_conversion_leaves_the_rate_refused(self, monkeypatch, tmp_path):
+        """
+        The acceptance for the HIGH, through `add_seed_mechanism_to_core`.
+
+        The family is quarantined on disk and deliberately NOT loaded, which is exactly
+        when the conversion fires.
+        """
+        _quarantined_on_disk(tmp_path)
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+        library = _auto_generated_library("a_seed", QUARANTINED_ON_DISK)
+        _model_database(monkeypatch, {"a_seed": library}, {})
+
+        model = CoreEdgeReactionModel()
+        with pytest.raises(QuarantinedKineticsError) as raised:
+            model.add_seed_mechanism_to_core("a_seed")
+        assert QUARANTINED_ON_DISK in str(raised.value)
+        assert not model.core.reactions
+
+    def test_a_reaction_library_conversion_leaves_the_rate_refused(self, monkeypatch,
+                                                                   tmp_path):
+        """The same defect at the second conversion site, through the real method."""
+        _quarantined_on_disk(tmp_path)
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+        library = _auto_generated_library("a_library", QUARANTINED_ON_DISK)
+        _model_database(monkeypatch, {"a_library": library}, {})
+
+        model = CoreEdgeReactionModel()
+        with pytest.raises(QuarantinedKineticsError):
+            model.add_reaction_library_to_edge("a_library")
+        assert not model.edge.reactions
+
+    def test_the_conversion_still_writes_the_library_label_into_the_family_slot(
+            self, monkeypatch, tmp_path):
+        """
+        The round-89 addendum's contract, re-asserted at the site this round changed.
+
+        `electron_placement.py` keys `FAMILY_ELECTRON_PLACEMENT` on `Reaction.family` and
+        DEPENDS on a `LibraryReaction` putting its library label there. Carrying the entry
+        across the conversion must not disturb that, so this drives a conversion that is
+        allowed to complete and looks at the slot.
+        """
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+        library = _auto_generated_library("a_seed", "A_Family_Nobody_Quarantined")
+        _model_database(monkeypatch, {"a_seed": library}, {})
+
+        model = CoreEdgeReactionModel()
+        model.add_seed_mechanism_to_core("a_seed")
+
+        assert len(model.core.reactions) == 1
+        converted = model.core.reactions[0]
+        assert isinstance(converted, LibraryReaction)
+        assert converted.family == "a_seed", (
+            "the conversion stopped writing the library label into .family, which is the "
+            "value electron_placement.py resolves argon ionisation through")
+        assert authoring_families(converted) == ["A_Family_Nobody_Quarantined"], (
+            "the authorship did not survive the conversion")
+
+
+class TestTheDiskAnswerIsRevalidated:
+    """
+    Round 92. The disk cache stored one answer per (database, label) forever, with no
+    check that the database still said it. Two consequences, both fail-open in one
+    direction or the other, and one race that fails open specifically.
+    """
+
+    LABEL = "A_Family_That_Changes"
+
+    def setup_method(self):
+        _clear_gate_caches()
+
+    def teardown_method(self):
+        _clear_gate_caches()
+
+    def _database(self, tmp_path, manifest=False):
+        family = tmp_path / "kinetics" / "families" / self.LABEL
+        family.mkdir(parents=True)
+        if manifest:
+            write_manifest(family)
+        return family
+
+    def test_a_manifest_added_after_the_first_lookup_is_seen(self, monkeypatch, tmp_path):
+        family = self._database(tmp_path)
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+
+        assert resolve_quarantine(self.LABEL) == (None, True)
+        write_manifest(family)
+        quarantine, answered = resolve_quarantine(self.LABEL)
+        assert answered and quarantine is not None, (
+            "the cache answered from a database state that no longer exists")
+
+    def test_a_manifest_removed_after_the_first_lookup_is_seen(self, monkeypatch,
+                                                              tmp_path):
+        """The same staleness in the direction that keeps refusing a released family."""
+        family = self._database(tmp_path, manifest=True)
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+
+        assert resolve_quarantine(self.LABEL)[0] is not None
+        os.remove(os.path.join(str(family), QUARANTINE_FILENAME))
+        assert resolve_quarantine(self.LABEL) == (None, True)
+
+    def test_a_manifest_that_vanishes_mid_read_is_unanswered_not_clean(
+            self, monkeypatch, tmp_path):
+        """
+        The TOCTOU window, made deterministic.
+
+        The file is removed from inside the existence check, which is what a concurrent
+        database edit does at an unpredictable moment. The wrong answer here is the
+        dangerous one: "this family carries no manifest" is a clean bill of health, and
+        the old code cached it.
+        """
+        from rmgpy.data.kinetics import quarantine as module
+
+        family = self._database(tmp_path, manifest=True)
+        manifest_path = os.path.join(str(family), QUARANTINE_FILENAME)
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+
+        real_exists = module.os.path.exists
+        state = {"fired": False}
+
+        def racing_exists(path):
+            answer = real_exists(path)
+            if answer and path == manifest_path and not state["fired"]:
+                state["fired"] = True
+                os.remove(path)
+            return answer
+
+        monkeypatch.setattr(module.os.path, "exists", racing_exists)
+        assert resolve_quarantine(self.LABEL) == (None, False), (
+            "a manifest that vanished mid-read was reported as a family with no manifest")
+        assert not module._DISK_QUARANTINE_CACHE, (
+            "the race was cached, so every later lookup inherits it")
+
+
+class TestAFamilyLabelIsNotAPath:
+    """
+    Round 92. A family label arrives from a `family:` line in an entry's longDesc --
+    user-authored text -- and was joined onto the database path unexamined. The file at
+    the end of that path is then EXECUTED.
+    """
+
+    def setup_method(self):
+        _clear_gate_caches()
+
+    def teardown_method(self):
+        _clear_gate_caches()
+
+    def _planted(self, tmp_path):
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        write_manifest(outside)
+        database = tmp_path / "db"
+        (database / "kinetics" / "families" / "An_Ordinary_Family").mkdir(parents=True)
+        return outside, database
+
+    def test_an_absolute_label_is_refused(self, monkeypatch, tmp_path):
+        outside, database = self._planted(tmp_path)
+        monkeypatch.setitem(settings, "database.directory", str(database))
+
+        assert resolve_quarantine(str(outside)) == (None, False), (
+            "an absolute label made os.path.join discard the database prefix, and the "
+            "manifest planted outside the database was executed")
+
+    def test_a_dotdot_label_is_refused(self, monkeypatch, tmp_path):
+        outside, database = self._planted(tmp_path)
+        monkeypatch.setitem(settings, "database.directory", str(database))
+
+        escape = os.path.join("..", "..", "..", "outside")
+        assert resolve_quarantine(escape) == (None, False)
+
+    def test_a_symlinked_family_pointing_outside_is_refused(self, monkeypatch, tmp_path):
+        """
+        What the syntactic check alone cannot catch: an ordinary-looking single-component
+        label whose directory is a symlink out of the tree.
+        """
+        outside, database = self._planted(tmp_path)
+        link = database / "kinetics" / "families" / "Looks_Ordinary"
+        try:
+            os.symlink(str(outside), str(link))
+        except (OSError, NotImplementedError):  # pragma: no cover - platform dependent
+            pytest.skip("this filesystem does not support symlinks")
+        monkeypatch.setitem(settings, "database.directory", str(database))
+
+        assert resolve_quarantine("Looks_Ordinary") == (None, False)
+
+    def test_an_ordinary_label_still_resolves(self, monkeypatch, tmp_path):
+        """The positive control: the refusal must not cost the ordinary case."""
+        outside, database = self._planted(tmp_path)
+        monkeypatch.setitem(settings, "database.directory", str(database))
+
+        assert resolve_quarantine("An_Ordinary_Family") == (None, True)
+
+
+CALLSITE_MANIFEST = """
+name = "Synthetic/quarantine"
+state = "QUARANTINED FOR TESTING"
+appliesToKineticsClass = "Arrhenius"
+reason = "a reason"
+requiresEngineModule = "rmgpy.data.kinetics.quarantine"
+requiresEngineSymbol = "check_quarantine"
+requiresEngineCallSites = ("rmgpy.rmg.model",)
+"""
+
+
+def _module_carrying(tmp_path, source, tag):
+    """
+    A module object under the name the manifest declares, carrying `source`.
+
+    Nothing is executed: the check reads the module's source and compares its binding of
+    the symbol, so a module with `__file__` set and the real gate bound is exactly the
+    shape it inspects. That is what lets these tests ask what the check accepts without
+    editing `rmgpy/rmg/model.py` in the worktree.
+    """
+    import linecache
+    import types
+
+    from rmgpy.data.kinetics.quarantine import check_quarantine as real_gate
+
+    path = tmp_path / "carrier_{0}.py".format(tag)
+    path.write_text(source)
+    linecache.checkcache(str(path))
+    module = types.ModuleType("rmgpy.rmg.model")
+    module.__file__ = str(path)
+    module.check_quarantine = real_gate
+    return module
+
+
+def _load_with_module(tmp_path, tag, module):
+    directory = tmp_path / ("manifest_" + tag)
+    directory.mkdir()
+    (directory / QUARANTINE_FILENAME).write_text(CALLSITE_MANIFEST)
+    import sys
+
+    previous = sys.modules.get("rmgpy.rmg.model")
+    sys.modules["rmgpy.rmg.model"] = module
+    try:
+        return load_family_quarantine("Synthetic", str(directory))
+    finally:
+        if previous is not None:
+            sys.modules["rmgpy.rmg.model"] = previous
+        else:
+            del sys.modules["rmgpy.rmg.model"]
+
+
+class TestTheCallSitePinCoversEveryGate:
+    """
+    Round 92, and the third round this pin has been found weaker than its name.
+
+    Round 87 found that `math.pi` satisfied the symbol check. Round 89 found that an
+    import satisfied the call-site check. This round: a call the interpreter can never
+    reach, a same-named call on an unrelated object, and -- the one that matters -- one
+    surviving gate out of the four admission paths the engine actually has.
+
+    The bound is still stated rather than claimed away: none of this proves a call
+    EXECUTES. What it now proves is coverage of the named sites.
+    """
+
+    def setup_method(self):
+        _clear_gate_caches()
+
+    def teardown_method(self):
+        _clear_gate_caches()
+
+    DEAD = ("from rmgpy.data.kinetics.quarantine import check_quarantine\n"
+            "\n"
+            "\n"
+            "class CoreEdgeReactionModel(object):\n"
+            "    def add_reaction_to_core(self, rxn):\n"
+            "        if False:\n"
+            "            check_quarantine(rxn, stage='never runs')\n")
+
+    UNRELATED = ("from rmgpy.data.kinetics.quarantine import check_quarantine\n"
+                 "\n"
+                 "\n"
+                 "class CoreEdgeReactionModel(object):\n"
+                 "    def add_reaction_to_core(self, rxn):\n"
+                 "        somebody_else.check_quarantine(rxn)\n")
+
+    def test_a_call_in_a_dead_branch_does_not_satisfy_it(self, tmp_path):
+        with pytest.raises(DatabaseError):
+            _load_with_module(tmp_path, "dead",
+                              _module_carrying(tmp_path, self.DEAD, "dead"))
+
+    def test_a_same_named_call_on_something_else_does_not_satisfy_it(self, tmp_path):
+        with pytest.raises(DatabaseError):
+            _load_with_module(tmp_path, "unrelated",
+                              _module_carrying(tmp_path, self.UNRELATED, "unrelated"))
+
+    def test_deleting_three_of_the_four_gates_is_refused(self, tmp_path):
+        """
+        The one a module-level call count cannot see. Three admission paths lose their
+        gate, one keeps it, and the old check counted 1 and was satisfied.
+        """
+        import rmgpy.rmg.model as real_model
+
+        source = inspect.getsource(real_model)
+        thinned = source
+        removed = 0
+        for stage in ("admission to the model core",
+                      "admission to the model edge",
+                      "admission to a pressure-dependent network"):
+            for line in source.split("\n"):
+                if "check_quarantine(" in line and stage in line:
+                    thinned = thinned.replace(line + "\n", "")
+                    removed += 1
+        assert removed == 3, "the gate calls this test deletes have moved"
+
+        with pytest.raises(DatabaseError) as raised:
+            _load_with_module(tmp_path, "thinned",
+                              _module_carrying(tmp_path, thinned, "thinned"))
+        message = str(raised.value)
+        assert "add_reaction_to_core" in message
+        assert "add_reaction_to_unimolecular_networks" in message
+
+    def test_the_real_module_satisfies_it(self, tmp_path):
+        """
+        The positive control, and the tripwire for this engine growing a fifth admission
+        path: the required list lives beside the checker, so a new ungated path fails
+        here rather than in a run.
+        """
+        import rmgpy.rmg.model as real_model
+
+        assert _load_with_module(tmp_path, "real", real_model) is not None
+
+
+class TestTheSuppressionConsultsDiskToo:
+    """
+    Round 92. The `answered=False` policy admits a rate whose family this database does
+    not have, and is defensible only because it is LOUD. The suppression that keeps that
+    warning out of ordinary runs iterated LOADED families, so a run early enough that
+    nothing is loaded yet went quiet in a database that does carry manifests.
+
+    A correction to the review that raised it: an unloaded family which HAS a manifest on
+    disk is refused, not admitted -- `resolve_quarantine` reads it. The silence is in the
+    other case, a family the database does not contain at all, and it is the database's
+    other manifests that should have kept the warning switched on.
+    """
+
+    def setup_method(self):
+        _clear_gate_caches()
+
+    def teardown_method(self):
+        _clear_gate_caches()
+
+    def _reaction(self):
+        return make_library_reaction(
+            library="a_foreign_seed",
+            comment="family: A_Family_This_Database_Does_Not_Have")
+
+    def test_a_database_whose_manifests_are_only_on_disk_still_warns(
+            self, monkeypatch, tmp_path, caplog):
+        families = tmp_path / "kinetics" / "families" / "A_Quarantined_Family"
+        families.mkdir(parents=True)
+        write_manifest(families)
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+        _register_families(monkeypatch, {})
+
+        reaction = self._reaction()
+        with caplog.at_level(logging.WARNING):
+            check_quarantine(reaction, stage="a test", kinetics=reaction.kinetics)
+
+        assert any("Cannot tell whether" in record.getMessage()
+                   for record in caplog.records), (
+            "the rate was admitted in silence by a database that does quarantine "
+            "something; the policy allowing the admission rests on the warning")
+
+    def test_a_database_with_no_quarantine_anywhere_stays_quiet(
+            self, monkeypatch, tmp_path, caplog):
+        """
+        The other half of the same policy, and the reason the suppression exists: an
+        ordinary database loading a foreign seed must not get a line per reaction.
+        """
+        (tmp_path / "kinetics" / "families" / "An_Ordinary_Family").mkdir(parents=True)
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+        _register_families(monkeypatch, {})
+
+        reaction = self._reaction()
+        with caplog.at_level(logging.WARNING):
+            check_quarantine(reaction, stage="a test", kinetics=reaction.kinetics)
+
+        assert not [record for record in caplog.records
+                    if "Cannot tell whether" in record.getMessage()]

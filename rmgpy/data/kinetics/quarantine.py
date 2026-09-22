@@ -140,29 +140,91 @@ QUARANTINE_FILENAME = 'quarantine.py'
 _REQUIRED_FIELDS = ('state', 'appliesToKineticsClass', 'reason')
 
 
-def _counts_calls_to(module, symbol_name):
-    """
-    Return ``(number of calls to `symbol_name` in `module`'s source, source readable)``.
+#: The admission paths this engine defines, per module: every function through which a
+#: reaction can enter a model without passing one of the others. A manifest that names a
+#: module here is asking for *those* sites to be gated, not for a call to appear somewhere
+#: in the file. Keeping this list beside the checker is deliberate -- the manifest cannot
+#: know an engine's internal structure, and an engine that grows a fifth admission path
+#: should fail its own pin until the path is gated.
+_GATE_CALL_SITES = {
+    'rmgpy.rmg.model': (
+        'apply_kinetics_to_reaction',            # estimation
+        'add_reaction_to_core',                  # seeds, libraries, API callers
+        'add_reaction_to_edge',                  # the edge half of the same
+        'add_reaction_to_unimolecular_networks',  # pdep, which reaches neither of those
+    ),
+}
 
-    The bound, stated because the field's name promises more than any static check can
-    deliver: this proves a call **exists in the source**, not that it executes on a given
-    run or covers every path. What it does close is the gap it was written for -- a module
-    that imports the gate and calls it nowhere, which binding alone accepts.
+
+def _is_statically_dead(node):
+    """Whether `node` is an `if`/`while` whose test can never be true."""
+    test = getattr(node, 'test', None)
+    if test is None:
+        return False
+    if isinstance(test, ast.Constant):
+        return not test.value
+    return False
+
+
+def _live_gate_calls(module, symbol_name, module_name):
+    """
+    Return ``({enclosing function -> call count}, source readable)`` for live calls.
+
+    "Live" excludes three things the previous counter accepted, each of which let a module
+    satisfy the pin while gating nothing:
+
+    * calls inside a statically dead branch (``if False:``), which the interpreter never
+      reaches;
+    * calls at module scope rather than inside a function, which run once at import and
+      gate no reaction;
+    * ``something.check_quarantine(...)`` where ``something`` is not the declared engine
+      module -- a same-named method on an unrelated object.
+
+    The bound, restated because the field's name still promises more than any static check
+    can deliver: this proves a call exists, in a reachable branch, inside each named
+    function. It does not prove that call executes on a given run, nor that its arguments
+    are right. What it now does close is coverage: with :data:`_GATE_CALL_SITES`, deleting
+    the gate from one admission path out of four is refused, where a module-level count
+    accepted it.
     """
     try:
         tree = ast.parse(inspect.getsource(module))
     except (OSError, TypeError, SyntaxError):
-        return 0, False
-    calls = 0
+        return {}, False
+
+    # Names bound to the engine module itself, so `q.check_quarantine(...)` counts while
+    # `somebody_else.check_quarantine(...)` does not.
+    module_aliases = set()
     for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
-        func = node.func
-        if isinstance(func, ast.Name) and func.id == symbol_name:
-            calls += 1
-        elif isinstance(func, ast.Attribute) and func.attr == symbol_name:
-            calls += 1
-    return calls, True
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == module_name:
+                    module_aliases.add(alias.asname or alias.name.split('.')[0])
+
+    found = {}
+
+    def visit(node, function):
+        for child in ast.iter_child_nodes(node):
+            if _is_statically_dead(child):
+                # Walk the else branch only: the body is unreachable.
+                for orelse in getattr(child, 'orelse', []):
+                    visit(orelse, function)
+                continue
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                visit(child, child.name)
+                continue
+            if isinstance(child, ast.Call) and function is not None:
+                func = child.func
+                if isinstance(func, ast.Name) and func.id == symbol_name:
+                    found[function] = found.get(function, 0) + 1
+                elif (isinstance(func, ast.Attribute) and func.attr == symbol_name
+                      and isinstance(func.value, ast.Name)
+                      and func.value.id in module_aliases):
+                    found[function] = found.get(function, 0) + 1
+            visit(child, function)
+
+    visit(tree, None)
+    return found, True
 
 
 def _check_engine_requirements(path, family_label, manifest):
@@ -281,7 +343,8 @@ def _check_engine_requirements(path, family_label, manifest):
                 'is why this is checked separately.'.format(
                     path=path, symbol=symbol_name, module=module_name, site=call_site,
                     bound=getattr(site, symbol_name, None), family=family_label))
-        calls, readable = _counts_calls_to(site, symbol_name)
+        gated, readable = _live_gate_calls(site, symbol_name, module_name)
+        calls = sum(gated.values())
         if not readable:
             raise DatabaseError(
                 'Quarantine manifest {path} requires {symbol!r} to be called from {site!r}, '
@@ -298,6 +361,23 @@ def _check_engine_requirements(path, family_label, manifest):
                 'field is named for. Family {family} would be admitted unchecked.'.format(
                     path=path, symbol=symbol_name, site=call_site, calls=calls,
                     family=family_label))
+
+        required = _GATE_CALL_SITES.get(call_site)
+        if required:
+            missing = [name for name in required if name not in gated]
+            if missing:
+                raise DatabaseError(
+                    'Quarantine manifest {path} requires {symbol!r} to be reached from '
+                    '{site!r}, and {site!r} gates only {present}. This engine admits a '
+                    'reaction through {total:d} paths in that module and {count:d} of them '
+                    'call the gate: {missing} do not. A rate entering by one of those is '
+                    'admitted without the manifest for family {family} ever being consulted, '
+                    'so a module-level call count is not the property this field is named '
+                    'for.'.format(
+                        path=path, symbol=symbol_name, site=call_site,
+                        present=', '.join(sorted(gated)) or 'nothing',
+                        total=len(required), count=len(required) - len(missing),
+                        missing=', '.join(missing), family=family_label))
 
 
 class KineticsQuarantine(object):
@@ -407,8 +487,16 @@ def load_family_quarantine(family_label, family_path):
 
     local_context = {'__builtins__': None}
     global_context = {'__builtins__': None}
-    with open(path, 'r') as f:
-        content = f.read()
+    try:
+        with open(path, 'r') as f:
+            content = f.read()
+    except FileNotFoundError:
+        # The file existed one statement ago. Report it the same way as never having
+        # existed -- ``None`` -- and let the caller decide what that means; the caller
+        # here (`resolve_quarantine`) knows it saw the file and turns this into an
+        # unanswered question rather than a clean bill of health. Raising instead would
+        # kill a run over a concurrent database edit.
+        return None
     try:
         exec(content, global_context, local_context)
     except Exception:
@@ -543,6 +631,58 @@ def iter_quarantines():
             yield quarantine
 
 
+#: families directory -> (signature, whether any manifest was found there).
+_DISK_ANY_QUARANTINE_CACHE = {}
+
+
+def _database_has_any_quarantine():
+    """
+    Whether this database quarantines anything at all, loaded **or on disk**.
+
+    This is the suppression test for :func:`_warn_unanswered`, and it used to iterate
+    loaded families only. That made the warning disappear exactly when it was needed:
+    a run early enough that nothing has been loaded yet, in a database that does carry
+    manifests, admitted a rate whose authorship it could not resolve and said nothing.
+    The policy that admission is allowed *because* it is loud cannot rest on a test that
+    goes quiet first.
+
+    Bound, stated because it is real: the disk half is keyed on the families directory's
+    own signature, so a manifest dropped into an already-existing family directory during
+    a run is not noticed here until something re-reads that directory. It can only make
+    this warning appear or not appear -- never a refusal, which goes through
+    :func:`resolve_quarantine` and re-checks the manifest's own signature every time.
+    """
+    if any(True for _ in iter_quarantines()):
+        return True
+
+    from rmgpy import settings
+    directory = (settings or {}).get('database.directory')
+    if not directory:
+        return False
+    families_root = os.path.join(directory, 'kinetics', 'families')
+    try:
+        stat = os.stat(families_root)
+    except OSError:
+        return False
+    signature = (stat.st_mtime_ns, stat.st_ino)
+
+    cached = _DISK_ANY_QUARANTINE_CACHE.get(families_root)
+    if cached is not None and cached[0] == signature:
+        return cached[1]
+
+    found = False
+    try:
+        names = os.listdir(families_root)
+    except OSError:
+        names = []
+    for name in names:
+        if os.path.exists(os.path.join(families_root, name, QUARANTINE_FILENAME)):
+            found = True
+            break
+    _DISK_ANY_QUARANTINE_CACHE[families_root] = (signature, found)
+    return found
+
+
 def _warn_unattributable(reaction, kinetics):
     """
     Warn when a library rate matches a live quarantine criterion but cannot be attributed.
@@ -576,9 +716,96 @@ def _warn_unattributable(reaction, kinetics):
         _FAMILY_COMMENT_PREFIX)
 
 
-#: (database directory, family label) -> KineticsQuarantine or None, for families that
-#: are not loaded and had to be answered from disk. A miss costs two `os.path` calls.
+#: (database directory, family label) -> (signature, answer), for families that are not
+#: loaded and had to be answered from disk. The signature is what makes this a cache and
+#: not a snapshot: it is re-taken on every lookup -- two `os.stat` calls -- and the stored
+#: answer is used only while it still matches. Caching the answer alone, as the first
+#: version did, meant a manifest added, removed or edited after the first lookup was never
+#: seen again for the life of the process, in either direction.
 _DISK_QUARANTINE_CACHE = {}
+
+
+def _family_directory(families_root, label):
+    """
+    Resolve `label` to a directory inside `families_root`, or ``None``.
+
+    A family label is not a path. It arrives from a ``family:`` line in an entry's
+    ``longDesc`` -- user-authored text, in a file that may have been written by another
+    database, another group, or an attacker -- and the file at the end of the path this
+    function builds is then **executed** by :func:`load_family_quarantine`. Passing that
+    string to ``os.path.join`` unexamined meant an absolute label discarded the database
+    prefix entirely, and ``..`` segments walked out of the database.
+
+    Two checks, because either alone is defeatable. The first is syntactic: the label must
+    be a single path component, so no separator, no ``..``, no drive letter, nothing
+    absolute. The second is positional and catches what syntax cannot -- a symlinked family
+    directory pointing outside the tree -- by requiring the resolved real path to sit under
+    the resolved real families root.
+
+    Returns the joined path (which need not exist; the caller distinguishes "no such
+    family" from "no manifest") or ``None`` when the label is not a name this database
+    could have given a family.
+    """
+    text = str(label)
+    if not text or text in ('.', '..'):
+        return None
+    if os.path.isabs(text) or os.path.splitdrive(text)[0]:
+        _warn_unsafe_label(label, 'it is an absolute path')
+        return None
+    if os.path.basename(text) != text:
+        _warn_unsafe_label(label, 'it contains a path separator')
+        return None
+
+    family_path = os.path.join(families_root, text)
+    try:
+        resolved_root = os.path.realpath(families_root)
+        resolved_family = os.path.realpath(family_path)
+    except OSError:
+        return None
+    if resolved_family != resolved_root and not resolved_family.startswith(
+            resolved_root + os.sep):
+        _warn_unsafe_label(label, 'it resolves to {0}, outside the database'.format(
+            resolved_family))
+        return None
+    return family_path
+
+
+def _warn_unsafe_label(label, reason):
+    """
+    Report a family label that was refused as a path, once per label.
+
+    Loud on purpose. An ordinary database never produces one of these, so either a
+    library was written by something that does not understand the format, or the
+    ``family:`` line is hostile -- and the file it points at would have been executed.
+    """
+    if label in _UNSAFE_LABELS_WARNED:
+        return
+    _UNSAFE_LABELS_WARNED.add(label)
+    logging.error(
+        'Refusing to look for a quarantine manifest under the family label %r: %s. A '
+        'family label names a directory inside the database\'s kinetics/families, and '
+        'the manifest found there is executed. Rates attributed to this label are '
+        'treated as having an unresolvable authorship.', label, reason)
+
+
+#: One message per label refused by :func:`_family_directory`.
+_UNSAFE_LABELS_WARNED = set()
+
+
+def _manifest_signature(family_path):
+    """
+    ``(family directory exists, manifest identity or None)`` for `family_path`.
+
+    The manifest identity is ``(mtime_ns, size, inode)``: enough that an edit, a
+    replacement, or a removal all change it, and cheap enough to re-take on every lookup.
+    """
+    try:
+        stat = os.stat(os.path.join(family_path, QUARANTINE_FILENAME))
+    except OSError:
+        manifest = None
+    else:
+        manifest = (stat.st_mtime_ns, stat.st_size, stat.st_ino)
+    return os.path.isdir(family_path), manifest
 
 #: One warning per (family label, kinetics class) for questions that could not be
 #: answered at all.
@@ -621,19 +848,43 @@ def resolve_quarantine(label):
     if not directory:
         return None, False
 
-    key = (directory, label)
-    if key in _DISK_QUARANTINE_CACHE:
-        return _DISK_QUARANTINE_CACHE[key]
+    families_root = os.path.join(directory, 'kinetics', 'families')
+    family_path = _family_directory(families_root, label)
+    if family_path is None:
+        # The label did not name a family in this database's families directory. It is
+        # not an answer, and it is emphatically not licence to read the file it points
+        # at: see _family_directory.
+        return None, False
 
-    family_path = os.path.join(directory, 'kinetics', 'families', str(label))
-    if not os.path.isdir(family_path):
+    key = (directory, label)
+    signature = _manifest_signature(family_path)
+    cached = _DISK_QUARANTINE_CACHE.get(key)
+    if cached is not None and cached[0] == signature:
+        return cached[1]
+
+    directory_exists, manifest_stat = signature
+    if not directory_exists:
         answer = (None, False)
-    elif not os.path.exists(os.path.join(family_path, QUARANTINE_FILENAME)):
+    elif manifest_stat is None:
         # The family is in this database and carries no manifest. That is an answer.
         answer = (None, True)
     else:
-        answer = (load_family_quarantine(label, family_path), True)
-    _DISK_QUARANTINE_CACHE[key] = answer
+        quarantine = load_family_quarantine(label, family_path)
+        if quarantine is None:
+            # The manifest was there when this function looked and gone when the loader
+            # did. Two different databases produce that, neither of them benign: a
+            # concurrent edit, or a path that stopped resolving between the two reads.
+            # Recording it as "carries no manifest" would turn a race into a clean bill
+            # of health -- and cache it. It is an unanswered question instead, and is
+            # deliberately NOT cached, because the next call may find the file back.
+            logging.warning(
+                'Quarantine manifest for family %s disappeared while it was being read '
+                '(%s). Treating the family as unanswered rather than unquarantined; if '
+                'the database is being edited while RMG runs, restart the run.',
+                label, os.path.join(family_path, QUARANTINE_FILENAME))
+            return None, False
+        answer = (quarantine, True)
+    _DISK_QUARANTINE_CACHE[key] = (signature, answer)
     return answer
 
 
@@ -654,7 +905,7 @@ def _warn_unanswered(reaction, kinetics, labels):
     """
     if kinetics is None:
         return
-    if not any(True for _ in iter_quarantines()):
+    if not _database_has_any_quarantine():
         # No quarantine anywhere in this database: nothing is being skipped, and warning
         # here would put a line into every ordinary run that loads a foreign seed.
         return

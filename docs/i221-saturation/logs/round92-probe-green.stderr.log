@@ -1,0 +1,18 @@
+WARNING:matplotlib:/home/alon/.config/matplotlib is not a writable directory
+WARNING:matplotlib:Matplotlib created a temporary cache directory at /tmp/claude-1000/matplotlib-36e9xhve because there was an issue with the default path (/home/alon/.config/matplotlib); it is highly recommended to set the MPLCONFIGDIR environment variable to a writable directory, in particular to speed up the import of Matplotlib and to better support multiprocessing.
+INFO:matplotlib.font_manager:Failed to extract font properties from /usr/share/fonts/truetype/noto/NotoColorEmoji.ttf: In FT2Font: Could not set the fontsize (invalid pixel size; error code 0x17)
+INFO:matplotlib.font_manager:generated new fontManager
+INFO:root:Kinetics family Cation_R_Recombination is QUARANTINED FOR QUANTITATIVE PLASMA USE (Marcus): electrochemical reference/domain unavailable
+INFO:root:Adding seed mechanism a_seed_written_elsewhere to model core...
+WARNING:root:loading reaction Lip + CH3 => CH3Li originally from family Cation_R_Recombination as a library reaction
+INFO:root:Kinetics family Cation_R_Recombination is QUARANTINED FOR QUANTITATIVE PLASMA USE (Marcus): electrochemical reference/domain unavailable
+INFO:root:Adding reaction library a_library_written_elsewhere to model edge...
+WARNING:root:loading reaction Lip + CH3 => CH3Li originally from family Cation_R_Recombination as a library reaction
+INFO:root:Kinetics family Cation_R_Recombination is QUARANTINED FOR QUANTITATIVE PLASMA USE (Marcus): electrochemical reference/domain unavailable
+INFO:root:Adding reaction library an_ordinary_library to model edge...
+INFO:root:Kinetics family A_Family_That_Changes is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+WARNING:root:Quarantine manifest for family A_Family_Whose_Manifest_Vanishes disappeared while it was being read (/tmp/claude-1000/round92-probe-9zx1fsw7/toctou/kinetics/families/A_Family_Whose_Manifest_Vanishes/quarantine.py). Treating the family as unanswered rather than unquarantined; if the database is being edited while RMG runs, restart the run.
+ERROR:root:Refusing to look for a quarantine manifest under the family label '/tmp/claude-1000/round92-probe-9zx1fsw7/outside': it is an absolute path. A family label names a directory inside the database's kinetics/families, and the manifest found there is executed. Rates attributed to this label are treated as having an unresolvable authorship.
+ERROR:root:Refusing to look for a quarantine manifest under the family label '../../../outside': it contains a path separator. A family label names a directory inside the database's kinetics/families, and the manifest found there is executed. Rates attributed to this label are treated as having an unresolvable authorship.
+INFO:root:Kinetics family Synthetic is QUARANTINED FOR TESTING (Arrhenius): a reason
+WARNING:root:Cannot tell whether Marcus kinetics authored by family A_Family_This_Database_Does_Not_Have are quarantined: this database has no such family, so its manifest -- if it has one -- cannot be consulted. The rate IS being admitted. This is not the same as a rate with no recorded authorship: the authorship is here and the answer is not. If that family is quarantined in the database it came from, this run cannot know it. Load that family, or supply the rate from a source this database can check.

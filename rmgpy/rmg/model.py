@@ -1750,6 +1750,12 @@ class CoreEdgeReactionModel:
                     kinetics=rxn.kinetics,
                     duplicate=rxn.duplicate,
                     reversible=rxn.reversible,
+                    # The line above logs the authoring family to the user. Without this the
+                    # next statement threw it away: `LibraryReaction.family` is the LIBRARY,
+                    # so after the conversion nothing on the object recorded where the rate
+                    # came from, and a rate the quarantine gate refuses before conversion was
+                    # admitted after it. The entry's `long_desc` is the carrier that survives.
+                    entry=getattr(rxn, "entry", None),
                 )
             r, isNew = self.make_new_reaction(rxn)  # updates self.new_species_list and self.new_reaction_list
             for s in rxn.reactants+rxn.products:
@@ -1881,6 +1887,8 @@ class CoreEdgeReactionModel:
                     kinetics=rxn.kinetics,
                     duplicate=rxn.duplicate,
                     reversible=rxn.reversible,
+                    # Same conversion, same loss, same repair as the seed path above.
+                    entry=getattr(rxn, "entry", None),
                 )
             r, isNew = self.make_new_reaction(rxn)  # updates self.new_species_list and self.new_reaction_list
             if r is not None and getattr(rxn.kinetics, "coverage_dependence", None):

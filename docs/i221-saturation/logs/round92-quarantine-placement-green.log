@@ -1,0 +1,170 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+rootdir: /home/alon/Code/RMG-Py-i221-saturation-fix
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 147 items
+
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_manifest_loads_its_fields PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_family_without_a_manifest_is_not_quarantined PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_an_unknown_kinetics_class_raises_rather_than_quarantining_nothing PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_declared_engine_requirement_is_honoured PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_declared_engine_symbol_is_honoured PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_satisfied_engine_requirement_loads PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_the_commit_field_is_not_declarable PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_the_recorded_commit_is_kept_as_provenance_and_reaches_a_reader PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_symbol_that_is_not_callable_is_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_symbol_without_a_module_is_refused_not_ignored PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_gate_that_exists_but_is_not_wired_in_is_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_call_site_that_imports_the_gate_and_never_calls_it_is_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_the_real_call_site_satisfies_the_wiring_check PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_manifest_missing_a_required_field_raises[state] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_manifest_missing_a_required_field_raises[appliesToKineticsClass] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_manifest_missing_a_required_field_raises[reason] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_the_criterion_is_selective PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_the_criterion_is_evaluated_against_the_data_not_a_stored_list PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_no_hard_coded_entry_list_exists_in_the_code PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRefusalNamesFiveThings::test_it_names_the_family PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRefusalNamesFiveThings::test_it_names_the_provenance PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRefusalNamesFiveThings::test_it_names_the_generated_reaction PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRefusalNamesFiveThings::test_it_names_the_kinetics_class PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRefusalNamesFiveThings::test_it_names_the_reason PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRefusalNamesFiveThings::test_it_names_the_campaign_state_and_the_manifest PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRefusalNamesFiveThings::test_provenance_is_never_blank PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheGateFires::test_at_kinetics_estimation_the_primary_site PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheGateFires::test_at_core_admission_the_backstop PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheGateFires::test_at_edge_admission_the_backstop PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheGateFires::test_ordinary_chemistry_is_untouched PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheGateFires::test_a_quarantined_family_still_admits_its_unquarantined_kinetics PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheGateFires::test_an_unloaded_database_does_not_crash_the_gate PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestProvenanceNotTheFamilySlot::test_a_quarantined_rate_copied_into_a_library_is_still_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestProvenanceNotTheFamilySlot::test_the_provenance_may_live_in_the_entry_instead_of_the_comment PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestProvenanceNotTheFamilySlot::test_every_declared_family_is_consulted_not_just_the_first PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestProvenanceNotTheFamilySlot::test_a_forged_label_is_bounded_by_the_criterion PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestProvenanceNotTheFamilySlot::test_a_library_named_like_a_quarantined_family_is_not_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestProvenanceNotTheFamilySlot::test_authoring_family_reads_authorship_not_the_slot PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestProvenanceNotTheFamilySlot::test_an_unattributable_rate_is_reported_and_not_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestProvenanceNotTheFamilySlot::test_an_ordinary_library_rate_says_nothing PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheProvenanceArrivesFromTheRealLoader::test_the_entry_travels_with_the_reaction PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheProvenanceArrivesFromTheRealLoader::test_the_entry_survives_the_pickle_the_parallel_path_uses PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheProvenanceArrivesFromTheRealLoader::test_an_ordinary_library_still_loads_with_no_authorship PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestAMissingFamilyIsAnUnansweredQuestion::test_an_unloaded_family_is_answered_from_disk PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestAMissingFamilyIsAnUnansweredQuestion::test_a_family_in_the_database_without_a_manifest_is_a_clean_answer PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestAMissingFamilyIsAnUnansweredQuestion::test_an_unanswerable_question_is_reported_not_swallowed PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestAMissingFamilyIsAnUnansweredQuestion::test_a_database_with_no_quarantine_at_all_stays_silent PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheFamilySlotIsLeftAloneForItsOtherReader::test_the_library_label_still_lands_in_the_family_slot PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheFamilySlotIsLeftAloneForItsOtherReader::test_placement_still_resolves_for_the_argon_ionisation_channel PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheFamilySlotIsLeftAloneForItsOtherReader::test_the_two_readers_disagree_about_the_same_object_and_both_are_right PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheFamilySlotIsLeftAloneForItsOtherReader::test_nothing_in_the_gate_writes_to_the_family_slot PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestEveryAdmissionPathIsGated::test_the_pressure_dependent_network_path_is_gated PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestEveryAdmissionPathIsGated::test_the_enumeration_in_the_docstring_names_every_gate_call PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_1_the_reaction_is_not_removed_after_generation PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_2_no_average_rule_is_substituted PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_3_it_is_never_evaluated_at_potential_zero PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_4_it_is_not_marked_irreversible PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_5_no_reverse_rate_is_derived PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_6_seeding_a_product_or_cation_does_not_bypass_it PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_7_no_generic_collision_rate_replaces_it PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRealQuarantinedFamily::test_the_family_is_quarantined_with_the_ruling_s_words PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRealQuarantinedFamily::test_the_affected_set_is_enumerated_from_the_database PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRealQuarantinedFamily::test_nothing_was_deleted PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRealQuarantinedFamily::test_the_rates_themselves_were_not_touched PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheDoorLeftOpen::test_the_database_still_loads PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheDoorLeftOpen::test_the_family_is_still_registered_and_still_generates_reactions PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheDoorLeftOpen::test_the_rate_law_still_evaluates PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheThirdShapeSurvivesTheConversion::test_the_real_loader_attaches_the_entry_to_the_template_shape PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheThirdShapeSurvivesTheConversion::test_a_seed_conversion_leaves_the_rate_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheThirdShapeSurvivesTheConversion::test_a_reaction_library_conversion_leaves_the_rate_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheThirdShapeSurvivesTheConversion::test_the_conversion_still_writes_the_library_label_into_the_family_slot PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheDiskAnswerIsRevalidated::test_a_manifest_added_after_the_first_lookup_is_seen PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheDiskAnswerIsRevalidated::test_a_manifest_removed_after_the_first_lookup_is_seen PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheDiskAnswerIsRevalidated::test_a_manifest_that_vanishes_mid_read_is_unanswered_not_clean PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestAFamilyLabelIsNotAPath::test_an_absolute_label_is_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestAFamilyLabelIsNotAPath::test_a_dotdot_label_is_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestAFamilyLabelIsNotAPath::test_a_symlinked_family_pointing_outside_is_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestAFamilyLabelIsNotAPath::test_an_ordinary_label_still_resolves PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCallSitePinCoversEveryGate::test_a_call_in_a_dead_branch_does_not_satisfy_it PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCallSitePinCoversEveryGate::test_a_same_named_call_on_something_else_does_not_satisfy_it PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCallSitePinCoversEveryGate::test_deleting_three_of_the_four_gates_is_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCallSitePinCoversEveryGate::test_the_real_module_satisfies_it PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSuppressionConsultsDiskToo::test_a_database_whose_manifests_are_only_on_disk_still_warns PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSuppressionConsultsDiskToo::test_a_database_with_no_quarantine_anywhere_stays_quiet PASSED
+test/rmgpy/electronPlacementTest.py::TestElectronPlacementResolver::test_synthetic_attachment_resolves_nonmutating PASSED
+test/rmgpy/electronPlacementTest.py::TestElectronPlacementResolver::test_molecularity_reconciliation PASSED
+test/rmgpy/electronPlacementTest.py::TestElectronPlacementResolver::test_non_attachment_electron_family_fails_by_name PASSED
+test/rmgpy/electronPlacementTest.py::TestElectronPlacementResolver::test_family_free_reaction_fails_by_name PASSED
+test/rmgpy/electronPlacementTest.py::TestElectronPlacementResolver::test_ionization_shaped_fails_by_name PASSED
+test/rmgpy/electronPlacementTest.py::TestElectronPlacementResolver::test_excitation_shaped_fails_by_name PASSED
+test/rmgpy/electronPlacementTest.py::TestElectronPlacementResolver::test_double_representation_fails_by_name PASSED
+test/rmgpy/electronPlacementTest.py::TestElectronPlacementResolver::test_already_explicit_fails_by_name PASSED
+test/rmgpy/electronPlacementTest.py::TestElectronPlacementResolver::test_reverse_generated_reaction_resolves PASSED
+test/rmgpy/electronPlacementTest.py::TestElectronPlacementResolver::test_unknown_direction_resolves PASSED
+test/rmgpy/electronPlacementTest.py::TestElectronPlacementResolver::test_wrong_side_placement_refused_by_E_balance PASSED
+test/rmgpy/electronPlacementTest.py::TestElectronPlacementResolver::test_reversible_resolves_and_stays_reversible PASSED
+test/rmgpy/electronPlacementTest.py::TestElectronPlacementResolver::test_missing_kinetics_fails_by_name PASSED
+test/rmgpy/electronPlacementTest.py::TestElectronPlacementResolver::test_pressure_dependent_kinetics_fails_by_name PASSED
+test/rmgpy/electronPlacementTest.py::TestElectronPlacementResolver::test_kinetics_level_electron_field_fails_by_name PASSED
+test/rmgpy/electronPlacementTest.py::TestElectronPlacementResolver::test_missing_electron_species_fails_by_name PASSED
+test/rmgpy/electronPlacementTest.py::TestElectronPlacementResolver::test_ambiguous_electron_species_fails_by_name PASSED
+test/rmgpy/electronPlacementTest.py::TestElectronPlacementResolver::test_declaration_registry_is_explicit_and_closed PASSED
+test/rmgpy/electronPlacementTest.py::TestAttachmentPlacementDatabase::test_generated_reaction_resolves_nondestructively PASSED
+test/rmgpy/electronPlacementTest.py::TestAttachmentPlacementDatabase::test_molecularity_reconciliation_on_generated_reaction PASSED
+test/rmgpy/electronPlacementTest.py::TestAttachmentPlacementDatabase::test_reactor_autoresolves_canonical_form PASSED
+test/rmgpy/electronPlacementTest.py::TestAttachmentPlacementDatabase::test_reactor_accepts_resolved_view PASSED
+test/rmgpy/electronPlacementTest.py::TestElectronPlacementReactorIntegration::test_01_family_generated_reaction_reaches_reactor_automatically PASSED
+test/rmgpy/electronPlacementTest.py::TestElectronPlacementReactorIntegration::test_02_canonical_reaction_unchanged_after_pipeline PASSED
+test/rmgpy/electronPlacementTest.py::TestElectronPlacementReactorIntegration::test_03_view_has_exactly_one_incident_electron_on_reactant_side PASSED
+test/rmgpy/electronPlacementTest.py::TestElectronPlacementReactorIntegration::test_04_electron_enters_forward_rate_exactly_once PASSED
+test/rmgpy/electronPlacementTest.py::TestElectronPlacementReactorIntegration::test_05_first_order_scaling_in_electron_concentration PASSED
+test/rmgpy/electronPlacementTest.py::TestElectronPlacementReactorIntegration::test_06_electron_derivative_negative PASSED
+test/rmgpy/electronPlacementTest.py::TestElectronPlacementReactorIntegration::test_07_o2_derivative_negative PASSED
+test/rmgpy/electronPlacementTest.py::TestElectronPlacementReactorIntegration::test_08_o2_anion_derivative_positive PASSED
+test/rmgpy/electronPlacementTest.py::TestElectronPlacementReactorIntegration::test_09_net_charge_conserved PASSED
+test/rmgpy/electronPlacementTest.py::TestElectronPlacementReactorIntegration::test_10_electron_not_double_counted PASSED
+test/rmgpy/electronPlacementTest.py::TestElectronPlacementReactorIntegration::test_11_residual_and_jacobian_share_coefficients PASSED
+test/rmgpy/electronPlacementTest.py::TestElectronPlacementReactorIntegration::test_12_analytic_electron_jacobian_column_matches_fd PASSED
+test/rmgpy/electronPlacementTest.py::TestElectronPlacementReactorIntegration::test_13_running_pipeline_twice_does_not_accumulate_electrons PASSED
+test/rmgpy/electronPlacementTest.py::TestElectronPlacementReactorIntegration::test_14_thermal_reactions_pass_through_unchanged PASSED
+test/rmgpy/electronPlacementTest.py::TestElectronPlacementReactorIntegration::test_15_reload_and_regenerate_uses_same_automatic_path PASSED
+test/rmgpy/electronPlacementTest.py::TestElectronPlacementReactorIntegration::test_16_generated_attachment_remains_irreversible PASSED
+test/rmgpy/electronPlacementTest.py::TestElectronPlacementReactorIntegration::test_production_path_invokes_resolver_not_the_test PASSED
+test/rmgpy/electronPlacementTest.py::TestElectronPlacementReactorIntegration::test_negative_control_missing_electron_species PASSED
+test/rmgpy/electronPlacementTest.py::TestElectronPlacementReactorIntegration::test_negative_control_duplicate_explicit_representation PASSED
+test/rmgpy/electronPlacementTest.py::TestElectronPlacementReactorIntegration::test_negative_control_unsupported_ionization_shaped PASSED
+test/rmgpy/electronPlacementTest.py::TestElectronPlacementReactorIntegration::test_regression_plasma_kinetics_without_incident_electron_refused PASSED
+test/rmgpy/electronPlacementTest.py::TestElectronPlacementReactorIntegration::test_regression_reinit_same_reactor_does_not_accumulate PASSED
+test/rmgpy/electronPlacementTest.py::TestElectronPlacementReactorIntegration::test_regression_reaction_index_maps_canonical_not_view PASSED
+test/rmgpy/electronPlacementTest.py::TestCationRecombinationPlacement::test_00_reaction_is_reverse_generated_and_reversible PASSED
+test/rmgpy/electronPlacementTest.py::TestCationRecombinationPlacement::test_01_electron_placed_on_reactant_side_exactly_once PASSED
+test/rmgpy/electronPlacementTest.py::TestCationRecombinationPlacement::test_02_view_balances_in_charge_and_E_pseudo_element PASSED
+test/rmgpy/electronPlacementTest.py::TestCationRecombinationPlacement::test_03_canonical_reaction_is_not_mutated PASSED
+test/rmgpy/electronPlacementTest.py::TestCationRecombinationPlacement::test_04_view_stays_reversible PASSED
+test/rmgpy/electronPlacementTest.py::TestCationRecombinationPlacement::test_05_reactor_still_refuses_the_reversible_view_by_name PASSED
+test/rmgpy/electronPlacementTest.py::TestNewPlasmaFamiliesResolver::test_electron_impact_ionization_resolves PASSED
+test/rmgpy/electronPlacementTest.py::TestNewPlasmaFamiliesResolver::test_radiative_recombination_resolves PASSED
+test/rmgpy/electronPlacementTest.py::TestNewPlasmaFamiliesDatabase::test_electron_impact_ionization_generated_resolves PASSED
+test/rmgpy/electronPlacementTest.py::TestNewPlasmaFamiliesDatabase::test_radiative_recombination_generated_resolves PASSED
+test/rmgpy/electronPlacementTest.py::TestNetZeroElectronPlacementGate::test_net_zero_carrier_reaches_the_resolver PASSED
+test/rmgpy/electronPlacementTest.py::TestNetZeroElectronPlacementGate::test_resolved_order_matches_the_coefficient_units PASSED
+test/rmgpy/electronPlacementTest.py::TestNetZeroElectronPlacementGate::test_resolver_is_actually_consulted PASSED
+test/rmgpy/electronPlacementTest.py::TestNetZeroElectronPlacementGate::test_canonical_reaction_not_mutated PASSED
+test/rmgpy/electronPlacementTest.py::TestNetZeroElectronPlacementGate::test_neutral_undeclared_still_passes_through PASSED
+test/rmgpy/electronPlacementTest.py::TestNetZeroElectronPlacementGate::test_declared_owner_already_explicit_passes_through PASSED
+test/rmgpy/electronPlacementTest.py::TestNetZeroElectronPlacementGate::test_gate_electron_test_is_defensive_like_the_resolver PASSED
+test/rmgpy/electronPlacementTest.py::TestNetZeroElectronPlacementGate::test_declared_nonzero_owner_with_zero_metadata_fails_by_name PASSED
+
+=============================== warnings summary ===============================
+test/rmgpy/electronPlacementTest.py::TestCationRecombinationPlacement::test_00_reaction_is_reverse_generated_and_reversible
+  /home/alon/Code/RMG-Py-i221-saturation-fix/rmgpy/data/kinetics/family.py:1155: DeprecationWarning: add_rules_from_training should be only called for non-ATG families, but Cation_R_Recombination is an ATG family. Skip this function call. Calling add_rules_from_training on ATG families may be deprecated in RMG-Py 3.2
+    warnings.warn(f'add_rules_from_training should be only called for non-ATG families, '
+
+test/rmgpy/electronPlacementTest.py::TestCationRecombinationPlacement::test_00_reaction_is_reverse_generated_and_reversible
+  /home/alon/Code/RMG-Py-i221-saturation-fix/rmgpy/data/kinetics/family.py:1366: DeprecationWarning: fill_rules_by_averaging_up should be only called for non-ATG families, but Cation_R_Recombination is an ATG family. Skip this function call. Calling fill_rules_by_averaging_up on ATG families may be deprecated in RMG-Py 3.2
+    warnings.warn(f'fill_rules_by_averaging_up should be only called for non-ATG families, '
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================================ tests coverage ================================
+_______________ coverage: platform linux, python 3.9.23-final-0 ________________
+
+Coverage HTML written to dir htmlcov
+======================= 147 passed, 2 warnings in 14.42s =======================

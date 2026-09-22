@@ -375,6 +375,17 @@ class KineticsLibrary(Database):
                                        duplicate=entry.item.duplicate, reversible=entry.item.reversible,
                                        family=family, template=template, degeneracy=entry.item.degeneracy,
                                        electrons=entry.item.electrons)
+                # The third shape, and the one that had no carrier. This reaction's `family`
+                # slot holds real authorship -- parsed out of `long_desc` immediately above --
+                # but `CoreEdgeReactionModel` rebuilds it as a `LibraryReaction` whenever that
+                # family is not loaded (the seed and reaction-library paths in `rmg/model.py`),
+                # and a `LibraryReaction`'s `family` slot means the LIBRARY. Carrying the entry
+                # is what survives that conversion, because the entry's `long_desc` is the same
+                # text the family was just parsed out of.
+                #
+                # Assigned rather than passed: `TemplateReaction.__init__` takes no `entry`, and
+                # `rmgpy/data/kinetics/family.py` is outside this change.
+                rxn.entry = entry
             else:  # pdep or standard library reaction
                 rxn = LibraryReaction(reactants=entry.item.reactants[:], products=entry.item.products[:],
                                       library=self.label, specific_collider=entry.item.specific_collider,
