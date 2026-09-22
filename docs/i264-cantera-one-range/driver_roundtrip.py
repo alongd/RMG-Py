@@ -8,6 +8,7 @@ loaded ct.Solution against the ORIGINAL RMG thermo object at several
 spot temperatures. No synthesized intermediate is compared -- only the
 original RMG object vs. the object Cantera built from reading the file.
 """
+import math
 import sys
 
 import cantera as ct
@@ -85,8 +86,19 @@ def compare(label, species, yaml_path):
         s_ct = sol.entropy_mole / 1000.0
 
         for rmg_val, ct_val, name in ((cp_rmg, cp_ct, "Cp"), (h_rmg, h_ct, "H"), (s_rmg, s_ct, "S")):
+            # Explicit finiteness check: max(max_rel_err, rel_err) SILENTLY
+            # swallows a NaN rel_err (max(0.0, float('nan')) == 0.0 in
+            # CPython), so a non-finite comparison value must be caught here
+            # rather than left to fall through max().
+            if not (math.isfinite(rmg_val) and math.isfinite(ct_val)):
+                raise AssertionError(
+                    f"{label}: non-finite comparison value at T={T}: "
+                    f"{name}_RMG={rmg_val}, {name}_CT={ct_val}")
             denom = max(abs(rmg_val), 1e-8)
             rel_err = abs(rmg_val - ct_val) / denom
+            if not math.isfinite(rel_err):
+                raise AssertionError(
+                    f"{label}: non-finite relative error at T={T} for {name}: {rel_err}")
             max_rel_err = max(max_rel_err, rel_err)
 
         print(f"{T:8.1f} {cp_rmg:12.4f} {cp_ct:12.4f} {h_rmg:14.3f} {h_ct:14.3f} {s_rmg:12.4f} {s_ct:12.4f}")

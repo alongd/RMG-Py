@@ -139,3 +139,79 @@ because `test/rmgpy/data/rmgTest.py` and `test/rmgpy/rmg/rmgTest.py` share a bas
 No edits under `rmgpy/molecule/`, `rmgpy/kinetics/`, `rmgpy/data/`, RMG-database, or thermo
 fitting/storage. No push/merge/rebase. Source diff limited to `rmgpy/exceptions.py`,
 `rmgpy/thermo/nasa.pyx`, `rmgpy/yaml_cantera2.py`.
+
+## Round-98 hardening
+
+The initial fix (above) made `species_to_dict` and `NASA.to_cantera` handle a one-range NASA
+object, but left several adjacent failure modes silent or crash-by-`assert`/`IndexError` rather
+than refused-by-name, and had only driver-script coverage rather than real pytest coverage. This
+round closes both gaps without touching the fix's actual behavior for valid input.
+
+**Construction-time validation.** Both `species_to_dict` (`rmgpy/yaml_cantera2.py`) and
+`NASA.to_cantera` (`rmgpy/thermo/nasa.pyx`) now raise the named `CanteraThermoWriteError`
+(`rmgpy/exceptions.py`) — not a bare `assert` (which vanishes under `python -O`) and not a
+positional `IndexError`/`TypeError` — for every one of: more than 2 polynomials, a polynomial that
+does not have exactly 7 coefficients (e.g. NASA9 data), a non-finite coefficient, an
+inverted/degenerate range (`Tmin >= Tmax`), and (in `species_to_dict` only, since only there are
+multiple polynomials stitched together) a non-contiguous range gap between consecutive
+polynomials. `nasa.pyx` was rebuilt (`make build`) after editing; the `.so` was confirmed to
+resolve from this worktree. `rmgpy/solver/settings.pxi` (auto-written by `check-pydas`) was not
+committed.
+
+**Real pytest coverage.** `test/rmgpy/thermo/nasaTest.py::TestNASA` gained
+`test_to_cantera_one_range` (headline — this exact input crashed with a bare `AssertionError`
+before the original fix) plus one refusal test per failure mode:
+`test_to_cantera_refuses_more_than_two_polynomials`,
+`test_to_cantera_refuses_non_seven_coefficient_polynomial`,
+`test_to_cantera_refuses_non_finite_coefficients`. `test/rmgpy/yaml_cantera2Test.py::TestCanteraWriter2`
+gained the mirror set for the dict-writer path: `test_species_to_dict_one_range` (headline) plus
+`test_species_to_dict_refuses_more_than_two_polynomials`,
+`..._refuses_non_seven_coefficient_polynomial`, `..._refuses_gapped_ranges`,
+`..._refuses_inverted_range`, `..._refuses_non_finite_values`. A round-trip test,
+`test_one_range_species_roundtrips_through_cantera`, writes a full Cantera YAML phase for a
+one-range argon species via `save_cantera_model`, loads it back with `cantera.Solution(...)`, and
+compares Cp/H/S against the original RMG thermo object at six spot temperatures (250-5900 K) to a
+5e-6 relative tolerance — the same ~1.13e-6 RMG/Cantera gas-constant gap documented above, not a
+new defect. Every comparison value is checked with `math.isfinite` before use, so a NaN comparison
+value cannot be silently swallowed by `max(0.0, nan) == 0.0` the way a naive
+`max(max_rel_err, rel_err)` accumulator would.
+
+Verified (see `docs/i264-cantera-one-range/round98/`):
+- `full_nasaTest.log`: `pytest test/rmgpy/thermo/nasaTest.py --no-cov` → **24 passed**.
+- `full_yaml_cantera2Test.log`: `pytest test/rmgpy/yaml_cantera2Test.py --no-cov` → **36 passed, 5
+  skipped** (skips are the pre-existing opt-in `TestRecentlyGeneratedCanteraYaml2GasOnly` suite,
+  unaffected by this change).
+- `nasa_headline_red_on_base.log` / `yaml_cantera2_headline_red_on_base.log`: run against the BASE
+  checkout (`/home/alon/Code/RMG-Py-plasma`, commit `98d465d3b`, pre-fix). `NASA.to_cantera()` on a
+  one-range object raises a bare `AssertionError: Cantera NasaPoly2 objects only accept 2
+  polynomials`; `species_to_dict` on the same input raises a bare `IndexError: list index out of
+  range`; and `from rmgpy.exceptions import CanteraThermoWriteError` itself fails with
+  `ImportError` — i.e. the new refusal tests cannot even be collected against base, and the
+  headline tests fail for the documented pre-fix reason. Confirmed empirically rather than assumed
+  (an earlier characterization of the `to_cantera` path had guessed `IndexError`; direct testing
+  showed the two paths fail differently — `to_cantera` via `assert`, `species_to_dict` via raw
+  indexing — both are real, and both are named `CanteraThermoWriteError` now).
+
+**Evidence drivers exit non-zero on failure.** All three drivers under
+`docs/i264-cantera-one-range/` (`driver_yaml_writer.py`, `driver_nasa_to_cantera.py`,
+`driver_roundtrip.py`) track every arm's pass/fail and call `sys.exit(1)` if any arm's outcome
+does not match its expectation — printed `[OK]`/`[FAIL]` text is not the only signal. Each
+driver's exit-code behavior was proven live: a one-line tamper (weakening an assertion's
+tolerance, or replacing an expected `CanteraThermoWriteError` with `"ok"`) was introduced, the
+driver was re-run and observed to exit 1 with the tampered arm named as `[FAIL]`
+(`*_TAMPERED_stdout.log`, `*_TAMPERED_exitcode.txt`), the tamper was reverted from a saved copy,
+`git diff --stat`/`grep` confirmed a clean revert back to the real fix, and the driver was re-run
+to confirm exit 0 (`*_GREEN_stdout.log`, `*_GREEN_stderr.log`, `*_GREEN_exitcode.txt`). This
+demonstrates the exit code is a real signal tied to the arm outcomes, not printed theater. The
+tamper itself was never left in the committed driver files.
+
+**`python -O` demonstration (Task D).** `optimize_flag_demo.log` runs the same script twice, once
+under `python` and once under `python -O`, feeding `NASA.to_cantera()` a 3-range object and a
+9-coefficient (NASA9-shaped) object. Both refusals are raised identically as
+`CanteraThermoWriteError` under both invocations — proving the refusal is a real `raise`, not an
+`assert` that `-O`'s `__debug__ == False` would strip.
+
+**What did not change.** No behavior for valid one- or two-range NASA input changed. No template,
+atom type, or database content was touched. `save_cantera_model` was not given reload-on-export
+behavior. The ~1.13e-6 RMG/Cantera gas-constant mismatch was not chased — it is bounded by the 5e-6
+round-trip tolerance and documented, not fixed, consistent with the original hard constraint.

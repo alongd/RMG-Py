@@ -1,0 +1,17 @@
+--- one-range (Ar1R) (file: /tmp/claude-1000/i264/ar_one_range.yaml) ---
+   T (K)       Cp_RMG        Cp_CT          H_RMG           H_CT        S_RMG         S_CT
+   250.0      20.7862      20.7862      -1000.855      -1000.853     151.1847     151.1846
+   500.0      20.7862      20.7862       4195.690       4195.686     165.5926     165.5924
+  1000.0      20.7862      20.7862      14588.780      14588.764     180.0005     180.0003
+  2000.0      20.7862      20.7862      35374.960      35374.921     194.4084     194.4082
+  4000.0      20.7862      20.7862      76947.320      76947.234     208.8163     208.8160
+  5900.0      20.7862      20.7862     116441.062     116440.931     216.8950     216.8947
+max relative error across Cp/H/S at all spot temps: 1.128e-06
+Traceback (most recent call last):
+  File "/home/alon/Code/RMG-Py-i264-cantera-one-range/docs/i264-cantera-one-range/driver_roundtrip.py", line 124, in <module>
+    main()
+  File "/home/alon/Code/RMG-Py-i264-cantera-one-range/docs/i264-cantera-one-range/driver_roundtrip.py", line 119, in main
+    compare("one-range (Ar1R)", make_species(two_range=False), f"{tmpdir}/ar_one_range.yaml")
+  File "/home/alon/Code/RMG-Py-i264-cantera-one-range/docs/i264-cantera-one-range/driver_roundtrip.py", line 112, in compare
+    assert max_rel_err < 1e-12, f"{label}: round-trip mismatch too large ({max_rel_err:.3e})"
+AssertionError: one-range (Ar1R): round-trip mismatch too large (1.128e-06)

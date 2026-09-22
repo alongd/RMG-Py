@@ -1,0 +1,20 @@
+test/rmgpy/yaml_cantera2Test.py::TestCanteraWriter2::test_reaction_to_dict_sticking_coefficient PASSED
+test/rmgpy/yaml_cantera2Test.py::TestCanteraWriter2::test_reaction_to_dict_negative_a_sticking_coefficient PASSED
+test/rmgpy/yaml_cantera2Test.py::TestCanteraWriter2::test_reaction_to_dict_coverage_dependence PASSED
+test/rmgpy/yaml_cantera2Test.py::TestCanteraWriter2::test_reaction_to_dict_thirdbody_unit PASSED
+test/rmgpy/yaml_cantera2Test.py::TestCanteraWriter2::test_get_elements_block_isotopes_and_surface_site PASSED
+test/rmgpy/yaml_cantera2Test.py::TestCanteraWriter2::test_generate_cantera_data_elements_block PASSED
+test/rmgpy/yaml_cantera2Test.py::TestCanteraWriter2::test_generate_cantera_data_gas_phase_state PASSED
+test/rmgpy/yaml_cantera2Test.py::TestCanteraWriter2::test_generate_cantera_data_gas_reactions_key PASSED
+test/rmgpy/yaml_cantera2Test.py::TestCanteraWriter2::test_generate_cantera_data_surface_phase_state_and_reactions_key PASSED
+test/rmgpy/yaml_cantera2Test.py::TestCanteraWriter2::test_species_to_dict_surface_sites_count PASSED
+test/rmgpy/yaml_cantera2Test.py::TestCanteraWriter2::test_species_to_dict_gas_no_sites_field PASSED
+test/rmgpy/yaml_cantera2Test.py::TestCanteraWriter2::test_species_to_dict_transport_note_always_present PASSED
+test/rmgpy/yaml_cantera2Test.py::TestCanteraWriter2::test_one_range_species_roundtrips_through_cantera PASSED
+test/rmgpy/yaml_cantera2Test.py::TestRecentlyGeneratedCanteraYaml2GasOnly::testGeneratorsAsExpected <- test/rmgpy/cantera_yaml_comparer.py SKIPPED
+test/rmgpy/yaml_cantera2Test.py::TestRecentlyGeneratedCanteraYaml2GasOnly::testKeysMatch <- test/rmgpy/cantera_yaml_comparer.py SKIPPED
+test/rmgpy/yaml_cantera2Test.py::TestRecentlyGeneratedCanteraYaml2GasOnly::testPhasesMatch <- test/rmgpy/cantera_yaml_comparer.py SKIPPED
+test/rmgpy/yaml_cantera2Test.py::TestRecentlyGeneratedCanteraYaml2GasOnly::testElementsMatch <- test/rmgpy/cantera_yaml_comparer.py SKIPPED
+test/rmgpy/yaml_cantera2Test.py::TestRecentlyGeneratedCanteraYaml2GasOnly::testSpeciesMatch <- test/rmgpy/cantera_yaml_comparer.py SKIPPED
+
+======================== 36 passed, 5 skipped in 1.57s =========================

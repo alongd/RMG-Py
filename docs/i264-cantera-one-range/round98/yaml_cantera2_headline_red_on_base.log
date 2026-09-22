@@ -1,0 +1,7 @@
+=== species_to_dict headline RED-on-BASE evidence (i264 round-98) ===
+Run from BASE checkout /home/alon/Code/RMG-Py-plasma (commit 98d465d3b), pre-fix.
+
+[EXPECTED-RED] IndexError: list index out of range
+
+=== Confirming CanteraThermoWriteError does not exist on BASE (ImportError) ===
+[EXPECTED-RED] ImportError: cannot import name 'CanteraThermoWriteError' from 'rmgpy.exceptions' (/home/alon/Code/RMG-Py-plasma/rmgpy/exceptions.py)
