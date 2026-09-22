@@ -170,13 +170,24 @@ class TerminationSteadyStateLatchTest:
         Drive `term` through a sequence of residuals by synthesising steps that produce
         them. One species at 1.0 and one at exp(+/-R) over an e-fold of time; the constant
         species dominates the total, so the mole fraction of the second tracks it.
+
+        Physical time ADVANCES across steps -- ``t`` goes e^j -> e^(j+1), one e-fold per
+        step, with the clock ``term._feed_step`` persisting across successive _feed calls on
+        the same object. It is not held fixed at (1, e): a criterion whose persistence is
+        measured in physical time (so it does not depend on the integrator's step size)
+        cannot be exercised by a clock that never moves. Each step still spans exactly one
+        e-fold, so the residual it produces is unchanged; only the absolute time advances.
         """
         fired_at = None
         for k, r in enumerate(residual_sequence):
+            j = getattr(term, '_feed_step', 0)
             big = 1e12
             y_prev = np.array([big, 1.0])
             y_now = np.array([big, float(np.exp(r))])
-            if term.update(y_now, np.e, y_prev, 1.0, ATOL):
+            t_prev = float(np.exp(j))
+            t_now = float(np.exp(j + 1))
+            term._feed_step = j + 1
+            if term.update(y_now, t_now, y_prev, t_prev, ATOL):
                 fired_at = k
                 break
         return fired_at
@@ -242,6 +253,45 @@ class TerminationSteadyStateLatchTest:
         term = TerminationSteadyState(tolerance=1e-6, window=3)
         assert self._feed(term, [0.0] * 51) is None
         assert term.armed is False
+
+    def test_persistence_is_physical_time_not_a_bare_step_count(self):
+        """Round 96 MEDIUM 3: the flat streak counted accepted solver STEPS, so three steps
+        clustered in negligible physical time -- an artefact of tight step control -- filled
+        the window and fired. Persistence must be measured in physical time: the flat run
+        has to span at least an e-fold before firing, so neither the verdict nor the
+        termination time depends on the step controller. A residual of exactly zero (a
+        structurally frozen composition) is exempt -- it is unambiguously steady and fires
+        at once, which is what a fully-pumped discharge decaying to n_e = 0 relies on."""
+        def feed(term, target_r, t_prev, t_now):
+            # Produce a residual of exactly ``target_r`` at ANY step size: the residual is
+            # |d ln x / d ln t|, so the composition change must scale with the time step,
+            # d ln x = target_r * d ln t. (Feeding a fixed d ln x instead would make the
+            # residual blow up as the step shrinks -- the very step dependence under test.)
+            big = 1e12
+            dlnt = np.log(t_now) - np.log(t_prev)
+            y_prev = np.array([big, 1.0])
+            y_now = np.array([big, float(np.exp(target_r * dlnt))])
+            return term.update(y_now, t_now, y_prev, t_prev, ATOL)
+
+        # Arm (R >= 1), then three flat steps that together span less than one e-fold in
+        # time (factor 1.1 each: ln(1.21) ~ 0.19 < 1). The step window of three IS met.
+        term = TerminationSteadyState(tolerance=1e-6, window=3)
+        feed(term, 2.0, 1.0, np.e)                        # R >= 1 -> armed
+        assert not feed(term, 1e-7, np.e, 100.0)          # flat step 1 (t_flat_start = 100)
+        assert not feed(term, 1e-7, 100.0, 110.0)         # flat step 2 (span 0.095 e-fold)
+        assert not feed(term, 1e-7, 110.0, 121.0)         # flat step 3 (span 0.19 e-fold)
+        assert term.armed and term.streak >= term.window  # step window IS satisfied...
+        # ...yet the flat run has not spanned an e-fold, so none of the three fired above.
+        # The SAME flatness, once time has advanced past an e-fold, does fire.
+        assert feed(term, 1e-7, 121.0, 300.0)             # span ln(3) ~ 1.1 e-fold -> fires
+
+        # A residual of exactly zero is exempt from the span: three frozen steps that span
+        # less than an e-fold still fire once armed (a structurally frozen composition).
+        term0 = TerminationSteadyState(tolerance=1e-6, window=3)
+        feed(term0, 2.0, 1.0, np.e)
+        feed(term0, 0.0, np.e, 100.0)
+        feed(term0, 0.0, 100.0, 110.0)
+        assert feed(term0, 0.0, 110.0, 121.0)
 
     def test_reset_clears_the_latch(self):
         """

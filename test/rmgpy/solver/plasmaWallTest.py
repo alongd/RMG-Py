@@ -54,7 +54,7 @@ import rmgpy.constants as constants
 import rmgpy.solver.plasma
 from rmgpy import settings
 from rmgpy.exceptions import PlasmaStateError
-from rmgpy.kinetics import VoronovEIArrhenius
+from rmgpy.kinetics import Arrhenius, VoronovEIArrhenius
 from rmgpy.reaction import Reaction
 from rmgpy.rmg.settings import ModelSettings, SimulatorSettings
 from rmgpy.solver.plasma import PLASMA_LOSCHMIDT, PlasmaReactor
@@ -840,11 +840,24 @@ def test_reduce_enumerates_every_constructor_parameter():
                             src, re.S)
     assert reduce_body, "could not locate PlasmaReactor.__reduce__ in plasma.pyx"
     body = reduce_body.group(1)
+    # Search only the RETURNED reconstruction tuple, with the method docstring and all
+    # comments stripped first. A parameter named merely in a comment or in the docstring of
+    # __reduce__ (both are present -- the docstring lists parameters by name, and the return
+    # tuple carries an explanatory comment) must NOT satisfy the check: the property is that
+    # the parameter is actually CARRIED in the reconstruction arguments, not that its name
+    # appears somewhere in the method. This is what makes the test more than a lexical
+    # surrogate for the property it names.
+    body = re.sub(r'(?s)"""(?:.*?)"""', '', body)     # docstring
+    body = re.sub(r'#.*', '', body)                   # comments
+    ret = re.search(r'return\s*\((.*)\)\s*\Z', body.strip(), re.S)
+    assert ret, "could not locate the return tuple of __reduce__ after stripping docstring/comments"
+    returned = ret.group(1)
 
-    missing = [p for p in params if not re.search(r'\bself\.%s\b' % re.escape(p), body)]
+    missing = [p for p in params if not re.search(r'\bself\.%s\b' % re.escape(p), returned)]
     assert not missing, (
-        "__reduce__ does not carry {0} of __init__'s parameters, so a pickle or "
-        "deepcopy silently drops them: {1}".format(len(missing), missing))
+        "__reduce__ does not carry {0} of __init__'s parameters in its returned "
+        "reconstruction tuple, so a pickle or deepcopy silently drops them: {1}".format(
+            len(missing), missing))
 
 
 # ---------------------------------------------------------------- I-246 rework
@@ -852,8 +865,17 @@ def test_reduce_enumerates_every_constructor_parameter():
 # The ground/metastable resolution, the thermo precondition, the near-degeneracy
 # threshold, the wall_neutralization_products declaration, the neutral-floor and
 # electron-population validators, the single-cation enforcement, and the direct
-# diffusionLength dimension check. Every red state here is banked, on the built
-# module, in docs/i246-ambipolar-wall-operator/evidence/before.log.
+# diffusionLength dimension check.
+#
+# Two kinds of test live here, and the distinction is deliberate. The DEFECT
+# reproductions -- every test that exercises a refusal or a corrected behaviour a prior
+# build got wrong -- have their red state banked, on the built module, in the round's
+# evidence log (before.log and the round-90/93/96 logs). The INVARIANT checks -- a
+# closed-form re-derivation of nu_wall, a geometry scaling law, a charge/heavy-atom
+# conservation statement, a parameterisation invariance -- assert a positive property
+# directly and have no "red state" in the defect sense; a banked red log is not claimed
+# for them, because there is no defect they reproduce. The claim is scoped to the tests
+# that can meet it rather than asserted over all of them.
 
 EV_J_PER_MOL = 96485.33212
 
@@ -1991,3 +2013,144 @@ def test_small_but_nonzero_source_flux_is_not_lost_to_a_squaring_underflow():
     stays nonzero."""
     r, core, rxns = _build_reactor(wall=True, with_chemistry=False, x_ion=0.0, source=1.0e-140)
     assert r.get_non_chemical_char_rate() > 0.0
+
+
+# ---------------------------------------------------------------- round 96
+#
+# The steady-state REPORT was unsound in both directions, the round-93 MEDIUMs were
+# sharpened, and a subnormal source slipped the ignition guard. Each red state below was
+# reproduced first on the built module and is banked in
+# docs/i246-ambipolar-wall-operator/evidence/round96_before.log.
+
+
+def _slow_neutral_drift_reactor(slow_k, xseed, source=1.0e5, gamma=1.0,
+                                te_ev=TE_NOMINAL_EV, termination=None):
+    """A source-driven discharge (electron ignites from exactly zero and saturates to
+    S/nu_wall) plus a slow, charge-decoupled neutral drain ``Ar -> X`` at rate constant
+    ``slow_k`` on top of a live ``xseed`` fraction of X. X stands in for a slow neutral
+    channel (a metastable excitation, an isomerisation); it drains on a ~1/slow_k timescale,
+    so with ``slow_k`` tiny the electron reaches steady density while X is still filling --
+    a saturated electron sitting over a neutral that has NOT reached steady state. X carries
+    a distinct heavy skeleton so the Ar+ wall recycle stays unambiguous (Ar+ -> Ar)."""
+    e = Species(label='e-').from_adjacency_list('1 e u1 p0 c-1')
+    ar = Species(label='Ar').from_adjacency_list('1 Ar u0 p4 c0')
+    arp = Species(label='Ar+').from_adjacency_list('multiplicity 2\n1 Ar u1 p3 c+1')
+    x = Species(label='X').from_adjacency_list('1 He u0 p1 c0')
+    x.thermo = _thermo_with_h298(0.0)
+    imf = {e: 0.0, arp: 0.0, ar: 1.0 - xseed, x: xseed}
+    r = PlasmaReactor(
+        (TGAS, 'K'), (P_NOMINAL, 'Pa'), imf, (te_ev * EV_TO_K, 'K'), n_sims=1,
+        termination=termination or [], diffusion_length=(_diffusion_length(), 'm'),
+        ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'), wall_recycling=gamma,
+        ionisation_source=(source, 'm^-3/s'))
+    core = [e, ar, arp, x]
+    slow = Reaction(reactants=[ar], products=[x], reversible=False,
+                    kinetics=Arrhenius(A=(slow_k, 's^-1'), n=0, Ea=(0, 'J/mol')))
+    r.initialize_model(core, [slow], [], [])
+    return r, core, [slow]
+
+
+def test_a_saturated_electron_does_not_vouch_for_a_still_drifting_neutral():
+    """Round 96 HIGH 1: steady_state_external_armed armed the WHOLE criterion once the
+    electron passed t*nu_wall >= 1, so a slow neutral reaction that had not run through its
+    own timescale was declared stationary the moment the electron saturated. Arming is
+    per-quantity: the electron's arm vouches only for the electron and may license the
+    system only while the generic (neutral) residual is not still RISING toward its own arm.
+    A neutral mid-transit -- X filling on a ~1e12 s timescale, its residual below tolerance
+    only because it has not yet reached that scale -- must keep the system NOT steady, while
+    a deck with no such neutral still reports steady once the electron saturates. Both, in
+    one build, so the fix cannot buy one by breaking the other."""
+    term = [TerminationSteadyState(tolerance=1.0e-8), TerminationTime((300.0, 's'))]
+    r, core, rxns = _slow_neutral_drift_reactor(slow_k=1.0e-12, xseed=1.0e-2, termination=term)
+    _simulate(r, core, rxns)
+    assert not r.steady_state_reached, (
+        "a saturated electron wrongly vouched for a neutral still draining Ar -> X")
+
+    term2 = [TerminationSteadyState(tolerance=1.0e-8), TerminationTime((300.0, 's'))]
+    r2, core2, rxns2 = _build_reactor(wall=True, with_chemistry=False, x_ion=0.0,
+                                      source=1.0e5, termination=term2)
+    _simulate(r2, core2, rxns2)
+    assert r2.steady_state_reached, (
+        "the pure saturating discharge with no drifting neutral was not recognised steady")
+
+
+def test_a_stationary_composition_over_a_shrinking_inventory_terminates():
+    """Round 96 HIGH 2: the generic criterion measures mole FRACTIONS while the external
+    electron residual measured electron MOLES. On a pumped discharge whose fractions go
+    stationary but whose absolute inventory shrinks, the moles residual reads large motion
+    where the fraction is flat, poisoning the MAX fold so the run never terminated on a
+    genuinely stationary composition. Measured on the same intensive quantity (the electron
+    mole fraction), the state is recognised as steady and the run stops before the backstop."""
+    term = [TerminationSteadyState(tolerance=1.0e-8), TerminationTime((50.0, 's'))]
+    r, core, rxns = _build_reactor(wall=True, gamma=0.0, with_chemistry=False,
+                                   x_ion=1.0e-4, source=1.0e22, termination=term)
+    _simulate(r, core, rxns)
+    assert r.steady_state_reached, (
+        "a stationary composition over a shrinking inventory was not recognised as steady")
+    assert r.t < 50.0, "the run reached the time backstop instead of terminating on steady state"
+
+
+def test_the_wall_guard_evaluates_the_runtime_expression_not_a_reference_proxy():
+    """Round 96 MEDIUM 1: the construction guard evaluated nu_wall at the reference density,
+    where mu_i is exactly mu0, but run time forms mu_i = mu0*Nref/n_neutral. A finite
+    mu0=1e20 with a finite Nref=1e308 leaves mu0 finite yet mu0*Nref = inf, so nu_wall is
+    infinite for every real state while the reference-density proxy read finite and admitted
+    it. The guard must evaluate the run-time expression at its worst case (the neutral
+    floor). The physical single-bath case must still construct."""
+    e, ar, arp = _argon_species()
+    imf = {e: 1.0e-6, arp: 1.0e-6, ar: 1.0 - 2.0e-6}
+
+    def _make(mu0, nref):
+        return PlasmaReactor(
+            (TGAS, 'K'), (P_NOMINAL, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1,
+            termination=[], diffusion_length=(_diffusion_length(), 'm'),
+            ion_reduced_mobility=(mu0, 'm^2/(V*s)'),
+            mobility_reference_density=(nref, 'm^-3'), wall_recycling=1.0)
+
+    with pytest.raises(PlasmaStateError):
+        _make(1.0e20, 1.0e308)          # each finite; the product mu0*Nref overflows
+    _make(MU0_AR_IN_AR, PLASMA_LOSCHMIDT)   # the physical case constructs
+
+
+def test_multi_gas_bath_records_an_availability_state_not_just_a_warning():
+    """Round 96 MEDIUM 2: a warning is not an availability state -- a consumer reading the
+    latched wall fluxes cannot see a log line. When the neutral bath spans more than one
+    heavy skeleton the single ion mobility is applied to the summed density as an
+    approximation, so every nu_wall-derived flux is downgraded from 'available' to
+    'available-single-bath-approximation' in the availability dict. A single-skeleton bath
+    (Ar, or Ar and its metastable) reports plain 'available'. The downgrade never launders a
+    genuinely unavailable (NaN) field into a usable one."""
+    e, ar, arp = _argon_species()
+    he = Species(label='He').from_adjacency_list('1 He u0 p1 c0')
+    he.thermo = _thermo_with_h298(0.0)
+    imf = {e: 1.0e-6, arp: 1.0e-6, ar: 0.5 - 1.0e-6, he: 0.5 - 1.0e-6}
+    reactor = PlasmaReactor(
+        (TGAS, 'K'), (P_NOMINAL, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1,
+        termination=[], diffusion_length=(_diffusion_length(), 'm'),
+        ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'), wall_recycling=1.0)
+    reactor.initialize_model([e, ar, he, arp], [], [], [])
+    assert reactor.wall_bath_is_mixture is True
+    y = np.array(reactor.y0[:reactor.num_core_species], float)
+    reactor.residual(0.0, y, np.zeros(reactor.num_core_species, float))
+    avail = reactor.wall_energy_availability
+    assert avail['wall_flux'] == 'available-single-bath-approximation'
+    assert avail['wall_electron_energy_flux'] == 'available-single-bath-approximation'
+
+    # single-gas control: plain 'available', no downgrade
+    r1, _, _ = _build_reactor(wall=True, with_chemistry=False)
+    y1 = _state_at(r1, 1.0e-6)
+    r1.residual(0.0, y1, np.zeros(r1.num_core_species, float))
+    assert r1.wall_bath_is_mixture is False
+    assert r1.wall_energy_availability['wall_flux'] == 'available'
+
+
+def test_a_subnormal_source_that_injects_nothing_is_refused():
+    """Round 96 LOW: a positive but subnormal ionisation_source (5e-324, 1e-320) -- or any
+    value whose volumetric molar rate source/Na underflows -- reads as source > 0.0 and so
+    switches off the zero-electron ignition guard, yet source*V/Na injects exactly zero: the
+    deck declares ignition-from-zero it can never achieve. Refuse it at construction. A
+    normal source injects and is admitted."""
+    for bad in (5.0e-324, 1.0e-320, 1.0e-290):
+        with pytest.raises(PlasmaStateError):
+            _build_reactor(wall=True, with_chemistry=False, x_ion=0.0, source=bad)
+    _build_reactor(wall=True, with_chemistry=False, x_ion=0.0, source=1.0e5)
