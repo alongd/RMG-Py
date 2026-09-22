@@ -1,0 +1,53 @@
+==============================================================================
+F1 (HIGH 1) -- CanteraWriter1 must recompute the answer over its own list
+==============================================================================
+  production flags over core+edge: [True, True]
+  group answer for the CORE-ONLY list: [False]
+    FAIL  Writer1, core-only export after production marking
+          InputFileError thrown by Kinetics::checkDuplicates: | Error on line 53 of /tmp/claude-1000/r75-t8mrivil/f1_w1.yaml: | No duplicate found for declared duplicate reaction number 0 (H(1) + OH(2) => H2(3) + O(4))
+    PASS  Writer2, core-only export after production marking
+
+==============================================================================
+F2 (HIGH 2) -- a cross-class pair through the PAIRWISE production path
+==============================================================================
+  production (pairwise) flags: [False, False]
+  group answer over the same list: [True, True]
+    FAIL  pairwise marking still splits a cross-class pair the group key joins
+    FAIL  Writer1, cross-class pair
+          InputFileError thrown by Kinetics::checkDuplicates: | Error on lines 53 and 58 of /tmp/claude-1000/r75-t8mrivil/f2_w1.yaml: | Undeclared duplicate reactions detected:
+    PASS  Writer2, cross-class pair
+    PASS  Chemkin -> ck2yaml -> Solution, cross-class pair
+
+==============================================================================
+F3 (HIGH 3) -- a Multi wrapper holding exactly ONE entry
+==============================================================================
+  -- MultiArrhenius([one]) -- leaves: 1
+    FAIL  MultiArrhenius([one]): Chemkin -> ck2yaml -> Solution
+          InputFileError thrown by Kinetics::checkDuplicates: | Error on line 48 of /tmp/claude-1000/r75-t8mrivil/f3_ck.yaml: | No duplicate found for declared duplicate reaction number 0 (H(1) + OH(2) => H2(3) + O(4))
+    FAIL  MultiArrhenius([one]): Writer2
+          InputFileError thrown by Kinetics::checkDuplicates: | Error on line 48 of /tmp/claude-1000/r75-t8mrivil/f3_w2.yaml: | No duplicate found for declared duplicate reaction number 0 (H(1) + OH(2) => H2(3) + O(4))
+    FAIL  MultiArrhenius([one]): Writer1
+          InputFileError thrown by Kinetics::checkDuplicates: | Error on line 53 of /tmp/claude-1000/r75-t8mrivil/f3_w1.yaml: | No duplicate found for declared duplicate reaction number 0 (H(1) + OH(2) => H2(3) + O(4))
+  -- MultiPDepArrhenius([one]) -- leaves: 1
+    FAIL  MultiPDepArrhenius([one]): Chemkin -> ck2yaml -> Solution
+          InputFileError thrown by Kinetics::checkDuplicates: | Error on line 48 of /tmp/claude-1000/r75-t8mrivil/f3_ck.yaml: | No duplicate found for declared duplicate reaction number 0 (H(1) + OH(2) => H2(3) + O(4))
+    FAIL  MultiPDepArrhenius([one]): Writer2
+          InputFileError thrown by Kinetics::checkDuplicates: | Error on line 48 of /tmp/claude-1000/r75-t8mrivil/f3_w2.yaml: | No duplicate found for declared duplicate reaction number 0 (H(1) + OH(2) => H2(3) + O(4))
+    FAIL  MultiPDepArrhenius([one]): Writer1
+          InputFileError thrown by Kinetics::checkDuplicates: | Error on line 53 of /tmp/claude-1000/r75-t8mrivil/f3_w1.yaml: | No duplicate found for declared duplicate reaction number 0 (H(1) + OH(2) => H2(3) + O(4))
+  -- control: MultiArrhenius([two]) must STILL be marked
+    PASS  MultiArrhenius([two]): Chemkin -> ck2yaml -> Solution
+    PASS  MultiArrhenius([two]): Writer2
+    PASS  MultiArrhenius([two]): Writer1
+
+==============================================================================
+F4 (MEDIUM) -- a collider the equation builder cannot render
+==============================================================================
+  group answer: [False, False]
+    FAIL  Writer2 emitted a mechanism instead of refusing (InputFileError thrown by Kinetics::checkDuplicates: | Error on lines 64 and 73 of /tmp/claude-1000/r75-t8mrivil/f4_Writer2.yaml: | Undeclared duplicate reactions detected:)
+    FAIL  Writer1 emitted a mechanism instead of refusing (InputFileError thrown by Kinetics::checkDuplicates: | Error on lines 71 and 80 of /tmp/claude-1000/r75-t8mrivil/f4_Writer1.yaml: | Undeclared duplicate reactions detected:)
+  -- control: ThirdBody colliders ARE renderable and must stay distinct
+    PASS  Writer2, two ThirdBody reactions with different colliders
+
+==============================================================================
+FAILURES (11): Writer1, core-only export after production marking; F2 pairwise cross-class; Writer1, cross-class pair; MultiArrhenius([one]): Chemkin -> ck2yaml -> Solution; MultiArrhenius([one]): Writer2; MultiArrhenius([one]): Writer1; MultiPDepArrhenius([one]): Chemkin -> ck2yaml -> Solution; MultiPDepArrhenius([one]): Writer2; MultiPDepArrhenius([one]): Writer1; F4 Writer2; F4 Writer1

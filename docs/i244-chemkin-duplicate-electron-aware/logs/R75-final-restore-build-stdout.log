@@ -1,0 +1,63 @@
+Compiling rmgpy/reaction.py because it changed.
+Compiling rmgpy/chemkin.pyx because it changed.
+[1/2] Cythonizing rmgpy/chemkin.pyx
+[2/2] Cythonizing rmgpy/reaction.py
+running build_ext
+building 'rmgpy.reaction' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/reaction.c -o build/temp.linux-x86_64-cpython-39/rmgpy/reaction.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/temp.linux-x86_64-cpython-39/rmgpy/reaction.o -o build/lib.linux-x86_64-cpython-39/rmgpy/reaction.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.chemkin' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/chemkin.c -o build/temp.linux-x86_64-cpython-39/rmgpy/chemkin.o
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/temp.linux-x86_64-cpython-39/rmgpy/chemkin.o -o build/lib.linux-x86_64-cpython-39/rmgpy/chemkin.cpython-39-x86_64-linux-gnu.so
+copying build/lib.linux-x86_64-cpython-39/rmgpy/rmgobject.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/arrhenius.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/chebyshev.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/kineticsdata.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/falloff.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/model.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/tunneling.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/surface.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/uncertainties.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/atomtype.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/element.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/graph.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/group.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/molecule.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/symmetry.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/vf2.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/converter.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/translator.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/util.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/inchi.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/resonance.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/pathfinder.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/kekulize.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/collision.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/configuration.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/me.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/msc.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/reaction.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/rs.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/cse.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/conformer.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/mode.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/rotation.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/schrodinger.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/torsion.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/translation.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/vibration.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/thermo/thermodata.cpython-39-x86_64-linux-gnu.so -> rmgpy/thermo
+copying build/lib.linux-x86_64-cpython-39/rmgpy/thermo/model.cpython-39-x86_64-linux-gnu.so -> rmgpy/thermo
+copying build/lib.linux-x86_64-cpython-39/rmgpy/thermo/nasa.cpython-39-x86_64-linux-gnu.so -> rmgpy/thermo
+copying build/lib.linux-x86_64-cpython-39/rmgpy/thermo/wilhoit.cpython-39-x86_64-linux-gnu.so -> rmgpy/thermo
+copying build/lib.linux-x86_64-cpython-39/rmgpy/constants.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/quantity.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/reaction.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/species.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/chemkin.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/base.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/simple.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/liquid.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/mbSampled.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/surface.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/plasma.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver

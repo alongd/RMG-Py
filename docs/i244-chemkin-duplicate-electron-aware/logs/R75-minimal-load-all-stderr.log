@@ -1,0 +1,2 @@
+/home/alon/Code/Cantera/build/python/cantera/ck2yaml.py:2288: UserWarning: To be removed after Cantera 3.1; renamed to 'convert'
+  warnings.warn(

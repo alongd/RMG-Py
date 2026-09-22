@@ -1,0 +1,407 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+cachedir: .pytest_cache
+rootdir: /home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 307 items
+
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestElectronPlacementSeparatesDuplicates::test_two_owners_of_one_ionisation_channel_are_not_duplicates PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestElectronPlacementSeparatesDuplicates::test_matching_placement_is_still_a_duplicate PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestThreeBodyRecombinationShape::test_the_duplicate_check_separates_the_pair PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestThreeBodyRecombinationShape::test_the_export_boundary_refuses_a_reversed_declared_reaction PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestThreeBodyRecombinationShape::test_an_undeclared_three_body_owner_is_still_folded_onto_the_radiative_channel PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestOrdinaryDuplicateHandlingIsUntouched::test_neutral_duplicate_pair_is_still_marked PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestOrdinaryDuplicateHandlingIsUntouched::test_opposite_direction_irreversible_branch_still_unmarks PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestOrdinaryDuplicateHandlingIsUntouched::test_mixed_pressure_dependence_branch_still_unmarks PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestDuplicateIsAGroupPredicate::test_a_pre_marked_placement_mismatched_pair_is_cleared PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestDuplicateIsAGroupPredicate::test_a_cross_group_comparison_does_not_clear_another_groups_flags PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestDuplicateIsAGroupPredicate::test_a_lone_flag_that_names_no_mate_is_cleared PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestDuplicateIsAGroupPredicate::test_a_pre_marked_mixed_reversibility_pair_is_cleared PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestDuplicateIsAGroupPredicate::test_the_verdict_does_not_depend_on_the_flags_it_arrives_with PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestDuplicateIsAGroupPredicate::test_the_production_save_path_recomputes_the_flags PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestPlacementTruthTable::test_same_direction_rows[0-0-NeutralLibA-NeutralLibB-True-(0, 0) vs (0, 0) -- all neutral chemistry, unchanged] PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestPlacementTruthTable::test_same_direction_rows[1-1-PlasmaElectronImpactIonization-PlasmaElectronImpactIonization-True-(1, 2) vs (1, 2) -- a genuine duplicate of a declared channel] PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestPlacementTruthTable::test_same_direction_rows[1-1-AnUndeclaredKineticsLibrary-AnotherUndeclaredLibrary-True-(0, 1) vs (0, 1) -- a genuine duplicate under the net-derived rule] PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestPlacementTruthTable::test_same_direction_rows[1-1-PlasmaElectronImpactIonization-AnUndeclaredKineticsLibrary-False-(1, 2) vs (0, 1) -- equal net count, different incident order] PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestPlacementTruthTable::test_same_direction_rows[1-1-AnUndeclaredKineticsLibrary-PlasmaElectronImpactIonization-False-(0, 1) vs (1, 2) -- the same row with the arguments swapped] PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestTheAnswerBelongsToTheDeck::test_a_permuted_pair_is_not_cleared_into_a_deck_cantera_rejects PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestTheAnswerBelongsToTheDeck::test_the_lone_flag_case_still_clears PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestTheAnswerBelongsToTheDeck::test_a_render_leaves_every_reactions_flag_exactly_as_it_found_it PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestTheAnswerBelongsToTheDeck::test_a_core_plus_edge_save_does_not_store_its_answer_on_the_reactions PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestTheAnswerBelongsToTheDeck::test_a_generator_of_reactions_is_written_not_consumed PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestTheAnswerBelongsToTheDeck::test_a_cross_class_pair_is_not_cleared_into_a_deck_cantera_rejects PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestTheAnswerBelongsToTheDeck::test_a_three_body_is_not_grouped_with_a_falloff_that_writes_another_equation PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestProductionMarkingDoesNotReachTheCanteraWriter::test_the_production_marking_this_rests_on_still_exists PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestProductionMarkingDoesNotReachTheCanteraWriter::test_a_core_only_cantera_export_is_loadable_after_production_marking PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestProductionMarkingDoesNotReachTheCanteraWriter::test_a_chemkin_render_does_not_launder_the_production_marks PASSED
+test/rmgpy/plasmaExportTest.py::TestCanteraRoundTrip::test_reaction_count_survives PASSED
+test/rmgpy/plasmaExportTest.py::TestCanteraRoundTrip::test_two_temperature_plasma_parameters PASSED
+test/rmgpy/plasmaExportTest.py::TestCanteraRoundTrip::test_electron_collision_plasma_parameters PASSED
+test/rmgpy/plasmaExportTest.py::TestCanteraRoundTrip::test_badnell_and_voronov_parameters[2] PASSED
+test/rmgpy/plasmaExportTest.py::TestCanteraRoundTrip::test_badnell_and_voronov_parameters[3] PASSED
+test/rmgpy/plasmaExportTest.py::TestCanteraRoundTrip::test_badnell_and_voronov_rate_is_electron_temperature_only PASSED
+test/rmgpy/plasmaExportTest.py::TestCanteraRoundTrip::test_ionization_is_first_order_in_the_electron PASSED
+test/rmgpy/plasmaExportTest.py::TestCanteraRoundTrip::test_plain_arrhenius_still_correct PASSED
+test/rmgpy/plasmaExportTest.py::TestUnhandledKineticsFailsLoudly::test_cantera_writer_raises_and_writes_no_file_with_the_reaction PASSED
+test/rmgpy/plasmaExportTest.py::TestUnhandledKineticsFailsLoudly::test_chemkin_writer_raises_and_writes_no_file_with_the_reaction PASSED
+test/rmgpy/plasmaExportTest.py::TestUnhandledKineticsFailsLoudly::test_no_opt_out_downgrades_it_to_a_warning PASSED
+test/rmgpy/plasmaExportTest.py::TestElectronBalance::test_cantera_equations_carry_the_electron PASSED
+test/rmgpy/plasmaExportTest.py::TestElectronBalance::test_cantera_reactions_balance_in_E PASSED
+test/rmgpy/plasmaExportTest.py::TestElectronBalance::test_chemkin_equations_carry_the_electron PASSED
+test/rmgpy/plasmaExportTest.py::TestElectronBalance::test_unbalanced_E_is_caught_by_the_same_loud_path PASSED
+test/rmgpy/plasmaExportTest.py::TestElectronBalance::test_missing_electron_species_is_caught PASSED
+test/rmgpy/plasmaExportTest.py::TestElectronBalance::test_electron_density_dependence_without_a_reactant_electron_is_caught PASSED
+test/rmgpy/plasmaExportTest.py::TestBothWriters::test_chemkin_writes_every_plasma_reaction_with_real_parameters PASSED
+test/rmgpy/plasmaExportTest.py::TestBothWriters::test_chemkin_plasma_rate_matches_the_rmg_object PASSED
+test/rmgpy/plasmaExportTest.py::TestBothWriters::test_both_writers_agree_on_which_reactions_exist PASSED
+test/rmgpy/plasmaExportTest.py::TestBothWriters::test_write_kinetics_entry_raises_for_unhandled_type PASSED
+test/rmgpy/plasmaExportTest.py::TestChargeTransferKinetics::test_inert_surface_charge_transfer_round_trips_in_cantera PASSED
+test/rmgpy/plasmaExportTest.py::TestChargeTransferKinetics::test_live_surface_charge_transfer_is_refused_in_cantera PASSED
+test/rmgpy/plasmaExportTest.py::TestChargeTransferKinetics::test_cantera_never_writes_a_beta_that_cantera_would_discard PASSED
+test/rmgpy/plasmaExportTest.py::TestChargeTransferKinetics::test_inertness_rule_in_both_writers[0.0--1-72.0-True] PASSED
+test/rmgpy/plasmaExportTest.py::TestChargeTransferKinetics::test_inertness_rule_in_both_writers[0.62-0-72.0-True] PASSED
+test/rmgpy/plasmaExportTest.py::TestChargeTransferKinetics::test_inertness_rule_in_both_writers[0.62--1-72.0-False] PASSED
+test/rmgpy/plasmaExportTest.py::TestChargeTransferKinetics::test_inertness_rule_in_both_writers[0.0--1--5.0-False] PASSED
+test/rmgpy/plasmaExportTest.py::TestChargeTransferKinetics::test_marcus_is_refused_by_both_writers PASSED
+test/rmgpy/plasmaExportTest.py::TestMultiKineticsCarryElectrons::test_multi_arrhenius[-1-cm^3/(mol*s)-O(4) + e(1) => O-(5)] PASSED
+test/rmgpy/plasmaExportTest.py::TestMultiKineticsCarryElectrons::test_multi_arrhenius[1-s^-1-O-(5) => O(4) + e(1)] PASSED
+test/rmgpy/plasmaExportTest.py::TestMultiKineticsCarryElectrons::test_multi_pdep_arrhenius[-1-O(4) + e(1) => O-(5)] PASSED
+test/rmgpy/plasmaExportTest.py::TestMultiKineticsCarryElectrons::test_multi_pdep_arrhenius[1-O-(5) => O(4) + e(1)] PASSED
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnMissingElectronSpecies::test_both_refuse_plasma_kinetics_with_no_electron_species PASSED
+test/rmgpy/plasmaExportTest.py::TestWrongReactionOrderGuard::test_electron_impact_without_an_electron_reactant_is_caught[1-ElectronCollisionPlasma] PASSED
+test/rmgpy/plasmaExportTest.py::TestWrongReactionOrderGuard::test_electron_impact_without_an_electron_reactant_is_caught[0-TwoTemperaturePlasma] PASSED
+test/rmgpy/plasmaExportTest.py::TestWrongReactionOrderGuard::test_the_five_reaction_plasma_fixture_still_exports PASSED
+test/rmgpy/plasmaExportTest.py::TestFailedExportLeavesNothing::test_chemkin_leaves_no_partial_file_and_no_dirty_counter PASSED
+test/rmgpy/plasmaExportTest.py::TestFailedExportLeavesNothing::test_chemkin_does_not_clobber_an_existing_good_file PASSED
+test/rmgpy/plasmaExportTest.py::TestFailedExportLeavesNothing::test_counter_is_cleared_after_a_successful_export_too PASSED
+test/rmgpy/plasmaExportTest.py::TestFailedExportLeavesNothing::test_cantera_leaves_no_partial_file PASSED
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnTheRate::test_both_writers_evaluate_to_the_same_rate[Arrhenius] PASSED
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnTheRate::test_both_writers_evaluate_to_the_same_rate[ThirdBody] PASSED
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnTheRate::test_both_writers_evaluate_to_the_same_rate[Troe] PASSED
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnTheRate::test_both_writers_evaluate_to_the_same_rate[Lindemann] PASSED
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnTheRate::test_both_writers_evaluate_to_the_same_rate[PDepArrhenius] PASSED
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnTheRate::test_both_writers_evaluate_to_the_same_rate[MultiArrhenius] PASSED
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnTheRate::test_both_writers_evaluate_to_the_same_rate[ArrheniusChargeTransfer] PASSED
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnTheRate::test_exported_rate_does_not_depend_on_the_reference_temperature[Arrhenius] PASSED
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnTheRate::test_exported_rate_does_not_depend_on_the_reference_temperature[ThirdBody] PASSED
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnTheRate::test_exported_rate_does_not_depend_on_the_reference_temperature[Troe] PASSED
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnTheRate::test_exported_rate_does_not_depend_on_the_reference_temperature[Lindemann] PASSED
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnTheRate::test_exported_rate_does_not_depend_on_the_reference_temperature[PDepArrhenius] PASSED
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnTheRate::test_exported_rate_does_not_depend_on_the_reference_temperature[MultiArrhenius] PASSED
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnTheRate::test_exported_rate_does_not_depend_on_the_reference_temperature[ArrheniusChargeTransfer] PASSED
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnTheRate::test_exported_rate_does_not_depend_on_the_reference_temperature[StickingCoefficient] PASSED
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnTheRate::test_exported_rate_does_not_depend_on_the_reference_temperature[SurfaceArrhenius] PASSED
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnTheRate::test_exported_rate_does_not_depend_on_the_reference_temperature[SurfaceChargeTransfer] PASSED
+test/rmgpy/plasmaExportTest.py::TestConventionalReferenceTemperatureIsUnchanged::test_the_goldens_are_mechanisms_cantera_can_load PASSED
+test/rmgpy/plasmaExportTest.py::TestConventionalReferenceTemperatureIsUnchanged::test_gas_export_is_byte_identical_to_the_base_commit PASSED
+test/rmgpy/plasmaExportTest.py::TestConventionalReferenceTemperatureIsUnchanged::test_surface_export_is_byte_identical_to_the_base_commit PASSED
+test/rmgpy/plasmaExportTest.py::TestConventionalReferenceTemperatureIsUnchanged::test_the_goldens_really_do_use_the_conventional_reference_temperature PASSED
+test/rmgpy/plasmaExportTest.py::TestCanteraWriteIsAtomic::test_a_failure_inside_the_dump_leaves_the_previous_file_intact PASSED
+test/rmgpy/plasmaExportTest.py::TestCanteraWriteIsAtomic::test_a_failure_inside_the_dump_creates_no_file_where_there_was_none PASSED
+test/rmgpy/plasmaExportTest.py::TestChemkinOutputSetIsCoherent::test_a_full_export_writes_the_whole_set PASSED
+test/rmgpy/plasmaExportTest.py::TestChemkinOutputSetIsCoherent::test_a_failure_on_a_later_file_leaves_the_earlier_ones_untouched PASSED
+test/rmgpy/plasmaExportTest.py::TestChemkinOutputSetIsCoherent::test_a_failure_on_a_later_file_writes_nothing_at_all_the_first_time PASSED
+test/rmgpy/plasmaExportTest.py::TestMultiKineticsReconstructionKeepsTheReaction::test_every_component_keeps_index_collider_pairs_and_electrons FAILED
+test/rmgpy/plasmaExportTest.py::TestMultiKineticsReconstructionKeepsTheReaction::test_a_grouped_third_body_reaction_keeps_its_collider_in_the_equation PASSED
+test/rmgpy/chemkinTest.py::ChemkinTest::test_read_thermo_entry_bad_element_count PASSED
+test/rmgpy/chemkinTest.py::ChemkinTest::test_read_thermo_entry_not_gas_phase PASSED
+test/rmgpy/chemkinTest.py::ChemkinTest::test_read_thermo_entry_not_float PASSED
+test/rmgpy/chemkinTest.py::ChemkinTest::test_read_thermo_entry_no_temperature_range PASSED
+test/rmgpy/chemkinTest.py::ChemkinTest::test_read_thermo_block_temperature_header_columns PASSED
+test/rmgpy/chemkinTest.py::ChemkinTest::test_read_thermo_block_warns_for_badly_formatted_temperature_header PASSED
+test/rmgpy/chemkinTest.py::ChemkinTest::test_read_and_write_and_read_template_reaction_family_for_minimal_example PASSED
+test/rmgpy/chemkinTest.py::ChemkinTest::test_read_and_write_template_reaction_family_for_pdd_example PASSED
+test/rmgpy/chemkinTest.py::ChemkinTest::test_transport_data_read_and_write PASSED
+test/rmgpy/chemkinTest.py::ChemkinTest::test_use_chemkin_names PASSED
+test/rmgpy/chemkinTest.py::ChemkinTest::test_reactant_n2_is_reactive_and_gets_right_species_identifier PASSED
+test/rmgpy/chemkinTest.py::ChemkinTest::test_read_specific_collider PASSED
+test/rmgpy/chemkinTest.py::ChemkinTest::test_process_duplicate_reactions PASSED
+test/rmgpy/chemkinTest.py::ChemkinTest::test_mark_duplicate_reactions PASSED
+test/rmgpy/chemkinTest.py::ChemkinTest::test_read_write_coverage_dependence PASSED
+test/rmgpy/chemkinTest.py::ChemkinTest::test_write_kinetics_entry_with_coverage_dependence PASSED
+test/rmgpy/chemkinTest.py::ChemkinTest::test_write_elements_section_omits_unused_isotopes_and_surface_site PASSED
+test/rmgpy/chemkinTest.py::ChemkinTest::test_write_elements_section_includes_used_isotopes_and_surface_site PASSED
+test/rmgpy/chemkinTest.py::ChemkinTest::test_write_elements_section_maps_electron_to_pseudo_element PASSED
+test/rmgpy/chemkinTest.py::TestThermoReadWrite::test_write_thermo_block PASSED
+test/rmgpy/chemkinTest.py::TestThermoReadWrite::test_read_thermo_block PASSED
+test/rmgpy/chemkinTest.py::TestThermoReadWrite::test_write_thermo_block_for_isotope_uses_chemkin_name PASSED
+test/rmgpy/chemkinTest.py::TestThermoReadWrite::test_save_chemkin_file_writes_dynamic_elements_section PASSED
+test/rmgpy/chemkinTest.py::TestThermoReadWrite::test_save_chemkin_file_adds_electron_element_for_charged_species PASSED
+test/rmgpy/chemkinTest.py::TestThermoReadWrite::test_write_thermo_block_for_charged_species_includes_electron_count PASSED
+test/rmgpy/chemkinTest.py::TestThermoReadWrite::test_write_thermo_block_5_elem PASSED
+test/rmgpy/chemkinTest.py::TestThermoReadWrite::test_read_thermo_block_5_elem PASSED
+test/rmgpy/chemkinTest.py::TestThermoReadWrite::test_write_thermo_block_6_elem PASSED
+test/rmgpy/chemkinTest.py::TestThermoReadWrite::test_read_thermo_block_6_elem PASSED
+test/rmgpy/chemkinTest.py::TestThermoReadWrite::test_write_bidentate_species PASSED
+test/rmgpy/chemkinTest.py::TestReadReactionComments::test_read_reaction_comments_template PASSED
+test/rmgpy/chemkinTest.py::TestReadReactionComments::test_read_reaction_comments_family PASSED
+test/rmgpy/chemkinTest.py::TestReadReactionComments::test_read_reaction_comments_degeneracy PASSED
+test/rmgpy/chemkinTest.py::TestReadReactionComments::test_remove_line_breaks PASSED
+test/rmgpy/chemkinTest.py::TestPlasmaChemkinRoundTrip::test_plasma_round_trip_preserves_rate_coefficient PASSED
+test/rmgpy/chemkinTest.py::TestPlasmaChemkinRoundTrip::test_plasma_arrhenius_reduction_is_unit_independent PASSED
+test/rmgpy/chemkinTest.py::TestPlasmaChemkinRoundTrip::test_plasma_reduction_is_exact_along_the_electron_diagonal PASSED
+test/rmgpy/yaml_cantera1Test.py::TestYamlCantera1Functions::test_species_to_dict_gas_name_and_thermo PASSED
+test/rmgpy/yaml_cantera1Test.py::TestYamlCantera1Functions::test_species_to_dict_gas_transport PASSED
+test/rmgpy/yaml_cantera1Test.py::TestYamlCantera1Functions::test_species_to_dict_charged_species_uses_electron_pseudo_element PASSED
+test/rmgpy/yaml_cantera1Test.py::TestYamlCantera1Functions::test_species_to_dict_electron_uses_electron_pseudo_element PASSED
+test/rmgpy/yaml_cantera1Test.py::TestYamlCantera1Functions::test_species_to_dict_surface_composition PASSED
+test/rmgpy/yaml_cantera1Test.py::TestYamlCantera1Functions::test_species_to_dict_surface_thermo_model PASSED
+test/rmgpy/yaml_cantera1Test.py::TestYamlCantera1Functions::test_reaction_to_dicts_arrhenius_equation_and_rate PASSED
+test/rmgpy/yaml_cantera1Test.py::TestYamlCantera1Functions::test_reaction_to_dicts_negative_a_arrhenius PASSED
+test/rmgpy/yaml_cantera1Test.py::TestYamlCantera1Functions::test_reaction_to_dicts_thirdbody PASSED
+test/rmgpy/yaml_cantera1Test.py::TestYamlCantera1Functions::test_reaction_to_dicts_pdep_arrhenius PASSED
+test/rmgpy/yaml_cantera1Test.py::TestYamlCantera1Functions::test_reaction_to_dicts_troe PASSED
+test/rmgpy/yaml_cantera1Test.py::TestYamlCantera1Functions::test_reaction_to_dicts_negative_a_falloff PASSED
+test/rmgpy/yaml_cantera1Test.py::TestYamlCantera1Functions::test_reaction_to_dicts_surface_arrhenius PASSED
+test/rmgpy/yaml_cantera1Test.py::TestYamlCantera1Functions::test_reaction_to_dicts_sticking_coefficient PASSED
+test/rmgpy/yaml_cantera1Test.py::TestYamlCantera1Functions::test_reaction_to_dicts_negative_a_sticking_coefficient PASSED
+test/rmgpy/yaml_cantera1Test.py::TestYamlCantera1Functions::test_reaction_to_dicts_coverage_dependence PASSED
+test/rmgpy/yaml_cantera1Test.py::TestYamlCantera1Functions::test_reaction_to_dicts_surface_spectator_species PASSED
+test/rmgpy/yaml_cantera1Test.py::TestYamlCantera1Functions::test_reaction_to_dicts_three_species_one_side_spectator PASSED
+test/rmgpy/yaml_cantera1Test.py::TestYamlCantera1Functions::test_get_elements_block_isotopes_and_surface_site PASSED
+test/rmgpy/yaml_cantera1Test.py::TestYamlCantera1Functions::test_get_phases_gas_only_has_state PASSED
+test/rmgpy/yaml_cantera1Test.py::TestYamlCantera1Functions::test_get_phases_gas_only_has_elements PASSED
+test/rmgpy/yaml_cantera1Test.py::TestYamlCantera1Functions::test_get_mech_dict_nonsurface_reactions_key PASSED
+test/rmgpy/yaml_cantera1Test.py::TestYamlCantera1Functions::test_get_mech_dict_surface_has_gas_and_surface_reactions PASSED
+test/rmgpy/yaml_cantera1Test.py::TestYamlCantera1Functions::test_get_phases_with_surface_has_state PASSED
+test/rmgpy/yaml_cantera1Test.py::TestYamlCantera1Functions::test_species_to_dict_surface_sites_count PASSED
+test/rmgpy/yaml_cantera1Test.py::TestYamlCantera1Functions::test_species_to_dict_gas_no_sites_field PASSED
+test/rmgpy/yaml_cantera1Test.py::TestYamlCantera1Functions::test_species_to_dict_transport_note_always_present PASSED
+test/rmgpy/yaml_cantera1Test.py::TestCanteraWriter1::test_can_instantiate PASSED
+test/rmgpy/yaml_cantera1Test.py::TestRecentlyGeneratedCanteraYaml1GasOnly::testGeneratorsAsExpected PASSED
+test/rmgpy/yaml_cantera1Test.py::TestRecentlyGeneratedCanteraYaml1GasOnly::testKeysMatch PASSED
+test/rmgpy/yaml_cantera1Test.py::TestRecentlyGeneratedCanteraYaml1GasOnly::testPhasesMatch PASSED
+test/rmgpy/yaml_cantera1Test.py::TestRecentlyGeneratedCanteraYaml1GasOnly::testElementsMatch PASSED
+test/rmgpy/yaml_cantera1Test.py::TestRecentlyGeneratedCanteraYaml1GasOnly::testSpeciesMatch PASSED
+test/rmgpy/reactionTest.py::TestReactionIsomorphism::test1to1 PASSED
+test/rmgpy/reactionTest.py::TestReactionIsomorphism::test1to2 PASSED
+test/rmgpy/reactionTest.py::TestReactionIsomorphism::test2to2 PASSED
+test/rmgpy/reactionTest.py::TestReactionIsomorphism::test2to3 PASSED
+test/rmgpy/reactionTest.py::TestReactionIsomorphism::test2to3_using_check_only_label PASSED
+test/rmgpy/reactionTest.py::TestSurfaceReaction::test_electrons PASSED
+test/rmgpy/reactionTest.py::TestSurfaceReaction::test_protons PASSED
+test/rmgpy/reactionTest.py::TestSurfaceReaction::test_is_surface_reaction_species PASSED
+test/rmgpy/reactionTest.py::TestSurfaceReaction::test_is_surface_reaction_molecules PASSED
+test/rmgpy/reactionTest.py::TestSurfaceReaction::test_methyl_adsorption_surface_arrhenius PASSED
+test/rmgpy/reactionTest.py::TestSurfaceReaction::test_methyl_adsorption_sticking_coefficient PASSED
+test/rmgpy/reactionTest.py::TestSurfaceReaction::test_get_rate_coefficient_units_from_reaction_order PASSED
+test/rmgpy/reactionTest.py::TestSurfaceReaction::test_equilibrium_constant_surface_kc PASSED
+test/rmgpy/reactionTest.py::TestSurfaceReaction::test_reverse_sticking_coeff_rate PASSED
+test/rmgpy/reactionTest.py::TestReaction::test_is_isomerization PASSED
+test/rmgpy/reactionTest.py::TestReaction::test_is_association PASSED
+test/rmgpy/reactionTest.py::TestReaction::test_is_dissociation PASSED
+test/rmgpy/reactionTest.py::TestReaction::test_has_template PASSED
+test/rmgpy/reactionTest.py::TestReaction::test_enthalpy_of_reaction PASSED
+test/rmgpy/reactionTest.py::TestReaction::test_entropy_of_reaction PASSED
+test/rmgpy/reactionTest.py::TestReaction::test_free_energy_of_reaction PASSED
+test/rmgpy/reactionTest.py::TestReaction::test_equilibrium_constant_ka PASSED
+test/rmgpy/reactionTest.py::TestReaction::test_equilibrium_constant_kc PASSED
+test/rmgpy/reactionTest.py::TestReaction::test_equilibrium_constant_kp PASSED
+test/rmgpy/reactionTest.py::TestReaction::test_stoichiometric_coefficient PASSED
+test/rmgpy/reactionTest.py::TestReaction::test_rate_coefficient PASSED
+test/rmgpy/reactionTest.py::TestReaction::test_generate_reverse_rate_coefficient PASSED
+test/rmgpy/reactionTest.py::TestReaction::test_fix_barrier_height PASSED
+test/rmgpy/reactionTest.py::TestReaction::test_generate_reverse_rate_coefficient_arrhenius PASSED
+test/rmgpy/reactionTest.py::TestReaction::test_reverse_surface_arrhenius_rate PASSED
+test/rmgpy/reactionTest.py::TestReaction::test_generate_reverse_rate_coefficient_arrhenius_ep SKIPPED
+test/rmgpy/reactionTest.py::TestReaction::test_generate_reverse_rate_coefficient_pdep_arrhenius PASSED
+test/rmgpy/reactionTest.py::TestReaction::test_generate_reverse_rate_coefficient_pdep_multi_arrhenius PASSED
+test/rmgpy/reactionTest.py::TestReaction::test_generate_reverse_rate_coefficient_multi_arrhenius PASSED
+test/rmgpy/reactionTest.py::TestReaction::test_generate_reverse_rate_coefficient_multi_pdep_arrhenius PASSED
+test/rmgpy/reactionTest.py::TestReaction::test_generate_reverse_rate_coefficient_third_body PASSED
+test/rmgpy/reactionTest.py::TestReaction::test_generate_reverse_rate_coefficient_lindemann PASSED
+test/rmgpy/reactionTest.py::TestReaction::test_generate_reverse_rate_coefficient_troe PASSED
+test/rmgpy/reactionTest.py::TestReaction::test_tst_calculation PASSED
+test/rmgpy/reactionTest.py::TestReaction::test_pickle PASSED
+test/rmgpy/reactionTest.py::TestReaction::test_output PASSED
+test/rmgpy/reactionTest.py::TestReaction::test_degeneracy_updates_rate PASSED
+test/rmgpy/reactionTest.py::TestReaction::test_degeneracy_updates_kinetics_comment PASSED
+test/rmgpy/reactionTest.py::TestReaction::test_sulfur_reaction_pairs PASSED
+test/rmgpy/reactionTest.py::TestReaction::test_phosphorus_reaction_pairs PASSED
+test/rmgpy/reactionTest.py::TestReactionToCantera::test_arrhenius PASSED
+test/rmgpy/reactionTest.py::TestReactionToCantera::test_to_cantera_with_spectator_species PASSED
+test/rmgpy/reactionTest.py::TestReactionToCantera::test_multi_arrhenius PASSED
+test/rmgpy/reactionTest.py::TestReactionToCantera::test_pdep_arrhenius PASSED
+test/rmgpy/reactionTest.py::TestReactionToCantera::test_multi_pdep_arrhenius PASSED
+test/rmgpy/reactionTest.py::TestReactionToCantera::test_chebyshev PASSED
+test/rmgpy/reactionTest.py::TestReactionToCantera::test_falloff PASSED
+test/rmgpy/reactionTest.py::TestChargeTransferReaction::test_electrons PASSED
+test/rmgpy/reactionTest.py::TestChargeTransferReaction::test_protons PASSED
+test/rmgpy/reactionTest.py::TestChargeTransferReaction::test_apply_che_model_reports_true_proton_count PASSED
+test/rmgpy/reactionTest.py::TestChargeTransferReaction::test_is_surface_reaction PASSED
+test/rmgpy/reactionTest.py::TestChargeTransferReaction::test_is_charge_transfer_reaction PASSED
+test/rmgpy/reactionTest.py::TestChargeTransferReaction::test_is_surface_charge_transfer PASSED
+test/rmgpy/reactionTest.py::TestChargeTransferReaction::test_get_reversible_potential PASSED
+test/rmgpy/reactionTest.py::TestChargeTransferReaction::test_get_rate_coeff PASSED
+test/rmgpy/reactionTest.py::TestChargeTransferReaction::test_equilibrium_constant_surface_charge_transfer_kc PASSED
+test/rmgpy/reactionTest.py::TestChargeTransferReaction::test_reverse_surface_charge_transfer_rate SKIPPED
+test/rmgpy/reactionTest.py::TestElectronDirection::test_reduction_and_its_negated_reverse_are_isomorphic_either_direction PASSED
+test/rmgpy/reactionTest.py::TestElectronDirection::test_reduction_and_its_reverse_are_not_isomorphic_same_direction PASSED
+test/rmgpy/reactionTest.py::TestElectronDirection::test_reverse_with_wrong_electron_sign_is_not_isomorphic PASSED
+test/rmgpy/reactionTest.py::TestElectronDirection::test_forward_match_requires_equal_electrons PASSED
+test/rmgpy/reactionTest.py::TestElectronDirection::test_check_template_rxn_products_is_electron_aware PASSED
+test/rmgpy/reactionTest.py::TestElectronDirection::test_check_template_rxn_products_treats_unset_orientation_as_reverse PASSED
+test/rmgpy/reactionTest.py::TestElectronDirection::test_to_cantera_places_electron_on_reactant_side PASSED
+test/rmgpy/reactionTest.py::TestElectronDirection::test_to_cantera_places_electron_on_product_side PASSED
+test/rmgpy/reactionTest.py::TestElectronDirection::test_to_cantera_fails_when_electron_needed_but_absent PASSED
+test/rmgpy/reactionTest.py::TestElectronDirection::test_to_chemkin_reaction_string_places_electron PASSED
+test/rmgpy/reactionTest.py::TestElectronDirection::test_write_reaction_string_refuses_charged_reaction_without_species_list PASSED
+test/rmgpy/reactionTest.py::TestElectronDirection::test_cantera_writer1_refuses_metadata_electron_mechanism PASSED
+test/rmgpy/reactionTest.py::TestElectronsSurviveCopyAndPickle::test_copy_preserves_electrons PASSED
+test/rmgpy/reactionTest.py::TestElectronsSurviveCopyAndPickle::test_pickle_preserves_electrons_for_every_subclass PASSED
+test/rmgpy/reactionTest.py::TestElectronsSurviveCopyAndPickle::test_library_and_pdep_reactions_accept_electrons PASSED
+test/rmgpy/reactionTest.py::TestElectronsSurviveCopyAndPickle::test_library_reaction_repr_round_trips_electrons PASSED
+test/rmgpy/reactionTest.py::TestIsBalancedChargeConservation::test_charge_unbalanced_but_element_balanced_is_rejected PASSED
+test/rmgpy/reactionTest.py::TestIsBalancedChargeConservation::test_neutral_element_balanced_reaction_is_accepted PASSED
+test/rmgpy/reactionTest.py::TestIsBalancedChargeConservation::test_reduction_with_consumed_electron_is_accepted PASSED
+test/rmgpy/reactionTest.py::TestIsBalancedChargeConservation::test_oxidation_with_produced_electron_is_accepted PASSED
+test/rmgpy/reactionTest.py::TestIsBalancedChargeConservation::test_sign_inverted_electron_reaction_is_rejected PASSED
+test/rmgpy/reactionTest.py::TestReverseCollisionLimitDegradation::test_direct_unsupported_reverse_check_skipped_loudly_not_raised PASSED
+test/rmgpy/reactionTest.py::TestReverseCollisionLimitDegradation::test_wrapped_unsupported_child_skipped_loudly_not_raised PASSED
+test/rmgpy/reactionTest.py::TestReverseCollisionLimitDegradation::test_supported_reverse_check_still_runs PASSED
+test/rmgpy/reactionTest.py::TestCollisionLimitAttribution::test_forward_violation_names_the_condition_its_ratio_came_from PASSED
+test/rmgpy/reactionTest.py::TestCollisionLimitAttribution::test_reverse_still_checked_when_forward_uncomputable PASSED
+test/rmgpy/reactionTest.py::TestCollisionLimitAttribution::test_no_skip_ratios_and_conditions_unchanged PASSED
+test/rmgpy/reactionTest.py::TestReverseCollisionLimitPotential::test_arrhenius_charge_transfer_reverse_evaluated_at_reference_potential PASSED
+test/rmgpy/reactionTest.py::TestReverseCollisionLimitPotential::test_surface_charge_transfer_reverse_evaluated_at_reference_potential PASSED
+test/rmgpy/reactionTest.py::TestReverseCollisionLimitPotential::test_non_charge_transfer_reverse_still_receives_pressure PASSED
+test/rmgpy/reactionTest.py::TestReverseCollisionLimitPotentialWrappers::test_multi_arrhenius_of_charge_transfer_evaluated_at_v0 PASSED
+test/rmgpy/reactionTest.py::TestReverseCollisionLimitPotentialWrappers::test_pdep_arrhenius_of_charge_transfer_evaluated_at_v0 PASSED
+test/rmgpy/reactionTest.py::TestReverseCollisionLimitPotentialWrappers::test_multi_pdep_arrhenius_of_pdep_of_charge_transfer_evaluated_at_v0 PASSED
+test/rmgpy/reactionTest.py::TestReverseCollisionLimitPotentialWrappers::test_helper_matches_native_for_non_charge_transfer_wrappers PASSED
+test/rmgpy/reactionTest.py::TestReverseCollisionLimitPotentialWrappers::test_top_level_potential_tests_still_pass PASSED
+test/rmgpy/reactionTest.py::TestReverseRateAtReferencePotentialRound13::test_pdep_arrhenius_p_zero_raises_matching_native PASSED
+test/rmgpy/reactionTest.py::TestReverseRateAtReferencePotentialRound13::test_pdep_arrhenius_interpolation_matches_native_oracle PASSED
+test/rmgpy/reactionTest.py::TestReverseRateAtReferencePotentialRound13::test_pdep_arrhenius_below_grid_clamps_low_matching_native PASSED
+test/rmgpy/reactionTest.py::TestReverseRateAtReferencePotentialRound13::test_pdep_arrhenius_above_grid_clamps_high_matching_native PASSED
+test/rmgpy/reactionTest.py::TestReverseRateAtReferencePotentialRound13::test_pdep_arrhenius_single_entry_matches_native PASSED
+test/rmgpy/reactionTest.py::TestReverseRateAtReferencePotentialRound13::test_pdep_arrhenius_duplicate_pressures_matches_native PASSED
+test/rmgpy/reactionTest.py::TestReverseRateAtReferencePotentialRound13::test_pdep_arrhenius_with_none_pressures_not_summed PASSED
+test/rmgpy/reactionTest.py::TestReverseRateAtReferencePotentialRound13::test_multi_arrhenius_without_pressures_still_summed PASSED
+test/rmgpy/reactionTest.py::TestReverseRateAtReferencePotentialRound13::test_multi_pdep_arrhenius_without_pressures_still_summed PASSED
+test/rmgpy/reactionTest.py::TestReverseRateAtReferencePotentialRound13::test_arrhenius_charge_transfer_bm_leaf_refused PASSED
+test/rmgpy/reactionTest.py::TestReverseRateAtReferencePotentialRound13::test_surface_charge_transfer_bep_leaf_refused PASSED
+test/rmgpy/reactionTest.py::TestReverseRateAtReferencePotentialRound13::test_concrete_charge_transfer_leaves_not_refused PASSED
+test/rmgpy/reactionTest.py::TestReverseRateAtReferencePotentialRound13::test_multi_arrhenius_wrapping_bm_child_refused PASSED
+test/rmgpy/reactionTest.py::TestReverseRateAtReferencePotentialRound13::test_check_collision_limit_violation_skips_reverse_for_wrapped_bm PASSED
+test/rmgpy/reactionTest.py::TestReverseRateAtReferencePotentialRound15::test_multi_pdep_arrhenius_empty_children_p_zero_raises_matching_native PASSED
+test/rmgpy/reactionTest.py::TestReverseRateAtReferencePotentialRound15::test_multi_pdep_arrhenius_p_zero_raises_matching_native PASSED
+test/rmgpy/reactionTest.py::TestReverseRateAtReferencePotentialRound15::test_multi_arrhenius_p_zero_does_not_raise_over_broadening_guard PASSED
+test/rmgpy/reactionTest.py::TestReverseRateAtReferencePotentialRound15::test_pdep_arrhenius_charge_transfer_children_evaluated_at_own_v0_through_interpolation PASSED
+test/rmgpy/reactionTest.py::TestReverseRateAtReferencePotentialRound15::test_pdep_arrhenius_mixed_charge_transfer_and_ordinary_children_through_interpolation PASSED
+test/rmgpy/i167CanteraExportPathTest.py::TestPlasmaExportPath::test_the_mechanism_really_carries_tdep PASSED
+test/rmgpy/i167CanteraExportPathTest.py::TestPlasmaExportPath::test_export_records_no_failure PASSED
+test/rmgpy/i167CanteraExportPathTest.py::TestPlasmaExportPath::test_native_cantera_file_is_produced PASSED
+test/rmgpy/i167CanteraExportPathTest.py::TestPlasmaExportPath::test_native_cantera_file_is_a_plasma PASSED
+test/rmgpy/i167CanteraExportPathTest.py::TestPlasmaExportPath::test_translation_is_not_attempted PASSED
+test/rmgpy/i167CanteraExportPathTest.py::TestPlasmaExportPath::test_the_skip_is_logged_and_explained PASSED
+test/rmgpy/i167CanteraExportPathTest.py::TestNonPlasmaExportPathIsUntouched::test_translation_still_runs PASSED
+test/rmgpy/i167CanteraExportPathTest.py::TestNonPlasmaExportPathIsUntouched::test_native_writer_still_runs_alongside_it PASSED
+test/rmgpy/i167CanteraExportPathTest.py::TestNonPlasmaExportPathIsUntouched::test_nothing_is_logged_about_skipping PASSED
+test/rmgpy/i167CanteraExportPathTest.py::TestDefaultConfigProducesNoArtifactAndSaysSo::test_records_an_export_failure PASSED
+test/rmgpy/i167CanteraExportPathTest.py::TestDefaultConfigProducesNoArtifactAndSaysSo::test_the_recorded_failure_fails_the_run PASSED
+test/rmgpy/i167CanteraExportPathTest.py::TestDefaultConfigProducesNoArtifactAndSaysSo::test_the_message_names_the_missing_artifact_and_the_fix PASSED
+test/rmgpy/i167CanteraExportPathTest.py::TestDefaultConfigProducesNoArtifactAndSaysSo::test_no_cantera_file_exists_on_disk PASSED
+test/rmgpy/i167CanteraExportPathTest.py::TestCantera2EnabledStillReportsSuccess::test_no_failure_and_message_kept PASSED
+test/rmgpy/i167CanteraExportPathTest.py::TestStaleTranslationArtifactIsRemoved::test_planted_stale_chem_yaml_is_gone PASSED
+test/rmgpy/i167CanteraExportPathTest.py::TestStaleTranslationArtifactIsRemoved::test_planted_stale_chem_edge_yaml_is_gone PASSED
+test/rmgpy/i167CanteraExportPathTest.py::TestStaleTranslationArtifactIsRemoved::test_stale_file_is_removed_not_stripped_in_place PASSED
+test/rmgpy/i167CanteraExportPathTest.py::TestStaleTranslationArtifactIsRemoved::test_planted_stale_chem_annotated_yaml_is_gone PASSED
+test/rmgpy/i167CanteraExportPathTest.py::TestStaleTranslationArtifactIsRemoved::test_every_genuinely_translated_file_is_gone_after_a_reused_dir PASSED
+test/rmgpy/i167CanteraExportPathTest.py::TestStaleTranslationArtifactIsRemoved::test_stale_comparison_report_is_gone PASSED
+test/rmgpy/i167CanteraExportPathTest.py::TestPredicateMatchesWriterUnderMultiWrappers::test_wrapped_plasma_subrate_predicate_and_writer_agree_true PASSED
+test/rmgpy/i167CanteraExportPathTest.py::TestPredicateMatchesWriterUnderMultiWrappers::test_wrapped_plain_subrate_predicate_and_writer_agree_false PASSED
+test/rmgpy/i167CanteraExportPathTest.py::TestPredicateMatchesWriterUnderMultiWrappers::test_mechanism_predicate_sees_a_wrapped_plasma_reaction PASSED
+
+=================================== FAILURES ===================================
+_ TestMultiKineticsReconstructionKeepsTheReaction.test_every_component_keeps_index_collider_pairs_and_electrons _
+
+self = <plasmaExportTest.TestMultiKineticsReconstructionKeepsTheReaction object at 0x78e5687640a0>
+gas_forms_species = [Species(index=1, label="e", thermo=NASA(polynomials=[NASAPolynomial(coeffs=[2.5,0,0,0,0,-745.375,-11.7246], Tmin=(200...rom'), dipoleMoment=(0,'De'), polarizability=(0,'angstrom^3'), rotrelaxcollnum=0.0), molecular_weight=(15.9994,'amu'))]
+grouped_reaction = Reaction(index=17, reactants=[Species(index=2, label="O", thermo=NASA(polynomials=[NASAPolynomial(coeffs=[2.5,0,0,0,0,...ent=(0,'De'), polarizability=(0,'angstrom^3'), rotrelaxcollnum=0.0), molecular_weight=(15.9994,'amu')))], electrons=-1)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x78e5679ef820>
+
+    def test_every_component_keeps_index_collider_pairs_and_electrons(
+            self, gas_forms_species, grouped_reaction, monkeypatch):
+        import rmgpy.yaml_cantera2 as yaml_cantera2
+    
+        built = []
+        real_reaction = yaml_cantera2.Reaction
+    
+        class RecordingReaction(real_reaction):
+            def __init__(self, *args, **kwargs):
+                super(RecordingReaction, self).__init__(*args, **kwargs)
+                built.append(self)
+    
+        monkeypatch.setattr(yaml_cantera2, 'Reaction', RecordingReaction)
+>       entries = yaml_cantera2.reaction_to_dict_list(grouped_reaction, gas_forms_species)
+
+test/rmgpy/plasmaExportTest.py:1500: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+rmgpy/yaml_cantera2.py:696: in reaction_to_dict_list
+    sub_result = reaction_to_dict_list(sub_rxn, species_list,
+rmgpy/yaml_cantera2.py:705: in reaction_to_dict_list
+    equation = get_reaction_equation(reaction, species_list)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+reaction = Reaction(index=17, reactants=[Species(index=2, label="O", thermo=NASA(polynomials=[NASAPolynomial(coeffs=[2.5,0,0,0,0,...ent=(0,'De'), polarizability=(0,'angstrom^3'), rotrelaxcollnum=0.0), molecular_weight=(15.9994,'amu')))], electrons=-1)
+species_list = [Species(index=1, label="e", thermo=NASA(polynomials=[NASAPolynomial(coeffs=[2.5,0,0,0,0,-745.375,-11.7246], Tmin=(200...rom'), dipoleMoment=(0,'De'), polarizability=(0,'angstrom^3'), rotrelaxcollnum=0.0), molecular_weight=(15.9994,'amu'))]
+
+    def get_reaction_equation(reaction, species_list):
+        """Helper to build reaction string.
+    
+        ``reaction.electrons`` is folded into the equation as an explicit electron
+        species (see :mod:`rmgpy.electron_balance`); without it every charged
+        reaction exports unbalanced in the ``E`` pseudo-element, because RMG keeps
+        the electron stoichiometry out of the reactant/product lists.
+    
+        **A ``specific_collider`` this function cannot render is refused, not dropped.**
+        Only three kinetics shapes have a place for one: ``ThirdBody`` writes it as an
+        ordinary participant on both sides, and ``Lindemann``/``Troe`` write it as the
+        chaperone ``(+collider)``. For anything else -- an ``Arrhenius``, a PLOG, a
+        Chebyshev, or the ``Arrhenius`` leaves a ``Multi*`` wrapper expands into -- there is
+        no order-preserving way to put the collider in the equation, and until round 75 it
+        was silently left out, recorded only in the note. That made the mechanism wrong in
+        two directions at once: the collider was gone from the chemistry, and two reactions
+        differing only by collider keyed apart (the duplicate key carries collider identity)
+        while serializing to the identical equation, so ``Kinetics::checkDuplicates``
+        rejected the file with "Undeclared duplicate reactions detected". The Chemkin writer
+        already refuses the same shapes at :func:`rmgpy.chemkin.get_reaction_string`; this
+        refusal is deliberately narrower than Chemkin's, which also rejects ``ThirdBody``
+        colliders that this writer renders correctly and that Cantera loads.
+        """
+        collider = getattr(reaction, 'specific_collider', None)
+        if collider is not None and not isinstance(reaction.kinetics, (ThirdBody, Lindemann, Troe)):
+>           raise MechanismWriterError(
+                f"Cannot write reaction {reaction!s} to Cantera YAML: it carries the specific "
+                f"third-body collider {collider.label}, but its kinetics type "
+                f"{type(reaction.kinetics).__name__} has no place in the equation for one. "
+                f"Writing it anyway would drop the collider, and two reactions differing only "
+                f"by collider would then serialize to the same equation and be rejected by "
+                f"Kinetics::checkDuplicates.")
+E           rmgpy.exceptions.MechanismWriterError: Cannot write reaction O(2) (+O2(3)) => O-(5) (+O2(3)) to Cantera YAML: it carries the specific third-body collider O2, but its kinetics type Arrhenius has no place in the equation for one. Writing it anyway would drop the collider, and two reactions differing only by collider would then serialize to the same equation and be rejected by Kinetics::checkDuplicates.
+
+rmgpy/yaml_cantera2.py:976: MechanismWriterError
+=============================== warnings summary ===============================
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestTheAnswerBelongsToTheDeck::test_a_permuted_pair_is_not_cleared_into_a_deck_cantera_rejects
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestTheAnswerBelongsToTheDeck::test_the_lone_flag_case_still_clears
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestTheAnswerBelongsToTheDeck::test_a_cross_class_pair_is_not_cleared_into_a_deck_cantera_rejects
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestTheAnswerBelongsToTheDeck::test_a_three_body_is_not_grouped_with_a_falloff_that_writes_another_equation
+  /home/alon/Code/Cantera/build/python/cantera/ck2yaml.py:2288: UserWarning: To be removed after Cantera 3.1; renamed to 'convert'
+    warnings.warn(
+
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnTheRate::test_exported_rate_does_not_depend_on_the_reference_temperature[StickingCoefficient]
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnTheRate::test_exported_rate_does_not_depend_on_the_reference_temperature[StickingCoefficient]
+  /home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware/test/rmgpy/plasmaExportTest.py:1146: UserWarning: StickingRate::validate: 
+  Sticking coefficient is greater than 1 for reaction 'H2(3) + X(4) => H2X(6)'
+  at T = 2000.0
+  at T = 5000.0
+  at T = 10000.0
+  
+    return ct.Interface(path, phase_names[-1])
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED test/rmgpy/plasmaExportTest.py::TestMultiKineticsReconstructionKeepsTheReaction::test_every_component_keeps_index_collider_pairs_and_electrons
+============= 1 failed, 304 passed, 2 skipped, 6 warnings in 3.94s =============
