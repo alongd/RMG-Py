@@ -616,67 +616,78 @@ def _wall_neutral_moles(reactor, y):
                      if reactor.neutral_heavy_mask[j]))
 
 
+def _neutral_density(reactor, y, V):
+    """The neutral-heavy number density (m^-3) -- the intensive quantity nu_wall uses,
+    and the quantity the floor is defined in after round 90."""
+    return _wall_neutral_moles(reactor, y) * constants.Na / V
+
+
 def test_jacobian_matches_residual_below_the_neutral_floor():
     """The Jacobian must differentiate the residual the solver ACTUALLY evaluates,
-    including on the clamped branch below ``wall_neutral_floor``.
+    including on the clamped branch below the neutral-DENSITY floor.
 
-    ``compute_nu_wall`` floors the neutral moles, so below the floor nu_wall is
-    CONSTANT in the neutral amount and its derivative with respect to a neutral
-    species is exactly zero. A Jacobian that keeps differentiating the unclamped
-    1/y_neutral there reports a derivative for a dependence the residual does not
-    have, and the discrepancy diverges as y_neutral -> 0.
+    ``compute_nu_wall`` floors the neutral number density, so below the floor nu_wall is
+    a CONSTANT -- pinned to the floor density, with no dependence on the neutral amount
+    AND none on V -- and its derivative with respect to every species is exactly zero. A
+    Jacobian that keeps either the -1/y_neutral term or the dV/V term there reports a
+    dependence the residual does not have. (The old moles clamp pinned the neutral amount
+    but left n_neutral = floor*Na/V, so nu kept a V dependence and the Jacobian kept the
+    dV/V term; pinning the density removes both.)
 
-    This samples strictly BELOW the floor on purpose. The finite-difference check
-    in verify_operator.py sampled a normal state and is structurally blind to this:
-    above the floor the two branches agree exactly, so any state the earlier check
-    could reach reproduces the blind spot rather than closing it.
+    The floor is intensive, so a below-floor state is reached by driving the neutral
+    DENSITY down -- a charge-dominated composition that inflates the volume -- not by
+    shrinking the neutral moles at fixed density, which an isobaric reactor holds pinned
+    at ~P/kT.
     """
     r, _, _ = _build_reactor(wall=True, with_chemistry=False)
     ie, i_ar, i_arp = _indices(r)
-    floor = r.wall_neutral_floor
+    floor = r.wall_neutral_density_floor
     assert floor > 0.0, "the floor must exist for this test to mean anything"
 
-    # A state whose neutral content is an order of magnitude BELOW the floor,
-    # so compute_nu_wall is on its clamped branch.
-    y = _state_at(r, 1.0e-6)
-    y[i_ar] = 0.1 * floor
-    assert _wall_neutral_moles(r, y) < floor
-
+    # A charge-dominated state whose neutral number density is an order of magnitude
+    # BELOW the floor, so compute_nu_wall is on its clamped branch.
+    y = np.zeros(r.num_core_species, float)
+    y[ie] = 1.0
+    y[i_arp] = 1.0
+    y[i_ar] = 1.0                                  # provisional, to fix the volume scale
+    V0 = r.compute_volume(y)
+    y[i_ar] = 0.1 * floor * V0 / constants.Na
     V = r.compute_volume(y)
+    assert _neutral_density(r, y, V) < floor, "state is not below the density floor"
+
     nu_here = r.compute_nu_wall(y, V)
 
-    # Precondition: the EXPLICIT 1/y_neutral is clamped here. nu_wall is NOT flat
-    # in the neutral amount below the floor -- nu ~ V/y_neutral_eff, and V keeps its
-    # EOS dependence on that species -- but with y_neutral_eff pinned to the floor,
-    # nu/V is identical at any two below-floor states. That ratio is the precise
-    # statement of "clamped", and the clamped term is the one the Jacobian omits.
+    # Precondition: nu is CLAMPED -- constant in y. Two below-floor states give the
+    # identical nu (not merely the identical nu/V the old moles clamp gave). That
+    # constancy is exactly what the Jacobian must reproduce as a zero derivative.
     y_half = y.copy()
-    y_half[i_ar] = 0.05 * floor
+    y_half[i_ar] = 0.5 * y[i_ar]
     V_half = r.compute_volume(y_half)
-    assert np.isclose(r.compute_nu_wall(y_half, V_half) / V_half, nu_here / V,
-                      rtol=1e-12, atol=0.0), (
-        "precondition failed: nu_wall is not clamped below the floor")
+    assert _neutral_density(r, y_half, V_half) < floor
+    assert np.isclose(r.compute_nu_wall(y_half, V_half), nu_here, rtol=1e-12, atol=0.0), (
+        "precondition failed: nu_wall is not clamped constant below the floor")
 
     zeros = np.zeros(r.num_core_species, float)
     jac = np.asarray(r.jacobian(0.0, y, zeros, 0.0), float)
 
-    # Central finite difference of the residual with respect to the neutral,
-    # over steps small enough to stay under the floor.
-    col = i_ar
-    best = None
-    for h in (1.0e-3 * floor, 1.0e-4 * floor, 1.0e-5 * floor):
+    # Full-matrix central finite difference of the residual, every column, at the
+    # below-floor state. Small relative steps keep every perturbed state clamped.
+    worst = 0.0
+    for col in range(r.num_core_species):
+        h = 1.0e-6 * abs(y[col]) if y[col] != 0.0 else 1.0e-6 * y[i_ar]
         yp = y.copy(); yp[col] += h
         ym = y.copy(); ym[col] -= h
-        assert _wall_neutral_moles(r, yp) < floor, "step left the clamped branch"
+        assert _neutral_density(r, yp, r.compute_volume(yp)) < floor, "step left the clamp"
+        assert _neutral_density(r, ym, r.compute_volume(ym)) < floor, "step left the clamp"
         rp = np.asarray(r.residual(0.0, yp, zeros)[0], float)
         rm = np.asarray(r.residual(0.0, ym, zeros)[0], float)
         fd = (rp - rm) / (2.0 * h)
         err = np.max(np.abs(jac[:, col] - fd)) / max(1.0, np.max(np.abs(fd)))
-        best = err if best is None else min(best, err)
+        worst = max(worst, err)
 
-    assert best < 1.0e-6, (
+    assert worst < 1.0e-6, (
         "analytic Jacobian disagrees with the residual it claims to differentiate "
-        "below the neutral floor: relative error {0:.3e}".format(best))
+        "below the neutral density floor: relative error {0:.3e}".format(worst))
 
 
 def test_jacobian_finite_when_neutrals_are_exhausted():
@@ -998,16 +1009,21 @@ def test_wall_neutralization_products_missing_neutral_is_refused():
 
 
 def test_check_wall_support_refuses_subfloor_inventory():
-    """An accepted state whose neutral inventory is at or below the numerical floor
-    is refused: the ceiling bounds n_e/n_neutral, so a collapsed-inventory state
-    (low alpha, tiny n_neutral) passed before this rework while nu_wall silently came
-    off the clamp."""
+    """An accepted state whose neutral number DENSITY is at or below the intensive floor
+    is refused. After round 90 the floor is a fraction of the reference density, so the
+    refusable state is a genuinely depleted (over-ionised) gas -- reached by inflating the
+    volume with a charge-dominated composition -- and NOT a small-but-normal-density
+    inventory, which the old extensive moles floor wrongly refused on its history."""
     r, _, _ = _build_reactor(wall=True, gamma=0.0, with_chemistry=False)
     ie, i_ar, i_arp = _indices(r)
+    floor = r.wall_neutral_density_floor
     y = np.zeros(r.num_core_species, float)
-    y[i_ar] = 1.0e-9                      # below floor (~1e-6 of the initial neutral moles)
-    y[i_arp] = 1.0e-15
-    y[ie] = 1.0e-15                       # alpha = 1e-6, far under the ceiling
+    y[ie] = 1.0
+    y[i_arp] = 1.0
+    y[i_ar] = 1.0                                  # provisional, to fix the volume scale
+    V0 = r.compute_volume(y)
+    y[i_ar] = 0.1 * floor * V0 / constants.Na      # drive n_neutral an order below floor
+    assert _neutral_density(r, y, r.compute_volume(y)) < floor
     with pytest.raises(PlasmaStateError) as exc:
         r.check_wall_support(y)
     assert 'numerical floor' in str(exc.value)
@@ -1706,3 +1722,125 @@ def test_quasineutral_electron_flag_parses_boolean_strings_strictly():
         PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
                       (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
                       quasineutral_electron='maybe')
+
+
+# ====================================================================== round 90
+#
+# Two HIGH (external-source ignition; the neutral floor's dimension), two MEDIUM
+# (availability honesty; strict boolean coercion) and a LOW (a char_rate=0 divide),
+# each reproduced red-first on the built module in evidence/round90_before.log.
+
+
+def test_external_source_ignites_a_zero_electron_deck_through_simulate():
+    """HIGH 1: a discharge driven by an external ionisation_source must start from
+    neutral gas -- exactly zero electrons. The source is a zeroth-order electron-ion pair
+    source (its rate does not depend on n_e), so it seeds the first electrons and the
+    integrated electron population rises from 0. Demonstrated through the production
+    simulate() entry, not a constructor probe: before round 90 the reactor refused to
+    initialise at all."""
+    r, core, rxns = _build_reactor(wall=True, with_chemistry=False, x_ion=0.0, source=1.0e20)
+    ie = r.electron_index
+    assert r.y0[ie] == 0.0, "the deck must start at exactly zero electrons"
+    r.termination = [TerminationTime((1.0e-4, 's'))]
+    _simulate(r, core, rxns)
+    assert r.y[ie] > 0.0, "the ionisation source did not seed any electrons"
+
+
+def test_zero_electron_deck_without_a_source_is_still_refused():
+    """HIGH 1 boundary: with no ionisation_source the only electron production is the
+    n_e-proportional gas-phase chemistry, so a zero-electron state is a fixed point that
+    can never ignite. The guard must still refuse it, by name."""
+    with pytest.raises(PlasmaStateError) as exc:
+        _build_reactor(wall=True, with_chemistry=False, x_ion=0.0, source=None)
+    msg = str(exc.value)
+    assert 'ignite' in msg and 'ionisation_source' in msg
+
+
+def test_neutral_floor_is_a_density_not_a_history_dependent_mole_count():
+    """HIGH 2: nu_wall depends on the neutral number DENSITY (intensive), so acceptance
+    must not depend on the neutral MOLES (the deck's absolute inventory). A state with
+    small neutral moles but normal density -- which an isobaric reactor holds at ~P/kT no
+    matter how much mass the wall has pumped out -- must be accepted and its nu_wall read
+    from the density, unclamped. The old extensive 1e-6-mol floor refused it and clamped
+    nu_wall on the reactor's history (nu 18.5 vs 185 for the same intensive state)."""
+    r, _, _ = _build_reactor(wall=True, with_chemistry=False, x_ion=1.0e-9)   # ~1 mol init
+    ie, i_ar, i_arp = _indices(r)
+    y = np.zeros(r.num_core_species, float)
+    y[i_ar] = 1.0e-7          # neutral MOLES far below the old 1e-6-mol floor
+    y[i_arp] = 1.0e-13
+    y[ie] = 1.0e-13           # alpha ~ 1e-6, far under the ceiling
+    V = r.compute_volume(y)
+    n_neutral = _neutral_density(r, y, V)
+    assert n_neutral > r.wall_neutral_density_floor, "state should be at normal density"
+    r.check_wall_support(y)                    # accepted, not refused
+    nu = r.compute_nu_wall(y, V)
+    closed = _nu_wall_closed_form(TE_NOMINAL_EV, n_neutral, r.diffusion_length.value_si)
+    assert abs(nu / closed - 1.0) < 1.0e-12, "nu_wall was clamped on an in-domain density"
+
+
+def test_non_finite_wall_flux_is_not_reported_available():
+    """MEDIUM: an availability flag must be checked at least as hard as the number it
+    vouches for. An extreme mobility makes nu_wall, hence wall_flux, non-finite; the flag
+    must read 'unavailable', not assert 'available' over an inf."""
+    r, _, _ = _build_reactor(wall=True, with_chemistry=False, mu0=1.0e308)
+    r._latch_wall_diagnostics(r.y0, r.compute_volume(r.y0), 0.0)
+    assert not np.isfinite(np.asarray(r.wall_flux)).all()
+    assert r.wall_energy_availability['wall_flux'] == 'unavailable'
+
+
+def test_sub_underflow_diffusion_length_is_refused_by_name():
+    """MEDIUM: a finite, positive diffusion length whose SQUARE underflows to zero would
+    divide by zero in nu_wall = D_a/Lambda^2 and surface as a raw ZeroDivisionError from
+    the Fortran callback. Refuse it by name at construction instead."""
+    with pytest.raises(PlasmaStateError) as exc:
+        _build_reactor(wall=True, with_chemistry=False, lam=1.0e-200)
+    msg = str(exc.value)
+    assert 'diffusion_length' in msg and 'square' in msg
+
+
+def test_coerce_bool_flag_refuses_uninterpretable_values():
+    """MEDIUM: _coerce_bool_flag used to end in bool(value), so 2, 0.5, NaN and object()
+    enabled the flag while [] and {} disabled it -- the truthiness of the type, not the
+    meaning. Refuse anything that is not a bool, None, or a recognised boolean string;
+    the interpretable cases still pass through."""
+    from rmgpy.solver.plasma import _coerce_bool_flag
+    for v in (2, 0.5, float('nan'), object(), [], {}):
+        with pytest.raises(PlasmaStateError):
+            _coerce_bool_flag(v, 'quasineutral_electron', 'id')
+    assert _coerce_bool_flag(True, 'q', 'id') is True
+    assert _coerce_bool_flag(None, 'q', 'id') is False
+    assert _coerce_bool_flag('on', 'q', 'id') is True
+
+
+def test_wall_only_run_does_not_divide_by_zero_chemistry_rate():
+    """LOW: base.pyx builds core/edge/network rate RATIOS by dividing by the CHEMISTRY
+    char_rate. In a supported wall-only run every core rate is exactly 0, so char_rate is
+    0 and the ratios were 0/0 NaN (an 'invalid value encountered in divide' warning). The
+    ratios are chemistry-relative enlargement signals and keep reading char_rate -- only
+    the inert / termination gates read the total -- but the 0/0 must not launder a NaN.
+    Under strict float-error handling the wall-only run must not raise."""
+    r, core, rxns = _build_reactor(wall=True, with_chemistry=False, x_ion=1.0e-6)
+    r.termination = [TerminationTime((1.0e-4, 's'))]
+    with np.errstate(invalid='raise', divide='raise'):
+        _simulate(r, core, rxns)
+
+
+def test_neutral_density_floor_is_independent_of_initial_inventory():
+    """HIGH 2, the two-histories statement made structural: the floor no longer reads the
+    initial inventory at all, so two reactors whose initial neutral moles differ get the
+    IDENTICAL density floor and identical nu_wall at the same intensive state. The old
+    1e-6*(initial neutral moles) floor differed with the inventory, which is exactly how
+    two histories reaching the same intensive state were judged differently."""
+    r1, _, _ = _build_reactor(wall=True, with_chemistry=False, x_ion=1.0e-9)
+    r2, _, _ = _build_reactor(wall=True, with_chemistry=False, x_ion=1.0e-4)
+    ie1, i_ar1, i_arp1 = _indices(r1)
+    ie2, i_ar2, i_arp2 = _indices(r2)
+    assert r1.y0[i_ar1] != r2.y0[i_ar2], "the two decks must differ in initial inventory"
+    # ...yet the intensive floor is identical
+    assert r1.wall_neutral_density_floor == r2.wall_neutral_density_floor
+    # ...and the same intensive state yields identical nu_wall from both
+    y = np.zeros(r1.num_core_species, float)
+    y[i_ar1] = 1.0e-7
+    y[i_arp1] = 1.0e-13
+    y[ie1] = 1.0e-13
+    assert r1.compute_nu_wall(y, r1.compute_volume(y)) == r2.compute_nu_wall(y, r2.compute_volume(y))
