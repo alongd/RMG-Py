@@ -598,6 +598,109 @@ rather than reproducing a defect.
   electron-negativity guard on vanishing-species decks; a deck whose steady state is a species reaching
   a small-but-nonzero floor rather than exactly zero was not separately exercised.
 
+## Round 100: the discriminator's mechanism was unsound though its behaviour was right — three HIGH, two MEDIUM, two LOW
+
+Round 96's three behaviours were verified correct in all directions (slow drift → not steady, shrinking
+inventory → steady, zero-seed ignition → steady, inert → not steady). Round 100 did not touch that
+behaviour; it replaced the *machinery* underneath it, which was reaching the right verdicts by unsound
+means. **The one quantity the criterion is about is unchanged — the composition's mole-fraction slope —
+and every residual still measures it; what changed is how the criterion decides a channel has stopped
+moving and how long "stopped" must hold.** Evidence: `evidence/round100_before.log` (9 red on HEAD),
+`round100_after.log` (9 green on the rebuild), `round100_build.log` (clean `make clean && make build`,
+`.so` proven by value: `wall_single_bath_approximation`, `run-time volumetric injection`,
+`steady_state_relaxation_time`).
+
+- **HIGH 1 — the external arm was a two-point comparison with a permanent latch.** It compared the
+  generic residual to the single preceding sample and, once any non-increasing sample appeared (a noisy
+  dip, two equal samples, or the very first step, whose predecessor is `nan`), armed the external
+  channel *forever*. A still-rising neutral could arm the criterion. Fix: (a) "departing" is now a
+  property of a **sequence** — the generic channel counts as still climbing until it has set no
+  step-over-step rise for `window` consecutive samples, so one flat/noisy sample cannot license the arm;
+  and (b) the external arm is **re-evaluated every step, not latched** — it is a conjunction with a live
+  condition (no generic channel departing), so a neutral that settles and then resumes moving withdraws
+  it. The generic `R >= 1` arm stays latched, because passing your own relaxation time is a historical
+  fact, not a reversible condition. Threshold-free throughout: the discriminator is the sign of the
+  trend over a window, never a magnitude floor.
+
+- **HIGH 2 — persistence still depended on accepted solver steps, and an exact-zero waiver aliased
+  oscillations.** `streak >= window` was mandatory, so fine stepping terminated inside a plateau that
+  coarse stepping could not, and a residual of exactly zero waived the physical span entirely (equal
+  endpoints do not prove a frozen structure). Fix: the binding requirement is a **physical span**
+  (below); the step count survives only as a two-sample fluke guard (`streak >= 2`), deliberately **not
+  sufficient**; and the **exact-zero waiver is removed** — a zero residual earns the same span
+  confirmation as any other flat tail.
+
+- **HIGH 3 — the physical window was anchored to absolute log time.** A tail first seen at `t0` had to
+  survive to `e·t0`, i.e. another `1.718·t0` *regardless of the system's own relaxation time*, so the
+  same physics converged or not depending on when the window happened to open; and the first flat
+  interval was discarded (`_t_flat_start` was set to the interval's *end*). Fix: persistence is anchored
+  to **one system relaxation time**, which the reactor supplies (`steady_state_relaxation_time` →
+  `1/nu_wall` for a wall-bounded discharge, `nan` for an ordinary reactor, which then falls back to the
+  absolute e-fold). `_t_flat_start` is now the flat interval's *first* endpoint (`t_prev`). Anchoring to
+  τ made the confirmation short enough that removing HIGH 2's exact-zero waiver did **not** reintroduce
+  the γ=0 collision (the absolute e-fold, when `t0` was large, forced far more than one τ of extra
+  integration and drove `n_e` past the wall guard; one τ does not). So the electron-negativity guard was
+  left untouched, as the contract requires — τ-anchoring, not a looser guard, is what resolves it.
+
+- **MEDIUM 1 — the source guard checked a proxy.** `__init__` validated `source/Na`, but the residual
+  injects `source * V / Na`. At an extreme-but-finite volume that product overflows or underflows while
+  `source/Na` looks finite. The same shape as round 96's `nu_wall` overflow. Fix: the run-time
+  expression is re-checked at the actual initial volume in `set_initial_conditions`.
+
+- **MEDIUM 2 — the availability label documented the wrong transport rather than gating on it.** A
+  multi-skeleton neutral bath was run silently on the single ion mobility, recorded only as a label a
+  consumer might read. Round 96 rejected warn-only; round 100 rejects label-only. Fix: the mixture is
+  **refused at construction unless the user opts in** with `wallSingleBathApproximation=True`
+  (constructor arg + camelCase DSL keyword, round-tripped by `__reduce__` and `save_input_file`). Opt-in
+  is the honest middle between refusing every multi-species plasma and running silently on transport that
+  does not describe the gas; once opted in, the fluxes still carry `available-single-bath-approximation`.
+  This is a judgement call the reviewer may still contest; the deferred fallback (a bath-gas-density
+  `nu_wall` using only neutrals sharing the cation's skeleton) remains available but trades one
+  approximation for another and was not done.
+
+- **LOW — the tiny-source test asserted only a collapsed scalar**, which passes if only one member of
+  the ion–electron pair is injected. Strengthened to assert the residual injects a positive rate into
+  **both** the electron and its cation.
+
+- **LOW / test-quality — the `_feed` harness stamped a clock onto `term._feed_step`**, an attribute the
+  production object never sets, proving nothing about how the criterion is really called. The clock now
+  belongs to the harness (keyed per term), and `term` is driven only through its real `update` API.
+
+- **Test-quality — the red-state brief.** The claim that every test banks a red state is now scoped by
+  an **observable marker**: a defect-reproduction names its round/finding in its docstring (and is
+  reproduced red in that round's `before.log`); an invariant/property/acceptance check states a property
+  and claims no red. A reader audits the docstring tag against the round log, not a separate manifest.
+
+The through-line from rounds 90/93/96 (state one quantity, make every residual measure it) held: this
+round did not add a quantity, it made the *decision procedure* over the existing quantity
+step-controller-independent and threshold-free.
+
+### The trend discriminator, again — found by probing, not reasoning
+
+The HIGH-1 fix (like round 96's) rests on the sign of a trend over a window, not a magnitude floor. I
+validated it by driving the built `TerminationSteadyState` directly (`high1_probe`): a neutral rising
+throughout with one flat sample, electron past its relaxation time, must not arm; a settled neutral
+must; a settled-then-departing neutral must un-arm. All four directions confirmed before the fix was
+written. The permanent latch's starkest failure surfaced only under the probe — it armed on the *first*
+step, because `nan`-predecessor reads as "not rising."
+
+### What I could NOT reach (named gaps)
+
+- **The residual is a scalar max over species.** HIGH 1's "not rising for `window` samples" reads the
+  aggregate `r_gen`, so a slow neutral whose rise stays hidden beneath an earlier, larger species'
+  decay is not separately detected. This is inherent to a scalar `d/dln t` criterion and unchanged from
+  before; a per-species trend test is out of scope.
+- **Coarse/fine and t0-independence are shown at the unit level**, driving `update()` with controlled
+  schedules over the identical trajectory — more direct than hoping the integrator picks coarse vs fine
+  steps, but not a demonstration on a real adaptive schedule. The integration tests exercise the real
+  `simulate()` path for the four behaviours.
+- **The two-sample guard can still cost coarse stepping one extra step** before it terminates (a single
+  step spanning a whole τ has `streak == 1`); the verdict is unchanged, only the exact stop time shifts
+  by one step. Reducing the guard below two would let a lone flat step terminate, which is the fluke it
+  exists to reject.
+- **MEDIUM 2 remains an opt-in to an approximation, not a physics fix** — the composition-weighted
+  mobility needs per-gas transport data the model does not carry.
+
 ## Files touched
 
 `rmgpy/solver/plasma.pyx`, `rmgpy/solver/base.pyx`, `rmgpy/solver/base.pxd`,

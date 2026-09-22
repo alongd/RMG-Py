@@ -1,0 +1,17 @@
+# round 100 red states — tests run against HEAD (3fb0c319a) sources, WIP tests present
+# each fails before the fix; see round100_after.log for the same tests green after it
+
+test/rmgpy/solver/plasmaWallTest.py:1994: Failed
+------------------------------ Captured log call -------------------------------
+WARNING  root:plasmaWallTest.py:1994 PlasmaReactor wall: the neutral bath spans more than one gas ('InChI=1S/Ar', 'InChI=1S/He'), but a single ion reduced mobility is applied to the summed neutral density as if the whole gas were the reference bath. This is an approximation -- the true mobility is composition-weighted (Blanc's law), which needs a reduced mobility per bath gas that this model does not carry. An electronic ground state and its metastables share a skeleton and are one bath (exact); distinct gases are not. (PlasmaReactor(label=None, T=(298.15,'K'), P=(666.612,'Pa'), Te=(34813.6,'K')))
+=========================== short test summary info ============================
+FAILED test/rmgpy/solver/steadyStateTest.py::TerminationSteadyStateLatchTest::test_the_external_arm_does_not_vouch_for_a_generic_channel_still_rising
+FAILED test/rmgpy/solver/steadyStateTest.py::TerminationSteadyStateLatchTest::test_the_external_arm_is_not_a_permanent_latch
+FAILED test/rmgpy/solver/steadyStateTest.py::TerminationSteadyStateLatchTest::test_persistence_anchors_to_the_relaxation_time_when_supplied
+FAILED test/rmgpy/solver/steadyStateTest.py::TerminationSteadyStateLatchTest::test_the_same_physics_gives_the_same_verdict_under_coarse_and_fine_stepping
+FAILED test/rmgpy/solver/steadyStateTest.py::TerminationSteadyStateLatchTest::test_persistence_is_physical_time_not_a_bare_step_count
+FAILED test/rmgpy/solver/steadyStateTest.py::TerminationSteadyStateLatchTest::test_criterion_fires_once_armed_and_flat
+FAILED test/rmgpy/solver/steadyStateTest.py::TerminationSteadyStateLatchTest::test_two_flat_samples_are_the_minimum_and_not_sufficient
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_the_source_guard_evaluates_the_runtime_expression_at_the_actual_volume
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_neutral_mixture_is_refused_unless_the_single_bath_approximation_is_opted_into
+9 failed in 1.17s
