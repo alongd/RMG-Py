@@ -1,0 +1,113 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python3.9
+rootdir: /home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 3 items
+
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestThreeBodyRecombinationShape::test_the_duplicate_check_separates_the_pair PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestThreeBodyRecombinationShape::test_the_export_boundary_refuses_a_reversed_declared_reaction FAILED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestThreeBodyRecombinationShape::test_an_undeclared_three_body_owner_is_still_folded_onto_the_radiative_channel PASSED
+
+=================================== FAILURES ===================================
+_ TestThreeBodyRecombinationShape.test_the_export_boundary_refuses_a_reversed_declared_reaction _
+
+self = <i244ChemkinDuplicateElectronTest.TestThreeBodyRecombinationShape object at 0x70896f22a3d0>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-58/test_the_export_boundary_refus0')
+charged_species = (Species(index=1, label="e-", thermo=NASA(polynomials=[NASAPolynomial(coeffs=[2.5,0,0,0,0,-745.375,-11.7246], Tmin=(20...x=(6000,'K'))], Tmin=(200,'K'), Tmax=(6000,'K')), molecule=[Molecule(smiles="[Li+]")], molecular_weight=(6.941,'amu')))
+
+    def test_the_export_boundary_refuses_a_reversed_declared_reaction(self, tmp_path, charged_species):
+        """
+        ``get_electron_placement_counts`` reads a declaration in either
+        orientation; ``expand_electrons`` accepts only the forward one and raises
+        otherwise. That asymmetry is deliberate on the export side -- writing a
+        wrong equation is unrecoverable -- but it means a three-body
+        recombination cannot reach a deck by borrowing the ionisation family's
+        declaration backwards. Pinned so that the limit is a measurement and not
+        an assumption when the three-body branches land.
+        """
+        from rmgpy.exceptions import MechanismWriterError
+    
+        electron, li, lip = charged_species
+        three_body = _library_reaction(
+            [lip], [li], DECLARED_TWO_SIDED_OWNER, electrons=-1,
+            kinetics=Arrhenius(A=(1.0e18, "cm^6/(mol^2*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+        with pytest.raises(MechanismWriterError, match="declares the electron placement"):
+>           _write_deck(tmp_path, [electron, li, lip], [three_body])
+
+test/rmgpy/i244ChemkinDuplicateElectronTest.py:332: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test/rmgpy/i244ChemkinDuplicateElectronTest.py:145: in _write_deck
+    save_chemkin_file(path, species, reactions, verbose=False)
+rmgpy/chemkin.pyx:2580: in rmgpy.chemkin.save_chemkin_file
+    _write_file_atomically(path, render_chemkin_file(species, reactions, verbose=verbose,
+rmgpy/chemkin.pyx:2643: in rmgpy.chemkin.render_chemkin_file
+    f.write(write_kinetics_entry(rxn, species_list=species, verbose=verbose))
+rmgpy/chemkin.pyx:2102: in rmgpy.chemkin.write_kinetics_entry
+    reaction_string = write_reaction_string(reaction, java_library, species_list=species_list)
+rmgpy/chemkin.pyx:1992: in rmgpy.chemkin.write_reaction_string
+    check_electron_balance(reaction, reactants, products, reaction_string)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+reaction = LibraryReaction(reactants=[Species(index=3, label="Lip", thermo=NASA(polynomials=[NASAPolynomial(coeffs=[2.5,0,0,0,0,-...)], kinetics=Arrhenius(A=(1e+18,'cm^6/(mol^2*s)'), n=0, Ea=(0,'kcal/mol'), T0=(1,'K')), reversible=False, electrons=-1)
+reactants = [Species(index=3, label="Lip", thermo=NASA(polynomials=[NASAPolynomial(coeffs=[2.5,0,0,0,0,-745.375,-11.7246], Tmin=(2...x=(6000,'K'))], Tmin=(200,'K'), Tmax=(6000,'K')), molecule=[Molecule(smiles="e")], molecular_weight=(0.0005486,'amu'))]
+products = [Species(index=2, label="Li", thermo=NASA(polynomials=[NASAPolynomial(coeffs=[2.5,0,0,0,0,-745.375,-11.7246], Tmin=(20...x=(6000,'K'))], Tmin=(200,'K'), Tmax=(6000,'K')), molecule=[Molecule(smiles="e")], molecular_weight=(0.0005486,'amu'))]
+equation = 'Lip(3)+e-(1)=>Li(2)+e-(1)+e-(1)'
+
+    def check_electron_balance(reaction, reactants, products, equation):
+        """
+        Raise :class:`MechanismWriterError` unless the ``E`` pseudo-element balances
+        across ``equation``, whose sides are the already-electron-expanded
+        ``reactants`` and ``products`` lists.
+    
+        This is checked on what is about to be written, not on the RMG objects, so it
+        catches the case where ``Reaction.is_balanced`` and the writer disagree -- and
+        only the writer reaches the solver.
+        """
+        reactant_e = sum(get_species_electron_count(spc) for spc in reactants)
+        product_e = sum(get_species_electron_count(spc) for spc in products)
+        if reactant_e != product_e:
+>           raise MechanismWriterError(
+                'Reaction {0!s} does not balance in the E pseudo-element and would be '
+                'exported wrong: the equation "{1}" has E={2:d} on the left and E={3:d} on '
+                'the right (reaction.electrons={4:d}).'.format(
+                    reaction, equation, reactant_e, product_e, getattr(reaction, 'electrons', 0) or 0)
+            )
+E           rmgpy.exceptions.MechanismWriterError: Reaction Lip(3) => Li(2) does not balance in the E pseudo-element and would be exported wrong: the equation "Lip(3)+e-(1)=>Li(2)+e-(1)+e-(1)" has E=0 on the left and E=2 on the right (reaction.electrons=-1).
+
+rmgpy/electron_balance.py:565: MechanismWriterError
+
+During handling of the above exception, another exception occurred:
+
+self = <i244ChemkinDuplicateElectronTest.TestThreeBodyRecombinationShape object at 0x70896f22a3d0>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-58/test_the_export_boundary_refus0')
+charged_species = (Species(index=1, label="e-", thermo=NASA(polynomials=[NASAPolynomial(coeffs=[2.5,0,0,0,0,-745.375,-11.7246], Tmin=(20...x=(6000,'K'))], Tmin=(200,'K'), Tmax=(6000,'K')), molecule=[Molecule(smiles="[Li+]")], molecular_weight=(6.941,'amu')))
+
+    def test_the_export_boundary_refuses_a_reversed_declared_reaction(self, tmp_path, charged_species):
+        """
+        ``get_electron_placement_counts`` reads a declaration in either
+        orientation; ``expand_electrons`` accepts only the forward one and raises
+        otherwise. That asymmetry is deliberate on the export side -- writing a
+        wrong equation is unrecoverable -- but it means a three-body
+        recombination cannot reach a deck by borrowing the ionisation family's
+        declaration backwards. Pinned so that the limit is a measurement and not
+        an assumption when the three-body branches land.
+        """
+        from rmgpy.exceptions import MechanismWriterError
+    
+        electron, li, lip = charged_species
+        three_body = _library_reaction(
+            [lip], [li], DECLARED_TWO_SIDED_OWNER, electrons=-1,
+            kinetics=Arrhenius(A=(1.0e18, "cm^6/(mol^2*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+        with pytest.raises(MechanismWriterError, match="declares the electron placement"):
+>           _write_deck(tmp_path, [electron, li, lip], [three_body])
+E           AssertionError: Regex pattern did not match.
+E            Regex: 'declares the electron placement'
+E            Input: 'Reaction Lip(3) => Li(2) does not balance in the E pseudo-element and would be exported wrong: the equation "Lip(3)+e-(1)=>Li(2)+e-(1)+e-(1)" has E=0 on the left and E=2 on the right (reaction.electrons=-1).'
+
+test/rmgpy/i244ChemkinDuplicateElectronTest.py:332: AssertionError
+=========================== short test summary info ============================
+FAILED test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestThreeBodyRecombinationShape::test_the_export_boundary_refuses_a_reversed_declared_reaction
+========================= 1 failed, 2 passed in 2.46s ==========================

@@ -1,0 +1,141 @@
+backed up rmgpy/chemkin.pyx -> rmgpy/chemkin.pyx.round73-backup
+patched rmgpy/chemkin.pyx for arm D3-consumed-generator
+expected RED:
+    TestTheAnswerBelongsToTheDeck::test_a_generator_of_reactions_is_written_not_consumed
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/surface.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/plasma.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+--- discriminators under this arm ---
+D1 permuted pair keys alike        : True
+D2 render leaves flags untouched   : True
+D3 generator survives the render   : False
+D4 authority overrides its input   : True
+--- pytest ---
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+rootdir: /home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 24 items
+
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestElectronPlacementSeparatesDuplicates::test_two_owners_of_one_ionisation_channel_are_not_duplicates PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestElectronPlacementSeparatesDuplicates::test_matching_placement_is_still_a_duplicate PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestThreeBodyRecombinationShape::test_the_duplicate_check_separates_the_pair PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestThreeBodyRecombinationShape::test_the_export_boundary_refuses_a_reversed_declared_reaction PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestThreeBodyRecombinationShape::test_an_undeclared_three_body_owner_is_still_folded_onto_the_radiative_channel PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestOrdinaryDuplicateHandlingIsUntouched::test_neutral_duplicate_pair_is_still_marked PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestOrdinaryDuplicateHandlingIsUntouched::test_opposite_direction_irreversible_branch_still_unmarks PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestOrdinaryDuplicateHandlingIsUntouched::test_mixed_pressure_dependence_branch_still_unmarks PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestDuplicateIsAGroupPredicate::test_a_pre_marked_placement_mismatched_pair_is_cleared PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestDuplicateIsAGroupPredicate::test_a_cross_group_comparison_does_not_clear_another_groups_flags PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestDuplicateIsAGroupPredicate::test_a_lone_flag_that_names_no_mate_is_cleared PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestDuplicateIsAGroupPredicate::test_a_pre_marked_mixed_reversibility_pair_is_cleared PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestDuplicateIsAGroupPredicate::test_the_verdict_does_not_depend_on_the_flags_it_arrives_with PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestDuplicateIsAGroupPredicate::test_the_production_save_path_recomputes_the_flags PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestPlacementTruthTable::test_same_direction_rows[0-0-NeutralLibA-NeutralLibB-True-(0, 0) vs (0, 0) -- all neutral chemistry, unchanged] PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestPlacementTruthTable::test_same_direction_rows[1-1-PlasmaElectronImpactIonization-PlasmaElectronImpactIonization-True-(1, 2) vs (1, 2) -- a genuine duplicate of a declared channel] PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestPlacementTruthTable::test_same_direction_rows[1-1-AnUndeclaredKineticsLibrary-AnotherUndeclaredLibrary-True-(0, 1) vs (0, 1) -- a genuine duplicate under the net-derived rule] PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestPlacementTruthTable::test_same_direction_rows[1-1-PlasmaElectronImpactIonization-AnUndeclaredKineticsLibrary-False-(1, 2) vs (0, 1) -- equal net count, different incident order] PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestPlacementTruthTable::test_same_direction_rows[1-1-AnUndeclaredKineticsLibrary-PlasmaElectronImpactIonization-False-(0, 1) vs (1, 2) -- the same row with the arguments swapped] PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestTheAnswerBelongsToTheDeck::test_a_permuted_pair_is_not_cleared_into_a_deck_cantera_rejects PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestTheAnswerBelongsToTheDeck::test_the_lone_flag_case_still_clears PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestTheAnswerBelongsToTheDeck::test_a_render_leaves_every_reactions_flag_exactly_as_it_found_it PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestTheAnswerBelongsToTheDeck::test_a_core_plus_edge_save_does_not_mark_a_core_only_cantera_entry PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestTheAnswerBelongsToTheDeck::test_a_generator_of_reactions_is_written_not_consumed FAILED
+
+=================================== FAILURES ===================================
+_ TestTheAnswerBelongsToTheDeck.test_a_generator_of_reactions_is_written_not_consumed _
+
+self = <i244ChemkinDuplicateElectronTest.TestTheAnswerBelongsToTheDeck object at 0x79a64c195190>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-161/test_a_generator_of_reactions_0')
+permutation_species = (Species(index=1, label="H", thermo=NASA(polynomials=[NASAPolynomial(coeffs=[2.5,0,0,0,0,-745.375,-11.7246], Tmin=(200...x=(6000,'K'))], Tmin=(200,'K'), Tmax=(6000,'K')), molecule=[Molecule(smiles="[O]")], molecular_weight=(15.9994,'amu')))
+
+    def test_a_generator_of_reactions_is_written_not_consumed(self, tmp_path,
+                                                              permutation_species):
+        """
+        ``mark_duplicate_reaction`` has promised for years that its reaction list
+        "can be any iterator". Keying the groups reads the argument once; writing
+        the entries reads it again. A generator passed in was therefore exhausted
+        by the first read and the writer emitted an empty mechanism -- and returned
+        success, so the loss was silent.
+        """
+        h, oh, h2, o = permutation_species
+    
+        def one():
+            return _library_reaction(
+                [h, oh], [h2, o], "NeutralLibA",
+                kinetics=Arrhenius(A=(1.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+            )
+    
+        from_list = _write_deck(tmp_path, list(permutation_species), [one()], name="list.inp")
+        from_generator = _write_deck(tmp_path, list(permutation_species),
+                                     (rxn for rxn in [one()]), name="gen.inp")
+    
+        assert len(_deck_entries(from_list)) == 1, from_list
+>       assert len(_deck_entries(from_generator)) == len(_deck_entries(from_list)), (
+            "a generator argument lost the mechanism:\n{0}".format(from_generator)
+        )
+E       AssertionError: a generator argument lost the mechanism:
+E         ELEMENTS
+E         	H
+E         	O
+E         END
+E         
+E         SPECIES
+E             H(1)            
+E             OH(2)           
+E             H2(3)           
+E             O(4)            
+E         END
+E         
+E         
+E         
+E         THERM ALL
+E            300.000  1000.000  5000.000
+E         
+E         H(1)                    H   1               G   200.000  6000.000 1000.00      1
+E          2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2
+E         -7.45375000E+02-1.17246000E+01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3
+E          0.00000000E+00 0.00000000E+00-7.45375000E+02-1.17246000E+01                   4
+E         
+E         OH(2)                   H   1O   1          G   200.000  6000.000 1000.00      1
+E          2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2
+E         -7.45375000E+02-1.17246000E+01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3
+E          0.00000000E+00 0.00000000E+00-7.45375000E+02-1.17246000E+01                   4
+E         
+E         H2(3)                   H   2               G   200.000  6000.000 1000.00      1
+E          2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2
+E         -7.45375000E+02-1.17246000E+01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3
+E          0.00000000E+00 0.00000000E+00-7.45375000E+02-1.17246000E+01                   4
+E         
+E         O(4)                    O   1               G   200.000  6000.000 1000.00      1
+E          2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2
+E         -7.45375000E+02-1.17246000E+01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3
+E          0.00000000E+00 0.00000000E+00-7.45375000E+02-1.17246000E+01                   4
+E         
+E         END
+E         
+E         
+E         
+E         REACTIONS    KCAL/MOLE   MOLES
+E         
+E         END
+E         
+E         
+E       assert 0 == 1
+E        +  where 0 = len([])
+E        +    where [] = _deck_entries('ELEMENTS\n\tH\n\tO\nEND\n\nSPECIES\n    H(1)            \n    OH(2)           \n    H2(3)           \n    O(4)            \nEND\n\n\n\nTHERM ALL\n   300.000  1000.000  5000.000\n\nH(1)                    H   1               G   200.000  6000.000 1000.00      1\n 2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2\n-7.45375000E+02-1.17246000E+01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3\n 0.00000000E+00 0.00000000E+00-7.45375000E+02-1.17246000E+01                   4\n\nOH(2)                   H   1O   1          G   200.000  6000.000 1000.00      1\n 2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2\n-7.45375000E+02-1.17246000E+01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3\n 0.00000000E+00 0.00000000E+00-7.45375000E+02-1.17246000E+01                   4\n\nH2(3)                   H   2               G   200.000  6000.000 1000.00      1\n 2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2\n-7.45375000E+02-1.17246000E+01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3\n 0.00000000E+00 0.00000000E+00-7.45375000E+02-1.17246000E+01                   4\n\nO(4)                    O   1               G   200.000  6000.000 1000.00      1\n 2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2\n-7.45375000E+02-1.17246000E+01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3\n 0.00000000E+00 0.00000000E+00-7.45375000E+02-1.17246000E+01                   4\n\nEND\n\n\n\nREACTIONS    KCAL/MOLE   MOLES\n\nEND\n\n')
+E        +  and   1 = len([('H(1)+OH(2)=>H2(3)+O(4)', False)])
+E        +    where [('H(1)+OH(2)=>H2(3)+O(4)', False)] = _deck_entries('ELEMENTS\n\tH\n\tO\nEND\n\nSPECIES\n    H(1)            \n    OH(2)           \n    H2(3)           \n    O(4)            \nEND\n\n\n\nTHERM ALL\n   300.000  1000.000  5000.000\n\nH(1)                    H   1               G   200.000  6000.000 1000.00      1\n 2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2\n-7.45375000E+02-1.17246000E+01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3\n 0.00000000E+00 0.00000000E+00-7.45375000E+02-1.17246000E+01                   4\n\nOH(2)                   H   1O   1          G   200.000  6000.000 1000.00      1\n 2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2\n-7.45375000E+02-1.17246000E+01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3\n 0.00000000E+00 0.00000000E+00-7.45375000E+02-1.17246000E+01                   4\n\nH2(3)                   H   2               G   200.000  6000.000 1000.00      1\n 2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2\n-7.45375000E+02-1.17246000E+01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3\n 0.00000000E+00 0.00000000E+00-7.45375000E+02-1.17246000E+01                   4\n\nO(4)                    O   1               G   200.000  6000.000 1000.00      1\n 2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2\n-7.45375000E+02-1.17246000E+01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3\n 0.00000000E+00 0.00000000E+00-7.45375000E+02-1.17246000E+01                   4\n\nEND\n\n\n\nREACTIONS    KCAL/MOLE   MOLES\n\nH(1)+OH(2)=>H2(3)+O(4)                              1.000000e+12 0.000     0.000    \n\nEND\n\n')
+
+test/rmgpy/i244ChemkinDuplicateElectronTest.py:1031: AssertionError
+=============================== warnings summary ===============================
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestTheAnswerBelongsToTheDeck::test_a_permuted_pair_is_not_cleared_into_a_deck_cantera_rejects
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestTheAnswerBelongsToTheDeck::test_the_lone_flag_case_still_clears
+  /home/alon/Code/Cantera/build/python/cantera/ck2yaml.py:2288: UserWarning: To be removed after Cantera 3.1; renamed to 'convert'
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestTheAnswerBelongsToTheDeck::test_a_generator_of_reactions_is_written_not_consumed
+=================== 1 failed, 23 passed, 2 warnings in 2.13s ===================
+restored rmgpy/chemkin.pyx from its byte backup

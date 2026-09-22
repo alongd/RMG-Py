@@ -1,0 +1,635 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python3.9
+rootdir: /home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 13 items
+
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestElectronPlacementSeparatesDuplicates::test_two_owners_of_one_ionisation_channel_are_not_duplicates PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestElectronPlacementSeparatesDuplicates::test_matching_placement_is_still_a_duplicate FAILED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestThreeBodyRecombinationShape::test_the_duplicate_check_separates_the_pair PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestThreeBodyRecombinationShape::test_the_export_boundary_refuses_a_reversed_declared_reaction PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestThreeBodyRecombinationShape::test_an_undeclared_three_body_owner_is_still_folded_onto_the_radiative_channel FAILED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestOrdinaryDuplicateHandlingIsUntouched::test_neutral_duplicate_pair_is_still_marked FAILED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestOrdinaryDuplicateHandlingIsUntouched::test_opposite_direction_irreversible_branch_still_unmarks PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestOrdinaryDuplicateHandlingIsUntouched::test_mixed_pressure_dependence_branch_still_unmarks PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestPlacementTruthTable::test_same_direction_rows[0-0-NeutralLibA-NeutralLibB-True-(0, 0) vs (0, 0) -- all neutral chemistry, unchanged] FAILED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestPlacementTruthTable::test_same_direction_rows[1-1-PlasmaElectronImpactIonization-PlasmaElectronImpactIonization-True-(1, 2) vs (1, 2) -- a genuine duplicate of a declared channel] FAILED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestPlacementTruthTable::test_same_direction_rows[1-1-AnUndeclaredKineticsLibrary-AnotherUndeclaredLibrary-True-(0, 1) vs (0, 1) -- a genuine duplicate under the net-derived rule] FAILED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestPlacementTruthTable::test_same_direction_rows[1-1-PlasmaElectronImpactIonization-AnUndeclaredKineticsLibrary-False-(1, 2) vs (0, 1) -- equal net count, different incident order] PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestPlacementTruthTable::test_same_direction_rows[1-1-AnUndeclaredKineticsLibrary-PlasmaElectronImpactIonization-False-(0, 1) vs (1, 2) -- the same row with the arguments swapped] PASSED
+
+=================================== FAILURES ===================================
+_ TestElectronPlacementSeparatesDuplicates.test_matching_placement_is_still_a_duplicate _
+
+self = <i244ChemkinDuplicateElectronTest.TestElectronPlacementSeparatesDuplicates object at 0x729df5417b50>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-57/test_matching_placement_is_sti0')
+charged_species = (Species(index=1, label="e-", thermo=NASA(polynomials=[NASAPolynomial(coeffs=[2.5,0,0,0,0,-745.375,-11.7246], Tmin=(20...x=(6000,'K'))], Tmin=(200,'K'), Tmax=(6000,'K')), molecule=[Molecule(smiles="[Li+]")], molecular_weight=(6.941,'amu')))
+
+    def test_matching_placement_is_still_a_duplicate(self, tmp_path, charged_species):
+        """
+        Two writings of the SAME channel, with the same placement, are a genuine
+        duplicate pair and must still be marked.
+    
+        This is the other half of the refinement: it may only ever withdraw a
+        mark, and only where the placements differ.
+        """
+        electron, li, lip = charged_species
+    
+        first = _library_reaction(
+            [li], [lip], DECLARED_TWO_SIDED_OWNER, electrons=1,
+            kinetics=Arrhenius(A=(1.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+        second = _library_reaction(
+            [li], [lip], DECLARED_TWO_SIDED_OWNER, electrons=1,
+            kinetics=Arrhenius(A=(3.0e11, "cm^3/(mol*s)"), n=0.5, Ea=(2.0, "kcal/mol")),
+        )
+        assert get_electron_placement_counts(first) == get_electron_placement_counts(second) == (1, 2)
+    
+        text = _write_deck(tmp_path, [electron, li, lip], [first, second])
+        entries = _deck_entries(text)
+    
+        assert len(entries) == 2
+        assert all(_stoichiometry(eq) == (2, 3) for eq, _ in entries)
+>       assert all(marked for _, marked in entries), (
+            "a genuine duplicate pair lost its DUPLICATE lines:\n{0}".format(text)
+        )
+E       AssertionError: a genuine duplicate pair lost its DUPLICATE lines:
+E         ELEMENTS
+E         	E
+E         	Li
+E         END
+E         
+E         SPECIES
+E             e-(1)           
+E             Li(2)           
+E             Lip(3)          
+E         END
+E         
+E         
+E         
+E         THERM ALL
+E            300.000  1000.000  5000.000
+E         
+E         e-(1)                   E   1               G   200.000  6000.000 1000.00      1
+E          2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2
+E         -7.45375000E+02-1.17246000E+01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3
+E          0.00000000E+00 0.00000000E+00-7.45375000E+02-1.17246000E+01                   4
+E         
+E         Li(2)                   Li  1               G   200.000  6000.000 1000.00      1
+E          2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2
+E         -7.45375000E+02-1.17246000E+01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3
+E          0.00000000E+00 0.00000000E+00-7.45375000E+02-1.17246000E+01                   4
+E         
+E         Lip(3)                  E  -1Li  1          G   200.000  6000.000 1000.00      1
+E          2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2
+E         -7.45375000E+02-1.17246000E+01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3
+E          0.00000000E+00 0.00000000E+00-7.45375000E+02-1.17246000E+01                   4
+E         
+E         END
+E         
+E         
+E         
+E         REACTIONS    KCAL/MOLE   MOLES
+E         
+E         Li(2)+e-(1)=>Lip(3)+e-(1)+e-(1)                     1.000000e+12 0.000     0.000    
+E         
+E         Li(2)+e-(1)=>Lip(3)+e-(1)+e-(1)                     3.000000e+11 0.500     2.000    
+E         
+E         END
+E         
+E         
+E       assert False
+E        +  where False = all(<generator object TestElectronPlacementSeparatesDuplicates.test_matching_placement_is_still_a_duplicate.<locals>.<genexpr> at 0x729df4800040>)
+
+test/rmgpy/i244ChemkinDuplicateElectronTest.py:258: AssertionError
+_ TestThreeBodyRecombinationShape.test_an_undeclared_three_body_owner_is_still_folded_onto_the_radiative_channel _
+
+self = <i244ChemkinDuplicateElectronTest.TestThreeBodyRecombinationShape object at 0x729df54361c0>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-57/test_an_undeclared_three_body_0')
+charged_species = (Species(index=1, label="e-", thermo=NASA(polynomials=[NASAPolynomial(coeffs=[2.5,0,0,0,0,-745.375,-11.7246], Tmin=(20...x=(6000,'K'))], Tmin=(200,'K'), Tmax=(6000,'K')), molecule=[Molecule(smiles="[Li+]")], molecular_weight=(6.941,'amu')))
+
+    def test_an_undeclared_three_body_owner_is_still_folded_onto_the_radiative_channel(
+            self, tmp_path, charged_species):
+        """
+        **The limit of this repair, pinned rather than left to be discovered.**
+    
+        The separation comes from the per-side placement, and a three-body
+        recombination whose owner declares no placement does not have one: the
+        net-derived rule sees ``electrons = -1`` and returns ``(1, 0)``, the same
+        pair radiative recombination gets. The two then still compare equal and
+        are still marked. That is not a hole in the duplicate check -- the writer
+        would also *export* such a reaction as second order, losing the incident
+        electron -- but it does mean the repair is only as good as the owner's
+        declaration, so a three-body library must declare ``(2, 1)`` to be
+        separated from the radiative channel.
+        """
+        electron, li, lip = charged_species
+    
+        radiative = _library_reaction(
+            [lip], [li], DECLARED_ONE_SIDED_OWNER, electrons=-1,
+            kinetics=Arrhenius(A=(1.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+        undeclared_three_body = _library_reaction(
+            [lip], [li], UNDECLARED_OWNER, electrons=-1,
+            kinetics=Arrhenius(A=(1.0e12, "cm^3/(mol*s)"), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+        assert get_electron_placement_counts(undeclared_three_body) == (1, 0)
+    
+        text = _write_deck(tmp_path, [electron, li, lip], [radiative, undeclared_three_body])
+        entries = _deck_entries(text)
+    
+        assert len(entries) == 2
+        assert {_stoichiometry(eq) for eq, _ in entries} == {(2, 1)}, (
+            "both are exported second order, which is the deeper consequence of the missing "
+            "declaration:\n{0}".format(text)
+        )
+>       assert all(marked for _, marked in entries), (
+            "this pair IS identical as exported, so it is correctly still a duplicate; if this "
+            "ever stops holding, the rule has started guessing:\n{0}".format(text)
+        )
+E       AssertionError: this pair IS identical as exported, so it is correctly still a duplicate; if this ever stops holding, the rule has started guessing:
+E         ELEMENTS
+E         	E
+E         	Li
+E         END
+E         
+E         SPECIES
+E             e-(1)           
+E             Li(2)           
+E             Lip(3)          
+E         END
+E         
+E         
+E         
+E         THERM ALL
+E            300.000  1000.000  5000.000
+E         
+E         e-(1)                   E   1               G   200.000  6000.000 1000.00      1
+E          2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2
+E         -7.45375000E+02-1.17246000E+01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3
+E          0.00000000E+00 0.00000000E+00-7.45375000E+02-1.17246000E+01                   4
+E         
+E         Li(2)                   Li  1               G   200.000  6000.000 1000.00      1
+E          2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2
+E         -7.45375000E+02-1.17246000E+01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3
+E          0.00000000E+00 0.00000000E+00-7.45375000E+02-1.17246000E+01                   4
+E         
+E         Lip(3)                  E  -1Li  1          G   200.000  6000.000 1000.00      1
+E          2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2
+E         -7.45375000E+02-1.17246000E+01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3
+E          0.00000000E+00 0.00000000E+00-7.45375000E+02-1.17246000E+01                   4
+E         
+E         END
+E         
+E         
+E         
+E         REACTIONS    KCAL/MOLE   MOLES
+E         
+E         Lip(3)+e-(1)=>Li(2)                                 1.000000e+12 0.000     0.000    
+E         
+E         Lip(3)+e-(1)=>Li(2)                                 1.000000e+12 0.000     0.000    
+E         
+E         END
+E         
+E         
+E       assert False
+E        +  where False = all(<generator object TestThreeBodyRecombinationShape.test_an_undeclared_three_body_owner_is_still_folded_onto_the_radiative_channel.<locals>.<genexpr> at 0x729df4529900>)
+
+test/rmgpy/i244ChemkinDuplicateElectronTest.py:369: AssertionError
+_ TestOrdinaryDuplicateHandlingIsUntouched.test_neutral_duplicate_pair_is_still_marked _
+
+self = <i244ChemkinDuplicateElectronTest.TestOrdinaryDuplicateHandlingIsUntouched object at 0x729df5436460>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-57/test_neutral_duplicate_pair_is0')
+neutral_species = (Species(index=1, label="C2H6", thermo=NASA(polynomials=[NASAPolynomial(coeffs=[2.5,0,0,0,0,-745.375,-11.7246], Tmin=(...6000,'K'))], Tmin=(200,'K'), Tmax=(6000,'K')), molecule=[Molecule(smiles="C[CH2]")], molecular_weight=(29.0611,'amu')))
+
+    def test_neutral_duplicate_pair_is_still_marked(self, tmp_path, neutral_species):
+        """
+        The commonest case in RMG: two neutral reactions over the same species.
+        Both placements are ``(0, 0)``, so the refinement is a no-op and the pair
+        must still be marked.
+        """
+        ethane, methyl, ethyl = neutral_species
+        kwargs = dict(reversible=True)
+        first = _library_reaction(
+            [ethane], [methyl, methyl], "SomeNeutralLibrary",
+            kinetics=Arrhenius(A=(1.0e16, "s^-1"), n=0.0, Ea=(80.0, "kcal/mol")), **kwargs
+        )
+        second = _library_reaction(
+            [ethane], [methyl, methyl], "SomeNeutralLibrary",
+            kinetics=Arrhenius(A=(5.0e15, "s^-1"), n=0.2, Ea=(75.0, "kcal/mol")), **kwargs
+        )
+        assert get_electron_placement_counts(first) == get_electron_placement_counts(second) == (0, 0)
+    
+        text = _write_deck(tmp_path, [ethane, methyl, ethyl], [first, second])
+        entries = _deck_entries(text)
+    
+        assert len(entries) == 2
+>       assert all(marked for _, marked in entries), (
+            "a neutral duplicate pair lost its DUPLICATE lines:\n{0}".format(text)
+        )
+E       AssertionError: a neutral duplicate pair lost its DUPLICATE lines:
+E         ELEMENTS
+E         	C
+E         	H
+E         END
+E         
+E         SPECIES
+E             C2H6(1)         
+E             CH3(2)          
+E             C2H5(3)         
+E         END
+E         
+E         
+E         
+E         THERM ALL
+E            300.000  1000.000  5000.000
+E         
+E         C2H6(1)                 C   2H   6          G   200.000  6000.000 1000.00      1
+E          2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2
+E         -7.45375000E+02-1.17246000E+01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3
+E          0.00000000E+00 0.00000000E+00-7.45375000E+02-1.17246000E+01                   4
+E         
+E         CH3(2)                  C   1H   3          G   200.000  6000.000 1000.00      1
+E          2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2
+E         -7.45375000E+02-1.17246000E+01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3
+E          0.00000000E+00 0.00000000E+00-7.45375000E+02-1.17246000E+01                   4
+E         
+E         C2H5(3)                 C   2H   5          G   200.000  6000.000 1000.00      1
+E          2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2
+E         -7.45375000E+02-1.17246000E+01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3
+E          0.00000000E+00 0.00000000E+00-7.45375000E+02-1.17246000E+01                   4
+E         
+E         END
+E         
+E         
+E         
+E         REACTIONS    KCAL/MOLE   MOLES
+E         
+E         C2H6(1)<=>CH3(2)+CH3(2)                             1.000000e+16 0.000     80.000   
+E         
+E         C2H6(1)<=>CH3(2)+CH3(2)                             5.000000e+15 0.200     75.000   
+E         
+E         END
+E         
+E         
+E       assert False
+E        +  where False = all(<generator object TestOrdinaryDuplicateHandlingIsUntouched.test_neutral_duplicate_pair_is_still_marked.<locals>.<genexpr> at 0x729df4529510>)
+
+test/rmgpy/i244ChemkinDuplicateElectronTest.py:400: AssertionError
+_ TestPlacementTruthTable.test_same_direction_rows[0-0-NeutralLibA-NeutralLibB-True-(0, 0) vs (0, 0) -- all neutral chemistry, unchanged] _
+
+self = <i244ChemkinDuplicateElectronTest.TestPlacementTruthTable object at 0x729df5436c10>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-57/test_same_direction_rows_0_0_N0')
+charged_species = (Species(index=1, label="e-", thermo=NASA(polynomials=[NASAPolynomial(coeffs=[2.5,0,0,0,0,-745.375,-11.7246], Tmin=(20...x=(6000,'K'))], Tmin=(200,'K'), Tmax=(6000,'K')), molecule=[Molecule(smiles="[Li+]")], molecular_weight=(6.941,'amu')))
+neutral_species = (Species(index=1, label="C2H6", thermo=NASA(polynomials=[NASAPolynomial(coeffs=[2.5,0,0,0,0,-745.375,-11.7246], Tmin=(...6000,'K'))], Tmin=(200,'K'), Tmax=(6000,'K')), molecule=[Molecule(smiles="C[CH2]")], molecular_weight=(29.0611,'amu')))
+electrons_a = 0, electrons_b = 0, owner_a = 'NeutralLibA'
+owner_b = 'NeutralLibB', expect_marked = True
+why = '(0, 0) vs (0, 0) -- all neutral chemistry, unchanged'
+
+    @pytest.mark.parametrize(
+        "electrons_a, electrons_b, owner_a, owner_b, expect_marked, why",
+        [
+            (0, 0, "NeutralLibA", "NeutralLibB", True,
+             "(0, 0) vs (0, 0) -- all neutral chemistry, unchanged"),
+            (1, 1, DECLARED_TWO_SIDED_OWNER, DECLARED_TWO_SIDED_OWNER, True,
+             "(1, 2) vs (1, 2) -- a genuine duplicate of a declared channel"),
+            (1, 1, UNDECLARED_OWNER, "AnotherUndeclaredLibrary", True,
+             "(0, 1) vs (0, 1) -- a genuine duplicate under the net-derived rule"),
+            (1, 1, DECLARED_TWO_SIDED_OWNER, UNDECLARED_OWNER, False,
+             "(1, 2) vs (0, 1) -- equal net count, different incident order"),
+            (1, 1, UNDECLARED_OWNER, DECLARED_TWO_SIDED_OWNER, False,
+             "(0, 1) vs (1, 2) -- the same row with the arguments swapped"),
+        ],
+    )
+    def test_same_direction_rows(self, tmp_path, charged_species, neutral_species,
+                                 electrons_a, electrons_b, owner_a, owner_b,
+                                 expect_marked, why):
+        electron, li, lip = charged_species
+        ethane, methyl, _ = neutral_species
+    
+        if electrons_a == 0:
+            species = [ethane, methyl]
+            reactants, products = [ethane], [methyl, methyl]
+            units_a = units_b = "s^-1"
+        else:
+            species = [electron, li, lip]
+            reactants, products = [li], [lip]
+            # The exported reactant side is one species longer wherever the owner
+            # declares an incident electron, and the A-factor units have to match
+            # the equation the writer emits.
+            units_a = "cm^3/(mol*s)" if owner_a == DECLARED_TWO_SIDED_OWNER else "s^-1"
+            units_b = "cm^3/(mol*s)" if owner_b == DECLARED_TWO_SIDED_OWNER else "s^-1"
+    
+        first = _library_reaction(
+            reactants, products, owner_a, electrons=electrons_a,
+            kinetics=Arrhenius(A=(1.0e12, units_a), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+        second = _library_reaction(
+            reactants, products, owner_b, electrons=electrons_b,
+            kinetics=Arrhenius(A=(2.0e12, units_b), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+    
+        text = _write_deck(tmp_path, species, [first, second])
+        entries = _deck_entries(text)
+    
+        assert len(entries) == 2, text
+        marked = [flag for _, flag in entries]
+>       assert marked == [expect_marked, expect_marked], (
+            "{0}: expected marked={1}, deck says {2}\n{3}".format(why, expect_marked, marked, text)
+        )
+E       AssertionError: (0, 0) vs (0, 0) -- all neutral chemistry, unchanged: expected marked=True, deck says [False, False]
+E         ELEMENTS
+E         	C
+E         	H
+E         END
+E         
+E         SPECIES
+E             C2H6(1)         
+E             CH3(2)          
+E         END
+E         
+E         
+E         
+E         THERM ALL
+E            300.000  1000.000  5000.000
+E         
+E         C2H6(1)                 C   2H   6          G   200.000  6000.000 1000.00      1
+E          2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2
+E         -7.45375000E+02-1.17246000E+01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3
+E          0.00000000E+00 0.00000000E+00-7.45375000E+02-1.17246000E+01                   4
+E         
+E         CH3(2)                  C   1H   3          G   200.000  6000.000 1000.00      1
+E          2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2
+E         -7.45375000E+02-1.17246000E+01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3
+E          0.00000000E+00 0.00000000E+00-7.45375000E+02-1.17246000E+01                   4
+E         
+E         END
+E         
+E         
+E         
+E         REACTIONS    KCAL/MOLE   MOLES
+E         
+E         C2H6(1)=>CH3(2)+CH3(2)                              1.000000e+12 0.000     0.000    
+E         
+E         C2H6(1)=>CH3(2)+CH3(2)                              2.000000e+12 0.000     0.000    
+E         
+E         END
+E         
+E         
+E       assert [False, False] == [True, True]
+E         
+E         At index 0 diff: False != True
+E         
+E         Full diff:
+E           [
+E         -     True,
+E         -     True,...
+E         
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/rmgpy/i244ChemkinDuplicateElectronTest.py:528: AssertionError
+_ TestPlacementTruthTable.test_same_direction_rows[1-1-PlasmaElectronImpactIonization-PlasmaElectronImpactIonization-True-(1, 2) vs (1, 2) -- a genuine duplicate of a declared channel] _
+
+self = <i244ChemkinDuplicateElectronTest.TestPlacementTruthTable object at 0x729df54365b0>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-57/test_same_direction_rows_1_1_P0')
+charged_species = (Species(index=1, label="e-", thermo=NASA(polynomials=[NASAPolynomial(coeffs=[2.5,0,0,0,0,-745.375,-11.7246], Tmin=(20...x=(6000,'K'))], Tmin=(200,'K'), Tmax=(6000,'K')), molecule=[Molecule(smiles="[Li+]")], molecular_weight=(6.941,'amu')))
+neutral_species = (Species(index=1, label="C2H6", thermo=NASA(polynomials=[NASAPolynomial(coeffs=[2.5,0,0,0,0,-745.375,-11.7246], Tmin=(...6000,'K'))], Tmin=(200,'K'), Tmax=(6000,'K')), molecule=[Molecule(smiles="C[CH2]")], molecular_weight=(29.0611,'amu')))
+electrons_a = 1, electrons_b = 1, owner_a = 'PlasmaElectronImpactIonization'
+owner_b = 'PlasmaElectronImpactIonization', expect_marked = True
+why = '(1, 2) vs (1, 2) -- a genuine duplicate of a declared channel'
+
+    @pytest.mark.parametrize(
+        "electrons_a, electrons_b, owner_a, owner_b, expect_marked, why",
+        [
+            (0, 0, "NeutralLibA", "NeutralLibB", True,
+             "(0, 0) vs (0, 0) -- all neutral chemistry, unchanged"),
+            (1, 1, DECLARED_TWO_SIDED_OWNER, DECLARED_TWO_SIDED_OWNER, True,
+             "(1, 2) vs (1, 2) -- a genuine duplicate of a declared channel"),
+            (1, 1, UNDECLARED_OWNER, "AnotherUndeclaredLibrary", True,
+             "(0, 1) vs (0, 1) -- a genuine duplicate under the net-derived rule"),
+            (1, 1, DECLARED_TWO_SIDED_OWNER, UNDECLARED_OWNER, False,
+             "(1, 2) vs (0, 1) -- equal net count, different incident order"),
+            (1, 1, UNDECLARED_OWNER, DECLARED_TWO_SIDED_OWNER, False,
+             "(0, 1) vs (1, 2) -- the same row with the arguments swapped"),
+        ],
+    )
+    def test_same_direction_rows(self, tmp_path, charged_species, neutral_species,
+                                 electrons_a, electrons_b, owner_a, owner_b,
+                                 expect_marked, why):
+        electron, li, lip = charged_species
+        ethane, methyl, _ = neutral_species
+    
+        if electrons_a == 0:
+            species = [ethane, methyl]
+            reactants, products = [ethane], [methyl, methyl]
+            units_a = units_b = "s^-1"
+        else:
+            species = [electron, li, lip]
+            reactants, products = [li], [lip]
+            # The exported reactant side is one species longer wherever the owner
+            # declares an incident electron, and the A-factor units have to match
+            # the equation the writer emits.
+            units_a = "cm^3/(mol*s)" if owner_a == DECLARED_TWO_SIDED_OWNER else "s^-1"
+            units_b = "cm^3/(mol*s)" if owner_b == DECLARED_TWO_SIDED_OWNER else "s^-1"
+    
+        first = _library_reaction(
+            reactants, products, owner_a, electrons=electrons_a,
+            kinetics=Arrhenius(A=(1.0e12, units_a), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+        second = _library_reaction(
+            reactants, products, owner_b, electrons=electrons_b,
+            kinetics=Arrhenius(A=(2.0e12, units_b), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+    
+        text = _write_deck(tmp_path, species, [first, second])
+        entries = _deck_entries(text)
+    
+        assert len(entries) == 2, text
+        marked = [flag for _, flag in entries]
+>       assert marked == [expect_marked, expect_marked], (
+            "{0}: expected marked={1}, deck says {2}\n{3}".format(why, expect_marked, marked, text)
+        )
+E       AssertionError: (1, 2) vs (1, 2) -- a genuine duplicate of a declared channel: expected marked=True, deck says [False, False]
+E         ELEMENTS
+E         	E
+E         	Li
+E         END
+E         
+E         SPECIES
+E             e-(1)           
+E             Li(2)           
+E             Lip(3)          
+E         END
+E         
+E         
+E         
+E         THERM ALL
+E            300.000  1000.000  5000.000
+E         
+E         e-(1)                   E   1               G   200.000  6000.000 1000.00      1
+E          2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2
+E         -7.45375000E+02-1.17246000E+01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3
+E          0.00000000E+00 0.00000000E+00-7.45375000E+02-1.17246000E+01                   4
+E         
+E         Li(2)                   Li  1               G   200.000  6000.000 1000.00      1
+E          2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2
+E         -7.45375000E+02-1.17246000E+01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3
+E          0.00000000E+00 0.00000000E+00-7.45375000E+02-1.17246000E+01                   4
+E         
+E         Lip(3)                  E  -1Li  1          G   200.000  6000.000 1000.00      1
+E          2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2
+E         -7.45375000E+02-1.17246000E+01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3
+E          0.00000000E+00 0.00000000E+00-7.45375000E+02-1.17246000E+01                   4
+E         
+E         END
+E         
+E         
+E         
+E         REACTIONS    KCAL/MOLE   MOLES
+E         
+E         Li(2)+e-(1)=>Lip(3)+e-(1)+e-(1)                     1.000000e+12 0.000     0.000    
+E         
+E         Li(2)+e-(1)=>Lip(3)+e-(1)+e-(1)                     2.000000e+12 0.000     0.000    
+E         
+E         END
+E         
+E         
+E       assert [False, False] == [True, True]
+E         
+E         At index 0 diff: False != True
+E         
+E         Full diff:
+E           [
+E         -     True,
+E         -     True,...
+E         
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/rmgpy/i244ChemkinDuplicateElectronTest.py:528: AssertionError
+_ TestPlacementTruthTable.test_same_direction_rows[1-1-AnUndeclaredKineticsLibrary-AnotherUndeclaredLibrary-True-(0, 1) vs (0, 1) -- a genuine duplicate under the net-derived rule] _
+
+self = <i244ChemkinDuplicateElectronTest.TestPlacementTruthTable object at 0x729df5436340>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-57/test_same_direction_rows_1_1_A0')
+charged_species = (Species(index=1, label="e-", thermo=NASA(polynomials=[NASAPolynomial(coeffs=[2.5,0,0,0,0,-745.375,-11.7246], Tmin=(20...x=(6000,'K'))], Tmin=(200,'K'), Tmax=(6000,'K')), molecule=[Molecule(smiles="[Li+]")], molecular_weight=(6.941,'amu')))
+neutral_species = (Species(index=1, label="C2H6", thermo=NASA(polynomials=[NASAPolynomial(coeffs=[2.5,0,0,0,0,-745.375,-11.7246], Tmin=(...6000,'K'))], Tmin=(200,'K'), Tmax=(6000,'K')), molecule=[Molecule(smiles="C[CH2]")], molecular_weight=(29.0611,'amu')))
+electrons_a = 1, electrons_b = 1, owner_a = 'AnUndeclaredKineticsLibrary'
+owner_b = 'AnotherUndeclaredLibrary', expect_marked = True
+why = '(0, 1) vs (0, 1) -- a genuine duplicate under the net-derived rule'
+
+    @pytest.mark.parametrize(
+        "electrons_a, electrons_b, owner_a, owner_b, expect_marked, why",
+        [
+            (0, 0, "NeutralLibA", "NeutralLibB", True,
+             "(0, 0) vs (0, 0) -- all neutral chemistry, unchanged"),
+            (1, 1, DECLARED_TWO_SIDED_OWNER, DECLARED_TWO_SIDED_OWNER, True,
+             "(1, 2) vs (1, 2) -- a genuine duplicate of a declared channel"),
+            (1, 1, UNDECLARED_OWNER, "AnotherUndeclaredLibrary", True,
+             "(0, 1) vs (0, 1) -- a genuine duplicate under the net-derived rule"),
+            (1, 1, DECLARED_TWO_SIDED_OWNER, UNDECLARED_OWNER, False,
+             "(1, 2) vs (0, 1) -- equal net count, different incident order"),
+            (1, 1, UNDECLARED_OWNER, DECLARED_TWO_SIDED_OWNER, False,
+             "(0, 1) vs (1, 2) -- the same row with the arguments swapped"),
+        ],
+    )
+    def test_same_direction_rows(self, tmp_path, charged_species, neutral_species,
+                                 electrons_a, electrons_b, owner_a, owner_b,
+                                 expect_marked, why):
+        electron, li, lip = charged_species
+        ethane, methyl, _ = neutral_species
+    
+        if electrons_a == 0:
+            species = [ethane, methyl]
+            reactants, products = [ethane], [methyl, methyl]
+            units_a = units_b = "s^-1"
+        else:
+            species = [electron, li, lip]
+            reactants, products = [li], [lip]
+            # The exported reactant side is one species longer wherever the owner
+            # declares an incident electron, and the A-factor units have to match
+            # the equation the writer emits.
+            units_a = "cm^3/(mol*s)" if owner_a == DECLARED_TWO_SIDED_OWNER else "s^-1"
+            units_b = "cm^3/(mol*s)" if owner_b == DECLARED_TWO_SIDED_OWNER else "s^-1"
+    
+        first = _library_reaction(
+            reactants, products, owner_a, electrons=electrons_a,
+            kinetics=Arrhenius(A=(1.0e12, units_a), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+        second = _library_reaction(
+            reactants, products, owner_b, electrons=electrons_b,
+            kinetics=Arrhenius(A=(2.0e12, units_b), n=0.0, Ea=(0.0, "kcal/mol")),
+        )
+    
+        text = _write_deck(tmp_path, species, [first, second])
+        entries = _deck_entries(text)
+    
+        assert len(entries) == 2, text
+        marked = [flag for _, flag in entries]
+>       assert marked == [expect_marked, expect_marked], (
+            "{0}: expected marked={1}, deck says {2}\n{3}".format(why, expect_marked, marked, text)
+        )
+E       AssertionError: (0, 1) vs (0, 1) -- a genuine duplicate under the net-derived rule: expected marked=True, deck says [False, False]
+E         ELEMENTS
+E         	E
+E         	Li
+E         END
+E         
+E         SPECIES
+E             e-(1)           
+E             Li(2)           
+E             Lip(3)          
+E         END
+E         
+E         
+E         
+E         THERM ALL
+E            300.000  1000.000  5000.000
+E         
+E         e-(1)                   E   1               G   200.000  6000.000 1000.00      1
+E          2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2
+E         -7.45375000E+02-1.17246000E+01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3
+E          0.00000000E+00 0.00000000E+00-7.45375000E+02-1.17246000E+01                   4
+E         
+E         Li(2)                   Li  1               G   200.000  6000.000 1000.00      1
+E          2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2
+E         -7.45375000E+02-1.17246000E+01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3
+E          0.00000000E+00 0.00000000E+00-7.45375000E+02-1.17246000E+01                   4
+E         
+E         Lip(3)                  E  -1Li  1          G   200.000  6000.000 1000.00      1
+E          2.50000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00 0.00000000E+00    2
+E         -7.45375000E+02-1.17246000E+01 2.50000000E+00 0.00000000E+00 0.00000000E+00    3
+E          0.00000000E+00 0.00000000E+00-7.45375000E+02-1.17246000E+01                   4
+E         
+E         END
+E         
+E         
+E         
+E         REACTIONS    KCAL/MOLE   MOLES
+E         
+E         Li(2)=>Lip(3)+e-(1)                                 1.000000e+12 0.000     0.000    
+E         
+E         Li(2)=>Lip(3)+e-(1)                                 2.000000e+12 0.000     0.000    
+E         
+E         END
+E         
+E         
+E       assert [False, False] == [True, True]
+E         
+E         At index 0 diff: False != True
+E         
+E         Full diff:
+E           [
+E         -     True,
+E         -     True,...
+E         
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/rmgpy/i244ChemkinDuplicateElectronTest.py:528: AssertionError
+=========================== short test summary info ============================
+FAILED test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestElectronPlacementSeparatesDuplicates::test_matching_placement_is_still_a_duplicate
+FAILED test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestThreeBodyRecombinationShape::test_an_undeclared_three_body_owner_is_still_folded_onto_the_radiative_channel
+FAILED test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestOrdinaryDuplicateHandlingIsUntouched::test_neutral_duplicate_pair_is_still_marked
+FAILED test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestPlacementTruthTable::test_same_direction_rows[0-0-NeutralLibA-NeutralLibB-True-(0, 0) vs (0, 0) -- all neutral chemistry, unchanged]
+FAILED test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestPlacementTruthTable::test_same_direction_rows[1-1-PlasmaElectronImpactIonization-PlasmaElectronImpactIonization-True-(1, 2) vs (1, 2) -- a genuine duplicate of a declared channel]
+FAILED test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestPlacementTruthTable::test_same_direction_rows[1-1-AnUndeclaredKineticsLibrary-AnotherUndeclaredLibrary-True-(0, 1) vs (0, 1) -- a genuine duplicate under the net-derived rule]
+========================= 6 failed, 7 passed in 2.41s ==========================

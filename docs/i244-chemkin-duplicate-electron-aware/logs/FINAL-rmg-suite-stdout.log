@@ -1,0 +1,1932 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python3.9
+rootdir: /home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 152 items
+
+test/rmgpy/rmg/inputTest.py::TestInputDatabase::test_importing_database_reaction_libraries_from_string PASSED
+test/rmgpy/rmg/inputTest.py::TestInputDatabase::test_importing_database_reaction_libraries_from_false_tuple PASSED
+test/rmgpy/rmg/inputTest.py::TestInputDatabase::test_importing_database_reaction_libraries_from_true_tuple PASSED
+test/rmgpy/rmg/inputTest.py::TestInputDatabaseAutoSelection::test_thermo_auto_string PASSED
+test/rmgpy/rmg/inputTest.py::TestInputDatabaseAutoSelection::test_thermo_auto_in_list PASSED
+test/rmgpy/rmg/inputTest.py::TestInputDatabaseAutoSelection::test_thermo_pah_libs_in_list PASSED
+test/rmgpy/rmg/inputTest.py::TestInputDatabaseAutoSelection::test_transport_auto_string PASSED
+test/rmgpy/rmg/inputTest.py::TestInputDatabaseAutoSelection::test_reaction_libraries_auto_string PASSED
+test/rmgpy/rmg/inputTest.py::TestInputDatabaseAutoSelection::test_reaction_libraries_auto_in_list PASSED
+test/rmgpy/rmg/inputTest.py::TestInputDatabaseAutoSelection::test_reaction_libraries_mixed_auto_and_tuple PASSED
+test/rmgpy/rmg/inputTest.py::TestInputDatabaseAutoSelection::test_seed_mechanisms_auto PASSED
+test/rmgpy/rmg/inputTest.py::TestInputDatabaseAutoSelection::test_kinetics_families_auto PASSED
+test/rmgpy/rmg/inputTest.py::TestInputDatabaseAutoSelection::test_kinetics_families_auto_with_exclusion PASSED
+test/rmgpy/rmg/inputTest.py::TestInputDatabaseAutoSelection::test_default_no_auto PASSED
+test/rmgpy/rmg/inputTest.py::TestInputDatabaseAutoSelection::test_pah_libs_standalone_thermo_raises PASSED
+test/rmgpy/rmg/inputTest.py::TestInputDatabaseAutoSelection::test_pah_libs_standalone_reaction_raises PASSED
+test/rmgpy/rmg/inputTest.py::TestInputDatabaseAutoSelection::test_pah_libs_standalone_transport_raises PASSED
+test/rmgpy/rmg/inputTest.py::TestInputDatabaseAutoSelection::test_pah_libs_standalone_seeds_raises PASSED
+test/rmgpy/rmg/inputTest.py::TestInputDatabaseAutoSelection::test_pah_libs_tuple_in_reaction_libs_raises PASSED
+test/rmgpy/rmg/inputTest.py::TestInputMLEstimator::test_ml_estimator SKIPPED
+test/rmgpy/rmg/inputTest.py::TestInputThermoCentralDatabase::test_thermo_central_database PASSED
+test/rmgpy/rmg/inputTest.py::TestInputReactors::test_simple_reactor_mole_fractions PASSED
+test/rmgpy/rmg/inputTest.py::TestInputReactors::test_simple_reactor_mole_fractions_normalize_1 PASSED
+test/rmgpy/rmg/inputTest.py::TestInputReactors::test_simple_reactor_mole_fractions_normalize_2 PASSED
+test/rmgpy/rmg/inputTest.py::TestInputReactors::test_simple_reactor_mole_fractions_ranged PASSED
+test/rmgpy/rmg/inputTest.py::TestInputReactors::test_liquid_reactor_concentrations PASSED
+test/rmgpy/rmg/inputTest.py::TestInputReactors::test_surface_reactor_mole_fractions PASSED
+test/rmgpy/rmg/inputTest.py::TestInputReactors::test_surface_reactor_mole_fractions_normalize_1 PASSED
+test/rmgpy/rmg/inputTest.py::TestInputReactors::test_mb_sampled_reactor_mole_fractions PASSED
+test/rmgpy/rmg/inputTest.py::TestInputReactors::test_mb_sampled_reactor_mole_fractions_normalize_1 PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPressureDependence::test_completed_networks_single PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPressureDependence::test_completed_networks_multiple PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPressureDependence::test_completed_networks_none PASSED
+test/rmgpy/rmg/inputTest.py::TestWriterConfig::test_parse_false_disables PASSED
+test/rmgpy/rmg/inputTest.py::TestWriterConfig::test_parse_true_enables_default_interval PASSED
+test/rmgpy/rmg/inputTest.py::TestWriterConfig::test_parse_true_custom_default_interval PASSED
+test/rmgpy/rmg/inputTest.py::TestWriterConfig::test_parse_dict_full PASSED
+test/rmgpy/rmg/inputTest.py::TestWriterConfig::test_parse_dict_partial PASSED
+test/rmgpy/rmg/inputTest.py::TestWriterConfig::test_parse_invalid_raises PASSED
+test/rmgpy/rmg/inputTest.py::TestWriterConfig::test_should_write_every_iteration PASSED
+test/rmgpy/rmg/inputTest.py::TestWriterConfig::test_should_write_every_n_iterations PASSED
+test/rmgpy/rmg/inputTest.py::TestWriterConfig::test_should_write_end_only PASSED
+test/rmgpy/rmg/inputTest.py::TestWriterConfig::test_should_write_disabled PASSED
+test/rmgpy/rmg/inputTest.py::TestWriterConfig::test_should_write_final_always_writes PASSED
+test/rmgpy/rmg/inputTest.py::TestWriterConfig::test_should_write_final_no_double_write PASSED
+test/rmgpy/rmg/inputTest.py::TestWriterConfig::test_writer_config_to_input_false PASSED
+test/rmgpy/rmg/inputTest.py::TestWriterConfig::test_writer_config_to_input_true PASSED
+test/rmgpy/rmg/inputTest.py::TestWriterConfig::test_writer_config_to_input_dict PASSED
+test/rmgpy/rmg/inputTest.py::TestWriterConfig::test_writer_config_to_input_none PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_electron_density_conversion PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_electron_density_round_trip PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_directive_optional_electron_named_directly PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_guard1_ranged_conditions_rejected PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_guard2_te_units_rejected PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_guard3_q_at_or_above_one_rejected PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_guard4_near_degenerate_q_rejected PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_guard5_duplicate_specification_rejected PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_guard6_zero_density_rejected PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_guard6_negative_density_rejected PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_guard6_infinite_density_rejected PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_guard6_nan_density_rejected PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_guard7_missing_electron_species_rejected PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_guard_density_bare_number_rejected PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_density_molecule_count_units_accepted_with_avogadro PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_density_plural_molecules_units_accepted PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_density_reciprocal_volume_units_accepted PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_guard_density_molar_concentration_still_rejected PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_density_cm3_units_accepted PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_shared_mole_fraction_dict_not_mutated PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_guard_multiple_electron_species_rejected PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_zero_pressure_reported_as_pressure PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_negative_temperature_reported_as_temperature PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_bare_number_electron_temperature_rejected PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_nan_mole_fraction_rejected_plain_path PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_inf_mole_fraction_rejected_plain_path PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_nan_mole_fraction_rejected_density_path PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_inf_mole_fraction_rejected_density_path PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_save_input_file_round_trips_plasma_reactor PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_termination_steady_state_bare_tolerance PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_termination_steady_state_dict_form PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_termination_steady_state_requires_a_backstop_time PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_termination_steady_state_rejects_nonsense[0.0] PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_termination_steady_state_rejects_nonsense[-1e-6] PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_termination_steady_state_rejects_nonsense[{'tolerance': 1e-6, 'window': 0}] PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_termination_steady_state_rejects_unknown_keys PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_termination_steady_state_absent_by_default PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_save_input_file_round_trips_termination_steady_state PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_save_input_file_round_trips_kinetics_depositories_all PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaChargeBalance::test_charge_balance_with_electron_density_is_neutral PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaChargeBalance::test_charge_balance_preserves_electron_density_round_trip PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaChargeBalance::test_charge_balance_with_explicit_electron_fraction PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaChargeBalance::test_charge_balance_accounts_for_charge_already_present PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaChargeBalance::test_multiply_charged_balance_species PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaChargeBalance::test_omitting_the_keyword_leaves_the_composition_untouched PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaChargeBalance::test_balance_species_label_is_carried_to_the_reactor PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaChargeBalance::test_no_balance_species_leaves_reactor_field_none PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaChargeBalance::test_undeclared_balance_species_rejected_at_parse_time PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaChargeBalance::test_uncharged_balance_species_rejected PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaChargeBalance::test_electron_as_balance_species_rejected PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaChargeBalance::test_balance_species_also_in_mole_fractions_rejected PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaChargeBalance::test_non_string_balance_species_rejected PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaChargeBalance::test_wrong_sign_balance_species_rejected PASSED
+test/rmgpy/rmg/mainTest.py::TestMain::test_rmg_execute PASSED
+test/rmgpy/rmg/mainTest.py::TestMain::test_rmg_increases_reactions PASSED
+test/rmgpy/rmg/mainTest.py::TestMain::test_rmg_seed_mechanism_creation PASSED
+test/rmgpy/rmg/mainTest.py::TestMain::test_rmg_seed_edge_mechanism_creation PASSED
+test/rmgpy/rmg/mainTest.py::TestMain::test_rmg_seed_library_creation PASSED
+test/rmgpy/rmg/mainTest.py::TestMain::test_rmg_seed_edge_library_creation PASSED
+test/rmgpy/rmg/mainTest.py::TestMain::test_rmg_rms_mechanism_files_creation PASSED
+test/rmgpy/rmg/mainTest.py::TestMain::test_rmg_seed_works PASSED
+test/rmgpy/rmg/mainTest.py::TestMain::test_rmg_memory PASSED
+test/rmgpy/rmg/mainTest.py::TestMain::test_make_cantera_input_file_from_ck PASSED
+test/rmgpy/rmg/mainTest.py::TestMain::test_make_cantera_input_file_directly_1 PASSED
+test/rmgpy/rmg/mainTest.py::TestMain::test_make_cantera_input_file_directly_2 PASSED
+test/rmgpy/rmg/mainTest.py::TestMain::test_cantera_input_files_match_chemkin_later PASSED
+test/rmgpy/rmg/mainTest.py::TestRestartWithFilters::test_restart_with_filters RMG execution initiated at Mon Sep 21 14:30:31 2026
+
+#########################################################
+# RMG-Py - Reaction Mechanism Generator in Python       #
+# Version: 4.0.0                                        #
+# Authors: RMG Developers (rmg_dev@mit.edu)             #
+# P.I.s:   William H. Green (whgreen@mit.edu)           #
+#          Richard H. West (r.west@neu.edu)             #
+# Website: http://reactionmechanismgenerator.github.io/ #
+#########################################################
+
+The current git HEAD for RMG-Py is:
+	93e070b0fe3640c216fecaf923067cf89f917e11
+	Mon Sep 21 10:21:54 2026 +0300
+
+The current git HEAD for RMG-database is:
+	96f2afa4a172def46364379532f3987262e82b6c
+	Mon Sep 21 13:23:54 2026 +0300
+
+Reading input file "/home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware/test/rmgpy/test_data/restartTest/restart_w_filters.py"...
+restartFromSeed(path='seed_w_filters')
+
+# Data sources
+database(
+    thermoLibraries = ['primaryThermoLibrary'],
+    reactionLibraries = [],
+    seedMechanisms = [],
+    kineticsDepositories = ['training'],
+    kineticsFamilies = 'default',
+    kineticsEstimator = 'rate rules',
+)
+
+# List of species
+species(
+    label='ethane',
+    reactive=True,
+    structure=SMILES("CC"),
+)
+
+# Reaction systems
+simpleReactor(
+    temperature=(1350,'K'),
+    pressure=(1.0,'bar'),
+    initialMoleFractions={
+        "ethane": 1.0,
+    },
+    terminationConversion={
+        'ethane': 0.9,
+    },
+    terminationTime=(1e6,'s'),
+)
+
+simulator(
+    atol=1e-16,
+    rtol=1e-8,
+)
+
+model(
+    toleranceKeepInEdge=0.0,
+    toleranceMoveToCore=0.1,
+    toleranceInterruptSimulation=0.1,
+    maximumEdgeSpecies=100000,
+    filterReactions=True,
+)
+
+options(
+    units='si',
+    generateOutputHTML=True,
+    generatePlots=False,
+    saveEdgeSpecies=True,
+    saveSimulationProfiles=True,
+)
+
+Using RMG database at: /home/alon/Code/RMG-database-plasma/input (from rmgrc)
+Warning: Generate Output HTML option was turned on. Note that this will slow down model generation.
+Warning: Edge species saving was turned on. This will slow down model generation for large simulations.
+
+Loading transport library from NIST_Fluorine.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport library from PrimaryTransportLibrary.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport library from GRI-Mech.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport library from OneDMinN2.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport library from NOx2018.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport group database from /home/alon/Code/RMG-database-plasma/input/transport/groups...
+Loading frequencies group database from /home/alon/Code/RMG-database-plasma/input/statmech/groups...
+Loading solvation thermodynamics group database from /home/alon/Code/RMG-database-plasma/input/solvation/groups...
+Loading thermodynamics library from primaryThermoLibrary.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics group database from /home/alon/Code/RMG-database-plasma/input/thermo/groups...
+Loading thermodynamics SIDTs from /home/alon/Code/RMG-database-plasma/input/thermo/sidt...
+Adding rate rules from training set in kinetics families...
+Warning: Cphigh is above the theoretical CpInf value for ThermoData object
+ThermoData(Tdata=([300,400,500,600,800,1000,1500],'K'), Cpdata=([60.2599,68.0494,74.7775,80.9311,90.8846,97.4337,105.393],'J/(mol*K)'), H298=(-477.191,'kJ/mol'), S298=(269.551,'J/(mol*K)'), Cp0=(33.2579,'J/(mol*K)'), CpInf=(103.931,'J/(mol*K)'), comment="""Thermo group additivity estimation: group(O2s-(Cds-Cd)(Cds-Cd)) + group(O2s-(Cds-O2d)H) + group(Cds-OdOsOs) + group(Li-OCOdO) + radical(OC=OOJ)""").
+The thermo for this species is probably wrong! Setting CpInf = Cphigh for Entropy calculationat T = 2000.0 K...
+Warning: Cphigh is above the theoretical CpInf value for ThermoData object
+ThermoData(Tdata=([300,400,500,600,800,1000,1500],'K'), Cpdata=([60.2599,68.0494,74.7775,80.9311,90.8846,97.4337,105.393],'J/(mol*K)'), H298=(-477.191,'kJ/mol'), S298=(269.551,'J/(mol*K)'), Cp0=(33.2579,'J/(mol*K)'), CpInf=(103.931,'J/(mol*K)'), comment="""Thermo group additivity estimation: group(O2s-(Cds-Cd)(Cds-Cd)) + group(O2s-(Cds-O2d)H) + group(Cds-OdOsOs) + group(Li-OCOdO) + radical(OC=OOJ)""").
+The thermo for this species is probably wrong! Setting CpInf = Cphigh for Entropy calculationat T = 1666.6666666666665 K...
+Filling in rate rules in kinetics families by averaging...
+Loading kinetics library restart from /home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware/rmgpy/../test/rmgpy/test_data/restartTest/output_w_filters/previous_restart/restart/reactions.py...
+Loading kinetics library restart_edge from /home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware/rmgpy/../test/rmgpy/test_data/restartTest/output_w_filters/previous_restart/restart_edge/reactions.py...
+Adding seed mechanism restart to model core...
+This library reaction was not new: H(5) + C[CH2](4) <=> ethane(1)
+Warning: Marked reaction H(5) + C[CH2](4) <=> ethane(1) as not duplicate because no other reaction writes its Chemkin equation.
+
+Summary of Model Enlargement
+---------------------------------
+Added 22 new core species
+    ethane(1)
+    [CH3](2)
+    CH4(3)
+    C[CH2](4)
+    H(5)
+    C=C(6)
+    H2(7)
+    [CH2]CC(8)
+    [CH]=C(9)
+    C#C(10)
+    [C]=C(11)
+    [CH2]CC=C(12)
+    [CH2]C1CC1(13)
+    [CH]=CCC(14)
+    C=C[CH]C(15)
+    C=CC=C(16)
+    C1=CCC1(17)
+    [CH2][CH]C=C(18)
+    C=C=CC(19)
+    [CH]=CC(20)
+    [CH]=CC=C(21)
+    [CH2]C1C=C1(22)
+Created 0 new edge species
+Added 70 new core reactions
+    [CH3](2) + [CH3](2) <=> ethane(1)
+    [CH3](2) + ethane(1) <=> CH4(3) + C[CH2](4)
+    H(5) + C[CH2](4) <=> ethane(1)
+    H(5) + [CH3](2) <=> CH4(3)
+    H(5) + C=C(6) <=> C[CH2](4)
+    [CH3](2) + C[CH2](4) <=> CH4(3) + C=C(6)
+    C[CH2](4) + C[CH2](4) <=> C=C(6) + ethane(1)
+    H(5) + ethane(1) <=> H2(7) + C[CH2](4)
+    H(5) + C[CH2](4) <=> H2(7) + C=C(6)
+    H(5) + CH4(3) <=> H2(7) + [CH3](2)
+    H(5) + H(5) <=> H2(7)
+    [CH3](2) + C=C(6) <=> [CH2]CC(8)
+    H(5) + [CH]=C(9) <=> C=C(6)
+    CH4(3) + [CH]=C(9) <=> [CH3](2) + C=C(6)
+    [CH]=C(9) + ethane(1) <=> C=C(6) + C[CH2](4)
+    H(5) + C=C(6) <=> H2(7) + [CH]=C(9)
+    [CH]=C(9) + C[CH2](4) <=> C=C(6) + C=C(6)
+    H(5) + C#C(10) <=> [CH]=C(9)
+    [CH]=C(9) + C[CH2](4) <=> C#C(10) + ethane(1)
+    [CH3](2) + [CH]=C(9) <=> CH4(3) + C#C(10)
+    [CH]=C(9) + [CH]=C(9) <=> C#C(10) + C=C(6)
+    H(5) + [CH]=C(9) <=> H2(7) + C#C(10)
+    [C]=C(11) <=> C#C(10)
+    [CH]=C(9) + C=C(6) <=> [CH2]CC=C(12)
+    [CH2]CC=C(12) <=> [CH2]C1CC1(13)
+    C#C(10) + C[CH2](4) <=> [CH]=CCC(14)
+    [CH]=CCC(14) <=> [CH2]CC=C(12)
+    [CH2]CC=C(12) <=> C=C[CH]C(15)
+    [CH]=CCC(14) <=> C=C[CH]C(15)
+    H(5) + C=CC=C(16) <=> [CH2]CC=C(12)
+    H(5) + C=CC=C(16) <=> C=C[CH]C(15)
+    [CH]=C(9) + [CH]=C(9) <=> C=CC=C(16)
+    C[CH2](4) + [CH2]CC=C(12) <=> ethane(1) + C=CC=C(16)
+    C[CH2](4) + C=C[CH]C(15) <=> ethane(1) + C=CC=C(16)
+    [CH3](2) + [CH2]CC=C(12) <=> CH4(3) + C=CC=C(16)
+    [CH3](2) + C=C[CH]C(15) <=> CH4(3) + C=CC=C(16)
+    [CH]=C(9) + [CH2]CC=C(12) <=> C=C(6) + C=CC=C(16)
+    [CH]=C(9) + C=C[CH]C(15) <=> C=C(6) + C=CC=C(16)
+    H(5) + [CH2]CC=C(12) <=> H2(7) + C=CC=C(16)
+    H(5) + C=C[CH]C(15) <=> H2(7) + C=CC=C(16)
+    C=CC=C(16) <=> C1=CCC1(17)
+    H(5) + [CH2][CH]C=C(18) <=> [CH2]CC=C(12)
+    C[CH2](4) + [CH2][CH]C=C(18) <=> C=C(6) + [CH2]CC=C(12)
+    [CH]=C(9) + [CH2][CH]C=C(18) <=> C#C(10) + [CH2]CC=C(12)
+    H(5) + [CH2][CH]C=C(18) <=> C=C[CH]C(15)
+    C[CH2](4) + [CH2][CH]C=C(18) <=> C=C(6) + C=C[CH]C(15)
+    [CH]=C(9) + [CH2][CH]C=C(18) <=> C#C(10) + C=C[CH]C(15)
+    [CH2][CH]C=C(18) + [CH2]CC=C(12) <=> C=CC=C(16) + C=C[CH]C(15)
+    [CH2][CH]C=C(18) + C=C[CH]C(15) <=> C=CC=C(16) + C=C[CH]C(15)
+    [CH2][CH]C=C(18) <=> C1=CCC1(17)
+    [CH2][CH]C=C(18) => C=CC=C(16)
+    H(5) + C=C=CC(19) <=> C=C[CH]C(15)
+    [CH2][CH]C=C(18) <=> C=C=CC(19)
+    C[CH2](4) + C=C[CH]C(15) <=> ethane(1) + C=C=CC(19)
+    [CH3](2) + C=C[CH]C(15) <=> CH4(3) + C=C=CC(19)
+    [CH]=C(9) + C=C[CH]C(15) <=> C=C(6) + C=C=CC(19)
+    H(5) + C=C[CH]C(15) <=> H2(7) + C=C=CC(19)
+    [CH3](2) + C#C(10) <=> [CH]=CC(20)
+    C#C(10) + [CH]=C(9) <=> [CH]=CC=C(21)
+    H(5) + [CH]=CC=C(21) <=> C=CC=C(16)
+    [CH3](2) + C=CC=C(16) <=> CH4(3) + [CH]=CC=C(21)
+    C[CH2](4) + C=CC=C(16) <=> ethane(1) + [CH]=CC=C(21)
+    H(5) + C=CC=C(16) <=> H2(7) + [CH]=CC=C(21)
+    C[CH2](4) + [CH]=CC=C(21) <=> C=C(6) + C=CC=C(16)
+    [CH]=C(9) + C=CC=C(16) <=> C=C(6) + [CH]=CC=C(21)
+    [CH]=C(9) + [CH]=CC=C(21) <=> C#C(10) + C=CC=C(16)
+    [CH]=CC=C(21) + [CH2]CC=C(12) <=> C=CC=C(16) + C=CC=C(16)
+    [CH]=CC=C(21) + C=C[CH]C(15) <=> C=CC=C(16) + C=CC=C(16)
+    [CH]=CC=C(21) + C=C[CH]C(15) <=> C=C=CC(19) + C=CC=C(16)
+    [CH]=CC=C(21) <=> [CH2]C1C=C1(22)
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 22 species and 70 reactions
+    The model edge has 0 species and 0 reactions
+
+NOT generating reactions for unreactive species Ar
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    Ar
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 23 species and 70 reactions
+    The model edge has 0 species and 0 reactions
+
+
+NOT generating reactions for unreactive species He
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    He
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 24 species and 70 reactions
+    The model edge has 0 species and 0 reactions
+
+
+NOT generating reactions for unreactive species Ne
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    Ne
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 25 species and 70 reactions
+    The model edge has 0 species and 0 reactions
+
+
+NOT generating reactions for unreactive species N2
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    N2
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 26 species and 70 reactions
+    The model edge has 0 species and 0 reactions
+
+
+Adding species ethane(1) to model core
+
+Summary of Model Enlargement
+---------------------------------
+Added 0 new core species
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 26 species and 70 reactions
+    The model edge has 0 species and 0 reactions
+
+
+Initialization complete. Starting model generation.
+
+Generating initial reactions for reaction system 1...
+For reaction generation 1 process is used.
+
+Summary of Secondary Model Edge Enlargement
+---------------------------------
+Added 0 new core species
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 26 species and 70 reactions
+    The model edge has 0 species and 0 reactions
+
+
+Completed initial enlarge edge step.
+
+Saving current model core to Chemkin file...
+Chemkin file contains 70 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 70 reactions.
+Saving current model core and edge to Chemkin file...
+Chemkin file contains 70 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 70 reactions.
+Saving current model core to HTML file...
+Saving current model edge to HTML file...
+Updating RMG execution statistics...
+    Execution time (DD:HH:MM:SS): 00:00:00:20
+    Memory used: 1368.73 MB
+
+Making seed mechanism...
+Beginning model generation stage 1 of 1.
+
+Making seed mechanism...
+Conducting simulation of reaction system 1...
+At time 8.8937e-04 s, reached target termination conversion: 0.900000 of ethane(1)
+    ethane(1) conversion: 0.9008    
+
+
+At time 8.8937e-04 s, reached target termination conversion: 0.900000 of ethane(1)
+    ethane(1) conversion: 0.9008    
+
+For reaction generation 1 process is used.
+
+Summary of Secondary Model Edge Enlargement
+---------------------------------
+Added 0 new core species
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 26 species and 70 reactions
+    The model edge has 0 species and 0 reactions
+
+
+Saving current model core to Chemkin file...
+Chemkin file contains 70 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 70 reactions.
+Saving current model core and edge to Chemkin file...
+Chemkin file contains 70 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 70 reactions.
+Saving current model core to HTML file...
+Saving current model edge to HTML file...
+Updating RMG execution statistics...
+    Execution time (DD:HH:MM:SS): 00:00:00:20
+    Memory used: 1369.26 MB
+
+Making seed mechanism...
+Saving current model core to Chemkin file...
+Chemkin file contains 70 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 70 reactions.
+Saving current model core and edge to Chemkin file...
+Chemkin file contains 70 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 70 reactions.
+Saving current model core to HTML file...
+Saving current model edge to HTML file...
+Updating RMG execution statistics...
+    Execution time (DD:HH:MM:SS): 00:00:00:21
+    Memory used: 1369.26 MB
+
+Translating final chemkin file into Cantera yaml.
+Performing final model checks...
+No collision rate violators found in the model's core.
+
+MODEL GENERATION COMPLETED
+
+The final model core has 26 species and 70 reactions
+The final model edge has 0 species and 0 reactions
+
+RMG execution terminated at Mon Sep 21 14:30:53 2026
+PASSED
+test/rmgpy/rmg/mainTest.py::TestRestartNoFilters::test_restart_no_filters RMG execution initiated at Mon Sep 21 14:30:53 2026
+
+#########################################################
+# RMG-Py - Reaction Mechanism Generator in Python       #
+# Version: 4.0.0                                        #
+# Authors: RMG Developers (rmg_dev@mit.edu)             #
+# P.I.s:   William H. Green (whgreen@mit.edu)           #
+#          Richard H. West (r.west@neu.edu)             #
+# Website: http://reactionmechanismgenerator.github.io/ #
+#########################################################
+
+The current git HEAD for RMG-Py is:
+	93e070b0fe3640c216fecaf923067cf89f917e11
+	Mon Sep 21 10:21:54 2026 +0300
+
+The current git HEAD for RMG-database is:
+	96f2afa4a172def46364379532f3987262e82b6c
+	Mon Sep 21 13:23:54 2026 +0300
+
+Reading input file "/home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware/test/rmgpy/test_data/restartTest/restart_no_filters.py"...
+restartFromSeed(path='seed_no_filters')
+
+# Data sources
+database(
+    thermoLibraries = ['primaryThermoLibrary'],
+    reactionLibraries = [],
+    seedMechanisms = [],
+    kineticsDepositories = ['training'],
+    kineticsFamilies = ['H_Abstraction','Disproportionation','R_Recombination',
+                        'Birad_recombination', 'Birad_R_Recombination'],
+    kineticsEstimator = 'rate rules',
+)
+
+# List of species
+species(
+    label='H2',
+    reactive=True,
+    structure=SMILES("[H][H]"),
+)
+species(
+   label='O2',
+   reactive=True,
+   structure=SMILES("[O][O]"),
+)
+
+# Reaction systems
+simpleReactor(
+    temperature=(1000,'K'),
+    pressure=(1.0,'bar'),
+    initialMoleFractions={
+        'H2':.67, 'O2':.33,
+    },
+    terminationConversion={
+        'H2': 0.9,
+    },
+    terminationTime=(1e6,'s'),
+)
+
+simulator(
+    atol=1e-16,
+    rtol=1e-8,
+)
+
+model(
+    toleranceKeepInEdge=0.0,
+    toleranceMoveToCore=0.001,
+    toleranceInterruptSimulation=0.001,
+    maximumEdgeSpecies=100000,
+)
+
+options(
+    units='si',
+    generateOutputHTML=True,
+    generatePlots=False,
+    saveEdgeSpecies=True,
+    saveSimulationProfiles=True,
+)
+
+Using RMG database at: /home/alon/Code/RMG-database-plasma/input (from rmgrc)
+Warning: Generate Output HTML option was turned on. Note that this will slow down model generation.
+Warning: Edge species saving was turned on. This will slow down model generation for large simulations.
+
+Loading transport library from NIST_Fluorine.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport library from PrimaryTransportLibrary.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport library from GRI-Mech.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport library from OneDMinN2.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport library from NOx2018.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport group database from /home/alon/Code/RMG-database-plasma/input/transport/groups...
+Loading frequencies group database from /home/alon/Code/RMG-database-plasma/input/statmech/groups...
+Loading solvation thermodynamics group database from /home/alon/Code/RMG-database-plasma/input/solvation/groups...
+Loading thermodynamics library from primaryThermoLibrary.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics group database from /home/alon/Code/RMG-database-plasma/input/thermo/groups...
+Loading thermodynamics SIDTs from /home/alon/Code/RMG-database-plasma/input/thermo/sidt...
+Adding rate rules from training set in kinetics families...
+Filling in rate rules in kinetics families by averaging...
+Loading kinetics library restart from /home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware/rmgpy/../test/rmgpy/test_data/restartTest/output_no_filters/previous_restart/restart/reactions.py...
+Loading kinetics library restart_edge from /home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware/rmgpy/../test/rmgpy/test_data/restartTest/output_no_filters/previous_restart/restart_edge/reactions.py...
+Adding seed mechanism restart to model core...
+This library reaction was not new: H(3) + H(3) <=> H2(1)
+Warning: Marked reaction H(3) + H(3) <=> H2(1) as not duplicate because no other reaction writes its Chemkin equation.
+
+Summary of Model Enlargement
+---------------------------------
+Added 5 new core species
+    H2(1)
+    O2(2)
+    H(3)
+    [O]O(4)
+    OO(5)
+Created 0 new edge species
+Added 6 new core reactions
+    H(3) + H(3) <=> H2(1)
+    O2(2) + H2(1) <=> H(3) + [O]O(4)
+    O2(2) + H(3) <=> [O]O(4)
+    H(3) + OO(5) <=> [O]O(4) + H2(1)
+    H(3) + [O]O(4) <=> OO(5)
+    [O]O(4) + [O]O(4) <=> O2(2) + OO(5)
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 5 species and 6 reactions
+    The model edge has 0 species and 0 reactions
+
+NOT generating reactions for unreactive species Ar
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    Ar
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 6 species and 6 reactions
+    The model edge has 0 species and 0 reactions
+
+
+NOT generating reactions for unreactive species He
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    He
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 7 species and 6 reactions
+    The model edge has 0 species and 0 reactions
+
+
+NOT generating reactions for unreactive species Ne
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    Ne
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 8 species and 6 reactions
+    The model edge has 0 species and 0 reactions
+
+
+NOT generating reactions for unreactive species N2
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    N2
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 9 species and 6 reactions
+    The model edge has 0 species and 0 reactions
+
+
+Adding species H2(1) to model core
+
+Summary of Model Enlargement
+---------------------------------
+Added 0 new core species
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 9 species and 6 reactions
+    The model edge has 0 species and 0 reactions
+
+
+Adding species O2(2) to model core
+
+Summary of Model Enlargement
+---------------------------------
+Added 0 new core species
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 9 species and 6 reactions
+    The model edge has 0 species and 0 reactions
+
+
+Warning: No filters were found in file /home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware/rmgpy/../test/rmgpy/test_data/restartTest/seed_no_filters/filters/filters.h5. This is to be expected if the restart files specified are from an RMG job without reaction filtering. Therefore, RMG will assume that all of the core species from the restart core seed have already been reacted and will not react them again. Additional species added to the input file but not in the restart core seed WILL be reacted with the rest of the core.
+Initialization complete. Starting model generation.
+
+Generating initial reactions...
+For reaction generation 1 process is used.
+
+Summary of Secondary Model Edge Enlargement
+---------------------------------
+Added 0 new core species
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 9 species and 6 reactions
+    The model edge has 0 species and 0 reactions
+
+
+Completed initial enlarge edge step.
+
+Saving current model core to Chemkin file...
+Chemkin file contains 6 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 6 reactions.
+Saving current model core and edge to Chemkin file...
+Chemkin file contains 6 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 6 reactions.
+Saving current model core to HTML file...
+Saving current model edge to HTML file...
+Updating RMG execution statistics...
+    Execution time (DD:HH:MM:SS): 00:00:00:04
+    Memory used: 1563.34 MB
+
+Making seed mechanism...
+Beginning model generation stage 1 of 1.
+
+Making seed mechanism...
+Conducting simulation of reaction system 1...
+At time 1.0000e+06 s, reached target termination time.
+    H2(1) conversion: 0.4641    
+
+
+For reaction generation 1 process is used.
+
+Summary of Secondary Model Edge Enlargement
+---------------------------------
+Added 0 new core species
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 9 species and 6 reactions
+    The model edge has 0 species and 0 reactions
+
+
+Saving current model core to Chemkin file...
+Chemkin file contains 6 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 6 reactions.
+Saving current model core and edge to Chemkin file...
+Chemkin file contains 6 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 6 reactions.
+Saving current model core to HTML file...
+Saving current model edge to HTML file...
+Updating RMG execution statistics...
+    Execution time (DD:HH:MM:SS): 00:00:00:04
+    Memory used: 1563.34 MB
+
+Making seed mechanism...
+Saving current model core to Chemkin file...
+Chemkin file contains 6 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 6 reactions.
+Saving current model core and edge to Chemkin file...
+Chemkin file contains 6 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 6 reactions.
+Saving current model core to HTML file...
+Saving current model edge to HTML file...
+Updating RMG execution statistics...
+    Execution time (DD:HH:MM:SS): 00:00:00:04
+    Memory used: 1563.34 MB
+
+Translating final chemkin file into Cantera yaml.
+Performing final model checks...
+No collision rate violators found in the model's core.
+
+MODEL GENERATION COMPLETED
+
+The final model core has 9 species and 6 reactions
+The final model edge has 0 species and 0 reactions
+
+RMG execution terminated at Mon Sep 21 14:30:58 2026
+PASSED
+test/rmgpy/rmg/mainTest.py::TestMainFunctions::test_save_seed_modulus RMG execution initiated at Mon Sep 21 14:30:58 2026
+
+#########################################################
+# RMG-Py - Reaction Mechanism Generator in Python       #
+# Version: 4.0.0                                        #
+# Authors: RMG Developers (rmg_dev@mit.edu)             #
+# P.I.s:   William H. Green (whgreen@mit.edu)           #
+#          Richard H. West (r.west@neu.edu)             #
+# Website: http://reactionmechanismgenerator.github.io/ #
+#########################################################
+
+The current git HEAD for RMG-Py is:
+	93e070b0fe3640c216fecaf923067cf89f917e11
+	Mon Sep 21 10:21:54 2026 +0300
+
+The current git HEAD for RMG-database is:
+	96f2afa4a172def46364379532f3987262e82b6c
+	Mon Sep 21 13:23:54 2026 +0300
+
+Reading input file "/home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware/test/rmgpy/test_data/mainTest/superminimal_input.py"...
+# Data sources
+database(
+    thermoLibraries = ['primaryThermoLibrary'],
+    reactionLibraries = [],
+    seedMechanisms = [],
+    kineticsDepositories = ['training'],
+    kineticsFamilies = ['H_Abstraction','Disproportionation','R_Recombination',
+                        'Birad_recombination', 'Birad_R_Recombination'],
+    kineticsEstimator = 'rate rules',
+)
+
+# List of species
+species(
+    label='H2',
+    reactive=True,
+    structure=SMILES("[H][H]"),
+)
+species(
+   label='O2',
+   reactive=True,
+   structure=SMILES("[O][O]"),
+)
+
+# Reaction systems
+simpleReactor(
+    temperature=(1000,'K'),
+    pressure=(1.0,'bar'),
+    initialMoleFractions={
+        'H2':.67, 'O2':.33,
+    },
+    terminationConversion={
+        'H2': 0.9,
+    },
+    terminationTime=(1e6,'s'),
+)
+
+simulator(
+    atol=1e-16,
+    rtol=1e-8,
+)
+
+model(
+    toleranceKeepInEdge=0.0,
+    toleranceMoveToCore=0.001,
+    toleranceInterruptSimulation=0.001,
+    maximumEdgeSpecies=100000,
+)
+
+options(
+    units='si',
+    generateOutputHTML=True,
+    generatePlots=False,
+    saveEdgeSpecies=True,
+    saveSimulationProfiles=True,
+    saveSeedModulus=2,
+
+)
+
+Using RMG database at: /home/alon/Code/RMG-database-plasma/input (from rmgrc)
+Warning: Generate Output HTML option was turned on. Note that this will slow down model generation.
+Warning: Edge species saving was turned on. This will slow down model generation for large simulations.
+
+Overriding max_iterations from input file (None) with command-line value (10).
+Loading transport library from NIST_Fluorine.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport library from PrimaryTransportLibrary.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport library from GRI-Mech.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport library from OneDMinN2.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport library from NOx2018.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport group database from /home/alon/Code/RMG-database-plasma/input/transport/groups...
+Loading frequencies group database from /home/alon/Code/RMG-database-plasma/input/statmech/groups...
+Loading solvation thermodynamics group database from /home/alon/Code/RMG-database-plasma/input/solvation/groups...
+Loading thermodynamics library from primaryThermoLibrary.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics group database from /home/alon/Code/RMG-database-plasma/input/thermo/groups...
+Loading thermodynamics SIDTs from /home/alon/Code/RMG-database-plasma/input/thermo/sidt...
+Adding rate rules from training set in kinetics families...
+Filling in rate rules in kinetics families by averaging...
+NOT generating reactions for unreactive species Ar
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    Ar
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 1 species and 0 reactions
+    The model edge has 2 species and 0 reactions
+
+
+NOT generating reactions for unreactive species He
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    He
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 2 species and 0 reactions
+    The model edge has 2 species and 0 reactions
+
+
+NOT generating reactions for unreactive species Ne
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    Ne
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 3 species and 0 reactions
+    The model edge has 2 species and 0 reactions
+
+
+NOT generating reactions for unreactive species N2
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    N2
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 4 species and 0 reactions
+    The model edge has 2 species and 0 reactions
+
+
+Adding species H2(1) to model core
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    H2(1)
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 5 species and 0 reactions
+    The model edge has 1 species and 0 reactions
+
+
+Adding species O2(2) to model core
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    O2(2)
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 6 species and 0 reactions
+    The model edge has 0 species and 0 reactions
+
+
+Initialization complete. Starting model generation.
+
+Generating initial reactions...
+For reaction generation 1 process is used.
+Species  renamed H based on thermo library name
+Generating thermo for new species...
+
+Summary of Secondary Model Edge Enlargement
+---------------------------------
+Added 0 new core species
+Created 2 new edge species
+    H(3)
+    [O]O(4)
+Added 0 new core reactions
+Created 2 new edge reactions
+    H(3) + H(3) <=> H2(1)
+    O2(2) + H2(1) <=> H(3) + [O]O(4)
+
+After model enlargement:
+    The model core has 6 species and 0 reactions
+    The model edge has 2 species and 2 reactions
+
+
+Completed initial enlarge edge step.
+
+Saving current model core to Chemkin file...
+Chemkin file contains 0 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 0 reactions.
+Saving current model core and edge to Chemkin file...
+Chemkin file contains 2 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 2 reactions.
+Saving current model core to HTML file...
+Saving current model edge to HTML file...
+Updating RMG execution statistics...
+    Execution time (DD:HH:MM:SS): 00:00:00:04
+    Memory used: 1783.19 MB
+
+Making seed mechanism...
+Copying seed from seed directory to /home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware/rmgpy/../test/rmgpy/test_data/mainTest/output/previous_seeds/iteration_number_0
+Beginning model generation stage 1 of 1.
+
+Making seed mechanism...
+Conducting simulation of reaction system 1...
+At time 0.0000e+00 s, species H(3) was added to model core to avoid singularity
+
+
+Adding species H(3) to model core
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    H(3)
+Created 0 new edge species
+Moved 1 reactions from edge to core
+    H(3) + H(3) <=> H2(1)
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 7 species and 1 reactions
+    The model edge has 1 species and 1 reactions
+
+
+For reaction generation 1 process is used.
+
+Summary of Secondary Model Edge Enlargement
+---------------------------------
+Added 0 new core species
+Created 0 new edge species
+Added 0 new core reactions
+Created 1 new edge reactions
+    O2(2) + H(3) <=> [O]O(4)
+
+After model enlargement:
+    The model core has 7 species and 1 reactions
+    The model edge has 1 species and 2 reactions
+
+
+Saving current model core to Chemkin file...
+Chemkin file contains 1 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 1 reactions.
+Saving current model core and edge to Chemkin file...
+Chemkin file contains 3 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 3 reactions.
+Saving current model core to HTML file...
+Saving current model edge to HTML file...
+Updating RMG execution statistics...
+    Execution time (DD:HH:MM:SS): 00:00:00:05
+    Memory used: 1783.23 MB
+
+Making seed mechanism...
+Copying seed from seed directory to /home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware/rmgpy/../test/rmgpy/test_data/mainTest/output/previous_seeds/iteration_number_2
+Conducting simulation of reaction system 1...
+At time 0.0000e+00 s, species [O]O(4) at 134996897.2931655 exceeded the minimum rate for simulation interruption of 0.001
+Reached max number of objects...preparing to terminate
+At time 0.0000e+00 s, species [O]O(4) at rate ratio 134996897.2931655 exceeded the minimum rate for moving to model core of 0.001
+terminating simulation due to interrupt...
+
+
+Adding species [O]O(4) to model core
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    [O]O(4)
+Created 0 new edge species
+Moved 2 reactions from edge to core
+    O2(2) + H2(1) <=> H(3) + [O]O(4)
+    O2(2) + H(3) <=> [O]O(4)
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 8 species and 3 reactions
+    The model edge has 0 species and 0 reactions
+
+
+For reaction generation 1 process is used.
+Species  renamed OH(D) based on thermo library name
+Species  renamed O(T) based on thermo library name
+For reaction O2(2) + [O]O(4) <=> [O]OOO(8), Ea raised from 86.9 to 93.3 kJ/mol to match endothermicity of reaction.
+Generating thermo for new species...
+
+Summary of Secondary Model Edge Enlargement
+---------------------------------
+Added 0 new core species
+Created 5 new edge species
+    O(T)(6)
+    OH(D)(5)
+    OO(7)
+    [O]OOO(8)
+    OOOO(9)
+Added 0 new core reactions
+Created 6 new edge reactions
+    O(T)(6) + OH(D)(5) <=> [O]O(4)
+    H(3) + OO(7) <=> [O]O(4) + H2(1)
+    O2(2) + [O]O(4) <=> [O]OOO(8)
+    H(3) + [O]O(4) <=> OO(7)
+    [O]O(4) + [O]O(4) <=> O2(2) + OO(7)
+    [O]O(4) + [O]O(4) <=> OOOO(9)
+
+After model enlargement:
+    The model core has 8 species and 3 reactions
+    The model edge has 5 species and 6 reactions
+
+
+Saving current model core to Chemkin file...
+Chemkin file contains 3 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 3 reactions.
+Saving current model core and edge to Chemkin file...
+Chemkin file contains 9 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 9 reactions.
+Saving current model core to HTML file...
+Saving current model edge to HTML file...
+Updating RMG execution statistics...
+    Execution time (DD:HH:MM:SS): 00:00:00:05
+    Memory used: 1783.30 MB
+
+Making seed mechanism...
+Conducting simulation of reaction system 1...
+At time 1.0000e-05 s, species [O]OOO(8) at 0.001149415249853133 exceeded the minimum rate for simulation interruption of 0.001
+Reached max number of objects...preparing to terminate
+At time 1.0000e-05 s, species [O]OOO(8) at rate ratio 0.001149415249853133 exceeded the minimum rate for moving to model core of 0.001
+terminating simulation due to interrupt...
+
+
+Adding species [O]OOO(8) to model core
+Species [O]OOO(8) was Forbidden and not added to Core...Removing from Edge.
+
+Summary of Model Enlargement
+---------------------------------
+Added 0 new core species
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 8 species and 3 reactions
+    The model edge has 4 species and 5 reactions
+
+
+For reaction generation 1 process is used.
+
+Summary of Secondary Model Edge Enlargement
+---------------------------------
+Added 0 new core species
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 8 species and 3 reactions
+    The model edge has 4 species and 5 reactions
+
+
+Saving current model core to Chemkin file...
+Chemkin file contains 3 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 3 reactions.
+Saving current model core and edge to Chemkin file...
+Chemkin file contains 8 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 8 reactions.
+Saving current model core to HTML file...
+Saving current model edge to HTML file...
+Updating RMG execution statistics...
+    Execution time (DD:HH:MM:SS): 00:00:00:05
+    Memory used: 1783.30 MB
+
+Making seed mechanism...
+Copying seed from seed directory to /home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware/rmgpy/../test/rmgpy/test_data/mainTest/output/previous_seeds/iteration_number_4
+Conducting simulation of reaction system 1...
+At time 6.6823e-04 s, species OOOO(9) at 0.0013638852012143423 exceeded the minimum rate for simulation interruption of 0.001
+Reached max number of objects...preparing to terminate
+At time 6.6823e-04 s, species OOOO(9) at rate ratio 0.0013638852012143423 exceeded the minimum rate for moving to model core of 0.001
+terminating simulation due to interrupt...
+
+
+Adding species OOOO(9) to model core
+Species OOOO(9) was Forbidden and not added to Core...Removing from Edge.
+
+Summary of Model Enlargement
+---------------------------------
+Added 0 new core species
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 8 species and 3 reactions
+    The model edge has 3 species and 4 reactions
+
+
+For reaction generation 1 process is used.
+
+Summary of Secondary Model Edge Enlargement
+---------------------------------
+Added 0 new core species
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 8 species and 3 reactions
+    The model edge has 3 species and 4 reactions
+
+
+Saving current model core to Chemkin file...
+Chemkin file contains 3 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 3 reactions.
+Saving current model core and edge to Chemkin file...
+Chemkin file contains 7 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 7 reactions.
+Saving current model core to HTML file...
+Saving current model edge to HTML file...
+Updating RMG execution statistics...
+    Execution time (DD:HH:MM:SS): 00:00:00:05
+    Memory used: 1783.30 MB
+
+Making seed mechanism...
+Conducting simulation of reaction system 1...
+At time 1.0000e-03 s, species OO(7) at 0.001009276539908987 exceeded the minimum rate for simulation interruption of 0.001
+Reached max number of objects...preparing to terminate
+At time 1.0000e-03 s, species OO(7) at rate ratio 0.001009276539908987 exceeded the minimum rate for moving to model core of 0.001
+terminating simulation due to interrupt...
+
+
+Adding species OO(7) to model core
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    OO(7)
+Created 0 new edge species
+Moved 3 reactions from edge to core
+    H(3) + OO(7) <=> [O]O(4) + H2(1)
+    H(3) + [O]O(4) <=> OO(7)
+    [O]O(4) + [O]O(4) <=> O2(2) + OO(7)
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 9 species and 6 reactions
+    The model edge has 2 species and 1 reactions
+
+
+For reaction generation 1 process is used.
+
+Summary of Secondary Model Edge Enlargement
+---------------------------------
+Added 0 new core species
+Created 0 new edge species
+Added 0 new core reactions
+Created 1 new edge reactions
+    OH(D)(5) + OH(D)(5) <=> OO(7)
+
+After model enlargement:
+    The model core has 9 species and 6 reactions
+    The model edge has 2 species and 2 reactions
+
+
+Saving current model core to Chemkin file...
+Chemkin file contains 6 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 6 reactions.
+Saving current model core and edge to Chemkin file...
+Chemkin file contains 8 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 8 reactions.
+Saving current model core to HTML file...
+Saving current model edge to HTML file...
+Updating RMG execution statistics...
+    Execution time (DD:HH:MM:SS): 00:00:00:05
+    Memory used: 1783.46 MB
+
+Making seed mechanism...
+Copying seed from seed directory to /home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware/rmgpy/../test/rmgpy/test_data/mainTest/output/previous_seeds/iteration_number_6
+Conducting simulation of reaction system 1...
+At time 3.7252e-04 s, species OH(D)(5) at 0.0012249848347041928 exceeded the minimum rate for simulation interruption of 0.001
+Reached max number of objects...preparing to terminate
+At time 3.7252e-04 s, species OH(D)(5) at rate ratio 0.0012249848347041928 exceeded the minimum rate for moving to model core of 0.001
+terminating simulation due to interrupt...
+
+
+Adding species OH(D)(5) to model core
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    OH(D)(5)
+Created 0 new edge species
+Moved 1 reactions from edge to core
+    OH(D)(5) + OH(D)(5) <=> OO(7)
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 10 species and 7 reactions
+    The model edge has 1 species and 1 reactions
+
+
+For reaction generation 1 process is used.
+Species  renamed H2O based on thermo library name
+Species  renamed O2(S) based on thermo library name
+For reaction O2(2) + OH(D)(5) <=> O2(S)(11) + OH(D)(5), Ea raised from 94.3 to 94.3 kJ/mol to match endothermicity of reaction.
+Generating thermo for new species...
+
+Summary of Secondary Model Edge Enlargement
+---------------------------------
+Added 0 new core species
+Created 3 new edge species
+    H2O(10)
+    O2(S)(11)
+    OOO(12)
+Added 0 new core reactions
+Created 11 new edge reactions
+    O(T)(6) + H(3) <=> OH(D)(5)
+    OH(D)(5) + H2(1) <=> H(3) + H2O(10)
+    O(T)(6) + [O]O(4) <=> O2(2) + OH(D)(5)
+    O2(2) + OH(D)(5) <=> O2(S)(11) + OH(D)(5)
+    O(T)(6) + H2(1) <=> H(3) + OH(D)(5)
+    H(3) + OH(D)(5) <=> H2O(10)
+    O2(2) + H2O(10) <=> OH(D)(5) + [O]O(4)
+    O(T)(6) + OO(7) <=> OH(D)(5) + [O]O(4)
+    OH(D)(5) + [O]O(4) <=> OOO(12)
+    OH(D)(5) + OO(7) <=> [O]O(4) + H2O(10)
+    O(T)(6) + H2O(10) <=> OH(D)(5) + OH(D)(5)
+
+After model enlargement:
+    The model core has 10 species and 7 reactions
+    The model edge has 4 species and 12 reactions
+
+
+Saving current model core to Chemkin file...
+Chemkin file contains 7 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 7 reactions.
+Saving current model core and edge to Chemkin file...
+Chemkin file contains 19 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 19 reactions.
+Saving current model core to HTML file...
+Saving current model edge to HTML file...
+Updating RMG execution statistics...
+    Execution time (DD:HH:MM:SS): 00:00:00:05
+    Memory used: 1784.11 MB
+
+Making seed mechanism...
+Conducting simulation of reaction system 1...
+At time 8.7754e-04 s, species H2O(10) at 0.0011214469969096873 exceeded the minimum rate for simulation interruption of 0.001
+Reached max number of objects...preparing to terminate
+At time 8.7754e-04 s, species H2O(10) at rate ratio 0.0011214469969096873 exceeded the minimum rate for moving to model core of 0.001
+terminating simulation due to interrupt...
+
+
+Adding species H2O(10) to model core
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    H2O(10)
+Created 0 new edge species
+Moved 4 reactions from edge to core
+    OH(D)(5) + H2(1) <=> H(3) + H2O(10)
+    H(3) + OH(D)(5) <=> H2O(10)
+    O2(2) + H2O(10) <=> OH(D)(5) + [O]O(4)
+    OH(D)(5) + OO(7) <=> [O]O(4) + H2O(10)
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 11 species and 11 reactions
+    The model edge has 3 species and 8 reactions
+
+
+For reaction generation 1 process is used.
+
+Summary of Secondary Model Edge Enlargement
+---------------------------------
+Added 0 new core species
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 11 species and 11 reactions
+    The model edge has 3 species and 8 reactions
+
+
+Saving current model core to Chemkin file...
+Chemkin file contains 11 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 11 reactions.
+Saving current model core and edge to Chemkin file...
+Chemkin file contains 19 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 19 reactions.
+Saving current model core to HTML file...
+Saving current model edge to HTML file...
+Updating RMG execution statistics...
+    Execution time (DD:HH:MM:SS): 00:00:00:05
+    Memory used: 1784.62 MB
+
+Making seed mechanism...
+Copying seed from seed directory to /home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware/rmgpy/../test/rmgpy/test_data/mainTest/output/previous_seeds/iteration_number_8
+Conducting simulation of reaction system 1...
+At time 1.2683e-03 s, species O2(S)(11) at 0.001035364274932903 exceeded the minimum rate for simulation interruption of 0.001
+Reached max number of objects...preparing to terminate
+At time 1.2683e-03 s, species O2(S)(11) at rate ratio 0.001035364274932903 exceeded the minimum rate for moving to model core of 0.001
+terminating simulation due to interrupt...
+
+
+Adding species O2(S)(11) to model core
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    O2(S)(11)
+Created 0 new edge species
+Moved 1 reactions from edge to core
+    O2(2) + OH(D)(5) <=> O2(S)(11) + OH(D)(5)
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 12 species and 12 reactions
+    The model edge has 2 species and 7 reactions
+
+
+For reaction generation 1 process is used.
+
+Summary of Secondary Model Edge Enlargement
+---------------------------------
+Added 0 new core species
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 12 species and 12 reactions
+    The model edge has 2 species and 7 reactions
+
+
+Saving current model core to Chemkin file...
+Chemkin file contains 12 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 12 reactions.
+Saving current model core and edge to Chemkin file...
+Chemkin file contains 19 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 19 reactions.
+Saving current model core to HTML file...
+Saving current model edge to HTML file...
+Updating RMG execution statistics...
+    Execution time (DD:HH:MM:SS): 00:00:00:06
+    Memory used: 1784.98 MB
+
+Making seed mechanism...
+Conducting simulation of reaction system 1...
+At time 2.7144e-03 s, species OOO(12) at 0.0010948450099315789 exceeded the minimum rate for simulation interruption of 0.001
+Reached max number of objects...preparing to terminate
+At time 2.7144e-03 s, species OOO(12) at rate ratio 0.0010948450099315789 exceeded the minimum rate for moving to model core of 0.001
+terminating simulation due to interrupt...
+
+
+Adding species OOO(12) to model core
+Species OOO(12) was Forbidden and not added to Core...Removing from Edge.
+
+Summary of Model Enlargement
+---------------------------------
+Added 0 new core species
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 12 species and 12 reactions
+    The model edge has 1 species and 6 reactions
+
+
+For reaction generation 1 process is used.
+
+Summary of Secondary Model Edge Enlargement
+---------------------------------
+Added 0 new core species
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 12 species and 12 reactions
+    The model edge has 1 species and 6 reactions
+
+
+Saving current model core to Chemkin file...
+Chemkin file contains 12 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 12 reactions.
+Saving current model core and edge to Chemkin file...
+Chemkin file contains 18 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 18 reactions.
+Saving current model core to HTML file...
+Saving current model edge to HTML file...
+Updating RMG execution statistics...
+    Execution time (DD:HH:MM:SS): 00:00:00:06
+    Memory used: 1785.23 MB
+
+Making seed mechanism...
+Copying seed from seed directory to /home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware/rmgpy/../test/rmgpy/test_data/mainTest/output/previous_seeds/iteration_number_10
+Conducting simulation of reaction system 1...
+At time 1.3081e-02 s, species O(T)(6) at 0.001007035063103586 exceeded the minimum rate for simulation interruption of 0.001
+Reached max number of objects...preparing to terminate
+At time 1.3081e-02 s, species O(T)(6) at rate ratio 0.001007035063103586 exceeded the minimum rate for moving to model core of 0.001
+terminating simulation due to interrupt...
+
+
+Adding species O(T)(6) to model core
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    O(T)(6)
+Created 0 new edge species
+Moved 6 reactions from edge to core
+    O(T)(6) + OH(D)(5) <=> [O]O(4)
+    O(T)(6) + H(3) <=> OH(D)(5)
+    O(T)(6) + [O]O(4) <=> O2(2) + OH(D)(5)
+    O(T)(6) + H2(1) <=> H(3) + OH(D)(5)
+    O(T)(6) + OO(7) <=> OH(D)(5) + [O]O(4)
+    O(T)(6) + H2O(10) <=> OH(D)(5) + OH(D)(5)
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 13 species and 18 reactions
+    The model edge has 0 species and 0 reactions
+
+
+For reaction generation 1 process is used.
+Generating thermo for new species...
+
+Summary of Secondary Model Edge Enlargement
+---------------------------------
+Added 0 new core species
+Created 1 new edge species
+    [O]O[O](13)
+Added 1 new core reactions
+    O(T)(6) + [O]O(4) <=> O2(S)(11) + OH(D)(5)
+Created 1 new edge reactions
+    O(T)(6) + O2(2) <=> [O]O[O](13)
+
+After model enlargement:
+    The model core has 13 species and 19 reactions
+    The model edge has 1 species and 1 reactions
+
+
+Saving current model core to Chemkin file...
+Chemkin file contains 19 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 19 reactions.
+Saving current model core and edge to Chemkin file...
+Chemkin file contains 20 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 20 reactions.
+Saving current model core to HTML file...
+Saving current model edge to HTML file...
+Updating RMG execution statistics...
+    Execution time (DD:HH:MM:SS): 00:00:00:06
+    Memory used: 1785.89 MB
+
+MODEL GENERATION TERMINATED
+
+The maximum number of iterations of 10 has been reached
+The output model may be incomplete.
+
+The current model core has 13 species and 19 reactions
+The current model edge has 1 species and 1 reactions
+Making seed mechanism...
+Saving current model core to Chemkin file...
+Chemkin file contains 19 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 19 reactions.
+Saving current model core and edge to Chemkin file...
+Chemkin file contains 20 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 20 reactions.
+Saving current model core to HTML file...
+Saving current model edge to HTML file...
+Updating RMG execution statistics...
+    Execution time (DD:HH:MM:SS): 00:00:00:06
+    Memory used: 1785.92 MB
+
+Translating final chemkin file into Cantera yaml.
+Performing final model checks...
+No collision rate violators found in the model's core.
+
+RMG execution terminated at Mon Sep 21 14:31:04 2026
+PASSED
+test/rmgpy/rmg/mainTest.py::TestMainFunctions::test_max_iter PASSED
+test/rmgpy/rmg/mainTest.py::TestProfiling::test_make_profile_graph PASSED
+test/rmgpy/rmg/mainTest.py::TestCanteraOutputConversion::test_chemkin_to_cantera_conversion *******************************************************************************
+No thermo data found for species 'ethane(1)'
+Error: Error converting to Cantera format.
+Traceback (most recent call last):
+  File "/home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware/rmgpy/rmg/main.py", line 2260, in generate_cantera_files_from_chemkin
+    parser.convert_mech(chemkin_file, transport_file=transport_file, out_name=out_name, quiet=True, permissive=True, **kwargs)
+  File "/home/alon/Code/Cantera/build/python/cantera/ck2yaml.py", line 2216, in convert_mech
+    raise InputError('\n'.join(parser.handler.errors))
+cantera.ck2yaml.InputError: No thermo data found for species 'ethane(1)'
+Please check https://cantera.org/stable/userguide/ck2yaml-tutorial.html#debugging-common-errors-in-ck-files
+for the correct Chemkin syntax.
+Trying again without transport data file.
+*******************************************************************************
+No thermo data found for species 'ethane(1)'
+*******************************************************************************
+No thermo data found for species 'CH3(4)'
+Error: Error converting to Cantera format.
+Traceback (most recent call last):
+  File "/home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware/rmgpy/rmg/main.py", line 2260, in generate_cantera_files_from_chemkin
+    parser.convert_mech(chemkin_file, transport_file=transport_file, out_name=out_name, quiet=True, permissive=True, **kwargs)
+  File "/home/alon/Code/Cantera/build/python/cantera/ck2yaml.py", line 2216, in convert_mech
+    raise InputError('\n'.join(parser.handler.errors))
+cantera.ck2yaml.InputError: No thermo data found for species 'CH3(4)'
+Please check https://cantera.org/stable/userguide/ck2yaml-tutorial.html#debugging-common-errors-in-ck-files
+for the correct Chemkin syntax.
+Trying again without transport data file.
+*******************************************************************************
+No thermo data found for species 'CH3(4)'
+PASSED
+test/rmgpy/rmg/modelTest.py::TestSpecies::test_get_thermo_data Loading thermodynamics library from PlasmaCationThermo.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from LithiumAdditionalThermo.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from SulfurLibrary.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from halogens.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from CO2RR_Adsorbates_Cu111.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from primaryNS.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from CH.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from CHOFCl_G4.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from bio_oil.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from BurkeH2O2.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from CHO.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from SulfurHaynes.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from C3.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from CHOClBr_G4.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from JetSurF2.0.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from electrocatLiThermo.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from CHOBr_G4.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from LithiumPrimaryThermo.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from CHOF_G4.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from C10H11.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from SulfurGlarborgNS.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from Narayanaswamy.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from CBS_QB3_1dHR.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from NH3.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from SulfurGlarborgMarshall.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from CO2RR_Adsorbates_Ag111.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from CN.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from 2-BTP.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from surfaceThermoCovDepPt111.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from SulfurGlarborgH2S.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from Spiekermann_refining_elementary_reactions.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from CHOFBr_G4.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from iodinated_Hydrocarbons.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from FormicAcid.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from DFT_QCI_thermo.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from NISTThermoLibrary.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from primaryThermoLibrary.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from SulfurGlarborgBozzelli.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from Butadiene_Dimerization.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from naphthalene_H.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from Chernov.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from Chlorination.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from FFCM1(-).py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from Fluorine.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from CHOCl_G4.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from Lai_Hexylbenzene.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from Fulvene_H.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from CHOFClBr_G4.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from USC-Mech-ii.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from GRI-Mech3.0.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from Klippenstein_Glarborg2016.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from s3_5_7_ane.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from Elliott_OOQOOH.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from LithiumPrimaryThermo2.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from surfaceThermoNi111.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from heavy_oil_ccsdtf12_1dHR.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from surfaceThermoLi.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from CurranPentane.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from CHON.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from NitrogenCurran.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from SABIC_aromatics_1dHR_extended.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from LithiumSurface.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from BurcatNS.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from electrocatThermo.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from JetSurF1.0.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from Chlorinated_Hydrocarbons.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from thermo_DFT_CCSDTF12_BAC.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from SABIC_aromatics_1dHR.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from GRI-Mech3.0-N.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from CO2RR_Adsorbates_Cu3Sn0001.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from 2-BTP_G4.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from NOx2018.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from SABIC_aromatics.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from CHON_G4.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from vinylCPD_H.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from surfaceThermoPt111.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from CHN.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from computationalLithiumElectrode.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics group database from /home/alon/Code/RMG-database-plasma/input/thermo/groups...
+Loading thermodynamics SIDTs from /home/alon/Code/RMG-database-plasma/input/thermo/sidt...
+PASSED
+test/rmgpy/rmg/modelTest.py::TestCoreEdgeReactionModel::test_add_new_surface_objects Warning: An instance of RMGDatabase already exists. Re-initializing it.
+For reaction generation 2 processes are used.
+For reaction generation 2 processes are used.
+PASSED
+test/rmgpy/rmg/modelTest.py::TestCoreEdgeReactionModel::test_make_new_species PASSED
+test/rmgpy/rmg/modelTest.py::TestCoreEdgeReactionModel::test_append_unreactive_structure PASSED
+test/rmgpy/rmg/modelTest.py::TestCoreEdgeReactionModel::test_make_new_species_does_not_collapse_opposite_charges PASSED
+test/rmgpy/rmg/modelTest.py::TestCoreEdgeReactionModel::test_check_for_existing_species_cache_branch_is_charge_aware PASSED
+test/rmgpy/rmg/modelTest.py::TestCoreEdgeReactionModel::test_make_new_reaction For reaction generation 2 processes are used.
+PASSED
+test/rmgpy/rmg/modelTest.py::TestCoreEdgeReactionModel::test_thermo_filter_species Removing species [CH2](4) with Gibbs energy 332913.32347432553 from edge because it's Gibbs number 1.1148750163211094 is greater than the thermo_tol_keep_spc_in_edge of 0.0 
+PASSED
+test/rmgpy/rmg/modelTest.py::TestCoreEdgeReactionModel::test_thermo_filter_down Reached maximum number of edge species
+Attempting to remove excess edge species with Thermodynamic filtering
+Removing species [CH2](4) from edge to meet maximum number of edge species, Gibbs number is 1.1148750163211094
+Removing species [CH3](3) from edge to meet maximum number of edge species, Gibbs number is 0.0
+Removing species [OH](1) from edge to meet maximum number of edge species, Gibbs number is -0.4875090493531258
+Garbage collector: collected 2705 objects.
+PASSED
+test/rmgpy/rmg/modelTest.py::TestCoreEdgeReactionModel::test_check_for_existing_reaction_eliminates_identical_reactions PASSED
+test/rmgpy/rmg/modelTest.py::TestCoreEdgeReactionModel::test_check_for_existing_reaction_keeps_identical_reactions_with_duplicate_flag PASSED
+test/rmgpy/rmg/modelTest.py::TestCoreEdgeReactionModel::test_check_for_existing_reaction_eliminates_identical_reactions_without_duplicate_flag PASSED
+test/rmgpy/rmg/modelTest.py::TestCoreEdgeReactionModel::test_check_for_existing_reaction_removes_duplicates_in_opposite_directions PASSED
+test/rmgpy/rmg/modelTest.py::TestCoreEdgeReactionModel::test_check_for_existing_reaction_eliminates_same_reaction_from_reverse_multiple_templates PASSED
+test/rmgpy/rmg/modelTest.py::TestEnlarge::test_enlarge_1_add_nonreactive_species Loading transport library from NIST_Fluorine.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport library from PrimaryTransportLibrary.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport library from GRI-Mech.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport library from OneDMinN2.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport library from NOx2018.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport group database from /home/alon/Code/RMG-database-plasma/input/transport/groups...
+Loading frequencies library from halogens_G4.py in /home/alon/Code/RMG-database-plasma/input/statmech/libraries...
+Loading frequencies group database from /home/alon/Code/RMG-database-plasma/input/statmech/groups...
+Loading solvation thermodynamics group database from /home/alon/Code/RMG-database-plasma/input/solvation/groups...
+Loading thermodynamics library from primaryThermoLibrary.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics group database from /home/alon/Code/RMG-database-plasma/input/thermo/groups...
+Loading thermodynamics SIDTs from /home/alon/Code/RMG-database-plasma/input/thermo/sidt...
+NOT generating reactions for unreactive species He
+Updating 0 modified unimolecular reaction networks (out of 0)...
+
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    He
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 1 species and 0 reactions
+    The model edge has 0 species and 0 reactions
+
+
+PASSED
+test/rmgpy/rmg/modelTest.py::TestEnlarge::test_enlarge_2_add_reactive_species Adding species C2H4(1) to model core
+Updating 0 modified unimolecular reaction networks (out of 0)...
+
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    C2H4(1)
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 2 species and 0 reactions
+    The model edge has 0 species and 0 reactions
+
+
+Adding species CH3(2) to model core
+Updating 0 modified unimolecular reaction networks (out of 0)...
+
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    CH3(2)
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 3 species and 0 reactions
+    The model edge has 0 species and 0 reactions
+
+
+PASSED
+test/rmgpy/rmg/modelTest.py::TestEnlarge::test_enlarge_3_react_edge For reaction generation 1 process is used.
+Species  renamed H based on thermo library name
+Generating thermo for new species...
+Updating 1 modified unimolecular reaction networks (out of 1)...
+Updating PDepNetwork #1
+Warning: For CC, more characteristic frequencies were generated than vibrational modes allowed. Removed 1 groups (9 frequencies) to compensate.
+Warning: Maximum number of iterations reached when fitting spectral data for CC.
+Warning: Statmech node 'C_R1' and all its parents have data = None
+Warning: For C[CH2], more characteristic frequencies were generated than vibrational modes allowed. Removed 1 groups (6 frequencies) to compensate.
+Calculating densities of states for PDepNetwork #1 network...
+Using 540 grains from -0.00 to 1118.80 kJ/mol in steps of 2.08 kJ/mol to compute densities of states
+Calculating phenomenological rate coefficients for H(4) + C[CH2](3) <=> C2H4(1)...
+Using 250 grains from -0.00 to 517.68 kJ/mol in steps of 2.08 kJ/mol to compute the k(T,P) values at 302.491 K
+Using 252 grains from -0.00 to 525.09 kJ/mol in steps of 2.09 kJ/mol to compute the k(T,P) values at 323.355 K
+Using 260 grains from -0.00 to 541.83 kJ/mol in steps of 2.09 kJ/mol to compute the k(T,P) values at 370.585 K
+Using 274 grains from -0.00 to 571.12 kJ/mol in steps of 2.09 kJ/mol to compute the k(T,P) values at 457.988 K
+Using 299 grains from -0.00 to 623.41 kJ/mol in steps of 2.09 kJ/mol to compute the k(T,P) values at 614.983 K
+Using 344 grains from -0.00 to 717.56 kJ/mol in steps of 2.09 kJ/mol to compute the k(T,P) values at 900.017 K
+Using 423 grains from -0.00 to 882.82 kJ/mol in steps of 2.09 kJ/mol to compute the k(T,P) values at 1394.8 K
+Using 517 grains from -0.00 to 1079.47 kJ/mol in steps of 2.09 kJ/mol to compute the k(T,P) values at 1985.54 K
+========================================================================
+PDepNetwork #1 network information
+----------------------------------
+Isomers:
+    C2H4(1)                                          -3.12436e-06 kJ/mol
+Reactant channels:
+    CH3(2) + CH3(2)                                       367.507 kJ/mol
+Product channels:
+    H(4) + C[CH2](3)                                      417.075 kJ/mol
+Path reactions:
+    CH3(2) + CH3(2) <=> C2H4(1)                           368.072 kJ/mol
+    H(4) + C[CH2](3) <=> C2H4(1)                          417.075 kJ/mol
+Net reactions:
+    C2H4(1) => CH3(2) + CH3(2)                      
+    C2H4(1) => H(4) + C[CH2](3)                     
+========================================================================
+
+
+
+Summary of Secondary Model Edge Enlargement
+---------------------------------
+Added 0 new core species
+Created 2 new edge species
+    H(4)
+    C[CH2](3)
+Added 1 new core reactions
+    C2H4(1) <=> CH3(2) + CH3(2)
+Created 1 new edge reactions
+    C2H4(1) => H(4) + C[CH2](3)
+
+After model enlargement:
+    The model core has 3 species and 1 reactions
+    The model edge has 2 species and 1 reactions
+
+
+PASSED
+test/rmgpy/rmg/modelTest.py::TestEnlarge::test_enlarge_4_create_pdep_network PASSED
+test/rmgpy/rmg/outputTest.py::TestOutput::test_save_output_html Thermo file has default temperature range 300.0 to 1000.0 and 1000.0 to 5000.0
+PASSED
+test/rmgpy/rmg/outputTest.py::TestOutput::test_save_output_html_edge_places_electron_for_charged_reaction Thermo file has default temperature range 300.0 to 1000.0 and 1000.0 to 5000.0
+PASSED
+test/rmgpy/rmg/pdepTest.py::TestPdep::test_energy_filter Error: to TS
+PASSED
+test/rmgpy/rmg/pdepTest.py::TestPdep::test_flux_filter Warning: Falling back flux reduction from Steady State analysis to rate coefficient analysis
+PASSED
+test/rmgpy/rmg/pdepTest.py::TestPdep::test_copy PASSED
+test/rmgpy/rmg/reactTest.py::TestReact::test_react For reaction generation 1 process is used.
+PASSED
+test/rmgpy/rmg/reactTest.py::TestReact::test_react_parallel For reaction generation 2 processes are used.
+PASSED
+test/rmgpy/rmg/reactTest.py::TestReact::test_react_all For reaction generation 1 process is used.
+PASSED
+test/rmgpy/rmg/reactTest.py::TestReact::test_react_all_parallel For reaction generation 2 processes are used.
+PASSED
+test/rmgpy/rmg/rmgTest.py::TestRMGWorkFlow::test_deterministic_reaction_template_matching SKIPPED
+test/rmgpy/rmg/rmgTest.py::TestRMGWorkFlow::test_check_for_existing_species_for_bi_aromatics PASSED
+test/rmgpy/rmg/rmgTest.py::TestRMGScript::test_parse_command_line_arguments_defaults PASSED
+test/rmgpy/rmg/rmgTest.py::TestRMGScript::test_parse_command_line_non_defaults PASSED
+
+=============================== warnings summary ===============================
+test/rmgpy/rmg/mainTest.py::TestMainFunctions::test_save_seed_modulus
+  /home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware/rmgpy/rmg/main.py:1147: RuntimeWarning: invalid value encountered in divide
+    terminated, resurrected, obj, new_surface_species, new_surface_reactions, t, x = reaction_system.simulate(
+
+test/rmgpy/rmg/mainTest.py::TestMainFunctions::test_save_seed_modulus
+  /home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware/rmgpy/rmg/main.py:1147: RuntimeWarning: divide by zero encountered in divide
+    terminated, resurrected, obj, new_surface_species, new_surface_reactions, t, x = reaction_system.simulate(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+============ 150 passed, 2 skipped, 2 warnings in 76.83s (0:01:16) =============

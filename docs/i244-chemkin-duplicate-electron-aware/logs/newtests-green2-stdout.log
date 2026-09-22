@@ -1,0 +1,22 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python3.9
+rootdir: /home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 13 items
+
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestElectronPlacementSeparatesDuplicates::test_two_owners_of_one_ionisation_channel_are_not_duplicates PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestElectronPlacementSeparatesDuplicates::test_matching_placement_is_still_a_duplicate PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestThreeBodyRecombinationShape::test_the_duplicate_check_separates_the_pair PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestThreeBodyRecombinationShape::test_the_export_boundary_refuses_a_reversed_declared_reaction PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestThreeBodyRecombinationShape::test_an_undeclared_three_body_owner_is_still_folded_onto_the_radiative_channel PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestOrdinaryDuplicateHandlingIsUntouched::test_neutral_duplicate_pair_is_still_marked PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestOrdinaryDuplicateHandlingIsUntouched::test_opposite_direction_irreversible_branch_still_unmarks PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestOrdinaryDuplicateHandlingIsUntouched::test_mixed_pressure_dependence_branch_still_unmarks PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestPlacementTruthTable::test_same_direction_rows[0-0-NeutralLibA-NeutralLibB-True-(0, 0) vs (0, 0) -- all neutral chemistry, unchanged] PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestPlacementTruthTable::test_same_direction_rows[1-1-PlasmaElectronImpactIonization-PlasmaElectronImpactIonization-True-(1, 2) vs (1, 2) -- a genuine duplicate of a declared channel] PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestPlacementTruthTable::test_same_direction_rows[1-1-AnUndeclaredKineticsLibrary-AnotherUndeclaredLibrary-True-(0, 1) vs (0, 1) -- a genuine duplicate under the net-derived rule] PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestPlacementTruthTable::test_same_direction_rows[1-1-PlasmaElectronImpactIonization-AnUndeclaredKineticsLibrary-False-(1, 2) vs (0, 1) -- equal net count, different incident order] PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestPlacementTruthTable::test_same_direction_rows[1-1-AnUndeclaredKineticsLibrary-PlasmaElectronImpactIonization-False-(0, 1) vs (1, 2) -- the same row with the arguments swapped] PASSED
+
+============================== 13 passed in 3.31s ==============================

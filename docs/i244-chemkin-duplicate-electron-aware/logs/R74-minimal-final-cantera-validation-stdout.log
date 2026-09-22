@@ -1,0 +1,3 @@
+R74 final core   DUPLICATE=0    LOADED  (26 sp, 66 rxn)
+R74 final edge   DUPLICATE=10   LOADED  (172 sp, 398 rxn)
+BASE edge        DUPLICATE=11   REJECTED: InputFileError thrown by Kinetics::checkDuplicates:

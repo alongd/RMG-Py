@@ -1,0 +1,22 @@
+Wrote YAML mechanism file to '/tmp/claude-1000/-home-alon-Code-RMG-Py-i244-chemkin-duplicate-electron-aware/a8f6cc03-60ca-4b2c-9a46-73ae02eeb7f3/scratchpad/min-base/edge.yaml'.
+Mechanism contains 172 species and 398 reactions.
+Validating mechanism...
+FAILED
+
+*******************************************************************************
+InputFileError thrown by Kinetics::checkDuplicates:
+Error on line 2121 of /tmp/claude-1000/-home-alon-Code-RMG-Py-i244-chemkin-duplicate-electron-aware/a8f6cc03-60ca-4b2c-9a46-73ae02eeb7f3/scratchpad/min-base/edge.yaml:
+No duplicate found for declared duplicate reaction number 179 (C4H7(72) <=> C4H7(44))
+|  Line |
+|  2116 |   rate-constant: {A: 6.28654e+13, b: -0.212, Ea: 0.0}
+|  2117 | - equation: H(6) + C4H6(70) <=> C4H7(44)  # Reaction 178
+|  2118 |   rate-constant: {A: 1.52804e+55, b: -12.789, Ea: 0.0}
+|  2119 | - equation: H(6) + C4H6(71) <=> C4H7(44)  # Reaction 179
+|  2120 |   rate-constant: {A: 8.15666e+18, b: -1.493, Ea: 0.0}
+>  2121 > - equation: C4H7(72) <=> C4H7(44)  # Reaction 180
+            ^
+|  2122 |   duplicate: true
+|  2123 |   rate-constant: {A: 2.58e+09, b: 1.08, Ea: 38.7}
+|  2124 | - equation: C2H3(14) + [CH]C(8) <=> C4H7(44)  # Reaction 181
+*******************************************************************************
+

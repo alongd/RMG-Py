@@ -1,0 +1,16 @@
+database libraries root : /home/alon/Code/RMG-database-plasma/input/kinetics/libraries
+key in use is multiset  : True
+candidate libraries     : 190
+  NIST_Fluorine/full                                   reactions=988    changed=2    groups_merged=1    label_collisions=0
+  NIST_Fluorine/seed                                   reactions=543    changed=2    groups_merged=1    label_collisions=0
+
+=== CENSUS ===
+libraries loaded              : 190 of 190
+reactions examined            : 35277
+entries whose answer CHANGES  : 4
+groups merged by the multiset : 2
+label/formula collisions      : 0
+    NIST_Fluorine/full :: CHF2-CF3 + C3H7 <=> CF3-CF2 + C3H8  (ordered=False -> multiset=True)
+    NIST_Fluorine/full :: C3H8 + CF3-CF2 <=> C3H7 + CHF2-CF3  (ordered=False -> multiset=True)
+    NIST_Fluorine/seed :: CHF2-CF3 + C3H7 <=> CF3-CF2 + C3H8  (ordered=False -> multiset=True)
+    NIST_Fluorine/seed :: C3H8 + CF3-CF2 <=> C3H7 + CHF2-CF3  (ordered=False -> multiset=True)

@@ -1213,7 +1213,46 @@ class TestConventionalReferenceTemperatureIsUnchanged:
     RMG writes ``T0 = 1 K``. These tests are the proof that nothing moved for
     that case: the exported files still match, byte for byte, what the writer
     produced before the change.
+
+    **The goldens were regenerated in I-244 round 74, and here is why.** They were
+    captured before the Cantera writer computed ``duplicate`` over the mechanism it
+    was writing, so they recorded the answer that happened to be sitting on each
+    reaction object. ``t0_one_gas.yaml`` therefore held three entries writing
+    ``O(2) + O2(3) => O3(4)`` with only two of them marked, which is a mechanism
+    ``cantera.Solution`` REJECTS -- *"Undeclared duplicate reactions detected"*. A
+    byte-identity test cannot see that: it compares text against text, and both
+    sides were equally invalid.
+
+    Regenerating them moved nothing this class is about. The only content
+    difference is added ``duplicate: true`` lines -- three in the gas golden, two in
+    the surface one -- plus the ``generator:`` line, which
+    :func:`_normalize_generator` already strips. No rate constant, reference
+    temperature or thermo coefficient changed, so the ``T0 = 1 K`` invariant these
+    tests exist to guard is untouched.
+
+    :meth:`test_the_goldens_are_mechanisms_cantera_can_load` is the tripwire that
+    would have caught it, and is why a future regeneration cannot quietly reinstate
+    an invalid deck.
     """
+
+    def test_the_goldens_are_mechanisms_cantera_can_load(self):
+        """
+        A golden is only a useful baseline if it is a mechanism in the first place.
+        Comparing an export against a text file proves the writer is consistent with
+        itself; it says nothing about whether either is loadable, which is how an
+        invalid deck sat here as the reference answer.
+        """
+        import cantera as ct
+
+        for name in ('t0_one_gas.yaml', 't0_one_surface.yaml'):
+            path = os.path.join(_GOLDEN_DIR, name)
+            try:
+                ct.Solution(path, transport_model=None)
+            except Exception as exc:
+                raise AssertionError(
+                    "the golden {0} is not a loadable mechanism, so it cannot serve as "
+                    "a baseline:\n{1}".format(name, exc)
+                )
 
     def test_gas_export_is_byte_identical_to_the_base_commit(self, gas_forms_species, tmp_out):
         path = os.path.join(tmp_out, 'chem.yaml')
@@ -1432,6 +1471,20 @@ class TestMultiKineticsReconstructionKeepsTheReaction:
     named in that constructor call is gone by the time the entry is built --
     which is how the third-body collider and the flux pairs were being dropped
     from grouped reactions only.
+
+    **The collider half of that repair is no longer reachable through a grouped
+    reaction, and that is deliberate.** This fixture used to carry
+    ``specific_collider=o2`` on a ``MultiArrhenius`` and to assert that the
+    collider came back in the entry's *note*. Round 75 measured what that shape
+    does elsewhere: the Chemkin writer refuses it outright
+    (``get_reaction_string`` allows a specific collider only on Troe/Lindemann),
+    so no RMG run can carry such a reaction to a deck at all; and recording the
+    collider in a note means the equation omits it, so two grouped reactions
+    differing only by collider serialize identically and ``cantera.Solution``
+    rejects the mechanism with "Undeclared duplicate reactions detected". The
+    writer now refuses instead of dropping, which is pinned below. What this
+    class still guards is the part that remains live: index, flux pairs and the
+    electron count surviving reconstruction.
     """
 
     @pytest.fixture()
@@ -1442,8 +1495,7 @@ class TestMultiKineticsReconstructionKeepsTheReaction:
             Arrhenius(A=(3.0e6, 'm^3/(mol*s)'), n=0.0, Ea=(20.0, 'kJ/mol')),
         ])
         return Reaction(index=17, reactants=[o_atom], products=[o_anion], electrons=-1,
-                        reversible=False, specific_collider=o2,
-                        pairs=[(o_atom, o_anion)], kinetics=kinetics)
+                        reversible=False, pairs=[(o_atom, o_anion)], kinetics=kinetics)
 
     def test_every_component_keeps_index_collider_pairs_and_electrons(
             self, gas_forms_species, grouped_reaction, monkeypatch):
@@ -1463,16 +1515,41 @@ class TestMultiKineticsReconstructionKeepsTheReaction:
         assert len(built) == 2, 'expected one sub-reaction per grouped component'
         for sub in built:
             assert sub.index == 17
-            assert sub.specific_collider is grouped_reaction.specific_collider
             assert sub.pairs == grouped_reaction.pairs
             assert sub.electrons == -1
 
         # ...and the artifact carries what the artifact can carry.
         assert len(entries) == 2
         for entry in entries:
-            assert 'Specific third body collider: O2' in entry['note']
             assert 'Flux pairs: O(2), O-(5)' in entry['note']
             assert 'e(1)' in entry['equation']
+
+    def test_a_grouped_reaction_with_an_unrenderable_collider_is_refused(
+            self, gas_forms_species):
+        """
+        A ``specific_collider`` on a grouped reaction has nowhere to go in the
+        equation: the wrapper expands into ``Arrhenius`` leaves, and an Arrhenius
+        equation cannot name a collider without changing the reaction order. The
+        writer must say so rather than drop it into a note and emit a mechanism
+        whose equations no longer distinguish the two colliders.
+
+        The message must name ``MultiArrhenius`` -- the type the caller actually
+        wrote -- and not the ``Arrhenius`` of a leaf nobody constructed. A
+        refusal that reports the wrong stage is the defect this ticket is about.
+        """
+        import rmgpy.yaml_cantera2 as yaml_cantera2
+
+        e, o_atom, o2, o3, o_anion = gas_forms_species
+        reaction = Reaction(index=17, reactants=[o_atom], products=[o_anion], electrons=-1,
+                            reversible=False, specific_collider=o2,
+                            pairs=[(o_atom, o_anion)],
+                            kinetics=MultiArrhenius(arrhenius=[
+                                Arrhenius(A=(1.0e6, 'm^3/(mol*s)'), n=0.0, Ea=(10.0, 'kJ/mol')),
+                                Arrhenius(A=(3.0e6, 'm^3/(mol*s)'), n=0.0, Ea=(20.0, 'kJ/mol')),
+                            ]))
+        with pytest.raises(MechanismWriterError) as excinfo:
+            yaml_cantera2.reaction_to_dict_list(reaction, gas_forms_species)
+        assert 'MultiArrhenius' in str(excinfo.value)
 
     def test_a_grouped_third_body_reaction_keeps_its_collider_in_the_equation(
             self, gas_forms_species):

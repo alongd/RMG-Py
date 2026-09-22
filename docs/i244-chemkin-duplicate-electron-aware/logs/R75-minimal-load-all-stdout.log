@@ -1,0 +1,6 @@
+cantera1: 48 files, 76 'duplicate: true' lines total
+cantera2: 48 files, 76 'duplicate: true' lines total
+chem_annotated.inp: DUPLICATE=0 -> LOADED (26 species, 66 reactions)
+chem_edge_annotated.inp: DUPLICATE=10 -> LOADED (172 species, 398 reactions)
+
+LOADED 98, REJECTED 0

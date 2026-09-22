@@ -1,0 +1,131 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+cachedir: .pytest_cache
+rootdir: /home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 70 items
+
+test/rmgpy/plasmaExportTest.py::TestCanteraRoundTrip::test_reaction_count_survives PASSED
+test/rmgpy/plasmaExportTest.py::TestCanteraRoundTrip::test_two_temperature_plasma_parameters PASSED
+test/rmgpy/plasmaExportTest.py::TestCanteraRoundTrip::test_electron_collision_plasma_parameters PASSED
+test/rmgpy/plasmaExportTest.py::TestCanteraRoundTrip::test_badnell_and_voronov_parameters[2] PASSED
+test/rmgpy/plasmaExportTest.py::TestCanteraRoundTrip::test_badnell_and_voronov_parameters[3] PASSED
+test/rmgpy/plasmaExportTest.py::TestCanteraRoundTrip::test_badnell_and_voronov_rate_is_electron_temperature_only PASSED
+test/rmgpy/plasmaExportTest.py::TestCanteraRoundTrip::test_ionization_is_first_order_in_the_electron PASSED
+test/rmgpy/plasmaExportTest.py::TestCanteraRoundTrip::test_plain_arrhenius_still_correct PASSED
+test/rmgpy/plasmaExportTest.py::TestUnhandledKineticsFailsLoudly::test_cantera_writer_raises_and_writes_no_file_with_the_reaction PASSED
+test/rmgpy/plasmaExportTest.py::TestUnhandledKineticsFailsLoudly::test_chemkin_writer_raises_and_writes_no_file_with_the_reaction PASSED
+test/rmgpy/plasmaExportTest.py::TestUnhandledKineticsFailsLoudly::test_no_opt_out_downgrades_it_to_a_warning PASSED
+test/rmgpy/plasmaExportTest.py::TestElectronBalance::test_cantera_equations_carry_the_electron PASSED
+test/rmgpy/plasmaExportTest.py::TestElectronBalance::test_cantera_reactions_balance_in_E PASSED
+test/rmgpy/plasmaExportTest.py::TestElectronBalance::test_chemkin_equations_carry_the_electron PASSED
+test/rmgpy/plasmaExportTest.py::TestElectronBalance::test_unbalanced_E_is_caught_by_the_same_loud_path PASSED
+test/rmgpy/plasmaExportTest.py::TestElectronBalance::test_missing_electron_species_is_caught PASSED
+test/rmgpy/plasmaExportTest.py::TestElectronBalance::test_electron_density_dependence_without_a_reactant_electron_is_caught PASSED
+test/rmgpy/plasmaExportTest.py::TestBothWriters::test_chemkin_writes_every_plasma_reaction_with_real_parameters PASSED
+test/rmgpy/plasmaExportTest.py::TestBothWriters::test_chemkin_plasma_rate_matches_the_rmg_object PASSED
+test/rmgpy/plasmaExportTest.py::TestBothWriters::test_both_writers_agree_on_which_reactions_exist PASSED
+test/rmgpy/plasmaExportTest.py::TestBothWriters::test_write_kinetics_entry_raises_for_unhandled_type PASSED
+test/rmgpy/plasmaExportTest.py::TestChargeTransferKinetics::test_inert_surface_charge_transfer_round_trips_in_cantera PASSED
+test/rmgpy/plasmaExportTest.py::TestChargeTransferKinetics::test_live_surface_charge_transfer_is_refused_in_cantera PASSED
+test/rmgpy/plasmaExportTest.py::TestChargeTransferKinetics::test_cantera_never_writes_a_beta_that_cantera_would_discard PASSED
+test/rmgpy/plasmaExportTest.py::TestChargeTransferKinetics::test_inertness_rule_in_both_writers[0.0--1-72.0-True] PASSED
+test/rmgpy/plasmaExportTest.py::TestChargeTransferKinetics::test_inertness_rule_in_both_writers[0.62-0-72.0-True] PASSED
+test/rmgpy/plasmaExportTest.py::TestChargeTransferKinetics::test_inertness_rule_in_both_writers[0.62--1-72.0-False] PASSED
+test/rmgpy/plasmaExportTest.py::TestChargeTransferKinetics::test_inertness_rule_in_both_writers[0.0--1--5.0-False] PASSED
+test/rmgpy/plasmaExportTest.py::TestChargeTransferKinetics::test_marcus_is_refused_by_both_writers PASSED
+test/rmgpy/plasmaExportTest.py::TestMultiKineticsCarryElectrons::test_multi_arrhenius[-1-cm^3/(mol*s)-O(4) + e(1) => O-(5)] PASSED
+test/rmgpy/plasmaExportTest.py::TestMultiKineticsCarryElectrons::test_multi_arrhenius[1-s^-1-O-(5) => O(4) + e(1)] PASSED
+test/rmgpy/plasmaExportTest.py::TestMultiKineticsCarryElectrons::test_multi_pdep_arrhenius[-1-O(4) + e(1) => O-(5)] PASSED
+test/rmgpy/plasmaExportTest.py::TestMultiKineticsCarryElectrons::test_multi_pdep_arrhenius[1-O-(5) => O(4) + e(1)] PASSED
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnMissingElectronSpecies::test_both_refuse_plasma_kinetics_with_no_electron_species PASSED
+test/rmgpy/plasmaExportTest.py::TestWrongReactionOrderGuard::test_electron_impact_without_an_electron_reactant_is_caught[1-ElectronCollisionPlasma] PASSED
+test/rmgpy/plasmaExportTest.py::TestWrongReactionOrderGuard::test_electron_impact_without_an_electron_reactant_is_caught[0-TwoTemperaturePlasma] PASSED
+test/rmgpy/plasmaExportTest.py::TestWrongReactionOrderGuard::test_the_five_reaction_plasma_fixture_still_exports PASSED
+test/rmgpy/plasmaExportTest.py::TestFailedExportLeavesNothing::test_chemkin_leaves_no_partial_file_and_no_dirty_counter PASSED
+test/rmgpy/plasmaExportTest.py::TestFailedExportLeavesNothing::test_chemkin_does_not_clobber_an_existing_good_file PASSED
+test/rmgpy/plasmaExportTest.py::TestFailedExportLeavesNothing::test_counter_is_cleared_after_a_successful_export_too PASSED
+test/rmgpy/plasmaExportTest.py::TestFailedExportLeavesNothing::test_cantera_leaves_no_partial_file PASSED
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnTheRate::test_both_writers_evaluate_to_the_same_rate[Arrhenius] PASSED
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnTheRate::test_both_writers_evaluate_to_the_same_rate[ThirdBody] PASSED
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnTheRate::test_both_writers_evaluate_to_the_same_rate[Troe] PASSED
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnTheRate::test_both_writers_evaluate_to_the_same_rate[Lindemann] PASSED
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnTheRate::test_both_writers_evaluate_to_the_same_rate[PDepArrhenius] PASSED
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnTheRate::test_both_writers_evaluate_to_the_same_rate[MultiArrhenius] PASSED
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnTheRate::test_both_writers_evaluate_to_the_same_rate[ArrheniusChargeTransfer] PASSED
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnTheRate::test_exported_rate_does_not_depend_on_the_reference_temperature[Arrhenius] PASSED
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnTheRate::test_exported_rate_does_not_depend_on_the_reference_temperature[ThirdBody] PASSED
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnTheRate::test_exported_rate_does_not_depend_on_the_reference_temperature[Troe] PASSED
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnTheRate::test_exported_rate_does_not_depend_on_the_reference_temperature[Lindemann] PASSED
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnTheRate::test_exported_rate_does_not_depend_on_the_reference_temperature[PDepArrhenius] PASSED
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnTheRate::test_exported_rate_does_not_depend_on_the_reference_temperature[MultiArrhenius] PASSED
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnTheRate::test_exported_rate_does_not_depend_on_the_reference_temperature[ArrheniusChargeTransfer] PASSED
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnTheRate::test_exported_rate_does_not_depend_on_the_reference_temperature[StickingCoefficient] PASSED
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnTheRate::test_exported_rate_does_not_depend_on_the_reference_temperature[SurfaceArrhenius] PASSED
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnTheRate::test_exported_rate_does_not_depend_on_the_reference_temperature[SurfaceChargeTransfer] PASSED
+test/rmgpy/plasmaExportTest.py::TestConventionalReferenceTemperatureIsUnchanged::test_the_goldens_are_mechanisms_cantera_can_load PASSED
+test/rmgpy/plasmaExportTest.py::TestConventionalReferenceTemperatureIsUnchanged::test_gas_export_is_byte_identical_to_the_base_commit PASSED
+test/rmgpy/plasmaExportTest.py::TestConventionalReferenceTemperatureIsUnchanged::test_surface_export_is_byte_identical_to_the_base_commit PASSED
+test/rmgpy/plasmaExportTest.py::TestConventionalReferenceTemperatureIsUnchanged::test_the_goldens_really_do_use_the_conventional_reference_temperature PASSED
+test/rmgpy/plasmaExportTest.py::TestCanteraWriteIsAtomic::test_a_failure_inside_the_dump_leaves_the_previous_file_intact PASSED
+test/rmgpy/plasmaExportTest.py::TestCanteraWriteIsAtomic::test_a_failure_inside_the_dump_creates_no_file_where_there_was_none PASSED
+test/rmgpy/plasmaExportTest.py::TestChemkinOutputSetIsCoherent::test_a_full_export_writes_the_whole_set PASSED
+test/rmgpy/plasmaExportTest.py::TestChemkinOutputSetIsCoherent::test_a_failure_on_a_later_file_leaves_the_earlier_ones_untouched PASSED
+test/rmgpy/plasmaExportTest.py::TestChemkinOutputSetIsCoherent::test_a_failure_on_a_later_file_writes_nothing_at_all_the_first_time PASSED
+test/rmgpy/plasmaExportTest.py::TestMultiKineticsReconstructionKeepsTheReaction::test_every_component_keeps_index_collider_pairs_and_electrons PASSED
+test/rmgpy/plasmaExportTest.py::TestMultiKineticsReconstructionKeepsTheReaction::test_a_grouped_reaction_with_an_unrenderable_collider_is_refused FAILED
+test/rmgpy/plasmaExportTest.py::TestMultiKineticsReconstructionKeepsTheReaction::test_a_grouped_third_body_reaction_keeps_its_collider_in_the_equation PASSED
+
+=================================== FAILURES ===================================
+_ TestMultiKineticsReconstructionKeepsTheReaction.test_a_grouped_reaction_with_an_unrenderable_collider_is_refused _
+
+self = <plasmaExportTest.TestMultiKineticsReconstructionKeepsTheReaction object at 0x7461b4268e50>
+gas_forms_species = [Species(index=1, label="e", thermo=NASA(polynomials=[NASAPolynomial(coeffs=[2.5,0,0,0,0,-745.375,-11.7246], Tmin=(200...rom'), dipoleMoment=(0,'De'), polarizability=(0,'angstrom^3'), rotrelaxcollnum=0.0), molecular_weight=(15.9994,'amu'))]
+
+    def test_a_grouped_reaction_with_an_unrenderable_collider_is_refused(
+            self, gas_forms_species):
+        """
+        A ``specific_collider`` on a grouped reaction has nowhere to go in the
+        equation: the wrapper expands into ``Arrhenius`` leaves, and an Arrhenius
+        equation cannot name a collider without changing the reaction order. The
+        writer must say so rather than drop it into a note and emit a mechanism
+        whose equations no longer distinguish the two colliders.
+    
+        The message must name ``MultiArrhenius`` -- the type the caller actually
+        wrote -- and not the ``Arrhenius`` of a leaf nobody constructed. A
+        refusal that reports the wrong stage is the defect this ticket is about.
+        """
+        import rmgpy.yaml_cantera2 as yaml_cantera2
+    
+        e, o_atom, o2, o3, o_anion = gas_forms_species
+        reaction = Reaction(index=17, reactants=[o_atom], products=[o_anion], electrons=-1,
+                            reversible=False, specific_collider=o2,
+                            pairs=[(o_atom, o_anion)],
+                            kinetics=MultiArrhenius(arrhenius=[
+                                Arrhenius(A=(1.0e6, 'm^3/(mol*s)'), n=0.0, Ea=(10.0, 'kJ/mol')),
+                                Arrhenius(A=(3.0e6, 'm^3/(mol*s)'), n=0.0, Ea=(20.0, 'kJ/mol')),
+                            ]))
+        with pytest.raises(MechanismWriterError) as excinfo:
+            yaml_cantera2.reaction_to_dict_list(reaction, gas_forms_species)
+>       assert 'MultiArrhenius' in str(excinfo.value)
+E       AssertionError: assert 'MultiArrhenius' in 'Cannot write reaction O(2) (+O2(3)) => O-(5) (+O2(3)) to Cantera YAML: it carries the specific third-body collider O2, but its kinetics type Arrhenius has no place in the equation for one. Writing it anyway would drop the collider, and two reactions differing only by collider would then serialize to the same equation and be rejected by Kinetics::checkDuplicates.'
+E        +  where 'Cannot write reaction O(2) (+O2(3)) => O-(5) (+O2(3)) to Cantera YAML: it carries the specific third-body collider O2, but its kinetics type Arrhenius has no place in the equation for one. Writing it anyway would drop the collider, and two reactions differing only by collider would then serialize to the same equation and be rejected by Kinetics::checkDuplicates.' = str(MechanismWriterError('Cannot write reaction O(2) (+O2(3)) => O-(5) (+O2(3)) to Cantera YAML: it carries the specific third-body collider O2, but its kinetics type Arrhenius has no place in the equation for one. Writing it anyway would drop the collider, and two reactions differing only by collider would then serialize to the same equation and be rejected by Kinetics::checkDuplicates.'))
+E        +    where MechanismWriterError('Cannot write reaction O(2) (+O2(3)) => O-(5) (+O2(3)) to Cantera YAML: it carries the specific third-body collider O2, but its kinetics type Arrhenius has no place in the equation for one. Writing it anyway would drop the collider, and two reactions differing only by collider would then serialize to the same equation and be rejected by Kinetics::checkDuplicates.') = <ExceptionInfo MechanismWriterError('Cannot write reaction O(2) (+O2(3)) => O-(5) (+O2(3)) to Cantera YAML: it carries the specific t...ns differing only by collider would then serialize to the same equation and be rejected by Kinetics::checkDuplicates.') tblen=4>.value
+
+test/rmgpy/plasmaExportTest.py:1552: AssertionError
+=============================== warnings summary ===============================
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnTheRate::test_exported_rate_does_not_depend_on_the_reference_temperature[StickingCoefficient]
+test/rmgpy/plasmaExportTest.py::TestWritersAgreeOnTheRate::test_exported_rate_does_not_depend_on_the_reference_temperature[StickingCoefficient]
+  /home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware/test/rmgpy/plasmaExportTest.py:1146: UserWarning: StickingRate::validate: 
+  Sticking coefficient is greater than 1 for reaction 'H2(3) + X(4) => H2X(6)'
+  at T = 2000.0
+  at T = 5000.0
+  at T = 10000.0
+  
+    return ct.Interface(path, phase_names[-1])
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED test/rmgpy/plasmaExportTest.py::TestMultiKineticsReconstructionKeepsTheReaction::test_a_grouped_reaction_with_an_unrenderable_collider_is_refused
+=================== 1 failed, 69 passed, 2 warnings in 2.88s ===================

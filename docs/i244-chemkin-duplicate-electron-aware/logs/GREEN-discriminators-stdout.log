@@ -1,0 +1,4 @@
+D1 permuted pair keys alike        : True
+D2 render leaves flags untouched   : True
+D3 generator survives the render   : True
+D4 authority overrides its input   : True

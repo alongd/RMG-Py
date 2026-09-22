@@ -1,0 +1,12 @@
+
+==== loaded reactions, BEFORE any duplicate marking ====
+  [Li](1) => [Lip](2)                      class=LibraryReaction  family='PlasmaElectronImpactIonization' library='PlasmaElectronImpactIonization' reversible=False electrons=+1 placement=(1, 2) duplicate=False
+  [Lip](2) => [Li](1)                      class=LibraryReaction  family='PlasmaRadiativeRecombination' library='PlasmaRadiativeRecombination' reversible=False electrons=-1 placement=(1, 0) duplicate=False
+
+==== species object identity after unification ====
+  [Li](1)      id=129013917858496
+  [Lip](2)     id=129013497528768
+  [Li](1) => [Lip](2)            reactant ids=[129013917858496] product ids=[129013497528768]
+  [Lip](2) => [Li](1)            reactant ids=[129013497528768] product ids=[129013917858496]
+
+==== render_chemkin_file(check_for_duplicates=True) ====

@@ -1,0 +1,45 @@
+==============================================================================
+F1 (HIGH 1) -- CanteraWriter1 must recompute the answer over its own list
+==============================================================================
+  production flags over core+edge: [True, True]
+  group answer for the CORE-ONLY list: [False]
+    PASS  Writer1, core-only export after production marking
+    PASS  Writer2, core-only export after production marking
+
+==============================================================================
+F2 (HIGH 2) -- a cross-class pair through the PAIRWISE production path
+==============================================================================
+  production (pairwise) flags: [True, True]
+  group answer over the same list: [True, True]
+    PASS  pairwise marking agrees with the group key
+    PASS  Writer1, cross-class pair
+    PASS  Writer2, cross-class pair
+    PASS  Chemkin -> ck2yaml -> Solution, cross-class pair
+
+==============================================================================
+F3 (HIGH 3) -- a Multi wrapper holding exactly ONE entry
+==============================================================================
+  -- MultiArrhenius([one]) -- leaves: 1
+    PASS  MultiArrhenius([one]): Chemkin -> ck2yaml -> Solution
+    PASS  MultiArrhenius([one]): Writer2
+    PASS  MultiArrhenius([one]): Writer1
+  -- MultiPDepArrhenius([one]) -- leaves: 1
+    PASS  MultiPDepArrhenius([one]): Chemkin -> ck2yaml -> Solution
+    PASS  MultiPDepArrhenius([one]): Writer2
+    PASS  MultiPDepArrhenius([one]): Writer1
+  -- control: MultiArrhenius([two]) must STILL be marked
+    PASS  MultiArrhenius([two]): Chemkin -> ck2yaml -> Solution
+    PASS  MultiArrhenius([two]): Writer2
+    PASS  MultiArrhenius([two]): Writer1
+
+==============================================================================
+F4 (MEDIUM) -- a collider the equation builder cannot render
+==============================================================================
+  group answer: [False, False]
+    PASS  Writer2 refuses a PLOG collider it cannot render: MechanismWriterError
+    PASS  Writer1 refuses a PLOG collider it cannot render: MechanismWriterError
+  -- control: ThirdBody colliders ARE renderable and must stay distinct
+    PASS  Writer2, two ThirdBody reactions with different colliders
+
+==============================================================================
+all checks passed

@@ -1,0 +1,11 @@
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/reaction.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+rmgpy/reaction.c: In function ‘__pyx_f_5rmgpy_8reaction_8Reaction_generate_reverse_rate_coefficient’:
+rmgpy/reaction.c:39123:35: warning: comparison of integer expressions of different signedness: ‘size_t’ {aka ‘long unsigned int’} and ‘Py_ssize_t’ {aka ‘long int’} [-Wsign-compare]
+39123 |     for (__pyx_t_7 = 0; __pyx_t_7 < __pyx_t_11; __pyx_t_7+=1) {
+      |                                   ^

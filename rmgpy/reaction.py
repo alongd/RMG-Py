@@ -559,10 +559,16 @@ class Reaction:
 
         # Set reversibility, duplicate, and ID attributes
         if isinstance(ct_reaction, list):
+            # Every entry of an expansion writes the same equation, so each is a duplicate
+            # of the others -- but only when there is more than one. MultiArrhenius and
+            # MultiPDepArrhenius both accept a single-element list, and a lone entry
+            # declaring itself a duplicate is rejected by Cantera with "No duplicate found
+            # for declared duplicate reaction number 0". A one-entry expansion therefore
+            # keeps the reaction's own answer, exactly as an unwrapped reaction would.
+            duplicate = self.duplicate or len(ct_reaction) > 1
             for rxn in ct_reaction:
                 rxn.reversible = self.reversible
-                # Set the duplicate flag to true since this reaction comes from multiarrhenius or multipdeparrhenius
-                rxn.duplicate = True
+                rxn.duplicate = duplicate
                 # Set the ID flag to the original rmg index
                 rxn.ID = str(self.index)
         else:

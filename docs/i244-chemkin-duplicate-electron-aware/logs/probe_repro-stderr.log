@@ -1,0 +1,56 @@
+WARNING:matplotlib:/home/alon/.config/matplotlib is not a writable directory
+WARNING:matplotlib:Matplotlib created a temporary cache directory at /tmp/claude-1000/matplotlib-ekt83xxo because there was an issue with the default path (/home/alon/.config/matplotlib); it is highly recommended to set the MPLCONFIGDIR environment variable to a writable directory, in particular to speed up the import of Matplotlib and to better support multiprocessing.
+INFO:matplotlib.font_manager:Failed to extract font properties from /usr/share/fonts/truetype/noto/NotoColorEmoji.ttf: In FT2Font: Could not set the fontsize (invalid pixel size; error code 0x17)
+INFO:matplotlib.font_manager:generated new fontManager
+INFO:root:Loading transport group database from /home/alon/Code/RMG-database-plasma/input/transport/groups...
+INFO:root:Loading kinetics library PlasmaElectronImpactIonization from /home/alon/Code/RMG-database-plasma/input/kinetics/libraries/PlasmaElectronImpactIonization/reactions.py...
+INFO:root:Loading kinetics library PlasmaRadiativeRecombination from /home/alon/Code/RMG-database-plasma/input/kinetics/libraries/PlasmaRadiativeRecombination/reactions.py...
+INFO:root:Loading frequencies group database from /home/alon/Code/RMG-database-plasma/input/statmech/groups...
+INFO:root:Loading thermodynamics library from LithiumPrimaryThermo.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+INFO:root:Loading thermodynamics library from LithiumAdditionalThermo.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+INFO:root:Loading thermodynamics library from primaryThermoLibrary.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+INFO:root:Loading thermodynamics library from electrocatThermo.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+INFO:root:Loading thermodynamics group database from /home/alon/Code/RMG-database-plasma/input/thermo/groups...
+INFO:root:Loading thermodynamics SIDTs from /home/alon/Code/RMG-database-plasma/input/thermo/sidt...
+INFO:root:Adding reaction library PlasmaElectronImpactIonization to model edge...
+INFO:root:
+INFO:root:Summary of Model Enlargement
+INFO:root:---------------------------------
+INFO:root:Added 0 new core species
+INFO:root:Created 2 new edge species
+INFO:root:    [Li](1)
+INFO:root:    [Lip](2)
+INFO:root:Added 0 new core reactions
+INFO:root:Created 1 new edge reactions
+INFO:root:    [Li](1) => [Lip](2)
+INFO:root:
+INFO:root:After model enlargement:
+INFO:root:    The model core has 0 species and 0 reactions
+INFO:root:    The model edge has 2 species and 1 reactions
+INFO:root:
+INFO:root:Adding reaction library PlasmaRadiativeRecombination to model edge...
+INFO:root:
+INFO:root:Summary of Model Enlargement
+INFO:root:---------------------------------
+INFO:root:Added 0 new core species
+INFO:root:Created 0 new edge species
+INFO:root:Added 0 new core reactions
+INFO:root:Created 1 new edge reactions
+INFO:root:    [Lip](2) => [Li](1)
+INFO:root:
+INFO:root:After model enlargement:
+INFO:root:    The model core has 0 species and 0 reactions
+INFO:root:    The model edge has 2 species and 2 reactions
+INFO:root:
+Traceback (most recent call last):
+  File "/home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware/docs/i244-chemkin-duplicate-electron-aware/probe_repro.py", line 96, in <module>
+    main()
+  File "/home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware/docs/i244-chemkin-duplicate-electron-aware/probe_repro.py", line 76, in main
+    text = render_chemkin_file(species, reactions, verbose=False,
+  File "rmgpy/chemkin.pyx", line 2605, in rmgpy.chemkin.render_chemkin_file
+    f.write(write_kinetics_entry(rxn, species_list=species, verbose=verbose))
+  File "rmgpy/chemkin.pyx", line 2099, in rmgpy.chemkin.write_kinetics_entry
+    num_reactants = len(expand_electrons(reaction, species_list)[0])
+  File "/home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware/rmgpy/electron_balance.py", line 360, in expand_electrons
+    raise MechanismWriterError(
+rmgpy.exceptions.MechanismWriterError: Reaction [Li](1) => [Lip](2) has electrons=1 but the mechanism defines no electron species, so the electron cannot be written into the exported equation. Add the electron to the species list before exporting.

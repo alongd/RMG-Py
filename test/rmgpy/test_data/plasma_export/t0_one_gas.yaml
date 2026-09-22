@@ -1,6 +1,6 @@
 description: RMG-Py Generated Mechanism
-generator: 'RMG-Py CanteraWriter2 at /tmp/claude-1000/-home-alon-Code-RMG-Py-i011-export/c749ae22-1662-45b6-95ef-a975635dc2fd/scratchpad/basewriter/yaml_cantera2_base.py
-  (git commit: )'
+generator: 'RMG-Py CanteraWriter2 at /home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware/rmgpy/yaml_cantera2.py
+  (git commit: 242431e)'
 cantera-version: '3.1'
 units: {length: m, time: s, quantity: mol, activation-energy: J/mol}
 phases:
@@ -60,6 +60,7 @@ species:
   transport: {model: gas, geometry: atom, well-depth: 100.0, diameter: 3.0000000000000004}
 reactions:
 - equation: O(2) + O2(3) => O3(4)
+  duplicate: true
   rate-constant: {A: 1000000.0, b: 2.0, Ea: 10000.0}
   note: |
     Reaction index: Chemkin #1; RMG #1
@@ -69,6 +70,7 @@ reactions:
   note: |
     Reaction index: Chemkin #2; RMG #1
 - equation: O(2) + O(2) (+M) => O2(3) (+M)
+  duplicate: true
   type: falloff
   high-P-rate-constant: {A: 1000000.0, b: 2.0, Ea: 10000.0}
   low-P-rate-constant: {A: 2000000.0, b: 2.0, Ea: 10000.0}
@@ -76,6 +78,7 @@ reactions:
   note: |
     Reaction index: Chemkin #3; RMG #1
 - equation: O(2) + O(2) (+M) => O2(3) (+M)
+  duplicate: true
   type: falloff
   high-P-rate-constant: {A: 1000000.0, b: 2.0, Ea: 10000.0}
   low-P-rate-constant: {A: 2000000.0, b: 2.0, Ea: 10000.0}

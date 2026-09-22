@@ -1,0 +1,21 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python3.9
+rootdir: /home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 3 items
+
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestOrdinaryDuplicateHandlingIsUntouched::test_neutral_duplicate_pair_is_still_marked 
+-------------------------------- live log call ---------------------------------
+WARNING  root:i244ChemkinDuplicateElectronTest.py:145 Marked reaction C2H6(1) <=> CH3(2) + CH3(2) as duplicate of C2H6(1) <=> CH3(2) + CH3(2) for saving to Chemkin file.
+PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestOrdinaryDuplicateHandlingIsUntouched::test_opposite_direction_irreversible_branch_still_unmarks 
+-------------------------------- live log call ---------------------------------
+WARNING  root:i244ChemkinDuplicateElectronTest.py:145 Marked reaction Li(2) => Lip(3) as not duplicate because they are irreversible in opposite directions for saving to Chemkin file.
+PASSED
+test/rmgpy/i244ChemkinDuplicateElectronTest.py::TestOrdinaryDuplicateHandlingIsUntouched::test_mixed_pressure_dependence_branch_still_unmarks 
+-------------------------------- live log call ---------------------------------
+WARNING  root:i244ChemkinDuplicateElectronTest.py:145 Marked reaction Li(2) => Lip(3) as not duplicate because of mixed pressure dependence for saving to Chemkin file.
+PASSED
+
+============================== 3 passed in 1.53s ===============================

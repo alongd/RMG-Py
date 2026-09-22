@@ -1,0 +1,22 @@
+STATIC CENSUS over /home/alon/Code/RMG-database-plasma/input/kinetics/families
+families on disk          : 140
+families with nonzero e-  : 17
+  plasma-named            : 6
+  NOT plasma-named        : 11
+    Cation_Addition_MultipleBond                            electrons = -1   NOT plasma
+    Cation_Addition_MultipleBond_Disprop                    electrons = -1   NOT plasma
+    Cation_Li_Abstraction                                   electrons = -1   NOT plasma
+    Cation_NO_Ring_Opening                                  electrons = -1   NOT plasma
+    Cation_NO_Substitution                                  electrons = -1   NOT plasma
+    Cation_R_Recombination                                  electrons = -1   NOT plasma
+    Plasma_Associative_Ionization_Alkali_Alkali             electrons = +1   plasma
+    Plasma_Associative_Ionization_Alkali_Alkaline           electrons = +1   plasma
+    Plasma_Associative_Ionization_Alkaline_Alkaline         electrons = +1   plasma
+    Plasma_Electron_Attachment                              electrons = -1   plasma
+    Plasma_Electron_Impact_Ionization                       electrons = +1   plasma
+    Plasma_Radiative_Recombination                          electrons = -1   plasma
+    Surface_Proton_Electron_Reduction_Alpha                 electrons = -1   NOT plasma
+    Surface_Proton_Electron_Reduction_Alpha_vdW             electrons = -1   NOT plasma
+    Surface_Proton_Electron_Reduction_Beta                  electrons = -1   NOT plasma
+    Surface_Proton_Electron_Reduction_Beta_Dissociation     electrons = -1   NOT plasma
+    Surface_Proton_Electron_Reduction_Beta_vdW              electrons = -1   NOT plasma

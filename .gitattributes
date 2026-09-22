@@ -1,0 +1,26 @@
+# Captured run output under docs/<ticket>/logs/ is evidence: it is committed so that a
+# measurement can be re-read later, and it must stay byte-identical to what the tool
+# actually printed. Rewriting it to satisfy a whitespace check would falsify it, so the
+# whitespace check is turned off for those paths and stays useful everywhere else.
+#
+# `conflict-marker-size` was ALSO set here, and has been reverted. It was reached for
+# because `git diff --check 311818121..HEAD` reports committed logs as unresolved merges.
+# Setting the marker length far above seven silenced the report. That is building to pass
+# the check rather than fixing what it caught, and it silenced the detector for every log
+# in the repository -- so a real conflict marker committed into any future log would also
+# have gone unreported. That cost was not hypothetical: while the attribute was set, a
+# THIRD log (R73-suite-chemkin-export-stdout.log:752) joined the two known ones and nobody
+# saw it, which is precisely the failure a silenced detector produces.
+#
+# The reports are FALSE POSITIVES of `git diff --check`, recorded here rather than
+# suppressed. The flagged lines are pytest's short-summary separator, which at this
+# terminal width begins with exactly seven `=` followed by a space -- git's pattern for
+# the middle marker of a conflict. (An earlier version of this comment said seven `<`;
+# that was wrong.) The three lines are FINAL-verifier-round2-stdout.log:640,
+# R73-suite-chemkin-export-stdout.log:752 and REG-suite-chemkin-stdout.log:615, all of
+# them `======= N failed, M passed ... =======`. The logs are correct and must not be
+# edited, so `git diff --check` over this branch's range is expected to report three
+# lines, and that is the honest state.
+docs/**/logs/**       -whitespace
+docs/**/*.log         -whitespace
+docs/**/*-diff.txt    -whitespace

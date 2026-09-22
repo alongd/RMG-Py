@@ -1,0 +1,5 @@
+matching entries in NIST_Fluorine/full : 2
+  CHF2-CF3 + C3H7 <=> CF3-CF2 + C3H8                   reversible=True duplicate-as-loaded=True
+       reactants=['CHF2-CF3', 'C3H7'] products=['CF3-CF2', 'C3H8']
+  C3H8 + CF3-CF2 <=> C3H7 + CHF2-CF3                   reversible=True duplicate-as-loaded=True
+       reactants=['C3H8', 'CF3-CF2'] products=['C3H7', 'CHF2-CF3']

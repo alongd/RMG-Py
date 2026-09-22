@@ -1,0 +1,21 @@
+WARNING:matplotlib:/home/alon/.config/matplotlib is not a writable directory
+WARNING:matplotlib:Matplotlib created a temporary cache directory at /tmp/claude-1000/matplotlib-bu3k7i3u because there was an issue with the default path (/home/alon/.config/matplotlib); it is highly recommended to set the MPLCONFIGDIR environment variable to a writable directory, in particular to speed up the import of Matplotlib and to better support multiprocessing.
+INFO:matplotlib.font_manager:Failed to extract font properties from /usr/share/fonts/truetype/noto/NotoColorEmoji.ttf: In FT2Font: Could not set the fontsize (invalid pixel size; error code 0x17)
+INFO:matplotlib.font_manager:generated new fontManager
+WARNING:root:Marked reaction H2(3) => H2(3) + O(4) as not duplicate because no other reaction writes its Chemkin equation.
+Traceback (most recent call last):
+  File "/home/alon/Code/RMG-Py-i244-chemkin-duplicate-electron-aware/docs/i244-chemkin-duplicate-electron-aware/round73_arm_discriminators.py", line 54, in <module>
+    cm.render_chemkin_file(SPECIES, [c, d, lonely], verbose=False)
+  File "rmgpy/chemkin.pyx", line 2824, in rmgpy.chemkin.render_chemkin_file
+    f.write(write_kinetics_entry(rxn, species_list=species, verbose=verbose,
+  File "rmgpy/chemkin.pyx", line 2131, in rmgpy.chemkin.write_kinetics_entry
+    assert 0.999 < conversion_factor / 1.0e6 ** (num_reactants - 1) < 1.001, """
+AssertionError: 
+              Gas phase reaction 
+H2(3)=>H2(3)+O(4)                                   
+              with kinetics 
+Arrhenius(A=(3e+12,'cm^3/(mol*s)'), n=0, Ea=(0,'kcal/mol'), T0=(1,'K'))
+              with 1 reactants was expected to have
+              kinetics.A.get_conversion_factor_from_si_to_cm_mol_s() = 1.0
+              but instead it is 1000000.0
+              

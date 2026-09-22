@@ -1,0 +1,5 @@
+WARNING:root:Marked reaction Li(2) => Lip(3) as not duplicate because no other reaction writes its Chemkin equation.
+WARNING:root:Marked reaction Li(2) => Lip(3) as not duplicate because no other reaction writes its Chemkin equation.
+INFO:root:Chemkin file contains 2 reactions.
+INFO:root:Chemkin file contains 2 reactions.
+INFO:root:Chemkin file contains 4 reactions.

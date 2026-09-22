@@ -1,0 +1,10 @@
+diff -r /tmp/claude-1000/-home-alon-Code-RMG-Py-i244-chemkin-duplicate-electron-aware/03926acc-0244-46b5-9956-e71cd93a74b2/scratchpad/nonplasma-before/cantera_from_ck/chem_annotated.yaml /tmp/claude-1000/-home-alon-Code-RMG-Py-i244-chemkin-duplicate-electron-aware/03926acc-0244-46b5-9956-e71cd93a74b2/scratchpad/nonplasma-after/cantera_from_ck/chem_annotated.yaml
+4c4
+< date: Mon, 21 Sep 2026 10:03:50 +0300
+---
+> date: Mon, 21 Sep 2026 10:05:46 +0300
+diff -r /tmp/claude-1000/-home-alon-Code-RMG-Py-i244-chemkin-duplicate-electron-aware/03926acc-0244-46b5-9956-e71cd93a74b2/scratchpad/nonplasma-before/cantera_from_ck/chem.yaml /tmp/claude-1000/-home-alon-Code-RMG-Py-i244-chemkin-duplicate-electron-aware/03926acc-0244-46b5-9956-e71cd93a74b2/scratchpad/nonplasma-after/cantera_from_ck/chem.yaml
+4c4
+< date: Mon, 21 Sep 2026 10:03:50 +0300
+---
+> date: Mon, 21 Sep 2026 10:05:46 +0300
