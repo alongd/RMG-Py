@@ -262,9 +262,93 @@ module (`round83_after.log`, 60 wall / 57 plasma / 101 input):
   a wall-less reactor still round-trips); and a `wallNeutralizationProducts` key naming no cation is
   refused rather than silently ignored; and per-species (not aggregate) neutral non-negativity.
 
+## Round 88: the guard class again, four HIGH and two MEDIUM closed
+
+A third pass, same class as round 83 for three of the four HIGH -- *a guard, a key, or a diagnostic
+reading a quantity adjacent to the one the physics governs* -- plus one that is the round-83 latch
+defect's structural twin: a term that moves the composition but is invisible to the code that asks
+whether the composition can still move.
+
+| site | reads | physics gates on | verdict |
+|------|-------|------------------|---------|
+| `_skeleton_key` identity | InChI **truncated at** the first `/q`,`/p` | nuclei + connectivity, one rule for **all charge states** | HIGH 1 -- `/i` and stereo sit AFTER `/q`, so truncation keyed a charged species by a different rule than a neutral: a ¹³C cation keyed as ¹²C neutral (transmutation) |
+| `simulate` inert / termination | `char_rate` (gas-phase **chemistry** diagnostic) | the reactor's **total** flux | HIGH 2 -- a wall-only deck carries no `char_rate` but the wall moves it; declared inert at t=0 |
+| quasineutrality bound (3 sites) | net charge vs **absolute** `1e-12 mol` floor | the **relative** imbalance `|net|/magnitude` | HIGH 3 -- a wholly-unpaired but small electron inventory (1e-13 mol) passes an absolute mole floor |
+| `wall_neutralization_energy_flux` | `Σ ΔH · γ · (loss)`, gated on `γ>0` | energy owed per **ion lost** (γ governs mass, not energy) | HIGH 4 -- a pumping wall (γ=0) reports 0 W and labels it `available` |
+| `_resolve_declared_neutral` | **first** label match in `matches` | the declared label must identify **one** species | MED -- a duplicate neutral label lets core ordering pick the product |
+| `quasineutral_electron` flag | `bool(value)` (truthiness) | the flag's **value** | MED -- the string `'False'` is truthy, so it enabled the mode |
+
+**HIGH 1 -- the key was two rules.** InChI orders its layers formula / c / h / `q` / `p` / stereo /
+`i` (isotope) / …, so the isotope and stereo layers sit *after* the charge layers. Truncating at the
+first `/q` or `/p` dropped them from a **charged** species and kept them on a **neutral** -- the one
+asymmetry an ion→neutral map cannot have. Measured (`evidence/round88_high1_key_probe.log`, and
+`test_skeleton_key_keeps_isotopes_...`): `[13CH3][O+][CH3]` → `.../h1-2H3/q+1/i1+1`, truncated to
+`.../h1-2H3` = ordinary-carbon `COC`; the wall recycled ¹³C into ¹²C and the ionisation source did the
+reverse -- nuclei transmuted and fabricated. And the escape hatch failed with it: the isotopic neutral
+kept its `/i` (no `/q` to cut at), so it never entered the ion's candidate `matches` list and a correct
+declaration naming it was *refused*. Fix, argued and adopted: wall neutralisation is a charge transfer
+that conserves nuclei and connectivity but not charge or electronic state, so the key **removes the
+`/q` and `/p` layers and keeps every other layer** (a first-char filter on the `/`-split tokens),
+rather than truncating at them. Ar and Ar* still coincide (no layer between them); ¹³C and ¹²C now
+separate on both charge states; the declaration resolves. This is one rule for every species
+regardless of charge -- the actual defect.
+
+**HIGH 2 -- the wall is invisible to "can this change?".** `res` carries the wall and source terms,
+but `core_species_rates` deliberately does **not** (it is the gas-phase chemistry diagnostic that
+model enlargement and the rate-ratio criteria compare edge fluxes against -- the comment guarding
+that is correct and was kept). `base.pyx` then reads `char_rate ≤ floor` as "the composition cannot
+change". On a wall-only deck (`simulate()`, gamma=0, no chemistry) the wall removes ~1.9e-2 mol/s of
+ion-electron pairs while `char_rate = 0`, so the run terminated at t=0 with a warning that the
+composition cannot change -- false. Two correctness criteria, each right, jointly impossible: "a
+transport term is not a reaction flux" and "`char_rate` is the total flux". Fix: a polymorphic seam,
+`ReactionSystem.get_non_chemical_char_rate()` returning `0.0`, overridden in `PlasmaReactor` to
+evaluate exactly the terms `_apply_wall_terms` adds (the single source of the wall arithmetic, never a
+re-derivation) at the accepted state, divided by V into `core_species_rates` units. The two inert
+tests gate on `total_char_rate = √(char_rate² + non_chemical²)`; `char_rate` itself is untouched, so
+the enlargement ratios and logs are unchanged, and a reactor with no non-chemical terms behaves
+exactly as before (`total_char_rate == char_rate`). Demonstrated on `simulate()`
+(`evidence/round88_high2_simulate.log`): the wall-only deck now integrates, the plasma decays from
+x_ion=1e-4 to ~2e-17 over 0.16 s, and terminates at a genuine steady state; a wall-less inert deck
+still stops at t=0.
+
+**HIGH 3 -- quasineutrality is a ratio.** All three net-charge checks (`check_wall_support`,
+`set_initial_conditions` under the algebraic electron, and the initial-composition warning) compared
+`|net|` to `max(1e-12 mol, 1e-6·magnitude)`, which admits a state below *either* bound. On a small
+charged inventory the 1e-12 mol floor was the larger term and swallowed a 100%-imbalanced state: 1e-13
+mol of electrons with **no ion partner** reads as net −1e-13 mol < 1e-12, so it initialised. An
+absolute mole tolerance cannot express a ratio -- the same imbalance passes or fails depending only on
+how many moles the deck carries. Fix: the pure relative bound `|net| > 1e-6·magnitude`, scale-invariant
+(100% imbalance refused whether the inventory is 1e-13 or 1e6 mol; a genuinely neutral deck, `|net|`
+at accumulation roundoff ≈ `N·2.22e-16·magnitude`, admitted at every scale; `magnitude=0` gives
+`net=0`, admitted). The absolute floor was deleted.
+
+**HIGH 4 -- energy is owed per ion, not per recycled atom.** `wall_recycling` (γ) is a *mass-return*
+fraction. A pumped ion still reaches the wall, still recombines with an electron there, and still
+deposits `H_ion − H_neutral` at the surface. The energy term was gated on `γ>0` and multiplied by γ,
+so γ=0 reported 0 W and -- worse than the number -- labelled it `available`, defeating the round-79
+availability map whose whole point is that an absent datum is machine-readably absent. Fix: γ scales
+only the mass return; the neutralisation energy is `Σ ΔH·(ion loss)`, independent of γ. `ΔH` is NaN
+when the product or its thermo is unknown, which now correctly marks the aggregate `unavailable`
+rather than a confident zero. (LOW, folded in: the energy fields are marked `available` only after a
+final finiteness check.)
+
+Closed, each reproduced RED first (`evidence/round88_before.log`, 8 red) then GREEN on the rebuilt
+module (`round88_after.log`; suites 69 wall / 57 plasma / 101 input, and 23 steady-state / 6
+zero-flux / 6 base / 5 simple / 6 liquid / 9 surface unbroken by the `base.pyx` seam). Charge and
+heavy-atom conservation re-measured with the metastable present at γ ∈ {1, 0.5, 0}
+(`round88_conservation.log`): net wall current exactly 0, heavy-atom loss exactly `−(1−γ)·(ion loss)`.
+
+**What I could NOT reach.** No molecular-tautomer stereo case was exercised end-to-end (RDKit refuses
+InChI for many charged aromatics/amides, keying them `None` -- the same wall round 83 hit); the
+isotope path is proven, the stereo path is proven only at the key level by construction, not on a
+built stereocentre. `get_non_chemical_char_rate` reuses `_apply_wall_terms`, so it overwrites the
+residual-scratch fields at the accepted state -- harmless (the next residual overwrites them before any
+consumer reads them), but it means the seam is not side-effect-free; a future refactor that reads
+`wall_loss_rates` between a step and the next residual would need to know that.
+
 ## Files touched
 
-`rmgpy/solver/plasma.pyx`, `rmgpy/rmg/input.py`,
+`rmgpy/solver/plasma.pyx`, `rmgpy/solver/base.pyx`, `rmgpy/solver/base.pxd`, `rmgpy/rmg/input.py`,
 `documentation/source/users/rmg/input.rst`, `test/rmgpy/solver/plasmaWallTest.py`, and this
 `docs/i246-ambipolar-wall-operator/` directory. No file under `rmgpy/molecule/`, `rmgpy/kinetics/`,
 `rmgpy/data/` or the database was touched. Nothing pushed, merged or rebased.

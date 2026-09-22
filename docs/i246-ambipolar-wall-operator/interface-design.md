@@ -15,7 +15,7 @@ after `initialize_model` and after every accepted `advance`:
 | `nu_wall_latched` | common ambipolar loss frequency at the accepted state | s⁻¹ | **robust** |
 | `wall_diagnostics_time` | the accepted time the latch is for (staleness guard) | s | — |
 | `wall_electron_energy_flux` | `2·k_B·T_e · (electron loss rate)` | W | **robust** (from T_e) |
-| `wall_neutralization_energy_flux` | `Σ (H_ion − H_neutral)·(recycled rate)` | W | conditional (needs ion+neutral thermo) |
+| `wall_neutralization_energy_flux` | `Σ (H_ion − H_neutral)·(ion loss rate)` | W | conditional (needs ion+neutral thermo) |
 | `wall_ion_energy_flux` | ion directed/sheath energy, `e·V_sheath·(ion loss rate)` | W | **declared-absent** |
 | `wall_energy_availability` | `field → 'available' \| 'unavailable' \| 'declared-absent'` | — | the map that makes the above machine-readable |
 
@@ -60,8 +60,13 @@ E_ion`:
 - **E_e** (electron thermal): the flux-averaged energy of electrons escaping over the sheath is
   `2·k_B·T_e` per electron. The reactor holds T_e, so this is always available and reported.
 - **E_neutralisation** (chemical): the formation-enthalpy drop `H_ion − H_neutral` released when the
-  ion is neutralised at the surface, from thermo the recycle map already resolves. Reported when both
-  thermo are present and finite; otherwise `unavailable`.
+  ion is neutralised at the surface, from thermo the recycle map already resolves. It is owed for
+  **every ion lost to the wall**, not only the recycled fraction: `wall_recycling` (γ) is a
+  mass-return fraction governing where the neutral goes, and a fully-pumped ion (γ=0) still recombines
+  with an electron at the surface and deposits its enthalpy there. The flux is therefore
+  `Σ (H_ion − H_neutral)·(ion loss rate)`, independent of γ — an earlier version multiplied it by γ,
+  so a pumping wall reported 0 W and, worse, labelled it `available` (round-88 HIGH 4). Reported when
+  both thermo are present and finite; otherwise `unavailable`.
 - **E_ion** (directed/sheath): the ion falls through the sheath and arrives with `e·V_sheath`. This
   needs a sheath potential — and a sheath model is an explicit contract non-goal (§ Non-goals; § 10
   of the binding contract names "sheath or plasma-potential assumptions" as M8-B's charter). It is

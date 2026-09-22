@@ -1,0 +1,17 @@
+/home/alon/Code/RMG-Py-i246-ambipolar-wall-operator/docs/i246-ambipolar-wall-operator/evidence/round88_high2_simulate.py:21: RuntimeWarning: invalid value encountered in divide
+  res = r.simulate(core, rxns, [], [], [], [],
+INFO:root:At time 1.6245e-01 s, reached steady state: residual 0.0000e+00 below tolerance 1.0000e-08 for 3 consecutive steps (slowest species: Ar).
+terminated      = True  final t = 0.16245049834119552
+core_species_rates = [0. 0. 0.]
+wall_flux       = [-3.83246353e-15  0.00000000e+00 -3.83246353e-15] mol/s
+|wall_flux|     = 5.419921901796436e-15
+nu_wall_latched = 185.14417553965342 s^-1
+y0              = [1.000e-04 9.998e-01 1.000e-04]
+y  final        = [2.06998871e-17 9.99800000e-01 2.06998871e-17]
+
+RED expectation: the wall is removing ions/electrons, so the run must
+integrate past t=0 and the composition must move.
+  final t > 0 ?       True
+  composition moved ? True
+
+GREEN: wall-driven deck integrated past t=0.

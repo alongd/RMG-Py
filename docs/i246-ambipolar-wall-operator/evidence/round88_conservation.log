@@ -1,0 +1,20 @@
+INFO:root:PlasmaReactor wall: cation Species(label="Ar+", molecule=[Molecule(smiles="[Ar+]")], molecular_weight=(39.8775,'amu')) neutralises to Species(label="Ar", thermo=ThermoData(Tdata=([298,400,600,800,1000,1500,2000],'K'), Cpdata=([20.7862,20.7862,20.7862,20.7862,20.7862,20.7862,20.7862],'J/(mol*K)'), H298=(0,'kJ/mol'), S298=(154.8,'J/(mol*K)')), molecule=[Molecule(smiles="[Ar]")], molecular_weight=(39.8775,'amu')) as declared by wallNeutralizationProducts.
+INFO:root:PlasmaReactor wall: cation Species(label="Ar+", molecule=[Molecule(smiles="[Ar+]")], molecular_weight=(39.8775,'amu')) neutralises to Species(label="Ar", thermo=ThermoData(Tdata=([298,400,600,800,1000,1500,2000],'K'), Cpdata=([20.7862,20.7862,20.7862,20.7862,20.7862,20.7862,20.7862],'J/(mol*K)'), H298=(0,'kJ/mol'), S298=(154.8,'J/(mol*K)')), molecule=[Molecule(smiles="[Ar]")], molecular_weight=(39.8775,'amu')) as declared by wallNeutralizationProducts.
+INFO:root:PlasmaReactor wall: cation Species(label="Ar+", molecule=[Molecule(smiles="[Ar+]")], molecular_weight=(39.8775,'amu')) neutralises to Species(label="Ar", thermo=ThermoData(Tdata=([298,400,600,800,1000,1500,2000],'K'), Cpdata=([20.7862,20.7862,20.7862,20.7862,20.7862,20.7862,20.7862],'J/(mol*K)'), H298=(0,'kJ/mol'), S298=(154.8,'J/(mol*K)')), molecule=[Molecule(smiles="[Ar]")], molecular_weight=(39.8775,'amu')) as declared by wallNeutralizationProducts.
+gamma=1.0
+  net charge flux to wall = 0.000e+00  (must be ~0)
+  heavy-atom flux         = 0.000000e+00
+  -(1-gamma)*ion_loss     = -0.000000e+00
+  wall_neutralization_energy_flux = nan W [unavailable]
+gamma=0.5
+  net charge flux to wall = 0.000e+00  (must be ~0)
+  heavy-atom flux         = -9.258299e-05
+  -(1-gamma)*ion_loss     = -9.258299e-05
+  wall_neutralization_energy_flux = nan W [unavailable]
+gamma=0.0
+  net charge flux to wall = 0.000e+00  (must be ~0)
+  heavy-atom flux         = -1.851660e-04
+  -(1-gamma)*ion_loss     = -1.851660e-04
+  wall_neutralization_energy_flux = nan W [unavailable]
+
+OK: charge conserved (zero net wall current) and heavy atoms conserved at every gamma, with the metastable present.
