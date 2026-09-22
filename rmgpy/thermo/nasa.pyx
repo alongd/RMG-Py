@@ -28,6 +28,7 @@
 ###############################################################################
 
 import cython
+import math
 import numpy as np
 cimport numpy as np
 
@@ -35,6 +36,7 @@ from libc.math cimport log
 
 cimport rmgpy.constants as constants
 import rmgpy.quantity as quantity
+from rmgpy.exceptions import CanteraThermoWriteError
 
 ################################################################################
 
@@ -433,8 +435,24 @@ cdef class NASA(HeatCapacityModel):
 
         polys = self.polynomials
         if len(polys) not in (1, 2):
-            assert False, "Cantera NasaPoly2 objects only accept 1 or 2 polynomials, got {0}".format(len(polys))
-        assert all(len(poly.coeffs) == 7 for poly in polys), "Cantera NasaPoly2 polynomials can only contain 7 coefficients."
+            raise CanteraThermoWriteError(
+                "Cannot convert this NASA object to a Cantera NasaPoly2 object: "
+                "Cantera's NasaPoly2 only accepts 1 or 2 polynomials, got "
+                "{0}.".format(len(polys)))
+        for poly in polys:
+            if len(poly.coeffs) != 7:
+                raise CanteraThermoWriteError(
+                    "Cannot convert this NASA object to a Cantera NasaPoly2 "
+                    "object: Cantera's NasaPoly2 polynomials must contain "
+                    "exactly 7 coefficients, got {0} (this looks like NASA9 "
+                    "data, which Cantera's NasaPoly2 cannot represent).".format(
+                        len(poly.coeffs)))
+            values_to_check = [poly.Tmin.value_si, poly.Tmax.value_si] + list(poly.coeffs)
+            if not all(math.isfinite(v) for v in values_to_check):
+                raise CanteraThermoWriteError(
+                    "Cannot convert this NASA object to a Cantera NasaPoly2 "
+                    "object: a polynomial has a non-finite (NaN or Inf) "
+                    "temperature bound or coefficient.")
 
         if len(polys) == 1:
             # Cantera's Python object API has no NasaPoly1 -- NasaPoly2 is the only
