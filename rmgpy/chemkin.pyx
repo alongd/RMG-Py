@@ -1690,20 +1690,64 @@ def get_species_identifier(species):
 ################################################################################
 
 
+def _validate_chemkin_nasa_polynomial(species, NASAPolynomial poly):
+    """
+    Raise a ChemkinError naming `species` if `poly` cannot be written as a
+    Chemkin NASA-7 temperature range. A range must carry finite temperature
+    bounds with Tmin < Tmax, only finite seven-coefficient data, and no cm2/cm1
+    (1/T^2 and 1/T) terms of the nine-coefficient NASA-9 form. This is applied
+    to the ORIGINAL polynomials in write_thermo_entry, before a one-range NASA
+    is split: the split copies only the seven NASA-7 coefficients, so cm2/cm1
+    dropped from a NASA-9 source would be invisible to a check on the split
+    products. Validating values here also stops malformed data (NaN/Inf
+    coefficients, non-finite or non-positive bounds, an inverted range, missing
+    bounds) from silently emitting NAN/INF tokens or crashing later with an
+    unnamed AttributeError.
+    """
+    cdef double t_min, t_max, c
+    if poly.Tmin is None or poly.Tmax is None:
+        raise ChemkinError(
+            'Cannot generate Chemkin string for species "{0}": a NASA polynomial is '
+            'missing its temperature bounds.'.format(species))
+    t_min = poly.Tmin.value_si
+    t_max = poly.Tmax.value_si
+    if not math.isfinite(t_min) or not math.isfinite(t_max) or t_min <= 0.0 or t_max <= 0.0:
+        raise ChemkinError(
+            'Cannot generate Chemkin string for species "{0}": NASA temperature bounds '
+            'must be finite and positive, but found {1!r} to {2!r} K.'.format(species, t_min, t_max))
+    if t_min >= t_max:
+        raise ChemkinError(
+            'Cannot generate Chemkin string for species "{0}": each NASA range must have '
+            'Tmin < Tmax, but found a range of {1:g} to {2:g} K.'.format(species, t_min, t_max))
+    if poly.cm2 != 0 or poly.cm1 != 0:
+        raise ChemkinError(
+            'Cannot generate Chemkin string for species "{0}": Chemkin\'s NASA-7 format '
+            'has no coefficient for the 1/T^2 or 1/T (cm2, cm1) terms of the 9-term NASA '
+            'form, but this species carries nonzero values for them.'.format(species))
+    for c in poly.coeffs:
+        if not math.isfinite(c):
+            raise ChemkinError(
+                'Cannot generate Chemkin string for species "{0}": NASA coefficients must '
+                'be finite, but found {1!r}.'.format(species, c))
+
+
 def write_thermo_entry(species, element_counts=None, bint verbose=True):
     """
     Return a string representation of the NASA model readable by Chemkin.
-    To use this method you must have exactly two NASA polynomials in your
-    model, and you must use the seven-coefficient forms for each.
+    To use this method your model must have one or two NASA polynomials
+    (a single polynomial is split at an interior breakpoint into the two
+    ranges Chemkin's NASA-7 format requires), and you must use the
+    seven-coefficient forms for each.
     """
     cdef NASA thermo
-    cdef NASAPolynomial poly_low, poly_high
+    cdef NASAPolynomial poly_low, poly_high, single
     cdef dict counts
-    cdef list sorted_elements, elements, short_lines
+    cdef list sorted_elements, elements, short_lines, polys
     cdef bint extended_syntax
     cdef int count, isotope, charge, electrons
     cdef str string, line, short_line, chemkin_name, symbol, elem_1, elem_2
     cdef object thermo_data
+    cdef double t_low, t_high, t_int
 
     thermo_data = species.get_thermo_data()
 
@@ -1712,13 +1756,65 @@ def write_thermo_entry(species, element_counts=None, bint verbose=True):
                            'Thermodynamics data must be a NASA object.'.format(species))
     thermo = <NASA>thermo_data
 
-    assert len(thermo.polynomials) == 2
-    poly_low = thermo.polynomials[0]
-    poly_high = thermo.polynomials[1]
-    assert poly_low.Tmin.value_si < poly_high.Tmin.value_si
-    assert poly_low.Tmax.value_si == poly_high.Tmin.value_si
-    assert poly_low.cm2 == 0 and poly_low.cm1 == 0
-    assert poly_high.cm2 == 0 and poly_high.cm1 == 0
+    polys = thermo.polynomials
+    if len(polys) not in (1, 2):
+        raise ChemkinError(
+            'Cannot generate Chemkin string for species "{0}": Chemkin\'s NASA-7 '
+            'format holds one or two temperature ranges, but this species\'s NASA '
+            'thermo has {1} polynomials.'.format(species, len(polys)))
+
+    # Validate the SOURCE polynomials before building the block (see the helper's
+    # docstring: a one-range NASA-9 would slip past a check on the split products).
+    for poly in polys:
+        _validate_chemkin_nasa_polynomial(species, <NASAPolynomial>poly)
+
+    if len(polys) == 1:
+        # Chemkin's NASA-7 layout is intrinsically two-range: line 1 carries an
+        # interior breakpoint (Tint) and lines 2-4 carry a high-range and a
+        # low-range coefficient set. A NASA object holding a single polynomial
+        # over the whole interval -- e.g. a monatomic species, whose constant
+        # heat capacity makes one range exact rather than merely adequate -- has
+        # no second set to write. Split it at an interior Tint into two
+        # polynomials that share the single polynomial's coefficients:
+        # evaluating the same coefficients on [Tmin, Tint] and on [Tint, Tmax]
+        # reproduces the original function exactly, and enthalpy and entropy are
+        # continuous at the breakpoint because both sides ARE the same
+        # polynomial. Tint is therefore thermodynamically irrelevant here; we
+        # put it at 1000 K, the conventional Chemkin breakpoint that nearly
+        # every thermo file uses, so the emitted block looks ordinary to other
+        # tools, and fall back to the midpoint only when 1000 K is not strictly
+        # inside (Tmin, Tmax).
+        single = <NASAPolynomial>polys[0]
+        t_low = single.Tmin.value_si
+        t_high = single.Tmax.value_si
+        if t_low < 1000.0 < t_high:
+            t_int = 1000.0
+        else:
+            t_int = 0.5 * (t_low + t_high)
+        poly_low = NASAPolynomial(
+            Tmin=(t_low, "K"), Tmax=(t_int, "K"),
+            coeffs=[single.c0, single.c1, single.c2, single.c3, single.c4, single.c5, single.c6],
+        )
+        poly_high = NASAPolynomial(
+            Tmin=(t_int, "K"), Tmax=(t_high, "K"),
+            coeffs=[single.c0, single.c1, single.c2, single.c3, single.c4, single.c5, single.c6],
+        )
+    else:
+        poly_low = <NASAPolynomial>polys[0]
+        poly_high = <NASAPolynomial>polys[1]
+
+    if poly_low.Tmin.value_si >= poly_high.Tmin.value_si:
+        raise ChemkinError(
+            'Cannot generate Chemkin string for species "{0}": the low-temperature '
+            'NASA range must begin below the high-temperature range, but found the '
+            'low range starting at {1:g} K and the high range at {2:g} K.'.format(
+                species, poly_low.Tmin.value_si, poly_high.Tmin.value_si))
+    if poly_low.Tmax.value_si != poly_high.Tmin.value_si:
+        raise ChemkinError(
+            'Cannot generate Chemkin string for species "{0}": the two NASA ranges '
+            'must meet at a common breakpoint, but the low range ends at {1:g} K '
+            'while the high range begins at {2:g} K.'.format(
+                species, poly_low.Tmax.value_si, poly_high.Tmin.value_si))
 
     # Determine the number of each type of element in the molecule
     # Need to use the element's chemkin name, not the element symbol, because of isotopes.
