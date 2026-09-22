@@ -961,7 +961,7 @@ def test_wall_refuses_near_degenerate_states():
         _metastable_reactor(ground_eV=0.0, meta_eV=0.5 * rt_ev, meta_label='Ar_near')
     msg = str(exc.value)
     assert 'degeneracy threshold' in msg or 'thermal energy k_B' in msg
-    assert 'wall_neutralization_products' in msg
+    assert 'wallNeutralizationProducts' in msg
 
 
 def test_wall_neutralization_products_declaration_resolves_ambiguity():
@@ -1040,3 +1040,231 @@ def test_direct_diffusion_length_dimension_is_checked():
     kwargs = _plasma_wall_kwargs({'diffusionLength': (2.03, 'cm')},
                                  (MU0_AR_IN_AR, 'm^2/(V*s)'), None, 1.0, None, None)
     assert abs(kwargs['diffusion_length'][0] - 0.0203) < 1e-12
+
+
+# ============================================================ round-79 repairs
+# Each test below reproduces a defect the earlier rework exposed (see
+# docs/i246-ambipolar-wall-operator/rework.md). The recurring root is a species
+# identified by a key coarser than the physics distinguishes: the wall recycle and
+# the ionisation source both matched on element COUNT, which collides constitutional
+# isomers and cannot separate a molecular ion from an isomeric neutral. The correct
+# key is the heavy-atom skeleton -- the standard InChI truncated before its charge
+# layer -- which unifies electronic states (Ar and Ar* share it) yet separates
+# isomers (DME and ethanol do not).
+
+
+def _thermo_with_h298(h298_kj):
+    """Minimal thermo carrying a chosen formation enthalpy at 298 K; Cp and S are
+    placeholders, since only the enthalpy ordering is read by the ground-state rule."""
+    return ThermoData(
+        Tdata=([298, 400, 600, 800, 1000, 1500, 2000], 'K'),
+        Cpdata=([4.0 * constants.R] * 7, 'J/(mol*K)'),
+        H298=(h298_kj, 'kJ/mol'),
+        S298=(200.0, 'J/(mol*K)'))
+
+
+def _isomer_reactor(gamma=1.0, dme_kj=-184.0, eth_kj=-235.0, neutralization=None):
+    """Core carrying a molecular cation DME+ alongside TWO same-formula (C2H6O)
+    neutrals: its own neutral DME and the constitutional isomer ethanol, ethanol the
+    lower in formation enthalpy so a lowest-enthalpy rule would 'crown' it."""
+    electron = Species(label='e-').from_adjacency_list('1 e u1 p0 c-1')
+    dme = Species(label='DME').from_smiles('COC')
+    dme.thermo = _thermo_with_h298(dme_kj)
+    eth = Species(label='EtOH').from_smiles('CCO')
+    eth.thermo = _thermo_with_h298(eth_kj)
+    dmep = Species(label='DME+').from_smiles('[CH3][O+][CH3]')
+    imf = {electron: 1.0e-6, dmep: 1.0e-6, eth: 1.0e-6, dme: 1.0 - 3.0e-6}
+    kwargs = dict(diffusion_length=(_diffusion_length(), 'm'),
+                  ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
+                  wall_recycling=gamma)
+    if neutralization is not None:
+        kwargs['wall_neutralization_products'] = neutralization
+    reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+                            (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[], **kwargs)
+    core = [electron, dme, eth, dmep]
+    reactor.initialize_model(core, [], [], [])
+    return reactor, core
+
+
+def _cation_index(reactor):
+    z = reactor.species_charges
+    return [j for j in range(len(z)) if z[j] == 1 and j != reactor.electron_index][0]
+
+
+def test_wall_does_not_transmute_a_molecular_ion_across_isomers():
+    """HIGH 1: DME+ neutralises to DME, never to the constitutional isomer ethanol
+    just because ethanol's enthalpy is lower. Element-count matching admitted the
+    isomer and 'lowest enthalpy' then crowned it -- a transmutation. The skeleton
+    (InChI) excludes ethanol from the candidate set entirely."""
+    reactor, core = _isomer_reactor()
+    assert core[int(reactor.wall_recycle_target[_cation_index(reactor)])].label == 'DME'
+
+
+def test_wall_refuses_nonfinite_enthalpy():
+    """HIGH 1: a neutral whose formation enthalpy is NaN is UNUSABLE, not merely
+    absent. The ground-state comparison must refuse it -- naming thermochemistry --
+    not sort NaN silently into place and initialise on a coin-toss."""
+    with pytest.raises(PlasmaStateError) as exc:
+        _metastable_reactor(ground_eV=float('nan'), meta_eV=11.5)
+    assert 'thermochemistry' in str(exc.value)
+
+
+def test_wall_refuses_electron_without_a_cation():
+    """HIGH 2: a wall with an electron but NO positive ion would remove electrons
+    with no charge-conserving partner, driving the net charge -- not floating-wall
+    behaviour. 'Exactly one cation' rejected two and accepted zero; zero is refused."""
+    electron = Species(label='e-').from_adjacency_list('1 e u1 p0 c-1')
+    ar = _ground_species('Ar')
+    imf = {electron: 1.0e-6, ar: 1.0 - 1.0e-6}
+    reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+                            (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
+                            diffusion_length=(_diffusion_length(), 'm'),
+                            ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'))
+    with pytest.raises(PlasmaStateError) as exc:
+        reactor.initialize_model([electron, ar], [], [], [])
+    assert 'cation' in str(exc.value) or 'positive ion' in str(exc.value)
+
+
+def test_ceiling_uses_ion_inventory_not_electron_alone():
+    """HIGH 2: the ionisation-degree ceiling gates on the charged inventory, not n_e
+    alone. 1% Ar+ with 1 ppm electrons is a 1e-2 ion fraction and must be refused
+    under a 1e-3 ceiling, though n_e/n_neutral = 1e-6 slips under it."""
+    r, _, _ = _build_reactor(wall=True, gamma=0.0, with_chemistry=False, max_alpha=1.0e-3)
+    ie, i_ar, i_arp = _indices(r)
+    y = np.zeros(r.num_core_species, float)
+    y[i_ar] = 1.0
+    y[i_arp] = 1.0e-2
+    y[ie] = 1.0e-6
+    with pytest.raises(PlasmaStateError) as exc:
+        r.check_wall_support(y)
+    assert 'ionisation degree' in str(exc.value)
+
+
+def test_declared_source_is_delivered_in_full_in_a_mixture():
+    """HIGH 3: the external pair source is apportioned over IONISABLE neutrals. A
+    non-ionisable bath gas (He, with no He+ in the core) must not sit in the
+    denominator and silently swallow half the declared source."""
+    electron = Species(label='e-').from_adjacency_list('1 e u1 p0 c-1')
+    ar = _ground_species('Ar')
+    he = Species(label='He').from_adjacency_list('1 He u0 p1 c0')
+    arp = Species(label='Ar+').from_adjacency_list('multiplicity 2\n1 Ar u1 p3 c+1')
+    source = 1.0e18
+    imf = {electron: 1.0e-6, arp: 1.0e-6, he: 0.5, ar: 0.5 - 2.0e-6}
+    reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+                            (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
+                            diffusion_length=(_diffusion_length(), 'm'),
+                            ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
+                            wall_recycling=0.0, ionisation_source=(source, 'm^-3/s'))
+    core = [electron, ar, he, arp]
+    reactor.initialize_model(core, [], [], [])
+    z = reactor.species_charges
+    ie = reactor.electron_index
+    i_ar = [j for j in range(len(z)) if z[j] == 0 and core[j].label == 'Ar'][0]
+    i_he = [j for j in range(len(z)) if z[j] == 0 and core[j].label == 'He'][0]
+    y = np.zeros(reactor.num_core_species, float)
+    y[i_ar] = 0.5
+    y[i_he] = 0.5
+    V = reactor.compute_volume(y)
+    delta, _ = reactor.residual(0.0, y.copy(), np.zeros_like(y))
+    source_total = source * V / constants.Na       # mol of pairs per second
+    assert np.isclose(delta[ie], source_total, rtol=1e-9, atol=0.0)
+
+
+def test_direct_construction_checks_diffusion_length_dimension():
+    """MEDIUM: direct PlasmaReactor(...) construction must reject a diffusion length
+    that is not a length -- (2, 's') became a 2 m length silently, the input-file path
+    already guards this."""
+    electron, ar, arp = _argon_species()
+    imf = {electron: 1.0e-6, arp: 1.0e-6, ar: 1.0 - 2.0e-6}
+    with pytest.raises(PlasmaStateError) as exc:
+        PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+                      (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
+                      diffusion_length=(2.0, 's'),
+                      ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'))
+    assert 'length' in str(exc.value)
+
+
+def test_direct_construction_checks_mobility_dimension():
+    """MEDIUM: a diffusivity (m^2/s) is not a mobility; direct construction rejects it."""
+    electron, ar, arp = _argon_species()
+    imf = {electron: 1.0e-6, arp: 1.0e-6, ar: 1.0 - 2.0e-6}
+    with pytest.raises(PlasmaStateError) as exc:
+        PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+                      (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
+                      diffusion_length=(_diffusion_length(), 'm'),
+                      ion_reduced_mobility=(1.0e-4, 'm^2/s'))
+    assert 'mobility' in str(exc.value)
+
+
+def test_wall_diagnostics_latched_only_at_accepted_states():
+    """HIGH 5: the wall-flux interface is latched at accepted states (init, and after
+    each accepted step) and NEVER from inside the residual, so no rejected Newton
+    trial can leak in. A residual evaluation at a wild state moves the internal
+    scratch (wall_loss_rates) but must leave the latched wall_flux untouched."""
+    r, core = _metastable_reactor(gamma=1.0)
+    latched = np.array(r.wall_flux, float)
+    assert latched.shape[0] == r.num_core_species
+    assert np.all(np.isfinite(latched))
+    y = np.array(r.y0, float) * 1.0e6                 # a state the solver would reject
+    r.residual(0.0, y, np.zeros_like(y))
+    assert np.array_equal(np.array(r.wall_flux, float), latched)      # latch untouched
+    assert not np.array_equal(np.array(r.wall_loss_rates, float), latched)  # scratch moved
+
+
+def test_wall_energy_interface_declares_ion_term_absent_not_broken():
+    """HIGH 5 + addition: a consumer must distinguish DECLARED-ABSENT (by design)
+    from UNAVAILABLE (could not compute) from AVAILABLE, in code, without reading a
+    docstring. The ion directed/sheath term is declared-absent (a sheath model is a
+    contract non-goal); the electron thermal term is available from T_e; the
+    neutralisation term is unavailable here because Ar+ carries no thermo."""
+    r, core = _metastable_reactor(gamma=1.0)
+    avail = r.wall_energy_availability
+    assert avail['wall_ion_energy_flux'] == 'declared-absent'
+    assert np.isnan(r.wall_ion_energy_flux)
+    assert avail['wall_electron_energy_flux'] == 'available'
+    assert np.isfinite(r.wall_electron_energy_flux) and r.wall_electron_energy_flux > 0.0
+    assert avail['wall_neutralization_energy_flux'] == 'unavailable'
+    assert np.isnan(r.wall_neutralization_energy_flux)
+
+
+def test_saved_input_preserves_wall_neutralization_products():
+    """HIGH 4: the input writer emits every other wall keyword but dropped
+    wallNeutralizationProducts, so the declaration fallback did not survive a
+    save/reload -- the reloaded deck could refuse, infer a different product, or undo
+    a deliberate override. It must be written back."""
+    from rmgpy.rmg.input import _format_plasma_wall
+    reactor, core = _metastable_reactor(neutralization={'Ar+': 'Ar'})
+    text = _format_plasma_wall(reactor)
+    assert 'wallNeutralizationProducts' in text
+    assert "'Ar+': 'Ar'" in text
+
+
+def test_source_apportionment_jacobian_matches_fd_in_a_mixture():
+    """HIGH 3 changed both the residual denominator and its Jacobian to the ionisable
+    total; they must still agree to finite-difference precision. A He/Ar/Ar+ mixture
+    with a source makes y_ionisable (Ar only) differ from the full neutral total
+    (Ar+He), the path the argon-only analytic-Jacobian arm never exercises."""
+    electron = Species(label='e-').from_adjacency_list('1 e u1 p0 c-1')
+    ar = _ground_species('Ar')
+    he = Species(label='He').from_adjacency_list('1 He u0 p1 c0')
+    arp = Species(label='Ar+').from_adjacency_list('multiplicity 2\n1 Ar u1 p3 c+1')
+    imf = {electron: 1.0e-7, arp: 1.0e-7, he: 0.4, ar: 0.6 - 2.0e-7}
+    reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+                            (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
+                            diffusion_length=(_diffusion_length(), 'm'),
+                            ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
+                            wall_recycling=1.0, ionisation_source=(1.0e5, 'm^-3/s'))
+    core = [electron, ar, he, arp]
+    reactor.initialize_model(core, [], [], [])
+    z = reactor.species_charges
+    ie = reactor.electron_index
+    i_ar = [j for j in range(len(z)) if z[j] == 0 and core[j].label == 'Ar'][0]
+    i_he = [j for j in range(len(z)) if z[j] == 0 and core[j].label == 'He'][0]
+    i_arp = [j for j in range(len(z)) if z[j] == 1 and j != ie][0]
+    y = np.zeros(reactor.num_core_species, float)
+    y[i_ar] = 0.6
+    y[i_he] = 0.4
+    y[i_arp] = 1.0e-7
+    y[ie] = 1.0e-7
+    best = _jacobian_scan(reactor, y)
+    assert best < FD_TOLERANCE, best
