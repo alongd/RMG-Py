@@ -913,6 +913,120 @@ class TestAMissingFamilyIsAnUnansweredQuestion:
         assert caplog.text == ""
 
 
+class TestTheFamilySlotIsLeftAloneForItsOtherReader:
+    """
+    ``Reaction.family`` has a second reader that wants the OPPOSITE thing.
+
+    ``rmgpy.electron_placement`` keys ``FAMILY_ELECTRON_PLACEMENT`` on
+    ``Reaction.family`` and **depends** on ``LibraryReaction`` overwriting it:
+    ``PlasmaElectronImpactIonization`` is a kinetics LIBRARY label sitting in that table
+    deliberately, and the argon ionisation channel this whole campaign runs on resolves
+    through it. The quarantine gate must not see that label as a family; the placement
+    resolver must.
+
+    Both are served only because :func:`authoring_family` leaves the slot alone and reads
+    provenance beside it. These tests exist so that a later "cleanup" -- normalising
+    ``family``, stopping ``LibraryReaction`` overwriting it, or promoting a separate
+    authored-family attribute to authoritative -- breaks here instead of breaking argon
+    ionisation placement silently, which nothing in this ticket would otherwise catch.
+    """
+
+    @staticmethod
+    def _ionisation_library():
+        """A real library labelled like the one the argon channel resolves through."""
+        from rmgpy.reaction import Reaction
+
+        library = KineticsLibrary(label="PlasmaElectronImpactIonization")
+        library.entries = {
+            1: Entry(
+                index=1,
+                label="Ar <=> Arp",
+                item=Reaction(
+                    reactants=[Species(label="Ar", molecule=[Molecule(smiles="[Ar]")])],
+                    products=[Species(label="Arp",
+                                      molecule=[Molecule().from_adjacency_list(
+                                          "1 Ar u1 p3 c+1")])],
+                    electrons=1,
+                    reversible=False,
+                ),
+                data=Arrhenius(A=(1.254444e3, "m^3/(mol*s)"), n=0.0, Ea=(0.0, "kJ/mol")),
+                long_desc="",
+            )
+        }
+        return library
+
+    def test_the_library_label_still_lands_in_the_family_slot(self):
+        """
+        The contract electron placement depends on, asserted through the loader this
+        round changed. Adding `entry=entry` must not disturb what `family` holds.
+        """
+        reaction = self._ionisation_library().get_library_reactions()[0]
+        assert reaction.library == "PlasmaElectronImpactIonization"
+        assert reaction.family == "PlasmaElectronImpactIonization", (
+            "electron placement is keyed on Reaction.family and this library label is a "
+            "deliberate key in FAMILY_ELECTRON_PLACEMENT; changing what the slot holds "
+            "breaks argon ionisation placement")
+        assert reaction.entry is not None, "and the entry must arrive as well"
+
+    def test_placement_still_resolves_for_the_argon_ionisation_channel(self):
+        """
+        End to end through the real resolver: the library label must still find its
+        ``(1, 2)`` declaration and produce a balanced view.
+        """
+        from rmgpy.electron_placement import (
+            FAMILY_ELECTRON_PLACEMENT,
+            resolve_electron_placement,
+        )
+
+        assert FAMILY_ELECTRON_PLACEMENT["PlasmaElectronImpactIonization"] == (1, 2)
+
+        reaction = self._ionisation_library().get_library_reactions()[0]
+        electron = Species(label="e-").from_adjacency_list("1 e u1 p0 c-1")
+        view = resolve_electron_placement(reaction, [electron] + reaction.reactants
+                                          + reaction.products)
+
+        assert sum(1 for spc in view.reactants if spc.is_electron()) == 1
+        assert sum(1 for spc in view.products if spc.is_electron()) == 2
+        assert view.electrons == 0
+        # the canonical reaction is never mutated
+        assert reaction.electrons == 1
+        assert not any(spc.is_electron() for spc in reaction.reactants)
+
+    def test_the_two_readers_disagree_about_the_same_object_and_both_are_right(self):
+        """
+        The design, pinned on one object. Placement reads the slot and gets the library;
+        the quarantine gate reads provenance and gets the authoring family. Neither
+        answer is a normalisation of the other, and making them agree would break one.
+        """
+        library = self._ionisation_library()
+        library.entries[1].long_desc = "family: Plasma_Electron_Impact_Ionization"
+        reaction = library.get_library_reactions()[0]
+
+        assert reaction.family == "PlasmaElectronImpactIonization"
+        assert authoring_family(reaction) == "Plasma_Electron_Impact_Ionization"
+        assert reaction.family != authoring_family(reaction)
+
+    def test_nothing_in_the_gate_writes_to_the_family_slot(self):
+        """
+        A static guard on the whole quarantine module: it may read `family`, never assign
+        it. An assignment here is how the slot would drift under the resolver.
+        """
+        import ast
+
+        from rmgpy.data.kinetics import quarantine as module
+
+        tree = ast.parse(inspect.getsource(module))
+        writes = [node for node in ast.walk(tree)
+                  if isinstance(node, (ast.Assign, ast.AugAssign))
+                  for target in (node.targets if isinstance(node, ast.Assign)
+                                 else [node.target])
+                  if isinstance(target, ast.Attribute) and target.attr == "family"]
+        assert not writes, (
+            "the quarantine module assigns to a .family attribute; it must only ever "
+            "read the slot, because electron placement depends on what LibraryReaction "
+            "puts there")
+
+
 class TestEveryAdmissionPathIsGated:
     """
     The quarantine module's docstring enumerates every path by which a rate reaches the
