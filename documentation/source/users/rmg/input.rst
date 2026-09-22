@@ -680,8 +680,24 @@ The remaining keywords are all optional:
   noble gas 1.0 is the physical value: the ion is Auger-neutralised with probability near one and
   the atom does not chemisorb.  The reactor is a closed batch with no makeup stream, so
   ``gamma < 1`` removes heavy atoms from the gas permanently.  Every ion must have a neutral
-  counterpart in the core for its heavy core to return to, and a cation with no such counterpart,
-  or with an ambiguous one, is refused rather than guessed at.
+  counterpart in the core for its heavy core to return to; a cation with no such counterpart is
+  refused rather than guessed at.  When two neutral core species share an ion's heavy composition
+  -- ground-state and metastable argon, both ``Ar`` -- the ion returns as the **electronic ground
+  state**, identified as the neutral of lowest formation enthalpy (wall neutralisation gives the
+  ionisation energy to the wall and the atom relaxes to its ground state; it is not the
+  electron-impact excitation that makes a metastable).  Two states within ``k_B*T_gas`` of each
+  other are treated as indistinguishable and refused, as is the case where the two neutrals are
+  genuine isomers or lack thermochemistry -- in each the ground state cannot be inferred, and the
+  message names ``wallNeutralizationProducts`` to resolve it.
+
+* ``wallNeutralizationProducts`` -- an optional ``{ion label: neutral label}`` dict naming, per ion,
+  the neutral it returns as at the wall, e.g. ``{'Arp': 'Ar'}``.  It is the escape hatch for the
+  cases the energy rule cannot decide on its own: two neutral states closer than ``k_B*T_gas``, an
+  ion whose neutral has isomers, or an excited-only deck with no ground state present to compare
+  against.  The named neutral must be a declared species, uncharged, and share the ion's heavy
+  composition.  Omit it and the ground state is inferred from thermochemistry, which is the common
+  case -- the ~11.5 eV between ground and metastable argon is far above the threshold, so nothing
+  need be declared for a deck that carries both.
 
 * ``ionisationSource`` -- a volumetric external production rate of ion-electron pairs,
   ``(6.6e4, 'm^-3/s')`` or ``(0.066, 'cm^-3/s')``.  This is where a *declared physical mechanism*
@@ -710,6 +726,23 @@ The remaining keywords are all optional:
 	boundary -- which for a fixed gas obeys a similarity law in the product of pressure and
 	diffusion length.  It does **not** determine an absolute steady-state electron density.  That
 	requires closing the discharge power balance, which is a separate matter from transport.
+
+.. warning::
+	**When this wall model applies.**  The wall here is a single bulk *ambipolar diffusion* sink:
+	one eigenvalue ``D_a/Lambda**2`` applied to every charged species, with zero net wall current
+	imposed algebraically.  There is no Bohm sheath, no sheath potential, no edge-to-centre density
+	factor, no electrode area, no secondary electron emission and no distinction between discharge
+	modes.  That picture is defensible for an **electropositive, unmagnetised discharge whose wall
+	loss is diffusion-limited** -- an inductively-coupled plasma or the positive column of a DC
+	discharge in a noble gas at roughly a few torr, where charged particles reach the wall by
+	ambipolar diffusion through the neutral gas.  It is **not** reliable where sheath-adjacent
+	ionisation, not diffusion, sets the wall loss: a high-pressure **capacitively-coupled** discharge,
+	a strongly electronegative gas (negative ions are confined by the ambipolar field, not lost at
+	the wall -- the model refuses a core that carries an anion), a magnetised plasma, or any regime
+	where the sheath is a large fraction of the gap.  The model also assumes a single dominant
+	singly-charged cation and refuses a second ion species or a multiply-charged one, whose mobility
+	the single ``ionReducedMobility`` cannot represent.  The ``maxIonisationDegree`` ceiling is the
+	one edge the code enforces numerically; the regime limits above are the user's to respect.
 
 .. _simulatortolerances:
 
