@@ -1028,6 +1028,124 @@ C 1 H 3 N 1 O 2 S 1 X 1
 
         os.remove(chemkin_save_path)
 
+    # --- one-range NASA (i260) -------------------------------------------
+
+    def _one_range_nasa(self):
+        # Monatomic-argon shape: constant Cp = 5/2 R, so a1 = 2.5 and a2..a5 = 0;
+        # a6, a7 are arbitrary H/S offsets. One range 200-6000 K is exact.
+        coeffs = [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, 4.37967]
+        return NASA(
+            polynomials=[
+                NASAPolynomial(coeffs=coeffs, Tmin=(200.0, "K"), Tmax=(6000.0, "K")),
+            ],
+            Tmin=(200.0, "K"),
+            Tmax=(6000.0, "K"),
+            comment="one-range monatomic",
+        )
+
+    def test_write_thermo_block_one_range(self):
+        """A one-range NASA must be written as a valid 4-line Chemkin block, not crash."""
+        species = Species(smiles="[Ar]")
+        species.label = "Ar"
+        species.thermo = self._one_range_nasa()
+        result = write_thermo_entry(species, verbose=False)
+        lines = result.splitlines()
+        assert len(lines) == 4, result
+        # Deliberate breakpoint: 1000 K, the conventional Chemkin interior split.
+        assert "1000.00" in lines[0], lines[0]
+
+    def _ar(self, thermo):
+        species = Species(smiles="[Ar]")
+        species.label = "Ar"
+        species.thermo = thermo
+        return species
+
+    def _assert_round_trip_exact(self, nasa, block):
+        """The block, read back, must agree with `nasa` in Cp, H and S across its range."""
+        import numpy as np
+        _, back, _ = read_thermo_entry(block)
+        assert back is not None, block
+        for T in np.linspace(nasa.polynomials[0].Tmin.value_si + 1.0,
+                             nasa.polynomials[-1].Tmax.value_si, 25):
+            for getter in ("get_heat_capacity", "get_enthalpy", "get_entropy"):
+                v0 = getattr(nasa, getter)(T)
+                v1 = getattr(back, getter)(T)
+                assert abs(v1 - v0) <= 1e-4 * abs(v0) + 1e-3, (getter, T, v0, v1)
+
+    def test_write_read_one_range_round_trips(self):
+        """A one-range (monatomic) NASA agrees in Cp, H and S once written and read back."""
+        nasa_one = self._one_range_nasa()
+        self._assert_round_trip_exact(nasa_one, write_thermo_entry(self._ar(nasa_one), verbose=False))
+
+    def test_write_read_one_range_varying_cp_round_trips(self):
+        """A one-range NASA with a VARYING Cp (a2..a5 nonzero) also round-trips exactly."""
+        nasa_one = NASA(
+            polynomials=[NASAPolynomial(
+                coeffs=[3.5, 1.2e-3, -4.0e-7, 5.0e-11, -2.0e-15, -1000.0, 6.0],
+                Tmin=(200.0, "K"), Tmax=(6000.0, "K"))],
+            Tmin=(200.0, "K"), Tmax=(6000.0, "K"))
+        self._assert_round_trip_exact(nasa_one, write_thermo_entry(self._ar(nasa_one), verbose=False))
+
+    def test_write_read_one_range_midpoint_fallback_round_trips(self):
+        """When 1000 K is outside the range, the split falls back to the midpoint and stays exact."""
+        nasa_one = NASA(
+            polynomials=[NASAPolynomial(
+                coeffs=[3.5, 1.0e-3, 0.0, 0.0, 0.0, -1000.0, 6.0],
+                Tmin=(1200.0, "K"), Tmax=(5000.0, "K"))],
+            Tmin=(1200.0, "K"), Tmax=(5000.0, "K"))
+        block = write_thermo_entry(self._ar(nasa_one), verbose=False)
+        # Midpoint of 1200-5000 K is 3100 K, not the default 1000 K breakpoint.
+        assert "3100.00" in block.splitlines()[0], block.splitlines()[0]
+        self._assert_round_trip_exact(nasa_one, block)
+
+    def test_write_thermo_block_one_range_nasa9_refused(self):
+        """A one-range NASA-9 (nonzero cm2/cm1) must be refused, not silently written as NASA-7."""
+        nasa9 = NASA(
+            polynomials=[NASAPolynomial(
+                coeffs=[3.0e6, -2.0e4, 3.5, 1.0e-3, 0.0, 0.0, 0.0, -1000.0, 5.0],
+                Tmin=(200.0, "K"), Tmax=(6000.0, "K"))],
+            Tmin=(200.0, "K"), Tmax=(6000.0, "K"))
+        with pytest.raises(ChemkinError, match=r'Ar.*cm2, cm1'):
+            write_thermo_entry(self._ar(nasa9), verbose=False)
+
+    def test_write_thermo_block_three_ranges_refused(self):
+        """Three ranges cannot map to Chemkin's two-range format: refuse and name the species."""
+        c = [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, 4.37967]
+        nasa_three = NASA(
+            polynomials=[
+                NASAPolynomial(coeffs=c, Tmin=(200.0, "K"), Tmax=(1000.0, "K")),
+                NASAPolynomial(coeffs=c, Tmin=(1000.0, "K"), Tmax=(3000.0, "K")),
+                NASAPolynomial(coeffs=c, Tmin=(3000.0, "K"), Tmax=(6000.0, "K")),
+            ],
+            Tmin=(200.0, "K"), Tmax=(6000.0, "K"),
+        )
+        with pytest.raises(ChemkinError, match=r'Ar.*one or two temperature ranges.*3 polynomials'):
+            write_thermo_entry(self._ar(nasa_three), verbose=False)
+
+    def test_write_thermo_block_malformed_values_refused(self):
+        """Non-finite coefficients or bounds, negative temperatures, and inverted ranges are refused by name."""
+        c = [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, 4.37967]
+
+        def one(coeffs, tmin=200.0, tmax=6000.0):
+            return NASA(polynomials=[NASAPolynomial(coeffs=coeffs, Tmin=(tmin, "K"), Tmax=(tmax, "K"))],
+                        Tmin=(tmin, "K"), Tmax=(tmax, "K"))
+
+        with pytest.raises(ChemkinError, match=r'Ar.*coefficients must be finite'):
+            write_thermo_entry(self._ar(one([2.5, float("nan"), 0.0, 0.0, 0.0, -745.0, 4.38])), verbose=False)
+        with pytest.raises(ChemkinError, match=r'Ar.*coefficients must be finite'):
+            write_thermo_entry(self._ar(one([2.5, float("inf"), 0.0, 0.0, 0.0, -745.0, 4.38])), verbose=False)
+        with pytest.raises(ChemkinError, match=r'Ar.*bounds must be finite and positive'):
+            write_thermo_entry(self._ar(one(c, tmax=float("inf"))), verbose=False)
+        with pytest.raises(ChemkinError, match=r'Ar.*bounds must be finite and positive'):
+            write_thermo_entry(self._ar(one(c, tmin=-10.0)), verbose=False)
+        # A two-range NASA whose high range is inverted (1000 -> 500 K).
+        inverted = NASA(
+            polynomials=[NASAPolynomial(coeffs=c, Tmin=(200.0, "K"), Tmax=(1000.0, "K")),
+                         NASAPolynomial(coeffs=c, Tmin=(1000.0, "K"), Tmax=(500.0, "K"))],
+            Tmin=(200.0, "K"), Tmax=(1000.0, "K"))
+        with pytest.raises(ChemkinError, match=r'Ar.*Tmin < Tmax'):
+            write_thermo_entry(self._ar(inverted), verbose=False)
+
 
 class TestReadReactionComments:
     @classmethod
