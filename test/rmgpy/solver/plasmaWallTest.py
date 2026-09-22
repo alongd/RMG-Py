@@ -55,7 +55,9 @@ from rmgpy import settings
 from rmgpy.exceptions import PlasmaStateError
 from rmgpy.kinetics import VoronovEIArrhenius
 from rmgpy.reaction import Reaction
+from rmgpy.rmg.settings import ModelSettings, SimulatorSettings
 from rmgpy.solver.plasma import PLASMA_LOSCHMIDT, PlasmaReactor
+from rmgpy.solver.termination import TerminationSteadyState, TerminationTime
 from rmgpy.species import Species
 from rmgpy.thermo import ThermoData
 
@@ -1510,3 +1512,197 @@ def test_nonfinite_recycle_thermo_leaves_energy_unavailable():
     avail = reactor.wall_energy_availability['wall_neutralization_energy_flux']
     assert avail == 'unavailable'
     assert np.isnan(reactor.wall_neutralization_energy_flux)
+
+
+# ================================ round 88 ================================
+# Four HIGH + two MEDIUM. Three of the HIGH are the round-83 class -- a guard, a
+# key, or a diagnostic reading a quantity adjacent to the one the physics governs.
+# HIGH 2 is the wall made invisible to the termination path.
+
+
+def _simulate(reactor, core, rxns, edge=None, edge_rxns=None):
+    """Drive a reactor through the production simulate() entry, as the model builder
+    does. Settings are the inert-friendly ones the steady-state suite uses."""
+    return reactor.simulate(
+        core, rxns, edge or [], edge_rxns or [], [], [],
+        model_settings=ModelSettings(tol_keep_in_edge=0, tol_move_to_core=1e5,
+                                     tol_interrupt_simulation=1e8),
+        simulator_settings=SimulatorSettings())
+
+
+# ---- HIGH 2: a wall-only system must not declare itself inert on simulate() ----
+
+def test_wall_only_deck_integrates_past_t0_on_the_production_path():
+    """HIGH 2: a wall-only deck (no gas-phase chemistry, gamma=0) carries no
+    char_rate, but the wall is removing ~1.9e-2 mol/s of ion-electron pairs. The
+    inert test read char_rate -- the gas-phase CHEMISTRY diagnostic -- as the
+    system's total flux and terminated at t=0 claiming 'the composition cannot
+    change'. Demonstrated on simulate(), the production entry, not a residual probe.
+    The inert test must consult the reactor's TOTAL flux; the wall term moves it."""
+    term = [TerminationSteadyState(tolerance=1e-8), TerminationTime((1.0, 's'))]
+    r, core, rxns = _build_reactor(wall=True, gamma=0.0, with_chemistry=False,
+                                   x_ion=1.0e-4, termination=term)
+    y0 = np.array(r.y0[:r.num_core_species], float)
+    terminated, _res, _inv, _ss, _sr, t_final, _conv = _simulate(r, core, rxns)
+    # The wall is depleting the plasma, so the run must integrate, not stop at t=0.
+    assert t_final > 0.0
+    assert not np.array_equal(np.array(r.y[:r.num_core_species], float), y0)
+
+
+def test_genuinely_inert_deck_still_terminates_at_t0_unchanged():
+    """The other half of HIGH 2's ruling: a reactor with no non-chemical flux must
+    behave EXACTLY as before. A wall-less plasma deck with no chemistry has zero
+    total flux and must still be recognised as inert and terminate at t=0."""
+    term = [TerminationSteadyState(tolerance=1e-8), TerminationTime((1.0, 's'))]
+    r, core, rxns = _build_reactor(wall=False, with_chemistry=False, termination=term)
+    terminated, _res, _inv, _ss, _sr, t_final, _conv = _simulate(r, core, rxns)
+    assert terminated and t_final == 0.0
+
+
+# ---- HIGH 1: the skeleton key must key charged and neutral species alike ----
+
+def _dme_isotope_species():
+    e = Species(label='e-').from_adjacency_list('1 e u1 p0 c-1')
+    dme12 = Species(label='DME').from_smiles('COC')
+    dme12.thermo = _thermo_with_h298(-184.0)
+    dme13 = Species(label='DME-13C').from_smiles('[13CH3]O[CH3]')
+    dme13.thermo = _thermo_with_h298(-184.0)
+    dmep13 = Species(label='DME+-13C').from_smiles('[13CH3][O+][CH3]')
+    return e, dme12, dme13, dmep13
+
+
+def test_skeleton_key_keeps_isotopes_so_the_wall_cannot_transmute_nuclei():
+    """HIGH 1: the key truncated the standard InChI at the first /q or /p, but the
+    isotope layer /i sits AFTER /q, so a charged species lost it and a neutral did
+    not -- the key was a different rule depending on charge. A 13C cation then keyed
+    identically to an ordinary-carbon neutral, and the wall recycled 13C into 12C: a
+    transmuted nucleus. Removing the /q and /p layers (not truncating at them) keeps
+    /i, so isotopes discriminate on both charge states while Ar and Ar* still
+    coincide."""
+    r, _, _ = _build_reactor(wall=True, with_chemistry=False)
+    _e, dme12, dme13, dmep13 = _dme_isotope_species()
+    # charge independence preserved: the 13C neutral and 13C cation still coincide
+    assert r._skeleton_key(dme13) == r._skeleton_key(dmep13)
+    # the nucleus discriminates: the 13C cation must NOT key as the 12C neutral
+    assert r._skeleton_key(dmep13) != r._skeleton_key(dme12)
+
+
+def test_declared_isotopic_neutral_is_not_hidden_by_key_truncation():
+    """HIGH 1, the escape hatch: a correct declaration naming the isotopic neutral
+    must resolve. Truncation stripped the neutral's /i layer from the ion's key, so
+    the isotopic neutral never entered the candidate 'matches' list and the
+    declaration was refused as 'not sharing the heavy composition'. With the layer
+    kept, ion and its isotopic neutral share a key and the declaration resolves."""
+    e, _dme12, dme13, dmep13 = _dme_isotope_species()
+    imf = {e: 1.0e-6, dmep13: 1.0e-6, dme13: 1.0 - 2.0e-6}
+    reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+                            (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
+                            diffusion_length=(_diffusion_length(), 'm'),
+                            ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
+                            wall_recycling=1.0,
+                            wall_neutralization_products={'DME+-13C': 'DME-13C'})
+    core = [e, dme13, dmep13]
+    reactor.initialize_model(core, [], [], [])
+    i_cat = _cation_index(reactor)
+    assert core[int(reactor.wall_recycle_target[i_cat])].label == 'DME-13C'
+
+
+# ---- HIGH 3: quasineutrality is a ratio, not an absolute mole floor ----
+
+def test_quasineutrality_bound_is_relative_not_an_absolute_mole_floor():
+    """HIGH 3: quasineutrality is a RATIO, but the guard compared the net charge to a
+    fixed 1e-12 mol. An electron inventory of 1e-13 mol with no ion partner at all is
+    100% non-neutral, yet slipped under the absolute floor. The bound must be a
+    fraction of the charged inventory, independent of the system's size and units."""
+    e = Species(label='e-').from_adjacency_list('1 e u1 p0 c-1')
+    ar = _ground_species('Ar')
+    arp = Species(label='Ar+').from_adjacency_list('multiplicity 2\n1 Ar u1 p3 c+1')
+    imf = {e: 1.0e-13, arp: 0.0, ar: 1.0 - 1.0e-13}
+    reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+                            (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
+                            diffusion_length=(_diffusion_length(), 'm'),
+                            ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
+                            wall_recycling=0.0)
+    with pytest.raises(PlasmaStateError) as exc:
+        reactor.initialize_model([e, ar, arp], [], [], [])
+    assert 'quasineutrality' in str(exc.value) or 'net charge' in str(exc.value)
+
+
+def test_initial_quasineutrality_bound_is_relative_under_algebraic_electron():
+    """HIGH 3 at the second site: with the electron carried algebraically, the packed
+    initial state must SATISFY quasineutrality, and 'satisfy' is again relative. Ar+
+    at 5e-13 mol against e- at 1e-13 mol is a net +4e-13 -- a two-thirds charge
+    imbalance -- that the absolute 1e-12 mol floor admitted."""
+    e = Species(label='e-').from_adjacency_list('1 e u1 p0 c-1')
+    ar = _ground_species('Ar')
+    arp = Species(label='Ar+').from_adjacency_list('multiplicity 2\n1 Ar u1 p3 c+1')
+    imf = {e: 1.0e-13, arp: 5.0e-13, ar: 1.0 - 6.0e-13}
+    reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+                            (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
+                            quasineutral_electron=True)
+    with pytest.raises(PlasmaStateError) as exc:
+        reactor.initialize_model([e, ar, arp], [], [], [])
+    assert 'net charge' in str(exc.value)
+
+
+# ---- HIGH 4: neutralisation energy is owed per ion lost, not scaled by gamma ----
+
+def _energy_reactor(gamma):
+    e = Species(label='e-').from_adjacency_list('1 e u1 p0 c-1')
+    ar = _ground_species('Ar', excitation_eV=0.0)
+    arp = Species(label='Ar+').from_adjacency_list('multiplicity 2\n1 Ar u1 p3 c+1')
+    arp.thermo = _argon_thermo(15.76)          # ionisation energy as the enthalpy offset
+    imf = {e: 1.0e-6, arp: 1.0e-6, ar: 1.0 - 2.0e-6}
+    reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+                            (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
+                            diffusion_length=(_diffusion_length(), 'm'),
+                            ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
+                            wall_recycling=gamma)
+    reactor.initialize_model([e, ar, arp], [], [], [])
+    return reactor
+
+
+def test_neutralisation_energy_is_owed_per_ion_lost_not_scaled_by_recycling():
+    """HIGH 4: wall_recycling is a MASS-return fraction. The neutralisation enthalpy
+    is deposited when the ion recombines with an electron at the wall, which happens
+    whether or not the neutral returns to the gas. The energy term was gated on and
+    multiplied by gamma, so a fully-pumping wall (gamma=0) reported 0 W -- and, worse,
+    labelled it 'available'. The energy must be independent of gamma."""
+    r0 = _energy_reactor(gamma=0.0)
+    r1 = _energy_reactor(gamma=1.0)
+    e0 = r0.wall_neutralization_energy_flux
+    e1 = r1.wall_neutralization_energy_flux
+    assert r0.wall_energy_availability['wall_neutralization_energy_flux'] == 'available'
+    assert e0 > 0.0
+    # gamma governs where the neutral goes, not whether the enthalpy is deposited
+    assert np.isclose(e0, e1, rtol=1e-12, atol=0.0)
+
+
+# ---- MEDIUM: a duplicate declaration label, and a truthy-string flag ----
+
+def test_duplicate_neutral_label_in_declaration_is_refused():
+    """MEDIUM: a declaration names ONE product, but if two core species carry that
+    label the name identifies two things and core ordering silently picked the first.
+    Round 83's whole point is that the modeller names the product; an ambiguous label
+    defeats it. Refuse."""
+    with pytest.raises(PlasmaStateError) as exc:
+        _metastable_reactor(meta_label='Ar', neutralization={'Ar+': 'Ar'})
+    msg = str(exc.value)
+    assert "'Ar'" in msg and ('more than one' in msg or 'ambiguous' in msg)
+
+
+def test_quasineutral_electron_flag_parses_boolean_strings_strictly():
+    """MEDIUM: quasineutral_electron went through bool(value), so the STRING 'False'
+    -- any non-empty string -- enabled quasineutral mode. Parse boolean-like strings
+    by value, and refuse a string that is not boolean-like rather than reading it as
+    True."""
+    e, ar, arp = _argon_species()
+    imf = {e: 1.0e-6, arp: 1.0e-6, ar: 1.0 - 2.0e-6}
+    r = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+                      (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
+                      quasineutral_electron='False')
+    assert r.quasineutral_electron is False
+    with pytest.raises(PlasmaStateError):
+        PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+                      (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
+                      quasineutral_electron='maybe')
