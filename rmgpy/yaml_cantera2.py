@@ -67,7 +67,7 @@ from rmgpy.data.kinetics.library import LibraryReaction
 from rmgpy.electron_balance import (check_electron_balance, check_electron_reactant_order,
                                     expand_electrons, get_electron_species,
                                     is_isomorphic_same_charge, potential_dependence_is_inert)
-from rmgpy.exceptions import MechanismWriterError
+from rmgpy.exceptions import CanteraThermoWriteError, MechanismWriterError
 from rmgpy.kinetics import (
     Arrhenius, PDepArrhenius, MultiArrhenius, MultiPDepArrhenius,
     Chebyshev, Troe, Lindemann, ThirdBody,
@@ -508,6 +508,11 @@ def species_to_dict(species, species_list):
     # Sort polynomials by Tmin
     sorted_polys = sorted(thermo_data.polynomials, key=lambda p: p.Tmin.value_si)
 
+    if not sorted_polys:
+        raise CanteraThermoWriteError(
+            f"Cannot write Cantera thermo for species '{species}': its NASA thermo "
+            f"carries no polynomials.")
+
     polys = []
     for poly in sorted_polys:
         polys.append({
@@ -516,14 +521,19 @@ def species_to_dict(species, species_list):
         })
 
     # Build the base dictionary
+    # 'temperature-ranges' is the Tmin of the first (lowest) polynomial followed by the
+    # Tmax of every polynomial in order; 'data' is each polynomial's coefficient set in
+    # the same order. This is a direct generalisation of the old hard-indexed
+    # [sorted_polys[0].Tmin, sorted_polys[0].Tmax, sorted_polys[1].Tmax] /
+    # [polys[0]['data'], polys[1]['data']] construction to any number of polynomials
+    # (Cantera's NASA7 YAML schema accepts a single range as well as two).
     species_entry = {
         'name': get_label(species, species_list),
         'composition': atom_dict,
         'thermo': {
             'model': 'NASA7',
-            'temperature-ranges': [sorted_polys[0].Tmin.value_si, sorted_polys[0].Tmax.value_si,
-                                   sorted_polys[1].Tmax.value_si],
-            'data': [polys[0]['data'], polys[1]['data']]
+            'temperature-ranges': [sorted_polys[0].Tmin.value_si] + [p.Tmax.value_si for p in sorted_polys],
+            'data': [p['data'] for p in polys]
         },
     }
 
