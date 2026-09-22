@@ -2002,6 +2002,14 @@ class CoreEdgeReactionModel:
         whenever a new high-pressure limit edge reaction is created. Returns the
         network containing the new reaction.
         """
+        # The third gate, and the one that was missing. A pressure-dependent reaction
+        # never touches `self.core.reactions` or `self.edge.reactions` as a path reaction:
+        # `process_new_reactions` routes it here instead, and `generate_kinetics=False`
+        # skips the estimation gate, so before this call a quarantined rate could enter a
+        # network with nothing having looked at it and then leave as a k(T,P) fit with its
+        # provenance averaged away. A network is the last place a bad rate stays
+        # recognisable.
+        check_quarantine(newReaction, stage='admission to a pressure-dependent network')
 
         assert isinstance(new_species, Species)
 

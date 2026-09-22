@@ -78,6 +78,38 @@ writes into an estimated rate's comment and saves into the entry's ``longDesc``.
 hand-written entry carrying no comment there is nothing to recover, that gap is real,
 and :func:`_warn_unattributable` reports it rather than guessing in either direction.
 
+**Every path by which a rate reaches the model, and the gate covering it.** This list is
+the answer to "is the gate wired in?", and it is here rather than in a review note so that
+a future reviewer can check it against the code. Each entry names the call in
+``rmgpy/rmg/model.py``.
+
+======================================= =====================================================
+Path                                    Gate
+======================================= =====================================================
+generated reaction, kinetics estimated  ``apply_kinetics_to_reaction`` -- the primary gate,
+                                        upstream of both core and edge, so a refused rate
+                                        cannot steer enlargement from the edge either
+core admission                          ``add_reaction_to_core`` -- backstop for everything
+                                        that never passes through estimation
+edge admission                          ``add_reaction_to_edge`` -- same backstop
+pressure-dependent network              ``add_reaction_to_unimolecular_networks``. A pdep
+                                        path reaction goes *here instead of* core or edge,
+                                        and ``generate_kinetics=False`` skips estimation, so
+                                        the two backstops above never see it
+seed mechanism                          covered: ``add_seed_mechanism_to_core`` reaches
+                                        ``add_reaction_to_core`` for every reaction it adds
+reaction library                        covered: ``add_reaction_library_to_edge`` reaches
+                                        ``add_reaction_to_edge``
+library-to-output selection             covered upstream, deliberately not gated again:
+                                        ``add_reaction_library_to_output`` only re-selects
+                                        reactions already in ``self.edge.reactions``, each of
+                                        which passed the edge gate
+======================================= =====================================================
+
+What this does **not** cover is unchanged and enumerated per-manifest in ``bypassRoutes``:
+an engine without this module, a consumer reading ``.kinetics`` off the database without
+model admission at all, and a hand-written library entry carrying no authorship.
+
 **Scope.** The quarantine is a property of a *family*, so it does not reach ordinary
 chemistry: a database with no ``quarantine.py`` anywhere behaves precisely as it did
 before, and the gate costs one ``None`` check per reaction.
@@ -90,7 +122,9 @@ supplies the missing reference (an electrode/electrolyte model, a refit, an Arka
 job, a provenance audit) keeps working on the same unmodified data.
 """
 
+import ast
 import importlib
+import inspect
 import logging
 import os.path
 
@@ -104,6 +138,31 @@ QUARANTINE_FILENAME = 'quarantine.py'
 #: ``name``, ``shortDesc`` and ``longDesc`` are optional and free text; they follow the
 #: rest of the database in being camelCase in the data file and snake_case on the object.
 _REQUIRED_FIELDS = ('state', 'appliesToKineticsClass', 'reason')
+
+
+def _counts_calls_to(module, symbol_name):
+    """
+    Return ``(number of calls to `symbol_name` in `module`'s source, source readable)``.
+
+    The bound, stated because the field's name promises more than any static check can
+    deliver: this proves a call **exists in the source**, not that it executes on a given
+    run or covers every path. What it does close is the gap it was written for -- a module
+    that imports the gate and calls it nowhere, which binding alone accepts.
+    """
+    try:
+        tree = ast.parse(inspect.getsource(module))
+    except (OSError, TypeError, SyntaxError):
+        return 0, False
+    calls = 0
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if isinstance(func, ast.Name) and func.id == symbol_name:
+            calls += 1
+        elif isinstance(func, ast.Attribute) and func.attr == symbol_name:
+            calls += 1
+    return calls, True
 
 
 def _check_engine_requirements(path, family_label, manifest):
@@ -125,11 +184,12 @@ def _check_engine_requirements(path, family_label, manifest):
       attribute that merely exists proves nothing: ``math.pi`` is not a gate. Declaring a
       symbol without a module is refused rather than ignored, since it asks for a check
       that cannot be performed.
-    * ``requiresEngineCallSites`` -- module(s) that must have the declared symbol bound
-      under its own name, and bound to *the same object*. Existence proves the capability
-      was written; this proves it is wired into the path the manifest depends on. An
-      engine that defines ``check_quarantine`` and never calls it from its reaction model
-      fails here.
+    * ``requiresEngineCallSites`` -- module(s) that must bind the declared symbol to *the
+      same object* **and call it**. Binding alone was the first version of this check and
+      was not the property the field is named for: deleting every call while keeping the
+      import leaves a module that still binds the gate and runs nothing. The call check is
+      static (see :func:`_counts_calls_to`), so it proves a call exists in the source, not
+      that it executes on a given run.
     * ``requiresEngineCommit`` -- **not declarable**. An installed engine has no reliable
       commit to compare against, so the check would pass on every checkout. Record the
       commit as ``recordedEngineCommit`` instead, which this function reads as provenance
@@ -221,6 +281,23 @@ def _check_engine_requirements(path, family_label, manifest):
                 'is why this is checked separately.'.format(
                     path=path, symbol=symbol_name, module=module_name, site=call_site,
                     bound=getattr(site, symbol_name, None), family=family_label))
+        calls, readable = _counts_calls_to(site, symbol_name)
+        if not readable:
+            raise DatabaseError(
+                'Quarantine manifest {path} requires {symbol!r} to be called from {site!r}, '
+                'and this engine provides {site!r} without readable source, so the '
+                'requirement cannot be checked. Refusing rather than assuming, because an '
+                'unverifiable requirement that loads is the failure mode this field group '
+                'exists to remove.'.format(path=path, symbol=symbol_name, site=call_site))
+        if not calls:
+            raise DatabaseError(
+                'Quarantine manifest {path} requires {symbol!r} to be reached from {site!r}. '
+                '{site!r} imports it and never calls it: {calls:d} call sites in its source. '
+                'Deleting every call while keeping the import leaves a module that still '
+                'binds the gate and runs nothing, so binding alone is not the property this '
+                'field is named for. Family {family} would be admitted unchecked.'.format(
+                    path=path, symbol=symbol_name, site=call_site, calls=calls,
+                    family=family_label))
 
 
 class KineticsQuarantine(object):
@@ -380,18 +457,33 @@ _FAMILY_COMMENT_PREFIX = 'family:'
 _UNATTRIBUTED_WARNED = set()
 
 
-def _family_from_provenance(*texts):
+def _families_from_provenance(*texts):
     """
-    Return the family label declared by a ``family: <label>`` line in any of `texts`.
+    Return **every** distinct family label declared by a ``family: <label>`` line.
+
+    Every one, in order of appearance, and not just the first. Provenance is free text:
+    taking the first line and stopping means one prepended line shadows the genuine one,
+    and a bypass that costs an attacker a single line of comment is not a bound worth
+    having. Trusting all of them inverts that -- an added line can only ever *widen* what
+    is consulted, never narrow it.
+
+    The trust this places in free text is bounded, and the bound is worth stating. A
+    forged or stale line cannot invent a quarantine: the manifest still has to exist, and
+    its ``appliesToKineticsClass`` criterion still has to match the rate. What a forged
+    line can do is cause a *false refusal* of an independent rate that happens to be of
+    the quarantined class. That failure is loud, names the file it came from, and is
+    corrected by deleting a line -- where the failure in the other direction is a
+    meaningless number in a mechanism that reports success.
     """
+    labels = []
     for text in texts:
         for line in (text or '').splitlines():
             stripped = line.strip()
             if stripped.startswith(_FAMILY_COMMENT_PREFIX):
                 label = stripped[len(_FAMILY_COMMENT_PREFIX):].strip()
-                if label:
-                    return label
-    return None
+                if label and label not in labels:
+                    labels.append(label)
+    return labels
 
 
 def authoring_family(reaction):
@@ -411,12 +503,25 @@ def authoring_family(reaction):
     which case authorship is unrecoverable and this returns ``None`` -- see
     :func:`check_quarantine` for what is done about that.
     """
+    labels = authoring_families(reaction)
+    return labels[0] if labels else None
+
+
+def authoring_families(reaction):
+    """
+    Return every family label `reaction`'s provenance declares, most likely first.
+
+    :func:`check_quarantine` uses this rather than :func:`authoring_family`, so that a
+    second ``family:`` line cannot hide the first. For a template reaction the list is
+    the one family that generated it.
+    """
     if reaction is None:
-        return None
+        return []
     if getattr(reaction, 'library', None) is None:
-        return getattr(reaction, 'family', None)
+        family = getattr(reaction, 'family', None)
+        return [family] if family else []
     entry = getattr(reaction, 'entry', None)
-    return _family_from_provenance(
+    return _families_from_provenance(
         getattr(getattr(reaction, 'kinetics', None), 'comment', ''),
         getattr(entry, 'long_desc', ''),
     )
@@ -471,6 +576,102 @@ def _warn_unattributable(reaction, kinetics):
         _FAMILY_COMMENT_PREFIX)
 
 
+#: (database directory, family label) -> KineticsQuarantine or None, for families that
+#: are not loaded and had to be answered from disk. A miss costs two `os.path` calls.
+_DISK_QUARANTINE_CACHE = {}
+
+#: One warning per (family label, kinetics class) for questions that could not be
+#: answered at all.
+_UNANSWERED_WARNED = set()
+
+
+def resolve_quarantine(label):
+    """
+    Answer "is family `label` quarantined?" as ``(quarantine, answered)``.
+
+    ``answered`` is the whole point of this function. ``get_quarantine`` returns ``None``
+    both for "this family carries no manifest" and for "I could not find this family at
+    all", and those are opposite situations: the first is a clean bill of health, the
+    second is an unanswered question. Collapsing them means a lookup miss silently skips
+    every assertion that follows it.
+
+    The unloaded case is not exotic. ``CoreEdgeReactionModel.add_seed_mechanism_to_core``
+    deliberately *converts* a seed reaction whose family is unavailable into a library
+    reaction rather than loading the family, so "authorship recovered, family not loaded"
+    is the normal path for any seed written by a different database than the one running.
+
+    So the question is answered from **disk** when the family is not loaded: a manifest is
+    a sidecar file in the family's directory, and reading it needs no family object. What
+    is left unanswered after that is the genuine case -- a family this database does not
+    contain, whose manifest cannot be consulted because it is not here.
+    """
+    import rmgpy.data.rmg
+    database = getattr(rmgpy.data.rmg, 'database', None)
+    families = getattr(getattr(database, 'kinetics', None), 'families', None)
+    if families:
+        try:
+            family = families[label]
+        except (KeyError, TypeError):
+            pass
+        else:
+            return getattr(family, 'quarantine', None), True
+
+    from rmgpy import settings
+    directory = (settings or {}).get('database.directory')
+    if not directory:
+        return None, False
+
+    key = (directory, label)
+    if key in _DISK_QUARANTINE_CACHE:
+        return _DISK_QUARANTINE_CACHE[key]
+
+    family_path = os.path.join(directory, 'kinetics', 'families', str(label))
+    if not os.path.isdir(family_path):
+        answer = (None, False)
+    elif not os.path.exists(os.path.join(family_path, QUARANTINE_FILENAME)):
+        # The family is in this database and carries no manifest. That is an answer.
+        answer = (None, True)
+    else:
+        answer = (load_family_quarantine(label, family_path), True)
+    _DISK_QUARANTINE_CACHE[key] = answer
+    return answer
+
+
+def _warn_unanswered(reaction, kinetics, labels):
+    """
+    Report a rate whose authorship is known and whose manifest could not be consulted.
+
+    Deliberately not a refusal, and the reasoning is the opposite of
+    :func:`_warn_unattributable`'s. There the label was missing; here the family is. A
+    seed mechanism that names families this database does not contain is ordinary -- the
+    reaction model converts such reactions on purpose and merely logs it -- so refusing
+    would stop runs that have nothing to do with any quarantine, and would break the
+    promise that a database with no manifest anywhere behaves exactly as it did before.
+
+    What must not happen is that it passes in silence, which is what a bare ``None``
+    achieved. The residual risk is stated rather than closed: if the missing family is
+    quarantined *in its own database*, this run cannot know it.
+    """
+    if kinetics is None:
+        return
+    if not any(True for _ in iter_quarantines()):
+        # No quarantine anywhere in this database: nothing is being skipped, and warning
+        # here would put a line into every ordinary run that loads a foreign seed.
+        return
+    key = (tuple(labels), type(kinetics).__name__)
+    if key in _UNANSWERED_WARNED:
+        return
+    _UNANSWERED_WARNED.add(key)
+    logging.warning(
+        'Cannot tell whether %s kinetics authored by family %s are quarantined: this '
+        'database has no such family, so its manifest -- if it has one -- cannot be '
+        'consulted. The rate IS being admitted. This is not the same as a rate with no '
+        'recorded authorship: the authorship is here and the answer is not. If that '
+        'family is quarantined in the database it came from, this run cannot know it. '
+        'Load that family, or supply the rate from a source this database can check.',
+        type(kinetics).__name__, ', '.join(str(label) for label in labels))
+
+
 def get_quarantine(source):
     """
     Return the :class:`KineticsQuarantine` covering `source`, or ``None``.
@@ -479,6 +680,10 @@ def get_quarantine(source):
     loaded kinetics database; an unloaded database and an unknown label both yield
     ``None``. Callers must not pass a *library* label here -- see
     :func:`authoring_family` for why the two kinds of name are not interchangeable.
+
+    **Prefer :func:`resolve_quarantine` in a gate.** This function cannot distinguish
+    "no manifest" from "no such family", and a gate that cannot tell those apart admits
+    on a lookup miss.
     """
     if source is None:
         return None
@@ -555,14 +760,26 @@ def check_quarantine(reaction, stage, family=None, kinetics=None, source=None, e
     if kinetics is None:
         kinetics = getattr(reaction, 'kinetics', None)
 
-    quarantine = get_quarantine(family if family is not None else authoring_family(reaction))
-    if quarantine is None:
-        if family is None and getattr(reaction, 'library', None) is not None \
-                and authoring_family(reaction) is None:
-            _warn_unattributable(reaction, kinetics)
-        return
+    if family is not None:
+        # The caller is holding the family itself; nothing to resolve or doubt.
+        candidates = [(get_quarantine(family), True, family)]
+    else:
+        labels = authoring_families(reaction)
+        if not labels:
+            if getattr(reaction, 'library', None) is not None:
+                _warn_unattributable(reaction, kinetics)
+            return
+        candidates = [resolve_quarantine(label) + (label,) for label in labels]
 
-    if not quarantine.applies_to(kinetics):
+    unanswered = [label for quarantine, answered, label in candidates if not answered]
+    for quarantine, answered, _label in candidates:
+        if answered and quarantine is not None and quarantine.applies_to(kinetics):
+            break
+    else:
+        # Nothing matched. Say so where the question could not be asked, rather than
+        # letting a lookup miss look like a clean bill of health.
+        if unanswered:
+            _warn_unanswered(reaction, kinetics, unanswered)
         return
 
     try:

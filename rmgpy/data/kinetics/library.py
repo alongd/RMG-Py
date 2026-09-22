@@ -340,6 +340,11 @@ class KineticsLibrary(Database):
         """
         rxns = []
         for entry in self.entries.values():
+            # `entry=entry` on every LibraryReaction below is load-bearing, not bookkeeping.
+            # An entry's `long_desc` is where the authorship of an estimated rate survives
+            # being written to a library ("family: <label>"), and it is the only carrier
+            # when the kinetics comment has been stripped. Constructing the reaction
+            # without it discards that provenance at the one point it is still in hand.
             if self.auto_generated and entry.long_desc and 'Originally from reaction library: ' in entry.long_desc:
                 lib = [line for line in entry.long_desc.split('\n') if 'Originally from reaction library: ' in line]
                 lib = lib[0].replace('Originally from reaction library: ', '')
@@ -351,7 +356,7 @@ class KineticsLibrary(Database):
                                       duplicate=entry.item.duplicate, reversible=entry.item.reversible,
                                       allow_pdep_route=entry.item.allow_pdep_route,
                                       elementary_high_p=entry.item.elementary_high_p,
-                                      electrons=entry.item.electrons)
+                                      electrons=entry.item.electrons, entry=entry)
                 rxn.family = self.label  # the library the reaction was loaded from (opposed to originally from)
             elif self.auto_generated and entry.long_desc and 'rate rule' in entry.long_desc:  # template reaction
                 family = ''
@@ -376,7 +381,7 @@ class KineticsLibrary(Database):
                                       kinetics=entry.data, duplicate=entry.item.duplicate,
                                       reversible=entry.item.reversible, allow_pdep_route=entry.item.allow_pdep_route,
                                       elementary_high_p=entry.item.elementary_high_p,
-                                      electrons=entry.item.electrons)
+                                      electrons=entry.item.electrons, entry=entry)
             rxns.append(rxn)
 
         return rxns

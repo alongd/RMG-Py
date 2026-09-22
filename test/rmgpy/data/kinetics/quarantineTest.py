@@ -66,10 +66,11 @@ from rmgpy import settings
 from rmgpy.data.base import Entry
 from rmgpy.data.kinetics.database import KineticsDatabase
 from rmgpy.data.kinetics.family import TemplateReaction
-from rmgpy.data.kinetics.library import LibraryReaction
+from rmgpy.data.kinetics.library import KineticsLibrary, LibraryReaction
 from rmgpy.data.kinetics.quarantine import (
     QUARANTINE_FILENAME,
     KineticsQuarantine,
+    authoring_families,
     authoring_family,
     check_quarantine,
     describe_provenance,
@@ -333,6 +334,33 @@ class TestTheManifest:
             load_family_quarantine("Fake_Quarantined_Family", path)
         assert "wired into" in str(exc.value)
 
+    def test_a_call_site_that_imports_the_gate_and_never_calls_it_is_refused(
+            self, tmp_path, monkeypatch):
+        """
+        Binding was the first version of this check and it is not the property the field
+        is named for: delete every call in ``model.py`` and keep the import, and the
+        module still binds the gate while running nothing. Round 87's ``math.pi`` finding
+        one level up -- stricter about what the name points at, still silent about whether
+        anything invokes it.
+        """
+        module_dir = tmp_path / "fake_site"
+        module_dir.mkdir()
+        (module_dir / "imports_but_never_calls.py").write_text(
+            "from rmgpy.data.kinetics.quarantine import check_quarantine\n"
+            "# every call site deleted; the import is all that is left\n")
+        monkeypatch.syspath_prepend(str(module_dir))
+
+        manifest_dir = tmp_path / "manifest"
+        manifest_dir.mkdir()
+        write_manifest(str(manifest_dir),
+                       MANIFEST
+                       + 'requiresEngineModule = "rmgpy.data.kinetics.quarantine"\n'
+                       + 'requiresEngineSymbol = "check_quarantine"\n'
+                       + 'requiresEngineCallSites = ("imports_but_never_calls",)\n')
+        with pytest.raises(DatabaseError) as exc:
+            load_family_quarantine("Fake_Quarantined_Family", str(manifest_dir))
+        assert "never calls it" in str(exc.value)
+
     def test_the_real_call_site_satisfies_the_wiring_check(self, tmp_path):
         """
         The positive control for the test above, and the arrangement the shipped manifest
@@ -526,6 +554,55 @@ class TestTheGateFires:
         check_quarantine(make_reaction(), stage="a test", kinetics=make_marcus())
 
 
+def _clear_gate_caches():
+    """
+    Reset the gate's memoised state between tests.
+
+    Each of these exists so a message is emitted once rather than once per edge reaction
+    per iteration, or so a disk lookup is not repeated. Left uncleared, one test's warning
+    silences another's and the silence reads as a pass.
+
+    Deliberately tolerant of a cache that does not exist: this file is run against older
+    engines to show new tests failing, and a fixture that raises `AttributeError` during
+    setup turns an assertion failure into a setup error, which proves much less.
+    """
+    from rmgpy.data.kinetics import quarantine as module
+
+    for name in ("_UNATTRIBUTED_WARNED", "_UNANSWERED_WARNED", "_DISK_QUARANTINE_CACHE"):
+        cache = getattr(module, name, None)
+        if cache is not None:
+            cache.clear()
+
+
+def _register_families(monkeypatch, quarantines):
+    """
+    Register `quarantines` (label -> KineticsQuarantine or None) as the loaded families.
+
+    Deliberately separate from the `registered` fixture so a test can register families
+    that do NOT include the one a reaction names -- which is the case
+    `add_seed_mechanism_to_core` creates routinely.
+    """
+
+    class _Family(object):
+        def __init__(self, label, q):
+            self.label = label
+            self.quarantine = q
+
+    class _Kinetics(object):
+        def __init__(self, families):
+            self.families = families
+
+    class _Database(object):
+        def __init__(self, families):
+            self.kinetics = _Kinetics(families)
+
+    import rmgpy.data.rmg
+
+    families = {label: _Family(label, q) for label, q in quarantines.items()}
+    monkeypatch.setattr(rmgpy.data.rmg, "database", _Database(families), raising=False)
+    return families
+
+
 def make_library_reaction(library="copied_seed", comment="", long_desc=None):
     """A library reaction shaped like one loaded from a seed mechanism."""
     reaction = LibraryReaction(
@@ -572,11 +649,9 @@ class TestProvenanceNotTheFamilySlot:
         it does not repeat per edge reaction per iteration. Clear it, or one test's
         warning silences another's and the silence reads as a pass.
         """
-        from rmgpy.data.kinetics import quarantine as module
-
-        module._UNATTRIBUTED_WARNED.clear()
+        _clear_gate_caches()
         yield
-        module._UNATTRIBUTED_WARNED.clear()
+        _clear_gate_caches()
 
     def test_a_quarantined_rate_copied_into_a_library_is_still_refused(self, registered):
         """
@@ -589,10 +664,47 @@ class TestProvenanceNotTheFamilySlot:
         assert "Fake_Quarantined_Family" in str(exc.value)
 
     def test_the_provenance_may_live_in_the_entry_instead_of_the_comment(self, registered):
-        """The library writer puts the estimator's comment in the entry's longDesc."""
+        """
+        The library writer puts the estimator's comment in the entry's longDesc.
+
+        NOTE the shape this builds: it assigns ``reaction.entry`` by hand. That is the
+        intended design, and for one round it was a design production did not implement --
+        ``get_library_reactions`` constructed every ``LibraryReaction`` without its entry,
+        so this test passed against an object shape that never occurred. It is kept as a
+        unit test of the lookup, and
+        :meth:`TestTheProvenanceArrivesFromTheRealLoader.test_the_entry_travels_with_the_reaction`
+        is what makes it mean anything.
+        """
         reaction = make_library_reaction(comment="", long_desc=ESTIMATED_COMMENT)
         with pytest.raises(QuarantinedKineticsError):
             check_quarantine(reaction, stage="a test", kinetics=reaction.kinetics)
+
+    def test_every_declared_family_is_consulted_not_just_the_first(self, registered):
+        """
+        Provenance is free text. Taking the first ``family:`` line and stopping means one
+        prepended line shadows the genuine one, and a bypass costing an attacker a single
+        comment line is not a bound worth having. All declared labels are consulted, so an
+        added line can only widen what is checked.
+        """
+        shadowed = make_library_reaction(
+            comment="family: An_Innocent_Family\n" + ESTIMATED_COMMENT)
+        assert authoring_families(shadowed) == ["An_Innocent_Family",
+                                                "Fake_Quarantined_Family"]
+        with pytest.raises(QuarantinedKineticsError):
+            check_quarantine(shadowed, stage="a test", kinetics=shadowed.kinetics)
+
+    def test_a_forged_label_is_bounded_by_the_criterion(self, registered):
+        """
+        The other edge of trusting free text, stated so the bound is visible: a forged or
+        stale line can cause a false *refusal*, never a false admission, and only for a
+        rate that already matches the manifest's kinetics criterion. A forged label on an
+        Arrhenius rate does nothing.
+        """
+        forged = make_library_reaction(library="lib")
+        forged.kinetics = Arrhenius(A=(1e13, "cm^3/(mol*s)"), n=0, Ea=(0, "kJ/mol"),
+                                    comment=ESTIMATED_COMMENT)
+        assert check_quarantine(forged, stage="a test",
+                                kinetics=forged.kinetics) is None
 
     def test_a_library_named_like_a_quarantined_family_is_not_refused(self, registered):
         """
@@ -641,6 +753,211 @@ class TestProvenanceNotTheFamilySlot:
             assert check_quarantine(reaction, stage="a test",
                                     kinetics=reaction.kinetics) is None
         assert caplog.text == ""
+
+
+class TestTheProvenanceArrivesFromTheRealLoader:
+    """
+    The key is right; these are the paths that have to deliver it.
+
+    Every test here goes through a **production** constructor. A gate keyed on a field
+    that production never fills is a gate that reads a design document, and the unit tests
+    above cannot see the difference -- they build the field themselves.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _fresh_caches(self):
+        _clear_gate_caches()
+        yield
+        _clear_gate_caches()
+
+    @staticmethod
+    def _library(label="copied_seed", long_desc=ESTIMATED_COMMENT, comment=""):
+        """A real KineticsLibrary with one real Entry, loaded the way RMG loads one."""
+        from rmgpy.reaction import Reaction
+
+        library = KineticsLibrary(label=label)
+        library.entries = {
+            1: Entry(
+                index=1,
+                label="Lip + CH3 <=> CH3Li",
+                item=Reaction(
+                    reactants=[Species(label="Lip", molecule=[Molecule(smiles="[Li+]")]),
+                               Species(label="CH3", molecule=[Molecule(smiles="[CH3]")])],
+                    products=[Species(label="CH3Li", molecule=[Molecule(smiles="C[Li]")])],
+                    reversible=True),
+                data=_marcus_with(comment),
+                long_desc=long_desc,
+            )
+        }
+        return library
+
+    def test_the_entry_travels_with_the_reaction(self, registered):
+        """
+        The one that could not fail before. `get_library_reactions` built every
+        `LibraryReaction` without `entry=entry`, so the longDesc half of the lookup could
+        never fire in production no matter how correct it was.
+        """
+        reaction = self._library().get_library_reactions()[0]
+
+        assert reaction.entry is not None, (
+            "the loader dropped the entry, so the provenance it carries is unreachable "
+            "from the reaction and every longDesc lookup is dead code in production")
+        assert authoring_family(reaction) == "Fake_Quarantined_Family"
+        with pytest.raises(QuarantinedKineticsError):
+            check_quarantine(reaction, stage="a test", kinetics=reaction.kinetics)
+
+    def test_the_entry_survives_the_pickle_the_parallel_path_uses(self, registered):
+        """
+        `LibraryReaction.__reduce__` has to carry the entry too, or provenance is lost
+        again the moment a reaction crosses into a worker process.
+        """
+        import pickle
+
+        reaction = self._library().get_library_reactions()[0]
+        restored = pickle.loads(pickle.dumps(reaction))
+        assert restored.entry is not None
+        assert authoring_family(restored) == "Fake_Quarantined_Family"
+
+    def test_an_ordinary_library_still_loads_with_no_authorship(self, registered):
+        """The control: a library with no provenance must still produce reactions."""
+        library = self._library(label="primaryH2O2", long_desc="a hand-written entry")
+        reaction = library.get_library_reactions()[0]
+        assert reaction.entry is not None
+        assert authoring_family(reaction) is None
+
+
+class TestAMissingFamilyIsAnUnansweredQuestion:
+    """
+    ``None`` from "no authorship recorded" and ``None`` from "authorship recovered, family
+    not found" are the same value arriving from opposite situations, and a gate that
+    cannot tell them apart admits on a lookup miss.
+
+    ``add_seed_mechanism_to_core`` makes the second case routine: it *converts* a reaction
+    whose family is unavailable into a library reaction rather than loading the family.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _fresh_caches(self):
+        _clear_gate_caches()
+        yield
+        _clear_gate_caches()
+
+    @staticmethod
+    def _reaction():
+        return make_library_reaction(library="a_seed_from_another_chemistry",
+                                     comment=ESTIMATED_COMMENT)
+
+    def test_an_unloaded_family_is_answered_from_disk(self, monkeypatch, tmp_path, quarantine):
+        """
+        A manifest is a sidecar file; reading it needs no family object. So "the family
+        exists in this database and merely was not loaded" is an answerable question, and
+        answering it is what keeps a routine seed conversion from disabling the gate.
+        """
+        family_dir = tmp_path / "kinetics" / "families" / "Fake_Quarantined_Family"
+        family_dir.mkdir(parents=True)
+        write_manifest(str(family_dir))
+
+        _register_families(monkeypatch, {"Some_Other_Loaded_Family": quarantine})
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+
+        reaction = self._reaction()
+        assert authoring_family(reaction) == "Fake_Quarantined_Family"
+        with pytest.raises(QuarantinedKineticsError):
+            check_quarantine(reaction, stage="a test", kinetics=reaction.kinetics)
+
+    def test_a_family_in_the_database_without_a_manifest_is_a_clean_answer(
+            self, monkeypatch, tmp_path, quarantine):
+        """The negative control for the test above: present, unquarantined, admitted."""
+        (tmp_path / "kinetics" / "families" / "Fake_Quarantined_Family").mkdir(parents=True)
+
+        _register_families(monkeypatch, {"Some_Other_Loaded_Family": quarantine})
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+
+        reaction = self._reaction()
+        assert check_quarantine(reaction, stage="a test",
+                                kinetics=reaction.kinetics) is None
+
+    def test_an_unanswerable_question_is_reported_not_swallowed(
+            self, monkeypatch, tmp_path, quarantine, caplog):
+        """
+        When the family is nowhere this run can reach, the answer is genuinely
+        unavailable. It is admitted -- refusing would stop ordinary runs whose seeds name
+        foreign families, and would break the promise that a database with no manifest
+        behaves as before -- but it must not pass in silence, and the message must not be
+        the unattributable one, because the authorship is right there.
+        """
+        _register_families(monkeypatch, {"Some_Other_Loaded_Family": quarantine})
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+
+        reaction = self._reaction()
+        with caplog.at_level(logging.WARNING):
+            assert check_quarantine(reaction, stage="a test",
+                                    kinetics=reaction.kinetics) is None
+        assert "Fake_Quarantined_Family" in caplog.text
+        assert "cannot know" in caplog.text
+        assert "records no authoring family" not in caplog.text
+
+    def test_a_database_with_no_quarantine_at_all_stays_silent(
+            self, monkeypatch, tmp_path, caplog):
+        """
+        The bound on that warning. A database carrying no manifest anywhere must behave
+        exactly as it did before -- otherwise every ordinary run that loads a foreign seed
+        gains a line of output about a mechanism it does not use.
+        """
+        _register_families(monkeypatch, {"Some_Other_Loaded_Family": None})
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+
+        with caplog.at_level(logging.WARNING):
+            assert check_quarantine(self._reaction(), stage="a test",
+                                    kinetics=make_marcus()) is None
+        assert caplog.text == ""
+
+
+class TestEveryAdmissionPathIsGated:
+    """
+    The quarantine module's docstring enumerates every path by which a rate reaches the
+    model and names the gate covering each. These tests are what make that table a claim
+    rather than a comment.
+    """
+
+    def test_the_pressure_dependent_network_path_is_gated(self, registered):
+        """
+        A pdep path reaction goes to a network *instead of* core or edge, and
+        ``generate_kinetics=False`` skips the estimation gate, so neither backstop sees
+        it. Before this it reached a network unchecked and left as a k(T,P) fit with its
+        provenance averaged away.
+        """
+        model = CoreEdgeReactionModel()
+        reaction = make_reaction()
+        reaction.kinetics = make_marcus()
+        with pytest.raises(QuarantinedKineticsError):
+            model.add_reaction_to_unimolecular_networks(
+                reaction, new_species=reaction.reactants[0])
+
+    def test_the_enumeration_in_the_docstring_names_every_gate_call(self):
+        """
+        Each gate named in the module docstring's table must be a real call in
+        ``rmgpy/rmg/model.py``. A table that drifts from the code is worse than none.
+        """
+        import ast
+
+        from rmgpy.data.kinetics import quarantine as module
+
+        tree = ast.parse(inspect.getsource(CoreEdgeReactionModel))
+        gated = {node.name for node in ast.walk(tree)
+                 if isinstance(node, ast.FunctionDef)
+                 and any(isinstance(call, ast.Call)
+                         and getattr(call.func, "id", None) == "check_quarantine"
+                         for call in ast.walk(node))}
+
+        assert gated == {"apply_kinetics_to_reaction", "add_reaction_to_core",
+                         "add_reaction_to_edge", "add_reaction_to_unimolecular_networks"}, (
+            "the set of gated methods moved; update the table in the quarantine module "
+            "docstring in the same commit, or it stops being checkable")
+        for name in gated:
+            assert name in module.__doc__, (
+                "%s calls the gate but the docstring's admission-path table does not "
+                "name it" % name)
 
 
 class TestTheSevenForbiddenSilentBehaviours:
