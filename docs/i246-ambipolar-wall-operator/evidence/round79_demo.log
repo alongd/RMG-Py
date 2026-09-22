@@ -1,0 +1,22 @@
+== 1. the skeleton key sits between formula and is_isomorphic ==
+  Ar   skeleton: InChI=1S/Ar
+  Ar*  skeleton: InChI=1S/Ar  -> same as Ar (electronic states unified)
+  DME  skeleton: InChI=1S/C2H6O/c1-3-2/h1-2H3
+  EtOH skeleton: InChI=1S/C2H6O/c1-2-3/h3H,2H2,1H3  -> differs from DME (isomers separated)
+
+== 2. HIGH 1: DME+ neutralises to DME, not the lower-enthalpy isomer ethanol ==
+  ethanol H298 < DME H298, yet DME+ recycles to: DME
+
+== 3. HIGH 3: declared source delivered in FULL with a He bath gas ==
+  declared S*V/Na = 6.175121e-06 mol/s;  delivered to e- = 6.175121e-06 mol/s;  ratio = 1.0000
+
+== 4. HIGH 5: latched wall interface + availability map (Ar/Ar*/Ar+/e-, gamma=1) ==
+  nu_wall_latched      = 185.1660 s^-1
+  wall_flux (mol/s)    = [-0.  0.  0. -0.]
+  electron energy flux = 1.0719e+02 W   [available]
+  neutralisation flux  = nan   [unavailable]
+  ion directed flux    = nan   [declared-absent]  <- power balance owns this
+
+== 5. a rejected Newton trial cannot leak into the latch ==
+  wall_flux unchanged after a wild residual: True
+  residual scratch (wall_loss_rates) moved:  True

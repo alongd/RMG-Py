@@ -144,6 +144,56 @@ hard-codes `/home/alon/Code/RMG-database-plasma/...`; it resolves `voronov.yaml`
    regardless, and initial-composition neutrality is handled separately by the reactor, so I did not
    add a net-charge assertion here; flagged so it is a decision, not an oversight.
 
+## Round 79: the class attacked, five HIGH and two MEDIUM closed
+
+An adversarial pass found that the earlier rework had *narrowed* formula-matching, not replaced it.
+The recurring root is one defect **class**: a species identified by a key coarser than the physics
+distinguishes. It had produced three distinct defects -- ion→neutral recycle, neutral→cation for the
+source, and (on a sibling branch) a transport estimator saturating metastable argon into ArH2. Rather
+than patch a third site, the whole `plasma.pyx` file was audited for composition→species maps.
+
+**The correct key is the heavy-atom skeleton: the standard InChI truncated before its charge (`/q`,
+`/p`) layers** (`_skeleton_key`). Proven to sit exactly on the physics boundary: it unifies electronic
+states (Ar and Ar* both `InChI=1S/Ar`, so the ground-state enthalpy tiebreak still applies) yet
+separates constitutional isomers (DME `.../c1-3-2/...` vs ethanol `.../c1-2-3/...`, so a molecular ion
+cannot be transmuted into an isomeric neutral). Element count is too coarse; `is_isomorphic` and the
+augmented InChI are too fine. Both the ion→neutral and neutral→cation maps now key on the skeleton
+(`evidence/round79_demo.log` §1-2: DME+ recycles to DME, not the lower-enthalpy ethanol).
+
+Where even the skeleton is ambiguous the correct key is **user-supplied identity** via
+`wallNeutralizationProducts` -- a design conclusion, not a gap. The excited-only deck (two argon
+states, no ground) remains non-inferable and is reaffirmed, not newly closed.
+
+Closed, each reproduced RED first (`evidence/round79_before.log`) then GREEN on the rebuilt module
+(`round79_after.log`), with durable tests:
+
+- **HIGH 1** -- isomer transmutation (skeleton key); and a non-finite (NaN/inf) enthalpy is now
+  *unusable*, routed to the same refusal as absent thermo, not sorted silently into place.
+- **HIGH 2** -- "exactly one cation" now rejects **zero** as well as two (an electron with no cation
+  is not floating-wall physics); and the ionisation-degree ceiling gates on the **charged inventory**
+  (`max(n_e, Σ positive-ion moles)`), not n_e alone, so 1% ions with 1 ppm electrons no longer slips
+  under it.
+- **HIGH 3** -- the external source is apportioned over **ionisable** neutrals only, so a non-ionisable
+  bath gas (He) no longer sits in the denominator and swallows half the declared source
+  (`round79_demo.log` §3: delivered/declared ratio 0.5 → 1.0000). The Jacobian mirror was changed in
+  lockstep and checked against finite differences on the mixture path.
+- **HIGH 4** -- the input writer now emits `wallNeutralizationProducts`, so the declaration survives a
+  save/reload. The wall serialisation was extracted to `_format_plasma_wall` to make the round trip
+  unit-testable.
+- **HIGH 5** -- the wall-flux/wall-energy interface now exists: latched at accepted states only, with a
+  machine-readable availability map. Full design in `interface-design.md`.
+- **MEDIUM** -- refusal messages now name the input-deck keyword `wallNeutralizationProducts` a user can
+  type, not the Python attribute; direct `PlasmaReactor(...)` construction now checks the *dimensions*
+  of `diffusion_length` and `ion_reduced_mobility`, closing the last of named gap #2.
+
+**Sibling ArH2 ticket (fourth instance of the class, worked separately).** A transport estimator
+saturates a u2 (metastable) species into a molecule no atom type owns, because a family-level
+containment cannot see a non-family consumer -- the same projection error, a different projection
+(family membership rather than element count). The rule here applies there unchanged: key at the
+finest identity the physics distinguishes. The skeleton key (charge/electronic-state-independent
+InChI) is directly reusable as that identity if the two branches are reconciled; they should not
+diverge on what "the same species" means.
+
 ## Files touched
 
 `rmgpy/solver/plasma.pyx`, `rmgpy/rmg/input.py`,
