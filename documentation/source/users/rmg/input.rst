@@ -486,7 +486,12 @@ dict form gives full control::
 
 		terminationSteadyState={'tolerance': 1e-6, 'window': 3},
 
-where ``window`` is how many consecutive solver steps must satisfy the tolerance.
+where ``window`` is how many consecutive solver steps must satisfy the tolerance. The window
+is a step count, but persistence is not: the flat run must also hold while the integration
+time advances by at least a factor of :math:`e` (one e-fold, the natural scale of a
+:math:`d/d\ln t` criterion), so that neither the verdict nor the termination time depends on
+the integrator's step-size controller. A residual of exactly zero -- a structurally frozen
+composition -- is exempt from the span and terminates at once.
 
 Two things about it are worth knowing before you use it:
 
@@ -505,11 +510,21 @@ Two things about it are worth knowing before you use it:
   *saturating* exponential, whose log-log slope :math:`\nu t/(e^{\nu t}-1)` is bounded by 1 and
   approaches it only as :math:`t \to 0` -- the opposite shape from a decaying transient -- and
   the electron itself saturates far below the integrator's mole floor, so the generic residual
-  reads only the (flat) neutrals. The reactor therefore supplies the electron's own slope, so
-  firing waits until it has genuinely saturated to ``S/nu_wall``, and arms the criterion once
-  ``t * nu_wall >= 1`` -- the same "past the fastest relaxation time" standard, evaluated from
-  the relaxation time ``1/nu_wall`` the wall model knows. This never arms a discharge that never
-  started: a deck with no source has no such channel and is still reported as not a steady state.
+  reads only the (flat) neutrals. The reactor therefore supplies the electron's own slope --
+  measured on its **mole fraction**, the same intensive quantity every other residual uses, so
+  a discharge whose composition is stationary while its absolute inventory drifts (a pumped
+  wall) is still recognised as steady -- so firing waits until it has genuinely saturated to
+  ``S/nu_wall``, and arms the criterion once ``t * nu_wall >= 1``, the same "past the fastest
+  relaxation time" standard evaluated from the relaxation time ``1/nu_wall`` the wall knows.
+  This never arms a discharge that never started: a deck with no source has no such channel and
+  is still reported as not a steady state.
+* **The electron's arm vouches only for the electron.** Arming is per quantity: the electron
+  passing ``t * nu_wall >= 1`` may license termination only while no *other* channel is still
+  changing -- specifically while the generic (neutral) residual is not still rising toward its
+  own ``R = 1`` arm. A neutral reaction that has not yet run through its own timescale -- flat
+  only because it has barely started, not because it has settled -- keeps the system reported as
+  *not* steady even after the electron has saturated, so a slow gas-phase channel is never
+  declared stationary on the strength of the discharge having lit.
 
 The run logs the residual it terminated at, so "we integrated to steady state, by this
 criterion, and here is the residual" is a claim a reader can check.
@@ -683,7 +698,13 @@ The remaining keywords are all optional:
 * ``mobilityReferenceDensity`` -- the gas density at which ``ionReducedMobility`` is quoted,
   defaulting to the Loschmidt constant (2.6867811e25 m^-3), which is what ion-mobility
   compilations normalise to.  This is a unit convention; changing it means reading the tabulated
-  mobility as something it is not.
+  mobility as something it is not.  Transport reads it only as the product
+  ``ionReducedMobility * mobilityReferenceDensity``, so at construction that product -- and the
+  wall loss frequency it produces at the neutral-density floor, the run-time worst case -- is
+  checked for finiteness: two individually finite inputs whose product overflows (e.g.
+  ``mobilityReferenceDensity=1e308`` with a large ``ionReducedMobility``) are refused, rather than
+  admitted on the strength of a per-input check and then carried into the solver as an infinite
+  ``nu_wall``.
 
 * ``wallRecycling`` -- gamma, the fraction of wall-neutralised ions whose heavy core returns to
   the gas.  ``1.0`` (the default) is a fully recycling wall; ``0.0`` a fully pumping one.  For a
@@ -738,7 +759,12 @@ The remaining keywords are all optional:
   'm^-3')`` or an explicit ``e-`` amount of zero) -- the source seeds the first electrons.  Without
   a source the only electron production is the ``n_e``-proportional gas-phase chemistry, so a
   zero-electron composition is a fixed point that cannot ignite, and it is **refused**: a strictly
-  positive seed is required there.
+  positive seed is required there.  A source so small that its volumetric molar rate
+  ``source/Na`` underflows a normal double (a subnormal value such as ``5e-324``, or any value
+  below ``Na * 2.2e-308``) is **refused at construction**: it reads as a declared source -- which
+  switches off the zero-electron guard just described -- yet injects exactly zero, leaving a deck
+  that declares ignition-from-zero it can never achieve.  A source that cannot inject is not a
+  source.
 
 * ``maxIonisationDegree`` -- the ceiling on ``n_e/n_neutral`` above which the ion-*neutral*
   ambipolar model is outside its own assumptions, defaulting to 1e-3.  Above it, Coulomb
@@ -793,8 +819,14 @@ The remaining keywords are all optional:
 	diluent, or an isomeric co-species): the true mobility is composition-weighted (Blanc's law),
 	which needs a reduced mobility *per* bath gas that this model does not carry.  Such a mixture is
 	**not refused** -- doing so would forbid every multi-species plasma, including the inert-diluent
-	and isomeric-neutral cases the wall is built to handle -- but it emits a warning naming the gases
-	and the approximation.  The ``maxIonisationDegree`` ceiling is the one edge the code enforces
+	and isomeric-neutral cases the wall is built to handle.  It is instead recorded as an
+	**availability state**, not merely a log line a downstream consumer cannot see: every wall flux
+	built from ``nu_wall`` (``wall_flux`` and the electron-energy flux) is reported as
+	``available-single-bath-approximation`` rather than plain ``available`` in the reactor's
+	``wall_energy_availability`` map, so a caller reading the latched fluxes knows the number is a
+	usable single-bath approximation and not the composition-weighted value.  A warning naming the
+	gases is also emitted for the human running the deck.  A single-skeleton bath (Ar alone, or Ar
+	with its metastables) reports plain ``available``.  The ``maxIonisationDegree`` ceiling is the one edge the code enforces
 	numerically; the regime limits above are the user's to respect.
 
 .. _simulatortolerances:

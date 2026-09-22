@@ -281,7 +281,15 @@ cdef class PlasmaReactor(ReactionSystem):
     cdef public double wall_ion_energy_flux       # W, ion directed/sheath energy: NOT
                                                   # promised here (a sheath model is a
                                                   # contract non-goal) -- NaN sentinel
-    cdef public dict wall_energy_availability     # field -> available|declared-absent|unavailable
+    cdef public dict wall_energy_availability     # field -> available|available-single-bath-approximation|declared-absent|unavailable
+    # True when the neutral bath spans more than one heavy skeleton (Ar and He, two
+    # isomers): the single ion reduced mobility is then applied to the summed neutral
+    # density as an approximation, so every wall flux built from nu_wall is a
+    # single-bath approximation, not a quantitatively exact number. Recorded as an
+    # availability STATE on those fields (not merely a log warning), set in
+    # _resolve_wall_state. False for a single-skeleton bath, including a ground state
+    # and its metastables, which share a skeleton and are one bath exactly.
+    cdef public bint wall_bath_is_mixture
     cdef public np.ndarray wall_neutralization_delta_h  # J/mol per ion, H_ion-H_neutral, or NaN
     # Purely NUMERICAL floor on the neutral population inside compute_nu_wall, set
     # from the initial composition. It exists so that a Newton TRIAL state with no
@@ -405,6 +413,7 @@ cdef class PlasmaReactor(ReactionSystem):
             'wall_neutralization_energy_flux': 'unavailable',
             'wall_ion_energy_flux': 'declared-absent',
         }
+        self.wall_bath_is_mixture = False
 
         if (diffusion_length is None) != (ion_reduced_mobility is None):
             raise PlasmaStateError(
@@ -528,26 +537,37 @@ cdef class PlasmaReactor(ReactionSystem):
                     self.mobility_reference_density, self._identity()))
 
         # Each input above is finite and positive on its own, yet their COMBINATION can
-        # still make nu_wall non-finite: a huge reduced mobility (1e308) overflows the
-        # ambipolar diffusivity, and a subnormal Lambda^2 (caught above) or a huge one
-        # sends the quotient to infinity. Reporting the wall term 'unavailable' at run time
-        # is not the same as refusing a state that cannot be integrated -- a non-finite
-        # residual corrupts the solver. Evaluate nu_wall at the reference density (where the
-        # ion mobility is exactly mu0) and refuse now, by name, if it is not finite.
+        # still make nu_wall non-finite at RUN TIME -- and the guard must evaluate the SAME
+        # expression the run time will, not a proxy for it. compute_nu_wall forms
+        # mu_i = mu0*Nref/n_neutral and clamps n_neutral at wall_neutral_density_floor, so
+        # the LARGEST mu_i -- and the largest nu_wall, the one that overflows first -- occurs
+        # at that floor, NOT at the reference density where mu_i is merely mu0. Evaluating
+        # here at the reference density (mu_i = mu0) is the wrong expression: mu0=1e20 with
+        # Nref=1e308 leaves mu0 finite while the product mu0*Nref = inf, so nu_wall is inf
+        # for every real state, yet the reference-density proxy reads finite and admits it.
+        # Refuse now by evaluating the exact run-time expression at its worst case (the
+        # neutral-density floor, a fixed multiple of the Loschmidt number).
         if self.has_wall:
-            ref_nu = (self.ion_reduced_mobility.value_si * (constants.R / constants.Na)
-                      * self.Te.value_si / constants.e) / (
-                      self.diffusion_length.value_si * self.diffusion_length.value_si)
-            if not np.isfinite(ref_nu) or ref_nu <= 0.0:
+            worst_n_neutral = PLASMA_NEUTRAL_DENSITY_FLOOR_FRACTION * PLASMA_LOSCHMIDT
+            worst_mu_i = (self.ion_reduced_mobility.value_si
+                          * self.mobility_reference_density / worst_n_neutral)
+            worst_nu = (worst_mu_i * (constants.R / constants.Na)
+                        * self.Te.value_si / constants.e) / (
+                        self.diffusion_length.value_si * self.diffusion_length.value_si)
+            if not np.isfinite(worst_nu) or worst_nu <= 0.0:
                 raise PlasmaStateError(
-                    "the wall loss frequency nu_wall = D_a/Lambda^2 evaluated at the "
-                    "reference density is {0!r} s^-1, not a finite positive number: the "
-                    "combination of ion_reduced_mobility={1!r} m^2/(V*s), Te={2!r} K and "
-                    "diffusion_length={3!r} m overflows or underflows even though each is "
-                    "finite on its own. A reactor whose wall term cannot be evaluated is "
-                    "refused here rather than carried into the solver as a non-finite "
-                    "residual. ({4})".format(
-                        ref_nu, self.ion_reduced_mobility.value_si, self.Te.value_si,
+                    "the wall loss frequency nu_wall = D_a/Lambda^2, evaluated at the "
+                    "run-time worst case (mu_i = mu0*Nref/n_neutral at the neutral-density "
+                    "floor n_neutral={0!r} m^-3), is {1!r} s^-1, not a finite positive "
+                    "number: the combination of ion_reduced_mobility={2!r} m^2/(V*s), "
+                    "mobility_reference_density={3!r} m^-3, Te={4!r} K and "
+                    "diffusion_length={5!r} m overflows or underflows even though each is "
+                    "finite on its own -- most often because the product mu0*Nref is not "
+                    "finite. A reactor whose wall term cannot be evaluated is refused here "
+                    "rather than carried into the solver as a non-finite residual. "
+                    "({6})".format(
+                        worst_n_neutral, worst_nu, self.ion_reduced_mobility.value_si,
+                        self.mobility_reference_density, self.Te.value_si,
                         self.diffusion_length.value_si, self._identity()))
 
         self.wall_recycling = float(wall_recycling)
@@ -601,6 +621,27 @@ cdef class PlasmaReactor(ReactionSystem):
                 "ionisation_source is a volumetric production rate of ion-electron "
                 "pairs and must be finite and non-negative (m^-3 s^-1); got {0!r}. "
                 "({1})".format(self.ionisation_source.value_si, self._identity()))
+        # A source that is positive but so small that its volumetric MOLAR injection
+        # source/Na underflows to subnormal/zero delivers NOTHING -- the seeded amount
+        # source*V/Na (see residual) is zero at any realistic volume -- while still reading
+        # as ionisation_source > 0.0, which switches off the zero-electron ignition guard
+        # and every other "source declared" branch. The deck then declares ignition-from-
+        # zero yet can never leave n_e = 0. Refuse it: a source that cannot inject is not a
+        # source. The two reported cases (5e-324, 1e-320) are subnormal; a normal value
+        # below Na*tiny underflows identically, so the threshold is on source/Na, the
+        # per-volume molar rate, not on source itself.
+        if (self.ionisation_source.value_si > 0.0
+                and (self.ionisation_source.value_si / constants.Na) < np.finfo(np.float64).tiny):
+            raise PlasmaStateError(
+                "ionisation_source={0!r} m^-3 s^-1 is positive but so small that its "
+                "volumetric molar injection source/Na = {1!r} mol m^-3 s^-1 underflows "
+                "below the smallest normal double ({2!r}): the seeded amount source*V/Na is "
+                "exactly zero at any realistic volume, so the source injects nothing while "
+                "still switching off the zero-electron ignition guard. A source that cannot "
+                "inject is not a source; use a normal positive rate or omit it. ({3})".format(
+                    self.ionisation_source.value_si,
+                    self.ionisation_source.value_si / constants.Na,
+                    np.finfo(np.float64).tiny, self._identity()))
 
         # Replaced with a commensurate value in initialize_model once the rate
         # coefficients exist; 1.0 until then, which is exact but badly scaled.
@@ -1535,12 +1576,17 @@ cdef class PlasmaReactor(ReactionSystem):
         # NOT refused: refusing it would forbid every multi-species plasma -- an inert
         # diluent, an ionisable co-reactant, an isomeric neutral the wall must not transmute
         # into -- all of which are supported and carry distinct skeletons by construction.
-        # It is WARNED, once, naming the gases and the approximation, so a user running a
-        # genuine mixture sees it; input.rst carries the same statement at the mobility
-        # keyword. Keyed on the heavy skeleton, the identity the recycle uses.
+        # It is not merely warned: a warning is not an availability state, and a consumer
+        # reading the latched wall fluxes cannot see a log line. So it is recorded as an
+        # availability STATE -- ``wall_bath_is_mixture`` here, which downgrades every
+        # nu_wall-derived flux from 'available' to 'available-single-bath-approximation' in
+        # _latch_wall_diagnostics -- AND warned once, naming the gases, for the human
+        # running the deck; input.rst carries the same statement at the mobility keyword.
+        # Keyed on the heavy skeleton, the identity the recycle uses.
         if self.has_wall:
             neutral_baths = sorted(repr(s) for s in
                                    {skeletons[j] for j in range(n) if neutral_mask[j]})
+            self.wall_bath_is_mixture = len(neutral_baths) > 1
             if len(neutral_baths) > 1:
                 logging.warning(
                     "PlasmaReactor wall: the neutral bath spans more than one gas (%s), but "
@@ -2117,6 +2163,18 @@ cdef class PlasmaReactor(ReactionSystem):
             self.wall_energy_availability['wall_neutralization_energy_flux'] = 'unavailable'
         self.wall_ion_energy_flux = float('nan')
         self.wall_energy_availability['wall_ion_energy_flux'] = 'declared-absent'
+        # A multi-gas neutral bath makes every nu_wall-derived flux a single-bath
+        # approximation (see wall_bath_is_mixture): the number is finite and usable, but it
+        # is NOT the composition-weighted (Blanc's-law) flux, so it must not be reported as
+        # plain 'available'. Downgrade exactly the fields built from nu_wall, and only where
+        # they are otherwise available -- an already 'unavailable' field (a NaN that slipped
+        # through) stays unavailable; the approximation label never launders a broken number
+        # into a usable one. wall_ion_energy_flux is declared-absent and untouched.
+        if self.wall_bath_is_mixture:
+            for _field in ('wall_flux', 'wall_electron_energy_flux',
+                           'wall_neutralization_energy_flux'):
+                if self.wall_energy_availability[_field] == 'available':
+                    self.wall_energy_availability[_field] = 'available-single-bath-approximation'
 
     cpdef double get_non_chemical_char_rate(self):
         """The L2 norm of the wall + ionisation-source contribution to the core species
@@ -2175,8 +2233,19 @@ cdef class PlasmaReactor(ReactionSystem):
         slope so firing waits for IT to go flat, i.e. for ``n_e -> S/nu_wall``. NaN (no such
         channel) unless a source-driven wall is configured, so a reactor without one is
         judged exactly as before.
+
+        The slope is taken on the electron's **mole fraction** ``x_e = n_e / sum(y)``, the
+        SAME intensive quantity ``compute_residual`` measures on every other species -- not
+        on the electron moles. A criterion that mixes an extensive residual (moles) with an
+        intensive one (fractions) is unsound: when the total inventory drifts while the
+        composition holds (e.g. a pumped, ``gamma < 1`` discharge whose fractions are
+        stationary but whose absolute moles shrink), a moles residual reads large motion
+        where the fraction is flat, and the criterion never terminates on a genuinely
+        stationary state. Where the neutral inventory is fixed (an isobaric bath), the two
+        coincide, so the saturating-from-zero recognition is unchanged; only the drifting-
+        inventory case is corrected.
         """
-        cdef double ne_now, ne_prev, dlnt
+        cdef double ne_now, ne_prev, tot_now, tot_prev, xe_now, xe_prev, dlnt
         if not self.has_wall or self.ionisation_source.value_si <= 0.0:
             return float('nan')
         if t_prev <= 0.0 or t_now <= t_prev:
@@ -2185,10 +2254,16 @@ cdef class PlasmaReactor(ReactionSystem):
         ne_prev = y_prev[self.electron_index]
         if not (ne_now > 0.0) or not (ne_prev > 0.0):
             return float('nan')
+        tot_now = y_now.sum()
+        tot_prev = y_prev.sum()
+        if not (tot_now > 0.0) or not (tot_prev > 0.0):
+            return float('nan')
+        xe_now = ne_now / tot_now
+        xe_prev = ne_prev / tot_prev
         dlnt = log(t_now) - log(t_prev)
         if not (dlnt > 0.0):
             return float('nan')
-        return fabs(log(ne_now) - log(ne_prev)) / dlnt
+        return fabs(log(xe_now) - log(xe_prev)) / dlnt
 
     cpdef bint steady_state_external_armed(self, double t_now, np.ndarray y_now):
         """Whether the source-driven electron has passed its relaxation time ``1/nu_wall``.

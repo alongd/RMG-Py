@@ -153,7 +153,11 @@ class TerminationSteadyState:
         object outlives one simulation and is reused across the whole model-generation run.
         """
         self.armed = False
+        self.armed_generic = False
+        self.armed_external = False
+        self._r_gen_prev = float('nan')
         self.streak = 0
+        self._t_flat_start = float('nan')
         self.residual = float('nan')
         self.worst_label = None
 
@@ -173,28 +177,57 @@ class TerminationSteadyState:
         seeded from zero by an external source saturates far under ``atol``, so
         :meth:`compute_residual` (which excludes sub-floor species) reads only the inert
         neutrals and would fire at ignition instead of at saturation. The reactor passes the
-        electron's own slope as `external_residual` -- folded into the residual by MAX, so
-        firing waits for it to go flat -- and `external_armed` to arm the criterion from the
-        reactor's known relaxation time, since a saturating-from-zero slope is bounded by 1
-        and never reaches the generic ``R >= 1`` arm. Both default to none/False, so an
-        ordinary reactor is unaffected.
+        electron's own **mole-fraction** slope as `external_residual` -- the same intensive
+        quantity every other residual measures -- folded into the residual by MAX so firing
+        waits for it to go flat, and `external_armed` to arm the criterion from the reactor's
+        known relaxation time, since a saturating-from-zero slope is bounded by 1 and never
+        reaches the generic ``R >= 1`` arm. Both default to nan/False, so an ordinary reactor
+        is byte-for-byte unaffected: with no external channel, arming reduces to the generic
+        ``R >= 1`` latch exactly as before.
+
+        `external_armed` vouches ONLY for the electron. It may arm the whole criterion only
+        while the generic (neutral) residual is not still rising toward its own arm; a
+        neutral mid-transit -- below tolerance only because it has not yet reached its
+        timescale -- keeps the system unsteady even after the electron has saturated. See
+        the per-channel arming block below.
 
         Returns True only if armed and the flat condition has held for `window` steps.
         """
-        r, self.worst_label = self.compute_residual(y_now, t_now, y_prev, t_prev, floor,
-                                                    labels=labels)
-        # Fold in the reactor's sub-floor channel by MAX: the composition is settled only
-        # when the slowest of everything -- neutrals AND the invisible electron -- is flat.
+        r_gen, self.worst_label = self.compute_residual(y_now, t_now, y_prev, t_prev, floor,
+                                                        labels=labels)
+        # Fold in the reactor's sub-floor channel by MAX for the FLAT test: the composition
+        # is settled only when the slowest of everything -- neutrals AND the invisible
+        # electron -- is flat.
+        r = r_gen
         if np.isfinite(external_residual):
             if not np.isfinite(r) or external_residual > r:
                 r = external_residual
                 self.worst_label = '<external channel>'
         self.residual = r
-        # An externally-driven channel arms on the reactor's known relaxation time (t/tau),
-        # independent of the empirical slope, which for a saturating-from-zero rise never
-        # reaches 1. The latch persists once set.
-        if external_armed:
-            self.armed = True
+
+        # Arming is PER CHANNEL -- the thing that arms must be the thing declared steady:
+        #  - the GENERIC channel arms on its OWN residual crossing 1 (a neutral has run
+        #    through its relaxation time). The folded electron slope must not arm it.
+        #  - the EXTERNAL (electron) channel arms on the reactor's known relaxation time
+        #    ``t*nu >= 1``, since its saturating-from-zero slope is bounded by 1 and can
+        #    never reach the ``R >= 1`` arm. But that arm vouches ONLY for the electron: it
+        #    may license the whole criterion only while no generic channel is still
+        #    DEPARTING, i.e. while the generic residual is not rising. A neutral whose
+        #    residual is still climbing toward its own arm -- a slow reaction mid-transit,
+        #    below tolerance only because it has not yet reached its timescale -- is not
+        #    steady, and the electron's saturation says nothing about it. A quiescent
+        #    (flat/zero) or settled (decaying) generic residual does not block. Both latches
+        #    persist once set.
+        if np.isfinite(r_gen) and r_gen >= 1.0:
+            self.armed_generic = True
+        generic_rising = (np.isfinite(r_gen) and np.isfinite(self._r_gen_prev)
+                          and r_gen > self._r_gen_prev)
+        if external_armed and not generic_rising:
+            self.armed_external = True
+        if np.isfinite(r_gen):
+            self._r_gen_prev = r_gen
+        self.armed = self.armed_generic or self.armed_external
+
         if not np.isfinite(r):
             # Not evaluable (first step, zero/degenerate time interval, or no live
             # species yet): no information either way, so do not advance the streak and
@@ -202,13 +235,36 @@ class TerminationSteadyState:
             # species crosses up through the floor, which is the opposite of steady.
             self.streak = 0
             return False
-        if r >= 1.0:
-            self.armed = True
         if r < self.tolerance:
+            if self.streak == 0:
+                self._t_flat_start = t_now
             self.streak += 1
         else:
             self.streak = 0
-        return self.armed and self.streak >= self.window
+            self._t_flat_start = float('nan')
+        # Persistence is PHYSICAL, not a bare step count. Counting accepted solver steps
+        # alone makes the verdict a function of the integrator's step controller: three
+        # steps span negligible time under tight control and a full decade under loose
+        # control, so both the termination time and whether a transient DIP is mistaken for
+        # a steady tail depend on step size. Require, in addition to the step `window` (which
+        # still guards against a single fluky flat step), that the flat run has held while
+        # the integration time advanced by at least a factor of e -- one e-fold, the native
+        # scale of a ``d/d ln t`` criterion and a step-controller-independent span.
+        #
+        # The span is waived for a residual of EXACTLY zero: that is not a small slope that
+        # a transient could be mimicking, it is a STRUCTURALLY frozen composition -- every
+        # live species constant to the last bit, the "went through a transient and then
+        # froze" case in the class docstring -- which is unambiguously steady and needs no
+        # confirmation over time. Requiring the extra e-fold there would force the
+        # integration on past a state that cannot change again; for a fully-pumped discharge
+        # (gamma=0) whose steady state is the electron vanishing, that extra span pushes n_e
+        # below the mole floor into solver-noise-negative territory, which the wall's
+        # domain guard then refuses -- terminating a settled run in an error instead.
+        span_ok = (self.residual == 0.0) or (
+            np.isfinite(self._t_flat_start) and self._t_flat_start > 0.0
+            and t_now > 0.0
+            and (np.log(t_now) - np.log(self._t_flat_start)) >= 1.0)
+        return self.armed and self.streak >= self.window and span_ok
 
     @staticmethod
     def compute_residual(y_now, t_now, y_prev, t_prev, floor, labels=None):
