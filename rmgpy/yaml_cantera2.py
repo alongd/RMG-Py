@@ -34,6 +34,7 @@ This module contains functions for writing of Cantera input files.
 from typing import Union, TYPE_CHECKING
 
 import io
+import math
 import os
 import shutil
 import tempfile
@@ -512,6 +513,49 @@ def species_to_dict(species, species_list):
         raise CanteraThermoWriteError(
             f"Cannot write Cantera thermo for species '{species}': its NASA thermo "
             f"carries no polynomials.")
+
+    if len(sorted_polys) > 2:
+        raise CanteraThermoWriteError(
+            f"Cannot write Cantera thermo for species '{species}': the Cantera "
+            f"NASA7 schema supports at most two temperature ranges (three "
+            f"breakpoints), but this species' NASA thermo carries "
+            f"{len(sorted_polys)} polynomials.")
+
+    for i, poly in enumerate(sorted_polys):
+        n_coeffs = len(poly.coeffs)
+        if n_coeffs != 7:
+            raise CanteraThermoWriteError(
+                f"Cannot write Cantera thermo for species '{species}': polynomial "
+                f"{i} of its NASA thermo has {n_coeffs} coefficients; the "
+                f"Cantera NASA7 schema requires exactly 7 per polynomial (this "
+                f"looks like NASA9 data, which Cantera's NASA7 model cannot "
+                f"represent).")
+
+        values_to_check = [poly.Tmin.value_si, poly.Tmax.value_si] + list(poly.coeffs)
+        if not all(math.isfinite(v) for v in values_to_check):
+            raise CanteraThermoWriteError(
+                f"Cannot write Cantera thermo for species '{species}': polynomial "
+                f"{i} of its NASA thermo has a non-finite (NaN or Inf) "
+                f"temperature bound or coefficient.")
+
+        if poly.Tmin.value_si >= poly.Tmax.value_si:
+            raise CanteraThermoWriteError(
+                f"Cannot write Cantera thermo for species '{species}': polynomial "
+                f"{i} of its NASA thermo has Tmin ({poly.Tmin.value_si}) >= Tmax "
+                f"({poly.Tmax.value_si}), an inverted or degenerate temperature "
+                f"range.")
+
+        if i > 0:
+            prev_tmax = sorted_polys[i - 1].Tmax.value_si
+            this_tmin = poly.Tmin.value_si
+            rel_gap = abs(this_tmin - prev_tmax) / max(abs(prev_tmax), 1.0)
+            if rel_gap > 1e-6:
+                raise CanteraThermoWriteError(
+                    f"Cannot write Cantera thermo for species '{species}': "
+                    f"polynomial {i}'s Tmin ({this_tmin}) does not match "
+                    f"polynomial {i - 1}'s Tmax ({prev_tmax}); the Cantera NASA7 "
+                    f"schema requires contiguous temperature ranges with no gap "
+                    f"or overlap.")
 
     polys = []
     for poly in sorted_polys:
