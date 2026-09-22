@@ -33,6 +33,7 @@ from multiprocessing import Pool
 
 import rmgpy.qm.gaussian
 import rmgpy.qm.mopac
+from rmgpy.data.base import saturate_for_estimation
 from rmgpy.data.thermo import ThermoLibrary
 
 
@@ -235,8 +236,8 @@ class QMCalculator(object):
             if spc.molecule[0].get_radical_count() > self.settings.maxRadicalNumber:
                 for molecule in spc.molecule:
                     if self.settings.onlyCyclics and molecule.is_cyclic():
-                        saturated_mol = molecule.copy(deep=True)
-                        saturated_mol.saturate_radicals()
+                        saturated_mol, _added = saturate_for_estimation(
+                            molecule, 'thermodynamic data by QM')
                         if saturated_mol not in mol_list:
                             mol_list.append(saturated_mol)
             else:

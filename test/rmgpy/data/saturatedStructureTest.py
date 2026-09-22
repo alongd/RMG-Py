@@ -116,6 +116,46 @@ class TestSaturateForEstimation:
         """
         assert not issubclass(SaturatedStructureError, AtomTypeError)
 
+    def test_both_adjacency_lists_in_the_message_read_back(self):
+        """
+        The message prints adjacency lists rather than SMILES so that rendering it cannot
+        fail the way the crash it replaces did. That is only worth anything if the blocks
+        are *valid*: ``saturate_radicals`` assigns ``multiplicity`` only after atom typing
+        succeeds, so on the failing path the saturated copy carried the unsaturated
+        species' multiplicity beside zero radicals and would not parse at all.
+
+        The contract is exact. The saturated form reads back with atom typing relaxed, and
+        the only thing standing in the way otherwise is the AtomTypeError the message
+        already quotes -- an InvalidAdjacencyListError here would be a defect in the block
+        rather than a fact about the species.
+        """
+        with pytest.raises(SaturatedStructureError) as exc_info:
+            saturate_for_estimation(molecule(AR_METASTABLE), "transport data")
+        message = str(exc_info.value)
+
+        species_block = message.split("The species was:\n")[1].split("\nits saturated form")[0]
+        saturated_block = message.split("its saturated form was:\n")[1].split(
+            "\nand the underlying")[0]
+
+        assert Molecule().from_adjacency_list(species_block).get_radical_count() == 2
+
+        relaxed = Molecule().from_adjacency_list(saturated_block,
+                                                 raise_atomtype_exception=False)
+        assert relaxed.get_radical_count() == 0
+        assert relaxed.multiplicity == 1
+
+        with pytest.raises(AtomTypeError):
+            Molecule().from_adjacency_list(saturated_block)
+
+    def test_the_message_says_how_to_read_the_saturated_block_back(self):
+        """
+        Relaxed parsing is not the default, so a reader who is not told will conclude the
+        block is broken. The instruction belongs in the message, beside the block.
+        """
+        with pytest.raises(SaturatedStructureError) as exc_info:
+            saturate_for_estimation(molecule(AR_METASTABLE), "transport data")
+        assert "raise_atomtype_exception=False" in str(exc_info.value)
+
 
 class TestTransportOfUnsaturableSpecies:
     @classmethod

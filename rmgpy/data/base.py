@@ -1345,6 +1345,14 @@ def saturate_for_estimation(molecule, data_type):
     try:
         added = saturated_struct.saturate_radicals()
     except AtomTypeError as exc:
+        # `saturate_radicals` assigns `multiplicity` only AFTER `update_atomtypes` returns
+        # (molecule.py), so on this path the copy still carries the *unsaturated* species'
+        # multiplicity beside zero remaining radicals. Rendering it that way prints an
+        # adjacency list that no reader can read back: it fails `from_adjacency_list` on a
+        # multiplicity/radical disagreement, which is an artefact of where the exception was
+        # raised and says nothing about the species. Finish the bookkeeping the raise
+        # interrupted, so the block below describes the structure that was actually built.
+        saturated_struct.multiplicity = saturated_struct.get_radical_count() + 1
         raise SaturatedStructureError(
             'Cannot estimate {data_type} by group additivity: replacing the species\' '
             '{n:d} radical electron(s) with bonds to hydrogen gives a structure that no RMG '
@@ -1353,7 +1361,11 @@ def saturate_for_estimation(molecule, data_type):
             'noble gas, whose unpaired electrons are not unfilled valences. Supply {data_type} '
             'for this species directly in a library entry, or keep it out of the model.\n'
             'The species was:\n{molecule!s}\nits saturated form was:\n{saturated!s}\n'
-            'and the underlying atom type failure was: {exc!s}'.format(
+            'and the underlying atom type failure was: {exc!s}\n'
+            'Both blocks above are valid adjacency lists. The saturated one reads back only '
+            'with Molecule().from_adjacency_list(text, raise_atomtype_exception=False) -- '
+            'insisting on an atom type reproduces exactly the AtomTypeError quoted above, '
+            'which is the whole content of this failure and not a defect in the block.'.format(
                 data_type=data_type,
                 molecule=molecule.to_adjacency_list(),
                 n=molecule.get_radical_count(),
