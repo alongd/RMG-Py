@@ -587,6 +587,22 @@ def _plasma_wall_kwargs(chamberGeometry, ionReducedMobility, mobilityReferenceDe
                 "its dimensions, or the diffusion length alone.".format(
                     sorted(set(geometry) - {'diffusionLength'})))
         lam = Quantity(geometry['diffusionLength'])
+        # A directly-stated diffusion length must actually be a LENGTH. Without this,
+        # diffusionLength=(2, 's') passes -- Quantity keeps 's', and the value is then
+        # emitted as (value, 'm') below -- so seconds are silently reinterpreted as
+        # metres. The shape path already checks its dimensions; this is the escape
+        # hatch, and it needs the same guard.
+        length_dimensionality = pq.Quantity(1.0, 'm').simplified.dimensionality
+        try:
+            lam_dimensionality = pq.Quantity(1.0, lam.units).simplified.dimensionality
+        except Exception:
+            lam_dimensionality = None
+        if lam_dimensionality != length_dimensionality:
+            raise InputError(
+                "chamberGeometry 'diffusionLength' must be a length ('m', 'cm', 'mm'); "
+                "got units {0!r}. A non-length is rejected -- reading it as metres would "
+                "silently set the wall loss frequency from the wrong quantity.".format(
+                    lam.units))
         shape_description = 'diffusionLength stated directly'
     else:
         shape = geometry.pop('shape', None)
@@ -727,6 +743,7 @@ def plasma_reactor(temperature,
                    ionReducedMobility=None,
                    mobilityReferenceDensity=None,
                    wallRecycling=1.0,
+                   wallNeutralizationProducts=None,
                    ionisationSource=None,
                    maxIonisationDegree=None,
                    quasineutralElectron=False,
@@ -1207,6 +1224,38 @@ def plasma_reactor(temperature,
     wall_kwargs = _plasma_wall_kwargs(
         chamberGeometry, ionReducedMobility, mobilityReferenceDensity,
         wallRecycling, ionisationSource, maxIonisationDegree)
+
+    # wallNeutralizationProducts names, per ion, the neutral GROUND STATE it returns as
+    # at the wall -- the escape hatch for the case the energy rule cannot infer (two
+    # neutral states within k_B*T_gas, a molecular ion's isomeric neutral, or an
+    # excited-only deck). Validated for shape and label existence here; the reactor
+    # checks charge and composition once the species and their thermo exist. Like every
+    # other wall keyword, it means nothing without a wall.
+    if wallNeutralizationProducts is not None:
+        if 'diffusion_length' not in wall_kwargs:
+            raise InputError(
+                "wallNeutralizationProducts={0!r} was given but no charged-particle wall "
+                "was declared, so it would have no effect. A wall needs BOTH "
+                "chamberGeometry and ionReducedMobility; supply them, or remove "
+                "wallNeutralizationProducts.".format(wallNeutralizationProducts))
+        if not isinstance(wallNeutralizationProducts, dict):
+            raise InputError(
+                "wallNeutralizationProducts must be a dict mapping an ion label to the "
+                "label of the neutral it returns as at the wall, e.g. {'Ar+': 'Ar'}; got "
+                "{0!r}.".format(wallNeutralizationProducts))
+        for ion_label, neutral_label in wallNeutralizationProducts.items():
+            if not isinstance(ion_label, str) or not isinstance(neutral_label, str):
+                raise InputError(
+                    "wallNeutralizationProducts maps ion labels to neutral labels and "
+                    "both must be strings; got {0!r}: {1!r}.".format(ion_label, neutral_label))
+            for role, label in (('ion', ion_label), ('neutral product', neutral_label)):
+                if label not in species_dict:
+                    raise InputError(
+                        "wallNeutralizationProducts names {0} {1!r}, which is not a "
+                        "declared species; declare it with a species(...) directive "
+                        "before the plasmaReactor(...) block. Declared species are "
+                        "{2}.".format(role, label, sorted(species_dict.keys())))
+        wall_kwargs['wall_neutralization_products'] = dict(wallNeutralizationProducts)
 
     # Every argument passed by keyword: PlasmaReactor's fourth positional argument is
     # Te, not n_sims as in simple_reactor -- do not copy that call shape.

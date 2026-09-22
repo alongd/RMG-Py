@@ -187,6 +187,12 @@ cdef class PlasmaReactor(ReactionSystem):
     # gamma: the fraction of ions neutralised at the wall whose heavy core returns
     # to the gas. 1.0 = fully recycling wall, 0.0 = fully pumping wall.
     cdef public double wall_recycling
+    # Optional user declaration {ion label -> neutral label} naming the electronic
+    # ground state a neutralised ion returns as, for the residual ambiguity the
+    # energy rule cannot infer (isomers, a near-degenerate pair, or an excited-only
+    # deck where no ground reference is present). Empty/None means "infer from
+    # thermochemistry"; see _resolve_wall_state.
+    cdef public dict wall_neutralization_products
     # Volumetric external ion-electron pair source (m^-3 s^-1): the declared
     # physical mechanism that replaces a numerical seed.
     cdef public ScalarQuantity ionisation_source
@@ -212,8 +218,8 @@ cdef class PlasmaReactor(ReactionSystem):
     # from the initial composition. It exists so that a Newton TRIAL state with no
     # neutrals left yields a large-but-finite loss frequency that the solver can
     # reject, instead of an infinity that corrupts the iteration matrix. It is not
-    # a physical statement and it never binds inside the supported regime: it is
-    # reached only at ionisation degrees a million times the validity ceiling.
+    # a physical statement. check_wall_support refuses any ACCEPTED state whose neutral
+    # inventory reaches it, so the clamp only ever acts on rejected Newton trial states.
     cdef public double wall_neutral_floor
     # Multiplier on the algebraic quasineutrality row. Scaling one row of a DAE
     # residual by a positive constant is an EXACT operation -- it changes no
@@ -235,6 +241,7 @@ cdef class PlasmaReactor(ReactionSystem):
                  charge_balance_species=None,
                  diffusion_length=None, ion_reduced_mobility=None,
                  mobility_reference_density=None, wall_recycling=1.0,
+                 wall_neutralization_products=None,
                  ionisation_source=None,
                  max_ionisation_degree=PLASMA_WALL_MAX_IONISATION_DEGREE,
                  quasineutral_electron=False):
@@ -286,11 +293,13 @@ cdef class PlasmaReactor(ReactionSystem):
 
         self._configure_wall(diffusion_length, ion_reduced_mobility,
                              mobility_reference_density, wall_recycling,
+                             wall_neutralization_products,
                              ionisation_source, max_ionisation_degree,
                              quasineutral_electron)
 
     def _configure_wall(self, diffusion_length, ion_reduced_mobility,
                         mobility_reference_density, wall_recycling,
+                        wall_neutralization_products,
                         ionisation_source, max_ionisation_degree,
                         quasineutral_electron):
         """
@@ -355,6 +364,26 @@ cdef class PlasmaReactor(ReactionSystem):
                 "wall_recycling (gamma) is the fraction of wall-neutralised ions whose "
                 "heavy core returns to the gas and must lie in [0, 1]; got {0!r}. "
                 "({1})".format(self.wall_recycling, self._identity()))
+
+        # Optional {ion label -> neutral label} declaration. Validated for shape here;
+        # the labels are resolved against the core species in _resolve_wall_state, once
+        # the species exist. Stored as a plain dict (empty when omitted) so __reduce__
+        # round-trips it unchanged.
+        if wall_neutralization_products is None:
+            self.wall_neutralization_products = {}
+        elif isinstance(wall_neutralization_products, dict):
+            for ion_label, neutral_label in wall_neutralization_products.items():
+                if not isinstance(ion_label, str) or not isinstance(neutral_label, str):
+                    raise PlasmaStateError(
+                        "wall_neutralization_products maps ion labels to neutral labels "
+                        "and both must be strings; got {0!r}: {1!r}. ({2})".format(
+                            ion_label, neutral_label, self._identity()))
+            self.wall_neutralization_products = dict(wall_neutralization_products)
+        else:
+            raise PlasmaStateError(
+                "wall_neutralization_products must be a dict mapping an ion label to the "
+                "label of the neutral it returns as at the wall, e.g. {{'Ar+': 'Ar'}}; "
+                "got {0!r}. ({1})".format(wall_neutralization_products, self._identity()))
 
         if ionisation_source is None:
             self.ionisation_source = Quantity((0.0, 'm^-3/s'))
@@ -427,6 +456,7 @@ cdef class PlasmaReactor(ReactionSystem):
                  self.const_spc_names, self.charge_balance_species,
                  self.diffusion_length, self.ion_reduced_mobility,
                  self.mobility_reference_density, self.wall_recycling,
+                 self.wall_neutralization_products,
                  self.ionisation_source, self.max_ionisation_degree,
                  self.quasineutral_electron))
 
@@ -1153,10 +1183,20 @@ cdef class PlasmaReactor(ReactionSystem):
             ionising radiation makes predominantly singly-charged ions; that is a
             statement about the mechanism, not a convenience.
 
-        An ambiguous match is refused rather than resolved by a tie-break: two
-        neutral argon states in the core (ground and metastable, both Ar, both
-        uncharged) would make "the neutral Ar+ returns as" a coin flip that silently
-        moves population between two species with different chemistry.
+        When two neutral core species share an ion's heavy composition -- ground Ar
+        and metastable Ar*, both 'Ar', both uncharged -- the ion returns as the
+        ELECTRONIC GROUND STATE: wall neutralisation is a surface charge-transfer that
+        gives the whole ionisation energy to the wall, not the electron-impact
+        excitation that makes a metastable, so the product relaxes to the ground
+        state. The ground state is identified by LOWEST formation enthalpy, which is
+        its definition and the only discriminator that generalises: multiplicity does
+        NOT (O2's ground state is the triplet and its metastable the singlet, so a
+        "lowest multiplicity" rule would pick the excited state). That comparison
+        needs thermochemistry; when it is missing, or the two lowest states are within
+        the k_B*T_gas degeneracy threshold, or the product is a genuine isomer, the
+        answer is not inferable and the code refuses -- naming a
+        ``wall_neutralization_products={'Ar+': 'Ar'}`` declaration to supply -- rather
+        than falling through to a silent pick.
         """
         cdef Py_ssize_t n = self.num_core_species
         cdef Py_ssize_t i, j
@@ -1185,27 +1225,25 @@ cdef class PlasmaReactor(ReactionSystem):
             except Exception:
                 formulas[i] = None
 
-        # ion -> neutral counterpart (same heavy composition, zero charge). Anions
-        # recycle by the same rule as cations: an anion neutralised at a wall leaves
-        # the same heavy core behind, and leaving them out would make their atoms
-        # vanish silently.
+        # ion -> neutral counterpart at the wall. Matched on heavy composition; when
+        # more than one neutral state shares it, resolved to the electronic ground
+        # state by lowest formation enthalpy (see the class-method docstring), or by an
+        # explicit wall_neutralization_products declaration. The declaration wins where
+        # present, so a user can name a product energy cannot infer.
+        neutralization = self.wall_neutralization_products or {}
         for i in range(n):
             if i == self.electron_index or charges[i] == 0 or formulas[i] is None:
                 continue
             matches = [j for j in range(n)
                        if neutral_mask[j] and formulas[j] is not None and formulas[j] == formulas[i]]
-            if len(matches) == 1:
+            ion_label = getattr(core_species[i], 'label', None)
+            if ion_label is not None and ion_label in neutralization:
+                recycle[i] = self._resolve_declared_neutral(
+                    core_species, i, ion_label, neutralization[ion_label], matches)
+            elif len(matches) == 1:
                 recycle[i] = matches[0]
             elif len(matches) > 1 and self.has_wall and self.wall_recycling > 0.0:
-                raise PlasmaStateError(
-                    "the wall recycling fate of cation {0!r} is ambiguous: {1} neutral "
-                    "core species share its heavy composition ({2}), so 'the neutral it "
-                    "returns as' has no single answer. Recycling would silently move "
-                    "population into one of them. Set wall_recycling=0.0 to make the "
-                    "wall fully pumping, or remove the duplicate neutral state from the "
-                    "core. ({3})".format(
-                        core_species[i], len(matches),
-                        ', '.join(repr(core_species[j]) for j in matches), self._identity()))
+                recycle[i] = self._resolve_ground_state_neutral(core_species, i, matches)
 
         # neutral -> its singly-charged cation (what the external source makes)
         for i in range(n):
@@ -1232,6 +1270,45 @@ cdef class PlasmaReactor(ReactionSystem):
                     "neutral heavy species; the ion mobility used here scales as "
                     "1/n_neutral and is undefined without a neutral gas to collide "
                     "with. ({0})".format(self._identity()))
+
+            # Single positive-ion support. _apply_wall_terms applies ONE reduced
+            # mobility -- the dominant cation's -- as a common loss frequency to every
+            # charged species. That is right for one singly-charged cation and wrong
+            # for anything else: an anion is confined by the electropositive ambipolar
+            # field, not removed at the wall (opposite sign), and a second cation or a
+            # multiply-charged ion has a different mobility the single value cannot
+            # carry. Refuse rather than silently mis-transport them. Generalising to
+            # per-species mobilities is a separate, larger transport model.
+            anions = [i for i in range(n) if i != self.electron_index and charges[i] < 0]
+            cations = [i for i in range(n) if i != self.electron_index and charges[i] > 0]
+            multiply_charged = [i for i in cations if charges[i] != 1]
+            if anions:
+                raise PlasmaStateError(
+                    "this charged-particle wall supports a single positive-ion species, "
+                    "but the core carries {0} anion(s): {1}. An anion is confined by the "
+                    "electropositive sheath rather than removed at the wall, so applying "
+                    "the cation's wall loss frequency to it is the wrong sign of physics; "
+                    "the model does not support anions. ({2})".format(
+                        len(anions), ', '.join(repr(core_species[i]) for i in anions),
+                        self._identity()))
+            if multiply_charged:
+                raise PlasmaStateError(
+                    "this charged-particle wall carries one reduced mobility, that of a "
+                    "singly-charged cation, but the core has multiply-charged ion(s): "
+                    "{0}. A charge-|z|>1 ion has a different mobility and wall flux than "
+                    "the single value can represent. Model the dominant singly-charged "
+                    "cation, or extend the wall to per-species mobilities. ({1})".format(
+                        ', '.join('{0!r} (charge {1:+d})'.format(core_species[i], int(charges[i]))
+                                  for i in multiply_charged), self._identity()))
+            if len(cations) > 1:
+                raise PlasmaStateError(
+                    "this charged-particle wall applies one ion reduced mobility to every "
+                    "charged species, so it supports a single cation species; the core "
+                    "carries {0}: {1}, whose true mobilities differ. Model one dominant "
+                    "ion, or extend the wall to per-species mobilities. ({2})".format(
+                        len(cations), ', '.join(repr(core_species[i]) for i in cations),
+                        self._identity()))
+
             if self.wall_recycling > 0.0:
                 orphans = [core_species[i] for i in range(n)
                            if charges[i] != 0 and i != self.electron_index and recycle[i] < 0]
@@ -1258,6 +1335,105 @@ cdef class PlasmaReactor(ReactionSystem):
         self.wall_recycle_target = recycle
         self.source_cation_target = source_cation
         self.wall_loss_rates = np.zeros(n, float)
+
+    def _resolve_declared_neutral(self, list core_species, Py_ssize_t i,
+                                  ion_label, neutral_label, list matches):
+        """
+        Resolve an ion to the neutral named in ``wall_neutralization_products``.
+
+        The named neutral must be a core species, uncharged, and share the ion's
+        heavy composition -- a wall-neutralisation product conserves the heavy atoms
+        and carries no charge. Anything else is a declaration error, refused here by
+        name so the user can correct the block they wrote.
+        """
+        cdef Py_ssize_t j
+        for j in matches:
+            if getattr(core_species[j], 'label', None) == neutral_label:
+                logging.info(
+                    "PlasmaReactor wall: cation %r neutralises to %r as declared by "
+                    "wall_neutralization_products.", core_species[i], core_species[j])
+                return j
+        all_labels = [getattr(s, 'label', None) for s in core_species]
+        if neutral_label not in all_labels:
+            raise PlasmaStateError(
+                "wall_neutralization_products maps ion {0!r} to {1!r}, but no core "
+                "species carries that label. Declared core species are {2}. Name the "
+                "neutral ground state the ion returns as, e.g. "
+                "wall_neutralization_products={{{0!r}: '<neutral label>'}}. ({3})".format(
+                    ion_label, neutral_label,
+                    sorted(l for l in all_labels if l), self._identity()))
+        raise PlasmaStateError(
+            "wall_neutralization_products maps ion {0!r} to {1!r}, but {1!r} is not a "
+            "neutral core species sharing {0!r}'s heavy composition. A wall "
+            "neutralisation product must be uncharged and conserve the heavy atoms of "
+            "the ion. ({2})".format(ion_label, neutral_label, self._identity()))
+
+    def _resolve_ground_state_neutral(self, list core_species, Py_ssize_t i, list matches):
+        """
+        Resolve an ion to the ELECTRONIC GROUND STATE of its heavy composition: the
+        neutral core species of lowest formation enthalpy at the gas temperature.
+
+        Lowest energy IS the definition of the ground state and is the only
+        discriminator that generalises. Multiplicity does not -- O2's ground state is
+        the triplet and its metastable the singlet, so a "lowest multiplicity" rule
+        would return the excited state. The comparison needs thermochemistry:
+          - missing thermo makes the states unorderable, so the ground state cannot be
+            identified -> refuse, rather than fall through to a silent single pick;
+          - two states within k_B*T_gas of each other are appreciably co-populated at
+            the gas temperature (Boltzmann factor > 1/e), so neither is "the ground
+            state" and picking one would move population silently -> refuse.
+        Both refusals name the wall_neutralization_products declaration that resolves
+        them.
+        """
+        cdef double T = self.T.value_si
+        cdef double threshold, h0, h1
+        cdef Py_ssize_t j, j0, j1
+        enthalpies = []
+        missing = []
+        for j in matches:
+            thermo = getattr(core_species[j], 'thermo', None)
+            if thermo is None:
+                missing.append(core_species[j])
+                continue
+            try:
+                enthalpies.append((thermo.get_enthalpy(T), j))
+            except Exception:
+                missing.append(core_species[j])
+        if missing:
+            raise PlasmaStateError(
+                "the wall returns ion {0!r} as the electronic GROUND STATE of its heavy "
+                "composition, but {1} of the {2} neutral core species sharing that "
+                "composition have no usable thermochemistry ({3}), so their energies "
+                "cannot be ordered and the ground state cannot be identified. Attach "
+                "thermo to every neutral state, or name the product with "
+                "wall_neutralization_products={{{4!r}: '<neutral label>'}}. ({5})".format(
+                    core_species[i], len(missing), len(matches),
+                    ', '.join(repr(s) for s in missing),
+                    getattr(core_species[i], 'label', None), self._identity()))
+        enthalpies.sort()
+        h0, j0 = enthalpies[0]
+        h1, j1 = enthalpies[1]
+        # k_B*T_gas per mole: below this the two states are appreciably co-populated
+        # (Boltzmann) and "ground state" is not a defensible label. See input.rst.
+        threshold = constants.R * T
+        if (h1 - h0) < threshold:
+            raise PlasmaStateError(
+                "the wall's ground-state neutral for ion {0!r} is ambiguous: its two "
+                "lowest-energy neutral states of that composition, {1!r} and {2!r}, "
+                "differ in formation enthalpy by {3:.4g} J/mol, below the thermal energy "
+                "k_B*T_gas = {4:.4g} J/mol at T_gas = {5:.6g} K. Below that scale both "
+                "states are appreciably populated and neither is the ground state, so "
+                "picking one would move population silently. Separate them in energy, or "
+                "name the product with wall_neutralization_products={{{6!r}: '<neutral "
+                "label>'}}. ({7})".format(
+                    core_species[i], core_species[j0], core_species[j1], h1 - h0,
+                    threshold, T, getattr(core_species[i], 'label', None), self._identity()))
+        logging.info(
+            "PlasmaReactor wall: cation %r neutralises to ground-state %r (formation "
+            "enthalpy %.4g J/mol; next neutral state %r is %.4g J/mol higher, above the "
+            "k_B*T_gas = %.4g J/mol degeneracy threshold).",
+            core_species[i], core_species[j0], h0, core_species[j1], h1 - h0, threshold)
+        return j0
 
     cpdef double compute_nu_wall(self, np.ndarray y, double V) except -1.0:
         """
@@ -1332,8 +1508,19 @@ cdef class PlasmaReactor(ReactionSystem):
         Called on the initial composition and after every accepted solver step, never
         from inside the residual: see the note in :meth:`compute_nu_wall` for why a
         Newton trial state must not be allowed to trigger this.
+
+        Three things are refused here, each a state whose acceptance would let the wall
+        loss be evaluated from something other than the physics: a neutral inventory at
+        or below the numerical floor :meth:`compute_nu_wall` clamps to (below which
+        ``nu_wall`` is read off the floor, not off ``n_neutral``); an electron
+        population that is not finite and non-negative (the ionisation-degree and
+        quasineutrality bookkeeping is undefined there); and an ionisation degree above
+        ``max_ionisation_degree``. The first two used to pass: the floor was reachable
+        while ``n_e/n_neutral`` still sat under the ceiling, because the ceiling bounds
+        the RATIO, not the absolute inventory, so a state with both populations driven
+        small passed while ``nu_wall`` silently came off the clamp.
         """
-        cdef double y_neutral = 0.0, alpha
+        cdef double y_neutral = 0.0, alpha, n_e
         cdef Py_ssize_t j
         if not self.has_wall or self.neutral_heavy_mask is None:
             return
@@ -1347,7 +1534,25 @@ cdef class PlasmaReactor(ReactionSystem):
                 "undefined without a neutral gas to collide with, so the run stops "
                 "here rather than extrapolating. ({1})".format(
                     y_neutral, self._identity()))
-        alpha = y[self.electron_index] / y_neutral
+        if y_neutral <= self.wall_neutral_floor:
+            raise PlasmaStateError(
+                "the accepted state has a neutral heavy population of {0!r} mol, at or "
+                "below the numerical floor {1!r} mol that compute_nu_wall clamps to. The "
+                "clamp exists only to keep a Newton TRIAL state finite; an ACCEPTED "
+                "state there means the gas inventory has been consumed to where the "
+                "1/n_neutral ion mobility is meaningless and the wall loss frequency "
+                "would be evaluated from the floor rather than the physics. Refusing to "
+                "extrapolate. ({2})".format(
+                    y_neutral, self.wall_neutral_floor, self._identity()))
+        n_e = y[self.electron_index]
+        if not np.isfinite(n_e) or n_e < 0.0:
+            raise PlasmaStateError(
+                "the accepted state has an electron population of {0!r} mol, which is not "
+                "a physical (finite, non-negative) population. The ionisation-degree and "
+                "quasineutrality bookkeeping the wall model relies on is undefined there, "
+                "so the run stops rather than continuing on a corrupt charge state. "
+                "({1})".format(n_e, self._identity()))
+        alpha = n_e / y_neutral
         if alpha > self.max_ionisation_degree:
             raise PlasmaStateError(
                 "ionisation degree n_e/n_neutral = {0!r} exceeds the declared validity "
@@ -1458,9 +1663,12 @@ cdef class PlasmaReactor(ReactionSystem):
             self.core_species_concentrations[j] = self.y0[j] / self.V
 
         # The wall's numerical neutral floor, and the domain check on the initial
-        # state. The floor is a millionth of the initial neutral population: it is
-        # reached only at ionisation degrees a million times the validity ceiling,
-        # so it can never bind on a state the domain check would accept.
+        # state. The floor is a millionth of the initial neutral population. It is NOT
+        # true that it can never bind on a state the domain check accepts: the ceiling
+        # bounds the ratio n_e/n_neutral, not the absolute neutral inventory, so a
+        # state with both populations driven small can sit under the ceiling AND at the
+        # floor. check_wall_support now refuses a neutral inventory at or below the
+        # floor for exactly that reason.
         if self.has_wall and self.neutral_heavy_mask is not None:
             y_neutral0 = 0.0
             for j in range(self.num_core_species):
