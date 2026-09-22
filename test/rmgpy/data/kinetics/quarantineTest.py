@@ -57,16 +57,20 @@ with a loud reason on a database that predates it.
 """
 
 import inspect
+import logging
 import os
 
 import pytest
 
 from rmgpy import settings
+from rmgpy.data.base import Entry
 from rmgpy.data.kinetics.database import KineticsDatabase
 from rmgpy.data.kinetics.family import TemplateReaction
+from rmgpy.data.kinetics.library import LibraryReaction
 from rmgpy.data.kinetics.quarantine import (
     QUARANTINE_FILENAME,
     KineticsQuarantine,
+    authoring_family,
     check_quarantine,
     describe_provenance,
     get_quarantine,
@@ -252,17 +256,93 @@ class TestTheManifest:
         path = write_manifest(str(tmp_path), body)
         assert load_family_quarantine("Fake_Quarantined_Family", path) is not None
 
-    def test_the_commit_field_is_provenance_and_is_deliberately_not_checked(self, tmp_path):
+    def test_the_commit_field_is_not_declarable(self, tmp_path):
         """
         An installed engine has no reliable commit to compare against, so a commit check
-        would pass on every checkout: a check that cannot fail. The commit is recorded as
-        provenance, the capability is what gets enforced, and this pins that split so
-        nobody later reads the field as a guarantee.
+        would pass on every checkout: a check that cannot fail.
+
+        Round 80 answered that by documenting the field as provenance and leaving it
+        readable. That was the same defect one layer up -- a field still *named*
+        ``requiresEngineCommit`` reads as a guarantee to anyone who greps the name rather
+        than the comment beside it. The field is now refused outright, and the error says
+        where to put the commit instead.
         """
         body = (MANIFEST
                 + 'requiresEngineModule = "rmgpy.data.kinetics.quarantine"\n'
                 + 'requiresEngineSymbol = "check_quarantine"\n'
                 + 'requiresEngineCommit = "not-a-commit-that-exists-anywhere"\n')
+        path = write_manifest(str(tmp_path), body)
+        with pytest.raises(DatabaseError) as exc:
+            load_family_quarantine("Fake_Quarantined_Family", path)
+        assert "recordedEngineCommit" in str(exc.value)
+
+    def test_the_recorded_commit_is_kept_as_provenance_and_reaches_a_reader(
+            self, tmp_path, caplog):
+        """
+        The commit is still worth recording -- under a name that does not claim to pin,
+        and read by something, because a field nothing consults is where this whole
+        thread started.
+        """
+        body = (MANIFEST
+                + 'requiresEngineModule = "rmgpy.data.kinetics.quarantine"\n'
+                + 'requiresEngineSymbol = "check_quarantine"\n'
+                + 'recordedEngineCommit = "541e6498f"\n')
+        path = write_manifest(str(tmp_path), body)
+        with caplog.at_level(logging.INFO):
+            assert load_family_quarantine("Fake_Quarantined_Family", path) is not None
+        assert "541e6498f" in caplog.text
+
+    def test_a_symbol_that_is_not_callable_is_refused(self, tmp_path):
+        """
+        ``getattr(module, name) is not None`` accepts any attribute at all: a manifest
+        naming ``math.pi`` as the gate that refuses a family used to load clean. A gate
+        that cannot be called is not a gate.
+        """
+        body = (MANIFEST
+                + 'requiresEngineModule = "math"\n'
+                + 'requiresEngineSymbol = "pi"\n')
+        path = write_manifest(str(tmp_path), body)
+        with pytest.raises(DatabaseError) as exc:
+            load_family_quarantine("Fake_Quarantined_Family", path)
+        assert "not callable" in str(exc.value)
+
+    def test_a_symbol_without_a_module_is_refused_not_ignored(self, tmp_path):
+        """
+        A symbol with nowhere to look it up asks for a check that cannot be performed.
+        Skipping it silently leaves the manifest reading as pinned while pinning nothing,
+        which is the failure mode of the whole field group.
+        """
+        body = MANIFEST + 'requiresEngineSymbol = "check_quarantine"\n'
+        path = write_manifest(str(tmp_path), body)
+        with pytest.raises(DatabaseError) as exc:
+            load_family_quarantine("Fake_Quarantined_Family", path)
+        assert "requiresEngineModule" in str(exc.value)
+
+    def test_a_gate_that_exists_but_is_not_wired_in_is_refused(self, tmp_path):
+        """
+        Existence of the symbol shows the capability was written, not that anything calls
+        it. ``os`` is a module that certainly exists and certainly does not bind the gate,
+        so a manifest requiring the gate to be reached from there must be refused.
+        """
+        body = (MANIFEST
+                + 'requiresEngineModule = "rmgpy.data.kinetics.quarantine"\n'
+                + 'requiresEngineSymbol = "check_quarantine"\n'
+                + 'requiresEngineCallSites = ("os",)\n')
+        path = write_manifest(str(tmp_path), body)
+        with pytest.raises(DatabaseError) as exc:
+            load_family_quarantine("Fake_Quarantined_Family", path)
+        assert "wired into" in str(exc.value)
+
+    def test_the_real_call_site_satisfies_the_wiring_check(self, tmp_path):
+        """
+        The positive control for the test above, and the arrangement the shipped manifest
+        declares: the reaction model imports the gate by name, so the binding is the same
+        object.
+        """
+        body = (MANIFEST
+                + 'requiresEngineModule = "rmgpy.data.kinetics.quarantine"\n'
+                + 'requiresEngineSymbol = "check_quarantine"\n'
+                + 'requiresEngineCallSites = ("rmgpy.rmg.model",)\n')
         path = write_manifest(str(tmp_path), body)
         assert load_family_quarantine("Fake_Quarantined_Family", path) is not None
 
@@ -444,6 +524,123 @@ class TestTheGateFires:
         monkeypatch.setattr(rmgpy.data.rmg, "database", None, raising=False)
         assert get_quarantine("anything") is None
         check_quarantine(make_reaction(), stage="a test", kinetics=make_marcus())
+
+
+def make_library_reaction(library="copied_seed", comment="", long_desc=None):
+    """A library reaction shaped like one loaded from a seed mechanism."""
+    reaction = LibraryReaction(
+        reactants=[Species(label="Lip", molecule=[Molecule(smiles="[Li+]")]),
+                   Species(label="CH3", molecule=[Molecule(smiles="[CH3]")])],
+        products=[Species(label="CH3Li", molecule=[Molecule(smiles="C[Li]")])],
+        library=library,
+        kinetics=make_marcus() if comment is None else _marcus_with(comment),
+        reversible=True,
+    )
+    if long_desc is not None:
+        reaction.entry = Entry(long_desc=long_desc)
+    return reaction
+
+
+def _marcus_with(comment):
+    kinetics = make_marcus()
+    kinetics.comment = comment
+    return kinetics
+
+
+#: The provenance RMG writes for an estimated rate, in the shape it survives into a
+#: library entry's longDesc.
+ESTIMATED_COMMENT = ("Estimated using template [Root_2R->C] for rate rule [Root_2R->C]\n"
+                     "Euclidian distance = 0\n"
+                     "family: Fake_Quarantined_Family")
+
+
+class TestProvenanceNotTheFamilySlot:
+    """
+    A quarantine is about the RATE, scoped by the family that authored it -- so the gate
+    must resolve *authorship*, and ``reaction.family`` is not authorship.
+
+    ``LibraryReaction.__init__`` assigns ``self.family = library``: the same attribute
+    holds a family label on one wrapper and a library label on another. Keying a gate on
+    a slot a wrapper repurposes fails in both directions at once, and both are tested
+    here -- the quarantined rate that gets in, and the innocent library that gets refused.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _fresh_warning_cache(self):
+        """
+        The unattributable-rate warning is emitted once per (library, kinetics class) so
+        it does not repeat per edge reaction per iteration. Clear it, or one test's
+        warning silences another's and the silence reads as a pass.
+        """
+        from rmgpy.data.kinetics import quarantine as module
+
+        module._UNATTRIBUTED_WARNED.clear()
+        yield
+        module._UNATTRIBUTED_WARNED.clear()
+
+    def test_a_quarantined_rate_copied_into_a_library_is_still_refused(self, registered):
+        """
+        The HIGH. Copy the rate into a seed mechanism and its ``.family`` becomes
+        ``"copied_seed"``, which resolves to no quarantine at all.
+        """
+        reaction = make_library_reaction(comment=ESTIMATED_COMMENT)
+        with pytest.raises(QuarantinedKineticsError) as exc:
+            check_quarantine(reaction, stage="a test", kinetics=reaction.kinetics)
+        assert "Fake_Quarantined_Family" in str(exc.value)
+
+    def test_the_provenance_may_live_in_the_entry_instead_of_the_comment(self, registered):
+        """The library writer puts the estimator's comment in the entry's longDesc."""
+        reaction = make_library_reaction(comment="", long_desc=ESTIMATED_COMMENT)
+        with pytest.raises(QuarantinedKineticsError):
+            check_quarantine(reaction, stage="a test", kinetics=reaction.kinetics)
+
+    def test_a_library_named_like_a_quarantined_family_is_not_refused(self, registered):
+        """
+        The other direction, and the one a false-positive-hunting reviewer would find
+        first: an unrelated library that happens to share the family's name carries no
+        quarantined data, and refusing it would obstruct a legitimate mechanism.
+        """
+        reaction = make_library_reaction(library="Fake_Quarantined_Family", comment="")
+        assert check_quarantine(reaction, stage="a test",
+                                kinetics=reaction.kinetics) is None
+
+    def test_authoring_family_reads_authorship_not_the_slot(self, registered):
+        template = make_reaction()
+        assert authoring_family(template) == "Fake_Quarantined_Family"
+
+        copied = make_library_reaction(comment=ESTIMATED_COMMENT)
+        assert copied.family == "copied_seed"
+        assert authoring_family(copied) == "Fake_Quarantined_Family"
+
+        anonymous = make_library_reaction(library="Fake_Quarantined_Family", comment="")
+        assert anonymous.family == "Fake_Quarantined_Family"
+        assert authoring_family(anonymous) is None
+
+    def test_an_unattributable_rate_is_reported_and_not_refused(self, registered, caplog):
+        """
+        Where provenance is genuinely lost -- a hand-written entry with no comment -- the
+        gate cannot tell a copied quarantined rate from an independent one of the same
+        class. It says so once rather than guessing in either direction, because refusing
+        on the kinetics class alone would ban legitimate electrochemistry.
+        """
+        reaction = make_library_reaction(library="some_hand_written_library", comment="")
+        with caplog.at_level(logging.WARNING):
+            assert check_quarantine(reaction, stage="a test",
+                                    kinetics=reaction.kinetics) is None
+        assert "some_hand_written_library" in caplog.text
+        assert "NOT a refusal" in caplog.text
+
+    def test_an_ordinary_library_rate_says_nothing(self, registered, caplog):
+        """
+        The control that keeps the warning from being noise: a library rate that does not
+        match any live quarantine criterion must produce no output at all.
+        """
+        reaction = make_library_reaction(library="primaryH2O2", comment="")
+        reaction.kinetics = Arrhenius(A=(1e13, "cm^3/(mol*s)"), n=0, Ea=(0, "kJ/mol"))
+        with caplog.at_level(logging.WARNING):
+            assert check_quarantine(reaction, stage="a test",
+                                    kinetics=reaction.kinetics) is None
+        assert caplog.text == ""
 
 
 class TestTheSevenForbiddenSilentBehaviours:
