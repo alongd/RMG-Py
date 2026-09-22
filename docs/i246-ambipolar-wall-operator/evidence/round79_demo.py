@@ -85,7 +85,11 @@ print("\n== 4. HIGH 5: latched wall interface + availability map (Ar/Ar*/Ar+/e-,
 ar2 = Species(label='Ar').from_adjacency_list('1 Ar u0 p4 c0'); ar2.thermo = th(0.0)
 ars = Species(label='Ar*').from_adjacency_list('1 Ar u2 p3 c0'); ars.thermo = th(1110.0)
 arp2 = Species(label='Ar+').from_adjacency_list('multiplicity 2\n1 Ar u1 p3 c+1')
-r = reactor([e, ar2, ars, arp2], {e: 1e-6, arp2: 1e-6, ars: 1e-6, ar2: 1 - 3e-6}, wall_recycling=1.0)
+# Round 83 note: this Ar/Ar* deck no longer auto-resolves -- two electronic states share
+# Ar+'s skeleton and nothing certifies the ground, so a declaration is now REQUIRED (see
+# round83). Round 79 auto-picked ground Ar here; that pick is exactly what round 83 refuses.
+r = reactor([e, ar2, ars, arp2], {e: 1e-6, arp2: 1e-6, ars: 1e-6, ar2: 1 - 3e-6},
+            wall_recycling=1.0, wall_neutralization_products={'Ar+': 'Ar'})
 print("  nu_wall_latched      = {0:.4f} s^-1".format(r.nu_wall_latched))
 print("  wall_flux (mol/s)    =", np.array2string(np.array(r.wall_flux), precision=3))
 print("  electron energy flux = {0:.4e} W   [{1}]".format(

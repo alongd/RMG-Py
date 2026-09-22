@@ -194,6 +194,74 @@ finest identity the physics distinguishes. The skeleton key (charge/electronic-s
 InChI) is directly reusable as that identity if the two branches are reconciled; they should not
 diverge on what "the same species" means.
 
+## Round 83: the guard class, five HIGH and three MEDIUM closed
+
+A second adversarial pass named the class from the other side. Round 79's class was the *identity
+key*; round 83's is the **guard**: *a guard that reads a nearby quantity instead of the governing
+one*. Before fixing the findings individually, every guard in `plasma.pyx` was audited for that
+gap. The table is the durable deliverable -- it outlives the five repairs it organises:
+
+| site | reads | physics gates on | verdict |
+|------|-------|------------------|---------|
+| `step()` diagnostics | *(latched nothing; only `advance` did)* | published diag time ≥ solver time on the **live** `simulate→step` path | HIGH 1 -- wrong path |
+| `_skeleton_key` identity | standard InChI (mobile-H, tautomer-**merged**) | constitutional identity incl. H connectivity | HIGH 2 -- projection coarser than constitution |
+| ion→neutral resolution | `len(matches)`; lowest enthalpy | true electronic **ground** (absolute anchor) | HIGH 3 -- relative order ≠ ground |
+| no-cation guard | cation species **presence** | cation **inventory** vs electron inventory at the state | HIGH 4 -- presence not inventory |
+| source deposit | silently skips when `y_ionisable≤0` | supported-neutral **inventory** must exist to receive the source | HIGH 5 -- silent zero, no accepted-state refusal |
+| `mobility_reference_density` | magnitude only | number-density **dimension** (m⁻³) | MED -- value not dimension |
+| `ionisation_source` | magnitude only | rate-density **dimension** (m⁻³ s⁻¹) | MED -- value not dimension |
+| wall params when `has_wall=False` | *(nothing)* | wall-only options require a wall | MED -- accepted then ignored |
+| `wall_neutralization_products` key | key/val are **strings** | key is an actual **cation species** | MED -- typo falls back to inference |
+| `check_wall_support` neutral | **aggregate** `Σ y_neutral` | **per-species** non-negativity | MED -- aggregate not per-species |
+
+One sentence covers column four: **presence where inventory governs (HIGH 1, HIGH 4); aggregate
+where per-species governs (MED); a projection where constitution governs (HIGH 2); relative where
+absolute governs (HIGH 3); residual-scratch on the `advance` path where the live `step` path
+governs (the latch).** The audit found no sixth divergence: the `source_cation` ambiguity, the
+orphan-ion check, and the alpha ceiling all read the governing quantity already.
+
+**HIGH 2 and HIGH 3 collapse to one fact and one fix.** When 2+ neutral candidates share an ion's
+skeleton, nothing in the deck certifies which is the ground-state product: they may be electronic
+states (Ar/Ar*, where the lowest is the ground *only if the ground is present* -- an excited-only
+deck is indistinguishable) or tautomers standard InChI merges (2-pyridone / 2-hydroxypyridine,
+`evidence/round83_key_probe.log`), which are not electronic states at all. The FixedH InChI layer
+separates tautomers on neutrals but does **not** compose with the charge-truncation the key needs:
+on a cation InChI puts `/p`,`/f` before `/q` and shifts the formula, so truncating for
+charge-independence strips the `/f` that distinguishes tautomers. A fourth projection was declined.
+The fix (chosen with the reviewer) is **multiplicity requires a declaration**: 2+ candidates and no
+`wallNeutralizationProducts` → refuse; do not pick. `_resolve_ground_state_neutral` -- the
+lowest-enthalpy / k_B·T degeneracy picker -- was **removed**. Enthalpy leaves identity entirely and
+survives only in the wall-energy interface, as a measurement of a quantity rather than a vote about
+an identity. Cost, accepted as positively correct: a deck carrying two argon electronic states now
+declares `wallNeutralizationProducts={'Ar+': 'Ar'}` -- one line in a deck that already declares
+seven wall parameters, and a modelling claim the modeller should state.
+
+The **single-candidate floor is named, not hidden** (docstring, `input.rst`): one neutral per
+skeleton is returned because there is no alternative, not because it is certified as the ground
+state; if the only neutral present is a different tautomer or an excited state, the ion returns as
+that. No rule can distinguish that from one candidate; the declaration overrides it.
+
+Closed, each reproduced RED first (`evidence/round83_before.log`, 14 red) then GREEN on the rebuilt
+module (`round83_after.log`, 60 wall / 57 plasma / 101 input):
+
+- **HIGH 1** -- `step()` (the entry `ReactionSystem.simulate` actually calls) now latches the wall
+  interface after `check_wall_support`, so production runs publish live diagnostics, not the t=0
+  latch. Test drives a real `step()` and asserts the published diagnostic time tracks the solver
+  time -- the check that would have caught it.
+- **HIGH 2 + HIGH 3** -- multiplicity requires a declaration (above); the energy picker removed.
+- **HIGH 4** -- `check_wall_support` refuses a net charge outside quasineutrality (`|n_ion − n_e|`
+  bounded by the existing net-charge tolerance), so a declared cation present at **zero moles** with
+  electrons is caught -- the inventory the topology guard cannot see. Ordered after the alpha
+  ceiling, so an over-ceiling non-neutral state still gets the more specific ceiling diagnosis. This
+  closes deferred gap #3.
+- **HIGH 5** -- `check_wall_support` refuses a declared source with no ionisable-neutral inventory
+  left to receive it (only unsupported bath gas remaining), rather than depositing zero silently.
+- **MEDIUM** -- direct-construction dimension checks on `mobility_reference_density` (m⁻³) and
+  `ionisation_source` (m⁻³ s⁻¹); wall-only options supplied without a wall are refused rather than
+  stored and ignored (`__reduce__` passes the wall-only densities back as `None` when wall-less, so
+  a wall-less reactor still round-trips); and a `wallNeutralizationProducts` key naming no cation is
+  refused rather than silently ignored; and per-species (not aggregate) neutral non-negativity.
+
 ## Files touched
 
 `rmgpy/solver/plasma.pyx`, `rmgpy/rmg/input.py`,

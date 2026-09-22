@@ -1,0 +1,20 @@
+>           reactor.initialize_model([electron, ar, arp], [], [], [])
+E           Failed: DID NOT RAISE <class 'rmgpy.exceptions.PlasmaStateError'>
+
+test/rmgpy/solver/plasmaWallTest.py:1498: Failed
+=========================== short test summary info ============================
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_wall_requires_a_declaration_for_two_electronic_states
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_wall_refuses_two_neutral_states_by_multiplicity_not_thermo
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_wall_refuses_two_states_even_across_a_clear_energy_gap
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_wall_refuses_two_states_regardless_of_their_separation
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_multi_state_deck_refuses_before_reading_enthalpy
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_step_publishes_diagnostics_on_the_production_path
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_wall_refuses_two_excited_states_with_no_ground
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_wall_refuses_electrons_without_commensurate_ion_inventory
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_declared_source_refused_when_no_ionisable_inventory_remains
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_check_wall_support_refuses_an_individual_negative_neutral
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_direct_construction_checks_mobility_reference_density_dimension
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_direct_construction_checks_ionisation_source_dimension
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_wall_only_options_without_a_wall_are_refused
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_wall_neutralization_products_unknown_ion_key_is_refused
+14 failed, 46 passed in 2.03s

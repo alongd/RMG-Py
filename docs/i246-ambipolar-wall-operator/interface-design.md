@@ -34,12 +34,19 @@ evaluation, including rejected Newton trials. It is *not* the interface, and a c
 it.
 
 The interface fields are written *only* by `_latch_wall_diagnostics(y, V, t)`, which recomputes the
-wall terms cleanly at an accepted `y` and is called from exactly two places:
+wall terms cleanly at an accepted `y` and is called from exactly three places, each an accepted-state
+gate outside the residual:
 
 - `initialize_model`, on `self.y0` (the initial composition is an accepted state), at t = 0;
+- `step`, on `self.y`, **after** `check_wall_support` has passed;
 - `advance`, on `self.y`, **after** `check_wall_support` has passed.
 
-Because both call sites are outside the residual — the same accepted-state gate `check_wall_support`
+`step` is the one that matters in production: `ReactionSystem.simulate` drives the reactor through
+`step`, never `advance`. Round 79 wired the latch into `advance` only, so a real simulation published
+diagnostics frozen at the t=0 initialisation latch — a guarantee that never ran, worse than none
+because it looked like one (round-83 HIGH 1). Both entries now latch, at the same accepted-state gate.
+
+Because every call site is outside the residual — the same accepted-state gate `check_wall_support`
 already sits behind — no rejected trial state can reach the interface. This is a structural guarantee,
 not a discipline: there is no code path from a Newton trial to `wall_flux`.
 (`test_wall_diagnostics_latched_only_at_accepted_states` pins it: a wild residual moves the scratch
