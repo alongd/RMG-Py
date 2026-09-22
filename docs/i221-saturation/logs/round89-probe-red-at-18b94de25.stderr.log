@@ -1,0 +1,7 @@
+INFO:root:Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+WARNING:root:Reaction library 'copied_seed' supplies Marcus kinetics, which is the class quarantined for family Fake_Quarantined_Family (a reason that must reach the error message), and the entry records no authoring family. A rate copied out of that family would be admitted here unchecked, because nothing in the entry says where it came from. This is NOT a refusal: the same kinetics class from an independent source is legitimate and the gate cannot tell the two apart. To settle it, add a "family: <label>" line to the entry's longDesc -- which is what RMG itself writes for an estimated rate -- or confirm the rate is independent.
+INFO:root:Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+INFO:root:Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+INFO:root:Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+INFO:root:Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+INFO:root:Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
