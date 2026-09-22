@@ -51,11 +51,13 @@ import pytest
 
 import rmgpy.constants as constants
 import rmgpy.solver.plasma
+from rmgpy import settings
 from rmgpy.exceptions import PlasmaStateError
 from rmgpy.kinetics import VoronovEIArrhenius
 from rmgpy.reaction import Reaction
 from rmgpy.solver.plasma import PLASMA_LOSCHMIDT, PlasmaReactor
 from rmgpy.species import Species
+from rmgpy.thermo import ThermoData
 
 EV_TO_K = 1.0 / 8.617333262e-5           # K per eV
 TORR_TO_PA = 101325.0 / 760.0
@@ -70,7 +72,10 @@ L_NOMINAL = 0.30                          # m, cylinder length
 # Ellis, McDaniel & Albritton, At. Data Nucl. Data Tables 17 (1976) 177.
 MU0_AR_IN_AR = 1.535e-4                   # m^2/(V s) at the Loschmidt density
 
-VORONOV_YAML = '/home/alon/Code/RMG-database-plasma/input/kinetics/voronov.yaml'
+# Resolve the Voronov coefficients from the configured database, the way the rest of
+# the suite locates database files, rather than hard-coding one machine's checkout.
+# ``database.directory`` comes from the worktree's rmgrc (see docs/rmgrc.md).
+VORONOV_YAML = os.path.join(settings['database.directory'], 'kinetics', 'voronov.yaml')
 
 
 def _diffusion_length(radius=R_NOMINAL, length=L_NOMINAL):
@@ -284,25 +289,65 @@ def test_heavy_atom_recycling_conservation():
 # ---------------------------------------------------------------- item 7
 
 
-def test_no_wall_residual_and_jacobian_bitwise_reproducible():
-    """A reactor with no wall declared produces residual and Jacobian values
-    bit-for-bit identical to one whose wall parameters are absent -- built
-    twice, independently, from the same equations. Uses ==, not approx."""
-    ra, _, _ = _build_reactor(wall=False, with_chemistry=True)
-    rb, _, _ = _build_reactor(wall=False, with_chemistry=True)
-    assert ra.has_wall is False
-    assert rb.has_wall is False
+def test_wall_operator_residual_inert_and_jacobian_is_the_wall_linearization():
+    """Two invariants on the wall operator, at an all-neutral state, each of which a
+    deterministic corruption of the wall path breaks -- unlike the earlier version of
+    this test, which compared two WALL-LESS reactors and so never evaluated the wall
+    path at all (see docs/i246-ambipolar-wall-operator/evidence/bitwise_mutation.log).
 
-    y = _state_at(ra, 1.0e-6)
-    dydt = np.zeros(ra.num_core_species, float)
-    da, ia = ra.residual(0.0, y.copy(), dydt.copy())
-    db, ib = rb.residual(0.0, y.copy(), dydt.copy())
-    assert np.array_equal(da, db)
-    assert ia == ib
+    RESIDUAL is bit-for-bit inert: with no charged particles present every wall loss
+    ``nu*y[j]`` is identically zero, so a wall reactor's residual EQUALS a wall-less
+    one's (``==``, not approx). A stray constant or wrong index in ``_apply_wall_terms``
+    breaks this.
 
-    pa = np.array(ra.jacobian(0.0, y.copy(), dydt.copy(), 1.0), float)
-    pb = np.array(rb.jacobian(0.0, y.copy(), dydt.copy(), 1.0), float)
-    assert np.array_equal(pa, pb)
+    JACOBIAN is NOT inert, and must not be claimed to be: the wall loss is ``nu*y[j]``,
+    whose derivative in ``y[j]`` is ``nu`` regardless of ``y[j]``, so the linearization
+    carries the wall slope even where the value is zero. The invariant here is exact
+    instead: the wall reactor's Jacobian MINUS the wall-less one's equals the analytic
+    wall linearization -- ``-nu`` on every charged diagonal and ``+gamma*nu`` from each
+    cation into its recycle target. A wrong sign, a wrong nu, or a mis-placed recycle
+    term breaks this."""
+    r_wall, _, _ = _build_reactor(wall=True, with_chemistry=True)
+    r_none, _, _ = _build_reactor(wall=False, with_chemistry=True)
+    assert r_wall.has_wall is True
+    assert r_none.has_wall is False
+
+    ie, i_ar, i_arp = _indices(r_wall)
+    # All-neutral: no electrons, no ions. The ionisation reaction is first order in the
+    # electron, so it too is inert; the only wall-attributable difference is the wall term.
+    y = np.zeros(r_wall.num_core_species, float)
+    y[i_ar] = 1.0
+    dydt = np.zeros(r_wall.num_core_species, float)
+
+    dw, iw = r_wall.residual(0.0, y.copy(), dydt.copy())
+    dn, in_ = r_none.residual(0.0, y.copy(), dydt.copy())
+    assert np.array_equal(dw, dn), (
+        "wall residual not inert on a chargeless state; differs by {0!r}".format(
+            np.asarray(dw) - np.asarray(dn)))
+    assert iw == in_
+
+    pw = np.array(r_wall.jacobian(0.0, y.copy(), dydt.copy(), 1.0), float)
+    pn = np.array(r_none.jacobian(0.0, y.copy(), dydt.copy(), 1.0), float)
+
+    nu = r_wall.compute_nu_wall(y, r_wall.compute_volume(y))
+    assert nu > 0.0
+    expected = np.zeros_like(pw)
+    gamma = r_wall.wall_recycling
+    for j in range(r_wall.num_core_species):
+        if r_wall.species_charges[j] == 0:
+            continue
+        expected[j, j] -= nu
+        if j == ie:
+            continue
+        target = int(r_wall.wall_recycle_target[j])
+        if target >= 0 and gamma > 0.0:
+            expected[target, j] += gamma * nu
+    diff = pw - pn
+    assert np.allclose(diff, expected, rtol=1e-10, atol=1e-9), (
+        "wall Jacobian contribution does not match the analytic linearization; "
+        "max abs residual {0:.3e}".format(np.max(np.abs(diff - expected))))
+    # And the difference is non-trivial: the wall genuinely changed the Jacobian.
+    assert np.max(np.abs(diff)) > 1.0
 
 
 # ---------------------------------------------------------------- item 8
@@ -786,3 +831,212 @@ def test_reduce_enumerates_every_constructor_parameter():
     assert not missing, (
         "__reduce__ does not carry {0} of __init__'s parameters, so a pickle or "
         "deepcopy silently drops them: {1}".format(len(missing), missing))
+
+
+# ---------------------------------------------------------------- I-246 rework
+#
+# The ground/metastable resolution, the thermo precondition, the near-degeneracy
+# threshold, the wall_neutralization_products declaration, the neutral-floor and
+# electron-population validators, the single-cation enforcement, and the direct
+# diffusionLength dimension check. Every red state here is banked, on the built
+# module, in docs/i246-ambipolar-wall-operator/evidence/before.log.
+
+EV_J_PER_MOL = 96485.33212
+
+
+def _argon_thermo(excitation_eV):
+    """Monatomic-argon thermo with an electronic offset. The offset is all that the
+    ground-state rule reads; Cp and S are the same for both states, so the enthalpy
+    difference is purely the excitation energy."""
+    Cp = 2.5 * constants.R
+    return ThermoData(
+        Tdata=([298, 400, 600, 800, 1000, 1500, 2000], 'K'),
+        Cpdata=([Cp] * 7, 'J/(mol*K)'),
+        H298=(excitation_eV * EV_J_PER_MOL / 1000.0, 'kJ/mol'),
+        S298=(154.8, 'J/(mol*K)'))
+
+
+def _metastable_species(label='Ar*', excitation_eV=None):
+    """A second neutral argon state, constructed locally (no database). It differs
+    from the ground state by two unpaired electrons (multiplicity 3), so it is a
+    distinct species that nonetheless shares argon's heavy composition."""
+    s = Species(label=label).from_adjacency_list('1 Ar u2 p3 c0')
+    if excitation_eV is not None:
+        s.thermo = _argon_thermo(excitation_eV)
+    return s
+
+
+def _ground_species(label='Ar', excitation_eV=None):
+    s = Species(label=label).from_adjacency_list('1 Ar u0 p4 c0')
+    if excitation_eV is not None:
+        s.thermo = _argon_thermo(excitation_eV)
+    return s
+
+
+def _metastable_reactor(ground_eV=0.0, meta_eV=11.5, meta_label='Ar*', gamma=1.0,
+                        neutralization=None, with_meta_thermo=True,
+                        with_ground_thermo=True):
+    """A wall reactor whose core carries ground Ar, a second neutral Ar state, Ar+
+    and e-. Thermo is attached locally so the ground-state energy rule can run."""
+    electron = Species(label='e-').from_adjacency_list('1 e u1 p0 c-1')
+    ground = _ground_species('Ar', ground_eV if with_ground_thermo else None)
+    meta = _metastable_species(meta_label, meta_eV if with_meta_thermo else None)
+    arp = Species(label='Ar+').from_adjacency_list('multiplicity 2\n1 Ar u1 p3 c+1')
+    imf = {electron: 1.0e-6, arp: 1.0e-6, meta: 1.0e-6, ground: 1.0 - 3.0e-6}
+    kwargs = dict(diffusion_length=(_diffusion_length(), 'm'),
+                  ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
+                  wall_recycling=gamma)
+    if neutralization is not None:
+        kwargs['wall_neutralization_products'] = neutralization
+    reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+                            n_sims=1, termination=[], **kwargs)
+    core = [electron, ground, meta, arp]
+    reactor.initialize_model(core, [], [], [])
+    return reactor, core
+
+
+def _cation_recycle_label(reactor, core):
+    z = reactor.species_charges
+    i_arp = [j for j in range(len(z)) if z[j] == 1 and j != reactor.electron_index][0]
+    return core[int(reactor.wall_recycle_target[i_arp])].label
+
+
+def test_wall_resolves_metastable_deck_to_ground_state():
+    """The actual collision: ground Ar, metastable Ar*, Ar+, e-, wall_recycling=1.0.
+    It initialises (it refused before this rework) and recycles Ar+ into the GROUND
+    state, the lowest-enthalpy neutral, not the metastable."""
+    reactor, core = _metastable_reactor(ground_eV=0.0, meta_eV=11.5, gamma=1.0)
+    assert _cation_recycle_label(reactor, core) == 'Ar'
+
+
+def test_wall_ground_state_charge_and_particle_conservation_with_metastable():
+    """With the metastable present and gamma=1, the wall conserves both net charge
+    and heavy atoms; the metastable itself takes no wall flux."""
+    reactor, core = _metastable_reactor(gamma=1.0)
+    z = reactor.species_charges
+    ie = reactor.electron_index
+    i_ground = [j for j in range(len(z)) if z[j] == 0
+                and core[j].label == 'Ar'][0]
+    i_meta = [j for j in range(len(z)) if z[j] == 0 and core[j].label == 'Ar*'][0]
+    i_arp = [j for j in range(len(z)) if z[j] == 1 and j != ie][0]
+    y = np.zeros(reactor.num_core_species, float)
+    y[i_ground] = 1.0
+    y[i_meta] = 1.0e-2
+    y[i_arp] = 1.0e-4
+    y[ie] = 1.0e-4
+    reactor.residual(0.0, y.copy(), np.zeros_like(y))
+    wall = np.asarray(reactor.wall_loss_rates, float)
+    nu = reactor.nu_wall
+    assert wall[i_meta] == 0.0
+    assert np.isclose(wall[i_arp], -nu * y[i_arp], rtol=1e-12, atol=0.0)
+    assert np.isclose(wall[i_ground], nu * y[i_arp], rtol=1e-12, atol=0.0)
+    net_charge_rate = sum(z[j] * wall[j] for j in range(len(z)))
+    assert abs(net_charge_rate) <= 1e-18 * max(1.0, abs(nu))
+    net_heavy_rate = sum(wall[j] for j in range(len(z)) if j != ie)
+    assert np.isclose(net_heavy_rate, 0.0, atol=1e-18)
+
+
+def test_wall_refuses_two_neutral_states_without_thermo():
+    """Two neutral Ar states with NO thermo cannot be ordered by energy, so the
+    ground state is unidentifiable. It must refuse NAMING thermochemistry, not fall
+    through to the single-match branch and pick one silently."""
+    with pytest.raises(PlasmaStateError) as exc:
+        _metastable_reactor(with_meta_thermo=False, with_ground_thermo=False)
+    assert 'no usable thermochemistry' in str(exc.value)
+
+
+def test_wall_resolves_across_a_clear_electronic_gap():
+    """Two states separated by 2*k_B*T_gas resolve to the lower one."""
+    rt_ev = constants.R * TGAS / EV_J_PER_MOL
+    reactor, core = _metastable_reactor(ground_eV=0.0, meta_eV=2.0 * rt_ev,
+                                        meta_label='Ar_hi')
+    assert _cation_recycle_label(reactor, core) == 'Ar'
+
+
+def test_wall_refuses_near_degenerate_states():
+    """Two states within the k_B*T_gas threshold are co-populated; neither is the
+    ground state, so it refuses naming the degeneracy threshold and the declaration."""
+    rt_ev = constants.R * TGAS / EV_J_PER_MOL
+    with pytest.raises(PlasmaStateError) as exc:
+        _metastable_reactor(ground_eV=0.0, meta_eV=0.5 * rt_ev, meta_label='Ar_near')
+    msg = str(exc.value)
+    assert 'degeneracy threshold' in msg or 'thermal energy k_B' in msg
+    assert 'wall_neutralization_products' in msg
+
+
+def test_wall_neutralization_products_declaration_resolves_ambiguity():
+    """The declaration names the ground-state product explicitly and wins."""
+    reactor, core = _metastable_reactor(neutralization={'Ar+': 'Ar'})
+    assert _cation_recycle_label(reactor, core) == 'Ar'
+
+
+def test_wall_neutralization_products_missing_neutral_is_refused():
+    """A declaration naming a neutral that is not in the core is refused by name."""
+    with pytest.raises(PlasmaStateError) as exc:
+        _metastable_reactor(neutralization={'Ar+': 'Ar_ground_not_here'})
+    assert 'Ar_ground_not_here' in str(exc.value)
+
+
+def test_check_wall_support_refuses_subfloor_inventory():
+    """An accepted state whose neutral inventory is at or below the numerical floor
+    is refused: the ceiling bounds n_e/n_neutral, so a collapsed-inventory state
+    (low alpha, tiny n_neutral) passed before this rework while nu_wall silently came
+    off the clamp."""
+    r, _, _ = _build_reactor(wall=True, gamma=0.0, with_chemistry=False)
+    ie, i_ar, i_arp = _indices(r)
+    y = np.zeros(r.num_core_species, float)
+    y[i_ar] = 1.0e-9                      # below floor (~1e-6 of the initial neutral moles)
+    y[i_arp] = 1.0e-15
+    y[ie] = 1.0e-15                       # alpha = 1e-6, far under the ceiling
+    with pytest.raises(PlasmaStateError) as exc:
+        r.check_wall_support(y)
+    assert 'numerical floor' in str(exc.value)
+
+
+def test_check_wall_support_refuses_nonfinite_electron():
+    """A NaN or negative electron population is refused, not carried into the
+    ionisation-degree ratio (nan > ceiling is False, so it used to pass)."""
+    r, _, _ = _build_reactor(wall=True, gamma=0.0, with_chemistry=False)
+    ie, i_ar, i_arp = _indices(r)
+    y = np.zeros(r.num_core_species, float)
+    y[i_ar] = 1.0
+    y[ie] = float('nan')
+    with pytest.raises(PlasmaStateError) as exc:
+        r.check_wall_support(y)
+    assert 'electron population of' in str(exc.value)
+    y[ie] = -1.0e-6
+    with pytest.raises(PlasmaStateError):
+        r.check_wall_support(y)
+
+
+def test_wall_refuses_anion_in_core():
+    """A single mobility applied to an anion is the wrong sign of physics (the sheath
+    confines anions), so an anion in the core with a wall is refused."""
+    electron = Species(label='e-').from_adjacency_list('1 e u1 p0 c-1')
+    ground = _ground_species('Ar')
+    cl = Species(label='Cl').from_adjacency_list('1 Cl u1 p3 c0')
+    cln = Species(label='Cl-').from_adjacency_list('1 Cl u0 p4 c-1')
+    arp = Species(label='Ar+').from_adjacency_list('multiplicity 2\n1 Ar u1 p3 c+1')
+    imf = {electron: 1e-6, arp: 1e-6, cln: 1e-6, cl: 1e-6, ground: 1.0 - 4e-6}
+    reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+                            (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
+                            diffusion_length=(_diffusion_length(), 'm'),
+                            ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'))
+    with pytest.raises(PlasmaStateError) as exc:
+        reactor.initialize_model([electron, ground, cl, cln, arp], [], [], [])
+    assert 'does not support anions' in str(exc.value)
+
+
+def test_direct_diffusion_length_dimension_is_checked():
+    """A directly-stated diffusionLength must be a length: (2, 's') is refused rather
+    than silently reinterpreted as (2, 'm')."""
+    from rmgpy.rmg.input import _plasma_wall_kwargs
+    from rmgpy.exceptions import InputError
+    with pytest.raises(InputError) as exc:
+        _plasma_wall_kwargs({'diffusionLength': (2.0, 's')},
+                            (MU0_AR_IN_AR, 'm^2/(V*s)'), None, 1.0, None, None)
+    assert 'diffusionLength' in str(exc.value) and 'length' in str(exc.value)
+    # and the valid spelling still resolves
+    kwargs = _plasma_wall_kwargs({'diffusionLength': (2.03, 'cm')},
+                                 (MU0_AR_IN_AR, 'm^2/(V*s)'), None, 1.0, None, None)
+    assert abs(kwargs['diffusion_length'][0] - 0.0203) < 1e-12
