@@ -29,12 +29,14 @@
 
 
 import cantera as ct
+import math
 import os
 import shutil
 import numpy as np
 import pytest
 
 from cantera_yaml_comparer import CanteraYamlFileComparer
+from rmgpy.exceptions import CanteraThermoWriteError
 from rmgpy.molecule import Atom, Molecule, get_element
 from rmgpy.species import Species
 from rmgpy.reaction import Reaction
@@ -53,6 +55,7 @@ from rmgpy.transport import TransportData
 from rmgpy.yaml_cantera2 import (
     CanteraWriter2,
     save_cantera_files,
+    save_cantera_model,
     species_to_dict,
     reaction_to_dict_list,
     generate_cantera_data,
@@ -125,6 +128,107 @@ class TestCanteraWriter2:
         assert np.isclose(d['transport']['dipole'], 1.7) # Debye
         assert np.isclose(d['transport']['well-depth'], 100.0) # Kelvin
         assert np.isclose(d['transport']['rotational-relaxation'], 1.0)
+
+    def _create_dummy_species_one_range(self, label, formula, index=-1):
+        """Like _create_dummy_species, but with a SINGLE NASA polynomial
+        (one temperature range) instead of the usual two."""
+        sp = Species(label=label).from_smiles(formula)
+        sp.index = index
+        coeffs = [1.0, 0.0, 0.0, 0.0, 0.0, -100.0, 1.0]
+        poly = NASAPolynomial(coeffs=coeffs, Tmin=(200, 'K'), Tmax=(6000, 'K'))
+        sp.thermo = NASA(polynomials=[poly], Tmin=(200, 'K'), Tmax=(6000, 'K'))
+        sp.transport_data = TransportData(
+            shapeIndex=1,
+            sigma=(3.0, 'angstrom'),
+            epsilon=(100.0, 'K'),
+            dipoleMoment=(1.7, 'De'),
+            polarizability=(0.0, 'angstrom^3'),
+            rotrelaxcollnum=1.0
+        )
+        return sp
+
+    def test_species_to_dict_one_range(self):
+        """
+        Headline test (i264 round-98): a species whose thermo carries a
+        SINGLE NASA polynomial (one temperature range) must convert without
+        error, emitting a Cantera ``temperature-ranges`` list of length 2
+        (repeating the single range's bounds, per the writer's convention)
+        so Cantera can load it. Before the i264 fix this path raised a bare
+        IndexError from inside species_to_dict.
+        """
+        sp = self._create_dummy_species_one_range("H2", "[H][H]", index=1)
+        d = species_to_dict(sp, [sp])
+
+        assert d['name'] == "H2(1)"
+        assert d['thermo']['model'] == 'NASA7'
+        assert len(d['thermo']['temperature-ranges']) == 2
+        assert len(d['thermo']['data']) == 1
+
+    def test_species_to_dict_refuses_more_than_two_polynomials(self):
+        """A 3-range NASA thermo cannot be represented in Cantera's NASA7
+        two-range form; species_to_dict must name the refusal."""
+        sp = self._create_dummy_species("H2", "[H][H]", index=1)
+        coeffs = [1.0, 0.0, 0.0, 0.0, 0.0, -100.0, 1.0]
+        sp.thermo = NASA(
+            polynomials=[
+                NASAPolynomial(coeffs=coeffs, Tmin=(200, 'K'), Tmax=(1000, 'K')),
+                NASAPolynomial(coeffs=coeffs, Tmin=(1000, 'K'), Tmax=(3000, 'K')),
+                NASAPolynomial(coeffs=coeffs, Tmin=(3000, 'K'), Tmax=(6000, 'K')),
+            ],
+            Tmin=(200, 'K'), Tmax=(6000, 'K'),
+        )
+        with pytest.raises(CanteraThermoWriteError):
+            species_to_dict(sp, [sp])
+
+    def test_species_to_dict_refuses_non_seven_coefficient_polynomial(self):
+        """A NASA9-shaped (9-coefficient) polynomial must be refused by
+        name, not silently truncated or mis-written."""
+        sp = self._create_dummy_species("H2", "[H][H]", index=1)
+        coeffs9 = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -100.0, 1.0]
+        sp.thermo = NASA(
+            polynomials=[NASAPolynomial(coeffs=coeffs9, Tmin=(200, 'K'), Tmax=(6000, 'K'))],
+            Tmin=(200, 'K'), Tmax=(6000, 'K'),
+        )
+        with pytest.raises(CanteraThermoWriteError):
+            species_to_dict(sp, [sp])
+
+    def test_species_to_dict_refuses_gapped_ranges(self):
+        """Non-contiguous polynomial ranges (a gap between the low range's
+        Tmax and the high range's Tmin) must be refused by name."""
+        sp = self._create_dummy_species("H2", "[H][H]", index=1)
+        coeffs = [1.0, 0.0, 0.0, 0.0, 0.0, -100.0, 1.0]
+        sp.thermo = NASA(
+            polynomials=[
+                NASAPolynomial(coeffs=coeffs, Tmin=(200, 'K'), Tmax=(1000, 'K')),
+                NASAPolynomial(coeffs=coeffs, Tmin=(1500, 'K'), Tmax=(6000, 'K')),
+            ],
+            Tmin=(200, 'K'), Tmax=(6000, 'K'),
+        )
+        with pytest.raises(CanteraThermoWriteError):
+            species_to_dict(sp, [sp])
+
+    def test_species_to_dict_refuses_inverted_range(self):
+        """A polynomial with Tmin >= Tmax must be refused by name."""
+        sp = self._create_dummy_species("H2", "[H][H]", index=1)
+        coeffs = [1.0, 0.0, 0.0, 0.0, 0.0, -100.0, 1.0]
+        sp.thermo = NASA(
+            polynomials=[NASAPolynomial(coeffs=coeffs, Tmin=(1000, 'K'), Tmax=(200, 'K'))],
+            Tmin=(200, 'K'), Tmax=(6000, 'K'),
+        )
+        with pytest.raises(CanteraThermoWriteError):
+            species_to_dict(sp, [sp])
+
+    def test_species_to_dict_refuses_non_finite_values(self):
+        """A NaN coefficient must be refused by name, never written as
+        invalid YAML that Cantera would fail to load (or load wrongly)."""
+        sp = self._create_dummy_species("H2", "[H][H]", index=1)
+        coeffs_nan = [float("nan")] * 7
+        sp.thermo = NASA(
+            polynomials=[NASAPolynomial(coeffs=coeffs_nan, Tmin=(200, 'K'), Tmax=(6000, 'K'))],
+            Tmin=(200, 'K'), Tmax=(6000, 'K'),
+        )
+        with pytest.raises(CanteraThermoWriteError):
+            species_to_dict(sp, [sp])
 
     def test_species_to_dict_warns_and_uses_charge_for_explicit_electron_mismatch(self, caplog):
         """
@@ -767,6 +871,57 @@ class TestCanteraWriter2:
         sp.transport_data.comment = "from GRI-Mech"
         d = species_to_dict(sp, [sp])
         assert d['transport']['note'] == "from GRI-Mech"
+
+    def test_one_range_species_roundtrips_through_cantera(self):
+        """
+        Round-trip test (i264 round-98): a full Cantera YAML phase written
+        for a one-range species must be loadable by Cantera, and Cp/H/S read
+        back from the loaded ct.Solution must match the original RMG thermo
+        object at several spot temperatures. Any non-finite comparison value
+        is rejected explicitly via math.isfinite -- max(0.0, nan) == 0.0 in
+        CPython, so a naive `max(max_rel_err, rel_err)` accumulation would
+        silently pass a broken round-trip.
+        """
+        class _FakeModel:
+            def __init__(self, species_list):
+                self.species = species_list
+                self.reactions = []
+
+            def get_elements(self):
+                elements = set()
+                for sp in self.species:
+                    for atom in sp.molecule[0].vertices:
+                        elements.add(atom.element)
+                return elements
+
+        sp = self._create_dummy_species_one_range("Ar", "[Ar]", index=1)
+        # Use real, positive Ar-like transport parameters so the resulting
+        # Solution is loadable (shapeIndex=0 for a single atom).
+        sp.transport_data.shapeIndex = 0
+        yaml_path = os.path.join(self.tmp_dir, "one_range_roundtrip.yaml")
+        save_cantera_model(_FakeModel([sp]), yaml_path)
+
+        sol = ct.Solution(yaml_path)
+        for T in (250.0, 500.0, 1000.0, 2000.0, 4000.0, 5900.0):
+            cp_rmg = sp.thermo.get_heat_capacity(T)
+            h_rmg = sp.thermo.get_enthalpy(T)
+            s_rmg = sp.thermo.get_entropy(T)
+
+            sol.TP = T, ct.one_atm
+            cp_ct = sol.cp_mole / 1000.0
+            h_ct = sol.enthalpy_mole / 1000.0
+            s_ct = sol.entropy_mole / 1000.0
+
+            for rmg_val, ct_val, name in ((cp_rmg, cp_ct, "Cp"), (h_rmg, h_ct, "H"), (s_rmg, s_ct, "S")):
+                assert math.isfinite(rmg_val) and math.isfinite(ct_val), (
+                    f"non-finite comparison value at T={T} for {name}: "
+                    f"RMG={rmg_val}, CT={ct_val}")
+                rel_err = abs(rmg_val - ct_val) / max(abs(rmg_val), 1e-8)
+                assert math.isfinite(rel_err), f"non-finite relative error at T={T} for {name}"
+                # Tolerance 5e-6, not 1e-6: rmgpy.constants.R differs from
+                # Cantera's gas constant by ~1.128e-6 relative -- a documented,
+                # pre-existing constant mismatch, not a defect in this writer.
+                assert rel_err < 5e-6, f"{name} round-trip mismatch too large at T={T}: {rel_err:.3e}"
 
 
 class TestRecentlyGeneratedCanteraYaml2GasOnly(CanteraYamlFileComparer):
