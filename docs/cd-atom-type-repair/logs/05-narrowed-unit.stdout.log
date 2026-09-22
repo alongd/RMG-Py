@@ -1,0 +1,21 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+rootdir: /home/alon/Code/RMG-Py-databaseTest-cd-atom-type-repair
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 12 items
+
+test/database/cdAtomTypeTest.py::TestCdAtomTypeCheckIsLive::test_general_check_catches_a_misused_cd PASSED
+test/database/cdAtomTypeTest.py::TestCdAtomTypeCheckIsLive::test_general_check_accepts_a_correctly_typed_group PASSED
+test/database/cdAtomTypeTest.py::TestCdAtomTypeCheckIsLive::test_kinetics_check_catches_a_misused_cd PASSED
+test/database/cdAtomTypeTest.py::TestCdAtomTypeCheckIsLive::test_kinetics_check_accepts_a_correctly_typed_group PASSED
+test/database/cdAtomTypeTest.py::TestCdAtomTypeInferenceIsSoundForSubgraphs::test_a_cdd_atom_with_one_drawn_bond_to_oxygen_is_not_asked_for_co PASSED
+test/database/cdAtomTypeTest.py::TestCdAtomTypeInferenceIsSoundForSubgraphs::test_a_cdd_atom_with_one_drawn_bond_to_sulfur_is_not_asked_for_cs PASSED
+test/database/cdAtomTypeTest.py::TestCdAtomTypeInferenceIsSoundForSubgraphs::test_the_kinetics_check_makes_the_same_allowance PASSED
+test/database/cdAtomTypeTest.py::TestCdAtomTypeInferenceIsSoundForSubgraphs::test_co_and_cdd_really_are_mutually_exclusive PASSED
+test/database/cdAtomTypeTest.py::TestCdAtomTypeInferenceIsSoundForSubgraphs::test_the_allowance_did_not_switch_the_check_off PASSED
+test/database/cdAtomTypeTest.py::TestCdAtomTypeInferenceIsSoundForSubgraphs::test_two_drawn_double_bonds_still_demand_cdd PASSED
+test/database/cdAtomTypeTest.py::TestCdAtomTypeCheckCannotRegress::test_group_bond_order_is_numeric_not_a_letter PASSED
+test/database/cdAtomTypeTest.py::TestCdAtomTypeCheckCannotRegress::test_the_old_string_comparison_would_have_been_dead PASSED
+
+============================== 12 passed in 1.07s ==============================

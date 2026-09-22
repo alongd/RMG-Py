@@ -1161,10 +1161,21 @@ class TestDatabase:
                         continue
                     # Create list of all the atomTypes that should be present in addition or instead of Cd
                     correct_atom_list = []
-                    num_of_d_bonds = sum([1 if x.order[0] == "D" and len(x.order) == 1 else 0 for x in atom.bonds.values()])
+                    # A Group bond stores `order` as a list of numbers, never of bond-order
+                    # letters, so the `x.order[0] == "D"` this line used to carry was never
+                    # true: `num_of_d_bonds` was always 0 and this check could not fail for
+                    # anything. The branch below has always used the numeric test; they now agree.
+                    num_of_d_bonds = sum([1 if len(x.order) == 1 and abs(2 - x.order[0]) < 1e-7 else 0 for x in atom.bonds.values()])
                     if num_of_d_bonds == 2:
                         correct_atom_list.append("Cdd")
-                    elif num_of_d_bonds == 1:
+                    # A group is a subgraph, so `num_of_d_bonds` counts the double bonds that are
+                    # *drawn* and is only a lower bound on the atom's real count. Concluding
+                    # "exactly one, and it is to an O, so this must be CO" is therefore sound only
+                    # when the atom cannot also carry a second, undrawn double bond. An atom
+                    # already declared Cdd carries two by definition and draws one of them here,
+                    # and CO and Cdd are mutually exclusive atom types -- neither is a specific
+                    # case of the other -- so demanding CO of it asks for something impossible.
+                    elif num_of_d_bonds == 1 and ATOMTYPES["Cdd"] not in atom.atomtype:
                         for ligand, bond in atom.bonds.items():
                             # Ignore ligands that are not double bonded
                             if any([abs(2 - order) < 1e-7 for order in bond.order]):
@@ -2021,10 +2032,21 @@ Origin Group AdjList:
                         continue
                     # figure out what the correct atomtype is
                     correct_atom_list = []
-                    num_of_d_bonds = sum([1 if x.order[0] == "D" and len(x.order) == 1 else 0 for x in atom.bonds.values()])
+                    # A Group bond stores `order` as a list of numbers, never of bond-order
+                    # letters, so the `x.order[0] == "D"` this line used to carry was never
+                    # true: `num_of_d_bonds` was always 0 and this check could not fail for
+                    # anything. The branch below has always used the numeric test; they now agree.
+                    num_of_d_bonds = sum([1 if len(x.order) == 1 and abs(2 - x.order[0]) < 1e-7 else 0 for x in atom.bonds.values()])
                     if num_of_d_bonds == 2:
                         correct_atom_list.append("Cdd")
-                    elif num_of_d_bonds == 1:
+                    # A group is a subgraph, so `num_of_d_bonds` counts the double bonds that are
+                    # *drawn* and is only a lower bound on the atom's real count. Concluding
+                    # "exactly one, and it is to an O, so this must be CO" is therefore sound only
+                    # when the atom cannot also carry a second, undrawn double bond. An atom
+                    # already declared Cdd carries two by definition and draws one of them here,
+                    # and CO and Cdd are mutually exclusive atom types -- neither is a specific
+                    # case of the other -- so demanding CO of it asks for something impossible.
+                    elif num_of_d_bonds == 1 and ATOMTYPES["Cdd"] not in atom.atomtype:
                         for ligand, bond in atom.bonds.items():
                             # Ignore ligands that are not double bonded
                             if any([abs(2 - order) < 1e-7 for order in bond.order]):

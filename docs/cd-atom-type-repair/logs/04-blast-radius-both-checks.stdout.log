@@ -1,0 +1,18 @@
+--- negative control: Cd double-bonded to O, typed Cd but not CO ---
+  shipped predicate complains:   []
+  repaired predicate complains:  [('BAD', 'CO')]
+  control PASSES (shipped must be silent, repaired must complain)
+
+kinetics families scanned:           140
+thermo/solvation/statmech/transport
+  group databases scanned:           19
+complaints, checks AS SHIPPED:       0
+complaints, checks WITH REPAIR:      1
+group databases that would FAIL:     1
+  solvation/group: 1 complaints across 1 nodes
+      node 'O2d-Cdd' is missing atomtype CO
+
+reach (a zero above is only meaningful if these are not zero):
+  Group entries scanned:             17333
+  atoms typed Cd/CO/CS/Cdd:          15775
+  ...of those, with a double bond:   12851

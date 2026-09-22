@@ -1,0 +1,17 @@
+=== GREEN ARM: same tests against the REPAIRED predicate  2026-09-14T21:49:01+03:00
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+rootdir: /home/alon/Code/RMG-Py-databaseTest-cd-atom-type-repair
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 6 items
+
+test/database/cdAtomTypeTest.py::TestCdAtomTypeCheckIsLive::test_general_check_catches_a_misused_cd PASSED
+test/database/cdAtomTypeTest.py::TestCdAtomTypeCheckIsLive::test_general_check_accepts_a_correctly_typed_group PASSED
+test/database/cdAtomTypeTest.py::TestCdAtomTypeCheckIsLive::test_kinetics_check_catches_a_misused_cd PASSED
+test/database/cdAtomTypeTest.py::TestCdAtomTypeCheckIsLive::test_kinetics_check_accepts_a_correctly_typed_group PASSED
+test/database/cdAtomTypeTest.py::TestCdAtomTypeCheckCannotRegress::test_group_bond_order_is_numeric_not_a_letter PASSED
+test/database/cdAtomTypeTest.py::TestCdAtomTypeCheckCannotRegress::test_the_old_string_comparison_would_have_been_dead PASSED
+
+============================== 6 passed in 2.55s ===============================
+EXIT=0

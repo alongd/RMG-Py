@@ -1,0 +1,36 @@
+=== RED ARM: new tests against the UNREPAIRED predicate  2026-09-14T21:48:29+03:00
+unrepaired databaseTest.py taken from 311818121 into /tmp/claude-1000/redarm
+F.F...                                                                   [100%]
+=================================== FAILURES ===================================
+______ TestCdAtomTypeCheckIsLive.test_general_check_catches_a_misused_cd _______
+
+self = <cdAtomTypeTest.TestCdAtomTypeCheckIsLive object at 0x7b1af5d138b0>
+
+    def test_general_check_catches_a_misused_cd(self):
+        with pytest.raises(ValueError):
+>           DatabaseChecks.general_check_cd_atom_type(None, "MisusedCd", group_database("bad", MISUSED_CD))
+E           Failed: DID NOT RAISE <class 'ValueError'>
+
+/tmp/claude-1000/redarm/cdAtomTypeTest.py:108: Failed
+______ TestCdAtomTypeCheckIsLive.test_kinetics_check_catches_a_misused_cd ______
+
+self = <cdAtomTypeTest.TestCdAtomTypeCheckIsLive object at 0x7b1af5d13b50>
+
+    def test_kinetics_check_catches_a_misused_cd(self):
+        harness, family_name = kinetics_harness("bad", MISUSED_CD)
+        with pytest.raises(ValueError):
+>           DatabaseChecks.kinetics_check_cd_atom_type(harness, family_name)
+E           Failed: DID NOT RAISE <class 'ValueError'>
+
+/tmp/claude-1000/redarm/cdAtomTypeTest.py:116: Failed
+=============================== warnings summary ===============================
+../../../../tmp/claude-1000/redarm/databaseTest.py:62
+  /tmp/claude-1000/redarm/databaseTest.py:62: PytestUnknownMarkWarning: Unknown pytest.mark.database - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.database
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED ../../../../tmp/claude-1000/redarm/cdAtomTypeTest.py::TestCdAtomTypeCheckIsLive::test_general_check_catches_a_misused_cd
+FAILED ../../../../tmp/claude-1000/redarm/cdAtomTypeTest.py::TestCdAtomTypeCheckIsLive::test_kinetics_check_catches_a_misused_cd
+2 failed, 4 passed, 1 warning in 2.09s
+RED_EXIT=1 (nonzero expected)
