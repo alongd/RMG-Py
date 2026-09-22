@@ -217,6 +217,55 @@ class TestTheManifest:
             load_family_quarantine("Fake_Quarantined_Family", path)
         assert "Marcuss" in str(exc.value)
 
+    def test_a_declared_engine_requirement_is_honoured(self, tmp_path):
+        """
+        A manifest may declare the engine capability its refusal depends on. If nothing
+        reads that declaration it is a comment, not a pin: a database could state a
+        requirement, be loaded by an engine that does not meet it, and gate nothing while
+        the file still reads as protection.
+        """
+        body = MANIFEST + 'requiresEngineModule = "rmgpy.data.kinetics.no_such_module"\n'
+        path = write_manifest(str(tmp_path), body)
+        with pytest.raises(DatabaseError) as exc:
+            load_family_quarantine("Fake_Quarantined_Family", path)
+        assert "no_such_module" in str(exc.value)
+        assert "Fake_Quarantined_Family" in str(exc.value)
+
+    def test_a_declared_engine_symbol_is_honoured(self, tmp_path):
+        """
+        The drift that actually happens: the module survives a refactor and the function
+        the gate depends on is renamed out from under the manifest.
+        """
+        body = (MANIFEST
+                + 'requiresEngineModule = "rmgpy.data.kinetics.quarantine"\n'
+                + 'requiresEngineSymbol = "a_function_this_engine_does_not_have"\n')
+        path = write_manifest(str(tmp_path), body)
+        with pytest.raises(DatabaseError) as exc:
+            load_family_quarantine("Fake_Quarantined_Family", path)
+        assert "a_function_this_engine_does_not_have" in str(exc.value)
+
+    def test_a_satisfied_engine_requirement_loads(self, tmp_path):
+        """The positive control: the check must not refuse a requirement that IS met."""
+        body = (MANIFEST
+                + 'requiresEngineModule = "rmgpy.data.kinetics.quarantine"\n'
+                + 'requiresEngineSymbol = "check_quarantine"\n')
+        path = write_manifest(str(tmp_path), body)
+        assert load_family_quarantine("Fake_Quarantined_Family", path) is not None
+
+    def test_the_commit_field_is_provenance_and_is_deliberately_not_checked(self, tmp_path):
+        """
+        An installed engine has no reliable commit to compare against, so a commit check
+        would pass on every checkout: a check that cannot fail. The commit is recorded as
+        provenance, the capability is what gets enforced, and this pins that split so
+        nobody later reads the field as a guarantee.
+        """
+        body = (MANIFEST
+                + 'requiresEngineModule = "rmgpy.data.kinetics.quarantine"\n'
+                + 'requiresEngineSymbol = "check_quarantine"\n'
+                + 'requiresEngineCommit = "not-a-commit-that-exists-anywhere"\n')
+        path = write_manifest(str(tmp_path), body)
+        assert load_family_quarantine("Fake_Quarantined_Family", path) is not None
+
     @pytest.mark.parametrize("field", ["state", "appliesToKineticsClass", "reason"])
     def test_a_manifest_missing_a_required_field_raises(self, tmp_path, field):
         body = "\n".join(line for line in MANIFEST.splitlines()

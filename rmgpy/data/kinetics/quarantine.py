@@ -70,6 +70,7 @@ supplies the missing reference (an electrode/electrolyte model, a refit, an Arka
 job, a provenance audit) keeps working on the same unmodified data.
 """
 
+import importlib
 import logging
 import os.path
 
@@ -83,6 +84,48 @@ QUARANTINE_FILENAME = 'quarantine.py'
 #: ``name``, ``shortDesc`` and ``longDesc`` are optional and free text; they follow the
 #: rest of the database in being camelCase in the data file and snake_case on the object.
 _REQUIRED_FIELDS = ('state', 'appliesToKineticsClass', 'reason')
+
+
+def _check_engine_requirements(path, family_label, manifest):
+    """
+    Refuse to load a quarantine manifest whose declared engine capability is absent.
+
+    A manifest may declare ``requiresEngineModule`` and ``requiresEngineSymbol``: the module
+    and function that make its refusal real. Honouring them here is what turns that
+    declaration into a pin rather than a comment -- without it a database can state a
+    requirement that nothing reads, and a manifest that is silently inert reads like
+    protection while providing none.
+
+    Two limits, stated because they bound the guarantee:
+
+    * an engine so old that it has no quarantine loader never reaches this function at all,
+      and never reads the manifest. That is the first entry in every manifest's
+      ``bypassRoutes`` and cannot be closed from the database side.
+    * a manifest may also declare ``requiresEngineCommit``. It is NOT checked: an installed
+      engine has no reliable commit to compare against, and a check that silently passes on
+      every source checkout would be worse than none. It is provenance -- which commit first
+      provided the capability -- and the capability itself is what is enforced above.
+    """
+    module_name = manifest.get('requiresEngineModule')
+    symbol_name = manifest.get('requiresEngineSymbol')
+    if not module_name:
+        return
+    try:
+        module = importlib.import_module(module_name)
+    except ImportError as exc:
+        raise DatabaseError(
+            'Quarantine manifest {path} requires engine module {module!r}, which this RMG-Py '
+            'does not provide ({exc}). The manifest exists because family {family} must not '
+            'reach a reaction model on an engine without that capability, so loading is '
+            'refused here rather than proceeding unguarded.'.format(
+                path=path, module=module_name, exc=exc, family=family_label))
+    if symbol_name and getattr(module, symbol_name, None) is None:
+        raise DatabaseError(
+            'Quarantine manifest {path} requires {symbol!r} from engine module {module!r}, '
+            'which this RMG-Py provides without it. The capability the manifest depends on '
+            'has been renamed or removed, so the refusal it declares for family {family} '
+            'would not fire; loading is refused instead.'.format(
+                path=path, symbol=symbol_name, module=module_name, family=family_label))
 
 
 class KineticsQuarantine(object):
@@ -205,6 +248,8 @@ def load_family_quarantine(family_label, family_path):
         raise DatabaseError(
             'Quarantine manifest {0} is missing required field(s) {1}. A manifest that cannot '
             'say what it applies to and why cannot gate anything.'.format(path, ', '.join(missing)))
+
+    _check_engine_requirements(path, family_label, local_context)
 
     quarantine = KineticsQuarantine(
         family_label=family_label,
