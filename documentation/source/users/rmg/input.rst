@@ -723,7 +723,12 @@ The remaining keywords are all optional:
   such as the cosmic-ray background goes; for a noble gas at a few torr it is of order
   1e4 - 1e5 m^-3 s^-1.  It lets a discharge ignite from a neutral gas instead of from a numerical
   seed, and it is what creates the sub-threshold steady branch ``n_e = S_ext/(nu_wall - nu_ion)``
-  below the sustainment boundary.
+  below the sustainment boundary.  Because this source produces electrons at a rate independent of
+  ``n_e``, a deck that declares it **may start from exactly zero electrons** (``electronDensity=(0,
+  'm^-3')`` or an explicit ``e-`` amount of zero) -- the source seeds the first electrons.  Without
+  a source the only electron production is the ``n_e``-proportional gas-phase chemistry, so a
+  zero-electron composition is a fixed point that cannot ignite, and it is **refused**: a strictly
+  positive seed is required there.
 
 * ``maxIonisationDegree`` -- the ceiling on ``n_e/n_neutral`` above which the ion-*neutral*
   ambipolar model is outside its own assumptions, defaulting to 1e-3.  Above it, Coulomb
@@ -740,7 +745,9 @@ The remaining keywords are all optional:
   state is not something the equations can represent.  ``chargeBalanceSpecies`` is the easy way to
   satisfy it.  Pass a genuine boolean, not a string: ``'False'`` is a non-empty string and would be
   truthy, so a boolean-like string is parsed by value and any other string is refused rather than
-  silently enabling the mode.
+  silently enabling the mode.  Anything that is neither a boolean, ``None``, nor a boolean-like
+  string -- a number such as ``2`` or ``0.5``, ``NaN``, an object, an empty list -- is likewise
+  refused: it would otherwise set the mode on the value's truthiness (its type), not its meaning.
 
 .. note::
 	The wall operator determines the loss frequency, and with it the sustainment/extinction

@@ -882,9 +882,24 @@ cdef class ReactionSystem(DASx):
             core_species_production_rates = self.core_species_production_rates
             edge_species_rates = np.abs(self.edge_species_rates)
             network_leak_rates = np.abs(self.network_leak_rates)
-            core_species_rate_ratios = np.abs(self.core_species_rates / char_rate)
-            edge_species_rate_ratios = np.abs(self.edge_species_rates / char_rate)
-            network_leak_rate_ratios = np.abs(self.network_leak_rates / char_rate)
+            # char_rate is the CHEMISTRY characteristic rate (the norm of
+            # core_species_rates). Enumerating its consumers by which flux they measure:
+            # the rate RATIOS here (core/edge/network) and the branching numbers that read
+            # core_species_rate_ratios are enlargement/pruning signals RELATIVE to the
+            # chemistry, so they read char_rate -- a wall or source term must not rescale
+            # which edge species looks fast. Only the inert / termination GATES read the
+            # TOTAL flux (total_char_rate, via get_non_chemical_char_rate): the zero-flux
+            # promotion below and the steady-state block later. max_char_rate and the
+            # non-finite guard read char_rate, being chemistry diagnostics.
+            # When there is no chemistry flux at all (a supported wall-only run: every core
+            # rate is exactly 0, so char_rate is 0), the ratios are 0/0. Nothing can be
+            # ranked against a zero chemistry rate, so divide by 1.0 there -- yielding 0
+            # where the numerator is 0 -- rather than laundering a NaN through argmax and
+            # the branching numbers (NaN silently wins every comparison it enters).
+            ratio_denom = char_rate if char_rate > 0.0 else 1.0
+            core_species_rate_ratios = np.abs(self.core_species_rates / ratio_denom)
+            edge_species_rate_ratios = np.abs(self.edge_species_rates / ratio_denom)
+            network_leak_rate_ratios = np.abs(self.network_leak_rates / ratio_denom)
             num_edge_reactions = self.num_edge_reactions
             core_reaction_rates = self.core_reaction_rates
             product_indices = self.product_indices

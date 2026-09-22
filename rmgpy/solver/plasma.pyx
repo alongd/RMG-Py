@@ -46,8 +46,9 @@ which converts an optional ``electronDensity`` into an electron mole fraction on
 the driver side -- the constructor's ``initial_mole_fractions`` remains the single
 source of the electron amount. The caller must supply exactly one
 electron pseudo-species (identified structurally via ``Species.is_electron()``)
-among the core species, a strictly positive initial electron amount, and a
-strictly positive electron temperature. Any unsupported configuration raises
+among the core species, a non-negative initial electron amount (strictly positive
+unless an ``ionisation_source`` is declared to seed a discharge from neutral gas),
+and a strictly positive electron temperature. Any unsupported configuration raises
 a named error (:class:`rmgpy.exceptions.PlasmaStateError` or
 :class:`rmgpy.exceptions.NonEquilibriumReverseRateError`) before solver
 initialization instead of degrading to a one-temperature reactor.
@@ -104,6 +105,20 @@ PLASMA_NET_CHARGE_RTOL = 1.0e-6
 # changing it would mean reading the tabulated number as something it is not.
 PLASMA_LOSCHMIDT = 2.6867811e25          # m^-3
 
+# Numerical floor on the neutral NUMBER DENSITY, as a fraction of the mobility
+# reference density. It exists to keep 1/n_neutral finite on a trial state with no
+# neutrals left, and to let check_wall_support refuse an ACCEPTED state whose gas has
+# been depleted to nothing -- not to mark the physical validity edge of the transport
+# model. Expressed as a density (intensive) and as a fraction of the reference density
+# (the only density scale the reduced mobility carries), so the criterion is
+# independent of the deck's absolute inventory: two runs reaching the same intensive
+# state are judged identically, which an extensive moles floor did not do. Set ten
+# orders below the reference density, far under any density an ambipolar-diffusion
+# discharge is run at, so it never refuses a legitimate low-pressure deck. The PHYSICAL
+# floor -- the collisionless transition where the ion mean free path approaches the
+# diffusion length -- is a sheath-regime concern (M9), named here, not implemented.
+PLASMA_NEUTRAL_DENSITY_FLOOR_FRACTION = 1.0e-10
+
 # Default ceiling on the ionisation degree n_e / n_neutral above which the
 # ion-neutral ambipolar model implemented here is outside its own assumptions
 # and the reactor refuses to continue rather than extrapolate.
@@ -141,7 +156,14 @@ def _coerce_bool_flag(value, name, identity):
             "{0}={1!r} is a string that is not a recognised boolean. Use a boolean "
             "(True/False), not a string -- bool('False') is True, so a string here "
             "would silently enable the flag. ({2})".format(name, value, identity))
-    return bool(value)
+    raise PlasmaStateError(
+        "{0}={1!r} is a {2}, not a boolean. This flag selects between two solver "
+        "formulations and must be an explicit bool (or a recognised boolean string); "
+        "coercing an arbitrary value through bool() would set the mode on its "
+        "truthiness, and that inverts on the value's type rather than its meaning -- "
+        "bool(2), bool(0.5), bool(object()) and bool(float('nan')) are all True while "
+        "bool([]) and bool({{}}) are False. Refusing what cannot be interpreted. "
+        "({3})".format(name, value, type(value).__name__, identity))
 
 
 cdef class PlasmaReactor(ReactionSystem):
@@ -265,7 +287,7 @@ cdef class PlasmaReactor(ReactionSystem):
     # reject, instead of an infinity that corrupts the iteration matrix. It is not
     # a physical statement. check_wall_support refuses any ACCEPTED state whose neutral
     # inventory reaches it, so the clamp only ever acts on rejected Newton trial states.
-    cdef public double wall_neutral_floor
+    cdef public double wall_neutral_density_floor
     # Multiplier on the algebraic quasineutrality row. Scaling one row of a DAE
     # residual by a positive constant is an EXACT operation -- it changes no
     # solution, only the matrix that gets factored -- and it is necessary here.
@@ -453,6 +475,20 @@ cdef class PlasmaReactor(ReactionSystem):
                         "{1!r}. A zero diffusion length is an infinite loss frequency "
                         "and a zero mobility is no transport at all; neither is a wall. "
                         "({2})".format(name, value, self._identity()))
+            # nu_wall = D_a/Lambda^2, so it is Lambda SQUARED that has to be a usable
+            # number. A finite, strictly positive diffusion length can still have a
+            # square that underflows to 0.0 (Lambda=1e-200) or overflows to inf
+            # (Lambda=1e200); the former divides by zero mid-solve and surfaces as a raw
+            # ZeroDivisionError from the Fortran callback, the latter silently zeroes the
+            # wall loss. Refuse either here, by name, rather than at an accepted state.
+            lam_sq = self.diffusion_length.value_si * self.diffusion_length.value_si
+            if not np.isfinite(lam_sq) or lam_sq <= 0.0:
+                raise PlasmaStateError(
+                    "diffusion_length={0!r} m is finite and positive, but its square is "
+                    "{1!r}, which is not a usable divisor for nu_wall = D_a/Lambda^2 (it "
+                    "underflowed to zero or overflowed to infinity). Use a diffusion "
+                    "length whose square is a normal floating-point number. ({2})".format(
+                        self.diffusion_length.value_si, lam_sq, self._identity()))
         else:
             self.diffusion_length = None
             self.ion_reduced_mobility = None
@@ -935,13 +971,30 @@ cdef class PlasmaReactor(ReactionSystem):
                 electron_amount = float(value)
         if electron_amount is None:
             raise PlasmaStateError(
-                "no initial electron amount was supplied in initial_mole_fractions; "
-                "an explicit, finite, strictly positive electron amount is required. "
-                "({0})".format(self._identity()))
-        if not np.isfinite(electron_amount) or electron_amount <= 0.0:
+                "no initial electron amount was supplied in initial_mole_fractions; the "
+                "electron population is carried in the packed state and its initial value "
+                "must be stated explicitly -- use e- : 0.0 to start from neutral gas under "
+                "an ionisation_source. ({0})".format(self._identity()))
+        if not np.isfinite(electron_amount) or electron_amount < 0.0:
             raise PlasmaStateError(
-                "initial electron amount must be finite and strictly positive; got "
+                "initial electron amount must be finite and non-negative; got "
                 "{0!r}. ({1})".format(electron_amount, self._identity()))
+        # Zero initial electrons is admissible ONLY when an external ionisation_source is
+        # declared. That source is a zeroth-order production of electron-ion pairs -- its
+        # rate does not depend on n_e -- so it seeds the first electrons and the discharge
+        # ignites from neutral gas, which is the entire point of the feature. Without such
+        # a source the only electron production is the gas-phase chemistry, whose rate is
+        # proportional to n_e (e- + Ar -> Ar+ + 2e- and the like); at n_e = 0 that rate is
+        # zero and the state is a numerical dead point that can never leave. A source-less
+        # deck must therefore still supply a strictly positive seed.
+        if electron_amount == 0.0 and not (self.ionisation_source.value_si > 0.0):
+            raise PlasmaStateError(
+                "initial electron amount is 0.0 but no external ionisation_source is "
+                "declared. The only electron production then is the gas-phase chemistry, "
+                "whose rate is proportional to n_e, so a zero-electron state cannot ignite "
+                "-- it is a fixed point of the equations. Seed a small strictly positive "
+                "electron (and matching cation) amount, or declare an ionisation_source to "
+                "model ignition from neutral gas. ({0})".format(self._identity()))
 
         # Fifth check, ADDED alongside the four above and replacing none of them: is
         # the initial composition charge neutral? This one WARNS and never raises. A
@@ -1736,11 +1789,14 @@ cdef class PlasmaReactor(ReactionSystem):
         for j in range(self.num_core_species):
             if self.neutral_heavy_mask[j]:
                 y_neutral += y[j]
-        # Numerical floor only; see wall_neutral_floor. Keeps a trial state with no
-        # neutrals left finite so the solver can reject it on its own terms.
-        if not (y_neutral > self.wall_neutral_floor):
-            y_neutral = self.wall_neutral_floor
         n_neutral = y_neutral * constants.Na / V
+        # Numerical floor on the NUMBER DENSITY the transport law uses, not on the neutral
+        # moles: mu_i scales as 1/n_neutral, an intensive quantity, so the clamp must be
+        # intensive too -- a moles floor makes it depend on the deck's absolute inventory.
+        # Keeps a trial state with no neutrals left finite so the solver can reject it on
+        # its own terms; see wall_neutral_density_floor.
+        if not (n_neutral > self.wall_neutral_density_floor):
+            n_neutral = self.wall_neutral_density_floor
         mu_i = self.ion_reduced_mobility.value_si * self.mobility_reference_density / n_neutral
         # k_B*T_e/e in volts. constants.R / constants.Na is the same Boltzmann
         # constant compute_volume's EOS is built from, so the two never disagree.
@@ -1779,7 +1835,7 @@ cdef class PlasmaReactor(ReactionSystem):
         alone. The floor and the finiteness checks used to pass under the ceiling because
         the ceiling bounds the RATIO, not the absolute inventory.
         """
-        cdef double y_neutral = 0.0, alpha, n_e, n_ion = 0.0, y_ionisable = 0.0, net, magnitude
+        cdef double y_neutral = 0.0, alpha, n_e, n_ion = 0.0, y_ionisable = 0.0, net, magnitude, n_neutral
         cdef Py_ssize_t j
         if not self.has_wall or self.neutral_heavy_mask is None:
             return
@@ -1806,16 +1862,6 @@ cdef class PlasmaReactor(ReactionSystem):
                 "undefined without a neutral gas to collide with, so the run stops "
                 "here rather than extrapolating. ({1})".format(
                     y_neutral, self._identity()))
-        if y_neutral <= self.wall_neutral_floor:
-            raise PlasmaStateError(
-                "the accepted state has a neutral heavy population of {0!r} mol, at or "
-                "below the numerical floor {1!r} mol that compute_nu_wall clamps to. The "
-                "clamp exists only to keep a Newton TRIAL state finite; an ACCEPTED "
-                "state there means the gas inventory has been consumed to where the "
-                "1/n_neutral ion mobility is meaningless and the wall loss frequency "
-                "would be evaluated from the floor rather than the physics. Refusing to "
-                "extrapolate. ({2})".format(
-                    y_neutral, self.wall_neutral_floor, self._identity()))
         n_e = y[self.electron_index]
         if not np.isfinite(n_e) or n_e < 0.0:
             raise PlasmaStateError(
@@ -1833,6 +1879,27 @@ cdef class PlasmaReactor(ReactionSystem):
                 "which is not a physical (finite, non-negative) population; the "
                 "ionisation-degree bookkeeping is undefined there. ({1})".format(
                     n_ion, self._identity()))
+        # The floor is on the neutral NUMBER DENSITY, not the neutral moles: nu_wall
+        # depends on 1/n_neutral (intensive), so acceptance must not depend on how much
+        # gas the deck started with. Two runs that reach the same intensive state are
+        # judged identically here -- an extensive moles floor judged them by history.
+        # Computed AFTER the electron and ion finiteness checks above: compute_volume
+        # reads n_e and the heavy inventory, so a NaN there is diagnosed as the corrupt
+        # population it is rather than surfacing as an EOS "non-physical volume" message.
+        n_neutral = y_neutral * constants.Na / self.compute_volume(y)
+        if n_neutral <= self.wall_neutral_density_floor:
+            raise PlasmaStateError(
+                "the accepted state has a neutral heavy number density of {0!r} m^-3, at "
+                "or below the numerical floor {1!r} m^-3 that compute_nu_wall clamps to. "
+                "The clamp exists only to keep a Newton TRIAL state finite; an ACCEPTED "
+                "state there means the gas has been depleted to where the 1/n_neutral ion "
+                "mobility is meaningless and the wall loss frequency would be read off the "
+                "floor rather than the physics. The floor is a fixed fraction of the "
+                "mobility reference density, independent of the initial inventory; the "
+                "physical collisionless-transition floor (ion mean free path ~ diffusion "
+                "length) is a sheath-regime concern outside this model. Refusing to "
+                "extrapolate. ({2})".format(
+                    n_neutral, self.wall_neutral_density_floor, self._identity()))
         # The ionisation degree is set by the CHARGED inventory, not n_e alone. In a
         # badly non-neutral accepted state n_e can sit far below the ion density -- 1%
         # ions with 1 ppm electrons reads as alpha = 1e-6 on n_e while the ions already
@@ -1958,7 +2025,13 @@ cdef class PlasmaReactor(ReactionSystem):
         # still checked finite before it is marked so -- a field is 'available' only
         # when it carries a usable number, never on a NaN/Inf that slipped through.
         self.wall_electron_energy_flux = 2.0 * constants.R * self.Te.value_si * e_loss_rate
-        self.wall_energy_availability['wall_flux'] = 'available'
+        # 'available' is a promise the number is usable, so it is checked at least as hard
+        # as the number it vouches for: a wall_flux with any non-finite component (an
+        # infinite nu_wall from an extreme mobility, say) is marked 'unavailable', never
+        # asserted available. The flag must not withdraw the scepticism that a bare NaN/Inf
+        # would otherwise draw.
+        self.wall_energy_availability['wall_flux'] = (
+            'available' if np.isfinite(self.wall_flux).all() else 'unavailable')
         self.wall_energy_availability['wall_electron_energy_flux'] = (
             'available' if np.isfinite(self.wall_electron_energy_flux) else 'unavailable')
         if neutral_available and np.isfinite(neutral_power):
@@ -2074,11 +2147,20 @@ cdef class PlasmaReactor(ReactionSystem):
             i = self.get_species_index(spec)
             self.y0[i] = mole_frac
 
-        if not np.isfinite(self.y0[self.electron_index]) or self.y0[self.electron_index] <= 0.0:
+        # Non-positive electrons are refused for the same reason _validate_electron_state
+        # refuses them upstream -- except that exactly zero is admissible when a positive
+        # ionisation_source is declared, because that zeroth-order pair source seeds the
+        # first electrons and the discharge ignites from neutral gas. Negative or
+        # non-finite is always refused; zero without a source is a fixed point that cannot
+        # ignite. The two checks are kept in lockstep so the packed state and the declared
+        # composition agree on what is admissible.
+        e0 = self.y0[self.electron_index]
+        if not np.isfinite(e0) or e0 < 0.0 or (
+                e0 == 0.0 and not (self.ionisation_source.value_si > 0.0)):
             raise PlasmaStateError(
-                "packed initial state has a non-positive electron amount "
-                "{0!r} at index {1}. ({2})".format(
-                    self.y0[self.electron_index], self.electron_index, self._identity()))
+                "packed initial state has a non-positive electron amount {0!r} at index "
+                "{1}, with no external ionisation_source to seed it. ({2})".format(
+                    e0, self.electron_index, self._identity()))
 
         # The quasineutrality row is an algebraic constraint, so the packed initial
         # state must SATISFY it. A state that does not is not merely inaccurate: the
@@ -2113,13 +2195,14 @@ cdef class PlasmaReactor(ReactionSystem):
         for j in range(self.num_core_species):
             self.core_species_concentrations[j] = self.y0[j] / self.V
 
-        # The wall's numerical neutral floor, and the domain check on the initial
-        # state. The floor is a millionth of the initial neutral population. It is NOT
-        # true that it can never bind on a state the domain check accepts: the ceiling
-        # bounds the ratio n_e/n_neutral, not the absolute neutral inventory, so a
-        # state with both populations driven small can sit under the ceiling AND at the
-        # floor. check_wall_support now refuses a neutral inventory at or below the
-        # floor for exactly that reason.
+        # The wall's numerical neutral-density floor, and the domain check on the initial
+        # state. The floor is a fixed fraction of the mobility reference density -- a
+        # NUMBER DENSITY, not a fraction of the initial neutral moles -- so it is
+        # intensive and independent of how much gas the deck started with. It can still
+        # bind on a state the domain check accepts: the ceiling bounds the ratio
+        # n_e/n_neutral, not the absolute density, so a fully depleted gas sits under the
+        # ceiling AND at the floor. check_wall_support refuses a neutral density at or
+        # below the floor for exactly that reason.
         if self.has_wall and self.neutral_heavy_mask is not None:
             y_neutral0 = 0.0
             for j in range(self.num_core_species):
@@ -2131,7 +2214,8 @@ cdef class PlasmaReactor(ReactionSystem):
                     "contains no neutral heavy species ({0!r} mol); the ion mobility "
                     "scales as 1/n_neutral and has nothing to scale against. "
                     "({1})".format(y_neutral0, self._identity()))
-            self.wall_neutral_floor = 1.0e-6 * y_neutral0
+            self.wall_neutral_density_floor = (
+                PLASMA_NEUTRAL_DENSITY_FLOOR_FRACTION * self.mobility_reference_density)
             self.check_wall_support(self.y0)
 
     @cython.boundscheck(False)
@@ -2558,14 +2642,15 @@ cdef class PlasmaReactor(ReactionSystem):
         for k in range(self.num_core_species):
             if self.neutral_heavy_mask[k]:
                 y_neutral += y[k]
-        # compute_nu_wall clamps the neutral moles at wall_neutral_floor, so on that
-        # branch nu no longer depends on the neutral amount through 1/y_neutral --
-        # only through V, which keeps its EOS dependence. Differentiating the
-        # unclamped 1/y_neutral here would report a dependence the residual does not
-        # have, and divide by zero once the neutrals are gone. The source term below
-        # is apportioned by the UNFLOORED total, exactly as _apply_wall_terms does,
-        # so the two uses cannot share one value.
-        if not (y_neutral > self.wall_neutral_floor):
+        # compute_nu_wall clamps the neutral DENSITY at wall_neutral_density_floor, so on
+        # that branch nu no longer depends on the neutral amount through 1/y_neutral --
+        # only through V, which keeps its EOS dependence. Differentiating the unclamped
+        # 1/y_neutral here would report a dependence the residual does not have, and
+        # divide by zero once the neutrals are gone. The clamp test is on the same
+        # density compute_nu_wall uses, so the two agree on which branch they are on. The
+        # source term below is apportioned by the UNFLOORED total, exactly as
+        # _apply_wall_terms does, so the two uses cannot share one value.
+        if not (y_neutral * constants.Na / V > self.wall_neutral_density_floor):
             neutral_floored = 1
 
         for i in range(self.num_core_species):
@@ -2574,10 +2659,20 @@ cdef class PlasmaReactor(ReactionSystem):
             loss = nu * y[i]
             target = self.wall_recycle_target[i] if i != self.electron_index else -1
             for k in range(self.num_core_species):
-                # d(nu)/dy_k, relative to nu
-                dnu_rel = dVdy[k] / V
-                if self.neutral_heavy_mask[k] and not neutral_floored:
-                    dnu_rel -= 1.0 / y_neutral
+                # d(nu)/dy_k, relative to nu. On the clamped branch compute_nu_wall pins
+                # the neutral DENSITY to the floor, so nu is a constant -- no dependence on
+                # y_neutral AND none on V -- and every relative derivative is zero. Off the
+                # branch nu ~ V/y_neutral, giving dV/V on every species and an extra
+                # -1/y_neutral on the neutral-heavy ones. (The old moles clamp pinned the
+                # neutral amount but left n_neutral = floor*Na/V, so nu kept its V
+                # dependence there; pinning the density removes it, and the Jacobian
+                # follows.)
+                if neutral_floored:
+                    dnu_rel = 0.0
+                else:
+                    dnu_rel = dVdy[k] / V
+                    if self.neutral_heavy_mask[k]:
+                        dnu_rel -= 1.0 / y_neutral
                 dloss = loss * dnu_rel
                 if k == i:
                     dloss += nu
