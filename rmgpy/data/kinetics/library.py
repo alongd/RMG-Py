@@ -318,6 +318,62 @@ def seed_placement_survives(entry, owner):
     return False
 
 
+#: Every field a :class:`~rmgpy.reaction.Reaction` carries, discovered from the class
+#: rather than written out here. The three fields round 102 found missing were missing
+#: because this call site enumerated by hand and the hand-kept list fell behind the class;
+#: a second hand-kept list would reproduce the defect one layer up. `getset_descriptor` is
+#: what a Cython ``cdef public`` attribute presents as, which is what separates state from
+#: the methods and the cimported types that also appear in ``dir()``.
+_REACTION_FIELDS = frozenset(
+    name for name in dir(Reaction)
+    if not name.startswith('_')
+    and type(getattr(Reaction, name, None)).__name__ == 'getset_descriptor'
+)
+
+#: Fields NOT carried from ``entry.item``, each with the reason. Everything else is
+#: carried, so a field added to `Reaction` tomorrow is carried without anyone noticing --
+#: which is the point. `quarantineTest.py` pins this partition so that a new field has to
+#: be classified deliberately rather than dropped silently.
+_NOT_CARRIED_FROM_ENTRY = {
+    'reactants': 'the constructor copies these by slice, so the entry and the reaction do '
+                 'not share a mutable list',
+    'products': 'the constructor copies these by slice too, for the same reason -- a shared\n                 list would let a model edit write back into the database entry',
+    'kinetics': 'comes from entry.data -- the rate the library declares, not whatever the '
+                'blank reaction in the entry was built with',
+    'index': 'the entry index is a position in a library file; the model numbers a '
+             'reaction at admission',
+    'label': 'the entry label is the reaction string, rebuilt by the reaction itself',
+    'comment': 'provenance belongs to the kinetics, which carries its own',
+    'SurfaceArrhenius': 'a cimported type, not reaction state',
+    'SurfaceChargeTransfer': 'a cimported type, not reaction state',
+    'k_effective_cache': 'a memo of a computation, not data the entry declares',
+}
+
+
+def _carry_entry_fields(rxn, item):
+    """
+    Copy every field `item` holds onto `rxn`, except those listed with a reason above.
+
+    The three shapes below each name a handful of fields in their constructor call, and
+    two of those constructors cannot take the rest: `TemplateReaction.__init__` has no
+    ``elementary_high_p``, ``allow_pdep_route`` or ``allow_max_rate_violation``
+    parameter at all, so forwarding them as arguments is not available and they are set
+    here. The effect for `elementary_high_p` is not cosmetic -- a reaction that loses it
+    misses pressure-dependent routing, silently, and both conversions in
+    ``rmgpy/rmg/model.py`` then carry the false default onward.
+    """
+    for name in _REACTION_FIELDS:
+        if name in _NOT_CARRIED_FROM_ENTRY:
+            continue
+        try:
+            setattr(rxn, name, getattr(item, name))
+        except AttributeError:
+            # A field the source does not have, or one the target refuses. Neither is a
+            # reason to abandon the rest.
+            continue
+    return rxn
+
+
 class KineticsLibrary(Database):
     """
     A class for working with an RMG kinetics library.
@@ -357,6 +413,7 @@ class KineticsLibrary(Database):
                                       allow_pdep_route=entry.item.allow_pdep_route,
                                       elementary_high_p=entry.item.elementary_high_p,
                                       electrons=entry.item.electrons, entry=entry)
+                _carry_entry_fields(rxn, entry.item)
                 rxn.family = self.label  # the library the reaction was loaded from (opposed to originally from)
             elif self.auto_generated and entry.long_desc and 'rate rule' in entry.long_desc:  # template reaction
                 family = ''
@@ -385,6 +442,7 @@ class KineticsLibrary(Database):
                                        # family was parsed from, and it carries every label, not
                                        # just the last. `authoring_families` reads it.
                                        entry=entry)
+                _carry_entry_fields(rxn, entry.item)
             else:  # pdep or standard library reaction
                 rxn = LibraryReaction(reactants=entry.item.reactants[:], products=entry.item.products[:],
                                       library=self.label, specific_collider=entry.item.specific_collider,
@@ -392,6 +450,7 @@ class KineticsLibrary(Database):
                                       reversible=entry.item.reversible, allow_pdep_route=entry.item.allow_pdep_route,
                                       elementary_high_p=entry.item.elementary_high_p,
                                       electrons=entry.item.electrons, entry=entry)
+                _carry_entry_fields(rxn, entry.item)
             rxns.append(rxn)
 
         return rxns

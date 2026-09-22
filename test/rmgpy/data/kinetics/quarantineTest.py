@@ -1870,13 +1870,21 @@ QUARANTINED_FIRST = "A_Family_Quarantined_On_Disk"
 INNOCENT_SECOND = "An_Ordinary_Loaded_Family"
 
 
-def _library_declaring(label, family_labels, electrons=0, degeneracy=1, auto=True):
+def _library_declaring(label, family_labels, electrons=0, degeneracy=1, auto=True,
+                       elementary_high_p=False, allow_pdep_route=False,
+                       allow_max_rate_violation=False):
     """
     An auto-generated library whose one entry declares `family_labels`, in order.
 
     `_auto_generated_library` declares exactly one. This one takes a list because the
     defect is what happens when a longDesc carries more than one, and carries `electrons`
     and `degeneracy` because the conversion used to drop both.
+
+    The three flags go onto ``entry.item`` -- the blank `Reaction` -- which is exactly
+    where `KineticsLibrary.load_entry` puts them when a library file declares them, and
+    is the only place they can come from. Nothing here touches the loader's OUTPUT: the
+    point of round 102's finding is that a test assigning these onto the built reaction
+    asks the converter only to carry values the fixture put there.
     """
     long_desc = ["Matched reaction 3 Lip + CH3 <=> CH3Li in {0}/rate rule [Root]".format(
         family_labels[0]), "Euclidian distance = 0"]
@@ -1894,7 +1902,10 @@ def _library_declaring(label, family_labels, electrons=0, degeneracy=1, auto=Tru
                                    reactive=False)],
                 products=[Species(label="CH3Li", molecule=[Molecule(smiles="C[Li]")],
                                   reactive=False)],
-                reversible=False, electrons=electrons, degeneracy=degeneracy),
+                reversible=False, electrons=electrons, degeneracy=degeneracy,
+                elementary_high_p=elementary_high_p,
+                allow_pdep_route=allow_pdep_route,
+                allow_max_rate_violation=allow_max_rate_violation),
             data=_marcus_with(""),
             long_desc="\n".join(long_desc),
         )
@@ -2041,16 +2052,23 @@ class TestTheConversionCarriesEveryField:
         """
         from rmgpy.rmg.model import as_library_reaction
 
-        source = TemplateReaction(
-            index=7,
-            reactants=[Species(label="Lip", molecule=[Molecule(smiles="[Li+]")])],
-            products=[Species(label="CH3Li", molecule=[Molecule(smiles="C[Li]")])],
-            family="A_Family", kinetics=make_marcus(), reversible=False,
-            duplicate=True, degeneracy=3, electrons=1,
-        )
-        source.allow_pdep_route = True
-        source.elementary_high_p = True
-        source.allow_max_rate_violation = True
+        # Built by the real loader, from an entry that declares the flags the way a
+        # library FILE declares them. Round 102's finding was that this test used to
+        # assign `elementary_high_p`, `allow_pdep_route` and `allow_max_rate_violation`
+        # onto the loader's output -- so the converter was only ever asked to carry
+        # values the fixture had put there, and the loader dropping all three on the
+        # template shape was invisible. Nothing below writes to `source`.
+        source = _library_declaring(
+            "a_seed", ["A_Family"], electrons=1, degeneracy=3,
+            elementary_high_p=True, allow_pdep_route=True,
+            allow_max_rate_violation=True).get_library_reactions()[0]
+
+        assert isinstance(source, TemplateReaction)
+        for flag in ("elementary_high_p", "allow_pdep_route", "allow_max_rate_violation"):
+            assert getattr(source, flag) is True, (
+                "the LOADER dropped {0!r} before the converter ever saw it; "
+                "`elementary_high_p` lost here means the reaction silently misses "
+                "pressure-dependent routing".format(flag))
 
         converted = as_library_reaction(source, "a_library")
 
@@ -2905,3 +2923,229 @@ class TestDeclaringBothSpellingsIsRefusedEvenWhenOneIsEmpty:
             load_family_quarantine("Fake_Quarantined_Family",
                                    write_manifest(str(tmp_path), body))
         assert "names no module" in str(exc.value)
+
+
+class TestTheSignatureAndTheContentComeFromOneOpen:
+    """
+    Round 102's HIGH 1 -- round 99's lesson one level up.
+
+    `_manifest_signature` stats the path; `load_family_quarantine` then opens the same
+    path independently. A rename between those two resolutions reads B and stores B's
+    quarantine **under A's signature**, after which restoring A is a cache HIT that
+    returns B's answer -- A's criterion bypassed without A ever being read. `st_ctime_ns`
+    cannot help, because the cached one is A's.
+
+    The repair is not another check. The identity is taken with `os.fstat` on the
+    descriptor the bytes came from, so the key and the value describe one object.
+    """
+
+    LABEL = "A_Family_Whose_Manifest_Is_Renamed_Mid_Lookup"
+
+    def setup_method(self):
+        _clear_gate_caches()
+
+    def teardown_method(self):
+        _clear_gate_caches()
+
+    def _bodies(self):
+        return (MANIFEST.replace("a reason that must reach the error message", "manifest A"),
+                MANIFEST.replace("a reason that must reach the error message", "manifest B"))
+
+    def test_a_rename_between_the_stat_and_the_read_does_not_outlive_itself(
+            self, monkeypatch, tmp_path):
+        family = tmp_path / "kinetics" / "families" / self.LABEL
+        family.mkdir(parents=True)
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+        a, b = self._bodies()
+        manifest = family / QUARANTINE_FILENAME
+        manifest.write_text(a)
+        other = family / "manifest_b.py"
+        other.write_text(b)
+
+        state = {"fired": False}
+        original = os.lstat
+        target = os.path.abspath(str(manifest))
+
+        def lstat(path, *args, **kwargs):
+            answer = original(path, *args, **kwargs)
+            if not state["fired"] and os.path.abspath(str(path)) == target:
+                state["fired"] = True
+                os.rename(target, str(family / "manifest_a.py"))
+                os.rename(str(other), target)
+            return answer
+
+        from rmgpy.data.kinetics import quarantine as module
+
+        monkeypatch.setattr(os, "lstat", lstat)
+        first = resolve_quarantine(self.LABEL)
+        monkeypatch.undo()
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+
+        assert state["fired"] is True, (
+            "this test did not exercise the rename it is named for: the signature was "
+            "never taken on the manifest path")
+        assert first[0].reason == "manifest B", (
+            "the read is supposed to have picked up B -- that is the race, not the "
+            "defect; the defect is what the cache now believes")
+
+        # `quarantine.py` is B now, and B is what was parsed.
+        parsed = os.stat(target)
+        cached = module._DISK_QUARANTINE_CACHE[(str(tmp_path), self.LABEL)]
+        assert cached[0][1] == (parsed.st_mtime_ns, parsed.st_ctime_ns, parsed.st_size,
+                                parsed.st_ino), (
+            "the answer was stored under the identity of a file that was never parsed: "
+            "the signature came from one open and the content from another, so the key "
+            "and the value beside it describe two different files")
+
+    def test_restoring_the_original_is_a_cache_miss(self, monkeypatch, tmp_path):
+        """
+        The exploitation, measured rather than assumed -- and it does **not** reproduce at
+        the base of this round.
+
+        The brief expected restoring A to be a cache HIT returning B, and said `ctime`
+        could not help because the cached one is A's. Measured, `ctime` is exactly what
+        helps: `os.rename` moves the inode's `st_ctime_ns`, so the restored file no longer
+        matches the stale key and the lookup misses. That is round 99's own repair paying
+        for itself. The key describing a file that was never parsed is still wrong and is
+        closed on its own terms above; this test pins the end-to-end answer so the claim
+        does not drift in either direction.
+        """
+        family = tmp_path / "kinetics" / "families" / self.LABEL
+        family.mkdir(parents=True)
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+        a, b = self._bodies()
+        manifest = family / QUARANTINE_FILENAME
+        manifest.write_text(a)
+        other = family / "manifest_b.py"
+        other.write_text(b)
+
+        state = {"fired": False}
+        original = os.lstat
+        target = os.path.abspath(str(manifest))
+
+        def lstat(path, *args, **kwargs):
+            answer = original(path, *args, **kwargs)
+            if not state["fired"] and os.path.abspath(str(path)) == target:
+                state["fired"] = True
+                os.rename(target, str(family / "manifest_a.py"))
+                os.rename(str(other), target)
+            return answer
+
+        monkeypatch.setattr(os, "lstat", lstat)
+        resolve_quarantine(self.LABEL)
+        monkeypatch.undo()
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+        assert state["fired"] is True
+
+        os.rename(target, str(other))
+        os.rename(str(family / "manifest_a.py"), target)
+
+        second = resolve_quarantine(self.LABEL)
+        assert second[0] is not None and second[0].reason == "manifest A", (
+            "restoring the original manifest returned the other file's quarantine")
+
+    def test_the_cached_key_is_the_identity_of_the_file_that_was_parsed(
+            self, monkeypatch, tmp_path):
+        """
+        The property directly, without the race: what is in the cache must describe the
+        file whose bytes produced the value beside it.
+        """
+        from rmgpy.data.kinetics import quarantine as module
+
+        family = tmp_path / "kinetics" / "families" / self.LABEL
+        family.mkdir(parents=True)
+        write_manifest(str(family))
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+
+        assert resolve_quarantine(self.LABEL)[0] is not None
+        cached = module._DISK_QUARANTINE_CACHE[(str(tmp_path), self.LABEL)]
+        info = os.stat(str(family / QUARANTINE_FILENAME))
+        assert cached[0][1] == (info.st_mtime_ns, info.st_ctime_ns, info.st_size,
+                                info.st_ino)
+
+
+class TestTheLoaderCarriesEveryFieldTheEntryHolds:
+    """
+    Round 102's HIGH 2. All three shapes in `get_library_reactions` named their fields by
+    hand, so the template shape dropped `elementary_high_p`, `allow_pdep_route` and
+    `allow_max_rate_violation`, and all three shapes dropped the last of those. A reaction
+    that loses `elementary_high_p` silently misses pressure-dependent routing.
+
+    The enumeration is derived from `Reaction` rather than written out, because a
+    hand-kept list falling behind the class is the defect itself -- and a second
+    hand-kept list in this file would reproduce it one layer up.
+    """
+
+    def _entry_declaring(self, **flags):
+        """A library whose entry declares the flags, the way `load_entry` does."""
+        return _library_declaring("a_seed", ["A_Family"], **flags)
+
+    def test_the_template_shape_carries_the_three_flags(self):
+        reaction = self._entry_declaring(
+            elementary_high_p=True, allow_pdep_route=True,
+            allow_max_rate_violation=True).get_library_reactions()[0]
+        assert isinstance(reaction, TemplateReaction)
+        assert reaction.elementary_high_p is True
+        assert reaction.allow_pdep_route is True
+        assert reaction.allow_max_rate_violation is True
+
+    def test_the_ordinary_library_shape_carries_allow_max_rate_violation(self):
+        """The field all three shapes dropped, on the shape that carried the other two."""
+        reaction = self._entry_declaring(
+            auto=False, allow_max_rate_violation=True).get_library_reactions()[0]
+        assert isinstance(reaction, LibraryReaction)
+        assert reaction.allow_max_rate_violation is True
+
+    def test_a_false_flag_stays_false(self):
+        """The negative control: carrying must not mean setting."""
+        reaction = self._entry_declaring().get_library_reactions()[0]
+        assert reaction.elementary_high_p is False
+        assert reaction.allow_pdep_route is False
+        assert reaction.allow_max_rate_violation is False
+
+    def test_the_library_file_format_can_declare_all_three(self):
+        """
+        Through the real parser entry point, so the flags are shown to reach `entry.item`
+        the way a shipped library file puts them there -- not only the way the fixture does.
+        """
+        library = KineticsLibrary(label="a_library", name="a_library")
+        library.load_entry(index=1, label="r", kinetics=make_marcus(),
+                           elementary_high_p=True, allow_pdep_route=True,
+                           allow_max_rate_violation=True)
+        item = library.entries[1].item
+        assert item.elementary_high_p is True
+        assert item.allow_pdep_route is True
+        assert item.allow_max_rate_violation is True
+
+    def test_every_field_of_reaction_is_carried_or_excluded_with_a_reason(self):
+        """
+        The partition is total, and machine-checked.
+
+        A field added to `Reaction` tomorrow is carried by default. This asserts the
+        classification covers everything, so a field can only be left behind by someone
+        writing down why.
+        """
+        from rmgpy.data.kinetics import library as module
+
+        carried = module._REACTION_FIELDS - set(module._NOT_CARRIED_FROM_ENTRY)
+        excluded = set(module._NOT_CARRIED_FROM_ENTRY)
+
+        assert len(module._REACTION_FIELDS) > 10, (
+            "the field discovery found {0} fields on Reaction, which means the way it "
+            "recognises them has stopped working and everything is now 'not a field' -- "
+            "the silent-pass shape this partition exists to prevent".format(
+                len(module._REACTION_FIELDS)))
+        assert not excluded - module._REACTION_FIELDS, (
+            "these names are excluded from the carry but are no longer fields of "
+            "Reaction, so the exclusion list has gone stale: {0}".format(
+                sorted(excluded - module._REACTION_FIELDS)))
+        assert carried, "every field of Reaction is excluded; nothing is carried at all"
+
+        unclassified = carried
+        for name, reason in module._NOT_CARRIED_FROM_ENTRY.items():
+            assert reason and len(reason) > 20, (
+                "{0!r} is excluded without a reason worth reading".format(name))
+        for expected in ("elementary_high_p", "allow_pdep_route",
+                         "allow_max_rate_violation", "electrons", "degeneracy"):
+            assert expected in unclassified, (
+                "{0!r} must be carried from the entry".format(expected))

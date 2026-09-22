@@ -1,0 +1,42 @@
+
+[NOT REPRODUCED] HIGH: the cached answer is stored under the identity of a file that was never parsed -- the signature comes from one open and the content from another
+    the read picked up B (that is the race, not the defect):
+        first -> reason = 'manifest B'
+    the cache now holds B's quarantine under:
+        cached identity = (1790119862222960684, 1790119862222960684, 157, 103581182)
+        B's identity    = (1790119862222960684, 1790119862222960684, 157, 103581182)
+    a key and a value that describe two different files
+
+[NOTED, not a finding] the brief's exploitation does NOT reproduce at this base, and the reason is round 99's own repair
+    with the ORIGINAL manifest restored, resolve_quarantine -> reason = 'manifest A', not 'manifest B'. A rename moves the inode's st_ctime_ns, and round 99 put st_ctime_ns into the identity, so the restored file no longer matches the stale key and the cache MISSES. The brief says ctime 'does not help'; measured, it is what makes this unexploitable by rename on an ordinary POSIX filesystem. The key still describes a file that was never parsed, which is the finding above, and is worth closing on its own terms.
+
+[NOT REPRODUCED] HIGH: the template shape drops every flag it does not name by hand, so both conversions in model.py carry false defaults onward
+    entry.item declares {'elementary_high_p': True, 'allow_pdep_route': True, 'allow_max_rate_violation': True}
+    the built TemplateReaction carries {'elementary_high_p': True, 'allow_pdep_route': True, 'allow_max_rate_violation': True}
+    dropped: none
+    `elementary_high_p` lost here means the reaction silently misses pressure-dependent routing
+
+[NOT REPRODUCED] HIGH (second half): the ordinary library shape names two of the three flags and drops `allow_max_rate_violation`, so no shape carries it
+    entry.item declares allow_max_rate_violation = True
+    the built LibraryReaction carries True
+
+[HOLDS] control: an ordinary manifest still resolves and is still cached
+    resolve_quarantine('An_Ordinary_Family') -> (KineticsQuarantine, True); cached = True
+
+[HOLDS] control: round 95's repair is intact: electrons and degeneracy still arrive
+    electrons = 1, degeneracy = 3.0
+
+[HOLDS] control: carrying is not setting: a flag the entry leaves false stays false
+    {'elementary_high_p': False, 'allow_pdep_route': False, 'allow_max_rate_violation': False}
+
+[HOLDS] control: round 92's carrier is intact: the entry still travels with the reaction
+    entry = Entry
+
+[NOTED, not a finding] rmgpy/data/kinetics/database.py: generate_reactions_from_library builds from entry.item and drops the same class of field
+    of (electrons, allow_pdep_route, elementary_high_p, allow_max_rate_violation, network_kinetics, pairs, transition_state) it forwards: none
+    out of this round's gates -- named, not fixed
+
+==============================================================================
+findings reproduced : 0 of 3
+controls holding    : 4 of 4
+noted, not findings : 2

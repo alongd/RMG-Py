@@ -671,7 +671,7 @@ def _read_manifest(family_path):
             family_path,
             'this platform provides no directory descriptors, so no component of the '
             'path can be opened without following links')
-        return None
+        return None, None
 
     anchor, components = _anchor_and_components(family_path)
     if anchor is None:
@@ -679,7 +679,7 @@ def _read_manifest(family_path):
             family_path,
             'it does not name a family directory below a directory this process may '
             'anchor on')
-        return None
+        return None, None
 
     nofollow = getattr(os, 'O_NOFOLLOW', 0)
     directory = getattr(os, 'O_DIRECTORY', 0)
@@ -694,23 +694,30 @@ def _read_manifest(family_path):
             fd = os.open(QUARANTINE_FILENAME, os.O_RDONLY | nofollow,
                          dir_fd=descriptors[-1])
         except (FileNotFoundError, NotADirectoryError):
-            return None
+            return None, None
         except OSError as error:
             # ELOOP lands here for every link below the anchor -- an intermediate
             # directory, the family directory, or the manifest itself. All are refused
             # rather than resolved, and the caller turns the refusal into an unanswered
             # question, never a clean bill.
             _warn_unsafe_manifest(family_path, error)
-            return None
+            return None, None
 
-        if not stat.S_ISREG(os.fstat(fd).st_mode):
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode):
             _warn_unsafe_manifest(family_path, 'it is not a regular file')
-            return None
+            return None, None
+        # The identity comes from THIS descriptor, not from a second look at the name.
+        # `_manifest_signature` stats the path independently, and a rename between that
+        # stat and this open would otherwise cache the content of B under the identity of
+        # A -- after which restoring A produces a cache HIT returning B's quarantine, and
+        # A's criterion is silently bypassed. `st_ctime_ns` cannot help: it would be A's.
+        identity = (info.st_mtime_ns, info.st_ctime_ns, info.st_size, info.st_ino)
         with os.fdopen(fd, 'r') as handle:
             fd = None                    # fdopen owns it now
-            return handle.read()
+            return handle.read(), identity
     except OSError:
-        return None
+        return None, None
     finally:
         for descriptor in [fd] + descriptors:
             if descriptor is not None:
@@ -731,8 +738,20 @@ def load_family_quarantine(family_label, family_path):
     The manifest is executed the way the rest of the database is, with builtins
     stripped, so it stays a declarative data file rather than a script.
     """
+    return _load_with_identity(family_label, family_path)[0]
+
+
+def _load_with_identity(family_label, family_path):
+    """
+    :func:`load_family_quarantine`, also returning the identity of the file it parsed.
+
+    The identity is taken with :func:`os.fstat` on the descriptor the bytes were read
+    from, so it names the file that was actually executed rather than whatever the path
+    resolved to when somebody else stat'd it. :func:`resolve_quarantine` caches under
+    this, which is what makes the cached answer and the cached key describe one object.
+    """
     path = os.path.join(family_path, QUARANTINE_FILENAME)
-    content = _read_manifest(family_path)
+    content, identity = _read_manifest(family_path)
     if content is None:
         # No manifest, or one this database may not execute, or one that vanished between
         # being seen and being read. All three are ``None`` here and the caller decides
@@ -740,7 +759,7 @@ def load_family_quarantine(family_label, family_path):
         # signature it took, and turns the last two into an unanswered question rather
         # than a clean bill of health. Raising instead would kill a run over a concurrent
         # database edit.
-        return None
+        return None, None
 
     local_context = {'__builtins__': None}
     global_context = {'__builtins__': None}
@@ -777,7 +796,7 @@ def load_family_quarantine(family_label, family_path):
         # `_check_engine_requirements` for why a commit check could not fail.
         logging.info('  the engine capability it requires was first provided by commit %s '
                      '(provenance only; what is enforced is the capability).', recorded_commit)
-    return quarantine
+    return quarantine, identity
 
 
 #: Prefix of the line RMG writes into an estimated rate's comment naming the family
@@ -1245,7 +1264,7 @@ def resolve_quarantine(label):
         _warn_unsafe_manifest(family_path, 'it is not a regular file')
         answer = (None, False)
     else:
-        quarantine = load_family_quarantine(label, family_path)
+        quarantine, parsed = _load_with_identity(label, family_path)
         if quarantine is None:
             # The manifest was there when this function looked and gone when the loader
             # did. Two different databases produce that, neither of them benign: a
@@ -1260,6 +1279,14 @@ def resolve_quarantine(label):
                 label, os.path.join(family_path, QUARANTINE_FILENAME))
             return None, False
         answer = (quarantine, True)
+        # Cache under the identity of the file that was PARSED, not the one that was
+        # stat'd above. The two are separate resolutions of one name, so a rename between
+        # them would otherwise store B's quarantine under A's signature -- and restoring A
+        # would then be a cache HIT returning B's answer, bypassing A's criterion without
+        # reading A at all. Re-keying here is what makes the check and the thing used the
+        # same object; it costs nothing, because the fstat was already taken to confirm
+        # the file was regular.
+        signature = (directory_exists, parsed, kind)
     _DISK_QUARANTINE_CACHE[key] = (signature, answer)
     return answer
 
