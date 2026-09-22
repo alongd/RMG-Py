@@ -1,0 +1,35 @@
+INFO:root:PlasmaReactor wall: cation Species(label="Ar+", molecule=[Molecule(smiles="[Ar+]")], molecular_weight=(39.8775,'amu')) neutralises to ground-state Species(label="Ar", thermo=ThermoData(Tdata=([298,400,600,800,1000,1500,2000],'K'), Cpdata=([20.7862,20.7862,20.7862,20.7862,20.7862,20.7862,20.7862],'J/(mol*K)'), H298=(0,'kJ/mol'), S298=(154.8,'J/(mol*K)')), molecule=[Molecule(smiles="[Ar]")], molecular_weight=(39.8775,'amu')) (formation enthalpy 3.118 J/mol; next neutral state Species(label="Ar*", thermo=ThermoData(Tdata=([298,400,600,800,1000,1500,2000],'K'), Cpdata=([20.7862,20.7862,20.7862,20.7862,20.7862,20.7862,20.7862],'J/(mol*K)'), H298=(1109.58,'kJ/mol'), S298=(154.8,'J/(mol*K)')), molecule=[Molecule(smiles="[Ar]")], molecular_weight=(39.8775,'amu')) is 1.11e+06 J/mol higher, above the k_B*T_gas = 2479 J/mol degeneracy threshold).
+INFO:root:PlasmaReactor wall: cation Species(label="Ar+", molecule=[Molecule(smiles="[Ar+]")], molecular_weight=(39.8775,'amu')) neutralises to ground-state Species(label="Ar", thermo=ThermoData(Tdata=([298,400,600,800,1000,1500,2000],'K'), Cpdata=([20.7862,20.7862,20.7862,20.7862,20.7862,20.7862,20.7862],'J/(mol*K)'), H298=(0,'kJ/mol'), S298=(154.8,'J/(mol*K)')), molecule=[Molecule(smiles="[Ar]")], molecular_weight=(39.8775,'amu')) (formation enthalpy 3.118 J/mol; next neutral state Species(label="Ar*", thermo=ThermoData(Tdata=([298,400,600,800,1000,1500,2000],'K'), Cpdata=([20.7862,20.7862,20.7862,20.7862,20.7862,20.7862,20.7862],'J/(mol*K)'), H298=(1109.58,'kJ/mol'), S298=(154.8,'J/(mol*K)')), molecule=[Molecule(smiles="[Ar]")], molecular_weight=(39.8775,'amu')) is 1.11e+06 J/mol higher, above the k_B*T_gas = 2479 J/mol degeneracy threshold).
+========================================================================
+gamma = 1.0
+  Ar+ recycle target      : 'Ar'  (ground state)
+  nu_wall                 : 193.233 s^-1
+  wall flux, ground Ar    : +1.932335e-02 mol/s
+  wall flux, metastable   : +0.000000e+00 mol/s   (must be 0: neutral)
+  wall flux, Ar+          : -1.932335e-02 mol/s
+  wall flux, e-           : -1.932335e-02 mol/s
+  net CHARGE rate         : +0.000e+00 mol/s   (must be ~0)
+  net HEAVY rate          : +0.000e+00 mol/s
+  expected heavy rate     : -0.000e+00 mol/s   -(1-gamma)*nu*y_Ar+
+  Ar+ loss  == -nu*y_Ar+  : True
+  ground gain== +g*nu*yAr+: True
+  metastable untouched    : True
+  net charge conserved    : True
+  net heavy == expected   : True
+========================================================================
+gamma = 0.5
+  Ar+ recycle target      : 'Ar'  (ground state)
+  nu_wall                 : 193.233 s^-1
+  wall flux, ground Ar    : +9.661674e-03 mol/s
+  wall flux, metastable   : +0.000000e+00 mol/s   (must be 0: neutral)
+  wall flux, Ar+          : -1.932335e-02 mol/s
+  wall flux, e-           : -1.932335e-02 mol/s
+  net CHARGE rate         : +0.000e+00 mol/s   (must be ~0)
+  net HEAVY rate          : -9.662e-03 mol/s
+  expected heavy rate     : -9.662e-03 mol/s   -(1-gamma)*nu*y_Ar+
+  Ar+ loss  == -nu*y_Ar+  : True
+  ground gain== +g*nu*yAr+: True
+  metastable untouched    : True
+  net charge conserved    : True
+  net heavy == expected   : True
+========================================================================

@@ -1,0 +1,12 @@
+### rewritten bitwise test under mutation:
+E       assert False
+E        +  where False = <function array_equal at 0x7a35b513c0b0>(array([-0.001,  0.001, -0.001]), array([0., 0., 0.]))
+E        +    where <function array_equal at 0x7a35b513c0b0> = np.array_equal
+
+test/rmgpy/solver/plasmaWallTest.py:324: AssertionError
+=========================== short test summary info ============================
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_wall_operator_residual_inert_and_jacobian_is_the_wall_linearization
+1 failed in 0.90s
+
+### old two-wall-less pattern under the SAME mutation:
+OLD two-wall-less pattern: GREEN (vacuous)
