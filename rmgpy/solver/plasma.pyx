@@ -56,6 +56,8 @@ initialization instead of degrading to a one-temperature reactor.
 import itertools
 import logging
 
+import quantities as pq
+
 cimport cython
 import numpy as np
 cimport numpy as np
@@ -214,6 +216,24 @@ cdef class PlasmaReactor(ReactionSystem):
     # the wall flux INDEPENDENTLY of the gas-phase deficit and compare the two.
     cdef public np.ndarray wall_loss_rates        # mol/s, per core species, signed
     cdef public double nu_wall                    # s^-1, at the last evaluation
+    # --- M8-A wall-flux / wall-energy interface, LATCHED at accepted states -------
+    # These are the stable interface the power-closure successor consumes. Unlike
+    # wall_loss_rates above (residual scratch, overwritten on every Newton trial),
+    # they are written ONLY by _latch_wall_diagnostics, called from the initial
+    # composition and after each accepted solver step -- never from inside the
+    # residual -- so a rejected Newton trial cannot leak into them by construction,
+    # the same accepted-state gating check_wall_support already relies on. A
+    # consumer must read THESE, not wall_loss_rates.
+    cdef public np.ndarray wall_flux              # mol/s, per core species, signed, latched
+    cdef public double nu_wall_latched            # s^-1, at the latched accepted state
+    cdef public double wall_diagnostics_time      # s, the accepted time the latch is for
+    cdef public double wall_electron_energy_flux  # W, 2 k_B T_e * electron loss rate
+    cdef public double wall_neutralization_energy_flux  # W, released on neutralisation
+    cdef public double wall_ion_energy_flux       # W, ion directed/sheath energy: NOT
+                                                  # promised here (a sheath model is a
+                                                  # contract non-goal) -- NaN sentinel
+    cdef public dict wall_energy_availability     # field -> available|declared-absent|unavailable
+    cdef public np.ndarray wall_neutralization_delta_h  # J/mol per ion, H_ion-H_neutral, or NaN
     # Purely NUMERICAL floor on the neutral population inside compute_nu_wall, set
     # from the initial composition. It exists so that a Newton TRIAL state with no
     # neutrals left yields a large-but-finite loss frequency that the solver can
@@ -318,6 +338,25 @@ cdef class PlasmaReactor(ReactionSystem):
         self.wall_recycle_target = None
         self.source_cation_target = None
 
+        # Latched wall interface (see the attribute block). Unset until the first
+        # accepted state. The ion directed/sheath energy is DECLARED absent by
+        # design -- a sheath potential is a contract non-goal and belongs to the
+        # power-closure workstream -- so a consumer reads 'declared-absent' here
+        # and accounts for it explicitly, rather than discovering a NaN and guessing
+        # whether the term is missing or broken.
+        self.wall_flux = None
+        self.nu_wall_latched = float('nan')
+        self.wall_diagnostics_time = float('nan')
+        self.wall_electron_energy_flux = float('nan')
+        self.wall_neutralization_energy_flux = float('nan')
+        self.wall_ion_energy_flux = float('nan')
+        self.wall_energy_availability = {
+            'wall_flux': 'unavailable',
+            'wall_electron_energy_flux': 'unavailable',
+            'wall_neutralization_energy_flux': 'unavailable',
+            'wall_ion_energy_flux': 'declared-absent',
+        }
+
         if (diffusion_length is None) != (ion_reduced_mobility is None):
             raise PlasmaStateError(
                 "a charged-particle wall needs BOTH a diffusion length and an ion "
@@ -333,6 +372,25 @@ cdef class PlasmaReactor(ReactionSystem):
         if self.has_wall:
             self.diffusion_length = Quantity(diffusion_length)
             self.ion_reduced_mobility = Quantity(ion_reduced_mobility)
+            # Dimensions, not just sign and finiteness. A directly-constructed reactor
+            # bypasses the input-file path (_plasma_wall_kwargs), which already guards
+            # this, so without the check here diffusion_length=(2, 's') is taken as a
+            # 2 m length and a diffusivity (m^2/s) as a mobility -- either silently
+            # sets nu_wall from the wrong quantity.
+            for name, quantity_obj, ref_units, dim_name in (
+                    ('diffusion_length', self.diffusion_length, 'm', 'length'),
+                    ('ion_reduced_mobility', self.ion_reduced_mobility, 'm**2/(V*s)', 'mobility')):
+                want = pq.Quantity(1.0, ref_units).simplified.dimensionality
+                try:
+                    got = pq.Quantity(1.0, quantity_obj.units).simplified.dimensionality
+                except Exception:
+                    got = None
+                if got != want:
+                    raise PlasmaStateError(
+                        "PlasmaReactor {0} must have the dimensions of a {1}; got units "
+                        "{2!r}. Reading it as a {1} would silently set the wall loss "
+                        "frequency from the wrong quantity. ({3})".format(
+                            name, dim_name, quantity_obj.units, self._identity()))
             for name, quantity_obj in (('diffusion_length', self.diffusion_length),
                                        ('ion_reduced_mobility', self.ion_reduced_mobility)):
                 value = quantity_obj.value_si
@@ -588,6 +646,12 @@ cdef class PlasmaReactor(ReactionSystem):
         # initialize_solver, so runtime residual/Jacobian (which index the packed
         # arrays positionally, never through reaction_index) are unaffected.
         self._rekey_reaction_index_to_model(core_reactions_model, edge_reactions_model)
+
+        # Latch the wall interface at the initial composition -- itself an accepted
+        # state (check_wall_support has already passed on self.y0). This gives a
+        # consumer a valid interface before the first step, at t = 0.
+        if self.has_wall:
+            self._latch_wall_diagnostics(self.y0, self.compute_volume(self.y0), 0.0)
 
     def _rekey_reaction_index_to_model(self, core_reactions, edge_reactions):
         """
@@ -1160,6 +1224,39 @@ cdef class PlasmaReactor(ReactionSystem):
                     self.kb[j] = 0.0
                     self.Keq[j] = np.inf
 
+    def _skeleton_key(self, spc):
+        """
+        A charge- and electronic-state-independent identity for a species: its
+        standard InChI, truncated before the charge (``/q``) and proton (``/p``)
+        layers. Two species share a skeleton iff they have the same nuclei and the
+        same heavy-atom connectivity, regardless of net charge, radical count or
+        electronic excitation -- which is the identity wall neutralisation (a
+        charge transfer that conserves the heavy skeleton) actually couples through.
+
+        This is the key the ion->neutral and neutral->cation maps must use.
+        Element count is too COARSE -- constitutional isomers collide, so DME+ would
+        match ethanol and a lowest-enthalpy tiebreak would transmute one into the
+        other. ``is_isomorphic`` and the augmented InChI are too FINE -- they split
+        an electronic ground state from its own metastable (Ar and Ar* are not
+        isomorphic), which would defeat the whole point of resolving Ar+ to ground
+        Ar. Standard InChI sits exactly between: it drops the radical/spin layer
+        (so Ar and Ar* coincide) but keeps the connectivity layer (so DME and
+        ethanol separate).
+
+        Returns None when no skeleton can be computed, which denies the species an
+        automatic match and forces a declaration or a refusal rather than a guess.
+        """
+        try:
+            inchi = spc.molecule[0].to_inchi()
+        except Exception:
+            return None
+        cut = len(inchi)
+        for sep in ('/q', '/p'):
+            idx = inchi.find(sep)
+            if idx != -1 and idx < cut:
+                cut = idx
+        return inchi[:cut]
+
     def _resolve_wall_state(self, list core_species):
         """
         Build the per-core-species charge bookkeeping the wall operator needs, and
@@ -1173,9 +1270,10 @@ cdef class PlasmaReactor(ReactionSystem):
 
         ``wall_recycle_target``
             for every positive ion, the index of the NEUTRAL core species its heavy
-            core returns as when it is neutralised at the wall. Matched on element
-            composition, so Ar+ -> Ar. Resolved once, here, rather than guessed per
-            step.
+            core returns as when it is neutralised at the wall. Matched on the
+            heavy-atom SKELETON (see :meth:`_skeleton_key`), not element count, so a
+            molecular ion cannot be transmuted into an isomeric neutral; Ar+ -> Ar.
+            Resolved once, here, rather than guessed per step.
 
         ``source_cation_target``
             for every neutral heavy species, the index of its SINGLY-charged cation,
@@ -1206,7 +1304,7 @@ cdef class PlasmaReactor(ReactionSystem):
         recycle = np.full(n, -1, dtype=np.int_)
         source_cation = np.full(n, -1, dtype=np.int_)
 
-        formulas = [None] * n
+        skeletons = [None] * n
         for i in range(n):
             spc = core_species[i]
             try:
@@ -1220,10 +1318,11 @@ cdef class PlasmaReactor(ReactionSystem):
                 continue
             if charges[i] == 0:
                 neutral_mask[i] = 1
-            try:
-                formulas[i] = tuple(sorted(spc.molecule[0].get_element_count().items()))
-            except Exception:
-                formulas[i] = None
+            # Heavy-atom skeleton (see _skeleton_key), NOT element count: the
+            # skeleton keeps constitutional isomers apart so a molecular ion cannot
+            # be transmuted into an isomeric neutral, while still uniting an
+            # electronic ground state with its own metastable.
+            skeletons[i] = self._skeleton_key(spc)
 
         # ion -> neutral counterpart at the wall. Matched on heavy composition; when
         # more than one neutral state shares it, resolved to the electronic ground
@@ -1232,10 +1331,10 @@ cdef class PlasmaReactor(ReactionSystem):
         # present, so a user can name a product energy cannot infer.
         neutralization = self.wall_neutralization_products or {}
         for i in range(n):
-            if i == self.electron_index or charges[i] == 0 or formulas[i] is None:
+            if i == self.electron_index or charges[i] == 0 or skeletons[i] is None:
                 continue
             matches = [j for j in range(n)
-                       if neutral_mask[j] and formulas[j] is not None and formulas[j] == formulas[i]]
+                       if neutral_mask[j] and skeletons[j] is not None and skeletons[j] == skeletons[i]]
             ion_label = getattr(core_species[i], 'label', None)
             if ion_label is not None and ion_label in neutralization:
                 recycle[i] = self._resolve_declared_neutral(
@@ -1247,11 +1346,11 @@ cdef class PlasmaReactor(ReactionSystem):
 
         # neutral -> its singly-charged cation (what the external source makes)
         for i in range(n):
-            if not neutral_mask[i] or formulas[i] is None:
+            if not neutral_mask[i] or skeletons[i] is None:
                 continue
             matches = [j for j in range(n)
                        if charges[j] == 1 and j != self.electron_index
-                       and formulas[j] is not None and formulas[j] == formulas[i]]
+                       and skeletons[j] is not None and skeletons[j] == skeletons[i]]
             if len(matches) == 1:
                 source_cation[i] = matches[0]
             elif len(matches) > 1 and self.has_wall and self.ionisation_source.value_si > 0.0:
@@ -1308,6 +1407,19 @@ cdef class PlasmaReactor(ReactionSystem):
                     "ion, or extend the wall to per-species mobilities. ({2})".format(
                         len(cations), ', '.join(repr(core_species[i]) for i in cations),
                         self._identity()))
+            if not cations:
+                # 'Exactly one cation' must reject zero as well as two: an electron with
+                # no positive ion is not floating-wall physics. Ambipolar wall loss is
+                # the diffusion of ION-ELECTRON PAIRS to the wall; the common loss
+                # frequency applied to the electron alone would remove electrons with no
+                # charge-conserving partner and drive the net charge.
+                raise PlasmaStateError(
+                    "a charged-particle wall was declared, but the core carries no "
+                    "positive ion -- only the electron is charged. With no cation the "
+                    "wall's common loss frequency would remove electrons with no "
+                    "charge-conserving partner, which is not the ambipolar loss of "
+                    "ion-electron pairs this model represents. Add the dominant cation, "
+                    "or remove the wall. ({0})".format(self._identity()))
 
             if self.wall_recycling > 0.0:
                 orphans = [core_species[i] for i in range(n)
@@ -1330,11 +1442,45 @@ cdef class PlasmaReactor(ReactionSystem):
                     "ionisation_source to zero. ({1})".format(
                         self.ionisation_source.value_si, self._identity()))
 
+        # Neutralisation enthalpy drop per ion, for the latched wall-energy interface:
+        # H_ion - H_neutral at the gas temperature, released at the surface when the ion
+        # is neutralised. Precomputed here, where the species are in hand -- the reactor
+        # does not retain core_species -- and multiplied by the accepted rate in the
+        # latch. NaN where either thermo is missing or non-finite, which the diagnostic
+        # reports as UNAVAILABLE, distinct from the ion directed term's DECLARED-ABSENT.
+        delta_h = np.full(n, np.nan, float)
+        T_gas = self.T.value_si
+        for i in range(n):
+            if i == self.electron_index or charges[i] <= 0:
+                continue
+            tgt = int(recycle[i])
+            if tgt < 0:
+                continue
+            h_ion = self._species_enthalpy(core_species[i], T_gas)
+            h_neu = self._species_enthalpy(core_species[tgt], T_gas)
+            if h_ion is not None and h_neu is not None:
+                delta_h[i] = h_ion - h_neu
+        self.wall_neutralization_delta_h = delta_h
+
         self.species_charges = charges
         self.neutral_heavy_mask = neutral_mask
         self.wall_recycle_target = recycle
         self.source_cation_target = source_cation
         self.wall_loss_rates = np.zeros(n, float)
+
+    def _species_enthalpy(self, spc, double T):
+        """Formation enthalpy (J/mol) at ``T``, or None when thermo is absent or the
+        value is non-finite -- so a caller can distinguish 'no thermo' from a number."""
+        thermo = getattr(spc, 'thermo', None)
+        if thermo is None:
+            return None
+        try:
+            h = thermo.get_enthalpy(T)
+        except Exception:
+            return None
+        if not np.isfinite(h):
+            return None
+        return h
 
     def _resolve_declared_neutral(self, list core_species, Py_ssize_t i,
                                   ion_label, neutral_label, list matches):
@@ -1351,19 +1497,19 @@ cdef class PlasmaReactor(ReactionSystem):
             if getattr(core_species[j], 'label', None) == neutral_label:
                 logging.info(
                     "PlasmaReactor wall: cation %r neutralises to %r as declared by "
-                    "wall_neutralization_products.", core_species[i], core_species[j])
+                    "wallNeutralizationProducts.", core_species[i], core_species[j])
                 return j
         all_labels = [getattr(s, 'label', None) for s in core_species]
         if neutral_label not in all_labels:
             raise PlasmaStateError(
-                "wall_neutralization_products maps ion {0!r} to {1!r}, but no core "
+                "wallNeutralizationProducts maps ion {0!r} to {1!r}, but no core "
                 "species carries that label. Declared core species are {2}. Name the "
                 "neutral ground state the ion returns as, e.g. "
-                "wall_neutralization_products={{{0!r}: '<neutral label>'}}. ({3})".format(
+                "wallNeutralizationProducts={{{0!r}: '<neutral label>'}}. ({3})".format(
                     ion_label, neutral_label,
                     sorted(l for l in all_labels if l), self._identity()))
         raise PlasmaStateError(
-            "wall_neutralization_products maps ion {0!r} to {1!r}, but {1!r} is not a "
+            "wallNeutralizationProducts maps ion {0!r} to {1!r}, but {1!r} is not a "
             "neutral core species sharing {0!r}'s heavy composition. A wall "
             "neutralisation product must be uncharged and conserve the heavy atoms of "
             "the ion. ({2})".format(ion_label, neutral_label, self._identity()))
@@ -1396,9 +1542,18 @@ cdef class PlasmaReactor(ReactionSystem):
                 missing.append(core_species[j])
                 continue
             try:
-                enthalpies.append((thermo.get_enthalpy(T), j))
+                h = thermo.get_enthalpy(T)
             except Exception:
                 missing.append(core_species[j])
+                continue
+            # A non-finite enthalpy is UNUSABLE, not merely present: NaN and inf sort
+            # unpredictably and every comparison against them is False, so a silent
+            # pick would follow. Route it to the same refusal as absent thermo -- the
+            # states cannot be ordered either way.
+            if not np.isfinite(h):
+                missing.append(core_species[j])
+                continue
+            enthalpies.append((h, j))
         if missing:
             raise PlasmaStateError(
                 "the wall returns ion {0!r} as the electronic GROUND STATE of its heavy "
@@ -1406,7 +1561,7 @@ cdef class PlasmaReactor(ReactionSystem):
                 "composition have no usable thermochemistry ({3}), so their energies "
                 "cannot be ordered and the ground state cannot be identified. Attach "
                 "thermo to every neutral state, or name the product with "
-                "wall_neutralization_products={{{4!r}: '<neutral label>'}}. ({5})".format(
+                "wallNeutralizationProducts={{{4!r}: '<neutral label>'}}. ({5})".format(
                     core_species[i], len(missing), len(matches),
                     ', '.join(repr(s) for s in missing),
                     getattr(core_species[i], 'label', None), self._identity()))
@@ -1424,7 +1579,7 @@ cdef class PlasmaReactor(ReactionSystem):
                 "k_B*T_gas = {4:.4g} J/mol at T_gas = {5:.6g} K. Below that scale both "
                 "states are appreciably populated and neither is the ground state, so "
                 "picking one would move population silently. Separate them in energy, or "
-                "name the product with wall_neutralization_products={{{6!r}: '<neutral "
+                "name the product with wallNeutralizationProducts={{{6!r}: '<neutral "
                 "label>'}}. ({7})".format(
                     core_species[i], core_species[j0], core_species[j1], h1 - h0,
                     threshold, T, getattr(core_species[i], 'label', None), self._identity()))
@@ -1520,7 +1675,7 @@ cdef class PlasmaReactor(ReactionSystem):
         the RATIO, not the absolute inventory, so a state with both populations driven
         small passed while ``nu_wall`` silently came off the clamp.
         """
-        cdef double y_neutral = 0.0, alpha, n_e
+        cdef double y_neutral = 0.0, alpha, n_e, n_ion = 0.0
         cdef Py_ssize_t j
         if not self.has_wall or self.neutral_heavy_mask is None:
             return
@@ -1552,7 +1707,22 @@ cdef class PlasmaReactor(ReactionSystem):
                 "quasineutrality bookkeeping the wall model relies on is undefined there, "
                 "so the run stops rather than continuing on a corrupt charge state. "
                 "({1})".format(n_e, self._identity()))
-        alpha = n_e / y_neutral
+        for j in range(self.num_core_species):
+            if j != self.electron_index and self.species_charges[j] > 0:
+                n_ion += y[j]
+        if not np.isfinite(n_ion) or n_ion < 0.0:
+            raise PlasmaStateError(
+                "the accepted state has a total positive-ion population of {0!r} mol, "
+                "which is not a physical (finite, non-negative) population; the "
+                "ionisation-degree bookkeeping is undefined there. ({1})".format(
+                    n_ion, self._identity()))
+        # The ionisation degree is set by the CHARGED inventory, not n_e alone. In a
+        # badly non-neutral accepted state n_e can sit far below the ion density -- 1%
+        # ions with 1 ppm electrons reads as alpha = 1e-6 on n_e while the ions already
+        # put the ion mobility outside its ion-neutral regime. Gate on whichever of the
+        # two is larger, so neither a runaway ion nor a runaway electron count slips
+        # through the ceiling that claims to bound them.
+        alpha = (n_e if n_e >= n_ion else n_ion) / y_neutral
         if alpha > self.max_ionisation_degree:
             raise PlasmaStateError(
                 "ionisation degree n_e/n_neutral = {0!r} exceeds the declared validity "
@@ -1562,6 +1732,65 @@ cdef class PlasmaReactor(ReactionSystem):
                 "inaccurate one. Refusing to extrapolate. Raise max_ionisation_degree "
                 "only together with a transport model that covers the regime. "
                 "({2})".format(alpha, self.max_ionisation_degree, self._identity()))
+
+    def _latch_wall_diagnostics(self, np.ndarray y, double V, double t):
+        """
+        Recompute the wall flux and energy fluxes cleanly at an ACCEPTED state ``y``
+        and store them in the latched interface fields (:attr:`wall_flux` etc.).
+        Called from the initial composition and after each accepted solver step, and
+        NEVER from inside the residual, so a rejected Newton trial cannot reach the
+        interface a consumer reads -- the same accepted-state gating
+        :meth:`check_wall_support` relies on.
+
+        Robustly determined: the per-species wall particle flux, the loss frequency,
+        and the electron thermal energy carried to the wall (2 k_B T_e per lost
+        electron, from the electron temperature the reactor holds). Conditionally
+        available: the neutralisation energy released at the surface, which needs
+        thermo on both the ion and its neutral product. Declared absent by design: the
+        ion directed/sheath energy, which needs a sheath potential -- a contract
+        non-goal owned by the power-closure workstream; the availability map reports
+        it 'declared-absent', not a fabricated number, so a consumer distinguishes it
+        from a term that merely could not be computed.
+        """
+        cdef Py_ssize_t j, tgt
+        cdef double nu, loss, e_loss_rate = 0.0, neutral_power = 0.0, dh
+        cdef bint neutral_available = True
+        cdef np.ndarray[np.float64_t, ndim=1] flux
+        if not self.has_wall:
+            return
+        nu = self.compute_nu_wall(y, V)
+        flux = np.zeros(self.num_core_species, float)
+        for j in range(self.num_core_species):
+            if self.species_charges[j] == 0:
+                continue
+            loss = nu * y[j]
+            flux[j] -= loss
+            if j == self.electron_index:
+                e_loss_rate = loss
+                continue
+            tgt = self.wall_recycle_target[j]
+            if tgt >= 0 and self.wall_recycling > 0.0:
+                flux[tgt] += self.wall_recycling * loss
+                dh = self.wall_neutralization_delta_h[j]
+                if dh != dh:                       # NaN: this ion's drop is unusable
+                    neutral_available = False
+                else:
+                    neutral_power += dh * self.wall_recycling * loss
+        self.wall_flux = flux
+        self.nu_wall_latched = nu
+        self.wall_diagnostics_time = t
+        # 2 k_B T_e per lost electron; 2 R T_e * (mol/s) = W. Always available from T_e.
+        self.wall_electron_energy_flux = 2.0 * constants.R * self.Te.value_si * e_loss_rate
+        self.wall_energy_availability['wall_flux'] = 'available'
+        self.wall_energy_availability['wall_electron_energy_flux'] = 'available'
+        if neutral_available:
+            self.wall_neutralization_energy_flux = neutral_power
+            self.wall_energy_availability['wall_neutralization_energy_flux'] = 'available'
+        else:
+            self.wall_neutralization_energy_flux = float('nan')
+            self.wall_energy_availability['wall_neutralization_energy_flux'] = 'unavailable'
+        self.wall_ion_energy_flux = float('nan')
+        self.wall_energy_availability['wall_ion_energy_flux'] = 'declared-absent'
 
     cpdef advance(self, double tout):
         """Advance, then refuse the accepted state if it left the wall model's domain.
@@ -1573,6 +1802,9 @@ cdef class PlasmaReactor(ReactionSystem):
         """
         result = ReactionSystem.advance(self, tout)
         self.check_wall_support(self.y)
+        if self.has_wall:
+            # Latch the interface at the just-accepted state, AFTER the domain check.
+            self._latch_wall_diagnostics(self.y, self.compute_volume(self.y), self.t)
         return result
 
     cpdef step(self, double tout):
@@ -1924,7 +2156,7 @@ cdef class PlasmaReactor(ReactionSystem):
         ``self.wall_loss_rates`` so a caller can integrate the flux INDEPENDENTLY
         of the gas-phase deficit and compare the two.
         """
-        cdef double nu, loss, y_neutral = 0.0, source_total, rate
+        cdef double nu, loss, y_neutral = 0.0, source_total, rate, y_ionisable = 0.0
         cdef Py_ssize_t j, target
         cdef np.ndarray[np.float64_t, ndim=1] wall
 
@@ -1960,16 +2192,27 @@ cdef class PlasmaReactor(ReactionSystem):
         # proportion to their number density -- which is what an ionising radiation
         # field does, at the stated assumption of equal per-particle ionisation
         # probability. For a single-neutral gas the apportionment is the identity.
+        # The denominator is the IONISABLE neutral total, not every neutral: a
+        # neutral with no cation channel in the core (a bath gas the model does not
+        # ionise) is skipped in the numerator, so leaving it in the denominator would
+        # apportion the declared source over a larger population and deliver less than
+        # S_ext*V pairs per second -- silently. Summed over the same set the loop
+        # produces into, the delivered total is exactly S_ext*V.
         source_total = self.ionisation_source.value_si * V / constants.Na
-        if source_total > 0.0 and y_neutral > 0.0:
+        if source_total > 0.0:
+            y_ionisable = 0.0
             for j in range(self.num_core_species):
-                target = self.source_cation_target[j]
-                if not self.neutral_heavy_mask[j] or target < 0:
-                    continue
-                rate = source_total * y[j] / y_neutral
-                res[j] -= rate
-                res[target] += rate
-                res[self.electron_index] += rate
+                if self.neutral_heavy_mask[j] and self.source_cation_target[j] >= 0:
+                    y_ionisable += y[j]
+            if y_ionisable > 0.0:
+                for j in range(self.num_core_species):
+                    target = self.source_cation_target[j]
+                    if not self.neutral_heavy_mask[j] or target < 0:
+                        continue
+                    rate = source_total * y[j] / y_ionisable
+                    res[j] -= rate
+                    res[target] += rate
+                    res[self.electron_index] += rate
 
     @cython.boundscheck(False)
     def jacobian(self, double t, np.ndarray[np.float64_t, ndim=1] y, np.ndarray[np.float64_t, ndim=1] dydt,
@@ -2087,7 +2330,7 @@ cdef class PlasmaReactor(ReactionSystem):
                               np.ndarray[np.float64_t, ndim=1] dVdy,
                               np.ndarray[np.float64_t, ndim=2] pd):
         """Partial derivatives of exactly the terms :meth:`_apply_wall_terms` adds."""
-        cdef double nu, y_neutral = 0.0, loss, dnu_rel, dloss, source_total, term, dterm
+        cdef double nu, y_neutral = 0.0, loss, dnu_rel, dloss, source_total, term, dterm, y_ionisable = 0.0
         cdef Py_ssize_t i, k, target
         cdef double gamma = self.wall_recycling
         cdef bint neutral_floored = 0
@@ -2123,19 +2366,27 @@ cdef class PlasmaReactor(ReactionSystem):
                 if target >= 0 and gamma > 0.0:
                     pd[target, k] += gamma * dloss
 
+        # Denominator is the ionisable-neutral total, matching _apply_wall_terms; the
+        # d/dy term therefore fires only on an ionisable neutral (the only species in
+        # that sum), not on every neutral_heavy species.
         source_total = self.ionisation_source.value_si * V / constants.Na
-        if source_total > 0.0 and y_neutral > 0.0:
+        if source_total > 0.0:
+            y_ionisable = 0.0
             for i in range(self.num_core_species):
-                target = self.source_cation_target[i]
-                if not self.neutral_heavy_mask[i] or target < 0:
-                    continue
-                term = source_total * y[i] / y_neutral
-                for k in range(self.num_core_species):
-                    dterm = term * dVdy[k] / V
-                    if self.neutral_heavy_mask[k]:
-                        dterm -= term / y_neutral
-                    if k == i:
-                        dterm += source_total / y_neutral
-                    pd[i, k] -= dterm
-                    pd[target, k] += dterm
-                    pd[self.electron_index, k] += dterm
+                if self.neutral_heavy_mask[i] and self.source_cation_target[i] >= 0:
+                    y_ionisable += y[i]
+            if y_ionisable > 0.0:
+                for i in range(self.num_core_species):
+                    target = self.source_cation_target[i]
+                    if not self.neutral_heavy_mask[i] or target < 0:
+                        continue
+                    term = source_total * y[i] / y_ionisable
+                    for k in range(self.num_core_species):
+                        dterm = term * dVdy[k] / V
+                        if self.neutral_heavy_mask[k] and self.source_cation_target[k] >= 0:
+                            dterm -= term / y_ionisable
+                        if k == i:
+                            dterm += source_total / y_ionisable
+                        pd[i, k] -= dterm
+                        pd[target, k] += dterm
+                        pd[self.electron_index, k] += dterm

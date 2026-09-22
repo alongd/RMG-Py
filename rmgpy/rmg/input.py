@@ -2595,9 +2595,43 @@ def read_thermo_input_file(path, rmg0):
 
 ################################################################################
 
+def _format_plasma_wall(system):
+    """
+    Serialise a :class:`PlasmaReactor`'s charged-particle wall keywords back to
+    ``plasmaReactor(...)`` syntax. The reactor stores the characteristic diffusion
+    length, not the chamber shape it was computed from, so the round trip emits
+    ``diffusionLength`` directly -- exact in physics, lossy only in description, the
+    same principle by which ``electronDensity`` is not reconstructed and the mole
+    fractions are the ground truth. Extracted from :func:`save_input_file` so the
+    round trip is unit-testable without a whole RMG object.
+    """
+    lines = []
+    if system.quasineutral_electron:
+        lines.append('    quasineutralElectron = True,\n')
+    if system.has_wall:
+        lines.append('    chamberGeometry = {{"diffusionLength": ({0!r},"m")}},\n'
+                     ''.format(system.diffusion_length.value_si))
+        lines.append('    ionReducedMobility = ({0!r},"m^2/(V*s)"),\n'
+                     ''.format(system.ion_reduced_mobility.value_si))
+        lines.append('    mobilityReferenceDensity = ({0!r},"m^-3"),\n'
+                     ''.format(system.mobility_reference_density))
+        lines.append('    wallRecycling = {0!r},\n'.format(system.wall_recycling))
+        if system.wall_neutralization_products:
+            # The declaration fallback for what energy inference cannot resolve; it
+            # must round-trip or the reloaded deck loses a deliberate override.
+            lines.append('    wallNeutralizationProducts = {0!r},\n'
+                         ''.format(dict(system.wall_neutralization_products)))
+        if system.ionisation_source.value_si:
+            lines.append('    ionisationSource = ({0!r},"m^-3/s"),\n'
+                         ''.format(system.ionisation_source.value_si))
+        lines.append('    maxIonisationDegree = {0!r},\n'
+                     ''.format(system.max_ionisation_degree))
+    return ''.join(lines)
+
+
 def save_input_file(path, rmg):
     """
-    Save an RMG input file at `path` on disk from the :class:`RMG` object 
+    Save an RMG input file at `path` on disk from the :class:`RMG` object
     `rmg`.
     """
 
@@ -2713,27 +2747,10 @@ def save_input_file(path, rmg):
             f.write(format_initial_mole_fractions(system))
         f.write('    },\n')
 
-        # Charged-particle wall. The reactor stores the characteristic diffusion
-        # length, not the chamber shape it was computed from, so the round trip emits
-        # diffusionLength directly. That is exact in physics and lossy only in
-        # description -- the same principle by which electronDensity is not
-        # reconstructed and the mole fractions are treated as the ground truth.
+        # Charged-particle wall, serialised through a helper so its round trip is
+        # unit-testable without standing up a whole RMG object.
         if isinstance(system, PlasmaReactor):
-            if system.quasineutral_electron:
-                f.write('    quasineutralElectron = True,\n')
-            if system.has_wall:
-                f.write('    chamberGeometry = {{"diffusionLength": ({0!r},"m")}},\n'
-                        ''.format(system.diffusion_length.value_si))
-                f.write('    ionReducedMobility = ({0!r},"m^2/(V*s)"),\n'
-                        ''.format(system.ion_reduced_mobility.value_si))
-                f.write('    mobilityReferenceDensity = ({0!r},"m^-3"),\n'
-                        ''.format(system.mobility_reference_density))
-                f.write('    wallRecycling = {0!r},\n'.format(system.wall_recycling))
-                if system.ionisation_source.value_si:
-                    f.write('    ionisationSource = ({0!r},"m^-3/s"),\n'
-                            ''.format(system.ionisation_source.value_si))
-                f.write('    maxIonisationDegree = {0!r},\n'
-                        ''.format(system.max_ionisation_degree))
+            f.write(_format_plasma_wall(system))
 
         # Termination criteria
         conversions = ''
