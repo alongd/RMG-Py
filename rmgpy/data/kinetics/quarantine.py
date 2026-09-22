@@ -138,6 +138,9 @@ QUARANTINE_FILENAME = 'quarantine.py'
 #: Manifest fields without which a quarantine cannot say what it covers or why.
 #: ``name``, ``shortDesc`` and ``longDesc`` are optional and free text; they follow the
 #: rest of the database in being camelCase in the data file and snake_case on the object.
+#: Distinguishes a manifest field DECLARED empty from one not declared at all.
+_ABSENT = object()
+
 _REQUIRED_FIELDS = ('state', 'appliesToKineticsClass', 'reason')
 
 
@@ -332,19 +335,32 @@ def _check_engine_requirements(path, family_label, manifest):
 
     module_name = manifest.get('requiresEngineModule')
     symbol_name = manifest.get('requiresEngineSymbol')
-    call_sites = manifest.get('requiresEngineCallsInSource') or ()
-    legacy_sites = manifest.get('requiresEngineCallSites') or ()
-    if call_sites and legacy_sites:
+    # Presence, not truthiness. `manifest.get(...) or ()` collapses "declared empty" into
+    # "not declared", and both promises made here are about DECLARING a field: an empty
+    # new field beside a populated old one slipped through the ambiguity refusal, which is
+    # precisely the manifest someone writes halfway through a rename.
+    declared = manifest.get('requiresEngineCallsInSource', _ABSENT)
+    legacy = manifest.get('requiresEngineCallSites', _ABSENT)
+    if declared is not _ABSENT and legacy is not _ABSENT:
         raise DatabaseError(
             'Quarantine manifest {path} (family {family}) declares both '
             'requiresEngineCallsInSource and its old spelling requiresEngineCallSites. '
             'Resolving that quietly would mean guessing which one the author meant to be '
             'read; declare one.'.format(path=path, family=family_label))
-    if legacy_sites:
+    if legacy is not _ABSENT:
         _warn_legacy_call_sites_field(path)
-        call_sites = legacy_sites
-    if isinstance(call_sites, str):
-        call_sites = (call_sites,)
+        declared = legacy
+
+    if declared is _ABSENT:
+        call_sites = ()
+    else:
+        call_sites = (declared,) if isinstance(declared, str) else tuple(declared)
+        if not call_sites:
+            raise DatabaseError(
+                'Quarantine manifest {path} (family {family}) declares a call-in-source '
+                'requirement that names no module, so it pins nothing while reading as a '
+                'pin. Name the modules that must call the gate, or remove the field.'.format(
+                    path=path, family=family_label))
 
     if not module_name:
         if symbol_name or call_sites:
@@ -557,6 +573,60 @@ def _warn_unsafe_manifest(family_path, reason):
         'family is treated as unanswered, not as unquarantined.', family_path, reason)
 
 
+def _anchor_and_components(family_path):
+    """
+    Split `family_path` into ``(anchor, components)`` for a link-free descent, or
+    ``(None, None)`` when it cannot be split into one.
+
+    The anchor is the one directory that is opened **following** links, because a path
+    cannot be descended without something to descend from and that first open always
+    resolves whatever it is given. Every component below it is opened with ``O_NOFOLLOW``,
+    so the rule is exactly one sentence: nothing below the anchor may be a link.
+
+    The anchor is ``settings['database.directory']`` whenever `family_path` lies below it
+    lexically -- which puts the followed open on *local configuration* and pins everything
+    a shipped ``family:`` line can steer, including ``kinetics`` and ``families``. Round 99
+    anchored on the family's own parent instead, so ``kinetics/families`` was followed; a
+    link there escapes the database entirely, and ``_family_directory``'s containment test
+    cannot see it, because with that link in place the root and the family resolve into
+    the same foreign tree and the prefix comparison passes.
+
+    Falls back to the family's parent when the path is not below the configured database
+    -- a family loaded from somewhere else, or a caller passing its own directory. That
+    caller is vouching for the path it passed; what is still pinned is the family
+    directory and the manifest.
+
+    Refuses outright, rather than approximating, when the split would yield an empty
+    component, ``.`` or ``..``. ``os.path.split('')`` gives ``('', '')`` and
+    ``os.path.join('', 'quarantine.py')`` is a *relative* name, so the old fallback read
+    ``quarantine.py`` out of the process's working directory.
+    """
+    from rmgpy import settings
+
+    if not family_path:
+        # `os.path.relpath('')` raises, and a gate that raises out of the path it is
+        # refusing has failed in the direction this whole module exists to avoid.
+        return None, None
+
+    root = (settings or {}).get('database.directory')
+    components = None
+    if root:
+        try:
+            relative = os.path.relpath(family_path, root)
+        except (ValueError, TypeError):
+            relative = os.pardir
+        if not os.path.isabs(relative) and relative.split(os.sep)[0] != os.pardir:
+            anchor, components = root, relative.split(os.sep)
+
+    if components is None:
+        anchor, name = os.path.split(family_path.rstrip(os.sep) or family_path)
+        components = [name]
+
+    if not anchor or any(part in ('', os.curdir, os.pardir) for part in components):
+        return None, None
+    return anchor, components
+
+
 def _read_manifest(family_path):
     """
     Return the manifest's text from inside `family_path`, or ``None``.
@@ -591,31 +661,45 @@ def _read_manifest(family_path):
     ``None`` covers three cases the caller separates by other means: no manifest (every
     ordinary family), a manifest refused as a file, and one that vanished mid-read.
     """
+    if os.open not in os.supports_dir_fd:
+        # Without directory descriptors no component can be opened relative to one, so
+        # there is no way to descend without following links and no containment to offer.
+        # Round 99 fell back to opening the joined pathname and answering anyway, with a
+        # comment admitting the hole. A documented hole is still a hole: this module's
+        # whole purpose is to refuse rather than to answer unsafely, and it refuses here.
+        _warn_unsafe_manifest(
+            family_path,
+            'this platform provides no directory descriptors, so no component of the '
+            'path can be opened without following links')
+        return None
+
+    anchor, components = _anchor_and_components(family_path)
+    if anchor is None:
+        _warn_unsafe_manifest(
+            family_path,
+            'it does not name a family directory below a directory this process may '
+            'anchor on')
+        return None
+
     nofollow = getattr(os, 'O_NOFOLLOW', 0)
     directory = getattr(os, 'O_DIRECTORY', 0)
-    parent, name = os.path.split(family_path.rstrip(os.sep) or family_path)
+    descriptors = []
     fd = None
-    family_fd = None
-    parent_fd = None
     try:
         try:
-            if name and os.open in os.supports_dir_fd:
-                parent_fd = os.open(parent or os.curdir, os.O_RDONLY | directory)
-                family_fd = os.open(name, os.O_RDONLY | directory | nofollow,
-                                    dir_fd=parent_fd)
-                fd = os.open(QUARANTINE_FILENAME, os.O_RDONLY | nofollow,
-                             dir_fd=family_fd)
-            else:
-                # No directory descriptors on this platform: the symlinked-manifest hole
-                # still closes (O_NOFOLLOW), the directory-swap race does not.
-                fd = os.open(os.path.join(family_path, QUARANTINE_FILENAME),
-                             os.O_RDONLY | nofollow)
+            descriptors.append(os.open(anchor, os.O_RDONLY | directory))
+            for component in components:
+                descriptors.append(os.open(component, os.O_RDONLY | directory | nofollow,
+                                           dir_fd=descriptors[-1]))
+            fd = os.open(QUARANTINE_FILENAME, os.O_RDONLY | nofollow,
+                         dir_fd=descriptors[-1])
         except (FileNotFoundError, NotADirectoryError):
             return None
         except OSError as error:
-            # ELOOP lands here twice over: from a family directory that is a link, and
-            # from a manifest that is one. Both are refused rather than resolved, and the
-            # caller turns the refusal into an unanswered question, never a clean bill.
+            # ELOOP lands here for every link below the anchor -- an intermediate
+            # directory, the family directory, or the manifest itself. All are refused
+            # rather than resolved, and the caller turns the refusal into an unanswered
+            # question, never a clean bill.
             _warn_unsafe_manifest(family_path, error)
             return None
 
@@ -628,7 +712,7 @@ def _read_manifest(family_path):
     except OSError:
         return None
     finally:
-        for descriptor in (fd, family_fd, parent_fd):
+        for descriptor in [fd] + descriptors:
             if descriptor is not None:
                 try:
                     os.close(descriptor)
@@ -1125,6 +1209,21 @@ def resolve_quarantine(label):
         return cached[1]
 
     directory_exists, manifest_stat, kind = signature
+    if kind == 'unreadable':
+        # FIRST, before existence. `directory_exists` is `os.path.isdir`, which returns
+        # False when it cannot look -- so a permission error on `kinetics/families` makes
+        # the family read as "not where this database would put it", and a LOADED family
+        # then answered from its own attribute with answered=True. For a family whose
+        # attribute is None that is a clean bill of health produced by the failure of the
+        # check itself: round 99's defect, surviving on the branch round 99 did not test.
+        #
+        # There may or may not be a manifest here; this process could not find out. It is
+        # an unanswered question -- and returned UNCACHED, because the condition that
+        # produced it (a permission, an I/O error, a descriptor exhaustion) is transient
+        # by nature and the next call may well succeed. Caching it would make a momentary
+        # failure permanent for the life of the run.
+        _warn_unsafe_manifest(family_path, 'it could not be examined')
+        return None, False
     if not directory_exists:
         if loaded is not None:
             # A loaded family whose directory is not where this database would put it --
@@ -1136,15 +1235,6 @@ def resolve_quarantine(label):
             # no longer there.
             return getattr(loaded, 'quarantine', None), True
         answer = (None, False)
-    elif kind == 'unreadable':
-        # There may or may not be a manifest here; this process could not find out. Saying
-        # "carries no manifest" would be a clean bill of health issued by the failure of
-        # the check itself, so it is an unanswered question -- and returned UNCACHED,
-        # because the condition that produced it (a permission, an I/O error, a descriptor
-        # exhaustion) is transient by nature and the next call may well succeed. Caching it
-        # would make a momentary failure permanent for the life of the run.
-        _warn_unsafe_manifest(family_path, 'it could not be examined')
-        return None, False
     elif manifest_stat is None:
         # The family is in this database and carries no manifest. That is an answer.
         answer = (None, True)

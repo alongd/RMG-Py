@@ -1,0 +1,54 @@
+
+[REPRODUCED] HIGH: `kinetics/families` replaced by a link reaches a manifest outside the database
+    resolve_quarantine('A_Family_Reached_Through_A_Linked_Parent') -> (KineticsQuarantine, True); reason = 'EXECUTED_FROM_OUTSIDE_VIA_FAMILIES'
+    the file executed is /tmp/claude-1000/round101-descent-rlq6u7ql/outside_families/A_Family_Reached_Through_A_Linked_Parent/quarantine.py
+    the database it must have come from is /tmp/claude-1000/round101-descent-rlq6u7ql/database_families
+    the containment check approves: with the link in place the root and the family resolve into the same foreign tree
+
+[REPRODUCED] HIGH: `kinetics` replaced by a link reaches a manifest outside the database
+    resolve_quarantine('A_Family_Reached_Through_A_Linked_Parent') -> (KineticsQuarantine, True); reason = 'EXECUTED_FROM_OUTSIDE_VIA_KINETICS'
+    the file executed is /tmp/claude-1000/round101-descent-rlq6u7ql/outside_kinetics/families/A_Family_Reached_Through_A_Linked_Parent/quarantine.py
+    the database it must have come from is /tmp/claude-1000/round101-descent-rlq6u7ql/database_kinetics
+    the containment check approves: with the link in place the root and the family resolve into the same foreign tree
+
+[REPRODUCED] HIGH: with no directory descriptors the descent falls back to opening the joined pathname, following every link in it
+    os.supports_dir_fd emptied; resolve_quarantine('A_Family_Reached_Through_A_Linked_Parent') -> (KineticsQuarantine, True)
+    the file executed is /tmp/claude-1000/round101-descent-rlq6u7ql/outside_nodirfd/A_Family_Reached_Through_A_Linked_Parent/quarantine.py
+
+[REPRODUCED] HIGH: an empty family path reads `quarantine.py` out of the process's working directory and executes it
+    os.path.split('') is ('', '') and os.path.join('', 'quarantine.py') is a RELATIVE name
+    load_family_quarantine('A_Family', '') -> <KineticsQuarantine 'A_Family' QUARANTINED FOR TESTING applies to Marcus>
+
+[REPRODUCED] HIGH: a permission error on `kinetics/families` gives a LOADED family a clean bill of health, because existence is consulted before readability
+    resolve_quarantine('A_Loaded_Family_Behind_An_Unreadable_Parent') -> (None, True)
+    os.path.isdir cannot look, so it returns False, so the family reads as 'not where this database would put it' and the loaded object answers instead
+    the family's own attribute is None, so the answer is 'carries no quarantine'
+
+[REPRODUCED] LOW: the both-spellings refusal tests truthiness, not presence, so declaring the new field EMPTY beside a populated old one is not seen as declaring both
+    requiresEngineCallsInSource = () with requiresEngineCallSites populated -> loaded, unrefused
+
+[HOLDS] control: an ordinary label still resolves to its manifest and the manifest is read
+    resolve_quarantine('An_Ordinary_Family') -> (KineticsQuarantine, True)
+
+[HOLDS] control: a database root that is itself a link still resolves its manifests
+    resolve_quarantine('A_Family_Under_A_Linked_Root') -> (KineticsQuarantine, True)
+
+[HOLDS] control: a family that carries no manifest is still ANSWERED, not unanswered
+    resolve_quarantine('A_Family_With_No_Manifest') -> (None, True)
+
+[HOLDS] control: a manifest pinning the real call site under the legacy spelling still loads
+    load_family_quarantine -> loaded
+
+[HOLDS] control: a loaded family whose attribute is None still picks up a manifest on disk
+    resolve_quarantine('A_Loaded_Family_With_A_Readable_Manifest') -> (KineticsQuarantine, True)
+
+==============================================================================
+findings reproduced : 6 of 6
+controls holding    : 5 of 5
+noted, not findings : 0
+  REPRODUCED  HIGH: `kinetics/families` replaced by a link reaches a manifest outside the database
+  REPRODUCED  HIGH: `kinetics` replaced by a link reaches a manifest outside the database
+  REPRODUCED  HIGH: with no directory descriptors the descent falls back to opening the joined pathname, following every link in it
+  REPRODUCED  HIGH: an empty family path reads `quarantine.py` out of the process's working directory and executes it
+  REPRODUCED  HIGH: a permission error on `kinetics/families` gives a LOADED family a clean bill of health, because existence is consulted before readability
+  REPRODUCED  LOW: the both-spellings refusal tests truthiness, not presence, so declaring the new field EMPTY beside a populated old one is not seen as declaring both

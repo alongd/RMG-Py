@@ -2664,3 +2664,244 @@ class TestTheCallSiteFieldIsNamedForWhatItChecks:
             assert absent in text, (
                 "the documentation must enumerate what the check does NOT verify -- it "
                 "does not mention {0!r}".format(absent))
+
+
+class TestEveryComponentBelowTheAnchorIsPinned:
+    """
+    Round 101's HIGH 1. Round 99 pinned the label component and the manifest, and opened
+    the *parent* -- `<database>/kinetics/families` -- following symlinks. So the descent
+    protected its last two components and not the path.
+
+    `_family_directory`'s containment check cannot catch this, and that is the instructive
+    part: it compares `realpath(family_path)` against `realpath(families_root)`, and when
+    `families` is itself a link BOTH resolve outside the database, so the prefix test
+    passes and reports containment in a tree that is no longer the database.
+
+    There is always exactly one anchor that must be followed, because it may legitimately
+    be a link -- here it is `settings['database.directory']`, which is local configuration.
+    Everything below it is opened with `O_NOFOLLOW`. That is the whole rule.
+    """
+
+    def setup_method(self):
+        _clear_gate_caches()
+
+    def teardown_method(self):
+        _clear_gate_caches()
+
+    def _escape_at(self, monkeypatch, tmp_path, component):
+        """Replace `component` of the descent with a link to a family outside the tree."""
+        label = "A_Family_Reached_Through_A_Linked_Parent"
+        outside = tmp_path / "outside_the_database"
+        (outside / label).mkdir(parents=True)
+        write_manifest(str(outside / label))
+
+        root = tmp_path / "database"
+        if component == "families":
+            (root / "kinetics").mkdir(parents=True)
+            os.symlink(str(outside), str(root / "kinetics" / "families"))
+        else:
+            root.mkdir()
+            os.symlink(str(outside), str(root / "kinetics"))
+            # `kinetics` links to a directory holding the family directly, so the
+            # families level has to exist inside it for the join to land.
+            (outside / "families").mkdir()
+            os.rename(str(outside / label), str(outside / "families" / label))
+        monkeypatch.setitem(settings, "database.directory", str(root))
+        return label
+
+    def test_a_symlinked_families_directory_does_not_reach_outside(self, monkeypatch,
+                                                                   tmp_path):
+        label = self._escape_at(monkeypatch, tmp_path, "families")
+        assert resolve_quarantine(label) == (None, False), (
+            "`kinetics/families` was a link out of the database and the manifest behind "
+            "it was read and executed; the containment check cannot see this, because "
+            "with that link in place the root and the family resolve to the same foreign "
+            "tree and the prefix test passes")
+
+    def test_a_symlinked_kinetics_directory_does_not_reach_outside(self, monkeypatch,
+                                                                    tmp_path):
+        label = self._escape_at(monkeypatch, tmp_path, "kinetics")
+        assert resolve_quarantine(label) == (None, False), (
+            "the escape moves one level up and must be refused at every level, not at "
+            "the one the last repair happened to name")
+
+    def test_the_configured_database_root_may_still_be_a_link(self, monkeypatch, tmp_path):
+        """
+        The anchor, and why there has to be one.
+
+        A path cannot be descended without something to descend *from*, and that first
+        thing is always followed. Choosing `database.directory` puts it on local
+        configuration rather than on anything a shipped `family:` line can steer.
+        """
+        label = "A_Family_Under_A_Linked_Root"
+        real_root = tmp_path / "real_root"
+        (real_root / "kinetics" / "families" / label).mkdir(parents=True)
+        write_manifest(str(real_root / "kinetics" / "families" / label))
+        os.symlink(str(real_root), str(tmp_path / "linked_root"))
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path / "linked_root"))
+
+        quarantine, answered = resolve_quarantine(label)
+        assert answered and quarantine is not None, (
+            "pinning every component including the anchor would refuse an ordinary "
+            "symlinked checkout, which no shipped entry can influence")
+
+
+class TestContainmentIsRefusedRatherThanApproximated:
+    """
+    Round 101's HIGH 2. The descent had an `else` branch that opened the whole pathname
+    when directory descriptors were unavailable **or the last component was empty**, and
+    said so in a comment. A documented hole is still a hole, and the empty case was
+    reachable from the public loader.
+    """
+
+    def setup_method(self):
+        _clear_gate_caches()
+
+    def teardown_method(self):
+        _clear_gate_caches()
+
+    def test_an_empty_family_path_does_not_read_the_working_directory(self, tmp_path,
+                                                                      monkeypatch):
+        """
+        `os.path.split('')` gives `('', '')`, and `os.path.join('', 'quarantine.py')` is
+        `'quarantine.py'` -- a relative name. The fallback opened it, so an empty path
+        executed whatever `quarantine.py` happened to sit in the process's working
+        directory.
+        """
+        write_manifest(str(tmp_path))
+        monkeypatch.chdir(str(tmp_path))
+
+        assert load_family_quarantine("A_Family", "") is None, (
+            "an empty family path read `quarantine.py` from the current working "
+            "directory and executed it")
+
+    def test_a_root_family_path_is_refused(self, tmp_path):
+        assert load_family_quarantine("A_Family", os.sep) is None
+
+    def test_the_descent_is_refused_when_directory_descriptors_are_unavailable(
+            self, monkeypatch, tmp_path):
+        """
+        The platform requirement, enforced rather than documented.
+
+        Without `dir_fd` there is no way to open a component relative to a descriptor, so
+        containment cannot be guaranteed at all -- and the previous fallback answered
+        anyway. Refusing means a hypothetical platform loses the quarantine gate and is
+        told so, which is the failure mode this module exists to prefer.
+        """
+        label = self._escape_at(monkeypatch, tmp_path, "families")
+        monkeypatch.setattr(os, "supports_dir_fd", set())
+
+        assert resolve_quarantine(label) == (None, False), (
+            "with no directory descriptors the code opened the joined pathname and "
+            "followed every link in it, reaching a manifest outside the database; there "
+            "is no containment available on that path, so it must refuse rather than "
+            "answer")
+
+    _escape_at = TestEveryComponentBelowTheAnchorIsPinned._escape_at
+
+
+class TestAnUnreadableDirectoryIsUnansweredForALoadedFamilyToo:
+    """
+    Round 101's HIGH 3 -- round 99's HIGH surviving in the branch round 99 did not test.
+
+    `_manifest_signature` reports `(False, None, 'unreadable')` when the family directory
+    cannot be examined *and* `os.path.isdir` cannot see it either, which is what happens
+    when the permission error is on `kinetics/families` rather than on the family itself.
+    `resolve_quarantine` then tested `directory_exists` before `kind`, so a **loaded**
+    family took the "not where this database would put it" branch and returned its own
+    attribute with `answered=True`. For a family whose attribute is `None` that is a clean
+    bill of health produced by a permission error.
+
+    The round-99 test could not see it: it registered no loaded family, and it made the
+    family directory unreadable rather than its parent.
+    """
+
+    LABEL = "A_Loaded_Family_Behind_An_Unreadable_Parent"
+
+    def setup_method(self):
+        _clear_gate_caches()
+        self.restore = []
+
+    def teardown_method(self):
+        for path in self.restore:
+            try:
+                os.chmod(path, 0o755)
+            except OSError:
+                pass
+        _clear_gate_caches()
+
+    def _unreadable_parent(self, monkeypatch, tmp_path, quarantine):
+        families = tmp_path / "kinetics" / "families"
+        (families / self.LABEL).mkdir(parents=True)
+        write_manifest(str(families / self.LABEL))
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+        _register_families(monkeypatch, {self.LABEL: quarantine})
+        os.chmod(str(families), 0o000)
+        self.restore.append(str(families))
+        if os.path.isdir(str(families / self.LABEL)):
+            pytest.skip("this process reads through a 0o000 directory (running as root?)")
+
+    def test_a_loaded_family_with_no_quarantine_is_unanswered_not_clean(self, monkeypatch,
+                                                                        tmp_path):
+        self._unreadable_parent(monkeypatch, tmp_path, None)
+        assert resolve_quarantine(self.LABEL) == (None, False), (
+            "a permission error on the families directory was reported as a loaded "
+            "family that carries no quarantine -- a clean bill of health issued by the "
+            "failure of the check, on the branch the last repair did not cover")
+
+    def test_a_loaded_family_that_does_carry_one_is_also_unanswered(self, monkeypatch,
+                                                                     tmp_path, quarantine):
+        """
+        The object's answer is not wrong here, and it is still refused.
+
+        Answering from the attribute is exactly the staleness round 95 removed: it is
+        whatever was true at load time, and the question asked is what is true now. When
+        the disk cannot be consulted the honest answer is that there is no answer.
+        """
+        self._unreadable_parent(monkeypatch, tmp_path, quarantine)
+        assert resolve_quarantine(self.LABEL) == (None, False)
+
+
+class TestDeclaringBothSpellingsIsRefusedEvenWhenOneIsEmpty:
+    """
+    Round 101's LOW. The ambiguity check tested truthiness, not presence, so
+    `requiresEngineCallsInSource = ()` beside a populated `requiresEngineCallSites` was
+    not "both declared" -- and the promise made in the refusal message was false for
+    exactly the manifest most likely to be written during a rename.
+    """
+
+    def setup_method(self):
+        _clear_gate_caches()
+
+    def teardown_method(self):
+        _clear_gate_caches()
+
+    GATE = ('requiresEngineModule = "rmgpy.data.kinetics.quarantine"\n'
+            'requiresEngineSymbol = "check_quarantine"\n')
+
+    @pytest.mark.parametrize("new_value,old_value", [
+        ("()", '("rmgpy.rmg.model",)'),
+        ('("rmgpy.rmg.model",)', "()"),
+        ("()", "()"),
+    ])
+    def test_both_fields_present_is_refused_whatever_they_contain(self, tmp_path,
+                                                                  new_value, old_value):
+        body = (MANIFEST + self.GATE
+                + 'requiresEngineCallsInSource = {0}\n'.format(new_value)
+                + 'requiresEngineCallSites = {0}\n'.format(old_value))
+        with pytest.raises(DatabaseError) as exc:
+            load_family_quarantine("Fake_Quarantined_Family",
+                                   write_manifest(str(tmp_path), body))
+        assert "declare one" in str(exc.value)
+
+    def test_an_empty_declaration_of_the_new_field_alone_is_still_a_declaration(
+            self, tmp_path):
+        """
+        Presence, not truthiness, on the single-field path too: declaring the field with
+        no modules pins nothing, and it must not be read as "the field is absent".
+        """
+        body = (MANIFEST + self.GATE + 'requiresEngineCallsInSource = ()\n')
+        with pytest.raises(DatabaseError) as exc:
+            load_family_quarantine("Fake_Quarantined_Family",
+                                   write_manifest(str(tmp_path), body))
+        assert "names no module" in str(exc.value)

@@ -1,0 +1,15 @@
+WARNING:matplotlib:/home/alon/.config/matplotlib is not a writable directory
+WARNING:matplotlib:Matplotlib created a temporary cache directory at /tmp/claude-1000/matplotlib-u2cq7a5o because there was an issue with the default path (/home/alon/.config/matplotlib); it is highly recommended to set the MPLCONFIGDIR environment variable to a writable directory, in particular to speed up the import of Matplotlib and to better support multiprocessing.
+INFO:matplotlib.font_manager:Failed to extract font properties from /usr/share/fonts/truetype/noto/NotoColorEmoji.ttf: In FT2Font: Could not set the fontsize (invalid pixel size; error code 0x17)
+INFO:matplotlib.font_manager:generated new fontManager
+INFO:root:Kinetics family A_Family_Reached_Through_A_Linked_Parent is QUARANTINED FOR TESTING (Marcus): EXECUTED_FROM_OUTSIDE_VIA_FAMILIES
+INFO:root:Kinetics family A_Family_Reached_Through_A_Linked_Parent is QUARANTINED FOR TESTING (Marcus): EXECUTED_FROM_OUTSIDE_VIA_KINETICS
+INFO:root:Kinetics family A_Family_Reached_Through_A_Linked_Parent is QUARANTINED FOR TESTING (Marcus): EXECUTED_FROM_OUTSIDE_VIA_FAMILIES
+INFO:root:Kinetics family A_Family is QUARANTINED FOR TESTING (Marcus): EXECUTED_FROM_THE_WORKING_DIRECTORY
+WARNING:root:Quarantine manifest /tmp/claude-1000/round101-descent-rlq6u7ql/both_spellings/quarantine.py declares requiresEngineCallSites. That field is now requiresEngineCallsInSource, which says what is actually checked: that the named modules bind the gate and that their SOURCE TEXT contains a call to it. It is a static syntactic check and never evidence that the call executes. The old spelling is still honoured; rename it in the database when convenient.
+INFO:root:Kinetics family A_Family is QUARANTINED FOR TESTING (Marcus): a reason
+INFO:root:Kinetics family An_Ordinary_Family is QUARANTINED FOR TESTING (Marcus): still readable
+INFO:root:Kinetics family A_Family_Under_A_Linked_Root is QUARANTINED FOR TESTING (Marcus): reached under a linked root
+WARNING:root:Quarantine manifest /tmp/claude-1000/round101-descent-rlq6u7ql/real_pin/quarantine.py declares requiresEngineCallSites. That field is now requiresEngineCallsInSource, which says what is actually checked: that the named modules bind the gate and that their SOURCE TEXT contains a call to it. It is a static syntactic check and never evidence that the call executes. The old spelling is still honoured; rename it in the database when convenient.
+INFO:root:Kinetics family A_Family is QUARANTINED FOR TESTING (Marcus): a reason
+INFO:root:Kinetics family A_Loaded_Family_With_A_Readable_Manifest is QUARANTINED FOR TESTING (Marcus): read from disk, not from the object
