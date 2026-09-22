@@ -901,18 +901,27 @@ def _cation_recycle_label(reactor, core):
     return core[int(reactor.wall_recycle_target[i_arp])].label
 
 
-def test_wall_resolves_metastable_deck_to_ground_state():
-    """The actual collision: ground Ar, metastable Ar*, Ar+, e-, wall_recycling=1.0.
-    It initialises (it refused before this rework) and recycles Ar+ into the GROUND
-    state, the lowest-enthalpy neutral, not the metastable."""
-    reactor, core = _metastable_reactor(ground_eV=0.0, meta_eV=11.5, gamma=1.0)
-    assert _cation_recycle_label(reactor, core) == 'Ar'
+def test_wall_requires_a_declaration_for_two_electronic_states():
+    """Ground Ar, metastable Ar*, Ar+, e-, wall_recycling=1.0, and NO declaration.
+    Two neutral states share Ar+'s heavy skeleton, and nothing in the deck certifies
+    which is the ground-state product the wall returns: formation enthalpy orders them
+    but an excited-only deck (true ground absent) is indistinguishable from
+    ground+metastable. So the wall REFUSES and names the declaration, rather than
+    picking the lower enthalpy. Energy is no longer a vote about identity -- it survives
+    only in the wall-energy interface. (Round 79 auto-resolved this deck to ground; that
+    was the narrowing round 83 closes.)"""
+    with pytest.raises(PlasmaStateError) as exc:
+        _metastable_reactor(ground_eV=0.0, meta_eV=11.5, gamma=1.0)
+    msg = str(exc.value)
+    assert 'ambiguous' in msg and 'heavy skeleton' in msg
+    assert 'wallNeutralizationProducts' in msg
 
 
 def test_wall_ground_state_charge_and_particle_conservation_with_metastable():
-    """With the metastable present and gamma=1, the wall conserves both net charge
-    and heavy atoms; the metastable itself takes no wall flux."""
-    reactor, core = _metastable_reactor(gamma=1.0)
+    """With the metastable present and gamma=1 and the product DECLARED, the wall
+    conserves both net charge and heavy atoms; the metastable itself takes no wall
+    flux. (The declaration is required now that two electronic states are present.)"""
+    reactor, core = _metastable_reactor(gamma=1.0, neutralization={'Ar+': 'Ar'})
     z = reactor.species_charges
     ie = reactor.electron_index
     i_ground = [j for j in range(len(z)) if z[j] == 0
@@ -936,31 +945,40 @@ def test_wall_ground_state_charge_and_particle_conservation_with_metastable():
     assert np.isclose(net_heavy_rate, 0.0, atol=1e-18)
 
 
-def test_wall_refuses_two_neutral_states_without_thermo():
-    """Two neutral Ar states with NO thermo cannot be ordered by energy, so the
-    ground state is unidentifiable. It must refuse NAMING thermochemistry, not fall
-    through to the single-match branch and pick one silently."""
+def test_wall_refuses_two_neutral_states_by_multiplicity_not_thermo():
+    """Two neutral Ar states sharing Ar+'s skeleton are refused because there are TWO,
+    not because their thermo is missing: the product is a declaration, not an energy
+    inference, so the refusal fires whether or not thermo is attached (here it is
+    absent) and BEFORE any enthalpy is read. It names the declaration to supply."""
     with pytest.raises(PlasmaStateError) as exc:
         _metastable_reactor(with_meta_thermo=False, with_ground_thermo=False)
-    assert 'no usable thermochemistry' in str(exc.value)
+    msg = str(exc.value)
+    assert 'ambiguous' in msg and 'heavy skeleton' in msg
+    assert 'wallNeutralizationProducts' in msg
 
 
-def test_wall_resolves_across_a_clear_electronic_gap():
-    """Two states separated by 2*k_B*T_gas resolve to the lower one."""
+def test_wall_refuses_two_states_even_across_a_clear_energy_gap():
+    """A clear energy gap does NOT license a pick. Two neutral states well separated in
+    enthalpy are still refused, because a clear gap between two PRESENT states is
+    exactly what an excited-only deck (5 and 11.5 eV, true ground absent) also shows --
+    the ordering is real but the anchor to the absolute ground is not. Only a
+    declaration resolves it. (Round 79 resolved this to the lower state; round 83 does
+    not, because the gap cannot tell ground+excited from excited+excited.)"""
     rt_ev = constants.R * TGAS / EV_J_PER_MOL
-    reactor, core = _metastable_reactor(ground_eV=0.0, meta_eV=2.0 * rt_ev,
-                                        meta_label='Ar_hi')
-    assert _cation_recycle_label(reactor, core) == 'Ar'
+    with pytest.raises(PlasmaStateError) as exc:
+        _metastable_reactor(ground_eV=0.0, meta_eV=2.0 * rt_ev, meta_label='Ar_hi')
+    assert 'ambiguous' in str(exc.value) and 'heavy skeleton' in str(exc.value)
 
 
-def test_wall_refuses_near_degenerate_states():
-    """Two states within the k_B*T_gas threshold are co-populated; neither is the
-    ground state, so it refuses naming the degeneracy threshold and the declaration."""
+def test_wall_refuses_two_states_regardless_of_their_separation():
+    """Whatever the energy separation -- here a near-degenerate pair -- two neutral
+    states sharing the ion's skeleton are refused with the declaration named. Energy no
+    longer picks at any separation; multiplicity alone requires the declaration."""
     rt_ev = constants.R * TGAS / EV_J_PER_MOL
     with pytest.raises(PlasmaStateError) as exc:
         _metastable_reactor(ground_eV=0.0, meta_eV=0.5 * rt_ev, meta_label='Ar_near')
     msg = str(exc.value)
-    assert 'degeneracy threshold' in msg or 'thermal energy k_B' in msg
+    assert 'ambiguous' in msg and 'heavy skeleton' in msg
     assert 'wallNeutralizationProducts' in msg
 
 
@@ -1100,13 +1118,20 @@ def test_wall_does_not_transmute_a_molecular_ion_across_isomers():
     assert core[int(reactor.wall_recycle_target[_cation_index(reactor)])].label == 'DME'
 
 
-def test_wall_refuses_nonfinite_enthalpy():
-    """HIGH 1: a neutral whose formation enthalpy is NaN is UNUSABLE, not merely
-    absent. The ground-state comparison must refuse it -- naming thermochemistry --
-    not sort NaN silently into place and initialise on a coin-toss."""
+def test_multi_state_deck_refuses_before_reading_enthalpy():
+    """Round-79 HIGH 1 was 'NaN enthalpy initialises on a coin-toss'. Under round 83
+    that failure mode is gone by construction: identity never reads enthalpy, so a NaN
+    formation enthalpy cannot influence the pick. This deck -- two neutral Ar states,
+    the ground one carrying a NaN enthalpy -- refuses on MULTIPLICITY, before any
+    enthalpy is examined, and the message is about the ambiguity, not thermochemistry.
+    (Whether NaN thermo is handled correctly where it DOES still matter -- the
+    wall-energy interface -- is test_nonfinite_recycle_thermo_leaves_energy_unavailable
+    below.)"""
     with pytest.raises(PlasmaStateError) as exc:
         _metastable_reactor(ground_eV=float('nan'), meta_eV=11.5)
-    assert 'thermochemistry' in str(exc.value)
+    msg = str(exc.value)
+    assert 'ambiguous' in msg and 'heavy skeleton' in msg
+    assert 'thermochemistry' not in msg
 
 
 def test_wall_refuses_electron_without_a_cation():
@@ -1201,7 +1226,7 @@ def test_wall_diagnostics_latched_only_at_accepted_states():
     each accepted step) and NEVER from inside the residual, so no rejected Newton
     trial can leak in. A residual evaluation at a wild state moves the internal
     scratch (wall_loss_rates) but must leave the latched wall_flux untouched."""
-    r, core = _metastable_reactor(gamma=1.0)
+    r, core = _metastable_reactor(gamma=1.0, neutralization={'Ar+': 'Ar'})
     latched = np.array(r.wall_flux, float)
     assert latched.shape[0] == r.num_core_species
     assert np.all(np.isfinite(latched))
@@ -1217,7 +1242,7 @@ def test_wall_energy_interface_declares_ion_term_absent_not_broken():
     docstring. The ion directed/sheath term is declared-absent (a sheath model is a
     contract non-goal); the electron thermal term is available from T_e; the
     neutralisation term is unavailable here because Ar+ carries no thermo."""
-    r, core = _metastable_reactor(gamma=1.0)
+    r, core = _metastable_reactor(gamma=1.0, neutralization={'Ar+': 'Ar'})
     avail = r.wall_energy_availability
     assert avail['wall_ion_energy_flux'] == 'declared-absent'
     assert np.isnan(r.wall_ion_energy_flux)
@@ -1268,3 +1293,220 @@ def test_source_apportionment_jacobian_matches_fd_in_a_mixture():
     y[ie] = 1.0e-7
     best = _jacobian_scan(reactor, y)
     assert best < FD_TOLERANCE, best
+
+
+# ============================================================ round-83 repairs
+# A guard that reads a NEARBY quantity instead of the GOVERNING one. Presence where
+# inventory governs (HIGH 1, HIGH 4); aggregate where per-species governs (MED); a
+# projection where constitution governs (HIGH 2); relative where absolute governs
+# (HIGH 3); residual-scratch on the advance() path where the live simulate()/step()
+# path governs (the latch). Each test below reproduces one such site, red on the
+# pre-round-83 module.
+
+
+def test_step_publishes_diagnostics_on_the_production_path():
+    """HIGH 1: ReactionSystem.simulate drives the reactor through step(), never
+    advance(); the latch was wired only into advance(), so a production run published
+    wall diagnostics frozen at initialisation -- a guarantee that never ran. After a
+    real step() the published diagnostic time must track the solver time, not fall
+    behind it, and the latched flux must reflect the advanced state."""
+    r, _, _ = _build_reactor(wall=True, gamma=1.0, with_chemistry=False, x_ion=1.0e-6)
+    t_init = r.wall_diagnostics_time             # latched at t = 0 by initialize_model
+    assert t_init == 0.0
+    flux0 = np.array(r.wall_flux, float)
+    r.step(1.0e-6)                                # the entry simulate() actually uses
+    assert r.t > 0.0
+    # the check that would have caught it: published diagnostic time must not lag t
+    assert r.wall_diagnostics_time == r.t
+    assert r.wall_diagnostics_time > t_init
+    assert not np.array_equal(np.array(r.wall_flux, float), flux0)
+
+
+def test_wall_refuses_two_excited_states_with_no_ground():
+    """HIGH 3: two neutral Ar states at 5 and 11.5 eV, the true ground (0 eV) absent.
+    'Lowest present' (5 eV) is NOT the ground state, but nothing in the deck certifies
+    that -- there is no absolute energy reference. Round 79 crowned the 5 eV state;
+    round 83 refuses and names the declaration, because a clear ordering among PRESENT
+    states cannot anchor the absolute ground."""
+    with pytest.raises(PlasmaStateError) as exc:
+        _metastable_reactor(ground_eV=5.0, meta_eV=11.5, meta_label='Ar_hi')
+    msg = str(exc.value)
+    assert 'ambiguous' in msg and 'heavy skeleton' in msg
+    assert 'wallNeutralizationProducts' in msg
+
+
+def test_skeleton_key_merges_tautomers_which_forces_the_declaration():
+    """HIGH 2 root cause. Standard InChI deliberately merges tautomers, so the skeleton
+    key yields the SAME value for 2-pyridone and 2-hydroxypyridine. A cation sharing
+    that key matches BOTH neutrals, and an energy pick transmutes one tautomer into the
+    other (round 79 did exactly this on pyridone+). The key cannot be refined to split
+    them without breaking charge-independence: the FixedH /f layer that distinguishes
+    tautomers sits BEHIND the /q,/p the key must truncate to unite an ion with its
+    neutral (verified in evidence/round83_key_probe.log). So the fix is not a finer
+    key -- that would be the fourth projection in a row -- but the multiplicity refusal:
+    two matches, whatever they are, require a declaration. This pins the merge that
+    makes that refusal necessary, and the isomer split that must survive it."""
+    r, _, _ = _build_reactor(wall=True, gamma=0.0, with_chemistry=False)
+    pyridone = Species(label='pyridone').from_smiles('O=c1cccc[nH]1')
+    hydroxypyridine = Species(label='hydroxypyridine').from_smiles('Oc1ccccn1')
+    assert r._skeleton_key(pyridone) == r._skeleton_key(hydroxypyridine)   # merged
+    dme = Species(label='DME').from_smiles('COC')
+    ethanol = Species(label='EtOH').from_smiles('CCO')
+    assert r._skeleton_key(dme) != r._skeleton_key(ethanol)                # still split
+
+
+def test_wall_refuses_electrons_without_commensurate_ion_inventory():
+    """HIGH 4: the zero-cation guard checks a cation SPECIES exists, not that it is
+    PRESENT in inventory. A declared Ar+ at zero moles with n_e > 0 passed, and the
+    common wall loss frequency then removed electrons with no ion partner, driving the
+    net charge. Quasineutrality is a precondition of this wall, knowable only at a
+    state, so check_wall_support refuses a grossly non-neutral accepted state -- whether
+    or not the electron is carried algebraically."""
+    r, _, _ = _build_reactor(wall=True, gamma=0.0, with_chemistry=False)
+    ie, i_ar, i_arp = _indices(r)
+    y = np.zeros(r.num_core_species, float)
+    y[i_ar] = 1.0
+    y[i_arp] = 0.0                       # cation species present, zero inventory
+    y[ie] = 1.0e-6                       # electrons with no ion partner
+    with pytest.raises(PlasmaStateError) as exc:
+        r.check_wall_support(y)
+    assert 'net charge' in str(exc.value)
+
+
+def test_declared_source_refused_when_no_ionisable_inventory_remains():
+    """HIGH 5: the external pair source is apportioned over IONISABLE neutrals. When
+    those are consumed but an unsupported bath gas (He) remains, y_ionisable -> 0 and
+    the residual silently deposits ZERO -- the declared source vanishes with no error. A
+    user who declares a source and receives none cannot detect it from the output, so an
+    accepted state there is refused."""
+    electron = Species(label='e-').from_adjacency_list('1 e u1 p0 c-1')
+    ar = _ground_species('Ar')
+    he = Species(label='He').from_adjacency_list('1 He u0 p1 c0')
+    arp = Species(label='Ar+').from_adjacency_list('multiplicity 2\n1 Ar u1 p3 c+1')
+    imf = {electron: 1.0e-7, arp: 1.0e-7, he: 0.5, ar: 0.5 - 2.0e-7}
+    reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+                            (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
+                            diffusion_length=(_diffusion_length(), 'm'),
+                            ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
+                            wall_recycling=1.0, ionisation_source=(1.0e18, 'm^-3/s'))
+    core = [electron, ar, he, arp]
+    reactor.initialize_model(core, [], [], [])
+    z = reactor.species_charges
+    ie = reactor.electron_index
+    i_ar = [j for j in range(len(z)) if z[j] == 0 and core[j].label == 'Ar'][0]
+    i_he = [j for j in range(len(z)) if z[j] == 0 and core[j].label == 'He'][0]
+    i_arp = [j for j in range(len(z)) if z[j] == 1 and j != ie][0]
+    y = np.zeros(reactor.num_core_species, float)
+    y[i_he] = 0.5                        # only unsupported bath gas remains
+    y[i_ar] = 0.0                        # ionisable neutral consumed
+    y[i_arp] = 1.0e-7
+    y[ie] = 1.0e-7
+    with pytest.raises(PlasmaStateError) as exc:
+        reactor.check_wall_support(y)
+    assert 'ionisable' in str(exc.value)
+
+
+def test_check_wall_support_refuses_an_individual_negative_neutral():
+    """MED: support validation summed the neutral inventory, so an individual negative
+    population offset by a positive one passed the aggregate check -- and the residual
+    then apportioned the wall source over per-species populations, turning the negative
+    one into a negative (injecting) source allocation. The governing quantity is the
+    per-species inventory, not the sum."""
+    electron = Species(label='e-').from_adjacency_list('1 e u1 p0 c-1')
+    ar = _ground_species('Ar')
+    he = Species(label='He').from_adjacency_list('1 He u0 p1 c0')
+    arp = Species(label='Ar+').from_adjacency_list('multiplicity 2\n1 Ar u1 p3 c+1')
+    imf = {electron: 1.0e-7, arp: 1.0e-7, he: 0.5, ar: 0.5 - 2.0e-7}
+    reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+                            (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
+                            diffusion_length=(_diffusion_length(), 'm'),
+                            ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'))
+    core = [electron, ar, he, arp]
+    reactor.initialize_model(core, [], [], [])
+    z = reactor.species_charges
+    ie = reactor.electron_index
+    i_ar = [j for j in range(len(z)) if z[j] == 0 and core[j].label == 'Ar'][0]
+    i_he = [j for j in range(len(z)) if z[j] == 0 and core[j].label == 'He'][0]
+    i_arp = [j for j in range(len(z)) if z[j] == 1 and j != ie][0]
+    y = np.zeros(reactor.num_core_species, float)
+    y[i_he] = 1.0
+    y[i_ar] = -1.0e-3                    # individual negative; aggregate stays ~0.999
+    y[i_arp] = 1.0e-7
+    y[ie] = 1.0e-7
+    with pytest.raises(PlasmaStateError) as exc:
+        reactor.check_wall_support(y)
+    assert 'negative' in str(exc.value)
+
+
+def test_direct_construction_checks_mobility_reference_density_dimension():
+    """MED: a directly-constructed reactor must reject mobility_reference_density given
+    in the wrong dimension. (3, 'kg') is a mass, not a number density; taking its SI
+    value as m^-3 would scale the ion mobility from the wrong quantity."""
+    with pytest.raises(PlasmaStateError) as exc:
+        PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'),
+                      {Species(label='e-').from_adjacency_list('1 e u1 p0 c-1'): 1.0},
+                      (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
+                      diffusion_length=(_diffusion_length(), 'm'),
+                      ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
+                      mobility_reference_density=(3.0, 'kg'))
+    msg = str(exc.value)
+    assert 'mobility_reference_density' in msg and 'number density' in msg
+
+
+def test_direct_construction_checks_ionisation_source_dimension():
+    """MED: ionisation_source given as (7, 'kg') is a mass, not a rate density; the
+    constructor must reject it rather than take 7 as 7 m^-3 s^-1."""
+    with pytest.raises(PlasmaStateError) as exc:
+        PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'),
+                      {Species(label='e-').from_adjacency_list('1 e u1 p0 c-1'): 1.0},
+                      (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
+                      diffusion_length=(_diffusion_length(), 'm'),
+                      ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
+                      ionisation_source=(7.0, 'kg'))
+    assert 'ionisation_source' in str(exc.value)
+
+
+def test_wall_only_options_without_a_wall_are_refused():
+    """MED: wall-only options (here an ionisation source) supplied without the
+    diffusion_length/mobility that DECLARE a wall were stored and silently ignored --
+    the deck would run as a plain volume reactor with the source doing nothing. Refuse,
+    naming the option."""
+    with pytest.raises(PlasmaStateError) as exc:
+        PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'),
+                      {Species(label='e-').from_adjacency_list('1 e u1 p0 c-1'): 1.0},
+                      (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
+                      ionisation_source=(1.0e18, 'm^-3/s'))
+    msg = str(exc.value)
+    assert 'no wall' in msg and 'ionisation_source' in msg
+
+
+def test_wall_neutralization_products_unknown_ion_key_is_refused():
+    """MED: a wallNeutralizationProducts key that names no cation in the core (a typo,
+    'Ar+2' for 'Ar+') was silently ignored, so the declaration the user wrote to be safe
+    did nothing and the ion fell back to inference. The unknown key is refused. (Single
+    neutral Ar here, so Ar+ itself resolves cleanly -- the only fault is the typo.)"""
+    electron = Species(label='e-').from_adjacency_list('1 e u1 p0 c-1')
+    ar = _ground_species('Ar')
+    arp = Species(label='Ar+').from_adjacency_list('multiplicity 2\n1 Ar u1 p3 c+1')
+    imf = {electron: 1.0e-6, arp: 1.0e-6, ar: 1.0 - 2.0e-6}
+    reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+                            (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
+                            diffusion_length=(_diffusion_length(), 'm'),
+                            ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
+                            wall_neutralization_products={'Ar+2': 'Ar'})
+    with pytest.raises(PlasmaStateError) as exc:
+        reactor.initialize_model([electron, ar, arp], [], [], [])
+    msg = str(exc.value)
+    assert 'Ar+2' in msg and 'not a positive ion' in msg
+
+
+def test_nonfinite_recycle_thermo_leaves_energy_unavailable():
+    """Enthalpy left identity but still matters in the wall-energy interface: a NaN
+    formation enthalpy no longer blocks initialisation (the declaration sets identity),
+    and the neutralisation energy term is reported 'unavailable', not a silent finite
+    number and not a crash."""
+    reactor, core = _metastable_reactor(ground_eV=float('nan'), meta_eV=11.5,
+                                        neutralization={'Ar+': 'Ar'})
+    avail = reactor.wall_energy_availability['wall_neutralization_energy_flux']
+    assert avail == 'unavailable'
+    assert np.isnan(reactor.wall_neutralization_energy_flux)
