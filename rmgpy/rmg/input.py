@@ -1266,7 +1266,9 @@ def plasma_reactor(temperature,
         Te=electronTemperature,
         n_sims=1,
         termination=termination,
-        quasineutral_electron=bool(quasineutralElectron),
+        # Passed through unchanged; PlasmaReactor coerces it by value (bool('False')
+        # is True, so a string must not be read by truthiness here).
+        quasineutral_electron=quasineutralElectron,
         **wall_kwargs,
         # Carry the balancing-ion LABEL, not its computed fraction, to the reactor.
         # Reachability -- whether any loaded reaction source actually produces this

@@ -128,6 +128,8 @@ cdef class ReactionSystem(DASx):
         list pdep_networks=?, bool prune=?, bool sensitivity=?, list sens_worksheet=?, object model_settings=?,
         object simulator_settings=?, dict conditions=?)
 
+    cpdef double get_non_chemical_char_rate(self)
+
     cpdef log_rates(self, double char_rate, object species, double species_rate, double max_dif_ln_accum_num, object network, double network_rate)
      
     cpdef log_conversions(self, species_index, y0)

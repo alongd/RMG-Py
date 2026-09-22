@@ -642,6 +642,7 @@ cdef class ReactionSystem(DASx):
         cdef int index, spc_index, max_species_index, max_network_index
         cdef int num_core_species, num_edge_species, num_pdep_networks, num_core_reactions
         cdef double step_time, char_rate, max_species_rate, max_network_rate, maxEdgeReactionAccum, stdan
+        cdef double non_chemical_char_rate, total_char_rate
         cdef np.ndarray[np.float64_t, ndim=1] y0  # Vector containing the number of moles of each species
         cdef np.ndarray[np.float64_t, ndim=1] core_species_rates, edge_species_rates, network_leak_rates
         cdef np.ndarray[np.float64_t, ndim=1] core_species_production_rates, core_species_consumption_rates, total_div_accum_nums
@@ -922,11 +923,24 @@ cdef class ReactionSystem(DASx):
                                   bad_edge.size, len(edge_species_rates),
                                   list(bad_core), list(bad_edge)))
 
+            # The inert / termination tests below ask whether the composition can still
+            # change, which is a question about the reactor's TOTAL flux, not its
+            # gas-phase chemistry diagnostic. get_non_chemical_char_rate() is 0.0 for
+            # every reactor without transport/source terms, so total_char_rate ==
+            # char_rate and their behaviour is unchanged; for a PlasmaReactor whose wall
+            # is depleting the plasma it is non-zero, which is what stops a wall-driven
+            # system from being reported as one that never started. char_rate itself is
+            # left untouched -- it stays the chemistry diagnostic the enlargement ratios
+            # and the logs read.
+            non_chemical_char_rate = self.get_non_chemical_char_rate()
+            total_char_rate = sqrt(char_rate * char_rate
+                                   + non_chemical_char_rate * non_chemical_char_rate)
+
             # No resolvable flux (exact zero OR normal-magnitude dust). When a terminationSteadyState
             # criterion is present this block stands down: a no-flux exit is that criterion's to
             # report (as "NO STEADY STATE WAS DEMONSTRATED"), and breaking here would take the
             # promotion path before control ever reached the steady-state termination logic below.
-            if char_rate <= _CHAR_RATE_FLOOR and len(edge_species_rates) > 0 and not steady_state_terms:
+            if total_char_rate <= _CHAR_RATE_FLOOR and len(edge_species_rates) > 0 and not steady_state_terms:
                 max_species_index = np.argmax(edge_species_rates)
                 max_species = edge_species[max_species_index]
                 max_species_rate = edge_species_rates[max_species_index]
@@ -1365,7 +1379,15 @@ cdef class ReactionSystem(DASx):
                 # is the sole owner of the no-flux exit and must cover the whole inert band it
                 # would have caught, not just exact zero, or a dust-rate system would neither
                 # promote nor terminate and would churn to the backstop time.
-                if char_rate <= _CHAR_RATE_FLOOR and not steady_state_satisfied:
+                #
+                # Tested on total_char_rate, not char_rate: "no flux" here means the
+                # reactor's TOTAL flux is at the floor, chemistry AND any non-chemical
+                # transport/source term. A wall that is depleting the plasma carries no
+                # gas-phase char_rate but is moving the composition, so gating on char_rate
+                # alone would call it inert and let the warning below claim, falsely, that
+                # "the composition cannot change". total_char_rate == char_rate for every
+                # reactor without such terms, so their inert exit is unchanged.
+                if total_char_rate <= _CHAR_RATE_FLOOR and not steady_state_satisfied:
                     steady_state_inert = True
                     for term in steady_state_terms:
                         if term.armed:
@@ -1475,6 +1497,22 @@ cdef class ReactionSystem(DASx):
         # Return the invalid object (if the simulation was invalid) or None
         # (if the simulation was valid)
         return terminated, False, invalid_objects, surface_species, surface_reactions, self.t, conversion
+
+    cpdef double get_non_chemical_char_rate(self):
+        """
+        The L2 norm, in core-species-rate units (mol/m^3/s), of any NON-CHEMICAL
+        contribution to the core species rates at the current accepted state -- flux
+        that changes the composition but is deliberately kept out of
+        ``core_species_rates`` (the gas-phase chemistry diagnostic).
+
+        Zero for every reactor without such terms, so the inert / termination tests in
+        :meth:`simulate` are unchanged for them. A reactor with transport or source
+        terms that move the composition without appearing in ``core_species_rates``
+        (e.g. :class:`PlasmaReactor`'s charged-particle wall) overrides this, so those
+        tests can ask about the reactor's TOTAL flux -- "can the composition still
+        change?" -- rather than about its chemistry diagnostic alone.
+        """
+        return 0.0
 
     cpdef log_rates(self, double char_rate, object species, double species_rate, double max_dif_ln_accum_num, object network,
                     double network_rate):

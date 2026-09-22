@@ -59,6 +59,7 @@ import logging
 import quantities as pq
 
 cimport cython
+from libc.math cimport sqrt
 import numpy as np
 cimport numpy as np
 
@@ -70,26 +71,27 @@ from rmgpy.quantity cimport ScalarQuantity
 from rmgpy.solver.base cimport ReactionSystem
 
 
-# Tolerances for the initial-composition net-charge check in
-# PlasmaReactor._warn_if_not_charge_neutral. The check warns when
+# Tolerance for every net-charge / quasineutrality check in this module. A state is
+# refused (or warned about) when
 #
-#     |net| > max(PLASMA_NET_CHARGE_ATOL, PLASMA_NET_CHARGE_RTOL * magnitude)
+#     |net| > PLASMA_NET_CHARGE_RTOL * magnitude
 #
-# where net = sum(x_i * z_i) per mole of mixture and magnitude = sum(|x_i * z_i|), the
-# total charge the net is a cancellation of. BOTH terms are needed. A purely absolute
-# test is blind to a weakly ionized deck: an argon plasma seeded at n_e = 1e16 m^-3 and
-# 5 torr is 100% charge-imbalanced at a net of only -6.2e-8 per mole, which any
-# absolute tolerance loose enough to survive real compositions would swallow. A purely
-# relative test cries wolf in the opposite corner, where the charged fraction is itself
-# near the roundoff floor and |net|/magnitude is dominated by cancellation error.
-#
-# ATOL is set above the double-precision accumulation bound for the sum: N terms each
-# bounded by 1 accumulate at most ~N * 2.22e-16, so 1e-12 clears models up to ~4500
-# species, well beyond any plasma mechanism RMG generates. RTOL at 1e-6 is far above
-# that same floor in relative terms and far below any imbalance a modeller could mean.
-# Neither is a physical statement: they separate "the arithmetic did not quite close"
-# from "the composition is not neutral", nothing more.
-PLASMA_NET_CHARGE_ATOL = 1.0e-12
+# where net = sum(z_i * amount_i) and magnitude = sum(|z_i * amount_i|), the total
+# charged inventory the net is a cancellation of. The test is the RELATIVE imbalance
+# |net| / magnitude, because quasineutrality IS a ratio -- the fractional excess of one
+# sign of charge over the other -- and is dimensionless and independent of the system's
+# size and units. An earlier version added an absolute floor, max(ATOL, RTOL*magnitude),
+# which admits a state below EITHER bound; on a small charged inventory the 1e-12 mol
+# floor was the larger term and swallowed a wholly-unpaired electron population (1e-13
+# mol of electrons with no ion partner reads as net = -1e-13 mol, 100% imbalanced, yet
+# below 1e-12). An absolute mole tolerance cannot express a ratio: the same imbalance
+# passes or fails depending only on how many moles the deck happens to carry. The
+# relative test is scale-invariant -- 100% imbalance is refused whether the inventory is
+# 1e-13 mol or 1e6 mol, and a genuinely neutral deck (|net| ~ accumulation roundoff,
+# ~N*2.22e-16 * magnitude for N charged species, far below 1e-6) is admitted at every
+# scale. When magnitude is exactly zero (nothing charged), net is exactly zero and the
+# test passes. RTOL is not a physical statement: it separates "the arithmetic did not
+# quite close" from "the composition is not neutral", nothing more.
 PLASMA_NET_CHARGE_RTOL = 1.0e-6
 
 
@@ -117,6 +119,29 @@ PLASMA_LOSCHMIDT = 2.6867811e25          # m^-3
 # the transport model stops being the right one. It is NOT chosen from, and does
 # not depend on, any electron density the model is expected to produce.
 PLASMA_WALL_MAX_IONISATION_DEGREE = 1.0e-3
+
+
+def _coerce_bool_flag(value, name, identity):
+    """Coerce a user-supplied boolean flag by VALUE, not by truthiness.
+
+    ``bool(value)`` reads any non-empty string as True, so the string ``'False'``
+    silently enabled the flag it names. A genuine bool (or None) passes through; a
+    boolean-like string is parsed by value; anything else that is a string is refused
+    rather than read as True, so a typo fails loudly instead of flipping the mode on.
+    """
+    if isinstance(value, bool) or value is None:
+        return bool(value)
+    if isinstance(value, str):
+        s = value.strip().lower()
+        if s in ('true', '1', 'yes', 'on'):
+            return True
+        if s in ('false', '0', 'no', 'off', ''):
+            return False
+        raise PlasmaStateError(
+            "{0}={1!r} is a string that is not a recognised boolean. Use a boolean "
+            "(True/False), not a string -- bool('False') is True, so a string here "
+            "would silently enable the flag. ({2})".format(name, value, identity))
+    return bool(value)
 
 
 cdef class PlasmaReactor(ReactionSystem):
@@ -367,7 +392,8 @@ cdef class PlasmaReactor(ReactionSystem):
                 "({2})".format(diffusion_length, ion_reduced_mobility, self._identity()))
 
         self.has_wall = diffusion_length is not None
-        self.quasineutral_electron = bool(quasineutral_electron)
+        self.quasineutral_electron = _coerce_bool_flag(
+            quasineutral_electron, 'quasineutral_electron', self._identity())
 
         if not self.has_wall:
             # Wall-only options are meaningless without a wall: there is no nu_wall to
@@ -928,9 +954,12 @@ cdef class PlasmaReactor(ReactionSystem):
 
     def _warn_if_not_charge_neutral(self):
         """
-        Log a warning naming the initial composition's net charge per mole when it is
-        not neutral to within
-        ``max(PLASMA_NET_CHARGE_ATOL, PLASMA_NET_CHARGE_RTOL * magnitude)``.
+        Log a warning naming the initial composition's net charge per mole when its
+        RELATIVE imbalance exceeds ``PLASMA_NET_CHARGE_RTOL`` -- i.e. when
+        ``|net| > PLASMA_NET_CHARGE_RTOL * magnitude``, magnitude the total charged
+        inventory. Quasineutrality is a ratio, so the bound is relative, not an
+        absolute mole floor (which would go silent on a wholly-unpaired electron
+        population that happened to be small).
 
         Never raises: non-neutrality is reported, not forbidden. A species whose charge
         cannot be determined is named in the message rather than skipped silently, so
@@ -976,7 +1005,7 @@ cdef class PlasmaReactor(ReactionSystem):
                 "(got %r). (%s)", net, self._identity())
             return
 
-        threshold = max(PLASMA_NET_CHARGE_ATOL, PLASMA_NET_CHARGE_RTOL * magnitude)
+        threshold = PLASMA_NET_CHARGE_RTOL * magnitude
         if abs(net) <= threshold:
             return
 
@@ -990,15 +1019,14 @@ cdef class PlasmaReactor(ReactionSystem):
         logging.warning(
             "PlasmaReactor initial composition is NOT charge neutral: net charge = %r "
             "per mole (total charge magnitude %r, relative imbalance %r), above the "
-            "tolerance max(atol=%r, rtol=%r * magnitude) = %r. Charged species: %s. "
-            "This is a warning, not an error -- a deliberately non-neutral initial "
-            "condition is legitimate -- but a deck that seeds an electronDensity "
+            "relative tolerance rtol=%r (threshold rtol * magnitude = %r). Charged "
+            "species: %s. This is a warning, not an error -- a deliberately non-neutral "
+            "initial condition is legitimate -- but a deck that seeds an electronDensity "
             "without a compensating cation lands here by accident. To have RMG compute "
             "the balancing ion's mole fraction for you, name it with "
             "chargeBalanceSpecies='<label>' in the plasmaReactor(...) block. (%s)",
-            net, magnitude, (abs(net) / magnitude if magnitude > 0.0 else float('inf')),
-            PLASMA_NET_CHARGE_ATOL, PLASMA_NET_CHARGE_RTOL, threshold, breakdown,
-            self._identity())
+            net, magnitude, (abs(net) / magnitude if magnitude > 0.0 else 0.0),
+            PLASMA_NET_CHARGE_RTOL, threshold, breakdown, self._identity())
 
     def _warn_if_balance_ion_unreachable(self, core_reactions, edge_reactions):
         """
@@ -1294,11 +1322,12 @@ cdef class PlasmaReactor(ReactionSystem):
     def _skeleton_key(self, spc):
         """
         A charge- and electronic-state-independent identity for a species: its
-        standard InChI, truncated before the charge (``/q``) and proton (``/p``)
-        layers. Two species share a skeleton iff they have the same nuclei and the
-        same heavy-atom connectivity, regardless of net charge, radical count or
-        electronic excitation -- which is the identity wall neutralisation (a
-        charge transfer that conserves the heavy skeleton) actually couples through.
+        standard InChI with the charge (``/q``) and proton (``/p``) layers REMOVED
+        and every other layer kept. Two species share a skeleton iff they have the
+        same nuclei and the same heavy-atom connectivity, regardless of net charge,
+        radical count or electronic excitation -- which is the identity wall
+        neutralisation (a charge transfer that conserves the heavy skeleton, but not
+        charge or electronic state) actually couples through.
 
         This is the key the ion->neutral and neutral->cation maps must use.
         Element count is too COARSE -- constitutional isomers collide, so DME+ would
@@ -1310,6 +1339,18 @@ cdef class PlasmaReactor(ReactionSystem):
         (so Ar and Ar* coincide) but keeps the connectivity layer (so DME and
         ethanol separate).
 
+        The charge layers are DELETED, not truncated at: InChI orders its layers
+        formula / c / h / q / p / b,t,m,s (stereo) / i (isotope) / ..., so the
+        isotope and stereo layers sit AFTER the charge layers. Truncating at the
+        first ``/q`` or ``/p`` therefore dropped ``/i`` and stereo from a CHARGED
+        species while a neutral kept them -- one key rule for neutrals, another for
+        ions, which an ion->neutral map cannot have: a 13C cation keyed as an
+        ordinary-carbon neutral, so the wall transmuted its nucleus. Neutralisation
+        conserves nuclei, so isotopes MUST discriminate; it does not racemise, so
+        stereo must too. Removing only ``/q`` and ``/p`` keeps them, on both charge
+        states, while Ar and Ar* -- which have no layer between them -- still
+        coincide.
+
         Returns None when no skeleton can be computed, which denies the species an
         automatic match and forces a declaration or a refusal rather than a guess.
         """
@@ -1317,12 +1358,12 @@ cdef class PlasmaReactor(ReactionSystem):
             inchi = spc.molecule[0].to_inchi()
         except Exception:
             return None
-        cut = len(inchi)
-        for sep in ('/q', '/p'):
-            idx = inchi.find(sep)
-            if idx != -1 and idx < cut:
-                cut = idx
-        return inchi[:cut]
+        # Drop the /q and /p layers wherever they sit, keep every other layer. The
+        # formula token and all other layers begin with an uppercase element symbol
+        # or a lowercase layer letter that is neither 'q' nor 'p', so a first-char
+        # test on each '/'-delimited token removes exactly the two charge layers.
+        return '/'.join(layer for layer in inchi.split('/')
+                        if layer[:1] not in ('q', 'p'))
 
     def _resolve_wall_state(self, list core_species):
         """
@@ -1401,11 +1442,12 @@ cdef class PlasmaReactor(ReactionSystem):
             # electronic ground state with its own metastable.
             skeletons[i] = self._skeleton_key(spc)
 
-        # ion -> neutral counterpart at the wall. Matched on heavy composition; when
-        # more than one neutral state shares it, resolved to the electronic ground
-        # state by lowest formation enthalpy (see the class-method docstring), or by an
-        # explicit wall_neutralization_products declaration. The declaration wins where
-        # present, so a user can name a product energy cannot infer.
+        # ion -> neutral counterpart at the wall. Matched on the heavy skeleton; when
+        # exactly one neutral shares it, the ion returns as that neutral. When more than
+        # one does, the code REFUSES and requires a wall_neutralization_products
+        # declaration -- enthalpy can order the candidates but cannot certify the ground
+        # state (see the class-method docstring), so identity is never inferred from
+        # energy here. The declaration names the product energy cannot infer.
         neutralization = self.wall_neutralization_products or {}
         for i in range(n):
             if i == self.electron_index or charges[i] == 0 or skeletons[i] is None:
@@ -1611,6 +1653,21 @@ cdef class PlasmaReactor(ReactionSystem):
         name so the user can correct the block they wrote.
         """
         cdef Py_ssize_t j
+        # A declaration names ONE product. If two core species carry the neutral label,
+        # the name identifies two things: returning the first would let core ordering
+        # choose the wall's product, exactly what the multiplicity ruling forbids the
+        # code from doing. Refuse and make the user disambiguate the labels.
+        labelled = [k for k in range(len(core_species))
+                    if getattr(core_species[k], 'label', None) == neutral_label]
+        if len(labelled) > 1:
+            raise PlasmaStateError(
+                "wallNeutralizationProducts maps ion {0!r} to {1!r}, but {2} core "
+                "species carry the label {1!r} (indices {3}). A declaration names one "
+                "product; an ambiguous label identifies more than one, and the wall's "
+                "product would be chosen by core ordering rather than by the modeller. "
+                "Give each neutral state a distinct label and name the one the ion "
+                "returns as. ({4})".format(
+                    ion_label, neutral_label, len(labelled), labelled, self._identity()))
         for j in matches:
             if getattr(core_species[j], 'label', None) == neutral_label:
                 logging.info(
@@ -1804,9 +1861,14 @@ cdef class PlasmaReactor(ReactionSystem):
         # and present at zero MOLES; inventory governs, and it is knowable only at a
         # state. Anions and |z|>1 ions are already refused, so the net charge is exactly
         # n_ion - n_e, its magnitude n_ion + n_e.
+        # Relative bound: quasineutrality is the fractional charge imbalance
+        # |n_ion - n_e| / (n_ion + n_e), measured against the charged inventory it is a
+        # cancellation of, not against an absolute mole floor. A floor admits a wholly
+        # unpaired but small electron population (1e-13 mol of electrons, no ion) as if
+        # neutral; the ratio refuses it whatever its absolute size.
         net = n_ion - n_e
         magnitude = n_ion + n_e
-        if abs(net) > max(PLASMA_NET_CHARGE_ATOL, PLASMA_NET_CHARGE_RTOL * magnitude):
+        if abs(net) > PLASMA_NET_CHARGE_RTOL * magnitude:
             raise PlasmaStateError(
                 "the accepted state carries a net charge of {0!r} mol (positive-ion "
                 "inventory {1!r} mol, electron inventory {2!r} mol), outside the "
@@ -1873,20 +1935,33 @@ cdef class PlasmaReactor(ReactionSystem):
                 continue
             tgt = self.wall_recycle_target[j]
             if tgt >= 0 and self.wall_recycling > 0.0:
+                # gamma is the MASS-return fraction: only the recycled part of the
+                # neutralised heavy core re-enters the gas. This term, and only this
+                # term, is scaled by gamma.
                 flux[tgt] += self.wall_recycling * loss
-                dh = self.wall_neutralization_delta_h[j]
-                if dh != dh:                       # NaN: this ion's drop is unusable
-                    neutral_available = False
-                else:
-                    neutral_power += dh * self.wall_recycling * loss
+            # Neutralisation ENERGY is owed for every ion that reaches the wall and
+            # recombines with an electron there, whether or not the neutral returns to
+            # the gas: a fully-pumped ion (gamma=0) still deposits H_ion - H_neutral at
+            # the surface. gamma governs where the mass goes, not whether the energy is
+            # released, so it must NOT multiply this term. delta_h is NaN when the
+            # product or its thermo is unknown, which makes the aggregate 'unavailable'
+            # rather than a confidently-wrong zero.
+            dh = self.wall_neutralization_delta_h[j]
+            if dh != dh:                           # NaN: this ion's drop is unusable
+                neutral_available = False
+            else:
+                neutral_power += dh * loss
         self.wall_flux = flux
         self.nu_wall_latched = nu
         self.wall_diagnostics_time = t
-        # 2 k_B T_e per lost electron; 2 R T_e * (mol/s) = W. Always available from T_e.
+        # 2 k_B T_e per lost electron; 2 R T_e * (mol/s) = W. Available from T_e, but
+        # still checked finite before it is marked so -- a field is 'available' only
+        # when it carries a usable number, never on a NaN/Inf that slipped through.
         self.wall_electron_energy_flux = 2.0 * constants.R * self.Te.value_si * e_loss_rate
         self.wall_energy_availability['wall_flux'] = 'available'
-        self.wall_energy_availability['wall_electron_energy_flux'] = 'available'
-        if neutral_available:
+        self.wall_energy_availability['wall_electron_energy_flux'] = (
+            'available' if np.isfinite(self.wall_electron_energy_flux) else 'unavailable')
+        if neutral_available and np.isfinite(neutral_power):
             self.wall_neutralization_energy_flux = neutral_power
             self.wall_energy_availability['wall_neutralization_energy_flux'] = 'available'
         else:
@@ -1894,6 +1969,35 @@ cdef class PlasmaReactor(ReactionSystem):
             self.wall_energy_availability['wall_neutralization_energy_flux'] = 'unavailable'
         self.wall_ion_energy_flux = float('nan')
         self.wall_energy_availability['wall_ion_energy_flux'] = 'declared-absent'
+
+    cpdef double get_non_chemical_char_rate(self):
+        """The L2 norm of the wall + ionisation-source contribution to the core species
+        rates at the current accepted state, in core_species_rates units (mol/m^3/s).
+
+        These transport and source terms move the composition but are deliberately kept
+        OUT of core_species_rates (see the note in :meth:`residual` at the wall block).
+        ReactionSystem.simulate's inert / termination tests read this so a wall-driven,
+        chemistry-quiet reactor -- one the wall is actively depleting -- is not reported
+        as one that never started. Zero when there is no wall, so a wall-less plasma
+        reactor is indistinguishable from any other reactor to those tests.
+
+        Computed by evaluating exactly the terms :meth:`_apply_wall_terms` adds, at the
+        accepted state, into a fresh vector -- the same single source of the wall
+        arithmetic the residual uses, never a re-derivation. ``res`` is the non-chemical
+        dy/dt in mol/s; core_species_rates are dC/dt in mol/m^3/s, so divide by V to make
+        the two commensurate. This overwrites the residual-scratch fields
+        (``wall_loss_rates``, ``nu_wall``) as _apply_wall_terms always does, harmlessly:
+        it runs at an accepted state, and the next residual evaluation overwrites them
+        again before any consumer reads them.
+        """
+        cdef np.ndarray[np.float64_t, ndim=1] res
+        cdef double V
+        if not self.has_wall:
+            return 0.0
+        V = self.compute_volume(self.y)
+        res = np.zeros(self.num_core_species, float)
+        self._apply_wall_terms(self.y, V, res)
+        return sqrt(np.sum(res * res)) / V
 
     cpdef advance(self, double tout):
         """Advance, then refuse the accepted state if it left the wall model's domain.
@@ -1990,7 +2094,10 @@ cdef class PlasmaReactor(ReactionSystem):
         if self.quasineutral_electron and self.species_charges is not None:
             net = self._net_charge(self.y0)
             magnitude = float(np.sum(np.abs(self.species_charges * self.y0[:self.num_core_species])))
-            if abs(net) > max(PLASMA_NET_CHARGE_ATOL, PLASMA_NET_CHARGE_RTOL * magnitude):
+            # Relative bound, as in check_wall_support: quasineutrality is a ratio, so
+            # the packed state satisfies it when its fractional imbalance is small, not
+            # when its absolute net is below a mole floor.
+            if abs(net) > PLASMA_NET_CHARGE_RTOL * magnitude:
                 raise PlasmaStateError(
                     "quasineutral_electron=True carries the electron on an algebraic "
                     "charge-conservation row, but the initial composition has a net "

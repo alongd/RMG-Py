@@ -681,7 +681,10 @@ The remaining keywords are all optional:
   the atom does not chemisorb.  The reactor is a closed batch with no makeup stream, so
   ``gamma < 1`` removes heavy atoms from the gas permanently.  Every ion must have a neutral
   counterpart in the core for its heavy core to return to; a cation with no such counterpart is
-  refused rather than guessed at.  When exactly **one** neutral core species shares an ion's heavy
+  refused rather than guessed at.  The heavy skeleton (a standard InChI with only the charge layers
+  removed) keeps the isotope and stereochemistry layers, because wall neutralisation is a charge
+  transfer that conserves nuclei and does not racemise: an ion never recycles to a different-isotope
+  or different-stereo neutral.  When exactly **one** neutral core species shares an ion's heavy
   skeleton, the ion returns as it.  When **two or more** do -- ground-state and metastable argon,
   both keyed ``Ar`` -- the wall **refuses** and requires a ``wallNeutralizationProducts`` declaration
   (below), rather than picking one.  Formation enthalpy can order the candidates but cannot certify
@@ -708,10 +711,12 @@ The remaining keywords are all optional:
   more neutral core species share an ion's heavy skeleton (two argon electronic states, or an ion
   whose neutral has tautomers), and it is the override for the single-candidate floor above.  The
   named neutral must be a declared species, uncharged, and share the ion's heavy composition; a key
-  that names no cation in the core (a typo) is refused rather than silently ignored.  Omit it for the
-  common case of a single neutral per skeleton -- a deck carrying only ground-state argon needs
-  nothing declared -- and include it, one line, for any deck that carries a metastable alongside its
-  ground state.
+  that names no cation in the core (a typo) is refused rather than silently ignored.  The neutral
+  label must identify **one** species: if two core species carry the same label, the declaration is
+  ambiguous and is refused rather than resolved by core ordering -- give each electronic state a
+  distinct label.  Omit it for the common case of a single neutral per skeleton -- a deck carrying
+  only ground-state argon needs nothing declared -- and include it, one line, for any deck that
+  carries a metastable alongside its ground state.
 
 * ``ionisationSource`` -- a volumetric external production rate of ion-electron pairs,
   ``(6.6e4, 'm^-3/s')`` or ``(0.066, 'cm^-3/s')``.  This is where a *declared physical mechanism*
@@ -733,7 +738,9 @@ The remaining keywords are all optional:
   of large ionisation and recombination fluxes.  It requires a charge-neutral initial composition
   and **refuses a non-neutral one** -- with the electron carried algebraically, a non-neutral
   state is not something the equations can represent.  ``chargeBalanceSpecies`` is the easy way to
-  satisfy it.
+  satisfy it.  Pass a genuine boolean, not a string: ``'False'`` is a non-empty string and would be
+  truthy, so a boolean-like string is parsed by value and any other string is refused rather than
+  silently enabling the mode.
 
 .. note::
 	The wall operator determines the loss frequency, and with it the sustainment/extinction
