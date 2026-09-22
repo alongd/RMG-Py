@@ -539,7 +539,8 @@ def _plasma_inverse_lambda_squared(shape, dims):
 
 
 def _plasma_wall_kwargs(chamberGeometry, ionReducedMobility, mobilityReferenceDensity,
-                        wallRecycling, ionisationSource, maxIonisationDegree):
+                        wallRecycling, ionisationSource, maxIonisationDegree,
+                        wallSingleBathApproximation=False):
     """
     Turn the ``plasmaReactor(...)`` wall keywords into :class:`PlasmaReactor`
     constructor arguments, resolving a named chamber shape into a diffusion length.
@@ -555,7 +556,8 @@ def _plasma_wall_kwargs(chamberGeometry, ionReducedMobility, mobilityReferenceDe
         for name, value, inert in (('wallRecycling', wallRecycling, 1.0),
                                    ('ionisationSource', ionisationSource, None),
                                    ('mobilityReferenceDensity', mobilityReferenceDensity, None),
-                                   ('maxIonisationDegree', maxIonisationDegree, None)):
+                                   ('maxIonisationDegree', maxIonisationDegree, None),
+                                   ('wallSingleBathApproximation', wallSingleBathApproximation, False)):
             if value != inert:
                 raise InputError(
                     "{0}={1!r} was given but no charged-particle wall was declared, so it "
@@ -698,6 +700,8 @@ def _plasma_wall_kwargs(chamberGeometry, ionReducedMobility, mobilityReferenceDe
     if maxIonisationDegree is not None:
         kwargs['max_ionisation_degree'] = float(maxIonisationDegree)
 
+    kwargs['wall_single_bath_approximation'] = bool(wallSingleBathApproximation)
+
     logging.info(
         'plasmaReactor: charged-particle wall declared. Geometry: %s -> Lambda = %r m. '
         'Ion reduced mobility %r m^2/(V*s). Recycling coefficient gamma = %r. '
@@ -746,6 +750,7 @@ def plasma_reactor(temperature,
                    wallNeutralizationProducts=None,
                    ionisationSource=None,
                    maxIonisationDegree=None,
+                   wallSingleBathApproximation=False,
                    quasineutralElectron=False,
                    terminationConversion=None,
                    terminationTime=None,
@@ -1223,7 +1228,8 @@ def plasma_reactor(temperature,
     # is being read rather than minutes into a run.
     wall_kwargs = _plasma_wall_kwargs(
         chamberGeometry, ionReducedMobility, mobilityReferenceDensity,
-        wallRecycling, ionisationSource, maxIonisationDegree)
+        wallRecycling, ionisationSource, maxIonisationDegree,
+        wallSingleBathApproximation=wallSingleBathApproximation)
 
     # wallNeutralizationProducts names, per ion, the neutral GROUND STATE it returns as
     # at the wall -- the escape hatch for the case the energy rule cannot infer (two
@@ -2628,6 +2634,10 @@ def _format_plasma_wall(system):
                          ''.format(system.ionisation_source.value_si))
         lines.append('    maxIonisationDegree = {0!r},\n'
                      ''.format(system.max_ionisation_degree))
+        if system.wall_single_bath_approximation:
+            # A deliberate opt-in to the single-bath transport approximation on a multi-gas
+            # bath; without it the reloaded deck would refuse to construct.
+            lines.append('    wallSingleBathApproximation = True,\n')
     return ''.join(lines)
 
 

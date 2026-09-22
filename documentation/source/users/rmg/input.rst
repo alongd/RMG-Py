@@ -486,12 +486,19 @@ dict form gives full control::
 
 		terminationSteadyState={'tolerance': 1e-6, 'window': 3},
 
-where ``window`` is how many consecutive solver steps must satisfy the tolerance. The window
-is a step count, but persistence is not: the flat run must also hold while the integration
-time advances by at least a factor of :math:`e` (one e-fold, the natural scale of a
-:math:`d/d\ln t` criterion), so that neither the verdict nor the termination time depends on
-the integrator's step-size controller. A residual of exactly zero -- a structurally frozen
-composition -- is exempt from the span and terminates at once.
+where ``window`` is a floor on how many accepted samples a flat interval must span. It is a
+cheap fluke guard -- a single flat step is not an interval and cannot terminate on its own --
+and it is deliberately **not** sufficient. Persistence is a *physical* span: the flat run
+must also hold for at least one **system relaxation time** -- the timescale on which the
+system settles, which a wall-bounded discharge reports as ``1/nu_wall``. Anchoring to that
+physical time (rather than to a count of accepted steps, or to a fixed factor of the absolute
+clock) makes the verdict independent of the integrator's step-size controller and of *when*
+the flat window happened to open: a late-converging tail needs one more relaxation time to
+confirm, never a growing multiple of the elapsed time. A reactor that knows no such timescale
+(an ordinary gas-phase reactor) falls back to one e-fold of absolute time. There is no
+special case for a residual of exactly zero: equal endpoints do not prove a frozen structure
+(they equally alias an oscillation or a stop-and-restart), so a zero residual earns the same
+one-relaxation-time confirmation as any other flat tail.
 
 Two things about it are worth knowing before you use it:
 
@@ -521,10 +528,14 @@ Two things about it are worth knowing before you use it:
 * **The electron's arm vouches only for the electron.** Arming is per quantity: the electron
   passing ``t * nu_wall >= 1`` may license termination only while no *other* channel is still
   changing -- specifically while the generic (neutral) residual is not still rising toward its
-  own ``R = 1`` arm. A neutral reaction that has not yet run through its own timescale -- flat
-  only because it has barely started, not because it has settled -- keeps the system reported as
-  *not* steady even after the electron has saturated, so a slow gas-phase channel is never
-  declared stationary on the strength of the discharge having lit.
+  own ``R = 1`` arm. "Still rising" is judged over a *sequence* of samples (the residual has
+  set no new step-over-step rise for ``window`` consecutive steps), not from the two most
+  recent values, so a single flat or noisy sample cannot prematurely license it; and the
+  electron's licence is re-evaluated every step rather than latched, so a neutral that settles
+  and then resumes moving withdraws it. A neutral reaction that has not yet run through its own
+  timescale -- flat only because it has barely started, not because it has settled -- keeps the
+  system reported as *not* steady even after the electron has saturated, so a slow gas-phase
+  channel is never declared stationary on the strength of the discharge having lit.
 
 The run logs the residual it terminated at, so "we integrated to steady state, by this
 criterion, and here is the residual" is a claim a reader can check.
@@ -764,7 +775,12 @@ The remaining keywords are all optional:
   below ``Na * 2.2e-308``) is **refused at construction**: it reads as a declared source -- which
   switches off the zero-electron guard just described -- yet injects exactly zero, leaving a deck
   that declares ignition-from-zero it can never achieve.  A source that cannot inject is not a
-  source.
+  source.  That guard checks ``source/Na``, but the residual actually injects
+  ``source * V / Na`` -- the declared rate times the reactor volume.  At an extreme-but-finite
+  volume that product can overflow to infinity or underflow to zero while ``source/Na`` alone
+  looks finite, so the same check is applied a second time to the *run-time* expression at the
+  actual initial volume: an ``ionisationSource`` whose ``source * V / Na`` is not a usable
+  finite positive rate is refused, evaluating what the run computes rather than a proxy for it.
 
 * ``maxIonisationDegree`` -- the ceiling on ``n_e/n_neutral`` above which the ion-*neutral*
   ambipolar model is outside its own assumptions, defaulting to 1e-3.  Above it, Coulomb
@@ -772,6 +788,16 @@ The remaining keywords are all optional:
   form, not merely an inaccurate one.  The run **stops**, with a message naming the ionisation
   degree, rather than extrapolating.  The check is applied to every accepted solver step and to
   the initial composition.
+
+* ``wallSingleBathApproximation`` -- ``True`` to opt into the single-bath transport approximation
+  on a neutral bath that spans more than one heavy skeleton (Ar with an He diluent, an isomeric
+  co-species).  The wall carries one ``ionReducedMobility``; applied to the summed density of
+  chemically distinct neutrals it is an approximation, not the composition-weighted (Blanc's-law)
+  mobility.  Without this flag such a bath is **refused at construction**, so the approximation is
+  never entered unknowingly; with it the run proceeds and the affected wall fluxes are marked
+  ``available-single-bath-approximation`` (see the wall model warning below).  A single-skeleton
+  bath -- Ar alone, or Ar with its metastables -- is exact and does not need it.  Defaults to
+  ``False``.
 
 * ``quasineutralElectron`` -- when ``True``, the electron is removed from the integrated state and
   carried on an algebraic charge-conservation row instead, so ``n_e`` is whatever makes the
@@ -818,15 +844,19 @@ The remaining keywords are all optional:
 	and an **approximation** for a genuine mixture of chemically distinct neutrals (Ar with an He
 	diluent, or an isomeric co-species): the true mobility is composition-weighted (Blanc's law),
 	which needs a reduced mobility *per* bath gas that this model does not carry.  Such a mixture is
-	**not refused** -- doing so would forbid every multi-species plasma, including the inert-diluent
-	and isomeric-neutral cases the wall is built to handle.  It is instead recorded as an
+	**refused at construction unless you opt in** with ``wallSingleBathApproximation=True``.
+	Refusing outright would forbid every multi-species plasma, including the inert-diluent and
+	isomeric-neutral cases the wall is built to handle; running silently on transport that does not
+	describe the gas is worse; so the honest middle is to require the user to consciously accept the
+	approximation.  Once opted in, the run proceeds and the approximation is recorded as an
 	**availability state**, not merely a log line a downstream consumer cannot see: every wall flux
 	built from ``nu_wall`` (``wall_flux`` and the electron-energy flux) is reported as
 	``available-single-bath-approximation`` rather than plain ``available`` in the reactor's
 	``wall_energy_availability`` map, so a caller reading the latched fluxes knows the number is a
 	usable single-bath approximation and not the composition-weighted value.  A warning naming the
 	gases is also emitted for the human running the deck.  A single-skeleton bath (Ar alone, or Ar
-	with its metastables) reports plain ``available``.  The ``maxIonisationDegree`` ceiling is the one edge the code enforces
+	with its metastables) is exact, needs no opt-in, and reports plain ``available``.  The
+	``maxIonisationDegree`` ceiling is the one edge the code enforces
 	numerically; the regime limits above are the user's to respect.
 
 .. _simulatortolerances:

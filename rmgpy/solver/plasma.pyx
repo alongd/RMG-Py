@@ -290,6 +290,12 @@ cdef class PlasmaReactor(ReactionSystem):
     # _resolve_wall_state. False for a single-skeleton bath, including a ground state
     # and its metastables, which share a skeleton and are one bath exactly.
     cdef public bint wall_bath_is_mixture
+    # The user's explicit opt-in to the single-bath transport approximation on a multi-gas
+    # neutral bath. Without it a multi-skeleton bath is REFUSED at construction rather than
+    # silently run on a mobility that does not describe it; with it the run proceeds and the
+    # affected fluxes carry the 'available-single-bath-approximation' state. False by
+    # default, so the approximation is never entered unless asked for.
+    cdef public bint wall_single_bath_approximation
     cdef public np.ndarray wall_neutralization_delta_h  # J/mol per ion, H_ion-H_neutral, or NaN
     # Purely NUMERICAL floor on the neutral population inside compute_nu_wall, set
     # from the initial composition. It exists so that a Newton TRIAL state with no
@@ -321,6 +327,7 @@ cdef class PlasmaReactor(ReactionSystem):
                  wall_neutralization_products=None,
                  ionisation_source=None,
                  max_ionisation_degree=PLASMA_WALL_MAX_IONISATION_DEGREE,
+                 wall_single_bath_approximation=False,
                  quasineutral_electron=False):
         ReactionSystem.__init__(self, termination, sensitive_species, sensitivity_threshold)
 
@@ -372,12 +379,14 @@ cdef class PlasmaReactor(ReactionSystem):
                              mobility_reference_density, wall_recycling,
                              wall_neutralization_products,
                              ionisation_source, max_ionisation_degree,
+                             wall_single_bath_approximation,
                              quasineutral_electron)
 
     def _configure_wall(self, diffusion_length, ion_reduced_mobility,
                         mobility_reference_density, wall_recycling,
                         wall_neutralization_products,
                         ionisation_source, max_ionisation_degree,
+                        wall_single_bath_approximation,
                         quasineutral_electron):
         """
         Validate and store the charged-particle wall boundary parameters.
@@ -414,6 +423,7 @@ cdef class PlasmaReactor(ReactionSystem):
             'wall_ion_energy_flux': 'declared-absent',
         }
         self.wall_bath_is_mixture = False
+        self.wall_single_bath_approximation = bool(wall_single_bath_approximation)
 
         if (diffusion_length is None) != (ion_reduced_mobility is None):
             raise PlasmaStateError(
@@ -713,6 +723,7 @@ cdef class PlasmaReactor(ReactionSystem):
                  self.wall_neutralization_products,
                  (self.ionisation_source if self.has_wall else None),
                  self.max_ionisation_degree,
+                 self.wall_single_bath_approximation,
                  self.quasineutral_electron))
 
     cpdef initialize_model(self, list core_species, list core_reactions, list edge_species, list edge_reactions,
@@ -1563,39 +1574,57 @@ cdef class PlasmaReactor(ReactionSystem):
             # electronic ground state with its own metastable.
             skeletons[i] = self._skeleton_key(spc)
 
-        # Single bath gas: named where it cannot be hidden. The wall carries ONE ion
-        # reduced mobility (mu_i for the ion in its bath gas), but compute_nu_wall sums
-        # n_neutral over EVERY neutral heavy species. That is EXACT only when those
+        # Single bath gas: the approximation is OPT-IN, refused by default. The wall carries
+        # ONE ion reduced mobility (mu_i for the ion in its bath gas), but compute_nu_wall
+        # sums n_neutral over EVERY neutral heavy species. That is EXACT only when those
         # neutrals are one gas -- an electronic ground state and its metastables share a
         # heavy skeleton and collide with the ion identically, so summing them is summing
-        # one bath (the Ar/Ar* deliverable). When the neutrals span distinct heavy
-        # skeletons (Ar and He, or two isomers), the single reduced mobility is applied to
-        # the summed density as if the whole gas were the reference bath -- an
-        # approximation, not the true composition-weighted (Blanc's-law) mobility, which
-        # would need a reduced mobility PER bath gas that this model does not carry. This is
-        # NOT refused: refusing it would forbid every multi-species plasma -- an inert
-        # diluent, an ionisable co-reactant, an isomeric neutral the wall must not transmute
-        # into -- all of which are supported and carry distinct skeletons by construction.
-        # It is not merely warned: a warning is not an availability state, and a consumer
-        # reading the latched wall fluxes cannot see a log line. So it is recorded as an
-        # availability STATE -- ``wall_bath_is_mixture`` here, which downgrades every
-        # nu_wall-derived flux from 'available' to 'available-single-bath-approximation' in
-        # _latch_wall_diagnostics -- AND warned once, naming the gases, for the human
-        # running the deck; input.rst carries the same statement at the mobility keyword.
-        # Keyed on the heavy skeleton, the identity the recycle uses.
+        # one bath (the Ar/Ar* deliverable). When the neutrals span distinct heavy skeletons
+        # (Ar and He, or two isomers), the single reduced mobility is applied to the summed
+        # density as if the whole gas were the reference bath -- an approximation, not the
+        # true composition-weighted (Blanc's-law) mobility, which would need a reduced
+        # mobility PER bath gas that this model does not carry.
+        #
+        # A warning is not enough (a consumer of the latched fluxes cannot read a log line)
+        # and neither is a passive availability label alone (round 96): it documents the
+        # wrong transport rather than gating on it, so a deck silently runs on a mobility
+        # that does not describe its gas. So the mixture is REFUSED at construction unless the
+        # user has explicitly opted in via wall_single_bath_approximation=True, consciously
+        # accepting that the single reduced mobility stands in for the whole bath. Refusing
+        # outright is wrong -- it would forbid every multi-species plasma (an inert diluent,
+        # an ionisable co-reactant, an isomeric neutral the wall must not transmute into) --
+        # and running silently is wrong; the opt-in is the honest middle. When it is given,
+        # the run proceeds, the affected fluxes carry the 'available-single-bath-
+        # approximation' state (set in _latch_wall_diagnostics via wall_bath_is_mixture), and
+        # a warning names the gases. Keyed on the heavy skeleton, the identity the recycle
+        # uses; input.rst carries the same statement at the mobility keyword.
         if self.has_wall:
             neutral_baths = sorted(repr(s) for s in
                                    {skeletons[j] for j in range(n) if neutral_mask[j]})
             self.wall_bath_is_mixture = len(neutral_baths) > 1
             if len(neutral_baths) > 1:
+                if not self.wall_single_bath_approximation:
+                    raise PlasmaStateError(
+                        "PlasmaReactor wall: the neutral bath spans more than one gas ({0}), "
+                        "but the wall carries a single ion reduced mobility that describes the "
+                        "ion in ONE bath. Applied to the summed density of distinct gases it is "
+                        "an approximation, not the composition-weighted (Blanc's-law) mobility, "
+                        "which would need a reduced mobility per bath gas this model does not "
+                        "carry. Refusing rather than running silently on transport that does not "
+                        "describe this gas. To proceed on the single-bath approximation -- "
+                        "accepting that one reduced mobility stands in for the whole bath -- set "
+                        "wall_single_bath_approximation=True; the wall fluxes will then be marked "
+                        "'available-single-bath-approximation'. An electronic ground state and "
+                        "its metastables share a skeleton and are ONE bath (exact), and do not "
+                        "trigger this. ({1})".format(', '.join(neutral_baths), self._identity()))
                 logging.warning(
-                    "PlasmaReactor wall: the neutral bath spans more than one gas (%s), but "
-                    "a single ion reduced mobility is applied to the summed neutral density "
-                    "as if the whole gas were the reference bath. This is an approximation "
-                    "-- the true mobility is composition-weighted (Blanc's law), which "
-                    "needs a reduced mobility per bath gas that this model does not carry. "
-                    "An electronic ground state and its metastables share a skeleton and are "
-                    "one bath (exact); distinct gases are not. (%s)",
+                    "PlasmaReactor wall: the neutral bath spans more than one gas (%s); "
+                    "wall_single_bath_approximation=True was given, so a single ion reduced "
+                    "mobility is applied to the summed neutral density as if the whole gas were "
+                    "the reference bath. This is an approximation -- the true mobility is "
+                    "composition-weighted (Blanc's law), which needs a reduced mobility per bath "
+                    "gas that this model does not carry. The nu_wall-derived fluxes are marked "
+                    "'available-single-bath-approximation'. (%s)",
                     ', '.join(neutral_baths), self._identity())
 
         # ion -> neutral counterpart at the wall. Matched on the heavy skeleton; when
@@ -2290,6 +2319,28 @@ cdef class PlasmaReactor(ReactionSystem):
             return False
         return t_now * nu >= 1.0
 
+    cpdef double steady_state_relaxation_time(self, double t_now, np.ndarray y_now):
+        """The wall relaxation time ``1/nu_wall`` (s), the physical span a flat composition
+        must persist across before :class:`TerminationSteadyState` accepts it.
+
+        ``nu_wall = D_a/Lambda^2`` is the rate at which the wall removes charged particles,
+        so ``1/nu_wall`` is the timescale on which a wall-bounded discharge settles -- the
+        natural unit for "has the composition really stopped changing?", and independent of
+        how many steps the integrator took to get there. Reported whenever a wall is
+        configured and the frequency is finite and positive (it depends on the state through
+        the ion mobility, so it is evaluated at ``y_now``); ``nan`` otherwise, which sends the
+        criterion back to its absolute-time fallback. Not gated on a source: the wall settles
+        a pumped discharge (gamma=0, no source) on exactly this timescale too.
+        """
+        cdef double nu, V
+        if not self.has_wall:
+            return float('nan')
+        V = self.compute_volume(y_now)
+        nu = self.compute_nu_wall(y_now, V)
+        if not np.isfinite(nu) or nu <= 0.0:
+            return float('nan')
+        return 1.0 / nu
+
     cpdef advance(self, double tout):
         """Advance, then refuse the accepted state if it left the wall model's domain.
 
@@ -2412,6 +2463,29 @@ cdef class PlasmaReactor(ReactionSystem):
         self.V = self.compute_volume(self.y0)
         for j in range(self.num_core_species):
             self.core_species_concentrations[j] = self.y0[j] / self.V
+
+        # The runtime source term (residual) injects source_total = ionisation_source * V /
+        # Na mol/s -- the DECLARED rate times the reactor volume. The __init__ guard checks
+        # only ionisation_source/Na (no V), a reference-density proxy for what runtime forms;
+        # like round 96's nu_wall overflow, the guard and the computation then evaluate
+        # different expressions. At an extreme-but-finite volume the actual product overflows
+        # to infinity (an infinite source the __init__ finiteness check never saw) or
+        # underflows to exactly zero (a source that reads as declared yet injects nothing,
+        # switching off the zero-electron ignition guard while never leaving n_e = 0). So
+        # check the run-time expression at the actual initial volume, now that V is known.
+        if self.ionisation_source.value_si > 0.0:
+            source_mol = self.ionisation_source.value_si * self.V / constants.Na
+            if not np.isfinite(source_mol) or source_mol < np.finfo(np.float64).tiny:
+                raise PlasmaStateError(
+                    "ionisation_source={0!r} m^-3 s^-1 at the initial volume V={1!r} m^3 "
+                    "forms a run-time volumetric injection source*V/Na = {2!r} mol/s, which "
+                    "is not a usable finite positive rate (it overflowed to infinity or "
+                    "underflowed to zero). The __init__ guard checks source/Na, but the "
+                    "residual injects source*V/Na -- a different expression -- so a source "
+                    "finite on its own becomes infinite or vanishing once scaled by the "
+                    "volume. Use a source and gas amount whose product injects a normal "
+                    "positive rate. ({3})".format(
+                        self.ionisation_source.value_si, self.V, source_mol, self._identity()))
 
         # The wall's numerical neutral-density floor, and the domain check on the initial
         # state. The floor is a fixed fraction of the Loschmidt number density -- a NUMBER

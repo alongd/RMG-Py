@@ -1378,11 +1378,13 @@ cdef class ReactionSystem(DASx):
                     ss_external_residual = self.steady_state_external_residual(
                         self.t, y_core_species, steady_state_prev_t, steady_state_prev_y)
                     ss_external_armed = self.steady_state_external_armed(self.t, y_core_species)
+                    ss_relaxation_time = self.steady_state_relaxation_time(self.t, y_core_species)
                     for term in steady_state_terms:
                         if term.update(y_core_species, self.t, steady_state_prev_y,
                                        steady_state_prev_t, atol, core_species,
                                        external_residual=ss_external_residual,
-                                       external_armed=ss_external_armed):
+                                       external_armed=ss_external_armed,
+                                       relaxation_time=ss_relaxation_time):
                             steady_state_satisfied = True
                 if not steady_state_satisfied:
                     steady_state_prev_y = y_core_species.copy()
@@ -1559,6 +1561,18 @@ cdef class ReactionSystem(DASx):
         the generic ``R >= 1`` (default: no).
         """
         return False
+
+    cpdef double steady_state_relaxation_time(self, double t_now, np.ndarray y_now):
+        """The system relaxation time (s) a flat run must persist across before the
+        steady-state criterion accepts it (default: ``nan``, unknown).
+
+        :class:`TerminationSteadyState` anchors its persistence requirement to this physical
+        time rather than to a count of accepted solver steps, so the verdict does not depend
+        on the integrator's step controller. A :class:`PlasmaReactor` with a wall overrides
+        it with ``1/nu_wall``; a reactor that knows no such time leaves it ``nan`` and the
+        criterion falls back to one e-fold of absolute time.
+        """
+        return float('nan')
 
     cpdef log_rates(self, double char_rate, object species, double species_rate, double max_dif_ln_accum_num, object network,
                     double network_rate):

@@ -110,25 +110,35 @@ class TerminationSteadyState:
 
     **Termination.** Both of:
 
-    1. armed -- ``R >= 1`` has held at least once; and
-    2. flat -- ``R < tolerance`` on ``window`` consecutive steps.
+    1. armed -- ``R >= 1`` has held at least once (or, for a sub-floor channel the reactor
+       tracks externally, its own relaxation time has passed while no generic channel is
+       still departing -- see :meth:`update`); and
+    2. flat -- ``R < tolerance`` and the flat run has persisted for at least one SYSTEM
+       RELAXATION TIME. Persistence is a physical span, not a step count: counting accepted
+       solver steps would make the verdict depend on the integrator's step controller, so
+       the same plateau would terminate under fine stepping and not under coarse. The
+       reactor supplies the relaxation time (``1/nu_wall`` for a wall-bounded discharge);
+       an ordinary reactor that knows no such time falls back to one e-fold of absolute
+       time. The step ``window`` survives only as a cheap fluke guard -- a flat interval
+       must be at least two accepted samples -- and is never sufficient on its own.
 
     **A system that carries no flux at all is handled by the solver, and it is NOT a steady
     state.** Its composition cannot change again, so the integration has to stop -- but a
     system that never started has converged to nothing, and reporting that as a satisfied
-    criterion is precisely the failure this criterion exists to remove. The latch is what
-    tells the two apart, with no extra machinery: a run that went through a transient and
-    then froze arrives here armed, with a residual of exactly zero that clears any
-    tolerance and fills the window like any other flat tail, and it counts. A run that
-    never armed is terminated by the solver with ``steady_state_reached`` left False and a
-    warning saying no steady state was demonstrated.
+    criterion is precisely the failure this criterion exists to remove. The arm is what
+    tells the two apart: a run that went through a transient and then froze arrives here
+    armed and flat and counts (after one relaxation time confirms it, like any other tail);
+    a run that never armed is terminated by the solver with ``steady_state_reached`` left
+    False and a warning saying no steady state was demonstrated. There is no special case
+    for a residual of exactly zero -- equal endpoints do not prove a frozen structure, so a
+    zero residual earns the same one-relaxation-time confirmation as any other flat tail.
 
     Attributes:
 
     `tolerance`     the residual below which the composition counts as no longer changing
-    `window`        how many consecutive steps must satisfy it
+    `window`        the fluke-guard floor on how many accepted samples a flat interval spans
     `armed`         whether the integration has passed its fastest relaxation time
-    `streak`        consecutive steps satisfied so far
+    `streak`        consecutive flat steps satisfied so far
     `residual`      the most recently evaluated residual (nan before the second step)
     `worst_label`   the species carrying that residual, for the log
     """
@@ -156,13 +166,15 @@ class TerminationSteadyState:
         self.armed_generic = False
         self.armed_external = False
         self._r_gen_prev = float('nan')
+        self._steps_since_generic_rise = 0
         self.streak = 0
         self._t_flat_start = float('nan')
         self.residual = float('nan')
         self.worst_label = None
 
     def update(self, y_now, t_now, y_prev, t_prev, floor, labels=None,
-               external_residual=float('nan'), external_armed=False):
+               external_residual=float('nan'), external_armed=False,
+               relaxation_time=float('nan')):
         """
         Fold one solver step into the criterion and report whether it is now satisfied.
 
@@ -186,10 +198,19 @@ class TerminationSteadyState:
         ``R >= 1`` latch exactly as before.
 
         `external_armed` vouches ONLY for the electron. It may arm the whole criterion only
-        while the generic (neutral) residual is not still rising toward its own arm; a
-        neutral mid-transit -- below tolerance only because it has not yet reached its
-        timescale -- keeps the system unsteady even after the electron has saturated. See
-        the per-channel arming block below.
+        while the generic (neutral) residual is not still DEPARTING -- and departing is
+        judged over a sequence (no step-over-step rise for `window` consecutive samples),
+        not from the two most recent values, so one flat or noisy sample cannot license it.
+        That arm is re-evaluated every step and does not latch: a neutral mid-transit --
+        below tolerance only because it has not yet reached its timescale -- keeps the system
+        unsteady even after the electron has saturated, and a settled neutral that resumes
+        moving un-arms it. See the per-channel arming block below.
+
+        `relaxation_time` is the system timescale the flat run must persist across before the
+        state counts as steady (the reactor's ``1/nu_wall`` for a wall-bounded discharge).
+        Anchoring persistence to a physical time rather than to a count of accepted steps is
+        what makes the verdict independent of the integrator's step controller. Defaults to
+        nan, in which case persistence falls back to one e-fold of absolute time.
 
         Returns True only if armed and the flat condition has held for `window` steps.
         """
@@ -205,27 +226,39 @@ class TerminationSteadyState:
                 self.worst_label = '<external channel>'
         self.residual = r
 
-        # Arming is PER CHANNEL -- the thing that arms must be the thing declared steady:
+        # Arming is PER CHANNEL -- the thing that arms must be the thing declared steady.
         #  - the GENERIC channel arms on its OWN residual crossing 1 (a neutral has run
-        #    through its relaxation time). The folded electron slope must not arm it.
-        #  - the EXTERNAL (electron) channel arms on the reactor's known relaxation time
-        #    ``t*nu >= 1``, since its saturating-from-zero slope is bounded by 1 and can
-        #    never reach the ``R >= 1`` arm. But that arm vouches ONLY for the electron: it
-        #    may license the whole criterion only while no generic channel is still
-        #    DEPARTING, i.e. while the generic residual is not rising. A neutral whose
-        #    residual is still climbing toward its own arm -- a slow reaction mid-transit,
-        #    below tolerance only because it has not yet reached its timescale -- is not
-        #    steady, and the electron's saturation says nothing about it. A quiescent
-        #    (flat/zero) or settled (decaying) generic residual does not block. Both latches
-        #    persist once set.
+        #    through its relaxation time). That is a HISTORICAL FACT about the trajectory --
+        #    it either happened or it did not -- so this latch is permanent and sound.
+        #  - the EXTERNAL (electron) channel is licensed to arm the whole criterion only
+        #    while NO generic channel is still DEPARTING (climbing toward its own arm). A
+        #    saturating-from-zero electron slope is bounded by 1 and never reaches the
+        #    ``R >= 1`` arm, so the reactor vouches for it from its known relaxation time;
+        #    but that vouch says nothing about a neutral still in transit, so it may license
+        #    the system only while the generic channel is not departing. "Not departing" is
+        #    a LIVE condition, not a historical fact -- a neutral can start moving again --
+        #    so this arm is RE-EVALUATED every step and NOT latched. An irreversible arm on a
+        #    reversible condition is exactly the defect this replaces.
+        #
+        # "Departing" is a property of a SEQUENCE, not of the two most recent samples. The
+        # old test compared r_gen to the single preceding value, so one flat or noisy sample
+        # -- or the very first step, whose predecessor is nan -- read as "not rising" and
+        # armed the channel forever. Here the generic residual counts as still climbing until
+        # it has failed to set a step-over-step rise for `window` CONSECUTIVE finite samples:
+        # a single flat/noisy sample inside a genuine climb is undone by the next rise and
+        # can no longer license the arm, while a residual that has truly stopped rising for a
+        # full window releases it. Threshold-free -- it reads the sign of the trend over the
+        # window, never a magnitude floor.
+        if np.isfinite(r_gen):
+            if np.isfinite(self._r_gen_prev) and r_gen > self._r_gen_prev:
+                self._steps_since_generic_rise = 0    # rose vs the previous sample: departing
+            else:
+                self._steps_since_generic_rise += 1   # flat or falling
+            self._r_gen_prev = r_gen
         if np.isfinite(r_gen) and r_gen >= 1.0:
             self.armed_generic = True
-        generic_rising = (np.isfinite(r_gen) and np.isfinite(self._r_gen_prev)
-                          and r_gen > self._r_gen_prev)
-        if external_armed and not generic_rising:
-            self.armed_external = True
-        if np.isfinite(r_gen):
-            self._r_gen_prev = r_gen
+        generic_departing = self._steps_since_generic_rise < self.window
+        self.armed_external = external_armed and not generic_departing
         self.armed = self.armed_generic or self.armed_external
 
         if not np.isfinite(r):
@@ -237,34 +270,48 @@ class TerminationSteadyState:
             return False
         if r < self.tolerance:
             if self.streak == 0:
-                self._t_flat_start = t_now
+                # Anchor the flat interval at its FIRST endpoint (t_prev of the first flat
+                # step), not its current endpoint: the residual at this step describes the
+                # interval [t_prev, t_now], so the flat run began at t_prev. Setting the
+                # start to t_now instead threw away that first interval and made a late tail
+                # need an extra span measured from where the window happened to open.
+                self._t_flat_start = t_prev
             self.streak += 1
         else:
             self.streak = 0
             self._t_flat_start = float('nan')
-        # Persistence is PHYSICAL, not a bare step count. Counting accepted solver steps
-        # alone makes the verdict a function of the integrator's step controller: three
-        # steps span negligible time under tight control and a full decade under loose
-        # control, so both the termination time and whether a transient DIP is mistaken for
-        # a steady tail depend on step size. Require, in addition to the step `window` (which
-        # still guards against a single fluky flat step), that the flat run has held while
-        # the integration time advanced by at least a factor of e -- one e-fold, the native
-        # scale of a ``d/d ln t`` criterion and a step-controller-independent span.
+
+        # Persistence is a PHYSICAL span, not a step count. Counting accepted solver steps
+        # makes the verdict a function of the integrator's controller: the same plateau
+        # terminates under fine stepping (many steps in the window) and not under coarse
+        # stepping (too few), though the physics is identical. So the binding requirement is
+        # that the flat run has persisted for at least one SYSTEM RELAXATION TIME -- the
+        # timescale on which this system settles, which the reactor supplies
+        # (`relaxation_time`, e.g. ``1/nu_wall`` for a wall-bounded discharge). That is
+        # step-controller-independent AND anchored to the physics rather than to absolute
+        # elapsed time: a late-converging tail needs one more tau to confirm, never a fixed
+        # multiple of whenever the window opened. Where the reactor knows no system time (an
+        # ordinary reactor passes nan), fall back to one e-fold of absolute time -- the
+        # native scale of a ``d/d ln t`` criterion.
         #
-        # The span is waived for a residual of EXACTLY zero: that is not a small slope that
-        # a transient could be mimicking, it is a STRUCTURALLY frozen composition -- every
-        # live species constant to the last bit, the "went through a transient and then
-        # froze" case in the class docstring -- which is unambiguously steady and needs no
-        # confirmation over time. Requiring the extra e-fold there would force the
-        # integration on past a state that cannot change again; for a fully-pumped discharge
-        # (gamma=0) whose steady state is the electron vanishing, that extra span pushes n_e
-        # below the mole floor into solver-noise-negative territory, which the wall's
-        # domain guard then refuses -- terminating a settled run in an error instead.
-        span_ok = (self.residual == 0.0) or (
-            np.isfinite(self._t_flat_start) and self._t_flat_start > 0.0
-            and t_now > 0.0
-            and (np.log(t_now) - np.log(self._t_flat_start)) >= 1.0)
-        return self.armed and self.streak >= self.window and span_ok
+        # The step `window` is kept ONLY as a cheap fluke guard -- a flat interval must be at
+        # least two accepted samples, so a single flat step that happens to span a whole tau
+        # cannot alone terminate -- and is deliberately NOT sufficient: the physical span
+        # must also hold. Two is the floor because a span needs two endpoints; requiring more
+        # would put back the step-count dependence this removes. There is no exact-zero
+        # waiver: equal endpoints do not prove a frozen structure (they alias an oscillation
+        # or a stop-restart), so a residual of zero earns the same one-relaxation-time
+        # confirmation as any other flat tail. Anchoring to tau rather than to an absolute
+        # e-fold keeps that confirmation short enough that a fully-pumped (gamma=0) discharge
+        # settling to n_e -> 0 is recognised before the electron drifts past the wall guard.
+        if not (self.streak >= 2 and np.isfinite(self._t_flat_start)
+                and self._t_flat_start > 0.0 and t_now > 0.0):
+            return False
+        if np.isfinite(relaxation_time) and relaxation_time > 0.0:
+            span_ok = (t_now - self._t_flat_start) >= relaxation_time
+        else:
+            span_ok = (np.log(t_now) - np.log(self._t_flat_start)) >= 1.0
+        return self.armed and span_ok
 
     @staticmethod
     def compute_residual(y_now, t_now, y_prev, t_prev, floor, labels=None):
