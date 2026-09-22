@@ -1,0 +1,14 @@
+INFO:matplotlib.font_manager:Failed to extract font properties from /usr/share/fonts/truetype/noto/NotoColorEmoji.ttf: In FT2Font: Could not set the fontsize (invalid pixel size; error code 0x17)
+INFO:matplotlib.font_manager:generated new fontManager
+Traceback (most recent call last):
+  File "/home/alon/Code/RMG-Py-i264-cantera-one-range/docs/i264-cantera-one-range/driver_yaml_writer.py", line 54, in main
+    entry = species_to_dict(sp_one, [sp_one])
+  File "/home/alon/Code/RMG-Py-plasma/rmgpy/yaml_cantera2.py", line 525, in species_to_dict
+    sorted_polys[1].Tmax.value_si],
+IndexError: list index out of range
+Traceback (most recent call last):
+  File "/home/alon/Code/RMG-Py-i264-cantera-one-range/docs/i264-cantera-one-range/driver_yaml_writer.py", line 81, in main
+    species_to_dict(sp_empty, [sp_empty])
+  File "/home/alon/Code/RMG-Py-plasma/rmgpy/yaml_cantera2.py", line 524, in species_to_dict
+    'temperature-ranges': [sorted_polys[0].Tmin.value_si, sorted_polys[0].Tmax.value_si,
+IndexError: list index out of range

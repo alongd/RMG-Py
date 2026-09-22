@@ -1,0 +1,6 @@
+Traceback (most recent call last):
+  File "/home/alon/Code/RMG-Py-i264-cantera-one-range/docs/i264-cantera-one-range/driver_nasa_to_cantera.py", line 36, in main
+    ct_poly = nasa_one.to_cantera()
+  File "rmgpy/thermo/nasa.pyx", line 434, in rmgpy.thermo.nasa.NASA.to_cantera
+    assert len(polys) == 2, "Cantera NasaPoly2 objects only accept 2 polynomials"
+AssertionError: Cantera NasaPoly2 objects only accept 2 polynomials

@@ -1,0 +1,11 @@
+=== cantera 3.1.0 ===
+has NasaPoly1 attr: False
+has NasaPoly2 attr: True
+[OK]   one-range (2 breakpoints, 1 data): loaded. thermo type = NasaPoly2
+          T=   300  Cp/R=2.5000  H=38454.390  S=154974.3179
+          T=  1000  Cp/R=2.5000  H=14588763.971  S=180000.2851
+          T=  3000  Cp/R=2.5000  H=56161077.062  S=202836.2121
+[OK]   two-range duplicated (3 breakpoints, 2 data): loaded. thermo type = NasaPoly2
+          T=   300  Cp/R=2.5000  H=38454.390  S=154974.3179
+          T=  1000  Cp/R=2.5000  H=14588763.971  S=180000.2851
+          T=  3000  Cp/R=2.5000  H=56161077.062  S=202836.2121
