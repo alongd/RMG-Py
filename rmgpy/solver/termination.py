@@ -143,14 +143,16 @@ class TerminationSteadyState:
     `worst_label`   the species carrying that residual, for the log
     """
 
-    def __init__(self, tolerance=1e-6, window=3):
+    def __init__(self, tolerance=1e-6, window=2):
         tolerance = float(tolerance)
         if not np.isfinite(tolerance) or tolerance <= 0.0:
             raise ValueError('terminationSteadyState tolerance must be finite and strictly '
                              'positive; got {0!r}.'.format(tolerance))
         window = int(window)
-        if window < 1:
-            raise ValueError('terminationSteadyState window must be at least 1 step; got '
+        if window < 2:
+            raise ValueError('terminationSteadyState window must be at least 2 accepted '
+                             'samples: a flat interval needs two endpoints, and a single '
+                             'step -- however long it spans -- is not an interval. Got '
                              '{0!r}.'.format(window))
         self.tolerance = tolerance
         self.window = window
@@ -165,8 +167,13 @@ class TerminationSteadyState:
         self.armed = False
         self.armed_generic = False
         self.armed_external = False
-        self._r_gen_prev = float('nan')
-        self._steps_since_generic_rise = 0
+        # HIGH 1 (round 106): the departing test is PER SPECIES, not on the aggregate
+        # maximum. A dict of the previous log-log slope for each live species, and a dict
+        # counting how many consecutive samples each has failed to rise. A species is still
+        # departing until it has not risen for `window` consecutive samples; the generic
+        # channel is departing while ANY live species still is.
+        self._slope_prev = {}
+        self._steps_since_rise = {}
         self.streak = 0
         self._t_flat_start = float('nan')
         self.residual = float('nan')
@@ -214,8 +221,9 @@ class TerminationSteadyState:
 
         Returns True only if armed and the flat condition has held for `window` steps.
         """
-        r_gen, self.worst_label = self.compute_residual(y_now, t_now, y_prev, t_prev, floor,
-                                                        labels=labels)
+        analysis = self._slope_analysis(y_now, t_now, y_prev, t_prev, floor, labels=labels)
+        r_gen = analysis['r']
+        self.worst_label = analysis['label']
         # Fold in the reactor's sub-floor channel by MAX for the FLAT test: the composition
         # is settled only when the slowest of everything -- neutrals AND the invisible
         # electron -- is flat.
@@ -240,24 +248,42 @@ class TerminationSteadyState:
         #    so this arm is RE-EVALUATED every step and NOT latched. An irreversible arm on a
         #    reversible condition is exactly the defect this replaces.
         #
-        # "Departing" is a property of a SEQUENCE, not of the two most recent samples. The
-        # old test compared r_gen to the single preceding value, so one flat or noisy sample
-        # -- or the very first step, whose predecessor is nan -- read as "not rising" and
-        # armed the channel forever. Here the generic residual counts as still climbing until
-        # it has failed to set a step-over-step rise for `window` CONSECUTIVE finite samples:
-        # a single flat/noisy sample inside a genuine climb is undone by the next rise and
-        # can no longer license the arm, while a residual that has truly stopped rising for a
-        # full window releases it. Threshold-free -- it reads the sign of the trend over the
-        # window, never a magnitude floor.
-        if np.isfinite(r_gen):
-            if np.isfinite(self._r_gen_prev) and r_gen > self._r_gen_prev:
-                self._steps_since_generic_rise = 0    # rose vs the previous sample: departing
-            else:
-                self._steps_since_generic_rise += 1   # flat or falling
-            self._r_gen_prev = r_gen
+        # The generic R>=1 arm is a HISTORICAL FACT on the aggregate maximum -- did the
+        # fastest chemistry ever run through its own relaxation time. The maximum is exactly
+        # right for that ("did ANY species reach R=1"), and it either happened or it did not,
+        # so this latch is permanent and sound.
         if np.isfinite(r_gen) and r_gen >= 1.0:
             self.armed_generic = True
-        generic_departing = self._steps_since_generic_rise < self.window
+
+        # "Departing" is PER SPECIES, and a property of each species' own SEQUENCE (HIGH 1,
+        # round 106). The previous test asked whether the aggregate MAXIMUM residual rose;
+        # that hides a species climbing toward its own transient whenever a different,
+        # decaying species holds the maximum, and it compares the slopes of two DIFFERENT
+        # species across a step in which the largest changed. "Is anything still moving" is a
+        # per-species question. Track each live species' log-slope against its OWN previous
+        # value: it counts as still climbing until it has failed to rise for `window`
+        # CONSECUTIVE samples. A single flat/noisy sample inside a genuine climb is undone by
+        # the next rise; a species that has truly stopped rising for a full window releases
+        # its hold. The generic channel is departing while ANY live species still is.
+        # Threshold-free -- it reads the sign of each species' trend, never a magnitude floor.
+        if analysis['status'] == 'ok':
+            live_keys = set(analysis['slopes'])
+            for key, slope in analysis['slopes'].items():
+                prev = self._slope_prev.get(key)
+                if prev is not None and slope > prev:
+                    self._steps_since_rise[key] = 0                       # rose vs its own last sample
+                else:
+                    self._steps_since_rise[key] = self._steps_since_rise.get(key, 0) + 1
+                self._slope_prev[key] = slope
+            # Drop species no longer live so a stale, frozen counter cannot vouch that the
+            # present composition has stopped moving.
+            for key in [k for k in self._steps_since_rise if k not in live_keys]:
+                self._steps_since_rise.pop(key, None)
+                self._slope_prev.pop(key, None)
+        if not self._steps_since_rise:
+            generic_departing = True     # nothing measured yet -- conservatively still departing
+        else:
+            generic_departing = any(c < self.window for c in self._steps_since_rise.values())
         self.armed_external = external_armed and not generic_departing
         self.armed = self.armed_generic or self.armed_external
 
@@ -294,17 +320,22 @@ class TerminationSteadyState:
         # ordinary reactor passes nan), fall back to one e-fold of absolute time -- the
         # native scale of a ``d/d ln t`` criterion.
         #
-        # The step `window` is kept ONLY as a cheap fluke guard -- a flat interval must be at
-        # least two accepted samples, so a single flat step that happens to span a whole tau
-        # cannot alone terminate -- and is deliberately NOT sufficient: the physical span
-        # must also hold. Two is the floor because a span needs two endpoints; requiring more
-        # would put back the step-count dependence this removes. There is no exact-zero
-        # waiver: equal endpoints do not prove a frozen structure (they alias an oscillation
-        # or a stop-restart), so a residual of zero earns the same one-relaxation-time
-        # confirmation as any other flat tail. Anchoring to tau rather than to an absolute
-        # e-fold keeps that confirmation short enough that a fully-pumped (gamma=0) discharge
-        # settling to n_e -> 0 is recognised before the electron drifts past the wall guard.
-        if not (self.streak >= 2 and np.isfinite(self._t_flat_start)
+        # The step `window` is a fluke-guard floor on the sample count -- a flat interval
+        # must span at least `window` accepted samples -- and it is HONOURED as declared
+        # (round 106 MEDIUM): the previous code hard-coded a floor of two regardless of
+        # `window`, so a knob the user set was silently ignored. It defaults to two, the
+        # irreducible floor (a span needs two endpoints; a single flat step, however long,
+        # is not an interval), and at the default the verdict is step-controller-independent
+        # because any positive span yields at least two samples. Raising `window` above two
+        # trades that independence for extra insurance against a fluke, at the user's explicit
+        # choice -- but it is never SUFFICIENT: the physical span below must also hold, so the
+        # physics, not the sample count, remains the control. There is no exact-zero waiver:
+        # equal endpoints do not prove a frozen structure (they alias an oscillation or a
+        # stop-restart), so a residual of zero earns the same one-relaxation-time confirmation
+        # as any other flat tail. Anchoring to tau rather than to an absolute e-fold keeps
+        # that confirmation short enough that a fully-pumped (gamma=0) discharge settling to
+        # n_e -> 0 is recognised before the electron drifts past the wall guard.
+        if not (self.streak >= self.window and np.isfinite(self._t_flat_start)
                 and self._t_flat_start > 0.0 and t_now > 0.0):
             return False
         if np.isfinite(relaxation_time) and relaxation_time > 0.0:
@@ -314,22 +345,37 @@ class TerminationSteadyState:
         return self.armed and span_ok
 
     @staticmethod
-    def compute_residual(y_now, t_now, y_prev, t_prev, floor, labels=None):
+    def _slope_analysis(y_now, t_now, y_prev, t_prev, floor, labels=None):
         """
-        The residual R for one step, and the label (or index) of the species carrying it.
+        The full per-step slope analysis, from which both the aggregate residual and the
+        per-species departing test are derived (HIGH 1, round 106).
 
-        Returns ``(nan, None)`` when the step carries no information: the interval is not
-        a positive interval in log time, or no species is live at both ends. Returns
-        ``(inf, label)`` when a species has crossed *up* through `floor`, i.e. appeared --
-        a system growing a new species is emphatically not stationary.
+        Returns a dict with:
+
+        - ``status``: ``'nan'`` (no information -- degenerate interval, dead totals, no
+          live species), ``'inf'`` (a species went negative beyond the floor or appeared
+          from nothing -- emphatically not steady), or ``'ok'`` (a real aggregate slope).
+        - ``r``: the aggregate residual -- ``nan``/``inf``/``max_i |slope_i|`` matching
+          ``status``.
+        - ``label``: the caller's name (or bare index) for the species carrying ``r``, or
+          ``None`` when there is none.
+        - ``slopes``: ``{int core-species index -> float log-log slope}`` for every species
+          live at BOTH endpoints with a finite slope, present only when ``status == 'ok'``
+          (empty otherwise). Keyed by INTEGER INDEX -- guaranteed hashable, and stable
+          across steps as the set of live species changes -- so :meth:`update` can track each
+          species' own trend rather than the aggregate maximum. A species that HELD the
+          maximum on one step and yields it on the next is one falling entry here; a species
+          climbing toward its own transient while a different, decaying species holds the
+          maximum is one rising entry the aggregate could never show.
         """
+        empty = {}
         y_now = np.asarray(y_now, dtype=np.float64)
         y_prev = np.asarray(y_prev, dtype=np.float64)
         if t_prev <= 0.0 or t_now <= t_prev:
-            return float('nan'), None
+            return {'status': 'nan', 'r': float('nan'), 'label': None, 'slopes': empty}
         dlnt = np.log(t_now) - np.log(t_prev)
         if not np.isfinite(dlnt) or dlnt <= 0.0:
-            return float('nan'), None
+            return {'status': 'nan', 'r': float('nan'), 'label': None, 'slopes': empty}
 
         # A negative population is a solver failure, not a settled composition. The live
         # mask below tests ``y > floor``, which would silently DROP a large-negative species
@@ -342,12 +388,12 @@ class TerminationSteadyState:
         negative = (y_now < -floor) | (y_prev < -floor)
         if negative.any():
             idx = int(np.argmax(negative))
-            return float('inf'), _label_of(labels, idx)
+            return {'status': 'inf', 'r': float('inf'), 'label': _label_of(labels, idx), 'slopes': empty}
 
         total_now = y_now.sum()
         total_prev = y_prev.sum()
         if not (np.isfinite(total_now) and np.isfinite(total_prev)) or total_now <= 0.0 or total_prev <= 0.0:
-            return float('nan'), None
+            return {'status': 'nan', 'r': float('nan'), 'label': None, 'slopes': empty}
 
         # The floor is applied to MOLES (that is where the integrator's absolute tolerance
         # lives), while the residual is taken on mole fractions.
@@ -357,21 +403,43 @@ class TerminationSteadyState:
         appeared = live_now & ~live_prev
         if appeared.any():
             idx = int(np.argmax(appeared))
-            return float('inf'), _label_of(labels, idx)
+            return {'status': 'inf', 'r': float('inf'), 'label': _label_of(labels, idx), 'slopes': empty}
 
         both = live_now & live_prev
         if not both.any():
-            return float('nan'), None
+            return {'status': 'nan', 'r': float('nan'), 'label': None, 'slopes': empty}
 
+        both_indices = np.flatnonzero(both)
         x_now = y_now[both] / total_now
         x_prev = y_prev[both] / total_prev
         slope = np.abs(np.log(x_now) - np.log(x_prev)) / dlnt
-        if not np.isfinite(slope).any():
-            return float('nan'), None
-        slope = np.where(np.isfinite(slope), slope, -1.0)
-        k = int(np.argmax(slope))
-        idx = int(np.flatnonzero(both)[k])
-        return float(slope[k]), _label_of(labels, idx)
+        finite = np.isfinite(slope)
+        if not finite.any():
+            return {'status': 'nan', 'r': float('nan'), 'label': None, 'slopes': empty}
+        # Per-species slopes, keyed by the core-species integer index (hashable and stable),
+        # for every both-live species with a finite slope. This is what the departing test
+        # tracks per species; the aggregate max below is only what the generic R>=1 arm reads.
+        slopes = {int(both_indices[j]): float(slope[j]) for j in range(slope.shape[0]) if finite[j]}
+        slope_masked = np.where(finite, slope, -1.0)
+        k = int(np.argmax(slope_masked))
+        idx = int(both_indices[k])
+        return {'status': 'ok', 'r': float(slope_masked[k]), 'label': _label_of(labels, idx), 'slopes': slopes}
+
+    @staticmethod
+    def compute_residual(y_now, t_now, y_prev, t_prev, floor, labels=None):
+        """
+        The residual R for one step, and the label (or index) of the species carrying it.
+
+        A thin wrapper over :meth:`_slope_analysis` that keeps the historical 2-tuple
+        contract (``(r, label)``) for the many callers and tests that read only the
+        aggregate. Returns ``(nan, None)`` when the step carries no information: the
+        interval is not a positive interval in log time, or no species is live at both
+        ends. Returns ``(inf, label)`` when a species has crossed *up* through `floor`,
+        i.e. appeared -- a system growing a new species is emphatically not stationary.
+        """
+        analysis = TerminationSteadyState._slope_analysis(
+            y_now, t_now, y_prev, t_prev, floor, labels=labels)
+        return analysis['r'], analysis['label']
 
 
 def _label_of(labels, index):

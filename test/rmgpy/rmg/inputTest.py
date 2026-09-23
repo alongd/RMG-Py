@@ -1027,7 +1027,7 @@ class TestInputPlasmaReactor:
                  if isinstance(t, TerminationSteadyState)]
         assert len(terms) == 1
         assert terms[0].tolerance == 1e-7
-        assert terms[0].window == 3          # the default
+        assert terms[0].window == 2          # the default: two endpoints, the minimum interval
 
     def test_termination_steady_state_dict_form(self, tmp_path):
         from rmgpy.solver.termination import TerminationSteadyState

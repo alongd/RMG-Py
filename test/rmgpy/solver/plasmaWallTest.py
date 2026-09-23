@@ -2287,3 +2287,125 @@ def test_all_four_steady_state_verdicts_hold_together_in_one_build():
     r4, c4, x4 = _build_reactor(wall=False, with_chemistry=False, termination=t4)
     _simulate(r4, c4, x4)
     assert not r4.steady_state_reached, "(4) a genuinely inert deck was wrongly called steady"
+
+
+# ---------------------------------------------------------------- round 106 MEDIUM
+
+
+def _wall_reactor_with_flag(flag):
+    """A wall PlasmaReactor built with an explicit wallSingleBathApproximation value,
+    bypassing _build_reactor (which does not expose the flag)."""
+    electron, ar, arp = _argon_species()
+    imf = {electron: 1.0e-6, arp: 1.0e-6, ar: 1.0 - 2.0e-6}
+    return PlasmaReactor(
+        (TGAS, 'K'), (P_NOMINAL, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+        n_sims=1, termination=[],
+        diffusion_length=(_diffusion_length(), 'm'),
+        ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
+        wall_recycling=1.0, wall_single_bath_approximation=flag)
+
+
+def test_wall_single_bath_approximation_is_coerced_by_value_not_truthiness():
+    """Round 106 MEDIUM: wall_single_bath_approximation was set with ``bool(value)``, which
+    reads the STRING "False" as True (bool of any non-empty string is True), reads 2 and NaN
+    as True, and so opts a deck into the single-bath approximation it wrote "False" to
+    decline -- silently. It must be coerced by VALUE, the same discipline quasineutralElectron
+    already gets: a genuine bool/None passes through, a boolean-like string parses by its
+    meaning, and anything else is refused by name rather than read as truthy."""
+    assert _wall_reactor_with_flag(True).wall_single_bath_approximation is True
+    assert _wall_reactor_with_flag(False).wall_single_bath_approximation is False
+    # the exact trap: the string "False" must NOT enable the flag
+    assert _wall_reactor_with_flag('False').wall_single_bath_approximation is False
+    assert _wall_reactor_with_flag('True').wall_single_bath_approximation is True
+    # a non-boolean-like value is refused, not silently read as True
+    for bad in (2, float('nan'), 0.5):
+        with pytest.raises(PlasmaStateError):
+            _wall_reactor_with_flag(bad)
+
+
+def test_the_ionisation_source_is_validated_at_the_evolved_volume_not_only_the_initial_one():
+    """Round 106 MEDIUM: the __init__/set_initial guard validated source*V/Na only at the
+    INITIAL volume, while the residual and Jacobian recompute source*V/Na at the evolved and
+    Newton-trial volume -- guard and computation on different expressions at different points,
+    the campaign's recurring shape. A source finite and positive at V0 can overflow (or
+    underflow to zero) once scaled by an extreme trial volume, and was then applied as an
+    infinite (or vanishing) rate silently. Now every site forms the product through one
+    validated helper, so a volume that makes it non-finite is caught wherever the solve
+    reaches it."""
+    r, _, _ = _build_reactor(wall=True, with_chemistry=False, source=1.0e18, x_ion=1.0e-6)
+    ie, i_ar, i_arp = _indices(r)
+    # Valid at the initial volume: initialisation already succeeded above.
+    y0 = _state_at(r, 1.0e-6)
+    source_mol_0 = r.ionisation_source.value_si * r.compute_volume(y0) / constants.Na
+    assert np.isfinite(source_mol_0) and source_mol_0 > 0.0
+
+    # A wild Newton-trial neutral amount inflates the volume until source*V/Na overflows.
+    # Both the residual and the Jacobian must refuse it, not propagate an infinite source.
+    y = _state_at(r, 1.0e-6)
+    y[i_ar] = 1.0e300
+    V = r.compute_volume(y)
+    assert not np.isfinite(r.ionisation_source.value_si * V / constants.Na), \
+        "the trial volume must actually overflow source*V/Na for this to test the guard"
+    dydt = np.zeros_like(y)
+    with pytest.raises(PlasmaStateError):
+        r.residual(0.0, y, dydt)
+    with pytest.raises(PlasmaStateError):
+        r.jacobian(0.0, y, dydt, 0.0)
+
+
+def test_every_solver_test_is_a_tagged_defect_reproduction_or_asserts_a_property():
+    """Round 106 census: the brief above (see the I-246 rework banner) scopes the evidence
+    standard by an OBSERVABLE marker -- a test is a banked defect reproduction iff its
+    docstring names the round/finding it closes, otherwise it is an invariant/property check
+    that asserts its property directly. That scoping was prose; a reviewer counted tests
+    against it by hand and got a different tally. This makes the brief EXECUTABLE: every
+    ``test_*`` function in the two changed solver test files must either (a) name a
+    round/finding tag in its docstring, or (b) contain at least one ``assert``. A test that
+    does neither makes a claim it cannot back -- it neither reproduces a banked red nor asserts
+    a property -- and fails here, by name, so the standard cannot silently fall out of step."""
+    import ast
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    files = [os.path.join(here, 'plasmaWallTest.py'),
+             os.path.join(here, 'steadyStateTest.py')]
+    # A finding tag: "Round 106", "Finding 3", "HIGH 1", "MEDIUM:", "MED1", "LOW:", etc.
+    # Severity words are matched case-sensitively as whole tokens so ordinary prose
+    # ("higher", "lower", "medium-sized") cannot masquerade as a finding tag; the round /
+    # finding labels carry their own number.
+    tag = re.compile(r'\b(?:Round|Finding)\s*\d+'
+                     r'|\bHIGH\b|\bMEDIUM\b|\bLOW\b|\bMED\d+\b')
+
+    def has_assert(node):
+        for child in ast.walk(node):
+            if isinstance(child, ast.Assert):
+                return True
+            # pytest.raises(...) as a context manager is an assertion of behaviour
+            if isinstance(child, ast.withitem):
+                call = child.context_expr
+                src = ast.dump(call)
+                if 'raises' in src or 'warns' in src:
+                    return True
+        return False
+
+    total = tagged = asserting = 0
+    neither = []
+    for path in files:
+        with open(path) as fh:
+            tree = ast.parse(fh.read(), filename=path)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name.startswith('test_'):
+                total += 1
+                doc = ast.get_docstring(node) or ''
+                is_tagged = bool(tag.search(doc))
+                is_asserting = has_assert(node)
+                if is_tagged:
+                    tagged += 1
+                if is_asserting:
+                    asserting += 1
+                if not (is_tagged or is_asserting):
+                    neither.append('{0}::{1}'.format(os.path.basename(path), node.name))
+    assert total > 0, "no test functions were discovered -- the census enforcement is vacuous"
+    assert not neither, (
+        "{0} of {1} test functions across the two solver test files neither name a "
+        "round/finding tag nor contain an assertion, so they claim neither a banked red nor "
+        "a property: {2}".format(len(neither), total, neither))

@@ -423,7 +423,14 @@ cdef class PlasmaReactor(ReactionSystem):
             'wall_ion_energy_flux': 'declared-absent',
         }
         self.wall_bath_is_mixture = False
-        self.wall_single_bath_approximation = bool(wall_single_bath_approximation)
+        # Coerce, do NOT truthiness-cast (round 106 MEDIUM). ``bool(value)`` accepts the
+        # string "False", the int 2, and NaN as opt-ins, so a deck that wrote
+        # wallSingleBathApproximation="False" would silently enable the very approximation
+        # it meant to decline. _coerce_bool_flag passes bool/None through, parses only
+        # boolean-like strings, and refuses anything else by name -- the same discipline
+        # quasineutral_electron already gets just below.
+        self.wall_single_bath_approximation = _coerce_bool_flag(
+            wall_single_bath_approximation, 'wall_single_bath_approximation', self._identity())
 
         if (diffusion_length is None) != (ion_reduced_mobility is None):
             raise PlasmaStateError(
@@ -2464,28 +2471,19 @@ cdef class PlasmaReactor(ReactionSystem):
         for j in range(self.num_core_species):
             self.core_species_concentrations[j] = self.y0[j] / self.V
 
-        # The runtime source term (residual) injects source_total = ionisation_source * V /
-        # Na mol/s -- the DECLARED rate times the reactor volume. The __init__ guard checks
-        # only ionisation_source/Na (no V), a reference-density proxy for what runtime forms;
+        # The runtime source term (residual and Jacobian) injects source_total =
+        # ionisation_source * V / Na mol/s -- the DECLARED rate times the reactor volume. The
+        # __init__ guard checks only ionisation_source/Na (no V), a reference-density proxy;
         # like round 96's nu_wall overflow, the guard and the computation then evaluate
         # different expressions. At an extreme-but-finite volume the actual product overflows
         # to infinity (an infinite source the __init__ finiteness check never saw) or
         # underflows to exactly zero (a source that reads as declared yet injects nothing,
-        # switching off the zero-electron ignition guard while never leaving n_e = 0). So
-        # check the run-time expression at the actual initial volume, now that V is known.
-        if self.ionisation_source.value_si > 0.0:
-            source_mol = self.ionisation_source.value_si * self.V / constants.Na
-            if not np.isfinite(source_mol) or source_mol < np.finfo(np.float64).tiny:
-                raise PlasmaStateError(
-                    "ionisation_source={0!r} m^-3 s^-1 at the initial volume V={1!r} m^3 "
-                    "forms a run-time volumetric injection source*V/Na = {2!r} mol/s, which "
-                    "is not a usable finite positive rate (it overflowed to infinity or "
-                    "underflowed to zero). The __init__ guard checks source/Na, but the "
-                    "residual injects source*V/Na -- a different expression -- so a source "
-                    "finite on its own becomes infinite or vanishing once scaled by the "
-                    "volume. Use a source and gas amount whose product injects a normal "
-                    "positive rate. ({3})".format(
-                        self.ionisation_source.value_si, self.V, source_mol, self._identity()))
+        # switching off the zero-electron ignition guard while never leaving n_e = 0). Check
+        # the run-time expression THROUGH THE SAME HELPER the residual and Jacobian use
+        # (round 106 MEDIUM), so the guard evaluates the identical product at the identical
+        # volume rather than a proxy at a different one -- here at the initial volume, and
+        # again at every evolved and Newton-trial volume the solve reaches.
+        self._source_total_at_volume(self.V)
 
         # The wall's numerical neutral-density floor, and the domain check on the initial
         # state. The floor is a fixed fraction of the Loschmidt number density -- a NUMBER
@@ -2749,6 +2747,37 @@ cdef class PlasmaReactor(ReactionSystem):
                 net += self.species_charges[j] * y[j]
         return net
 
+    cdef double _source_total_at_volume(self, double V) except *:
+        """The run-time volumetric pair-injection rate source*V/Na (mol/s), VALIDATED at the
+        actual volume V it is evaluated at, and 0.0 when no source is declared.
+
+        The declared ``ionisation_source`` passes a finiteness check in __init__ (on
+        source/Na, no volume), but the residual and Jacobian both form source*V/Na at the
+        run-time volume -- a DIFFERENT expression at a DIFFERENT point. An extreme-but-finite
+        V overflows the product to infinity or underflows it to exactly zero, so a source
+        finite on its own is applied as an infinite or vanishing rate silently. This is the
+        campaign's recurring guard-and-computation-diverge shape (round 96 nu_wall, round 100
+        MED1, now the residual/Jacobian recompute): the only cure is to make the guard and
+        the computation the SAME expression at the SAME volume. Every site that needs
+        source*V/Na goes through here, so validation travels with the value to the initial,
+        evolved, and Newton-trial volumes alike."""
+        cdef double source_mol
+        if self.ionisation_source.value_si <= 0.0:
+            return 0.0
+        source_mol = self.ionisation_source.value_si * V / constants.Na
+        if not np.isfinite(source_mol) or source_mol < np.finfo(np.float64).tiny:
+            raise PlasmaStateError(
+                "ionisation_source={0!r} m^-3 s^-1 at volume V={1!r} m^3 forms a run-time "
+                "volumetric injection source*V/Na = {2!r} mol/s, which is not a usable "
+                "finite positive rate (it overflowed to infinity or underflowed to zero). "
+                "The declared source is finite on its own, but scaled by this volume the "
+                "injected rate is not -- so the residual and Jacobian would apply an "
+                "infinite or vanishing source silently. Use a source and gas amount whose "
+                "product injects a normal positive rate at every volume the solve reaches. "
+                "({3})".format(
+                    self.ionisation_source.value_si, V, source_mol, self._identity()))
+        return source_mol
+
     cdef _apply_wall_terms(self, np.ndarray[np.float64_t, ndim=1] y, double V,
                            np.ndarray[np.float64_t, ndim=1] res):
         """
@@ -2799,7 +2828,7 @@ cdef class PlasmaReactor(ReactionSystem):
         # apportion the declared source over a larger population and deliver less than
         # S_ext*V pairs per second -- silently. Summed over the same set the loop
         # produces into, the delivered total is exactly S_ext*V.
-        source_total = self.ionisation_source.value_si * V / constants.Na
+        source_total = self._source_total_at_volume(V)
         if source_total > 0.0:
             y_ionisable = 0.0
             for j in range(self.num_core_species):
@@ -2981,7 +3010,7 @@ cdef class PlasmaReactor(ReactionSystem):
         # Denominator is the ionisable-neutral total, matching _apply_wall_terms; the
         # d/dy term therefore fires only on an ionisable neutral (the only species in
         # that sum), not on every neutral_heavy species.
-        source_total = self.ionisation_source.value_si * V / constants.Na
+        source_total = self._source_total_at_volume(V)
         if source_total > 0.0:
             y_ionisable = 0.0
             for i in range(self.num_core_species):

@@ -139,7 +139,7 @@ class TerminationSteadyStateResidualTest:
         assert np.isinf(r), "a negative population must poison the residual, not be dropped from it"
         assert worst == 'C', "the residual must name the negative species, got {0!r}".format(worst)
         # And the latch consequence: fed to update(), an inf residual cannot arm or advance.
-        term = TerminationSteadyState(tolerance=1e-6, window=1)
+        term = TerminationSteadyState(tolerance=1e-6, window=2)
         term.armed = True                          # even a system that had armed earlier
         assert term.update(y_now, np.e, y_prev, 1.0, ATOL, labels=['A', 'B', 'C']) is False
         assert term.streak == 0
@@ -214,10 +214,10 @@ class TerminationSteadyStateLatchTest:
     def test_criterion_fires_once_armed_and_flat(self):
         """Transient (R rises past 1), then the flat tail: this is a real steady state.
 
-        With each synthesised step spanning one e-fold of time, two flat samples already
-        span the e-fold the physical persistence requires, so firing lands on the second
-        flat step (index 1), not on a third step counted by the old bare step window."""
-        term = TerminationSteadyState(tolerance=1e-6, window=3)
+        At the default window of two, and with each synthesised step spanning one e-fold of
+        time, two flat samples fill the window AND span the e-fold the physical persistence
+        requires, so firing lands on the second flat step (index 1)."""
+        term = TerminationSteadyState(tolerance=1e-6, window=2)
         # rise through the measured peak of 15.5, then the measured collapse
         rise = [1e-9, 1e-4, 0.44, 2.13, 15.48, 3.45, 0.573, 3.328e-2, 1.355e-4]
         assert self._feed(term, rise) is None
@@ -229,7 +229,7 @@ class TerminationSteadyStateLatchTest:
         A single flat sample is not an interval and cannot terminate however long its step;
         two samples are the minimum. But two samples are NOT sufficient on their own -- the
         physical span must also hold (tested in test_persistence_is_physical_time...)."""
-        term = TerminationSteadyState(tolerance=1e-6, window=3)
+        term = TerminationSteadyState(tolerance=1e-6, window=2)
         assert self._feed(term, [2.0]) is None            # arm it
         # one flat sample: even though this synthesised step spans a full e-fold, streak is
         # only 1, so the two-sample guard blocks it.
@@ -321,7 +321,7 @@ class TerminationSteadyStateLatchTest:
         tau = 5.0
         # Window opens at a LARGE absolute time; only one tau of flatness is needed, not an
         # e-fold of the (large) absolute time.
-        term = TerminationSteadyState(tolerance=1e-6, window=3)
+        term = TerminationSteadyState(tolerance=1e-6, window=2)
         self._feed_r(term, 2.0, 1.0e6, 1.0e6 * np.e, relax=tau)          # arm at large t
         assert not self._feed_r(term, 1e-7, 1.0e6 * np.e, 1.0e6 * np.e + 2.0, relax=tau)  # 2 s < tau
         # cross one tau of elapsed flat time -> fires, though the absolute span is a tiny
@@ -408,6 +408,63 @@ class TerminationSteadyStateLatchTest:
             y_now = np.array([1e12, float(np.exp(rg))])
             term.update(y_now, np.exp(j + 1), y_prev, np.exp(j), ATOL, external_armed=True)
         assert term.armed_external is False   # the resumed rise dropped the arm
+
+    def test_a_species_rising_under_the_aggregate_maximum_still_blocks_the_arm(self):
+        """Round 106 HIGH 1: the departing test must be PER SPECIES, not on the aggregate
+        maximum residual. Here two neutrals sit below tolerance: one ('a') is RISING toward
+        its own transient (log-log slope 5e-8 -> 1e-7 -> 1.5e-7 -> ...), the other ('b') is
+        larger and FALLING (6.77e-7 -> 6.01e-7 -> 5.26e-7 -> ...). The aggregate maximum is
+        'b' at every step, and it is falling -- so a departing test that reads only the
+        maximum sees "nothing rising", stops treating the system as departing, and lets the
+        external (electron) arm through. But 'a' is a live species climbing toward its own
+        timescale: the system is NOT settled, and must not arm. The per-species trend catches
+        the species the aggregate hides."""
+        BIG = 1e12
+        a_slopes = [5e-8, 1e-7, 1.5e-7, 2e-7, 2.5e-7, 3e-7, 3.5e-7, 4e-7]
+        b_slopes = [6.77e-7, 6.01e-7, 5.26e-7, 5.0e-7, 4.8e-7, 4.7e-7, 4.6e-7, 4.55e-7]
+        term = TerminationSteadyState(tolerance=1e-6, window=3)
+        a = b = 1.0
+        for k in range(len(a_slopes)):
+            t_prev, t_now = float(np.exp(k)), float(np.exp(k + 1))     # dlnt = 1
+            a_next, b_next = a * np.exp(a_slopes[k]), b * np.exp(b_slopes[k])
+            term.update(np.array([BIG, a_next, b_next]), t_now,
+                        np.array([BIG, a, b]), t_prev, ATOL,
+                        labels=['big', 'a', 'b'], external_armed=True)
+            a, b = a_next, b_next
+        assert term.worst_label == 'b'          # the maximum is the falling species, as claimed
+        assert term.armed_external is False      # ...yet the rising 'a' keeps the arm shut
+        assert term.armed is False
+
+        # Control: when BOTH species genuinely settle (every live slope flat for a full
+        # window), the external arm IS granted -- the fix does not over-block a real steady
+        # state.
+        settled_a = [3e-7, 2e-7, 1e-7, 1e-9, 1e-9, 1e-9, 1e-9, 1e-9]
+        settled_b = [6e-7, 4e-7, 2e-7, 1e-9, 1e-9, 1e-9, 1e-9, 1e-9]
+        term2 = TerminationSteadyState(tolerance=1e-6, window=3)
+        a = b = 1.0
+        for k in range(len(settled_a)):
+            t_prev, t_now = float(np.exp(k)), float(np.exp(k + 1))
+            a_next, b_next = a * np.exp(settled_a[k]), b * np.exp(settled_b[k])
+            term2.update(np.array([BIG, a_next, b_next]), t_now,
+                         np.array([BIG, a, b]), t_prev, ATOL,
+                         labels=['big', 'a', 'b'], external_armed=True)
+            a, b = a_next, b_next
+        assert term2.armed_external is True
+
+    def test_the_window_parameter_is_honoured_as_the_minimum_sample_span(self):
+        """Round 106 MEDIUM: ``window`` is documented as the minimum number of accepted
+        samples a flat interval must span, but the production code hard-coded a floor of two
+        regardless of the value passed, so window=4 terminated after two flat samples like
+        window=2. Honoured, a larger window demands that many flat samples before firing --
+        even when the physical span is already satisfied. Each synthesised step here spans a
+        full e-fold, so the physical persistence (one e-fold) holds from the second flat
+        sample on; only the sample-count floor separates window=2 from window=4."""
+        def flat_sample_that_fires(window):
+            term = TerminationSteadyState(tolerance=1e-6, window=window)
+            assert self._feed(term, [2.0]) is None                      # arm
+            return self._feed(term, [1e-9] * 10)                        # first flat step to fire
+        assert flat_sample_that_fires(2) == 1     # two samples: fires on the 2nd flat step
+        assert flat_sample_that_fires(4) == 3     # four samples: not until the 4th
 
     def test_reset_clears_the_latch(self):
         """

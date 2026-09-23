@@ -484,11 +484,17 @@ any mole fraction per e-fold of integration time. Because
 :math:`R` is the elapsed time measured in units of the fastest chemistry still running. The
 dict form gives full control::
 
-		terminationSteadyState={'tolerance': 1e-6, 'window': 3},
+		terminationSteadyState={'tolerance': 1e-6, 'window': 4},
 
-where ``window`` is a floor on how many accepted samples a flat interval must span. It is a
-cheap fluke guard -- a single flat step is not an interval and cannot terminate on its own --
-and it is deliberately **not** sufficient. Persistence is a *physical* span: the flat run
+where ``window`` is the floor on how many accepted samples a flat interval must span, and it
+is **honoured as given**: a run terminates only after at least ``window`` consecutive flat
+samples (in addition to the physical-span requirement below). It defaults to ``2`` -- the
+irreducible minimum, since a span needs two endpoints and a single flat step, however long,
+is not an interval -- and must be at least ``2``. At the default the verdict is independent
+of the integrator's step-size controller, because any positive physical span already yields
+two samples; raising ``window`` above ``2`` trades that independence for extra insurance
+against a fluke, at your explicit choice. It is a cheap fluke guard and is deliberately
+**not** sufficient on its own. Persistence is a *physical* span: the flat run
 must also hold for at least one **system relaxation time** -- the timescale on which the
 system settles, which a wall-bounded discharge reports as ``1/nu_wall``. Anchoring to that
 physical time (rather than to a count of accepted steps, or to a fixed factor of the absolute

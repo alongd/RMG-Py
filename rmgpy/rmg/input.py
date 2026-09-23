@@ -700,7 +700,10 @@ def _plasma_wall_kwargs(chamberGeometry, ionReducedMobility, mobilityReferenceDe
     if maxIonisationDegree is not None:
         kwargs['max_ionisation_degree'] = float(maxIonisationDegree)
 
-    kwargs['wall_single_bath_approximation'] = bool(wallSingleBathApproximation)
+    # Pass the raw value; PlasmaReactor coerces it by VALUE (round 106 MEDIUM). bool() here
+    # reads the string "False" as True, silently enabling the approximation a deck meant to
+    # decline -- the same trap quasineutralElectron avoids by passing raw (see below).
+    kwargs['wall_single_bath_approximation'] = wallSingleBathApproximation
 
     logging.info(
         'plasmaReactor: charged-particle wall declared. Geometry: %s -> Lambda = %r m. '
@@ -813,7 +816,7 @@ def plasma_reactor(temperature,
     three criteria expresses (a low-pressure plasma runs to a stationary ionisation
     balance: nothing is consumed net, and no rate ratio decays). Give it a bare tolerance
     on the residual, ``terminationSteadyState=1e-6``, or a dict for full control,
-    ``terminationSteadyState={'tolerance': 1e-6, 'window': 3}``. The residual and the
+    ``terminationSteadyState={'tolerance': 1e-6, 'window': 4}``. The residual and the
     reasoning behind the default are documented on
     :class:`~rmgpy.solver.termination.TerminationSteadyState`; the run logs the residual
     it terminated at, so the resulting claim is checkable.
