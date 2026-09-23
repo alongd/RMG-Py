@@ -1,0 +1,31 @@
+=== one-range NASA.to_cantera() ===
+  T=  250.0 Cp_RMG=   20.7862 Cp_CT=   20.7862 H_RMG=   -1000.855 H_CT=   -1000.853 S_RMG=  151.1847 S_CT=  151.1846
+  T=  500.0 Cp_RMG=   20.7862 Cp_CT=   20.7862 H_RMG=    4195.690 H_CT=    4195.686 S_RMG=  165.5926 S_CT=  165.5924
+  T= 1000.0 Cp_RMG=   20.7862 Cp_CT=   20.7862 H_RMG=   14588.780 H_CT=   14588.764 S_RMG=  180.0005 S_CT=  180.0003
+  T= 2000.0 Cp_RMG=   20.7862 Cp_CT=   20.7862 H_RMG=   35374.960 H_CT=   35374.921 S_RMG=  194.4084 S_CT=  194.4082
+  T= 4000.0 Cp_RMG=   20.7862 Cp_CT=   20.7862 H_RMG=   76947.320 H_CT=   76947.234 S_RMG=  208.8163 S_CT=  208.8160
+  T= 5900.0 Cp_RMG=   20.7862 Cp_CT=   20.7862 H_RMG=  116441.062 H_CT=  116440.931 S_RMG=  216.8950 S_CT=  216.8947
+  max relative error: 1.128e-06
+[OK] succeeded: <cantera.speciesthermo.NasaPoly2 object at 0x7739bb3741e0>
+
+=== two-range NASA.to_cantera() (non-regression) ===
+  T=  250.0 Cp_RMG=   20.7862 Cp_CT=   20.7862 H_RMG=   -1000.855 H_CT=   -1000.853 S_RMG=  151.1847 S_CT=  151.1846
+  T=  500.0 Cp_RMG=   20.7862 Cp_CT=   20.7862 H_RMG=    4195.690 H_CT=    4195.686 S_RMG=  165.5926 S_CT=  165.5924
+  T= 1000.0 Cp_RMG=   20.7862 Cp_CT=   20.7862 H_RMG=   14588.780 H_CT=   14588.764 S_RMG=  180.0005 S_CT=  180.0003
+  T= 2000.0 Cp_RMG=   20.7862 Cp_CT=   20.7862 H_RMG=   35374.960 H_CT=   35374.921 S_RMG=  194.4084 S_CT=  194.4082
+  T= 4000.0 Cp_RMG=   20.7862 Cp_CT=   20.7862 H_RMG=   76947.320 H_CT=   76947.234 S_RMG=  208.8163 S_CT=  208.8160
+  T= 5900.0 Cp_RMG=   20.7862 Cp_CT=   20.7862 H_RMG=  116441.062 H_CT=  116440.931 S_RMG=  216.8950 S_CT=  216.8947
+  max relative error: 1.128e-06
+[OK] succeeded: <cantera.speciesthermo.NasaPoly2 object at 0x7739bb3741e0>
+
+=== >2 polynomials (named refusal) ===
+[OK] raised CanteraThermoWriteError as expected: Cannot convert this NASA object to a Cantera NasaPoly2 object: Cantera's NasaPoly2 only accepts 1 or 2 polynomials, got 3.
+
+=== non-7-coefficient / NASA9 (named refusal) ===
+[OK] raised CanteraThermoWriteError as expected: Cannot convert this NASA object to a Cantera NasaPoly2 object: Cantera's NasaPoly2 polynomials must contain exactly 7 coefficients, got 9 (this looks like NASA9 data, which Cantera's NasaPoly2 cannot represent).
+
+=== NaN coefficient (named refusal) ===
+[OK] raised CanteraThermoWriteError as expected: Cannot convert this NASA object to a Cantera NasaPoly2 object: a polynomial has a non-finite (NaN or Inf) temperature bound or coefficient.
+
+=== summary: 5/5 arms passed ===
+[OK] all arms passed

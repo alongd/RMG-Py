@@ -1,0 +1,20 @@
+test/rmgpy/thermo/nasaTest.py::TestNASA::test_thermo_coverage_dependence PASSED
+test/rmgpy/thermo/nasaTest.py::TestNASA::test_is_temperature_valid PASSED
+test/rmgpy/thermo/nasaTest.py::TestNASA::test_get_heat_capacity PASSED
+test/rmgpy/thermo/nasaTest.py::TestNASA::test_get_enthalpy PASSED
+test/rmgpy/thermo/nasaTest.py::TestNASA::test_get_entropy PASSED
+test/rmgpy/thermo/nasaTest.py::TestNASA::test_get_free_energy PASSED
+test/rmgpy/thermo/nasaTest.py::TestNASA::test_pickle PASSED
+test/rmgpy/thermo/nasaTest.py::TestNASA::test_repr PASSED
+test/rmgpy/thermo/nasaTest.py::TestNASA::test_to_cantera PASSED
+test/rmgpy/thermo/nasaTest.py::TestNASA::test_to_cantera_one_range PASSED
+test/rmgpy/thermo/nasaTest.py::TestNASA::test_to_cantera_refuses_more_than_two_polynomials PASSED
+test/rmgpy/thermo/nasaTest.py::TestNASA::test_to_cantera_refuses_non_seven_coefficient_polynomial PASSED
+test/rmgpy/thermo/nasaTest.py::TestNASA::test_to_cantera_refuses_non_finite_coefficients PASSED
+test/rmgpy/thermo/nasaTest.py::TestNASA::test_to_nasa PASSED
+test/rmgpy/thermo/nasaTest.py::TestNASA::test_nasa_as_dict_full PASSED
+test/rmgpy/thermo/nasaTest.py::TestNASA::test_nasa_as_dict_minimal PASSED
+test/rmgpy/thermo/nasaTest.py::TestNASA::test_nasa_polynomial_as_dict PASSED
+test/rmgpy/thermo/nasaTest.py::TestNASA::test_make_nasa PASSED
+
+============================== 24 passed in 3.90s ==============================

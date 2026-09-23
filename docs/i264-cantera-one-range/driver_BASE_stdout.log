@@ -1,0 +1,9 @@
+=== one-range species ===
+[EXPECTED-RED] IndexError raised (base/pre-fix behavior):
+
+=== two-range species (non-regression) ===
+[OK] species_to_dict succeeded for two-range species
+thermo block: {'model': 'NASA7', 'temperature-ranges': [200.0, 1000.0, 6000.0], 'data': [[2.5, 0.0, 0.0, 0.0, 0.0, -745.375, 4.37967], [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, 4.37967]]}
+
+=== zero-polynomial species (named-refusal case) ===
+[UNEXPECTED] bare IndexError raised for zero-polynomial species (should be named)

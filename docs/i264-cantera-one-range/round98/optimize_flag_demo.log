@@ -1,0 +1,7 @@
+=== without -O ===
+[OK] 3-range raised CanteraThermoWriteError: Cannot convert this NASA object to a Cantera NasaPoly2 object: Cantera's NasaPoly2 only accepts 1 or 2 polynomials, got 3.
+[OK] non-7-coefficient raised CanteraThermoWriteError: Cannot convert this NASA object to a Cantera NasaPoly2 object: Cantera's NasaPoly2 polynomials must contain exactly 7 coefficients, got 9 (this looks like NASA9 data, which Cantera's NasaPoly2 cannot represent).
+
+=== with -O ===
+[OK] 3-range raised CanteraThermoWriteError: Cannot convert this NASA object to a Cantera NasaPoly2 object: Cantera's NasaPoly2 only accepts 1 or 2 polynomials, got 3.
+[OK] non-7-coefficient raised CanteraThermoWriteError: Cannot convert this NASA object to a Cantera NasaPoly2 object: Cantera's NasaPoly2 polynomials must contain exactly 7 coefficients, got 9 (this looks like NASA9 data, which Cantera's NasaPoly2 cannot represent).

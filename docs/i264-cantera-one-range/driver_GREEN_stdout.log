@@ -1,0 +1,10 @@
+=== one-range species ===
+[OK] species_to_dict succeeded for one-range species
+thermo block: {'model': 'NASA7', 'temperature-ranges': [200.0, 6000.0], 'data': [[2.5, 0.0, 0.0, 0.0, 0.0, -745.375, 4.37967]]}
+
+=== two-range species (non-regression) ===
+[OK] species_to_dict succeeded for two-range species
+thermo block: {'model': 'NASA7', 'temperature-ranges': [200.0, 1000.0, 6000.0], 'data': [[2.5, 0.0, 0.0, 0.0, 0.0, -745.375, 4.37967], [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, 4.37967]]}
+
+=== zero-polynomial species (named-refusal case) ===
+[OK] named exception raised: CanteraThermoWriteError: Cannot write Cantera thermo for species 'Ar-empty': its NASA thermo carries no polynomials.

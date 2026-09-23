@@ -1,0 +1,34 @@
+Traceback (most recent call last):
+  File "/home/alon/Code/RMG-Py-i264-cantera-one-range/docs/i264-cantera-one-range/driver_yaml_writer.py", line 52, in run_arm
+    result = fn()
+  File "/home/alon/Code/RMG-Py-i264-cantera-one-range/docs/i264-cantera-one-range/driver_yaml_writer.py", line 112, in <lambda>
+    lambda: species_to_dict(sp_empty, [sp_empty]), "ok")
+  File "/home/alon/Code/RMG-Py-i264-cantera-one-range/rmgpy/yaml_cantera2.py", line 513, in species_to_dict
+    raise CanteraThermoWriteError(
+rmgpy.exceptions.CanteraThermoWriteError: Cannot write Cantera thermo for species 'Ar-empty': its NASA thermo carries no polynomials.
+=== one-range species ===
+[OK] succeeded: thermo={'model': 'NASA7', 'temperature-ranges': [200.0, 6000.0], 'data': [[2.5, 0.0, 0.0, 0.0, 0.0, -745.375, 4.37967]]}
+
+=== two-range species (non-regression) ===
+[OK] succeeded: thermo={'model': 'NASA7', 'temperature-ranges': [200.0, 1000.0, 6000.0], 'data': [[2.5, 0.0, 0.0, 0.0, 0.0, -745.375, 4.37967], [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, 4.37967]]}
+
+=== zero-polynomial species (named refusal) ===
+[FAIL] unexpected CanteraThermoWriteError: Cannot write Cantera thermo for species 'Ar-empty': its NASA thermo carries no polynomials.
+
+=== >2 polynomials (named refusal) ===
+[OK] raised CanteraThermoWriteError as expected: Cannot write Cantera thermo for species 'Ar-three-range': the Cantera NASA7 schema supports at most two temperature ranges (three breakpoints), but this species' NASA thermo carries 3 polynomials.
+
+=== non-7-coefficient / NASA9 (named refusal) ===
+[OK] raised CanteraThermoWriteError as expected: Cannot write Cantera thermo for species 'Ar-nasa9': polynomial 0 of its NASA thermo has 9 coefficients; the Cantera NASA7 schema requires exactly 7 per polynomial (this looks like NASA9 data, which Cantera's NASA7 model cannot represent).
+
+=== gapped ranges (named refusal) ===
+[OK] raised CanteraThermoWriteError as expected: Cannot write Cantera thermo for species 'Ar-gapped': polynomial 1's Tmin (1500.0) does not match polynomial 0's Tmax (1000.0); the Cantera NASA7 schema requires contiguous temperature ranges with no gap or overlap.
+
+=== inverted range (named refusal) ===
+[OK] raised CanteraThermoWriteError as expected: Cannot write Cantera thermo for species 'Ar-inverted': polynomial 0 of its NASA thermo has Tmin (1000.0) >= Tmax (200.0), an inverted or degenerate temperature range.
+
+=== NaN coefficient (named refusal) ===
+[OK] raised CanteraThermoWriteError as expected: Cannot write Cantera thermo for species 'Ar-nan': polynomial 0 of its NASA thermo has a non-finite (NaN or Inf) temperature bound or coefficient.
+
+=== summary: 7/8 arms passed ===
+[FAIL] 1 arm(s) failed
