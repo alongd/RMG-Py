@@ -909,6 +909,14 @@ external channel's own vocabulary is worth recording: `steady_state_external_res
 (`plasma.pyx:2259`) returns **only** `nan` or a finite slope, never `inf` — so the fold's `inf` can only
 ever arrive on the generic side, exactly where site 1 now handles it.
 
+> **Round 110 correction.** The sentence above — "returns only `nan` or a finite slope, never `inf`" —
+> was FALSE, and the round-110 HIGH 1 addendum proves it through the compiled hook: the hook guarded the
+> electron MOLES (`ne_now > 0`) but took `log()` of the FRACTION `xe = ne/tot`, and a positive subnormal
+> `ne` whose ratio underflows to `0.0` gave `log(0) = -inf` → `+inf`. It is fixed at the source (guard the
+> fraction after the division; return `nan`), so the vocabulary claim is restored rather than merely
+> asserted. The census count is also revised below: it omitted the FLUX/TRANSPORT channels and so was
+> **6, not the exhaustive total — the true count is 8** (see the round-110 section).
+
 This branch has now produced the same shape four times — `nu_wall` guard vs its computation, source at
 initial vs evolved volume, aggregate vs per-species trend, and now a finite-check vs the specific
 non-finite value that carries the meaning. The census above is the falsifiable form of "and nowhere
@@ -934,3 +942,161 @@ Round 109 changed only `rmgpy/solver/termination.py`,
 `test/rmgpy/rmg/inputTest.py`, and this `docs/i246-ambipolar-wall-operator/` directory. No file under
 `rmgpy/molecule/`, `rmgpy/kinetics/`, `rmgpy/data/` or the database was touched. Nothing pushed, merged
 or rebased.
+
+## Round 110: the value is ignored, the permission is not — two HIGH, one MEDIUM, a census whose detector was fixed
+
+Closed against branch head `31487b60d` under the owner's binding ruling of 2026-09-23. The wall-transport
+physics is **not** the subject and was not reopened: the measured wall-loss frequency is preserved
+(re-measured below). Two HIGH, one MEDIUM, three test findings, and a census whose *detector* — not just
+its list — was corrected.
+
+### The numpy.bool_ type leak (owner's rebuild was RED here, and this is why)
+
+The round-109-plus-partial branch, rebuilt, failed three `TerminationSteadyStateLatchTest` cases on
+`assert term.armed_external is False` — an assertion that reads like `False is False`. The value was
+correct; the **type** was not. The round-110 HIGH 1 arm fix added `np.isfinite(external_residual)` into
+the `and`-chain, and `np.isfinite` returns a `numpy.bool_`; Python's short-circuiting `and` returns that
+scalar when it is the deciding operand, so `armed_external` (and, through the `or`, `armed`) silently
+became a `numpy.bool_` — truthy/falsy but failing an `is`-identity test a caller may make. This is the
+same class as HIGH 1 itself: a value *almost* right on a contract that says *exactly* right. Fixed by
+coercing both attributes with `bool(...)` at their one assignment site (`termination.py`). **What else
+changed type the same way:** only `armed_external` (and `armed` transitively). `armed_generic` is assigned
+a literal `True`, never a numpy expression; `residual` is a Python `float` (`external_residual` arrives as
+a `cpdef double`, `r_gen` is `float(...)`-wrapped); `streak` is an `int`. The three failing tests'
+*control* sub-cases (a settled channel that DOES arm) were fed `external_armed=True` with no
+`external_residual`, so it defaulted to `nan`; under the round-110 contract a vouching electron channel
+reports a finite slope (a sub-floor-but-positive electron gives a finite residual, not `nan`), so those
+calls now pass `external_residual=1e-9`. That restores the exact generic-departing gating they test and
+is faithful to the production path — not a relaxed assertion.
+
+### HIGH 1 — a non-finite residual must never authorise anything
+
+Round 109 made the fold *ignore* a non-finite `external_residual`; it left the boolean `external_armed`
+(same call, independent) to grant the arm alone, and it dropped a non-finite external residual as
+"criterion unavailable" while a flat generic channel went on to terminate. Reproduced through production
+`update()`, `window=2`, flat generic channel: `external_residual` ∈ {`1e-9`, `nan`, `+inf`} all gave the
+byte-identical `[False, True, True]`. Two-part fix, both in `termination.py`:
+
+1. **The arm travels with the value.** `armed_external = bool(external_armed and
+   np.isfinite(external_residual) and not generic_departing)`. A channel that reported no usable number
+   cannot vouch. Ordinary reactors pass `external_armed=False`/`external_residual=nan`, so this is a no-op
+   there.
+2. **The fold distinguishes `nan` from `±inf`.** `nan` = no information → keep the generic residual
+   (ordinary path, unchanged). `±inf` = the channel is reporting a NON-FINITE residual → POISON the folded
+   residual (`r = inf`) so the non-finite guard resets the streak and it can never arm, and NAME the
+   invalid value in `worst_label` (diagnostics). Dropping it while the generic channel terminated was the
+   defect; poisoning blocks termination through **any** channel, even an armed-and-flat generic one
+   (`test_a_nonfinite_external_residual_poisons_even_an_armed_generic_channel`).
+
+**Addendum — the compiled hook could emit `+inf`.** `steady_state_external_residual` (`plasma.pyx`)
+guarded the electron MOLES (`ne_now > 0`) but took `log()` of the FRACTION `xe = ne/tot`. A positive
+subnormal `ne` divided by an order-one total underflows to `0.0`, so `log(0) = -inf` → the hook returns
+`+inf`. Confirmed through the **compiled** hook. Fixed by guarding the fraction after the division
+(return `nan`, the channel's "no information" sentinel), so the vocabulary {`nan`, finite} is restored at
+the source and a generic `inf` can only ever arrive on the generic side. `rework.md`'s earlier "never
+`inf`" claim is corrected above. Post-fix demonstrations: `1e-9` follows the tolerance rule; `nan`,
+`+inf`, `-inf` cannot terminate; the value is named; residual/Jacobian recovery is unchanged (Check 7).
+
+### HIGH 2 — a zero denominator makes the ratio criterion undefined (owner's ruling; my earlier fix was forbidden)
+
+The partial round's fix reproduced the historical `edge/0 == +inf` to preserve promotion. The owner
+**forbade** that: a zero denominator makes the relative criterion undefined, and it may then grant neither
+promotion nor termination; `denominator = 1`, `= epsilon`, or any floor is a category error (a dimensional
+rate compared against a dimensionless tolerance — `1.0` was the bug, a smaller number the same bug). The
+enlargement ratio is now computed by `ReactionSystem._rate_ratios_or_zero(rates, char_rate)`, which
+evaluates `|rates/char_rate|` **only** when `char_rate` is finite and strictly positive and otherwise
+returns **zeros** — the criterion abstains, promoting and terminating nothing, laundering no `0/0` NaN.
+
+**The contract already contains the dimensioned absolute criterion** the ruling requires for the
+zero-core-flux case: the `_CHAR_RATE_FLOOR` band on `total_char_rate` (the zero-flux promotion block and
+the steady-state-inert block), which includes the wall's `get_non_chemical_char_rate()`. So there is **no
+policy gap**, and none was invented. Seven-case denominator matrix, all green:
+
+| denominator | ratio criterion | test |
+|---|---|---|
+| positive (finite) | evaluates `|rates/denom|` (unchanged) | `test_rate_ratio_criterion_evaluates_only_for_a_finite_positive_denominator` |
+| zero | abstains → zeros | same (unit) |
+| negative | abstains → zeros | same (unit) |
+| NaN | abstains → zeros | same (unit) |
+| +inf / -inf | abstains → zeros | same (unit) |
+| zero-core-flux reactor (non-plasma) | ratio abstains; absolute criterion governs (deterministic `never started`, not a magnitude-dependent promotion) | `test_a_zero_core_flux_reactor_does_not_promote_by_dimensional_comparison` |
+| non-zero wall loss + zero core flux (plasma) | ratio abstains; `get_non_chemical_char_rate() > 0` keeps the absolute criterion live | `test_zero_core_flux_with_wall_loss_abstains_on_ratio_but_keeps_an_absolute_criterion` |
+
+### MEDIUM — the report names the criterion that fired
+
+With several steady-state criteria, the readback (`steady_state_residual`) and the success log used
+`steady_state_terms[0]` unconditionally, producing statements false on their face (e.g. "below tolerance
+1.0000e-30 for 0 consecutive steps" while a different criterion terminated the run). `base.pyx` now
+records the term that fired and reports its residual, tolerance and streak; the backstop-stop readback
+still falls back to criterion zero. Pinned by `test_steady_state_report_names_the_criterion_that_fired`
+(criteria of tolerance `1e-30` and `1e-6`).
+
+### Test findings folded in
+
+- **Source apportionment** (`plasmaWallTest.py`): the pair source is one reaction `Ar -> Ar+ + e-`; the
+  test asserted only the electron leg. It now asserts cation production and neutral consumption too
+  (each equals the full source at the all-neutral state where the wall loss is zero), and that the
+  non-ionisable bath gas stays out of the balance.
+- **AST census** (`plasmaWallTest.py`): `has_assert` accepted a vacuous `assert True` (a bare-`Constant`
+  test), and the tag regex accepted a bare severity word. Tightened: a constant assertion no longer
+  counts, and a severity word must carry its finding number or a colon (`HIGH 1`, `MEDIUM:`), not appear
+  alone.
+- **Cross-channel census pin** (new, `plasmaWallTest.py`): pins the flux/transport fold sites to source
+  and forbids the reintroduction of `char_rate if char_rate > 0.0 else 1.0` or any `ratio_denom` floor,
+  and requires the abstaining helper.
+
+### The census detector was fixed, not just extended
+
+The round-109 cross-channel census enumerated the **residual, charge and Jacobian** channels and reported
+**6** sites. The detector's *channel taxonomy* omitted the **FLUX / TRANSPORT** channels, so it was blind
+to the two folds that combine gas-phase chemistry with a non-chemical rate — one of which carried this
+round's HIGH 2. Re-run with the taxonomy completed to include flux/transport, the enumeration is:
+
+1–6. the six round-109 sites (the fold, the arm gate, the combined arm, and the three charge/quasineutrality
+   sites), unchanged.
+7. **`base.pyx` — the chemical/non-chemical FLUX fold.** `total_char_rate = sqrt(char_rate² +
+   non_chemical_char_rate²)` combines the chemistry rate with the transport rate, and the enlargement-ratio
+   denominator ranks edge flux against `char_rate`. This is where HIGH 2 lived: the `else 1.0` truthiness
+   substitution erased the "no chemistry → undefined ratio" meaning into a dimensional comparison.
+   **1 defect before this round; 0 after** (the ratio now abstains; a non-finite flux is refused loudly by
+   the existing `base.pyx` non-finite guard, not laundered).
+8. **`plasma.pyx` — the chemistry/wall-transport fold.** `_apply_wall_terms(y, V, res)` combines the
+   chemistry residual `res` with the wall transport term. A non-finite wall/source term is refused by the
+   round-106 source guard; a non-finite `res` propagates as a bad residual the integrator rejects. **0
+   defects.**
+
+**Count: 8 cross-channel sites (was 6; +2 flux/transport). Erasure defects: 1 before this round (site 7,
+HIGH 2); 0 after. Zero reported as zero.** Why the two were invisible: the detector searched only the
+steady-state residual and charge channels; a fold is only "cross-channel" to it if both operands were in
+that list, and neither `char_rate`/`non_chemical_char_rate` nor the wall transport term was. The pin test
+now holds the flux/transport sites to source so the list cannot silently drift from the code again.
+
+### The bitwise baseline is no longer an untracked file
+
+`verify_zero_wall_bitwise.py` imported `rmgpy.solver.plasma_base_i246`, a 1217-line **untracked** copy of
+the pre-change reactor — so the bitwise-equivalence claim was unreproducible from a clean checkout. The
+copy was byte-identical to `git show 311818121:rmgpy/solver/plasma.pyx`, i.e. a pure artifact of an
+interrupted `build_and_verify_zero_wall.sh` run (that wrapper already git-shows the baseline, builds it,
+and cleans up on exit). The stray was removed; the verify script now exits with a clear message pointing to
+the wrapper if the transient module is absent, rather than a bare `ImportError`. A frozen private copy is
+the wrong instrument precisely because nothing makes it track the ancestor it claims to be.
+
+### Close gate
+
+- Focused suites rebuilt and green: `pytest test/rmgpy/solver/plasmaWallTest.py
+  test/rmgpy/solver/steadyStateTest.py test/rmgpy/rmg/inputTest.py -o addopts="" -p no:cacheprovider`
+  → **239 passed, 1 skipped** (was 3 failed, 233 passed, 1 skipped on the owner's rebuild of the partial).
+- `.so` proven by value: `strings rmgpy/solver/base.*.so | grep _rate_ratios_or_zero` (present); both
+  `base` and `plasma` rebuilt.
+- **Wall-loss frequency re-measured and unchanged:** at Te = 3000 K, `PlasmaReactor.compute_nu_wall` =
+  15.954491 s⁻¹ and the independent closed form = 15.954492 s⁻¹ (agree to 5.6e-8), matching the owner's
+  15.954516 s⁻¹ to 1.5e-6 — far inside the ±3% mobility tolerance. The sub-threshold floor is the pure
+  quotient `S/nu_wall`; with `nu_wall` unchanged and the source an input, it is unchanged (closed-form
+  estimate 2.33e-20, same order as the owner's integrated 2.5543e-20). None of the round-110 edits touch
+  `compute_nu_wall`, `_apply_wall_terms`, or the wall coefficient. Evidence:
+  `evidence/round110_wall_remeasure.log`.
+- **Check 7 (zero-wall bit-for-bit)** still passes: residual, Jacobian and `jacobian_matrix` identical to
+  the pre-change build on a wall-less reactor across 7 ionisation degrees, negative control confirms it can
+  fail. Evidence: `evidence/round110_zero_wall_bitwise.log`.
+- No file under `rmgpy/molecule/`, `rmgpy/kinetics/`, `rmgpy/data/` or the database touched. Nothing
+  pushed, merged or rebased.

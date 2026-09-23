@@ -25,8 +25,16 @@ print("CHECK 7: ZERO-WALL BIT-FOR-BIT RECOVERY OF THE PRE-CHANGE EQUATIONS")
 print("plasma module (this branch): {0}".format(M.assert_provenance()))
 
 from rmgpy.solver.plasma import PlasmaReactor as NewReactor
-from rmgpy.solver.plasma_base_i246 import PlasmaReactor as BaseReactor
-import rmgpy.solver.plasma_base_i246 as base_mod
+try:
+    from rmgpy.solver.plasma_base_i246 import PlasmaReactor as BaseReactor
+    import rmgpy.solver.plasma_base_i246 as base_mod
+except ImportError:
+    sys.exit(
+        "The baseline module rmgpy.solver.plasma_base_i246 is not built. It is NOT a tracked\n"
+        "file (a frozen private copy would silently drift from the ancestor it claims to be);\n"
+        "it is compiled transiently from `git show 311818121:rmgpy/solver/plasma.pyx` and removed\n"
+        "again. Run this check through build_and_verify_zero_wall.sh, which does the git-show,\n"
+        "the build and the cleanup around it.")
 
 print("plasma module (base 311818121): {0}".format(base_mod.__file__))
 print("=" * 78)

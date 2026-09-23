@@ -1,0 +1,204 @@
+FFFFF..                                                                  [100%]
+=================================== FAILURES ===================================
+_______ test_an_unusable_external_residual_cannot_authorise_termination ________
+
+    def test_an_unusable_external_residual_cannot_authorise_termination():
+        """Round 110 HIGH 1. Round 109 made the residual FOLD ignore a non-finite
+        ``external_residual``, but left the boolean ``external_armed`` -- which arrives on the
+        same ``update()`` call and is independent -- to grant the arm on its own. So a channel
+        that has just reported NO USABLE NUMBER (``nan``) or a value that blew up (``inf``) still
+        authorises termination on a flat generic channel, byte-identically to a valid residual.
+    
+        Reproduces the byte-identical verdict list the reviewer measured, then pins the fix: the
+        value and the permission must travel together, so an external arm is licensed only while
+        the external residual is a usable finite number.
+        """
+        y = np.array([1.0, 0.5])                 # two live species, flat (identical) across steps
+        t = [1.0e-6, 1.0e-3, 1.0, 1.0e3]         # log-spaced, so the e-fold persistence span holds
+        floor = 1.0e-30
+    
+        def verdicts(external_residual):
+            term = TerminationSteadyState(tolerance=1e-6, window=2)
+            return [bool(term.update(y, t[k], y, t[k - 1], floor,
+                                     external_residual=external_residual, external_armed=True,
+                                     relaxation_time=float('nan')))
+                    for k in range(1, len(t))]
+    
+        finite = verdicts(1.0e-9)
+        nan = verdicts(float('nan'))
+        inf = verdicts(float('inf'))
+    
+        # A usable finite external residual still arms and terminates -- the valid path is intact.
+        assert any(finite), finite
+        # ...but a nan (no usable number) or an inf (blew up) must NOT authorise termination: the
+        # arm distrusts a source that reported nothing usable.
+>       assert nan == [False, False, False], nan
+E       AssertionError: [False, True, True]
+E       assert [False, True, True] == [False, False, False]
+E         
+E         At index 1 diff: True != False
+E         Use -v to get more diff
+
+test/rmgpy/solver/steadyStateTest.py:877: AssertionError
+__ test_a_small_edge_flux_with_zero_core_flux_still_grows_a_non_plasma_model ___
+
+caplog = <_pytest.logging.LogCaptureFixture object at 0x793bd1738c40>
+
+    def test_a_small_edge_flux_with_zero_core_flux_still_grows_a_non_plasma_model(caplog):
+        """Round 110 HIGH 2. ``ratio_denom = char_rate if char_rate > 0.0 else 1.0`` (base.pyx)
+        is NOT plasma-gated: on any reactor with ``char_rate == 0`` the edge rate RATIOS became
+        the raw DIMENSIONAL edge rates, compared against dimensionless tolerances. A real edge
+        rate smaller than the dimensionless ``tol_move_to_core`` is then never promoted, and --
+        with a steady-state criterion present to stand the zero-flux promotion block down -- the
+        run is reported as a model that 'never started', though the old ``edge / char_rate`` was
+        ``+inf`` there and would have promoted the edge species.
+    
+        A non-plasma reactor with no non-chemical flux must keep that old promotion. Edge flux
+        here (1.2027e-11) is real, not dust, and lands below the dimensionless tol on purpose.
+        """
+        steady = TerminationSteadyState(tolerance=1e-6, window=2)
+        backstop = TerminationTime((1.0, 's'))
+        reactor, core_species, core_reactions, edge_species, edge_reactions = \
+            _nonzero_edge_flux_zero_core_flux([steady, backstop])
+    
+        # Guard the premise empirically: char_rate is exactly zero, the edge rate is real.
+        y0 = np.array(reactor.y0, float)
+        reactor.residual(0.0, y0.copy(), np.zeros_like(y0))
+        assert np.all(reactor.core_species_rates == 0.0), "core must be inert (char_rate == 0)"
+        max_edge = float(np.max(np.abs(reactor.edge_species_rates)))
+        assert max_edge > np.finfo(np.float64).tiny, "edge flux must be real, not numerical dust"
+    
+        with caplog.at_level(logging.INFO):
+            _terminated, _res, invalid_objects, _ss, _sr, _t, _x = reactor.simulate(
+                core_species, core_reactions, edge_species, edge_reactions, [], [],
+                model_settings=ModelSettings(tol_keep_in_edge=0, tol_move_to_core=0.1,
+                                             tol_interrupt_simulation=1.0),
+                simulator_settings=SimulatorSettings(),
+            )
+    
+        # The model has real edge chemistry to explore: it must GROW (promote the edge species),
+        # not be dismissed as a model that never started.
+>       assert edge_species[0] in invalid_objects, (
+            "a non-plasma reactor with real edge flux but zero core flux promoted {0!r}; the raw "
+            "dimensional edge rate was compared against a dimensionless tolerance".format(invalid_objects))
+E       AssertionError: a non-plasma reactor with real edge flux but zero core flux promoted []; the raw dimensional edge rate was compared against a dimensionless tolerance
+E       assert Species(label="", thermo=ThermoData(Tdata=([300,400,500,600,800,1000,1500],'K'), Cpdata=([9.397,10.123,10.856,11.571,1...9.357,'kcal/mol'), S298=(45.174,'cal/(mol*K)')), molecule=[Molecule(smiles="[CH3]")], molecular_weight=(15.0346,'amu')) in []
+
+test/rmgpy/solver/steadyStateTest.py:937: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  root:steadyStateTest.py:928 At time 0.0000e+00 s, terminating terminationSteadyState WITHOUT a steady state: the system carries no flux, so the composition cannot change and there is nothing further to integrate. NO STEADY STATE WAS DEMONSTRATED -- this model never started, which is not the same result as a stationary ionisation balance, and must not be reported as one. There is no residual to quote: the criterion was never evaluated, because a composition that cannot move carries no information about whether it has settled.
+___________ test_steady_state_report_names_the_criterion_that_fired ____________
+
+caplog = <_pytest.logging.LogCaptureFixture object at 0x793bd17355e0>
+
+    def test_steady_state_report_names_the_criterion_that_fired(caplog):
+        """Round 110 MEDIUM. Any of several steady-state criteria can terminate, but the readback
+        and the success log always used criterion zero (``steady_state_terms[0]``). With a first
+        criterion whose tolerance (1e-30) it never meets and a second (1e-6) it does, the success
+        line quoted criterion zero -- 'below tolerance 1.0000e-30 for 0 consecutive steps' -- a
+        statement false on its face. Report the criterion that actually fired."""
+        never = TerminationSteadyState(tolerance=1e-30, window=3)   # criterion 0: never satisfied
+        fires = TerminationSteadyState(tolerance=1e-6, window=3)     # criterion 1: the one that fires
+        backstop = TerminationTime((1.0e4, 's'))
+        reactor, core_species, core_reactions = _relaxing_system([never, fires, backstop])
+    
+        with caplog.at_level(logging.INFO):
+            terminated = _simulate(reactor, core_species, core_reactions)[0]
+    
+        assert terminated
+        assert reactor.steady_state_reached is True
+        msgs = [r.getMessage() for r in caplog.records if 'reached steady state' in r.getMessage()]
+        assert msgs, "no steady-state success line was logged: {0!r}".format(
+            [r.getMessage() for r in caplog.records])
+        reached = msgs[-1]
+        # The report must quote the tolerance and streak of the criterion that FIRED (1e-6, a full
+        # window), not criterion zero's (1e-30, zero consecutive steps).
+>       assert '1.0000e-06' in reached, reached
+E       AssertionError: At time 1.4049e+00 s, reached steady state: residual 3.9738e-11 below tolerance 1.0000e-30 for 0 consecutive steps (slowest species: A).
+E       assert '1.0000e-06' in 'At time 1.4049e+00 s, reached steady state: residual 3.9738e-11 below tolerance 1.0000e-30 for 0 consecutive steps (slowest species: A).'
+
+test/rmgpy/solver/steadyStateTest.py:966: AssertionError
+------------------------------ Captured log call -------------------------------
+INFO     root:steadyStateTest.py:682 At time 1.4049e+00 s, reached steady state: residual 3.9738e-11 below tolerance 1.0000e-30 for 0 consecutive steps (slowest species: A).
+_ test_a_subnormal_electron_fraction_does_not_make_the_external_residual_infinite _
+
+    def test_a_subnormal_electron_fraction_does_not_make_the_external_residual_infinite():
+        """Round 110 HIGH 1 addendum. ``steady_state_external_residual`` guards ``ne_now > 0.0``
+        on the electron MOLES, then divides by the total and takes ``log()`` of the FRACTION. A
+        positive subnormal electron moles passes the moles guard, yet ``xe = ne/tot`` underflows to
+        exactly 0.0, so ``log(0) = -inf`` and the compiled hook returns ``+inf``. rework.md claimed
+        this channel can never be infinite; the compiled hook proves otherwise. An unresolvable
+        fraction is no usable number -- like a sub-floor electron -- so the hook must return ``nan``
+        (its documented 'no information' sentinel), keeping the channel vocabulary to {nan, finite}
+        so a generic ``inf`` can never arrive on the external side."""
+        reactor = _build_reactor(source=1.0e18, wall=True, gamma=1.0)[0]
+        ie = reactor.electron_index
+        n = reactor.num_core_species
+    
+        y_prev = np.full(n, 1.0)
+        y_prev[ie] = 1.0e-4                        # a normal, finite previous electron fraction
+        y_now = np.full(n, 10.0)                   # order-10 total inventory
+        y_now[ie] = 5.0e-324                        # smallest positive subnormal: passes ne_now > 0
+    
+        # Premise, empirically: the moles are positive but the fraction underflows to exact zero.
+        assert y_now[ie] > 0.0
+        assert y_now[ie] / y_now.sum() == 0.0
+    
+        val = reactor.steady_state_external_residual(2.0, y_now, 1.0, y_prev)
+>       assert not np.isinf(val), "a subnormal electron fraction still yields an infinite residual"
+E       AssertionError: a subnormal electron fraction still yields an infinite residual
+E       assert not True
+E        +  where True = <ufunc 'isinf'>(inf)
+E        +    where <ufunc 'isinf'> = np.isinf
+
+test/rmgpy/solver/plasmaWallTest.py:2490: AssertionError
+____ test_the_cross_channel_census_now_covers_the_flux_and_transport_folds _____
+
+    def test_the_cross_channel_census_now_covers_the_flux_and_transport_folds():
+        """Round 110 census. The round-109 cross-channel census enumerated the steady-state
+        RESIDUAL, CHARGE and JACOBIAN channels and reported 6 sites, but its channel taxonomy
+        omitted the FLUX / TRANSPORT channels -- so it was blind to the two folds that combine
+        gas-phase chemistry with a non-chemical rate, one of which carried this round's HIGH 2:
+    
+          * base.pyx -- ``char_rate`` (chemistry) folded with ``non_chemical_char_rate``
+            (transport) into ``total_char_rate``, and the edge rate-ratio denominator that ranks
+            edge flux against ``char_rate``;
+          * plasma.pyx ``_apply_wall_terms`` -- the chemistry residual ``res`` combined with the
+            wall transport term.
+    
+        This pins both to source so the census cannot silently drift again, and forbids the
+        dimensional ``else 1.0`` denominator that made a raw edge rate masquerade as a dimensionless
+        ratio (HIGH 2)."""
+        here = os.path.dirname(os.path.abspath(__file__))
+        root = os.path.dirname(os.path.dirname(os.path.dirname(here)))
+        with open(os.path.join(root, 'rmgpy', 'solver', 'base.pyx')) as fh:
+            base_src = fh.read()
+        with open(os.path.join(root, 'rmgpy', 'solver', 'plasma.pyx')) as fh:
+            plasma_src = fh.read()
+    
+        # The chemical / non-chemical flux fold is present and catalogued.
+        assert 'char_rate * char_rate' in base_src
+        assert 'non_chemical_char_rate * non_chemical_char_rate' in base_src
+        # The edge-ratio denominator no longer launders a dimensional value via a bare `else 1.0`.
+>       assert 'char_rate if char_rate > 0.0 else 1.0' not in base_src, \
+            "the dimensional edge-ratio denominator (round 110 HIGH 2) was reintroduced"
+E       AssertionError: the dimensional edge-ratio denominator (round 110 HIGH 2) was reintroduced
+E       assert 'char_rate i...0.0 else 1.0' not in '###########...rate_deriv\n'
+E         
+E         'char_rate if char_rate > 0.0 else 1.0' is contained here:
+E           o_denom = char_rate if char_rate > 0.0 else 1.0
+E                       core_species_rate_ratios = np.abs(self.core_species_rates / ratio_denom)
+E                       edge_species_rate_ratios = np.abs(self.edge_species_rates / ratio_denom)
+E                       network_leak_rate_ratios = np.abs(self.network_leak_rates / ratio_denom)
+E                       num_edge_reactions = self.num_edge_reactions...
+E         
+E         ...Full output truncated (785 lines hidden), use '-vv' to show
+
+test/rmgpy/solver/plasmaWallTest.py:2520: AssertionError
+=========================== short test summary info ============================
+FAILED test/rmgpy/solver/steadyStateTest.py::test_an_unusable_external_residual_cannot_authorise_termination
+FAILED test/rmgpy/solver/steadyStateTest.py::test_a_small_edge_flux_with_zero_core_flux_still_grows_a_non_plasma_model
+FAILED test/rmgpy/solver/steadyStateTest.py::test_steady_state_report_names_the_criterion_that_fired
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_a_subnormal_electron_fraction_does_not_make_the_external_residual_infinite
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_the_cross_channel_census_now_covers_the_flux_and_transport_folds
+5 failed, 2 passed in 1.34s
