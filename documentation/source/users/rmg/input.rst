@@ -493,7 +493,13 @@ irreducible minimum, since a span needs two endpoints and a single flat step, ho
 is not an interval -- and must be at least ``2``. At the default the verdict is independent
 of the integrator's step-size controller, because any positive physical span already yields
 two samples; raising ``window`` above ``2`` trades that independence for extra insurance
-against a fluke, at your explicit choice. It is a cheap fluke guard and is deliberately
+against a fluke, at your explicit choice. The one number governs two things at once -- the
+flat-streak length *and* how many consecutive samples a species must fail to rise before the
+criterion stops treating it as still moving -- but the two pull the **same** way: a larger
+``window`` requires a longer flat streak *and* holds a species as "still departing" for longer,
+so both make the verdict strictly more conservative. Raising ``window`` can only push
+termination later, never earlier; read it as *how much evidence to require before trusting a
+"no longer changing" verdict*. It is a cheap fluke guard and is deliberately
 **not** sufficient on its own. Persistence is a *physical* span: the flat run
 must also hold for at least one **system relaxation time** -- the timescale on which the
 system settles, which a wall-bounded discharge reports as ``1/nu_wall``. Anchoring to that

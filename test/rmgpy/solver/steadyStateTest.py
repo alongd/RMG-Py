@@ -466,6 +466,138 @@ class TerminationSteadyStateLatchTest:
         assert flat_sample_that_fires(2) == 1     # two samples: fires on the 2nd flat step
         assert flat_sample_that_fires(4) == 3     # four samples: not until the 4th
 
+    def test_a_species_appearing_while_the_external_channel_is_flat_does_not_return_steady(self):
+        """Round 109 HIGH: a species crossing UP through the floor makes _slope_analysis return
+        inf -- "emphatically not steady". The fold that adds the external (electron) channel
+        tested ``not np.isfinite(r)``, which is true for inf as well as nan, so a small flat
+        external residual REPLACED the inf poison instead of losing a MAX to it; and the
+        per-species counters, updated only on an 'ok' step, kept their stale 'settled' values,
+        so armed_external stayed True and the streak advanced. The appearance step then returned
+        steady -- byte-identically to a control where nothing appears. A species crossing the
+        floor is ordinary under model enlargement, so this is a live path. The appearance must
+        NOT return steady; the control, genuinely settled, still must."""
+        atol = 1e-16
+        big, ext, tau = 1e12, 1e-9, 1e-30
+        labels = ['big', 'settler', 'newcomer']
+
+        def primed():
+            # arm generic (settler climbs two decades), then one flat sample: armed and settled,
+            # streak 1, one more flat step from terminating.
+            t = TerminationSteadyState(tolerance=1e-6, window=2)
+            t.update(np.array([big, 7.389, 0.0]), np.e ** 1, np.array([big, 1.0, 0.0]), np.e ** 0,
+                     atol, labels=labels, external_residual=ext, external_armed=True, relaxation_time=tau)
+            t.update(np.array([big, 7.389, 0.0]), np.e ** 2, np.array([big, 7.389, 0.0]), np.e ** 1,
+                     atol, labels=labels, external_residual=ext, external_armed=True, relaxation_time=tau)
+            return t
+
+        # Control: nothing appears -> genuinely settled -> terminates.
+        control = primed()
+        assert control.update(np.array([big, 7.389, 0.0]), np.e ** 3, np.array([big, 7.389, 0.0]),
+                              np.e ** 2, atol, labels=labels, external_residual=ext,
+                              external_armed=True, relaxation_time=tau) is True
+
+        # Appearance: the newcomer crosses up through the floor on this step.
+        appear = primed()
+        r_alone, lbl = appear.compute_residual(np.array([big, 7.389, atol * 10]), np.e ** 3,
+                                               np.array([big, 7.389, 0.0]), np.e ** 2, atol, labels=labels)
+        assert not np.isfinite(r_alone) and r_alone > 0.0 and lbl == 'newcomer'   # inf, the newcomer
+        got = appear.update(np.array([big, 7.389, atol * 10]), np.e ** 3, np.array([big, 7.389, 0.0]),
+                            np.e ** 2, atol, labels=labels, external_residual=ext,
+                            external_armed=True, relaxation_time=tau)
+        assert got is False                          # the inf survives the fold: not steady
+        assert not np.isfinite(appear.residual)      # ...and is reported, not the electron's 1e-9
+        assert appear.armed_external is False         # the appearance dropped the external arm
+
+    def test_nan_and_inf_steps_treat_the_departing_counters_differently(self):
+        """Round 109: a step the slope analysis cannot evaluate is either nan (NO information --
+        degenerate interval, no live species) or inf (STRONG NEGATIVE information -- a species
+        appeared or went negative). They are different answers and the counters do different
+        things: a nan step leaves the per-species trend memory untouched (nothing was observed),
+        an inf step DISCARDS it (the composition changed structurally, so a stale 'settled' count
+        must not vouch for the new state)."""
+        atol, big = 1e-16, 1e12
+        labels = ['big', 's', 'new']
+
+        def build():
+            # two 'ok' steps build live counters for big and s (newcomer stays below the floor)
+            t = TerminationSteadyState(tolerance=1e-6, window=2)
+            t.update(np.array([big, 7.389, 0.0]), np.e ** 1, np.array([big, 1.0, 0.0]), np.e ** 0, atol, labels=labels)
+            t.update(np.array([big, 7.389, 0.0]), np.e ** 2, np.array([big, 7.389, 0.0]), np.e ** 1, atol, labels=labels)
+            return t
+
+        # nan step: a degenerate interval (t_now == t_prev) -> no information -> counters UNCHANGED.
+        t_nan = build()
+        before = dict(t_nan._steps_since_rise)
+        assert before != {}
+        t_nan.update(np.array([big, 7.389, 0.0]), np.e ** 2, np.array([big, 7.389, 0.0]), np.e ** 2, atol, labels=labels)
+        assert dict(t_nan._steps_since_rise) == before      # left exactly as they were
+
+        # inf step: the newcomer appears -> structural change -> counters DISCARDED.
+        t_inf = build()
+        assert t_inf._steps_since_rise != {}
+        t_inf.update(np.array([big, 7.389, atol * 10]), np.e ** 3, np.array([big, 7.389, 0.0]), np.e ** 2, atol, labels=labels)
+        assert t_inf._steps_since_rise == {} and t_inf._slope_prev == {}
+
+    def test_raising_window_makes_the_criterion_no_less_conservative_in_both_roles(self):
+        """Round 109 MEDIUM 1: `window` gates two quantities -- the flat-streak length AND the
+        number of consecutive non-rises before a species stops counting as 'departing'. Raising
+        it makes BOTH more conservative (a longer flat streak is required, and a species is held
+        as departing longer), so a larger window can only push termination LATER, never earlier;
+        the single knob coherently means "how much evidence before trusting a 'no longer
+        changing' verdict". (The finding's premise that the two move in opposite directions is
+        inverted -- see the docstring on TerminationSteadyState.) This pins it: across a fixed
+        trajectory driven through the external-arm gate, so both roles are active, the firing
+        step is monotonically non-decreasing in `window`."""
+        atol = 1e-16
+        big, ext, tau = 1e12, 1e-9, 1e-30
+        labels = ['b', 's']
+
+        def fire_index(window):
+            t = TerminationSteadyState(tolerance=1e-6, window=window)
+            t.update(np.array([big, 7.389]), np.e ** 1, np.array([big, 1.0]), np.e ** 0, atol,
+                     labels=labels, external_residual=ext, external_armed=True, relaxation_time=tau)
+            for k in range(20):
+                j = k + 1
+                if t.update(np.array([big, 7.389]), np.e ** (j + 1), np.array([big, 7.389]), np.e ** j,
+                            atol, labels=labels, external_residual=ext, external_armed=True,
+                            relaxation_time=tau):
+                    return k
+            return None
+
+        idx = [fire_index(w) for w in (2, 3, 4, 5)]
+        assert all(a is not None for a in idx), idx
+        assert all(idx[i] <= idx[i + 1] for i in range(len(idx) - 1)), idx   # never earlier
+        assert idx[0] < idx[-1], idx                                          # and the knob is not inert
+
+    def test_departing_counters_are_keyed_by_index_and_cleared_between_runs(self):
+        """Round 109 MEDIUM 2: `_slope_prev`/`_steps_since_rise` are keyed by core-species
+        integer index. Within one simulate() the core is fixed, so an index means the same
+        species for the whole integration. The core only GROWS across simulate() boundaries
+        (model enlargement), and each simulate() restarts from t=0 having called reset() first
+        (base.pyx). This grows the core between steps to show the hazard concretely -- a stale
+        counter at an index is silently re-read against whatever species now holds that index --
+        and the guard that removes it: reset() clears both dicts, and a grown core only ever
+        arrives on a fresh simulate()."""
+        atol, big = 1e-16, 1e12
+
+        # Run 1: a two-species core builds a counter at index 1 (species A).
+        t = TerminationSteadyState(tolerance=1e-6, window=2)
+        t.update(np.array([big, 7.389]), np.e ** 2, np.array([big, 7.389]), np.e ** 1, atol, labels=['b', 'A'])
+        assert 1 in t._steps_since_rise
+
+        # WITHOUT reset, feeding an ENLARGED core re-reads index 1 -- now species B -- and
+        # inherits A's stale count. This is exactly the hazard the finding names.
+        t.update(np.array([big, 3.0, 7.389]), np.e ** 3, np.array([big, 3.0, 7.389]), np.e ** 2, atol, labels=['b', 'B', 'A'])
+        assert t._steps_since_rise.get(1, 0) >= 2      # B inherited the count that belonged to A
+
+        # The production contract removes it: base.pyx calls reset() before every simulate(),
+        # and a grown core only ever arrives on a fresh simulate(). After reset the dicts are
+        # empty, so no index can carry a meaning from a previous, smaller core.
+        t.reset()
+        assert t._steps_since_rise == {} and t._slope_prev == {}
+        t.update(np.array([big, 3.0, 7.389]), np.e ** 2, np.array([big, 3.0, 7.389]), np.e ** 1, atol, labels=['b', 'B', 'A'])
+        assert set(t._steps_since_rise) <= {0, 1, 2}   # only the new core's indices, nothing stale
+
     def test_reset_clears_the_latch(self):
         """
         Each simulate() restarts from t=0. A latch carried over from the previous

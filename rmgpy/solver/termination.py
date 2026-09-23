@@ -133,10 +133,26 @@ class TerminationSteadyState:
     for a residual of exactly zero -- equal endpoints do not prove a frozen structure, so a
     zero residual earns the same one-relaxation-time confirmation as any other flat tail.
 
+    **What ``window`` buys, and why one number governs two things.** ``window`` sets both (a)
+    the flat-streak floor -- how many consecutive flat samples a tail must span before it can
+    terminate -- and (b) the departing test's patience -- how many consecutive samples a species
+    must fail to rise before it stops counting as still climbing (see :meth:`update`). These are
+    NOT opposed knobs pulling in different directions: raising ``window`` makes BOTH strictly
+    more conservative. A longer streak is harder to satisfy, so persistence tightens; and a
+    species is held as "departing" for more samples, so the external channel is licensed to arm
+    later. Both effects push termination LATER, never earlier -- a larger ``window`` can only
+    delay a verdict, monotonically (pinned by
+    ``test_raising_window_makes_the_criterion_no_less_conservative_in_both_roles``). So the
+    single number reads coherently as one quantity: *how much evidence to require before trusting
+    a "no longer changing" verdict*. Splitting it into two knobs would let a user buy a stricter
+    streak while weakening the departing test, which is not a combination that means anything
+    physical here.
+
     Attributes:
 
     `tolerance`     the residual below which the composition counts as no longer changing
-    `window`        the fluke-guard floor on how many accepted samples a flat interval spans
+    `window`        evidence floor (samples): both the flat-streak length AND the departing
+                    test's consecutive-non-rise count; larger is strictly more conservative
     `armed`         whether the integration has passed its fastest relaxation time
     `streak`        consecutive flat steps satisfied so far
     `residual`      the most recently evaluated residual (nan before the second step)
@@ -229,7 +245,19 @@ class TerminationSteadyState:
         # electron -- is flat.
         r = r_gen
         if np.isfinite(external_residual):
-            if not np.isfinite(r) or external_residual > r:
+            # Substitute the external residual ONLY when the generic channel carried NO
+            # information (``nan`` -- degenerate interval, dead totals, no live species) or
+            # when it is the larger of two comparable residuals (the MAX this fold is for).
+            # A generic ``inf`` is DIFFERENT: it means a species crossed UP through the floor
+            # (appeared from nothing) or went negative -- emphatically NOT steady. That is
+            # strong negative information, not the ABSENCE of information, and a small flat
+            # electron residual must not erase it. The previous test ``not np.isfinite(r)``
+            # was true for both ``nan`` and ``inf`` and so swallowed the poison together with
+            # the no-information case, letting the electron replace it and the step terminate
+            # (round 109 HIGH). ``np.isnan`` singles out the no-information case; and since
+            # ``external_residual > inf`` is False, an ``inf`` generic residual is preserved
+            # and falls through to the non-finite guard below, which resets the streak.
+            if np.isnan(r) or external_residual > r:
                 r = external_residual
                 self.worst_label = '<external channel>'
         self.residual = r
@@ -266,7 +294,12 @@ class TerminationSteadyState:
         # the next rise; a species that has truly stopped rising for a full window releases
         # its hold. The generic channel is departing while ANY live species still is.
         # Threshold-free -- it reads the sign of each species' trend, never a magnitude floor.
+        # `nan`, `inf` and `ok` are THREE different answers, and the counters do a different
+        # thing on each -- decided here explicitly (round 109 HIGH, second half):
         if analysis['status'] == 'ok':
+            # A real per-step slope for each live species: count each species' trend against
+            # its OWN previous sample, and prune species no longer live so a stale, frozen
+            # counter cannot vouch that the present composition has stopped moving.
             live_keys = set(analysis['slopes'])
             for key, slope in analysis['slopes'].items():
                 prev = self._slope_prev.get(key)
@@ -275,11 +308,27 @@ class TerminationSteadyState:
                 else:
                     self._steps_since_rise[key] = self._steps_since_rise.get(key, 0) + 1
                 self._slope_prev[key] = slope
-            # Drop species no longer live so a stale, frozen counter cannot vouch that the
-            # present composition has stopped moving.
             for key in [k for k in self._steps_since_rise if k not in live_keys]:
                 self._steps_since_rise.pop(key, None)
                 self._slope_prev.pop(key, None)
+        elif analysis['status'] == 'inf':
+            # STRONG NEGATIVE information: a species appeared from nothing or went negative --
+            # a STRUCTURAL change to the composition, emphatically not steady. The per-species
+            # trend history described a composition that no longer holds; leaving it in place
+            # would let a stale "settled" count from before the change keep `generic_departing`
+            # False, so the very step that proves the system is not steady could arm and
+            # terminate on a substituted external residual (that was the round 109 defect).
+            # DISCARD the history: with no counters the generic channel reads as departing
+            # (below), `armed_external` drops, and the appearance cannot be mistaken for a
+            # settled tail. A genuine re-settling afterward rebuilds the counters over a fresh
+            # window -- the confirmation the appearance interrupted is paid again, correctly.
+            self._steps_since_rise.clear()
+            self._slope_prev.clear()
+        # else `status == 'nan'`: NO information (degenerate interval, dead totals, no live
+        # species). The step says nothing about whether anything is moving, so the per-species
+        # counters are left EXACTLY as they are -- neither advanced nor discarded. (The flat
+        # STREAK is still broken by the non-finite guard below; only the trend memory persists,
+        # because we did not observe any species change.)
         if not self._steps_since_rise:
             generic_departing = True     # nothing measured yet -- conservatively still departing
         else:

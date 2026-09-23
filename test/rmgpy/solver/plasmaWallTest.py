@@ -2323,6 +2323,40 @@ def test_wall_single_bath_approximation_is_coerced_by_value_not_truthiness():
             _wall_reactor_with_flag(bad)
 
 
+def test_coerce_bool_flag_accept_reject_set_is_enumerated_and_the_refusal_reaches_the_user():
+    """Round 109 MEDIUM 3: enumerate exactly what _coerce_bool_flag accepts and rejects, and
+    confirm a rejection is a REFUSAL the user sees (a raised PlasmaStateError that propagates out
+    of the constructor), not a log line the run continues past. Includes the motivating case
+    ("False"), plus 2, NaN, None and the empty string."""
+    from rmgpy.solver.plasma import _coerce_bool_flag
+
+    # ACCEPTED, coerced by value (never by truthiness). None and "" mean opt-out, not refusal;
+    # "False" -- the case that motivated the helper -- must be False, not the True that bool()
+    # would give.
+    accepted = {
+        True: True, False: False, None: False,
+        'True': True, 'true': True, 'TRUE': True, '1': True, 'yes': True, 'on': True,
+        'False': False, 'false': False, '0': False, 'no': False, 'off': False,
+        '': False, '  Off  ': False,
+    }
+    for value, expected in accepted.items():
+        result = _coerce_bool_flag(value, 'flag', 'id')
+        assert result is expected, (value, result, expected)
+
+    # REJECTED: refused by name with a PlasmaStateError. A number opts in on its truthiness
+    # (bool(2), bool(0.5), bool(NaN) are all True), an unrecognised string is a likely typo, and
+    # a container/object has no boolean meaning here -- all must fail loudly, never coerce.
+    for value in (2, 0, 0.5, float('nan'), float('inf'), 'maybe', 'Flase', [], {}, object()):
+        with pytest.raises(PlasmaStateError):
+            _coerce_bool_flag(value, 'flag', 'id')
+
+    # ...and the refusal actually reaches the user: it propagates out of the reactor
+    # constructor rather than being swallowed into a log line the run ignores.
+    for bad in (2, float('nan'), 'maybe'):
+        with pytest.raises(PlasmaStateError):
+            _wall_reactor_with_flag(bad)
+
+
 def test_the_ionisation_source_is_validated_at_the_evolved_volume_not_only_the_initial_one():
     """Round 106 MEDIUM: the __init__/set_initial guard validated source*V/Na only at the
     INITIAL volume, while the residual and Jacobian recompute source*V/Na at the evolved and
