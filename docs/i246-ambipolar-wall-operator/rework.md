@@ -701,10 +701,116 @@ step, because `nan`-predecessor reads as "not rising."
 - **MEDIUM 2 remains an opt-in to an approximation, not a physics fix** — the composition-weighted
   mobility needs per-gas transport data the model does not carry.
 
+## Round 106: the discriminator got a slope but kept watching the aggregate — one HIGH closed, one HIGH rebutted, three MEDIUM, a census made executable
+
+Round 100 replaced the external arm's two-point latch with a sequence-trend test — but the trend was
+read off the **aggregate maximum** residual, the same scalar `r_gen` the round-100 "What I could NOT
+reach" note flagged as out of scope. Round 106's reviewer made that gap a HIGH and was right to: a
+guard reading a quantity adjacent to the one the physics governs is this campaign's oldest pattern,
+and it had reappeared *inside* the fix for it. Evidence: `evidence/round106_before.log` (4 defect
+reproductions red on HEAD, the census enforcement test already green), `round106_after.log` (all 5
+green on the rebuild), `round106_build.log` (clean `make clean && make build`; `.so` proven by value:
+`_source_total_at_volume`, `at volume V=... forms a run-time volumetric injection`).
+
+- **HIGH 1 (closed) — the departing test read the aggregate maximum, not each species.** "Not rising
+  for `window` samples" was evaluated on `r_gen = max_i |dln x_i/dln t|`. A species climbing toward its
+  own transient is invisible whenever a *different*, decaying species holds the maximum — so the
+  aggregate "stops rising", the system is judged no longer departing, and the external (electron) arm
+  is let through while a live neutral is still moving. It also compared the slopes of two *different*
+  species across any step in which the maximum changed hands. Fix: the slope analysis now returns a
+  per-species dict (`_slope_analysis`, keyed by the core-species **integer index** — hashable and
+  stable as the live set changes), and "departing" is tracked **per species** (`_slope_prev`,
+  `_steps_since_rise`): each species counts as still climbing until it fails to rise against *its own*
+  previous sample for `window` consecutive samples, and the generic channel is departing while ANY live
+  species still is. The generic `R >= 1` arm stays on the aggregate maximum — that is exactly the right
+  quantity for "did ANY species reach its relaxation time", and it is a latched historical fact.
+  `compute_residual` is now a thin wrapper over `_slope_analysis`, preserving its `(r, label)` contract
+  for every existing caller. Reproduced by `evidence/round106_high1_probe.py` (asserts + non-zero
+  exit): the reviewer's hidden-rising sequence (`a`: 5e-8→1e-7→1.5e-7 rising; `b`: 6.77e-7→6.01e-7→
+  5.26e-7 falling, always the max) does NOT arm, `worst_label` correctly names the falling `b`, and a
+  genuinely-settled control still arms.
+
+- **HIGH 2 (rebutted, with measurement) — the period-9 decade-aliasing case cannot arise.** The finding
+  posits a periodic trajectory that arms at t=1 then reads exactly zero at t=10 and t=100, so an
+  endpoints-only span check returns steady while the interior swings. Its load-bearing premise is that
+  `update()` is sampled at **decade-spaced points**. Probed and inverted: `ReactionSystem.simulate`
+  drives the integrator in pydas **intermediate one-step mode** (`self.step(step_time)`,
+  `base.pyx:796`) and calls `update()` with `self.t` after **every internal DASSL step**.
+  `evidence/round106_high2_cadence.py` (asserts + non-zero exit) instruments a genuinely relaxing wall
+  reactor and measures the actual cadence: **415 samples, median 0.008 decade, max 0.477 decade, zero
+  steps spanning a full decade.** DASSL's local-truncation-error control cannot accept a step that
+  spans an oscillation period, so a flat residual over an accepted step is the integrator certifying
+  the composition is smooth across it; a period-9 oscillation shows non-zero residual at the fine
+  interior steps the criterion actually sees. An interior-variation guard would be redundant (the
+  streak already requires every step's `R < tol`, which bounds the total variation across the span
+  below `tol·Δln t`) and would fight DASSL's legitimate step growth in the flat tail — a false negative
+  in the primary use case. Verifier item 6 invited this; no code guard was added, and the acceptance
+  case is answered by showing the sampling it assumes does not occur.
+
+- **MEDIUM (closed) — `window` was documented as the minimum accepted-sample span but hard-coded to
+  two.** The termination test used `streak >= 2` regardless of the `window` a deck set, so window=3/10/
+  100 all terminated after two flat samples — a knob that did nothing. Fix: `streak >= self.window`;
+  the default and floor are now **2** (a flat interval needs two endpoints; a single step, however
+  long, is not an interval), and raising `window` demands that many flat samples. It remains never
+  *sufficient*: the physical span must also hold. Documented honestly in `input.rst` and reproduced by
+  `test_the_window_parameter_is_honoured_as_the_minimum_sample_span` (window=4 fires on the 4th flat
+  sample, not the 2nd). Four existing steady-state tests that had encoded the old hard-coded floor were
+  moved to `window=2` so their two-sample narratives stay valid; the input default assertion moved from
+  3 to 2.
+
+- **MEDIUM (closed) — the source guard and the source computation evaluated different expressions, for
+  the third time.** `set_initial_conditions` validated `source*V/Na` only at the **initial** volume,
+  while the residual and Jacobian recompute `source*V/Na` at the **evolved and Newton-trial** volume. A
+  source finite and positive at V0 overflows (or underflows to zero) once scaled by an extreme trial
+  volume, and was then applied as an infinite (or vanishing) rate silently. Fix: a single validated
+  helper `_source_total_at_volume(V)` (raising `PlasmaStateError` on a non-finite or subnormal product)
+  is called from all three sites, so the guard travels with the value to every volume the solve reaches.
+  Reproduced by `test_the_ionisation_source_is_validated_at_the_evolved_volume_not_only_the_initial_one`
+  (a source valid at V0; a wild trial neutral amount inflates V until `source*V/Na` overflows; both
+  `residual` and `jacobian` refuse it).
+
+- **MEDIUM (closed) — the mixed-gas opt-in was truthiness-coerced.** `wall_single_bath_approximation`
+  was set with `bool(value)`, so the string `"False"`, the int `2`, and `NaN` all opted in — and a deck
+  writing `wallSingleBathApproximation="False"` silently enabled the approximation it meant to decline.
+  The identical fix `quasineutralElectron` already carries: `_coerce_bool_flag` in the constructor
+  (bool/None through, boolean-like strings by meaning, everything else refused by name), and `input.py`
+  passes the raw value rather than `bool()`-casting it. Reproduced by
+  `test_wall_single_bath_approximation_is_coerced_by_value_not_truthiness`.
+
+- **Census (made executable) — the red-state brief was prose, and a hand-count disputed it.** The brief
+  scopes evidence by an observable marker: a test is a banked defect reproduction iff its docstring
+  names the round/finding it closes, otherwise it is an invariant/property check that asserts its
+  property directly. That scoping is now enforced by
+  `test_every_solver_test_is_a_tagged_defect_reproduction_or_asserts_a_property`, which walks the AST of
+  both changed solver test files and fails, by name, any `test_*` that neither carries a finding tag nor
+  contains an assertion (a `pytest.raises`/`warns` context counts). After the changes: **plasmaWallTest
+  119→ of which 88 functions, 52 tagged, 87 asserting, 0 neither; steadyStateTest 31 functions, 11
+  tagged, 31 asserting, 0 neither — 0 of 119 lack evidence.** The reviewer's 22/85 and 44/114 counted
+  untagged invariant tests as gaps; the executable check confirms every one of them asserts a property
+  (so it carries the evidence the brief requires) while catching any genuinely assertion-free untagged
+  test in the future. The round-106 probes (`round106_high1_probe.py`, `round106_high2_cadence.py`)
+  assert and `sys.exit(1)` on failure, unlike the print-only `round100_high1_probe.py`.
+
+### What I could NOT reach (named gaps, round 106)
+
+- **The per-species trend still reads a discrete two-sample slope**, so a species whose rise is slower
+  than one sample interval registers as flat for that step; it is caught once its accumulated rise
+  exceeds the sample-to-sample noise, not instantaneously. This is inherent to a finite-difference
+  `d/dln t` and is why the arm waits for a *window* of non-rises, not one.
+- **HIGH 2 is answered by rebuttal, not a guard.** If a future change moved `simulate` off intermediate
+  one-step mode (e.g. stepping directly to decade output times), the cadence premise would flip and the
+  aliasing case would become reachable; `round106_high2_cadence.py` is the tripwire that would catch
+  that regression (it asserts the fine cadence and exits non-zero if a step ever spans a decade).
+- **The source helper raises inside `residual`/`jacobian`.** A wild Newton trial that overflows
+  `source*V/Na` now aborts the solve rather than letting DASSL reject the trial. This is the intended
+  fail-loud behaviour (an infinite/vanishing source silently applied is the defect), and such a volume
+  is astronomically unphysical, but it is a hard stop rather than a graceful trial rejection.
+
 ## Files touched
 
 `rmgpy/solver/plasma.pyx`, `rmgpy/solver/base.pyx`, `rmgpy/solver/base.pxd`,
 `rmgpy/solver/termination.py`, `rmgpy/rmg/input.py`, `documentation/source/users/rmg/input.rst`,
-`test/rmgpy/solver/plasmaWallTest.py`, `test/rmgpy/solver/steadyStateTest.py`, and this
-`docs/i246-ambipolar-wall-operator/` directory. No file under `rmgpy/molecule/`, `rmgpy/kinetics/`,
-`rmgpy/data/` or the database was touched. Nothing pushed, merged or rebased.
+`test/rmgpy/solver/plasmaWallTest.py`, `test/rmgpy/solver/steadyStateTest.py`,
+`test/rmgpy/rmg/inputTest.py`, and this `docs/i246-ambipolar-wall-operator/` directory. No file under
+`rmgpy/molecule/`, `rmgpy/kinetics/`, `rmgpy/data/` or the database was touched. Nothing pushed, merged
+or rebased.
