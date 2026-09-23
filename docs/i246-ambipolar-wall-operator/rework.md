@@ -1352,3 +1352,54 @@ green after); the tightened census flags no live test.
   unchanged:** `compute_nu_wall` = 15.954491 s⁻¹. Evidence: `evidence/round113_remeasure.log`.
 - No file under `rmgpy/molecule/`, `rmgpy/kinetics/`, `rmgpy/data/` or the database touched. Nothing
   pushed, merged or rebased.
+
+## Round 114: external-channel presence declared by the hook contract — one BLOCKING, two LOW
+
+Round 113 recovered "is a source-driven channel in play" by reading `has_wall` and `ionisation_source` off
+the reactor inside the base.pyx adapter. That is still inference from state, and it has the same shape of
+hole: a wall-less `PlasmaReactor` subclass (or any reactor) that overrides `steady_state_external_residual`
+fails the `has_wall && source > 0` test, so its reading, finite or not, is dropped before the criterion sees
+it. Tested through `simulate()`, every hooked case (inf, nan, -inf, and a finite 2.0) terminated as steady at
+the identical t = 3.67e-4 s as the hook-less control. An identical time is the signature of a reading that
+was discarded, not one that was mis-weighed.
+
+### BLOCKING — presence is declared by the hook, not inferred by the adapter
+
+A new `cpdef steady_state_external_channel(t_now, y_now, t_prev, y_prev)` on `ReactionSystem` (declared in
+`base.pxd`) is the single rule the adapter consults: `None` = no channel, finite = folded in, non-finite =
+poisons. Its default returns `None` unless some class in the MRO defines `steady_state_external_residual`
+(found through `vars(klass)`, which works for cpdef methods), in which case it returns that hook's reading
+unchanged. A reactor can override the new method directly to declare absence with `None`.
+
+Bridge (owner ruling open): `PlasmaReactor`'s own frozen implementation still overloads `nan` for "no
+channel" and "channel unresolvable", so when the defining class IS `PlasmaReactor` (imported lazily; plasma
+cimports base) the default keeps the round-113 `has_wall && source > 0` gate. That gate now applies only to
+that frozen implementation, not to subclasses that override the hook. The clean cure is for `plasma.pyx` to
+override `steady_state_external_channel` and delete `_frozen_plasma_class`. That needs the byte-identity
+constraint lifted.
+
+### LOW — three more census holes
+
+The assertion census now folds constant-only conditions (`if 1 == 0:`; no Name/Call/Attribute, evaluated
+with empty builtins), stops walking a block at `return`/`raise`/`break`/`continue`, and collects `async def`
+tests, which are always flagged. The tripwire self-test gained all three reproductions (red before, green
+after). The tightened census flags no live test.
+
+### Deferred LOW — the zero-core / infinite-leak case through `simulate()`
+
+Not written this round (time-box). The helper-level reproduction is covered since round 113. A `simulate()`
+-driven test is the named closer.
+
+### Close gate
+
+- The six new tests (ten parametrised cases) are red on the round-113 tip (8 failed, 2 passed: the control
+  and the `None` absence case) and green after (11 passed with the census tripwire): `evidence/r114/red_*`,
+  `evidence/r114/green_*`, census red `evidence/r114/census_red_*`.
+- Full suite rebuilt and green: `pytest test/rmgpy/solver/ test/rmgpy/rmg/inputTest.py -o addopts="" -p
+  no:cacheprovider` → **359 passed, 1 skipped**, stderr empty (`evidence/r114/full_*`).
+- `base.pxd` changed its vtable, so `make build` recythonized every dependent solver module (exit 0,
+  build logs local-only, gitignored). `.so` proven by value: `strings base.*.so` shows `steady_state_external_channel`
+  and `_frozen_plasma_class`.
+- **`plasma.pyx` byte-identical** (`git diff 7d05b475d -- rmgpy/solver/plasma.pyx` empty). `termination.py`
+  untouched. No file under `rmgpy/molecule/`, `rmgpy/kinetics/`, `rmgpy/data/` or the database touched.
+  Nothing pushed, merged or rebased.
