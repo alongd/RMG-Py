@@ -1061,19 +1061,18 @@ def _enumerate_quarantines():
     import rmgpy.data.rmg
     database = getattr(rmgpy.data.rmg, 'database', None)
     families = getattr(getattr(database, 'kinetics', None), 'families', None) or {}
-    for label, family in families.items():
+    for label in families:
         seen.add(label)
-        attribute = getattr(family, 'quarantine', None)
         quarantine, answered = resolve_quarantine(label)
         if not answered:
-            if attribute is not None:
-                # A family whose manifest was never read is as ordinary as it gets, and
-                # `resolve_quarantine` leaves it unanswered only when there is no families
-                # directory to consult -- which the disk half below reports on its own.
-                # A family that DID carry a quarantine and can no longer be answered is a
-                # hole in the enumeration.
-                incomplete.append('family {0!r} carries a quarantine that could not be '
-                                  're-read'.format(label))
+            # Whatever the cached attribute holds. Round 112 counted only a family whose
+            # attribute was set, on the premise that a None attribute is unanswered only
+            # when there is no families directory -- but `resolve_quarantine` answers a
+            # loaded family from its attribute in exactly that case, so what reaches here is
+            # a label with no directory, a directory that could not be examined, or a
+            # refused read. And the label is now in `seen`, so the disk half never looks at
+            # it again: dropping it here ended the enumeration clean (round 113).
+            incomplete.append('could not examine loaded family {0!r}'.format(label))
             continue
         if quarantine is not None:
             found.append(quarantine)

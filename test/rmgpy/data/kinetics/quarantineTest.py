@@ -66,6 +66,7 @@ Round 107 relabelled round 105's four structural reds in place, at the manager's
 rather than leaving the distinction in a findings document only.
 """
 
+import errno
 import inspect
 import logging
 import os
@@ -620,6 +621,43 @@ def _register_families(monkeypatch, quarantines):
 
     families = {label: _Family(label, q) for label, q in quarantines.items()}
     monkeypatch.setattr(rmgpy.data.rmg, "database", _Database(families), raising=False)
+
+
+def _deny_access(monkeypatch, directory):
+    """
+    Make `directory` answer the enumeration's system calls as a mode-000 directory does:
+    it can itself be stat'd, but it cannot be listed and nothing below it can be reached.
+
+    Injected by patch, not by ``chmod``. ``chmod 000`` does not stop root, so a permission
+    test built on it has to skip under root -- and a test that can skip itself green
+    proves nothing where it skips (round 113). Returns a callable that lifts the denial.
+    """
+    directory = os.path.abspath(str(directory))
+    state = {"denied": True}
+
+    def blocked(path, inside_only):
+        if not state["denied"] or isinstance(path, int):
+            return False
+        path = os.path.abspath(os.fsdecode(path))
+        return path.startswith(directory + os.sep) or (not inside_only and path == directory)
+
+    def deny(name, inside_only):
+        real = getattr(os, name)
+
+        def denied(path=".", *args, **kwargs):
+            if kwargs.get("dir_fd") is None and blocked(path, inside_only):
+                raise PermissionError(errno.EACCES, os.strerror(errno.EACCES), path)
+            return real(path, *args, **kwargs)
+
+        monkeypatch.setattr(os, name, denied)
+
+    # Not `os.open`: `_read_manifest` requires `os.open in os.supports_dir_fd`, which a
+    # wrapper fails, and every path reaches an `lstat` before it opens anything.
+    for name in ("stat", "lstat"):
+        deny(name, True)
+    for name in ("listdir", "scandir"):
+        deny(name, False)
+    return lambda: state.update(denied=False)
     return families
 
 
@@ -2426,14 +2464,8 @@ class TestAnUnreadableManifestIsNotAnAbsentOne:
 
     def setup_method(self):
         _clear_gate_caches()
-        self.restore = []
 
     def teardown_method(self):
-        for path in self.restore:
-            try:
-                os.chmod(path, 0o755)
-            except OSError:
-                pass
         _clear_gate_caches()
 
     def _unreadable_family(self, monkeypatch, tmp_path, label):
@@ -2441,12 +2473,7 @@ class TestAnUnreadableManifestIsNotAnAbsentOne:
         family.mkdir(parents=True)
         write_manifest(str(family))
         monkeypatch.setitem(settings, "database.directory", str(tmp_path))
-        os.chmod(str(family), 0o000)
-        self.restore.append(str(family))
-        if os.access(os.path.join(str(family), QUARANTINE_FILENAME), os.F_OK):
-            pytest.skip("this process can read through a 0o000 directory (running as "
-                        "root?), so a permission error cannot be produced here")
-        return family
+        return _deny_access(monkeypatch, family)
 
     def test_a_manifest_that_cannot_be_examined_is_unanswered_not_clean(self, monkeypatch,
                                                                         tmp_path):
@@ -2473,14 +2500,14 @@ class TestAnUnreadableManifestIsNotAnAbsentOne:
         from rmgpy.data.kinetics import quarantine as module
 
         label = "A_Family_Readable_Again_Later"
-        family = self._unreadable_family(monkeypatch, tmp_path, label)
+        allow = self._unreadable_family(monkeypatch, tmp_path, label)
 
         assert resolve_quarantine(label) == (None, False)
         assert not [key for key in module._DISK_QUARANTINE_CACHE if key[1] == label], (
             "the answer taken from a permission error was cached, under a key naming a "
             "directory and a label -- neither of which is what produced it")
 
-        os.chmod(str(family), 0o755)
+        allow()
         second = resolve_quarantine(label)
         assert second[1] is True and second[0] is not None, (
             "the manifest stayed invisible after it became readable")
@@ -2863,14 +2890,8 @@ class TestAnUnreadableDirectoryIsUnansweredForALoadedFamilyToo:
 
     def setup_method(self):
         _clear_gate_caches()
-        self.restore = []
 
     def teardown_method(self):
-        for path in self.restore:
-            try:
-                os.chmod(path, 0o755)
-            except OSError:
-                pass
         _clear_gate_caches()
 
     def _unreadable_parent(self, monkeypatch, tmp_path, quarantine):
@@ -2879,10 +2900,7 @@ class TestAnUnreadableDirectoryIsUnansweredForALoadedFamilyToo:
         write_manifest(str(families / self.LABEL))
         monkeypatch.setitem(settings, "database.directory", str(tmp_path))
         _register_families(monkeypatch, {self.LABEL: quarantine})
-        os.chmod(str(families), 0o000)
-        self.restore.append(str(families))
-        if os.path.isdir(str(families / self.LABEL)):
-            pytest.skip("this process reads through a 0o000 directory (running as root?)")
+        _deny_access(monkeypatch, families)
 
     def test_a_loaded_family_with_no_quarantine_is_unanswered_not_clean(self, monkeypatch,
                                                                         tmp_path):
@@ -5473,15 +5491,11 @@ class TestTheEnumerationIsNeitherStaleNorSilent:
         return messages
 
     @staticmethod
-    def _unlistable(path):
-        """chmod 000 `path`; skipped where that does not stop the process reading it."""
-        os.chmod(path, 0)
-        try:
+    def _unlistable(monkeypatch, path):
+        """`path` denied as a mode-000 directory is, by patch; see `_deny_access`."""
+        _deny_access(monkeypatch, path)
+        with pytest.raises(PermissionError):
             os.listdir(path)
-        except PermissionError:
-            return
-        os.chmod(path, 0o755)
-        pytest.skip("this process can list a mode-000 directory (running as root?)")
 
     def test_a_manifest_rewritten_after_load_is_enumerated_as_it_now_reads(
             self, tmp_path, monkeypatch):
@@ -5535,11 +5549,10 @@ class TestTheEnumerationIsNeitherStaleNorSilent:
         monkeypatch.setattr(rmgpy.data.rmg, "database", None, raising=False)
         messages = self._capture_warnings(monkeypatch)
 
-        self._unlistable(families_root)
+        self._unlistable(monkeypatch, families_root)
         try:
             check_quarantine(self._unattributed(make_marcus()), "test")
         finally:
-            os.chmod(families_root, 0o755)
             _clear_gate_caches()
 
         assert messages, (
@@ -5565,11 +5578,10 @@ class TestTheEnumerationIsNeitherStaleNorSilent:
         monkeypatch.setattr(rmgpy.data.rmg, "database", None, raising=False)
         messages = self._capture_warnings(monkeypatch)
 
-        self._unlistable(family_path)
+        self._unlistable(monkeypatch, family_path)
         try:
             check_quarantine(self._unattributed(make_marcus()), "test")
         finally:
-            os.chmod(family_path, 0o755)
             _clear_gate_caches()
 
         assert any("could not" in m.lower() for m in messages), (
@@ -5587,13 +5599,60 @@ class TestTheEnumerationIsNeitherStaleNorSilent:
         monkeypatch.setitem(settings, "database.directory", str(tmp_path))
         monkeypatch.setattr(rmgpy.data.rmg, "database", None, raising=False)
 
-        self._unlistable(families_root)
+        self._unlistable(monkeypatch, families_root)
         try:
             with pytest.raises(getattr(module, "QuarantineEnumerationError", DatabaseError)):
                 list(module.iter_quarantines())
         finally:
-            os.chmod(families_root, 0o755)
             _clear_gate_caches()
+
+    def test_an_unanswered_loaded_family_without_a_quarantine_is_incomplete(
+            self, tmp_path, monkeypatch):
+        """
+        Round 113, the reviewer's reproduction. A loaded family whose cached `quarantine` is
+        None, and whose label names no directory here: `resolve_quarantine` answers
+        ``(None, False)``. At `fc60e5ba4` that was dropped because the attribute was None,
+        and the disk pass skipped the label as already seen -- ``([], [])``.
+        """
+        from rmgpy.data.kinetics import quarantine as module
+
+        families_root = os.path.join(str(tmp_path), "kinetics", "families")
+        os.makedirs(families_root)
+        _clear_gate_caches()
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+        _register_families(monkeypatch, {"F": None})
+        monkeypatch.setattr(module, "_family_directory", lambda root, label: None)
+        real_listdir = os.listdir
+        monkeypatch.setattr(os, "listdir", lambda path=".": ["F"] if os.fspath(path) == families_root
+                            else real_listdir(path))
+
+        assert resolve_quarantine("F") == (None, False)
+        found, incomplete = module._enumerate_quarantines()
+        assert found == [] and incomplete, (
+            "an unanswered family was enumerated as clean: ({0}, {1})".format(found, incomplete))
+        with pytest.raises(module.QuarantineEnumerationError):
+            list(module.iter_quarantines())
+        _clear_gate_caches()
+
+    def test_a_loaded_family_without_a_quarantine_behind_a_denied_directory_is_incomplete(
+            self, tmp_path, monkeypatch):
+        """
+        The same hole without patching the module: the loaded family's own directory
+        cannot be examined, so whether a manifest sits there is unknown.
+        """
+        from rmgpy.data.kinetics import quarantine as module
+
+        family_path = os.path.join(str(tmp_path), "kinetics", "families", "F")
+        os.makedirs(family_path)
+        write_manifest(family_path)
+        _clear_gate_caches()
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+        _register_families(monkeypatch, {"F": None})
+        _deny_access(monkeypatch, family_path)
+
+        with pytest.raises(module.QuarantineEnumerationError):
+            list(module.iter_quarantines())
+        _clear_gate_caches()
 
     def test_an_unlistable_families_directory_keeps_the_unanswered_warning_on(
             self, tmp_path, monkeypatch):
@@ -5612,11 +5671,10 @@ class TestTheEnumerationIsNeitherStaleNorSilent:
         monkeypatch.setitem(settings, "database.directory", str(tmp_path))
         monkeypatch.setattr(rmgpy.data.rmg, "database", None, raising=False)
 
-        self._unlistable(families_root)
+        self._unlistable(monkeypatch, families_root)
         try:
             answer = _database_has_any_quarantine()
         finally:
-            os.chmod(families_root, 0o755)
             _clear_gate_caches()
 
         assert answer is True, "could not look was answered as nothing is quarantined"
