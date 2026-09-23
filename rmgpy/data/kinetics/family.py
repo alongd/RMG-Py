@@ -436,10 +436,68 @@ _LOSSY_REDUCERS = {
 COMPLETE_REDUCERS = {cls: reducer for cls, (reducer, _) in _LOSSY_REDUCERS.items()}
 
 
+#: Subclasses of a class in `_LOSSY_REDUCERS` that are deliberately left unregistered, each
+#: with the reason. The census in `quarantineTest.py` imports every module of `rmgpy` and
+#: `arkane`, walks ``__subclasses__()`` under each registered class, and fails on one that is
+#: in neither table -- so a new subclass has to be decided, not inherited by accident.
+_ACCEPTED_UNREGISTERED_SUBCLASSES = {
+    'arkane.encorr.data.Molecule':
+        'a BAC-fitting wrapper that adds a mol_id; it is built and consumed inside one '
+        'Arkane process, never enters a reaction, and reaches no pickler -- and should it '
+        'ever reach one of these two, the refusal below names it',
+}
+
+
+def _unregistered_lossy_base(cls):
+    """The registered class `cls` inherits a lossy reducer from, if `cls` is not registered."""
+    if cls in COMPLETE_REDUCERS:
+        return None
+    for base in cls.__mro__[1:]:
+        if base in COMPLETE_REDUCERS:
+            return base
+    return None
+
+
+def _refuse_unregistered_subclass(obj):
+    """
+    Refuse `obj`, a subclass instance whose class is not in `_LOSSY_REDUCERS`.
+
+    Its inherited reducer is the lossy one this module exists to replace, and for every
+    registered class that reducer names the *parent* as the class to rebuild -- so the copy
+    would come back the wrong type, without whatever the subclass adds. Round 111 measured
+    exactly that and pinned it as silent; this is the loud half of the decision.
+    """
+    base = _unregistered_lossy_base(type(obj))
+    raise pickle.PicklingError(
+        '{0}.{1} subclasses {2}, whose own reducer is lossy, and is not in _LOSSY_REDUCERS; '
+        'pickling it would rebuild a {2} and drop what the subclass adds. Register it with '
+        'a complete reducer in rmgpy/data/kinetics/family.py.'.format(
+            type(obj).__module__, type(obj).__qualname__, base.__name__))
+
+
 class _CompletePickler(pickle.Pickler):
-    """A pickler that consults `_LOSSY_REDUCERS` before an object's own ``__reduce__``."""
+    """
+    A pickler that consults `_LOSSY_REDUCERS` before an object's own ``__reduce__``, and
+    refuses a subclass of one of those classes that is not itself in the table.
+
+    The refusal is a ``reducer_override`` rather than a table entry because it has to catch
+    a subclass defined at any time, including after import. It is called only for instances
+    of user classes -- never for ``None``, ``bool``, ``int``, ``float``, ``str``, ``bytes`` or
+    the builtin containers -- and it answers from a per-class cache.
+    """
 
     dispatch_table = COMPLETE_REDUCERS
+    _verdicts = {}
+
+    def reducer_override(self, obj):
+        cls = type(obj)
+        try:
+            refused = self._verdicts[cls]
+        except KeyError:
+            refused = self._verdicts[cls] = _unregistered_lossy_base(cls) is not None
+        if refused:
+            _refuse_unregistered_subclass(obj)
+        return NotImplemented
 
 
 def install_complete_reducers():
@@ -471,11 +529,28 @@ def install_complete_reducers():
     and raises. It would also change pickling for code that never imported this module.
     Registering with the pickler that has the problem is the narrower true statement.
 
+    Every *unregistered* subclass of a registered class that is loaded at the time is
+    registered too, with `_refuse_unregistered_subclass`: `multiprocessing` would otherwise
+    hand it the inherited lossy reducer. A table entry rather than a ``reducer_override``,
+    because this is the stdlib's class and every payload any library sends through it would
+    pay a per-object call for a hook only RMG's classes need. The cost of that choice is a
+    subclass defined after the last call; the subclass census in `quarantineTest.py` is what
+    covers the tree against it.
+
     Idempotent: registering a class twice overwrites one dict entry with itself.
     """
     for cls, (reducer, _reason) in _LOSSY_REDUCERS.items():
         ForkingPickler.register(cls, reducer)
+        for sub in _all_subclasses(cls):
+            if sub not in COMPLETE_REDUCERS:
+                ForkingPickler.register(sub, _refuse_unregistered_subclass)
     return COMPLETE_REDUCERS
+
+
+def _all_subclasses(cls):
+    for sub in cls.__subclasses__():
+        yield sub
+        yield from _all_subclasses(sub)
 
 
 # At import, because the parent process pickles the *arguments* to `Pool.map` and a child

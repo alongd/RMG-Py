@@ -71,6 +71,9 @@ import logging
 import os
 import pickle
 import re
+import subprocess
+import sys
+import textwrap
 
 import pytest
 
@@ -5723,6 +5726,44 @@ class TestTheSubclassesCopyAsThemselves:
             assert after.rank == 3
             assert after.comment == "a comment"
 
+    def test_both_subclasses_carry_their_nested_state_through_every_rmg_transport(self):
+        """
+        The test above checks scalars only, so nested loss could not fail it (round 112
+        review). Here the payload is inside the reactants: atom ``id`` and ``props``, which
+        drive resonance correspondence and group matching. Measured at `c44390545`: all
+        three RMG transports carry them. A plain `pickle.dumps` does not -- every id ``-1``,
+        every ``props`` empty -- and that residue is `Atom`'s own reducer in
+        `rmgpy/molecule/`, outside this round's gates; it is asserted last so that an
+        upstream fix announces itself here.
+        """
+        from multiprocessing.reduction import ForkingPickler
+        from rmgpy.data.kinetics.family import complete_round_trip
+
+        transports = {
+            "copy()": lambda reaction: reaction.copy(),
+            "complete_round_trip": complete_round_trip,
+            "ForkingPickler": lambda reaction: pickle.loads(ForkingPickler.dumps(reaction)),
+        }
+        for reaction in (self._depository_reaction(), self._pdep_reaction()):
+            for side in (reaction.reactants, reaction.products):
+                for n, atom in enumerate(side[0].molecule[0].atoms):
+                    atom.id = 100 + n
+                    atom.props = {"inRing": bool(n % 2), "marker": n}
+            expected = [[(atom.id, dict(atom.props)) for atom in side[0].molecule[0].atoms]
+                        for side in (reaction.reactants, reaction.products)]
+
+            for name, transport in transports.items():
+                after = transport(reaction)
+                assert type(after) is type(reaction), name
+                got = [[(atom.id, dict(atom.props)) for atom in side[0].molecule[0].atoms]
+                       for side in (after.reactants, after.products)]
+                assert got == expected, name
+
+            plain = pickle.loads(pickle.dumps(reaction))
+            assert {atom.id for atom in plain.products[0].molecule[0].atoms} == {-1}, (
+                "plain pickle now carries atom ids: rmgpy/molecule/ changed upstream, so "
+                "retire the residue note in family.complete_round_trip")
+
     def test_a_deep_copy_of_either_keeps_its_class(self):
         """`deepcopy` and `copy()` are one mechanism, for these two as for the other two."""
         from copy import deepcopy
@@ -5747,36 +5788,167 @@ class TestTheSubclassesCopyAsThemselves:
 
 class TestWhatAnUnlistedLossyClassCosts:
     """
-    The census's own question, answered by measurement: the set of lossy classes is
-    hand-enumerated, so what happens to a class nobody has added to it?
+    The census's own question: the set of lossy classes is hand-enumerated, so what happens
+    to a class nobody has added to it?
 
-    **Quietly wrong, not loud.** There is no mechanism that could notice -- a reducer that
-    omits a field is indistinguishable from a class that does not have one -- so the field
-    arrives as whatever the constructor leaves behind. That is exactly how `Atom.id` and
-    `Atom.props` survived two rounds of this campaign, and it is why the test below exists
-    rather than a comment saying so.
+    Round 111 answered by measurement -- **quietly wrong** -- and pinned that answer in a
+    test, which recorded the defect rather than closing it. Round 112 decides it:
+
+    * **A subclass of a registered class is refused, loudly, at pickling time.** The
+      registration is exact-type, so a subclass would otherwise fall through to the lossy
+      reducer it inherits -- the one that names its *parent* as the class to rebuild. This
+      is not hypothetical: `arkane.encorr.data.Molecule` is such a subclass, and a plain
+      pickle of it comes back a base `Molecule` without its ``id``.
+    * **An unrelated class with its own lossy ``__reduce__`` stays undetectable**, and that
+      is accepted, with the reason: a reducer that omits a field is indistinguishable from
+      a class that does not have one. What keeps the table honest there is the census,
+      which round-trips every class reachable in a reaction's state.
+    * **Private Cython memos are accepted as caches** -- see
+      `test_the_private_cython_state_is_exactly_the_three_memos`.
     """
 
-    class _Lossy:
-        """A class whose own reducer forgets a field, standing in for the next one."""
+    @staticmethod
+    def _subclass_of(base):
+        """An unregistered subclass of `base` that carries one field of its own."""
+        return type("Unregistered" + base.__name__, (base,), {})
 
-        def __init__(self, kept=None, forgotten=None):
-            self.kept = kept
-            self.forgotten = forgotten
-
-        def __reduce__(self):
-            return (type(self), (self.kept,))
-
-    def test_an_unlisted_lossy_class_loses_its_field_without_a_word(self):
+    def test_an_unregistered_subclass_is_refused_by_the_copy_transport(self):
         """
-        The measurement. Nothing raises, nothing is logged: the value is simply gone.
+        Behavioural at `71ae97bd5`: `complete_round_trip` returned a base `Molecule`,
+        class and extra field gone, without a word.
         """
-        before = self._Lossy(kept="here", forgotten="gone")
-        after = pickle.loads(pickle.dumps(before))
+        from rmgpy.data.kinetics.family import complete_round_trip
 
-        assert after.kept == "here"
-        assert after.forgotten is None, (
-            "the stand-in is not lossy, so this test proves nothing")
+        Sub = self._subclass_of(Molecule)
+        molecule = Sub(smiles="CC")
+        molecule.extra = "carried"
+
+        with pytest.raises(pickle.PicklingError, match="UnregisteredMolecule"):
+            complete_round_trip(molecule)
+        # Nested is the case that matters: the subclass sits inside a reaction's state.
+        with pytest.raises(pickle.PicklingError, match="UnregisteredMolecule"):
+            complete_round_trip([Species(molecule=[molecule])])
+
+    def test_an_unregistered_atom_subclass_is_refused_too(self):
+        """`Atom` is registered with the *other* reducer; the refusal must not care which."""
+        from rmgpy.data.kinetics.family import complete_round_trip
+        from rmgpy.molecule.molecule import Atom
+
+        with pytest.raises(pickle.PicklingError, match="UnregisteredAtom"):
+            complete_round_trip(self._subclass_of(Atom)(element="C"))
+
+    def test_the_multiprocessing_pickler_refuses_a_subclass_loaded_before_install(self):
+        """
+        Behavioural at `71ae97bd5`: ``ForkingPickler`` fell through to the inherited
+        reducer. `install_complete_reducers` now registers a refusal for every unregistered
+        subclass loaded when it runs -- a dispatch-table entry, so the multiprocessing
+        path pays nothing per object for it.
+        """
+        from multiprocessing.reduction import ForkingPickler
+        from rmgpy.data.kinetics.family import install_complete_reducers
+
+        Sub = self._subclass_of(Molecule)
+        install_complete_reducers()
+        try:
+            with pytest.raises(pickle.PicklingError, match="UnregisteredMolecule"):
+                ForkingPickler.dumps([Sub(smiles="C")])
+        finally:
+            ForkingPickler._extra_reducers.pop(Sub, None)
+
+    def test_registered_classes_still_travel(self):
+        """The control: the refusal is for subclasses, not for the classes themselves."""
+        from multiprocessing.reduction import ForkingPickler
+        from rmgpy.data.kinetics.family import complete_round_trip
+        from rmgpy.molecule.fragment import Fragment
+
+        for value in (Molecule(smiles="CC"), Species(molecule=[Molecule(smiles="C")]),
+                      Fragment().from_smiles_like_string("CCR")):
+            assert type(complete_round_trip(value)) is type(value)
+            assert type(pickle.loads(ForkingPickler.dumps(value))) is type(value)
+
+    def test_every_subclass_in_the_tree_is_registered_or_accepted(self):
+        """
+        Mechanical: import every module of `rmgpy` and `arkane` in a fresh interpreter,
+        walk ``__subclasses__()`` recursively under each registered class, and fail on a
+        subclass that is neither registered nor listed below with a reason. A subprocess,
+        because importing the whole tree into the test process would leak module state
+        into every later test.
+        """
+        from rmgpy.data.kinetics.family import _ACCEPTED_UNREGISTERED_SUBCLASSES
+
+        script = textwrap.dedent("""
+            import importlib, pkgutil, logging
+            logging.disable(logging.CRITICAL)
+            import rmgpy, arkane
+            from rmgpy.data.kinetics.family import _LOSSY_REDUCERS
+            for package in (rmgpy, arkane):
+                for module in pkgutil.walk_packages(package.__path__, package.__name__ + "."):
+                    try:
+                        importlib.import_module(module.name)
+                    except Exception:
+                        pass
+            def walk(cls):
+                for sub in cls.__subclasses__():
+                    yield sub
+                    yield from walk(sub)
+            for base in _LOSSY_REDUCERS:
+                for sub in walk(base):
+                    if sub not in _LOSSY_REDUCERS:
+                        print(sub.__module__ + "." + sub.__qualname__)
+        """)
+        result = subprocess.run([sys.executable, "-c", script], capture_output=True,
+                                text=True, timeout=600)
+        assert result.returncode == 0, result.stderr
+        found = set(result.stdout.split())
+        assert found == set(_ACCEPTED_UNREGISTERED_SUBCLASSES), (
+            "unregistered subclasses of a lossy class: {0}".format(sorted(found)))
+        for name, reason in _ACCEPTED_UNREGISTERED_SUBCLASSES.items():
+            assert len(reason) > 40, "{0} is accepted without a reason".format(name)
+
+    def test_the_private_cython_state_is_exactly_the_three_memos(self):
+        """
+        `writable_fields` cannot see a ``cdef`` attribute that is neither ``public`` nor
+        ``readonly``, so no transport carries one. Accepted, for a reason pinned here: the
+        only such state on the registered classes is ``_fingerprint``, ``_inchi`` and
+        ``_smiles`` on `Molecule` and `Species`, each a memo of a value derived from the
+        graph and recomputed when absent. Parsed from the ``.pxd`` so that a new private
+        field fails this test instead of vanishing from every copy.
+        """
+        import rmgpy
+
+        root = os.path.dirname(rmgpy.__file__)
+        private = {}
+        for pxd in ("molecule/graph.pxd", "molecule/molecule.pxd", "molecule/fragment.pxd",
+                    "species.pxd"):
+            path = os.path.join(root, pxd)
+            if not os.path.exists(path):
+                continue
+            current = None
+            for line in open(path):
+                klass = re.match(r"cdef class (\w+)", line)
+                if klass:
+                    current = klass.group(1)
+                    continue
+                field = re.match(r"    cdef (?!public\b|readonly\b)\w[\w\.\[\]]*\s+(\w+)\s*$",
+                                 line)
+                if field and current:
+                    private.setdefault(current, set()).add(field.group(1))
+        memos = {"_fingerprint", "_inchi", "_smiles"}
+        assert private == {"Molecule": memos, "Species": memos}
+
+    def test_the_memos_are_recomputed_after_a_copy(self):
+        """The half of the acceptance that is behaviour: a copy answers as the original."""
+        from rmgpy.data.kinetics.family import complete_round_trip
+
+        molecule = Molecule(smiles="C=CC")
+        species = Species(molecule=[Molecule(smiles="C=CC")])
+        expected = (molecule.fingerprint, molecule.smiles, molecule.to_inchi())
+        expected_species = (species.fingerprint, species.smiles, species.inchi)
+
+        copied, copied_species = complete_round_trip([molecule, species])
+        assert (copied.fingerprint, copied.smiles, copied.to_inchi()) == expected
+        assert (copied_species.fingerprint, copied_species.smiles,
+                copied_species.inchi) == expected_species
 
     def test_the_only_measured_member_of_the_table_is_atom(self):
         """
