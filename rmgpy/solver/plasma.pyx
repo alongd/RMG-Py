@@ -2296,6 +2296,16 @@ cdef class PlasmaReactor(ReactionSystem):
             return float('nan')
         xe_now = ne_now / tot_now
         xe_prev = ne_prev / tot_prev
+        # The guards above are on the electron MOLES (ne > 0), but the slope is taken on the
+        # FRACTION xe = ne/tot. A positive subnormal moles value passes ne > 0 yet its ratio to
+        # an order-one total underflows to exactly 0.0, so log(xe) = -inf and this hook would
+        # return +inf (round 110 HIGH 1 addendum). That contradicted the channel's documented
+        # vocabulary -- {nan, finite}, never inf -- and let a spurious infinity reach the
+        # criterion. An unresolvable fraction carries no usable slope, exactly like a sub-floor
+        # electron, so report nan (no information) here too, guarding the fraction after the
+        # division rather than only the moles before it.
+        if not (xe_now > 0.0) or not (xe_prev > 0.0):
+            return float('nan')
         dlnt = log(t_now) - log(t_prev)
         if not (dlnt > 0.0):
             return float('nan')

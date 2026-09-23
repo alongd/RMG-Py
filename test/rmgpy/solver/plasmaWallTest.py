@@ -1243,13 +1243,23 @@ def test_declared_source_is_delivered_in_full_in_a_mixture():
     ie = reactor.electron_index
     i_ar = [j for j in range(len(z)) if z[j] == 0 and core[j].label == 'Ar'][0]
     i_he = [j for j in range(len(z)) if z[j] == 0 and core[j].label == 'He'][0]
+    i_arp = [j for j in range(len(z)) if z[j] == 1][0]
     y = np.zeros(reactor.num_core_species, float)
     y[i_ar] = 0.5
     y[i_he] = 0.5
     V = reactor.compute_volume(y)
     delta, _ = reactor.residual(0.0, y.copy(), np.zeros_like(y))
     source_total = source * V / constants.Na       # mol of pairs per second
-    assert np.isclose(delta[ie], source_total, rtol=1e-9, atol=0.0)
+    # The pair source is one whole reaction Ar -> Ar+ + e-: it produces the electron AND the
+    # cation and consumes the neutral, all at the same rate. Asserting only the electron leg
+    # would pass a source that created electrons from nothing without an ion or a consumed
+    # neutral. At this all-neutral state no charged species is present, so the wall loss (which
+    # scales with n_e / n_ion) is zero and each leg equals the full source exactly.
+    assert np.isclose(delta[ie], source_total, rtol=1e-9, atol=0.0)      # electron produced
+    assert np.isclose(delta[i_arp], source_total, rtol=1e-9, atol=0.0)   # cation produced
+    assert np.isclose(delta[i_ar], -source_total, rtol=1e-9, atol=0.0)   # neutral consumed
+    # He is not ionisable: it neither produces nor consumes, so it stays out of the balance.
+    assert np.isclose(delta[i_he], 0.0, atol=1e-30)
 
 
 def test_direct_construction_checks_diffusion_length_dimension():
@@ -2402,16 +2412,25 @@ def test_every_solver_test_is_a_tagged_defect_reproduction_or_asserts_a_property
     here = os.path.dirname(os.path.abspath(__file__))
     files = [os.path.join(here, 'plasmaWallTest.py'),
              os.path.join(here, 'steadyStateTest.py')]
-    # A finding tag: "Round 106", "Finding 3", "HIGH 1", "MEDIUM:", "MED1", "LOW:", etc.
-    # Severity words are matched case-sensitively as whole tokens so ordinary prose
-    # ("higher", "lower", "medium-sized") cannot masquerade as a finding tag; the round /
-    # finding labels carry their own number.
+    # A finding tag: "Round 106", "Finding 3", "HIGH 1", "MEDIUM:", "MED1", "LOW 3", etc. A
+    # severity word ALONE is not a tag -- it must carry the finding's own number or a colon
+    # ("HIGH 1", "HIGH-2", "MEDIUM:"), so a bare "HIGH" mentioned in prose cannot masquerade
+    # as naming a specific banked finding. Matched case-sensitively as whole tokens so ordinary
+    # prose ("higher", "lower", "medium-sized") cannot match either; the round/finding labels
+    # carry their own number.
     tag = re.compile(r'\b(?:Round|Finding)\s*\d+'
-                     r'|\bHIGH\b|\bMEDIUM\b|\bLOW\b|\bMED\d+\b')
+                     r'|\b(?:HIGH|MEDIUM|LOW)(?:[ -]?\d+|:)'
+                     r'|\bMED\d+\b')
 
     def has_assert(node):
         for child in ast.walk(node):
             if isinstance(child, ast.Assert):
+                # A VACUOUS assertion (``assert True``, ``assert 1``, ``assert "x"``) asserts
+                # nothing -- its test is a bare constant that can never fail -- so it must not
+                # count as a property check, or a test could satisfy the census while backing
+                # no claim at all. Only a non-constant assertion counts.
+                if isinstance(child.test, ast.Constant):
+                    continue
                 return True
             # pytest.raises(...) as a context manager is an assertion of behaviour
             if isinstance(child, ast.withitem):
@@ -2443,3 +2462,86 @@ def test_every_solver_test_is_a_tagged_defect_reproduction_or_asserts_a_property
         "{0} of {1} test functions across the two solver test files neither name a "
         "round/finding tag nor contain an assertion, so they claim neither a banked red nor "
         "a property: {2}".format(len(neither), total, neither))
+
+
+def test_a_subnormal_electron_fraction_does_not_make_the_external_residual_infinite():
+    """Round 110 HIGH 1 addendum. ``steady_state_external_residual`` guards ``ne_now > 0.0``
+    on the electron MOLES, then divides by the total and takes ``log()`` of the FRACTION. A
+    positive subnormal electron moles passes the moles guard, yet ``xe = ne/tot`` underflows to
+    exactly 0.0, so ``log(0) = -inf`` and the compiled hook returns ``+inf``. rework.md claimed
+    this channel can never be infinite; the compiled hook proves otherwise. An unresolvable
+    fraction is no usable number -- like a sub-floor electron -- so the hook must return ``nan``
+    (its documented 'no information' sentinel), keeping the channel vocabulary to {nan, finite}
+    so a generic ``inf`` can never arrive on the external side."""
+    reactor = _build_reactor(source=1.0e18, wall=True, gamma=1.0)[0]
+    ie = reactor.electron_index
+    n = reactor.num_core_species
+
+    y_prev = np.full(n, 1.0)
+    y_prev[ie] = 1.0e-4                        # a normal, finite previous electron fraction
+    y_now = np.full(n, 10.0)                   # order-10 total inventory
+    y_now[ie] = 5.0e-324                        # smallest positive subnormal: passes ne_now > 0
+
+    # Premise, empirically: the moles are positive but the fraction underflows to exact zero.
+    assert y_now[ie] > 0.0
+    assert y_now[ie] / y_now.sum() == 0.0
+
+    val = reactor.steady_state_external_residual(2.0, y_now, 1.0, y_prev)
+    assert not np.isinf(val), "a subnormal electron fraction still yields an infinite residual"
+    assert np.isnan(val), "an unresolvable electron fraction must read as no information (nan)"
+
+
+def test_the_cross_channel_census_now_covers_the_flux_and_transport_folds():
+    """Round 110 census. The round-109 cross-channel census enumerated the steady-state
+    RESIDUAL, CHARGE and JACOBIAN channels and reported 6 sites, but its channel taxonomy
+    omitted the FLUX / TRANSPORT channels -- so it was blind to the two folds that combine
+    gas-phase chemistry with a non-chemical rate, one of which carried this round's HIGH 2:
+
+      * base.pyx -- ``char_rate`` (chemistry) folded with ``non_chemical_char_rate``
+        (transport) into ``total_char_rate``, and the edge rate-ratio denominator that ranks
+        edge flux against ``char_rate``;
+      * plasma.pyx ``_apply_wall_terms`` -- the chemistry residual ``res`` combined with the
+        wall transport term.
+
+    This pins both to source so the census cannot silently drift again, and forbids the
+    dimensional ``else 1.0`` denominator that made a raw edge rate masquerade as a dimensionless
+    ratio (HIGH 2)."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    root = os.path.dirname(os.path.dirname(os.path.dirname(here)))
+    with open(os.path.join(root, 'rmgpy', 'solver', 'base.pyx')) as fh:
+        base_src = fh.read()
+    with open(os.path.join(root, 'rmgpy', 'solver', 'plasma.pyx')) as fh:
+        plasma_src = fh.read()
+
+    # The chemical / non-chemical flux fold is present and catalogued.
+    assert 'char_rate * char_rate' in base_src
+    assert 'non_chemical_char_rate * non_chemical_char_rate' in base_src
+    # The edge-ratio criterion abstains through the helper, and the FORBIDDEN dimensional
+    # denominators (owner's ruling: 1.0, an epsilon, or any floor) are gone: a floored
+    # denominator compares a dimensional rate against a dimensionless tolerance (round 110 HIGH 2).
+    assert '_rate_ratios_or_zero' in base_src, "the abstaining ratio helper is missing"
+    assert 'char_rate if char_rate > 0.0 else 1.0' not in base_src, \
+        "the dimensional edge-ratio denominator (round 110 HIGH 2) was reintroduced"
+    assert 'ratio_denom' not in base_src, \
+        "a floored ratio denominator was reintroduced; the ratio criterion must abstain, not floor"
+    # The chemistry / wall-transport fold is present and catalogued.
+    assert '_apply_wall_terms(y, V, res)' in plasma_src
+
+
+def test_zero_core_flux_with_wall_loss_abstains_on_ratio_but_keeps_an_absolute_criterion():
+    """Round 110 HIGH 2 (owner's ruling; matrix case 'non-zero wall loss with zero core flux').
+    A wall-driven plasma with no gas-phase reactions has char_rate == 0, so the enlargement
+    RATIO criterion abstains (see the denominator matrix in steadyStateTest). But the wall is
+    moving the composition, so get_non_chemical_char_rate() > 0 and total_char_rate > 0: the
+    dimensioned ABSOLUTE criterion is present and governs, and the run is NOT dismissed as one
+    that never started on the strength of an undefined ratio. The wall physics itself is
+    unchanged -- this only asserts which criterion is in force when the ratio is undefined."""
+    r, _, _ = _build_reactor(wall=True, with_chemistry=False, source=1.0e18)
+    y = _state_at(r, 1.0e-6)                       # a live discharge state (electrons present)
+    r.residual(0.0, y.copy(), np.zeros_like(y))
+    char_rate = float(np.sqrt(np.sum(np.asarray(r.core_species_rates, float) ** 2)))
+
+    # No gas chemistry: the ratio denominator is zero, so the ratio criterion abstains...
+    assert char_rate == 0.0, "a chemistry-free deck must carry no gas-phase characteristic rate"
+    # ...but the wall carries real flux, so the absolute criterion is live (total_char_rate > 0).
+    assert r.get_non_chemical_char_rate() > 0.0, "the wall loss must supply the absolute criterion"

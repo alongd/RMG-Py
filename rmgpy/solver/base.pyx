@@ -882,24 +882,30 @@ cdef class ReactionSystem(DASx):
             core_species_production_rates = self.core_species_production_rates
             edge_species_rates = np.abs(self.edge_species_rates)
             network_leak_rates = np.abs(self.network_leak_rates)
-            # char_rate is the CHEMISTRY characteristic rate (the norm of
-            # core_species_rates). Enumerating its consumers by which flux they measure:
-            # the rate RATIOS here (core/edge/network) and the branching numbers that read
-            # core_species_rate_ratios are enlargement/pruning signals RELATIVE to the
-            # chemistry, so they read char_rate -- a wall or source term must not rescale
-            # which edge species looks fast. Only the inert / termination GATES read the
-            # TOTAL flux (total_char_rate, via get_non_chemical_char_rate): the zero-flux
-            # promotion below and the steady-state block later. max_char_rate and the
-            # non-finite guard read char_rate, being chemistry diagnostics.
-            # When there is no chemistry flux at all (a supported wall-only run: every core
-            # rate is exactly 0, so char_rate is 0), the ratios are 0/0. Nothing can be
-            # ranked against a zero chemistry rate, so divide by 1.0 there -- yielding 0
-            # where the numerator is 0 -- rather than laundering a NaN through argmax and
-            # the branching numbers (NaN silently wins every comparison it enters).
-            ratio_denom = char_rate if char_rate > 0.0 else 1.0
-            core_species_rate_ratios = np.abs(self.core_species_rates / ratio_denom)
-            edge_species_rate_ratios = np.abs(self.edge_species_rates / ratio_denom)
-            network_leak_rate_ratios = np.abs(self.network_leak_rates / ratio_denom)
+            # char_rate is the CHEMISTRY characteristic rate (the norm of core_species_rates).
+            # The enlargement/pruning rate RATIOS (core/edge/network) and the branching numbers
+            # that read them are DIMENSIONLESS signals compared against dimensionless tolerances,
+            # so their denominator must be char_rate: a wall or source term must not rescale which
+            # edge species looks fast, and only that gas-phase rate makes the ratio dimensionless.
+            # Only the inert / termination GATES read the TOTAL flux (total_char_rate, via
+            # get_non_chemical_char_rate): the zero-flux promotion below and the steady-state block
+            # later. max_char_rate and the non-finite guard read char_rate, chemistry diagnostics.
+            #
+            # The ratio criterion is EVALUATED ONLY when char_rate is finite and strictly positive
+            # -- the sole case in which edge/char_rate is a dimensionless ratio (round 110 HIGH 2,
+            # owner's ruling). When char_rate is zero the ratio is UNDEFINED, and this relative
+            # criterion ABSTAINS: it can neither promote nor terminate. The separately-defined,
+            # dimensioned ABSOLUTE criterion below (total_char_rate against the _CHAR_RATE_FLOOR
+            # band -- the zero-flux promotion block and the steady-state-inert block) is what
+            # governs the zero-core-flux case instead; it already exists, so no policy is invented
+            # here. Substituting 1.0, an epsilon, or any other floor for the denominator would
+            # compare a DIMENSIONAL rate against a dimensionless tolerance -- a category error, and
+            # exactly the bug being fixed (1.0 was the previous form; a smaller number is the same
+            # bug). Abstention returns zeros, which promote nothing and launder no 0/0 NaN through
+            # argmax or the branching numbers.
+            core_species_rate_ratios = self._rate_ratios_or_zero(self.core_species_rates, char_rate)
+            edge_species_rate_ratios = self._rate_ratios_or_zero(self.edge_species_rates, char_rate)
+            network_leak_rate_ratios = self._rate_ratios_or_zero(self.network_leak_rates, char_rate)
             num_edge_reactions = self.num_edge_reactions
             core_reaction_rates = self.core_reaction_rates
             product_indices = self.product_indices
@@ -940,13 +946,14 @@ cdef class ReactionSystem(DASx):
 
             # The inert / termination tests below ask whether the composition can still
             # change, which is a question about the reactor's TOTAL flux, not its
-            # gas-phase chemistry diagnostic. get_non_chemical_char_rate() is 0.0 for
-            # every reactor without transport/source terms, so total_char_rate ==
-            # char_rate and their behaviour is unchanged; for a PlasmaReactor whose wall
-            # is depleting the plasma it is non-zero, which is what stops a wall-driven
-            # system from being reported as one that never started. char_rate itself is
-            # left untouched -- it stays the chemistry diagnostic the enlargement ratios
-            # and the logs read.
+            # gas-phase chemistry diagnostic. get_non_chemical_char_rate() is 0.0 for every
+            # reactor without transport/source terms, so total_char_rate == char_rate and their
+            # behaviour is unchanged; for a PlasmaReactor whose wall is depleting the plasma it
+            # is non-zero, which is the dimensioned ABSOLUTE signal that keeps a wall-driven
+            # system from being reported as one that never started, and that governs the
+            # zero-core-flux case the (dimensionless) enlargement ratio abstains from. char_rate
+            # itself is left untouched -- it stays the chemistry diagnostic the ratios and the
+            # logs read.
             non_chemical_char_rate = self.get_non_chemical_char_rate()
             total_char_rate = sqrt(char_rate * char_rate
                                    + non_chemical_char_rate * non_chemical_char_rate)
@@ -1368,6 +1375,13 @@ cdef class ReactionSystem(DASx):
             # below reads it, so that a run stopping on its backstop time can still report
             # the residual it got to whatever order the criteria were declared in.
             if steady_state_terms:
+                # Which criterion actually fired this step, so the readback and the success log
+                # name IT and not always criterion zero (round 110 MEDIUM). With several criteria
+                # of different tolerance, quoting criterion zero produced statements false on
+                # their face -- "below tolerance 1.0000e-30 for 0 consecutive steps" while a
+                # different criterion is what terminated the run. None until one fires; the
+                # per-step residual readback falls back to criterion zero exactly as before.
+                steady_state_fired = None
                 if steady_state_prev_y is not None:
                     # A reactor may resolve a state variable BELOW the mole floor (a plasma
                     # electron seeded from zero by an external source) that the generic
@@ -1386,10 +1400,17 @@ cdef class ReactionSystem(DASx):
                                        external_armed=ss_external_armed,
                                        relaxation_time=ss_relaxation_time):
                             steady_state_satisfied = True
+                            if steady_state_fired is None:
+                                steady_state_fired = term
                 if not steady_state_satisfied:
                     steady_state_prev_y = y_core_species.copy()
                     steady_state_prev_t = self.t
-                self.steady_state_residual = steady_state_terms[0].residual
+                # Report the criterion that fired; before any fires, the latest residual from
+                # criterion zero (so a backstop stop still has a number to quote).
+                if steady_state_fired is not None:
+                    self.steady_state_residual = steady_state_fired.residual
+                else:
+                    self.steady_state_residual = steady_state_terms[0].residual
 
                 # A system carrying no net flux cannot change again, so there is nothing
                 # left to integrate and the run must stop. The ordinary path above already
@@ -1437,7 +1458,9 @@ cdef class ReactionSystem(DASx):
                         'composition that cannot move carries no information about whether it has '
                         'settled.'.format(self.t))
                 else:
-                    term = steady_state_terms[0]
+                    # The criterion that fired (round 110 MEDIUM), not always criterion zero, so
+                    # the tolerance and streak quoted are the ones that actually terminated the run.
+                    term = steady_state_fired if steady_state_fired is not None else steady_state_terms[0]
                     logging.info('At time {0:10.4e} s, reached steady state: residual {1:10.4e} below '
                                  'tolerance {2:10.4e} for {3:d} consecutive steps (slowest species: '
                                  '{4}).'.format(self.t, self.steady_state_residual, term.tolerance,
@@ -1541,6 +1564,31 @@ cdef class ReactionSystem(DASx):
         change?" -- rather than about its chemistry diagnostic alone.
         """
         return 0.0
+
+    @staticmethod
+    def _rate_ratios_or_zero(rates, denominator):
+        """Enlargement/pruning rate ratios ``|rates / denominator|`` -- the DIMENSIONLESS
+        quantity model growth and pruning compare against dimensionless tolerances.
+
+        Evaluated ONLY when the denominator (the characteristic chemistry rate ``char_rate``)
+        is finite and strictly positive: that is the sole case in which the ratio is
+        dimensionless and the criterion is physically applicable. When the denominator is
+        zero, negative, or non-finite the ratio is UNDEFINED and this relative criterion
+        ABSTAINS -- it returns zeros, so it promotes nothing and terminates nothing, and the
+        separately-defined dimensioned ABSOLUTE criterion (``total_char_rate`` against the
+        ``_CHAR_RATE_FLOOR`` band) is left to govern the zero-core-flux case.
+
+        Returning zeros -- rather than dividing by ``1.0``, an epsilon, or any other floored
+        denominator -- is the point (round 110 HIGH 2, owner's ruling): a floored denominator
+        compares a DIMENSIONAL rate against a dimensionless tolerance, a category error that
+        promotes or suppresses edge species by their raw magnitude (``1.0`` was the previous
+        form; a smaller constant is the same bug). Zeros also avoid laundering a ``0/0`` NaN
+        through ``argmax`` and the branching numbers.
+        """
+        rates = np.asarray(rates, dtype=np.float64)
+        if np.isfinite(denominator) and denominator > 0.0:
+            return np.abs(rates / denominator)
+        return np.zeros_like(rates)
 
     cpdef double steady_state_external_residual(self, double t_now, np.ndarray y_now,
                                                 double t_prev, np.ndarray y_prev):

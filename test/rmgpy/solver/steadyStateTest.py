@@ -383,7 +383,7 @@ class TerminationSteadyStateLatchTest:
             j = float(k)
             y_prev = np.array([1e12, 1.0])
             y_now = np.array([1e12, float(np.exp(rg))])
-            term.update(y_now, np.exp(j + 1), y_prev, np.exp(j), ATOL, external_armed=True)
+            term.update(y_now, np.exp(j + 1), y_prev, np.exp(j), ATOL, external_residual=1e-9, external_armed=True)
         assert term.armed_external is False and term.armed is False
 
         # a genuinely settled neutral, electron past relaxation: DOES arm
@@ -393,7 +393,7 @@ class TerminationSteadyStateLatchTest:
             j = float(k)
             y_prev = np.array([1e12, 1.0])
             y_now = np.array([1e12, float(np.exp(rg))])
-            term2.update(y_now, np.exp(j + 1), y_prev, np.exp(j), ATOL, external_armed=True)
+            term2.update(y_now, np.exp(j + 1), y_prev, np.exp(j), ATOL, external_residual=1e-9, external_armed=True)
         assert term2.armed_external is True
 
     def test_the_external_arm_is_not_a_permanent_latch(self):
@@ -406,7 +406,7 @@ class TerminationSteadyStateLatchTest:
             j = float(k)
             y_prev = np.array([1e12, 1.0])
             y_now = np.array([1e12, float(np.exp(rg))])
-            term.update(y_now, np.exp(j + 1), y_prev, np.exp(j), ATOL, external_armed=True)
+            term.update(y_now, np.exp(j + 1), y_prev, np.exp(j), ATOL, external_residual=1e-9, external_armed=True)
         assert term.armed_external is False   # the resumed rise dropped the arm
 
     def test_a_species_rising_under_the_aggregate_maximum_still_blocks_the_arm(self):
@@ -429,7 +429,7 @@ class TerminationSteadyStateLatchTest:
             a_next, b_next = a * np.exp(a_slopes[k]), b * np.exp(b_slopes[k])
             term.update(np.array([BIG, a_next, b_next]), t_now,
                         np.array([BIG, a, b]), t_prev, ATOL,
-                        labels=['big', 'a', 'b'], external_armed=True)
+                        labels=['big', 'a', 'b'], external_residual=1e-9, external_armed=True)
             a, b = a_next, b_next
         assert term.worst_label == 'b'          # the maximum is the falling species, as claimed
         assert term.armed_external is False      # ...yet the rising 'a' keeps the arm shut
@@ -447,7 +447,7 @@ class TerminationSteadyStateLatchTest:
             a_next, b_next = a * np.exp(settled_a[k]), b * np.exp(settled_b[k])
             term2.update(np.array([BIG, a_next, b_next]), t_now,
                          np.array([BIG, a, b]), t_prev, ATOL,
-                         labels=['big', 'a', 'b'], external_armed=True)
+                         labels=['big', 'a', 'b'], external_residual=1e-9, external_armed=True)
             a, b = a_next, b_next
         assert term2.armed_external is True
 
@@ -838,3 +838,184 @@ class SteadyStateTerminationInSolverTest:
         ), "the honest steady-state report was never reached: {0!r}".format(
             [r.getMessage() for r in caplog.records]
         )
+
+
+# ===========================================================================
+# Round 110 -- the value is ignored, the permission is not
+# ===========================================================================
+
+def test_an_unusable_external_residual_cannot_authorise_termination():
+    """Round 110 HIGH 1. Round 109 made the residual FOLD ignore a non-finite
+    ``external_residual``, but left the boolean ``external_armed`` -- which arrives on the
+    same ``update()`` call and is independent -- to grant the arm on its own. So a channel
+    that has just reported NO USABLE NUMBER (``nan``) or a value that blew up (``inf``) still
+    authorises termination on a flat generic channel, byte-identically to a valid residual.
+
+    Reproduces the byte-identical verdict list the reviewer measured, then pins the fix: the
+    value and the permission must travel together, so an external arm is licensed only while
+    the external residual is a usable finite number.
+    """
+    y = np.array([1.0, 0.5])                 # two live species, flat (identical) across steps
+    t = [1.0e-6, 1.0e-3, 1.0, 1.0e3]         # log-spaced, so the e-fold persistence span holds
+    floor = 1.0e-30
+
+    def verdicts(external_residual):
+        term = TerminationSteadyState(tolerance=1e-6, window=2)
+        return [bool(term.update(y, t[k], y, t[k - 1], floor,
+                                 external_residual=external_residual, external_armed=True,
+                                 relaxation_time=float('nan')))
+                for k in range(1, len(t))]
+
+    finite = verdicts(1.0e-9)
+    nan = verdicts(float('nan'))
+    pos_inf = verdicts(float('inf'))
+    neg_inf = verdicts(float('-inf'))
+
+    # A usable finite external residual still arms and terminates -- the valid path is intact.
+    assert any(finite), finite
+    # ...but a nan (no usable number), +inf or -inf (invalid) must NOT authorise termination:
+    # a non-finite residual can never grant convergence through any channel.
+    assert nan == [False, False, False], nan
+    assert pos_inf == [False, False, False], pos_inf
+    assert neg_inf == [False, False, False], neg_inf
+    # The finite verdict list is no longer byte-identical to the non-finite ones, which was
+    # the defect (all four were [False, True, True] before the fix).
+    assert finite != nan and finite != pos_inf and finite != neg_inf
+
+
+def test_a_nonfinite_external_residual_poisons_even_an_armed_generic_channel():
+    """Round 110 HIGH 1 (owner's ruling). A non-finite residual must never authorise
+    termination through ANY channel -- and in particular must not be dropped as 'criterion
+    unavailable' while the remaining (generic) channel goes on to terminate the run, which is
+    exactly the old behaviour. Arm the generic channel through a real transient and take it
+    flat, then have the external channel report +inf (and -inf): the folded residual is
+    poisoned, the step cannot terminate, and the invalid value is named in the diagnostic
+    rather than silently swallowed."""
+    big = 1.0e12
+
+    def feed(term, target_r, t_prev, t_now, external_residual):
+        dlnt = np.log(t_now) - np.log(t_prev)
+        y_prev = np.array([big, 1.0])
+        y_now = np.array([big, float(np.exp(target_r * dlnt))])
+        return term.update(y_now, t_now, y_prev, t_prev, ATOL,
+                           external_residual=external_residual, external_armed=False,
+                           relaxation_time=float('nan'))
+
+    for poison in (float('inf'), float('-inf')):
+        term = TerminationSteadyState(tolerance=1e-6, window=2)
+        feed(term, 2.0, 1.0, np.e, float('nan'))          # a real transient arms the generic arm
+        assert term.armed_generic is True
+        # Generic now flat, but the external channel reports a non-finite residual: no
+        # termination, even though the armed generic channel alone would have fired.
+        v1 = feed(term, 0.0, np.e, np.e ** 2, poison)
+        v2 = feed(term, 0.0, np.e ** 2, np.e ** 3, poison)
+        assert v1 is False and v2 is False, (poison, v1, v2)
+        assert not np.isfinite(term.residual)             # the fold is poisoned, not dropped
+        assert 'external channel' in str(term.worst_label), term.worst_label
+
+
+def test_rate_ratio_criterion_evaluates_only_for_a_finite_positive_denominator():
+    """Round 110 HIGH 2 (owner's ruling; the denominator matrix). The edge/core/network rate
+    ratios are dimensionless only when divided by a finite, strictly positive characteristic
+    rate. ``_rate_ratios_or_zero`` evaluates the ratio ONLY then; for a zero, negative, or
+    non-finite denominator the ratio is undefined, so the relative criterion ABSTAINS and
+    returns zeros -- promoting and terminating nothing -- rather than dividing by a floored
+    1.0/epsilon that would compare a dimensional rate against a dimensionless tolerance."""
+    from rmgpy.solver.base import ReactionSystem
+    rates = np.array([2.0, -4.0, 0.0])
+
+    # positive denominator -> the ordinary applicable ratio, unchanged.
+    np.testing.assert_allclose(ReactionSystem._rate_ratios_or_zero(rates, 4.0), [0.5, 1.0, 0.0])
+    # zero / negative / NaN / +inf / -inf denominator -> undefined -> abstain -> all zeros,
+    # and finite (no NaN or inf laundered into argmax or the branching numbers).
+    for denom in (0.0, -4.0, float('nan'), float('inf'), float('-inf')):
+        out = ReactionSystem._rate_ratios_or_zero(rates, denom)
+        assert np.all(out == 0.0), (denom, out)
+        assert np.isfinite(out).all(), (denom, out)
+
+
+def _zero_core_flux_with_large_edge_rate(termination):
+    """Round 110 HIGH 2 fixture: a NON-PLASMA reactor whose core carries no reaction
+    (``char_rate`` exactly 0, hence ``total_char_rate`` 0 -- no transport), but whose
+    non-empty edge has a LARGE flux. Edge reactions do not feed core-species derivatives
+    (simple.pyx), so the core rate stays exactly zero while the edge rate is real -- and here
+    large enough (~1.2e7, A=1e6) that, divided by the old floored denominator of 1.0, it would
+    clear a dimensionless ``tol_move_to_core``: the dimensional comparison the fix removes."""
+    ch4 = _hydrocarbon("C", [8.615, 9.687, 10.963, 12.301, 14.841, 16.976, 20.528], -17.714, 44.472)
+    c2h6 = _hydrocarbon("CC", [12.684, 15.506, 18.326, 20.971, 25.500, 29.016, 34.595], -19.521, 54.799)
+    ch3 = _hydrocarbon("[CH3]", [9.397, 10.123, 10.856, 11.571, 12.899, 14.055, 16.195], 9.357, 45.174)
+    edge_rxn = Reaction(reactants=[c2h6], products=[ch3, ch3],
+                        kinetics=Arrhenius(A=(1.0e6, "1/s"), n=0.0, Ea=(0.0, "kcal/mol"), T0=(298.15, "K")))
+    core_species = [ch4, c2h6]
+    edge_species = [ch3]
+    reactor = SimpleReactor(T=1000.0, P=1.0e5, initial_mole_fractions={ch4: 0.5, c2h6: 0.5},
+                            n_sims=1, termination=termination)
+    reactor.initialize_model(core_species, [], edge_species, [edge_rxn])
+    return reactor, core_species, [], edge_species, [edge_rxn]
+
+
+def test_a_zero_core_flux_reactor_does_not_promote_by_dimensional_comparison(caplog):
+    """Round 110 HIGH 2 (owner's ruling; matrix case 'zero-core-flux reactor'). With
+    ``char_rate == 0`` the ratio criterion is undefined and must ABSTAIN: it may neither
+    promote an edge species nor terminate. The old ``char_rate ... else 1.0`` compared the raw
+    dimensional edge rate against a dimensionless ``tol_move_to_core`` and would have promoted
+    this large edge rate; after the fix nothing is promoted through the ratio, and the
+    dimensioned ABSOLUTE criterion (the zero-flux / steady-state-inert band on
+    ``total_char_rate``) governs the outcome deterministically instead."""
+    steady = TerminationSteadyState(tolerance=1e-6, window=2)
+    backstop = TerminationTime((1.0, 's'))
+    reactor, core_species, core_reactions, edge_species, edge_reactions = \
+        _zero_core_flux_with_large_edge_rate([steady, backstop])
+
+    # Guard the premise: char_rate is exactly zero, and the edge rate is large enough that the
+    # old dimensional comparison edge/1.0 WOULD have exceeded tol_move_to_core below.
+    y0 = np.array(reactor.y0, float)
+    reactor.residual(0.0, y0.copy(), np.zeros_like(y0))
+    assert np.all(reactor.core_species_rates == 0.0), "core must be inert (char_rate == 0)"
+    max_edge = float(np.max(np.abs(reactor.edge_species_rates)))
+    assert max_edge > 1.0e5, "edge rate must exceed tol_move_to_core so the dimensional bug WOULD fire"
+
+    with caplog.at_level(logging.INFO):
+        _terminated, _res, invalid_objects, _ss, _sr, _t, _x = reactor.simulate(
+            core_species, core_reactions, edge_species, edge_reactions, [], [],
+            model_settings=ModelSettings(tol_keep_in_edge=0, tol_move_to_core=1e5,
+                                         tol_interrupt_simulation=1e8),
+            simulator_settings=SimulatorSettings(),
+        )
+
+    # The undefined ratio must not promote the edge species by its raw dimensional magnitude.
+    assert edge_species[0] not in invalid_objects, (
+        "a zero-core-flux reactor promoted {0!r} through a dimensional ratio comparison; the "
+        "ratio criterion must abstain when its denominator is zero".format(invalid_objects))
+    # The dimensioned absolute criterion governs deterministically instead.
+    assert any('this model never started' in r.getMessage() for r in caplog.records), \
+        "the absolute zero-flux criterion did not govern the zero-core-flux case"
+
+
+def test_steady_state_report_names_the_criterion_that_fired(caplog):
+    """Round 110 MEDIUM. Any of several steady-state criteria can terminate, but the readback
+    and the success log always used criterion zero (``steady_state_terms[0]``). With a first
+    criterion whose tolerance (1e-30) it never meets and a second (1e-6) it does, the success
+    line quoted criterion zero -- 'below tolerance 1.0000e-30 for 0 consecutive steps' -- a
+    statement false on its face. Report the criterion that actually fired."""
+    never = TerminationSteadyState(tolerance=1e-30, window=3)   # criterion 0: never satisfied
+    fires = TerminationSteadyState(tolerance=1e-6, window=3)     # criterion 1: the one that fires
+    backstop = TerminationTime((1.0e4, 's'))
+    reactor, core_species, core_reactions = _relaxing_system([never, fires, backstop])
+
+    with caplog.at_level(logging.INFO):
+        terminated = _simulate(reactor, core_species, core_reactions)[0]
+
+    assert terminated
+    assert reactor.steady_state_reached is True
+    msgs = [r.getMessage() for r in caplog.records if 'reached steady state' in r.getMessage()]
+    assert msgs, "no steady-state success line was logged: {0!r}".format(
+        [r.getMessage() for r in caplog.records])
+    reached = msgs[-1]
+    # The report must quote the tolerance and streak of the criterion that FIRED (1e-6, a full
+    # window), not criterion zero's (1e-30, zero consecutive steps).
+    assert '1.0000e-06' in reached, reached
+    assert '1.0000e-30' not in reached, reached
+    assert 'for 0 consecutive steps' not in reached, reached
+    # steady_state_residual is the fired criterion's, and it cleared 1e-6.
+    assert reactor.steady_state_residual < 1e-6
