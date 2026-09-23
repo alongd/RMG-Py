@@ -1,0 +1,95 @@
+warning: rmgpy/solver/surface.pyx:415:61: Unreachable code
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/thermo/nasa.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/solver/base.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+rmgpy/solver/base.c: In function ‘__pyx_f_5rmgpy_6solver_4base_14ReactionSystem_simulate’:
+rmgpy/solver/base.c:20375:24: warning: ‘__pyx_v_RTP’ may be used uninitialized [-Wmaybe-uninitialized]
+20375 |           __pyx_t_19 = PyFloat_FromDouble(__pyx_v_RTP); if (unlikely(!__pyx_t_19)) __PYX_ERR(0, 872, __pyx_L1_error)
+      |                        ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+rmgpy/solver/base.c:16727:10: note: ‘__pyx_v_RTP’ was declared here
+16727 |   double __pyx_v_RTP;
+      |          ^~~~~~~~~~~
+rmgpy/solver/base.c:20481:40: warning: ‘__pyx_pybuffernd_sens_species_indices.diminfo[0].shape’ may be used uninitialized [-Wmaybe-uninitialized]
+20481 |         if (__pyx_t_24 < 0) __pyx_t_24 += __pyx_pybuffernd_sens_species_indices.diminfo[0].shape;
+      |                             ~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+rmgpy/solver/base.c:16877:21: note: ‘__pyx_pybuffernd_sens_species_indices.diminfo[0].shape’ was declared here
+16877 |   __Pyx_LocalBuf_ND __pyx_pybuffernd_sens_species_indices;
+      |                     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+rmgpy/solver/base.c:2985:73: warning: ‘__pyx_pybuffernd_sens_species_indices.diminfo[0].strides’ may be used uninitialized [-Wmaybe-uninitialized]
+ 2985 | #define __Pyx_BufPtrStrided1d(type, buf, i0, s0) (type)((char*)buf + i0 * s0)
+      |                                                                         ^
+rmgpy/solver/base.c:20482:24: note: in expansion of macro ‘__Pyx_BufPtrStrided1d’
+20482 |         __pyx_t_40 = (*__Pyx_BufPtrStrided1d(__pyx_t_5numpy_int_t *, __pyx_pybuffernd_sens_species_indices.rcbuffer->pybuffer.buf, __pyx_t_24, __pyx_pybuffernd_sens_species_indices.diminfo[0].strides));
+      |                        ^~~~~~~~~~~~~~~~~~~~~
+rmgpy/solver/base.c:16877:21: note: ‘__pyx_pybuffernd_sens_species_indices.diminfo[0].strides’ was declared here
+16877 |   __Pyx_LocalBuf_ND __pyx_pybuffernd_sens_species_indices;
+      |                     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/solver/simple.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+rmgpy/solver/simple.c: In function ‘__pyx_pf_5rmgpy_6solver_6simple_13SimpleReactor_20residual’:
+rmgpy/solver/simple.c:11397:12: warning: ‘__pyx_v_j’ may be used uninitialized [-Wmaybe-uninitialized]
+11397 |         if (__pyx_t_21 < 0) __pyx_t_21 += __pyx_pybuffernd_kf.diminfo[0].shape;
+      |            ^
+rmgpy/solver/simple.c:10333:14: note: ‘__pyx_v_j’ was declared here
+10333 |   Py_ssize_t __pyx_v_j;
+      |              ^~~~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/solver/liquid.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/solver/mbSampled.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/solver/surface.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+rmgpy/solver/surface.c: In function ‘__pyx_pf_5rmgpy_6solver_7surface_14SurfaceReactor_18residual’:
+rmgpy/solver/surface.c:2847:73: warning: ‘__pyx_pybuffernd_coverages.diminfo[0].strides’ may be used uninitialized [-Wmaybe-uninitialized]
+ 2847 | #define __Pyx_BufPtrStrided1d(type, buf, i0, s0) (type)((char*)buf + i0 * s0)
+      |                                                                         ^
+rmgpy/solver/surface.c:14913:41: note: in expansion of macro ‘__Pyx_BufPtrStrided1d’
+14913 |       __pyx_v_surface_site_fraction = (*__Pyx_BufPtrStrided1d(__pyx_t_5numpy_float64_t *, __pyx_pybuffernd_coverages.rcbuffer->pybuffer.buf, __pyx_t_14, __pyx_pybuffernd_coverages.diminfo[0].strides));
+      |                                         ^~~~~~~~~~~~~~~~~~~~~
+rmgpy/solver/surface.c:13554:21: note: ‘__pyx_pybuffernd_coverages.diminfo[0].strides’ was declared here
+13554 |   __Pyx_LocalBuf_ND __pyx_pybuffernd_coverages;
+      |                     ^~~~~~~~~~~~~~~~~~~~~~~~~~
+rmgpy/solver/surface.c:14912:38: warning: ‘__pyx_pybuffernd_coverages.diminfo[0].shape’ may be used uninitialized [-Wmaybe-uninitialized]
+14912 |       if (__pyx_t_14 < 0) __pyx_t_14 += __pyx_pybuffernd_coverages.diminfo[0].shape;
+      |                           ~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+rmgpy/solver/surface.c:13554:21: note: ‘__pyx_pybuffernd_coverages.diminfo[0].shape’ was declared here
+13554 |   __Pyx_LocalBuf_ND __pyx_pybuffernd_coverages;
+      |                     ^~~~~~~~~~~~~~~~~~~~~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/solver/plasma.c:1140:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
