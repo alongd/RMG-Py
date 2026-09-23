@@ -67,7 +67,7 @@ from rmgpy.kinetics.uncertainties import RateUncertainty, rank_accuracy_map
 from rmgpy.molecule import Bond, GroupBond, Group, Molecule
 from rmgpy.molecule.molecule import Atom
 from rmgpy.molecule.atomtype import ATOMTYPES
-from rmgpy.reaction import Reaction, same_species_lists
+from rmgpy.reaction import Reaction, pair_occurrences, same_species_lists
 from rmgpy.species import Species
 from rmgpy.tools.uncertainty import KineticParameterUncertainty
 from rmgpy.molecule.fragment import CuttingLabel, Fragment
@@ -644,6 +644,10 @@ def copy_reaction(reaction, not_copied_by_reference):
     added to either table lands in exactly one half, and a field added to `Reaction` with
     no table entry is carried by reference and named by the partition tests.
     """
+    # A pair member that is not an occurrence on its own side must raise here: the pickle
+    # memo would otherwise hand the copy a fresh, detached object for it, which is an alien
+    # member surviving the copy under a new identity (round 112, HIGH 1).
+    pair_occurrences(getattr(reaction, 'pairs', None), reaction.reactants, reaction.products)
     held = state_fields(reaction)
     unclassified = sorted(held - set(not_copied_by_reference) - set(_COPIED_BY_REFERENCE))
     if unclassified:

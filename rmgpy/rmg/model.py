@@ -57,7 +57,7 @@ from rmgpy.kinetics.surface import StickingCoefficient
 from rmgpy.molecule.fragment import Fragment
 from rmgpy.molecule.group import Group
 from rmgpy.quantity import Quantity
-from rmgpy.reaction import Reaction
+from rmgpy.reaction import Reaction, pair_occurrences, pairs_from_occurrences
 from rmgpy.rmg.decay import decay_species
 from rmgpy.rmg.pdep import PDepNetwork, PDepReaction
 from rmgpy.rmg.react import react_all
@@ -211,26 +211,17 @@ class ReactionModel:
         # Add the unique species from other to the final model
         final_model.species.extend(unique_species)
 
-        # Make sure unique reactions only refer to species in the final model
+        # Make sure unique reactions only refer to species in the final model. The pairs
+        # follow by position on each side: `reactant in pair` matched a species that is a
+        # product of the same pair too, and rewrote the wrong member (round 112).
         for rxn in unique_reactions:
+            occurrences = pair_occurrences(rxn.pairs, rxn.reactants, rxn.products)
             for i, reactant in enumerate(rxn.reactants):
-                try:
-                    rxn.reactants[i] = common_species[reactant]
-                    if rxn.pairs:
-                        for j, pair in enumerate(rxn.pairs):
-                            if reactant in pair:
-                                rxn.pairs[j] = (rxn.reactants[i], pair[1])
-                except KeyError:
-                    pass
+                rxn.reactants[i] = common_species.get(reactant, reactant)
             for i, product in enumerate(rxn.products):
-                try:
-                    rxn.products[i] = common_species[product]
-                    if rxn.pairs:
-                        for j, pair in enumerate(rxn.pairs):
-                            if product in pair:
-                                rxn.pairs[j] = (pair[0], rxn.products[i])
-                except KeyError:
-                    pass
+                rxn.products[i] = common_species.get(product, product)
+            if occurrences:
+                rxn.pairs = pairs_from_occurrences(occurrences, rxn.reactants, rxn.products)
 
         # Add the unique reactions from other to the final model
         final_model.reactions.extend(unique_reactions)
@@ -658,14 +649,22 @@ class CoreEdgeReactionModel:
         if forward.specific_collider is not None:
             forward.specific_collider = self.make_new_species(forward.specific_collider)[0]
 
-        if forward.pairs is not None:
-            for pairIndex in range(len(forward.pairs)):
-                reactant_index = forward.reactants.index(forward.pairs[pairIndex][0])
-                product_index = forward.products.index(forward.pairs[pairIndex][1])
-                forward.pairs[pairIndex] = (reactants[reactant_index], products[product_index])
-                if hasattr(forward, "reverse"):
-                    if forward.reverse:
-                        forward.reverse.pairs[pairIndex] = (products[product_index], reactants[reactant_index])
+        # The pairs are carried across by POSITION on each side (round 112). A global
+        # `forward.reactants.index(member)` answers with the first occurrence for every
+        # occurrence, and a species can occur twice on a side and on both sides -- the
+        # electron does both in every ionisation. A cut that turned one product into several
+        # fragments leaves no position to carry to, so those pairs are regenerated below.
+        occurrences = pair_occurrences(forward.pairs, forward.reactants, forward.products)
+        if occurrences is not None:
+            if len(products) != len(forward.products):
+                forward.pairs = None
+            else:
+                forward.pairs = pairs_from_occurrences(occurrences, reactants, products)
+            if getattr(forward, 'reverse', None):
+                if forward.pairs is None:
+                    forward.reverse.pairs = None
+                else:
+                    forward.reverse.pairs = [(product, reactant) for reactant, product in forward.pairs]
         forward.reactants = reactants
         forward.products = products
 

@@ -1,0 +1,327 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+rootdir: /tmp/claude-1000/red112
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 18 items
+
+test/rmgpy/i221OccurrencePairsTest.py::TestCopyCarriesOccurrences::test_same_species_twice_on_one_side FAILED
+test/rmgpy/i221OccurrencePairsTest.py::TestCopyCarriesOccurrences::test_species_on_both_sides PASSED
+test/rmgpy/i221OccurrencePairsTest.py::TestCopyCarriesOccurrences::test_duplicated_electron_products FAILED
+test/rmgpy/i221OccurrencePairsTest.py::TestCopyCarriesOccurrences::test_missing_pair_member_raises FAILED
+test/rmgpy/i221OccurrencePairsTest.py::TestCopyCarriesOccurrences::test_member_on_the_wrong_side_raises FAILED
+test/rmgpy/i221OccurrencePairsTest.py::TestCopyCarriesOccurrences::test_ordinary_thermal_reaction_unchanged PASSED
+test/rmgpy/i221OccurrencePairsTest.py::TestCopyCarriesOccurrences::test_no_pairs_stays_none PASSED
+test/rmgpy/i221OccurrencePairsTest.py::TestTemplateCopyCarriesOccurrences::test_electron_identity_structure_survives FAILED
+test/rmgpy/i221OccurrencePairsTest.py::TestTemplateCopyCarriesOccurrences::test_alien_member_raises FAILED
+test/rmgpy/i221OccurrencePairsTest.py::TestPairOccurrences::test_kth_mention_is_kth_occurrence FAILED
+test/rmgpy/i221OccurrencePairsTest.py::TestPairOccurrences::test_rebuild_on_new_lists FAILED
+test/rmgpy/i221OccurrencePairsTest.py::TestPairOccurrences::test_malformed_pair_raises FAILED
+test/rmgpy/i221OccurrencePairsTest.py::TestPairOccurrences::test_none_is_none FAILED
+test/rmgpy/i221OccurrencePairsTest.py::TestModelCarriesPairsByPosition::test_duplicated_electron_products FAILED
+test/rmgpy/i221OccurrencePairsTest.py::TestModelCarriesPairsByPosition::test_reverse_pairs_follow PASSED
+test/rmgpy/i221OccurrencePairsTest.py::TestModelCarriesPairsByPosition::test_ordinary_thermal_reaction_unchanged PASSED
+test/rmgpy/i221OccurrencePairsTest.py::TestEnsureSpeciesCarriesOccurrences::test_duplicated_electron_products FAILED
+test/rmgpy/i221OccurrencePairsTest.py::TestMergeModelsCarriesPairsByPosition::test_species_on_both_sides_and_twice FAILED
+
+=================================== FAILURES ===================================
+________ TestCopyCarriesOccurrences.test_same_species_twice_on_one_side ________
+
+self = <i221OccurrencePairsTest.TestCopyCarriesOccurrences object at 0x7253d1c013d0>
+
+    def test_same_species_twice_on_one_side(self):
+        s, p = _spc('S', smiles='[CH3]'), _spc('P', smiles='CC')
+        rxn = Reaction(reactants=[s, s], products=[p], pairs=[(s, p), (s, p)])
+        other = rxn.copy()
+        assert other.reactants[0] is not other.reactants[1]
+        # At 71ae97bd5 both pairs named reactant slot 1: `id(s)` mapped to the last copy.
+>       assert _positions(other) == [(0, 0), (1, 0)]
+E       AssertionError: assert [(1, 0), (1, 0)] == [(0, 0), (1, 0)]
+E         
+E         At index 0 diff: (1, 0) != (0, 0)
+E         
+E         Full diff:
+E           [
+E               (
+E         -         0,...
+E         
+E         ...Full output truncated (10 lines hidden), use '-vv' to show
+
+test/rmgpy/i221OccurrencePairsTest.py:100: AssertionError
+_________ TestCopyCarriesOccurrences.test_duplicated_electron_products _________
+
+self = <i221OccurrencePairsTest.TestCopyCarriesOccurrences object at 0x7253d1c010d0>
+
+    def test_duplicated_electron_products(self):
+        li, li_plus, e = _ionisation_species()
+        rxn = Reaction(reactants=[li, e], products=[li_plus, e, e])
+        rxn.generate_pairs()
+        # generate_pairs' own shape, by slot on the original: e-e, Li-Li+, Li-e.
+        mentioned = [(rxn.reactants.index(a), [i for i, x in enumerate(rxn.products) if x is b])
+                     for a, b in rxn.pairs]
+        assert mentioned == [(1, [1, 2]), (0, [0]), (0, [1, 2])]
+        other = rxn.copy()
+        assert len({id(spc) for spc in other.products}) == 3
+        # The first mention of the product electron is slot 1 and the second slot 2. At
+        # 71ae97bd5 both named slot 2, and product slot 1 was named by no pair at all.
+>       assert _positions(other) == [(1, 1), (0, 0), (0, 2)]
+E       AssertionError: assert [(1, 2), (0, 0), (0, 2)] == [(1, 1), (0, 0), (0, 2)]
+E         
+E         At index 0 diff: (1, 2) != (1, 1)
+E         
+E         Full diff:
+E           [
+E               (
+E                   1,...
+E         
+E         ...Full output truncated (14 lines hidden), use '-vv' to show
+
+test/rmgpy/i221OccurrencePairsTest.py:121: AssertionError
+__________ TestCopyCarriesOccurrences.test_missing_pair_member_raises __________
+
+self = <i221OccurrencePairsTest.TestCopyCarriesOccurrences object at 0x7253d1c01df0>
+
+    def test_missing_pair_member_raises(self):
+        a, b, alien = _spc('A', smiles='C'), _spc('B', smiles='[CH3]'), _spc('Q', smiles='O')
+        rxn = Reaction(reactants=[a], products=[b], pairs=[(a, alien)])
+        # At 71ae97bd5 the alien passed through aliased to the original object.
+        with pytest.raises(ValueError, match='not a product of this reaction'):
+>           rxn.copy()
+E           Failed: DID NOT RAISE <class 'ValueError'>
+
+test/rmgpy/i221OccurrencePairsTest.py:129: Failed
+_______ TestCopyCarriesOccurrences.test_member_on_the_wrong_side_raises ________
+
+self = <i221OccurrencePairsTest.TestCopyCarriesOccurrences object at 0x7253d1bc7880>
+
+    def test_member_on_the_wrong_side_raises(self):
+        a, b = _spc('A', smiles='C'), _spc('B', smiles='[CH3]')
+        rxn = Reaction(reactants=[a], products=[b], pairs=[(b, a)])
+        with pytest.raises(ValueError, match='not a reactant of this reaction'):
+>           rxn.copy()
+E           Failed: DID NOT RAISE <class 'ValueError'>
+
+test/rmgpy/i221OccurrencePairsTest.py:135: Failed
+_ TestTemplateCopyCarriesOccurrences.test_electron_identity_structure_survives _
+
+self = <i221OccurrencePairsTest.TestTemplateCopyCarriesOccurrences object at 0x7253d1bc70d0>
+
+    def test_electron_identity_structure_survives(self):
+        li, li_plus, e = _ionisation_species()
+        rxn = TemplateReaction(reactants=[li, e], products=[li_plus, e, e], family='F')
+        rxn.generate_pairs()
+        other = rxn.copy()
+        assert other.reactants[1] is other.products[1] is other.products[2]
+        assert other.reactants[1] is not e
+        own = {id(spc) for spc in other.reactants + other.products}
+        assert all(id(a) in own and id(b) in own for a, b in other.pairs)
+>       assert pair_occurrences(other.pairs, other.reactants, other.products) == \
+            pair_occurrences(rxn.pairs, rxn.reactants, rxn.products)
+
+test/rmgpy/i221OccurrencePairsTest.py:165: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+a = ([(Species(label="e", molecule=[Molecule(smiles="e")], molecular_weight=(0.0005486,'amu')), Species(label="e", molecul...ar_weight=(0.0005486,'amu')), Species(label="e", molecule=[Molecule(smiles="e")], molecular_weight=(0.0005486,'amu'))])
+k = {}
+
+>   def pair_occurrences(*a, **k): raise NotImplementedError('absent at base')
+E   NotImplementedError: absent at base
+
+test/rmgpy/i221OccurrencePairsTest.py:57: NotImplementedError
+_________ TestTemplateCopyCarriesOccurrences.test_alien_member_raises __________
+
+self = <i221OccurrencePairsTest.TestTemplateCopyCarriesOccurrences object at 0x7253d1c166d0>
+
+    def test_alien_member_raises(self):
+        a, b, alien = _spc('A', smiles='C'), _spc('B', smiles='[CH3]'), _spc('Q', smiles='O')
+        rxn = TemplateReaction(reactants=[a], products=[b], pairs=[(a, alien)], family='F')
+        # At 71ae97bd5 the pickle memo handed the copy a fresh detached alien, no error.
+        with pytest.raises(ValueError, match='not a product of this reaction'):
+>           rxn.copy()
+E           Failed: DID NOT RAISE <class 'ValueError'>
+
+test/rmgpy/i221OccurrencePairsTest.py:173: Failed
+____________ TestPairOccurrences.test_kth_mention_is_kth_occurrence ____________
+
+self = <i221OccurrencePairsTest.TestPairOccurrences object at 0x7253d1bc7400>
+
+    def test_kth_mention_is_kth_occurrence(self):
+        li, li_plus, e = _ionisation_species()
+        rxn = Reaction(reactants=[li, e], products=[li_plus, e, e])
+        rxn.generate_pairs()
+>       assert pair_occurrences(rxn.pairs, rxn.reactants, rxn.products) == \
+            [(1, 1), (0, 0), (0, 2)]
+
+test/rmgpy/i221OccurrencePairsTest.py:183: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+a = ([(Species(label="e", molecule=[Molecule(smiles="e")], molecular_weight=(0.0005486,'amu')), Species(label="e", molecul...ar_weight=(0.0005486,'amu')), Species(label="e", molecule=[Molecule(smiles="e")], molecular_weight=(0.0005486,'amu'))])
+k = {}
+
+>   def pair_occurrences(*a, **k): raise NotImplementedError('absent at base')
+E   NotImplementedError: absent at base
+
+test/rmgpy/i221OccurrencePairsTest.py:57: NotImplementedError
+________________ TestPairOccurrences.test_rebuild_on_new_lists _________________
+
+self = <i221OccurrencePairsTest.TestPairOccurrences object at 0x7253d1c019d0>
+
+    def test_rebuild_on_new_lists(self):
+        new_r = [object(), object()]
+        new_p = [object(), object(), object()]
+>       pairs = pairs_from_occurrences([(1, 1), (0, 0), (0, 2)], new_r, new_p)
+
+test/rmgpy/i221OccurrencePairsTest.py:189: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+a = ([(1, 1), (0, 0), (0, 2)], [<object object at 0x7253d1d076a0>, <object object at 0x7253d1d07740>], [<object object at 0x7253d1d077e0>, <object object at 0x7253d1d077a0>, <object object at 0x7253d1d077d0>])
+k = {}
+
+>   def pair_occurrences(*a, **k): raise NotImplementedError('absent at base')
+E   NotImplementedError: absent at base
+
+test/rmgpy/i221OccurrencePairsTest.py:57: NotImplementedError
+________________ TestPairOccurrences.test_malformed_pair_raises ________________
+
+self = <i221OccurrencePairsTest.TestPairOccurrences object at 0x7253d1c166a0>
+
+    def test_malformed_pair_raises(self):
+        a = object()
+        with pytest.raises(ValueError):
+>           pair_occurrences([(a,)], [a], [a])
+
+test/rmgpy/i221OccurrencePairsTest.py:196: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+a = ([(<object object at 0x7253d1d07760>,)], [<object object at 0x7253d1d07760>], [<object object at 0x7253d1d07760>])
+k = {}
+
+>   def pair_occurrences(*a, **k): raise NotImplementedError('absent at base')
+E   NotImplementedError: absent at base
+
+test/rmgpy/i221OccurrencePairsTest.py:57: NotImplementedError
+____________________ TestPairOccurrences.test_none_is_none _____________________
+
+self = <i221OccurrencePairsTest.TestPairOccurrences object at 0x7253d1c16430>
+
+    def test_none_is_none(self):
+>       assert pair_occurrences(None, [], []) is None
+
+test/rmgpy/i221OccurrencePairsTest.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+a = (None, [], []), k = {}
+
+>   def pair_occurrences(*a, **k): raise NotImplementedError('absent at base')
+E   NotImplementedError: absent at base
+
+test/rmgpy/i221OccurrencePairsTest.py:57: NotImplementedError
+______ TestModelCarriesPairsByPosition.test_duplicated_electron_products _______
+
+self = <i221OccurrencePairsTest.TestModelCarriesPairsByPosition object at 0x7253d1c16190>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7253d1c53cd0>
+
+    def test_duplicated_electron_products(self, monkeypatch):
+        li, li_plus, e = _ionisation_species()
+        forward = TemplateReaction(reactants=[li, e], products=[li_plus, e, e],
+                                   family='F', is_forward=False)
+        forward.generate_pairs()
+        rxn, new = self._model(monkeypatch).make_new_reaction(
+            forward, check_existing=False, generate_thermo=False, generate_kinetics=False)
+        assert new
+        assert all(spc is not orig for spc, orig in zip(rxn.products, [li_plus, e, e]))
+        # At 71ae97bd5: `forward.products.index(e)` is 1 for both electron mentions.
+>       assert _positions(rxn) == [(1, 1), (0, 0), (0, 2)]
+E       AssertionError: assert [(1, 1), (0, 0), (0, 1)] == [(1, 1), (0, 0), (0, 2)]
+E         
+E         At index 2 diff: (0, 1) != (0, 2)
+E         
+E         Full diff:
+E           [
+E               (
+E                   1,...
+E         
+E         ...Full output truncated (14 lines hidden), use '-vv' to show
+
+test/rmgpy/i221OccurrencePairsTest.py:226: AssertionError
+____ TestEnsureSpeciesCarriesOccurrences.test_duplicated_electron_products _____
+
+self = <i221OccurrencePairsTest.TestEnsureSpeciesCarriesOccurrences object at 0x7253d1c06820>
+
+    def test_duplicated_electron_products(self):
+        li = Molecule().from_adjacency_list('1 Li u1 p0 c0')
+        li_plus = Molecule().from_adjacency_list('1 Li u0 p0 c+1')
+        e = Molecule().from_adjacency_list('1 e u1 p0 c-1')
+        rxn = Reaction(reactants=[li, e], products=[li_plus, e, e],
+                       pairs=[(e, e), (li, li_plus), (li, e)])
+        rxn.ensure_species()
+        assert all(isinstance(spc, Species) for spc in rxn.reactants + rxn.products)
+        assert len({id(spc) for spc in rxn.products}) == 3
+        # At 71ae97bd5 an isomorphism search mapped both electron mentions to slot 1.
+>       assert _positions(rxn) == [(1, 1), (0, 0), (0, 2)]
+E       AssertionError: assert [(1, 1), (0, 0), (0, 1)] == [(1, 1), (0, 0), (0, 2)]
+E         
+E         At index 2 diff: (0, 1) != (0, 2)
+E         
+E         Full diff:
+E           [
+E               (
+E                   1,...
+E         
+E         ...Full output truncated (14 lines hidden), use '-vv' to show
+
+test/rmgpy/i221OccurrencePairsTest.py:262: AssertionError
+__ TestMergeModelsCarriesPairsByPosition.test_species_on_both_sides_and_twice __
+
+self = <i221OccurrencePairsTest.TestMergeModelsCarriesPairsByPosition object at 0x7253d1c06a60>
+
+    def test_species_on_both_sides_and_twice(self):
+        li, li_plus, e = _ionisation_species()
+        common_e = _spc('e', adjlist='1 e u1 p0 c-1')
+        # merge() compares the thermo of every species the two models share.
+        e.thermo = common_e.thermo = ThermoData(
+            Tdata=([300, 400, 500, 600, 800, 1000, 1500], 'K'), Cpdata=([20.8] * 7, 'J/(mol*K)'),
+            H298=(0, 'kJ/mol'), S298=(20, 'J/(mol*K)'), Cp0=(20.8, 'J/(mol*K)'),
+            CpInf=(20.8, 'J/(mol*K)'))
+        first = ReactionModel(species=[common_e], reactions=[])
+        rxn = Reaction(reactants=[li, e], products=[li_plus, e, e])
+        rxn.generate_pairs()
+        second = ReactionModel(species=[li, li_plus, e], reactions=[rxn])
+        merged = first.merge(second)
+        out = merged.reactions[-1]
+        assert out.reactants[1] is common_e and out.products[1] is common_e \
+            and out.products[2] is common_e
+>       assert pair_occurrences(out.pairs, out.reactants, out.products) == \
+            [(1, 1), (0, 0), (0, 2)]
+
+test/rmgpy/i221OccurrencePairsTest.py:284: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+a = ([(Species(label="e", thermo=ThermoData(Tdata=([300,400,500,600,800,1000,1500],'K'), Cpdata=([20.8,20.8,20.8,20.8,20.8...0=(20.8,'J/(mol*K)'), CpInf=(20.8,'J/(mol*K)')), molecule=[Molecule(smiles="e")], molecular_weight=(0.0005486,'amu'))])
+k = {}
+
+>   def pair_occurrences(*a, **k): raise NotImplementedError('absent at base')
+E   NotImplementedError: absent at base
+
+test/rmgpy/i221OccurrencePairsTest.py:57: NotImplementedError
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED test/rmgpy/i221OccurrencePairsTest.py::TestCopyCarriesOccurrences::test_species_on_both_sides
+PASSED test/rmgpy/i221OccurrencePairsTest.py::TestCopyCarriesOccurrences::test_ordinary_thermal_reaction_unchanged
+PASSED test/rmgpy/i221OccurrencePairsTest.py::TestCopyCarriesOccurrences::test_no_pairs_stays_none
+PASSED test/rmgpy/i221OccurrencePairsTest.py::TestModelCarriesPairsByPosition::test_reverse_pairs_follow
+PASSED test/rmgpy/i221OccurrencePairsTest.py::TestModelCarriesPairsByPosition::test_ordinary_thermal_reaction_unchanged
+FAILED test/rmgpy/i221OccurrencePairsTest.py::TestCopyCarriesOccurrences::test_same_species_twice_on_one_side
+FAILED test/rmgpy/i221OccurrencePairsTest.py::TestCopyCarriesOccurrences::test_duplicated_electron_products
+FAILED test/rmgpy/i221OccurrencePairsTest.py::TestCopyCarriesOccurrences::test_missing_pair_member_raises
+FAILED test/rmgpy/i221OccurrencePairsTest.py::TestCopyCarriesOccurrences::test_member_on_the_wrong_side_raises
+FAILED test/rmgpy/i221OccurrencePairsTest.py::TestTemplateCopyCarriesOccurrences::test_electron_identity_structure_survives
+FAILED test/rmgpy/i221OccurrencePairsTest.py::TestTemplateCopyCarriesOccurrences::test_alien_member_raises
+FAILED test/rmgpy/i221OccurrencePairsTest.py::TestPairOccurrences::test_kth_mention_is_kth_occurrence
+FAILED test/rmgpy/i221OccurrencePairsTest.py::TestPairOccurrences::test_rebuild_on_new_lists
+FAILED test/rmgpy/i221OccurrencePairsTest.py::TestPairOccurrences::test_malformed_pair_raises
+FAILED test/rmgpy/i221OccurrencePairsTest.py::TestPairOccurrences::test_none_is_none
+FAILED test/rmgpy/i221OccurrencePairsTest.py::TestModelCarriesPairsByPosition::test_duplicated_electron_products
+FAILED test/rmgpy/i221OccurrencePairsTest.py::TestEnsureSpeciesCarriesOccurrences::test_duplicated_electron_products
+FAILED test/rmgpy/i221OccurrencePairsTest.py::TestMergeModelsCarriesPairsByPosition::test_species_on_both_sides_and_twice
+========================= 13 failed, 5 passed in 2.19s =========================
