@@ -582,7 +582,8 @@ def _clear_gate_caches():
     """
     from rmgpy.data.kinetics import quarantine as module
 
-    for name in ("_UNATTRIBUTED_WARNED", "_UNANSWERED_WARNED", "_DISK_QUARANTINE_CACHE",
+    for name in ("_UNATTRIBUTED_WARNED", "_UNENUMERABLE_WARNED", "_UNANSWERED_WARNED",
+                 "_DISK_QUARANTINE_CACHE",
                  "_DISK_ANY_QUARANTINE_CACHE", "_UNSAFE_LABELS_WARNED",
                  "_UNSAFE_MANIFESTS_WARNED", "_LEGACY_CALL_SITES_WARNED"):
         cache = getattr(module, name, None)
@@ -5386,14 +5387,17 @@ class TestTheEnumerationReadsTheDiskToo:
         _clear_gate_caches()
 
         assert len(found) == 1, "the family was enumerated {0} times".format(len(found))
-        assert found[0] is loaded, "the loaded object was not the one yielded"
+        # Not `found[0] is loaded`: that pinned round 111's stale path, where the cached
+        # object was served instead of the manifest as it now reads (round 112's HIGH 4).
+        assert (found[0].family_label, found[0].kinetics_class_name) == (label, "Marcus")
 
     def test_an_unreadable_manifest_is_not_enumerated_as_a_criterion(
             self, tmp_path, monkeypatch):
         """
         `QUARANTINE_UNREADABLE` has no ``applies_to``, so an enumeration that yielded it
-        would raise inside the gate. It is skipped here and reported by the unanswered
-        path instead.
+        would raise inside the gate. It is not yielded; since round 112 the enumeration
+        then raises `QuarantineEnumerationError`, because a manifest it could not read is a
+        hole in it, not an absence.
         """
         import rmgpy.data.rmg
         from rmgpy.data.kinetics.quarantine import (QUARANTINE_UNREADABLE,
@@ -5412,10 +5416,226 @@ class TestTheEnumerationReadsTheDiskToo:
             kinetics = _Kinetics()
 
         monkeypatch.setattr(rmgpy.data.rmg, "database", _Database(), raising=False)
-        found = list(iter_quarantines())
+        from rmgpy.data.kinetics.quarantine import QuarantineEnumerationError
+        found = []
+        with pytest.raises(QuarantineEnumerationError):
+            # Round 112: an unreadable manifest might name any class, so the enumeration
+            # is incomplete and says so, rather than ending as if there were nothing.
+            for quarantine in iter_quarantines():
+                found.append(quarantine)
         _clear_gate_caches()
 
         assert found == [], "a refusal was enumerated as if it were a criterion"
+
+
+class TestTheEnumerationIsNeitherStaleNorSilent:
+    """
+    Round 112's fourth and fifth HIGH, both in `iter_quarantines`.
+
+    HIGH 4: the loaded half yielded the cached family object and the disk half then
+    skipped that family, so a manifest rewritten after load was enumerated as it used to
+    read. HIGH 5: a families directory that could not be listed returned an empty
+    enumeration, which `_warn_unattributable` could not tell from "nothing is quarantined".
+    """
+
+    ARRHENIUS_MANIFEST = MANIFEST.replace('"Marcus"', '"Arrhenius"')
+
+    @staticmethod
+    def _loaded_database(tmp_path, monkeypatch, label="F"):
+        """A database directory holding one Marcus manifest, with that family loaded."""
+        import rmgpy.data.rmg
+
+        family_path = os.path.join(str(tmp_path), "kinetics", "families", label)
+        os.makedirs(family_path)
+        write_manifest(family_path)
+        _clear_gate_caches()
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+        loaded = load_family_quarantine(label, family_path)
+        assert loaded.kinetics_class_name == "Marcus"
+        _register_families(monkeypatch, {label: loaded})
+        return family_path
+
+    @staticmethod
+    def _unattributed(kinetics):
+        reaction = make_library_reaction(library="a_seed_with_no_family_line")
+        reaction.kinetics = kinetics
+        reaction.entry = Entry(index=1, label="no authorship", long_desc="nothing here")
+        return reaction
+
+    @staticmethod
+    def _capture_warnings(monkeypatch):
+        messages = []
+        monkeypatch.setattr(logging, "warning",
+                            lambda msg, *args, **kw: messages.append(msg % args))
+        return messages
+
+    @staticmethod
+    def _unlistable(path):
+        """chmod 000 `path`; skipped where that does not stop the process reading it."""
+        os.chmod(path, 0)
+        try:
+            os.listdir(path)
+        except PermissionError:
+            return
+        os.chmod(path, 0o755)
+        pytest.skip("this process can list a mode-000 directory (running as root?)")
+
+    def test_a_manifest_rewritten_after_load_is_enumerated_as_it_now_reads(
+            self, tmp_path, monkeypatch):
+        """
+        The brief's sequence: load a Marcus manifest, rewrite it to Arrhenius on disk,
+        enumerate. Behavioural at `71ae97bd5`: still ``[('F', 'Marcus')]``.
+        """
+        from rmgpy.data.kinetics.quarantine import iter_quarantines
+
+        family_path = self._loaded_database(tmp_path, monkeypatch)
+        write_manifest(family_path, self.ARRHENIUS_MANIFEST)
+
+        found = [(q.family_label, q.kinetics_class_name) for q in iter_quarantines()]
+        _clear_gate_caches()
+
+        assert found == [("F", "Arrhenius")], (
+            "the enumeration served the manifest as it read at load time: {0}".format(found))
+
+    def test_an_unattributed_rate_of_the_rewritten_class_is_reported(
+            self, tmp_path, monkeypatch):
+        """
+        What the stale enumeration cost: an unattributed Arrhenius rate admitted in silence
+        while the manifest on disk names Arrhenius.
+        """
+        family_path = self._loaded_database(tmp_path, monkeypatch)
+        write_manifest(family_path, self.ARRHENIUS_MANIFEST)
+        messages = self._capture_warnings(monkeypatch)
+
+        check_quarantine(self._unattributed(Arrhenius(A=(1e10, "m^3/(mol*s)"), n=0,
+                                                      Ea=(10, "kJ/mol"))), "test")
+        _clear_gate_caches()
+
+        assert any("Arrhenius" in m and "family F (" in m for m in messages), (
+            "the rewritten criterion was not applied: {0}".format(messages))
+
+    def test_an_unlistable_families_directory_is_not_zero_quarantines(
+            self, tmp_path, monkeypatch):
+        """
+        The brief's sequence: an unattributed library rate, an inaccessible families
+        directory, then `check_quarantine`. Behavioural at `71ae97bd5`: no refusal and no
+        warning, because the enumeration swallowed the `listdir` failure and came back
+        empty.
+        """
+        import rmgpy.data.rmg
+
+        families_root = os.path.join(str(tmp_path), "kinetics", "families")
+        os.makedirs(os.path.join(families_root, "A_Family_On_Disk"))
+        write_manifest(os.path.join(families_root, "A_Family_On_Disk"))
+        _clear_gate_caches()
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+        monkeypatch.setattr(rmgpy.data.rmg, "database", None, raising=False)
+        messages = self._capture_warnings(monkeypatch)
+
+        self._unlistable(families_root)
+        try:
+            check_quarantine(self._unattributed(make_marcus()), "test")
+        finally:
+            os.chmod(families_root, 0o755)
+            _clear_gate_caches()
+
+        assert messages, (
+            "the rate was admitted in silence: the families directory could not be listed, "
+            "and that was reported as there being no quarantine anywhere")
+        assert any("could not" in m.lower() for m in messages), (
+            "the warning does not say the enumeration was incomplete: {0}".format(messages))
+
+    def test_an_unexaminable_family_directory_is_not_zero_quarantines(
+            self, tmp_path, monkeypatch):
+        """
+        One layer down: the families directory lists, but one family's directory cannot
+        be looked into. `os.path.lexists` answers False on that, which read as "this family
+        carries no manifest".
+        """
+        import rmgpy.data.rmg
+
+        family_path = os.path.join(str(tmp_path), "kinetics", "families", "A_Family_On_Disk")
+        os.makedirs(family_path)
+        write_manifest(family_path)
+        _clear_gate_caches()
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+        monkeypatch.setattr(rmgpy.data.rmg, "database", None, raising=False)
+        messages = self._capture_warnings(monkeypatch)
+
+        self._unlistable(family_path)
+        try:
+            check_quarantine(self._unattributed(make_marcus()), "test")
+        finally:
+            os.chmod(family_path, 0o755)
+            _clear_gate_caches()
+
+        assert any("could not" in m.lower() for m in messages), (
+            "an unexaminable family read as an unquarantined one: {0}".format(messages))
+
+    def test_the_public_enumeration_raises_rather_than_ending_early(
+            self, tmp_path, monkeypatch):
+        """An iterator that ends is a claim that there is nothing more; this one refuses."""
+        import rmgpy.data.rmg
+        from rmgpy.data.kinetics import quarantine as module
+
+        families_root = os.path.join(str(tmp_path), "kinetics", "families")
+        os.makedirs(families_root)
+        _clear_gate_caches()
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+        monkeypatch.setattr(rmgpy.data.rmg, "database", None, raising=False)
+
+        self._unlistable(families_root)
+        try:
+            with pytest.raises(getattr(module, "QuarantineEnumerationError", DatabaseError)):
+                list(module.iter_quarantines())
+        finally:
+            os.chmod(families_root, 0o755)
+            _clear_gate_caches()
+
+    def test_an_unlistable_families_directory_keeps_the_unanswered_warning_on(
+            self, tmp_path, monkeypatch):
+        """
+        `_database_has_any_quarantine` is the suppression test for `_warn_unanswered`.
+        Behavioural at `71ae97bd5`: False, so the warning was switched off by the failure
+        of the check that decides whether it is needed.
+        """
+        import rmgpy.data.rmg
+        from rmgpy.data.kinetics.quarantine import _database_has_any_quarantine
+
+        families_root = os.path.join(str(tmp_path), "kinetics", "families")
+        os.makedirs(os.path.join(families_root, "A_Family_On_Disk"))
+        write_manifest(os.path.join(families_root, "A_Family_On_Disk"))
+        _clear_gate_caches()
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+        monkeypatch.setattr(rmgpy.data.rmg, "database", None, raising=False)
+
+        self._unlistable(families_root)
+        try:
+            answer = _database_has_any_quarantine()
+        finally:
+            os.chmod(families_root, 0o755)
+            _clear_gate_caches()
+
+        assert answer is True, "could not look was answered as nothing is quarantined"
+
+    def test_controls_a_readable_empty_database_is_still_silent(self, tmp_path, monkeypatch):
+        """The promise the module rests on: no manifest anywhere, nothing said, no raise."""
+        import rmgpy.data.rmg
+        from rmgpy.data.kinetics.quarantine import (_database_has_any_quarantine,
+                                                    iter_quarantines)
+
+        os.makedirs(os.path.join(str(tmp_path), "kinetics", "families", "Ordinary"))
+        _clear_gate_caches()
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+        monkeypatch.setattr(rmgpy.data.rmg, "database", None, raising=False)
+        messages = self._capture_warnings(monkeypatch)
+
+        check_quarantine(self._unattributed(make_marcus()), "test")
+        found = list(iter_quarantines())
+        any_quarantine = _database_has_any_quarantine()
+        _clear_gate_caches()
+
+        assert messages == [] and found == [] and any_quarantine is False
 
 
 class TestTheSubclassesCopyAsThemselves:

@@ -912,6 +912,9 @@ _FAMILY_COMMENT_PREFIX = 'family:'
 #: reaction per iteration.
 _UNATTRIBUTED_WARNED = set()
 
+#: The same key, for the warning that the enumeration itself was incomplete.
+_UNENUMERABLE_WARNED = set()
+
 
 def _families_from_provenance(*texts):
     """
@@ -1020,54 +1023,122 @@ def _iter_loaded_quarantines():
             yield label, quarantine
 
 
-def iter_quarantines():
+class QuarantineEnumerationError(DatabaseError):
     """
-    Yield every :class:`KineticsQuarantine` this database has -- loaded **or on disk**.
+    The enumeration of this database's quarantines could not be completed.
 
-    It used to be the loaded families alone, and that made its one consumer,
-    :func:`_warn_unattributable`, go silent in exactly the situation it exists for. A
-    manifest is a sidecar file in a family's directory; reading it needs no family object,
-    and `_database_has_any_quarantine` learned that in round 99 while this function did
-    not. So a library rate whose ``family:`` line had been deleted, in a database whose
-    quarantined family was on disk and not loaded, met an empty enumeration and passed
-    with no refusal and no warning -- and that is the ordinary case, because
-    ``CoreEdgeReactionModel.add_seed_mechanism_to_core`` converts a seed reaction whose
-    family is unavailable into a library reaction rather than loading the family.
-
-    The disk half goes through :func:`resolve_quarantine`, so it is signature-validated
-    and cached exactly like every other disk answer, and a family already yielded from the
-    loaded half is not read twice. Cost when nothing is quarantined: one `listdir` of the
-    families directory. Both consumers ask their own de-duplicating question first, so
-    this runs once per distinct unanswered question rather than once per reaction.
-
-    Empty when no database is loaded and none is configured, and -- as in all of ordinary
-    chemistry -- when no family carries a manifest anywhere.
+    Raised instead of ending the iteration early, because an iterator that ends is a claim
+    that there is nothing more -- and "I could not look" read as "there is nothing here" is
+    the clean bill of health this module exists to never produce.
     """
+    pass
+
+
+def _enumerate_quarantines():
+    """
+    Every :class:`KineticsQuarantine` this database has, and why the list may be short.
+
+    Returns ``(found, incomplete)``: `found` is the quarantines that could be read, and
+    `incomplete` is one human-readable reason per place that could not be examined. An
+    empty `incomplete` is the only thing that makes an empty `found` mean "nothing is
+    quarantined".
+
+    Every family -- loaded or not -- is answered through :func:`resolve_quarantine`, the one
+    signature-validated disk path. Round 111 yielded a loaded family's cached object and
+    then skipped the disk read for exactly that family, so a manifest rewritten after load
+    was enumerated as it used to read (round 112's HIGH 4). A loaded family still gets
+    ``resolve_quarantine``'s own fallback to its attribute when its directory is not where
+    this database would put it.
+
+    Round 111 also returned on any ``listdir`` failure and filtered families with
+    :func:`os.path.lexists`, which answers False when it cannot look; both turned a failure
+    to examine into "no quarantine here" (HIGH 5). Both now land in `incomplete`.
+    """
+    found = []
+    incomplete = []
     seen = set()
-    for label, quarantine in _iter_loaded_quarantines():
+
+    import rmgpy.data.rmg
+    database = getattr(rmgpy.data.rmg, 'database', None)
+    families = getattr(getattr(database, 'kinetics', None), 'families', None) or {}
+    for label, family in families.items():
         seen.add(label)
-        yield quarantine
+        attribute = getattr(family, 'quarantine', None)
+        quarantine, answered = resolve_quarantine(label)
+        if not answered:
+            if attribute is not None:
+                # A family whose manifest was never read is as ordinary as it gets, and
+                # `resolve_quarantine` leaves it unanswered only when there is no families
+                # directory to consult -- which the disk half below reports on its own.
+                # A family that DID carry a quarantine and can no longer be answered is a
+                # hole in the enumeration.
+                incomplete.append('family {0!r} carries a quarantine that could not be '
+                                  're-read'.format(label))
+            continue
+        if quarantine is not None:
+            found.append(quarantine)
 
     from rmgpy import settings
     directory = (settings or {}).get('database.directory')
     if not directory:
-        return
+        return found, incomplete
     families_root = os.path.join(directory, 'kinetics', 'families')
     try:
         names = sorted(os.listdir(families_root))
-    except OSError:
-        return
+    except FileNotFoundError:
+        # No families directory is a database with no families on disk, which is an
+        # answer. Every other failure is not.
+        return found, incomplete
+    except OSError as exc:
+        incomplete.append('could not list {0}: {1}'.format(families_root, exc))
+        return found, incomplete
     for name in names:
         if name in seen:
             continue
-        if not os.path.lexists(os.path.join(families_root, name, QUARANTINE_FILENAME)):
-            # The cheap negative first: every ordinary family answers here, with one
-            # `lexists` and without opening anything. Only a family that has *something*
-            # at the manifest's path is worth the validated read below.
+        # The cheap negative first: every ordinary family answers 'absent' here with one
+        # `lstat` and without opening anything. Anything else -- including 'unreadable',
+        # which `lexists` used to report as absent -- goes to the validated read, which
+        # answers it or leaves it unanswered.
+        if _manifest_signature(os.path.join(families_root, name))[2] == 'absent':
             continue
         quarantine, answered = resolve_quarantine(name)
-        if answered and quarantine is not None:
-            yield quarantine
+        if not answered:
+            incomplete.append('could not examine family {0!r} in {1}'.format(
+                name, families_root))
+        elif quarantine is not None:
+            found.append(quarantine)
+    return found, incomplete
+
+
+def iter_quarantines():
+    """
+    Yield every :class:`KineticsQuarantine` this database has -- loaded **or on disk**.
+
+    Raises :class:`QuarantineEnumerationError`, after yielding what it could read, when any
+    part of the database could not be examined; see :func:`_enumerate_quarantines`. Ending
+    quietly would be indistinguishable from "that is all there is".
+
+    It used to be the loaded families alone, and that made its one consumer,
+    :func:`_warn_unattributable`, go silent in exactly the situation it exists for: a
+    library rate whose ``family:`` line had been deleted, in a database whose quarantined
+    family was on disk and not loaded -- the ordinary case, because
+    ``CoreEdgeReactionModel.add_seed_mechanism_to_core`` converts a seed reaction whose
+    family is unavailable into a library reaction rather than loading the family.
+
+    Cost when nothing is quarantined: one `listdir` of the families directory plus one
+    `lstat` per family. Both consumers ask their own de-duplicating question first, so this
+    runs once per distinct unanswered question rather than once per reaction.
+
+    Empty when no database is loaded and none is configured, and -- as in all of ordinary
+    chemistry -- when no family carries a manifest anywhere.
+    """
+    found, incomplete = _enumerate_quarantines()
+    for quarantine in found:
+        yield quarantine
+    if incomplete:
+        raise QuarantineEnumerationError(
+            'The quarantine enumeration is incomplete, so the quarantines above may not be '
+            'all there are: {0}.'.format('; '.join(incomplete)))
 
 
 #: families directory -> (signature, whether any manifest was found there).
@@ -1094,7 +1165,7 @@ def _database_has_any_quarantine():
     if any(True for _ in _iter_loaded_quarantines()):
         # The loaded half deliberately, not `iter_quarantines()`: that one now reads the
         # families directory itself, and this function's own disk half below answers the
-        # same question with one `listdir` and one `lexists` per family instead of a
+        # same question with one `listdir` and one `lstat` per family instead of a
         # validated read of every manifest it finds. Same answer, cheaper question.
         return True
 
@@ -1105,8 +1176,13 @@ def _database_has_any_quarantine():
     families_root = os.path.join(directory, 'kinetics', 'families')
     try:
         info = os.stat(families_root)
-    except OSError:
+    except FileNotFoundError:
         return False
+    except OSError:
+        # Could not look. Round 111 answered False here, which switched the warning off
+        # by the failure of the check that decides whether it is needed. True, uncached:
+        # the worst it does is print a warning that turns out to be unneeded.
+        return True
     signature = (info.st_mtime_ns, info.st_ino)
 
     cached = _DISK_ANY_QUARANTINE_CACHE.get(families_root)
@@ -1117,9 +1193,12 @@ def _database_has_any_quarantine():
     try:
         names = os.listdir(families_root)
     except OSError:
-        names = []
+        # Same reasoning as the `stat` above, and uncached for the same reason.
+        return True
     for name in names:
-        if os.path.lexists(os.path.join(families_root, name, QUARANTINE_FILENAME)):
+        # `_manifest_signature` rather than `lexists`: `lexists` answers False when it
+        # cannot look, and an unexaminable family is counted as possibly quarantined.
+        if _manifest_signature(os.path.join(families_root, name))[2] != 'absent':
             found = True
             break
     if found:
@@ -1131,7 +1210,7 @@ def _database_has_any_quarantine():
         # do is keep a warning switched on after the last manifest is deleted, and this
         # suppression only ever decides whether a warning is printed, never whether a rate
         # is refused. The re-scan a missing negative costs is one `listdir` plus one
-        # `lexists` per family, and it happens once per distinct unanswered question --
+        # `lstat` per family, and it happens once per distinct unanswered question --
         # `_warn_unanswered` de-duplicates before it asks.
         _DISK_ANY_QUARANTINE_CACHE[families_root] = (signature, True)
     return found
@@ -1166,8 +1245,24 @@ def _warn_unattributable(reaction, kinetics):
         # the families directory rather than a dict of loaded objects. `_warn_unanswered`
         # states the same ordering for the same reason.
         return
-    matches = [q for q in iter_quarantines() if q.applies_to(kinetics)]
+    found, incomplete = _enumerate_quarantines()
+    matches = [q for q in found if q.applies_to(kinetics)]
     if not matches:
+        if incomplete and key not in _UNENUMERABLE_WARNED:
+            # No match among what could be read is not "no match": round 111 returned an
+            # empty enumeration for an unlistable families directory and this function
+            # then said nothing. Deduplicated separately from the match warning, so that
+            # a later readable match for the same key is still reported.
+            _UNENUMERABLE_WARNED.add(key)
+            logging.warning(
+                'Reaction library %r supplies %s kinetics, and the entry records no '
+                'authoring family. It could not be checked against every quarantine in '
+                'this database, because the enumeration could not examine all of it: %s. '
+                'A rate copied out of a quarantined family would be admitted here '
+                'unchecked. This is NOT a refusal; restore access to the families '
+                'directory, or add a "%s <label>" line to the entry\'s longDesc.',
+                library, type(kinetics).__name__, '; '.join(incomplete),
+                _FAMILY_COMMENT_PREFIX)
         return
     _UNATTRIBUTED_WARNED.add(key)
     logging.warning(
