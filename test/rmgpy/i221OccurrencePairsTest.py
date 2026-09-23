@@ -267,6 +267,79 @@ class TestModelCarriesPairsByPosition:
         assert _positions(rxn) == [(0, 0), (0, 1)]
 
 
+@pytest.mark.database
+class TestTheReverseKineticsSeeTheModelSpecies:
+    """
+    Round 113 rework. `generate_kinetics` reads ``reaction.reverse`` for an own-reverse
+    family -- it estimates the reverse direction and may keep it -- so the reverse that
+    `make_new_reaction` rebuilds is live input, not bookkeeping. A real H_Abstraction
+    reaction, with the reverse the family attaches (its sides in the template's order, not
+    the forward's), taken through ``make_new_reaction(generate_kinetics=True)``.
+    """
+
+    @classmethod
+    def setup_class(cls):
+        import os
+        from rmgpy import settings
+        from rmgpy.data.kinetics.database import KineticsDatabase
+
+        cls.kinetics = KineticsDatabase()
+        cls.kinetics.load(os.path.join(settings["database.directory"], "kinetics"),
+                          families=["H_Abstraction"], libraries=[])
+
+    @staticmethod
+    def _thermo(h298):
+        return ThermoData(Tdata=([300, 400, 500, 600, 800, 1000, 1500], "K"),
+                          Cpdata=([35.0] * 7, "J/(mol*K)"), H298=(h298, "kJ/mol"),
+                          S298=(190, "J/(mol*K)"), Cp0=(33.2, "J/(mol*K)"),
+                          CpInf=(83.1, "J/(mol*K)"))
+
+    def test_the_reverse_estimated_is_over_the_model_species(self, monkeypatch):
+        import rmgpy.data.rmg
+
+        class _Database(object):
+            kinetics = self.kinetics
+
+        monkeypatch.setattr(rmgpy.data.rmg, "database", _Database(), raising=False)
+        methane, hydroxyl = _spc("CH4", smiles="C"), _spc("OH", smiles="[OH]")
+        forward = self.kinetics.generate_reactions_from_families(
+            [methane, hydroxyl], only_families=["H_Abstraction"])[0]
+        assert forward.reverse is not None
+        h298 = {"C": -74.9, "[OH]": 37.3, "O": -241.8, "[CH3]": 146.4}
+
+        def make_new_species(spc, **kwargs):
+            model_spc = _spc(spc.label, smiles=spc.molecule[0].to_smiles())
+            model_spc.thermo = self._thermo(h298[model_spc.molecule[0].to_smiles()])
+            return model_spc, True
+
+        model = CoreEdgeReactionModel()
+        monkeypatch.setattr(model, "make_new_species", make_new_species)
+        monkeypatch.setattr(model, "register_reaction", lambda rxn: None)
+        family = self.kinetics.families["H_Abstraction"]
+        seen = []
+        real_get_kinetics = family.get_kinetics
+
+        def get_kinetics(reaction, *args, **kwargs):
+            seen.append((reaction, list(reaction.reactants), list(reaction.products),
+                         pair_occurrences(reaction.pairs, reaction.reactants, reaction.products)))
+            return real_get_kinetics(reaction, *args, **kwargs)
+
+        monkeypatch.setattr(family, "get_kinetics", get_kinetics)
+        reverse = forward.reverse
+
+        rxn, new = model.make_new_reaction(forward, check_existing=False, generate_thermo=False,
+                                           generate_kinetics=True)
+
+        assert new and rxn.kinetics is not None
+        estimated_reverse = [entry for entry in seen if entry[0] is reverse]
+        assert len(estimated_reverse) == 1, "generate_kinetics did not estimate the reverse"
+        _, reactants, products, occurrences = estimated_reverse[0]
+        forward_entry = [entry for entry in seen if entry[0] is rxn][0]
+        assert all(a is b for a, b in zip(reactants, forward_entry[2]))
+        assert all(a is b for a, b in zip(products, forward_entry[1]))
+        assert sorted(occurrences) == sorted((p, r) for r, p in forward_entry[3])
+
+
 class TestEnsureSpeciesCarriesOccurrences:
     """`ensure_species` wraps Molecule participants in Species; pairs follow by position."""
 

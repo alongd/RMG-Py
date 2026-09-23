@@ -631,6 +631,7 @@ def _register_families(monkeypatch, quarantines):
 
     families = {label: _Family(label, q) for label, q in quarantines.items()}
     monkeypatch.setattr(rmgpy.data.rmg, "database", _Database(families), raising=False)
+    return families
 
 
 def _deny_access(monkeypatch, directory):
@@ -668,7 +669,6 @@ def _deny_access(monkeypatch, directory):
     for name in ("listdir", "scandir"):
         deny(name, False)
     return lambda: state.update(denied=False)
-    return families
 
 
 def make_library_reaction(library="copied_seed", comment="", long_desc=None):
@@ -5953,6 +5953,36 @@ class TestWhatAnUnlistedLossyClassCosts:
         finally:
             sender.close()
             receiver.close()
+
+    def test_a_verdict_is_not_inherited_through_an_equal_comparing_metaclass(self):
+        """
+        Round 113 rework. The verdict cache was a `WeakKeyDictionary`, whose lookup goes
+        through the metaclass's ``__eq__``/``__hash__`` rather than class identity. A benign
+        class cached ``False``; a late lossy `Molecule` subclass whose metaclass compares
+        equal to it then read that ``False`` and crossed the pickler as a base `Molecule`.
+        Behavioural at `2f35a866a`.
+        """
+        from multiprocessing.reduction import ForkingPickler
+
+        class Colliding(type):
+            def __eq__(cls, other):
+                return isinstance(other, Colliding)
+
+            def __hash__(cls):
+                return 0
+
+        class Benign(metaclass=Colliding):
+            pass
+
+        # The verdict is cached before pickle finds a local class unpicklable by reference.
+        with pytest.raises((AttributeError, pickle.PicklingError), match="local object"):
+            ForkingPickler.dumps(Benign())
+        Sub = Colliding("UnregisteredMolecule", (Molecule,), {})
+        molecule = Sub(smiles="C")
+        molecule.extra = "carried"
+
+        with pytest.raises(pickle.PicklingError, match="UnregisteredMolecule"):
+            ForkingPickler.dumps(molecule)
 
     def test_registered_classes_still_travel(self):
         """The control: the refusal is for subclasses, not for the classes themselves."""

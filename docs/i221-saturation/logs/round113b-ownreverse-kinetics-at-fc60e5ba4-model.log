@@ -1,0 +1,74 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+rootdir: /home/alon/Code/RMG-Py-i221-saturation-fix
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 20 items / 19 deselected / 1 selected
+
+test/rmgpy/i221OccurrencePairsTest.py::TestTheReverseKineticsSeeTheModelSpecies::test_the_reverse_estimated_is_over_the_model_species FAILED
+
+=================================== FAILURES ===================================
+_ TestTheReverseKineticsSeeTheModelSpecies.test_the_reverse_estimated_is_over_the_model_species _
+
+self = <i221OccurrencePairsTest.TestTheReverseKineticsSeeTheModelSpecies object at 0x703c5a455850>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x703c5a3a3130>
+
+    def test_the_reverse_estimated_is_over_the_model_species(self, monkeypatch):
+        import rmgpy.data.rmg
+    
+        class _Database(object):
+            kinetics = self.kinetics
+    
+        monkeypatch.setattr(rmgpy.data.rmg, "database", _Database(), raising=False)
+        methane, hydroxyl = _spc("CH4", smiles="C"), _spc("OH", smiles="[OH]")
+        forward = self.kinetics.generate_reactions_from_families(
+            [methane, hydroxyl], only_families=["H_Abstraction"])[0]
+        assert forward.reverse is not None
+        h298 = {"C": -74.9, "[OH]": 37.3, "O": -241.8, "[CH3]": 146.4}
+    
+        def make_new_species(spc, **kwargs):
+            model_spc = _spc(spc.label, smiles=spc.molecule[0].to_smiles())
+            model_spc.thermo = self._thermo(h298[model_spc.molecule[0].to_smiles()])
+            return model_spc, True
+    
+        model = CoreEdgeReactionModel()
+        monkeypatch.setattr(model, "make_new_species", make_new_species)
+        monkeypatch.setattr(model, "register_reaction", lambda rxn: None)
+        family = self.kinetics.families["H_Abstraction"]
+        seen = []
+        real_get_kinetics = family.get_kinetics
+    
+        def get_kinetics(reaction, *args, **kwargs):
+            seen.append((reaction, list(reaction.reactants), list(reaction.products),
+                         pair_occurrences(reaction.pairs, reaction.reactants, reaction.products)))
+            return real_get_kinetics(reaction, *args, **kwargs)
+    
+        monkeypatch.setattr(family, "get_kinetics", get_kinetics)
+        reverse = forward.reverse
+    
+>       rxn, new = model.make_new_reaction(forward, check_existing=False, generate_thermo=False,
+                                           generate_kinetics=True)
+
+test/rmgpy/i221OccurrencePairsTest.py:330: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+rmgpy/rmg/model.py:700: in make_new_reaction
+    self.apply_kinetics_to_reaction(forward)
+rmgpy/rmg/model.py:1132: in apply_kinetics_to_reaction
+    kinetics, source, entry, is_forward = self.generate_kinetics(reaction)
+rmgpy/rmg/model.py:1179: in generate_kinetics
+    rev_kinetics, rev_source, rev_entry, rev_is_forward = family.get_kinetics(
+test/rmgpy/i221OccurrencePairsTest.py:324: in get_kinetics
+    pair_occurrences(reaction.pairs, reaction.reactants, reaction.products)))
+rmgpy/reaction.py:2373: in rmgpy.reaction.pair_occurrences
+    occurrences.append((_next_occurrence(pair[0], reactant_positions, reactant_named, 'reactant'),
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+>   raise ValueError('Reaction pair member {0!r} is not a {1} of this reaction. A pair names the '
+                     'reaction\'s own objects, reactant first; an object on neither side, or on '
+                     'the other one, has no position here.'.format(member, side_name))
+E   ValueError: Reaction pair member Species(label="", thermo=ThermoData(Tdata=([300,400,500,600,800,1000,1500],'K'), Cpdata=([35,35,35,35,35,35,35],'J/(mol*K)'), H298=(-241.8,'kJ/mol'), S298=(190,'J/(mol*K)'), Cp0=(33.2,'J/(mol*K)'), CpInf=(83.1,'J/(mol*K)')), molecule=[Molecule(smiles="O")], molecular_weight=(18.0153,'amu')) is not a reactant of this reaction. A pair names the reaction's own objects, reactant first; an object on neither side, or on the other one, has no position here.
+
+rmgpy/reaction.py:2406: ValueError
+=========================== short test summary info ============================
+FAILED test/rmgpy/i221OccurrencePairsTest.py::TestTheReverseKineticsSeeTheModelSpecies::test_the_reverse_estimated_is_over_the_model_species
+======================= 1 failed, 19 deselected in 4.35s =======================

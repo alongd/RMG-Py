@@ -669,9 +669,11 @@ class CoreEdgeReactionModel:
         forward.products = products
         # The reverse's sides are rebuilt from the same model species (round 113). Its pairs
         # were just rewritten over them, and a pair member that is not on its own side has no
-        # occurrence there. The reverse `add_reverse_attribute` attaches holds Molecules in the
-        # template's order, so the forward's order is the only one the model species carry;
-        # the lists are fresh so neither direction's list is the other's.
+        # occurrence there -- and `generate_kinetics` estimates the reverse for an own-reverse
+        # family, so these sides are read. The reverse `add_reverse_attribute` attaches holds
+        # objects of its own, in the template's order rather than the forward's; nothing links
+        # them to the model species, so the forward's order is the one carried. The lists are
+        # fresh so neither direction's list is the other's.
         if getattr(forward, 'reverse', None):
             forward.reverse.reactants = list(products)
             forward.reverse.products = list(reactants)

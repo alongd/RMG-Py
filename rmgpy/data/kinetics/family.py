@@ -476,9 +476,31 @@ def _refuse_unregistered_subclass(obj):
             type(obj).__module__, type(obj).__qualname__, base.__name__))
 
 
-#: ``class -> refused?``, the per-class answer `_refuse_by_mro` caches. Weak, so a class
-#: defined at run time (a test's, a plugin's) is not kept alive by having been pickled.
-_REFUSAL_VERDICTS = weakref.WeakKeyDictionary()
+#: ``id(class) -> (weak reference to the class, refused?)``, the per-class answer
+#: `_refuse_by_mro` caches. Keyed on IDENTITY: a class is looked up through its metaclass's
+#: ``__eq__``/``__hash__`` in any mapping keyed on the class itself, so a metaclass that
+#: compares its instances equal let a lossy subclass read a benign class's cached ``False``
+#: (round 113 rework; the first cut was a `WeakKeyDictionary`). The reference is checked on
+#: every hit, so a reused ``id`` never answers for a dead class, and a finalizer evicts the
+#: entry, so a class defined at run time is not kept alive by having been pickled.
+_REFUSAL_VERDICTS = {}
+
+
+def _refusal_verdict(cls):
+    """Whether `_refuse_by_mro` refuses instances of `cls`, cached by identity."""
+    key = id(cls)
+    cached = _REFUSAL_VERDICTS.get(key)
+    if cached is not None and cached[0]() is cls:
+        return cached[1]
+    refused = _unregistered_lossy_base(cls) is not None
+    try:
+        reference = weakref.ref(cls)
+    except TypeError:
+        # A class that cannot be weakly referenced is answered without the cache.
+        return refused
+    _REFUSAL_VERDICTS[key] = (reference, refused)
+    weakref.finalize(cls, _REFUSAL_VERDICTS.pop, key, None)
+    return refused
 
 
 def _refuse_by_mro(pickler, obj):
@@ -493,15 +515,7 @@ def _refuse_by_mro(pickler, obj):
     for ``None``, ``bool``, ``int``, ``float``, ``str``, ``bytes`` or the builtin containers --
     and it answers from a per-class cache.
     """
-    cls = type(obj)
-    try:
-        refused = _REFUSAL_VERDICTS[cls]
-    except KeyError:
-        refused = _REFUSAL_VERDICTS[cls] = _unregistered_lossy_base(cls) is not None
-    except TypeError:
-        # A class that cannot be weakly referenced is answered without the cache.
-        refused = _unregistered_lossy_base(cls) is not None
-    if refused:
+    if _refusal_verdict(type(obj)):
         _refuse_unregistered_subclass(obj)
     return NotImplemented
 
