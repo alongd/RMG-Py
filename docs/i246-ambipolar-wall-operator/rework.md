@@ -1282,3 +1282,73 @@ two solver test files flagged no live test this round.
   `evidence/round112_remeasure.log`.
 - No file under `rmgpy/molecule/`, `rmgpy/kinetics/`, `rmgpy/data/` or the database touched. Nothing
   pushed, merged or rebased.
+
+## Round 113: the adapter and the denominator — the same hole, one layer out — two BLOCKING, one LOW
+
+Round 112 closed both reproductions inside `TerminationSteadyState.update()` (they now give `False, False`)
+and routed all four ratio paths through the helper. The spar still did not clear: production goes through
+two layers the update()-level tests bypass — the base.pyx **adapter** that maps the reactor's hooks onto
+the criterion, and the helper's **zero-denominator abstention**. This round tests THROUGH `base.pyx`, not
+by calling `update()`. `plasma.pyx` is byte-identical again.
+
+### BLOCKING 1 — the adapter laundered a source-driven channel's non-finite reading to absence
+
+The round-112 adapter keyed the external channel's presence on `external_armed OR isfinite(residual)`, so
+an UNARMED non-finite reading (a `nan` while the electron is unresolvable, or a blown ±inf) was mapped
+back to `None` — "no channel" — and a flat generic channel fired on it: the same laundering as round 111,
+one layer out. Whether the channel is in play is a **structural** fact about the reactor — does it drive an
+electron from an ionisation source — not a property of the value it reported this step. The adapter now
+reads that: a reactor with an active source has a channel every step, so ANY non-finite reading it produces
+poisons (armed or not); a reactor with no source — an ordinary reactor, or a wall deck whose source-less
+electron merely decays — has no such channel and its `nan` is genuine absence (plasma's documented "no such
+channel" sentinel), so the generic channel decides alone.
+
+This is the crux the round-112 regression already exposed: plasma's hook returns `nan` for BOTH "no source
+channel" and "channel present but unresolvable", and the electron-underflow wall guard that crashes an
+over-integrated afterglow lives in the frozen `plasma.pyx`. So the gamma=0 wall-only deck
+(`test_wall_only_deck_integrates_past_t0_on_the_production_path`) and the reviewer's poison test feed the
+adapter an **identical** value (`nan`, unarmed, finite relaxation time) yet require opposite outcomes —
+absence vs poison. The only bit that separates them is source presence, which plasma's overloaded `nan`
+cannot carry. The adapter reads `ionisation_source` from the reactor (read-only `getattr`, no `plasma.pyx`
+change) to recover it. The truly clean cure — a hook returning a distinct absence sentinel — lives in
+`plasma.pyx`, out of scope; the coupling is noted so the owner can rule on it. Tested through the
+production `simulate()` path with a `PlasmaReactor` subclass whose hook returns each poison unarmed, driven
+to a flat generic channel (red on the round-112 `.so`: the adapter handed the criterion `None`; green
+after: it hands the poison, and the run does not reach steady state).
+
+### BLOCKING 2 — `_rate_ratios_or_zero` laundered an infinite numerator to zero
+
+The helper returned zeros whenever the denominator was zero/non-finite, EVEN IF a numerator was infinite:
+`core_species_rates=[0]`, `char_rate=0`, `network_leak_rates=[inf]` → `[0]`, and the inert/steady-state or
+interrupt path then acted on a zeroed inf. The raw-rate guard did not inspect network rates. A non-finite
+**numerator** is a broken integration regardless of the denominator, so the helper now stops loudly first,
+before the denominator is consulted; the zero-denominator abstention applies only to FINITE numerators
+(the undefined `0/0`, `x/0`). The raw-rate guard was moved ahead of the ratio calls and extended to inspect
+`network_leak_rates` too, so a non-finite network rate stops loudly with the detailed message (preserving
+the existing core/edge rate-guard messages by construction, since the guard fires before the helper). The
+round-112 assertion that blessed the laundering (`ratios([inf,1.0], 0.0) → zeros`) is inverted: it now
+raises, while a FINITE numerator over a zero/non-finite denominator still abstains.
+
+### LOW — NumPy error configuration, and four more census holes
+
+The overflow finiteness check is computed under `np.errstate(all='ignore')` and then tested, so the
+verdict does not depend on NumPy's global divide/overflow settings. The assertion census now recognises a
+`raises`/`warns` context manager by the call TARGET being `pytest.<raises|warns>` (rejecting a bare
+`raises(...)`, which need not be pytest's, and an unrelated `fake.raises(...)`), and treats assertions
+under `while False:` and in empty loops (`for _ in []:`, `range(0)`) as unreachable, alongside the round-112
+`if False:` and uncalled-nested-function cases. Its self-test gained the four reproductions (red before,
+green after); the tightened census flags no live test.
+
+### Close gate
+
+- Full suite rebuilt and green: `pytest test/rmgpy/solver/ test/rmgpy/rmg/inputTest.py -o addopts="" -p
+  no:cacheprovider` → **349 passed, 1 skipped** (`test/rmgpy/solver/` alone: **248 passed**, 0 collection
+  errors). The new/inverted tests are red on the round-112 tip and green after: `evidence/round113_reds.log`
+  (2 failed pre-fix), `evidence/round113_greens.log`.
+- Only `base.pyx` (compiled) changed this round; `termination.py` untouched. `base.so` rebuilt (`make
+  build`, exit 0). `.so` proven by value: `strings base.*.so | grep 'Non-finite enlargement rate:'` and
+  `… | grep 'network indices'` both present.
+- **`plasma.pyx` byte-identical** (vs `HEAD` and vs `ca384f8f3`). **Wall-loss frequency re-measured and
+  unchanged:** `compute_nu_wall` = 15.954491 s⁻¹. Evidence: `evidence/round113_remeasure.log`.
+- No file under `rmgpy/molecule/`, `rmgpy/kinetics/`, `rmgpy/data/` or the database touched. Nothing
+  pushed, merged or rebased.
