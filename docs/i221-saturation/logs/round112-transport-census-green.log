@@ -1,0 +1,74 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+rootdir: /home/alon/Code/RMG-Py-i221-saturation-fix
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 37 items
+
+test/rmgpy/i221TransportCensusTest.py::TestTransportCensus::test_every_transport_installs_the_complete_reducers PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTransportCensus::test_the_census_is_the_one_on_record PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTransportCensus::test_no_pickle_is_written_to_storage PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTransportCensus::test_no_cython_module_touches_a_transport PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_uninstalled_transport_is_seen[from multiprocessing import Pool\ndef f():\n    Pool(2).map(g, [])\n] PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_uninstalled_transport_is_seen[import multiprocessing as mp\ndef f():\n    mp.Pool(2)\n] PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_uninstalled_transport_is_seen[import multiprocessing\ndef f():\n    multiprocessing.get_context("spawn").Pool(2)\n] PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_uninstalled_transport_is_seen[from concurrent.futures import ProcessPoolExecutor as E\ndef f():\n    E(2)\n] PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_uninstalled_transport_is_seen[from multiprocessing import Pool\ndef f():\n    install_complete_reducers()\n    Pool(2)\n] PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_installed_transport_passes PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_a_local_pool_is_not_a_transport PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_storage_is_seen[import pickle\npickle.dump(x, open("f", "wb"))\n-found0] PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_storage_is_seen[import pickle\npickle.Pickler(open("f", "wb"))\n-found1] PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_storage_is_seen[import pickle, io\npickle.Pickler(io.BytesIO())\n-found2] PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_storage_is_seen[import pickle\npickle.loads(pickle.dumps(x))\n-found3] PASSED
+test/rmgpy/i221TransportCensusTest.py::TestFreshImportRegisters::test_fresh_import[rmgpy/data/kinetics/family.py] PASSED
+test/rmgpy/i221TransportCensusTest.py::TestFreshImportRegisters::test_fresh_import[rmgpy/qm/main.py] PASSED
+test/rmgpy/i221TransportCensusTest.py::TestFreshImportRegisters::test_fresh_import[rmgpy/rmg/react.py] PASSED
+test/rmgpy/qm/gaussianTest.py::TestGaussianMolPM3::test_generate_thermo_data SKIPPED
+test/rmgpy/qm/gaussianTest.py::TestGaussianMolPM3::test_load_thermo_data SKIPPED
+test/rmgpy/qm/gaussianTest.py::TestGaussianMolPM6::test_generate_thermo_data SKIPPED
+test/rmgpy/qm/gaussianTest.py::TestGaussianMolPM6::test_load_thermo_data SKIPPED
+test/rmgpy/qm/mopacTest.py::TestMopacMolPM3::test_generate_thermo_data PASSED
+test/rmgpy/qm/mopacTest.py::TestMopacMolPM3::test_load_thermo_data PASSED
+test/rmgpy/qm/mopacTest.py::TestMopacMolPM6::test_generate_thermo_data PASSED
+test/rmgpy/qm/mopacTest.py::TestMopacMolPM6::test_load_thermo_data PASSED
+test/rmgpy/qm/mopacTest.py::TestMopacMolPM7::test_generate_thermo_data PASSED
+test/rmgpy/qm/mopacTest.py::TestMopacMolPM7::test_load_thermo_data PASSED
+test/rmgpy/qm/qmMainTest.py::TestQMSettings::test_check_all_set PASSED
+test/rmgpy/qm/qmMainTest.py::TestQMCalculator::test_set_default_output_directory PASSED
+test/rmgpy/qm/qmMainTest.py::TestQMCalculator::test_initialize PASSED
+test/rmgpy/qm/qmMainTest.py::TestQMCalculator::test_get_thermo_data PASSED
+test/rmgpy/qm/qmMainTest.py::TestQMCalculator::test_get_thermo_data_mopac PASSED
+test/rmgpy/qm/qmMainTest.py::TestQMCalculator::test_get_thermo_data_gaussian SKIPPED
+test/rmgpy/qm/qmMainTest.py::TestQMCalculator::test_run_jobs PASSED
+test/rmgpy/qm/qmMoleculeTest.py::TestQMMolecule::test_rd_embed_common_species PASSED
+test/rmgpy/qm/qmMoleculeTest.py::TestQMMolecule::test_rd_embed_uncommon_species PASSED
+
+======================== 32 passed, 5 skipped in 26.66s ========================
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+rootdir: /home/alon/Code/RMG-Py-i221-saturation-fix
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 19 items
+
+test/rmgpy/i221TransportCensusTest.py::TestTransportCensus::test_every_transport_installs_the_complete_reducers PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTransportCensus::test_the_census_is_the_one_on_record PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTransportCensus::test_no_pickle_is_written_to_storage PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTransportCensus::test_plain_pickle_is_reached_from_one_module PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTransportCensus::test_no_cython_module_touches_a_transport PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_uninstalled_transport_is_seen[from multiprocessing import Pool\ndef f():\n    Pool(2).map(g, [])\n] PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_uninstalled_transport_is_seen[import multiprocessing as mp\ndef f():\n    mp.Pool(2)\n] PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_uninstalled_transport_is_seen[import multiprocessing\ndef f():\n    multiprocessing.get_context("spawn").Pool(2)\n] PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_uninstalled_transport_is_seen[from concurrent.futures import ProcessPoolExecutor as E\ndef f():\n    E(2)\n] PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_uninstalled_transport_is_seen[from multiprocessing import Pool\ndef f():\n    install_complete_reducers()\n    Pool(2)\n] PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_installed_transport_passes PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_a_local_pool_is_not_a_transport PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_storage_is_seen[import pickle\npickle.dump(x, open("f", "wb"))\n-found0] PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_storage_is_seen[import pickle\npickle.Pickler(open("f", "wb"))\n-found1] PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_storage_is_seen[import pickle, io\npickle.Pickler(io.BytesIO())\n-found2] PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_storage_is_seen[import pickle\npickle.loads(pickle.dumps(x))\n-found3] PASSED
+test/rmgpy/i221TransportCensusTest.py::TestFreshImportRegisters::test_fresh_import[rmgpy/data/kinetics/family.py] PASSED
+test/rmgpy/i221TransportCensusTest.py::TestFreshImportRegisters::test_fresh_import[rmgpy/qm/main.py] PASSED
+test/rmgpy/i221TransportCensusTest.py::TestFreshImportRegisters::test_fresh_import[rmgpy/rmg/react.py] PASSED
+
+============================= 19 passed in 14.23s ==============================

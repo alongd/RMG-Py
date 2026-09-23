@@ -34,7 +34,16 @@ from multiprocessing import Pool
 import rmgpy.qm.gaussian
 import rmgpy.qm.mopac
 from rmgpy.data.base import saturate_for_estimation
+from rmgpy.data.kinetics.family import install_complete_reducers
 from rmgpy.data.thermo import ThermoLibrary
+
+# `run_jobs` hands `(QMCalculator, Molecule)` pairs to a `Pool`, which pickles them with
+# `multiprocessing`'s own pickler. Nothing on this module's import path loaded `family.py`,
+# so in a fresh process that pickler still used the reducers in `rmgpy/molecule/`, which
+# drop `Atom.id` and `props`. Installing here makes the registration a property of the
+# module that starts the transport; test/rmgpy/i221TransportCensusTest.py refuses any
+# module that starts one without it.
+install_complete_reducers()
 
 
 class QMSettings(object):
