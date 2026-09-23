@@ -4149,3 +4149,686 @@ class TestTheCopyIsOneGraphNotFourLists:
         assert not any(copied_atom is a for a in copied_molecule.atoms), (
             "Molecule.__deepcopy__ now honours the memo, so copy() could use a single "
             "deepcopy instead of a pickle round trip -- simplify it")
+
+
+# ---------------------------------------------------------------------------------------
+# Round 110
+# ---------------------------------------------------------------------------------------
+
+
+@pytest.mark.database
+class TestTheTransportCarriesThePayloadToo:
+    """
+    Round 110's first HIGH. Round 108 chose the transport for one property -- one memo, so
+    two fields referring to one object still refer to one object on the other side -- and
+    it silently lost another. `pickle` delegates to each class's own ``__reduce__``, and
+    ``Atom.__reduce__`` (``rmgpy/molecule/molecule.py:140``) never mentions ``id``,
+    ``coords`` or ``props``. The body it replaced called `Species.copy(deep=True)`, which
+    reproduces all three.
+
+    Measured at `2e4ff991d` on a reaction this family generated, from molecules that had
+    been through production's own `generate_resonance_structures()`: ids
+    ``-32768…-32765`` came back ``-1`` and ``props {'inRing': False}`` came back ``{}``.
+    Atom ids drive resonance-structure correspondence and ``'inRing'`` feeds group
+    matching, so this is a wrong answer rather than a crash.
+
+    **Round 108's tests cannot see it.** They compare `pairs` members and labelled atoms
+    by identity -- correctly, that is their property -- and never look at what the objects
+    those references point at actually hold. The two properties are asserted on one copy
+    here for that reason.
+
+    The fixture is the family's own output throughout. Nothing under test is assigned by
+    the test.
+    """
+
+    @classmethod
+    def setup_class(cls):
+        families_path = os.path.join(settings["database.directory"], "kinetics", "families")
+        if not os.path.isdir(os.path.join(families_path, REAL_FAMILY)):
+            pytest.skip(f"database at {settings['database.directory']} has no "
+                        f"{REAL_FAMILY} to generate reactions from")
+        database = KineticsDatabase()
+        database.load_families(path=families_path, families=[REAL_FAMILY])
+        cls.family = database.families[REAL_FAMILY]
+
+    def _generated(self, delete_labels=True):
+        reactants = []
+        for smiles in ("[Li+]", "[CH3]"):
+            species = Species(molecule=[Molecule(smiles=smiles)])
+            species.generate_resonance_structures()
+            reactants.append(species.molecule[0])
+        reactions = self.family.generate_reactions(reactants, delete_labels=delete_labels)
+        assert reactions, "the family generated nothing, so there is nothing to copy"
+        return reactions[0]
+
+    @staticmethod
+    def _atoms_of(reaction):
+        atoms = []
+        for structure in list(reaction.reactants) + list(reaction.products):
+            for molecule in (structure.molecule if isinstance(structure, Species)
+                             else [structure]):
+                atoms.extend(molecule.atoms)
+        return atoms
+
+    def test_the_fixture_carries_the_state_before_anything_is_copied(self):
+        """
+        Anti-vacuity, and the answer to "did the test assign what it then checks".
+
+        **Green at `2e4ff991d`**: it is the guard on the tests below, not evidence of the
+        defect. If the family ever stops assigning atom ids this goes red and says so,
+        rather than letting the assertions below pass over ``-1 == -1``.
+        """
+        atoms = self._atoms_of(self._generated(delete_labels=False))
+        assert any(atom.id != -1 for atom in atoms), (
+            "no atom the family generated carries an assigned id, so a test that the copy "
+            "keeps ids would pass whether or not the copy keeps anything")
+        assert any(atom.props for atom in atoms), (
+            "no atom the family generated carries props, same problem")
+
+    def test_the_copy_keeps_both_the_references_and_the_atom_state(self):
+        """
+        The acceptance for this round's HIGH 1, on **one** copy.
+
+        Both properties or neither: the references *between* the fields (round 108) and
+        the state inside the objects those references point at (round 110). Splitting them
+        across two tests is what let a mechanism that satisfied one and broke the other
+        land, so they are asserted together here.
+
+        **Behavioural** at `2e4ff991d`: the ids and props assertions fail there, and the
+        identity assertions pass there and must keep passing.
+        """
+        reaction = self._generated(delete_labels=False)
+        before = self._atoms_of(reaction)
+        copy = reaction.copy()
+        after = self._atoms_of(copy)
+
+        assert len(after) == len(before)
+        for original, copied in zip(before, after):
+            assert copied is not original, "the copy is aliasing the original's atoms"
+            assert copied.id == original.id, (
+                "atom id {0} came back as {1}; ids drive resonance-structure "
+                "correspondence".format(original.id, copied.id))
+            assert copied.props == original.props, (
+                "atom props {0!r} came back as {1!r}; 'inRing' feeds group "
+                "matching".format(original.props, copied.props))
+
+        owned = list(copy.reactants) + list(copy.products)
+        for pair in copy.pairs:
+            for member in pair:
+                assert any(member is s for s in owned), (
+                    "round 108's property broke: a pairs member is a species the copy "
+                    "does not own")
+        for group in copy.labeled_atoms.values():
+            for label, atom in group.items():
+                for one in (atom if isinstance(atom, list) else [atom]):
+                    assert any(one is a for a in after), (
+                        "round 108's property broke: labelled atom {0!r} is inside no "
+                        "molecule the copy owns".format(label))
+
+    def test_the_familys_own_output_can_be_copied_at_all(self):
+        """
+        `generate_reactions()` **deletes** `labeled_atoms` once the labels have been read
+        back (`family.py:2651`), so every reaction it returns is missing a field the copy
+        policy lists. Round 108 applied the deepened set from the table rather than from
+        the object, so `copy()` raised `ReactionStateNotCarried` on the family's own
+        output -- the commonest reaction in the codebase.
+
+        **Behavioural** at `2e4ff991d`: it raises there.
+        """
+        reaction = self._generated()
+        assert not hasattr(reaction, "labeled_atoms"), (
+            "the family no longer deletes labeled_atoms, so this test is no longer about "
+            "the case it was written for")
+        copy = reaction.copy()
+        assert type(copy) is type(reaction)
+        assert not hasattr(copy, "labeled_atoms"), (
+            "the copy invented a field the original did not have")
+
+    def test_the_copied_atoms_keep_the_interned_atom_types(self):
+        """
+        Why `Atom` keeps its own reducer and has what it drops added back, rather than
+        being carried wholesale.
+
+        `Atom.__reduce__` stores ``atomtype.label`` and restores ``ATOMTYPES[label]``, so
+        a copied atom's type is the *interned* object. `AtomType` inherits identity
+        equality and `is_specific_case_of` is a membership test over those objects, so a
+        reducer that carried the type by value would trade three lost fields for silent
+        group mismatches.
+
+        **Green at `2e4ff991d`** -- it pins a property the repair had to preserve, not one
+        it added.
+        """
+        reaction = self._generated(delete_labels=False)
+        copy = reaction.copy()
+        for original, copied in zip(self._atoms_of(reaction), self._atoms_of(copy)):
+            assert copied.atomtype is original.atomtype, (
+                "the copy's atom type is a different object from the interned one")
+
+    def test_deepcopy_of_a_reaction_is_the_copy(self):
+        """
+        `deepcopy(reaction)` is a live path -- `family.py:3854` and
+        `rmgpy/data/kinetics/database.py:755` both take one -- and it recurses into
+        `Molecule.__deepcopy__`, which discards the memo, so the labelled atoms come back
+        detached.
+
+        **Behavioural** at `2e4ff991d`: the labelled atoms are severed there.
+        """
+        from copy import deepcopy
+
+        reaction = self._generated(delete_labels=False)
+        deep = deepcopy(reaction)
+        assert type(deep) is type(reaction), (
+            "deepcopy lost the subclass, which it did not do before")
+        atoms = self._atoms_of(deep)
+        for group in deep.labeled_atoms.values():
+            for label, atom in group.items():
+                for one in (atom if isinstance(atom, list) else [atom]):
+                    assert any(one is a for a in atoms), (
+                        "after deepcopy, labelled atom {0!r} is inside no molecule the "
+                        "copy owns".format(label))
+
+
+class TestTheClassesWhoseOwnReducerLoses:
+    """
+    The rest of round 110's first HIGH, and the whole of its second, on fixtures that do
+    not need the database.
+
+    `Fragment` and `CuttingLabel` inherit reducers that name `Molecule` and `Atom` as the
+    class to rebuild; the cutting label's symbol is then handed to `get_element` and
+    raises ``KeyError: 'R'``. `Molecule.__reduce__` passes ``metal`` and ``facet`` into
+    ``__init__``'s ``inchi`` and ``smiles`` -- the fifth and sixth positional parameters
+    rather than the seventh and eighth. `Species.__reduce__` omits four fields. All three
+    were reached only because round 108 made `copy()` go through those reducers; the deep
+    copy it replaced handled all three.
+    """
+
+    @staticmethod
+    def _reaction(reactants, products):
+        reaction = TemplateReaction(reactants=reactants, products=products,
+                                    family="A_Family")
+        reaction.labeled_atoms = {"reactants": {}, "products": {}}
+        return reaction
+
+    def test_a_fragment_reaction_can_be_copied(self):
+        """
+        Round 110's HIGH 2, behavioural: ``KeyError: 'R'`` at `2e4ff991d`.
+
+        A working feature -- `deepcopy` of a fragment succeeds at both tips, which the
+        negative control below pins -- broken by a change to how reactions are copied.
+        """
+        from rmgpy.molecule.fragment import CuttingLabel, Fragment
+
+        reaction = self._reaction([Fragment().from_smiles_like_string("CCR")],
+                                  [Fragment().from_smiles_like_string("[CH3]")])
+        copy = reaction.copy()
+
+        reactant = copy.reactants[0]
+        assert isinstance(reactant, Fragment), (
+            "the copied fragment came back as a {0}".format(type(reactant).__name__))
+        labels = [atom for atom in reactant.atoms if isinstance(atom, CuttingLabel)]
+        assert labels, "the copy has no CuttingLabel; the cutting label became an atom"
+        assert [atom.name for atom in labels] == ["R"], (
+            "the cutting label lost its name, which is the only thing that identifies it")
+        assert all(atom is not other
+                   for atom, other in zip(reactant.atoms,
+                                          reaction.reactants[0].atoms)), (
+            "the copy is aliasing the original's atoms")
+
+    def test_the_deep_copy_this_replaced_could_do_it(self):
+        """
+        Anti-vacuity for the test above: fragment copying is a feature that worked, not
+        one that never did.
+
+        **Green at `2e4ff991d`** -- it measures the path round 108 replaced.
+        """
+        from copy import deepcopy
+
+        from rmgpy.molecule.fragment import CuttingLabel, Fragment
+
+        fragment = Fragment().from_smiles_like_string("CCR")
+        deep = deepcopy(fragment)
+        assert isinstance(deep, Fragment)
+        assert any(isinstance(atom, CuttingLabel) for atom in deep.atoms)
+
+    def test_a_surface_reaction_can_be_copied(self):
+        """
+        Behavioural: ``KeyError: 'Pt'`` at `2e4ff991d`, because ``metal='Pt'`` is read as
+        an InChI. Every surface reaction in the codebase copies through this path.
+        """
+        molecule = Molecule(smiles="CC")
+        molecule.metal, molecule.facet = "Pt", "111"
+        reaction = self._reaction([molecule], [Molecule(smiles="[CH3]")])
+
+        copy = reaction.copy()
+        assert (copy.reactants[0].metal, copy.reactants[0].facet) == ("Pt", "111")
+
+    def test_a_copied_species_keeps_what_its_own_reducer_omits(self):
+        """
+        Behavioural: `Species.__reduce__` passes ten fields and the class holds more.
+        `symmetry_number` is the one that matters most -- it divides into every rate the
+        species appears in -- and it came back ``-1.0`` from ``2.0``.
+        """
+        reactant = Species(label="ethane", molecule=[Molecule(smiles="CC")])
+        reactant.symmetry_number = 2
+        reactant.aug_inchi = "an augmented inchi"
+        reactant.creation_iteration = 3
+        reactant.explicitly_allowed = True
+        reaction = self._reaction(
+            [reactant], [Species(label="ethyl", molecule=[Molecule(smiles="C[CH2]")])])
+
+        copy = reaction.copy().reactants[0]
+        assert copy is not reactant
+        assert copy.symmetry_number == 2
+        assert copy.aug_inchi == "an augmented inchi"
+        assert copy.creation_iteration == 3
+        assert copy.explicitly_allowed is True
+
+    def test_every_class_that_loses_state_is_registered(self):
+        """
+        The census, mechanised. Every class reachable in a reaction's deepened state is
+        round-tripped through its *own* reducer and asked what it lost; anything that lost
+        something must be in `_LOSSY_REDUCERS` with a reason. `Bond`, `TransitionState`
+        and the kinetics models lose nothing and are deliberately absent.
+
+        This is what keeps the registry from going stale in the direction that matters: a
+        class that starts losing state, or one that stops.
+
+        **Structural** at `2e4ff991d`, which has no `_LOSSY_REDUCERS`.
+        """
+        import numpy as np
+
+        from rmgpy.data.kinetics.family import _LOSSY_REDUCERS, object_state
+        from rmgpy.molecule.fragment import CuttingLabel, Fragment
+        from rmgpy.molecule.molecule import Atom
+
+        plain = (type(None), bool, int, float, complex, str, bytes, np.ndarray)
+
+        def is_plain(value):
+            if isinstance(value, plain):
+                return True
+            if isinstance(value, (list, tuple, set, frozenset)):
+                return all(is_plain(item) for item in value)
+            if isinstance(value, dict):
+                return all(is_plain(k) and is_plain(v) for k, v in value.items())
+            return False
+
+        def loses(obj):
+            try:
+                back = pickle.loads(pickle.dumps(obj, pickle.HIGHEST_PROTOCOL))
+            except Exception:                                    # noqa: BLE001
+                return True
+            if type(back) is not type(obj):
+                return True
+            for name, value in object_state(obj).items():
+                if not is_plain(value):
+                    continue
+                other = getattr(back, name, None)
+                if isinstance(value, np.ndarray) or isinstance(other, np.ndarray):
+                    if not np.array_equal(value, other):
+                        return True
+                elif not (value is other or value == other):
+                    return True
+            return False
+
+        molecule = Molecule(smiles="CC")
+        atom = molecule.atoms[0]
+        atom.id, atom.props = -424242, {"inRing": False}
+        surface = Molecule(smiles="CC")
+        surface.metal, surface.facet = "Pt", "111"
+        species = Species(label="x", molecule=[Molecule(smiles="CC")])
+        species.symmetry_number = 2
+        fragment = Fragment().from_smiles_like_string("CCR")
+        cutting = [a for a in fragment.atoms if isinstance(a, CuttingLabel)][0]
+
+        reachable = {
+            Atom: atom,
+            Molecule: surface,
+            Species: species,
+            Fragment: fragment,
+            CuttingLabel: cutting,
+            type(list(atom.edges.values())[0]): list(atom.edges.values())[0],
+            Arrhenius: Arrhenius(A=(1.0, "s^-1"), n=0, Ea=(0, "kJ/mol"), comment="c"),
+            TransitionState: TransitionState(label="ts"),
+        }
+        for cls, instance in reachable.items():
+            if loses(instance):
+                assert cls in _LOSSY_REDUCERS, (
+                    "{0} loses state through its own reducer and no complete reducer is "
+                    "registered for it".format(cls.__name__))
+            else:
+                assert cls not in _LOSSY_REDUCERS, (
+                    "{0} no longer loses anything through its own reducer, so the "
+                    "registered workaround has outlived its reason".format(cls.__name__))
+        for cls, (_, reason) in _LOSSY_REDUCERS.items():
+            assert reason and len(reason) > 30, (
+                "{0} is registered without a reason worth reading".format(cls.__name__))
+
+    def test_the_probe_that_derives_the_dropped_set_can_see_every_field(self):
+        """
+        What makes the completeness of the `Atom` restore *testable* rather than asserted.
+
+        The restore set is measured: a probe atom carrying a distinguishable value in
+        every plain field is round-tripped, and whatever comes back changed is what gets
+        restored. A field with no distinguishable value in the probe would be classified
+        as surviving whether it survives or not -- so this asserts the probe actually
+        distinguishes every plain field `Atom` has. An `Atom` that grows one turns this
+        red and names it.
+
+        **Structural** at `2e4ff991d`, which has no probe.
+        """
+        import numpy as np
+
+        from rmgpy.data.kinetics.family import (_atom_probe, fields_the_reducer_drops,
+                                                _is_plain, writable_fields)
+        from rmgpy.molecule.molecule import Atom
+
+        #: Fields the probe cannot give a distinguishable value to, each because its value
+        #: is a reference rather than data: `edges` is a dict keyed by the atoms this atom
+        #: is bonded to, and `atomtype` and `mapping` are objects that happen to be None
+        #: on a bare atom. The derivation's answer for these is not evidence either way,
+        #: and round 108's `is` assertions are what audits them. Anything *else* that
+        #: cannot be distinguished is a hole in the derivation.
+        references = {"edges", "atomtype", "mapping"}
+
+        probe = _atom_probe()
+        default = Atom(element="C")
+        undistinguished = []
+        for name in sorted(writable_fields(Atom) - references):
+            mine, theirs = getattr(probe, name), getattr(default, name)
+            if not _is_plain(mine):
+                continue
+            if isinstance(mine, np.ndarray) or isinstance(theirs, np.ndarray):
+                if np.array_equal(mine, theirs):
+                    undistinguished.append(name)
+            elif mine == theirs:
+                undistinguished.append(name)
+        assert not undistinguished, (
+            "these plain fields of Atom carry the default value in the probe, so the "
+            "derivation cannot tell whether the reducer drops them: {0}".format(
+                undistinguished))
+        assert not references - writable_fields(Atom), (
+            "these names are excused from the probe but are no longer writable fields of "
+            "Atom, so the excuse has gone stale: {0}".format(
+                sorted(references - writable_fields(Atom))))
+        assert fields_the_reducer_drops(Atom) >= {"id", "coords", "props"}, (
+            "the derivation no longer finds the three fields the review measured; either "
+            "upstream fixed Atom.__reduce__ -- in which case say so and delete the "
+            "workaround -- or the derivation has stopped working")
+
+
+class TestThePartitionHasNoSilentDefault:
+    """
+    Round 110's first MEDIUM. `copy_reaction`'s two tables were complementary *for the
+    fields somebody had classified*; for everything else the default was to carry by
+    reference, and the default was silent. `TemplateReaction.template` is a mutable list
+    and `specific_collider` is a `Species`, and neither was in either table, so
+    ``reaction.copy().template is reaction.template`` was ``True``.
+
+    There is no default now: a field in neither table is refused by name.
+    """
+
+    @staticmethod
+    def _reaction(**fields):
+        reaction = TemplateReaction(
+            reactants=[Species(label="a", molecule=[Molecule(smiles="CC")])],
+            products=[Species(label="b", molecule=[Molecule(smiles="C[CH2]")])],
+            family="A_Family", **fields)
+        reaction.labeled_atoms = {"reactants": {}, "products": {}}
+        return reaction
+
+    def test_the_template_is_not_shared_with_the_copy(self):
+        """Behavioural: ``True`` at `2e4ff991d`, on a list the family rewrites in place."""
+        reaction = self._reaction(template=["C/H3/Cs\\H3", "O_pri_rad"])
+        copy = reaction.copy()
+        assert copy.template == reaction.template
+        assert copy.template is not reaction.template, (
+            "the copy shares the original's template list, so appending to one appends "
+            "to the other")
+
+    def test_the_specific_collider_is_not_shared_with_the_copy(self):
+        """Behavioural: the same, on a `Species` rather than a list."""
+        collider = Species(label="Ar", molecule=[Molecule(smiles="[Ar]")])
+        reaction = self._reaction(specific_collider=collider)
+        copy = reaction.copy()
+        assert copy.specific_collider is not None
+        assert copy.specific_collider is not collider, (
+            "the copy shares the original's collider species")
+        assert copy.specific_collider.label == "Ar"
+
+    def test_a_field_nobody_classified_is_refused_by_name(self):
+        """
+        The general form, and the reason this is a partition rather than a filter.
+
+        **Behavioural** at `2e4ff991d`: no exception there, and the field is aliased.
+        `ReactionStateNotCarried` is the base class of the exception the repair raises, so
+        this test names only what the base already had and its red state is the missing
+        refusal rather than a missing import.
+        """
+        from rmgpy.data.kinetics.family import ReactionStateNotCarried
+
+        reaction = self._reaction()
+        reaction.a_field_nobody_classified = ["a mutable one"]
+        with pytest.raises(ReactionStateNotCarried) as raised:
+            reaction.copy()
+        assert "a_field_nobody_classified" in str(raised.value), (
+            "the refusal does not name the field, so whoever hits it cannot act on it")
+
+    def test_the_two_tables_are_a_partition_of_what_a_reaction_holds(self):
+        """
+        Every field of every shape lands in exactly one table, checked against the objects
+        rather than against a list.
+
+        **Structural** at `2e4ff991d`, which has no `_COPIED_BY_REFERENCE`.
+        """
+        from rmgpy.data.kinetics.family import (_COPIED_BY_REFERENCE,
+                                                _NOT_COPIED_BY_REFERENCE,
+                                                _TEMPLATE_NOT_COPIED_BY_REFERENCE,
+                                                state_fields)
+
+        shapes = ((TemplateReaction(reactants=[], products=[], family="F"),
+                   _TEMPLATE_NOT_COPIED_BY_REFERENCE),
+                  (LibraryReaction(reactants=[], products=[], library="L"),
+                   _NOT_COPIED_BY_REFERENCE))
+        for reaction, deepened in shapes:
+            held = state_fields(reaction)
+            unclassified = held - set(deepened) - set(_COPIED_BY_REFERENCE)
+            assert not unclassified, (
+                "{0} holds fields in neither table: {1}".format(
+                    type(reaction).__name__, sorted(unclassified)))
+            both = held & set(deepened) & set(_COPIED_BY_REFERENCE)
+            assert not both, (
+                "{0} holds fields in both tables: {1}".format(
+                    type(reaction).__name__, sorted(both)))
+        for name in ("template", "specific_collider"):
+            assert (name in _TEMPLATE_NOT_COPIED_BY_REFERENCE
+                    and name not in _COPIED_BY_REFERENCE), (
+                "{0!r} is mutable and must be deepened, not aliased".format(name))
+        for name, reason in _COPIED_BY_REFERENCE.items():
+            assert reason, "{0!r} is shared without a reason".format(name)
+
+
+class TestTheManifestIdentityBracketsTheRead:
+    """
+    Round 110's second MEDIUM. `os.fstat(fd)` came before `handle.read()` on the same
+    descriptor. The descriptor defeats a *rename* between the two -- that is what closed
+    round 99 -- and does nothing about a writer that rewrites the same file **in place**
+    while the read is in flight: the identity is then the old version's and the content
+    the new one's, and `resolve_quarantine` caches the second under the first.
+    """
+
+    MANIFEST = ("state = 'QUARANTINED FOR QUANTITATIVE PLASMA USE'\n"
+                "reason = '{0}'\n"
+                "kinetics_class = 'Marcus'\n")
+
+    def _family(self, tmp_path):
+        family_path = tmp_path / "kinetics" / "families" / "A_Family"
+        family_path.mkdir(parents=True)
+        manifest = family_path / QUARANTINE_FILENAME
+        manifest.write_text(self.MANIFEST.format("the reason the first version gave"))
+        return str(family_path), manifest
+
+    def test_a_manifest_rewritten_between_the_two_reads_is_refused(self, tmp_path,
+                                                                   monkeypatch):
+        """
+        The acceptance, and the only way to state it: rewrite the file *between* the
+        identity call and the content call and require a refusal.
+
+        **Behavioural** at `2e4ff991d`: the content comes back as the rewritten version
+        keyed to the identity of the version before it.
+        """
+        from rmgpy.data.kinetics.quarantine import _read_manifest
+
+        family_path, manifest = self._family(tmp_path)
+        rewritten = self.MANIFEST.format("a reason nobody has ever approved")
+        real_fstat = os.fstat
+        state = {"done": False}
+
+        def rewriting_fstat(fd):
+            info = real_fstat(fd)
+            if not state["done"] and os.path.samestat(info, os.stat(str(manifest))):
+                state["done"] = True
+                manifest.write_text(rewritten)          # in place: same inode, new bytes
+            return info
+
+        monkeypatch.setattr(os, "fstat", rewriting_fstat)
+        content, identity = _read_manifest(family_path)
+
+        assert state["done"], (
+            "the rewrite never fired, so this test did not exercise the window it was "
+            "written for")
+        assert content is None and identity is None, (
+            "the manifest changed under the read and was answered for anyway: the "
+            "content is {0!r}".format((content or "")[:60]))
+
+    def test_an_unchanged_manifest_is_still_read(self, tmp_path):
+        """
+        Anti-vacuity: the refusal must cost nothing in the ordinary case, or it would be
+        indistinguishable from breaking the loader.
+
+        **Green at `2e4ff991d`**.
+        """
+        from rmgpy.data.kinetics.quarantine import _read_manifest
+
+        family_path, manifest = self._family(tmp_path)
+        content, identity = _read_manifest(family_path)
+        assert content is not None and "the reason the first version gave" in content
+        assert identity is not None
+
+    def test_the_identity_is_taken_from_the_descriptor_on_both_sides(self):
+        """
+        The shape, so a later repair cannot satisfy the test above by re-stat'ing the
+        *name* -- which would reintroduce the two-resolutions defect round 95 closed.
+
+        **Structural** at `2e4ff991d`: one `os.fstat` call there, two here.
+        """
+        from rmgpy.data.kinetics import quarantine as module
+
+        body = inspect.getsource(module._read_manifest)
+        assert body.count("os.fstat(") == 2, (
+            "the identity is taken {0} time(s) from the descriptor; it must be taken "
+            "before and after the read".format(body.count("os.fstat(")))
+        assert "os.stat(" not in body, (
+            "the identity is being taken from a path again somewhere in _read_manifest; "
+            "a name is resolved afresh every time it is used and that is the defect "
+            "round 95 closed")
+
+
+class TestTheFlagTheReviewNamed:
+    """
+    The addendum, routed from another ticket: `allow_max_rate_violation` is lost in
+    production.
+
+    Two sites were named. On this branch one of them is **already closed** and has been
+    since round 102: `get_library_reactions` does omit the flag from its constructor calls
+    and `_carry_entry_fields` supplies it on the next line, from a field set discovered
+    from `Reaction` rather than written down. The other is live and is fixed here.
+    """
+
+    def test_the_loader_carries_the_flag_despite_the_constructor_omitting_it(self):
+        """
+        **Green at `2e4ff991d`**, and recorded rather than claimed: the review is right
+        about the constructor call and right for any branch without round 102's carry.
+        """
+        item = Reaction(reactants=[Species(label="a", molecule=[Molecule(smiles="CC")])],
+                        products=[Species(label="b", molecule=[Molecule(smiles="C[CH2]")])])
+        item.allow_max_rate_violation = True
+        entry = Entry(index=1, label="a <=> b", item=item,
+                      data=Arrhenius(A=(1.0, "s^-1"), n=0, Ea=(0, "kJ/mol")))
+        library = KineticsLibrary(label="L")
+        library.entries = {"a <=> b": entry}
+        library.auto_generated = False
+
+        reaction = library.get_library_reactions()[0]
+        assert reaction.allow_max_rate_violation is True
+        source = inspect.getsource(KineticsLibrary.get_library_reactions)
+        assert "allow_max_rate_violation" not in source, (
+            "the constructor calls now name the flag, so this test's premise -- that the "
+            "derived carry is what supplies it -- has changed")
+
+    def test_the_base_reaction_copy_carries_the_flag(self):
+        """Behavioural: ``False`` at `2e4ff991d`, and the default is the value that hides
+        the loss."""
+        reaction = Reaction(
+            reactants=[Species(label="a", molecule=[Molecule(smiles="CC")])],
+            products=[Species(label="b", molecule=[Molecule(smiles="C[CH2]")])])
+        reaction.allow_max_rate_violation = True
+        reaction.rank = 5
+        reaction.is_forward = True
+
+        copy = reaction.copy()
+        assert copy.allow_max_rate_violation is True
+        assert copy.rank == 5, "`rank` was beside it and missing the same way"
+        assert copy.is_forward is True, "`is_forward` too"
+        assert copy.k_effective_cache == {}, (
+            "__new__ leaves a cdef public dict unset and reading one raises, so a copy "
+            "without this cannot be asked for a rate coefficient")
+
+    def test_the_base_reaction_reduce_carries_the_flag(self):
+        """Behavioural: a deepcopy goes through `__reduce__`, and it dropped the flag."""
+        from copy import deepcopy
+
+        reaction = Reaction(
+            reactants=[Species(label="a", molecule=[Molecule(smiles="CC")])],
+            products=[Species(label="b", molecule=[Molecule(smiles="C[CH2]")])])
+        reaction.allow_max_rate_violation = True
+        reaction.is_forward = False
+
+        for after in (pickle.loads(pickle.dumps(reaction)), deepcopy(reaction)):
+            assert after.allow_max_rate_violation is True
+            assert after.is_forward is False
+
+    def test_the_base_reaction_copy_keeps_its_pairs(self):
+        """
+        Behavioural, and the reason `__deepcopy__` could be added at all: while
+        `Reaction.copy` severed `pairs`, routing `deepcopy` through `copy()` would have
+        been a regression rather than a repair.
+        """
+        reaction = Reaction(
+            reactants=[Species(label="a", molecule=[Molecule(smiles="CC")])],
+            products=[Species(label="b", molecule=[Molecule(smiles="C[CH2]")])])
+        reaction.pairs = [(reaction.reactants[0], reaction.products[0])]
+
+        copy = reaction.copy()
+        owned = list(copy.reactants) + list(copy.products)
+        for pair in copy.pairs:
+            for member in pair:
+                assert any(member is s for s in owned), (
+                    "a pairs member is a species the copy does not own; "
+                    "Species.__eq__ is identity, so reactants.index(pair[0]) raises")
+                assert not any(member is s for s in
+                               list(reaction.reactants) + list(reaction.products)), (
+                    "the copy's pairs still point at the original's species")
+
+    def test_the_flag_is_named_in_the_partition_rather_than_carried_by_default(self):
+        """
+        What the addendum asked for beyond the two fixes: the flag is classified
+        explicitly, so the next person reading the table sees it.
+
+        **Structural** at `2e4ff991d`.
+        """
+        from rmgpy.data.kinetics.family import _COPIED_BY_REFERENCE
+
+        assert "allow_max_rate_violation" in _COPIED_BY_REFERENCE
+        assert "Reaction.copy" in _COPIED_BY_REFERENCE["allow_max_rate_violation"], (
+            "the entry does not say why it is worth naming")
+        assert "is_forward" in _COPIED_BY_REFERENCE

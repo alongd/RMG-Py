@@ -1,0 +1,2 @@
+ERROR:root:Refusing to read the quarantine manifest in /tmp/claude-1000/tmpp4dmaakq/kinetics/families/A_Family: it changed while it was being read. A manifest is a regular file inside its own family directory, and it is EXECUTED -- so one that is a link to somewhere else, or is not a file at all, is refused rather than followed, and one that cannot be examined at all is refused rather than assumed away. The family is treated as unanswered, not as unquarantined.
+WARNING:root:Both InChI and SMILES provided for Molecule instantiation, using InChI and ignoring SMILES.

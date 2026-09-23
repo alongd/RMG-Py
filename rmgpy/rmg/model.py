@@ -100,8 +100,9 @@ _NOT_CARRIED_IN_CONVERSION = {
     'reactants': 'copied by slice below, so the two reactions do not share a mutable list',
     'products': 'copied by slice below too, for the same reason',
     'protons': 'read-only: derived from the charge balance of the reactants and products',
-    'SurfaceArrhenius': 'a cimported type, not reaction state',
-    'SurfaceChargeTransfer': 'a cimported type, not reaction state',
+    'SurfaceArrhenius': 'a slot named after a cimported type and assigned by nothing in '
+                        'the codebase; it is always None and is not reaction state',
+    'SurfaceChargeTransfer': 'the same: a never-assigned slot, not reaction state',
     'k_effective_cache': 'a memo of a computation, not state the source declares',
 }
 

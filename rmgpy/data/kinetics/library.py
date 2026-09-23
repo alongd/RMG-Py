@@ -50,10 +50,14 @@ from rmgpy.data.kinetics.common import save_entry
 # that share it live.
 from rmgpy.data.kinetics.family import (TemplateReaction, REACTION_STATE_FIELDS,
                                         ReactionStateNotCarried,
+                                        ReactionStateUnclassified,
                                         _CARRIED_THROUGH_STORAGE, _NOT_REPRODUCED,
-                                        _NOT_COPIED_BY_REFERENCE,
+                                        _COPIED_BY_REFERENCE,
+                                        _NOT_COPIED_BY_REFERENCE, _LOSSY_REDUCERS,
                                         apply_reaction_state, carry_reaction_state,
-                                        copy_reaction, reaction_state, state_fields)
+                                        complete_round_trip, copy_reaction,
+                                        fields_the_reducer_drops, object_state,
+                                        reaction_state, state_fields, writable_fields)
 from rmgpy.kinetics import Arrhenius, ThirdBody, Lindemann, Troe, \
                            PDepArrhenius, MultiArrhenius, MultiPDepArrhenius, Chebyshev, KineticsModel, Marcus
 from rmgpy.kinetics.surface import StickingCoefficient
@@ -151,6 +155,17 @@ class LibraryReaction(Reaction):
         of its lists.
         """
         return copy_reaction(self, _NOT_COPIED_BY_REFERENCE)
+
+    def __deepcopy__(self, memo):
+        """
+        The same override, for the same reason; see `TemplateReaction.__deepcopy__`.
+
+        A `LibraryReaction` carries no `labeled_atoms`, so what a field-by-field deepcopy
+        severed here was `pairs` -- and `Species.__eq__` is identity, so a severed pair
+        makes ``reactants.index(pair[0])`` raise somewhere else entirely.
+        """
+        memo[id(self)] = other = self.copy()
+        return other
 
     def __repr__(self):
         """

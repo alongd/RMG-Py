@@ -340,6 +340,14 @@ class Reaction:
                            self.rank,
                            self.electrons,
                            self.comment,
+                           # Round 110. `is_forward` and `allow_max_rate_violation` are
+                           # the next two parameters of `__init__` and were the two this
+                           # tuple stopped short of, so a reaction generated in reverse
+                           # came back forward and a rate allowed to exceed the collision
+                           # limit came back forbidden to. Both defaults are the value
+                           # that hides the loss.
+                           self.is_forward,
+                           self.allow_max_rate_violation,
                            ))
 
     @property
@@ -2037,11 +2045,43 @@ class Reaction:
         other.reversible = self.reversible
         other.transition_state = deepcopy(self.transition_state)
         other.duplicate = self.duplicate
-        other.pairs = deepcopy(self.pairs)
+        # `pairs` holds the reaction's *own* species -- `generate_pairs` appends them
+        # straight out of `self.reactants` and `self.products` -- so deep-copying that
+        # list separately from the lists it points into hands the copy species it does not
+        # own. `Species.__eq__` is identity, so `reactants.index(pair[0])` then raises
+        # somewhere else entirely. Map each member onto the copy's own species instead:
+        # the copies above are positional, so the correspondence is exact.
+        if self.pairs is None:
+            other.pairs = None
+        else:
+            # Written as loops rather than comprehensions on purpose: this is a `cpdef`
+            # method, and Cython refuses closures inside one.
+            originals = list(self.reactants) + list(self.products)
+            copies = list(other.reactants) + list(other.products)
+            own = {}
+            for i in range(len(originals)):
+                own[id(originals[i])] = copies[i]
+            other.pairs = []
+            for pair in self.pairs:
+                mapped = []
+                for member in pair:
+                    mapped.append(own.get(id(member), member))
+                other.pairs.append(tuple(mapped))
         other.allow_pdep_route = self.allow_pdep_route
         other.elementary_high_p = self.elementary_high_p
         other.comment = deepcopy(self.comment)
         other.electrons = self.electrons
+        # Round 110. Three fields this list stopped short of. `allow_max_rate_violation`
+        # is the one the review named -- a rate deliberately allowed past the collision
+        # limit comes back forbidden to exceed it -- and `rank` and `is_forward` were
+        # beside it, the same hand-enumeration missing the same way. `k_effective_cache`
+        # is not state but must be *set*: `__new__` leaves a `cdef public dict` unset, and
+        # reading one raises, so without this the copy is a reaction that cannot be asked
+        # for a rate coefficient.
+        other.allow_max_rate_violation = self.allow_max_rate_violation
+        other.rank = self.rank
+        other.is_forward = self.is_forward
+        other.k_effective_cache = {}
 
         return other
 

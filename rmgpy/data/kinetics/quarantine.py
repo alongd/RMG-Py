@@ -731,10 +731,26 @@ def _read_manifest(family_path):
         # stat and this open would otherwise cache the content of B under the identity of
         # A -- after which restoring A produces a cache HIT returning B's quarantine, and
         # A's criterion is silently bypassed. `st_ctime_ns` cannot help: it would be A's.
-        identity = (info.st_mtime_ns, info.st_ctime_ns, info.st_size, info.st_ino)
+        identity = _identity_of(info)
         with os.fdopen(fd, 'r') as handle:
             fd = None                    # fdopen owns it now
-            return handle.read(), identity
+            content = handle.read()
+            # Sampled AGAIN, from the same descriptor, after the bytes are in hand. The
+            # descriptor already defeats a *rename* between the two operations -- that is
+            # what the paragraph above is about, and it is what closed round 99 -- but it
+            # does nothing about a writer that rewrites this very file **in place** while
+            # the read is happening. The identity taken before the read would then be the
+            # old file's and the content the new one's, and the caller caches the second
+            # under the first: a later lookup gets a HIT and is handed a quarantine the
+            # manifest on disk no longer states. That is round 99's defect one layer down,
+            # and the refusal below is the only honest answer -- the bytes and the identity
+            # must come from one unchanging file or they are not evidence about the same
+            # file at all.
+            after = _identity_of(os.fstat(handle.fileno()))
+        if after != identity:
+            _warn_unsafe_manifest(family_path, 'it changed while it was being read')
+            return None, None
+        return content, identity
     except OSError:
         return None, None
     finally:
@@ -758,6 +774,17 @@ def load_family_quarantine(family_label, family_path):
     stripped, so it stays a declarative data file rather than a script.
     """
     return _load_with_identity(family_label, family_path)[0]
+
+
+def _identity_of(info):
+    """
+    The identity of the file behind a descriptor: what it is, and what state it is in.
+
+    `st_ino` says which file; `st_mtime_ns`, `st_ctime_ns` and `st_size` say which
+    version of it. `st_atime` is deliberately absent -- reading the file changes it, so an
+    identity that included it could never be compared with itself across a read.
+    """
+    return (info.st_mtime_ns, info.st_ctime_ns, info.st_size, info.st_ino)
 
 
 def _load_with_identity(family_label, family_path):
