@@ -231,6 +231,32 @@ class TestModelCarriesPairsByPosition:
         rxn, _ = self._model(monkeypatch).make_new_reaction(
             forward, check_existing=False, generate_thermo=False, generate_kinetics=False)
         assert rxn.reverse.pairs == [(b, a) for a, b in rxn.pairs]
+        # Round 113: the reverse pairs must name occurrences of the reverse's OWN sides. At
+        # fc60e5ba4 the sides were never rebuilt, so every member was detached and this raised.
+        assert pair_occurrences(rxn.reverse.pairs, rxn.reverse.reactants, rxn.reverse.products) == \
+            [(1, 1), (0, 0), (2, 0)]
+        assert _positions(rxn.reverse) == [(1, 1), (0, 0), (2, 0)]
+
+    def test_reverse_sides_are_the_model_species(self, monkeypatch):
+        """The reverse `add_reverse_attribute` attaches is built from Molecules, in the
+        template's order. Its sides become the forward's model species, swapped, one slot per
+        occurrence, in lists of their own."""
+        li, li_plus, e = _ionisation_species()
+        forward = TemplateReaction(reactants=[li, e], products=[li_plus, e, e],
+                                   family='F', is_forward=False)
+        forward.generate_pairs()
+        e1, e2, e3 = (e.molecule[0].copy(deep=True) for _ in range(3))
+        m_li_plus, m_li = li_plus.molecule[0].copy(deep=True), li.molecule[0].copy(deep=True)
+        forward.reverse = TemplateReaction(reactants=[e1, m_li_plus, e2], products=[e3, m_li],
+                                           family='F', is_forward=True)
+        forward.reverse.pairs = [(e1, e3), (m_li_plus, m_li), (e2, m_li)]
+        rxn, _ = self._model(monkeypatch).make_new_reaction(
+            forward, check_existing=False, generate_thermo=False, generate_kinetics=False)
+        assert all(a is b for a, b in zip(rxn.reverse.reactants, rxn.products))
+        assert all(a is b for a, b in zip(rxn.reverse.products, rxn.reactants))
+        assert len(rxn.reverse.reactants) == 3 and len(rxn.reverse.products) == 2
+        assert rxn.reverse.reactants is not rxn.products and rxn.reverse.products is not rxn.reactants
+        assert _positions(rxn.reverse) == [(b, a) for a, b in _positions(rxn)]
 
     def test_ordinary_thermal_reaction_unchanged(self, monkeypatch):
         a, b, c = _spc('A', smiles='CC'), _spc('B', smiles='[CH3]'), _spc('C', smiles='[H]')

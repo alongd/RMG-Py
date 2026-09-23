@@ -1,0 +1,28 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+rootdir: /home/alon/Code/RMG-Py-i221-saturation-fix
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 19 items
+
+test/rmgpy/i221OccurrencePairsTest.py::TestCopyCarriesOccurrences::test_same_species_twice_on_one_side PASSED
+test/rmgpy/i221OccurrencePairsTest.py::TestCopyCarriesOccurrences::test_species_on_both_sides PASSED
+test/rmgpy/i221OccurrencePairsTest.py::TestCopyCarriesOccurrences::test_duplicated_electron_products PASSED
+test/rmgpy/i221OccurrencePairsTest.py::TestCopyCarriesOccurrences::test_missing_pair_member_raises PASSED
+test/rmgpy/i221OccurrencePairsTest.py::TestCopyCarriesOccurrences::test_member_on_the_wrong_side_raises PASSED
+test/rmgpy/i221OccurrencePairsTest.py::TestCopyCarriesOccurrences::test_ordinary_thermal_reaction_unchanged PASSED
+test/rmgpy/i221OccurrencePairsTest.py::TestCopyCarriesOccurrences::test_no_pairs_stays_none PASSED
+test/rmgpy/i221OccurrencePairsTest.py::TestTemplateCopyCarriesOccurrences::test_electron_identity_structure_survives PASSED
+test/rmgpy/i221OccurrencePairsTest.py::TestTemplateCopyCarriesOccurrences::test_alien_member_raises PASSED
+test/rmgpy/i221OccurrencePairsTest.py::TestPairOccurrences::test_kth_mention_is_kth_occurrence PASSED
+test/rmgpy/i221OccurrencePairsTest.py::TestPairOccurrences::test_rebuild_on_new_lists PASSED
+test/rmgpy/i221OccurrencePairsTest.py::TestPairOccurrences::test_malformed_pair_raises PASSED
+test/rmgpy/i221OccurrencePairsTest.py::TestPairOccurrences::test_none_is_none PASSED
+test/rmgpy/i221OccurrencePairsTest.py::TestModelCarriesPairsByPosition::test_duplicated_electron_products PASSED
+test/rmgpy/i221OccurrencePairsTest.py::TestModelCarriesPairsByPosition::test_reverse_pairs_follow PASSED
+test/rmgpy/i221OccurrencePairsTest.py::TestModelCarriesPairsByPosition::test_reverse_sides_are_the_model_species PASSED
+test/rmgpy/i221OccurrencePairsTest.py::TestModelCarriesPairsByPosition::test_ordinary_thermal_reaction_unchanged PASSED
+test/rmgpy/i221OccurrencePairsTest.py::TestEnsureSpeciesCarriesOccurrences::test_duplicated_electron_products PASSED
+test/rmgpy/i221OccurrencePairsTest.py::TestMergeModelsCarriesPairsByPosition::test_species_on_both_sides_and_twice PASSED
+
+============================== 19 passed in 7.02s ==============================

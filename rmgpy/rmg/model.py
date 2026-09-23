@@ -667,6 +667,14 @@ class CoreEdgeReactionModel:
                     forward.reverse.pairs = [(product, reactant) for reactant, product in forward.pairs]
         forward.reactants = reactants
         forward.products = products
+        # The reverse's sides are rebuilt from the same model species (round 113). Its pairs
+        # were just rewritten over them, and a pair member that is not on its own side has no
+        # occurrence there. The reverse `add_reverse_attribute` attaches holds Molecules in the
+        # template's order, so the forward's order is the only one the model species carry;
+        # the lists are fresh so neither direction's list is the other's.
+        if getattr(forward, 'reverse', None):
+            forward.reverse.reactants = list(products)
+            forward.reverse.products = list(reactants)
 
         if check_existing:
             found, rxn = self.check_for_existing_reaction(forward)
