@@ -45,7 +45,7 @@ from rmgpy import settings
 from rmgpy.constraints import fails_species_constraints, pass_cutting_threshold
 from rmgpy.data.kinetics.depository import DepositoryReaction
 from rmgpy.data.kinetics.family import KineticsFamily, TemplateReaction
-from rmgpy.data.kinetics.library import KineticsLibrary, LibraryReaction
+from rmgpy.data.kinetics.library import KineticsLibrary, LibraryReaction, carry_reaction_state
 from rmgpy.data.kinetics.quarantine import check_quarantine
 from rmgpy.data.rmg import get_db
 from rmgpy.data.vaporLiquidMassTransfer import vapor_liquid_mass_transfer
@@ -77,14 +77,33 @@ from rmgpy.thermo.thermoengine import submit
 _MISSING = object()
 
 #: Everything `LibraryReaction.__init__` accepts, minus the two this conversion is
-#: supposed to change. Enumerated from the signature rather than written out, because the
-#: defect this closes was a hand-written field list falling behind the class it builds: a
-#: field added to `LibraryReaction` later is carried across automatically, and a field
-#: `TemplateReaction` does not hold is simply skipped below.
+#: supposed to change. This enumerates the *destination constructor*, which is the right
+#: question for exactly one thing -- what may be passed as an argument -- and the wrong
+#: question for what the conversion must preserve. `entry` is why it is still here: that
+#: one is `LibraryReaction` state, so the state enumeration below cannot see it.
 _CONVERTED_FIELDS = tuple(
     name for name in inspect.signature(LibraryReaction.__init__).parameters
     if name not in ('self', 'library')
 )
+
+#: `Reaction` state NOT carried across the conversion, each with the reason. Everything
+#: else in `REACTION_STATE_FIELDS` is carried, whether or not the constructor above takes
+#: it -- which is the repair. `is_forward`, `rank`, `comment` and `label` are state the
+#: class holds and the constructor does not take, so enumerating the constructor dropped
+#: all four by construction, and a test iterating that same constructor shared the blind
+#: spot exactly.
+#:
+#: `family` is deliberately in neither list. It is not `Reaction` state at all -- each
+#: subclass sets it in its own ``__init__`` -- and on a `LibraryReaction` that slot means
+#: the LIBRARY, which is what this conversion is for.
+_NOT_CARRIED_IN_CONVERSION = {
+    'reactants': 'copied by slice below, so the two reactions do not share a mutable list',
+    'products': 'copied by slice below too, for the same reason',
+    'protons': 'read-only: derived from the charge balance of the reactants and products',
+    'SurfaceArrhenius': 'a cimported type, not reaction state',
+    'SurfaceChargeTransfer': 'a cimported type, not reaction state',
+    'k_effective_cache': 'a memo of a computation, not state the source declares',
+}
 
 
 def as_library_reaction(rxn, library_name):
@@ -104,6 +123,12 @@ def as_library_reaction(rxn, library_name):
     * ``elementary_high_p``, which both call sites read off the converted object a few
       statements later to decide whether the reaction enters a pressure-dependent network.
 
+    Round 105: constructing from the constructor's own parameter list is not enough. The
+    class holds state the constructor does not take, and that state was dropped here
+    silently -- ``is_forward`` reverted to `False`, ``rank`` to `None`, ``comment`` and
+    ``label`` to `''`. What the conversion preserves is enumerated from the *source's
+    class* now, so a field added to `Reaction` tomorrow is carried or named with a reason.
+
     `library` is replaced on purpose -- that is what the conversion is for -- and `entry`
     is carried like everything else, which is round 92's repair.
     """
@@ -115,7 +140,8 @@ def as_library_reaction(rxn, library_name):
     fields['reactants'] = rxn.reactants[:]
     fields['products'] = rxn.products[:]
     fields['library'] = library_name
-    return LibraryReaction(**fields)
+    converted = LibraryReaction(**fields)
+    return carry_reaction_state(converted, rxn, _NOT_CARRIED_IN_CONVERSION)
 
 
 class ReactionModel:

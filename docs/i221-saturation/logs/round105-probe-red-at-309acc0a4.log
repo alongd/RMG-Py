@@ -1,0 +1,72 @@
+
+[REPRODUCED] carrying degeneracy rescales the rate and the shared entry
+            template degeneracy=0.5  A 10 -> 5  (x0.5), entry.data.A -> 5
+            template degeneracy=1.5  A 10 -> 15  (x1.5), entry.data.A -> 15
+     originally_from degeneracy=0.5  A 10 -> 5  (x0.5), entry.data.A -> 5
+     originally_from degeneracy=1.5  A 10 -> 15  (x1.5), entry.data.A -> 15
+     originally_from degeneracy=2    A 10 -> 20  (x2), entry.data.A -> 20
+     originally_from degeneracy=3    A 10 -> 30  (x3), entry.data.A -> 30
+            ordinary degeneracy=0.5  A 10 -> 5  (x0.5), entry.data.A -> 5
+            ordinary degeneracy=1.5  A 10 -> 15  (x1.5), entry.data.A -> 15
+            ordinary degeneracy=2    A 10 -> 20  (x2), entry.data.A -> 20
+            ordinary degeneracy=3    A 10 -> 30  (x3), entry.data.A -> 30
+
+[REPRODUCED] carrying degeneracy appends to the shared kinetics comment
+            template degeneracy=0.5  entry.data.comment 'Estimated from node Root' -> 'Estimated from node RootMultiplied by reaction path degeneracy 0.5'
+            template degeneracy=1    entry.data.comment 'Estimated from node Root' -> 'Estimated from node RootMultiplied by reaction path degeneracy 1.0'
+            template degeneracy=1.5  entry.data.comment 'Estimated from node Root' -> 'Estimated from node RootMultiplied by reaction path degeneracy 1.5'
+            template degeneracy=2    entry.data.comment 'Estimated from node Root' -> 'Estimated from node RootMultiplied by reaction path degeneracy 2.0'
+            template degeneracy=3    entry.data.comment 'Estimated from node Root' -> 'Estimated from node RootMultiplied by reaction path degeneracy 3.0'
+     originally_from degeneracy=0.5  entry.data.comment 'Estimated from node Root' -> 'Estimated from node RootMultiplied by reaction path degeneracy 0.5'
+     originally_from degeneracy=1    entry.data.comment 'Estimated from node Root' -> 'Estimated from node RootMultiplied by reaction path degeneracy 1.0'
+     originally_from degeneracy=1.5  entry.data.comment 'Estimated from node Root' -> 'Estimated from node RootMultiplied by reaction path degeneracy 1.5'
+     originally_from degeneracy=2    entry.data.comment 'Estimated from node Root' -> 'Estimated from node RootMultiplied by reaction path degeneracy 2.0'
+     originally_from degeneracy=3    entry.data.comment 'Estimated from node Root' -> 'Estimated from node RootMultiplied by reaction path degeneracy 3.0'
+            ordinary degeneracy=0.5  entry.data.comment 'Estimated from node Root' -> 'Estimated from node RootMultiplied by reaction path degeneracy 0.5'
+            ordinary degeneracy=1    entry.data.comment 'Estimated from node Root' -> 'Estimated from node RootMultiplied by reaction path degeneracy 1.0'
+            ordinary degeneracy=1.5  entry.data.comment 'Estimated from node Root' -> 'Estimated from node RootMultiplied by reaction path degeneracy 1.5'
+            ordinary degeneracy=2    entry.data.comment 'Estimated from node Root' -> 'Estimated from node RootMultiplied by reaction path degeneracy 2.0'
+            ordinary degeneracy=3    entry.data.comment 'Estimated from node Root' -> 'Estimated from node RootMultiplied by reaction path degeneracy 3.0'
+
+[REPRODUCED] the conversion drops state the destination constructor does not take
+    is_forward   True -> False
+    rank         7 -> None
+    comment      'kept?' -> ''
+    label        'Lip + CH3 <=> CH3Li' -> ''
+
+[REPRODUCED] a field the partition calls carried cannot be assigned at all
+    protons      attribute 'protons' of 'rmgpy.reaction.Reaction' objects is not writable
+
+[REPRODUCED] without O_NOFOLLOW the descent follows links out of the database
+    resolve_quarantine('A_Family_Reached_Through_A_Linked_Parent') = (<KineticsQuarantine 'A_Family_Reached_Through_A_Linked_Parent' QUARANTINED FOR TESTING applies to Marcus>, True); the family directory was reached through a symlinked `kinetics/families` and the manifest behind it was executed, because the flag degraded to 0 and nothing refused
+
+[HOLDS] control: the degeneracy value itself reaches the reaction
+    all 15 shape x degeneracy combinations forwarded the scalar
+
+[HOLDS] control: a degeneracy of 1 leaves the Marcus fixture alone
+    [21824.5, -0.0341626, -0.0013254, 4.92966e-07, 1730000.0] -> [21824.5, -0.0341626, -0.0013254, 4.92966e-07, 1730000.0]
+
+[HOLDS] control: the conversion still replaces library and family
+    library='a_library' family='a_library' electrons=1
+
+[HOLDS] control: the conversion still copies the reactant and product lists
+    reactants copied=True products copied=True
+
+[HOLDS] control: with O_NOFOLLOW the same escape is refused
+    resolve_quarantine('A_Family_Reached_Through_A_Linked_Parent') = (None, False)
+
+[HOLDS] control: an ordinary in-tree family is still answered
+    answered=True quarantine=True
+
+[NOTED, not a finding] the `< 2` branch is why a degeneracy of 3 looks harmless
+    reaction.py:359 uses `new` as the ratio when the OLD degeneracy is below 2, and `new / old` otherwise. Re-assigning the value a reaction already holds is therefore idempotent only for old >= 2: at old == 1 (the two LibraryReaction shapes, which pass no degeneracy to the constructor) the rate is multiplied by the whole new degeneracy, and at old == 0.5 by the new value again.
+
+==============================================================================
+findings reproduced : 5 of 5
+controls holding    : 6 of 6
+noted, not findings : 1
+  REPRODUCED  carrying degeneracy rescales the rate and the shared entry
+  REPRODUCED  carrying degeneracy appends to the shared kinetics comment
+  REPRODUCED  the conversion drops state the destination constructor does not take
+  REPRODUCED  a field the partition calls carried cannot be assigned at all
+  REPRODUCED  without O_NOFOLLOW the descent follows links out of the database

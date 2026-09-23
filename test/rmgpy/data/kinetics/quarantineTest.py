@@ -84,7 +84,7 @@ from rmgpy.kinetics.arrhenius import Arrhenius, Marcus
 from rmgpy.molecule import Molecule
 from rmgpy.reaction import Reaction
 from rmgpy.rmg.model import CoreEdgeReactionModel
-from rmgpy.species import Species
+from rmgpy.species import Species, TransitionState
 
 #: The family whose data is quarantined in the shipped database.
 REAL_FAMILY = "Cation_R_Recombination"
@@ -3127,18 +3127,18 @@ class TestTheLoaderCarriesEveryFieldTheEntryHolds:
         """
         from rmgpy.data.kinetics import library as module
 
-        carried = module._REACTION_FIELDS - set(module._NOT_CARRIED_FROM_ENTRY)
+        carried = module.REACTION_STATE_FIELDS - set(module._NOT_CARRIED_FROM_ENTRY)
         excluded = set(module._NOT_CARRIED_FROM_ENTRY)
 
-        assert len(module._REACTION_FIELDS) > 10, (
+        assert len(module.REACTION_STATE_FIELDS) > 10, (
             "the field discovery found {0} fields on Reaction, which means the way it "
             "recognises them has stopped working and everything is now 'not a field' -- "
             "the silent-pass shape this partition exists to prevent".format(
-                len(module._REACTION_FIELDS)))
-        assert not excluded - module._REACTION_FIELDS, (
+                len(module.REACTION_STATE_FIELDS)))
+        assert not excluded - module.REACTION_STATE_FIELDS, (
             "these names are excluded from the carry but are no longer fields of "
             "Reaction, so the exclusion list has gone stale: {0}".format(
-                sorted(excluded - module._REACTION_FIELDS)))
+                sorted(excluded - module.REACTION_STATE_FIELDS)))
         assert carried, "every field of Reaction is excluded; nothing is carried at all"
 
         unclassified = carried
@@ -3149,3 +3149,340 @@ class TestTheLoaderCarriesEveryFieldTheEntryHolds:
                          "allow_max_rate_violation", "electrons", "degeneracy"):
             assert expected in unclassified, (
                 "{0!r} must be carried from the entry".format(expected))
+
+
+class TestCarryingTheDegeneracyDoesNotRestateTheRate:
+    """
+    Round 105's HIGH. `_carry_entry_fields` assigned `degeneracy` through the property,
+    and `Reaction.degeneracy`'s setter is not an assignment: with kinetics already
+    attached it multiplies the rate by a ratio and appends to the kinetics comment. The
+    kinetics object at that moment **is** `entry.data`, the shared database object, so the
+    edit reaches every later consumer of that entry and not only the reaction being built.
+
+    Round 102's test used `degeneracy=3.0` on the template shape, where the ratio is
+    exactly 1, and asserted the scalar only -- so it could see neither harm. The sweep is
+    the repair to the test: the ratio has two branches, and which one fires depends on the
+    value the constructor was given, which differs per shape.
+    """
+
+    A_BEFORE = 10.0
+    SWEEP = (0.5, 1.0, 1.5, 2.0, 3.0)
+    SHAPES = ("template", "originally_from", "ordinary")
+
+    def _library(self, shape, degeneracy):
+        """
+        A one-entry library reaching each of the three branches of
+        `get_library_reactions`, with the degeneracy declared on ``entry.item`` -- where
+        `load_entry` puts it -- and an Arrhenius rate whose `A` is a round number.
+        """
+        if shape == "template":
+            long_desc = ("Matched reaction 3 Lip + CH3 <=> CH3Li in A_Family/rate rule "
+                         "[Root]\nEuclidian distance = 0\nfamily: A_Family")
+        elif shape == "originally_from":
+            long_desc = "Originally from reaction library: some_other_library"
+        else:
+            long_desc = ""
+        library = KineticsLibrary(label="a_seed", name="a_seed")
+        library.auto_generated = shape != "ordinary"
+        library.entries = {
+            1: Entry(
+                index=1, label="Lip + CH3 <=> CH3Li",
+                item=Reaction(
+                    reactants=[Species(label="Lip", molecule=[Molecule(smiles="[Li+]")],
+                                       reactive=False)],
+                    products=[Species(label="CH3Li", molecule=[Molecule(smiles="C[Li]")],
+                                      reactive=False)],
+                    reversible=False, electrons=1, degeneracy=degeneracy),
+                data=Arrhenius(A=(self.A_BEFORE, "m^3/(mol*s)"), n=0, Ea=(0, "kJ/mol"),
+                               T0=(1, "K"), comment="Estimated from node Root"),
+                long_desc=long_desc,
+            )
+        }
+        return library
+
+    @pytest.mark.parametrize("shape", SHAPES)
+    @pytest.mark.parametrize("degeneracy", SWEEP)
+    def test_the_carry_forwards_the_value_and_changes_nothing_else(self, shape,
+                                                                   degeneracy):
+        """
+        The acceptance: the forwarded scalar, an unchanged `A`, and an unmutated entry.
+
+        At `309acc0a4` the two `LibraryReaction` shapes pass no ``degeneracy`` to their
+        constructor, so the old value is 1, the setter's ``< 2`` branch fires and the rate
+        is multiplied by the **whole** new degeneracy -- 3.0 trebles it. On the template
+        shape, which does pass it, only a degeneracy below 2 and not equal to 1 moves the
+        rate. The comment is appended to in all fifteen combinations.
+        """
+        library = self._library(shape, degeneracy)
+        entry = library.entries[1]
+        comment_before = entry.data.comment
+
+        reaction = library.get_library_reactions()[0]
+
+        assert reaction.degeneracy == pytest.approx(degeneracy), (
+            "the declared degeneracy did not reach the reaction at all")
+        assert reaction.kinetics.A.value_si == pytest.approx(self.A_BEFORE), (
+            "carrying degeneracy={0} onto the {1} shape rescaled the rate by {2}; a "
+            "library file that declares a degeneracy is stating the rate it wants, and "
+            "re-deriving the rate from a number that was already true applies it "
+            "twice".format(degeneracy, shape,
+                           reaction.kinetics.A.value_si / self.A_BEFORE))
+        assert entry.data.A.value_si == pytest.approx(self.A_BEFORE), (
+            "the rate was changed in place on entry.data -- the shared database object -- "
+            "so every later consumer of this entry sees the corrupted value, not just "
+            "the reaction being loaded")
+        assert entry.data.comment == comment_before, (
+            "the setter appended to the shared kinetics comment. This campaign reads "
+            "authorship out of that comment, so it is not cosmetic")
+
+    def test_the_rate_is_shared_with_the_entry_so_the_damage_would_escape(self):
+        """
+        The premise the two assertions above rest on, measured rather than assumed.
+
+        If the loader handed the reaction a *copy* of `entry.data`, mutating it would be
+        confined to the reaction and the second assertion would be vacuous.
+        """
+        library = self._library("ordinary", 2.0)
+        entry = library.entries[1]
+        reaction = library.get_library_reactions()[0]
+        assert reaction.kinetics is entry.data, (
+            "the reaction no longer shares the entry's kinetics object, so the test above "
+            "measures nothing; either the loader started copying or the fixture broke")
+
+    def test_the_storage_table_names_a_setter_that_really_transforms(self):
+        """
+        The negative control on the workaround, so it cannot outlive its reason.
+
+        `_CARRIED_THROUGH_STORAGE` exists only because assigning `degeneracy` through the
+        property transforms the rate. If upstream ever makes that setter a plain
+        assignment, this fails and says to delete the special case rather than carrying an
+        unexplained back door forever.
+        """
+        from rmgpy.data.kinetics import library as module
+
+        for name, storage in module._CARRIED_THROUGH_STORAGE.items():
+            assert name in module.REACTION_STATE_FIELDS, (
+                "{0!r} is routed through storage but is no longer a field of "
+                "Reaction".format(name))
+            assert hasattr(Reaction(), storage), (
+                "{0!r} is routed to {1!r}, which Reaction no longer has".format(
+                    name, storage))
+
+        probe = Reaction(kinetics=Arrhenius(A=(self.A_BEFORE, "m^3/(mol*s)"), n=0,
+                                            Ea=(0, "kJ/mol"), T0=(1, "K")),
+                         degeneracy=1)
+        probe.degeneracy = 4.0
+        assert probe.kinetics.A.value_si != pytest.approx(self.A_BEFORE), (
+            "assigning degeneracy through the property no longer changes the rate, so "
+            "_CARRIED_THROUGH_STORAGE's degeneracy entry has no reason left to exist")
+
+
+class TestTheConversionEnumeratesTheSourceNotTheDestination:
+    """
+    Round 105's first MEDIUM. `as_library_reaction` enumerated
+    `LibraryReaction.__init__`'s parameters, so state the class holds and the constructor
+    does not take was dropped by construction -- `is_forward`, `rank`, `comment` and
+    `label`. Round 102's test iterated the same constructor signature, so the enumeration
+    and its check shared a blind spot exactly.
+
+    The enumeration comes from the source's class now, and this file checks it against
+    that class rather than against a second list of names.
+    """
+
+    def _markers(self):
+        """
+        One distinctive value per carried field, checked against the class below.
+
+        A name here that `Reaction` no longer has, or a carried field with no marker,
+        fails `test_every_carried_field_arrives`. That is what makes a field added to
+        `Reaction` tomorrow carried **or loudly refused**, rather than quietly dropped.
+        """
+        collider = Species(label="Ar", molecule=[Molecule(smiles="[Ar]")])
+        return {
+            "allow_max_rate_violation": True,
+            "allow_pdep_route": True,
+            "comment": "a comment worth keeping",
+            "degeneracy": 2.0,
+            "duplicate": True,
+            "electrons": -1,
+            "elementary_high_p": True,
+            "index": 11,
+            "is_forward": True,
+            "kinetics": Arrhenius(A=(10.0, "m^3/(mol*s)"), n=0, Ea=(0, "kJ/mol"),
+                                  T0=(1, "K"), comment="the rate"),
+            "label": "Lip + CH3 <=> CH3Li",
+            "network_kinetics": Arrhenius(A=(3.0, "m^3/(mol*s)"), n=0, Ea=(0, "kJ/mol"),
+                                          T0=(1, "K")),
+            "pairs": [("Lip", "CH3Li")],
+            "rank": 7,
+            "reversible": False,
+            "specific_collider": collider,
+            "transition_state": TransitionState(),
+        }
+
+    def _source(self, markers):
+        """
+        A template reaction holding every marker, built the way production does.
+
+        `kinetics` is attached **last** on purpose: assigning `degeneracy` while kinetics
+        are attached is the very transformation this round is about, and a fixture that
+        triggered it would be measuring itself.
+        """
+        source = TemplateReaction(
+            reactants=[Species(label="Lip", molecule=[Molecule(smiles="[Li+]")])],
+            products=[Species(label="CH3Li", molecule=[Molecule(smiles="C[Li]")])],
+            family="A_Family", template="Root")
+        for name, value in markers.items():
+            if name == "kinetics":
+                continue
+            setattr(source, name, value)
+        source.kinetics = markers["kinetics"]
+        return source
+
+    def test_the_four_fields_the_constructor_does_not_take_survive(self):
+        """The named acceptance, on its own, so a regression says which fields went."""
+        from rmgpy.rmg.model import as_library_reaction
+
+        markers = self._markers()
+        converted = as_library_reaction(self._source(markers), "a_library")
+        for name in ("is_forward", "rank", "comment", "label"):
+            assert getattr(converted, name) == markers[name], (
+                "{0!r} is state LibraryReaction holds and its constructor does not take, "
+                "so enumerating the constructor dropped it: {1!r} -> {2!r}".format(
+                    name, markers[name], getattr(converted, name)))
+
+    def test_every_carried_field_arrives(self):
+        """
+        The general form: every field the partition calls carried, checked by value.
+
+        Iterating `REACTION_STATE_FIELDS` rather than a list of names is the point -- a
+        field added to `Reaction` tomorrow enters this test automatically and fails it
+        until it is given a marker and shown to arrive.
+        """
+        from rmgpy.data.kinetics import library as library_module
+        from rmgpy.rmg import model as model_module
+        from rmgpy.rmg.model import as_library_reaction
+
+        carried = (library_module.REACTION_STATE_FIELDS
+                   - set(model_module._NOT_CARRIED_IN_CONVERSION))
+        markers = self._markers()
+        assert set(markers) == carried, (
+            "the markers and the carried set have diverged. missing markers: {0}; "
+            "markers for fields that are no longer carried: {1}".format(
+                sorted(carried - set(markers)), sorted(set(markers) - carried)))
+
+        converted = as_library_reaction(self._source(markers), "a_library")
+        for name in sorted(carried):
+            assert getattr(converted, name) == markers[name], (
+                "{0!r} did not survive the conversion: {1!r} -> {2!r}".format(
+                    name, markers[name], getattr(converted, name)))
+
+    def test_the_conversion_partition_is_total_and_reasoned(self):
+        from rmgpy.data.kinetics import library as library_module
+        from rmgpy.rmg import model as model_module
+
+        excluded = set(model_module._NOT_CARRIED_IN_CONVERSION)
+        assert not excluded - library_module.REACTION_STATE_FIELDS, (
+            "these names are excluded from the conversion but are no longer fields of "
+            "Reaction: {0}".format(
+                sorted(excluded - library_module.REACTION_STATE_FIELDS)))
+        for name, reason in model_module._NOT_CARRIED_IN_CONVERSION.items():
+            assert reason and len(reason) > 20, (
+                "{0!r} is excluded from the conversion without a reason worth "
+                "reading".format(name))
+
+    def test_every_field_called_carried_can_actually_be_assigned(self):
+        """
+        Carried must mean carried. Both carries swallow `AttributeError` from the target,
+        so a read-only field sitting in the carried set is a silent drop wearing the label
+        of a carry -- which is what `protons` was until this round.
+        """
+        from rmgpy.data.kinetics import library as library_module
+        from rmgpy.rmg import model as model_module
+
+        probe = Reaction()
+        for policy in (library_module._NOT_CARRIED_FROM_ENTRY,
+                       model_module._NOT_CARRIED_IN_CONVERSION):
+            for name in sorted(library_module.REACTION_STATE_FIELDS - set(policy)):
+                try:
+                    setattr(probe, name, getattr(probe, name))
+                except AttributeError as error:
+                    pytest.fail(
+                        "{0!r} is classified as carried but cannot be assigned at all, "
+                        "so it is dropped silently: {1}".format(name, error))
+
+    def test_the_conversion_does_not_rescale_the_rate(self):
+        """
+        The guard on the repair itself: the conversion now carries `degeneracy` too, and
+        it must carry it the same way the loader does. Green at `309acc0a4` -- the
+        constructor path never rescaled -- and red the moment the storage rule is dropped.
+        """
+        from rmgpy.rmg.model import as_library_reaction
+
+        markers = self._markers()
+        markers["degeneracy"] = 0.5
+        source = self._source(markers)
+        before = source.kinetics.A.value_si
+        converted = as_library_reaction(source, "a_library")
+        assert converted.kinetics.A.value_si == pytest.approx(before)
+        assert converted.degeneracy == pytest.approx(0.5)
+
+    def test_the_conversion_still_replaces_the_library_slot(self):
+        """The negative control: carrying everything must not carry the family label."""
+        from rmgpy.rmg.model import as_library_reaction
+
+        converted = as_library_reaction(self._source(self._markers()), "a_library")
+        assert isinstance(converted, LibraryReaction)
+        assert converted.library == "a_library"
+        assert converted.family == "a_library", (
+            "`family` means the LIBRARY on this class, which is what the conversion is "
+            "for; carrying the source's family label here would undo it")
+
+    def test_the_conversion_does_not_share_the_reactant_list(self):
+        from rmgpy.rmg.model import as_library_reaction
+
+        source = self._source(self._markers())
+        converted = as_library_reaction(source, "a_library")
+        assert converted.reactants is not source.reactants
+        assert converted.products is not source.products
+
+
+class TestTheAbsenceOfONofollowIsRefused:
+    """
+    Round 105's second MEDIUM. `getattr(os, 'O_NOFOLLOW', 0)` degrades to a flag of 0,
+    which is not a weaker containment but none: every component below the anchor would be
+    followed and a manifest outside the database read and executed, with nothing said.
+    Round 101 enforced the `dir_fd` half of the same platform requirement and left this
+    half documented -- and a documented hole is still a hole.
+    """
+
+    def setup_method(self):
+        _clear_gate_caches()
+
+    def teardown_method(self):
+        _clear_gate_caches()
+
+    def test_a_platform_without_o_nofollow_is_refused(self, monkeypatch, tmp_path):
+        label = self._escape_at(monkeypatch, tmp_path, "families")
+        monkeypatch.delattr(os, "O_NOFOLLOW")
+
+        assert resolve_quarantine(label) == (None, False), (
+            "with O_NOFOLLOW absent the flag became 0, the descent followed the "
+            "symlinked `kinetics/families` and the manifest behind it was executed; "
+            "there is no containment available on that path, so it must refuse rather "
+            "than answer")
+
+    def test_the_same_escape_is_refused_with_the_flag_present(self, monkeypatch,
+                                                              tmp_path):
+        """The control: the refusal above must not be the only thing being measured."""
+        label = self._escape_at(monkeypatch, tmp_path, "families")
+        assert resolve_quarantine(label) == (None, False)
+
+    def test_an_in_tree_family_is_still_answered(self, monkeypatch, tmp_path):
+        """And the flag being present must still let an ordinary family through."""
+        _quarantined_on_disk(tmp_path, QUARANTINED_FIRST)
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+        quarantine, answered = resolve_quarantine(QUARANTINED_FIRST)
+        assert answered and quarantine is not None
+
+    _escape_at = TestEveryComponentBelowTheAnchorIsPinned._escape_at

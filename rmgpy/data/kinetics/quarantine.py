@@ -673,6 +673,25 @@ def _read_manifest(family_path):
             'path can be opened without following links')
         return None, None
 
+    if not getattr(os, 'O_NOFOLLOW', 0):
+        # The second half of the same requirement, and the one that could evaporate
+        # quietly: `getattr(os, 'O_NOFOLLOW', 0)` degrades to a flag of 0, which is not a
+        # weaker refusal but no refusal at all -- every component below the anchor would
+        # be followed, and the descent would read and execute a manifest outside the
+        # database while reporting a clean answer. A platform without the constant gets
+        # the same treatment as one without `dir_fd`: no containment, no answer.
+        #
+        # `O_DIRECTORY` is handled differently on purpose. Its absence is not a
+        # containment hole: a component that is not a directory fails the *next* open
+        # with ENOTDIR, and the manifest itself is checked with `stat.S_ISREG` on the
+        # descriptor below, so the two things `O_DIRECTORY` would have refused early are
+        # both still refused.
+        _warn_unsafe_manifest(
+            family_path,
+            'this platform does not define O_NOFOLLOW, so no component of the path can '
+            'be opened without following links')
+        return None, None
+
     anchor, components = _anchor_and_components(family_path)
     if anchor is None:
         _warn_unsafe_manifest(
@@ -681,7 +700,7 @@ def _read_manifest(family_path):
             'anchor on')
         return None, None
 
-    nofollow = getattr(os, 'O_NOFOLLOW', 0)
+    nofollow = os.O_NOFOLLOW          # refused above when absent; never a silent 0 here
     directory = getattr(os, 'O_DIRECTORY', 0)
     descriptors = []
     fd = None

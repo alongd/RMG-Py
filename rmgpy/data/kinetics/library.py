@@ -324,11 +324,32 @@ def seed_placement_survives(entry, owner):
 #: a second hand-kept list would reproduce the defect one layer up. `getset_descriptor` is
 #: what a Cython ``cdef public`` attribute presents as, which is what separates state from
 #: the methods and the cimported types that also appear in ``dir()``.
-_REACTION_FIELDS = frozenset(
+#: Public because ``rmgpy/rmg/model.py`` carries the same state across a different
+#: boundary and must enumerate it from the same place. Two discoveries would be two
+#: hand-kept lists again, one layer apart.
+REACTION_STATE_FIELDS = frozenset(
     name for name in dir(Reaction)
     if not name.startswith('_')
     and type(getattr(Reaction, name, None)).__name__ == 'getset_descriptor'
 )
+
+#: Fields whose *setter does something other than store the value*, mapped to the storage
+#: to write instead. There is exactly one today, and it is not a detail: assigning
+#: `Reaction.degeneracy` while kinetics are attached multiplies the rate by a ratio and
+#: appends to the kinetics comment (``rmgpy/reaction.py:356``). At this call site the
+#: attached kinetics object **is** ``entry.data`` -- the shared database object -- so the
+#: edit escapes the reaction being built and reaches every later consumer of that entry.
+#:
+#: Carrying a value is not the same operation as changing it. A reaction whose library
+#: file declares ``degeneracy=3`` already states the rate it wants; re-deriving the rate
+#: from the number that was already true is not a correction, it is a second application.
+#: Writing the storage performs the carry the loop is for and nothing else -- which is the
+#: same thing `Reaction.__init__` does with its own ``degeneracy`` argument
+#: (``self._degeneracy = degeneracy``), so this is the constructor's own path, not a
+#: back door around an invariant.
+_CARRIED_THROUGH_STORAGE = {
+    'degeneracy': '_degeneracy',
+}
 
 #: Fields NOT carried from ``entry.item``, each with the reason. Everything else is
 #: carried, so a field added to `Reaction` tomorrow is carried without anyone noticing --
@@ -347,31 +368,49 @@ _NOT_CARRIED_FROM_ENTRY = {
     'SurfaceArrhenius': 'a cimported type, not reaction state',
     'SurfaceChargeTransfer': 'a cimported type, not reaction state',
     'k_effective_cache': 'a memo of a computation, not data the entry declares',
+    'protons': 'read-only: it is derived from the charge balance of the reactants and '
+               'products, so it arrives with them rather than being assigned',
 }
 
 
-def _carry_entry_fields(rxn, item):
+def carry_reaction_state(target, source, not_carried):
     """
-    Copy every field `item` holds onto `rxn`, except those listed with a reason above.
+    Copy every :class:`~rmgpy.reaction.Reaction` field `source` holds onto `target`.
 
-    The three shapes below each name a handful of fields in their constructor call, and
-    two of those constructors cannot take the rest: `TemplateReaction.__init__` has no
-    ``elementary_high_p``, ``allow_pdep_route`` or ``allow_max_rate_violation``
-    parameter at all, so forwarding them as arguments is not available and they are set
-    here. The effect for `elementary_high_p` is not cosmetic -- a reaction that loses it
-    misses pressure-dependent routing, silently, and both conversions in
-    ``rmgpy/rmg/model.py`` then carry the false default onward.
+    `not_carried` maps each excluded field to the reason it is excluded; everything else
+    in `REACTION_STATE_FIELDS` is carried, so a field added to `Reaction` tomorrow is
+    carried by default and can only be left behind by someone writing down why. Fields in
+    `_CARRIED_THROUGH_STORAGE` are written to their storage rather than through their
+    property, because their setter is a transformation and this is a carry.
+
+    Both call sites name a handful of fields in a constructor call first and use this for
+    the rest, because two of those constructors cannot take the rest:
+    `TemplateReaction.__init__` has no ``elementary_high_p``, ``allow_pdep_route`` or
+    ``allow_max_rate_violation`` parameter at all. The effect for `elementary_high_p` is
+    not cosmetic -- a reaction that loses it misses pressure-dependent routing, silently.
     """
-    for name in _REACTION_FIELDS:
-        if name in _NOT_CARRIED_FROM_ENTRY:
+    for name in REACTION_STATE_FIELDS:
+        if name in not_carried:
             continue
         try:
-            setattr(rxn, name, getattr(item, name))
+            value = getattr(source, name)
         except AttributeError:
-            # A field the source does not have, or one the target refuses. Neither is a
-            # reason to abandon the rest.
+            # A field the source does not have. Not a reason to abandon the rest.
             continue
-    return rxn
+        storage = _CARRIED_THROUGH_STORAGE.get(name)
+        try:
+            setattr(target, storage or name, value)
+        except AttributeError:
+            # A field the target refuses. `quarantineTest.py` pins that no field the
+            # partition calls carried can land here, so this is the last resort rather
+            # than the mechanism: reaching it means the class changed under the partition.
+            continue
+    return target
+
+
+def _carry_entry_fields(rxn, item):
+    """Carry `entry.item`'s state onto a reaction the loader has just constructed."""
+    return carry_reaction_state(rxn, item, _NOT_CARRIED_FROM_ENTRY)
 
 
 class KineticsLibrary(Database):
