@@ -192,6 +192,23 @@ def _structure(adjacency_list, label=''):
     return Species(label=label, molecule=[Molecule().from_adjacency_list(adjacency_list)])
 
 
+class StillWaitingOnAnotherTicket(Exception):
+    """The only exception the strict xfail markers in this file accept.
+
+    A marker scopes to the whole test function, so ``raises=`` narrows which
+    exception *type* satisfies it but not which *statement* may raise it: set-up
+    raising the pinned type satisfied the marker exactly as well as the call the
+    test is about, and the item reported xfailed without that call ever running.
+    Moving the set-up into a fixture does not escape this -- pytest applies the
+    marker to the setup phase too, measured.
+
+    Each marked test raises this from exactly one place, the ``except`` (or the
+    failed comparison) around the single call it exists for. So a set-up failure
+    is a plain failure whatever its type, and the call succeeding is the strict
+    XPASS that says the other ticket has landed.
+    """
+
+
 def _same_multiset(found, wanted):
     """True when two species lists are the same multiset under graph isomorphism.
 
@@ -4148,16 +4165,23 @@ class TestTheSelectorFailsLoudly:
             assert molecule.get_net_charge() == charge
             assert molecule.get_radical_count() == radicals
 
-    @pytest.mark.xfail(strict=True, raises=AssertionError, reason=(
+    @pytest.mark.xfail(strict=True, raises=StillWaitingOnAnotherTicket, reason=(
         'Measured on this tree: Molecule().from_smiles("[Ar+]") returns Ar(2+) -- the '
         'parser reads the radical electron as a second unit of charge -- so a '
         'SMILES-keyed structure for the argon cation is isomorphic to nothing in the '
         'shipped library. That is why the species keys in this file are adjacency lists. '
         'When this starts passing the SMILES round-trip has been repaired and this '
         'marker should go; the adjacency lists should stay either way, because they '
-        'state charge and unpaired electrons separately and cannot be read two ways.'))
+        'state charge and unpaired electrons separately and cannot be read two ways. '
+        'The pinned exception is raised only by the failed comparison: it used to be '
+        'AssertionError, which either constructor could raise before is_isomorphic ran.'))
     def test_a_smiles_keyed_description_would_have_found_the_argon_cation(self):
-        assert _species('[Ar+]').is_isomorphic(_structure(ARGON_CATION))
+        smiles_keyed = _species('[Ar+]')
+        cation = _structure(ARGON_CATION)
+        if not smiles_keyed.is_isomorphic(cation):
+            raise StillWaitingOnAnotherTicket(
+                '{0} from SMILES [Ar+] is not isomorphic to {1!r}'.format(
+                    smiles_keyed.molecule[0].to_smiles(), ARGON_CATION))
 
 
 @pytest.mark.database
@@ -6005,10 +6029,12 @@ class TestTheLibraryLoadLandmineIsNotReachedFromHere(_PlasmaLibraryFixture):
         library. It used to sweep in every entry of both and then assert the
         total was two -- which was a statement about the database's size, and
         stopped being true the moment the recombination library grew its argon
-        entry. The count below is not a return of that defect: ``merged.entries``
-        is a collection this helper filled two lines earlier from two named
-        selections, so counting it asserts that the two selections did not land
-        on the same entry, which is a property of this helper alone.
+        entry. What is asserted instead is identity: the two selections are two
+        different entries. A count cannot say that -- keys ``1`` and ``2`` are
+        written unconditionally, so the same entry selected twice still fills two
+        slots -- and ``check_for_duplicates`` skips an item compared with itself,
+        so a collision would otherwise surface downstream as the strict XPASS that
+        is supposed to mean the other ticket has landed.
         """
         merged = KineticsLibrary(label='PlasmaBothChannels')
         merged.entries = {}
@@ -6016,7 +6042,8 @@ class TestTheLibraryLoadLandmineIsNotReachedFromHere(_PlasmaLibraryFixture):
             entry = self._select_entry(database, LITHIUM_CHANNEL[label])
             entry.index = index
             merged.entries[index] = entry
-        assert len(merged.entries) == 2, 'the two channel selections collided on one entry'
+        assert merged.entries[1] is not merged.entries[2], (
+            'the two channel selections collided on one entry')
         return merged
 
     def test_a_loaded_entry_carries_no_owner(self):
@@ -6067,14 +6094,14 @@ class TestTheLibraryLoadLandmineIsNotReachedFromHere(_PlasmaLibraryFixture):
         belongs in a check and not in a comment.
         """
         database = self._database()
-        seen = 0
         for label in (IONISATION, RECOMBINATION):
-            for entry in database.libraries[label].entries.values():
+            entries = list(database.libraries[label].entries.values())
+            assert entries, (
+                '{0} loaded no entries, so this measurement was not made on it'.format(label))
+            for entry in entries:
                 assert entry.item.kinetics is None
                 assert entry.data is not None
                 assert rate_order(entry.data) == 2
-                seen += 1
-        assert seen, 'neither library yielded an entry, so nothing above was measured'
 
     def test_the_owner_appears_when_the_entry_becomes_a_library_reaction(self):
         """And from there on, the placement is available and this repair applies."""
@@ -6086,17 +6113,22 @@ class TestTheLibraryLoadLandmineIsNotReachedFromHere(_PlasmaLibraryFixture):
             placements[label] = get_electron_placement_counts(reaction)
         assert placements == {IONISATION: (1, 2), RECOMBINATION: (1, 0)}
 
-    @pytest.mark.xfail(strict=True, raises=DatabaseError, reason=(
+    @pytest.mark.xfail(strict=True, raises=StillWaitingOnAnotherTicket, reason=(
         'Not reached by this repair: check_for_duplicates runs over entry.item, which '
         'carries no owner, so both channels fall back to the net rule and stay mirrors. '
         'Fixing it requires recording the owner at load, and a decision about a registry '
         'that is keyed one placement per owner. When this starts passing, that ticket has '
-        'landed and this marker should be removed. `raises=DatabaseError` pins WHICH '
-        'failure is the expected one: without it the marker was satisfied by an '
-        'AssertionError raised in the set-up helper two statements before '
-        'check_for_duplicates was ever called, so the check reported xfailed -- green '
-        'to any reader -- while measuring nothing at all, and its success signal, the '
-        'strict xfail flipping to a pass when that other ticket lands, was silently '
-        'disabled.'))
+        'landed and this marker should be removed. The pinned exception is raised only '
+        'from the DatabaseError of check_for_duplicates itself. Twice before, the marker '
+        'was satisfiable from set-up: first with no raises=, by an AssertionError in the '
+        'set-up helper two statements before check_for_duplicates was called; then with '
+        'raises=DatabaseError, by an unmarked duplicate in either source library, which '
+        'raises DatabaseError at load. Both times the check reported xfailed -- green to '
+        'any reader -- while measuring nothing, and its success signal, the strict xfail '
+        'flipping to a pass when that other ticket lands, was silently disabled.'))
     def test_one_library_carrying_both_channels_can_be_loaded(self):
-        self._merged_library(self._database()).check_for_duplicates()
+        merged = self._merged_library(self._database())
+        try:
+            merged.check_for_duplicates()
+        except DatabaseError as error:
+            raise StillWaitingOnAnotherTicket(str(error)) from error
