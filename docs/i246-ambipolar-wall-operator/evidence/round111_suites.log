@@ -1,0 +1,15 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0
+rootdir: /home/alon/Code/RMG-Py-i246-ambipolar-wall-operator
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collected 245 items
+
+test/rmgpy/solver/plasmaWallTest.py .................................... [ 14%]
+...............................................................          [ 40%]
+test/rmgpy/solver/steadyStateTest.py ................................... [ 54%]
+.........                                                                [ 58%]
+test/rmgpy/rmg/inputTest.py ...................s........................ [ 76%]
+..........................................................               [100%]
+
+======================== 244 passed, 1 skipped in 5.30s ========================

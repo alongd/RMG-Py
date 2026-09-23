@@ -1,0 +1,58 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+cachedir: .pytest_cache
+rootdir: /home/alon/Code/RMG-Py-i264-cantera-one-range
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 44 items
+
+test/rmgpy/chemkinTest.py::ChemkinTest::test_read_thermo_entry_bad_element_count PASSED
+test/rmgpy/chemkinTest.py::ChemkinTest::test_read_thermo_entry_not_gas_phase PASSED
+test/rmgpy/chemkinTest.py::ChemkinTest::test_read_thermo_entry_not_float PASSED
+test/rmgpy/chemkinTest.py::ChemkinTest::test_read_thermo_entry_no_temperature_range PASSED
+test/rmgpy/chemkinTest.py::ChemkinTest::test_read_thermo_block_temperature_header_columns PASSED
+test/rmgpy/chemkinTest.py::ChemkinTest::test_read_thermo_block_warns_for_badly_formatted_temperature_header PASSED
+test/rmgpy/chemkinTest.py::ChemkinTest::test_read_and_write_and_read_template_reaction_family_for_minimal_example PASSED
+test/rmgpy/chemkinTest.py::ChemkinTest::test_read_and_write_template_reaction_family_for_pdd_example PASSED
+test/rmgpy/chemkinTest.py::ChemkinTest::test_transport_data_read_and_write PASSED
+test/rmgpy/chemkinTest.py::ChemkinTest::test_use_chemkin_names PASSED
+test/rmgpy/chemkinTest.py::ChemkinTest::test_reactant_n2_is_reactive_and_gets_right_species_identifier PASSED
+test/rmgpy/chemkinTest.py::ChemkinTest::test_read_specific_collider PASSED
+test/rmgpy/chemkinTest.py::ChemkinTest::test_process_duplicate_reactions PASSED
+test/rmgpy/chemkinTest.py::ChemkinTest::test_mark_duplicate_reactions PASSED
+test/rmgpy/chemkinTest.py::ChemkinTest::test_read_write_coverage_dependence PASSED
+test/rmgpy/chemkinTest.py::ChemkinTest::test_write_kinetics_entry_with_coverage_dependence PASSED
+test/rmgpy/chemkinTest.py::ChemkinTest::test_write_elements_section_omits_unused_isotopes_and_surface_site PASSED
+test/rmgpy/chemkinTest.py::ChemkinTest::test_write_elements_section_includes_used_isotopes_and_surface_site PASSED
+test/rmgpy/chemkinTest.py::ChemkinTest::test_write_elements_section_maps_electron_to_pseudo_element PASSED
+test/rmgpy/chemkinTest.py::TestThermoReadWrite::test_write_thermo_block PASSED
+test/rmgpy/chemkinTest.py::TestThermoReadWrite::test_read_thermo_block PASSED
+test/rmgpy/chemkinTest.py::TestThermoReadWrite::test_write_thermo_block_for_isotope_uses_chemkin_name PASSED
+test/rmgpy/chemkinTest.py::TestThermoReadWrite::test_save_chemkin_file_writes_dynamic_elements_section PASSED
+test/rmgpy/chemkinTest.py::TestThermoReadWrite::test_save_chemkin_file_adds_electron_element_for_charged_species PASSED
+test/rmgpy/chemkinTest.py::TestThermoReadWrite::test_write_thermo_block_for_charged_species_includes_electron_count PASSED
+test/rmgpy/chemkinTest.py::TestThermoReadWrite::test_write_thermo_block_5_elem PASSED
+test/rmgpy/chemkinTest.py::TestThermoReadWrite::test_read_thermo_block_5_elem PASSED
+test/rmgpy/chemkinTest.py::TestThermoReadWrite::test_write_thermo_block_6_elem PASSED
+test/rmgpy/chemkinTest.py::TestThermoReadWrite::test_read_thermo_block_6_elem PASSED
+test/rmgpy/chemkinTest.py::TestThermoReadWrite::test_write_bidentate_species PASSED
+test/rmgpy/chemkinTest.py::TestThermoReadWrite::test_write_thermo_block_one_range PASSED
+test/rmgpy/chemkinTest.py::TestThermoReadWrite::test_write_read_one_range_round_trips PASSED
+test/rmgpy/chemkinTest.py::TestThermoReadWrite::test_write_read_one_range_varying_cp_round_trips PASSED
+test/rmgpy/chemkinTest.py::TestThermoReadWrite::test_write_read_one_range_midpoint_fallback_round_trips PASSED
+test/rmgpy/chemkinTest.py::TestThermoReadWrite::test_write_thermo_block_one_range_nasa9_refused PASSED
+test/rmgpy/chemkinTest.py::TestThermoReadWrite::test_write_thermo_block_three_ranges_refused PASSED
+test/rmgpy/chemkinTest.py::TestThermoReadWrite::test_write_thermo_block_malformed_values_refused PASSED
+test/rmgpy/chemkinTest.py::TestReadReactionComments::test_read_reaction_comments_template PASSED
+test/rmgpy/chemkinTest.py::TestReadReactionComments::test_read_reaction_comments_family PASSED
+test/rmgpy/chemkinTest.py::TestReadReactionComments::test_read_reaction_comments_degeneracy PASSED
+test/rmgpy/chemkinTest.py::TestReadReactionComments::test_remove_line_breaks PASSED
+test/rmgpy/chemkinTest.py::TestPlasmaChemkinRoundTrip::test_plasma_round_trip_preserves_rate_coefficient PASSED
+test/rmgpy/chemkinTest.py::TestPlasmaChemkinRoundTrip::test_plasma_arrhenius_reduction_is_unit_independent PASSED
+test/rmgpy/chemkinTest.py::TestPlasmaChemkinRoundTrip::test_plasma_reduction_is_exact_along_the_electron_diagonal PASSED
+
+================================ tests coverage ================================
+_______________ coverage: platform linux, python 3.9.23-final-0 ________________
+
+Coverage HTML written to dir htmlcov
+============================== 44 passed in 7.48s ==============================

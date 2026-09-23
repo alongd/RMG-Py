@@ -1,0 +1,48 @@
+Traceback (most recent call last):
+  File "/home/alon/Code/RMG-Py-i262-anonymous-atomtype/rmgpy/data/kinetics/family.py", line 1705, in _generate_product_structures
+    product_structures = self.apply_recipe(reactant_structures, forward=forward, relabel_atoms=relabel_atoms)
+  File "/home/alon/Code/RMG-Py-i262-anonymous-atomtype/rmgpy/data/kinetics/family.py", line 1592, in apply_recipe
+    struct.update(sort_atoms=not self.save_order)
+  File "rmgpy/molecule/molecule.py", line 1353, in rmgpy.molecule.molecule.Molecule.update
+    self.update_atomtypes(log_species=log_species, raise_exception=raise_atomtype_exception)
+  File "rmgpy/molecule/molecule.py", line 1592, in rmgpy.molecule.molecule.Molecule.update_atomtypes
+    raise
+  File "rmgpy/molecule/molecule.py", line 1587, in rmgpy.molecule.molecule.Molecule.update_atomtypes
+    atom.atomtype = get_atomtype(atom, atom.edges)
+  File "rmgpy/molecule/atomtype.py", line 1153, in rmgpy.molecule.atomtype.get_atomtype
+    def get_atomtype(atom, bonds):
+  File "rmgpy/molecule/atomtype.py", line 1181, in rmgpy.molecule.atomtype.get_atomtype
+    raise AtomTypeError(
+rmgpy.exceptions.AtomTypeError: Unable to determine atom type for atom Ar, which has 2 single bonds, 0 double bonds (0 to O, 0 to S, 0 others), 0 triple bonds, 0 quadruple bonds, 0 benzene bonds, 3 lone pairs, and +0 charge.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/tmp/claude-1000/uncaught.py", line 10, in <module>
+    kdb.generate_reactions_from_families(reactants, only_families=['R_Recombination'])
+  File "/home/alon/Code/RMG-Py-i262-anonymous-atomtype/rmgpy/data/kinetics/database.py", line 538, in generate_reactions_from_families
+    reaction_list.extend(self.react_molecules(combo, products=products, only_families=only_families,
+  File "/home/alon/Code/RMG-Py-i262-anonymous-atomtype/rmgpy/data/kinetics/database.py", line 566, in react_molecules
+    reaction_list.extend(family.generate_reactions(molecules, products=products,
+  File "/home/alon/Code/RMG-Py-i262-anonymous-atomtype/rmgpy/data/kinetics/family.py", line 1938, in generate_reactions
+    self._generate_reactions(reactants=reactants,
+  File "/home/alon/Code/RMG-Py-i262-anonymous-atomtype/rmgpy/data/kinetics/family.py", line 2212, in _generate_reactions
+    product_structures = self._generate_product_structures(reactant_structures,
+  File "/home/alon/Code/RMG-Py-i262-anonymous-atomtype/rmgpy/data/kinetics/family.py", line 1748, in _generate_product_structures
+    raise UntypeableStructureError(
+rmgpy.data.kinetics.family.UntypeableStructureError: Reaction family 'R_Recombination' matched the reacting species below in the forward direction (top-level template reactant groups: ['Root']), but applying its recipe built a product structure that no atom type can represent.
+Underlying atom-typing failure (the shape of the impossible atom):
+    Unable to determine atom type for atom Ar, which has 2 single bonds, 0 double bonds (0 to O, 0 to S, 0 others), 0 triple bonds, 0 quadruple bonds, 0 benzene bonds, 3 lone pairs, and +0 charge.
+The product structure itself is untypeable, so it is not emitted as an adjacency list; the reacting species it grew from are (adjacency lists):
+
+multiplicity 2
+1 * H u1 p0 c0
+
+multiplicity 2
+1 * Ar u1 p3 c0 {2,S}
+2   Ar u0 p3 c+1 {1,S}
+
+To resolve, do one of:
+  - forbid this template so it stops matching these reactants (in the RMG-database R_Recombination family);
+  - remove one of the reacting species above from your model;
+  - narrow the reaction family list so 'R_Recombination' is not applied.

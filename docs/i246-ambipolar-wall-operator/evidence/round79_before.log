@@ -1,0 +1,181 @@
+FFFFFFFFFF                                                               [100%]
+=================================== FAILURES ===================================
+___________________ test_wall_refuses_near_degenerate_states ___________________
+
+    def test_wall_refuses_near_degenerate_states():
+        """Two states within the k_B*T_gas threshold are co-populated; neither is the
+        ground state, so it refuses naming the degeneracy threshold and the declaration."""
+        rt_ev = constants.R * TGAS / EV_J_PER_MOL
+        with pytest.raises(PlasmaStateError) as exc:
+            _metastable_reactor(ground_eV=0.0, meta_eV=0.5 * rt_ev, meta_label='Ar_near')
+        msg = str(exc.value)
+        assert 'degeneracy threshold' in msg or 'thermal energy k_B' in msg
+>       assert 'wallNeutralizationProducts' in msg
+E       assert 'wallNeutralizationProducts' in 'the wall\'s ground-state neutral for ion Species(label="Ar+", molecule=[Molecule(smiles="[Ar+]")], molecular_weight=(...={\'Ar+\': \'<neutral label>\'}. (PlasmaReactor(label=None, T=(298.15,\'K\'), P=(666.612,\'Pa\'), Te=(34813.6,\'K\')))'
+
+test/rmgpy/solver/plasmaWallTest.py:964: AssertionError
+_________ test_wall_does_not_transmute_a_molecular_ion_across_isomers __________
+
+    def test_wall_does_not_transmute_a_molecular_ion_across_isomers():
+        """HIGH 1: DME+ neutralises to DME, never to the constitutional isomer ethanol
+        just because ethanol's enthalpy is lower. Element-count matching admitted the
+        isomer and 'lowest enthalpy' then crowned it -- a transmutation. The skeleton
+        (InChI) excludes ethanol from the candidate set entirely."""
+        reactor, core = _isomer_reactor()
+>       assert core[int(reactor.wall_recycle_target[_cation_index(reactor)])].label == 'DME'
+E       AssertionError: assert 'EtOH' == 'DME'
+E         
+E         - DME
+E         + EtOH
+
+test/rmgpy/solver/plasmaWallTest.py:1100: AssertionError
+_____________________ test_wall_refuses_nonfinite_enthalpy _____________________
+
+    def test_wall_refuses_nonfinite_enthalpy():
+        """HIGH 1: a neutral whose formation enthalpy is NaN is UNUSABLE, not merely
+        absent. The ground-state comparison must refuse it -- naming thermochemistry --
+        not sort NaN silently into place and initialise on a coin-toss."""
+        with pytest.raises(PlasmaStateError) as exc:
+>           _metastable_reactor(ground_eV=float('nan'), meta_eV=11.5)
+E           Failed: DID NOT RAISE <class 'rmgpy.exceptions.PlasmaStateError'>
+
+test/rmgpy/solver/plasmaWallTest.py:1108: Failed
+_________________ test_wall_refuses_electron_without_a_cation __________________
+
+    def test_wall_refuses_electron_without_a_cation():
+        """HIGH 2: a wall with an electron but NO positive ion would remove electrons
+        with no charge-conserving partner, driving the net charge -- not floating-wall
+        behaviour. 'Exactly one cation' rejected two and accepted zero; zero is refused."""
+        electron = Species(label='e-').from_adjacency_list('1 e u1 p0 c-1')
+        ar = _ground_species('Ar')
+        imf = {electron: 1.0e-6, ar: 1.0 - 1.0e-6}
+        reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+                                (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
+                                diffusion_length=(_diffusion_length(), 'm'),
+                                ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'))
+        with pytest.raises(PlasmaStateError) as exc:
+>           reactor.initialize_model([electron, ar], [], [], [])
+E           Failed: DID NOT RAISE <class 'rmgpy.exceptions.PlasmaStateError'>
+
+test/rmgpy/solver/plasmaWallTest.py:1124: Failed
+------------------------------ Captured log call -------------------------------
+WARNING  root:plasmaWallTest.py:1124 PlasmaReactor initial composition is NOT charge neutral: net charge = -1e-06 per mole (total charge magnitude 1e-06, relative imbalance 1.0), above the tolerance max(atol=1e-12, rtol=1e-06 * magnitude) = 1e-12. Charged species: e- (charge -1) x=1e-06. This is a warning, not an error -- a deliberately non-neutral initial condition is legitimate -- but a deck that seeds an electronDensity without a compensating cation lands here by accident. To have RMG compute the balancing ion's mole fraction for you, name it with chargeBalanceSpecies='<label>' in the plasmaReactor(...) block. (PlasmaReactor(label=None, T=(298.15,'K'), P=(666.612,'Pa'), Te=(34813.6,'K')))
+______________ test_ceiling_uses_ion_inventory_not_electron_alone ______________
+
+    def test_ceiling_uses_ion_inventory_not_electron_alone():
+        """HIGH 2: the ionisation-degree ceiling gates on the charged inventory, not n_e
+        alone. 1% Ar+ with 1 ppm electrons is a 1e-2 ion fraction and must be refused
+        under a 1e-3 ceiling, though n_e/n_neutral = 1e-6 slips under it."""
+        r, _, _ = _build_reactor(wall=True, gamma=0.0, with_chemistry=False, max_alpha=1.0e-3)
+        ie, i_ar, i_arp = _indices(r)
+        y = np.zeros(r.num_core_species, float)
+        y[i_ar] = 1.0
+        y[i_arp] = 1.0e-2
+        y[ie] = 1.0e-6
+        with pytest.raises(PlasmaStateError) as exc:
+>           r.check_wall_support(y)
+E           Failed: DID NOT RAISE <class 'rmgpy.exceptions.PlasmaStateError'>
+
+test/rmgpy/solver/plasmaWallTest.py:1139: Failed
+____________ test_declared_source_is_delivered_in_full_in_a_mixture ____________
+
+    def test_declared_source_is_delivered_in_full_in_a_mixture():
+        """HIGH 3: the external pair source is apportioned over IONISABLE neutrals. A
+        non-ionisable bath gas (He, with no He+ in the core) must not sit in the
+        denominator and silently swallow half the declared source."""
+        electron = Species(label='e-').from_adjacency_list('1 e u1 p0 c-1')
+        ar = _ground_species('Ar')
+        he = Species(label='He').from_adjacency_list('1 He u0 p1 c0')
+        arp = Species(label='Ar+').from_adjacency_list('multiplicity 2\n1 Ar u1 p3 c+1')
+        source = 1.0e18
+        imf = {electron: 1.0e-6, arp: 1.0e-6, he: 0.5, ar: 0.5 - 2.0e-6}
+        reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+                                (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
+                                diffusion_length=(_diffusion_length(), 'm'),
+                                ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
+                                wall_recycling=0.0, ionisation_source=(source, 'm^-3/s'))
+        core = [electron, ar, he, arp]
+        reactor.initialize_model(core, [], [], [])
+        z = reactor.species_charges
+        ie = reactor.electron_index
+        i_ar = [j for j in range(len(z)) if z[j] == 0 and core[j].label == 'Ar'][0]
+        i_he = [j for j in range(len(z)) if z[j] == 0 and core[j].label == 'He'][0]
+        y = np.zeros(reactor.num_core_species, float)
+        y[i_ar] = 0.5
+        y[i_he] = 0.5
+        V = reactor.compute_volume(y)
+        delta, _ = reactor.residual(0.0, y.copy(), np.zeros_like(y))
+        source_total = source * V / constants.Na       # mol of pairs per second
+>       assert np.isclose(delta[ie], source_total, rtol=1e-9, atol=0.0)
+E       assert False
+E        +  where False = <function isclose at 0x7a7359538e70>(3.087560611962352e-06, 6.175121223924704e-06, rtol=1e-09, atol=0.0)
+E        +    where <function isclose at 0x7a7359538e70> = np.isclose
+
+test/rmgpy/solver/plasmaWallTest.py:1170: AssertionError
+__________ test_direct_construction_checks_diffusion_length_dimension __________
+
+    def test_direct_construction_checks_diffusion_length_dimension():
+        """MEDIUM: direct PlasmaReactor(...) construction must reject a diffusion length
+        that is not a length -- (2, 's') became a 2 m length silently, the input-file path
+        already guards this."""
+        electron, ar, arp = _argon_species()
+        imf = {electron: 1.0e-6, arp: 1.0e-6, ar: 1.0 - 2.0e-6}
+        with pytest.raises(PlasmaStateError) as exc:
+>           PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+                          (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
+                          diffusion_length=(2.0, 's'),
+                          ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'))
+E           Failed: DID NOT RAISE <class 'rmgpy.exceptions.PlasmaStateError'>
+
+test/rmgpy/solver/plasmaWallTest.py:1180: Failed
+______________ test_direct_construction_checks_mobility_dimension ______________
+
+    def test_direct_construction_checks_mobility_dimension():
+        """MEDIUM: a diffusivity (m^2/s) is not a mobility; direct construction rejects it."""
+        electron, ar, arp = _argon_species()
+        imf = {electron: 1.0e-6, arp: 1.0e-6, ar: 1.0 - 2.0e-6}
+        with pytest.raises(PlasmaStateError) as exc:
+>           PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+                          (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
+                          diffusion_length=(_diffusion_length(), 'm'),
+                          ion_reduced_mobility=(1.0e-4, 'm^2/s'))
+E           Failed: DID NOT RAISE <class 'rmgpy.exceptions.PlasmaStateError'>
+
+test/rmgpy/solver/plasmaWallTest.py:1192: Failed
+____________ test_wall_diagnostics_latched_only_at_accepted_states _____________
+
+    def test_wall_diagnostics_latched_only_at_accepted_states():
+        """HIGH 5: the wall-flux interface is latched at accepted states (init, and after
+        each accepted step) and NEVER from inside the residual, so no rejected Newton
+        trial can leak in. A residual evaluation at a wild state moves the internal
+        scratch (wall_loss_rates) but must leave the latched wall_flux untouched."""
+        r, core = _metastable_reactor(gamma=1.0)
+>       latched = np.array(r.wall_flux, float)
+E       AttributeError: 'rmgpy.solver.plasma.PlasmaReactor' object has no attribute 'wall_flux'
+
+test/rmgpy/solver/plasmaWallTest.py:1205: AttributeError
+________ test_wall_energy_interface_declares_ion_term_absent_not_broken ________
+
+    def test_wall_energy_interface_declares_ion_term_absent_not_broken():
+        """HIGH 5 + addition: a consumer must distinguish DECLARED-ABSENT (by design)
+        from UNAVAILABLE (could not compute) from AVAILABLE, in code, without reading a
+        docstring. The ion directed/sheath term is declared-absent (a sheath model is a
+        contract non-goal); the electron thermal term is available from T_e; the
+        neutralisation term is unavailable here because Ar+ carries no thermo."""
+        r, core = _metastable_reactor(gamma=1.0)
+>       avail = r.wall_energy_availability
+E       AttributeError: 'rmgpy.solver.plasma.PlasmaReactor' object has no attribute 'wall_energy_availability'
+
+test/rmgpy/solver/plasmaWallTest.py:1221: AttributeError
+=========================== short test summary info ============================
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_wall_refuses_near_degenerate_states
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_wall_does_not_transmute_a_molecular_ion_across_isomers
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_wall_refuses_nonfinite_enthalpy
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_wall_refuses_electron_without_a_cation
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_ceiling_uses_ion_inventory_not_electron_alone
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_declared_source_is_delivered_in_full_in_a_mixture
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_direct_construction_checks_diffusion_length_dimension
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_direct_construction_checks_mobility_dimension
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_wall_diagnostics_latched_only_at_accepted_states
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_wall_energy_interface_declares_ion_term_absent_not_broken
+10 failed, 37 deselected in 0.98s

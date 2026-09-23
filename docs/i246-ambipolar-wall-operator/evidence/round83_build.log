@@ -1,0 +1,14 @@
+=== round-83 .so proven by value ===
+tokens ADDED by the round-83 edits (present in the .so):
+  [1] outside the quasineutrality the ambipolar wall requires
+  [2] no ionisable neutral inventory left
+  [1] share its heavy skeleton
+  [1] not a positive ion in the core
+  [2] dimensions of a number density
+  [1] dimensions of a number density per time
+  [1] no wall to apply them to
+  [1] publishes the wall interface in a production run
+tokens REMOVED (dead energy-picker) -- must be 0:
+  [0] resolve_ground_state_neutral
+  [0] degeneracy threshold
+  [0] no usable thermochemistry

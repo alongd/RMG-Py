@@ -1,0 +1,9 @@
+.........                                                                [100%]
+=============================== warnings summary ===============================
+test/rmgpy/solver/plasmaWallTest.py::test_wall_only_deck_integrates_past_t0_on_the_production_path
+test/rmgpy/solver/plasmaWallTest.py::test_genuinely_inert_deck_still_terminates_at_t0_unchanged
+  /home/alon/Code/RMG-Py-i246-ambipolar-wall-operator/test/rmgpy/solver/plasmaWallTest.py:1526: RuntimeWarning: invalid value encountered in divide
+    return reactor.simulate(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+9 passed, 60 deselected, 2 warnings in 1.45s

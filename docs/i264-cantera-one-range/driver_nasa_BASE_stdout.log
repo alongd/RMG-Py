@@ -1,0 +1,5 @@
+=== one-range NASA.to_cantera() ===
+[EXPECTED-RED] AssertionError raised (base/pre-fix behavior): Cantera NasaPoly2 objects only accept 2 polynomials
+
+=== two-range NASA.to_cantera() (non-regression) ===
+[OK] to_cantera() succeeded: <cantera.speciesthermo.NasaPoly2 object at 0x7e262bc73510>

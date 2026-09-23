@@ -1,0 +1,22 @@
+--- one-range (Ar1R) (file: /tmp/claude-1000/i264/ar_one_range.yaml) ---
+   T (K)       Cp_RMG        Cp_CT          H_RMG           H_CT        S_RMG         S_CT
+   250.0      20.7862      20.7862      -1000.855      -1000.853     151.1847     151.1846
+   500.0      20.7862      20.7862       4195.690       4195.686     165.5926     165.5924
+  1000.0      20.7862      20.7862      14588.780      14588.764     180.0005     180.0003
+  2000.0      20.7862      20.7862      35374.960      35374.921     194.4084     194.4082
+  4000.0      20.7862      20.7862      76947.320      76947.234     208.8163     208.8160
+  5900.0      20.7862      20.7862     116441.062     116440.931     216.8950     216.8947
+max relative error across Cp/H/S at all spot temps: 1.128e-06
+[OK] one-range (Ar1R): RMG thermo and Cantera-loaded-from-file thermo agree to 1.128e-06
+
+--- two-range (Ar2R, non-regression) (file: /tmp/claude-1000/i264/ar_two_range.yaml) ---
+   T (K)       Cp_RMG        Cp_CT          H_RMG           H_CT        S_RMG         S_CT
+   250.0      20.7862      20.7862      -1000.855      -1000.853     151.1847     151.1846
+   500.0      20.7862      20.7862       4195.690       4195.686     165.5926     165.5924
+  1000.0      20.7862      20.7862      14588.780      14588.764     180.0005     180.0003
+  2000.0      20.7862      20.7862      35374.960      35374.921     194.4084     194.4082
+  4000.0      20.7862      20.7862      76947.320      76947.234     208.8163     208.8160
+  5900.0      20.7862      20.7862     116441.062     116440.931     216.8950     216.8947
+max relative error across Cp/H/S at all spot temps: 1.128e-06
+[OK] two-range (Ar2R, non-regression): RMG thermo and Cantera-loaded-from-file thermo agree to 1.128e-06
+

@@ -1,0 +1,14 @@
+$ PYTHONPATH=/home/alon/Code/RMG-Py-plasma /home/alon/anaconda3/envs/rmg_env/bin/python -c "..."
+module file: rmgpy.thermo.nasa /home/alon/Code/RMG-Py-plasma/rmgpy/thermo/nasa.cpython-39-x86_64-linux-gnu.so
+OTHER: AssertionError Cantera NasaPoly2 objects only accept 2 polynomials
+
+$ PYTHONPATH=/home/alon/Code/RMG-Py-plasma /home/alon/anaconda3/envs/rmg_env/bin/python -c "from rmgpy.exceptions import CanteraThermoWriteError"
+ImportError: cannot import name 'CanteraThermoWriteError' from 'rmgpy.exceptions' (/home/alon/Code/RMG-Py-plasma/rmgpy/exceptions.py)
+
+Conclusion: on BASE (pre-round-98, plasma checkout), the one-range
+NASA.to_cantera() case raises a bare AssertionError (not the named
+CanteraThermoWriteError), and CanteraThermoWriteError does not exist at all
+in rmgpy.exceptions -- so test_rmgpy/thermo/nasaTest.py's new
+test_to_cantera_refuses_* tests fail at collection time (ImportError) on
+base, and test_to_cantera_one_range would fail with AssertionError if the
+import were patched around. This is the documented RED state.

@@ -1,0 +1,186 @@
+F.FFFFFFF                                                                [100%]
+=================================== FAILURES ===================================
+________ test_wall_only_deck_integrates_past_t0_on_the_production_path _________
+
+    def test_wall_only_deck_integrates_past_t0_on_the_production_path():
+        """HIGH 2: a wall-only deck (no gas-phase chemistry, gamma=0) carries no
+        char_rate, but the wall is removing ~1.9e-2 mol/s of ion-electron pairs. The
+        inert test read char_rate -- the gas-phase CHEMISTRY diagnostic -- as the
+        system's total flux and terminated at t=0 claiming 'the composition cannot
+        change'. Demonstrated on simulate(), the production entry, not a residual probe.
+        The inert test must consult the reactor's TOTAL flux; the wall term moves it."""
+        term = [TerminationSteadyState(tolerance=1e-8), TerminationTime((1.0, 's'))]
+        r, core, rxns = _build_reactor(wall=True, gamma=0.0, with_chemistry=False,
+                                       x_ion=1.0e-4, termination=term)
+        y0 = np.array(r.y0[:r.num_core_species], float)
+        terminated, _res, _inv, _ss, _sr, t_final, _conv = _simulate(r, core, rxns)
+        # The wall is depleting the plasma, so the run must integrate, not stop at t=0.
+>       assert t_final > 0.0
+E       assert 0.0 > 0.0
+
+test/rmgpy/solver/plasmaWallTest.py:1548: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  root:plasmaWallTest.py:1526 At time 0.0000e+00 s, terminating terminationSteadyState WITHOUT a steady state: the system carries no flux, so the composition cannot change and there is nothing further to integrate. NO STEADY STATE WAS DEMONSTRATED -- this model never started, which is not the same result as a stationary ionisation balance, and must not be reported as one. There is no residual to quote: the criterion was never evaluated, because a composition that cannot move carries no information about whether it has settled.
+_____ test_skeleton_key_keeps_isotopes_so_the_wall_cannot_transmute_nuclei _____
+
+    def test_skeleton_key_keeps_isotopes_so_the_wall_cannot_transmute_nuclei():
+        """HIGH 1: the key truncated the standard InChI at the first /q or /p, but the
+        isotope layer /i sits AFTER /q, so a charged species lost it and a neutral did
+        not -- the key was a different rule depending on charge. A 13C cation then keyed
+        identically to an ordinary-carbon neutral, and the wall recycled 13C into 12C: a
+        transmuted nucleus. Removing the /q and /p layers (not truncating at them) keeps
+        /i, so isotopes discriminate on both charge states while Ar and Ar* still
+        coincide."""
+        r, _, _ = _build_reactor(wall=True, with_chemistry=False)
+        _e, dme12, dme13, dmep13 = _dme_isotope_species()
+        # charge independence preserved: the 13C neutral and 13C cation still coincide
+>       assert r._skeleton_key(dme13) == r._skeleton_key(dmep13)
+E       AssertionError: assert 'InChI=1S/C2H...2/h1-2H3/i1+1' == 'InChI=1S/C2H6O/c1-3-2/h1-2H3'
+E         
+E         - InChI=1S/C2H6O/c1-3-2/h1-2H3
+E         + InChI=1S/C2H6O/c1-3-2/h1-2H3/i1+1
+E         ?                             +++++
+
+test/rmgpy/solver/plasmaWallTest.py:1585: AssertionError
+----------------------------- Captured stderr call -----------------------------
+[20:58:12] WARNING: Accepted unusual valence(s): O+1(2)
+
+________ test_declared_isotopic_neutral_is_not_hidden_by_key_truncation ________
+
+    def test_declared_isotopic_neutral_is_not_hidden_by_key_truncation():
+        """HIGH 1, the escape hatch: a correct declaration naming the isotopic neutral
+        must resolve. Truncation stripped the neutral's /i layer from the ion's key, so
+        the isotopic neutral never entered the candidate 'matches' list and the
+        declaration was refused as 'not sharing the heavy composition'. With the layer
+        kept, ion and its isotopic neutral share a key and the declaration resolves."""
+        e, _dme12, dme13, dmep13 = _dme_isotope_species()
+        imf = {e: 1.0e-6, dmep13: 1.0e-6, dme13: 1.0 - 2.0e-6}
+        reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+                                (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
+                                diffusion_length=(_diffusion_length(), 'm'),
+                                ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
+                                wall_recycling=1.0,
+                                wall_neutralization_products={'DME+-13C': 'DME-13C'})
+        core = [e, dme13, dmep13]
+>       reactor.initialize_model(core, [], [], [])
+
+test/rmgpy/solver/plasmaWallTest.py:1605: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+rmgpy/solver/plasma.pyx:588: in rmgpy.solver.plasma.PlasmaReactor.initialize_model
+    cpdef initialize_model(self, list core_species, list core_reactions, list edge_species, list edge_reactions,
+rmgpy/solver/plasma.pyx:679: in rmgpy.solver.plasma.PlasmaReactor.initialize_model
+    self._resolve_wall_state(core_species)
+rmgpy/solver/plasma.pyx:1417: in rmgpy.solver.plasma.PlasmaReactor._resolve_wall_state
+    recycle[i] = self._resolve_declared_neutral(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+>   raise PlasmaStateError(
+E   rmgpy.exceptions.PlasmaStateError: wallNeutralizationProducts maps ion 'DME+-13C' to 'DME-13C', but 'DME-13C' is not a neutral core species sharing 'DME+-13C''s heavy composition. A wall neutralisation product must be uncharged and conserve the heavy atoms of the ion. (PlasmaReactor(label=None, T=(298.15,'K'), P=(666.612,'Pa'), Te=(34813.6,'K')))
+
+rmgpy/solver/plasma.pyx:1629: PlasmaStateError
+----------------------------- Captured stderr call -----------------------------
+[20:58:12] WARNING: Accepted unusual valence(s): O+1(2)
+
+______ test_quasineutrality_bound_is_relative_not_an_absolute_mole_floor _______
+
+    def test_quasineutrality_bound_is_relative_not_an_absolute_mole_floor():
+        """HIGH 3: quasineutrality is a RATIO, but the guard compared the net charge to a
+        fixed 1e-12 mol. An electron inventory of 1e-13 mol with no ion partner at all is
+        100% non-neutral, yet slipped under the absolute floor. The bound must be a
+        fraction of the charged inventory, independent of the system's size and units."""
+        e = Species(label='e-').from_adjacency_list('1 e u1 p0 c-1')
+        ar = _ground_species('Ar')
+        arp = Species(label='Ar+').from_adjacency_list('multiplicity 2\n1 Ar u1 p3 c+1')
+        imf = {e: 1.0e-13, arp: 0.0, ar: 1.0 - 1.0e-13}
+        reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+                                (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
+                                diffusion_length=(_diffusion_length(), 'm'),
+                                ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
+                                wall_recycling=0.0)
+        with pytest.raises(PlasmaStateError) as exc:
+>           reactor.initialize_model([e, ar, arp], [], [], [])
+E           Failed: DID NOT RAISE <class 'rmgpy.exceptions.PlasmaStateError'>
+
+test/rmgpy/solver/plasmaWallTest.py:1627: Failed
+___ test_initial_quasineutrality_bound_is_relative_under_algebraic_electron ____
+
+    def test_initial_quasineutrality_bound_is_relative_under_algebraic_electron():
+        """HIGH 3 at the second site: with the electron carried algebraically, the packed
+        initial state must SATISFY quasineutrality, and 'satisfy' is again relative. Ar+
+        at 5e-13 mol against e- at 1e-13 mol is a net +4e-13 -- a two-thirds charge
+        imbalance -- that the absolute 1e-12 mol floor admitted."""
+        e = Species(label='e-').from_adjacency_list('1 e u1 p0 c-1')
+        ar = _ground_species('Ar')
+        arp = Species(label='Ar+').from_adjacency_list('multiplicity 2\n1 Ar u1 p3 c+1')
+        imf = {e: 1.0e-13, arp: 5.0e-13, ar: 1.0 - 6.0e-13}
+        reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+                                (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
+                                quasineutral_electron=True)
+        with pytest.raises(PlasmaStateError) as exc:
+>           reactor.initialize_model([e, ar, arp], [], [], [])
+E           Failed: DID NOT RAISE <class 'rmgpy.exceptions.PlasmaStateError'>
+
+test/rmgpy/solver/plasmaWallTest.py:1644: Failed
+___ test_neutralisation_energy_is_owed_per_ion_lost_not_scaled_by_recycling ____
+
+    def test_neutralisation_energy_is_owed_per_ion_lost_not_scaled_by_recycling():
+        """HIGH 4: wall_recycling is a MASS-return fraction. The neutralisation enthalpy
+        is deposited when the ion recombines with an electron at the wall, which happens
+        whether or not the neutral returns to the gas. The energy term was gated on and
+        multiplied by gamma, so a fully-pumping wall (gamma=0) reported 0 W -- and, worse,
+        labelled it 'available'. The energy must be independent of gamma."""
+        r0 = _energy_reactor(gamma=0.0)
+        r1 = _energy_reactor(gamma=1.0)
+        e0 = r0.wall_neutralization_energy_flux
+        e1 = r1.wall_neutralization_energy_flux
+        assert r0.wall_energy_availability['wall_neutralization_energy_flux'] == 'available'
+>       assert e0 > 0.0
+E       assert 0.0 > 0.0
+
+test/rmgpy/solver/plasmaWallTest.py:1676: AssertionError
+____________ test_duplicate_neutral_label_in_declaration_is_refused ____________
+
+    def test_duplicate_neutral_label_in_declaration_is_refused():
+        """MEDIUM: a declaration names ONE product, but if two core species carry that
+        label the name identifies two things and core ordering silently picked the first.
+        Round 83's whole point is that the modeller names the product; an ambiguous label
+        defeats it. Refuse."""
+        with pytest.raises(PlasmaStateError) as exc:
+>           _metastable_reactor(meta_label='Ar', neutralization={'Ar+': 'Ar'})
+E           Failed: DID NOT RAISE <class 'rmgpy.exceptions.PlasmaStateError'>
+
+test/rmgpy/solver/plasmaWallTest.py:1689: Failed
+_______ test_quasineutral_electron_flag_parses_boolean_strings_strictly ________
+
+    def test_quasineutral_electron_flag_parses_boolean_strings_strictly():
+        """MEDIUM: quasineutral_electron went through bool(value), so the STRING 'False'
+        -- any non-empty string -- enabled quasineutral mode. Parse boolean-like strings
+        by value, and refuse a string that is not boolean-like rather than reading it as
+        True."""
+        e, ar, arp = _argon_species()
+        imf = {e: 1.0e-6, arp: 1.0e-6, ar: 1.0 - 2.0e-6}
+        r = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+                          (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
+                          quasineutral_electron='False')
+>       assert r.quasineutral_electron is False
+E       assert True is False
+E        +  where True = <rmgpy.solver.plasma.PlasmaReactor object at 0x5aac5fbf98e0>.quasineutral_electron
+
+test/rmgpy/solver/plasmaWallTest.py:1704: AssertionError
+=============================== warnings summary ===============================
+test/rmgpy/solver/plasmaWallTest.py::test_wall_only_deck_integrates_past_t0_on_the_production_path
+test/rmgpy/solver/plasmaWallTest.py::test_genuinely_inert_deck_still_terminates_at_t0_unchanged
+  /home/alon/Code/RMG-Py-i246-ambipolar-wall-operator/test/rmgpy/solver/plasmaWallTest.py:1526: RuntimeWarning: invalid value encountered in divide
+    return reactor.simulate(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_wall_only_deck_integrates_past_t0_on_the_production_path
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_skeleton_key_keeps_isotopes_so_the_wall_cannot_transmute_nuclei
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_declared_isotopic_neutral_is_not_hidden_by_key_truncation
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_quasineutrality_bound_is_relative_not_an_absolute_mole_floor
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_initial_quasineutrality_bound_is_relative_under_algebraic_electron
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_neutralisation_energy_is_owed_per_ion_lost_not_scaled_by_recycling
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_duplicate_neutral_label_in_declaration_is_refused
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_quasineutral_electron_flag_parses_boolean_strings_strictly
+8 failed, 1 passed, 60 deselected, 2 warnings in 1.60s

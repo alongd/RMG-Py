@@ -1,0 +1,84 @@
+.F                                                                       [100%]
+=================================== FAILURES ===================================
+_________ test_the_census_rejects_a_tagged_docstring_with_no_assertion _________
+
+    def test_the_census_rejects_a_tagged_docstring_with_no_assertion():
+        """Round 111 LOW 2, the census's own tripwire. Before the tightening a ``test_*`` whose body
+        was a round/finding-tagged docstring and ``pass`` satisfied the census, because a tag counted
+        as evidence -- the ``is_tagged or is_asserting`` rule. Feed exactly that and confirm the
+        detector now reports it, alongside a test that only asserts a bare constant; and confirm a
+        real assertion and a ``pytest.raises`` context manager are still accepted. This is what the
+        round-106 census could not do to itself."""
+        rejected = (
+            'def test_tagged_but_empty():\n'
+            '    """Round 111 HIGH 1 -- names a finding but asserts nothing."""\n'
+            '    pass\n'
+            'def test_vacuous_only():\n'
+            '    """LOW 2 tag."""\n'
+            '    assert True\n'
+            # round 112 LOW: four holes the round-111 census still had.
+            'def test_vacuous_compare():\n'                       # `1 == 1` is decided at parse time
+            '    assert 1 == 1\n'
+            'def test_dead_branch_assert():\n'                    # under `if False:` -- never runs
+            '    if False:\n'
+            '        assert compute() == 1\n'
+            'def test_uncalled_nested_assert():\n'                # the assert is in an uncalled inner def
+            '    def inner():\n'
+            '        assert compute() == 1\n'
+            'def test_unrelated_raises_context_manager():\n'      # AST holds "raises" but is not pytest.raises
+            '    with a_helper_that_raises():\n'
+            '        do_work()\n'
+            # round 113 LOW: four more the round-112 census still credited.
+            'def test_bare_raises_cm():\n'                        # bare raises(...) -- need not be pytest's
+            '    with raises(ValueError):\n'
+            '        do_work()\n'
+            'def test_fake_raises_cm():\n'                        # fake.raises(...) -- not pytest.raises
+            '    with fake.raises(ValueError):\n'
+            '        do_work()\n'
+            'def test_while_false_assert():\n'                    # while False -- body never runs
+            '    while False:\n'
+            '        assert compute() == 1\n'
+            'def test_empty_loop_assert():\n'                     # for _ in [] -- body never runs
+            '    for _ in []:\n'
+            '        assert compute() == 1\n'
+            # round 114 LOW: three more the round-113 census still credited.
+            'def test_folded_dead_branch_assert():\n'            # `1 == 0` folds to False -- never runs
+            '    if 1 == 0:\n'
+            '        assert compute() == 1\n'
+            'def test_assert_after_return():\n'                  # unreachable after the return
+            '    return\n'
+            '    assert compute() == 1\n'
+            'async def test_async_assert():\n'                   # no async plugin: pytest never awaits it
+            '    assert compute() == 1\n'
+        )
+        accepted = (
+            'def test_real_runtime_value():\n'                    # references a runtime value -> real
+            '    assert len([1, 2]) == 2\n'
+            'def test_context_manager():\n'
+            '    with pytest.raises(ValueError):\n'
+            '        raise ValueError()\n'
+            'def test_warns_context_manager():\n'
+            '    with pytest.warns(UserWarning):\n'
+            '        do_work()\n'
+            'def test_real_assert_inside_a_live_loop():\n'        # a reachable assert in a loop body
+            '    for i in range(3):\n'
+            '        assert step(i) is True\n'
+        )
+>       assert set(_tests_without_a_real_assertion(rejected)) == {
+            'test_tagged_but_empty', 'test_vacuous_only', 'test_vacuous_compare',
+            'test_dead_branch_assert', 'test_uncalled_nested_assert',
+            'test_unrelated_raises_context_manager', 'test_bare_raises_cm', 'test_fake_raises_cm',
+            'test_while_false_assert', 'test_empty_loop_assert', 'test_folded_dead_branch_assert',
+            'test_assert_after_return', 'test_async_assert'}
+E       AssertionError: assert {'test_bare_r..._assert', ...} == {'test_assert...ises_cm', ...}
+E         
+E         Extra items in the right set:
+E         'test_async_assert'
+E         'test_folded_dead_branch_assert'
+E         'test_assert_after_return'
+E         Use -v to get more diff
+
+test/rmgpy/solver/plasmaWallTest.py:2744: AssertionError
+=========================== short test summary info ============================
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_the_census_rejects_a_tagged_docstring_with_no_assertion
+1 failed, 1 passed, 108 deselected in 2.52s

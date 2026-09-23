@@ -1,0 +1,37 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+rootdir: /home/alon/Code/RMG-Py-metastable-wall
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 127 items / 99 deselected / 28 selected
+
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_frequency_matches_hand_arithmetic PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_frequency_scales_inversely_with_pressure PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_dn_form_equals_dp_form PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_residual_moves_metastable_to_ground_only PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_loss_conserves_heavy_particles PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_undeclared_metastable_has_no_neutral_wall_loss PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_jacobian_matches_finite_difference PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_jacobian_scan_can_fail PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_declaration_survives_pickle_and_deepcopy PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_nonfinite_or_nonpositive_diffusivity[nan] PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_nonfinite_or_nonpositive_diffusivity[inf] PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_nonfinite_or_nonpositive_diffusivity[-inf] PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_nonfinite_or_nonpositive_diffusivity[0.0] PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_nonfinite_or_nonpositive_diffusivity[-1.0] PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_nonfinite_or_nonpositive_diffusivity[5e-324] PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_nonfinite_or_nonpositive_diffusivity[1e+308] PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_malformed_declaration[wrong dimension-declaration0-dimension] PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_malformed_declaration[not a dict-declaration1-dict] PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_malformed_declaration[entry missing diffusivity-declaration2-diffusivity] PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_malformed_declaration[entry missing product-declaration3-product] PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_malformed_declaration[unknown entry key-declaration4-gamma] PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_malformed_declaration[charged species declared-declaration5-neutral] PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_malformed_declaration[product is the source-declaration6-itself] PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_malformed_declaration[product not in core-declaration7-Xe] PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_malformed_declaration[product charged-declaration8-neutral] PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_element_changing_product PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_declaration_without_a_wall PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_seeded_metastable_decays_exponentially_on_the_wall PASSED
+
+====================== 28 passed, 99 deselected in 3.05s =======================

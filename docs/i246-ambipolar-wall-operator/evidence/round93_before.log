@@ -1,0 +1,152 @@
+FFFFFF                                                                   [100%]
+=================================== FAILURES ===================================
+____ test_external_source_ignites_a_zero_electron_deck_in_quasineutral_mode ____
+
+    def test_external_source_ignites_a_zero_electron_deck_in_quasineutral_mode():
+        """HIGH 1: round 90 proved ignition from exactly zero electrons in the INTEGRATED
+        mode; the algebraic quasineutralElectron=True mode still refused. The algebraic
+        charge row is driven to the solver's ABSOLUTE accuracy, but check_wall_support tests
+        quasineutrality RELATIVELY. At the first microstep the entire charged inventory sits
+        ~2e-33 mol -- seventeen orders below the integrator's atol -- so the row's absolute
+        convergence noise reads as an ~11% relative imbalance and the guard refuses a state
+        the solver has merely not yet resolved. The relative guard must stand down while the
+        whole charged inventory is below the integrator's resolution; above it the row holds
+        net/magnitude at machine epsilon on its own. Demonstrated across the source range."""
+        for src in (1.0e5, 1.0e12, 1.0e20):
+            r, core, rxns = _build_reactor(wall=True, with_chemistry=False, x_ion=0.0,
+                                           source=src, quasineutral=True)
+            assert r.y0[r.electron_index] == 0.0, "the deck must start at exactly zero electrons"
+            r.termination = [TerminationTime((1.0e-4, 's'))]
+>           _simulate(r, core, rxns)   # must not raise the quasineutrality refusal
+
+test/rmgpy/solver/plasmaWallTest.py:1875: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test/rmgpy/solver/plasmaWallTest.py:1542: in _simulate
+    return reactor.simulate(
+rmgpy/solver/base.pyx:618: in rmgpy.solver.base.ReactionSystem.simulate
+    @cython.boundscheck(False)
+rmgpy/solver/base.pyx:796: in rmgpy.solver.base.ReactionSystem.simulate
+    self.step(step_time)
+rmgpy/solver/plasma.pyx:2103: in rmgpy.solver.plasma.PlasmaReactor.step
+    self.check_wall_support(self.y)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+>   raise PlasmaStateError(
+E   rmgpy.exceptions.PlasmaStateError: the accepted state carries a net charge of -2.646480524539157e-34 mol (positive-ion inventory 2.028968402145937e-33 mol, electron inventory 2.293616454599853e-33 mol), outside the quasineutrality the ambipolar wall requires. The common wall loss frequency removes every charged species at one rate, which conserves charge only when the net is ~0; here it would remove electrons with no ion partner and drive the charge. A cation species present at zero moles is the usual cause. Seed a commensurate positive-ion inventory (chargeBalanceSpecies='<ion>' does it), or remove the wall. (PlasmaReactor(label=None, T=(298.15,'K'), P=(666.612,'Pa'), Te=(34813.6,'K')))
+
+rmgpy/solver/plasma.pyx:1939: PlasmaStateError
+___ test_saturating_discharge_reports_a_steady_state_and_a_dead_one_does_not ___
+
+    def test_saturating_discharge_reports_a_steady_state_and_a_dead_one_does_not():
+        """HIGH 2: a source-driven discharge reaches n_e = S/nu_wall and holds it, yet the
+        criterion never armed. A saturating-from-zero trajectory has log-log slope bounded by
+        1 -- ``nu*t/(exp(nu*t)-1)`` -- so R>=1 never fires; and the electron saturates far
+        below the mole floor, so the generic residual reads only the inert neutrals (which a
+        weak discharge never perturbs, residual exactly 0 from t=0). The reactor supplies the
+        electron's own slope so firing waits for it to saturate, and arms on ``t*nu_wall>=1``
+        (the R=t/tau>=1 standard evaluated from the known relaxation time). Same criterion, a
+        model that never started -- no source -- must still report NOT a steady state."""
+        term = [TerminationSteadyState(tolerance=1.0e-8), TerminationTime((200.0, 's'))]
+        r, core, rxns = _build_reactor(wall=True, with_chemistry=False, x_ion=0.0,
+                                       source=1.0e5, termination=term)
+        _simulate(r, core, rxns)
+        yv = np.asarray(r.y[:r.num_core_species], float)
+        V = r.compute_volume(yv)
+        nu = r.compute_nu_wall(yv, V)
+        n_e_density = r.y[r.electron_index] * constants.Na / V
+>       assert r.steady_state_reached, "the saturated discharge was not recognised as steady"
+E       AssertionError: the saturated discharge was not recognised as steady
+E       assert False
+E        +  where False = <rmgpy.solver.plasma.PlasmaReactor object at 0x6369a9ca1d20>.steady_state_reached
+
+test/rmgpy/solver/plasmaWallTest.py:1897: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  root:plasmaWallTest.py:1542 At time 9.0072e+00 s, terminating terminationSteadyState WITHOUT a steady state: the system carries no flux, so the composition cannot change and there is nothing further to integrate. NO STEADY STATE WAS DEMONSTRATED -- this model never started, which is not the same result as a stationary ionisation balance, and must not be reported as one. There is no residual to quote: the criterion was never evaluated, because a composition that cannot move carries no information about whether it has settled.
+_ test_finite_wall_inputs_that_make_nu_wall_infinite_are_refused_at_construction _
+
+    def test_finite_wall_inputs_that_make_nu_wall_infinite_are_refused_at_construction():
+        """MEDIUM 1: a finite reduced mobility (1e308) and a finite diffusion length whose
+        SQUARE is subnormal (Lambda=1e-160 -> Lambda^2=1e-320) both give nu_wall=inf, yet were
+        admitted -- the run then carries a non-finite residual. Marking the wall term
+        'unavailable' is not the same as refusing a state that cannot be integrated. Refuse at
+        construction: nu_wall evaluated at the reference density must be finite, and Lambda^2
+        must be a normal (not subnormal) divisor."""
+        with pytest.raises(PlasmaStateError):
+>           _build_reactor(wall=True, with_chemistry=False, mu0=1.0e308)
+E           Failed: DID NOT RAISE <class 'rmgpy.exceptions.PlasmaStateError'>
+
+test/rmgpy/solver/plasmaWallTest.py:1917: Failed
+____________ test_neutral_mixture_of_distinct_bath_gases_is_refused ____________
+
+    def test_neutral_mixture_of_distinct_bath_gases_is_refused():
+        """MEDIUM 2: the wall carries ONE ion reduced mobility (Ar+ in Ar) but n_neutral sums
+        every neutral heavy species, so a 50/50 Ar/He mixture was accepted while the mobility
+        applied to the He fraction is simply wrong. The neutral bath must be a single gas: all
+        neutral heavy species must share one heavy-atom skeleton. Ar and its metastable Ar* do
+        (both InChI=1S/Ar); He does not. Refuse the mixture; the Ar/Ar* deliverable stands."""
+        e, ar, arp = _argon_species()
+        he = Species(label='He').from_adjacency_list('1 He u0 p1 c0')
+        he.thermo = _thermo_with_h298(0.0)
+        imf = {e: 1.0e-6, arp: 1.0e-6, ar: 0.5 - 1.0e-6, he: 0.5 - 1.0e-6}
+        with pytest.raises(PlasmaStateError) as exc:
+            reactor = PlasmaReactor(
+                (TGAS, 'K'), (P_NOMINAL, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+                n_sims=1, termination=[],
+                diffusion_length=(_diffusion_length(), 'm'),
+                ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'), wall_recycling=1.0)
+>           reactor.initialize_model([e, ar, he, arp], [], [], [])
+E           Failed: DID NOT RAISE <class 'rmgpy.exceptions.PlasmaStateError'>
+
+test/rmgpy/solver/plasmaWallTest.py:1938: Failed
+______ test_density_floor_is_invariant_under_mobility_reparameterisation _______
+
+    def test_density_floor_is_invariant_under_mobility_reparameterisation():
+        """MEDIUM 3: the transport law reads mu0*Nref as a product, so scaling
+        (Nref -> Nref*c, mu0 -> mu0/c) leaves nu_wall bit-identical -- but the acceptance floor
+        was FRACTION*Nref, which scaled by c. Physically identical inputs were then accepted or
+        refused differently. This is round 90's HIGH 2 in a new coordinate: the floor stopped
+        depending on history and now depended on parameterisation. It must be built from a
+        parameterisation-invariant density."""
+        def floor_of(c):
+            e, ar, arp = _argon_species()
+            imf = {e: 1.0e-6, arp: 1.0e-6, ar: 1.0 - 2.0e-6}
+            r = PlasmaReactor(
+                (TGAS, 'K'), (P_NOMINAL, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+                n_sims=1, termination=[],
+                diffusion_length=(_diffusion_length(), 'm'),
+                ion_reduced_mobility=(MU0_AR_IN_AR / c, 'm^2/(V*s)'),
+                mobility_reference_density=(PLASMA_LOSCHMIDT * c, 'm^-3'), wall_recycling=1.0)
+            r.initialize_model([e, ar, arp], [], [], [])
+            return r.wall_neutral_density_floor
+        base = floor_of(1.0)
+        for c in (1.0e3, 1.0e-3):
+>           assert floor_of(c) == base, (
+                "the density floor moved under a physics-preserving reparameterisation (c={0:g})".format(c))
+E           AssertionError: the density floor moved under a physics-preserving reparameterisation (c=1000)
+E           assert 2.6867811000000005e+18 == 2686781100000000.5
+E            +  where 2.6867811000000005e+18 = <function test_density_floor_is_invariant_under_mobility_reparameterisation.<locals>.floor_of at 0x794d0fa6e8b0>(1000.0)
+
+test/rmgpy/solver/plasmaWallTest.py:1965: AssertionError
+____ test_small_but_nonzero_source_flux_is_not_lost_to_a_squaring_underflow ____
+
+    def test_small_but_nonzero_source_flux_is_not_lost_to_a_squaring_underflow():
+        """LOW: get_non_chemical_char_rate squared the delivered per-species rates to form an
+        L2 norm, so a small source whose flux is representable but whose SQUARE underflows
+        (below ~sqrt(DBL_MIN)) reported exactly zero -- reading as an inert reactor while a
+        source was declared and admitted. The norm must be scale-robust so a nonzero flux
+        stays nonzero."""
+        r, core, rxns = _build_reactor(wall=True, with_chemistry=False, x_ion=0.0, source=1.0e-140)
+>       assert r.get_non_chemical_char_rate() > 0.0
+E       assert 0.0 > 0.0
+E        +  where 0.0 = get_non_chemical_char_rate()
+E        +    where get_non_chemical_char_rate = <rmgpy.solver.plasma.PlasmaReactor object at 0x6369a9c6cce0>.get_non_chemical_char_rate
+
+test/rmgpy/solver/plasmaWallTest.py:1976: AssertionError
+=========================== short test summary info ============================
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_external_source_ignites_a_zero_electron_deck_in_quasineutral_mode
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_saturating_discharge_reports_a_steady_state_and_a_dead_one_does_not
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_finite_wall_inputs_that_make_nu_wall_infinite_are_refused_at_construction
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_neutral_mixture_of_distinct_bath_gases_is_refused
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_density_floor_is_invariant_under_mobility_reparameterisation
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_small_but_nonzero_source_flux_is_not_lost_to_a_squaring_underflow
+6 failed, 77 deselected in 1.56s

@@ -1,0 +1,12 @@
+E       assert not True
+E        +  where True = <function TerminationSteadyStateLatchTest.test_persistence_is_physical_time_not_a_bare_step_count.<locals>.feed at 0x7cfeadb7bdc0>(<rmgpy.solver.termination.TerminationSteadyState object at 0x7cfeadc14820>, 1e-07, 110.0, 121.0)
+
+test/rmgpy/solver/steadyStateTest.py:282: AssertionError
+=========================== short test summary info ============================
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_a_saturated_electron_does_not_vouch_for_a_still_drifting_neutral
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_a_stationary_composition_over_a_shrinking_inventory_terminates
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_the_wall_guard_evaluates_the_runtime_expression_not_a_reference_proxy
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_multi_gas_bath_records_an_availability_state_not_just_a_warning
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_a_subnormal_source_that_injects_nothing_is_refused
+FAILED test/rmgpy/solver/steadyStateTest.py::TerminationSteadyStateLatchTest::test_persistence_is_physical_time_not_a_bare_step_count
+6 failed in 1.26s

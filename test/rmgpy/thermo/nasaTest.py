@@ -34,8 +34,10 @@ This script contains unit tests of the :mod:`rmgpy.thermo.nasa` module.
 import os.path, ast
 
 import numpy as np
+import pytest
 
 import rmgpy.constants as constants
+from rmgpy.exceptions import CanteraThermoWriteError
 from rmgpy.quantity import ScalarQuantity
 from rmgpy.thermo.nasa import NASA, NASAPolynomial
 
@@ -315,6 +317,73 @@ class TestNASA:
         # NasaPoly2 units use J/kmol rather than J/mol
         assert round(abs(self.nasa.get_enthalpy(900) - nasapoly2.h(900) / 1000), 1) == 0
         assert round(abs(self.nasa.get_entropy(700) - nasapoly2.s(700) / 1000), 1) == 0
+
+    def test_to_cantera_one_range(self):
+        """
+        Headline test (i264 round-98): a NASA object with a SINGLE polynomial
+        (one temperature range) must convert to a Cantera NasaPoly2 without
+        error, and the round-tripped Cp/H/S must agree with the original RMG
+        polynomial. Before the i264 fix, ``to_cantera`` unconditionally
+        indexed ``self.polynomials[1]`` and raised a bare ``IndexError`` on
+        this exact input.
+        """
+        coeffs = [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, 4.37967]
+        one_range = NASA(
+            polynomials=[NASAPolynomial(coeffs=coeffs, Tmin=(200, "K"), Tmax=(6000, "K"))],
+            Tmin=(200, "K"),
+            Tmax=(6000, "K"),
+        )
+        nasapoly2 = one_range.to_cantera()
+        for T in (250.0, 500.0, 1000.0, 2000.0, 4000.0, 5900.0):
+            cp_rmg = one_range.get_heat_capacity(T)
+            h_rmg = one_range.get_enthalpy(T)
+            s_rmg = one_range.get_entropy(T)
+            assert np.isfinite(cp_rmg) and np.isfinite(h_rmg) and np.isfinite(s_rmg)
+            # NasaPoly2 units use J/kmol rather than J/mol.
+            assert abs(cp_rmg - nasapoly2.cp(T) / 1000) / cp_rmg < 5e-6
+            assert abs(h_rmg - nasapoly2.h(T) / 1000) / abs(h_rmg) < 5e-6
+            assert abs(s_rmg - nasapoly2.s(T) / 1000) / s_rmg < 5e-6
+
+    def test_to_cantera_refuses_more_than_two_polynomials(self):
+        """A 3-range NASA object cannot be represented by Cantera's NasaPoly2
+        (which supports at most 2 ranges); to_cantera must name the refusal
+        rather than silently dropping the third polynomial."""
+        coeffs = [2.5, 0.0, 0.0, 0.0, 0.0, -745.375, 4.37967]
+        three_range = NASA(
+            polynomials=[
+                NASAPolynomial(coeffs=coeffs, Tmin=(200, "K"), Tmax=(1000, "K")),
+                NASAPolynomial(coeffs=coeffs, Tmin=(1000, "K"), Tmax=(3000, "K")),
+                NASAPolynomial(coeffs=coeffs, Tmin=(3000, "K"), Tmax=(6000, "K")),
+            ],
+            Tmin=(200, "K"),
+            Tmax=(6000, "K"),
+        )
+        with pytest.raises(CanteraThermoWriteError):
+            three_range.to_cantera()
+
+    def test_to_cantera_refuses_non_seven_coefficient_polynomial(self):
+        """A NASA9-shaped (9-coefficient) polynomial cannot be represented by
+        Cantera's NASA7-only NasaPoly2; to_cantera must refuse by name."""
+        coeffs9 = [2.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -745.375, 4.37967]
+        nasa9 = NASA(
+            polynomials=[NASAPolynomial(coeffs=coeffs9, Tmin=(200, "K"), Tmax=(6000, "K"))],
+            Tmin=(200, "K"),
+            Tmax=(6000, "K"),
+        )
+        with pytest.raises(CanteraThermoWriteError):
+            nasa9.to_cantera()
+
+    def test_to_cantera_refuses_non_finite_coefficients(self):
+        """A NaN coefficient must be refused by name, not silently written as
+        an invalid Cantera polynomial."""
+        coeffs_nan = [float("nan")] * 7
+        nasa_nan = NASA(
+            polynomials=[NASAPolynomial(coeffs=coeffs_nan, Tmin=(200, "K"), Tmax=(6000, "K"))],
+            Tmin=(200, "K"),
+            Tmax=(6000, "K"),
+        )
+        with pytest.raises(CanteraThermoWriteError):
+            nasa_nan.to_cantera()
 
     def test_to_nasa(self):
         """

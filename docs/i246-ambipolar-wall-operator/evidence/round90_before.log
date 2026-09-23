@@ -1,0 +1,27 @@
+=== HIGH 1: external source cannot ignite neutral gas (zero e-, source declared) ===
+  RED(init): zero-electron deck WITH a source is refused at init: PlasmaStateError initial electron amount must be finite and strictly positive; got 0.0. (PlasmaReactor(label=None, T=(298.15,'K
+
+=== HIGH 2: neutral floor is extensive (history-dependent), gating an intensive law ===
+  neutral moles=1.0e-07 mol, normal density n_neutral=1.6192e+23 m^-3
+  nu_wall=1.851660e+01  unclamped closed-form=1.851660e+02  clamped=True
+  check_wall_support verdict=refuse
+  RED: an intensive state judged by extensive moles — clamped and/or refused on its mole count
+
+=== MEDIUM 1a: non-finite nu_wall marked wall_flux 'available' ===
+  wall_flux finite=False, availability='available'
+  RED: a non-finite wall_flux is reported 'available'
+
+=== MEDIUM 1b: sub-underflow diffusion length raises a raw ZeroDivisionError ===
+  RED: raw ZeroDivisionError: float division
+
+=== MEDIUM 2: _coerce_bool_flag still ends in bool(value) ===
+  int 2        -> True  (coerced, not refused)
+  float 0.5    -> True  (coerced, not refused)
+  float NaN    -> True  (coerced, not refused)
+  object()     -> True  (coerced, not refused)
+  empty list   -> False  (coerced, not refused)
+  empty dict   -> False  (coerced, not refused)
+  RED: uninterpretable values are coerced, not refused
+
+=== LOW: base.pyx char_rate=0 makes 0/0 NaN rate ratios (wall-only run) ===
+  RED: wall-only simulate() hit a float error in the rate-ratio divide: invalid value encountered in divide

@@ -1,0 +1,118 @@
+rmgpy resolved from : /home/alon/Code/RMG-Py-i246-ambipolar-wall-operator
+this worktree       : /home/alon/Code/RMG-Py-i246-ambipolar-wall-operator
+plasma module .so   : /home/alon/Code/RMG-Py-i246-ambipolar-wall-operator/rmgpy/solver/plasma.cpython-39-x86_64-linux-gnu.so
+
+==============================================================================
+CONDITIONS: Tgas = 298.15 K, Te = 34813.5 K, P = 666.6118421052631 Pa (5 torr)
+Te/Tgas = 116.7651
+==============================================================================
+
+(1) ELECTRON SHARE OF THE TWO-TEMPERATURE EOS SUM, at f = 1
+------------------------------------------------------------------------------
+V(f=1)                          = 437.9382608578101 m^3
+electron share of the EOS sum   = 0.991509  (99.1509 %)
+brief claims                    = 99.15 %
+closed form Te/(Tgas+Te)        = 0.991509
+VERDICT: CONFIRMED
+
+(2)+(3) WALL SUPPRESSION ON n_e, measured by finite difference
+------------------------------------------------------------------------------
+A wall removes an amount delta of the charged pairs.
+  RECYCLING: Ar+ + e- -> Ar   (heavy count conserved, argon returns)
+  PUMPING  : Ar+ and e- both leave the gas entirely
+
+suppression S = (d ln n_e) / (d ln N_e); the brief predicts
+  S_recycling ~ 1/117      S_pumping ~ 1/96,800
+
+           f      S_recycling        1/S_recyc        S_pumping         1/S_pump
+------------------------------------------------------------------------------
+           1     8.490986e-03            117.8    -0.000000e+00              inf
+       0.999     8.498091e-03            117.7     7.105427e-06        1.407e+05
+        0.99     8.576251e-03            116.6     8.526513e-05        1.173e+04
+         0.9     9.428903e-03            106.1     9.450219e-04             1058
+         0.5     1.683986e-02            59.38     8.419932e-03            118.8
+         0.1     7.888445e-02            12.68     7.099742e-02            14.09
+       0.001     8.954401e-01            1.117     8.945448e-01            1.118
+       1e-05     9.988383e-01            1.001     9.988241e-01            1.001
+       1e-07     9.999893e-01                1     9.999893e-01                1
+
+closed forms derived from the EOS (for comparison, NOT used above):
+  S_recycling(f) = Tgas / (Tgas + f*Te)
+  S_pumping(f)   = 1 - f*(Tgas+Te)/(Tgas + f*Te)
+  f=1        closed S_rec=8.491484e-03 measured=8.490986e-03 | closed S_pmp=0.000000e+00 measured=-0.000000e+00
+  f=0.999    closed S_rec=8.499911e-03 measured=8.498091e-03 | closed S_pmp=8.499911e-06 measured=7.105427e-06
+  f=0.99     closed S_rec=8.576521e-03 measured=8.576251e-03 | closed S_pmp=8.576521e-05 measured=8.526513e-05
+  f=0.5      closed S_rec=1.683997e-02 measured=1.683986e-02 | closed S_pmp=8.419985e-03 measured=8.419932e-03
+
+S_recycling(f=1)  = 8.490986e-03  -> 1/117.8
+S_pumping(f=1)    = -0.000000e+00
+
+Where does 96,800 come from? It is a ZERO CROSSING, not a model property:
+S_pumping(f) = 0 exactly at f = 1, so 1/S_pumping diverges there. Solving
+S_pumping(f) = 1/96800 for f:
+  f = 0.9987848846  (i.e. 1 - f = 1.2151e-03)
+  -- a particular point, not a lever; 1/S_pumping runs from ~119 at f=0
+     to +infinity at f=1, passing 96,800 on the way.
+
+(4) THE TWO OBSERVABLES ON THE SAME EVENT
+------------------------------------------------------------------------------
+A recycling wall removing 511 ppm of the electrons, at a few f:
+           f        d n_e / n_e            d V / V d(1-f_ion)/(1-f_ion)
+------------------------------------------------------------------------------
+ 0.999999999        -4.3413e-06        -5.0666e-04        +5.1100e+05
+       0.999        -4.3457e-06        -5.0666e-04        +5.1049e-01
+        0.99        -4.3848e-06        -5.0662e-04        +5.0589e-02
+         0.5        -8.6096e-06        -5.0239e-04        +5.1100e-04
+       0.001        -4.5760e-04        -5.3428e-05        +5.1151e-07
+
+Same event, two observables, orders of magnitude apart -- the brief's
+consequence (a) CONFIRMED, and the reason is visible: the neutral
+fraction is normalised to a population that is itself near zero at f -> 1,
+while n_e is normalised to one that is near its maximum.
+
+(5) IS THE WALL RESIDUAL TERM VOLUME-DEPENDENT?
+------------------------------------------------------------------------------
+The solver residual is res_i = (dC_i/dt) * V, in mol/s, with C_i = y_i/V.
+A first-order wall loss is dC_i/dt = -nu_wall * C_i, so
+    res_i|wall = -nu_wall * C_i * V = -nu_wall * y_i
+which is EXACTLY LINEAR IN y AND FREE OF V -- provided nu_wall is a constant.
+Checked numerically at three very different volumes:
+  f=1e-07     V=3.718789e+00 m^3   -nu*C*V=-1.00000000000000002e-02  -nu*y=-1.00000000000000002e-02  identical=True
+  f=0.5       V=2.208285e+02 m^3   -nu*C*V=-4.99999999999999927e+04  -nu*y=-5.00000000000000000e+04  identical=False
+  f=1         V=4.379383e+02 m^3   -nu*C*V=-1.00000000000000000e+05  -nu*y=-1.00000000000000000e+05  identical=True
+
+The brief warns the wall Jacobian 'also perturbs V'. Through the C=y/V
+conversion it does NOT -- that cancels exactly. It DOES if nu_wall itself
+carries a density dependence, which an ambipolar diffusivity must:
+    D_a = mu_i * kTe/e  with  mu_i = mu_i0 * (N0 / n_gas),  n_gas = y_gas*Na/V
+so nu_wall ~ V / y_gas and the dV/dy coupling is real -- but it enters
+through the MOBILITY, not through the concentration conversion.
+
+(6) THE STEADY STATE THE WALL CREATES, AND ITS CONDITIONING
+------------------------------------------------------------------------------
+Balance: nu_ion = k_iz(Te)*n_Ar  against  nu_wall, both first order in n_e,
+so n_e CANCELS from the balance and the stationary condition is a condition
+on the NEUTRAL density alone:
+      n_Ar* = nu_wall / k_iz(Te)
+At constant pressure the EOS then fixes n_e as a DIFFERENCE:
+      n_e* = (P/kB - n_Ar* * Tgas) / (Tgas + Te)
+Writing f = 1 - n_Ar*/n_Ar,0 with n_Ar,0 = P/(kB*Tgas):
+      C_wall = |d ln n_e / d ln nu_wall| = (1-f)/f
+      C_Te   = |d ln n_e / d ln Te|      = (1-f)/f * |d ln k_iz/d ln Te|
+      C_Ar   = |d ln n_e / d ln n_Ar|    = (1-f)/f
+
+Two consequences, both checkable:
+ * C_Te / C_wall = |d ln k_iz/d ln Te| -- a CONSTANT. Te and nu_wall are
+   DEGENERATE directions: any error in the wall coefficient is
+   indistinguishable from an error in Te. That is why a free wall
+   coefficient can reproduce any n_e you like.
+ * the 784x the ruling measured implies (1-f)/f from C_Te alone:
+     C_Te = 6.664e+04 at |dln k/dln Te| = 4.00 -> (1-f)/f = 1.666e+04, f = 6.002e-05
+     C_Te = 6.664e+04 at |dln k/dln Te| = 5.25 -> (1-f)/f = 1.269e+04, f = 7.877e-05
+     C_Te = 6.664e+04 at |dln k/dln Te| = 7.00 -> (1-f)/f = 9521, f = 0.000105
+   i.e. the 784x is the signature of a WEAKLY IONISED state, and it
+   vanishes as f -> 1 (C -> 0) and diverges as f -> 0.
+
+==============================================================================
+DONE
+==============================================================================

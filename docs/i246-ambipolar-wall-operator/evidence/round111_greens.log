@@ -1,0 +1,10 @@
+=== ROUND 111 GREEN (fixes applied; base.so rebuilt) ===
+# HIGH 1 + MEDIUM + HIGH 2 + LOW 2 new/changed tests:
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collected 143 items / 133 deselected / 10 selected
+
+test/rmgpy/solver/steadyStateTest.py .....                               [ 50%]
+test/rmgpy/solver/plasmaWallTest.py .....                                [100%]
+
+====================== 10 passed, 133 deselected in 0.94s ======================

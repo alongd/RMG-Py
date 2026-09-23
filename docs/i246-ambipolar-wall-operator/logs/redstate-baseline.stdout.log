@@ -1,0 +1,28 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python3.9
+rootdir: /home/alon/Code/RMG-Py-i246-ambipolar-wall-operator
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 19 items
+
+test/rmgpy/solver/plasmaWallTest.py::test_nu_wall_matches_closed_form_rederivation PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_nu_wall_geometry_scaling PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_wall_loss_is_first_order_in_electron_population PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_net_charge_flux_zero_on_neutral_nonzero_on_nonneutral PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_net_charge_drift_zero_under_full_residual PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_heavy_atom_recycling_conservation PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_no_wall_residual_and_jacobian_bitwise_reproducible PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_below_threshold_decays_to_extinction_without_negative_amounts PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_analytic_jacobian_matches_finite_difference_scan[no wall at all (pre-existing equations)-kwargs0] PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_analytic_jacobian_matches_finite_difference_scan[wall, integrated electron-kwargs1] PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_analytic_jacobian_matches_finite_difference_scan[wall, quasineutral electron-kwargs2] PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_analytic_jacobian_matches_finite_difference_scan[wall + external source-kwargs3] PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_analytic_jacobian_matches_finite_difference_scan[gamma = 0.5 (partially pumping)-kwargs4] PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_jacobian_scan_negative_control_can_fail PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_ionisation_degree_ceiling_raises_naming_ionisation_degree PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_nonneutral_initial_state_raises_under_quasineutral_electron PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_diffusion_length_and_mobility_must_be_declared_together PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_wall_parameter_bounds_each_raise PASSED
+test/rmgpy/solver/plasmaWallTest.py::test_quasineutral_electron_row_is_net_charge_with_no_dydt_dependence PASSED
+
+============================== 19 passed in 5.62s ==============================

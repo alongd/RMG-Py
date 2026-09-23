@@ -1,0 +1,16 @@
+........................................................................ [ 20%]
+........................................................................ [ 40%]
+........................................................................ [ 60%]
+.............................................................s.......... [ 80%]
+........................................................................ [100%]
+=============================== warnings summary ===============================
+test/rmgpy/solver/steadyStateTest.py::test_a_nonfinite_per_species_slope_poisons_the_step_instead_of_dropping_it
+  /home/alon/Code/RMG-Py-i246-ambipolar-wall-operator/rmgpy/solver/termination.py:504: RuntimeWarning: divide by zero encountered in log
+    slope = np.abs(np.log(x_now) - np.log(x_prev)) / dlnt
+
+test/rmgpy/solver/steadyStateTest.py::test_a_nonfinite_per_species_slope_poisons_the_step_instead_of_dropping_it
+  /home/alon/Code/RMG-Py-i246-ambipolar-wall-operator/rmgpy/solver/termination.py:504: RuntimeWarning: invalid value encountered in subtract
+    slope = np.abs(np.log(x_now) - np.log(x_prev)) / dlnt
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+359 passed, 1 skipped, 2 warnings in 30.01s

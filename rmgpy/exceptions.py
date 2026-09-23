@@ -233,6 +233,16 @@ class MechanismWriterError(OutputError):
     pass
 
 
+class CanteraThermoWriteError(OutputError):
+    """
+    Raised when the Cantera writer cannot represent a species's thermo, e.g. a
+    NASA object that carries zero polynomials. Deliberately fatal, like
+    :class:`MechanismWriterError`: a silently skipped species would leave a
+    hole in the exported Cantera file while the export reports success.
+    """
+    pass
+
+
 class PressureDependenceError(Exception):
     """
     An exception class to use when an error involving pressure dependence is
