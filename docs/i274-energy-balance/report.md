@@ -59,11 +59,11 @@ left `declared-absent`, is now filled with the sheath term (`available-floating-
 | 2 | Te vs particle-balance Te* (tolerance 0.5 meV) | 0.5 W: 0.89881 eV vs Te*_FULL 0.89886. Across 0.001–10 W Te follows Te*(n_e) of report7: 0.89979 @2.3e14 (0.8998), 0.89960 @1.2e15 (0.8996), 0.89881 @1.2e16 (0.8989), 0.89903 @1.2e17 (0.8990). Energy equation does **not** overturn particle balance. | **closed** |
 | 3 | **Cl. 2 + 3**: n_e vs P_abs, no wall retune; hand check | 13 powers, 0.001–10 W: n_e 2.33e13 → 2.34e17 m⁻³, log-log slope **1.0006**. Global formula at 0.5 W (LXCat K_el): ν_w 55.470 s⁻¹, E_c 2025.5 eV, E_e 1.798 eV, E_i 4.655 eV → n_e(hand) 1.1734e16 vs solver 1.1734e16 (2.3e-6, RMG's Ar mass) | **closed** |
 | 4 | **Cl. 4**: radius ±50 % at 0.5 W | R 2.5 / 5 / 7.5 cm → Te 0.9755 / 0.8988 / 0.8610 eV (smaller chamber, larger wall loss, higher Te*); n_e 2.93e16 / 1.17e16 / 6.35e15 | **closed** |
-| 5 | **Cl. 5**: extinction vs sustained | P_abs = 0: Te within 1 % of Tg by 1.9 ms (LXCat K_el; 0.2 ms on L&L); state `extinct`. Toy-model test integrates P = 0 to the source floor. Every P_abs > 0 sustains. On **L&L** K_el, after PM ruling (2), the FULL run completes: exit 0 at 28.2 s, n_e = 4.1626e4 m⁻³ vs hand floor 4.1624e4 (3.8e-5). On the **LXCat** production rate it is refused mid-decay (0.8–2.7 s) on an Ars negative 1.02–2.7× its own atol, at atol 1e-16/1e-20/1e-30 | **extinction shown; completion open** on a ruling about the bound (finding 4) |
+| 5 | **Cl. 5**: extinction vs sustained | P_abs = 0 (LXCat K_el, default atol): Te within 1 % of Tg by 1.9 ms; the run **exits 0 with termination = 'extinct' at t = 2.45 ms**, after 10 consecutive accepted steps with Te within 1 K of Tg (298.06 K) and ν_iz/ν_loss < 1e-6 (5e-16). No refusal in stderr. The 0.5 W run never triggers it (termination None, every other output field identical to the previous run). Energy-off FULL stays byte-identical to `mainline-FULL` (`terminal/FULL-off/`). Every P_abs > 0 sustains | **closed** (finding 4) |
 | 6 | **Cl. 6 + 10**: ±20 % sensitivity at 0.5 W | ionisation ×0.8/×1.2: Te +11.6/−9.3 meV, n_e −6.0/+5.0 %. D_a ×0.8/×1.2: Te −11.6/+9.7 meV, n_e +6.4/−5.3 %. P_abs ×0.8/×1.2: Te +0.07/−0.04 meV, n_e −20.0/+20.0 %. K_el ×0.8/×1.2: Te −0.04/+0.04 meV, n_e +18.8/−13.7 %. **Joint 2⁴ corner sweep** (PM ruling 3, LXCat K_el baseline, 16 runs, all steady): Te **0.8781–0.9205 eV** (−20.7/+21.7 meV), n_e **7.25e15–1.88e16 m⁻³** (×0.62/×1.60 of 1.17e16). Each corner is within 1.3 % of the product of the one-at-a-time factors. The same sweep on L&L (`arms-LL/`) gives ×0.62/×1.60 about 9.55e15 (`results.md`) | Cl. 10 **closed for these four inputs**. Not covered: the Maxwellian-EEDF systematic |
 | 7 | **Cl. 7**: budget closure | 0.5 W steady state: \|P − ΣQ − dU/dt\|/P = **1.2e-12**, dU/dt/P = 1.5e-12. Table in `budget_0p5W.md`: elastic 79.0 %, excitation (87) 19.9 %, ionisation 0.76 %, wall ions 0.23 %, wall electrons 0.09 % (L&L: elastic 82.9 %, closure 6.9e-14) | **closed** |
 | 8 | **Cl. 8**: wall energy uses the particle flux | Q_wall,e / latched `wall_electron_energy_flux` = 1.000000000000000. Both are built from the same `wall_loss_rates` evaluation (unit test pins it at 1e-15) | **closed** |
-| 9 | Regression, energy off | FULL arm vs `mainline-FULL`: final state, rates, wall flux, V, t and every trace snapshot **bit-identical**. nu_wall re-measured **15.954491 s⁻¹** (this worktree's .so). Tests `test/rmgpy/solver/` + `inputTest.py`: **398 passed, 1 skipped** before → **428 passed, 1 skipped** after; **434 / 1** after the clamp. Re-checked after the clamp: FULL-off still bit-identical to `mainline-FULL` (`clamp/FULL-off/`) | **closed** |
+| 9 | Regression, energy off | FULL arm vs `mainline-FULL`: final state, rates, wall flux, V, t and every trace snapshot **bit-identical**. nu_wall re-measured **15.954491 s⁻¹** (this worktree's .so). Tests `test/rmgpy/solver/` + `inputTest.py`: **398 passed, 1 skipped** before → **428 passed, 1 skipped** after; **434 / 1** after the clamp, **438 / 1** after the terminal state. Re-checked after the clamp: FULL-off still bit-identical to `mainline-FULL` (`clamp/FULL-off/`) | **closed** |
 | 10 | Red-first unit tests | `test/rmgpy/solver/plasmaEnergyBalanceTest.py`: 23 tests run red before implementation (`red/stdout.log`), including a hand value for each loss term and the energy-conservation row. The declared-energy and input-keyword tests were added with the PM correction and written alongside the code, not run red first | closed, with that exception |
 | 11 | Both streams captured | every arm dir has `stdout.log` + `stderr.log`, as do the suites, analysis and remeasure | **closed** |
 
@@ -111,7 +111,7 @@ share of the budget). Removing 91 moves Te by −1.6 meV, as report7 found under
    (Ar-40 is 39.962). Through m_e/M this shifts elastic loss, and hence n_e, by 0.15 %. The hand
    check with the standard mass is off by exactly that (1.47e-3); with RMG's mass it closes to
    2.5e-6. Not changed here (out of scope). Worth a ticket.
-4. **Extinction run: PM ruling (2) fixes it on L&L; on LXCat it needs a further ruling.** At P_abs = 0 the state is labelled `extinct`
+4. **Extinction run: closed as a terminal state.** At P_abs = 0 the state is labelled `extinct`
    within 0.2 ms (L&L; 1.9 ms on LXCat). Before the fix the FULL run exited 1 at 10 ms: once Te ≈ Tg, Ars decays to ~0 and
    its accepted value is solver noise (−2e-32 mol even at atol 1e-30), which the M8-A
    `check_wall_support` refused as a negative population. Ruling: a **neutral** population in
@@ -123,18 +123,28 @@ share of the budget). Removing 91 moves Te by −1.6 meV, as report7 found under
    K_el the P0 arm (default atol 1e-16) then runs to steady state at the hand floor
    6.6e4/1.5856 = 4.16e4 m⁻³ (`arms-LL/P0`). The pre-clamp run is kept in `arms/P0-preclamp/`.
 
-   **On the LXCat production rate P0 is refused again, correctly under the ruling.** The Ars
-   accepted value overshoots its own atol: −1.02e-16 at atol 1e-16 (t = 2.65 s), −1.54e-20
-   at 1e-20 (1.62 s), −2.73e-30 at 1e-30 (0.84 s), i.e. 1.02–2.7× atol (`arms/P0-atol16-refused`,
-   `arms/P0`, `arms/P0-atol30`). Tightening atol does not help, because the noise scales with it.
-   DASPK's error test bounds the weighted RMS over all neq = 5 components, so a single component
-   can reach about √5 ≈ 2.2× its own weight. The ruling's 1× atol bound is stricter than the
-   integrator's guarantee. **Needs a PM ruling:** keep 1× (P0 on LXCat stays refused mid-decay) or
-   widen to a stated multiple such as √neq × atol. Every refused run is already `extinct`, with Te
-   at 297.66 K and n_e decaying on ν_w(Tg). Tg − Te = 0.49 K (LXCat fit) against 0.011 K (L&L):
-   wall-lost electrons carry 2kTe against a mean 3/2 kTe, which cools the rest, and elastic
-   heating from the gas restores them, so the deficit scales as 1/K_el(Tg). The ratio of the two
-   rates at Tg (57) predicts 0.63 K.
+   **On the LXCat production rate P0 was refused again, correctly under the ruling.** The Ars
+   accepted value overshoots its own atol: −1.02e-16 at atol 1e-16 (t = 2.65 s), −1.54e-20 at 1e-20
+   (1.62 s), −2.73e-30 at 1e-30 (0.84 s), i.e. 1.02–2.7× atol (`arms/P0-atol16-refused`,
+   `arms/P0-atol20-refused`, `arms/P0-atol30`). DASPK bounds only the weighted RMS error over the
+   neq = 5 components, so one component can reach about √5 × its own atol.
+
+   **PM ruling: keep the 1× bound; extinction is a terminal state.** Widening the bound would tune a
+   tolerance to make one run pass. Instead, in energy-balance mode only, the reactor counts
+   consecutive accepted steps at which `discharge_state()` is `extinct`, ν_iz/ν_loss < 1e-6 and
+   |Te − Tg| ≤ 1 K (module constants `PLASMA_EXTINCT_RATIO`, `PLASMA_EXTINCT_TE_BAND_K`,
+   `PLASMA_EXTINCT_STEPS` = 10). At 10 it records `energy_terminal` (termination, t, Te, Tg, n_e, both
+   frequencies, the streak and the state vector). `ReactionSystem.simulate` asks a new hook,
+   `terminal_state()`, after each accepted step (base default None) and stops normally when it names a
+   state. Four tests ran red first (`terminal-red/`): the toy P = 0 run on `simulate()` ends
+   `extinct` far short of its 40 s backstop; the toy 0.5 W run reaches the backstop with no terminal
+   state; the count needs 10 consecutive steps and restarts on a miss; an energy-off reactor never
+   evaluates it. Suites 438 passed, 1 skipped. On the production deck, P0 (LXCat, default atol) exits
+   0 with termination `extinct` at 2.45 ms, n_e = 9.9e15 m⁻³ at the stop, and no refusal. The decay
+   to the 4.16e4 m⁻³ floor is not integrated; the figure marks that floor as a hand value. Tg − Te
+   in the refused runs' tail was 0.49 K (LXCat fit) against 0.011 K (L&L): wall-lost electrons carry
+   2kTe against a mean 3/2 kTe, which cools the rest, and elastic heating from the gas restores
+   them, so the deficit scales as 1/K_el(Tg). The ratio of the two rates at Tg (57) predicts 0.63 K.
 
    **report7 refusals do not change outcome.** The five f0d9c arms refused on an Ars negative
    (FULL-91OFF, SWEEP-0.80, SWEEP-0.80-91OFF, SWEEP-0.85, SWEEP-0.85-91OFF; Ars −1.2e-19 to
