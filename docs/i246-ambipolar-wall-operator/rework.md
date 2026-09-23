@@ -1100,3 +1100,97 @@ the wrong instrument precisely because nothing makes it track the ancestor it cl
   fail. Evidence: `evidence/round110_zero_wall_bitwise.log`.
 - No file under `rmgpy/molecule/`, `rmgpy/kinetics/`, `rmgpy/data/` or the database touched. Nothing
   pushed, merged or rebased.
+
+## Round 111: the infinities were poisoned and NaN was not — two HIGH, one MEDIUM, two LOW
+
+Round 110 closed the non-finite defect for the values it named. Round 111 is the same defect at its
+third appearance, on the members round 110 left open — plus a second entry point into the ratio bug
+that the round-110 helper install did not route through. `plasma.pyx` is untouched again (the wall
+physics did not move — a close condition): only `termination.py` (pure Python) and `base.pyx` changed.
+
+### HIGH 1 — a non-finite residual must be closed as a CLASS, not member by member
+
+The round-110 authorisation matrix ended at `+inf → 0, -inf → 0, NaN → 1 unsafe path`. Arm the generic
+channel with `R = 2` over `[1, e]`, then feed two flat generic intervals with `external_residual = NaN`
+while the external channel is **armed** — the second interval returned `True`. This is not hypothetical:
+`steady_state_external_armed` returns True (electron present, `t·nu_wall ≥ 1`) while
+`steady_state_external_residual` returns **NaN** on a subnormal electron-*fraction* underflow — exactly
+the case round 110's own addendum **created** when it rerouted that underflow from `+inf` onto the NaN
+branch. NaN then took the benign "no information" branch and a flat generic channel fired on an
+armed-but-unusable electron channel.
+
+The fix restructures the fold in `update()` so no non-finite value can reach the flat test as a usable
+number. The dispatch is `np.isfinite` — whose negation is True for NaN **by construction** — never a
+comparison or a maximum (`NaN > r`, `NaN < r`, `NaN == r` are all False, so a comparison-based guard
+passes NaN silently). A non-finite external residual poisons the fold with `inf` when the channel is
+**in play**: `external_armed` (a live discharge vouching for the electron) OR an actual `±inf` (which
+only an active channel can compute — an ordinary reactor emits only the default NaN, so `not np.isnan`
+keeps the `±inf` poison unconditional as in round 110). The only surviving benign case is a NaN from a
+channel not in play — the ordinary reactor, whose generic-only termination stays byte-for-byte. The
+armed-generic test, which covered only the infinities, now carries the whole class (`(inf, unarmed)`,
+`(-inf, unarmed)`, `(NaN, armed)`), and a dedicated test reproduces the reviewer's exact sequence.
+
+### HIGH 2 — the surface-species ratio bypassed the helper and still divided by zero
+
+`base.pyx` builds the surface-to-core promotion ratio as `max(|production|, |consumption|) / char_rate`
+**directly**, not through the round-110 `_rate_ratios_or_zero`. On a reversible surface reaction with
+equal forward and reverse flux the net rates cancel (`char_rate == 0`) while the gross rates are
+positive, so the division is `positive / 0`: the production entry **raised `ZeroDivisionError`** (a numpy
+divide would instead have promoted the surface species through an undefined criterion). Reproduced end to
+end on the production path — a reversible `A ⇌ B` whose species carry identical thermochemistry (K_eq = 1)
+so equal moles give equal fluxes, `B` declared a surface species — the pre-fix `base.so` crashes at
+`base.pyx:1123`. Routed through `_rate_ratios_or_zero` (finite, positive denominator or abstain — no
+`1.0`, epsilon or floor, the owner's ruling as for core/edge), the ratio abstains, nothing is promoted,
+and the run completes. The **positive-denominator arm** (a small thermodynamic offset → `char_rate > 0`)
+still promotes `B` on the same path, so the fix removed only the undefined case — a guard broken to never
+promote is not what shipped.
+
+### The census detector was repaired, not extended (LOW 1)
+
+The round-110 cross-channel census asserted source **substrings** for the folds it already knew about —
+so a comment carrying the string satisfied it, a behaviourally-identical rewrite broke it, and, decisively,
+it could not see a division site nobody had listed. That is why it missed the surface ratio: the census's
+own round finding it could not detect. The repair **enumerates** rather than lists. Every code division by
+`char_rate` in `base.pyx` is found structurally via the tokenizer (`base.pyx` is not valid Python, so it
+tokenizes rather than `ast.parse`-s; comments and strings are dropped, so prose and dead code cannot
+register), and each must fall inside `log_rates` — the only legitimate site, a display line guarded by
+`if char_rate == 0.0`. The surface bug lands outside it and fails the census; after the fix the count
+outside is zero. This is the round-111 HIGH 2 red-first: the detector fails on the exact unguarded
+division at line 1123 before the fix, passes after.
+
+### MEDIUM — `update()` still leaked a numpy.bool_ on the relaxation-time fallback
+
+The round-110 source fix cast the `armed_external` attribute, but the default e-fold fallback computes
+`span_ok = (np.log(t_now) - np.log(t_flat_start)) >= 1.0` — a `numpy.float64` comparison yielding a
+`numpy.bool_` — and returned `self.armed and span_ok` unchanged, so a genuine termination on that path
+returned a `numpy.bool_`, not a Python bool. The return is now cast at the single chokepoint every
+return-True path flows through (`return bool(self.armed and span_ok)`). A test fires a termination on the
+fallback and asserts `type(v) is bool`.
+
+### The census could not fail itself (LOW 2), and caught a live test
+
+The round-106 test-hygiene census accepted a docstring naming a round/finding tag **OR** an assertion, so
+a tagged docstring with a `pass` body satisfied it while asserting nothing. A tag is prose about intent;
+only an assertion backs a claim. Every `test_*` in the two solver files must now contain a real
+(non-vacuous) assertion, tag or no tag. A tripwire feeds a tagged-`pass` and a bare `assert True` and
+confirms both are reported. The tightening immediately caught a **live** assertion-less test —
+`test_wall_only_run_does_not_divide_by_zero_chemistry_rate`, which relied on "does not raise" with no
+`assert` — now given an explicit assertion (the run completes to its backstop, premise `char_rate == 0`
+guarded).
+
+### Close gate
+
+- Focused suites rebuilt and green: `pytest test/rmgpy/solver/plasmaWallTest.py
+  test/rmgpy/solver/steadyStateTest.py test/rmgpy/rmg/inputTest.py -o addopts="" -p no:cacheprovider`
+  → **244 passed, 1 skipped** (was 239 passed, 1 skipped; +5 tests). Evidence:
+  `evidence/round111_reds.log`, `evidence/round111_greens.log`, `evidence/round111_suites.log`.
+- Only `base.pyx` (compiled) and `termination.py` (pure Python) changed; `base.so` rebuilt (`make build`,
+  exit 0). `.so` proven by value two ways: the surface reproduction flips `ZeroDivisionError` → clean on
+  the rebuilt module, and `strings base.*.so | grep _rate_ratios_or_zero` shows the sanctioned helper
+  compiled in.
+- **Wall-loss frequency re-measured and unchanged:** at Te = 3000 K, `compute_nu_wall` = 15.954491 s⁻¹,
+  independent closed form = 15.954492 s⁻¹ (agree to 5.6e-8), matching the owner's 15.954516 s⁻¹ to 1.5e-6;
+  the sub-threshold floor is the pure quotient `S/nu_wall`, unchanged (2.33e-20, same order as the owner's
+  2.5543e-20). `plasma.pyx` is untouched in the round-111 diff. Evidence: `evidence/round111_remeasure.log`.
+- No file under `rmgpy/molecule/`, `rmgpy/kinetics/`, `rmgpy/data/` or the database touched. Nothing
+  pushed, merged or rebased.

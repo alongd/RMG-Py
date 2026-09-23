@@ -1,0 +1,15 @@
+plasma module: /home/alon/Code/RMG-Py-i246-ambipolar-wall-operator/rmgpy/solver/plasma.cpython-39-x86_64-linux-gnu.so
+Te = 3000 K  ->  te_ev = 0.258520 eV
+nu_wall  closed form           = 15.954492 s^-1
+nu_wall  PlasmaReactor.compute = 15.954491 s^-1
+owner's reported closed form   = 15.954516 s^-1
+rel. diff reactor vs closed    = 5.557e-08
+
+sub-threshold floor x_e = (S/nu_wall)/n_neutral
+  high source = 2.3328e-20   (owner's reported floor 2.5543e-20)
+  low  source = 4.6657e-21
+
+nu_wall reactor == closed form (<1e-6): True
+nu_wall == owner 15.954516 (<1e-4):     True
+floor same order as owner 2.5543e-20:   True
+WALL-LOSS FREQUENCY UNCHANGED: True
