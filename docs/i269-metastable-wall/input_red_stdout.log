@@ -1,0 +1,116 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+rootdir: /home/alon/Code/RMG-Py-metastable-wall
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 105 items / 102 deselected / 3 selected
+
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_wall_neutral_diffusion_round_trips FAILED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_wall_neutral_diffusion_without_a_wall_is_refused FAILED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_wall_neutral_diffusion_undeclared_label_is_refused FAILED
+
+=================================== FAILURES ===================================
+________ TestInputPlasmaReactor.test_wall_neutral_diffusion_round_trips ________
+
+self = <inputTest.TestInputPlasmaReactor object at 0x71354d1b2670>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-850/test_wall_neutral_diffusion_ro0')
+
+    def test_wall_neutral_diffusion_round_trips(self, tmp_path):
+        body = (
+            "database(thermoLibraries=['primaryThermoLibrary'], reactionLibraries=[], "
+            "seedMechanisms=[], kineticsFamilies='default')\n"
+            + self._metastable_preamble()
+            + self._plasma_block(self._WALL + self._DECL + "    electronDensity=(1e16,'m^-3'),\n",
+                                 mole_fractions="{'Ar': 0.99, 'Ars': 0.01}")
+            + "simulator(atol=1e-16, rtol=1e-8)\n"
+            + "model(toleranceMoveToCore=0.1, toleranceInterruptSimulation=0.1)\n"
+        )
+>       reactor1 = self._read(tmp_path, body).reaction_systems[0]
+
+test/rmgpy/rmg/inputTest.py:1040: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test/rmgpy/rmg/inputTest.py:660: in _read
+    inp.read_input_file(str(path), rmg)
+rmgpy/rmg/input.py:2519: in read_input_file
+    exec(f.read(), global_context, local_context)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+>   ???
+E   TypeError: plasma_reactor() got an unexpected keyword argument 'wallNeutralDiffusion'
+
+<string>:6: TypeError
+------------------------------ Captured log call -------------------------------
+ERROR    root:input.py:2521 The input file "/tmp/claude-1000/pytest-of-alon/pytest-850/test_wall_neutral_diffusion_ro0/input.py" was invalid:
+ERROR    root:input.py:2522 plasma_reactor() got an unexpected keyword argument 'wallNeutralDiffusion'
+Traceback (most recent call last):
+  File "/home/alon/Code/RMG-Py-metastable-wall/rmgpy/rmg/input.py", line 2519, in read_input_file
+    exec(f.read(), global_context, local_context)
+  File "<string>", line 6, in <module>
+TypeError: plasma_reactor() got an unexpected keyword argument 'wallNeutralDiffusion'
+_ TestInputPlasmaReactor.test_wall_neutral_diffusion_without_a_wall_is_refused _
+
+self = <inputTest.TestInputPlasmaReactor object at 0x71354d1ca280>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-850/test_wall_neutral_diffusion_wi0')
+
+    def test_wall_neutral_diffusion_without_a_wall_is_refused(self, tmp_path):
+        body = self._metastable_preamble() + self._plasma_block(
+            self._DECL, mole_fractions="{'Ar': 0.99, 'Ars': 0.01, 'e-': 1e-9}")
+        with pytest.raises(InputError, match='no wall was declared'):
+>           self._read(tmp_path, body)
+
+test/rmgpy/rmg/inputTest.py:1059: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test/rmgpy/rmg/inputTest.py:660: in _read
+    inp.read_input_file(str(path), rmg)
+rmgpy/rmg/input.py:2519: in read_input_file
+    exec(f.read(), global_context, local_context)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+>   ???
+E   TypeError: plasma_reactor() got an unexpected keyword argument 'wallNeutralDiffusion'
+
+<string>:5: TypeError
+------------------------------ Captured log call -------------------------------
+ERROR    root:input.py:2521 The input file "/tmp/claude-1000/pytest-of-alon/pytest-850/test_wall_neutral_diffusion_wi0/input.py" was invalid:
+ERROR    root:input.py:2522 plasma_reactor() got an unexpected keyword argument 'wallNeutralDiffusion'
+Traceback (most recent call last):
+  File "/home/alon/Code/RMG-Py-metastable-wall/rmgpy/rmg/input.py", line 2519, in read_input_file
+    exec(f.read(), global_context, local_context)
+  File "<string>", line 5, in <module>
+TypeError: plasma_reactor() got an unexpected keyword argument 'wallNeutralDiffusion'
+_ TestInputPlasmaReactor.test_wall_neutral_diffusion_undeclared_label_is_refused _
+
+self = <inputTest.TestInputPlasmaReactor object at 0x71354d1ca4c0>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-850/test_wall_neutral_diffusion_un0')
+
+    def test_wall_neutral_diffusion_undeclared_label_is_refused(self, tmp_path):
+        body = self._preamble() + self._plasma_block(
+            self._WALL + self._DECL, mole_fractions="{'Ar': 0.99, 'e-': 1e-9}")
+        with pytest.raises(InputError, match="excited species 'Ars'"):
+>           self._read(tmp_path, body)
+
+test/rmgpy/rmg/inputTest.py:1065: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test/rmgpy/rmg/inputTest.py:660: in _read
+    inp.read_input_file(str(path), rmg)
+rmgpy/rmg/input.py:2519: in read_input_file
+    exec(f.read(), global_context, local_context)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+>   ???
+E   TypeError: plasma_reactor() got an unexpected keyword argument 'wallNeutralDiffusion'
+
+<string>:4: TypeError
+------------------------------ Captured log call -------------------------------
+ERROR    root:input.py:2521 The input file "/tmp/claude-1000/pytest-of-alon/pytest-850/test_wall_neutral_diffusion_un0/input.py" was invalid:
+ERROR    root:input.py:2522 plasma_reactor() got an unexpected keyword argument 'wallNeutralDiffusion'
+Traceback (most recent call last):
+  File "/home/alon/Code/RMG-Py-metastable-wall/rmgpy/rmg/input.py", line 2519, in read_input_file
+    exec(f.read(), global_context, local_context)
+  File "<string>", line 4, in <module>
+TypeError: plasma_reactor() got an unexpected keyword argument 'wallNeutralDiffusion'
+=========================== short test summary info ============================
+FAILED test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_wall_neutral_diffusion_round_trips
+FAILED test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_wall_neutral_diffusion_without_a_wall_is_refused
+FAILED test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_wall_neutral_diffusion_undeclared_label_is_refused
+====================== 3 failed, 102 deselected in 2.92s =======================

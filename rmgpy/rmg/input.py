@@ -751,6 +751,7 @@ def plasma_reactor(temperature,
                    mobilityReferenceDensity=None,
                    wallRecycling=1.0,
                    wallNeutralizationProducts=None,
+                   wallNeutralDiffusion=None,
                    ionisationSource=None,
                    maxIonisationDegree=None,
                    wallSingleBathApproximation=False,
@@ -1265,6 +1266,36 @@ def plasma_reactor(temperature,
                         "before the plasmaReactor(...) block. Declared species are "
                         "{2}.".format(role, label, sorted(species_dict.keys())))
         wall_kwargs['wall_neutralization_products'] = dict(wallNeutralizationProducts)
+
+    # wallNeutralDiffusion declares, per excited NEUTRAL species, that it diffuses to the
+    # wall and returns as a named ground state, with a reference D*p or D*N. Nothing is
+    # inferred from the electronic state: an undeclared excited species is not lost at
+    # the wall. Shape and label existence are checked here; units, the sign and
+    # finiteness of the diffusivity, charge and composition are checked by the reactor.
+    if wallNeutralDiffusion is not None:
+        if 'diffusion_length' not in wall_kwargs:
+            raise InputError(
+                "wallNeutralDiffusion={0!r} was given but no wall was declared, so it "
+                "would have no effect. A wall needs BOTH chamberGeometry and "
+                "ionReducedMobility; supply them, or remove "
+                "wallNeutralDiffusion.".format(wallNeutralDiffusion))
+        if not isinstance(wallNeutralDiffusion, dict):
+            raise InputError(
+                "wallNeutralDiffusion must be a dict mapping an excited neutral label to "
+                "{{'product': <ground-state label>, 'diffusivity': (D*p, 'cm^2*torr/s')}}; "
+                "got {0!r}.".format(wallNeutralDiffusion))
+        for label, entry in wallNeutralDiffusion.items():
+            names = [('excited species', label)]
+            if isinstance(entry, dict) and 'product' in entry:
+                names.append(('product', entry['product']))
+            for role, name in names:
+                if not isinstance(name, str) or name not in species_dict:
+                    raise InputError(
+                        "wallNeutralDiffusion names {0} {1!r}, which is not a declared "
+                        "species; declare it with a species(...) directive before the "
+                        "plasmaReactor(...) block. Declared species are "
+                        "{2}.".format(role, name, sorted(species_dict.keys())))
+        wall_kwargs['wall_neutral_diffusion'] = dict(wallNeutralDiffusion)
 
     # Every argument passed by keyword: PlasmaReactor's fourth positional argument is
     # Te, not n_sims as in simple_reactor -- do not copy that call shape.
@@ -2632,6 +2663,9 @@ def _format_plasma_wall(system):
             # must round-trip or the reloaded deck loses a deliberate override.
             lines.append('    wallNeutralizationProducts = {0!r},\n'
                          ''.format(dict(system.wall_neutralization_products)))
+        if system.wall_neutral_diffusion:
+            lines.append('    wallNeutralDiffusion = {0!r},\n'
+                         ''.format(dict(system.wall_neutral_diffusion)))
         if system.ionisation_source.value_si:
             lines.append('    ionisationSource = ({0!r},"m^-3/s"),\n'
                          ''.format(system.ionisation_source.value_si))

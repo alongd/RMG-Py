@@ -1,0 +1,20 @@
+plasma module: /home/alon/Code/RMG-Py-metastable-wall/rmgpy/solver/plasma.cpython-39-x86_64-linux-gnu.so
+Lambda = 2.031416116e-02 m, p = 666.611842 Pa, D*p = 47.0 cm^2 Torr/s
+nu_m hand     = 2.277875935e+00 s^-1
+nu_m operator = 2.277875935e+00 s^-1
+1. nu_m operator == hand (rel < 1e-6)                      PASS   rel = 2.22e-16
+1b. nu_m is exactly zero for Ar, Ar+, e-                   PASS   [0.0, 0.0, 0.0]
+nu_wall (i246 deck, Te=3000 K) = 15.954491 s^-1 (published 15.954516)
+2. nu_wall == 15.954516 (rel < 1e-4)                       PASS   rel = 1.59e-06
+2b. nu_wall declared == undeclared (bitwise)               PASS   15.954490797923542 vs 15.954490797923542
+2c. wall rates of e-, Ar+ identical (bitwise)              PASS   e- -1.5954490797923544e-08, Ar+ -1.5954490797923544e-08
+declared:   t = 4.507258e-01 s, nu_m*t = 1.026698, Ar* 1.000000000e-03 -> 3.581879034e-04 (exp 3.581878986e-04)
+            Ar* lost 6.418120966e-04, Ar gained 6.418120966e-04, Ar+ lost 4.136e-25
+3. Ar* == y0*exp(-nu_m t) (rel < 1e-4)                     PASS   rel = 1.32e-08
+3b. Ar gained == Ar* lost + Ar+ lost (rel < 1e-9)          PASS   rel = 5.16e-13
+undeclared: t = 5.629500e-01 s, nu_m = 0.0, Ar* 1.000000000e-03 -> 9.999999910e-04
+            Ar* lost 9.037310e-12; external-source draw on Ar* predicted 9.037310e-12
+4. undeclared arm: nu_m == 0, Ar* loses only the source draw PASS   lost/draw = 1.000000
+4b. arms differ (declaration reached the code)             PASS   declared lost 6.418e-04 vs 9.037e-12
+
+RESULT: ALL PASS

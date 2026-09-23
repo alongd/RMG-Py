@@ -1016,6 +1016,54 @@ class TestInputPlasmaReactor:
         for label in mf1:
             assert mf2[label] == pytest.approx(mf1[label], rel=1e-5)
 
+    # ---- wallNeutralDiffusion (I-269) --------------------------------------
+
+    _WALL = ("    chamberGeometry={'diffusionLength': (2.03, 'cm')},\n"
+             "    ionReducedMobility=(1.2e-4, 'm^2/(V*s)'),\n")
+    _DECL = "    wallNeutralDiffusion={'Ars': {'product': 'Ar', 'diffusivity': (47.0, 'cm^2*torr/s')}},\n"
+
+    def _metastable_preamble(self):
+        # The triplet-spelled argon the verifier uses for Ar*. Its being lost at the wall
+        # comes from the declaration, not from its electronic state.
+        return self._preamble() + "species(label='Ars', structure=adjacencyList(\"1 Ar u2 p3 c0\"))\n"
+
+    def test_wall_neutral_diffusion_round_trips(self, tmp_path):
+        body = (
+            "database(thermoLibraries=['primaryThermoLibrary'], reactionLibraries=[], "
+            "seedMechanisms=[], kineticsFamilies='default')\n"
+            + self._metastable_preamble()
+            + self._plasma_block(self._WALL + self._DECL + "    electronDensity=(1e16,'m^-3'),\n",
+                                 mole_fractions="{'Ar': 0.99, 'Ars': 0.01}")
+            + "simulator(atol=1e-16, rtol=1e-8)\n"
+            + "model(toleranceMoveToCore=0.1, toleranceInterruptSimulation=0.1)\n"
+        )
+        reactor1 = self._read(tmp_path, body).reaction_systems[0]
+        expected = {'Ars': {'product': 'Ar', 'diffusivity': (47.0, 'cm^2*torr/s')}}
+        assert reactor1.wall_neutral_diffusion == expected
+
+        saved = tmp_path / "saved.py"
+        rmg1 = RMG()
+        inp.read_input_file(str(tmp_path / "input.py"), rmg1)
+        inp.save_input_file(str(saved), rmg1)
+        assert 'wallNeutralDiffusion' in saved.read_text()
+        rmg2 = RMG()
+        inp.read_input_file(str(saved), rmg2)
+        reactor2 = rmg2.reaction_systems[0]
+        assert reactor2.wall_neutral_diffusion == expected
+        assert reactor2.wall_neutral_dn_by_label == reactor1.wall_neutral_dn_by_label
+
+    def test_wall_neutral_diffusion_without_a_wall_is_refused(self, tmp_path):
+        body = self._metastable_preamble() + self._plasma_block(
+            self._DECL, mole_fractions="{'Ar': 0.99, 'Ars': 0.01, 'e-': 1e-9}")
+        with pytest.raises(InputError, match='no wall was declared'):
+            self._read(tmp_path, body)
+
+    def test_wall_neutral_diffusion_undeclared_label_is_refused(self, tmp_path):
+        body = self._preamble() + self._plasma_block(
+            self._WALL + self._DECL, mole_fractions="{'Ar': 0.99, 'e-': 1e-9}")
+        with pytest.raises(InputError, match="excited species 'Ars'"):
+            self._read(tmp_path, body)
+
     # ---- terminationSteadyState (I-170) ------------------------------------
 
     def test_termination_steady_state_bare_tolerance(self, tmp_path):
