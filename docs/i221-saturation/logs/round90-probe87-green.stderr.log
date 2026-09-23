@@ -1,0 +1,24 @@
+WARNING:matplotlib:/home/alon/.config/matplotlib is not a writable directory
+WARNING:matplotlib:Matplotlib created a temporary cache directory at /tmp/claude-1000/matplotlib-xvk8xhp0 because there was an issue with the default path (/home/alon/.config/matplotlib); it is highly recommended to set the MPLCONFIGDIR environment variable to a writable directory, in particular to speed up the import of Matplotlib and to better support multiprocessing.
+INFO:matplotlib.font_manager:Failed to extract font properties from /usr/share/fonts/truetype/noto/NotoColorEmoji.ttf: In FT2Font: Could not set the fontsize (invalid pixel size; error code 0x17)
+INFO:matplotlib.font_manager:generated new fontManager
+INFO:root:Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+WARNING:root:Reaction library 'Fake_Quarantined_Family' supplies Marcus kinetics, which is the class quarantined for family Fake_Quarantined_Family (a reason that must reach the error message), and the entry records no authoring family. A rate copied out of that family would be admitted here unchecked, because nothing in the entry says where it came from. This is NOT a refusal: the same kinetics class from an independent source is legitimate and the gate cannot tell the two apart. To settle it, add a "family: <label>" line to the entry's longDesc -- which is what RMG itself writes for an estimated rate -- or confirm the rate is independent.
+INFO:root:Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+INFO:root:Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+ERROR:root:Could not update atomtypes for this molecule:
+multiplicity 3
+1 Ar u0 p3 c0 {2,S} {3,S}
+2 H  u0 p0 c0 {1,S}
+3 H  u0 p0 c0 {1,S}
+
+ERROR:root:Could not update atomtypes for this molecule:
+1 Ar u0 p3 c0 {2,S} {3,S}
+2 H  u0 p0 c0 {1,S}
+3 H  u0 p0 c0 {1,S}
+
+ERROR:root:Could not update atomtypes for this molecule:
+1 Ar u0 p3 c0 {2,S} {3,S}
+2 H  u0 p0 c0 {1,S}
+3 H  u0 p0 c0 {1,S}
+

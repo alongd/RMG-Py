@@ -1,0 +1,416 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+rootdir: /home/alon/Code/RMG-Py-i221-round92-base
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 84 items / 67 deselected / 17 selected
+
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheThirdShapeSurvivesTheConversion::test_the_real_loader_attaches_the_entry_to_the_template_shape FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheThirdShapeSurvivesTheConversion::test_a_seed_conversion_leaves_the_rate_refused FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheThirdShapeSurvivesTheConversion::test_a_reaction_library_conversion_leaves_the_rate_refused FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheThirdShapeSurvivesTheConversion::test_the_conversion_still_writes_the_library_label_into_the_family_slot FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheDiskAnswerIsRevalidated::test_a_manifest_added_after_the_first_lookup_is_seen FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheDiskAnswerIsRevalidated::test_a_manifest_removed_after_the_first_lookup_is_seen FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheDiskAnswerIsRevalidated::test_a_manifest_that_vanishes_mid_read_is_unanswered_not_clean FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestAFamilyLabelIsNotAPath::test_an_absolute_label_is_refused FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestAFamilyLabelIsNotAPath::test_a_dotdot_label_is_refused FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestAFamilyLabelIsNotAPath::test_a_symlinked_family_pointing_outside_is_refused FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestAFamilyLabelIsNotAPath::test_an_ordinary_label_still_resolves PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCallSitePinCoversEveryGate::test_a_call_in_a_dead_branch_does_not_satisfy_it FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCallSitePinCoversEveryGate::test_a_same_named_call_on_something_else_does_not_satisfy_it FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCallSitePinCoversEveryGate::test_deleting_three_of_the_four_gates_is_refused FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCallSitePinCoversEveryGate::test_the_real_module_satisfies_it PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSuppressionConsultsDiskToo::test_a_database_whose_manifests_are_only_on_disk_still_warns FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSuppressionConsultsDiskToo::test_a_database_with_no_quarantine_anywhere_stays_quiet PASSED
+
+=================================== FAILURES ===================================
+_ TestTheThirdShapeSurvivesTheConversion.test_the_real_loader_attaches_the_entry_to_the_template_shape _
+
+self = <quarantineTest.TestTheThirdShapeSurvivesTheConversion object at 0x716684a27070>
+
+    def test_the_real_loader_attaches_the_entry_to_the_template_shape(self):
+        """The half no test covered: the shape where the HIGH lived."""
+        library = _auto_generated_library("a_seed", self.FAMILY)
+        reaction = library.get_library_reactions()[0]
+    
+        assert isinstance(reaction, TemplateReaction)
+        assert reaction.family == self.FAMILY
+>       assert getattr(reaction, "entry", None) is not None, (
+            "the auto-generated template shape reached the model with no entry, so the "
+            "longDesc that carries its authorship was unreachable")
+E       AssertionError: the auto-generated template shape reached the model with no entry, so the longDesc that carries its authorship was unreachable
+E       assert None is not None
+E        +  where None = getattr(TemplateReaction(reactants=[Species(label="Lip", molecule=[Molecule(smiles="[Li+]")], reactive=False, molecular_weight=(6.941,'amu')), Species(label="CH3", molecule=[Molecule(smiles="[CH3]")], reactive=False, molecular_weight=(15.0346,'amu'))], products=[Species(label="CH3Li", molecule=[Molecule(smiles="[Li][CH3]")], reactive=False, molecular_weight=(21.9756,'amu'))], kinetics=Marcus(A=(1.73e+06,'m^3/(mol*s)'), n=2, lmbd_i_coefs=[21824.5,-0.0341626,-0.0013254,4.92966e-07], beta=(1.2e+10,'1/m'), wr=(0,'kJ/mol'), wp=(0,'kJ/mol'), lmbd_o=(0,'J/mol')), reversible=False, family='Fake_Quarantined_Family', template=Root), 'entry', None)
+
+test/rmgpy/data/kinetics/quarantineTest.py:1438: AssertionError
+_ TestTheThirdShapeSurvivesTheConversion.test_a_seed_conversion_leaves_the_rate_refused _
+
+self = <quarantineTest.TestTheThirdShapeSurvivesTheConversion object at 0x716684a272b0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7166845e76d0>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-637/test_a_seed_conversion_leaves_0')
+
+    def test_a_seed_conversion_leaves_the_rate_refused(self, monkeypatch, tmp_path):
+        """
+        The acceptance for the HIGH, through `add_seed_mechanism_to_core`.
+    
+        The family is quarantined on disk and deliberately NOT loaded, which is exactly
+        when the conversion fires.
+        """
+        _quarantined_on_disk(tmp_path)
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+        library = _auto_generated_library("a_seed", QUARANTINED_ON_DISK)
+        _model_database(monkeypatch, {"a_seed": library}, {})
+    
+        model = CoreEdgeReactionModel()
+        with pytest.raises(QuarantinedKineticsError) as raised:
+>           model.add_seed_mechanism_to_core("a_seed")
+E           Failed: DID NOT RAISE <class 'rmgpy.exceptions.QuarantinedKineticsError'>
+
+test/rmgpy/data/kinetics/quarantineTest.py:1457: Failed
+------------------------------ Captured log call -------------------------------
+WARNING  root:model.py:1744 loading reaction Lip + CH3 => CH3Li originally from family A_Family_Quarantined_On_Disk as a library reaction
+_ TestTheThirdShapeSurvivesTheConversion.test_a_reaction_library_conversion_leaves_the_rate_refused _
+
+self = <quarantineTest.TestTheThirdShapeSurvivesTheConversion object at 0x716684a274f0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x716684502340>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-637/test_a_reaction_library_conver0')
+
+    def test_a_reaction_library_conversion_leaves_the_rate_refused(self, monkeypatch,
+                                                                   tmp_path):
+        """The same defect at the second conversion site, through the real method."""
+        _quarantined_on_disk(tmp_path)
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+        library = _auto_generated_library("a_library", QUARANTINED_ON_DISK)
+        _model_database(monkeypatch, {"a_library": library}, {})
+    
+        model = CoreEdgeReactionModel()
+        with pytest.raises(QuarantinedKineticsError):
+>           model.add_reaction_library_to_edge("a_library")
+E           Failed: DID NOT RAISE <class 'rmgpy.exceptions.QuarantinedKineticsError'>
+
+test/rmgpy/data/kinetics/quarantineTest.py:1471: Failed
+------------------------------ Captured log call -------------------------------
+WARNING  root:model.py:1875 loading reaction Lip + CH3 => CH3Li originally from family A_Family_Quarantined_On_Disk as a library reaction
+_ TestTheThirdShapeSurvivesTheConversion.test_the_conversion_still_writes_the_library_label_into_the_family_slot _
+
+self = <quarantineTest.TestTheThirdShapeSurvivesTheConversion object at 0x716684a27730>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x716684399d90>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-637/test_the_conversion_still_writ0')
+
+    def test_the_conversion_still_writes_the_library_label_into_the_family_slot(
+            self, monkeypatch, tmp_path):
+        """
+        The round-89 addendum's contract, re-asserted at the site this round changed.
+    
+        `electron_placement.py` keys `FAMILY_ELECTRON_PLACEMENT` on `Reaction.family` and
+        DEPENDS on a `LibraryReaction` putting its library label there. Carrying the entry
+        across the conversion must not disturb that, so this drives a conversion that is
+        allowed to complete and looks at the slot.
+        """
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+        library = _auto_generated_library("a_seed", "A_Family_Nobody_Quarantined")
+        _model_database(monkeypatch, {"a_seed": library}, {})
+    
+        model = CoreEdgeReactionModel()
+        model.add_seed_mechanism_to_core("a_seed")
+    
+        assert len(model.core.reactions) == 1
+        converted = model.core.reactions[0]
+        assert isinstance(converted, LibraryReaction)
+        assert converted.family == "a_seed", (
+            "the conversion stopped writing the library label into .family, which is the "
+            "value electron_placement.py resolves argon ionisation through")
+>       assert authoring_families(converted) == ["A_Family_Nobody_Quarantined"], (
+            "the authorship did not survive the conversion")
+E       AssertionError: the authorship did not survive the conversion
+E       assert [] == ['A_Family_No..._Quarantined']
+E         
+E         Right contains one more item: 'A_Family_Nobody_Quarantined'
+E         
+E         Full diff:
+E         + []
+E         - [
+E         -     'A_Family_Nobody_Quarantined',
+E         - ]
+
+test/rmgpy/data/kinetics/quarantineTest.py:1497: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  root:model.py:1744 loading reaction Lip + CH3 => CH3Li originally from family A_Family_Nobody_Quarantined as a library reaction
+_ TestTheDiskAnswerIsRevalidated.test_a_manifest_added_after_the_first_lookup_is_seen _
+
+self = <quarantineTest.TestTheDiskAnswerIsRevalidated object at 0x716684a7da60>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7166843b1790>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-637/test_a_manifest_added_after_th0')
+
+    def test_a_manifest_added_after_the_first_lookup_is_seen(self, monkeypatch, tmp_path):
+        family = self._database(tmp_path)
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+    
+        assert resolve_quarantine(self.LABEL) == (None, True)
+        write_manifest(family)
+        quarantine, answered = resolve_quarantine(self.LABEL)
+>       assert answered and quarantine is not None, (
+            "the cache answered from a database state that no longer exists")
+E       AssertionError: the cache answered from a database state that no longer exists
+E       assert (True and None is not None)
+
+test/rmgpy/data/kinetics/quarantineTest.py:1530: AssertionError
+_ TestTheDiskAnswerIsRevalidated.test_a_manifest_removed_after_the_first_lookup_is_seen _
+
+self = <quarantineTest.TestTheDiskAnswerIsRevalidated object at 0x716684a80d60>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7166843ae520>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-637/test_a_manifest_removed_after_0')
+
+    def test_a_manifest_removed_after_the_first_lookup_is_seen(self, monkeypatch,
+                                                              tmp_path):
+        """The same staleness in the direction that keeps refusing a released family."""
+        family = self._database(tmp_path, manifest=True)
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+    
+        assert resolve_quarantine(self.LABEL)[0] is not None
+        os.remove(os.path.join(str(family), QUARANTINE_FILENAME))
+>       assert resolve_quarantine(self.LABEL) == (None, True)
+E       AssertionError: assert (<KineticsQua...Marcus>, True) == (None, True)
+E         
+E         At index 0 diff: <KineticsQuarantine 'A_Family_That_Changes' QUARANTINED FOR TESTING applies to Marcus> != None
+E         
+E         Full diff:
+E           (
+E         -     None,
+E         +     <KineticsQuarantine 'A_Family_That_Changes' QUARANTINED FOR TESTING applies to Marcus>,
+E               True,
+E           )
+
+test/rmgpy/data/kinetics/quarantineTest.py:1541: AssertionError
+_ TestTheDiskAnswerIsRevalidated.test_a_manifest_that_vanishes_mid_read_is_unanswered_not_clean _
+
+self = <quarantineTest.TestTheDiskAnswerIsRevalidated object at 0x716684a27a00>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7166843b1190>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-637/test_a_manifest_that_vanishes_0')
+
+    def test_a_manifest_that_vanishes_mid_read_is_unanswered_not_clean(
+            self, monkeypatch, tmp_path):
+        """
+        The TOCTOU window, made deterministic.
+    
+        The file is removed from inside the existence check, which is what a concurrent
+        database edit does at an unpredictable moment. The wrong answer here is the
+        dangerous one: "this family carries no manifest" is a clean bill of health, and
+        the old code cached it.
+        """
+        from rmgpy.data.kinetics import quarantine as module
+    
+        family = self._database(tmp_path, manifest=True)
+        manifest_path = os.path.join(str(family), QUARANTINE_FILENAME)
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+    
+        real_exists = module.os.path.exists
+        state = {"fired": False}
+    
+        def racing_exists(path):
+            answer = real_exists(path)
+            if answer and path == manifest_path and not state["fired"]:
+                state["fired"] = True
+                os.remove(path)
+            return answer
+    
+        monkeypatch.setattr(module.os.path, "exists", racing_exists)
+>       assert resolve_quarantine(self.LABEL) == (None, False), (
+            "a manifest that vanished mid-read was reported as a family with no manifest")
+E       AssertionError: a manifest that vanished mid-read was reported as a family with no manifest
+E       assert (None, True) == (None, False)
+E         
+E         At index 1 diff: True != False
+E         
+E         Full diff:
+E           (
+E               None,
+E         -     False,
+E         +     True,
+E           )
+
+test/rmgpy/data/kinetics/quarantineTest.py:1570: AssertionError
+_________ TestAFamilyLabelIsNotAPath.test_an_absolute_label_is_refused _________
+
+self = <quarantineTest.TestAFamilyLabelIsNotAPath object at 0x716684a27c40>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7166843b1be0>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-637/test_an_absolute_label_is_refu0')
+
+    def test_an_absolute_label_is_refused(self, monkeypatch, tmp_path):
+        outside, database = self._planted(tmp_path)
+        monkeypatch.setitem(settings, "database.directory", str(database))
+    
+>       assert resolve_quarantine(str(outside)) == (None, False), (
+            "an absolute label made os.path.join discard the database prefix, and the "
+            "manifest planted outside the database was executed")
+E       AssertionError: an absolute label made os.path.join discard the database prefix, and the manifest planted outside the database was executed
+E       assert (<KineticsQua...Marcus>, True) == (None, False)
+E         
+E         At index 0 diff: <KineticsQuarantine '/tmp/claude-1000/pytest-of-alon/pytest-637/test_an_absolute_label_is_refu0/outside' QUARANTINED FOR TESTING applies to Marcus> != None
+E         
+E         Full diff:
+E           (
+E         -     None,
+E         -     False,...
+E         
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/rmgpy/data/kinetics/quarantineTest.py:1601: AssertionError
+__________ TestAFamilyLabelIsNotAPath.test_a_dotdot_label_is_refused ___________
+
+self = <quarantineTest.TestAFamilyLabelIsNotAPath object at 0x716684a27e80>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7166843a73d0>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-637/test_a_dotdot_label_is_refused0')
+
+    def test_a_dotdot_label_is_refused(self, monkeypatch, tmp_path):
+        outside, database = self._planted(tmp_path)
+        monkeypatch.setitem(settings, "database.directory", str(database))
+    
+        escape = os.path.join("..", "..", "..", "outside")
+>       assert resolve_quarantine(escape) == (None, False)
+E       AssertionError: assert (<KineticsQua...Marcus>, True) == (None, False)
+E         
+E         At index 0 diff: <KineticsQuarantine '../../../outside' QUARANTINED FOR TESTING applies to Marcus> != None
+E         
+E         Full diff:
+E           (
+E         -     None,
+E         -     False,...
+E         
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/rmgpy/data/kinetics/quarantineTest.py:1610: AssertionError
+_ TestAFamilyLabelIsNotAPath.test_a_symlinked_family_pointing_outside_is_refused _
+
+self = <quarantineTest.TestAFamilyLabelIsNotAPath object at 0x716684a2d100>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x716684527f70>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-637/test_a_symlinked_family_pointi0')
+
+    def test_a_symlinked_family_pointing_outside_is_refused(self, monkeypatch, tmp_path):
+        """
+        What the syntactic check alone cannot catch: an ordinary-looking single-component
+        label whose directory is a symlink out of the tree.
+        """
+        outside, database = self._planted(tmp_path)
+        link = database / "kinetics" / "families" / "Looks_Ordinary"
+        try:
+            os.symlink(str(outside), str(link))
+        except (OSError, NotImplementedError):  # pragma: no cover - platform dependent
+            pytest.skip("this filesystem does not support symlinks")
+        monkeypatch.setitem(settings, "database.directory", str(database))
+    
+>       assert resolve_quarantine("Looks_Ordinary") == (None, False)
+E       AssertionError: assert (<KineticsQua...Marcus>, True) == (None, False)
+E         
+E         At index 0 diff: <KineticsQuarantine 'Looks_Ordinary' QUARANTINED FOR TESTING applies to Marcus> != None
+E         
+E         Full diff:
+E           (
+E         -     None,
+E         -     False,...
+E         
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/rmgpy/data/kinetics/quarantineTest.py:1625: AssertionError
+_ TestTheCallSitePinCoversEveryGate.test_a_call_in_a_dead_branch_does_not_satisfy_it _
+
+self = <quarantineTest.TestTheCallSitePinCoversEveryGate object at 0x716684a2d700>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-637/test_a_call_in_a_dead_branch_d0')
+
+    def test_a_call_in_a_dead_branch_does_not_satisfy_it(self, tmp_path):
+        with pytest.raises(DatabaseError):
+>           _load_with_module(tmp_path, "dead",
+                              _module_carrying(tmp_path, self.DEAD, "dead"))
+E           Failed: DID NOT RAISE <class 'rmgpy.exceptions.DatabaseError'>
+
+test/rmgpy/data/kinetics/quarantineTest.py:1722: Failed
+_ TestTheCallSitePinCoversEveryGate.test_a_same_named_call_on_something_else_does_not_satisfy_it _
+
+self = <quarantineTest.TestTheCallSitePinCoversEveryGate object at 0x716684a2d910>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-637/test_a_same_named_call_on_some0')
+
+    def test_a_same_named_call_on_something_else_does_not_satisfy_it(self, tmp_path):
+        with pytest.raises(DatabaseError):
+>           _load_with_module(tmp_path, "unrelated",
+                              _module_carrying(tmp_path, self.UNRELATED, "unrelated"))
+E           Failed: DID NOT RAISE <class 'rmgpy.exceptions.DatabaseError'>
+
+test/rmgpy/data/kinetics/quarantineTest.py:1727: Failed
+_ TestTheCallSitePinCoversEveryGate.test_deleting_three_of_the_four_gates_is_refused _
+
+self = <quarantineTest.TestTheCallSitePinCoversEveryGate object at 0x716684a2db20>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-637/test_deleting_three_of_the_fou0')
+
+    def test_deleting_three_of_the_four_gates_is_refused(self, tmp_path):
+        """
+        The one a module-level call count cannot see. Three admission paths lose their
+        gate, one keeps it, and the old check counted 1 and was satisfied.
+        """
+        import rmgpy.rmg.model as real_model
+    
+        source = inspect.getsource(real_model)
+        thinned = source
+        removed = 0
+        for stage in ("admission to the model core",
+                      "admission to the model edge",
+                      "admission to a pressure-dependent network"):
+            for line in source.split("\n"):
+                if "check_quarantine(" in line and stage in line:
+                    thinned = thinned.replace(line + "\n", "")
+                    removed += 1
+        assert removed == 3, "the gate calls this test deletes have moved"
+    
+        with pytest.raises(DatabaseError) as raised:
+>           _load_with_module(tmp_path, "thinned",
+                              _module_carrying(tmp_path, thinned, "thinned"))
+E           Failed: DID NOT RAISE <class 'rmgpy.exceptions.DatabaseError'>
+
+test/rmgpy/data/kinetics/quarantineTest.py:1750: Failed
+_ TestTheSuppressionConsultsDiskToo.test_a_database_whose_manifests_are_only_on_disk_still_warns _
+
+self = <quarantineTest.TestTheSuppressionConsultsDiskToo object at 0x716684a341c0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x716684397d30>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-637/test_a_database_whose_manifest0')
+caplog = <_pytest.logging.LogCaptureFixture object at 0x716684397250>
+
+    def test_a_database_whose_manifests_are_only_on_disk_still_warns(
+            self, monkeypatch, tmp_path, caplog):
+        families = tmp_path / "kinetics" / "families" / "A_Quarantined_Family"
+        families.mkdir(parents=True)
+        write_manifest(families)
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+        _register_families(monkeypatch, {})
+    
+        reaction = self._reaction()
+        with caplog.at_level(logging.WARNING):
+            check_quarantine(reaction, stage="a test", kinetics=reaction.kinetics)
+    
+>       assert any("Cannot tell whether" in record.getMessage()
+                   for record in caplog.records), (
+            "the rate was admitted in silence by a database that does quarantine "
+            "something; the policy allowing the admission rests on the warning")
+E       AssertionError: the rate was admitted in silence by a database that does quarantine something; the policy allowing the admission rests on the warning
+E       assert False
+E        +  where False = any(<generator object TestTheSuppressionConsultsDiskToo.test_a_database_whose_manifests_are_only_on_disk_still_warns.<locals>.<genexpr> at 0x716684389e40>)
+
+test/rmgpy/data/kinetics/quarantineTest.py:1803: AssertionError
+================================ tests coverage ================================
+_______________ coverage: platform linux, python 3.9.23-final-0 ________________
+
+Coverage HTML written to dir htmlcov
+=========================== short test summary info ============================
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheThirdShapeSurvivesTheConversion::test_the_real_loader_attaches_the_entry_to_the_template_shape
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheThirdShapeSurvivesTheConversion::test_a_seed_conversion_leaves_the_rate_refused
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheThirdShapeSurvivesTheConversion::test_a_reaction_library_conversion_leaves_the_rate_refused
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheThirdShapeSurvivesTheConversion::test_the_conversion_still_writes_the_library_label_into_the_family_slot
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheDiskAnswerIsRevalidated::test_a_manifest_added_after_the_first_lookup_is_seen
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheDiskAnswerIsRevalidated::test_a_manifest_removed_after_the_first_lookup_is_seen
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheDiskAnswerIsRevalidated::test_a_manifest_that_vanishes_mid_read_is_unanswered_not_clean
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestAFamilyLabelIsNotAPath::test_an_absolute_label_is_refused
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestAFamilyLabelIsNotAPath::test_a_dotdot_label_is_refused
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestAFamilyLabelIsNotAPath::test_a_symlinked_family_pointing_outside_is_refused
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheCallSitePinCoversEveryGate::test_a_call_in_a_dead_branch_does_not_satisfy_it
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheCallSitePinCoversEveryGate::test_a_same_named_call_on_something_else_does_not_satisfy_it
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheCallSitePinCoversEveryGate::test_deleting_three_of_the_four_gates_is_refused
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheSuppressionConsultsDiskToo::test_a_database_whose_manifests_are_only_on_disk_still_warns
+================= 14 failed, 3 passed, 67 deselected in 23.84s =================

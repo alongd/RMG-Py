@@ -31,16 +31,20 @@
 This module contains functionality for working with kinetics families.
 """
 import codecs
+import io
 import itertools
 import logging
 import multiprocessing as mp
 import os.path
+import pickle
 import random
 import math
 import re
 import warnings
+import weakref
 from collections import OrderedDict
 from copy import deepcopy
+from multiprocessing.reduction import ForkingPickler
 
 import numpy as np
 from scipy.optimize import OptimizeWarning
@@ -62,15 +66,724 @@ from rmgpy.kinetics import Arrhenius, SurfaceArrhenius, SurfaceArrheniusBEP, Sti
                            ArrheniusChargeTransferBM, KineticsModel, Marcus
 from rmgpy.kinetics.uncertainties import RateUncertainty, rank_accuracy_map
 from rmgpy.molecule import Bond, GroupBond, Group, Molecule
+from rmgpy.molecule.molecule import Atom
 from rmgpy.molecule.atomtype import ATOMTYPES
-from rmgpy.reaction import Reaction, same_species_lists
+from rmgpy.reaction import Reaction, pair_occurrences, same_species_lists
 from rmgpy.species import Species
 from rmgpy.tools.uncertainty import KineticParameterUncertainty
-from rmgpy.molecule.fragment import Fragment
+from rmgpy.molecule.fragment import CuttingLabel, Fragment
 import rmgpy.constants as constants
 from rmgpy.data.solvation import SoluteData, add_solute_data, SoluteTSData, to_soluteTSdata
 
 ################################################################################
+
+
+#: Every field a :class:`~rmgpy.reaction.Reaction` carries, discovered from the class
+#: rather than written out here. The three fields round 102 found missing were missing
+#: because a call site enumerated by hand and the hand-kept list fell behind the class;
+#: a second hand-kept list would reproduce the defect one layer up. `getset_descriptor`
+#: is what a Cython ``cdef public`` attribute presents as, which is what separates state
+#: from the methods and the cimported types that also appear in ``dir()``.
+#:
+#: This lives in `family.py` rather than `library.py`, where round 102 first put it,
+#: because `library.py` imports `TemplateReaction` from here and the import cannot run
+#: both ways. `library.py` re-exports the name, so every existing importer is unaffected.
+#: One definition, imported; not one definition per module that needs it.
+REACTION_STATE_FIELDS = frozenset(
+    name for name in dir(Reaction)
+    if not name.startswith('_')
+    and type(getattr(Reaction, name, None)).__name__ == 'getset_descriptor'
+)
+
+#: Fields whose *setter does something other than store the value*, mapped to the storage
+#: to write instead. There is exactly one today, and it is not a detail: assigning
+#: `Reaction.degeneracy` while kinetics are attached multiplies the rate by a ratio and
+#: appends to the kinetics comment (``rmgpy/reaction.py:356``). Carrying a value is not
+#: the same operation as changing it -- a reaction that already states ``degeneracy=3``
+#: has already stated the rate it wants, and re-deriving the rate from the number that was
+#: already true applies it twice. Writing the storage performs the carry and nothing else,
+#: which is the same thing `Reaction.__init__` does with its own ``degeneracy`` argument
+#: (``self._degeneracy = degeneracy``), so this is the constructor's own path rather than
+#: a back door around an invariant. Round 105 closed that at the loader; the transforms
+#: below inherit the rule by sharing this table.
+_CARRIED_THROUGH_STORAGE = {
+    'degeneracy': '_degeneracy',
+}
+
+
+class ReactionStateNotCarried(Exception):
+    """
+    Raised when a field classified as carried cannot in fact be carried.
+
+    Deliberately **not** an `AttributeError` subclass. The class of defect this module
+    keeps finding is a carry that silently drops what it claims to carry, and both places
+    a carry can fail raise `AttributeError` -- so an error an ``except AttributeError``
+    up the stack could swallow would restore the silence this exception exists to break.
+    """
+
+
+def state_fields(source):
+    """
+    Every name that holds state on `source`, discovered rather than listed.
+
+    Two halves, because a `Reaction` subclass has two kinds of field: the ones
+    `Reaction` declares in its ``.pxd``, which are descriptors on the class, and the ones
+    the subclass added in its own ``__init__``, which are ordinary instance attributes
+    because the kinetics subclasses are plain Python. `dir()` finds the first half and
+    ``vars()`` finds the second; between them nothing a subclass holds is invisible.
+
+    A base `Reaction` has no instance dictionary at all (it is a Cython extension type),
+    so for it the second half is empty and this returns exactly `REACTION_STATE_FIELDS`.
+    """
+    return REACTION_STATE_FIELDS.union(getattr(source, '__dict__', {}))
+
+
+def reaction_state(source, not_carried, fields=None):
+    """
+    Read `source`'s state as a ``{name: value}`` dict, excluding `not_carried`.
+
+    `not_carried` maps each excluded field to the reason it is excluded; `fields` is the
+    universe to enumerate, defaulting to the fields `Reaction` itself declares. Call
+    sites that carry state between *different* classes pass the default -- a
+    `TemplateReaction`'s ``template`` is not state a `LibraryReaction` should receive.
+    Call sites that reproduce *one object* -- `__reduce__`, `copy()` -- pass
+    `state_fields(source)` so the subclass's own fields travel too.
+
+    Raises `ReactionStateNotCarried` rather than skipping: a field the source cannot
+    produce is a field the caller was told it would get.
+    """
+    if fields is None:
+        fields = REACTION_STATE_FIELDS
+    state = {}
+    for name in sorted(fields):
+        if name in not_carried:
+            continue
+        try:
+            state[name] = getattr(source, name)
+        except AttributeError as error:
+            raise ReactionStateNotCarried(
+                '{0!r} is classified as carried state of {1} but cannot be read from it: '
+                '{2}'.format(name, type(source).__name__, error))
+    return state
+
+
+def apply_reaction_state(target, state):
+    """
+    Write a state dict onto `target`, through `_CARRIED_THROUGH_STORAGE` where the
+    property is a transformation rather than a store.
+
+    Raises `ReactionStateNotCarried` rather than skipping, for the same reason
+    `reaction_state` does: until round 107 this swallowed `AttributeError` and continued,
+    so a read-only field sitting in a carried set was a silent drop wearing the label of
+    a carry. That is how `protons` spent round 102 being "carried" without ever being
+    assigned. `quarantineTest.py` pins that no field any policy calls carried can reach
+    this raise, so raising costs nothing a correct partition does not already forbid --
+    and announces the partition going stale the moment it stops being correct.
+    """
+    for name, value in state.items():
+        storage = _CARRIED_THROUGH_STORAGE.get(name, name)
+        try:
+            setattr(target, storage, value)
+        except AttributeError as error:
+            raise ReactionStateNotCarried(
+                '{0!r} is classified as carried state but {1} refuses it: {2}'.format(
+                    name, type(target).__name__, error))
+    return target
+
+
+def carry_reaction_state(target, source, not_carried, fields=None):
+    """
+    Copy every field `source` holds onto `target`, except those `not_carried` names.
+
+    Everything not excluded is carried, so a field added to `Reaction` tomorrow is
+    carried by default and can only be left behind by someone writing down why.
+
+    Two of the constructors involved cannot take the fields in question --
+    `TemplateReaction.__init__` has no ``elementary_high_p``, ``allow_pdep_route`` or
+    ``allow_max_rate_violation`` parameter at all -- so the call sites name a handful of
+    fields in a constructor call and use this for the rest. The effect for
+    `elementary_high_p` is not cosmetic: a reaction that loses it misses pressure-
+    dependent routing, silently.
+
+    Raises `ReactionStateNotCarried` if a field either side calls carried cannot in fact
+    be carried. Until round 107 this swallowed both failures and continued, so the
+    docstring's promise above was false in exactly the way the promise was written to
+    prevent.
+    """
+    return apply_reaction_state(target, reaction_state(source, not_carried, fields))
+
+
+# ---------------------------------------------------------------------------------------
+# The transport
+#
+# Round 108 made `copy()` reproduce the reaction through one `pickle` round trip, so that
+# two fields referring to one object still refer to one object on the other side. A
+# transport chosen for that property turned out to drop another: the reducers it delegates
+# to are incomplete for one class, wrong for two, and misrouted for one field pair. What
+# follows keeps both properties at once, without touching `rmgpy/molecule/`, by supplying
+# complete reducers to *this* pickler rather than editing the classes' own.
+# ---------------------------------------------------------------------------------------
+
+_WRITABLE_FIELDS = {}
+
+
+def writable_fields(cls):
+    """
+    The state a class actually holds, discovered rather than listed.
+
+    `dir()` cannot tell a Cython ``cdef public`` attribute from a read-only Cython
+    property: both present as `getset_descriptor`. The difference is load-bearing here.
+    `Molecule.inchi` is *computed* -- reading it costs an InChI generation, and on a
+    `Fragment` it raises outright -- while `Molecule.metal` is storage. A value that
+    cannot be written is derived from the ones that can, so **writability is the
+    discriminator**, and it is measured on a throwaway instance rather than written down
+    in a list that would fall behind the class the way every hand-kept list in this module
+    has.
+
+    `AttributeError` is the refusal of the *write*; any other exception is the refusal of
+    this particular sentinel value, which still proves the field is writable.
+    """
+    fields = _WRITABLE_FIELDS.get(cls)
+    if fields is None:
+        probe = cls.__new__(cls)
+        writable = set()
+        for name in dir(cls):
+            if name.startswith('_'):
+                continue
+            if type(getattr(cls, name, None)).__name__ != 'getset_descriptor':
+                continue
+            try:
+                setattr(probe, name, None)
+            except AttributeError:
+                continue
+            except Exception:
+                pass
+            writable.add(name)
+        fields = _WRITABLE_FIELDS[cls] = frozenset(writable)
+    return fields
+
+
+def object_state(obj):
+    """Everything `obj` holds: its class's writable fields, and its own instance dict."""
+    return {name: getattr(obj, name)
+            for name in sorted(writable_fields(type(obj))
+                               | set(getattr(obj, '__dict__', {})))}
+
+
+#: Values that are *data* rather than references into the object graph. The audit below
+#: compares these and skips the rest, because an object whose ``__eq__`` is identity
+#: compares unequal to its own faithful copy: every `Atom`, `Species` and `Bond` in this
+#: codebase does that. Identity of the referenced objects is round 108's property and is
+#: asserted there, by `is`; this half is about the payload each object carries.
+_PLAIN_VALUES = (type(None), bool, int, float, complex, str, bytes, np.ndarray)
+
+
+def _is_plain(value):
+    if isinstance(value, _PLAIN_VALUES):
+        return True
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return all(_is_plain(item) for item in value)
+    if isinstance(value, dict):
+        return all(_is_plain(key) and _is_plain(item) for key, item in value.items())
+    return False
+
+
+def _same(one, other):
+    if isinstance(one, np.ndarray) or isinstance(other, np.ndarray):
+        return np.array_equal(one, other)
+    return one is other or one == other
+
+
+def _atom_probe():
+    """
+    An `Atom` carrying a distinguishable value in every plain field it has.
+
+    The values are written down; *which of them survive* is measured. A field that gains
+    no sentinel here would be silently classified as surviving, so
+    `quarantineTest.py` pins that every plain field of this probe differs from a
+    default-constructed atom's -- an `Atom` that grows a field turns that test red and
+    names it, which is what makes the completeness of the restore below testable rather
+    than asserted.
+    """
+    atom = Atom(element='C')
+    atom.id = -424242
+    atom.coords = np.array([1.5, 2.5, 3.5])
+    atom.props = {'a probe marker': True}
+    atom.label = '*probe'
+    atom.site = 'a probe site'
+    atom.morphology = 'a probe morphology'
+    atom.charge = 1
+    atom.radical_electrons = 1
+    atom.lone_pairs = 2
+    atom.connectivity1, atom.connectivity2, atom.connectivity3 = 11, 22, 33
+    atom.sorting_label = 44
+    atom.terminal = True
+    atom.ignore = True
+    return atom
+
+
+_REDUCER_PROBES = {Atom: _atom_probe}
+_FIELDS_DROPPED = {}
+
+
+def fields_the_reducer_drops(cls):
+    """
+    Which of a class's plain fields its own ``__reduce__`` fails to reproduce, **measured**
+    on a probe rather than read off the reducer's source.
+
+    ``Atom.__reduce__`` (``rmgpy/molecule/molecule.py:140``) rebuilds through
+    ``Atom(element, radical_electrons, charge, label)`` plus a dict of nine more names, and
+    what it never mentions is dropped. Deriving the difference instead of listing it means
+    the restore stops restoring a field the moment upstream starts carrying it, and starts
+    restoring one the moment upstream stops -- neither of which a written-down list does.
+    """
+    dropped = _FIELDS_DROPPED.get(cls)
+    if dropped is None:
+        probe = _REDUCER_PROBES[cls]()
+        before = {name: value for name, value in object_state(probe).items()
+                  if _is_plain(value)}
+        after = pickle.loads(pickle.dumps(probe, pickle.HIGHEST_PROTOCOL))
+        dropped = _FIELDS_DROPPED[cls] = frozenset(
+            name for name, value in before.items()
+            if not _same(value, getattr(after, name, None)))
+    return dropped
+
+
+def _rebuild(cls):
+    return cls.__new__(cls)
+
+
+def _restore(obj, state):
+    for name, value in state.items():
+        setattr(obj, name, value)
+    return obj
+
+
+def _reduce_whole_object(obj):
+    """
+    Reproduce an object from its own discovered state rather than its class's argument
+    list.
+
+    For the three classes registered with this reducer the argument list is not merely
+    incomplete, it is *wrong*: `Fragment` and `CuttingLabel` inherit reducers that name
+    `Molecule` and `Atom` as the thing to rebuild, and `Molecule.__reduce__` passes
+    ``metal`` and ``facet`` into ``__init__``'s ``inchi`` and ``smiles`` parameters, which
+    are the fifth and sixth positional arguments rather than the seventh and eighth.
+
+    The state travels as the reduce tuple's third element with an explicit state setter
+    (the sixth), not as constructor arguments, because the graph is cyclic -- an atom's
+    ``edges`` hold bonds that hold the atom -- and only the state element is applied after
+    the object is memoised.
+    """
+    return (_rebuild, (type(obj),), object_state(obj), None, None, _restore)
+
+
+def _restore_the_reducers_state_then_what_it_dropped(obj, halves):
+    state, dropped = halves
+    if state is not None:
+        obj.__setstate__(state)
+    return _restore(obj, dropped)
+
+
+def _reduce_completed(obj):
+    """
+    Keep the class's own reducer and add back what it drops.
+
+    `Atom` gets this rather than `_reduce_whole_object` for one measured reason: its
+    reducer stores ``atomtype.label`` and restores ``ATOMTYPES[label]``, so the copy's
+    atom types are the **interned** objects. `AtomType` inherits identity equality, and
+    `is_specific_case_of` is a membership test over those objects -- measured at
+    `2e4ff991d`, ``ATOMTYPES['Cs'].is_specific_case_of(<a pickled copy of it>)`` is
+    ``False``. A whole-object reducer would carry the atom type by value, de-intern it,
+    and turn group matching into a silent wrong answer, which is a worse defect than the
+    one being fixed.
+    """
+    reduction = obj.__reduce__()
+    dropped = {name: getattr(obj, name) for name in fields_the_reducer_drops(type(obj))}
+    return (reduction[0], reduction[1],
+            (reduction[2] if len(reduction) > 2 else None, dropped),
+            None, None, _restore_the_reducers_state_then_what_it_dropped)
+
+
+#: The classes whose own reducer loses state, each with the reducer that completes it and
+#: the reason it is here. Membership is a measurement, not a judgement: the census in
+#: `quarantineTest.py` round-trips every class reachable in a reaction's deepened state and
+#: fails if one loses a plain field and is absent from this table. `Bond`, `TransitionState`
+#: and the kinetics models are reachable and lose nothing, so they are not here.
+_LOSSY_REDUCERS = {
+    Atom: (_reduce_completed,
+           'its reducer omits id, coords and props; ids drive resonance-structure '
+           "correspondence and props carries 'inRing', which feeds group matching"),
+    Molecule: (_reduce_whole_object,
+               'its reducer passes metal and facet into __init__(..., inchi, smiles), so '
+               "a surface molecule is rebuilt from metal='Pt' as an InChI and raises"),
+    Species: (_reduce_whole_object,
+              'its reducer omits aug_inchi, creation_iteration, explicitly_allowed and '
+              'symmetry_number'),
+    Fragment: (_reduce_whole_object,
+               'it inherits a reducer that names Molecule as the class to rebuild, so a '
+               'fragment comes back a molecule without its label, index or species_repr'),
+    CuttingLabel: (_reduce_whole_object,
+                   'it inherits a reducer that names Atom as the class to rebuild and '
+                   "hands it the cutting label's symbol as an element, which raises "
+                   "KeyError: 'R'"),
+}
+
+
+#: `_LOSSY_REDUCERS` as a pickler's ``dispatch_table``: consulted *before* an object's own
+#: ``__reduce__``, keyed on the exact type. One table, shared by every pickler this module
+#: completes, so a class added above is carried by all of them and by none of them only if
+#: it is carried by none.
+COMPLETE_REDUCERS = {cls: reducer for cls, (reducer, _) in _LOSSY_REDUCERS.items()}
+
+
+#: Subclasses of a class in `_LOSSY_REDUCERS` that are deliberately left unregistered, each
+#: with the reason. The census in `quarantineTest.py` imports every module of `rmgpy` and
+#: `arkane`, walks ``__subclasses__()`` under each registered class, and fails on one that is
+#: in neither table -- so a new subclass has to be decided, not inherited by accident.
+_ACCEPTED_UNREGISTERED_SUBCLASSES = {
+    'arkane.encorr.data.Molecule':
+        'a BAC-fitting wrapper that adds a mol_id; it is built and consumed inside one '
+        'Arkane process, never enters a reaction, and reaches no pickler -- and should it '
+        'ever reach one of these two, the refusal below names it',
+}
+
+
+def _unregistered_lossy_base(cls):
+    """The registered class `cls` inherits a lossy reducer from, if `cls` is not registered."""
+    if cls in COMPLETE_REDUCERS:
+        return None
+    for base in cls.__mro__[1:]:
+        if base in COMPLETE_REDUCERS:
+            return base
+    return None
+
+
+def _refuse_unregistered_subclass(obj):
+    """
+    Refuse `obj`, a subclass instance whose class is not in `_LOSSY_REDUCERS`.
+
+    Its inherited reducer is the lossy one this module exists to replace, and for every
+    registered class that reducer names the *parent* as the class to rebuild -- so the copy
+    would come back the wrong type, without whatever the subclass adds. Round 111 measured
+    exactly that and pinned it as silent; this is the loud half of the decision.
+    """
+    base = _unregistered_lossy_base(type(obj))
+    raise pickle.PicklingError(
+        '{0}.{1} subclasses {2}, whose own reducer is lossy, and is not in _LOSSY_REDUCERS; '
+        'pickling it would rebuild a {2} and drop what the subclass adds. Register it with '
+        'a complete reducer in rmgpy/data/kinetics/family.py.'.format(
+            type(obj).__module__, type(obj).__qualname__, base.__name__))
+
+
+#: ``id(class) -> (weak reference to the class, refused?)``, the per-class answer
+#: `_refuse_by_mro` caches. Keyed on IDENTITY: a class is looked up through its metaclass's
+#: ``__eq__``/``__hash__`` in any mapping keyed on the class itself, so a metaclass that
+#: compares its instances equal let a lossy subclass read a benign class's cached ``False``
+#: (round 113 rework; the first cut was a `WeakKeyDictionary`). The reference is checked on
+#: every hit, so a reused ``id`` never answers for a dead class, and a finalizer evicts the
+#: entry, so a class defined at run time is not kept alive by having been pickled.
+_REFUSAL_VERDICTS = {}
+
+
+def _refusal_verdict(cls):
+    """Whether `_refuse_by_mro` refuses instances of `cls`, cached by identity."""
+    key = id(cls)
+    cached = _REFUSAL_VERDICTS.get(key)
+    if cached is not None and cached[0]() is cls:
+        return cached[1]
+    refused = _unregistered_lossy_base(cls) is not None
+    try:
+        reference = weakref.ref(cls)
+    except TypeError:
+        # A class that cannot be weakly referenced is answered without the cache.
+        return refused
+    _REFUSAL_VERDICTS[key] = (reference, refused)
+    weakref.finalize(cls, _REFUSAL_VERDICTS.pop, key, None)
+    return refused
+
+
+def _refuse_by_mro(pickler, obj):
+    """
+    A ``reducer_override``: refuse `obj` if its class inherits a lossy reducer from a class
+    in `_LOSSY_REDUCERS` without being in the table itself; otherwise ``NotImplemented``,
+    which hands `obj` on to the dispatch table and then to its own ``__reduce__``.
+
+    Resolved by MRO **at reduce time**, because it has to catch a subclass defined at any
+    time -- including after `install_complete_reducers` last ran, which a table entry per
+    subclass cannot (round 113). It is called only for instances of user classes -- never
+    for ``None``, ``bool``, ``int``, ``float``, ``str``, ``bytes`` or the builtin containers --
+    and it answers from a per-class cache.
+    """
+    if _refusal_verdict(type(obj)):
+        _refuse_unregistered_subclass(obj)
+    return NotImplemented
+
+
+class _CompletePickler(pickle.Pickler):
+    """
+    A pickler that consults `_LOSSY_REDUCERS` before an object's own ``__reduce__``, and
+    refuses a subclass of one of those classes that is not itself in the table; see
+    `_refuse_by_mro`.
+    """
+
+    dispatch_table = COMPLETE_REDUCERS
+    reducer_override = _refuse_by_mro
+
+
+def install_complete_reducers():
+    """
+    Give `multiprocessing`'s pickler the same complete reducers `copy()` uses.
+
+    Round 110 installed them **inside `copy()`**, which is where the finding was, and a
+    ``dispatch_table`` belongs to the pickler carrying it -- so every other transport in
+    RMG went on getting the lossy ones. The sharpest of those is the one production takes
+    on every parallel run: `Pool.map` (`rmgpy/rmg/react.py`) serialises the generated
+    reactions with `multiprocessing.reduction.ForkingPickler`, in both directions, and
+    measured at `13e3227b2` a parallel generation came back with every atom id ``-1`` and
+    every ``props`` empty, while a fragment or surface reaction raised ``KeyError`` where
+    the serial run succeeded. Same mechanism, same defect, one call site over: the shape
+    rounds 95, 102, 107 and 110 each closed on the path that was named and left standing
+    on the path beside it.
+
+    ``ForkingPickler.register`` is `multiprocessing`'s own, supported hook: it adds to the
+    class's ``_extra_reducers``, which every instance copies into its ``dispatch_table``.
+    So this is not a second mechanism -- it is the *same* table, handed to the other
+    pickler, and a class added to `_LOSSY_REDUCERS` is carried by both without anyone
+    remembering to do it twice.
+
+    **Not** `copyreg.pickle()`, which would have covered every pickler at once. Measured
+    and rejected: `copy.deepcopy` consults `copyreg.dispatch_table` too, and passes the
+    reduce tuple straight into ``copy._reconstruct``, whose sixth positional parameter is
+    ``deepcopy`` rather than the ``state_setter`` the six-element tuple means -- so a
+    process-wide registration hands `_restore` to `_reconstruct` as its recursion function
+    and raises. It would also change pickling for code that never imported this module.
+    Registering with the pickler that has the problem is the narrower true statement.
+
+    An *unregistered* subclass of a registered class is refused by `_refuse_by_mro`, set as
+    ``ForkingPickler.reducer_override``: `multiprocessing` would otherwise hand it the
+    inherited lossy reducer, which rebuilds the parent and drops what the subclass adds.
+    Round 112 registered a refusal per subclass instead, to spare the stdlib's pickler a
+    per-object call -- and so missed every subclass defined after the last call, which
+    round-tripped as a base `Molecule` in silence (round 113). The per-object cost is one
+    cached dict lookup, paid only for non-builtin objects; the stdlib's `ForkingPickler`
+    defines no ``reducer_override`` of its own, and one that someone else installed is
+    refused here rather than overwritten.
+
+    Idempotent: registering a class twice overwrites one dict entry with itself.
+    """
+    for cls, (reducer, _reason) in _LOSSY_REDUCERS.items():
+        ForkingPickler.register(cls, reducer)
+    existing = getattr(ForkingPickler, 'reducer_override', None)
+    if existing is not None and existing is not _refuse_by_mro:
+        raise RuntimeError('multiprocessing.reduction.ForkingPickler already carries a '
+                           'reducer_override ({0!r}); RMG will not replace it silently, and '
+                           'without its own the subclass refusal is lost.'.format(existing))
+    ForkingPickler.reducer_override = _refuse_by_mro
+    return COMPLETE_REDUCERS
+
+
+# At import, because the parent process pickles the *arguments* to `Pool.map` and a child
+# forked after this point inherits the registration. `rmgpy/rmg/react.py` calls it again
+# at its own import for the same reason `library.py` re-exports these names: so the
+# dependency is written down at the site that needs it rather than inferred from an import
+# graph that may be reordered.
+install_complete_reducers()
+
+
+def complete_round_trip(value):
+    """
+    Reproduce `value` -- with every reference inside it preserved, and with every object's
+    own state preserved.
+
+    This is the transport `copy()` uses, and -- since `install_complete_reducers` --
+    `multiprocessing` uses the same reducers. A plain ``pickle.dumps(reaction)`` still
+    reaches the lossy ones, because `__reduce__` cannot dictate how the objects nested
+    inside its state are pickled; that residue is upstream, is named in
+    `docs/i221-saturation/round111-findings.md`, and closing it takes a change to
+    `rmgpy/molecule/`.
+    """
+    buffer = io.BytesIO()
+    _CompletePickler(buffer, pickle.HIGHEST_PROTOCOL).dump(value)
+    return pickle.loads(buffer.getvalue())
+
+
+#: Fields left out of a `TemplateReaction`'s pickle and its copy alike, each with the
+#: reason. Everything else in `state_fields()` travels, which is the point: the three
+#: flags round 107 found missing from both transforms were missing because both
+#: transforms wrote the field list out by hand, and a fourth round of hand-enumeration
+#: would produce a fourth instance of the same defect.
+_NOT_REPRODUCED = {
+    'protons': 'read-only: it is derived from the charge balance of the reactants and '
+               'products, so it arrives with them rather than being assigned',
+    'k_effective_cache': 'a memo of a computation, not state -- a reproduction that '
+                         'inherited it would answer for rate coefficients it never '
+                         'computed',
+    'SurfaceArrhenius': 'a slot named after a cimported type and assigned by nothing in '
+                        'the codebase; it is always None and is not reaction state',
+    'SurfaceChargeTransfer': 'the same: a never-assigned slot, not reaction state',
+}
+
+#: Additionally left out of the *by-reference* carry in `copy()`, because `copy()` is
+#: documented to be deep and these are the mutable fields it deepens; each is assigned
+#: explicitly there. A shallow carry would hand the copy the original's own lists, which
+#: is the defect `_NOT_CARRIED_FROM_ENTRY` names for the loader one module over. These
+#: are the `Reaction` half, shared by both `copy()` methods; a subclass with mutable
+#: fields of its own adds them at the call (`labeled_atoms`, below).
+_NOT_COPIED_BY_REFERENCE = {
+    'reactants': 'deep-copied in copy(), so an edit to the copy cannot reach the original',
+    'products': 'deep-copied in copy(), for the same reason',
+    'kinetics': 'deep-copied in copy(): a shared rate object is how round 105 escaped '
+                'into the database',
+    'network_kinetics': 'deep-copied in copy(), for the same reason as kinetics',
+    'transition_state': 'deep-copied in copy(), a mutable object of its own',
+    'pairs': 'deep-copied in copy(), a list of tuples over the copied species',
+    'specific_collider': 'deep-copied in copy(): a Species, and a copy that aliased it '
+                         'would hand the original\'s collider to a reaction the model '
+                         'is free to edit',
+}
+_NOT_COPIED_BY_REFERENCE.update(_NOT_REPRODUCED)
+
+#: `TemplateReaction`'s own mutable fields, added to the exclusions at its `copy()`.
+_TEMPLATE_NOT_COPIED_BY_REFERENCE = dict(
+    _NOT_COPIED_BY_REFERENCE,
+    labeled_atoms='deep-copied in copy(), a dict of dicts the family mutates in place',
+    template='deep-copied in copy(), a list of node labels the family rebuilds in place '
+             'at family.py:2643')
+
+#: The other half of the partition, and the reason it exists. Until round 110 a field in
+#: *neither* table was carried by reference by default, and the default was silent: a copy
+#: shared the original's `template` list and its `specific_collider`, both mutable, because
+#: nobody had classified them. A default that silently aliases mutable state is the failure
+#: mode the tables exist to prevent, so there is no default any more -- `copy_reaction`
+#: refuses a field it finds in neither table, and the two tables together are a partition
+#: of `state_fields()` rather than a filter over it.
+#:
+#: Entries here are carried by reference *deliberately*. Most are immutable scalars, where
+#: the distinction does not arise; the three that are not say why.
+_COPIED_BY_REFERENCE = {
+    'index': 'an int',
+    'label': 'a str',
+    'comment': 'a str',
+    'degeneracy': 'a float, written through _CARRIED_THROUGH_STORAGE so the copy does not '
+                  'restate the rate',
+    'duplicate': 'a bool',
+    'reversible': 'a bool',
+    'electrons': 'an int',
+    'elementary_high_p': 'a bool',
+    'allow_pdep_route': 'a bool',
+    'allow_max_rate_violation': 'a bool -- named here rather than carried by default, '
+                                'because it is dropped by Reaction.copy and by '
+                                'Reaction.__reduce__ and has been lost in production by '
+                                'both',
+    'is_forward': 'a bool, and the one whose default is not its common value: a reaction '
+                  'generated in reverse that loses it silently becomes a forward one',
+    'rank': 'an int or None',
+    'family': 'a str label',
+    'library': 'a str label',
+    'estimator': 'a str',
+    'entry': 'the shared database Entry, deliberately not copied: it is the object the '
+             'quarantine gate reads authorship from, and a clone would answer for an '
+             'entry the database does not have',
+    'depository': 'the shared KineticsDepository, for the same reason as entry: a '
+                  "DepositoryReaction's source is a database object, and a clone would "
+                  'answer for a depository the database does not have. Held by '
+                  'DepositoryReaction only, which is why it is discovered through '
+                  'state_fields() rather than declared on Reaction',
+    'network': 'the PDepNetwork this reaction belongs to, shared: it is a back-pointer '
+               'that holds the reaction in turn, so deepening it would reproduce the '
+               'whole network around one of its own members. Held by PDepReaction only',
+    'reverse': 'the reverse reaction object, shared: deepening it would reproduce the '
+               'whole reaction graph a second time, and every consumer treats it as a '
+               'back-pointer rather than as state of its own',
+}
+
+
+class ReactionStateUnclassified(ReactionStateNotCarried):
+    """
+    Raised when a field is in neither half of the copy partition.
+
+    A subclass of `ReactionStateNotCarried` so that anything already prepared to hear
+    'this carry did not carry' hears this too, and a distinct class so that the test that
+    pins the refusal cannot pass on the other failure.
+    """
+
+
+def copy_reaction(reaction, not_copied_by_reference):
+    """
+    Deep copy `reaction`, preserving the references *between* its components.
+
+    A reaction is not a bag of independent fields. `pairs` holds the reaction's own
+    `Species` objects -- `Reaction.generate_pairs` appends them straight out of
+    ``self.reactants`` and ``self.products`` -- and `labeled_atoms` holds `Atom` objects
+    out of those species' molecules (``family.py``, ``_create_reaction``). Its internal
+    consistency is a property of those references, not of the four lists separately:
+
+    * `Species.__eq__` is identity, so a `pairs` entry that is not one of the copy's own
+      reactants makes ``reactants.index(pair[0])`` raise;
+    * `labeled_atoms` is read back to relabel the reaction's structures before pairs and
+      templates are regenerated (``family.py:2593``), so an atom that is not inside one of
+      the copy's molecules relabels nothing and reports nothing.
+
+    Until round 108 this deep-copied each field in a separate `deepcopy` call, each with
+    its own memo, which severs exactly those references. The whole deepened half goes
+    through **one round trip** now, so two fields that referred to one object still refer
+    to one object on the other side.
+
+    That round trip is `pickle`, and not for want of trying `deepcopy` first. A single
+    `deepcopy` with a shared memo fixes `pairs` and **cannot** fix `labeled_atoms`:
+    `Molecule.__deepcopy__` (``rmgpy/molecule/molecule.py:1064``) is
+    ``return self.copy(deep=True)`` -- it takes the memo and discards it, so every
+    molecule is rebuilt with fresh atoms no matter what the caller has already copied.
+    Measured at `56156ac9a`: through one memo, a `pairs` species is shared and a labelled
+    atom is not. `pickle` has its own memo, which `__deepcopy__` cannot intercept, and it
+    keeps both -- measured, and 3x faster than `deepcopy` on the same state besides.
+    `rmgpy/molecule/` is out of gates; the `__deepcopy__` override is named in the findings
+    rather than changed.
+
+    So `copy()` and the pickle path are now literally the same mechanism rather than two
+    implementations of one idea: both reproduce the reaction through `__reduce__`, so a
+    field that survives one survives the other by construction. The two *halves* cannot
+    drift either, because they are complementary in code rather than by agreement:
+    `not_copied_by_reference` minus `_NOT_REPRODUCED` is the deepened set, so a field
+    added to either table lands in exactly one half, and a field added to `Reaction` with
+    no table entry is carried by reference and named by the partition tests.
+    """
+    # A pair member that is not an occurrence on its own side must raise here: the pickle
+    # memo would otherwise hand the copy a fresh, detached object for it, which is an alien
+    # member surviving the copy under a new identity (round 112, HIGH 1).
+    pair_occurrences(getattr(reaction, 'pairs', None), reaction.reactants, reaction.products)
+    held = state_fields(reaction)
+    unclassified = sorted(held - set(not_copied_by_reference) - set(_COPIED_BY_REFERENCE))
+    if unclassified:
+        raise ReactionStateUnclassified(
+            '{0} holds {1} and no table classifies {2}. Add each to '
+            '_COPIED_BY_REFERENCE with the reason it may be shared, or to the '
+            'not-copied-by-reference table with the reason it must be deepened. There is '
+            'no default: a field nobody classified used to be aliased silently, which is '
+            'what this refusal replaces.'.format(
+                type(reaction).__name__, ', '.join(repr(name) for name in unclassified),
+                'it' if len(unclassified) == 1 else 'them'))
+
+    other = type(reaction).__new__(type(reaction))
+
+    # The shallow half: a label, a rate model, the authoring entry. Carried by reference
+    # deliberately -- `entry` is the shared database object the quarantine gate reads.
+    carry_reaction_state(other, reaction, not_copied_by_reference, held)
+
+    # The deepened half, intersected with what this reaction actually holds. The tables
+    # describe the class; an instance need not have every field of it. `labeled_atoms` is
+    # the live case: `family.py:2651` *deletes* it once the labels have been read back, so
+    # every reaction `generate_reactions()` returns is missing it, and deepening the table
+    # rather than the object made `copy()` raise on the family's own output.
+    deepened = (set(not_copied_by_reference) - set(_NOT_REPRODUCED)) & held
+    state = reaction_state(reaction, {}, deepened)
+    apply_reaction_state(other, complete_round_trip(state))
+
+    # A memo of a computation rather than state, so the copy starts empty -- but it must
+    # start, because `__new__` leaves a `cdef public dict` unset and reading one raises.
+    other.k_effective_cache = {}
+    return other
 
 
 class UntypeableStructureError(Exception):
@@ -140,6 +853,7 @@ class TemplateReaction(Reaction):
                  reverse=None,
                  is_forward=None,
                  electrons=0,
+                 entry=None,
                  ):
         Reaction.__init__(self,
                           index=index,
@@ -159,29 +873,37 @@ class TemplateReaction(Reaction):
         self.template = template
         self.estimator = estimator
         self.reverse = reverse
+        # The authoring `Entry` this reaction was built from, when a library built it.
+        # `family` above is one slot holding one label, and an entry's `longDesc` may
+        # declare several; the quarantine gate reads the entry so that a second `family:`
+        # line cannot hide the first. Carried through `__reduce__` and `copy()` below,
+        # because a carrier that a pickle or a copy silently drops is not a carrier.
+        self.entry = entry
         self.labeled_atoms = {'reactants': dict(), 'products': dict()}
 
     def __reduce__(self):
         """
         A helper function used when pickling an object.
+
+        No constructor arguments: every field travels in the state dict, which is
+        discovered from the object rather than written out here. Until round 107 this
+        listed seventeen fields by hand and silently dropped six of them --
+        `elementary_high_p`, `allow_pdep_route`, `allow_max_rate_violation`, `rank`,
+        `comment` and `label` -- because `TemplateReaction.__init__` has no parameter for
+        the first three and nobody noticed the rest. A `__reduce__` that can only carry
+        what a constructor accepts will always lag the class; a state dict cannot.
         """
-        return (TemplateReaction, (self.index,
-                                   self.reactants,
-                                   self.products,
-                                   self.specific_collider,
-                                   self.kinetics,
-                                   self.reversible,
-                                   self.transition_state,
-                                   self.duplicate,
-                                   self.degeneracy,
-                                   self.pairs,
-                                   self.family,
-                                   self.template,
-                                   self.estimator,
-                                   self.reverse,
-                                   self.is_forward,
-                                   self.electrons
-                                   ))
+        return (TemplateReaction, (), reaction_state(self, _NOT_REPRODUCED,
+                                                     state_fields(self)))
+
+    def __setstate__(self, state):
+        """
+        Restore what `__reduce__` sent. Required, and not merely nice: the default
+        unpickling path would do ``self.__dict__.update(state)``, and a `Reaction` field
+        is a descriptor on the class, so every one of them would land in the instance
+        dictionary where the descriptor shadows it and nothing would ever read it again.
+        """
+        apply_reaction_state(self, state)
 
     def __repr__(self):
         """
@@ -217,34 +939,39 @@ class TemplateReaction(Reaction):
     def copy(self):
         """
         creates a new instance of TemplateReaction
+
+        Neither half is enumerated here. `copy_reaction` carries the shallow half with the
+        same helper the loader and `__reduce__` use -- so the enumerations round 107 found
+        in disagreement cannot disagree -- and deepens the rest through **one shared
+        memo**, so `pairs` and `labeled_atoms` keep pointing at the copy's own species and
+        atoms rather than at clones of their own.
         """
-        other = TemplateReaction.__new__(TemplateReaction)
+        return copy_reaction(self, _TEMPLATE_NOT_COPIED_BY_REFERENCE)
 
-        # this was copied from Reaction.copy class
-        other.index = self.index
-        other.label = self.label
-        other.reactants = []
-        for reactant in self.reactants:
-            other.reactants.append(reactant.copy(deep=True))
-        other.products = []
-        for product in self.products:
-            other.products.append(product.copy(deep=True))
-        other.specific_collider = self.specific_collider
-        other.degeneracy = self.degeneracy
-        other.kinetics = deepcopy(self.kinetics)
-        other.reversible = self.reversible
-        other.transition_state = deepcopy(self.transition_state)
-        other.duplicate = self.duplicate
-        other.pairs = deepcopy(self.pairs)
-        other.electrons = self.electrons
+    def __deepcopy__(self, memo):
+        """
+        Deep-copying a reaction is `copy()`, not a recursion over its fields.
 
-        # added for TemplateReaction information
-        other.family = self.family
-        other.template = self.template
-        other.estimator = self.estimator
-        other.reverse = self.reverse
-        other.is_forward = self.is_forward
+        `deepcopy(reaction)` is a live path -- `family.py:3854` and
+        `rmgpy/data/kinetics/database.py:755` both take one -- and it recurses into
+        `Molecule.__deepcopy__`, which is ``return self.copy(deep=True)``: that override
+        accepts the memo and discards it, so every labelled atom comes out detached from
+        the molecule the copy owns. Measured at `2e4ff991d`. Routing through `copy()`
+        fixes it, because `copy()` reproduces the whole graph through one transport.
 
+        Defined here and on `LibraryReaction` rather than on `Reaction`, deliberately:
+        `Reaction.copy` returns a *base* `Reaction`, so inheriting this would make
+        `deepcopy` of a `DepositoryReaction` or a `PDepReaction` lose its class, which
+        `deepcopy` does not do today. The two classes whose `copy()` preserves the class
+        get it; the rest keep what they have.
+
+        The copy is memoised, so two references to this reaction inside one `deepcopy`
+        still come out as two references to one copy. It is not memo-consistent with
+        objects copied *outside* it -- a species shared with a separately deep-copied
+        structure comes out as two -- which is `copy()`'s own limitation and the reason
+        this is an override rather than a general repair.
+        """
+        memo[id(self)] = other = self.copy()
         return other
 
     def apply_solvent_correction(self, solvent):
@@ -650,8 +1377,14 @@ class KineticsFamily(Database):
         self.depositories = []
 
         # A KineticsQuarantine if the family directory carries a quarantine.py sidecar,
-        # None for every ordinary family. See rmgpy.data.kinetics.quarantine.
+        # None for every ordinary family, and QUARANTINE_UNREADABLE if there is a sidecar
+        # here that could not be read -- which is not the same as either of the other two
+        # and must not be tested for with a bare `is None`. See
+        # rmgpy.data.kinetics.quarantine.
         self.quarantine = None
+        # Where that answer came from, so `resolve_quarantine` can re-read the manifest
+        # against its own signature instead of trusting this object for the life of the run.
+        self.quarantine_path = None
 
     def __repr__(self):
         return '<ReactionFamily "{0}">'.format(self.label)
@@ -728,7 +1461,8 @@ class KineticsFamily(Database):
 
         # Loaded here, before the `depository_labels == 'all'` branch below returns early, so
         # every way of loading a family sees the same quarantine state. Ordinary families have
-        # no manifest and this is one os.path.exists.
+        # no manifest and this is one failed open.
+        self.quarantine_path = path
         self.quarantine = load_family_quarantine(self.label, path)
 
         if self.reactant_num:

@@ -1,0 +1,75 @@
+
+REPRODUCED   the parallel transport drops the per-atom payload `copy()` now keeps
+    of 10 atoms, 10 came back different. ids [-1, -32768, -32767, -32766] -> [-1, -1, -1, -1]; props [{'inRing': False}, {'inRing': False}] -> [{}, {}]
+
+REPRODUCED   a parallel run differs from the serial run it is supposed to reproduce
+    serial ids [-1, -32764, -32763, -32762] props [{'inRing': False}, {'inRing': False}]
+    parallel ids [-1, -1, -1, -1] props [{}, {}]
+
+REPRODUCED   a fragment reaction cannot cross the parallel transport at all
+    it raised KeyError: 'R'. A parallel run over fragment chemistry dies where the serial run succeeds.
+
+REPRODUCED   a surface reaction cannot cross the parallel transport at all
+    it raised KeyError: 'Pt'
+
+REPRODUCED   a species on both sides loses its reactant-side pair member
+    [Li] + e => [Li+] + e + e: pairs [('e', 'e'), ('[Li]', '[Li+]'), ('[Li]', 'e')]; detached [(0, 'e')]; reactants.index(pair[0]) -> ValueError
+
+REPRODUCED   the deep copy aliases specific_collider
+    copy().specific_collider is reaction.specific_collider -> True. The docstring says "deep copy"; an edit to the copy's collider reaches the original.
+
+REPRODUCED   an unattributed rate passes in silence when the family is on disk, unloaded
+    check_quarantine() logged nothing about a quarantine. The manifest is on disk, its criterion is the rate's own kinetics class, and the entry records no author -- the exact state the gate exists to report.
+
+REPRODUCED   a manifest that could not be read is indistinguishable from one that is absent
+    load_family_quarantine() returned None for the refused manifest and None for the family that has none, and check_quarantine(..., family=...) then answered without a word: an error became a clean bill of health.
+
+REPRODUCED   DepositoryReaction.copy() returns a base Reaction
+    copy() returned a Reaction; ['depository', 'entry', 'family'] did not survive
+
+REPRODUCED   PDepReaction.copy() returns a base Reaction
+    copy() returned a Reaction; ['network'] did not survive
+
+REPRODUCED   DepositoryReaction.__reduce__ drops fields it was never told about
+    ['allow_max_rate_violation', 'rank', 'comment', 'label'] came back changed: [('allow_max_rate_violation', True, False), ('rank', 3, None), ('comment', 'a comment', ''), ('label', 'a label', '')]
+
+REPRODUCED   PDepReaction.__reduce__ drops fields it was never told about
+    ['allow_max_rate_violation', 'rank', 'comment'] came back changed: [('allow_max_rate_violation', True, False), ('rank', 3, None), ('comment', 'a comment', '')]
+
+holds        control: round 110's property: copy() keeps the payload
+    10 atoms, ids [-1, -32760, -32759, -32758], props [{'inRing': False}, {'inRing': False}]
+
+holds        control: a reaction whose species are all distinct copies correctly
+    every pair member is one of the copy's own species -- which is why the existing test could not see the defect above
+
+holds        control: the fixture really does hold one Species object on both sides
+    shared: ['e', 'e']; this is the resolver's own view object, not an assembled one
+
+holds        control: a family with no manifest is still answered, and answered clean
+    resolve_quarantine -> (None, True), load_family_quarantine -> None
+
+holds        control: the gate still refuses a rate from a loaded quarantined family
+    check_quarantine raised QuarantinedKineticsError
+
+holds        control: the parallel transport still round-trips an ordinary reaction
+    reactants 1, degeneracy 3.0
+
+note        the hand-enumerated half, and how an unlisted lossy class fails
+    the table holds 5 classes: Atom, CuttingLabel, Fragment, Molecule, Species. Membership is a measurement for `Atom` alone -- `fields_the_reducer_drops` probes it -- and a judgement for the other four. A class that starts losing a field tomorrow and is not in the table loses it SILENTLY: nothing raises, the field simply arrives as its default. The census test in quarantineTest.py is what turns that into a red test rather than a wrong number.
+
+==============================================================================
+findings reproduced : 12 of 12
+controls holding    : 6 of 6
+noted, not findings : 1
+  REPRODUCED  the parallel transport drops the per-atom payload `copy()` now keeps
+  REPRODUCED  a parallel run differs from the serial run it is supposed to reproduce
+  REPRODUCED  a fragment reaction cannot cross the parallel transport at all
+  REPRODUCED  a surface reaction cannot cross the parallel transport at all
+  REPRODUCED  a species on both sides loses its reactant-side pair member
+  REPRODUCED  the deep copy aliases specific_collider
+  REPRODUCED  an unattributed rate passes in silence when the family is on disk, unloaded
+  REPRODUCED  a manifest that could not be read is indistinguishable from one that is absent
+  REPRODUCED  DepositoryReaction.copy() returns a base Reaction
+  REPRODUCED  PDepReaction.copy() returns a base Reaction
+  REPRODUCED  DepositoryReaction.__reduce__ drops fields it was never told about
+  REPRODUCED  PDepReaction.__reduce__ drops fields it was never told about

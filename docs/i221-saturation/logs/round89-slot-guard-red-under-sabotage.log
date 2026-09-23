@@ -1,0 +1,164 @@
+============================= test session starts ==============================
+collecting ... collected 67 items / 55 deselected / 12 selected
+
+test/rmgpy/data/kinetics/quarantineTest.py::TestProvenanceNotTheFamilySlot::test_a_quarantined_rate_copied_into_a_library_is_still_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestProvenanceNotTheFamilySlot::test_the_provenance_may_live_in_the_entry_instead_of_the_comment PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestProvenanceNotTheFamilySlot::test_every_declared_family_is_consulted_not_just_the_first PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestProvenanceNotTheFamilySlot::test_a_forged_label_is_bounded_by_the_criterion PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestProvenanceNotTheFamilySlot::test_a_library_named_like_a_quarantined_family_is_not_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestProvenanceNotTheFamilySlot::test_authoring_family_reads_authorship_not_the_slot FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestProvenanceNotTheFamilySlot::test_an_unattributable_rate_is_reported_and_not_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestProvenanceNotTheFamilySlot::test_an_ordinary_library_rate_says_nothing PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheFamilySlotIsLeftAloneForItsOtherReader::test_the_library_label_still_lands_in_the_family_slot FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheFamilySlotIsLeftAloneForItsOtherReader::test_placement_still_resolves_for_the_argon_ionisation_channel FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheFamilySlotIsLeftAloneForItsOtherReader::test_the_two_readers_disagree_about_the_same_object_and_both_are_right FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheFamilySlotIsLeftAloneForItsOtherReader::test_nothing_in_the_gate_writes_to_the_family_slot PASSED
+
+=================================== FAILURES ===================================
+_ TestProvenanceNotTheFamilySlot.test_authoring_family_reads_authorship_not_the_slot _
+
+self = <quarantineTest.TestProvenanceNotTheFamilySlot object at 0x7c31c5ecc4c0>
+registered = <KineticsQuarantine 'Fake_Quarantined_Family' QUARANTINED FOR TESTING applies to Marcus>
+
+    def test_authoring_family_reads_authorship_not_the_slot(self, registered):
+        template = make_reaction()
+        assert authoring_family(template) == "Fake_Quarantined_Family"
+    
+        copied = make_library_reaction(comment=ESTIMATED_COMMENT)
+>       assert copied.family == "copied_seed"
+E       assert None == 'copied_seed'
+E        +  where None = LibraryReaction(reactants=[Species(label="Lip", molecule=[Molecule(smiles="[Li+]")], molecular_weight=(6.941,'amu')), Species(label="CH3", molecule=[Molecule(smiles="[CH3]")], molecular_weight=(15.0346,'amu'))], products=[Species(label="CH3Li", molecule=[Molecule(smiles="[Li][CH3]")], molecular_weight=(21.9756,'amu'))], kinetics=Marcus(A=(1.73e+06,'m^3/(mol*s)'), n=2, lmbd_i_coefs=[21824.5,-0.0341626,-0.0013254,4.92966e-07], beta=(1.2e+10,'1/m'), wr=(0,'kJ/mol'), wp=(0,'kJ/mol'), lmbd_o=(0,'J/mol'), comment="""Estimated using template [Root_2R->C] for rate rule [Root_2R->C]\nEuclidian distance = 0\nfamily: Fake_Quarantined_Family""")).family
+
+test/rmgpy/data/kinetics/quarantineTest.py:724: AssertionError
+_ TestTheFamilySlotIsLeftAloneForItsOtherReader.test_the_library_label_still_lands_in_the_family_slot _
+
+self = <quarantineTest.TestTheFamilySlotIsLeftAloneForItsOtherReader object at 0x7c31c5ed0850>
+
+    def test_the_library_label_still_lands_in_the_family_slot(self):
+        """
+        The contract electron placement depends on, asserted through the loader this
+        round changed. Adding `entry=entry` must not disturb what `family` holds.
+        """
+        reaction = self._ionisation_library().get_library_reactions()[0]
+        assert reaction.library == "PlasmaElectronImpactIonization"
+>       assert reaction.family == "PlasmaElectronImpactIonization", (
+            "electron placement is keyed on Reaction.family and this library label is a "
+            "deliberate key in FAMILY_ELECTRON_PLACEMENT; changing what the slot holds "
+            "breaks argon ionisation placement")
+E       AssertionError: electron placement is keyed on Reaction.family and this library label is a deliberate key in FAMILY_ELECTRON_PLACEMENT; changing what the slot holds breaks argon ionisation placement
+E       assert None == 'PlasmaElectronImpactIonization'
+E        +  where None = LibraryReaction(reactants=[Species(label="Ar", molecule=[Molecule(smiles="[Ar]")], molecular_weight=(39.8775,'amu'))], products=[Species(label="Arp", molecule=[Molecule(smiles="[Ar+]")], molecular_weight=(39.8775,'amu'))], kinetics=Arrhenius(A=(1254.44,'m^3/(mol*s)'), n=0, Ea=(0,'kJ/mol'), T0=(1,'K')), reversible=False, electrons=1).family
+
+test/rmgpy/data/kinetics/quarantineTest.py:965: AssertionError
+_ TestTheFamilySlotIsLeftAloneForItsOtherReader.test_placement_still_resolves_for_the_argon_ionisation_channel _
+
+self = <quarantineTest.TestTheFamilySlotIsLeftAloneForItsOtherReader object at 0x7c31c5ed0a00>
+
+    def test_placement_still_resolves_for_the_argon_ionisation_channel(self):
+        """
+        End to end through the real resolver: the library label must still find its
+        ``(1, 2)`` declaration and produce a balanced view.
+        """
+        from rmgpy.electron_placement import (
+            FAMILY_ELECTRON_PLACEMENT,
+            resolve_electron_placement,
+        )
+    
+        assert FAMILY_ELECTRON_PLACEMENT["PlasmaElectronImpactIonization"] == (1, 2)
+    
+        reaction = self._ionisation_library().get_library_reactions()[0]
+        electron = Species(label="e-").from_adjacency_list("1 e u1 p0 c-1")
+>       view = resolve_electron_placement(reaction, [electron] + reaction.reactants
+                                          + reaction.products)
+
+test/rmgpy/data/kinetics/quarantineTest.py:985: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+reaction = LibraryReaction(reactants=[Species(label="Ar", molecule=[Molecule(smiles="[Ar]")], molecular_weight=(39.8775,'amu'))],...mu'))], kinetics=Arrhenius(A=(1254.44,'m^3/(mol*s)'), n=0, Ea=(0,'kJ/mol'), T0=(1,'K')), reversible=False, electrons=1)
+species_list = [Species(label="e-", molecule=[Molecule(smiles="e")], molecular_weight=(0.0005486,'amu')), Species(label="Ar", molecul...r_weight=(39.8775,'amu')), Species(label="Arp", molecule=[Molecule(smiles="[Ar+]")], molecular_weight=(39.8775,'amu'))]
+
+    def resolve_electron_placement(reaction, species_list):
+        """
+        Resolve a family-declared, reactor-facing electron-placement view of
+        `reaction`.
+    
+        `reaction` is a canonical (database-representation) reaction whose electron
+        is carried as ``electrons`` metadata; `species_list` is the model's species
+        list, which must contain exactly one canonical electron species.
+    
+        Returns a new :class:`rmgpy.reaction.Reaction` — the view — with copied
+        participant lists, the family-declared number of electrons inserted on each
+        side (one reactant electron and no product electron, for attachment; one and
+        two, for an ionisation family), and ``electrons = 0``. The view shares the
+        species and kinetics *objects* with the canonical reaction by reference
+        (the reactor indexes species by identity), but the canonical reaction
+        itself is never mutated: same ``electrons``, same participant lists, after
+        this call as before. The view is produced in the reaction's own stored
+        orientation, and is a reactor-facing object, never to be written back into
+        any database structure.
+    
+        Raises :class:`~rmgpy.exceptions.ElectronPlacementError`, always naming the
+        offending family/reaction, unless ALL of the following hold: the family
+        carries a well-formed placement declaration in
+        :data:`FAMILY_ELECTRON_PLACEMENT`; ``reaction.electrons`` equals the declared
+        net change, ``product_count - reactant_count``; no explicit electron already
+        appears among the participants; the kinetics are a currently supported,
+        non-pressure-dependent form whose own electron count, if it has one at all,
+        is the declared net change; exactly one canonical electron species is
+        resolvable from `species_list`; the finished view balances in the ``E``
+        pseudo-element, which is what proves the declared sides were the correct
+        sides; and the plasma reaction order implied by the rate coefficient's
+        dimensionality, where it is resolvable at all, equals the number of reactants
+        in the finished view.
+    
+        That last one is a CROSS-CHECK, never an order source: placement is not
+        derived from kinetics units here or anywhere. ``get_plasma_rate_order``
+        returns ``None`` for any rate law outside its units table, and that silence
+        is recorded as :data:`RATE_ORDER_UNRESOLVABLE` — its own outcome — rather
+        than being allowed to read as agreement.
+    
+        ``is_forward`` and ``reversible`` are NOT acceptance conditions — see the
+        module docstring and step 6 for why, and for where the reversibility
+        protection lives instead.
+        """
+        # 1. Family attribution. Placement is family-declared; a reaction that
+        #    carries no family cannot name a declaration and must not fall back to
+        #    its net electron count.
+        family = getattr(reaction, 'family', None)
+        if not family:
+>           raise ElectronPlacementError(
+                'Reaction {0!s} carries no family attribution; electron placement is '
+                'family-declared and cannot be inferred from the net electron count '
+                '(Reaction.electrons).'.format(reaction))
+E           rmgpy.exceptions.ElectronPlacementError: Reaction Ar => Arp carries no family attribution; electron placement is family-declared and cannot be inferred from the net electron count (Reaction.electrons).
+
+rmgpy/electron_placement.py:424: ElectronPlacementError
+_ TestTheFamilySlotIsLeftAloneForItsOtherReader.test_the_two_readers_disagree_about_the_same_object_and_both_are_right _
+
+self = <quarantineTest.TestTheFamilySlotIsLeftAloneForItsOtherReader object at 0x7c31c5ed0bb0>
+
+    def test_the_two_readers_disagree_about_the_same_object_and_both_are_right(self):
+        """
+        The design, pinned on one object. Placement reads the slot and gets the library;
+        the quarantine gate reads provenance and gets the authoring family. Neither
+        answer is a normalisation of the other, and making them agree would break one.
+        """
+        library = self._ionisation_library()
+        library.entries[1].long_desc = "family: Plasma_Electron_Impact_Ionization"
+        reaction = library.get_library_reactions()[0]
+    
+>       assert reaction.family == "PlasmaElectronImpactIonization"
+E       assert None == 'PlasmaElectronImpactIonization'
+E        +  where None = LibraryReaction(reactants=[Species(label="Ar", molecule=[Molecule(smiles="[Ar]")], molecular_weight=(39.8775,'amu'))], products=[Species(label="Arp", molecule=[Molecule(smiles="[Ar+]")], molecular_weight=(39.8775,'amu'))], kinetics=Arrhenius(A=(1254.44,'m^3/(mol*s)'), n=0, Ea=(0,'kJ/mol'), T0=(1,'K')), reversible=False, electrons=1).family
+
+test/rmgpy/data/kinetics/quarantineTest.py:1005: AssertionError
+================================ tests coverage ================================
+_______________ coverage: platform linux, python 3.9.23-final-0 ________________
+
+Coverage HTML written to dir htmlcov
+=========================== short test summary info ============================
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestProvenanceNotTheFamilySlot::test_authoring_family_reads_authorship_not_the_slot
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheFamilySlotIsLeftAloneForItsOtherReader::test_the_library_label_still_lands_in_the_family_slot
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheFamilySlotIsLeftAloneForItsOtherReader::test_placement_still_resolves_for_the_argon_ionisation_channel
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheFamilySlotIsLeftAloneForItsOtherReader::test_the_two_readers_disagree_about_the_same_object_and_both_are_right
+================= 4 failed, 8 passed, 55 deselected in 10.35s ==================

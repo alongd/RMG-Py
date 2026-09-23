@@ -340,6 +340,14 @@ class Reaction:
                            self.rank,
                            self.electrons,
                            self.comment,
+                           # Round 110. `is_forward` and `allow_max_rate_violation` are
+                           # the next two parameters of `__init__` and were the two this
+                           # tuple stopped short of, so a reaction generated in reverse
+                           # came back forward and a rate allowed to exceed the collision
+                           # limit came back forbidden to. Both defaults are the value
+                           # that hides the loss.
+                           self.is_forward,
+                           self.allow_max_rate_violation,
                            ))
 
     @property
@@ -2031,17 +2039,53 @@ class Reaction:
         for product in self.products:
             other.products.append(product.copy(deep=True))
         other.degeneracy = self.degeneracy
-        other.specific_collider = self.specific_collider
+        # Round 112. The pairs are resolved to POSITIONS before anything is copied, and
+        # rebuilt from those positions over the copy's own lists. Every map this method used
+        # to build was keyed on `id(species)`, and a reaction is a list of occurrences, not
+        # of species: `Ar + e- => Ar+ + e- + e-` holds one electron object three times, and
+        # `[s, s] => [p]` holds `s` twice on one side. Each occurrence is copied separately,
+        # so a species-keyed map kept only the last copy and every pair member naming that
+        # species resolved to it. `pair_occurrences` raises on a member that is on neither
+        # side it could be read from, which is what an alien member used to do silently --
+        # survive the "deep" copy still aliased to the original.
+        occurrences = pair_occurrences(self.pairs, self.reactants, self.products)
+        # A collider that is one of the participants stays one object with it -- its first
+        # occurrence, reactant side first -- and any other collider is deepened. Aliasing it
+        # breaks the deep-copy contract this method's docstring states.
+        other.specific_collider = None
+        if self.specific_collider is not None:
+            for i in range(len(self.reactants)):
+                if self.reactants[i] is self.specific_collider:
+                    other.specific_collider = other.reactants[i]
+                    break
+            if other.specific_collider is None:
+                for i in range(len(self.products)):
+                    if self.products[i] is self.specific_collider:
+                        other.specific_collider = other.products[i]
+                        break
+            if other.specific_collider is None:
+                other.specific_collider = self.specific_collider.copy(deep=True)
         other.kinetics = deepcopy(self.kinetics)
         other.network_kinetics = deepcopy(self.network_kinetics)
         other.reversible = self.reversible
         other.transition_state = deepcopy(self.transition_state)
         other.duplicate = self.duplicate
-        other.pairs = deepcopy(self.pairs)
+        other.pairs = pairs_from_occurrences(occurrences, other.reactants, other.products)
         other.allow_pdep_route = self.allow_pdep_route
         other.elementary_high_p = self.elementary_high_p
         other.comment = deepcopy(self.comment)
         other.electrons = self.electrons
+        # Round 110. Three fields this list stopped short of. `allow_max_rate_violation`
+        # is the one the review named -- a rate deliberately allowed past the collision
+        # limit comes back forbidden to exceed it -- and `rank` and `is_forward` were
+        # beside it, the same hand-enumeration missing the same way. `k_effective_cache`
+        # is not state but must be *set*: `__new__` leaves a `cdef public dict` unset, and
+        # reading one raises, so without this the copy is a reaction that cannot be asked
+        # for a rate coefficient.
+        other.allow_max_rate_violation = self.allow_max_rate_violation
+        other.rank = self.rank
+        other.is_forward = self.is_forward
+        other.k_effective_cache = {}
 
         return other
 
@@ -2061,6 +2105,14 @@ class Reaction:
         # if already species' objects, return none
         if isinstance(self.reactants[0], Species):
             return None
+        # Positions first, while the pairs still name the objects in these lists: the
+        # conversion below replaces each list element in place, and an isomorphism lookup
+        # afterwards gives every duplicate occurrence the first match (round 112). Pairs
+        # that name structures rather than these objects keep the lookup below.
+        try:
+            occurrences = pair_occurrences(self.pairs, self.reactants, self.products)
+        except ValueError:
+            occurrences = None
         # obtain species with all resonance isomers
         if self.is_forward:
             ensure_species(self.reactants, resonance=reactant_resonance, keep_isomorphic=True)
@@ -2070,7 +2122,9 @@ class Reaction:
             ensure_species(self.products, resonance=reactant_resonance, keep_isomorphic=True)
 
         # convert reaction.pairs object to species
-        if self.pairs:
+        if occurrences is not None:
+            self.pairs = pairs_from_occurrences(occurrences, self.reactants, self.products)
+        elif self.pairs:
             new_pairs = []
             for reactant, product in self.pairs:
                 new_pair = []
@@ -2278,6 +2332,84 @@ class Reaction:
         Only implemented for LibraryReaction
         """
         raise NotImplementedError("generate_high_p_limit_kinetics is not implemented for all Reaction subclasses.")
+
+def pair_occurrences(pairs, reactants, products):
+    """
+    Resolve `pairs` to a list of ``(reactant position, product position)`` over
+    `reactants` and `products`, or ``None`` when `pairs` is ``None``.
+
+    A reaction is a list of occurrences, and a pair names a *species*. Mapping a member
+    back to "its" position by lookup -- ``reactants.index(member)``, or a dict keyed on
+    ``id(member)`` -- answers with one occurrence for all of them, which is wrong the moment
+    a species occurs twice on a side (``A + A``, the two product electrons of an ionisation)
+    or on both sides (the electron in ``Ar + e- => Ar+ + e- + e-``). This is the one place
+    that question is answered, and it is answered per side and per occurrence:
+
+    * a member is looked up on its OWN side only -- ``pair[0]`` among `reactants`,
+      ``pair[1]`` among `products` -- by identity, because ``Species.__eq__`` is identity
+      and the side is the only thing that tells the two electrons of that reaction apart;
+    * the k-th pair that names an object on a side is given that object's k-th occurrence
+      on the side, wrapping when an object is named more often than it occurs (one reactant
+      electron paired with each of two product electrons names it twice, and it occurs
+      once);
+    * a member that does not occur on its side raises :class:`ValueError`. It is either an
+      alien object or a pair written the wrong way round, and in both cases no position is
+      the right answer -- passing it through aliased is what made a "deep" copy share an
+      object with the original.
+
+    Positions are what callers carry across a rebuild of either list;
+    :func:`pairs_from_occurrences` turns them back into pairs over the new lists.
+    """
+    if pairs is None:
+        return None
+    reactant_positions = _positions_by_identity(reactants)
+    product_positions = _positions_by_identity(products)
+    reactant_named = {}
+    product_named = {}
+    occurrences = []
+    for pair in pairs:
+        if len(pair) != 2:
+            raise ValueError('A reaction pair must have two members, not {0}: {1!r}'.format(len(pair), pair))
+        occurrences.append((_next_occurrence(pair[0], reactant_positions, reactant_named, 'reactant'),
+                            _next_occurrence(pair[1], product_positions, product_named, 'product')))
+    return occurrences
+
+
+def pairs_from_occurrences(occurrences, reactants, products):
+    """
+    The pairs that `occurrences` (from :func:`pair_occurrences`) name over `reactants` and
+    `products`, as tuples; ``None`` for ``None``.
+    """
+    if occurrences is None:
+        return None
+    pairs = []
+    for reactant_position, product_position in occurrences:
+        pairs.append((reactants[reactant_position], products[product_position]))
+    return pairs
+
+
+def _positions_by_identity(side):
+    """``id(object) -> [positions of that object in side]``, in order."""
+    positions = {}
+    for position in range(len(side)):
+        key = id(side[position])
+        if key not in positions:
+            positions[key] = []
+        positions[key].append(position)
+    return positions
+
+
+def _next_occurrence(member, positions, named, side_name):
+    """The occurrence of `member` on this side that its next mention in a pair refers to."""
+    key = id(member)
+    if key not in positions:
+        raise ValueError('Reaction pair member {0!r} is not a {1} of this reaction. A pair names the '
+                         'reaction\'s own objects, reactant first; an object on neither side, or on '
+                         'the other one, has no position here.'.format(member, side_name))
+    count = named.get(key, 0)
+    named[key] = count + 1
+    return positions[key][count % len(positions[key])]
+
 
 def _same_object(object1, object2, _check_identical=False, _only_check_label=False,
              _generate_initial_map=False, _strict=True, _save_order=False):

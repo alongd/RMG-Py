@@ -1,0 +1,65 @@
+probe scratch: /tmp/claude-1000/round87-probe-1rnofy2m
+
+[NOT REPRODUCED] HIGH: a quarantined rate copied into a library is admitted
+    control (TemplateReaction of the quarantined family) refused: True
+    LibraryReaction(library='copied_seed') carrying the SAME Marcus rate and the
+      same 'family: Fake_Quarantined_Family' provenance comment admitted: False
+      its .family attribute is 'copied_seed' -- a LIBRARY name in the slot the gate reads
+      as a FAMILY name (library.py:100, self.family = library)
+
+[NOT REPRODUCED] HIGH (second direction): a library named like the family is refused
+    LibraryReaction(library='Fake_Quarantined_Family') with NO family provenance at all was refused: False
+      Same slot, opposite error: the gate cannot tell a library label from a family
+      label, so it both misses real matches and invents false ones.
+
+[HOLDS] control: a module no engine provides is refused
+    expected refusal, got: refused: Quarantine manifest /tmp/claude-1000/round87-probe-1rnofy2m/control/quarantine.py requires engine module 'rmgp
+
+[HOLDS] control: a requirement this engine DOES meet still loads
+    expected a clean load, got: loaded
+
+[NOT REPRODUCED] MEDIUM: a non-callable satisfies requiresEngineSymbol
+    manifest requiring math.pi as its gate refused: Quarantine manifest /tmp/claude-1000/round87-probe-1rnofy2m/pi/quarantine.py requires 'pi' from engine module ; math.pi is 3.141592653589793, callable=False
+
+[NOT REPRODUCED] MEDIUM: requiresEngineSymbol without a module is silently ignored
+    manifest declaring only a symbol refused: Quarantine manifest /tmp/claude-1000/round87-probe-1rnofy2m/orphan/quarantine.py (family Fake_Quarantined_Fami -- _check_engine_requirements returns
+    early on 'if not module_name', so the symbol is never looked up
+
+[NOT REPRODUCED] MEDIUM: requiresEngineCommit is declarable and never checked
+    manifest pinning an all-zero commit refused: Quarantine manifest /tmp/claude-1000/round87-probe-1rnofy2m/commit/quarantine.py (family Fake_Quarantined_Fami
+
+[NOT REPRODUCED] MEDIUM: symbol existence does not prove the gate is reached
+    a manifest requiring the gate to be reached from a module that does not bind
+    it refused: Quarantine manifest /tmp/claude-1000/round87-probe-1rnofy2m/unwired/quarantine.py requires 'check_quarantine' 
+
+[HOLDS] control: the real call site satisfies the wiring check
+    rmgpy.rmg.model binds the same check_quarantine object: loaded
+
+[NOT REPRODUCED] MEDIUM: the saturated adjacency list in the message cannot be re-parsed
+    the saturated form re-parses when atom typing is relaxed
+    insisting on an atom type instead gives AtomTypeError, which is the failure the message is reporting
+
+[HOLDS] control: the SPECIES block in the same message re-parses
+    the unsaturated species is an ordinary molecule and must round-trip
+
+[NOT REPRODUCED] LOW: the shared helper is not universal
+    routed through saturate_for_estimation: rmgpy.data.transport, rmgpy.data.solvation, rmgpy.data.thermo, rmgpy.tools.uncertainty, rmgpy.qm.main
+    still calling saturate_radicals() directly: none
+
+========================================================================
+RESULT
+========================================================================
+  HOLDS          control: a module no engine provides is refused
+  HOLDS          control: a requirement this engine DOES meet still loads
+  HOLDS          control: the real call site satisfies the wiring check
+  HOLDS          control: the SPECIES block in the same message re-parses
+  not reproduced HIGH: a quarantined rate copied into a library is admitted
+  not reproduced HIGH (second direction): a library named like the family is refused
+  not reproduced MEDIUM: a non-callable satisfies requiresEngineSymbol
+  not reproduced MEDIUM: requiresEngineSymbol without a module is silently ignored
+  not reproduced MEDIUM: requiresEngineCommit is declarable and never checked
+  not reproduced MEDIUM: symbol existence does not prove the gate is reached
+  not reproduced MEDIUM: the saturated adjacency list in the message cannot be re-parsed
+  not reproduced LOW: the shared helper is not universal
+
+0 of 8 findings reproduced; 4 of 4 controls hold.

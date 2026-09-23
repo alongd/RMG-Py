@@ -1,0 +1,47 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+rootdir: /home/alon/Code/RMG-Py-i221-saturation-fix
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 263 items / 251 deselected / 12 selected
+
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSubclassesCopyAsThemselves::test_a_depository_reaction_copies_as_one PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSubclassesCopyAsThemselves::test_a_pdep_reaction_copies_as_one PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSubclassesCopyAsThemselves::test_both_subclasses_survive_a_pickle_round_trip_whole PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSubclassesCopyAsThemselves::test_both_subclasses_carry_their_nested_state_through_every_rmg_transport PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSubclassesCopyAsThemselves::test_a_deep_copy_of_either_keeps_its_class PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSubclassesCopyAsThemselves::test_the_two_new_fields_are_classified_explicitly PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestWhatAnUnlistedLossyClassCosts::test_an_unregistered_subclass_is_refused_by_the_copy_transport PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestWhatAnUnlistedLossyClassCosts::test_an_unregistered_atom_subclass_is_refused_too PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestWhatAnUnlistedLossyClassCosts::test_the_multiprocessing_pickler_refuses_a_subclass_loaded_before_install PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestWhatAnUnlistedLossyClassCosts::test_the_multiprocessing_pickler_refuses_a_subclass_defined_after_install FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestWhatAnUnlistedLossyClassCosts::test_registered_classes_still_travel PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestWhatAnUnlistedLossyClassCosts::test_every_subclass_in_the_tree_is_registered_or_accepted PASSED
+
+=================================== FAILURES ===================================
+_ TestWhatAnUnlistedLossyClassCosts.test_the_multiprocessing_pickler_refuses_a_subclass_defined_after_install _
+
+self = <quarantineTest.TestWhatAnUnlistedLossyClassCosts object at 0x7224cd054130>
+
+    def test_the_multiprocessing_pickler_refuses_a_subclass_defined_after_install(self):
+        """
+        Round 113. `install_complete_reducers` ran at import, long before this class
+        existed, and nothing re-runs it. Behavioural at `fc60e5ba4`: ``ForkingPickler``
+        rebuilt a base `Molecule` and the extra field was gone.
+        """
+        from multiprocessing.connection import Pipe
+        from multiprocessing.reduction import ForkingPickler
+    
+        Sub = self._subclass_of(Molecule)
+        assert Sub not in ForkingPickler._extra_reducers
+        molecule = Sub(smiles="C")
+        molecule.extra = "carried"
+    
+        with pytest.raises(pickle.PicklingError, match="UnregisteredMolecule"):
+>           ForkingPickler.dumps([Species(molecule=[molecule])])
+E           Failed: DID NOT RAISE <class '_pickle.PicklingError'>
+
+test/rmgpy/data/kinetics/quarantineTest.py:5931: Failed
+=========================== short test summary info ============================
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestWhatAnUnlistedLossyClassCosts::test_the_multiprocessing_pickler_refuses_a_subclass_defined_after_install
+================= 1 failed, 11 passed, 251 deselected in 8.56s =================

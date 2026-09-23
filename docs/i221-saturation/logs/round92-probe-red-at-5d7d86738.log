@@ -1,0 +1,78 @@
+probe scratch: /tmp/claude-1000/round92-probe-18xnpxp7
+
+[REPRODUCED] HIGH: add_seed_mechanism_to_core converts away the authorship it just logged
+    before_conversion_authorship = ['Cation_R_Recombination']
+    BEFORE_CONVERSION            = REFUSED_FROM_DISK
+    after_conversion_authorship  = []
+    after_conversion_entry       = None
+    ADMITTED_TO_CORE             = True
+
+[HOLDS] control: the conversion leaves the library label in .family for electron_placement
+    reaction.family after conversion = 'a_seed_written_elsewhere'
+
+[REPRODUCED] HIGH (second site): add_reaction_library_to_edge drops it the same way
+    before_conversion_authorship = ['Cation_R_Recombination']
+    BEFORE_CONVERSION            = REFUSED_FROM_DISK
+    after_conversion_authorship  = []
+    ADMITTED_TO_EDGE             = True
+
+[HOLDS] control: the shape round 89 fixed is still refused on the same path
+    authorship ['Cation_R_Recombination']; refused before conversion = True; refused on the path = True
+
+[REPRODUCED] MEDIUM: the disk cache answers from a database state that no longer exists
+    before the manifest was written: (None, True)
+    after  the manifest was written: (None, True)
+    the file on disk now says QUARANTINED FOR TESTING
+
+[REPRODUCED] MEDIUM: a manifest that vanishes mid-read is recorded as a clean bill of health
+    resolve_quarantine returned (None, True) -- answered=True means 'this family has no manifest'
+    cache now holds {('/tmp/claude-1000/round92-probe-18xnpxp7/toctou', 'A_Family_Whose_Manifest_Vanishes'): (None, True)}
+    the manifest was there when the check ran and gone when the loader looked
+
+[REPRODUCED] MEDIUM: an absolute family label discards the database prefix
+    resolve_quarantine('/tmp/claude-1000/round92-probe-18xnpxp7/outside') -> (<KineticsQuarantine '/tmp/claude-1000/round92-probe-18xnpxp7/outside' QUARANTINED FOR TESTING applies to Marcus>, True)
+    the manifest executed is the one planted outside the database
+
+[REPRODUCED] MEDIUM: a '..' family label escapes the families directory
+    resolve_quarantine('../../../outside') -> (<KineticsQuarantine '../../../outside' QUARANTINED FOR TESTING applies to Marcus>, True)
+
+[HOLDS] control: an ordinary label still resolves inside the database
+    resolve_quarantine('An_Ordinary_Family') -> (None, True)
+
+[REPRODUCED] MEDIUM: a call the interpreter can never reach satisfies requiresEngineCallSites
+    a module whose only call is inside `if False:` -> loaded
+
+[REPRODUCED] MEDIUM: an unrelated attribute call of the same name satisfies it too
+    a module calling somebody_else.check_quarantine(...) -> loaded
+
+[REPRODUCED] MEDIUM: rmgpy.rmg.model with 3 of its 4 gates deleted still satisfies it
+    gate calls removed: 3; what remains -> loaded
+
+[HOLDS] control: the real rmgpy.rmg.model satisfies the check
+    rmgpy.rmg.model -> loaded
+
+[REPRODUCED] MEDIUM: a database with a manifest on disk admits an unanswerable rate in silence
+    admitted = True; warnings emitted = []
+    the database DOES carry a quarantine manifest, at
+    /tmp/claude-1000/round92-probe-18xnpxp7/silent/kinetics/families/A_Quarantined_Family/quarantine.py
+    but nothing is loaded, and the suppression test iterates loaded families only
+
+========================================================================
+RESULT
+========================================================================
+  HOLDS          control: the conversion leaves the library label in .family for electron_placement
+  HOLDS          control: the shape round 89 fixed is still refused on the same path
+  HOLDS          control: an ordinary label still resolves inside the database
+  HOLDS          control: the real rmgpy.rmg.model satisfies the check
+  REPRODUCED     HIGH: add_seed_mechanism_to_core converts away the authorship it just logged
+  REPRODUCED     HIGH (second site): add_reaction_library_to_edge drops it the same way
+  REPRODUCED     MEDIUM: the disk cache answers from a database state that no longer exists
+  REPRODUCED     MEDIUM: a manifest that vanishes mid-read is recorded as a clean bill of health
+  REPRODUCED     MEDIUM: an absolute family label discards the database prefix
+  REPRODUCED     MEDIUM: a '..' family label escapes the families directory
+  REPRODUCED     MEDIUM: a call the interpreter can never reach satisfies requiresEngineCallSites
+  REPRODUCED     MEDIUM: an unrelated attribute call of the same name satisfies it too
+  REPRODUCED     MEDIUM: rmgpy.rmg.model with 3 of its 4 gates deleted still satisfies it
+  REPRODUCED     MEDIUM: a database with a manifest on disk admits an unanswerable rate in silence
+
+10 of 10 findings reproduced; 4 of 4 controls hold.

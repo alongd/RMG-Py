@@ -1,0 +1,78 @@
+
+absent       copy() erases per-atom state that the old path preserved
+    every atom of the copy carries the id and the props the original's did
+
+absent       a fragment reaction cannot be copied at all
+    the copy is a Fragment and keeps its CuttingLabel, and the cutting label keeps its name (['R'])
+
+absent       a reaction the family generated cannot be copied
+    copy() reproduces the family's own output, `labeled_atoms` absent and all
+
+absent       a reaction over a surface molecule cannot be copied
+    the copy keeps metal='Pt' and facet='111'
+
+absent       a copied Species loses state its own reducer omits
+    symmetry_number, aug_inchi, creation_iteration and explicitly_allowed all survive the copy
+
+absent       a field in neither table is silently aliased
+    template is a list of its own on the copy; the partition has no silent default left
+
+absent       a field nobody classified is carried by reference rather than refused
+    copy() refused it loudly: ReactionStateUnclassified: TemplateReaction holds 'a_field_nobody_classified' and no table classifies it
+
+absent       the manifest's identity is sampled before its bytes are read
+    the read was refused once the file changed under it, so nothing was cached and the caller gets an unanswered question rather than an answer keyed to the wrong version
+
+absent       Reaction.copy drops allow_max_rate_violation
+    allow_max_rate_violation, rank and is_forward all survive Reaction.copy
+
+absent       Reaction.copy severs pairs from the species it copied
+    every pairs member is one of the copy's own species
+
+absent       deepcopy(reaction) severs the labelled atoms
+    every labelled atom is inside one of the copy's own molecules, and the copy is still a TemplateReaction
+
+holds        control: the atom state is production's, and Molecule.copy(deep=True) keeps it
+    10 of 10 atoms carry an assigned id or non-empty props before any copy, and the deep copy `copy()` used before round 108 reproduces both. So the loss above is the new transport's, not an absence in the fixture.
+
+holds        control: the deep copy this replaced could copy a fragment
+    deepcopy(fragment) is a Fragment whose cutting label survives, so fragment copying is a working feature and not something that never worked
+
+holds        control: get_library_reactions already carries allow_max_rate_violation here
+    the constructor call does omit the flag, and `_carry_entry_fields` -- round 102's derived carry -- supplies it immediately afterwards. The review is right about the constructor and right for any branch without that carry; on this one the site is already closed, at both tips.
+
+holds        control: round 108's identity properties still hold
+    every pairs member is one of the copy's own species, every labelled atom is inside one of its molecules, and nothing is the original's object
+
+holds        control: the copied atoms keep the interned atom types
+    every copied atom's atomtype is the same object as the original's, which is what `Atom.__reduce__` buys by storing the label and looking it up again
+
+holds        control: carrying an atom type by value would break group matching
+    a pickled `AtomType` is a different object, `AtomType` inherits identity equality, and `is_specific_case_of` over the de-interned copy is False. A reducer that carried `Atom` state wholesale would buy the three lost fields at the price of silent group mismatches, so `Atom` keeps its own reducer and has what it drops added back.
+
+holds        control: value comparison sees none of this
+    the reactants compare equal as strings and labeled_atoms by key, at this tip and at the base alike. Every round 108 assertion of that shape is listed in the findings with what it cannot catch.
+
+note        every class that crosses the transport, and what its own reducer drops
+      Atom (production)              id, props
+      Atom (every plain field set)   coords, id, ignore, props, terminal
+      Bond                           nothing
+      Molecule (ordinary)            nothing
+      Molecule (metal='Pt')          RAISES KeyError: 'Pt'
+      Species                        aug_inchi, creation_iteration, explicitly_allowed, symmetry_number
+      Fragment                       RAISES KeyError: 'R'
+      CuttingLabel                   RAISES KeyError: 'R'
+      TransitionState                None on this reaction
+      Arrhenius                      nothing
+      TemplateReaction               nothing
+      LibraryReaction                nothing
+    
+    Plain fields only: an object whose __eq__ is identity compares unequal to its own faithful copy, so reference fields are audited by round 108's `is` assertions instead of here.
+
+note        what this repair does NOT reach
+    A plain `pickle.dumps(reaction)` still reaches the lossy reducers. `__reduce__` cannot dictate how the objects nested inside its state are pickled, so only a pickler that carries the dispatch table -- which is what `copy()` uses -- gets the complete ones. Closing that would take either a change to `rmgpy/molecule/`, which this round is forbidden, or a process-wide `copyreg.pickle()` registration, which would change the behaviour of code that never imported this module.
+
+==============================================================================
+findings reproduced : 0 of 11
+controls holding    : 7 of 7
+noted, not findings : 2

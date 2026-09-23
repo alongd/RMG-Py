@@ -90,22 +90,56 @@ class PDepReaction(rmgpy.reaction.Reaction):
     def __reduce__(self):
         """
         A helper function used when pickling an object.
+
+        No constructor arguments: every field travels in the state dict, discovered from
+        the object. The fourteen-item list this replaces dropped `comment`, `rank`,
+        `is_forward`, `elementary_high_p`, `allow_pdep_route` and
+        `allow_max_rate_violation` -- measured at `13e3227b2`, a round trip turned
+        ``allow_max_rate_violation=True`` into ``False`` and ``rank=3`` into ``None``. A
+        pressure-dependent reaction is the one shape for which `allow_pdep_route` and
+        `elementary_high_p` are most likely to be set, and this is the reducer that lost
+        them.
+
+        Imported inside the method rather than at the top of the module, to keep
+        `rmgpy.rmg` out of the import path of `rmgpy.data.kinetics`; `depository.py`
+        states the mirror image of this note.
         """
-        return (PDepReaction, (self.index,
-                               self.label,
-                               self.reactants,
-                               self.products,
-                               self.specific_collider,
-                               self.network,
-                               self.kinetics,
-                               self.network_kinetics,
-                               self.reversible,
-                               self.transition_state,
-                               self.duplicate,
-                               self.degeneracy,
-                               self.pairs,
-                               self.electrons
-                               ))
+        from rmgpy.data.kinetics.family import _NOT_REPRODUCED, reaction_state, state_fields
+        return (PDepReaction, (), reaction_state(self, _NOT_REPRODUCED,
+                                                 state_fields(self)))
+
+    def __setstate__(self, state):
+        """
+        Restore what `__reduce__` sent; see `TemplateReaction.__setstate__` for why the
+        default unpickling path will not do.
+        """
+        from rmgpy.data.kinetics.family import apply_reaction_state
+        apply_reaction_state(self, state)
+
+    def copy(self):
+        """
+        Create a deep copy of this reaction, as a `PDepReaction`.
+
+        Inherited, `Reaction.copy` builds a *base* `Reaction`, so the copy lost `network`
+        -- the only thing that says which pressure-dependent network this reaction belongs
+        to, and what `get_source` below reports. `rmgpy/tools/isotopes.py:394` copies
+        whatever `Reaction` it is handed, and a core model that ran pressure dependence is
+        full of these.
+
+        The `network` back-pointer is carried by reference, deliberately: it holds this
+        reaction in turn, so deepening it would reproduce the whole network around one of
+        its own members. That is written down in `_COPIED_BY_REFERENCE` beside the reason,
+        which is what keeps it a decision rather than an omission.
+        """
+        from rmgpy.data.kinetics.family import _NOT_COPIED_BY_REFERENCE, copy_reaction
+        return copy_reaction(self, _NOT_COPIED_BY_REFERENCE)
+
+    def __deepcopy__(self, memo):
+        """
+        The same override, for the same reason; see `TemplateReaction.__deepcopy__`.
+        """
+        memo[id(self)] = other = self.copy()
+        return other
 
     def get_source(self):
         """

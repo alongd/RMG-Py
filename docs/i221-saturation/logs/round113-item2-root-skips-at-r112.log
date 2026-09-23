@@ -1,0 +1,12 @@
+test/rmgpy/data/kinetics/r112_quarantineTest.py::TestAnUnreadableManifestIsNotAnAbsentOne::test_a_manifest_that_cannot_be_examined_is_unanswered_not_clean SKIPPED
+test/rmgpy/data/kinetics/r112_quarantineTest.py::TestAnUnreadableManifestIsNotAnAbsentOne::test_the_unreadable_answer_is_not_entered_into_the_cache SKIPPED
+test/rmgpy/data/kinetics/r112_quarantineTest.py::TestAnUnreadableDirectoryIsUnansweredForALoadedFamilyToo::test_a_loaded_family_with_no_quarantine_is_unanswered_not_clean SKIPPED
+test/rmgpy/data/kinetics/r112_quarantineTest.py::TestAnUnreadableDirectoryIsUnansweredForALoadedFamilyToo::test_a_loaded_family_that_does_carry_one_is_also_unanswered SKIPPED
+test/rmgpy/data/kinetics/r112_quarantineTest.py::TestTheEnumerationIsNeitherStaleNorSilent::test_an_unlistable_families_directory_is_not_zero_quarantines SKIPPED
+test/rmgpy/data/kinetics/r112_quarantineTest.py::TestTheEnumerationIsNeitherStaleNorSilent::test_an_unexaminable_family_directory_is_not_zero_quarantines SKIPPED
+test/rmgpy/data/kinetics/r112_quarantineTest.py::TestTheEnumerationIsNeitherStaleNorSilent::test_the_public_enumeration_raises_rather_than_ending_early SKIPPED
+test/rmgpy/data/kinetics/r112_quarantineTest.py::TestTheEnumerationIsNeitherStaleNorSilent::test_an_unlistable_families_directory_keeps_the_unanswered_warning_on SKIPPED
+SKIPPED [2] test/rmgpy/data/kinetics/r112_quarantineTest.py:2447: this process can read through a 0o000 directory (running as root?), so a permission error cannot be produced here
+SKIPPED [2] test/rmgpy/data/kinetics/r112_quarantineTest.py:2885: this process reads through a 0o000 directory (running as root?)
+SKIPPED [4] test/rmgpy/data/kinetics/r112_quarantineTest.py:5484: this process can list a mode-000 directory (running as root?)
+================= 3 passed, 8 skipped, 249 deselected in 7.98s =================

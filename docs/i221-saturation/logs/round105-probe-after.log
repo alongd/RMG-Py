@@ -1,0 +1,68 @@
+
+[NOT REPRODUCED] carrying degeneracy rescales the rate and the shared entry
+    every shape x degeneracy left A at 10 on both the reaction and the entry
+
+[NOT REPRODUCED] carrying degeneracy appends to the shared kinetics comment
+    no shape x degeneracy edited the comment on the database object
+
+[NOT REPRODUCED] the conversion drops state the destination constructor does not take
+    every field checked survived the conversion
+
+[NOT REPRODUCED] a field the partition calls carried cannot be assigned at all
+    every field the partition calls carried accepts an assignment
+
+[NOT REPRODUCED] without O_NOFOLLOW the descent follows links out of the database
+    resolve_quarantine('A_Family_Reached_Through_A_Linked_Parent') = (None, False); the family directory was reached through a symlinked `kinetics/families` and the manifest behind it was executed, because the flag degraded to 0 and nothing refused
+
+[HOLDS] control: the degeneracy value itself reaches the reaction
+    all 15 shape x degeneracy combinations forwarded the scalar
+
+[HOLDS] control: a degeneracy of 1 leaves the Marcus fixture alone
+    [21824.5, -0.0341626, -0.0013254, 4.92966e-07, 1730000.0] -> [21824.5, -0.0341626, -0.0013254, 4.92966e-07, 1730000.0]
+
+[HOLDS] control: the conversion still replaces library and family
+    library='a_library' family='a_library' electrons=1
+
+[HOLDS] control: the conversion still copies the reactant and product lists
+    reactants copied=True products copied=True
+
+[HOLDS] control: with O_NOFOLLOW the same escape is refused
+    resolve_quarantine('A_Family_Reached_Through_A_Linked_Parent') = (None, False)
+
+[HOLDS] control: an ordinary in-tree family is still answered
+    answered=True quarantine=True
+
+[NOTED, not a finding] the `< 2` branch is why a degeneracy of 3 looks harmless
+    reaction.py:359 uses `new` as the ratio when the OLD degeneracy is below 2, and `new / old` otherwise. Re-assigning the value a reaction already holds is therefore idempotent only for old >= 2: at old == 1 (the two LibraryReaction shapes, which pass no degeneracy to the constructor) the rate is multiplied by the whole new degeneracy, and at old == 0.5 by the new value again.
+
+[NOTED, not a finding] the ordering rule: assign degeneracy before the kinetics, or it is a rescale
+    degeneracy assigned BEFORE attaching kinetics -> A = 10
+    degeneracy assigned AFTER  attaching kinetics -> A = 40
+    
+    Census of `.degeneracy = ` in rmgpy/ (9 sites):
+      species.py:1018            not a Reaction -- TransitionState.__init__
+      common.py:397, :411        an application at generation time, before any
+                                 kinetics exist; this is what the setter is for
+      chemkin.pyx:895            an application that then undoes the rescale by
+                                 hand with change_rate(1/degen) -- the same repair
+                                 as this round's, done lossily, and its comment is
+                                 still appended
+      reaction.py:2033           a carry in Reaction.copy(), SAFE: assigned two
+                                 lines before `other.kinetics` is attached
+      family.py:210              a carry in TemplateReaction.copy(), SAFE, same
+                                 ordering
+      model.py:1152              a carry from the reverse reaction, SAFE: four
+                                 lines before `reaction.kinetics = kinetics`
+      isotopes.py:452            a carry, SAFE: before `rxn.kinetics = ...`
+      isotopes.py:458            a carry, **UNSAFE**: three lines later, after the
+                                 kinetics were attached, so the isotopologue's rate
+                                 is multiplied by the reverse degeneracy. Out of
+                                 this round's gates; named, not fixed
+      library.py                 the carry this round repairs
+    
+    Four of the five carries are safe only because of where the line sits, and nothing marks it.
+
+==============================================================================
+findings reproduced : 0 of 5
+controls holding    : 6 of 6
+noted, not findings : 2

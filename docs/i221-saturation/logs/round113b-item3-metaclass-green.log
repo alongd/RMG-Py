@@ -1,0 +1,53 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+rootdir: /home/alon/Code/RMG-Py-i221-saturation-fix
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 283 items / 239 deselected / 44 selected
+
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheTransportCarriesThePayloadToo::test_the_fixture_carries_the_state_before_anything_is_copied PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheTransportCarriesThePayloadToo::test_the_copy_keeps_both_the_references_and_the_atom_state PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheTransportCarriesThePayloadToo::test_the_familys_own_output_can_be_copied_at_all PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheTransportCarriesThePayloadToo::test_the_copied_atoms_keep_the_interned_atom_types PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheTransportCarriesThePayloadToo::test_deepcopy_of_a_reaction_is_the_copy PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheOtherTransportGetsTheSameReducers::test_the_fixture_carries_a_payload_before_anything_is_transported PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheOtherTransportGetsTheSameReducers::test_the_transport_multiprocessing_uses_carries_the_payload PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheOtherTransportGetsTheSameReducers::test_a_parallel_generation_reproduces_the_serial_one PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheOtherTransportGetsTheSameReducers::test_a_fragment_reaction_survives_the_parallel_transport PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheOtherTransportGetsTheSameReducers::test_a_surface_reaction_survives_the_parallel_transport PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheOtherTransportGetsTheSameReducers::test_both_transports_carry_one_table_rather_than_two PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheOtherTransportGetsTheSameReducers::test_the_module_that_needs_the_registration_makes_it PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSubclassesCopyAsThemselves::test_a_depository_reaction_copies_as_one PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSubclassesCopyAsThemselves::test_a_pdep_reaction_copies_as_one PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSubclassesCopyAsThemselves::test_both_subclasses_survive_a_pickle_round_trip_whole PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSubclassesCopyAsThemselves::test_both_subclasses_carry_their_nested_state_through_every_rmg_transport PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSubclassesCopyAsThemselves::test_a_deep_copy_of_either_keeps_its_class PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSubclassesCopyAsThemselves::test_the_two_new_fields_are_classified_explicitly PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestWhatAnUnlistedLossyClassCosts::test_an_unregistered_subclass_is_refused_by_the_copy_transport PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestWhatAnUnlistedLossyClassCosts::test_an_unregistered_atom_subclass_is_refused_too PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestWhatAnUnlistedLossyClassCosts::test_the_multiprocessing_pickler_refuses_a_subclass_loaded_before_install PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestWhatAnUnlistedLossyClassCosts::test_the_multiprocessing_pickler_refuses_a_subclass_defined_after_install PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestWhatAnUnlistedLossyClassCosts::test_a_verdict_is_not_inherited_through_an_equal_comparing_metaclass PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestWhatAnUnlistedLossyClassCosts::test_registered_classes_still_travel PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestWhatAnUnlistedLossyClassCosts::test_every_subclass_in_the_tree_is_registered_or_accepted PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTransportCensus::test_every_transport_installs_the_complete_reducers PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTransportCensus::test_the_census_is_the_one_on_record PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTransportCensus::test_no_pickle_is_written_to_storage PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTransportCensus::test_plain_pickle_is_reached_from_one_module PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTransportCensus::test_no_cython_module_touches_a_transport PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_uninstalled_transport_is_seen[from multiprocessing import Pool\ndef f():\n    Pool(2).map(g, [])\n] PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_uninstalled_transport_is_seen[import multiprocessing as mp\ndef f():\n    mp.Pool(2)\n] PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_uninstalled_transport_is_seen[import multiprocessing\ndef f():\n    multiprocessing.get_context("spawn").Pool(2)\n] PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_uninstalled_transport_is_seen[from concurrent.futures import ProcessPoolExecutor as E\ndef f():\n    E(2)\n] PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_uninstalled_transport_is_seen[from multiprocessing import Pool\ndef f():\n    install_complete_reducers()\n    Pool(2)\n] PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_installed_transport_passes PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_a_local_pool_is_not_a_transport PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_storage_is_seen[import pickle\npickle.dump(x, open("f", "wb"))\n-found0] PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_storage_is_seen[import pickle\npickle.Pickler(open("f", "wb"))\n-found1] PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_storage_is_seen[import pickle, io\npickle.Pickler(io.BytesIO())\n-found2] PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_storage_is_seen[import pickle\npickle.loads(pickle.dumps(x))\n-found3] PASSED
+test/rmgpy/i221TransportCensusTest.py::TestFreshImportRegisters::test_fresh_import[rmgpy/data/kinetics/family.py] PASSED
+test/rmgpy/i221TransportCensusTest.py::TestFreshImportRegisters::test_fresh_import[rmgpy/qm/main.py] PASSED
+test/rmgpy/i221TransportCensusTest.py::TestFreshImportRegisters::test_fresh_import[rmgpy/rmg/react.py] PASSED
+
+===================== 44 passed, 239 deselected in 21.88s ======================

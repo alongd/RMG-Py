@@ -1,0 +1,789 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+cachedir: .pytest_cache
+rootdir: /tmp/claude-1000/red110
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 218 items
+
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_manifest_loads_its_fields PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_family_without_a_manifest_is_not_quarantined PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_an_unknown_kinetics_class_raises_rather_than_quarantining_nothing PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_declared_engine_requirement_is_honoured PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_declared_engine_symbol_is_honoured PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_satisfied_engine_requirement_loads PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_the_commit_field_is_not_declarable PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_the_recorded_commit_is_kept_as_provenance_and_reaches_a_reader PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_symbol_that_is_not_callable_is_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_symbol_without_a_module_is_refused_not_ignored PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_gate_that_exists_but_is_not_wired_in_is_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_call_site_that_imports_the_gate_and_never_calls_it_is_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_the_real_call_site_satisfies_the_wiring_check PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_manifest_missing_a_required_field_raises[state] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_manifest_missing_a_required_field_raises[appliesToKineticsClass] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_manifest_missing_a_required_field_raises[reason] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_the_criterion_is_selective PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_the_criterion_is_evaluated_against_the_data_not_a_stored_list PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_no_hard_coded_entry_list_exists_in_the_code PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRefusalNamesFiveThings::test_it_names_the_family PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRefusalNamesFiveThings::test_it_names_the_provenance PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRefusalNamesFiveThings::test_it_names_the_generated_reaction PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRefusalNamesFiveThings::test_it_names_the_kinetics_class PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRefusalNamesFiveThings::test_it_names_the_reason PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRefusalNamesFiveThings::test_it_names_the_campaign_state_and_the_manifest PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRefusalNamesFiveThings::test_provenance_is_never_blank PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheGateFires::test_at_kinetics_estimation_the_primary_site PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheGateFires::test_at_core_admission_the_backstop PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheGateFires::test_at_edge_admission_the_backstop PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheGateFires::test_ordinary_chemistry_is_untouched PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheGateFires::test_a_quarantined_family_still_admits_its_unquarantined_kinetics PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheGateFires::test_an_unloaded_database_does_not_crash_the_gate PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestProvenanceNotTheFamilySlot::test_a_quarantined_rate_copied_into_a_library_is_still_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestProvenanceNotTheFamilySlot::test_the_provenance_may_live_in_the_entry_instead_of_the_comment PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestProvenanceNotTheFamilySlot::test_every_declared_family_is_consulted_not_just_the_first PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestProvenanceNotTheFamilySlot::test_a_forged_label_is_bounded_by_the_criterion PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestProvenanceNotTheFamilySlot::test_a_library_named_like_a_quarantined_family_is_not_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestProvenanceNotTheFamilySlot::test_authoring_family_reads_authorship_not_the_slot PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestProvenanceNotTheFamilySlot::test_an_unattributable_rate_is_reported_and_not_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestProvenanceNotTheFamilySlot::test_an_ordinary_library_rate_says_nothing PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheProvenanceArrivesFromTheRealLoader::test_the_entry_travels_with_the_reaction PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheProvenanceArrivesFromTheRealLoader::test_the_entry_survives_the_pickle_the_parallel_path_uses PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheProvenanceArrivesFromTheRealLoader::test_an_ordinary_library_still_loads_with_no_authorship PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestAMissingFamilyIsAnUnansweredQuestion::test_an_unloaded_family_is_answered_from_disk PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestAMissingFamilyIsAnUnansweredQuestion::test_a_family_in_the_database_without_a_manifest_is_a_clean_answer PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestAMissingFamilyIsAnUnansweredQuestion::test_an_unanswerable_question_is_reported_not_swallowed PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestAMissingFamilyIsAnUnansweredQuestion::test_a_database_with_no_quarantine_at_all_stays_silent PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheFamilySlotIsLeftAloneForItsOtherReader::test_the_library_label_still_lands_in_the_family_slot PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheFamilySlotIsLeftAloneForItsOtherReader::test_placement_still_resolves_for_the_argon_ionisation_channel PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheFamilySlotIsLeftAloneForItsOtherReader::test_the_two_readers_disagree_about_the_same_object_and_both_are_right PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheFamilySlotIsLeftAloneForItsOtherReader::test_nothing_in_the_gate_writes_to_the_family_slot PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestEveryAdmissionPathIsGated::test_the_pressure_dependent_network_path_is_gated PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestEveryAdmissionPathIsGated::test_the_enumeration_in_the_docstring_names_every_gate_call PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_1_the_reaction_is_not_removed_after_generation PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_2_no_average_rule_is_substituted PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_3_it_is_never_evaluated_at_potential_zero PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_4_it_is_not_marked_irreversible PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_5_no_reverse_rate_is_derived PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_6_seeding_a_product_or_cation_does_not_bypass_it PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_7_no_generic_collision_rate_replaces_it PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRealQuarantinedFamily::test_the_family_is_quarantined_with_the_ruling_s_words PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRealQuarantinedFamily::test_the_affected_set_is_enumerated_from_the_database PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRealQuarantinedFamily::test_nothing_was_deleted PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRealQuarantinedFamily::test_the_rates_themselves_were_not_touched PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheDoorLeftOpen::test_the_database_still_loads PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheDoorLeftOpen::test_the_family_is_still_registered_and_still_generates_reactions PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheDoorLeftOpen::test_the_rate_law_still_evaluates PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheThirdShapeSurvivesTheConversion::test_the_real_loader_attaches_the_entry_to_the_template_shape PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheThirdShapeSurvivesTheConversion::test_a_seed_conversion_leaves_the_rate_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheThirdShapeSurvivesTheConversion::test_a_reaction_library_conversion_leaves_the_rate_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheThirdShapeSurvivesTheConversion::test_the_conversion_still_writes_the_library_label_into_the_family_slot PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheDiskAnswerIsRevalidated::test_a_manifest_added_after_the_first_lookup_is_seen PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheDiskAnswerIsRevalidated::test_a_manifest_removed_after_the_first_lookup_is_seen PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheDiskAnswerIsRevalidated::test_a_manifest_that_vanishes_mid_read_is_unanswered_not_clean PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestAFamilyLabelIsNotAPath::test_an_absolute_label_is_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestAFamilyLabelIsNotAPath::test_a_dotdot_label_is_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestAFamilyLabelIsNotAPath::test_a_symlinked_family_pointing_outside_is_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestAFamilyLabelIsNotAPath::test_an_ordinary_label_still_resolves PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCallSitePinCoversEveryGate::test_a_call_in_a_dead_branch_does_not_satisfy_it PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCallSitePinCoversEveryGate::test_a_same_named_call_on_something_else_does_not_satisfy_it PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCallSitePinCoversEveryGate::test_deleting_three_of_the_four_gates_is_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCallSitePinCoversEveryGate::test_the_real_module_satisfies_it PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSuppressionConsultsDiskToo::test_a_database_whose_manifests_are_only_on_disk_still_warns PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSuppressionConsultsDiskToo::test_a_database_with_no_quarantine_anywhere_stays_quiet PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestASecondFamilyLineCannotHideTheFirstOnEitherShape::test_authoring_families_reads_every_label_on_the_template_shape PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestASecondFamilyLineCannotHideTheFirstOnEitherShape::test_the_hidden_label_is_refused_at_add_reaction_to_core PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestASecondFamilyLineCannotHideTheFirstOnEitherShape::test_the_family_slot_is_not_normalised PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestASecondFamilyLineCannotHideTheFirstOnEitherShape::test_the_library_shape_still_refuses_both_labels PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheConversionCarriesEveryField::test_a_converted_electron_transfer_reaction_keeps_its_electrons PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheConversionCarriesEveryField::test_every_field_the_class_takes_is_carried PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifestFileIsValidatedNotOnlyItsDirectory::test_a_manifest_symlinked_out_of_the_database_is_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifestFileIsValidatedNotOnlyItsDirectory::test_a_label_carrying_a_nul_byte_is_refused_rather_than_raising PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifestFileIsValidatedNotOnlyItsDirectory::test_a_label_carrying_a_newline_is_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifestFileIsValidatedNotOnlyItsDirectory::test_an_ordinary_label_still_resolves PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifestFileIsValidatedNotOnlyItsDirectory::test_a_manifest_that_is_not_a_regular_file_is_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestALoadedFamilyRereadsItsManifest::test_a_manifest_added_after_the_family_loaded_is_seen PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestALoadedFamilyRereadsItsManifest::test_a_manifest_removed_after_the_family_loaded_is_seen PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSuppressionRescansRatherThanTrustingACachedNo::test_a_manifest_added_inside_an_existing_family_ends_the_suppression PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestThePinDocumentsWhatItActuallyChecks::test_the_documentation_enumerates_what_it_does_not_verify PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCarrierSurvivesATransform::test_the_entry_survives_a_pickle PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCarrierSurvivesATransform::test_the_entry_survives_a_copy PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheDirectoryCannotBeSwappedUnderTheCheck::test_a_directory_swapped_during_the_check_is_not_followed PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheDirectoryCannotBeSwappedUnderTheCheck::test_a_family_directory_that_is_a_symlink_is_refused_even_inside_the_tree PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheDirectoryCannotBeSwappedUnderTheCheck::test_a_database_root_that_is_itself_a_symlink_still_resolves PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestAnUnreadableManifestIsNotAnAbsentOne::test_a_manifest_that_cannot_be_examined_is_unanswered_not_clean PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestAnUnreadableManifestIsNotAnAbsentOne::test_the_unreadable_answer_is_not_entered_into_the_cache PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSignatureNoticesAnEqualLengthEdit::test_an_in_place_edit_of_the_same_length_with_mtime_restored_is_seen PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheAffectedSetCannotPassVacuously::test_a_family_with_no_matching_entries_enumerates_nothing PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheAffectedSetCannotPassVacuously::test_the_enumeration_is_selective_within_each_of_the_two_branches PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheAffectedSetCannotPassVacuously::test_a_family_with_rules_but_no_training_depository_is_not_an_error PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCallSiteFieldIsNamedForWhatItChecks::test_the_new_spelling_is_honoured PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCallSiteFieldIsNamedForWhatItChecks::test_the_new_spelling_still_refuses_a_module_that_never_calls_the_gate PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCallSiteFieldIsNamedForWhatItChecks::test_the_old_spelling_is_still_honoured_and_says_so PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCallSiteFieldIsNamedForWhatItChecks::test_the_old_spelling_still_refuses_what_it_always_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCallSiteFieldIsNamedForWhatItChecks::test_declaring_both_spellings_is_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCallSiteFieldIsNamedForWhatItChecks::test_the_documentation_of_the_field_states_what_it_actually_checks PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestEveryComponentBelowTheAnchorIsPinned::test_a_symlinked_families_directory_does_not_reach_outside PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestEveryComponentBelowTheAnchorIsPinned::test_a_symlinked_kinetics_directory_does_not_reach_outside PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestEveryComponentBelowTheAnchorIsPinned::test_the_configured_database_root_may_still_be_a_link PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestContainmentIsRefusedRatherThanApproximated::test_an_empty_family_path_does_not_read_the_working_directory PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestContainmentIsRefusedRatherThanApproximated::test_a_root_family_path_is_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestContainmentIsRefusedRatherThanApproximated::test_the_descent_is_refused_when_directory_descriptors_are_unavailable PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestAnUnreadableDirectoryIsUnansweredForALoadedFamilyToo::test_a_loaded_family_with_no_quarantine_is_unanswered_not_clean PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestAnUnreadableDirectoryIsUnansweredForALoadedFamilyToo::test_a_loaded_family_that_does_carry_one_is_also_unanswered PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestDeclaringBothSpellingsIsRefusedEvenWhenOneIsEmpty::test_both_fields_present_is_refused_whatever_they_contain[()-("rmgpy.rmg.model",)] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestDeclaringBothSpellingsIsRefusedEvenWhenOneIsEmpty::test_both_fields_present_is_refused_whatever_they_contain[("rmgpy.rmg.model",)-()] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestDeclaringBothSpellingsIsRefusedEvenWhenOneIsEmpty::test_both_fields_present_is_refused_whatever_they_contain[()-()] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestDeclaringBothSpellingsIsRefusedEvenWhenOneIsEmpty::test_an_empty_declaration_of_the_new_field_alone_is_still_a_declaration PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSignatureAndTheContentComeFromOneOpen::test_a_rename_between_the_stat_and_the_read_does_not_outlive_itself PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSignatureAndTheContentComeFromOneOpen::test_restoring_the_original_is_a_cache_miss PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSignatureAndTheContentComeFromOneOpen::test_the_cached_key_is_the_identity_of_the_file_that_was_parsed PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheLoaderCarriesEveryFieldTheEntryHolds::test_the_template_shape_carries_the_three_flags PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheLoaderCarriesEveryFieldTheEntryHolds::test_the_ordinary_library_shape_carries_allow_max_rate_violation PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheLoaderCarriesEveryFieldTheEntryHolds::test_a_false_flag_stays_false PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheLoaderCarriesEveryFieldTheEntryHolds::test_the_library_file_format_can_declare_all_three PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheLoaderCarriesEveryFieldTheEntryHolds::test_every_field_of_reaction_is_carried_or_excluded_with_a_reason PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[0.5-template] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[0.5-originally_from] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[0.5-ordinary] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[1.0-template] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[1.0-originally_from] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[1.0-ordinary] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[1.5-template] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[1.5-originally_from] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[1.5-ordinary] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[2.0-template] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[2.0-originally_from] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[2.0-ordinary] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[3.0-template] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[3.0-originally_from] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[3.0-ordinary] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_rate_is_shared_with_the_entry_so_the_damage_would_escape PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_storage_table_names_a_setter_that_really_transforms PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheConversionEnumeratesTheSourceNotTheDestination::test_the_four_fields_the_constructor_does_not_take_survive PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheConversionEnumeratesTheSourceNotTheDestination::test_every_carried_field_arrives PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheConversionEnumeratesTheSourceNotTheDestination::test_the_conversion_partition_is_total_and_reasoned PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheConversionEnumeratesTheSourceNotTheDestination::test_the_conversion_does_not_rescale_the_rate PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheConversionEnumeratesTheSourceNotTheDestination::test_the_conversion_still_replaces_the_library_slot PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheConversionEnumeratesTheSourceNotTheDestination::test_the_conversion_does_not_share_the_reactant_list PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheAbsenceOfONofollowIsRefused::test_a_platform_without_o_nofollow_is_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheAbsenceOfONofollowIsRefused::test_the_same_escape_is_refused_with_the_flag_present PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheAbsenceOfONofollowIsRefused::test_an_in_tree_family_is_still_answered PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestEveryTransformReproducesTheWholeState::test_the_three_flags_and_the_carrier_survive[template-pickle] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestEveryTransformReproducesTheWholeState::test_the_three_flags_and_the_carrier_survive[template-copy] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestEveryTransformReproducesTheWholeState::test_the_three_flags_and_the_carrier_survive[library-pickle] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestEveryTransformReproducesTheWholeState::test_the_three_flags_and_the_carrier_survive[library-copy] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestEveryTransformReproducesTheWholeState::test_every_reproduced_field_arrives[template-pickle] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestEveryTransformReproducesTheWholeState::test_every_reproduced_field_arrives[template-copy] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestEveryTransformReproducesTheWholeState::test_every_reproduced_field_arrives[library-pickle] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestEveryTransformReproducesTheWholeState::test_every_reproduced_field_arrives[library-copy] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestEveryTransformReproducesTheWholeState::test_the_copy_is_deep_where_it_says_it_is[template] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestEveryTransformReproducesTheWholeState::test_the_copy_is_deep_where_it_says_it_is[library] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestEveryTransformReproducesTheWholeState::test_the_copy_does_not_restate_the_rate[template] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestEveryTransformReproducesTheWholeState::test_the_copy_does_not_restate_the_rate[library] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestEveryTransformReproducesTheWholeState::test_the_sites_that_enumerate_reaction_state_share_one_definition PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestEveryTransformReproducesTheWholeState::test_the_definition_is_discovered_from_both_halves_of_the_class PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestACarryThatCannotCarryRefusesLoudly::test_every_field_called_carried_can_be_carried_between_the_real_classes PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestACarryThatCannotCarryRefusesLoudly::test_a_field_the_target_refuses_is_refused_loudly PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestACarryThatCannotCarryRefusesLoudly::test_a_source_that_holds_none_of_the_state_is_refused_loudly PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestACarryThatCannotCarryRefusesLoudly::test_the_refusal_cannot_be_swallowed_by_an_attributeerror_handler PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestACarryThatCannotCarryRefusesLoudly::test_the_documentation_says_it_refuses PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCopyIsOneGraphNotFourLists::test_the_fixture_holds_the_invariant_before_anything_is_copied PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCopyIsOneGraphNotFourLists::test_every_pair_member_is_one_of_the_copys_own_species[template-copy] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCopyIsOneGraphNotFourLists::test_every_pair_member_is_one_of_the_copys_own_species[template-pickle] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCopyIsOneGraphNotFourLists::test_every_pair_member_is_one_of_the_copys_own_species[library-copy] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCopyIsOneGraphNotFourLists::test_every_pair_member_is_one_of_the_copys_own_species[library-pickle] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCopyIsOneGraphNotFourLists::test_every_labelled_atom_is_inside_one_of_the_copys_own_species[copy] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCopyIsOneGraphNotFourLists::test_every_labelled_atom_is_inside_one_of_the_copys_own_species[pickle] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCopyIsOneGraphNotFourLists::test_relabelling_through_labeled_atoms_is_observable_in_the_structure[copy] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCopyIsOneGraphNotFourLists::test_relabelling_through_labeled_atoms_is_observable_in_the_structure[pickle] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCopyIsOneGraphNotFourLists::test_the_shallow_half_is_still_shallow[template] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCopyIsOneGraphNotFourLists::test_the_shallow_half_is_still_shallow[library] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCopyIsOneGraphNotFourLists::test_the_two_copies_are_one_implementation PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCopyIsOneGraphNotFourLists::test_molecule_copy_still_preserves_atom_order PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCopyIsOneGraphNotFourLists::test_a_deepcopy_cannot_do_this_and_the_reason_is_upstream PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheTransportCarriesThePayloadToo::test_the_fixture_carries_the_state_before_anything_is_copied PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheTransportCarriesThePayloadToo::test_the_copy_keeps_both_the_references_and_the_atom_state FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheTransportCarriesThePayloadToo::test_the_familys_own_output_can_be_copied_at_all FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheTransportCarriesThePayloadToo::test_the_copied_atoms_keep_the_interned_atom_types PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheTransportCarriesThePayloadToo::test_deepcopy_of_a_reaction_is_the_copy FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheClassesWhoseOwnReducerLoses::test_a_fragment_reaction_can_be_copied FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheClassesWhoseOwnReducerLoses::test_the_deep_copy_this_replaced_could_do_it PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheClassesWhoseOwnReducerLoses::test_a_surface_reaction_can_be_copied FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheClassesWhoseOwnReducerLoses::test_a_copied_species_keeps_what_its_own_reducer_omits FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheClassesWhoseOwnReducerLoses::test_every_class_that_loses_state_is_registered FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheClassesWhoseOwnReducerLoses::test_the_probe_that_derives_the_dropped_set_can_see_every_field FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestThePartitionHasNoSilentDefault::test_the_template_is_not_shared_with_the_copy FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestThePartitionHasNoSilentDefault::test_the_specific_collider_is_not_shared_with_the_copy FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestThePartitionHasNoSilentDefault::test_a_field_nobody_classified_is_refused_by_name FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestThePartitionHasNoSilentDefault::test_the_two_tables_are_a_partition_of_what_a_reaction_holds FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifestIdentityBracketsTheRead::test_a_manifest_rewritten_between_the_two_reads_is_refused FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifestIdentityBracketsTheRead::test_an_unchanged_manifest_is_still_read PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifestIdentityBracketsTheRead::test_the_identity_is_taken_from_the_descriptor_on_both_sides FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheFlagTheReviewNamed::test_the_loader_carries_the_flag_despite_the_constructor_omitting_it PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheFlagTheReviewNamed::test_the_base_reaction_copy_carries_the_flag FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheFlagTheReviewNamed::test_the_base_reaction_reduce_carries_the_flag FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheFlagTheReviewNamed::test_the_base_reaction_copy_keeps_its_pairs FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheFlagTheReviewNamed::test_the_flag_is_named_in_the_partition_rather_than_carried_by_default FAILED
+
+=================================== FAILURES ===================================
+_ TestTheTransportCarriesThePayloadToo.test_the_copy_keeps_both_the_references_and_the_atom_state _
+
+self = <quarantineTest.TestTheTransportCarriesThePayloadToo object at 0x7394eca96c40>
+
+    def test_the_copy_keeps_both_the_references_and_the_atom_state(self):
+        """
+        The acceptance for this round's HIGH 1, on **one** copy.
+    
+        Both properties or neither: the references *between* the fields (round 108) and
+        the state inside the objects those references point at (round 110). Splitting them
+        across two tests is what let a mechanism that satisfied one and broke the other
+        land, so they are asserted together here.
+    
+        **Behavioural** at `2e4ff991d`: the ids and props assertions fail there, and the
+        identity assertions pass there and must keep passing.
+        """
+        reaction = self._generated(delete_labels=False)
+        before = self._atoms_of(reaction)
+        copy = reaction.copy()
+        after = self._atoms_of(copy)
+    
+        assert len(after) == len(before)
+        for original, copied in zip(before, after):
+            assert copied is not original, "the copy is aliasing the original's atoms"
+            assert copied.id == original.id, (
+                "atom id {0} came back as {1}; ids drive resonance-structure "
+                "correspondence".format(original.id, copied.id))
+>           assert copied.props == original.props, (
+                "atom props {0!r} came back as {1!r}; 'inRing' feeds group "
+                "matching".format(original.props, copied.props))
+E           AssertionError: atom props {'inRing': False} came back as {}; 'inRing' feeds group matching
+E           assert {} == {'inRing': False}
+E             
+E             Right contains 1 more item:
+E             {'inRing': False}
+E             
+E             Full diff:
+E             + {}
+E             - {
+E             -     'inRing': False,
+E             - }
+
+test/rmgpy/data/kinetics/quarantineTest.py:4251: AssertionError
+_ TestTheTransportCarriesThePayloadToo.test_the_familys_own_output_can_be_copied_at_all _
+
+source = TemplateReaction(reactants=[Molecule(smiles="[Li+]"), Molecule(smiles="[CH3]")], products=[Molecule(smiles="[Li][CH3]"...miles="[CH3]"), Molecule(smiles="[Li][CH3]")]], family='Cation_R_Recombination', template=['Root_2R->C'], electrons=-1)
+not_carried = {}
+fields = {'kinetics', 'labeled_atoms', 'network_kinetics', 'pairs', 'products', 'reactants', ...}
+
+    def reaction_state(source, not_carried, fields=None):
+        """
+        Read `source`'s state as a ``{name: value}`` dict, excluding `not_carried`.
+    
+        `not_carried` maps each excluded field to the reason it is excluded; `fields` is the
+        universe to enumerate, defaulting to the fields `Reaction` itself declares. Call
+        sites that carry state between *different* classes pass the default -- a
+        `TemplateReaction`'s ``template`` is not state a `LibraryReaction` should receive.
+        Call sites that reproduce *one object* -- `__reduce__`, `copy()` -- pass
+        `state_fields(source)` so the subclass's own fields travel too.
+    
+        Raises `ReactionStateNotCarried` rather than skipping: a field the source cannot
+        produce is a field the caller was told it would get.
+        """
+        if fields is None:
+            fields = REACTION_STATE_FIELDS
+        state = {}
+        for name in sorted(fields):
+            if name in not_carried:
+                continue
+            try:
+>               state[name] = getattr(source, name)
+E               AttributeError: 'TemplateReaction' object has no attribute 'labeled_atoms'
+
+rmgpy/data/kinetics/family.py:158: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = <quarantineTest.TestTheTransportCarriesThePayloadToo object at 0x7394eca96490>
+
+    def test_the_familys_own_output_can_be_copied_at_all(self):
+        """
+        `generate_reactions()` **deletes** `labeled_atoms` once the labels have been read
+        back (`family.py:2651`), so every reaction it returns is missing a field the copy
+        policy lists. Round 108 applied the deepened set from the table rather than from
+        the object, so `copy()` raised `ReactionStateNotCarried` on the family's own
+        output -- the commonest reaction in the codebase.
+    
+        **Behavioural** at `2e4ff991d`: it raises there.
+        """
+        reaction = self._generated()
+        assert not hasattr(reaction, "labeled_atoms"), (
+            "the family no longer deletes labeled_atoms, so this test is no longer about "
+            "the case it was written for")
+>       copy = reaction.copy()
+
+test/rmgpy/data/kinetics/quarantineTest.py:4282: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+rmgpy/data/kinetics/family.py:437: in copy
+    return copy_reaction(self, _TEMPLATE_NOT_COPIED_BY_REFERENCE)
+rmgpy/data/kinetics/family.py:298: in copy_reaction
+    state = reaction_state(reaction, {}, deepened)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+source = TemplateReaction(reactants=[Molecule(smiles="[Li+]"), Molecule(smiles="[CH3]")], products=[Molecule(smiles="[Li][CH3]"...miles="[CH3]"), Molecule(smiles="[Li][CH3]")]], family='Cation_R_Recombination', template=['Root_2R->C'], electrons=-1)
+not_carried = {}
+fields = {'kinetics', 'labeled_atoms', 'network_kinetics', 'pairs', 'products', 'reactants', ...}
+
+    def reaction_state(source, not_carried, fields=None):
+        """
+        Read `source`'s state as a ``{name: value}`` dict, excluding `not_carried`.
+    
+        `not_carried` maps each excluded field to the reason it is excluded; `fields` is the
+        universe to enumerate, defaulting to the fields `Reaction` itself declares. Call
+        sites that carry state between *different* classes pass the default -- a
+        `TemplateReaction`'s ``template`` is not state a `LibraryReaction` should receive.
+        Call sites that reproduce *one object* -- `__reduce__`, `copy()` -- pass
+        `state_fields(source)` so the subclass's own fields travel too.
+    
+        Raises `ReactionStateNotCarried` rather than skipping: a field the source cannot
+        produce is a field the caller was told it would get.
+        """
+        if fields is None:
+            fields = REACTION_STATE_FIELDS
+        state = {}
+        for name in sorted(fields):
+            if name in not_carried:
+                continue
+            try:
+                state[name] = getattr(source, name)
+            except AttributeError as error:
+>               raise ReactionStateNotCarried(
+                    '{0!r} is classified as carried state of {1} but cannot be read from it: '
+                    '{2}'.format(name, type(source).__name__, error))
+E               rmgpy.data.kinetics.family.ReactionStateNotCarried: 'labeled_atoms' is classified as carried state of TemplateReaction but cannot be read from it: 'TemplateReaction' object has no attribute 'labeled_atoms'
+
+rmgpy/data/kinetics/family.py:160: ReactionStateNotCarried
+_ TestTheTransportCarriesThePayloadToo.test_deepcopy_of_a_reaction_is_the_copy _
+
+self = <quarantineTest.TestTheTransportCarriesThePayloadToo object at 0x7394ecaa1280>
+
+    def test_deepcopy_of_a_reaction_is_the_copy(self):
+        """
+        `deepcopy(reaction)` is a live path -- `family.py:3854` and
+        `rmgpy/data/kinetics/database.py:755` both take one -- and it recurses into
+        `Molecule.__deepcopy__`, which discards the memo, so the labelled atoms come back
+        detached.
+    
+        **Behavioural** at `2e4ff991d`: the labelled atoms are severed there.
+        """
+        from copy import deepcopy
+    
+        reaction = self._generated(delete_labels=False)
+        deep = deepcopy(reaction)
+        assert type(deep) is type(reaction), (
+            "deepcopy lost the subclass, which it did not do before")
+        atoms = self._atoms_of(deep)
+        for group in deep.labeled_atoms.values():
+            for label, atom in group.items():
+                for one in (atom if isinstance(atom, list) else [atom]):
+>                   assert any(one is a for a in atoms), (
+                        "after deepcopy, labelled atom {0!r} is inside no molecule the "
+                        "copy owns".format(label))
+E                   AssertionError: after deepcopy, labelled atom '*1' is inside no molecule the copy owns
+E                   assert False
+E                    +  where False = any(<generator object TestTheTransportCarriesThePayloadToo.test_deepcopy_of_a_reaction_is_the_copy.<locals>.<genexpr> at 0x7394ec723350>)
+
+test/rmgpy/data/kinetics/quarantineTest.py:4326: AssertionError
+__ TestTheClassesWhoseOwnReducerLoses.test_a_fragment_reaction_can_be_copied ___
+
+self = <quarantineTest.TestTheClassesWhoseOwnReducerLoses object at 0x7394ecaa14f0>
+
+    def test_a_fragment_reaction_can_be_copied(self):
+        """
+        Round 110's HIGH 2, behavioural: ``KeyError: 'R'`` at `2e4ff991d`.
+    
+        A working feature -- `deepcopy` of a fragment succeeds at both tips, which the
+        negative control below pins -- broken by a change to how reactions are copied.
+        """
+        from rmgpy.molecule.fragment import CuttingLabel, Fragment
+    
+        reaction = self._reaction([Fragment().from_smiles_like_string("CCR")],
+                                  [Fragment().from_smiles_like_string("[CH3]")])
+>       copy = reaction.copy()
+
+test/rmgpy/data/kinetics/quarantineTest.py:4363: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+rmgpy/data/kinetics/family.py:437: in copy
+    return copy_reaction(self, _TEMPLATE_NOT_COPIED_BY_REFERENCE)
+rmgpy/data/kinetics/family.py:300: in copy_reaction
+    other, pickle.loads(pickle.dumps(state, pickle.HIGHEST_PROTOCOL)))
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+>   self.element = elements.__dict__[element]
+E   KeyError: 'R'
+
+rmgpy/molecule/molecule.py:110: KeyError
+___ TestTheClassesWhoseOwnReducerLoses.test_a_surface_reaction_can_be_copied ___
+
+self = <quarantineTest.TestTheClassesWhoseOwnReducerLoses object at 0x7394ecaa1850>
+
+    def test_a_surface_reaction_can_be_copied(self):
+        """
+        Behavioural: ``KeyError: 'Pt'`` at `2e4ff991d`, because ``metal='Pt'`` is read as
+        an InChI. Every surface reaction in the codebase copies through this path.
+        """
+        molecule = Molecule(smiles="CC")
+        molecule.metal, molecule.facet = "Pt", "111"
+        reaction = self._reaction([molecule], [Molecule(smiles="[CH3]")])
+    
+>       copy = reaction.copy()
+
+test/rmgpy/data/kinetics/quarantineTest.py:4402: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+rmgpy/data/kinetics/family.py:437: in copy
+    return copy_reaction(self, _TEMPLATE_NOT_COPIED_BY_REFERENCE)
+rmgpy/data/kinetics/family.py:300: in copy_reaction
+    other, pickle.loads(pickle.dumps(state, pickle.HIGHEST_PROTOCOL)))
+rmgpy/molecule/molecule.py:1055: in rmgpy.molecule.molecule.Molecule.__init__
+    self.from_inchi(inchi)
+rmgpy/molecule/molecule.py:1912: in rmgpy.molecule.molecule.Molecule.from_inchi
+    translator.from_inchi(self, inchistr, backend, raise_atomtype_exception=raise_atomtype_exception)
+rmgpy/molecule/translator.py:367: in rmgpy.molecule.translator.from_inchi
+    def from_inchi(mol, inchistr, backend='openbabel-first', raise_atomtype_exception=True):
+rmgpy/molecule/translator.py:376: in rmgpy.molecule.translator.from_inchi
+    return _read(mol, inchiutil.INCHI_PREFIX + '/' + inchistr, 'inchi', backend,
+rmgpy/molecule/translator.py:640: in rmgpy.molecule.translator._read
+    mol = _openbabel_translator(identifier, identifier_type, mol)
+rmgpy/molecule/translator.py:516: in rmgpy.molecule.translator._openbabel_translator
+    output = from_ob_mol(mol, obmol)
+rmgpy/molecule/converter.py:294: in rmgpy.molecule.converter.from_ob_mol
+    def from_ob_mol(mol, obmol, raise_atomtype_exception=True):
+rmgpy/molecule/converter.py:352: in rmgpy.molecule.converter.from_ob_mol
+    mol.update_atomtypes(log_species=True, raise_exception=raise_atomtype_exception)
+rmgpy/molecule/molecule.py:1583: in rmgpy.molecule.molecule.Molecule.update_atomtypes
+    self.update_lone_pairs()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+>   atom1.lone_pairs = (elements.PeriodicSystem.valence_electrons[atom1.element.symbol]
+                       - atom1.radical_electrons - atom1.charge - int(order)) / 2.0
+E   KeyError: 'Pt'
+
+rmgpy/molecule/molecule.py:2468: KeyError
+------------------------------ Captured log call -------------------------------
+WARNING  root:family.py:300 Both InChI and SMILES provided for Molecule instantiation, using InChI and ignoring SMILES.
+_ TestTheClassesWhoseOwnReducerLoses.test_a_copied_species_keeps_what_its_own_reducer_omits _
+
+self = <quarantineTest.TestTheClassesWhoseOwnReducerLoses object at 0x7394ecaa1a00>
+
+    def test_a_copied_species_keeps_what_its_own_reducer_omits(self):
+        """
+        Behavioural: `Species.__reduce__` passes ten fields and the class holds more.
+        `symmetry_number` is the one that matters most -- it divides into every rate the
+        species appears in -- and it came back ``-1.0`` from ``2.0``.
+        """
+        reactant = Species(label="ethane", molecule=[Molecule(smiles="CC")])
+        reactant.symmetry_number = 2
+        reactant.aug_inchi = "an augmented inchi"
+        reactant.creation_iteration = 3
+        reactant.explicitly_allowed = True
+        reaction = self._reaction(
+            [reactant], [Species(label="ethyl", molecule=[Molecule(smiles="C[CH2]")])])
+    
+        copy = reaction.copy().reactants[0]
+        assert copy is not reactant
+>       assert copy.symmetry_number == 2
+E       assert -1.0 == 2
+E        +  where -1.0 = Species(label="ethane", molecule=[Molecule(smiles="CC")], molecular_weight=(30.0691,'amu')).symmetry_number
+
+test/rmgpy/data/kinetics/quarantineTest.py:4421: AssertionError
+_ TestTheClassesWhoseOwnReducerLoses.test_every_class_that_loses_state_is_registered _
+
+self = <quarantineTest.TestTheClassesWhoseOwnReducerLoses object at 0x7394ecaa1bb0>
+
+    def test_every_class_that_loses_state_is_registered(self):
+        """
+        The census, mechanised. Every class reachable in a reaction's deepened state is
+        round-tripped through its *own* reducer and asked what it lost; anything that lost
+        something must be in `_LOSSY_REDUCERS` with a reason. `Bond`, `TransitionState`
+        and the kinetics models lose nothing and are deliberately absent.
+    
+        This is what keeps the registry from going stale in the direction that matters: a
+        class that starts losing state, or one that stops.
+    
+        **Structural** at `2e4ff991d`, which has no `_LOSSY_REDUCERS`.
+        """
+        import numpy as np
+    
+>       from rmgpy.data.kinetics.family import _LOSSY_REDUCERS, object_state
+E       ImportError: cannot import name '_LOSSY_REDUCERS' from 'rmgpy.data.kinetics.family' (/tmp/claude-1000/red110/rmgpy/data/kinetics/family.py)
+
+test/rmgpy/data/kinetics/quarantineTest.py:4440: ImportError
+_ TestTheClassesWhoseOwnReducerLoses.test_the_probe_that_derives_the_dropped_set_can_see_every_field _
+
+self = <quarantineTest.TestTheClassesWhoseOwnReducerLoses object at 0x7394ecaa1d60>
+
+    def test_the_probe_that_derives_the_dropped_set_can_see_every_field(self):
+        """
+        What makes the completeness of the `Atom` restore *testable* rather than asserted.
+    
+        The restore set is measured: a probe atom carrying a distinguishable value in
+        every plain field is round-tripped, and whatever comes back changed is what gets
+        restored. A field with no distinguishable value in the probe would be classified
+        as surviving whether it survives or not -- so this asserts the probe actually
+        distinguishes every plain field `Atom` has. An `Atom` that grows one turns this
+        red and names it.
+    
+        **Structural** at `2e4ff991d`, which has no probe.
+        """
+        import numpy as np
+    
+>       from rmgpy.data.kinetics.family import (_atom_probe, fields_the_reducer_drops,
+                                                _is_plain, writable_fields)
+E       ImportError: cannot import name '_atom_probe' from 'rmgpy.data.kinetics.family' (/tmp/claude-1000/red110/rmgpy/data/kinetics/family.py)
+
+test/rmgpy/data/kinetics/quarantineTest.py:4521: ImportError
+_ TestThePartitionHasNoSilentDefault.test_the_template_is_not_shared_with_the_copy _
+
+self = <quarantineTest.TestThePartitionHasNoSilentDefault object at 0x7394ecaa8040>
+
+    def test_the_template_is_not_shared_with_the_copy(self):
+        """Behavioural: ``True`` at `2e4ff991d`, on a list the family rewrites in place."""
+        reaction = self._reaction(template=["C/H3/Cs\\H3", "O_pri_rad"])
+        copy = reaction.copy()
+        assert copy.template == reaction.template
+>       assert copy.template is not reaction.template, (
+            "the copy shares the original's template list, so appending to one appends "
+            "to the other")
+E       AssertionError: the copy shares the original's template list, so appending to one appends to the other
+E       assert ['C/H3/Cs\\H3', 'O_pri_rad'] is not ['C/H3/Cs\\H3', 'O_pri_rad']
+E        +  where ['C/H3/Cs\\H3', 'O_pri_rad'] = TemplateReaction(reactants=[Species(label="a", molecule=[Molecule(smiles="CC")], molecular_weight=(30.0691,'amu'))], products=[Species(label="b", molecule=[Molecule(smiles="C[CH2]")], molecular_weight=(29.0611,'amu'))], family='A_Family', template=['C/H3/Cs\\H3', 'O_pri_rad']).template
+E        +  and   ['C/H3/Cs\\H3', 'O_pri_rad'] = TemplateReaction(reactants=[Species(label="a", molecule=[Molecule(smiles="CC")], molecular_weight=(30.0691,'amu'))], products=[Species(label="b", molecule=[Molecule(smiles="C[CH2]")], molecular_weight=(29.0611,'amu'))], family='A_Family', template=['C/H3/Cs\\H3', 'O_pri_rad']).template
+
+test/rmgpy/data/kinetics/quarantineTest.py:4584: AssertionError
+_ TestThePartitionHasNoSilentDefault.test_the_specific_collider_is_not_shared_with_the_copy _
+
+self = <quarantineTest.TestThePartitionHasNoSilentDefault object at 0x7394ecaa81c0>
+
+    def test_the_specific_collider_is_not_shared_with_the_copy(self):
+        """Behavioural: the same, on a `Species` rather than a list."""
+        collider = Species(label="Ar", molecule=[Molecule(smiles="[Ar]")])
+        reaction = self._reaction(specific_collider=collider)
+        copy = reaction.copy()
+        assert copy.specific_collider is not None
+>       assert copy.specific_collider is not collider, (
+            "the copy shares the original's collider species")
+E       AssertionError: the copy shares the original's collider species
+E       assert Species(label="Ar", molecule=[Molecule(smiles="[Ar]")], molecular_weight=(39.8775,'amu')) is not Species(label="Ar", molecule=[Molecule(smiles="[Ar]")], molecular_weight=(39.8775,'amu'))
+E        +  where Species(label="Ar", molecule=[Molecule(smiles="[Ar]")], molecular_weight=(39.8775,'amu')) = TemplateReaction(reactants=[Species(label="a", molecule=[Molecule(smiles="CC")], molecular_weight=(30.0691,'amu'))], products=[Species(label="b", molecule=[Molecule(smiles="C[CH2]")], molecular_weight=(29.0611,'amu'))], specific_collider=Species(label="Ar", molecule=[Molecule(smiles="[Ar]")], molecular_weight=(39.8775,'amu')), family='A_Family').specific_collider
+
+test/rmgpy/data/kinetics/quarantineTest.py:4594: AssertionError
+_ TestThePartitionHasNoSilentDefault.test_a_field_nobody_classified_is_refused_by_name _
+
+self = <quarantineTest.TestThePartitionHasNoSilentDefault object at 0x7394ecaa8370>
+
+    def test_a_field_nobody_classified_is_refused_by_name(self):
+        """
+        The general form, and the reason this is a partition rather than a filter.
+    
+        **Behavioural** at `2e4ff991d`: no exception there, and the field is aliased.
+        `ReactionStateNotCarried` is the base class of the exception the repair raises, so
+        this test names only what the base already had and its red state is the missing
+        refusal rather than a missing import.
+        """
+        from rmgpy.data.kinetics.family import ReactionStateNotCarried
+    
+        reaction = self._reaction()
+        reaction.a_field_nobody_classified = ["a mutable one"]
+        with pytest.raises(ReactionStateNotCarried) as raised:
+>           reaction.copy()
+E           Failed: DID NOT RAISE <class 'rmgpy.data.kinetics.family.ReactionStateNotCarried'>
+
+test/rmgpy/data/kinetics/quarantineTest.py:4612: Failed
+_ TestThePartitionHasNoSilentDefault.test_the_two_tables_are_a_partition_of_what_a_reaction_holds _
+
+self = <quarantineTest.TestThePartitionHasNoSilentDefault object at 0x7394ecaa8520>
+
+    def test_the_two_tables_are_a_partition_of_what_a_reaction_holds(self):
+        """
+        Every field of every shape lands in exactly one table, checked against the objects
+        rather than against a list.
+    
+        **Structural** at `2e4ff991d`, which has no `_COPIED_BY_REFERENCE`.
+        """
+>       from rmgpy.data.kinetics.family import (_COPIED_BY_REFERENCE,
+                                                _NOT_COPIED_BY_REFERENCE,
+                                                _TEMPLATE_NOT_COPIED_BY_REFERENCE,
+                                                state_fields)
+E       ImportError: cannot import name '_COPIED_BY_REFERENCE' from 'rmgpy.data.kinetics.family' (/tmp/claude-1000/red110/rmgpy/data/kinetics/family.py)
+
+test/rmgpy/data/kinetics/quarantineTest.py:4623: ImportError
+_ TestTheManifestIdentityBracketsTheRead.test_a_manifest_rewritten_between_the_two_reads_is_refused _
+
+self = <quarantineTest.TestTheManifestIdentityBracketsTheRead object at 0x7394ecaa87c0>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-798/test_a_manifest_rewritten_betw0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7394ec89bdf0>
+
+    def test_a_manifest_rewritten_between_the_two_reads_is_refused(self, tmp_path,
+                                                                   monkeypatch):
+        """
+        The acceptance, and the only way to state it: rewrite the file *between* the
+        identity call and the content call and require a refusal.
+    
+        **Behavioural** at `2e4ff991d`: the content comes back as the rewritten version
+        keyed to the identity of the version before it.
+        """
+        from rmgpy.data.kinetics.quarantine import _read_manifest
+    
+        family_path, manifest = self._family(tmp_path)
+        rewritten = self.MANIFEST.format("a reason nobody has ever approved")
+        real_fstat = os.fstat
+        state = {"done": False}
+    
+        def rewriting_fstat(fd):
+            info = real_fstat(fd)
+            if not state["done"] and os.path.samestat(info, os.stat(str(manifest))):
+                state["done"] = True
+                manifest.write_text(rewritten)          # in place: same inode, new bytes
+            return info
+    
+        monkeypatch.setattr(os, "fstat", rewriting_fstat)
+        content, identity = _read_manifest(family_path)
+    
+        assert state["done"], (
+            "the rewrite never fired, so this test did not exercise the window it was "
+            "written for")
+>       assert content is None and identity is None, (
+            "the manifest changed under the read and was answered for anyway: the "
+            "content is {0!r}".format((content or "")[:60]))
+E       AssertionError: the manifest changed under the read and was answered for anyway: the content is "state = 'QUARANTINED FOR QUANTITATIVE PLASMA USE'\nreason = '"
+E       assert ("state = 'QUARANTINED FOR QUANTITATIVE PLASMA USE'\nreason = 'a reason nobody has ever approved'\nkinetics_class = 'Marcus'\n" is None)
+
+test/rmgpy/data/kinetics/quarantineTest.py:4699: AssertionError
+_ TestTheManifestIdentityBracketsTheRead.test_the_identity_is_taken_from_the_descriptor_on_both_sides _
+
+self = <quarantineTest.TestTheManifestIdentityBracketsTheRead object at 0x7394ecaa8b50>
+
+    def test_the_identity_is_taken_from_the_descriptor_on_both_sides(self):
+        """
+        The shape, so a later repair cannot satisfy the test above by re-stat'ing the
+        *name* -- which would reintroduce the two-resolutions defect round 95 closed.
+    
+        **Structural** at `2e4ff991d`: one `os.fstat` call there, two here.
+        """
+        from rmgpy.data.kinetics import quarantine as module
+    
+        body = inspect.getsource(module._read_manifest)
+>       assert body.count("os.fstat(") == 2, (
+            "the identity is taken {0} time(s) from the descriptor; it must be taken "
+            "before and after the read".format(body.count("os.fstat(")))
+E       AssertionError: the identity is taken 1 time(s) from the descriptor; it must be taken before and after the read
+E       assert 1 == 2
+E        +  where 1 = <built-in method count of str object at 0x5a491ba944f0>('os.fstat(')
+E        +    where <built-in method count of str object at 0x5a491ba944f0> = 'def _read_manifest(family_path):\n    """\n    Return the manifest\'s text from inside `family_path`, or ``None``.\n\n    The file at the end of this path is **executed**, and that is what sets the standard\n    for how it may be addressed. Round 92 validated the family *directory* and then opened\n    ``<directory>/quarantine.py`` by name. Round 95 closed the manifest half of that by\n    reading the file through a descriptor on its directory -- and left the directory itself\n    named twice: :func:`_family_directory` resolves it with ``realpath`` and returns the\n    *unresolved* join, and this function then opened that string with ``O_DIRECTORY`` and\n    no ``O_NOFOLLOW``. Check and use were two independent resolutions of one name, so a\n    directory symlink swapped into the window between them was followed all the way to\n    ``exec()``. Round 95\'s claim here that "the descriptor pins the directory that was\n    validated" was simply false: a descriptor pins whatever the name resolved to when it\n    was opened, which is not the same thing as what was checked.\n\n    What closes it is structure, not a third check. The label is a single path component\n    by the time it a...family_path, error)\n            return None, None\n\n        info = os.fstat(fd)\n        if not stat.S_ISREG(info.st_mode):\n            _warn_unsafe_manifest(family_path, \'it is not a regular file\')\n            return None, None\n        # The identity comes from THIS descriptor, not from a second look at the name.\n        # `_manifest_signature` stats the path independently, and a rename between that\n        # stat and this open would otherwise cache the content of B under the identity of\n        # A -- after which restoring A produces a cache HIT returning B\'s quarantine, and\n        # A\'s criterion is silently bypassed. `st_ctime_ns` cannot help: it would be A\'s.\n        identity = (info.st_mtime_ns, info.st_ctime_ns, info.st_size, info.st_ino)\n        with os.fdopen(fd, \'r\') as handle:\n            fd = None                    # fdopen owns it now\n            return handle.read(), identity\n    except OSError:\n        return None, None\n    finally:\n        for descriptor in [fd] + descriptors:\n            if descriptor is not None:\n                try:\n                    os.close(descriptor)\n                except OSError:\n                    pass\n'.count
+
+test/rmgpy/data/kinetics/quarantineTest.py:4727: AssertionError
+____ TestTheFlagTheReviewNamed.test_the_base_reaction_copy_carries_the_flag ____
+
+self = <quarantineTest.TestTheFlagTheReviewNamed object at 0x7394ecaa1790>
+
+    def test_the_base_reaction_copy_carries_the_flag(self):
+        """Behavioural: ``False`` at `2e4ff991d`, and the default is the value that hides
+        the loss."""
+        reaction = Reaction(
+            reactants=[Species(label="a", molecule=[Molecule(smiles="CC")])],
+            products=[Species(label="b", molecule=[Molecule(smiles="C[CH2]")])])
+        reaction.allow_max_rate_violation = True
+        reaction.rank = 5
+        reaction.is_forward = True
+    
+        copy = reaction.copy()
+>       assert copy.allow_max_rate_violation is True
+E       assert False is True
+E        +  where False = Reaction(reactants=[Species(label="a", molecule=[Molecule(smiles="CC")], molecular_weight=(30.0691,'amu'))], products=[Species(label="b", molecule=[Molecule(smiles="C[CH2]")], molecular_weight=(29.0611,'amu'))],).allow_max_rate_violation
+
+test/rmgpy/data/kinetics/quarantineTest.py:4779: AssertionError
+___ TestTheFlagTheReviewNamed.test_the_base_reaction_reduce_carries_the_flag ___
+
+self = <quarantineTest.TestTheFlagTheReviewNamed object at 0x7394eca96430>
+
+    def test_the_base_reaction_reduce_carries_the_flag(self):
+        """Behavioural: a deepcopy goes through `__reduce__`, and it dropped the flag."""
+        from copy import deepcopy
+    
+        reaction = Reaction(
+            reactants=[Species(label="a", molecule=[Molecule(smiles="CC")])],
+            products=[Species(label="b", molecule=[Molecule(smiles="C[CH2]")])])
+        reaction.allow_max_rate_violation = True
+        reaction.is_forward = False
+    
+        for after in (pickle.loads(pickle.dumps(reaction)), deepcopy(reaction)):
+>           assert after.allow_max_rate_violation is True
+E           assert False is True
+E            +  where False = Reaction(reactants=[Species(label="a", molecule=[Molecule(smiles="CC")], molecular_weight=(30.0691,'amu'))], products=[Species(label="b", molecule=[Molecule(smiles="C[CH2]")], molecular_weight=(29.0611,'amu'))],).allow_max_rate_violation
+
+test/rmgpy/data/kinetics/quarantineTest.py:4797: AssertionError
+____ TestTheFlagTheReviewNamed.test_the_base_reaction_copy_keeps_its_pairs _____
+
+self = <quarantineTest.TestTheFlagTheReviewNamed object at 0x7394eca7ddf0>
+
+    def test_the_base_reaction_copy_keeps_its_pairs(self):
+        """
+        Behavioural, and the reason `__deepcopy__` could be added at all: while
+        `Reaction.copy` severed `pairs`, routing `deepcopy` through `copy()` would have
+        been a regression rather than a repair.
+        """
+        reaction = Reaction(
+            reactants=[Species(label="a", molecule=[Molecule(smiles="CC")])],
+            products=[Species(label="b", molecule=[Molecule(smiles="C[CH2]")])])
+        reaction.pairs = [(reaction.reactants[0], reaction.products[0])]
+    
+        copy = reaction.copy()
+        owned = list(copy.reactants) + list(copy.products)
+        for pair in copy.pairs:
+            for member in pair:
+>               assert any(member is s for s in owned), (
+                    "a pairs member is a species the copy does not own; "
+                    "Species.__eq__ is identity, so reactants.index(pair[0]) raises")
+E               AssertionError: a pairs member is a species the copy does not own; Species.__eq__ is identity, so reactants.index(pair[0]) raises
+E               assert False
+E                +  where False = any(<generator object TestTheFlagTheReviewNamed.test_the_base_reaction_copy_keeps_its_pairs.<locals>.<genexpr> at 0x7394ebffc660>)
+
+test/rmgpy/data/kinetics/quarantineTest.py:4815: AssertionError
+_ TestTheFlagTheReviewNamed.test_the_flag_is_named_in_the_partition_rather_than_carried_by_default _
+
+self = <quarantineTest.TestTheFlagTheReviewNamed object at 0x7394ecaa8c70>
+
+    def test_the_flag_is_named_in_the_partition_rather_than_carried_by_default(self):
+        """
+        What the addendum asked for beyond the two fixes: the flag is classified
+        explicitly, so the next person reading the table sees it.
+    
+        **Structural** at `2e4ff991d`.
+        """
+>       from rmgpy.data.kinetics.family import _COPIED_BY_REFERENCE
+E       ImportError: cannot import name '_COPIED_BY_REFERENCE' from 'rmgpy.data.kinetics.family' (/tmp/claude-1000/red110/rmgpy/data/kinetics/family.py)
+
+test/rmgpy/data/kinetics/quarantineTest.py:4829: ImportError
+================================ tests coverage ================================
+_______________ coverage: platform linux, python 3.9.23-final-0 ________________
+
+Coverage HTML written to dir htmlcov
+=========================== short test summary info ============================
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheTransportCarriesThePayloadToo::test_the_copy_keeps_both_the_references_and_the_atom_state
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheTransportCarriesThePayloadToo::test_the_familys_own_output_can_be_copied_at_all
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheTransportCarriesThePayloadToo::test_deepcopy_of_a_reaction_is_the_copy
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheClassesWhoseOwnReducerLoses::test_a_fragment_reaction_can_be_copied
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheClassesWhoseOwnReducerLoses::test_a_surface_reaction_can_be_copied
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheClassesWhoseOwnReducerLoses::test_a_copied_species_keeps_what_its_own_reducer_omits
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheClassesWhoseOwnReducerLoses::test_every_class_that_loses_state_is_registered
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheClassesWhoseOwnReducerLoses::test_the_probe_that_derives_the_dropped_set_can_see_every_field
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestThePartitionHasNoSilentDefault::test_the_template_is_not_shared_with_the_copy
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestThePartitionHasNoSilentDefault::test_the_specific_collider_is_not_shared_with_the_copy
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestThePartitionHasNoSilentDefault::test_a_field_nobody_classified_is_refused_by_name
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestThePartitionHasNoSilentDefault::test_the_two_tables_are_a_partition_of_what_a_reaction_holds
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifestIdentityBracketsTheRead::test_a_manifest_rewritten_between_the_two_reads_is_refused
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifestIdentityBracketsTheRead::test_the_identity_is_taken_from_the_descriptor_on_both_sides
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheFlagTheReviewNamed::test_the_base_reaction_copy_carries_the_flag
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheFlagTheReviewNamed::test_the_base_reaction_reduce_carries_the_flag
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheFlagTheReviewNamed::test_the_base_reaction_copy_keeps_its_pairs
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheFlagTheReviewNamed::test_the_flag_is_named_in_the_partition_rather_than_carried_by_default
+======================= 18 failed, 200 passed in 20.30s ========================

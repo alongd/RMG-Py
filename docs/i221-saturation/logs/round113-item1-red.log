@@ -1,0 +1,76 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+rootdir: /home/alon/Code/RMG-Py-i221-saturation-fix
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 19 items / 14 deselected / 5 selected
+
+test/rmgpy/i221OccurrencePairsTest.py::TestModelCarriesPairsByPosition::test_duplicated_electron_products PASSED
+test/rmgpy/i221OccurrencePairsTest.py::TestModelCarriesPairsByPosition::test_reverse_pairs_follow FAILED
+test/rmgpy/i221OccurrencePairsTest.py::TestModelCarriesPairsByPosition::test_reverse_sides_are_the_model_species FAILED
+test/rmgpy/i221OccurrencePairsTest.py::TestModelCarriesPairsByPosition::test_ordinary_thermal_reaction_unchanged PASSED
+test/rmgpy/i221OccurrencePairsTest.py::TestMergeModelsCarriesPairsByPosition::test_species_on_both_sides_and_twice PASSED
+
+=================================== FAILURES ===================================
+__________ TestModelCarriesPairsByPosition.test_reverse_pairs_follow ___________
+
+self = <i221OccurrencePairsTest.TestModelCarriesPairsByPosition object at 0x7115045e4970>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7115045e4be0>
+
+    def test_reverse_pairs_follow(self, monkeypatch):
+        li, li_plus, e = _ionisation_species()
+        forward = TemplateReaction(reactants=[li, e], products=[li_plus, e, e],
+                                   family='F', is_forward=False)
+        forward.generate_pairs()
+        forward.reverse = TemplateReaction(reactants=[li_plus, e, e], products=[li, e],
+                                           family='F', is_forward=True)
+        forward.reverse.pairs = [(b, a) for a, b in forward.pairs]
+        rxn, _ = self._model(monkeypatch).make_new_reaction(
+            forward, check_existing=False, generate_thermo=False, generate_kinetics=False)
+        assert rxn.reverse.pairs == [(b, a) for a, b in rxn.pairs]
+        # Round 113: the reverse pairs must name occurrences of the reverse's OWN sides. At
+        # fc60e5ba4 the sides were never rebuilt, so every member was detached and this raised.
+>       assert pair_occurrences(rxn.reverse.pairs, rxn.reverse.reactants, rxn.reverse.products) == \
+            [(1, 1), (0, 0), (2, 0)]
+
+test/rmgpy/i221OccurrencePairsTest.py:236: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+rmgpy/reaction.py:2373: in rmgpy.reaction.pair_occurrences
+    occurrences.append((_next_occurrence(pair[0], reactant_positions, reactant_named, 'reactant'),
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+>   raise ValueError('Reaction pair member {0!r} is not a {1} of this reaction. A pair names the '
+                     'reaction\'s own objects, reactant first; an object on neither side, or on '
+                     'the other one, has no position here.'.format(member, side_name))
+E   ValueError: Reaction pair member Species(label="e", molecule=[Molecule(smiles="e")], molecular_weight=(0.0005486,'amu')) is not a reactant of this reaction. A pair names the reaction's own objects, reactant first; an object on neither side, or on the other one, has no position here.
+
+rmgpy/reaction.py:2406: ValueError
+___ TestModelCarriesPairsByPosition.test_reverse_sides_are_the_model_species ___
+
+self = <i221OccurrencePairsTest.TestModelCarriesPairsByPosition object at 0x7115044312e0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7115043d0eb0>
+
+    def test_reverse_sides_are_the_model_species(self, monkeypatch):
+        """The reverse `add_reverse_attribute` attaches is built from Molecules, in the
+        template's order. Its sides become the forward's model species, swapped, one slot per
+        occurrence, in lists of their own."""
+        li, li_plus, e = _ionisation_species()
+        forward = TemplateReaction(reactants=[li, e], products=[li_plus, e, e],
+                                   family='F', is_forward=False)
+        forward.generate_pairs()
+        e1, e2, e3 = (e.molecule[0].copy(deep=True) for _ in range(3))
+        m_li_plus, m_li = li_plus.molecule[0].copy(deep=True), li.molecule[0].copy(deep=True)
+        forward.reverse = TemplateReaction(reactants=[e1, m_li_plus, e2], products=[e3, m_li],
+                                           family='F', is_forward=True)
+        forward.reverse.pairs = [(e1, e3), (m_li_plus, m_li), (e2, m_li)]
+        rxn, _ = self._model(monkeypatch).make_new_reaction(
+            forward, check_existing=False, generate_thermo=False, generate_kinetics=False)
+>       assert all(a is b for a, b in zip(rxn.reverse.reactants, rxn.products))
+E       assert False
+E        +  where False = all(<generator object TestModelCarriesPairsByPosition.test_reverse_sides_are_the_model_species.<locals>.<genexpr> at 0x7115042ec0b0>)
+
+test/rmgpy/i221OccurrencePairsTest.py:255: AssertionError
+=========================== short test summary info ============================
+FAILED test/rmgpy/i221OccurrencePairsTest.py::TestModelCarriesPairsByPosition::test_reverse_pairs_follow
+FAILED test/rmgpy/i221OccurrencePairsTest.py::TestModelCarriesPairsByPosition::test_reverse_sides_are_the_model_species
+================== 2 failed, 3 passed, 14 deselected in 5.17s ==================

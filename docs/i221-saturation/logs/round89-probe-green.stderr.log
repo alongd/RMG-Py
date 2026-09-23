@@ -1,0 +1,7 @@
+INFO:root:Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+INFO:root:Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+INFO:root:Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+INFO:root:Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+WARNING:root:Cannot tell whether Marcus kinetics authored by family Fake_Quarantined_Family are quarantined: this database has no such family, so its manifest -- if it has one -- cannot be consulted. The rate IS being admitted. This is not the same as a rate with no recorded authorship: the authorship is here and the answer is not. If that family is quarantined in the database it came from, this run cannot know it. Load that family, or supply the rate from a source this database can check.
+INFO:root:Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+INFO:root:Kinetics family Fake_Quarantined_Family is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message

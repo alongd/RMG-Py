@@ -1,0 +1,17 @@
+WARNING:matplotlib:/home/alon/.config/matplotlib is not a writable directory
+WARNING:matplotlib:Matplotlib created a temporary cache directory at /tmp/claude-1000/matplotlib-wa1efz_7 because there was an issue with the default path (/home/alon/.config/matplotlib); it is highly recommended to set the MPLCONFIGDIR environment variable to a writable directory, in particular to speed up the import of Matplotlib and to better support multiprocessing.
+INFO:matplotlib.font_manager:Failed to extract font properties from /usr/share/fonts/truetype/noto/NotoColorEmoji.ttf: In FT2Font: Could not set the fontsize (invalid pixel size; error code 0x17)
+INFO:matplotlib.font_manager:generated new fontManager
+INFO:root:Kinetics family A_Family_Swapped_Under_The_Check is QUARANTINED FOR TESTING (Marcus): EXECUTED_FROM_OUTSIDE_THE_DATABASE_VIA_RACE
+INFO:root:Kinetics family A_Family_Whose_Manifest_Cannot_Be_Read is QUARANTINED FOR TESTING (Marcus): must not be read as clean
+INFO:root:Kinetics family A_Family_Edited_In_Place is QUARANTINED FOR TESTING (Marcus): reason A -- xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+INFO:root:Kinetics family A_Family is QUARANTINED FOR TESTING (Marcus): a reason
+INFO:root:Kinetics family A_Family is QUARANTINED FOR TESTING (Marcus): a reason
+INFO:root:Kinetics family A_Family is QUARANTINED FOR TESTING (Marcus): a reason
+INFO:root:Kinetics family An_Ordinary_Family is QUARANTINED FOR TESTING (Marcus): still readable
+ERROR:root:Refusing to look for a quarantine manifest under the family label 'A_Family_Directory_That_Points_Out': it resolves to /tmp/claude-1000/round99-toctou-_1csn1iw/dirlink_outside, outside the database. A family label names a directory inside the database's kinetics/families, and the manifest found there is executed. Rates attributed to this label are treated as having an unresolvable authorship.
+ERROR:root:Refusing to read the quarantine manifest in /tmp/claude-1000/round99-toctou-_1csn1iw/filelink/kinetics/families/A_Family_With_A_Symlinked_Manifest: it is not a regular file. A manifest is a regular file inside its own family directory, and it is EXECUTED -- so one that is a link to somewhere else, or is not a file at all, is refused rather than followed. The family is treated as unanswered, not as unquarantined.
+ERROR:root:Refusing to look for a quarantine manifest under the family label 'A_Family\x00.py': it contains the control character '\x00'. A family label names a directory inside the database's kinetics/families, and the manifest found there is executed. Rates attributed to this label are treated as having an unresolvable authorship.
+ERROR:root:Refusing to look for a quarantine manifest under the family label 'A_Family\nOhNo': it contains the control character '\n'. A family label names a directory inside the database's kinetics/families, and the manifest found there is executed. Rates attributed to this label are treated as having an unresolvable authorship.
+INFO:root:Kinetics family A_Family_Linked_To_Its_Sibling is QUARANTINED FOR TESTING (Marcus): read through an in-tree symlink
+INFO:root:Kinetics family A_Family_Under_A_Symlinked_Root is QUARANTINED FOR TESTING (Marcus): reached under a linked root

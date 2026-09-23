@@ -1,0 +1,63 @@
+
+absent       the parallel transport drops the per-atom payload `copy()` now keeps
+    all 10 atoms came back with their ids and props intact
+
+absent       a parallel run differs from the serial run it is supposed to reproduce
+    serial ids [-1, -32764, -32763, -32762] props [{'inRing': False}, {'inRing': False}]
+    parallel ids [-1, -32764, -32763, -32762] props [{'inRing': False}, {'inRing': False}]
+
+absent       a fragment reaction cannot cross the parallel transport at all
+    it came back a Fragment holding ['Atom', 'Atom', 'CuttingLabel', 'Atom', 'Atom', 'Atom', 'Atom', 'Atom']
+
+absent       a surface reaction cannot cross the parallel transport at all
+    it came back with metal='Pt' facet='111'
+
+absent       a species on both sides loses its reactant-side pair member
+    every pairs[0] member is one of the copy's own reactants
+
+absent       the deep copy aliases specific_collider
+    copy().specific_collider is reaction.specific_collider -> False. The docstring says "deep copy"; an edit to the copy's collider reaches the original.
+
+absent       an unattributed rate passes in silence when the family is on disk, unloaded
+    it warned: Kinetics family A_Family_Quarantined_On_Disk is QUARANTINED FOR TESTING (Marcus): a reason that must reach the warning
+
+absent       a manifest that could not be read is indistinguishable from one that is absent
+    load_family_quarantine() returned QUARANTINE_UNREADABLE for the refused manifest and None for the family that has none, and check_quarantine(..., family=...) then answered without a word: an error became a clean bill of health.
+
+absent       DepositoryReaction.copy() returns a base Reaction
+    copy() returned a DepositoryReaction; nothing else did not survive
+
+absent       PDepReaction.copy() returns a base Reaction
+    copy() returned a PDepReaction; nothing else did not survive
+
+absent       DepositoryReaction.__reduce__ drops fields it was never told about
+    [] came back changed: []
+
+absent       PDepReaction.__reduce__ drops fields it was never told about
+    [] came back changed: []
+
+holds        control: round 110's property: copy() keeps the payload
+    10 atoms, ids [-1, -32760, -32759, -32758], props [{'inRing': False}, {'inRing': False}]
+
+holds        control: a reaction whose species are all distinct copies correctly
+    every pair member is one of the copy's own species -- which is why the existing test could not see the defect above
+
+holds        control: the fixture really does hold one Species object on both sides
+    shared: ['e', 'e']; this is the resolver's own view object, not an assembled one
+
+holds        control: a family with no manifest is still answered, and answered clean
+    resolve_quarantine -> (None, True), load_family_quarantine -> None
+
+holds        control: the gate still refuses a rate from a loaded quarantined family
+    check_quarantine raised QuarantinedKineticsError
+
+holds        control: the parallel transport still round-trips an ordinary reaction
+    reactants 1, degeneracy 3.0
+
+note        the hand-enumerated half, and how an unlisted lossy class fails
+    the table holds 5 classes: Atom, CuttingLabel, Fragment, Molecule, Species. Membership is a measurement for `Atom` alone -- `fields_the_reducer_drops` probes it -- and a judgement for the other four. A class that starts losing a field tomorrow and is not in the table loses it SILENTLY: nothing raises, the field simply arrives as its default. The census test in quarantineTest.py is what turns that into a red test rather than a wrong number.
+
+==============================================================================
+findings reproduced : 0 of 12
+controls holding    : 6 of 6
+noted, not findings : 1

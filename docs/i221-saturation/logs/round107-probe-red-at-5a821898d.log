@@ -1,0 +1,89 @@
+
+REPRODUCED   pickle of a template reaction drops fields the loader preserved
+             elementary_high_p  True -> False
+              allow_pdep_route  True -> False
+      allow_max_rate_violation  True -> False
+                          rank  7 -> None
+                       comment  'a comment worth keeping' -> ''
+                         label  'Lip + CH3 <=> CH3Li' -> ''
+              network_kinetics  3.0 -> None
+
+REPRODUCED   copy of a template reaction drops fields the loader preserved
+             elementary_high_p  True -> False
+              allow_pdep_route  True -> False
+      allow_max_rate_violation  True -> False
+                          rank  7 -> None
+                       comment  'a comment worth keeping' -> None
+              network_kinetics  3.0 -> None
+                 labeled_atoms  ['products', 'reactants'] -> []
+
+REPRODUCED   pickle of a library reaction drops fields the loader preserved
+                          rank  7 -> None
+                       comment  'a comment worth keeping' -> ''
+                         label  'Lip + CH3 <=> CH3Li' -> ''
+                    is_forward  True -> False
+
+REPRODUCED   copy of a library reaction drops fields the loader preserved
+      allow_max_rate_violation  True -> False
+                          rank  7 -> None
+                    is_forward  True -> False
+                         entry  'an entry' -> None
+                       library  'a_library' -> '<missing>'
+                        family  'a_library' -> '<missing>'
+                       (class)  library -> Reaction
+
+REPRODUCED   copy() of a library reaction returns a different class
+    LibraryReaction.copy() -> Reaction; `Reaction.copy` builds `Reaction.__new__(Reaction)`, so library, family and entry have nowhere to land. rmgpy/tools/isotopes.py:394 copies whatever Reaction it is handed.
+
+REPRODUCED   a field the target cannot take is dropped in silence
+    'protons' was classified as carried and the carry returned normally; the AttributeError from setattr was caught and the loop moved on
+
+REPRODUCED   a source holding none of the state carries nothing in silence
+    every getattr raised AttributeError, every one was swallowed, and the carry returned a reaction it had written nothing to
+
+holds        control: each transform produces a new object
+    all four shape x transform combinations returned a distinct reaction with a distinct reactant list, so a surviving field really survived a round trip
+
+holds        control: the fixture holds every field before the transform
+    both shapes carry all 13 marked fields before anything is transformed, so a loss below is the transform's
+
+holds        control: round 95's carrier fix is still in place on the template shape
+    entry survives both template transforms, at this tip and at the base -- so this probe is measuring the fields round 102 and 105 added, not a fixture that never set them
+
+holds        control: no transform restates the rate while carrying the degeneracy
+    A is unchanged in all four combinations at degeneracy 3.0 -- round 105's storage rule survives being routed through the transforms
+
+holds        control: 'protons' really is read-only
+    assigning it raises AttributeError, so the finding above is about a real field and not an invented one
+
+holds        control: the field discovery has not gone empty
+    23 fields discovered from Reaction; an empty discovery would make every check above pass vacuously
+
+note        every site in rmgpy/ that enumerates reaction state: 9, of which 4 are in this round's gates
+      reaction.py:322      Reaction.__reduce__        out of gates; drops allow_max_rate_violation and is_forward
+      reaction.py:2017     Reaction.copy              out of gates; drops the same two, and returns a base Reaction for every subclass that does not override it
+      family.py:__reduce__ TemplateReaction           repaired this round
+      family.py:copy       TemplateReaction           repaired this round
+      library.py:__reduce__ LibraryReaction           repaired this round
+      library.py:copy      LibraryReaction            added this round
+      library.py:_carry_entry_fields                  round 102/105's loader
+      depository.py:83     DepositoryReaction.__reduce__  out of gates; drops the three flags, rank, comment, label and network_kinetics
+      rmg/pdep.py:90       PDepReaction.__reduce__    out of gates; drops the three flags, rank and comment
+      rmg/model.py:79      as_library_reaction        round 105's conversion, already derived
+    
+    The review's census named three. The two it missed inside the gates are the `LibraryReaction` pair, and one of those is where round 105's own three fields were being dropped again.
+
+note        the reduce tuple changed shape, deliberately
+    `__reduce__` returns (class, (), state) now rather than (class, (17 args)). A pickle written before this tip still loads here -- no third element, no __setstate__ call, the old constructor path. A pickle written here needs the new __setstate__, because the default unpickling path would put every Reaction field in the instance dictionary where the class's descriptor shadows it. RMG pickles reactions within a run (multiprocessing, deepcopy), not across versions, so this is stated rather than worked around.
+
+==============================================================================
+findings reproduced : 7 of 7
+controls holding    : 6 of 6
+noted, not findings : 2
+  REPRODUCED  pickle of a template reaction drops fields the loader preserved
+  REPRODUCED  copy of a template reaction drops fields the loader preserved
+  REPRODUCED  pickle of a library reaction drops fields the loader preserved
+  REPRODUCED  copy of a library reaction drops fields the loader preserved
+  REPRODUCED  copy() of a library reaction returns a different class
+  REPRODUCED  a field the target cannot take is dropped in silence
+  REPRODUCED  a source holding none of the state carries nothing in silence

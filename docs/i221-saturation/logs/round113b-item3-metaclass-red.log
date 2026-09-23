@@ -1,0 +1,49 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+rootdir: /home/alon/Code/RMG-Py-i221-saturation-fix
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 264 items / 263 deselected / 1 selected
+
+test/rmgpy/data/kinetics/quarantineTest.py::TestWhatAnUnlistedLossyClassCosts::test_a_verdict_is_not_inherited_through_an_equal_comparing_metaclass FAILED
+
+=================================== FAILURES ===================================
+_ TestWhatAnUnlistedLossyClassCosts.test_a_verdict_is_not_inherited_through_an_equal_comparing_metaclass _
+
+self = <quarantineTest.TestWhatAnUnlistedLossyClassCosts object at 0x7474fbe93520>
+
+    def test_a_verdict_is_not_inherited_through_an_equal_comparing_metaclass(self):
+        """
+        Round 113 rework. The verdict cache was a `WeakKeyDictionary`, whose lookup goes
+        through the metaclass's ``__eq__``/``__hash__`` rather than class identity. A benign
+        class cached ``False``; a late lossy `Molecule` subclass whose metaclass compares
+        equal to it then read that ``False`` and crossed the pickler as a base `Molecule`.
+        Behavioural at `2f35a866a`.
+        """
+        from multiprocessing.reduction import ForkingPickler
+    
+        class Colliding(type):
+            def __eq__(cls, other):
+                return isinstance(other, Colliding)
+    
+            def __hash__(cls):
+                return 0
+    
+        class Benign(metaclass=Colliding):
+            pass
+    
+        # The verdict is cached before pickle finds a local class unpicklable by reference.
+        with pytest.raises((AttributeError, pickle.PicklingError), match="local object"):
+            ForkingPickler.dumps(Benign())
+        Sub = Colliding("UnregisteredMolecule", (Molecule,), {})
+        molecule = Sub(smiles="C")
+        molecule.extra = "carried"
+    
+        with pytest.raises(pickle.PicklingError, match="UnregisteredMolecule"):
+>           ForkingPickler.dumps(molecule)
+E           Failed: DID NOT RAISE <class '_pickle.PicklingError'>
+
+test/rmgpy/data/kinetics/quarantineTest.py:5985: Failed
+=========================== short test summary info ============================
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestWhatAnUnlistedLossyClassCosts::test_a_verdict_is_not_inherited_through_an_equal_comparing_metaclass
+====================== 1 failed, 263 deselected in 6.76s =======================

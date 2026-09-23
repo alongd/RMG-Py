@@ -1,0 +1,50 @@
+WARNING:matplotlib:/home/alon/.config/matplotlib is not a writable directory
+WARNING:matplotlib:Matplotlib created a temporary cache directory at /tmp/claude-1000/matplotlib-13io8r5y because there was an issue with the default path (/home/alon/.config/matplotlib); it is highly recommended to set the MPLCONFIGDIR environment variable to a writable directory, in particular to speed up the import of Matplotlib and to better support multiprocessing.
+INFO:matplotlib.font_manager:Failed to extract font properties from /usr/share/fonts/truetype/noto/NotoColorEmoji.ttf: In FT2Font: Could not set the fontsize (invalid pixel size; error code 0x17)
+INFO:matplotlib.font_manager:generated new fontManager
+INFO:root:Kinetics family Cation_R_Recombination is QUARANTINED FOR QUANTITATIVE PLASMA USE (Marcus): electrochemical reference/domain unavailable
+INFO:root:Adding seed mechanism a_seed_written_elsewhere to model core...
+WARNING:root:loading reaction Lip + CH3 => CH3Li originally from family Cation_R_Recombination as a library reaction
+INFO:root:
+INFO:root:Summary of Model Enlargement
+INFO:root:---------------------------------
+INFO:root:Added 3 new core species
+INFO:root:    Lip
+INFO:root:    CH3
+INFO:root:    CH3Li
+INFO:root:Created 0 new edge species
+INFO:root:Added 1 new core reactions
+INFO:root:    Lip + CH3 => CH3Li
+INFO:root:Created 0 new edge reactions
+INFO:root:
+INFO:root:After model enlargement:
+INFO:root:    The model core has 3 species and 1 reactions
+INFO:root:    The model edge has 0 species and 0 reactions
+INFO:root:
+INFO:root:Kinetics family Cation_R_Recombination is QUARANTINED FOR QUANTITATIVE PLASMA USE (Marcus): electrochemical reference/domain unavailable
+INFO:root:Adding reaction library a_library_written_elsewhere to model edge...
+WARNING:root:loading reaction Lip + CH3 => CH3Li originally from family Cation_R_Recombination as a library reaction
+INFO:root:
+INFO:root:Summary of Model Enlargement
+INFO:root:---------------------------------
+INFO:root:Added 0 new core species
+INFO:root:Created 3 new edge species
+INFO:root:    Lip
+INFO:root:    CH3
+INFO:root:    CH3Li
+INFO:root:Added 0 new core reactions
+INFO:root:Created 1 new edge reactions
+INFO:root:    Lip + CH3 => CH3Li
+INFO:root:
+INFO:root:After model enlargement:
+INFO:root:    The model core has 0 species and 0 reactions
+INFO:root:    The model edge has 3 species and 1 reactions
+INFO:root:
+INFO:root:Kinetics family Cation_R_Recombination is QUARANTINED FOR QUANTITATIVE PLASMA USE (Marcus): electrochemical reference/domain unavailable
+INFO:root:Adding reaction library an_ordinary_library to model edge...
+INFO:root:Kinetics family /tmp/claude-1000/round92-probe-18xnpxp7/outside is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+INFO:root:Kinetics family ../../../outside is QUARANTINED FOR TESTING (Marcus): a reason that must reach the error message
+INFO:root:Kinetics family Synthetic is QUARANTINED FOR TESTING (Arrhenius): a reason
+INFO:root:Kinetics family Synthetic is QUARANTINED FOR TESTING (Arrhenius): a reason
+INFO:root:Kinetics family Synthetic is QUARANTINED FOR TESTING (Arrhenius): a reason
+INFO:root:Kinetics family Synthetic is QUARANTINED FOR TESTING (Arrhenius): a reason

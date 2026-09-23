@@ -3553,40 +3553,30 @@ class TestTheSelectorFailsLoudly:
         assert 'wrong {0} flag'.format(flag) in str(raised.value)
 
     def test_allow_max_rate_violation_is_dropped_by_get_library_reactions(self):
-        """This asserts a PRODUCTION DEFECT, on purpose, so it is a notification
-        and not a regression.
+        """This used to assert a PRODUCTION DEFECT, on purpose, as a notification.
 
-        Unlike ``duplicate``, ``allow_pdep_route`` and ``elementary_high_p``,
-        ``allow_max_rate_violation`` is NOT copied onto the reaction that
-        ``get_library_reactions`` builds. In ``rmgpy/data/kinetics/library.py``,
-        inside ``get_library_reactions``, the ``else:  # pdep or standard library
-        reaction`` branch constructs its ``LibraryReaction(...)`` without
-        forwarding ``entry.item.allow_max_rate_violation`` -- so an entry authored
-        with this flag True still comes back out of the library reading False on
-        the reaction, even though the entry itself still reads True. This is a
-        different ticket's fix, and the worker holding ``rmgpy/`` owns it; this
-        suite is not allowed to touch that file.
-
-        When that ticket lands, `get_library_reactions` will start forwarding the
-        flag, `reaction.allow_max_rate_violation` below will become True, and THIS
-        TEST WILL GO RED. That is the intended outcome: its failure is the
-        notification the fix landed, and the fix should be followed by inverting
-        this assertion (to ``is True``) rather than deleting the test.
+        ``get_library_reactions`` in ``rmgpy/data/kinetics/library.py`` built the
+        reaction in its ``else:  # pdep or standard library reaction`` branch without
+        forwarding ``entry.item.allow_max_rate_violation``, so an entry authored with
+        the flag True came back out of the library reading False on the reaction.
+        I-221 commit ``309acc0a4`` fixed it: every shape in ``get_library_reactions``
+        now calls ``_carry_entry_fields``, which copies every ``Reaction`` field the
+        entry holds except those excluded with a reason. The notification fired on the
+        merge of plasma into I-221 and, as this test asked, the assertion is inverted
+        rather than deleted -- it now pins the fix. The name is kept so the test's id
+        stays the one the notification was filed under.
         """
         reaction, entry = self._recombination_carrying(
             BadnellRRArrhenius(Z=3, N=2), allow_max_rate_violation=True)
         assert entry.item.allow_max_rate_violation is True, (
             'the fixture did not author the flag on the entry the way this test '
             'thinks it did')
-        assert reaction.allow_max_rate_violation is False, (
-            'get_library_reactions now forwards allow_max_rate_violation onto the '
-            'reaction it builds -- the production defect named in '
-            'rmgpy/data/kinetics/library.py (get_library_reactions, the '
-            '`else:  # pdep or standard library reaction` branch, the '
-            'LibraryReaction(...) construction) is FIXED. Invert this assertion to '
-            '`is True` rather than deleting the test; this red is the notification.')
-        # And the audit method catches it correctly on the entry, not on the
-        # (always-False) reaction -- this is item 3(a)'s regression check firing.
+        assert reaction.allow_max_rate_violation is True, (
+            'get_library_reactions dropped allow_max_rate_violation again: the entry '
+            'reads True and the reaction it built reads False. I-221 309acc0a4 carried it '
+            'through _carry_entry_fields in rmgpy/data/kinetics/library.py.')
+        # And the audit method catches it on the entry, not on the reaction --
+        # this is item 3(a)'s regression check firing.
         with pytest.raises(AssertionError) as raised:
             LITHIUM_RECOMBINATION.assert_as_shipped(reaction, entry=entry)
         assert 'wrong allow_max_rate_violation flag on the ENTRY' in str(raised.value)

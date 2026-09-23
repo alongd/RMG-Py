@@ -36,12 +36,28 @@ import logging
 import os.path
 import re
 from collections import OrderedDict
+from copy import deepcopy
 
 import numpy as np
 
 from rmgpy.data.base import DatabaseError, Database, Entry
 from rmgpy.data.kinetics.common import save_entry
-from rmgpy.data.kinetics.family import TemplateReaction
+# The shared definition of what reaction state *is* lives in `family.py`, because this
+# module imports `TemplateReaction` from there and the import cannot run both ways.
+# The names below are re-exported: every importer round 102 and 105 wrote --
+# `rmgpy/rmg/model.py` and the test tree -- keeps working against one definition
+# rather than acquiring a second one, and `family.py` is where the two transforms
+# that share it live.
+from rmgpy.data.kinetics.family import (TemplateReaction, REACTION_STATE_FIELDS,
+                                        ReactionStateNotCarried,
+                                        ReactionStateUnclassified,
+                                        _CARRIED_THROUGH_STORAGE, _NOT_REPRODUCED,
+                                        _COPIED_BY_REFERENCE,
+                                        _NOT_COPIED_BY_REFERENCE, _LOSSY_REDUCERS,
+                                        apply_reaction_state, carry_reaction_state,
+                                        complete_round_trip, copy_reaction,
+                                        fields_the_reducer_drops, object_state,
+                                        reaction_state, state_fields, writable_fields)
 from rmgpy.kinetics import Arrhenius, ThirdBody, Lindemann, Troe, \
                            PDepArrhenius, MultiArrhenius, MultiPDepArrhenius, Chebyshev, KineticsModel, Marcus
 from rmgpy.kinetics.surface import StickingCoefficient
@@ -103,25 +119,53 @@ class LibraryReaction(Reaction):
     def __reduce__(self):
         """
         A helper function used when pickling an object.
+
+        No constructor arguments: every field travels in the state dict, discovered from
+        the object. The seventeen-field list this replaces did carry the three
+        pressure-dependence flags -- unlike `TemplateReaction`'s, whose constructor has no
+        parameter for them -- but still dropped `rank`, `comment` and `label`, and turned
+        `is_forward` from ``True`` into ``False``. Those are round 105's three fields,
+        reappearing one transform over: the same defect, the same cause, a different list.
         """
-        return (LibraryReaction, (self.index,
-                                  self.reactants,
-                                  self.products,
-                                  self.specific_collider,
-                                  self.kinetics,
-                                  self.network_kinetics,
-                                  self.reversible,
-                                  self.transition_state,
-                                  self.duplicate,
-                                  self.degeneracy,
-                                  self.pairs,
-                                  self.library,
-                                  self.allow_pdep_route,
-                                  self.elementary_high_p,
-                                  self.allow_max_rate_violation,
-                                  self.entry,
-                                  self.electrons,
-                                  ))
+        return (LibraryReaction, (), reaction_state(self, _NOT_REPRODUCED,
+                                                    state_fields(self)))
+
+    def __setstate__(self, state):
+        """
+        Restore what `__reduce__` sent; see `TemplateReaction.__setstate__` for why the
+        default unpickling path will not do.
+        """
+        apply_reaction_state(self, state)
+
+    def copy(self):
+        """
+        Create a deep copy of this reaction, as a `LibraryReaction`.
+
+        Inherited, `Reaction.copy` builds a *base* `Reaction` -- so until round 107 a copy
+        of a library reaction lost `library`, `family` and `entry` outright, and `entry`
+        is the carrier the quarantine gate reads authorship from. Not a theoretical path:
+        `rmgpy/tools/isotopes.py:394` copies whatever `Reaction` it is handed, and the
+        core model it walks is full of these.
+
+        The same call as `TemplateReaction.copy()` with the same helper and the same
+        exclusions, differing only in the one table entry `LibraryReaction` has no field
+        for -- so the two are not two implementations and cannot drift apart. In
+        particular a copied `pairs` entry is one of the copy's own reactants, not a clone
+        of it; see `copy_reaction` for why that is a property of the reaction rather than
+        of its lists.
+        """
+        return copy_reaction(self, _NOT_COPIED_BY_REFERENCE)
+
+    def __deepcopy__(self, memo):
+        """
+        The same override, for the same reason; see `TemplateReaction.__deepcopy__`.
+
+        A `LibraryReaction` carries no `labeled_atoms`, so what a field-by-field deepcopy
+        severed here was `pairs` -- and `Species.__eq__` is identity, so a severed pair
+        makes ``reactants.index(pair[0])`` raise somewhere else entirely.
+        """
+        memo[id(self)] = other = self.copy()
+        return other
 
     def __repr__(self):
         """
@@ -318,6 +362,35 @@ def seed_placement_survives(entry, owner):
     return False
 
 
+
+#: Fields NOT carried from ``entry.item``, each with the reason. Everything else is
+#: carried, so a field added to `Reaction` tomorrow is carried without anyone noticing --
+#: which is the point. `quarantineTest.py` pins this partition so that a new field has to
+#: be classified deliberately rather than dropped silently.
+_NOT_CARRIED_FROM_ENTRY = {
+    'reactants': 'the constructor copies these by slice, so the entry and the reaction do '
+                 'not share a mutable list',
+    'products': 'the constructor copies these by slice too, for the same reason -- a shared\n                 list would let a model edit write back into the database entry',
+    'kinetics': 'comes from entry.data -- the rate the library declares, not whatever the '
+                'blank reaction in the entry was built with',
+    'index': 'the entry index is a position in a library file; the model numbers a '
+             'reaction at admission',
+    'label': 'the entry label is the reaction string, rebuilt by the reaction itself',
+    'comment': 'provenance belongs to the kinetics, which carries its own',
+    'SurfaceArrhenius': 'a slot named after a cimported type and assigned by nothing '
+                        'in the codebase; it is always None and is not reaction state',
+    'SurfaceChargeTransfer': 'the same: a never-assigned slot, not reaction state',
+    'k_effective_cache': 'a memo of a computation, not data the entry declares',
+    'protons': 'read-only: it is derived from the charge balance of the reactants and '
+               'products, so it arrives with them rather than being assigned',
+}
+
+
+def _carry_entry_fields(rxn, item):
+    """Carry `entry.item`'s state onto a reaction the loader has just constructed."""
+    return carry_reaction_state(rxn, item, _NOT_CARRIED_FROM_ENTRY)
+
+
 class KineticsLibrary(Database):
     """
     A class for working with an RMG kinetics library.
@@ -340,6 +413,11 @@ class KineticsLibrary(Database):
         """
         rxns = []
         for entry in self.entries.values():
+            # `entry=entry` on every LibraryReaction below is load-bearing, not bookkeeping.
+            # An entry's `long_desc` is where the authorship of an estimated rate survives
+            # being written to a library ("family: <label>"), and it is the only carrier
+            # when the kinetics comment has been stripped. Constructing the reaction
+            # without it discards that provenance at the one point it is still in hand.
             if self.auto_generated and entry.long_desc and 'Originally from reaction library: ' in entry.long_desc:
                 lib = [line for line in entry.long_desc.split('\n') if 'Originally from reaction library: ' in line]
                 lib = lib[0].replace('Originally from reaction library: ', '')
@@ -351,7 +429,8 @@ class KineticsLibrary(Database):
                                       duplicate=entry.item.duplicate, reversible=entry.item.reversible,
                                       allow_pdep_route=entry.item.allow_pdep_route,
                                       elementary_high_p=entry.item.elementary_high_p,
-                                      electrons=entry.item.electrons)
+                                      electrons=entry.item.electrons, entry=entry)
+                _carry_entry_fields(rxn, entry.item)
                 rxn.family = self.label  # the library the reaction was loaded from (opposed to originally from)
             elif self.auto_generated and entry.long_desc and 'rate rule' in entry.long_desc:  # template reaction
                 family = ''
@@ -369,14 +448,26 @@ class KineticsLibrary(Database):
                                        specific_collider=entry.item.specific_collider, kinetics=entry.data,
                                        duplicate=entry.item.duplicate, reversible=entry.item.reversible,
                                        family=family, template=template, degeneracy=entry.item.degeneracy,
-                                       electrons=entry.item.electrons)
+                                       electrons=entry.item.electrons,
+                                       # The third shape, and the one that had no carrier. The
+                                       # `family` slot above holds real authorship -- parsed out
+                                       # of `long_desc` a few lines up -- but it holds only the
+                                       # LAST `family:` line, and `CoreEdgeReactionModel` rebuilds
+                                       # this object as a `LibraryReaction` whenever that family is
+                                       # not loaded, where the same slot means the LIBRARY. The
+                                       # entry is what survives both: it is the very text the
+                                       # family was parsed from, and it carries every label, not
+                                       # just the last. `authoring_families` reads it.
+                                       entry=entry)
+                _carry_entry_fields(rxn, entry.item)
             else:  # pdep or standard library reaction
                 rxn = LibraryReaction(reactants=entry.item.reactants[:], products=entry.item.products[:],
                                       library=self.label, specific_collider=entry.item.specific_collider,
                                       kinetics=entry.data, duplicate=entry.item.duplicate,
                                       reversible=entry.item.reversible, allow_pdep_route=entry.item.allow_pdep_route,
                                       elementary_high_p=entry.item.elementary_high_p,
-                                      electrons=entry.item.electrons)
+                                      electrons=entry.item.electrons, entry=entry)
+                _carry_entry_fields(rxn, entry.item)
             rxns.append(rxn)
 
         return rxns

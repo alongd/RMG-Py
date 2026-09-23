@@ -1,0 +1,221 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+rootdir: /home/alon/Code/RMG-Py-i221-saturation-fix
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 253 items / 246 deselected / 7 selected
+
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheEnumerationIsNeitherStaleNorSilent::test_a_manifest_rewritten_after_load_is_enumerated_as_it_now_reads FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheEnumerationIsNeitherStaleNorSilent::test_an_unattributed_rate_of_the_rewritten_class_is_reported FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheEnumerationIsNeitherStaleNorSilent::test_an_unlistable_families_directory_is_not_zero_quarantines FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheEnumerationIsNeitherStaleNorSilent::test_an_unexaminable_family_directory_is_not_zero_quarantines FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheEnumerationIsNeitherStaleNorSilent::test_the_public_enumeration_raises_rather_than_ending_early FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheEnumerationIsNeitherStaleNorSilent::test_an_unlistable_families_directory_keeps_the_unanswered_warning_on FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheEnumerationIsNeitherStaleNorSilent::test_controls_a_readable_empty_database_is_still_silent PASSED
+
+=================================== FAILURES ===================================
+_ TestTheEnumerationIsNeitherStaleNorSilent.test_a_manifest_rewritten_after_load_is_enumerated_as_it_now_reads _
+
+self = <quarantineTest.TestTheEnumerationIsNeitherStaleNorSilent object at 0x757eed37a3a0>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-825/test_a_manifest_rewritten_afte0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x757eed407af0>
+
+    def test_a_manifest_rewritten_after_load_is_enumerated_as_it_now_reads(
+            self, tmp_path, monkeypatch):
+        """
+        The brief's sequence: load a Marcus manifest, rewrite it to Arrhenius on disk,
+        enumerate. Behavioural at `71ae97bd5`: still ``[('F', 'Marcus')]``.
+        """
+        from rmgpy.data.kinetics.quarantine import iter_quarantines
+    
+        family_path = self._loaded_database(tmp_path, monkeypatch)
+        write_manifest(family_path, self.ARRHENIUS_MANIFEST)
+    
+        found = [(q.family_label, q.kinetics_class_name) for q in iter_quarantines()]
+        _clear_gate_caches()
+    
+>       assert found == [("F", "Arrhenius")], (
+            "the enumeration served the manifest as it read at load time: {0}".format(found))
+E       AssertionError: the enumeration served the manifest as it read at load time: [('F', 'Marcus')]
+E       assert [('F', 'Marcus')] == [('F', 'Arrhenius')]
+E         
+E         At index 0 diff: ('F', 'Marcus') != ('F', 'Arrhenius')
+E         
+E         Full diff:
+E           [
+E               (
+E                   'F',...
+E         
+E         ...Full output truncated (6 lines hidden), use '-vv' to show
+
+test/rmgpy/data/kinetics/quarantineTest.py:5487: AssertionError
+_ TestTheEnumerationIsNeitherStaleNorSilent.test_an_unattributed_rate_of_the_rewritten_class_is_reported _
+
+self = <quarantineTest.TestTheEnumerationIsNeitherStaleNorSilent object at 0x757eed37a5b0>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-825/test_an_unattributed_rate_of_t0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x757eed20efa0>
+
+    def test_an_unattributed_rate_of_the_rewritten_class_is_reported(
+            self, tmp_path, monkeypatch):
+        """
+        What the stale enumeration cost: an unattributed Arrhenius rate admitted in silence
+        while the manifest on disk names Arrhenius.
+        """
+        family_path = self._loaded_database(tmp_path, monkeypatch)
+        write_manifest(family_path, self.ARRHENIUS_MANIFEST)
+        messages = self._capture_warnings(monkeypatch)
+    
+        check_quarantine(self._unattributed(Arrhenius(A=(1e10, "m^3/(mol*s)"), n=0,
+                                                      Ea=(10, "kJ/mol"))), "test")
+        _clear_gate_caches()
+    
+>       assert any("Arrhenius" in m and "family F (" in m for m in messages), (
+            "the rewritten criterion was not applied: {0}".format(messages))
+E       AssertionError: the rewritten criterion was not applied: []
+E       assert False
+E        +  where False = any(<generator object TestTheEnumerationIsNeitherStaleNorSilent.test_an_unattributed_rate_of_the_rewritten_class_is_reported.<locals>.<genexpr> at 0x757eed283740>)
+
+test/rmgpy/data/kinetics/quarantineTest.py:5504: AssertionError
+_ TestTheEnumerationIsNeitherStaleNorSilent.test_an_unlistable_families_directory_is_not_zero_quarantines _
+
+self = <quarantineTest.TestTheEnumerationIsNeitherStaleNorSilent object at 0x757eed3e69d0>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-825/test_an_unlistable_families_di0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x757eecfcaa90>
+
+    def test_an_unlistable_families_directory_is_not_zero_quarantines(
+            self, tmp_path, monkeypatch):
+        """
+        The brief's sequence: an unattributed library rate, an inaccessible families
+        directory, then `check_quarantine`. Behavioural at `71ae97bd5`: no refusal and no
+        warning, because the enumeration swallowed the `listdir` failure and came back
+        empty.
+        """
+        import rmgpy.data.rmg
+    
+        families_root = os.path.join(str(tmp_path), "kinetics", "families")
+        os.makedirs(os.path.join(families_root, "A_Family_On_Disk"))
+        write_manifest(os.path.join(families_root, "A_Family_On_Disk"))
+        _clear_gate_caches()
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+        monkeypatch.setattr(rmgpy.data.rmg, "database", None, raising=False)
+        messages = self._capture_warnings(monkeypatch)
+    
+        self._unlistable(families_root)
+        try:
+            check_quarantine(self._unattributed(make_marcus()), "test")
+        finally:
+            os.chmod(families_root, 0o755)
+            _clear_gate_caches()
+    
+>       assert messages, (
+            "the rate was admitted in silence: the families directory could not be listed, "
+            "and that was reported as there being no quarantine anywhere")
+E       AssertionError: the rate was admitted in silence: the families directory could not be listed, and that was reported as there being no quarantine anywhere
+E       assert []
+
+test/rmgpy/data/kinetics/quarantineTest.py:5532: AssertionError
+_ TestTheEnumerationIsNeitherStaleNorSilent.test_an_unexaminable_family_directory_is_not_zero_quarantines _
+
+self = <quarantineTest.TestTheEnumerationIsNeitherStaleNorSilent object at 0x757eed3e60a0>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-825/test_an_unexaminable_family_di0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x757eed3d80a0>
+
+    def test_an_unexaminable_family_directory_is_not_zero_quarantines(
+            self, tmp_path, monkeypatch):
+        """
+        One layer down: the families directory lists, but one family's directory cannot
+        be looked into. `os.path.lexists` answers False on that, which read as "this family
+        carries no manifest".
+        """
+        import rmgpy.data.rmg
+    
+        family_path = os.path.join(str(tmp_path), "kinetics", "families", "A_Family_On_Disk")
+        os.makedirs(family_path)
+        write_manifest(family_path)
+        _clear_gate_caches()
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+        monkeypatch.setattr(rmgpy.data.rmg, "database", None, raising=False)
+        messages = self._capture_warnings(monkeypatch)
+    
+        self._unlistable(family_path)
+        try:
+            check_quarantine(self._unattributed(make_marcus()), "test")
+        finally:
+            os.chmod(family_path, 0o755)
+            _clear_gate_caches()
+    
+>       assert any("could not" in m.lower() for m in messages), (
+            "an unexaminable family read as an unquarantined one: {0}".format(messages))
+E       AssertionError: an unexaminable family read as an unquarantined one: []
+E       assert False
+E        +  where False = any(<generator object TestTheEnumerationIsNeitherStaleNorSilent.test_an_unexaminable_family_directory_is_not_zero_quarantines.<locals>.<genexpr> at 0x757eed283740>)
+
+test/rmgpy/data/kinetics/quarantineTest.py:5562: AssertionError
+_ TestTheEnumerationIsNeitherStaleNorSilent.test_the_public_enumeration_raises_rather_than_ending_early _
+
+self = <quarantineTest.TestTheEnumerationIsNeitherStaleNorSilent object at 0x757eed3e9a30>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-825/test_the_public_enumeration_ra0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x757eecacec40>
+
+    def test_the_public_enumeration_raises_rather_than_ending_early(
+            self, tmp_path, monkeypatch):
+        """An iterator that ends is a claim that there is nothing more; this one refuses."""
+        import rmgpy.data.rmg
+        from rmgpy.data.kinetics import quarantine as module
+    
+        families_root = os.path.join(str(tmp_path), "kinetics", "families")
+        os.makedirs(families_root)
+        _clear_gate_caches()
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+        monkeypatch.setattr(rmgpy.data.rmg, "database", None, raising=False)
+    
+        self._unlistable(families_root)
+        try:
+            with pytest.raises(getattr(module, "QuarantineEnumerationError", DatabaseError)):
+>               list(module.iter_quarantines())
+E               Failed: DID NOT RAISE <class 'rmgpy.exceptions.DatabaseError'>
+
+test/rmgpy/data/kinetics/quarantineTest.py:5580: Failed
+_ TestTheEnumerationIsNeitherStaleNorSilent.test_an_unlistable_families_directory_keeps_the_unanswered_warning_on _
+
+self = <quarantineTest.TestTheEnumerationIsNeitherStaleNorSilent object at 0x757eed3e05e0>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-825/test_an_unlistable_families_di1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x757ee17035e0>
+
+    def test_an_unlistable_families_directory_keeps_the_unanswered_warning_on(
+            self, tmp_path, monkeypatch):
+        """
+        `_database_has_any_quarantine` is the suppression test for `_warn_unanswered`.
+        Behavioural at `71ae97bd5`: False, so the warning was switched off by the failure
+        of the check that decides whether it is needed.
+        """
+        import rmgpy.data.rmg
+        from rmgpy.data.kinetics.quarantine import _database_has_any_quarantine
+    
+        families_root = os.path.join(str(tmp_path), "kinetics", "families")
+        os.makedirs(os.path.join(families_root, "A_Family_On_Disk"))
+        write_manifest(os.path.join(families_root, "A_Family_On_Disk"))
+        _clear_gate_caches()
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+        monkeypatch.setattr(rmgpy.data.rmg, "database", None, raising=False)
+    
+        self._unlistable(families_root)
+        try:
+            answer = _database_has_any_quarantine()
+        finally:
+            os.chmod(families_root, 0o755)
+            _clear_gate_caches()
+    
+>       assert answer is True, "could not look was answered as nothing is quarantined"
+E       AssertionError: could not look was answered as nothing is quarantined
+E       assert False is True
+
+test/rmgpy/data/kinetics/quarantineTest.py:5609: AssertionError
+=========================== short test summary info ============================
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheEnumerationIsNeitherStaleNorSilent::test_a_manifest_rewritten_after_load_is_enumerated_as_it_now_reads
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheEnumerationIsNeitherStaleNorSilent::test_an_unattributed_rate_of_the_rewritten_class_is_reported
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheEnumerationIsNeitherStaleNorSilent::test_an_unlistable_families_directory_is_not_zero_quarantines
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheEnumerationIsNeitherStaleNorSilent::test_an_unexaminable_family_directory_is_not_zero_quarantines
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheEnumerationIsNeitherStaleNorSilent::test_the_public_enumeration_raises_rather_than_ending_early
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheEnumerationIsNeitherStaleNorSilent::test_an_unlistable_families_directory_keeps_the_unanswered_warning_on
+================= 6 failed, 1 passed, 246 deselected in 3.04s ==================

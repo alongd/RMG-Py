@@ -33,7 +33,18 @@ Contains functions for generating reactions.
 import logging
 from multiprocessing import Pool
 
+from rmgpy.data.kinetics.family import install_complete_reducers
 from rmgpy.data.rmg import get_db
+
+# `Pool.map` below serialises the species it sends and the reactions it receives with
+# `multiprocessing`'s own pickler, which consults its own dispatch table rather than the
+# one `Reaction.copy()` carries. Without this, the objects crossing it are reproduced by
+# the reducers in `rmgpy/molecule/`: measured at `13e3227b2`, a parallel generation came
+# back with every `Atom.id` reset to -1 and every `props` empty, and a fragment or surface
+# reaction raised `KeyError` where the serial run succeeded. The call is idempotent, and
+# `family.py` makes it at its own import as well; it is repeated here because this is the
+# module whose correctness depends on it.
+install_complete_reducers()
 
 
 ################################################################################

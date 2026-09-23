@@ -40,7 +40,7 @@ from copy import deepcopy
 from CoolProp.CoolProp import PropsSI
 
 import rmgpy.constants as constants
-from rmgpy.data.base import Database, Entry, make_logic_node, DatabaseError
+from rmgpy.data.base import Database, Entry, make_logic_node, saturate_for_estimation, DatabaseError
 from rmgpy.molecule import Molecule, Group, ATOMTYPES
 from rmgpy.species import Species
 from rmgpy.exceptions import InputError
@@ -1562,8 +1562,7 @@ class SolvationDatabase(object):
         if not molecule.is_radical():
             raise ValueError("Method only valid for radicals.")
 
-        saturated_struct = molecule.copy(deep=True)
-        added = saturated_struct.saturate_radicals()
+        saturated_struct, added = saturate_for_estimation(molecule, 'solute data')
         saturated_struct.props['saturated'] = True
 
         # Get solute data estimate for saturated form of structure

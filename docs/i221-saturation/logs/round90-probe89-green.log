@@ -1,0 +1,66 @@
+probe scratch: /tmp/claude-1000/round89-probe-d6k8b25n
+
+[HOLDS] control: the entry really did carry the provenance
+    entry.long_desc = 'family: Fake_Quarantined_Family'
+
+[NOT REPRODUCED] HIGH 3: get_library_reactions() drops the entry, so longDesc is unreachable
+    entry attached to the LibraryReaction? True
+    reaction.family                      = 'copied_seed'
+    authoring_family(reaction)           = 'Fake_Quarantined_Family'
+    admitted by the gate                 = False
+
+[HOLDS] control: the comment carrier is unaffected -- only the longDesc half is lost
+    same library with the provenance in kinetics.comment instead: refused
+
+[HOLDS] control: with the family loaded, this very reaction is refused
+    authorship 'Fake_Quarantined_Family' resolves while the family is registered
+
+[NOT REPRODUCED] HIGH 2a: the family is in the database, merely not loaded -- and is not consulted
+    authoring_family 'Fake_Quarantined_Family'; loaded families ['Some_Other_Loaded_Family']; the manifest is on disk at
+    /tmp/claude-1000/round89-probe-d6k8b25n/db/kinetics/families/Fake_Quarantined_Family/quarantine.py
+    and the rate was refused, the manifest having been read from disk
+
+[NOT REPRODUCED] HIGH 2b: an unanswerable question is admitted in silence
+    admitted True; the run was told True
+    warnings emitted: ['Cannot tell whether Marcus kinetics authored by family Fake_Quarantined_Family are quarantined: this database has no such family, so its manifest -- if it has one -- cannot be consulted. The rate IS being admitted. This is not the same as a rate with no recorded authorship: the authorship is here and the answer is not. If that family is quarantined in the database it came from, this run cannot know it. Load that family, or supply the rate from a source this database can check.']
+    None from 'no authorship' and None from 'family not found' are the same value arriving from opposite situations
+
+[NOT REPRODUCED] HIGH 1: add_reaction_to_unimolecular_networks consults no gate
+    core 0   edge 0   refused by a gate: True
+    outcome: refused by the gate
+    a quarantined rate reaches a pdep network with nothing having looked at it
+
+[NOT REPRODUCED] HIGH 1 (static): the network method names no gate at all
+    check_quarantine appears in the method's source: True
+    the behavioural check above and this one must agree; a behavioural pass with no call in the source would mean the probe measured the wrong object
+
+[NOT REPRODUCED] MEDIUM: requiresEngineCallSites accepts a module that never calls the gate
+    a module whose entire body is the import was refused: Quarantine manifest /tmp/claude-1000/round89-probe-d6k8b25n/callsite-manifest/quarantine.py requires 'check_quarantine' 
+
+[HOLDS] control: the real call site does contain real calls
+    rmgpy.rmg.model contains 4 call(s) to check_quarantine
+
+[NOT REPRODUCED] MEDIUM: one prepended line shadows genuine provenance
+    the comment contains BOTH 'family: An_Innocent_Family' and 'family: Fake_Quarantined_Family';
+    authoring_family returns 'An_Innocent_Family' because it takes the first line and stops
+
+[HOLDS] control: a forged line cannot quarantine a rate of an unaffected class
+    Arrhenius does not match the manifest's criterion, so the criterion still bounds what a forged label can do
+
+========================================================================
+RESULT
+========================================================================
+  HOLDS          control: the entry really did carry the provenance
+  HOLDS          control: the comment carrier is unaffected -- only the longDesc half is lost
+  HOLDS          control: with the family loaded, this very reaction is refused
+  HOLDS          control: the real call site does contain real calls
+  HOLDS          control: a forged line cannot quarantine a rate of an unaffected class
+  not reproduced HIGH 3: get_library_reactions() drops the entry, so longDesc is unreachable
+  not reproduced HIGH 2a: the family is in the database, merely not loaded -- and is not consulted
+  not reproduced HIGH 2b: an unanswerable question is admitted in silence
+  not reproduced HIGH 1: add_reaction_to_unimolecular_networks consults no gate
+  not reproduced HIGH 1 (static): the network method names no gate at all
+  not reproduced MEDIUM: requiresEngineCallSites accepts a module that never calls the gate
+  not reproduced MEDIUM: one prepended line shadows genuine provenance
+
+0 of 7 findings reproduced; 5 of 5 controls hold.

@@ -1,0 +1,580 @@
+[12:46:58] WARNING: Proton(s) added/removed
+
+[12:47:00] WARNING: Proton(s) added/removed
+
+[12:47:01] WARNING: Proton(s) added/removed
+
+[12:47:01] WARNING: Proton(s) added/removed
+
+[12:47:02] WARNING: Proton(s) added/removed
+
+[12:47:03] WARNING: Proton(s) added/removed
+
+[12:47:03] WARNING: Proton(s) added/removed
+
+[12:47:04] WARNING: Proton(s) added/removed
+
+[12:47:06] WARNING: Proton(s) added/removed
+
+[12:47:27] WARNING: Proton(s) added/removed
+
+[12:47:29] WARNING: Proton(s) added/removed
+
+[12:47:29] WARNING: Proton(s) added/removed
+
+[12:47:29] WARNING: Proton(s) added/removed
+
+[12:47:31] WARNING: Proton(s) added/removed
+
+[12:47:31] WARNING: Proton(s) added/removed
+
+[12:47:32] WARNING: Proton(s) added/removed
+
+[12:47:32] WARNING: Proton(s) added/removed
+
+[12:47:34] WARNING: Proton(s) added/removed
+
+[13:12:47] WARNING: Proton(s) added/removed
+
+[13:12:48] WARNING: Proton(s) added/removed
+
+[13:12:49] WARNING: Proton(s) added/removed
+
+[13:12:49] WARNING: Proton(s) added/removed
+
+[13:12:51] WARNING: Proton(s) added/removed
+
+[13:12:51] WARNING: Proton(s) added/removed
+
+[13:12:52] WARNING: Proton(s) added/removed
+
+[13:12:52] WARNING: Proton(s) added/removed
+
+[13:12:55] WARNING: Proton(s) added/removed
+
+[13:13:48] WARNING: Proton(s) added/removed
+
+[13:13:49] WARNING: Proton(s) added/removed
+
+[13:13:50] WARNING: Proton(s) added/removed
+
+[13:13:50] WARNING: Proton(s) added/removed
+
+[13:13:52] WARNING: Proton(s) added/removed
+
+[13:13:52] WARNING: Proton(s) added/removed
+
+[13:13:53] WARNING: Proton(s) added/removed
+
+[13:13:53] WARNING: Proton(s) added/removed
+
+[13:13:55] WARNING: Proton(s) added/removed
+
+[13:14:17] WARNING: Proton(s) added/removed
+
+[13:14:20] WARNING: Proton(s) added/removed
+
+[13:14:20] WARNING: Proton(s) added/removed
+
+[13:14:20] WARNING: Proton(s) added/removed
+
+[13:14:22] WARNING: Proton(s) added/removed
+
+[13:14:23] WARNING: Proton(s) added/removed
+
+[13:14:24] WARNING: Proton(s) added/removed
+
+[13:14:24] WARNING: Proton(s) added/removed
+
+[13:14:26] WARNING: Proton(s) added/removed
+
+[13:21:00] SMILES Parse Error: syntax error while parsing: 
+[13:21:00] SMILES Parse Error: check for mistakes around position 1:
+[13:21:00] 
+[13:21:00] ^
+[13:21:00] SMILES Parse Error: Failed parsing SMILES '
+' for input: '
+'
+==============================
+*** Open Babel Error  in ParseSimple
+  SMILES string contains a character 'r' which is invalid
+[13:21:00] SMILES Parse Error: syntax error while parsing: ring
+[13:21:00] SMILES Parse Error: check for mistakes around position 1:
+[13:21:00] ring
+[13:21:00] ^
+[13:21:00] SMILES Parse Error: Failed parsing SMILES 'ring' for input: 'ring'
+[13:21:47] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:47] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:47] WARNING: Accepted unusual valence(s): C(2)
+
+[13:21:47] WARNING: Accepted unusual valence(s): C(2)
+
+[13:21:48] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:48] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:48] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:48] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:48] WARNING: Accepted unusual valence(s): C(2)
+
+[13:21:48] WARNING: Accepted unusual valence(s): C(2)
+
+[13:21:48] WARNING: Accepted unusual valence(s): C(2)
+
+[13:21:48] WARNING: Accepted unusual valence(s): C(2)
+
+==============================
+*** Open Babel Error  in InChI code
+  Reading InChI failed
+[13:21:48] ERROR: 
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: not removing hydrogen atom without neighbors
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): O(1); C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): O(1); C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): O(1); C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): O(1); C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): O(1); C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): O(1); C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): O(1); C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): O(1); C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(2)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(2)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(2)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(2)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(2)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(2)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): Pt(1); Metal was disconnected
+
+[13:21:52] WARNING: not removing hydrogen atom without neighbors
+[13:21:52] WARNING: not removing hydrogen atom without neighbors
+[13:21:52] WARNING: not removing hydrogen atom without neighbors
+[13:21:52] WARNING: not removing hydrogen atom without neighbors
+[13:21:52] WARNING: not removing hydrogen atom without neighbors
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3); C(2)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3); C(2)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): O(1)
+
+[13:21:52] WARNING: Accepted unusual valence(s): O(1)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): O(1)
+
+[13:21:52] WARNING: Accepted unusual valence(s): O(1)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): O(1); C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): O(1); C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): O(1); C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): O(1); C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(2)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(2)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(2)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(2)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): O(1); C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): O(1); C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(2)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(2)
+
+[13:21:52] WARNING: Accepted unusual valence(s): O(1); C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): O(1); C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): O(1); C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): O(1); C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(2)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(2)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): O(1)
+
+[13:21:52] WARNING: Accepted unusual valence(s): O(1)
+
+[13:21:52] WARNING: Accepted unusual valence(s): O(1); C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): O(1); C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): O(1); C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): O(1); C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): O(1); C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): O(1); C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): O(1); C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): O(1); C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): O(1)
+
+[13:21:52] WARNING: Accepted unusual valence(s): O(1)
+
+[13:21:52] WARNING: Accepted unusual valence(s): O(1); C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): O(1); C(3)
+
+[13:21:52] WARNING: Accepted unusual valence(s): O(1)
+
+[13:21:52] WARNING: Accepted unusual valence(s): O(1)
+
+[13:21:53] WARNING: Accepted unusual valence(s): O(1); C(3)
+
+[13:21:53] WARNING: Accepted unusual valence(s): O(1); C(3)
+
+[13:21:53] WARNING: Accepted unusual valence(s): C(2)
+
+[13:21:53] WARNING: Accepted unusual valence(s): C(2)
+
+[13:21:53] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:53] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:53] WARNING: Accepted unusual valence(s): C(2)
+
+[13:21:53] WARNING: Accepted unusual valence(s): C(2)
+
+[13:21:53] WARNING: Accepted unusual valence(s): C(2)
+
+[13:21:53] WARNING: Accepted unusual valence(s): C(2)
+
+[13:21:53] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:53] WARNING: Accepted unusual valence(s): C(3)
+
+[13:21:53] WARNING: Charges neutralized
+
+[13:21:53] WARNING: Charges neutralized
+
+[13:21:53] WARNING: Accepted unusual valence(s): N(2)
+
+[13:21:53] WARNING: Accepted unusual valence(s): N(2)
+

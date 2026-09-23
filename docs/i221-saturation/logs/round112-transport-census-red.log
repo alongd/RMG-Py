@@ -1,0 +1,119 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+rootdir: /home/alon/Code/RMG-Py-i221-saturation-fix
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 18 items
+
+test/rmgpy/i221TransportCensusTest.py::TestTransportCensus::test_every_transport_installs_the_complete_reducers FAILED
+test/rmgpy/i221TransportCensusTest.py::TestTransportCensus::test_the_census_is_the_one_on_record FAILED
+test/rmgpy/i221TransportCensusTest.py::TestTransportCensus::test_no_pickle_is_written_to_storage PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTransportCensus::test_no_cython_module_touches_a_transport PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_uninstalled_transport_is_seen[from multiprocessing import Pool\ndef f():\n    Pool(2).map(g, [])\n] PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_uninstalled_transport_is_seen[import multiprocessing as mp\ndef f():\n    mp.Pool(2)\n] PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_uninstalled_transport_is_seen[import multiprocessing\ndef f():\n    multiprocessing.get_context("spawn").Pool(2)\n] PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_uninstalled_transport_is_seen[from concurrent.futures import ProcessPoolExecutor as E\ndef f():\n    E(2)\n] PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_uninstalled_transport_is_seen[from multiprocessing import Pool\ndef f():\n    install_complete_reducers()\n    Pool(2)\n] PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_installed_transport_passes PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_a_local_pool_is_not_a_transport PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_storage_is_seen[import pickle\npickle.dump(x, open("f", "wb"))\n-found0] PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_storage_is_seen[import pickle\npickle.Pickler(open("f", "wb"))\n-found1] PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_storage_is_seen[import pickle, io\npickle.Pickler(io.BytesIO())\n-found2] PASSED
+test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_storage_is_seen[import pickle\npickle.loads(pickle.dumps(x))\n-found3] PASSED
+test/rmgpy/i221TransportCensusTest.py::TestFreshImportRegisters::test_fresh_import[rmgpy/data/kinetics/family.py] PASSED
+test/rmgpy/i221TransportCensusTest.py::TestFreshImportRegisters::test_fresh_import[rmgpy/qm/main.py] FAILED
+test/rmgpy/i221TransportCensusTest.py::TestFreshImportRegisters::test_fresh_import[rmgpy/rmg/react.py] PASSED
+
+=================================== FAILURES ===================================
+___ TestTransportCensus.test_every_transport_installs_the_complete_reducers ____
+
+self = <i221TransportCensusTest.TestTransportCensus object at 0x76a7af753430>
+
+    def test_every_transport_installs_the_complete_reducers(self):
+        _, missing, _, _ = _census()
+>       assert missing == [], (
+            'these modules start a process transport without calling '
+            'install_complete_reducers() at module level, so RMG objects crossing it go '
+            'through the lossy reducers in rmgpy/molecule/: {0}'.format(missing))
+E       AssertionError: these modules start a process transport without calling install_complete_reducers() at module level, so RMG objects crossing it go through the lossy reducers in rmgpy/molecule/: ['rmgpy/qm/main.py']
+E       assert ['rmgpy/qm/main.py'] == []
+E         
+E         Left contains one more item: 'rmgpy/qm/main.py'
+E         
+E         Full diff:
+E         - []
+E         + [
+E         +     'rmgpy/qm/main.py',
+E         + ]
+
+test/rmgpy/i221TransportCensusTest.py:189: AssertionError
+------------------------------ Captured log setup ------------------------------
+WARNING  matplotlib:__init__.py:537 /home/alon/.config/matplotlib is not a writable directory
+WARNING  matplotlib:__init__.py:550 Matplotlib created a temporary cache directory at /tmp/claude-1000/matplotlib-mwjjn39_ because there was an issue with the default path (/home/alon/.config/matplotlib); it is highly recommended to set the MPLCONFIGDIR environment variable to a writable directory, in particular to speed up the import of Matplotlib and to better support multiprocessing.
+___________ TestTransportCensus.test_the_census_is_the_one_on_record ___________
+
+self = <i221TransportCensusTest.TestTransportCensus object at 0x76a7af753910>
+
+    def test_the_census_is_the_one_on_record(self):
+        transports, _, _, _ = _census()
+>       assert transports == EXPECTED_TRANSPORTS
+E       AssertionError: assert {('rmgpy/data....py', 'Pool')} == {('rmgpy/data....py', 'Pool')}
+E         
+E         Extra items in the left set:
+E         ('rmgpy/data/kinetics/family.py', 'mp.Process')
+E         ('rmgpy/data/kinetics/family.py', 'mp.Pipe')
+E         
+E         Full diff:
+E           {...
+E         
+E         ...Full output truncated (21 lines hidden), use '-vv' to show
+
+test/rmgpy/i221TransportCensusTest.py:196: AssertionError
+_________ TestFreshImportRegisters.test_fresh_import[rmgpy/qm/main.py] _________
+
+self = <i221TransportCensusTest.TestFreshImportRegisters object at 0x76a7af723340>
+module = 'rmgpy/qm/main.py'
+
+    @pytest.mark.parametrize('module', sorted({rel for rel, _ in EXPECTED_TRANSPORTS}))
+    def test_fresh_import(self, module):
+        name = module[:-3].replace('/', '.')
+        probe = textwrap.dedent('''
+            import importlib
+            from multiprocessing.reduction import ForkingPickler
+            importlib.import_module({0!r})
+            from rmgpy.molecule.molecule import Molecule, Atom
+            from rmgpy.species import Species
+            table = ForkingPickler._extra_reducers
+            print(all(cls in table for cls in (Atom, Molecule, Species)))
+        ''').format(name)
+        out = subprocess.run([sys.executable, '-c', probe], cwd=ROOT, capture_output=True,
+                             text=True, check=True)
+>       assert out.stdout.strip().splitlines()[-1] == 'True', out.stderr
+E       AssertionError: 
+E       assert 'False' == 'True'
+E         
+E         - True
+E         + False
+
+test/rmgpy/i221TransportCensusTest.py:262: AssertionError
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED test/rmgpy/i221TransportCensusTest.py::TestTransportCensus::test_no_pickle_is_written_to_storage
+PASSED test/rmgpy/i221TransportCensusTest.py::TestTransportCensus::test_no_cython_module_touches_a_transport
+PASSED test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_uninstalled_transport_is_seen[from multiprocessing import Pool\ndef f():\n    Pool(2).map(g, [])\n]
+PASSED test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_uninstalled_transport_is_seen[import multiprocessing as mp\ndef f():\n    mp.Pool(2)\n]
+PASSED test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_uninstalled_transport_is_seen[import multiprocessing\ndef f():\n    multiprocessing.get_context("spawn").Pool(2)\n]
+PASSED test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_uninstalled_transport_is_seen[from concurrent.futures import ProcessPoolExecutor as E\ndef f():\n    E(2)\n]
+PASSED test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_uninstalled_transport_is_seen[from multiprocessing import Pool\ndef f():\n    install_complete_reducers()\n    Pool(2)\n]
+PASSED test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_installed_transport_passes
+PASSED test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_a_local_pool_is_not_a_transport
+PASSED test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_storage_is_seen[import pickle\npickle.dump(x, open("f", "wb"))\n-found0]
+PASSED test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_storage_is_seen[import pickle\npickle.Pickler(open("f", "wb"))\n-found1]
+PASSED test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_storage_is_seen[import pickle, io\npickle.Pickler(io.BytesIO())\n-found2]
+PASSED test/rmgpy/i221TransportCensusTest.py::TestTheCheckCanFail::test_storage_is_seen[import pickle\npickle.loads(pickle.dumps(x))\n-found3]
+PASSED test/rmgpy/i221TransportCensusTest.py::TestFreshImportRegisters::test_fresh_import[rmgpy/data/kinetics/family.py]
+PASSED test/rmgpy/i221TransportCensusTest.py::TestFreshImportRegisters::test_fresh_import[rmgpy/rmg/react.py]
+FAILED test/rmgpy/i221TransportCensusTest.py::TestTransportCensus::test_every_transport_installs_the_complete_reducers
+FAILED test/rmgpy/i221TransportCensusTest.py::TestTransportCensus::test_the_census_is_the_one_on_record
+FAILED test/rmgpy/i221TransportCensusTest.py::TestFreshImportRegisters::test_fresh_import[rmgpy/qm/main.py]
+======================== 3 failed, 15 passed in 12.12s =========================

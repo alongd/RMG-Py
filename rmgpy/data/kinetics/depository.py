@@ -83,22 +83,55 @@ class DepositoryReaction(Reaction):
     def __reduce__(self):
         """
         A helper function used when pickling an object.
+
+        No constructor arguments: every field travels in the state dict, discovered from
+        the object. The fourteen-item list this replaces dropped `label`, `comment`,
+        `rank`, `is_forward`, `network_kinetics`, `elementary_high_p`, `allow_pdep_route`
+        and `allow_max_rate_violation` -- measured at `13e3227b2`, a round trip turned
+        ``allow_max_rate_violation=True`` into ``False`` and ``rank=3`` into ``None``.
+        Those are round 105's fields for the third time, in a third hand-written list.
+
+        The import is made here rather than at the top of the module because `family.py`
+        imports `KineticsDepository` from *this* module, and the import cannot run both
+        ways. `library.py` states the mirror image of this note; the definitions are the
+        same ones, so the three transforms cannot drift apart.
         """
-        return (DepositoryReaction, (self.index,
-                                     self.reactants,
-                                     self.products,
-                                     self.specific_collider,
-                                     self.kinetics,
-                                     self.reversible,
-                                     self.transition_state,
-                                     self.duplicate,
-                                     self.degeneracy,
-                                     self.pairs,
-                                     self.depository,
-                                     self.family,
-                                     self.entry,
-                                     self.electrons,
-                                     ))
+        from rmgpy.data.kinetics.family import _NOT_REPRODUCED, reaction_state, state_fields
+        return (DepositoryReaction, (), reaction_state(self, _NOT_REPRODUCED,
+                                                       state_fields(self)))
+
+    def __setstate__(self, state):
+        """
+        Restore what `__reduce__` sent; see `TemplateReaction.__setstate__` for why the
+        default unpickling path will not do.
+        """
+        from rmgpy.data.kinetics.family import apply_reaction_state
+        apply_reaction_state(self, state)
+
+    def copy(self):
+        """
+        Create a deep copy of this reaction, as a `DepositoryReaction`.
+
+        Inherited, `Reaction.copy` builds a *base* `Reaction`, so a copy of a training or
+        depository reaction lost `depository`, `family` and `entry` outright -- and `entry`
+        is the carrier the quarantine gate reads authorship from, which makes a copied
+        training reaction unattributable. `rmgpy/tools/isotopes.py:394` copies whatever
+        `Reaction` it is handed, and the reactions a family's training depository supplies
+        are these.
+
+        Round 110 gave `TemplateReaction` and `LibraryReaction` this treatment and stopped
+        there; the two subclasses beside them kept the inherited method. Same call, same
+        helper, same tables.
+        """
+        from rmgpy.data.kinetics.family import _NOT_COPIED_BY_REFERENCE, copy_reaction
+        return copy_reaction(self, _NOT_COPIED_BY_REFERENCE)
+
+    def __deepcopy__(self, memo):
+        """
+        The same override, for the same reason; see `TemplateReaction.__deepcopy__`.
+        """
+        memo[id(self)] = other = self.copy()
+        return other
 
     def get_source(self):
         """

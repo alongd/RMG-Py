@@ -1,0 +1,15 @@
+[22:10:44] SMILES Parse Error: syntax error while parsing: 
+[22:10:44] SMILES Parse Error: check for mistakes around position 1:
+[22:10:44] 
+[22:10:44] ^
+[22:10:44] SMILES Parse Error: Failed parsing SMILES '
+' for input: '
+'
+==============================
+*** Open Babel Error  in ParseSimple
+  SMILES string contains a character 'r' which is invalid
+[22:10:44] SMILES Parse Error: syntax error while parsing: ring
+[22:10:44] SMILES Parse Error: check for mistakes around position 1:
+[22:10:44] ring
+[22:10:44] ^
+[22:10:44] SMILES Parse Error: Failed parsing SMILES 'ring' for input: 'ring'

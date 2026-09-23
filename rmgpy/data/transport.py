@@ -36,7 +36,8 @@ import os.path
 from copy import deepcopy
 
 import rmgpy.constants as constants
-from rmgpy.data.base import Database, Entry, make_logic_node, DatabaseError
+from rmgpy.data.base import Database, Entry, make_logic_node, saturate_for_estimation, DatabaseError
+from rmgpy.exceptions import SaturatedStructureError
 from rmgpy.molecule import Molecule, Group
 from rmgpy.transport import TransportData
 
@@ -348,6 +349,8 @@ class TransportDatabase(object):
                 transport = self.get_transport_properties_via_group_estimates(species)
             except (KeyError, AssertionError):
                 transport = self.get_transport_properties_via_lennard_jones_parameters(species)
+            except SaturatedStructureError as exc:
+                transport = self._fall_back_to_lennard_jones(species, exc)
 
         return transport
 
@@ -370,8 +373,30 @@ class TransportDatabase(object):
             transport.append(self.get_transport_properties_via_group_estimates(species))
         except (KeyError, AssertionError):
             transport.append(self.get_transport_properties_via_lennard_jones_parameters(species))
+        except SaturatedStructureError as exc:
+            transport.append(self._fall_back_to_lennard_jones(species, exc))
 
         # Return all of the resulting transport parameters
+        return transport
+
+    def _fall_back_to_lennard_jones(self, species, exc):
+        """
+        Return the fallback Lennard-Jones transport parameters for `species`, whose group
+        additivity estimate was impossible because its saturated form is a structure no atom
+        type owns (`exc`).
+
+        The fallback itself is the one the group estimate already falls back on for any other
+        reason; what this adds is that the reason is said out loud. An excited species reaching
+        here gets a generic Lennard-Jones guess based only on its heavy atom count, and a
+        modeller who is not told that will read those numbers as an estimate for their species.
+        """
+        logging.warning('Estimating transport properties of %s from the fallback Lennard-Jones '
+                        'parameters, because group additivity is not available for it: %s',
+                        species.label or species.molecule[0].to_adjacency_list(), exc)
+        transport = self.get_transport_properties_via_lennard_jones_parameters(species)
+        transport[0].comment += (' Group additivity was impossible for this species because its '
+                                 'saturated form is not a structure any atom type describes, so '
+                                 'these parameters are a heavy-atom-count guess and nothing more.')
         return transport
 
     def get_transport_properties_from_library(self, species, library):
@@ -457,12 +482,11 @@ class TransportDatabase(object):
         # will probably not visit the right atoms, and so will get the transport wrong
 
         if molecule.is_radical():  # radical species
-            # Make a copy of the structure so we don't change the original
-            saturated_struct = molecule.copy(deep=True)
-
-            # Saturate structure by replacing all radicals with bonds to
-            # hydrogen atoms
-            saturated_struct.saturate_radicals()
+            # Saturate structure by replacing all radicals with bonds to hydrogen atoms,
+            # on a copy so we don't change the original. Raises SaturatedStructureError if
+            # the saturated form is one no atom type owns, which get_transport_properties
+            # turns into the fallback Lennard-Jones estimate.
+            saturated_struct, _added = saturate_for_estimation(molecule, 'transport data')
 
             # Get critical point contribution estimates for saturated form of structure
             critical_point = self.estimate_critical_properties_via_group_additivity(saturated_struct)

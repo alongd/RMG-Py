@@ -1,0 +1,421 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+cachedir: .pytest_cache
+rootdir: /home/alon/Code/RMG-Py-round99-red
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 116 items
+
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_manifest_loads_its_fields PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_family_without_a_manifest_is_not_quarantined PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_an_unknown_kinetics_class_raises_rather_than_quarantining_nothing PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_declared_engine_requirement_is_honoured PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_declared_engine_symbol_is_honoured PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_satisfied_engine_requirement_loads PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_the_commit_field_is_not_declarable PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_the_recorded_commit_is_kept_as_provenance_and_reaches_a_reader PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_symbol_that_is_not_callable_is_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_symbol_without_a_module_is_refused_not_ignored PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_gate_that_exists_but_is_not_wired_in_is_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_call_site_that_imports_the_gate_and_never_calls_it_is_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_the_real_call_site_satisfies_the_wiring_check PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_manifest_missing_a_required_field_raises[state] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_manifest_missing_a_required_field_raises[appliesToKineticsClass] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_a_manifest_missing_a_required_field_raises[reason] PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_the_criterion_is_selective PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_the_criterion_is_evaluated_against_the_data_not_a_stored_list PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifest::test_no_hard_coded_entry_list_exists_in_the_code PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRefusalNamesFiveThings::test_it_names_the_family PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRefusalNamesFiveThings::test_it_names_the_provenance PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRefusalNamesFiveThings::test_it_names_the_generated_reaction PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRefusalNamesFiveThings::test_it_names_the_kinetics_class PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRefusalNamesFiveThings::test_it_names_the_reason PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRefusalNamesFiveThings::test_it_names_the_campaign_state_and_the_manifest PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRefusalNamesFiveThings::test_provenance_is_never_blank PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheGateFires::test_at_kinetics_estimation_the_primary_site PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheGateFires::test_at_core_admission_the_backstop PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheGateFires::test_at_edge_admission_the_backstop PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheGateFires::test_ordinary_chemistry_is_untouched PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheGateFires::test_a_quarantined_family_still_admits_its_unquarantined_kinetics PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheGateFires::test_an_unloaded_database_does_not_crash_the_gate PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestProvenanceNotTheFamilySlot::test_a_quarantined_rate_copied_into_a_library_is_still_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestProvenanceNotTheFamilySlot::test_the_provenance_may_live_in_the_entry_instead_of_the_comment PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestProvenanceNotTheFamilySlot::test_every_declared_family_is_consulted_not_just_the_first PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestProvenanceNotTheFamilySlot::test_a_forged_label_is_bounded_by_the_criterion PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestProvenanceNotTheFamilySlot::test_a_library_named_like_a_quarantined_family_is_not_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestProvenanceNotTheFamilySlot::test_authoring_family_reads_authorship_not_the_slot PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestProvenanceNotTheFamilySlot::test_an_unattributable_rate_is_reported_and_not_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestProvenanceNotTheFamilySlot::test_an_ordinary_library_rate_says_nothing PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheProvenanceArrivesFromTheRealLoader::test_the_entry_travels_with_the_reaction PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheProvenanceArrivesFromTheRealLoader::test_the_entry_survives_the_pickle_the_parallel_path_uses PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheProvenanceArrivesFromTheRealLoader::test_an_ordinary_library_still_loads_with_no_authorship PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestAMissingFamilyIsAnUnansweredQuestion::test_an_unloaded_family_is_answered_from_disk PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestAMissingFamilyIsAnUnansweredQuestion::test_a_family_in_the_database_without_a_manifest_is_a_clean_answer PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestAMissingFamilyIsAnUnansweredQuestion::test_an_unanswerable_question_is_reported_not_swallowed PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestAMissingFamilyIsAnUnansweredQuestion::test_a_database_with_no_quarantine_at_all_stays_silent PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheFamilySlotIsLeftAloneForItsOtherReader::test_the_library_label_still_lands_in_the_family_slot PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheFamilySlotIsLeftAloneForItsOtherReader::test_placement_still_resolves_for_the_argon_ionisation_channel PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheFamilySlotIsLeftAloneForItsOtherReader::test_the_two_readers_disagree_about_the_same_object_and_both_are_right PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheFamilySlotIsLeftAloneForItsOtherReader::test_nothing_in_the_gate_writes_to_the_family_slot PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestEveryAdmissionPathIsGated::test_the_pressure_dependent_network_path_is_gated PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestEveryAdmissionPathIsGated::test_the_enumeration_in_the_docstring_names_every_gate_call PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_1_the_reaction_is_not_removed_after_generation PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_2_no_average_rule_is_substituted PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_3_it_is_never_evaluated_at_potential_zero PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_4_it_is_not_marked_irreversible PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_5_no_reverse_rate_is_derived PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_6_seeding_a_product_or_cation_does_not_bypass_it PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSevenForbiddenSilentBehaviours::test_7_no_generic_collision_rate_replaces_it PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRealQuarantinedFamily::test_the_family_is_quarantined_with_the_ruling_s_words SKIPPED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRealQuarantinedFamily::test_the_affected_set_is_enumerated_from_the_database SKIPPED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRealQuarantinedFamily::test_nothing_was_deleted SKIPPED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRealQuarantinedFamily::test_the_rates_themselves_were_not_touched SKIPPED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheDoorLeftOpen::test_the_database_still_loads SKIPPED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheDoorLeftOpen::test_the_family_is_still_registered_and_still_generates_reactions SKIPPED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheDoorLeftOpen::test_the_rate_law_still_evaluates SKIPPED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheThirdShapeSurvivesTheConversion::test_the_real_loader_attaches_the_entry_to_the_template_shape PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheThirdShapeSurvivesTheConversion::test_a_seed_conversion_leaves_the_rate_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheThirdShapeSurvivesTheConversion::test_a_reaction_library_conversion_leaves_the_rate_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheThirdShapeSurvivesTheConversion::test_the_conversion_still_writes_the_library_label_into_the_family_slot PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheDiskAnswerIsRevalidated::test_a_manifest_added_after_the_first_lookup_is_seen PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheDiskAnswerIsRevalidated::test_a_manifest_removed_after_the_first_lookup_is_seen PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheDiskAnswerIsRevalidated::test_a_manifest_that_vanishes_mid_read_is_unanswered_not_clean PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestAFamilyLabelIsNotAPath::test_an_absolute_label_is_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestAFamilyLabelIsNotAPath::test_a_dotdot_label_is_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestAFamilyLabelIsNotAPath::test_a_symlinked_family_pointing_outside_is_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestAFamilyLabelIsNotAPath::test_an_ordinary_label_still_resolves PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCallSitePinCoversEveryGate::test_a_call_in_a_dead_branch_does_not_satisfy_it PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCallSitePinCoversEveryGate::test_a_same_named_call_on_something_else_does_not_satisfy_it PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCallSitePinCoversEveryGate::test_deleting_three_of_the_four_gates_is_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCallSitePinCoversEveryGate::test_the_real_module_satisfies_it PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSuppressionConsultsDiskToo::test_a_database_whose_manifests_are_only_on_disk_still_warns PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSuppressionConsultsDiskToo::test_a_database_with_no_quarantine_anywhere_stays_quiet PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestASecondFamilyLineCannotHideTheFirstOnEitherShape::test_authoring_families_reads_every_label_on_the_template_shape PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestASecondFamilyLineCannotHideTheFirstOnEitherShape::test_the_hidden_label_is_refused_at_add_reaction_to_core PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestASecondFamilyLineCannotHideTheFirstOnEitherShape::test_the_family_slot_is_not_normalised PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestASecondFamilyLineCannotHideTheFirstOnEitherShape::test_the_library_shape_still_refuses_both_labels PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheConversionCarriesEveryField::test_a_converted_electron_transfer_reaction_keeps_its_electrons PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheConversionCarriesEveryField::test_every_field_the_class_takes_is_carried PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifestFileIsValidatedNotOnlyItsDirectory::test_a_manifest_symlinked_out_of_the_database_is_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifestFileIsValidatedNotOnlyItsDirectory::test_a_label_carrying_a_nul_byte_is_refused_rather_than_raising PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifestFileIsValidatedNotOnlyItsDirectory::test_a_label_carrying_a_newline_is_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifestFileIsValidatedNotOnlyItsDirectory::test_an_ordinary_label_still_resolves PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheManifestFileIsValidatedNotOnlyItsDirectory::test_a_manifest_that_is_not_a_regular_file_is_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestALoadedFamilyRereadsItsManifest::test_a_manifest_added_after_the_family_loaded_is_seen PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestALoadedFamilyRereadsItsManifest::test_a_manifest_removed_after_the_family_loaded_is_seen PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSuppressionRescansRatherThanTrustingACachedNo::test_a_manifest_added_inside_an_existing_family_ends_the_suppression PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestThePinDocumentsWhatItActuallyChecks::test_the_documentation_enumerates_what_it_does_not_verify PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCarrierSurvivesATransform::test_the_entry_survives_a_pickle PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCarrierSurvivesATransform::test_the_entry_survives_a_copy PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheDirectoryCannotBeSwappedUnderTheCheck::test_a_directory_swapped_during_the_check_is_not_followed FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheDirectoryCannotBeSwappedUnderTheCheck::test_a_family_directory_that_is_a_symlink_is_refused_even_inside_the_tree FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheDirectoryCannotBeSwappedUnderTheCheck::test_a_database_root_that_is_itself_a_symlink_still_resolves PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestAnUnreadableManifestIsNotAnAbsentOne::test_a_manifest_that_cannot_be_examined_is_unanswered_not_clean FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestAnUnreadableManifestIsNotAnAbsentOne::test_the_unreadable_answer_is_not_entered_into_the_cache FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheSignatureNoticesAnEqualLengthEdit::test_an_in_place_edit_of_the_same_length_with_mtime_restored_is_seen FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheAffectedSetCannotPassVacuously::test_a_family_with_no_matching_entries_enumerates_nothing PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheAffectedSetCannotPassVacuously::test_the_enumeration_is_selective_within_each_of_the_two_branches PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheAffectedSetCannotPassVacuously::test_a_family_with_rules_but_no_training_depository_is_not_an_error PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCallSiteFieldIsNamedForWhatItChecks::test_the_new_spelling_is_honoured PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCallSiteFieldIsNamedForWhatItChecks::test_the_new_spelling_still_refuses_a_module_that_never_calls_the_gate FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCallSiteFieldIsNamedForWhatItChecks::test_the_old_spelling_is_still_honoured_and_says_so FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCallSiteFieldIsNamedForWhatItChecks::test_the_old_spelling_still_refuses_what_it_always_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCallSiteFieldIsNamedForWhatItChecks::test_declaring_both_spellings_is_refused FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheCallSiteFieldIsNamedForWhatItChecks::test_the_documentation_of_the_field_states_what_it_actually_checks FAILED
+
+=================================== FAILURES ===================================
+_ TestTheDirectoryCannotBeSwappedUnderTheCheck.test_a_directory_swapped_during_the_check_is_not_followed _
+
+self = <quarantineTest.TestTheDirectoryCannotBeSwappedUnderTheCheck object at 0x7d03bfe64ca0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7d03bfd93fa0>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-683/test_a_directory_swapped_durin0')
+
+    def test_a_directory_swapped_during_the_check_is_not_followed(self, monkeypatch,
+                                                                  tmp_path):
+        """
+        The window made deterministic, by swapping from inside the check itself.
+    
+        `_family_directory` calls `os.path.realpath` on the family path; that call IS the
+        containment check. It is allowed to compute the true, in-tree answer, and the
+        directory is replaced with a link out of the database before that answer is
+        returned. The check therefore passes on the directory that was there, and anything
+        that reaches for the *name* afterwards gets the one that is there now.
+        """
+        label = "A_Family_Swapped_Under_The_Check"
+        family = self._database(monkeypatch, tmp_path, label)
+        outside = tmp_path.parent / "outside_{0}".format(tmp_path.name)
+        outside.mkdir()
+        write_manifest(str(outside))
+    
+        state = {"fired": False}
+        original = os.path.realpath
+        target = os.path.abspath(str(family))
+    
+        def realpath(path, *args, **kwargs):
+            answer = original(path, *args, **kwargs)
+            if not state["fired"] and os.path.abspath(path) == target:
+                state["fired"] = True
+                os.rename(target, target + ".was_here")
+                os.symlink(str(outside), target)
+            return answer
+    
+        monkeypatch.setattr(os.path, "realpath", realpath)
+        quarantine, answered = resolve_quarantine(label)
+    
+        assert state["fired"] is True, (
+            "this test did not exercise the race it is named for: the containment check "
+            "never resolved the family path, so nothing was swapped")
+>       assert quarantine is None and answered is False, (
+            "a directory swapped between the containment check and the open was followed, "
+            "and a manifest from outside the database was executed; the refusal must also "
+            "leave the family UNanswered, since a refusal is not a clean bill of health")
+E       AssertionError: a directory swapped between the containment check and the open was followed, and a manifest from outside the database was executed; the refusal must also leave the family UNanswered, since a refusal is not a clean bill of health
+E       assert (<KineticsQuarantine 'A_Family_Swapped_Under_The_Check' QUARANTINED FOR TESTING applies to Marcus> is None)
+
+test/rmgpy/data/kinetics/quarantineTest.py:2325: AssertionError
+_ TestTheDirectoryCannotBeSwappedUnderTheCheck.test_a_family_directory_that_is_a_symlink_is_refused_even_inside_the_tree _
+
+self = <quarantineTest.TestTheDirectoryCannotBeSwappedUnderTheCheck object at 0x7d03bfe64ee0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7d03b42d80d0>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-683/test_a_family_directory_that_i0')
+
+    def test_a_family_directory_that_is_a_symlink_is_refused_even_inside_the_tree(
+            self, monkeypatch, tmp_path):
+        """
+        The deliberate narrowing, pinned so it is not quietly relaxed back.
+    
+        Admitting an in-tree link means containment is decided by resolving a name a
+        second time, which is the defect. A family directory is a real directory, a
+        direct child of the families root -- that rule is checkable in one sentence and
+        has no window in it.
+        """
+        real = "A_Real_Family"
+        link = "A_Family_Linked_To_Its_Sibling"
+        family = self._database(monkeypatch, tmp_path, real)
+        write_manifest(str(family))
+        families = tmp_path / "kinetics" / "families"
+        os.symlink(str(family), str(families / link))
+    
+>       assert resolve_quarantine(link) == (None, False), (
+            "a family directory that is a symbolic link was resolved and its manifest "
+            "executed; it is refused, and refused as unanswered")
+E       AssertionError: a family directory that is a symbolic link was resolved and its manifest executed; it is refused, and refused as unanswered
+E       assert (<KineticsQua...Marcus>, True) == (None, False)
+E         
+E         At index 0 diff: <KineticsQuarantine 'A_Family_Linked_To_Its_Sibling' QUARANTINED FOR TESTING applies to Marcus> != None
+E         
+E         Full diff:
+E           (
+E         -     None,
+E         -     False,...
+E         
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/rmgpy/data/kinetics/quarantineTest.py:2347: AssertionError
+_ TestAnUnreadableManifestIsNotAnAbsentOne.test_a_manifest_that_cannot_be_examined_is_unanswered_not_clean _
+
+self = <quarantineTest.TestAnUnreadableManifestIsNotAnAbsentOne object at 0x7d03bfe69550>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7d03bfe47df0>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-683/test_a_manifest_that_cannot_be0')
+
+    def test_a_manifest_that_cannot_be_examined_is_unanswered_not_clean(self, monkeypatch,
+                                                                        tmp_path):
+        label = "A_Family_Whose_Manifest_Cannot_Be_Read"
+        self._unreadable_family(monkeypatch, tmp_path, label)
+    
+>       assert resolve_quarantine(label) == (None, False), (
+            "a manifest that exists and could not be examined was reported as a family "
+            "carrying no manifest at all -- a clean bill of health handed out by the "
+            "check that failed")
+E       AssertionError: a manifest that exists and could not be examined was reported as a family carrying no manifest at all -- a clean bill of health handed out by the check that failed
+E       assert (None, True) == (None, False)
+E         
+E         At index 1 diff: True != False
+E         
+E         Full diff:
+E           (
+E               None,
+E         -     False,
+E         +     True,
+E           )
+
+test/rmgpy/data/kinetics/quarantineTest.py:2423: AssertionError
+_ TestAnUnreadableManifestIsNotAnAbsentOne.test_the_unreadable_answer_is_not_entered_into_the_cache _
+
+self = <quarantineTest.TestAnUnreadableManifestIsNotAnAbsentOne object at 0x7d03bfe69790>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7d03b42c5550>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-683/test_the_unreadable_answer_is_0')
+
+    def test_the_unreadable_answer_is_not_entered_into_the_cache(self, monkeypatch,
+                                                                 tmp_path):
+        """
+        An answer produced by a failure is not a property of the cache key.
+    
+        Measured limit, stated because the round's brief claimed more: the wrong answer
+        did **not** in fact survive the condition clearing, because restoring the
+        permission moves the signature from `(True, None, 'absent')` to
+        `(True, <identity>, 'regular')` and misses the cache anyway. What is pinned here
+        is the narrower true thing -- the key is not written at all -- which is the same
+        rule round 95 arrived at for the loaded-family fallback.
+        """
+        from rmgpy.data.kinetics import quarantine as module
+    
+        label = "A_Family_Readable_Again_Later"
+        family = self._unreadable_family(monkeypatch, tmp_path, label)
+    
+>       assert resolve_quarantine(label) == (None, False)
+E       assert (None, True) == (None, False)
+E         
+E         At index 1 diff: True != False
+E         
+E         Full diff:
+E           (
+E               None,
+E         -     False,
+E         +     True,
+E           )
+
+test/rmgpy/data/kinetics/quarantineTest.py:2445: AssertionError
+_ TestTheSignatureNoticesAnEqualLengthEdit.test_an_in_place_edit_of_the_same_length_with_mtime_restored_is_seen _
+
+self = <quarantineTest.TestTheSignatureNoticesAnEqualLengthEdit object at 0x7d03bfe69b80>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7d03b42d8b80>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-683/test_an_in_place_edit_of_the_s0')
+
+    def test_an_in_place_edit_of_the_same_length_with_mtime_restored_is_seen(
+            self, monkeypatch, tmp_path):
+        label = "A_Family_Edited_In_Place"
+        family = tmp_path / "kinetics" / "families" / label
+        family.mkdir(parents=True)
+        manifest = family / QUARANTINE_FILENAME
+        before = MANIFEST.replace("a reason that must reach the error message",
+                                  "reason A -- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+        after = MANIFEST.replace("a reason that must reach the error message",
+                                 "reason B -- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+        assert len(before) == len(after), "the edit must not change the file's length"
+        manifest.write_text(before)
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+    
+        first = resolve_quarantine(label)
+        assert first[0] is not None and first[0].reason.startswith("reason A")
+    
+        stamps = os.stat(str(manifest))
+        with open(str(manifest), "r+") as handle:
+            handle.seek(0)
+            handle.write(after)
+        os.utime(str(manifest), ns=(stamps.st_atime_ns, stamps.st_mtime_ns))
+        repeat = os.stat(str(manifest))
+        assert (repeat.st_mtime_ns, repeat.st_size, repeat.st_ino) == (
+            stamps.st_mtime_ns, stamps.st_size, stamps.st_ino), (
+            "this test did not exercise the case it is named for: the edit moved one of "
+            "the three fields the old identity was built from")
+    
+        second = resolve_quarantine(label)
+>       assert second[0] is not None and second[0].reason.startswith("reason B"), (
+            "an edited manifest kept answering with its old text: the cache identity is "
+            "preserved by an equal-length in-place edit with the mtime put back")
+E       AssertionError: an edited manifest kept answering with its old text: the cache identity is preserved by an equal-length in-place edit with the mtime put back
+E       assert (<KineticsQuarantine 'A_Family_Edited_In_Place' QUARANTINED FOR TESTING applies to Marcus> is not None and False)
+E        +  where False = <built-in method startswith of str object at 0x7d03bf95d880>('reason B')
+E        +    where <built-in method startswith of str object at 0x7d03bf95d880> = 'reason A -- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'.startswith
+E        +      where 'reason A -- xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' = <KineticsQuarantine 'A_Family_Edited_In_Place' QUARANTINED FOR TESTING applies to Marcus>.reason
+
+test/rmgpy/data/kinetics/quarantineTest.py:2505: AssertionError
+_ TestTheCallSiteFieldIsNamedForWhatItChecks.test_the_new_spelling_still_refuses_a_module_that_never_calls_the_gate _
+
+self = <quarantineTest.TestTheCallSiteFieldIsNamedForWhatItChecks object at 0x7d03bfe5d0a0>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-683/test_the_new_spelling_still_re0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7d03bfd94160>
+
+    def test_the_new_spelling_still_refuses_a_module_that_never_calls_the_gate(
+            self, tmp_path, monkeypatch):
+        """The rename must not have turned the check into a no-op under its new name."""
+        module_dir = tmp_path / "fake_site"
+        module_dir.mkdir()
+        (module_dir / "binds_but_never_calls.py").write_text(
+            "from rmgpy.data.kinetics.quarantine import check_quarantine\n")
+        monkeypatch.syspath_prepend(str(module_dir))
+    
+        manifest_dir = tmp_path / "manifest"
+        manifest_dir.mkdir()
+        write_manifest(str(manifest_dir),
+                       MANIFEST
+                       + 'requiresEngineModule = "rmgpy.data.kinetics.quarantine"\n'
+                       + 'requiresEngineSymbol = "check_quarantine"\n'
+                       + 'requiresEngineCallsInSource = ("binds_but_never_calls",)\n')
+        with pytest.raises(DatabaseError) as exc:
+>           load_family_quarantine("Fake_Quarantined_Family", str(manifest_dir))
+E           Failed: DID NOT RAISE <class 'rmgpy.exceptions.DatabaseError'>
+
+test/rmgpy/data/kinetics/quarantineTest.py:2613: Failed
+_ TestTheCallSiteFieldIsNamedForWhatItChecks.test_the_old_spelling_is_still_honoured_and_says_so _
+
+self = <quarantineTest.TestTheCallSiteFieldIsNamedForWhatItChecks object at 0x7d03bfe71250>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-683/test_the_old_spelling_is_still0')
+caplog = <_pytest.logging.LogCaptureFixture object at 0x7d03bf940ca0>
+
+    def test_the_old_spelling_is_still_honoured_and_says_so(self, tmp_path, caplog):
+        path = self._manifest(tmp_path, "requiresEngineCallSites")
+        with caplog.at_level(logging.WARNING):
+            assert load_family_quarantine("Fake_Quarantined_Family", path) is not None
+>       assert "requiresEngineCallsInSource" in caplog.text, (
+            "a manifest using the old spelling was read without being told the new one; "
+            "a rename nobody is informed of is a rename that never happens in the data")
+E       AssertionError: a manifest using the old spelling was read without being told the new one; a rename nobody is informed of is a rename that never happens in the data
+E       assert 'requiresEngineCallsInSource' in ''
+E        +  where '' = <_pytest.logging.LogCaptureFixture object at 0x7d03bf940ca0>.text
+
+test/rmgpy/data/kinetics/quarantineTest.py:2620: AssertionError
+_ TestTheCallSiteFieldIsNamedForWhatItChecks.test_declaring_both_spellings_is_refused _
+
+self = <quarantineTest.TestTheCallSiteFieldIsNamedForWhatItChecks object at 0x7d03bfe71670>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-683/test_declaring_both_spellings_0')
+
+    def test_declaring_both_spellings_is_refused(self, tmp_path):
+        body = (MANIFEST
+                + 'requiresEngineModule = "rmgpy.data.kinetics.quarantine"\n'
+                + 'requiresEngineSymbol = "check_quarantine"\n'
+                + 'requiresEngineCallsInSource = ("rmgpy.rmg.model",)\n'
+                + 'requiresEngineCallSites = ("rmgpy.rmg.model",)\n')
+        with pytest.raises(DatabaseError) as exc:
+>           load_family_quarantine("Fake_Quarantined_Family",
+                                   write_manifest(str(tmp_path), body))
+E           Failed: DID NOT RAISE <class 'rmgpy.exceptions.DatabaseError'>
+
+test/rmgpy/data/kinetics/quarantineTest.py:2642: Failed
+_ TestTheCallSiteFieldIsNamedForWhatItChecks.test_the_documentation_of_the_field_states_what_it_actually_checks _
+
+self = <quarantineTest.TestTheCallSiteFieldIsNamedForWhatItChecks object at 0x7d03bfe71880>
+
+    def test_the_documentation_of_the_field_states_what_it_actually_checks(self):
+        """
+        Asserted positively, on the words that must be PRESENT.
+    
+        Round 95 pinned the sibling docstring by checking that a false phrase was absent,
+        and the corrected text contained that phrase inside the sentence disowning it --
+        an assertion satisfied for the wrong reason. The content wanted here is a name
+        that matches the check and a sentence that states its limit, so that is what is
+        asserted.
+        """
+        from rmgpy.data.kinetics.quarantine import _check_engine_requirements
+    
+        text = _check_engine_requirements.__doc__
+>       assert "requiresEngineCallsInSource" in text
+E       assert 'requiresEngineCallsInSource' in "\n    Refuse to load a quarantine manifest whose declared engine capability is absent.\n\n    A manifest may declare ``requiresEngineModule`` and ``requiresEngineSymbol``: the module\n    and function that make its refusal real. Honouring them here is what turns that\n    declaration into a pin rather than a comment -- without it a database can state a\n    requirement that nothing reads, and a manifest that is silently inert reads like\n    protection while providing none.\n\n    Every field below is either honoured or refused at declaration time. A manifest field\n    that is read, found wanting, and then ignored is the defect this function exists to\n    remove, so there is no third category:\n\n    * ``requiresEngineModule`` -- must import.\n    * ``requiresEngineSymbol`` -- must be present in that module **and callable**. An\n      attribute that merely exists proves nothing: ``math.pi`` is not a gate. Declaring a\n      symbol without a module is refused rather than ignored, since it asks for a check\n      that cannot be performed.\n    * ``requiresEngineCallSites`` -- module(s) that must bind the declared symbol to *the\n      same object* **and call it**. Binding alone was the first version of this check and\n      was not the property the field is named for: deleting every call while keeping the\n      import leaves a module that still binds the gate and runs nothing. The call check is\n      static (see :func:`_counts_calls_to`), so it proves a call exists in the source, not\n      that it executes on a given run.\n    * ``requiresEngineCommit`` -- **not declarable**. An installed engine has no reliable\n      commit to compare against, so the check would pass on every checkout. Record the\n      commit as ``recordedEngineCommit`` instead, which this function reads as provenance\n      and never treats as a guarantee.\n\n    One limit remains and cannot be closed from the database side: an engine so old that\n    it has no quarantine loader never reaches this function, and never reads the manifest.\n    That is the first entry in every manifest's ``bypassRoutes``.\n    "
+
+test/rmgpy/data/kinetics/quarantineTest.py:2659: AssertionError
+================================ tests coverage ================================
+_______________ coverage: platform linux, python 3.9.23-final-0 ________________
+
+Coverage HTML written to dir htmlcov
+=========================== short test summary info ============================
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheDirectoryCannotBeSwappedUnderTheCheck::test_a_directory_swapped_during_the_check_is_not_followed
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheDirectoryCannotBeSwappedUnderTheCheck::test_a_family_directory_that_is_a_symlink_is_refused_even_inside_the_tree
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestAnUnreadableManifestIsNotAnAbsentOne::test_a_manifest_that_cannot_be_examined_is_unanswered_not_clean
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestAnUnreadableManifestIsNotAnAbsentOne::test_the_unreadable_answer_is_not_entered_into_the_cache
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheSignatureNoticesAnEqualLengthEdit::test_an_in_place_edit_of_the_same_length_with_mtime_restored_is_seen
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheCallSiteFieldIsNamedForWhatItChecks::test_the_new_spelling_still_refuses_a_module_that_never_calls_the_gate
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheCallSiteFieldIsNamedForWhatItChecks::test_the_old_spelling_is_still_honoured_and_says_so
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheCallSiteFieldIsNamedForWhatItChecks::test_declaring_both_spellings_is_refused
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheCallSiteFieldIsNamedForWhatItChecks::test_the_documentation_of_the_field_states_what_it_actually_checks
+================== 9 failed, 100 passed, 7 skipped in 14.03s ===================

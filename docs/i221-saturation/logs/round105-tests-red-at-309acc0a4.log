@@ -1,0 +1,818 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+rootdir: /tmp/claude-1000/red105
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 163 items / 130 deselected / 33 selected
+
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheThirdShapeSurvivesTheConversion::test_the_real_loader_attaches_the_entry_to_the_template_shape PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheThirdShapeSurvivesTheConversion::test_a_seed_conversion_leaves_the_rate_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheThirdShapeSurvivesTheConversion::test_a_reaction_library_conversion_leaves_the_rate_refused PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheThirdShapeSurvivesTheConversion::test_the_conversion_still_writes_the_library_label_into_the_family_slot PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheConversionCarriesEveryField::test_a_converted_electron_transfer_reaction_keeps_its_electrons PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheConversionCarriesEveryField::test_every_field_the_class_takes_is_carried PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[0.5-template] FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[0.5-originally_from] FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[0.5-ordinary] FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[1.0-template] FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[1.0-originally_from] FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[1.0-ordinary] FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[1.5-template] FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[1.5-originally_from] FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[1.5-ordinary] FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[2.0-template] FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[2.0-originally_from] FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[2.0-ordinary] FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[3.0-template] FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[3.0-originally_from] FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[3.0-ordinary] FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_rate_is_shared_with_the_entry_so_the_damage_would_escape PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_storage_table_names_a_setter_that_really_transforms FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheConversionEnumeratesTheSourceNotTheDestination::test_the_four_fields_the_constructor_does_not_take_survive FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheConversionEnumeratesTheSourceNotTheDestination::test_every_carried_field_arrives FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheConversionEnumeratesTheSourceNotTheDestination::test_the_conversion_partition_is_total_and_reasoned FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheConversionEnumeratesTheSourceNotTheDestination::test_every_field_called_carried_can_actually_be_assigned FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheConversionEnumeratesTheSourceNotTheDestination::test_the_conversion_does_not_rescale_the_rate PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheConversionEnumeratesTheSourceNotTheDestination::test_the_conversion_still_replaces_the_library_slot PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheConversionEnumeratesTheSourceNotTheDestination::test_the_conversion_does_not_share_the_reactant_list PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheAbsenceOfONofollowIsRefused::test_a_platform_without_o_nofollow_is_refused FAILED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheAbsenceOfONofollowIsRefused::test_the_same_escape_is_refused_with_the_flag_present PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheAbsenceOfONofollowIsRefused::test_an_in_tree_family_is_still_answered PASSED
+
+=================================== FAILURES ===================================
+_ TestCarryingTheDegeneracyDoesNotRestateTheRate.test_the_carry_forwards_the_value_and_changes_nothing_else[0.5-template] _
+
+self = <quarantineTest.TestCarryingTheDegeneracyDoesNotRestateTheRate object at 0x7df527055fd0>
+shape = 'template', degeneracy = 0.5
+
+    @pytest.mark.parametrize("shape", SHAPES)
+    @pytest.mark.parametrize("degeneracy", SWEEP)
+    def test_the_carry_forwards_the_value_and_changes_nothing_else(self, shape,
+                                                                   degeneracy):
+        """
+        The acceptance: the forwarded scalar, an unchanged `A`, and an unmutated entry.
+    
+        At `309acc0a4` the two `LibraryReaction` shapes pass no ``degeneracy`` to their
+        constructor, so the old value is 1, the setter's ``< 2`` branch fires and the rate
+        is multiplied by the **whole** new degeneracy -- 3.0 trebles it. On the template
+        shape, which does pass it, only a degeneracy below 2 and not equal to 1 moves the
+        rate. The comment is appended to in all fifteen combinations.
+        """
+        library = self._library(shape, degeneracy)
+        entry = library.entries[1]
+        comment_before = entry.data.comment
+    
+        reaction = library.get_library_reactions()[0]
+    
+        assert reaction.degeneracy == pytest.approx(degeneracy), (
+            "the declared degeneracy did not reach the reaction at all")
+>       assert reaction.kinetics.A.value_si == pytest.approx(self.A_BEFORE), (
+            "carrying degeneracy={0} onto the {1} shape rescaled the rate by {2}; a "
+            "library file that declares a degeneracy is stating the rate it wants, and "
+            "re-deriving the rate from a number that was already true applies it "
+            "twice".format(degeneracy, shape,
+                           reaction.kinetics.A.value_si / self.A_BEFORE))
+E       AssertionError: carrying degeneracy=0.5 onto the template shape rescaled the rate by 0.5; a library file that declares a degeneracy is stating the rate it wants, and re-deriving the rate from a number that was already true applies it twice
+E       assert 5.0 == 10.0 ± 1.0e-05
+E         
+E         comparison failed
+E         Obtained: 5.0
+E         Expected: 10.0 ± 1.0e-05
+
+test/rmgpy/data/kinetics/quarantineTest.py:3224: AssertionError
+_ TestCarryingTheDegeneracyDoesNotRestateTheRate.test_the_carry_forwards_the_value_and_changes_nothing_else[0.5-originally_from] _
+
+self = <quarantineTest.TestCarryingTheDegeneracyDoesNotRestateTheRate object at 0x7df52705b190>
+shape = 'originally_from', degeneracy = 0.5
+
+    @pytest.mark.parametrize("shape", SHAPES)
+    @pytest.mark.parametrize("degeneracy", SWEEP)
+    def test_the_carry_forwards_the_value_and_changes_nothing_else(self, shape,
+                                                                   degeneracy):
+        """
+        The acceptance: the forwarded scalar, an unchanged `A`, and an unmutated entry.
+    
+        At `309acc0a4` the two `LibraryReaction` shapes pass no ``degeneracy`` to their
+        constructor, so the old value is 1, the setter's ``< 2`` branch fires and the rate
+        is multiplied by the **whole** new degeneracy -- 3.0 trebles it. On the template
+        shape, which does pass it, only a degeneracy below 2 and not equal to 1 moves the
+        rate. The comment is appended to in all fifteen combinations.
+        """
+        library = self._library(shape, degeneracy)
+        entry = library.entries[1]
+        comment_before = entry.data.comment
+    
+        reaction = library.get_library_reactions()[0]
+    
+        assert reaction.degeneracy == pytest.approx(degeneracy), (
+            "the declared degeneracy did not reach the reaction at all")
+>       assert reaction.kinetics.A.value_si == pytest.approx(self.A_BEFORE), (
+            "carrying degeneracy={0} onto the {1} shape rescaled the rate by {2}; a "
+            "library file that declares a degeneracy is stating the rate it wants, and "
+            "re-deriving the rate from a number that was already true applies it "
+            "twice".format(degeneracy, shape,
+                           reaction.kinetics.A.value_si / self.A_BEFORE))
+E       AssertionError: carrying degeneracy=0.5 onto the originally_from shape rescaled the rate by 0.5; a library file that declares a degeneracy is stating the rate it wants, and re-deriving the rate from a number that was already true applies it twice
+E       assert 5.0 == 10.0 ± 1.0e-05
+E         
+E         comparison failed
+E         Obtained: 5.0
+E         Expected: 10.0 ± 1.0e-05
+
+test/rmgpy/data/kinetics/quarantineTest.py:3224: AssertionError
+_ TestCarryingTheDegeneracyDoesNotRestateTheRate.test_the_carry_forwards_the_value_and_changes_nothing_else[0.5-ordinary] _
+
+self = <quarantineTest.TestCarryingTheDegeneracyDoesNotRestateTheRate object at 0x7df52705b0a0>
+shape = 'ordinary', degeneracy = 0.5
+
+    @pytest.mark.parametrize("shape", SHAPES)
+    @pytest.mark.parametrize("degeneracy", SWEEP)
+    def test_the_carry_forwards_the_value_and_changes_nothing_else(self, shape,
+                                                                   degeneracy):
+        """
+        The acceptance: the forwarded scalar, an unchanged `A`, and an unmutated entry.
+    
+        At `309acc0a4` the two `LibraryReaction` shapes pass no ``degeneracy`` to their
+        constructor, so the old value is 1, the setter's ``< 2`` branch fires and the rate
+        is multiplied by the **whole** new degeneracy -- 3.0 trebles it. On the template
+        shape, which does pass it, only a degeneracy below 2 and not equal to 1 moves the
+        rate. The comment is appended to in all fifteen combinations.
+        """
+        library = self._library(shape, degeneracy)
+        entry = library.entries[1]
+        comment_before = entry.data.comment
+    
+        reaction = library.get_library_reactions()[0]
+    
+        assert reaction.degeneracy == pytest.approx(degeneracy), (
+            "the declared degeneracy did not reach the reaction at all")
+>       assert reaction.kinetics.A.value_si == pytest.approx(self.A_BEFORE), (
+            "carrying degeneracy={0} onto the {1} shape rescaled the rate by {2}; a "
+            "library file that declares a degeneracy is stating the rate it wants, and "
+            "re-deriving the rate from a number that was already true applies it "
+            "twice".format(degeneracy, shape,
+                           reaction.kinetics.A.value_si / self.A_BEFORE))
+E       AssertionError: carrying degeneracy=0.5 onto the ordinary shape rescaled the rate by 0.5; a library file that declares a degeneracy is stating the rate it wants, and re-deriving the rate from a number that was already true applies it twice
+E       assert 5.0 == 10.0 ± 1.0e-05
+E         
+E         comparison failed
+E         Obtained: 5.0
+E         Expected: 10.0 ± 1.0e-05
+
+test/rmgpy/data/kinetics/quarantineTest.py:3224: AssertionError
+_ TestCarryingTheDegeneracyDoesNotRestateTheRate.test_the_carry_forwards_the_value_and_changes_nothing_else[1.0-template] _
+
+self = <quarantineTest.TestCarryingTheDegeneracyDoesNotRestateTheRate object at 0x7df52705b160>
+shape = 'template', degeneracy = 1.0
+
+    @pytest.mark.parametrize("shape", SHAPES)
+    @pytest.mark.parametrize("degeneracy", SWEEP)
+    def test_the_carry_forwards_the_value_and_changes_nothing_else(self, shape,
+                                                                   degeneracy):
+        """
+        The acceptance: the forwarded scalar, an unchanged `A`, and an unmutated entry.
+    
+        At `309acc0a4` the two `LibraryReaction` shapes pass no ``degeneracy`` to their
+        constructor, so the old value is 1, the setter's ``< 2`` branch fires and the rate
+        is multiplied by the **whole** new degeneracy -- 3.0 trebles it. On the template
+        shape, which does pass it, only a degeneracy below 2 and not equal to 1 moves the
+        rate. The comment is appended to in all fifteen combinations.
+        """
+        library = self._library(shape, degeneracy)
+        entry = library.entries[1]
+        comment_before = entry.data.comment
+    
+        reaction = library.get_library_reactions()[0]
+    
+        assert reaction.degeneracy == pytest.approx(degeneracy), (
+            "the declared degeneracy did not reach the reaction at all")
+        assert reaction.kinetics.A.value_si == pytest.approx(self.A_BEFORE), (
+            "carrying degeneracy={0} onto the {1} shape rescaled the rate by {2}; a "
+            "library file that declares a degeneracy is stating the rate it wants, and "
+            "re-deriving the rate from a number that was already true applies it "
+            "twice".format(degeneracy, shape,
+                           reaction.kinetics.A.value_si / self.A_BEFORE))
+        assert entry.data.A.value_si == pytest.approx(self.A_BEFORE), (
+            "the rate was changed in place on entry.data -- the shared database object -- "
+            "so every later consumer of this entry sees the corrupted value, not just "
+            "the reaction being loaded")
+>       assert entry.data.comment == comment_before, (
+            "the setter appended to the shared kinetics comment. This campaign reads "
+            "authorship out of that comment, so it is not cosmetic")
+E       AssertionError: the setter appended to the shared kinetics comment. This campaign reads authorship out of that comment, so it is not cosmetic
+E       assert 'Estimated fr...egeneracy 1.0' == 'Estimated from node Root'
+E         
+E         - Estimated from node Root
+E         + Estimated from node RootMultiplied by reaction path degeneracy 1.0
+
+test/rmgpy/data/kinetics/quarantineTest.py:3234: AssertionError
+_ TestCarryingTheDegeneracyDoesNotRestateTheRate.test_the_carry_forwards_the_value_and_changes_nothing_else[1.0-originally_from] _
+
+self = <quarantineTest.TestCarryingTheDegeneracyDoesNotRestateTheRate object at 0x7df52705b820>
+shape = 'originally_from', degeneracy = 1.0
+
+    @pytest.mark.parametrize("shape", SHAPES)
+    @pytest.mark.parametrize("degeneracy", SWEEP)
+    def test_the_carry_forwards_the_value_and_changes_nothing_else(self, shape,
+                                                                   degeneracy):
+        """
+        The acceptance: the forwarded scalar, an unchanged `A`, and an unmutated entry.
+    
+        At `309acc0a4` the two `LibraryReaction` shapes pass no ``degeneracy`` to their
+        constructor, so the old value is 1, the setter's ``< 2`` branch fires and the rate
+        is multiplied by the **whole** new degeneracy -- 3.0 trebles it. On the template
+        shape, which does pass it, only a degeneracy below 2 and not equal to 1 moves the
+        rate. The comment is appended to in all fifteen combinations.
+        """
+        library = self._library(shape, degeneracy)
+        entry = library.entries[1]
+        comment_before = entry.data.comment
+    
+        reaction = library.get_library_reactions()[0]
+    
+        assert reaction.degeneracy == pytest.approx(degeneracy), (
+            "the declared degeneracy did not reach the reaction at all")
+        assert reaction.kinetics.A.value_si == pytest.approx(self.A_BEFORE), (
+            "carrying degeneracy={0} onto the {1} shape rescaled the rate by {2}; a "
+            "library file that declares a degeneracy is stating the rate it wants, and "
+            "re-deriving the rate from a number that was already true applies it "
+            "twice".format(degeneracy, shape,
+                           reaction.kinetics.A.value_si / self.A_BEFORE))
+        assert entry.data.A.value_si == pytest.approx(self.A_BEFORE), (
+            "the rate was changed in place on entry.data -- the shared database object -- "
+            "so every later consumer of this entry sees the corrupted value, not just "
+            "the reaction being loaded")
+>       assert entry.data.comment == comment_before, (
+            "the setter appended to the shared kinetics comment. This campaign reads "
+            "authorship out of that comment, so it is not cosmetic")
+E       AssertionError: the setter appended to the shared kinetics comment. This campaign reads authorship out of that comment, so it is not cosmetic
+E       assert 'Estimated fr...egeneracy 1.0' == 'Estimated from node Root'
+E         
+E         - Estimated from node Root
+E         + Estimated from node RootMultiplied by reaction path degeneracy 1.0
+
+test/rmgpy/data/kinetics/quarantineTest.py:3234: AssertionError
+_ TestCarryingTheDegeneracyDoesNotRestateTheRate.test_the_carry_forwards_the_value_and_changes_nothing_else[1.0-ordinary] _
+
+self = <quarantineTest.TestCarryingTheDegeneracyDoesNotRestateTheRate object at 0x7df52705b8e0>
+shape = 'ordinary', degeneracy = 1.0
+
+    @pytest.mark.parametrize("shape", SHAPES)
+    @pytest.mark.parametrize("degeneracy", SWEEP)
+    def test_the_carry_forwards_the_value_and_changes_nothing_else(self, shape,
+                                                                   degeneracy):
+        """
+        The acceptance: the forwarded scalar, an unchanged `A`, and an unmutated entry.
+    
+        At `309acc0a4` the two `LibraryReaction` shapes pass no ``degeneracy`` to their
+        constructor, so the old value is 1, the setter's ``< 2`` branch fires and the rate
+        is multiplied by the **whole** new degeneracy -- 3.0 trebles it. On the template
+        shape, which does pass it, only a degeneracy below 2 and not equal to 1 moves the
+        rate. The comment is appended to in all fifteen combinations.
+        """
+        library = self._library(shape, degeneracy)
+        entry = library.entries[1]
+        comment_before = entry.data.comment
+    
+        reaction = library.get_library_reactions()[0]
+    
+        assert reaction.degeneracy == pytest.approx(degeneracy), (
+            "the declared degeneracy did not reach the reaction at all")
+        assert reaction.kinetics.A.value_si == pytest.approx(self.A_BEFORE), (
+            "carrying degeneracy={0} onto the {1} shape rescaled the rate by {2}; a "
+            "library file that declares a degeneracy is stating the rate it wants, and "
+            "re-deriving the rate from a number that was already true applies it "
+            "twice".format(degeneracy, shape,
+                           reaction.kinetics.A.value_si / self.A_BEFORE))
+        assert entry.data.A.value_si == pytest.approx(self.A_BEFORE), (
+            "the rate was changed in place on entry.data -- the shared database object -- "
+            "so every later consumer of this entry sees the corrupted value, not just "
+            "the reaction being loaded")
+>       assert entry.data.comment == comment_before, (
+            "the setter appended to the shared kinetics comment. This campaign reads "
+            "authorship out of that comment, so it is not cosmetic")
+E       AssertionError: the setter appended to the shared kinetics comment. This campaign reads authorship out of that comment, so it is not cosmetic
+E       assert 'Estimated fr...egeneracy 1.0' == 'Estimated from node Root'
+E         
+E         - Estimated from node Root
+E         + Estimated from node RootMultiplied by reaction path degeneracy 1.0
+
+test/rmgpy/data/kinetics/quarantineTest.py:3234: AssertionError
+_ TestCarryingTheDegeneracyDoesNotRestateTheRate.test_the_carry_forwards_the_value_and_changes_nothing_else[1.5-template] _
+
+self = <quarantineTest.TestCarryingTheDegeneracyDoesNotRestateTheRate object at 0x7df52705b9a0>
+shape = 'template', degeneracy = 1.5
+
+    @pytest.mark.parametrize("shape", SHAPES)
+    @pytest.mark.parametrize("degeneracy", SWEEP)
+    def test_the_carry_forwards_the_value_and_changes_nothing_else(self, shape,
+                                                                   degeneracy):
+        """
+        The acceptance: the forwarded scalar, an unchanged `A`, and an unmutated entry.
+    
+        At `309acc0a4` the two `LibraryReaction` shapes pass no ``degeneracy`` to their
+        constructor, so the old value is 1, the setter's ``< 2`` branch fires and the rate
+        is multiplied by the **whole** new degeneracy -- 3.0 trebles it. On the template
+        shape, which does pass it, only a degeneracy below 2 and not equal to 1 moves the
+        rate. The comment is appended to in all fifteen combinations.
+        """
+        library = self._library(shape, degeneracy)
+        entry = library.entries[1]
+        comment_before = entry.data.comment
+    
+        reaction = library.get_library_reactions()[0]
+    
+        assert reaction.degeneracy == pytest.approx(degeneracy), (
+            "the declared degeneracy did not reach the reaction at all")
+>       assert reaction.kinetics.A.value_si == pytest.approx(self.A_BEFORE), (
+            "carrying degeneracy={0} onto the {1} shape rescaled the rate by {2}; a "
+            "library file that declares a degeneracy is stating the rate it wants, and "
+            "re-deriving the rate from a number that was already true applies it "
+            "twice".format(degeneracy, shape,
+                           reaction.kinetics.A.value_si / self.A_BEFORE))
+E       AssertionError: carrying degeneracy=1.5 onto the template shape rescaled the rate by 1.5; a library file that declares a degeneracy is stating the rate it wants, and re-deriving the rate from a number that was already true applies it twice
+E       assert 15.0 == 10.0 ± 1.0e-05
+E         
+E         comparison failed
+E         Obtained: 15.0
+E         Expected: 10.0 ± 1.0e-05
+
+test/rmgpy/data/kinetics/quarantineTest.py:3224: AssertionError
+_ TestCarryingTheDegeneracyDoesNotRestateTheRate.test_the_carry_forwards_the_value_and_changes_nothing_else[1.5-originally_from] _
+
+self = <quarantineTest.TestCarryingTheDegeneracyDoesNotRestateTheRate object at 0x7df52705ba60>
+shape = 'originally_from', degeneracy = 1.5
+
+    @pytest.mark.parametrize("shape", SHAPES)
+    @pytest.mark.parametrize("degeneracy", SWEEP)
+    def test_the_carry_forwards_the_value_and_changes_nothing_else(self, shape,
+                                                                   degeneracy):
+        """
+        The acceptance: the forwarded scalar, an unchanged `A`, and an unmutated entry.
+    
+        At `309acc0a4` the two `LibraryReaction` shapes pass no ``degeneracy`` to their
+        constructor, so the old value is 1, the setter's ``< 2`` branch fires and the rate
+        is multiplied by the **whole** new degeneracy -- 3.0 trebles it. On the template
+        shape, which does pass it, only a degeneracy below 2 and not equal to 1 moves the
+        rate. The comment is appended to in all fifteen combinations.
+        """
+        library = self._library(shape, degeneracy)
+        entry = library.entries[1]
+        comment_before = entry.data.comment
+    
+        reaction = library.get_library_reactions()[0]
+    
+        assert reaction.degeneracy == pytest.approx(degeneracy), (
+            "the declared degeneracy did not reach the reaction at all")
+>       assert reaction.kinetics.A.value_si == pytest.approx(self.A_BEFORE), (
+            "carrying degeneracy={0} onto the {1} shape rescaled the rate by {2}; a "
+            "library file that declares a degeneracy is stating the rate it wants, and "
+            "re-deriving the rate from a number that was already true applies it "
+            "twice".format(degeneracy, shape,
+                           reaction.kinetics.A.value_si / self.A_BEFORE))
+E       AssertionError: carrying degeneracy=1.5 onto the originally_from shape rescaled the rate by 1.5; a library file that declares a degeneracy is stating the rate it wants, and re-deriving the rate from a number that was already true applies it twice
+E       assert 15.0 == 10.0 ± 1.0e-05
+E         
+E         comparison failed
+E         Obtained: 15.0
+E         Expected: 10.0 ± 1.0e-05
+
+test/rmgpy/data/kinetics/quarantineTest.py:3224: AssertionError
+_ TestCarryingTheDegeneracyDoesNotRestateTheRate.test_the_carry_forwards_the_value_and_changes_nothing_else[1.5-ordinary] _
+
+self = <quarantineTest.TestCarryingTheDegeneracyDoesNotRestateTheRate object at 0x7df52705bb20>
+shape = 'ordinary', degeneracy = 1.5
+
+    @pytest.mark.parametrize("shape", SHAPES)
+    @pytest.mark.parametrize("degeneracy", SWEEP)
+    def test_the_carry_forwards_the_value_and_changes_nothing_else(self, shape,
+                                                                   degeneracy):
+        """
+        The acceptance: the forwarded scalar, an unchanged `A`, and an unmutated entry.
+    
+        At `309acc0a4` the two `LibraryReaction` shapes pass no ``degeneracy`` to their
+        constructor, so the old value is 1, the setter's ``< 2`` branch fires and the rate
+        is multiplied by the **whole** new degeneracy -- 3.0 trebles it. On the template
+        shape, which does pass it, only a degeneracy below 2 and not equal to 1 moves the
+        rate. The comment is appended to in all fifteen combinations.
+        """
+        library = self._library(shape, degeneracy)
+        entry = library.entries[1]
+        comment_before = entry.data.comment
+    
+        reaction = library.get_library_reactions()[0]
+    
+        assert reaction.degeneracy == pytest.approx(degeneracy), (
+            "the declared degeneracy did not reach the reaction at all")
+>       assert reaction.kinetics.A.value_si == pytest.approx(self.A_BEFORE), (
+            "carrying degeneracy={0} onto the {1} shape rescaled the rate by {2}; a "
+            "library file that declares a degeneracy is stating the rate it wants, and "
+            "re-deriving the rate from a number that was already true applies it "
+            "twice".format(degeneracy, shape,
+                           reaction.kinetics.A.value_si / self.A_BEFORE))
+E       AssertionError: carrying degeneracy=1.5 onto the ordinary shape rescaled the rate by 1.5; a library file that declares a degeneracy is stating the rate it wants, and re-deriving the rate from a number that was already true applies it twice
+E       assert 15.0 == 10.0 ± 1.0e-05
+E         
+E         comparison failed
+E         Obtained: 15.0
+E         Expected: 10.0 ± 1.0e-05
+
+test/rmgpy/data/kinetics/quarantineTest.py:3224: AssertionError
+_ TestCarryingTheDegeneracyDoesNotRestateTheRate.test_the_carry_forwards_the_value_and_changes_nothing_else[2.0-template] _
+
+self = <quarantineTest.TestCarryingTheDegeneracyDoesNotRestateTheRate object at 0x7df52705bbe0>
+shape = 'template', degeneracy = 2.0
+
+    @pytest.mark.parametrize("shape", SHAPES)
+    @pytest.mark.parametrize("degeneracy", SWEEP)
+    def test_the_carry_forwards_the_value_and_changes_nothing_else(self, shape,
+                                                                   degeneracy):
+        """
+        The acceptance: the forwarded scalar, an unchanged `A`, and an unmutated entry.
+    
+        At `309acc0a4` the two `LibraryReaction` shapes pass no ``degeneracy`` to their
+        constructor, so the old value is 1, the setter's ``< 2`` branch fires and the rate
+        is multiplied by the **whole** new degeneracy -- 3.0 trebles it. On the template
+        shape, which does pass it, only a degeneracy below 2 and not equal to 1 moves the
+        rate. The comment is appended to in all fifteen combinations.
+        """
+        library = self._library(shape, degeneracy)
+        entry = library.entries[1]
+        comment_before = entry.data.comment
+    
+        reaction = library.get_library_reactions()[0]
+    
+        assert reaction.degeneracy == pytest.approx(degeneracy), (
+            "the declared degeneracy did not reach the reaction at all")
+        assert reaction.kinetics.A.value_si == pytest.approx(self.A_BEFORE), (
+            "carrying degeneracy={0} onto the {1} shape rescaled the rate by {2}; a "
+            "library file that declares a degeneracy is stating the rate it wants, and "
+            "re-deriving the rate from a number that was already true applies it "
+            "twice".format(degeneracy, shape,
+                           reaction.kinetics.A.value_si / self.A_BEFORE))
+        assert entry.data.A.value_si == pytest.approx(self.A_BEFORE), (
+            "the rate was changed in place on entry.data -- the shared database object -- "
+            "so every later consumer of this entry sees the corrupted value, not just "
+            "the reaction being loaded")
+>       assert entry.data.comment == comment_before, (
+            "the setter appended to the shared kinetics comment. This campaign reads "
+            "authorship out of that comment, so it is not cosmetic")
+E       AssertionError: the setter appended to the shared kinetics comment. This campaign reads authorship out of that comment, so it is not cosmetic
+E       assert 'Estimated fr...egeneracy 2.0' == 'Estimated from node Root'
+E         
+E         - Estimated from node Root
+E         + Estimated from node RootMultiplied by reaction path degeneracy 2.0
+
+test/rmgpy/data/kinetics/quarantineTest.py:3234: AssertionError
+_ TestCarryingTheDegeneracyDoesNotRestateTheRate.test_the_carry_forwards_the_value_and_changes_nothing_else[2.0-originally_from] _
+
+self = <quarantineTest.TestCarryingTheDegeneracyDoesNotRestateTheRate object at 0x7df52705bca0>
+shape = 'originally_from', degeneracy = 2.0
+
+    @pytest.mark.parametrize("shape", SHAPES)
+    @pytest.mark.parametrize("degeneracy", SWEEP)
+    def test_the_carry_forwards_the_value_and_changes_nothing_else(self, shape,
+                                                                   degeneracy):
+        """
+        The acceptance: the forwarded scalar, an unchanged `A`, and an unmutated entry.
+    
+        At `309acc0a4` the two `LibraryReaction` shapes pass no ``degeneracy`` to their
+        constructor, so the old value is 1, the setter's ``< 2`` branch fires and the rate
+        is multiplied by the **whole** new degeneracy -- 3.0 trebles it. On the template
+        shape, which does pass it, only a degeneracy below 2 and not equal to 1 moves the
+        rate. The comment is appended to in all fifteen combinations.
+        """
+        library = self._library(shape, degeneracy)
+        entry = library.entries[1]
+        comment_before = entry.data.comment
+    
+        reaction = library.get_library_reactions()[0]
+    
+        assert reaction.degeneracy == pytest.approx(degeneracy), (
+            "the declared degeneracy did not reach the reaction at all")
+>       assert reaction.kinetics.A.value_si == pytest.approx(self.A_BEFORE), (
+            "carrying degeneracy={0} onto the {1} shape rescaled the rate by {2}; a "
+            "library file that declares a degeneracy is stating the rate it wants, and "
+            "re-deriving the rate from a number that was already true applies it "
+            "twice".format(degeneracy, shape,
+                           reaction.kinetics.A.value_si / self.A_BEFORE))
+E       AssertionError: carrying degeneracy=2.0 onto the originally_from shape rescaled the rate by 2.0; a library file that declares a degeneracy is stating the rate it wants, and re-deriving the rate from a number that was already true applies it twice
+E       assert 20.0 == 10.0 ± 1.0e-05
+E         
+E         comparison failed
+E         Obtained: 20.0
+E         Expected: 10.0 ± 1.0e-05
+
+test/rmgpy/data/kinetics/quarantineTest.py:3224: AssertionError
+_ TestCarryingTheDegeneracyDoesNotRestateTheRate.test_the_carry_forwards_the_value_and_changes_nothing_else[2.0-ordinary] _
+
+self = <quarantineTest.TestCarryingTheDegeneracyDoesNotRestateTheRate object at 0x7df52705bd60>
+shape = 'ordinary', degeneracy = 2.0
+
+    @pytest.mark.parametrize("shape", SHAPES)
+    @pytest.mark.parametrize("degeneracy", SWEEP)
+    def test_the_carry_forwards_the_value_and_changes_nothing_else(self, shape,
+                                                                   degeneracy):
+        """
+        The acceptance: the forwarded scalar, an unchanged `A`, and an unmutated entry.
+    
+        At `309acc0a4` the two `LibraryReaction` shapes pass no ``degeneracy`` to their
+        constructor, so the old value is 1, the setter's ``< 2`` branch fires and the rate
+        is multiplied by the **whole** new degeneracy -- 3.0 trebles it. On the template
+        shape, which does pass it, only a degeneracy below 2 and not equal to 1 moves the
+        rate. The comment is appended to in all fifteen combinations.
+        """
+        library = self._library(shape, degeneracy)
+        entry = library.entries[1]
+        comment_before = entry.data.comment
+    
+        reaction = library.get_library_reactions()[0]
+    
+        assert reaction.degeneracy == pytest.approx(degeneracy), (
+            "the declared degeneracy did not reach the reaction at all")
+>       assert reaction.kinetics.A.value_si == pytest.approx(self.A_BEFORE), (
+            "carrying degeneracy={0} onto the {1} shape rescaled the rate by {2}; a "
+            "library file that declares a degeneracy is stating the rate it wants, and "
+            "re-deriving the rate from a number that was already true applies it "
+            "twice".format(degeneracy, shape,
+                           reaction.kinetics.A.value_si / self.A_BEFORE))
+E       AssertionError: carrying degeneracy=2.0 onto the ordinary shape rescaled the rate by 2.0; a library file that declares a degeneracy is stating the rate it wants, and re-deriving the rate from a number that was already true applies it twice
+E       assert 20.0 == 10.0 ± 1.0e-05
+E         
+E         comparison failed
+E         Obtained: 20.0
+E         Expected: 10.0 ± 1.0e-05
+
+test/rmgpy/data/kinetics/quarantineTest.py:3224: AssertionError
+_ TestCarryingTheDegeneracyDoesNotRestateTheRate.test_the_carry_forwards_the_value_and_changes_nothing_else[3.0-template] _
+
+self = <quarantineTest.TestCarryingTheDegeneracyDoesNotRestateTheRate object at 0x7df52705be20>
+shape = 'template', degeneracy = 3.0
+
+    @pytest.mark.parametrize("shape", SHAPES)
+    @pytest.mark.parametrize("degeneracy", SWEEP)
+    def test_the_carry_forwards_the_value_and_changes_nothing_else(self, shape,
+                                                                   degeneracy):
+        """
+        The acceptance: the forwarded scalar, an unchanged `A`, and an unmutated entry.
+    
+        At `309acc0a4` the two `LibraryReaction` shapes pass no ``degeneracy`` to their
+        constructor, so the old value is 1, the setter's ``< 2`` branch fires and the rate
+        is multiplied by the **whole** new degeneracy -- 3.0 trebles it. On the template
+        shape, which does pass it, only a degeneracy below 2 and not equal to 1 moves the
+        rate. The comment is appended to in all fifteen combinations.
+        """
+        library = self._library(shape, degeneracy)
+        entry = library.entries[1]
+        comment_before = entry.data.comment
+    
+        reaction = library.get_library_reactions()[0]
+    
+        assert reaction.degeneracy == pytest.approx(degeneracy), (
+            "the declared degeneracy did not reach the reaction at all")
+        assert reaction.kinetics.A.value_si == pytest.approx(self.A_BEFORE), (
+            "carrying degeneracy={0} onto the {1} shape rescaled the rate by {2}; a "
+            "library file that declares a degeneracy is stating the rate it wants, and "
+            "re-deriving the rate from a number that was already true applies it "
+            "twice".format(degeneracy, shape,
+                           reaction.kinetics.A.value_si / self.A_BEFORE))
+        assert entry.data.A.value_si == pytest.approx(self.A_BEFORE), (
+            "the rate was changed in place on entry.data -- the shared database object -- "
+            "so every later consumer of this entry sees the corrupted value, not just "
+            "the reaction being loaded")
+>       assert entry.data.comment == comment_before, (
+            "the setter appended to the shared kinetics comment. This campaign reads "
+            "authorship out of that comment, so it is not cosmetic")
+E       AssertionError: the setter appended to the shared kinetics comment. This campaign reads authorship out of that comment, so it is not cosmetic
+E       assert 'Estimated fr...egeneracy 3.0' == 'Estimated from node Root'
+E         
+E         - Estimated from node Root
+E         + Estimated from node RootMultiplied by reaction path degeneracy 3.0
+
+test/rmgpy/data/kinetics/quarantineTest.py:3234: AssertionError
+_ TestCarryingTheDegeneracyDoesNotRestateTheRate.test_the_carry_forwards_the_value_and_changes_nothing_else[3.0-originally_from] _
+
+self = <quarantineTest.TestCarryingTheDegeneracyDoesNotRestateTheRate object at 0x7df52705bee0>
+shape = 'originally_from', degeneracy = 3.0
+
+    @pytest.mark.parametrize("shape", SHAPES)
+    @pytest.mark.parametrize("degeneracy", SWEEP)
+    def test_the_carry_forwards_the_value_and_changes_nothing_else(self, shape,
+                                                                   degeneracy):
+        """
+        The acceptance: the forwarded scalar, an unchanged `A`, and an unmutated entry.
+    
+        At `309acc0a4` the two `LibraryReaction` shapes pass no ``degeneracy`` to their
+        constructor, so the old value is 1, the setter's ``< 2`` branch fires and the rate
+        is multiplied by the **whole** new degeneracy -- 3.0 trebles it. On the template
+        shape, which does pass it, only a degeneracy below 2 and not equal to 1 moves the
+        rate. The comment is appended to in all fifteen combinations.
+        """
+        library = self._library(shape, degeneracy)
+        entry = library.entries[1]
+        comment_before = entry.data.comment
+    
+        reaction = library.get_library_reactions()[0]
+    
+        assert reaction.degeneracy == pytest.approx(degeneracy), (
+            "the declared degeneracy did not reach the reaction at all")
+>       assert reaction.kinetics.A.value_si == pytest.approx(self.A_BEFORE), (
+            "carrying degeneracy={0} onto the {1} shape rescaled the rate by {2}; a "
+            "library file that declares a degeneracy is stating the rate it wants, and "
+            "re-deriving the rate from a number that was already true applies it "
+            "twice".format(degeneracy, shape,
+                           reaction.kinetics.A.value_si / self.A_BEFORE))
+E       AssertionError: carrying degeneracy=3.0 onto the originally_from shape rescaled the rate by 3.0; a library file that declares a degeneracy is stating the rate it wants, and re-deriving the rate from a number that was already true applies it twice
+E       assert 30.0 == 10.0 ± 1.0e-05
+E         
+E         comparison failed
+E         Obtained: 30.0
+E         Expected: 10.0 ± 1.0e-05
+
+test/rmgpy/data/kinetics/quarantineTest.py:3224: AssertionError
+_ TestCarryingTheDegeneracyDoesNotRestateTheRate.test_the_carry_forwards_the_value_and_changes_nothing_else[3.0-ordinary] _
+
+self = <quarantineTest.TestCarryingTheDegeneracyDoesNotRestateTheRate object at 0x7df52705bfa0>
+shape = 'ordinary', degeneracy = 3.0
+
+    @pytest.mark.parametrize("shape", SHAPES)
+    @pytest.mark.parametrize("degeneracy", SWEEP)
+    def test_the_carry_forwards_the_value_and_changes_nothing_else(self, shape,
+                                                                   degeneracy):
+        """
+        The acceptance: the forwarded scalar, an unchanged `A`, and an unmutated entry.
+    
+        At `309acc0a4` the two `LibraryReaction` shapes pass no ``degeneracy`` to their
+        constructor, so the old value is 1, the setter's ``< 2`` branch fires and the rate
+        is multiplied by the **whole** new degeneracy -- 3.0 trebles it. On the template
+        shape, which does pass it, only a degeneracy below 2 and not equal to 1 moves the
+        rate. The comment is appended to in all fifteen combinations.
+        """
+        library = self._library(shape, degeneracy)
+        entry = library.entries[1]
+        comment_before = entry.data.comment
+    
+        reaction = library.get_library_reactions()[0]
+    
+        assert reaction.degeneracy == pytest.approx(degeneracy), (
+            "the declared degeneracy did not reach the reaction at all")
+>       assert reaction.kinetics.A.value_si == pytest.approx(self.A_BEFORE), (
+            "carrying degeneracy={0} onto the {1} shape rescaled the rate by {2}; a "
+            "library file that declares a degeneracy is stating the rate it wants, and "
+            "re-deriving the rate from a number that was already true applies it "
+            "twice".format(degeneracy, shape,
+                           reaction.kinetics.A.value_si / self.A_BEFORE))
+E       AssertionError: carrying degeneracy=3.0 onto the ordinary shape rescaled the rate by 3.0; a library file that declares a degeneracy is stating the rate it wants, and re-deriving the rate from a number that was already true applies it twice
+E       assert 30.0 == 10.0 ± 1.0e-05
+E         
+E         comparison failed
+E         Obtained: 30.0
+E         Expected: 10.0 ± 1.0e-05
+
+test/rmgpy/data/kinetics/quarantineTest.py:3224: AssertionError
+_ TestCarryingTheDegeneracyDoesNotRestateTheRate.test_the_storage_table_names_a_setter_that_really_transforms _
+
+self = <quarantineTest.TestCarryingTheDegeneracyDoesNotRestateTheRate object at 0x7df527055430>
+
+    def test_the_storage_table_names_a_setter_that_really_transforms(self):
+        """
+        The negative control on the workaround, so it cannot outlive its reason.
+    
+        `_CARRIED_THROUGH_STORAGE` exists only because assigning `degeneracy` through the
+        property transforms the rate. If upstream ever makes that setter a plain
+        assignment, this fails and says to delete the special case rather than carrying an
+        unexplained back door forever.
+        """
+        from rmgpy.data.kinetics import library as module
+    
+>       for name, storage in module._CARRIED_THROUGH_STORAGE.items():
+E       AttributeError: module 'rmgpy.data.kinetics.library' has no attribute '_CARRIED_THROUGH_STORAGE'
+
+test/rmgpy/data/kinetics/quarantineTest.py:3263: AttributeError
+_ TestTheConversionEnumeratesTheSourceNotTheDestination.test_the_four_fields_the_constructor_does_not_take_survive _
+
+self = <quarantineTest.TestTheConversionEnumeratesTheSourceNotTheDestination object at 0x7df52704e880>
+
+    def test_the_four_fields_the_constructor_does_not_take_survive(self):
+        """The named acceptance, on its own, so a regression says which fields went."""
+        from rmgpy.rmg.model import as_library_reaction
+    
+        markers = self._markers()
+        converted = as_library_reaction(self._source(markers), "a_library")
+        for name in ("is_forward", "rank", "comment", "label"):
+>           assert getattr(converted, name) == markers[name], (
+                "{0!r} is state LibraryReaction holds and its constructor does not take, "
+                "so enumerating the constructor dropped it: {1!r} -> {2!r}".format(
+                    name, markers[name], getattr(converted, name)))
+E           AssertionError: 'is_forward' is state LibraryReaction holds and its constructor does not take, so enumerating the constructor dropped it: True -> False
+E           assert False == True
+E            +  where False = getattr(LibraryReaction(index=11, reactants=[Species(label="Lip", molecule=[Molecule(smiles="[Li+]")], molecular_weight=(6.941,'amu'))], products=[Species(label="CH3Li", molecule=[Molecule(smiles="[Li][CH3]")], molecular_weight=(21.9756,'amu'))], specific_collider=Species(label="Ar", molecule=[Molecule(smiles="[Ar]")], molecular_weight=(39.8775,'amu')), kinetics=Arrhenius(A=(10,'m^3/(mol*s)'), n=0, Ea=(0,'kJ/mol'), T0=(1,'K'), comment="""the rate"""), reversible=False, transition_state=TransitionStat), duplicate=True, degeneracy=2.0, pairs=[('Lip', 'CH3Li')], allow_pdep_route=True, elementary_high_p=True, allow_max_rate_violation=True, electrons=-1), 'is_forward')
+
+test/rmgpy/data/kinetics/quarantineTest.py:3349: AssertionError
+_ TestTheConversionEnumeratesTheSourceNotTheDestination.test_every_carried_field_arrives _
+
+self = <quarantineTest.TestTheConversionEnumeratesTheSourceNotTheDestination object at 0x7df527066160>
+
+    def test_every_carried_field_arrives(self):
+        """
+        The general form: every field the partition calls carried, checked by value.
+    
+        Iterating `REACTION_STATE_FIELDS` rather than a list of names is the point -- a
+        field added to `Reaction` tomorrow enters this test automatically and fails it
+        until it is given a marker and shown to arrive.
+        """
+        from rmgpy.data.kinetics import library as library_module
+        from rmgpy.rmg import model as model_module
+        from rmgpy.rmg.model import as_library_reaction
+    
+>       carried = (library_module.REACTION_STATE_FIELDS
+                   - set(model_module._NOT_CARRIED_IN_CONVERSION))
+E       AttributeError: module 'rmgpy.data.kinetics.library' has no attribute 'REACTION_STATE_FIELDS'
+
+test/rmgpy/data/kinetics/quarantineTest.py:3366: AttributeError
+_ TestTheConversionEnumeratesTheSourceNotTheDestination.test_the_conversion_partition_is_total_and_reasoned _
+
+self = <quarantineTest.TestTheConversionEnumeratesTheSourceNotTheDestination object at 0x7df527066310>
+
+    def test_the_conversion_partition_is_total_and_reasoned(self):
+        from rmgpy.data.kinetics import library as library_module
+        from rmgpy.rmg import model as model_module
+    
+>       excluded = set(model_module._NOT_CARRIED_IN_CONVERSION)
+E       AttributeError: module 'rmgpy.rmg.model' has no attribute '_NOT_CARRIED_IN_CONVERSION'
+
+test/rmgpy/data/kinetics/quarantineTest.py:3384: AttributeError
+_ TestTheConversionEnumeratesTheSourceNotTheDestination.test_every_field_called_carried_can_actually_be_assigned _
+
+self = <quarantineTest.TestTheConversionEnumeratesTheSourceNotTheDestination object at 0x7df5270664c0>
+
+    def test_every_field_called_carried_can_actually_be_assigned(self):
+        """
+        Carried must mean carried. Both carries swallow `AttributeError` from the target,
+        so a read-only field sitting in the carried set is a silent drop wearing the label
+        of a carry -- which is what `protons` was until this round.
+        """
+        from rmgpy.data.kinetics import library as library_module
+        from rmgpy.rmg import model as model_module
+    
+        probe = Reaction()
+        for policy in (library_module._NOT_CARRIED_FROM_ENTRY,
+>                      model_module._NOT_CARRIED_IN_CONVERSION):
+E                      AttributeError: module 'rmgpy.rmg.model' has no attribute '_NOT_CARRIED_IN_CONVERSION'
+
+test/rmgpy/data/kinetics/quarantineTest.py:3405: AttributeError
+_ TestTheAbsenceOfONofollowIsRefused.test_a_platform_without_o_nofollow_is_refused _
+
+self = <quarantineTest.TestTheAbsenceOfONofollowIsRefused object at 0x7df527066dc0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7df526df6cd0>
+tmp_path = PosixPath('/tmp/claude-1000/pytest-of-alon/pytest-743/test_a_platform_without_o_nofo0')
+
+    def test_a_platform_without_o_nofollow_is_refused(self, monkeypatch, tmp_path):
+        label = self._escape_at(monkeypatch, tmp_path, "families")
+        monkeypatch.delattr(os, "O_NOFOLLOW")
+    
+>       assert resolve_quarantine(label) == (None, False), (
+            "with O_NOFOLLOW absent the flag became 0, the descent followed the "
+            "symlinked `kinetics/families` and the manifest behind it was executed; "
+            "there is no containment available on that path, so it must refuse rather "
+            "than answer")
+E       AssertionError: with O_NOFOLLOW absent the flag became 0, the descent followed the symlinked `kinetics/families` and the manifest behind it was executed; there is no containment available on that path, so it must refuse rather than answer
+E       assert (<KineticsQua...Marcus>, True) == (None, False)
+E         
+E         At index 0 diff: <KineticsQuarantine 'A_Family_Reached_Through_A_Linked_Parent' QUARANTINED FOR TESTING applies to Marcus> != None
+E         
+E         Full diff:
+E           (
+E         -     None,
+E         -     False,...
+E         
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+test/rmgpy/data/kinetics/quarantineTest.py:3469: AssertionError
+================================ tests coverage ================================
+_______________ coverage: platform linux, python 3.9.23-final-0 ________________
+
+Coverage HTML written to dir htmlcov
+=========================== short test summary info ============================
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[0.5-template]
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[0.5-originally_from]
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[0.5-ordinary]
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[1.0-template]
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[1.0-originally_from]
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[1.0-ordinary]
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[1.5-template]
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[1.5-originally_from]
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[1.5-ordinary]
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[2.0-template]
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[2.0-originally_from]
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[2.0-ordinary]
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[3.0-template]
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[3.0-originally_from]
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_carry_forwards_the_value_and_changes_nothing_else[3.0-ordinary]
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestCarryingTheDegeneracyDoesNotRestateTheRate::test_the_storage_table_names_a_setter_that_really_transforms
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheConversionEnumeratesTheSourceNotTheDestination::test_the_four_fields_the_constructor_does_not_take_survive
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheConversionEnumeratesTheSourceNotTheDestination::test_every_carried_field_arrives
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheConversionEnumeratesTheSourceNotTheDestination::test_the_conversion_partition_is_total_and_reasoned
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheConversionEnumeratesTheSourceNotTheDestination::test_every_field_called_carried_can_actually_be_assigned
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestTheAbsenceOfONofollowIsRefused::test_a_platform_without_o_nofollow_is_refused
+================ 21 failed, 12 passed, 130 deselected in 21.41s ================
