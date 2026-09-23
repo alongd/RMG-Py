@@ -2413,27 +2413,85 @@ def _solver_test_functions(source):
 
 
 def _tests_without_a_real_assertion(source):
-    """Names of ``test_*`` functions in `source` that carry NO non-vacuous assertion (round 111
-    LOW 2). A docstring -- even one naming a round/finding tag -- with a ``pass`` body asserts
-    nothing; a banked red or a property check must contain a real assertion, so a tag can no
-    longer stand in for one (the round-106 census accepted 'tag OR assert', which a tagged
-    ``pass`` satisfied). A bare-constant ``assert True`` does not count; ``pytest.raises`` /
-    ``pytest.warns`` as a context manager does."""
+    """Names of ``test_*`` functions in `source` that carry NO non-vacuous, REACHABLE assertion
+    (round 111 LOW 2, tightened round 112 LOW). A docstring -- even one naming a round/finding tag
+    -- with a ``pass`` body asserts nothing; a banked red or a property check must contain a real
+    assertion, so a tag can no longer stand in for one (the round-106 census accepted 'tag OR
+    assert', which a tagged ``pass`` satisfied).
+
+    ``ast.walk`` over the whole function is too permissive -- it counted four things that back no
+    claim, closed here (round 112 LOW):
+      * a vacuous ``assert`` whose test is decided at PARSE TIME, referencing no runtime value:
+        ``assert True`` but also ``assert 1 == 1`` (the round-111 census only caught a bare
+        ``ast.Constant``, so a constant COMPARE slipped through);
+      * an ``assert`` in a statically DEAD branch (``if False:`` / ``if 0:``) that never runs;
+      * an ``assert`` inside an UNCALLED nested function, which ``ast.walk`` reaches but the test
+        body never executes;
+      * a context manager whose AST merely CONTAINS the substring ``raises``/``warns`` (e.g. a
+        helper named ``a_thing_that_raises``), rather than an actual ``pytest.raises`` / ``.warns``.
+    So the detector walks reachable statements only -- never into a nested def/class or a dead
+    branch -- and recognises ``raises``/``warns`` by the call TARGET, not a substring."""
     import ast
 
-    def has_real_assertion(node):
-        for child in ast.walk(node):
-            if isinstance(child, ast.Assert):
-                if isinstance(child.test, ast.Constant):
-                    continue                     # assert True/1/"x" asserts nothing
-                return True
-            if isinstance(child, ast.withitem):
-                dumped = ast.dump(child.context_expr)
-                if 'raises' in dumped or 'warns' in dumped:
+    def is_vacuous(test):
+        # An assert whose test references no runtime value (only literals and operators on them)
+        # is decided at parse time: ``assert True``, ``assert 1 == 1``, ``assert 1 < 2 and 3``.
+        for sub in ast.walk(test):
+            if isinstance(sub, (ast.Name, ast.Call, ast.Attribute, ast.Subscript, ast.Starred)):
+                return False
+        return True
+
+    def is_pytest_raises_or_warns(item):
+        expr = item.context_expr
+        if not isinstance(expr, ast.Call):
+            return False
+        func = expr.func
+        target = func.attr if isinstance(func, ast.Attribute) else \
+            (func.id if isinstance(func, ast.Name) else '')
+        return target in ('raises', 'warns')
+
+    def const_truth(test):
+        # True/False if `test` is a compile-time constant truth value, else None.
+        return bool(test.value) if isinstance(test, ast.Constant) else None
+
+    def walk(stmts):
+        for stmt in stmts:
+            # An uncalled nested definition never runs in the test body: do not credit its asserts.
+            if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                continue
+            if isinstance(stmt, ast.Assert):
+                if not is_vacuous(stmt.test):
+                    return True
+                continue
+            if isinstance(stmt, ast.With):
+                if any(is_pytest_raises_or_warns(it) for it in stmt.items):
+                    return True
+                if walk(stmt.body):
+                    return True
+                continue
+            if isinstance(stmt, ast.If):
+                truth = const_truth(stmt.test)
+                if truth is True:
+                    if walk(stmt.body):     # the else-branch is statically dead
+                        return True
+                elif truth is False:
+                    if walk(stmt.orelse):   # the if-branch is statically dead
+                        return True
+                elif walk(stmt.body) or walk(stmt.orelse):
+                    return True
+                continue
+            # Any other compound statement (for/while/try/with-less block): descend into its
+            # reachable child bodies, but never into a nested def/class (handled above).
+            for field in ('body', 'orelse', 'finalbody'):
+                child = getattr(stmt, field, None)
+                if child and walk(child):
+                    return True
+            for handler in getattr(stmt, 'handlers', []) or []:
+                if walk(handler.body):
                     return True
         return False
 
-    return [name for name, node in _solver_test_functions(source) if not has_real_assertion(node)]
+    return [name for name, node in _solver_test_functions(source) if not walk(node.body)]
 
 
 def test_every_solver_test_asserts_a_property():
@@ -2474,15 +2532,36 @@ def test_the_census_rejects_a_tagged_docstring_with_no_assertion():
         'def test_vacuous_only():\n'
         '    """LOW 2 tag."""\n'
         '    assert True\n'
+        # round 112 LOW: four holes the round-111 census still had.
+        'def test_vacuous_compare():\n'                       # `1 == 1` is decided at parse time
+        '    assert 1 == 1\n'
+        'def test_dead_branch_assert():\n'                    # under `if False:` -- never runs
+        '    if False:\n'
+        '        assert compute() == 1\n'
+        'def test_uncalled_nested_assert():\n'                # the assert is in an uncalled inner def
+        '    def inner():\n'
+        '        assert compute() == 1\n'
+        'def test_unrelated_raises_context_manager():\n'      # AST holds "raises" but is not pytest.raises
+        '    with a_helper_that_raises():\n'
+        '        do_work()\n'
     )
     accepted = (
-        'def test_real():\n'
-        '    assert 1 == 1\n'
+        'def test_real_runtime_value():\n'                    # references a runtime value -> real
+        '    assert len([1, 2]) == 2\n'
         'def test_context_manager():\n'
         '    with pytest.raises(ValueError):\n'
         '        raise ValueError()\n'
+        'def test_warns_context_manager():\n'
+        '    with pytest.warns(UserWarning):\n'
+        '        do_work()\n'
+        'def test_real_assert_inside_a_live_loop():\n'        # a reachable assert in a loop body
+        '    for i in range(3):\n'
+        '        assert step(i) is True\n'
     )
-    assert set(_tests_without_a_real_assertion(rejected)) == {'test_tagged_but_empty', 'test_vacuous_only'}
+    assert set(_tests_without_a_real_assertion(rejected)) == {
+        'test_tagged_but_empty', 'test_vacuous_only', 'test_vacuous_compare',
+        'test_dead_branch_assert', 'test_uncalled_nested_assert',
+        'test_unrelated_raises_context_manager'}
     assert _tests_without_a_real_assertion(accepted) == []
 
 

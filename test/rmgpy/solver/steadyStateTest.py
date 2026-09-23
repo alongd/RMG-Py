@@ -1169,3 +1169,99 @@ def test_steady_state_report_names_the_criterion_that_fired(caplog):
     assert 'for 0 consecutive steps' not in reached, reached
     # steady_state_residual is the fired criterion's, and it cleared 1e-6.
     assert reactor.steady_state_residual < 1e-6
+
+
+def test_an_armed_false_nan_external_residual_cannot_authorise_termination():
+    """Round 112 HIGH 1, first reproduction (the steady-state decision site). Round 111 poisoned
+    a ``nan`` external residual only when the channel was ARMED; with ``external_armed=False`` a
+    supplied ``nan`` slipped onto the benign 'no information' path and a flat, armed generic
+    channel fired on it. The value could not be told apart from 'no external channel', so the
+    guard keyed on the arm FLAG. The fix makes ABSENCE a distinct sentinel (``external_residual
+    is None``): a channel that is SUPPLIED (any non-None value) and non-finite authorises
+    nothing, armed or not; an ABSENT channel (None, the default) leaves the generic channel to
+    decide, byte-for-byte. Before the fix the second flat interval returned ``True``."""
+    big = 1.0e12
+
+    def feed(term, target_r, t_prev, t_now, **ext):
+        dlnt = np.log(t_now) - np.log(t_prev)
+        y_prev = np.array([big, 1.0])
+        y_now = np.array([big, float(np.exp(target_r * dlnt))])
+        return term.update(y_now, t_now, y_prev, t_prev, ATOL, relaxation_time=float('nan'), **ext)
+
+    # A SUPPLIED nan with the channel UNARMED must refuse -- the round-111 gap.
+    term = TerminationSteadyState(tolerance=1e-6, window=2)
+    feed(term, 2.0, 1.0, np.e, external_residual=float('nan'), external_armed=False)
+    assert term.armed_generic is True
+    v1 = feed(term, 0.0, np.e, np.e ** 2, external_residual=float('nan'), external_armed=False)
+    v2 = feed(term, 0.0, np.e ** 2, np.e ** 3, external_residual=float('nan'), external_armed=False)
+    assert v1 is False and v2 is False, (v1, v2)
+    assert type(v2) is bool, type(v2)
+    assert not np.isfinite(term.residual), term.residual
+    assert 'external channel' in str(term.worst_label), term.worst_label
+
+    # Control: an ABSENT channel (external_residual omitted -> None) is the ordinary reactor and
+    # MUST still terminate on the flat generic channel -- the byte-for-byte pre-plasma path.
+    ctrl = TerminationSteadyState(tolerance=1e-6, window=2)
+    feed(ctrl, 2.0, 1.0, np.e)
+    assert ctrl.armed_generic is True
+    feed(ctrl, 0.0, np.e, np.e ** 2)
+    assert feed(ctrl, 0.0, np.e ** 2, np.e ** 3) is True
+
+
+def test_a_nonfinite_per_species_slope_poisons_the_step_instead_of_dropping_it():
+    """Round 112 HIGH 1, second reproduction (the same steady-state decision, via the slope
+    analysis). ``_slope_analysis`` took each live species' log-log slope and DROPPED any that
+    came out non-finite, letting a finite neighbour govern -- so a run could be called steady
+    while one species blew up. With moles ``[1e308, 1e-20]`` and a floor below ``1e-20`` the
+    second species is LIVE (its moles clear the floor) but its mole FRACTION ``1e-20 / 1e308``
+    underflows to zero, ``log(0) = -inf``, and ``inf - inf`` makes its slope ``nan``. The finite
+    heavy species then held the maximum and, once armed and flat, two intervals returned
+    ``False, True``. A non-finite slope must poison the whole step, never be dropped."""
+    floor = 1.0e-30
+    big = 1.0e308
+
+    def feed(term, y_prev, t_prev, y_now, t_now):
+        return term.update(np.asarray(y_now, dtype=float), t_now,
+                           np.asarray(y_prev, dtype=float), t_prev, floor,
+                           labels=['heavy', 'trace'])
+
+    term = TerminationSteadyState(tolerance=1e-6, window=2)
+    # Arm the generic channel with a real transient while both fractions are O(1) and both live.
+    feed(term, [1.0, 1.0], 1.0, [float(np.exp(2.0)), 1.0], np.e)
+    assert term.armed_generic is True
+    # Now the heavy species is flat while the trace fraction underflows: slope[trace] = nan.
+    v1 = feed(term, [big, 1e-20], np.e, [big, 1e-20], np.e ** 2)
+    v2 = feed(term, [big, 1e-20], np.e ** 2, [big, 1e-20], np.e ** 3)
+    assert v1 is False and v2 is False, (v1, v2)
+    assert not np.isfinite(term.residual), term.residual   # poisoned, not dropped to a finite max
+    assert 'trace' in str(term.worst_label), term.worst_label
+
+
+def test_rate_ratios_refuse_a_nonfinite_ratio_over_a_finite_denominator():
+    """Round 112 HIGH 2 (the interrupt, network-promotion and surface-promotion decision sites).
+    Every enlargement/interrupt/promotion ratio -- core, edge, network-leak and surface -- routes
+    through ``_rate_ratios_or_zero``; it is the single decision-input gate for all four sites. A
+    finite, positive denominator does NOT guarantee a finite ratio: a +/-inf rate makes the ratio
+    non-finite (the network-leak ``lr > tol_interrupt`` interrupt), and a finite but huge gross
+    rate OVERFLOWS to +inf even over a finite denominator (the surface ``ratio > tol`` promotion).
+    A non-finite ratio then interrupts the run and promotes numerical garbage. The helper must
+    refuse -- stop loudly -- rather than return it, while still ABSTAINING (zeros) on a
+    zero/negative/non-finite denominator and passing finite ratios straight through."""
+    from rmgpy.solver.base import ReactionSystem
+    ratios = ReactionSystem._rate_ratios_or_zero
+
+    # Interrupt / network-leak site: a +/-inf or nan rate over a finite, positive denominator.
+    for bad in (np.inf, -np.inf, np.nan):
+        with pytest.raises(ValueError, match='(?i)non-finite'):
+            ratios(np.array([1.0, bad, 2.0]), 4.0)
+
+    # Surface-promotion site: finite gross rate, finite denominator, the RATIO overflows to +inf.
+    with pytest.raises(ValueError, match='(?i)non-finite'):
+        ratios(np.array([1.0e308, 1.0e308]), 1.0e-300)
+
+    # Preserved (round 110/111): abstain -- zeros, no raise -- on a zero/negative/non-finite
+    # denominator, even when a rate is itself non-finite.
+    for denom in (0.0, -1.0, float('nan'), float('inf')):
+        np.testing.assert_array_equal(ratios(np.array([np.inf, 1.0]), denom), np.zeros(2))
+    # Preserved: finite rates over a finite positive denominator pass straight through.
+    np.testing.assert_allclose(ratios(np.array([2.0, -4.0, 0.0]), 4.0), [0.5, 1.0, 0.0])

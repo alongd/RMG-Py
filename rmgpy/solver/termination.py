@@ -196,7 +196,7 @@ class TerminationSteadyState:
         self.worst_label = None
 
     def update(self, y_now, t_now, y_prev, t_prev, floor, labels=None,
-               external_residual=float('nan'), external_armed=False,
+               external_residual=None, external_armed=False,
                relaxation_time=float('nan')):
         """
         Fold one solver step into the criterion and report whether it is now satisfied.
@@ -216,9 +216,12 @@ class TerminationSteadyState:
         quantity every other residual measures -- folded into the residual by MAX so firing
         waits for it to go flat, and `external_armed` to arm the criterion from the reactor's
         known relaxation time, since a saturating-from-zero slope is bounded by 1 and never
-        reaches the generic ``R >= 1`` arm. Both default to nan/False, so an ordinary reactor
-        is byte-for-byte unaffected: with no external channel, arming reduces to the generic
-        ``R >= 1`` latch exactly as before.
+        reaches the generic ``R >= 1`` arm. `external_residual` defaults to ``None`` -- the "no
+        external channel" sentinel, STRUCTURALLY distinct from a supplied non-finite value -- and
+        `external_armed` to False, so an ordinary reactor is byte-for-byte unaffected: with no
+        external channel, arming reduces to the generic ``R >= 1`` latch exactly as before. A
+        SUPPLIED external residual that is non-finite (``nan`` or +/-inf) authorises nothing --
+        it poisons the fold so the criterion cannot arm or fire (round 112).
 
         `external_armed` vouches ONLY for the electron. It may arm the whole criterion only
         while the generic (neutral) residual is not still DEPARTING -- and departing is
@@ -244,43 +247,34 @@ class TerminationSteadyState:
         # is settled only when the slowest of everything -- neutrals AND the invisible
         # electron -- is flat.
         r = r_gen
-        # A non-finite external residual must be closed as a CLASS, not member by member
-        # (round 111 HIGH 1). The dispatch is ``np.isfinite`` -- whose negation is True for
-        # ``nan`` BY CONSTRUCTION -- and never a comparison or a maximum, which ``nan`` slips
-        # through silently (``nan > r``, ``nan < r``, ``nan == r`` are all False). Round 109
-        # made the fold ignore a non-finite value; round 110 poisoned +inf/-inf but its own
-        # underflow-addendum rerouted the subnormal-fraction case from +inf onto ``nan``, which
-        # then took the benign "no information" branch and let a flat generic channel fire on an
-        # armed-but-unusable electron channel. So the branch below cannot be written by listing
-        # the values checked; it must make NO non-finite value reach the flat test as a usable
-        # number.
-        if np.isfinite(external_residual):
-            # A usable finite external residual: MAX-combine for the flat test. Substitute only
-            # when the generic channel carried NO information (``nan``) or is the smaller of the
-            # two. A generic ``inf`` is preserved, since ``external_residual > inf`` is False.
-            if np.isnan(r) or external_residual > r:
-                r = external_residual
-                self.worst_label = '<external channel>'
-        elif bool(external_armed) or not np.isnan(external_residual):
-            # A NON-FINITE external residual (nan, +inf or -inf) from a channel that is IN PLAY:
-            # it has ARMED -- a live discharge whose electron passed its relaxation time
-            # ``t*nu_wall >= 1`` -- or it is an actual +/-inf, which only an active channel can
-            # compute (an ordinary reactor emits only the default ``nan``). The channel is active
-            # yet cannot certify a steady electron, so it must never authorise termination through
-            # ANY channel: not the external arm, and not a flat generic channel left to fire on
-            # its own. POISON the folded residual with ``inf`` so the non-finite guard below resets
-            # the streak and it can never arm, and NAME the invalid value in diagnostics. Testing
-            # ``not np.isnan`` here (True only for the infinities) keeps the +/-inf poison
-            # UNCONDITIONAL -- as in round 110 -- while ``external_armed`` adds the armed-``nan``
-            # case round 110 left open.
-            r = float('inf')
-            self.worst_label = '<external channel: non-finite residual {0!r}>'.format(external_residual)
-        else:
-            # A ``nan`` from a channel that is NOT in play: the ordinary reactor (``external_armed``
-            # False, ``external_residual`` the default ``nan``), or a plasma channel that has not
-            # yet armed and merely reported no number. Genuinely NO information -- keep the generic
-            # residual and judge the generic channel on its own. Byte-for-byte the pre-plasma path.
-            pass
+        # ONE mechanism for every non-finite input at the decision boundary (round 112 HIGH 1).
+        # The external channel is an INPUT to this decision only when the reactor SUPPLIES one:
+        # ``external_residual is None`` is the "no external channel" sentinel a channel-less
+        # reactor passes (now the default), and it is STRUCTURALLY distinct from a supplied
+        # non-finite value. That distinction is the fix: round 111 keyed the poison on
+        # ``external_armed`` because a bare ``nan`` value could not be told apart from "absent",
+        # so an ``external_armed=False`` nan slipped through onto the benign "no information"
+        # path and a flat generic channel fired on it. With a None sentinel the discriminator is
+        # presence, not a flag on the value. When a channel IS supplied, ANY non-finite value it
+        # carries -- ``nan`` (no usable number) or +/-inf (a blown fraction) -- POISONS the
+        # folded residual with ``inf`` so the single non-finite guard below (``if not
+        # np.isfinite(r)``) resets the streak and it can never arm. No per-case branch on
+        # isnan/isinf/armed, and the value is never dropped; an absent channel leaves the generic
+        # residual untouched, byte-for-byte the pre-plasma path. This is the ``np.isfinite``
+        # dispatch of round 111 -- whose negation is True for ``nan`` BY CONSTRUCTION, never a
+        # comparison a ``nan`` slips through -- now reached for the whole supplied class at once.
+        if external_residual is not None:
+            if np.isfinite(external_residual):
+                # A usable finite external residual: MAX-combine for the flat test. Substitute
+                # only when the generic channel carried NO information (``nan``) or is the smaller
+                # of the two. A generic ``inf`` is preserved, since ``external_residual > inf`` is
+                # False.
+                if np.isnan(r) or external_residual > r:
+                    r = external_residual
+                    self.worst_label = '<external channel>'
+            else:
+                r = float('inf')
+                self.worst_label = '<external channel: non-finite residual {0!r}>'.format(external_residual)
         self.residual = r
 
         # Arming is PER CHANNEL -- the thing that arms must be the thing declared steady.
@@ -373,8 +367,8 @@ class TerminationSteadyState:
         # a caller may make (round 110: the same "almost right on a contract that says exactly
         # right" class as HIGH 1). These attributes cross into the compiled solver, whose declared
         # type here is a Python ``bool``; keep them that.
-        self.armed_external = bool(external_armed and np.isfinite(external_residual)
-                                   and not generic_departing)
+        self.armed_external = bool(external_armed and external_residual is not None
+                                   and np.isfinite(external_residual) and not generic_departing)
         self.armed = bool(self.armed_generic or self.armed_external)
 
         if not np.isfinite(r):
@@ -508,17 +502,27 @@ class TerminationSteadyState:
         x_now = y_now[both] / total_now
         x_prev = y_prev[both] / total_prev
         slope = np.abs(np.log(x_now) - np.log(x_prev)) / dlnt
-        finite = np.isfinite(slope)
-        if not finite.any():
-            return {'status': 'nan', 'r': float('nan'), 'label': None, 'slopes': empty}
-        # Per-species slopes, keyed by the core-species integer index (hashable and stable),
-        # for every both-live species with a finite slope. This is what the departing test
-        # tracks per species; the aggregate max below is only what the generic R>=1 arm reads.
-        slopes = {int(both_indices[j]): float(slope[j]) for j in range(slope.shape[0]) if finite[j]}
-        slope_masked = np.where(finite, slope, -1.0)
-        k = int(np.argmax(slope_masked))
+        # ONE mechanism (round 112 HIGH 1): a non-finite per-species slope is a pathological
+        # composition, not a settled one -- a mole fraction underflowing to zero gives
+        # ``log(0) = -inf``, and ``inf - inf`` gives ``nan``. The old code DROPPED such a species
+        # (it kept only the ``finite[j]`` entries and masked the rest to -1.0 for the argmax), so
+        # a finite neighbour governed and the run could be declared steady while one species was
+        # blowing up. Do not drop it: if ANY both-live slope is non-finite, POISON the whole step
+        # -- status ``'inf'`` -> ``r = inf`` -> the non-finite guard in :meth:`update` resets the
+        # streak and it can never arm -- naming the offending species, exactly as an appearing or
+        # large-negative species is handled above. The class is closed by ``np.isfinite().all()``,
+        # never by a per-element comparison a ``nan`` slips through.
+        if not np.isfinite(slope).all():
+            bad = int(np.argmax(~np.isfinite(slope)))
+            return {'status': 'inf', 'r': float('inf'),
+                    'label': _label_of(labels, int(both_indices[bad])), 'slopes': empty}
+        # Per-species slopes, keyed by the core-species integer index (hashable and stable), for
+        # every both-live species. This is what the departing test tracks per species; the
+        # aggregate max below is only what the generic R>=1 arm reads.
+        slopes = {int(both_indices[j]): float(slope[j]) for j in range(slope.shape[0])}
+        k = int(np.argmax(slope))
         idx = int(both_indices[k])
-        return {'status': 'ok', 'r': float(slope_masked[k]), 'label': _label_of(labels, idx), 'slopes': slopes}
+        return {'status': 'ok', 'r': float(slope[k]), 'label': _label_of(labels, idx), 'slopes': slopes}
 
     @staticmethod
     def compute_residual(y_now, t_now, y_prev, t_prev, floor, labels=None):
