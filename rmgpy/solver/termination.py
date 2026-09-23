@@ -244,32 +244,43 @@ class TerminationSteadyState:
         # is settled only when the slowest of everything -- neutrals AND the invisible
         # electron -- is flat.
         r = r_gen
-        if np.isnan(external_residual):
-            # The external channel reported NO usable number (no wall/source, the electron below
-            # the mole floor, or an unresolvable fraction). No information either way: keep the
-            # generic residual and judge the generic channel on its own. This is the ordinary
-            # reactor's path -- ``external_residual`` defaults to nan -- so it stays byte-for-byte
-            # unaffected.
-            pass
-        elif np.isfinite(external_residual):
-            # A FINITE external residual: MAX-combine for the flat test. Substitute only when the
-            # generic channel carried NO information (``nan``) or is the smaller of the two. A
-            # generic ``inf`` (a species appeared from nothing or went negative -- emphatically
-            # NOT steady) is preserved, since ``external_residual > inf`` is False, and falls
-            # through to the non-finite guard below which resets the streak (round 109 HIGH).
+        # A non-finite external residual must be closed as a CLASS, not member by member
+        # (round 111 HIGH 1). The dispatch is ``np.isfinite`` -- whose negation is True for
+        # ``nan`` BY CONSTRUCTION -- and never a comparison or a maximum, which ``nan`` slips
+        # through silently (``nan > r``, ``nan < r``, ``nan == r`` are all False). Round 109
+        # made the fold ignore a non-finite value; round 110 poisoned +inf/-inf but its own
+        # underflow-addendum rerouted the subnormal-fraction case from +inf onto ``nan``, which
+        # then took the benign "no information" branch and let a flat generic channel fire on an
+        # armed-but-unusable electron channel. So the branch below cannot be written by listing
+        # the values checked; it must make NO non-finite value reach the flat test as a usable
+        # number.
+        if np.isfinite(external_residual):
+            # A usable finite external residual: MAX-combine for the flat test. Substitute only
+            # when the generic channel carried NO information (``nan``) or is the smaller of the
+            # two. A generic ``inf`` is preserved, since ``external_residual > inf`` is False.
             if np.isnan(r) or external_residual > r:
                 r = external_residual
                 self.worst_label = '<external channel>'
-        else:
-            # ``external_residual`` is +inf or -inf: the external channel is reporting a NON-FINITE
-            # residual, which must never authorise termination through ANY channel (round 110
-            # HIGH 1, owner's ruling). Dropping it here as "criterion unavailable" -- as the plain
-            # ``np.isfinite`` test used to -- while a flat generic channel goes on to terminate the
-            # run is precisely the defect. POISON the folded residual with ``inf`` so the
-            # non-finite guard below resets the streak and it can never arm, and NAME the invalid
-            # value so it is visible in diagnostics rather than silently swallowed.
+        elif bool(external_armed) or not np.isnan(external_residual):
+            # A NON-FINITE external residual (nan, +inf or -inf) from a channel that is IN PLAY:
+            # it has ARMED -- a live discharge whose electron passed its relaxation time
+            # ``t*nu_wall >= 1`` -- or it is an actual +/-inf, which only an active channel can
+            # compute (an ordinary reactor emits only the default ``nan``). The channel is active
+            # yet cannot certify a steady electron, so it must never authorise termination through
+            # ANY channel: not the external arm, and not a flat generic channel left to fire on
+            # its own. POISON the folded residual with ``inf`` so the non-finite guard below resets
+            # the streak and it can never arm, and NAME the invalid value in diagnostics. Testing
+            # ``not np.isnan`` here (True only for the infinities) keeps the +/-inf poison
+            # UNCONDITIONAL -- as in round 110 -- while ``external_armed`` adds the armed-``nan``
+            # case round 110 left open.
             r = float('inf')
             self.worst_label = '<external channel: non-finite residual {0!r}>'.format(external_residual)
+        else:
+            # A ``nan`` from a channel that is NOT in play: the ordinary reactor (``external_armed``
+            # False, ``external_residual`` the default ``nan``), or a plasma channel that has not
+            # yet armed and merely reported no number. Genuinely NO information -- keep the generic
+            # residual and judge the generic channel on its own. Byte-for-byte the pre-plasma path.
+            pass
         self.residual = r
 
         # Arming is PER CHANNEL -- the thing that arms must be the thing declared steady.
@@ -421,7 +432,12 @@ class TerminationSteadyState:
             span_ok = (t_now - self._t_flat_start) >= relaxation_time
         else:
             span_ok = (np.log(t_now) - np.log(self._t_flat_start)) >= 1.0
-        return self.armed and span_ok
+        # ``bool(...)`` on the final verdict, not just the arm attributes (round 111 MEDIUM):
+        # the e-fold fallback computes ``span_ok`` from ``np.log`` -- a numpy.float64 comparison
+        # yielding a ``numpy.bool_`` -- so ``self.armed and span_ok`` returns that scalar when
+        # armed is True, and update() would leak a ``numpy.bool_`` an ``is True`` caller fails.
+        # This is the single chokepoint every return-True path flows through.
+        return bool(self.armed and span_ok)
 
     @staticmethod
     def _slope_analysis(y_now, t_now, y_prev, t_prev, floor, labels=None):

@@ -1115,15 +1115,25 @@ cdef class ReactionSystem(DASx):
 
                 #Determination of species moving from surface to core on-the-fly
 
-                surface_species_rate_ratios = np.zeros(len(surface_species_indices))
                 surface_species_production = core_species_production_rates[surface_species_indices]
                 surface_species_consumption = core_species_consumption_rates[surface_species_indices]
+                # Route the surface-species ratio through the SAME abstention policy as the
+                # core/edge/network ratios (round 111 HIGH 2). ``max(|production|, |consumption|)
+                # / char_rate`` is a DIMENSIONLESS ratio only where ``char_rate`` is finite and
+                # strictly positive. On a reversible surface reaction with equal forward and
+                # reverse flux the net rates cancel, so ``char_rate == 0`` while gross production
+                # and consumption are both positive: the bare division gave ``positive / 0 = inf``
+                # and promoted a surface species through a criterion that is undefined. The helper
+                # abstains there -- returns zeros, promoting nothing -- with no ``1.0``, epsilon or
+                # floor (a floored denominator compares a dimensional rate against a dimensionless
+                # tolerance). This was the second entry point the round-110 helper did not cover:
+                # the repair lived in ``_rate_ratios_or_zero`` and this call site bypassed it.
+                surface_species_rates = np.maximum(np.abs(surface_species_production),
+                                                   np.abs(surface_species_consumption))
+                surface_species_rate_ratios = self._rate_ratios_or_zero(surface_species_rates, char_rate)
 
                 for i in range(len(surface_species_indices)):
-                    rr = max(abs(surface_species_production[i]), abs(surface_species_consumption[i])) / char_rate
-                    surface_species_rate_ratios[i] = rr
-
-                    if rr > tol_move_surface_species_to_core:
+                    if surface_species_rate_ratios[i] > tol_move_surface_species_to_core:
                         sind = surface_species_indices[i]
                         surface_object_indices.append(sind)
                         surface_objects.append(core_species[sind])

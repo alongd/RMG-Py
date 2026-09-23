@@ -1879,8 +1879,16 @@ def test_wall_only_run_does_not_divide_by_zero_chemistry_rate():
     Under strict float-error handling the wall-only run must not raise."""
     r, core, rxns = _build_reactor(wall=True, with_chemistry=False, x_ion=1.0e-6)
     r.termination = [TerminationTime((1.0e-4, 's'))]
+    # Premise: with no gas chemistry the characteristic chemistry rate is exactly zero, so
+    # every core/edge/network/surface rate ratio divides by zero.
+    y0 = np.array(r.y0, float)
+    r.residual(0.0, y0.copy(), np.zeros_like(y0))
+    assert np.all(np.asarray(r.core_species_rates, float) == 0.0), "the deck must carry no gas chemistry"
+    # Under strict float-error handling the wall-only run must complete without a 0/0 divide
+    # (the ratios abstain rather than laundering a NaN through argmax and the branching numbers).
     with np.errstate(invalid='raise', divide='raise'):
-        _simulate(r, core, rxns)
+        result = _simulate(r, core, rxns)
+    assert result[0] is True, "the wall-only run did not reach its termination-time backstop"
 
 
 def test_neutral_density_floor_is_independent_of_initial_inventory():
@@ -2397,71 +2405,85 @@ def test_the_ionisation_source_is_validated_at_the_evolved_volume_not_only_the_i
         r.jacobian(0.0, y, dydt, 0.0)
 
 
-def test_every_solver_test_is_a_tagged_defect_reproduction_or_asserts_a_property():
-    """Round 106 census: the brief above (see the I-246 rework banner) scopes the evidence
-    standard by an OBSERVABLE marker -- a test is a banked defect reproduction iff its
-    docstring names the round/finding it closes, otherwise it is an invariant/property check
-    that asserts its property directly. That scoping was prose; a reviewer counted tests
-    against it by hand and got a different tally. This makes the brief EXECUTABLE: every
-    ``test_*`` function in the two changed solver test files must either (a) name a
-    round/finding tag in its docstring, or (b) contain at least one ``assert``. A test that
-    does neither makes a claim it cannot back -- it neither reproduces a banked red nor asserts
-    a property -- and fails here, by name, so the standard cannot silently fall out of step."""
+def _solver_test_functions(source):
+    """(name, FunctionDef) for every ``test_*`` in a test-file source."""
+    import ast
+    return [(n.name, n) for n in ast.walk(ast.parse(source))
+            if isinstance(n, ast.FunctionDef) and n.name.startswith('test_')]
+
+
+def _tests_without_a_real_assertion(source):
+    """Names of ``test_*`` functions in `source` that carry NO non-vacuous assertion (round 111
+    LOW 2). A docstring -- even one naming a round/finding tag -- with a ``pass`` body asserts
+    nothing; a banked red or a property check must contain a real assertion, so a tag can no
+    longer stand in for one (the round-106 census accepted 'tag OR assert', which a tagged
+    ``pass`` satisfied). A bare-constant ``assert True`` does not count; ``pytest.raises`` /
+    ``pytest.warns`` as a context manager does."""
     import ast
 
-    here = os.path.dirname(os.path.abspath(__file__))
-    files = [os.path.join(here, 'plasmaWallTest.py'),
-             os.path.join(here, 'steadyStateTest.py')]
-    # A finding tag: "Round 106", "Finding 3", "HIGH 1", "MEDIUM:", "MED1", "LOW 3", etc. A
-    # severity word ALONE is not a tag -- it must carry the finding's own number or a colon
-    # ("HIGH 1", "HIGH-2", "MEDIUM:"), so a bare "HIGH" mentioned in prose cannot masquerade
-    # as naming a specific banked finding. Matched case-sensitively as whole tokens so ordinary
-    # prose ("higher", "lower", "medium-sized") cannot match either; the round/finding labels
-    # carry their own number.
-    tag = re.compile(r'\b(?:Round|Finding)\s*\d+'
-                     r'|\b(?:HIGH|MEDIUM|LOW)(?:[ -]?\d+|:)'
-                     r'|\bMED\d+\b')
-
-    def has_assert(node):
+    def has_real_assertion(node):
         for child in ast.walk(node):
             if isinstance(child, ast.Assert):
-                # A VACUOUS assertion (``assert True``, ``assert 1``, ``assert "x"``) asserts
-                # nothing -- its test is a bare constant that can never fail -- so it must not
-                # count as a property check, or a test could satisfy the census while backing
-                # no claim at all. Only a non-constant assertion counts.
                 if isinstance(child.test, ast.Constant):
-                    continue
+                    continue                     # assert True/1/"x" asserts nothing
                 return True
-            # pytest.raises(...) as a context manager is an assertion of behaviour
             if isinstance(child, ast.withitem):
-                call = child.context_expr
-                src = ast.dump(call)
-                if 'raises' in src or 'warns' in src:
+                dumped = ast.dump(child.context_expr)
+                if 'raises' in dumped or 'warns' in dumped:
                     return True
         return False
 
-    total = tagged = asserting = 0
-    neither = []
+    return [name for name, node in _solver_test_functions(source) if not has_real_assertion(node)]
+
+
+def test_every_solver_test_asserts_a_property():
+    """Round 106 census, TIGHTENED for round 111 (LOW 2). The census made the evidence standard
+    executable -- a test is a banked defect reproduction or a property check -- but accepted a
+    docstring naming a round/finding tag OR an assertion, so a tagged docstring with a ``pass``
+    body satisfied it while asserting nothing. A tag is prose about intent; only an assertion
+    backs a claim. Every ``test_*`` function in the two solver test files must now contain a
+    real (non-vacuous) assertion, tag or no tag."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    files = [os.path.join(here, 'plasmaWallTest.py'),
+             os.path.join(here, 'steadyStateTest.py')]
+    total = 0
+    offenders = []
     for path in files:
-        with open(path) as fh:
-            tree = ast.parse(fh.read(), filename=path)
-        for node in ast.walk(tree):
-            if isinstance(node, ast.FunctionDef) and node.name.startswith('test_'):
-                total += 1
-                doc = ast.get_docstring(node) or ''
-                is_tagged = bool(tag.search(doc))
-                is_asserting = has_assert(node)
-                if is_tagged:
-                    tagged += 1
-                if is_asserting:
-                    asserting += 1
-                if not (is_tagged or is_asserting):
-                    neither.append('{0}::{1}'.format(os.path.basename(path), node.name))
+        source = open(path).read()
+        total += len(_solver_test_functions(source))
+        offenders += ['{0}::{1}'.format(os.path.basename(path), name)
+                      for name in _tests_without_a_real_assertion(source)]
     assert total > 0, "no test functions were discovered -- the census enforcement is vacuous"
-    assert not neither, (
-        "{0} of {1} test functions across the two solver test files neither name a "
-        "round/finding tag nor contain an assertion, so they claim neither a banked red nor "
-        "a property: {2}".format(len(neither), total, neither))
+    assert not offenders, (
+        "{0} of {1} test functions across the two solver test files contain no non-vacuous "
+        "assertion, so they back no claim -- neither a banked red nor a property: {2}".format(
+            len(offenders), total, offenders))
+
+
+def test_the_census_rejects_a_tagged_docstring_with_no_assertion():
+    """Round 111 LOW 2, the census's own tripwire. Before the tightening a ``test_*`` whose body
+    was a round/finding-tagged docstring and ``pass`` satisfied the census, because a tag counted
+    as evidence -- the ``is_tagged or is_asserting`` rule. Feed exactly that and confirm the
+    detector now reports it, alongside a test that only asserts a bare constant; and confirm a
+    real assertion and a ``pytest.raises`` context manager are still accepted. This is what the
+    round-106 census could not do to itself."""
+    rejected = (
+        'def test_tagged_but_empty():\n'
+        '    """Round 111 HIGH 1 -- names a finding but asserts nothing."""\n'
+        '    pass\n'
+        'def test_vacuous_only():\n'
+        '    """LOW 2 tag."""\n'
+        '    assert True\n'
+    )
+    accepted = (
+        'def test_real():\n'
+        '    assert 1 == 1\n'
+        'def test_context_manager():\n'
+        '    with pytest.raises(ValueError):\n'
+        '        raise ValueError()\n'
+    )
+    assert set(_tests_without_a_real_assertion(rejected)) == {'test_tagged_but_empty', 'test_vacuous_only'}
+    assert _tests_without_a_real_assertion(accepted) == []
 
 
 def test_a_subnormal_electron_fraction_does_not_make_the_external_residual_infinite():
@@ -2491,21 +2513,54 @@ def test_a_subnormal_electron_fraction_does_not_make_the_external_residual_infin
     assert np.isnan(val), "an unresolvable electron fraction must read as no information (nan)"
 
 
-def test_the_cross_channel_census_now_covers_the_flux_and_transport_folds():
-    """Round 110 census. The round-109 cross-channel census enumerated the steady-state
-    RESIDUAL, CHARGE and JACOBIAN channels and reported 6 sites, but its channel taxonomy
-    omitted the FLUX / TRANSPORT channels -- so it was blind to the two folds that combine
-    gas-phase chemistry with a non-chemical rate, one of which carried this round's HIGH 2:
+def _char_rate_division_lines(src):
+    """Every line of a Cython source on which it divides by the bare name ``char_rate`` in
+    CODE -- comments and string/docstring literals excluded via the tokenizer, so a mention of
+    ``char_rate`` in prose or dead code cannot register and a behaviourally-identical rewrite
+    cannot hide. base.pyx is not valid Python (``cdef`` etc.), so this tokenizes rather than
+    ``ast.parse``-s; the token stream is enough to find a ``/`` immediately followed by the
+    ``char_rate`` NAME."""
+    import io
+    import tokenize
 
-      * base.pyx -- ``char_rate`` (chemistry) folded with ``non_chemical_char_rate``
-        (transport) into ``total_char_rate``, and the edge rate-ratio denominator that ranks
-        edge flux against ``char_rate``;
-      * plasma.pyx ``_apply_wall_terms`` -- the chemistry residual ``res`` combined with the
-        wall transport term.
+    toks = tokenize.generate_tokens(io.StringIO(src).readline)
+    code = [t for t in toks if t.type not in (
+        tokenize.COMMENT, tokenize.STRING, tokenize.NL, tokenize.NEWLINE,
+        tokenize.INDENT, tokenize.DEDENT)]
+    return [b.start[0] for a, b in zip(code, code[1:])
+            if a.type == tokenize.OP and a.string == '/'
+            and b.type == tokenize.NAME and b.string == 'char_rate']
 
-    This pins both to source so the census cannot silently drift again, and forbids the
-    dimensional ``else 1.0`` denominator that made a raw edge rate masquerade as a dimensionless
-    ratio (HIGH 2)."""
+
+def _method_line_span(src, header_regex):
+    """The [start, end) line span of the def whose header matches ``header_regex``, ended by the
+    next def/cpdef/cdef at the same or lower indent. Used to whitelist a guarded, display-only
+    region structurally rather than by hard-coded line numbers."""
+    lines = src.splitlines()
+    start = next(i for i, l in enumerate(lines, 1) if re.match(header_regex, l))
+    indent = len(lines[start - 1]) - len(lines[start - 1].lstrip())
+    for i in range(start, len(lines)):
+        l = lines[i]
+        if l.strip() and (len(l) - len(l.lstrip())) <= indent and re.match(r'\s*(cpdef|cdef|def)\b', l):
+            return start, i + 1
+    return start, len(lines) + 1
+
+
+def test_no_enlargement_ratio_divides_by_char_rate_outside_the_abstaining_helper():
+    """Round 110 census, REPAIRED for round 111 (LOW 1). The round-110 cross-channel census
+    asserted source SUBSTRINGS for the folds it already knew about -- so a comment carrying the
+    string satisfied it, a behaviourally-identical rewrite broke it, and, decisively, it could
+    not see a division site nobody had listed. That is why it MISSED the surface-species ratio
+    (round 111 HIGH 2), which divided ``max(production, consumption) / char_rate`` directly:
+    the census's own round finding it could not detect.
+
+    The repair ENUMERATES rather than lists. Every code division by ``char_rate`` in base.pyx is
+    found structurally (via the tokenizer, comments and strings excluded) and must fall inside
+    ``log_rates`` -- the only legitimate site, a display line guarded by ``if char_rate == 0.0``.
+    Any division outside it is an enlargement/pruning/promotion decision dividing by a rate that
+    can be zero, which must instead route through ``_rate_ratios_or_zero`` (finite, positive
+    denominator or abstain). The surface-ratio bug lands OUTSIDE ``log_rates`` and fails here;
+    after the fix the count outside is zero."""
     here = os.path.dirname(os.path.abspath(__file__))
     root = os.path.dirname(os.path.dirname(os.path.dirname(here)))
     with open(os.path.join(root, 'rmgpy', 'solver', 'base.pyx')) as fh:
@@ -2513,18 +2568,25 @@ def test_the_cross_channel_census_now_covers_the_flux_and_transport_folds():
     with open(os.path.join(root, 'rmgpy', 'solver', 'plasma.pyx')) as fh:
         plasma_src = fh.read()
 
-    # The chemical / non-chemical flux fold is present and catalogued.
-    assert 'char_rate * char_rate' in base_src
-    assert 'non_chemical_char_rate * non_chemical_char_rate' in base_src
-    # The edge-ratio criterion abstains through the helper, and the FORBIDDEN dimensional
-    # denominators (owner's ruling: 1.0, an epsilon, or any floor) are gone: a floored
-    # denominator compares a dimensional rate against a dimensionless tolerance (round 110 HIGH 2).
+    division_lines = _char_rate_division_lines(base_src)
+    log_start, log_end = _method_line_span(base_src, r'\s*cpdef\s+log_rates\b')
+    outside = [ln for ln in division_lines if not (log_start <= ln < log_end)]
+    assert not outside, (
+        "base.pyx divides by char_rate outside the guarded display method log_rates, at "
+        "line(s) {0} -- an enlargement/pruning/promotion ratio dividing by a rate that can be "
+        "zero. Route it through _rate_ratios_or_zero (round 111 HIGH 2); every such division "
+        "found: {1}".format(outside, division_lines))
+    # The sanctioned route exists, and the FORBIDDEN dimensional denominators (owner's ruling:
+    # 1.0, an epsilon, or any floor) stay gone -- a floored denominator compares a dimensional
+    # rate against a dimensionless tolerance (round 110 HIGH 2).
     assert '_rate_ratios_or_zero' in base_src, "the abstaining ratio helper is missing"
     assert 'char_rate if char_rate > 0.0 else 1.0' not in base_src, \
         "the dimensional edge-ratio denominator (round 110 HIGH 2) was reintroduced"
     assert 'ratio_denom' not in base_src, \
         "a floored ratio denominator was reintroduced; the ratio criterion must abstain, not floor"
-    # The chemistry / wall-transport fold is present and catalogued.
+    # The chemistry / non-chemical flux folds this census also catalogues remain present.
+    assert 'char_rate * char_rate' in base_src
+    assert 'non_chemical_char_rate * non_chemical_char_rate' in base_src
     assert '_apply_wall_terms(y, V, res)' in plasma_src
 
 
@@ -2536,7 +2598,7 @@ def test_zero_core_flux_with_wall_loss_abstains_on_ratio_but_keeps_an_absolute_c
     dimensioned ABSOLUTE criterion is present and governs, and the run is NOT dismissed as one
     that never started on the strength of an undefined ratio. The wall physics itself is
     unchanged -- this only asserts which criterion is in force when the ratio is undefined."""
-    r, _, _ = _build_reactor(wall=True, with_chemistry=False, source=1.0e18)
+    r, core, rxns = _build_reactor(wall=True, with_chemistry=False, source=1.0e18)
     y = _state_at(r, 1.0e-6)                       # a live discharge state (electrons present)
     r.residual(0.0, y.copy(), np.zeros_like(y))
     char_rate = float(np.sqrt(np.sum(np.asarray(r.core_species_rates, float) ** 2)))
@@ -2545,3 +2607,12 @@ def test_zero_core_flux_with_wall_loss_abstains_on_ratio_but_keeps_an_absolute_c
     assert char_rate == 0.0, "a chemistry-free deck must carry no gas-phase characteristic rate"
     # ...but the wall carries real flux, so the absolute criterion is live (total_char_rate > 0).
     assert r.get_non_chemical_char_rate() > 0.0, "the wall loss must supply the absolute criterion"
+
+    # Drive the PRODUCTION path (simulate + total_char_rate), not just static probes: with the
+    # ratio abstaining on the zero denominator, the run must still terminate deterministically on
+    # the dimensioned absolute criterion rather than divide by zero or hang. Under strict float
+    # handling a reverted ratio (bare ``rates / char_rate`` = 0/0) would raise here instead.
+    r.termination = [TerminationSteadyState(tolerance=1e-6, window=2), TerminationTime((1.0e-4, 's'))]
+    with np.errstate(invalid='raise', divide='raise'):
+        result = _simulate(r, core, rxns)
+    assert result[0] is True, "the wall-only discharge did not terminate through the absolute criterion"

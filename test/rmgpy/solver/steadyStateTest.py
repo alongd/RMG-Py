@@ -884,34 +884,99 @@ def test_an_unusable_external_residual_cannot_authorise_termination():
 
 
 def test_a_nonfinite_external_residual_poisons_even_an_armed_generic_channel():
-    """Round 110 HIGH 1 (owner's ruling). A non-finite residual must never authorise
+    """Round 110 HIGH 1 + round 111 HIGH 1. A non-finite external residual must never authorise
     termination through ANY channel -- and in particular must not be dropped as 'criterion
     unavailable' while the remaining (generic) channel goes on to terminate the run, which is
     exactly the old behaviour. Arm the generic channel through a real transient and take it
-    flat, then have the external channel report +inf (and -inf): the folded residual is
-    poisoned, the step cannot terminate, and the invalid value is named in the diagnostic
-    rather than silently swallowed."""
+    flat, then have the external channel report a non-finite value: the folded residual is
+    poisoned, the step cannot terminate, and the invalid value is named in the diagnostic.
+
+    This now covers the WHOLE non-finite class, not just the enumerated infinities (round 111):
+      * ``+inf``/``-inf`` poison UNCONDITIONALLY -- only an active channel can compute an
+        infinite slope, so an ordinary reactor never emits one and gating on the arm is
+        unnecessary;
+      * ``nan`` poisons when the channel is ARMED -- a live discharge whose electron has passed
+        ``t*nu_wall >= 1`` yet produced no usable number (the subnormal-fraction underflow that
+        round 110's own addendum rerouted from ``+inf`` onto the ``nan`` branch). Round 110
+        poisoned the infinities and left this ``nan`` on the benign 'no information' path, so a
+        flat generic channel still fired on it. A guard written as a comparison lets ``nan``
+        through by construction; the fix dispatches on ``np.isfinite`` instead."""
     big = 1.0e12
 
-    def feed(term, target_r, t_prev, t_now, external_residual):
+    def feed(term, target_r, t_prev, t_now, external_residual, external_armed):
         dlnt = np.log(t_now) - np.log(t_prev)
         y_prev = np.array([big, 1.0])
         y_now = np.array([big, float(np.exp(target_r * dlnt))])
         return term.update(y_now, t_now, y_prev, t_prev, ATOL,
-                           external_residual=external_residual, external_armed=False,
+                           external_residual=external_residual, external_armed=external_armed,
                            relaxation_time=float('nan'))
 
-    for poison in (float('inf'), float('-inf')):
+    for poison, armed in ((float('inf'), False), (float('-inf'), False), (float('nan'), True)):
         term = TerminationSteadyState(tolerance=1e-6, window=2)
-        feed(term, 2.0, 1.0, np.e, float('nan'))          # a real transient arms the generic arm
+        # Arm the generic channel through a real transient, with a benign (unarmed) external.
+        feed(term, 2.0, 1.0, np.e, float('nan'), False)
         assert term.armed_generic is True
-        # Generic now flat, but the external channel reports a non-finite residual: no
-        # termination, even though the armed generic channel alone would have fired.
-        v1 = feed(term, 0.0, np.e, np.e ** 2, poison)
-        v2 = feed(term, 0.0, np.e ** 2, np.e ** 3, poison)
-        assert v1 is False and v2 is False, (poison, v1, v2)
-        assert not np.isfinite(term.residual)             # the fold is poisoned, not dropped
-        assert 'external channel' in str(term.worst_label), term.worst_label
+        # Generic now flat, but the external channel reports a non-finite residual it cannot
+        # stand behind: no termination, even though the armed generic channel alone would fire.
+        v1 = feed(term, 0.0, np.e, np.e ** 2, poison, armed)
+        v2 = feed(term, 0.0, np.e ** 2, np.e ** 3, poison, armed)
+        assert v1 is False and v2 is False, (poison, armed, v1, v2)
+        assert not np.isfinite(term.residual), (poison, armed)   # the fold is poisoned, not dropped
+        assert 'external channel' in str(term.worst_label), (poison, term.worst_label)
+
+
+def test_a_nan_external_residual_from_an_armed_channel_cannot_authorise_termination():
+    """Round 111 HIGH 1, the reviewer's exact reproduction. The non-finite authorisation
+    matrix that round 110 left behind read ``+inf -> 0, -inf -> 0, nan -> 1 unsafe path``: a
+    ``nan`` external residual still authorised termination on one path. Arm the generic channel
+    with ``R = 2`` over ``[1, e]``, then supply two flat generic intervals with
+    ``external_residual = nan`` while the external channel is ARMED (``external_armed=True`` --
+    the electron has passed its relaxation time but its fraction underflowed to an unresolvable
+    zero). The second flat interval returned ``True`` before the fix. A channel that is vouching
+    yet cannot produce a finite number must certify nothing."""
+    big = 1.0e12
+
+    def feed(term, target_r, t_prev, t_now):
+        dlnt = np.log(t_now) - np.log(t_prev)
+        y_prev = np.array([big, 1.0])
+        y_now = np.array([big, float(np.exp(target_r * dlnt))])
+        return term.update(y_now, t_now, y_prev, t_prev, ATOL,
+                           external_residual=float('nan'), external_armed=True,
+                           relaxation_time=float('nan'))
+
+    term = TerminationSteadyState(tolerance=1e-6, window=2)
+    feed(term, 2.0, 1.0, np.e)                     # R = 2 over [1, e] arms the generic channel
+    assert term.armed_generic is True
+    v1 = feed(term, 0.0, np.e, np.e ** 2)          # generic now flat; external channel = nan
+    v2 = feed(term, 0.0, np.e ** 2, np.e ** 3)     # the interval that returned True before
+    assert v1 is False and v2 is False, (v1, v2)
+    # Both must be a Python bool, not a numpy.bool_ leaked from the relaxation-time fallback.
+    assert type(v2) is bool, type(v2)
+    assert not np.isfinite(term.residual)          # the fold is poisoned, not silently dropped
+    assert 'external channel' in str(term.worst_label), term.worst_label
+
+
+def test_update_returns_a_python_bool_on_the_relaxation_time_fallback():
+    """Round 111 MEDIUM. The numpy.bool_ leak was fixed at its source for the ``armed_external``
+    attribute (round 110), but the DEFAULT relaxation-time fallback still computes ``span_ok``
+    as ``(np.log(t_now) - np.log(t_flat_start)) >= 1.0`` -- a numpy.float64 comparison yielding a
+    numpy.bool_ -- and returned ``self.armed and span_ok`` unchanged. So a genuine termination on
+    that path returned a numpy.bool_, not a Python bool, and an ``is True`` caller would fail.
+    ``update()`` must return a Python bool on EVERY path: the not-evaluable early return, the
+    not-yet-persisted return, and the fired verdict on both the supplied-relaxation-time branch
+    and the e-fold fallback."""
+    # An ordinary reactor: no external channel, no relaxation time -> the e-fold fallback path.
+    term = TerminationSteadyState(tolerance=1e-6, window=2)
+    flat = np.array([1.0, 0.5])
+    dlnt = np.log(np.e) - np.log(1.0)
+    moved = np.array([1.0, float(np.exp(2.0 * dlnt))])
+    assert term.update(moved, np.e, flat, 1.0, 1e-30) is False        # a real transient arms generic
+    assert term.armed_generic is True
+    v1 = term.update(flat, np.e ** 2, flat, np.e, 1e-30)              # flat, streak 1: not yet
+    v2 = term.update(flat, np.e ** 3, flat, np.e ** 2, 1e-30)        # flat, streak 2: fires on fallback
+    assert v1 is False, v1
+    assert v2 is True, v2
+    assert type(v1) is bool and type(v2) is bool, (type(v1), type(v2))
 
 
 def test_rate_ratio_criterion_evaluates_only_for_a_finite_positive_denominator():
@@ -990,6 +1055,91 @@ def test_a_zero_core_flux_reactor_does_not_promote_by_dimensional_comparison(cap
     # The dimensioned absolute criterion governs deterministically instead.
     assert any('this model never started' in r.getMessage() for r in caplog.records), \
         "the absolute zero-flux criterion did not govern the zero-core-flux case"
+
+
+def _reversible_surface_reaction(h298_b, termination, x_a=0.5, x_b=0.5):
+    """A reversible reaction ``A <=> B`` whose two species carry IDENTICAL Cp/S and a settable
+    B enthalpy, with B declared a SURFACE species on that reaction. At ``h298_b == 0`` the two
+    thermo sets are identical (Keq == 1); started at equal moles the forward and reverse fluxes
+    are then equal at every step, so the NET rate of each species is exactly zero -- hence
+    ``char_rate == 0`` -- while the GROSS production and consumption of B are positive and equal.
+    A small non-zero ``h298_b`` breaks the tie: ``char_rate`` becomes positive and the surface
+    ratio ``max(production, consumption) / char_rate`` is a finite, large, applicable number."""
+    tdata = ([300, 400, 500, 600, 800, 1000, 1500], "K")
+
+    def spc(smiles, h):
+        return Species(molecule=[Molecule().from_smiles(smiles)],
+                       thermo=ThermoData(Tdata=tdata, Cpdata=([12.0] * 7, "cal/(mol*K)"),
+                                         H298=(h, "kcal/mol"), S298=(50.0, "cal/(mol*K)")))
+
+    a, b = spc("CC", 0.0), spc("CCC", h298_b)
+    rxn = Reaction(reactants=[a], products=[b], reversible=True,
+                   kinetics=Arrhenius(A=(1.0e3, "1/s"), n=0.0, Ea=(0.0, "kcal/mol"), T0=(298.15, "K")))
+    reactor = SimpleReactor(T=1000.0, P=1.0e5, initial_mole_fractions={a: x_a, b: x_b},
+                            n_sims=1, termination=termination)
+    reactor.initialize_model([a, b], [rxn], [], [], [b], [rxn])
+    return reactor, [a, b], [rxn], b
+
+
+def _surface_model_settings():
+    # use_dynamics on (a finite edge->core tolerance), and a surface->core species tolerance the
+    # ratio is measured against; the reaction->core tolerance is set out of reach so only the
+    # SPECIES promotion is exercised.
+    return ModelSettings(tol_keep_in_edge=0, tol_move_to_core=1e5, tol_interrupt_simulation=1e8,
+                         tol_move_edge_rxn_to_core=0.5, tol_move_surface_spc_to_core=0.2,
+                         tol_move_surface_rxn_to_core=1e9)
+
+
+def test_a_reversible_surface_reaction_at_equal_flux_does_not_divide_by_zero(caplog):
+    """Round 111 HIGH 2. The surface-species-to-core promotion ratio in base.pyx divided
+    ``max(|production|, |consumption|)`` by ``char_rate`` DIRECTLY, bypassing the round-110
+    abstaining helper -- the second entry point the helper's install did not route through. On a
+    reversible surface reaction with equal forward and reverse flux the net rates cancel
+    (``char_rate == 0``) while the gross rates are positive, so the division is ``positive / 0``:
+    before the fix the production entry raised ZeroDivisionError (a numpy divide would instead
+    have promoted B through an undefined criterion). Routed through ``_rate_ratios_or_zero`` it
+    abstains -- the ratio is zero, nothing is promoted -- and the run completes."""
+    reactor, core, rxns, b = _reversible_surface_reaction(0.0, [TerminationTime((1.0e-3, 's'))])
+    # Premise: char_rate is exactly zero while the surface species' gross rates are positive.
+    y0 = np.array(reactor.y0, float)
+    reactor.residual(0.0, y0.copy(), np.zeros_like(y0))
+    assert float(np.sqrt(np.sum(np.asarray(reactor.core_species_rates, float) ** 2))) == 0.0, \
+        "equal forward/reverse flux must give a zero characteristic chemistry rate"
+    ib = reactor.get_species_index(b)
+    assert np.asarray(reactor.core_species_production_rates, float)[ib] > 0.0
+    assert np.asarray(reactor.core_species_consumption_rates, float)[ib] > 0.0
+
+    with caplog.at_level(logging.INFO):
+        result = reactor.simulate(core, rxns, [], [], [b], rxns,
+                                  model_settings=_surface_model_settings(),
+                                  simulator_settings=SimulatorSettings())
+    # The undefined ratio abstains: the surface species is NOT moved to the core...
+    assert not any('Moving species' in r.getMessage() and str(b) in r.getMessage()
+                   for r in caplog.records), "a 0/0 surface ratio promoted the surface species"
+    # ...and the run completes to its backstop instead of raising ZeroDivisionError.
+    assert result[0] is True
+
+
+def test_a_surface_species_is_promoted_when_the_characteristic_rate_is_positive(caplog):
+    """Round 111 HIGH 2, the positive-denominator production-path arm. Abstaining on a zero
+    denominator is only correct if the criterion still PROMOTES where its denominator is defined
+    -- otherwise a guard broken to never promote is indistinguishable from a working one. Break
+    the forward/reverse tie by a small B enthalpy so ``char_rate > 0`` and the surface ratio is a
+    finite, large, applicable number: B is moved from surface to core, on the same production
+    path, proving the fix removed only the undefined case."""
+    reactor, core, rxns, b = _reversible_surface_reaction(-0.2, [TerminationTime((1.0e-3, 's'))])
+    y0 = np.array(reactor.y0, float)
+    reactor.residual(0.0, y0.copy(), np.zeros_like(y0))
+    assert float(np.sqrt(np.sum(np.asarray(reactor.core_species_rates, float) ** 2))) > 0.0, \
+        "a broken tie must give a positive characteristic chemistry rate (an applicable denominator)"
+
+    with caplog.at_level(logging.INFO):
+        reactor.simulate(core, rxns, [], [], [b], rxns,
+                         model_settings=_surface_model_settings(),
+                         simulator_settings=SimulatorSettings())
+    assert any('Moving species' in r.getMessage() and str(b) in r.getMessage()
+               for r in caplog.records), \
+        "a surface species with a defined, large rate ratio was not promoted -- the guard is inert"
 
 
 def test_steady_state_report_names_the_criterion_that_fired(caplog):
