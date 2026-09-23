@@ -806,8 +806,128 @@ green on the rebuild), `round106_build.log` (clean `make clean && make build`; `
   fail-loud behaviour (an infinite/vanishing source silently applied is the defect), and such a volume
   is astronomically unphysical, but it is a hard stop rather than a graceful trial rejection.
 
+## Round 109: the poison is finite-checked away — one HIGH closed, three MEDIUM, a census of the whole class
+
+The round-106 external-arm fold folded the reactor's electron residual into the generic residual by
+MAX so a flat tail waits for the slowest of everything. But it wrote the MAX as
+`if not np.isfinite(r) or external_residual > r: r = external_residual`, and `not np.isfinite(r)` is
+true for **both** `nan` and `inf`. `_slope_analysis` emits `inf` when a species crosses UP through the
+floor (appears from nothing) — "emphatically not steady" — so a small flat electron residual
+**replaced** that poison instead of losing a MAX to it. The second half made it terminate rather than
+merely mis-report: the per-species departing counters are advanced only on an `ok` step, so on an `inf`
+step nothing was recounted or pruned, a composition settled a step earlier kept its counters,
+`generic_departing` stayed `False`, `armed_external` stayed `True`, and the streak advanced on the
+substituted residual. Under model enlargement a species crossing the floor is ordinary, so this was a
+live path. No compiled code changed this round: the whole fix is in the pure-Python
+`termination.py`. Evidence: `evidence/round109_before.stdout.log` (the two HIGH tests red on HEAD
+`0cda42441`, the two MEDIUM property tests already green), `round109_after.stdout.log` (288 passed, 1
+skipped on the fixed tree).
+
+- **HIGH (closed) — a finite external residual erased the generic `inf`.** Two coordinated changes,
+  both in `update()`. (1) The fold now reads `if np.isnan(r) or external_residual > r`: `np.isnan`
+  singles out the *no-information* case a `nan` generic residual means, while an `inf` — *strong
+  negative information* — is preserved (`external_residual > inf` is False), falls through to the
+  non-finite streak guard, and correctly returns not-steady. (2) The counter update now branches on
+  the analysis status explicitly, because `nan` and `inf` are **different answers**: an `ok` step
+  counts each species' own trend and prunes; an `inf` step **discards** the per-species history
+  (`_steps_since_rise.clear()`, `_slope_prev.clear()`) because the composition changed structurally and
+  a stale "settled" count must not vouch for the new state; a `nan` step **leaves the counters exactly
+  as they are** (no information observed). Both behaviours carry a code comment saying which is intended
+  for which. Reproduced through the real criterion by moving a mole value across the real floor (never
+  by injecting a non-finite): `test_a_species_appearing_while_the_external_channel_is_flat_does_not_return_steady`
+  (the appearance returns not-steady and reports `inf`, while a byte-identical control with no
+  appearance still terminates) and `test_nan_and_inf_steps_treat_the_departing_counters_differently`.
+
+- **MEDIUM 1 (answered in docstring and user docs) — `window` gates two quantities, and they pull the
+  SAME way.** The finding's premise, that raising `window` tightens persistence while *weakening* the
+  departing test, is inverted. Raising `window` requires a longer flat streak (stricter persistence)
+  AND holds each species as "departing" for more consecutive non-rises (later external arm) — both make
+  the verdict strictly **more** conservative, so a larger `window` can only push termination later,
+  never earlier. Splitting the knob would let a user buy a combination ("stricter streak, weaker
+  departing test") that means nothing physical here. Documented in the `TerminationSteadyState`
+  docstring and in `input.rst`, and pinned by
+  `test_raising_window_makes_the_criterion_no_less_conservative_in_both_roles` (the firing step is
+  monotonically non-decreasing across `window` = 2,3,4,5, driven through the external-arm gate so both
+  roles are active).
+
+- **MEDIUM 2 (answered by a test that grows the core) — index keys are safe because `reset()` wipes
+  them between runs.** `_slope_prev`/`_steps_since_rise` are keyed by core-species integer index. Within
+  one `simulate()` the core is fixed, so an index means the same species for the whole integration; the
+  core only grows across `simulate()` boundaries (enlargement), and `simulate()` calls `reset()` first
+  (`base.pyx:754`), clearing both dicts. `test_departing_counters_are_keyed_by_index_and_cleared_between_runs`
+  demonstrates the hazard concretely — feeding an enlarged core WITHOUT a reset does inherit a stale
+  count at a reused index — and then the guard: after `reset()` the dicts are empty, so no index can
+  carry a meaning from a smaller core.
+
+- **MEDIUM 3 (accept/reject enumerated, refusal reaches the user) — `_coerce_bool_flag`.**
+  `test_coerce_bool_flag_accept_reject_set_is_enumerated_and_the_refusal_reaches_the_user` fixes the
+  full contract: **accepted** — `True`/`False`/`None` (None → False), and the boolean-like strings
+  `true/1/yes/on` → True, `false/0/no/off` and the **empty string** → False (case- and
+  whitespace-insensitive); **rejected with a raised `PlasmaStateError`** — the motivating `"False"`'s
+  sibling typos, any unrecognised string, `2`, `0`, `0.5`, `NaN`, `inf`, and any list/dict/object. The
+  test also drives the rejection through the reactor constructor to show it propagates to the user, not
+  into a log line.
+
+### Census — every site where one channel's value meets another's, and what it does with `nan` vs `inf`
+
+The defect is a **class**: a sentinel carrying "not steady / invalid" erased by a later stage's
+finite/truthiness check. Enumerating every cross-channel combine / substitute / compare site in the
+branch (a value from one channel — generic-neutral residual, external-electron residual, electron
+population, cation population, differential Jacobian rows — meeting a value from another):
+
+1. **`termination.py:260` — the fold** (generic residual vs external residual; substitute-or-MAX). The
+   external side is gated by `np.isfinite(external_residual)`, so a `nan`/`inf` external is ignored.
+   Generic side after this round: `nan` → substitute external (no information); `inf` → **preserved**
+   (external cannot erase it); finite → MAX. **This was the one site with the erasure defect; now
+   fixed.**
+2. **`termination.py:334` — the external arm gate** `armed_external = external_armed and not
+   generic_departing` (external vouch vs generic departing verdict). Both operands are booleans;
+   `generic_departing` derives from integer counts and `external_armed` from the reactor. Non-finite
+   slopes are dropped upstream in `_slope_analysis` (only finite slopes enter the dict), so no
+   non-finite value can reach here. No erasure pathway.
+3. **`termination.py:337` — the combined arm** `armed = armed_generic or armed_external` (two booleans).
+   No non-finite pathway.
+4. **`plasma.pyx:2704` — the quasineutrality residual row** `delta[electron_index] = charge_row_scale *
+   _net_charge(y)` (electron population vs cation populations). A non-finite population makes the row
+   non-finite, which the integrator's own error control rejects — `nan` and `inf` both propagate as a
+   bad residual and are **not** erased into a spurious steady/valid state.
+5. **`plasma.pyx:2731 (`_set_charge_row_scale`)** `scale = max(differential); charge_row_scale = scale
+   if isfinite(scale) and scale > 0 else 1.0` (the charge row vs the differential rate rows). A
+   non-finite `scale` (`nan` or `inf`) falls back to `1.0`. This is an **exact** row scaling that
+   changes no solution, so the fallback cannot erase a steady-state sentinel; it only affects
+   conditioning.
+6. **`plasma.pyx:1141` — the initial net-charge diagnostic** (electron vs cations on the initial
+   composition) degrades a non-finite `net` (`nan` or `inf`) to a warning and returns. This is an
+   advisory neutrality check, not a steady-state or validity decision, and the electron population's
+   own non-finiteness is separately **refused** at `plasma.pyx:2434` (`if not np.isfinite(e0) ...
+   raise`). So the non-finite is caught by a refusal elsewhere; the diagnostic's graceful skip erases
+   no sentinel.
+
+**Count: 6 cross-channel sites. Sites where a sentinel meaning "not steady / invalid" could be erased by
+a finite/truthiness check into a false positive: 1 before this round (the fold, site 1); 0 after.** The
+external channel's own vocabulary is worth recording: `steady_state_external_residual`
+(`plasma.pyx:2259`) returns **only** `nan` or a finite slope, never `inf` — so the fold's `inf` can only
+ever arrive on the generic side, exactly where site 1 now handles it.
+
+This branch has now produced the same shape four times — `nu_wall` guard vs its computation, source at
+initial vs evolved volume, aggregate vs per-species trend, and now a finite-check vs the specific
+non-finite value that carries the meaning. The census above is the falsifiable form of "and nowhere
+else".
+
+### What I could NOT reach (named gaps, round 109)
+
+- **A `nan` step still resets the flat streak** (via the shared non-finite guard) while leaving the
+  per-species trend memory intact. This is deliberate — the two facts are independent (a no-information
+  interval breaks *continuous* flatness but tells us nothing about any species' trend) — but it means a
+  run peppered with degenerate intervals re-pays the streak each time even though no species moved. In
+  practice DASSL does not emit repeated identical time points, so this is a latent property, not an
+  observed cost.
+
 ## Files touched
 
+Round 109 changed only `rmgpy/solver/termination.py`,
+`documentation/source/users/rmg/input.rst`, `test/rmgpy/solver/steadyStateTest.py` and
+`test/rmgpy/solver/plasmaWallTest.py` — no compiled code, so no rebuild. Across the whole rework:
 `rmgpy/solver/plasma.pyx`, `rmgpy/solver/base.pyx`, `rmgpy/solver/base.pxd`,
 `rmgpy/solver/termination.py`, `rmgpy/rmg/input.py`, `documentation/source/users/rmg/input.rst`,
 `test/rmgpy/solver/plasmaWallTest.py`, `test/rmgpy/solver/steadyStateTest.py`,

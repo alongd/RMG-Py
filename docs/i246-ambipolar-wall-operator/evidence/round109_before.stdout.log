@@ -1,0 +1,103 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0
+rootdir: /home/alon/Code/RMG-Py-i246-ambipolar-wall-operator
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collected 4 items
+
+test/rmgpy/solver/steadyStateTest.py FF..                                [100%]
+
+=================================== FAILURES ===================================
+_ TerminationSteadyStateLatchTest.test_a_species_appearing_while_the_external_channel_is_flat_does_not_return_steady _
+
+self = <steadyStateTest.TerminationSteadyStateLatchTest object at 0x74775c6205b0>
+
+    def test_a_species_appearing_while_the_external_channel_is_flat_does_not_return_steady(self):
+        """Round 109 HIGH: a species crossing UP through the floor makes _slope_analysis return
+        inf -- "emphatically not steady". The fold that adds the external (electron) channel
+        tested ``not np.isfinite(r)``, which is true for inf as well as nan, so a small flat
+        external residual REPLACED the inf poison instead of losing a MAX to it; and the
+        per-species counters, updated only on an 'ok' step, kept their stale 'settled' values,
+        so armed_external stayed True and the streak advanced. The appearance step then returned
+        steady -- byte-identically to a control where nothing appears. A species crossing the
+        floor is ordinary under model enlargement, so this is a live path. The appearance must
+        NOT return steady; the control, genuinely settled, still must."""
+        atol = 1e-16
+        big, ext, tau = 1e12, 1e-9, 1e-30
+        labels = ['big', 'settler', 'newcomer']
+    
+        def primed():
+            # arm generic (settler climbs two decades), then one flat sample: armed and settled,
+            # streak 1, one more flat step from terminating.
+            t = TerminationSteadyState(tolerance=1e-6, window=2)
+            t.update(np.array([big, 7.389, 0.0]), np.e ** 1, np.array([big, 1.0, 0.0]), np.e ** 0,
+                     atol, labels=labels, external_residual=ext, external_armed=True, relaxation_time=tau)
+            t.update(np.array([big, 7.389, 0.0]), np.e ** 2, np.array([big, 7.389, 0.0]), np.e ** 1,
+                     atol, labels=labels, external_residual=ext, external_armed=True, relaxation_time=tau)
+            return t
+    
+        # Control: nothing appears -> genuinely settled -> terminates.
+        control = primed()
+        assert control.update(np.array([big, 7.389, 0.0]), np.e ** 3, np.array([big, 7.389, 0.0]),
+                              np.e ** 2, atol, labels=labels, external_residual=ext,
+                              external_armed=True, relaxation_time=tau) is True
+    
+        # Appearance: the newcomer crosses up through the floor on this step.
+        appear = primed()
+        r_alone, lbl = appear.compute_residual(np.array([big, 7.389, atol * 10]), np.e ** 3,
+                                               np.array([big, 7.389, 0.0]), np.e ** 2, atol, labels=labels)
+        assert not np.isfinite(r_alone) and r_alone > 0.0 and lbl == 'newcomer'   # inf, the newcomer
+        got = appear.update(np.array([big, 7.389, atol * 10]), np.e ** 3, np.array([big, 7.389, 0.0]),
+                            np.e ** 2, atol, labels=labels, external_residual=ext,
+                            external_armed=True, relaxation_time=tau)
+>       assert got is False                          # the inf survives the fold: not steady
+E       assert True is False
+
+test/rmgpy/solver/steadyStateTest.py:507: AssertionError
+_ TerminationSteadyStateLatchTest.test_nan_and_inf_steps_treat_the_departing_counters_differently _
+
+self = <steadyStateTest.TerminationSteadyStateLatchTest object at 0x74775c620760>
+
+    def test_nan_and_inf_steps_treat_the_departing_counters_differently(self):
+        """Round 109: a step the slope analysis cannot evaluate is either nan (NO information --
+        degenerate interval, no live species) or inf (STRONG NEGATIVE information -- a species
+        appeared or went negative). They are different answers and the counters do different
+        things: a nan step leaves the per-species trend memory untouched (nothing was observed),
+        an inf step DISCARDS it (the composition changed structurally, so a stale 'settled' count
+        must not vouch for the new state)."""
+        atol, big = 1e-16, 1e12
+        labels = ['big', 's', 'new']
+    
+        def build():
+            # two 'ok' steps build live counters for big and s (newcomer stays below the floor)
+            t = TerminationSteadyState(tolerance=1e-6, window=2)
+            t.update(np.array([big, 7.389, 0.0]), np.e ** 1, np.array([big, 1.0, 0.0]), np.e ** 0, atol, labels=labels)
+            t.update(np.array([big, 7.389, 0.0]), np.e ** 2, np.array([big, 7.389, 0.0]), np.e ** 1, atol, labels=labels)
+            return t
+    
+        # nan step: a degenerate interval (t_now == t_prev) -> no information -> counters UNCHANGED.
+        t_nan = build()
+        before = dict(t_nan._steps_since_rise)
+        assert before != {}
+        t_nan.update(np.array([big, 7.389, 0.0]), np.e ** 2, np.array([big, 7.389, 0.0]), np.e ** 2, atol, labels=labels)
+        assert dict(t_nan._steps_since_rise) == before      # left exactly as they were
+    
+        # inf step: the newcomer appears -> structural change -> counters DISCARDED.
+        t_inf = build()
+        assert t_inf._steps_since_rise != {}
+        t_inf.update(np.array([big, 7.389, atol * 10]), np.e ** 3, np.array([big, 7.389, 0.0]), np.e ** 2, atol, labels=labels)
+>       assert t_inf._steps_since_rise == {} and t_inf._slope_prev == {}
+E       assert ({0: 2, 1: 2} == {}
+E         
+E         Left contains 2 more items:
+E         {0: 2, 1: 2}
+E         Use -v to get more diff)
+
+test/rmgpy/solver/steadyStateTest.py:539: AssertionError
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED test/rmgpy/solver/steadyStateTest.py::TerminationSteadyStateLatchTest::test_raising_window_makes_the_criterion_no_less_conservative_in_both_roles
+PASSED test/rmgpy/solver/steadyStateTest.py::TerminationSteadyStateLatchTest::test_departing_counters_are_keyed_by_index_and_cleared_between_runs
+FAILED test/rmgpy/solver/steadyStateTest.py::TerminationSteadyStateLatchTest::test_a_species_appearing_while_the_external_channel_is_flat_does_not_return_steady
+FAILED test/rmgpy/solver/steadyStateTest.py::TerminationSteadyStateLatchTest::test_nan_and_inf_steps_treat_the_departing_counters_differently
+========================= 2 failed, 2 passed in 1.06s ==========================
