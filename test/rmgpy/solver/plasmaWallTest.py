@@ -113,7 +113,7 @@ def _ionisation_reaction(electron, ar, arp):
 def _build_reactor(te_ev=TE_NOMINAL_EV, pressure=P_NOMINAL, tgas=TGAS,
                    x_ion=1.0e-6, wall=True, gamma=1.0, source=None,
                    quasineutral=False, with_chemistry=True, max_alpha=None,
-                   lam=None, mu0=MU0_AR_IN_AR, termination=None):
+                   lam=None, mu0=MU0_AR_IN_AR, termination=None, reactor_cls=None):
     """A fully initialised argon PlasmaReactor, with or without a wall.
 
     ``x_ion`` is the charge-neutral seed mole fraction of Ar+ (and of e-); it
@@ -130,7 +130,7 @@ def _build_reactor(te_ev=TE_NOMINAL_EV, pressure=P_NOMINAL, tgas=TGAS,
             kwargs['ionisation_source'] = (source, 'm^-3/s')
         if max_alpha is not None:
             kwargs['max_ionisation_degree'] = max_alpha
-    reactor = PlasmaReactor(
+    reactor = (reactor_cls or PlasmaReactor)(
         (tgas, 'K'), (pressure, 'Pa'), imf, (te_ev * EV_TO_K, 'K'),
         n_sims=1, termination=termination or [],
         quasineutral_electron=quasineutral, **kwargs)
@@ -1627,6 +1627,49 @@ def test_genuinely_inert_deck_still_terminates_at_t0_unchanged():
     assert terminated and t_final == 0.0
 
 
+def test_adapter_does_not_launder_a_source_channels_nonfinite_reading_to_absence():
+    """Round 113 BLOCKING 1, THROUGH the production path (the base.pyx adapter), not by calling
+    update() directly. Round 112 closed the reproductions inside update(), but base.pyx mapped
+    every UNARMED non-finite hook value back to None -- 'no channel' -- so a source-driven
+    electron channel that reported nan/+inf/-inf while unarmed was laundered to absence and a flat
+    generic channel could fire on it. A reactor with an active ionisation source has a channel IN
+    PLAY every step; a non-finite reading it produces must poison, armed or not. Driven through the
+    reactor's own simulate(): the adapter must hand the poison to the criterion (never None), and
+    the run must not reach steady state on it. (A wall deck with NO source keeps reporting nan as
+    its documented 'no such channel' sentinel, and is still judged on the generic channel -- pinned
+    by ``test_wall_only_deck_integrates_past_t0_on_the_production_path``.)"""
+    orig = TerminationSteadyState.update
+    for poison in (float('nan'), float('inf'), float('-inf')):
+        class _PoisonChannel(PlasmaReactor):
+            def steady_state_external_residual(self, t_now, y_now, t_prev, y_prev):
+                return poison
+            def steady_state_external_armed(self, t_now, y_now):
+                return False
+
+        term = [TerminationSteadyState(tolerance=1e-8), TerminationTime((50.0, 's'))]
+        r, core, rxns = _build_reactor(wall=True, gamma=0.5, with_chemistry=False,
+                                       x_ion=1.0e-4, source=1.0e22, termination=term,
+                                       reactor_cls=_PoisonChannel)
+        seen = []
+
+        def spy(self, *a, **k):
+            ret = orig(self, *a, **k)
+            seen.append((k.get('external_residual'), ret))
+            return ret
+
+        TerminationSteadyState.update = spy
+        try:
+            _simulate(r, core, rxns)
+        finally:
+            TerminationSteadyState.update = orig
+
+        supplied = [v for v, ret in seen if v is not None]
+        assert supplied, (poison, "the adapter laundered every source-channel reading to None")
+        assert all(not np.isfinite(v) for v in supplied), (poison, supplied[:3])
+        assert not r.steady_state_reached, (
+            poison, "a non-finite source-channel reading was laundered into a steady state")
+
+
 # ---- HIGH 1: the skeleton key must key charged and neutral species alike ----
 
 def _dme_isotope_species():
@@ -2442,17 +2485,35 @@ def _tests_without_a_real_assertion(source):
         return True
 
     def is_pytest_raises_or_warns(item):
+        # Only a genuine ``pytest.raises`` / ``pytest.warns`` context manager backs a claim
+        # (round 113 LOW). A bare ``raises(...)`` need not be pytest's, and an unrelated
+        # ``fake.raises(...)`` merely contains the word -- match the call TARGET as
+        # ``pytest.<raises|warns>``, not any attribute or name that ends in raises/warns.
         expr = item.context_expr
         if not isinstance(expr, ast.Call):
             return False
         func = expr.func
-        target = func.attr if isinstance(func, ast.Attribute) else \
-            (func.id if isinstance(func, ast.Name) else '')
-        return target in ('raises', 'warns')
+        return (isinstance(func, ast.Attribute) and func.attr in ('raises', 'warns')
+                and isinstance(func.value, ast.Name) and func.value.id == 'pytest')
 
     def const_truth(test):
         # True/False if `test` is a compile-time constant truth value, else None.
         return bool(test.value) if isinstance(test, ast.Constant) else None
+
+    def empty_iter(node):
+        # A statically-empty iterable, so a ``for`` body over it never runs: [], (), {}, an
+        # empty string/bytes literal, or ``range(0)`` (round 113 LOW).
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+            return len(node.elts) == 0
+        if isinstance(node, ast.Dict):
+            return len(node.keys) == 0
+        if isinstance(node, ast.Constant):
+            return isinstance(node.value, (str, bytes)) and len(node.value) == 0
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                and node.func.id == 'range'):
+            return (len(node.args) == 1 and isinstance(node.args[0], ast.Constant)
+                    and node.args[0].value == 0)
+        return False
 
     def walk(stmts):
         for stmt in stmts:
@@ -2480,7 +2541,22 @@ def _tests_without_a_real_assertion(source):
                 elif walk(stmt.body) or walk(stmt.orelse):
                     return True
                 continue
-            # Any other compound statement (for/while/try/with-less block): descend into its
+            if isinstance(stmt, ast.While):
+                truth = const_truth(stmt.test)
+                if truth is False:          # ``while False:`` -- body never runs, else does
+                    if walk(stmt.orelse):
+                        return True
+                elif walk(stmt.body) or walk(stmt.orelse):
+                    return True
+                continue
+            if isinstance(stmt, ast.For):
+                if empty_iter(stmt.iter):   # ``for _ in []:`` -- body never runs, else does
+                    if walk(stmt.orelse):
+                        return True
+                elif walk(stmt.body) or walk(stmt.orelse):
+                    return True
+                continue
+            # Any other compound statement (try/with-less block): descend into its
             # reachable child bodies, but never into a nested def/class (handled above).
             for field in ('body', 'orelse', 'finalbody'):
                 child = getattr(stmt, field, None)
@@ -2544,6 +2620,19 @@ def test_the_census_rejects_a_tagged_docstring_with_no_assertion():
         'def test_unrelated_raises_context_manager():\n'      # AST holds "raises" but is not pytest.raises
         '    with a_helper_that_raises():\n'
         '        do_work()\n'
+        # round 113 LOW: four more the round-112 census still credited.
+        'def test_bare_raises_cm():\n'                        # bare raises(...) -- need not be pytest's
+        '    with raises(ValueError):\n'
+        '        do_work()\n'
+        'def test_fake_raises_cm():\n'                        # fake.raises(...) -- not pytest.raises
+        '    with fake.raises(ValueError):\n'
+        '        do_work()\n'
+        'def test_while_false_assert():\n'                    # while False -- body never runs
+        '    while False:\n'
+        '        assert compute() == 1\n'
+        'def test_empty_loop_assert():\n'                     # for _ in [] -- body never runs
+        '    for _ in []:\n'
+        '        assert compute() == 1\n'
     )
     accepted = (
         'def test_real_runtime_value():\n'                    # references a runtime value -> real
@@ -2561,7 +2650,8 @@ def test_the_census_rejects_a_tagged_docstring_with_no_assertion():
     assert set(_tests_without_a_real_assertion(rejected)) == {
         'test_tagged_but_empty', 'test_vacuous_only', 'test_vacuous_compare',
         'test_dead_branch_assert', 'test_uncalled_nested_assert',
-        'test_unrelated_raises_context_manager'}
+        'test_unrelated_raises_context_manager', 'test_bare_raises_cm', 'test_fake_raises_cm',
+        'test_while_false_assert', 'test_empty_loop_assert'}
     assert _tests_without_a_real_assertion(accepted) == []
 
 

@@ -903,6 +903,38 @@ cdef class ReactionSystem(DASx):
             # exactly the bug being fixed (1.0 was the previous form; a smaller number is the same
             # bug). Abstention returns zeros, which promote nothing and launder no 0/0 NaN through
             # argmax or the branching numbers.
+            #
+            # A non-finite rate is a broken integration, not a physical flux, and it defeats every
+            # gate below: NaN fails all comparisons silently (``NaN <= floor`` and ``NaN < tiny``
+            # are both False), and np.argmax treats a NaN as the largest value, so an overflow or
+            # invalid kinetics would be selected as "the fastest species" and promoted into the
+            # core -- numerical garbage presented as model growth. Treating it as zero flux would
+            # be just as wrong: it converts a detectable numerical failure into a quiet inert
+            # result. Stop loudly, naming what went non-finite, BEFORE the ratios are formed, so a
+            # broken rate never reaches ``_rate_ratios_or_zero`` (whose own abstention would
+            # otherwise launder a non-finite network-leak rate to zero over a zero char_rate --
+            # round 113 BLOCKING 2). Network leak rates are inspected here too, which the
+            # pre-round-113 guard omitted.
+            if not (np.isfinite(char_rate)
+                    and np.isfinite(edge_species_rates).all()
+                    and np.isfinite(network_leak_rates).all()):
+                bad_core = np.flatnonzero(~np.isfinite(self.core_species_rates))
+                bad_edge = np.flatnonzero(~np.isfinite(edge_species_rates))
+                bad_network = np.flatnonzero(~np.isfinite(network_leak_rates))
+                raise ValueError(
+                    'Non-finite reaction rate at time {0:10.4e} s in reaction system {1} (the one '
+                    'named in the "Conducting simulation of reaction system" line above): the '
+                    'characteristic core rate is {2!r}, with {3:d} of {4:d} core species rates, '
+                    '{5:d} of {6:d} edge species rates and {7:d} of {8:d} network leak rates '
+                    'non-finite (NaN or infinite). A non-finite rate is a broken integration -- an '
+                    'overflow or invalid kinetics -- not a physical flux; it is neither promoted '
+                    'into the core nor reported as an inert result. Core species indices with '
+                    'non-finite rates: {9}; edge species indices: {10}; network indices: {11}.'.format(
+                        self.t, type(self).__name__, char_rate,
+                        bad_core.size, self.num_core_species,
+                        bad_edge.size, len(edge_species_rates),
+                        bad_network.size, len(network_leak_rates),
+                        list(bad_core), list(bad_edge), list(bad_network)))
             core_species_rate_ratios = self._rate_ratios_or_zero(self.core_species_rates, char_rate)
             edge_species_rate_ratios = self._rate_ratios_or_zero(self.edge_species_rates, char_rate)
             network_leak_rate_ratios = self._rate_ratios_or_zero(self.network_leak_rates, char_rate)
@@ -919,30 +951,6 @@ cdef class ReactionSystem(DASx):
             for i, index in enumerate(prunable_network_indices):
                 if max_network_leak_rate_ratios[i] < network_leak_rate_ratios[index]:
                     max_network_leak_rate_ratios[i] = network_leak_rate_ratios[index]
-
-            # A non-finite rate is a broken integration, not a physical flux, and it defeats
-            # every gate below: NaN fails all comparisons silently (``NaN <= floor`` and
-            # ``NaN < tiny`` are both False), and np.argmax treats a NaN as the largest value,
-            # so an overflow or invalid kinetics would be selected as "the fastest species" and
-            # promoted into the core -- numerical garbage presented as model growth. Treating it
-            # as zero flux would be just as wrong: it converts a detectable numerical failure
-            # into a quiet inert result. Stop loudly instead, naming what went non-finite, so the
-            # failure is diagnosable rather than laundered into the mechanism.
-            if not (np.isfinite(char_rate) and np.isfinite(edge_species_rates).all()):
-                bad_core = np.flatnonzero(~np.isfinite(self.core_species_rates))
-                bad_edge = np.flatnonzero(~np.isfinite(edge_species_rates))
-                raise ValueError(
-                    'Non-finite reaction rate at time {0:10.4e} s in reaction system {1} (the one '
-                    'named in the "Conducting simulation of reaction system" line above): the '
-                    'characteristic core rate is {2!r}, with {3:d} of {4:d} core species rates and '
-                    '{5:d} of {6:d} edge species rates non-finite (NaN or infinite). A non-finite '
-                    'rate is a broken integration -- an overflow or invalid kinetics -- not a '
-                    'physical flux; it is neither promoted into the core nor reported as an inert '
-                    'result. Core species indices with non-finite rates: {7}; edge species indices: '
-                    '{8}.'.format(self.t, type(self).__name__, char_rate,
-                                  bad_core.size, self.num_core_species,
-                                  bad_edge.size, len(edge_species_rates),
-                                  list(bad_core), list(bad_edge)))
 
             # The inert / termination tests below ask whether the composition can still
             # change, which is a question about the reactor's TOTAL flux, not its
@@ -1403,22 +1411,28 @@ cdef class ReactionSystem(DASx):
                         self.t, y_core_species, steady_state_prev_t, steady_state_prev_y)
                     ss_external_armed = self.steady_state_external_armed(self.t, y_core_species)
                     ss_relaxation_time = self.steady_state_relaxation_time(self.t, y_core_species)
-                    # The external channel is an INPUT to the steady-state decision only when it
-                    # has SOMETHING TO SAY this step -- it has armed (a live electron vouching from
-                    # its relaxation time) or it produced a finite reading (round 112 HIGH 1). A
-                    # channel with neither -- an ordinary reactor, or a wall deck with no ionisation
-                    # source whose electron simply decays -- reports an unarmed nan and is ABSENT:
-                    # hand its residual over as the None sentinel so the criterion judges the
-                    # generic channel alone, byte-for-byte the pre-plasma/pre-source path. When the
-                    # channel IS in play its residual is passed as-is -- a finite value folds, and a
-                    # non-finite value it cannot stand behind (an armed electron underflowed to nan,
-                    # a blown +/-inf) refuses termination through the single guard in update(). The
-                    # None sentinel is what makes "in play but unusable" distinct from "absent",
-                    # which a bare nan value could never be: it closes round 111's armed=False gap
-                    # for a supplied value while leaving every channel-less reactor unchanged.
-                    ss_external = (ss_external_residual
-                                   if (ss_external_armed or np.isfinite(ss_external_residual))
-                                   else None)
+                    # Whether the external channel is IN PLAY is a structural fact about the
+                    # reactor -- does it drive an electron from an ionisation source -- NOT a
+                    # property of the value it happened to report this step (round 113 BLOCKING 1).
+                    # Round 112 keyed presence on ``armed OR isfinite(residual)``, so an UNARMED
+                    # non-finite reading (nan while the electron is unresolvable, or a blown
+                    # +/-inf) was mapped back to None -- 'no channel' -- and a flat generic channel
+                    # fired on it: the same laundering, one layer out from update(). A reactor with
+                    # an active source has a channel every step; ANY non-finite reading it produces
+                    # is a supplied reading that must poison, armed or not, because a bare value
+                    # cannot be told from absence. A reactor with NO source -- an ordinary reactor
+                    # (no hook), or a wall deck whose source-less electron merely decays -- has no
+                    # such channel: its hook reports nan as the documented 'no such channel'
+                    # sentinel, which is genuine absence, so the generic channel decides alone
+                    # (byte-for-byte the ordinary/pumped-afterglow path). The source is the
+                    # reactor's own declaration; read it here without touching plasma.pyx. This is
+                    # a read-only reach for the one bit plasma's overloaded nan (absence AND
+                    # unresolvable) cannot carry; the clean cure -- a hook that returns a distinct
+                    # absence sentinel -- lives in plasma.pyx, which this rework must not move.
+                    ss_source = getattr(self, 'ionisation_source', None)
+                    ss_has_channel = (getattr(self, 'has_wall', False)
+                                      and ss_source is not None and ss_source.value_si > 0.0)
+                    ss_external = ss_external_residual if ss_has_channel else None
                     for term in steady_state_terms:
                         if term.update(y_core_species, self.t, steady_state_prev_y,
                                        steady_state_prev_t, atol, core_species,
@@ -1612,30 +1626,43 @@ cdef class ReactionSystem(DASx):
         through ``argmax`` and the branching numbers.
         """
         rates = np.asarray(rates, dtype=np.float64)
+        # A non-finite NUMERATOR is a broken integration REGARDLESS of the denominator -- an
+        # overflow, an invalid rate, a +/-inf. The zero/non-finite-denominator abstention below is
+        # NOT a licence to launder it to zero: ``core_species_rates=[0]``, ``char_rate=0``,
+        # ``network_leak_rates=[inf]`` must NOT quietly promote or interrupt on a zeroed inf
+        # (round 113 BLOCKING 2). Stop loudly first, before the denominator is even consulted, so
+        # abstention applies only to FINITE numerators whose ratio is undefined (0/0, x/0).
+        if not np.isfinite(rates).all():
+            bad = np.flatnonzero(~np.isfinite(rates))
+            raise ValueError(
+                'Non-finite enlargement rate: {0:d} of {1:d} rates are NaN or infinite -- a broken '
+                'integration, not a physical flux; such a rate is neither promoted into the core nor '
+                'used to interrupt the simulation, whatever the characteristic rate {2!r}. Offending '
+                'indices: {3}; their rates: {4}.'.format(
+                    bad.size, rates.size, denominator, list(np.flatnonzero(~np.isfinite(rates))),
+                    list(rates[bad])))
+        # The relative criterion is defined only over a finite, positive denominator; even there
+        # the ratio of FINITE rates can OVERFLOW to +inf (a gross rate over a tiny char_rate),
+        # which is equally unusable and defeats every gate that reads it (``inf > tol`` interrupts
+        # and promotes garbage; ``nan`` slips comparisons yet is the argmax maximum). Every
+        # enlargement/pruning/interrupt/promotion ratio -- core, edge, network-leak, surface --
+        # routes through here, so this is the one place that closes the overflow by construction.
+        # Compute under a SUPPRESSED error state so the finiteness verdict does not depend on
+        # NumPy's global divide/overflow settings (round 113 LOW): check the result explicitly.
         if np.isfinite(denominator) and denominator > 0.0:
-            ratios = np.abs(rates / denominator)
-            # ONE mechanism at the decision boundary every enlargement/pruning/interrupt/promotion
-            # ratio flows through (round 112 HIGH 2). A finite, positive denominator does NOT
-            # guarantee a finite ratio: a non-finite rate (a +/-inf numerator) makes the ratio
-            # non-finite, and a finite-but-huge gross rate can OVERFLOW to +inf even over a finite
-            # denominator (the surface gross-rate case). Either way the ratio then defeats every
-            # gate that reads it -- ``inf > tol`` interrupts the run and promotes numerical garbage
-            # into the core, and ``nan`` slips every comparison yet is picked as the argmax
-            # maximum. A non-finite ratio is a broken integration, not a physical flux: stop
-            # loudly, naming the offending indices, rather than promote it or launder it to zero.
-            # This closes the network-leak inf and the surface gross-rate overflow that the
-            # upstream raw-rate guard (finite char_rate + edge rates only) never saw -- by
-            # construction, since core/edge/network/surface ratios all route through here.
+            with np.errstate(all='ignore'):
+                ratios = np.abs(rates / denominator)
             if not np.isfinite(ratios).all():
                 bad = np.flatnonzero(~np.isfinite(ratios))
                 raise ValueError(
-                    'Non-finite enlargement rate ratio: {0:d} of {1:d} ratios are NaN or infinite '
-                    'over the finite, positive characteristic rate {2!r}. A non-finite ratio is a '
-                    'broken integration -- a +/-inf rate or a gross-rate overflow -- not a physical '
-                    'flux; it is neither promoted into the core nor used to interrupt the '
-                    'simulation. Offending indices: {3}; their rates: {4}.'.format(
+                    'Non-finite enlargement rate ratio: {0:d} of {1:d} ratios overflowed to NaN or '
+                    'infinite over the finite, positive characteristic rate {2!r} -- a gross-rate '
+                    'overflow, not a physical flux; it is neither promoted into the core nor used to '
+                    'interrupt the simulation. Offending indices: {3}; their rates: {4}.'.format(
                         bad.size, ratios.size, denominator, list(bad), list(rates[bad])))
             return ratios
+        # Finite numerators over a zero/negative/non-finite denominator: the relative criterion is
+        # undefined, so ABSTAIN (return zeros, round 110/111). Reached only for finite rates now.
         return np.zeros_like(rates)
 
     cpdef double steady_state_external_residual(self, double t_now, np.ndarray y_now,

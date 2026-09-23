@@ -1259,9 +1259,15 @@ def test_rate_ratios_refuse_a_nonfinite_ratio_over_a_finite_denominator():
     with pytest.raises(ValueError, match='(?i)non-finite'):
         ratios(np.array([1.0e308, 1.0e308]), 1.0e-300)
 
-    # Preserved (round 110/111): abstain -- zeros, no raise -- on a zero/negative/non-finite
-    # denominator, even when a rate is itself non-finite.
+    # Round 113 BLOCKING 2: a non-finite NUMERATOR stops loudly REGARDLESS of the denominator.
+    # The zero/non-finite-denominator abstention is NOT a licence to launder an inf rate to zero
+    # (core_species_rates=[0], char_rate=0, network_leak_rates=[inf] must not quietly promote or
+    # interrupt on a zeroed inf). This inverts the round-112 assertion, which blessed exactly that
+    # laundering.
     for denom in (0.0, -1.0, float('nan'), float('inf')):
-        np.testing.assert_array_equal(ratios(np.array([np.inf, 1.0]), denom), np.zeros(2))
+        with pytest.raises(ValueError, match='(?i)non-finite'):
+            ratios(np.array([np.inf, 1.0]), denom)
+        # ...but a FINITE numerator over a zero/non-finite denominator still ABSTAINS (zeros).
+        np.testing.assert_array_equal(ratios(np.array([2.0, 1.0]), denom), np.zeros(2))
     # Preserved: finite rates over a finite positive denominator pass straight through.
     np.testing.assert_allclose(ratios(np.array([2.0, -4.0, 0.0]), 4.0), [0.5, 1.0, 0.0])
