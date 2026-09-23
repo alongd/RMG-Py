@@ -54,12 +54,23 @@ deliberately left working.
 Most tests here build a synthetic quarantined family, so they run against any database.
 The ones marked ``database`` check the real ``Cation_R_Recombination`` manifest and skip
 with a loud reason on a database that predates it.
+
+**Two kinds of red state, and the difference matters.** A campaign round is accepted on a
+test shown failing before the repair and passing after. A test that fails at the base with
+an `ImportError` or an `AttributeError` for a name the repair *adds* is not evidence about
+behaviour -- it pins the shape of the repair, which is worth having and is not the same
+thing. Those are labelled **structural** in each test's docstring and counted separately
+in the round's findings; every finding also carries at least one **behavioural** test,
+which imports only names the base already had, so its red state is the defect itself.
+Round 107 relabelled round 105's four structural reds in place, at the manager's request,
+rather than leaving the distinction in a findings document only.
 """
 
 import inspect
 import logging
 import os
 import pickle
+import re
 
 import pytest
 
@@ -3257,6 +3268,10 @@ class TestCarryingTheDegeneracyDoesNotRestateTheRate:
         property transforms the rate. If upstream ever makes that setter a plain
         assignment, this fails and says to delete the special case rather than carrying an
         unexplained back door forever.
+
+        **Structural** at `309acc0a4`, which has no `_CARRIED_THROUGH_STORAGE`. A guard on
+        the repair rather than evidence of the defect; the fifteen sweep cases in this
+        class carry the behavioural red.
         """
         from rmgpy.data.kinetics import library as module
 
@@ -3358,6 +3373,11 @@ class TestTheConversionEnumeratesTheSourceNotTheDestination:
         Iterating `REACTION_STATE_FIELDS` rather than a list of names is the point -- a
         field added to `Reaction` tomorrow enters this test automatically and fails it
         until it is given a marker and shown to arrive.
+
+        **Structural** at `309acc0a4`, which has no `REACTION_STATE_FIELDS`: this pins
+        the shape of the enumeration, and
+        `test_the_four_fields_the_constructor_does_not_take_survive` carries the
+        behavioural red for the same defect.
         """
         from rmgpy.data.kinetics import library as library_module
         from rmgpy.rmg import model as model_module
@@ -3378,6 +3398,12 @@ class TestTheConversionEnumeratesTheSourceNotTheDestination:
                     name, markers[name], getattr(converted, name)))
 
     def test_the_conversion_partition_is_total_and_reasoned(self):
+        """
+        **Structural** at `309acc0a4`: it names `_NOT_CARRIED_IN_CONVERSION`, which the
+        base does not have, so it fails there with an `AttributeError` rather than on
+        the defect. It pins the partition's shape; the behavioural evidence for the
+        same ground is `test_the_four_fields_the_constructor_does_not_take_survive`.
+        """
         from rmgpy.data.kinetics import library as library_module
         from rmgpy.rmg import model as model_module
 
@@ -3391,25 +3417,11 @@ class TestTheConversionEnumeratesTheSourceNotTheDestination:
                 "{0!r} is excluded from the conversion without a reason worth "
                 "reading".format(name))
 
-    def test_every_field_called_carried_can_actually_be_assigned(self):
-        """
-        Carried must mean carried. Both carries swallow `AttributeError` from the target,
-        so a read-only field sitting in the carried set is a silent drop wearing the label
-        of a carry -- which is what `protons` was until this round.
-        """
-        from rmgpy.data.kinetics import library as library_module
-        from rmgpy.rmg import model as model_module
-
-        probe = Reaction()
-        for policy in (library_module._NOT_CARRIED_FROM_ENTRY,
-                       model_module._NOT_CARRIED_IN_CONVERSION):
-            for name in sorted(library_module.REACTION_STATE_FIELDS - set(policy)):
-                try:
-                    setattr(probe, name, getattr(probe, name))
-                except AttributeError as error:
-                    pytest.fail(
-                        "{0!r} is classified as carried but cannot be assigned at all, "
-                        "so it is dropped silently: {1}".format(name, error))
+    # `test_every_field_called_carried_can_actually_be_assigned` stood here until round
+    # 107. It probed a bare `Reaction` against itself, which is not a pair any carry runs
+    # on, so a descriptor only the subclasses disagreed about would have passed it. Its
+    # replacement iterates the real (source, target) class pairs and runs the real carry:
+    # `TestACarryThatCannotCarryRefusesLoudly`.
 
     def test_the_conversion_does_not_rescale_the_rate(self):
         """
@@ -3486,3 +3498,429 @@ class TestTheAbsenceOfONofollowIsRefused:
         assert answered and quarantine is not None
 
     _escape_at = TestEveryComponentBelowTheAnchorIsPinned._escape_at
+
+
+#: How to compare a field before and after a transform. The default is ``==``; a field
+#: appears here only because the object it holds has no value equality, so a deep copy of
+#: it would never compare equal to its original however faithfully it was reproduced.
+#: A field added to `Reaction` tomorrow gets ``==`` without anyone deciding to give it
+#: one, and fails loudly if that is the wrong answer -- which is the point.
+_COMPARED_BY = {
+    "reactants": lambda v: [s.label for s in v],
+    "products": lambda v: [s.label for s in v],
+    "specific_collider": lambda v: None if v is None else v.label,
+    "kinetics": lambda v: None if v is None else (v.A.value_si, v.n.value_si),
+    "network_kinetics": lambda v: None if v is None else (v.A.value_si, v.n.value_si),
+    "transition_state": lambda v: type(v).__name__,
+    "entry": lambda v: None if v is None else (v.index, v.label),
+    "reverse": lambda v: None if v is None else v.index,
+    "labeled_atoms": lambda v: sorted(v),
+}
+
+
+def _compare(name, value):
+    return _COMPARED_BY.get(name, lambda v: v)(value)
+
+
+class TestEveryTransformReproducesTheWholeState:
+    """
+    Round 107's HIGH. Rounds 102 and 105 made the *loader* preserve every field a
+    `Reaction` carries by discovering the field set from the class. Two transforms still
+    enumerated by hand, so the preservation ended at the first ``pickle`` or ``copy()``:
+    measured at `5a821898d`, `TemplateReaction.__reduce__` dropped `elementary_high_p`,
+    `allow_pdep_route`, `allow_max_rate_violation`, `rank`, `comment` and `label`, and
+    `copy()` dropped the same three flags plus `rank`, `network_kinetics` and
+    `labeled_atoms` while leaving `comment` as ``None`` where the class declares a
+    ``str``.
+
+    The census is wider than those two methods. `LibraryReaction.__reduce__` dropped
+    `rank`, `comment`, `label` and turned `is_forward` ``True`` into ``False`` -- round
+    105's three fields, one transform over -- and `LibraryReaction` had no `copy()` at
+    all, so it inherited `Reaction.copy` and returned a **base `Reaction`**, losing
+    `library`, `family` and `entry`, the carrier the gate reads authorship from.
+
+    All four go through one derived definition of what reaction state is now, so the next
+    field cannot be added to one site and forgotten in three. These tests iterate that
+    definition rather than a list of names, so a field added to `Reaction` tomorrow
+    enters them automatically.
+    """
+
+    SHAPES = ("template", "library")
+    TRANSFORMS = ("pickle", "copy")
+
+    def _markers(self):
+        """One distinctive value per reproduced field, checked against the class below."""
+        collider = Species(label="Ar", molecule=[Molecule(smiles="[Ar]")])
+        return {
+            "allow_max_rate_violation": True,
+            "allow_pdep_route": True,
+            "comment": "a comment worth keeping",
+            "degeneracy": 3.0,
+            "duplicate": True,
+            "electrons": -1,
+            "elementary_high_p": True,
+            "index": 11,
+            "is_forward": True,
+            "kinetics": Arrhenius(A=(10.0, "m^3/(mol*s)"), n=0, Ea=(0, "kJ/mol"),
+                                  T0=(1, "K"), comment="the rate"),
+            "label": "Lip + CH3 <=> CH3Li",
+            "network_kinetics": Arrhenius(A=(3.0, "m^3/(mol*s)"), n=0, Ea=(0, "kJ/mol"),
+                                          T0=(1, "K")),
+            "pairs": [("Lip", "CH3Li")],
+            "products": None,          # filled in by `_built`, which owns the species
+            "rank": 7,
+            "reactants": None,         # likewise
+            "reversible": False,
+            "specific_collider": collider,
+            "transition_state": TransitionState(),
+        }
+
+    def _built(self, shape):
+        """
+        A fully populated reaction of either shape, plus the markers it was given.
+
+        `kinetics` is attached **last**: assigning `degeneracy` while kinetics are
+        attached is the transformation round 105 was about, and a fixture that triggered
+        it would be measuring itself.
+        """
+        markers = self._markers()
+        reactants = [Species(label="Lip", molecule=[Molecule(smiles="[Li+]")])]
+        products = [Species(label="CH3Li", molecule=[Molecule(smiles="C[Li]")])]
+        markers["reactants"] = reactants
+        markers["products"] = products
+        entry = Entry(index=4, label="an entry", long_desc="family: A_Family")
+
+        if shape == "template":
+            reaction = TemplateReaction(reactants=reactants, products=products,
+                                        family="A_Family", entry=entry)
+            markers.update({
+                "family": "A_Family",
+                "template": ["Root"],
+                "estimator": "rate rules",
+                "reverse": TemplateReaction(index=99),
+                "entry": entry,
+                "labeled_atoms": {"reactants": {"*1": "Lip"}, "products": {}},
+            })
+        else:
+            reaction = LibraryReaction(reactants=reactants, products=products,
+                                       library="a_library", entry=entry)
+            markers.update({
+                "family": "a_library",
+                "library": "a_library",
+                "entry": entry,
+            })
+
+        for name, value in markers.items():
+            if name == "kinetics":
+                continue
+            setattr(reaction, name, value)
+        reaction.kinetics = markers["kinetics"]
+        return reaction, markers
+
+    def _transformed(self, transform, reaction):
+        if transform == "pickle":
+            return pickle.loads(pickle.dumps(reaction))
+        return reaction.copy()
+
+    def _reproduced(self, reaction):
+        from rmgpy.data.kinetics.family import _NOT_REPRODUCED, state_fields
+
+        return state_fields(reaction) - set(_NOT_REPRODUCED)
+
+    @pytest.mark.parametrize("transform", TRANSFORMS)
+    @pytest.mark.parametrize("shape", SHAPES)
+    def test_the_three_flags_and_the_carrier_survive(self, shape, transform):
+        """
+        The named acceptance, on its own, so a regression says which field went.
+
+        `elementary_high_p` is the one with teeth: a reaction that loses it misses
+        pressure-dependent routing, and nothing says so. `is_forward`, `rank` and
+        `comment` are here because they are round 105's three fields, which the library
+        shape's pickle was dropping all over again.
+
+        This test imports nothing the repair adds, so it runs at the base too and its
+        red state is the dropped field rather than a missing constant.
+        """
+        reaction, markers = self._built(shape)
+        after = self._transformed(transform, reaction)
+
+        for name in ("elementary_high_p", "allow_pdep_route", "allow_max_rate_violation",
+                     "degeneracy", "is_forward", "rank", "comment", "label"):
+            assert getattr(after, name) == markers[name], (
+                "{0!r} did not survive {1} of a {2} reaction: {3!r} -> {4!r}".format(
+                    name, transform, shape, markers[name], getattr(after, name)))
+        assert after.entry is not None and after.entry.label == "an entry", (
+            "the entry carrier did not survive {0} of a {1} reaction".format(
+                transform, shape))
+        assert type(after) is type(reaction), (
+            "{0} of a {1} reaction returned a {2}".format(
+                transform, shape, type(after).__name__))
+
+    @pytest.mark.parametrize("transform", TRANSFORMS)
+    @pytest.mark.parametrize("shape", SHAPES)
+    def test_every_reproduced_field_arrives(self, shape, transform):
+        """
+        The general form, and the acceptance for "a newly-added field cannot be dropped".
+
+        The field set is discovered from the object, not listed here, so a field added to
+        `Reaction` tomorrow is checked by this test without anyone remembering to add it
+        -- and fails it until it is given a marker and shown to survive both transforms.
+
+        **Structural** at `5a821898d`, which has no `state_fields` or `_NOT_REPRODUCED`:
+        it pins the shape of the definition. `test_the_three_flags_and_the_carrier_survive`
+        carries the behavioural red for the same four combinations, naming every field
+        that was dropped.
+        """
+        reaction, markers = self._built(shape)
+        reproduced = self._reproduced(reaction)
+
+        assert reproduced == set(markers), (
+            "the markers and the reproduced state have diverged. fields with no marker: "
+            "{0}; markers for fields no longer reproduced: {1}".format(
+                sorted(reproduced - set(markers)), sorted(set(markers) - reproduced)))
+
+        after = self._transformed(transform, reaction)
+        for name in sorted(reproduced):
+            assert _compare(name, getattr(after, name)) == _compare(name, markers[name]), (
+                "{0!r} did not survive {1} of a {2} reaction: {3!r} -> {4!r}".format(
+                    name, transform, shape, markers[name], getattr(after, name)))
+
+    @pytest.mark.parametrize("shape", SHAPES)
+    def test_the_copy_is_deep_where_it_says_it_is(self, shape):
+        """
+        The other half of `copy()`: carried-by-reference is right for a label and wrong
+        for a list. Round 105's HIGH escaped into the database through a shared kinetics
+        object, so a copy that shared one would be the same defect wearing a new hat.
+
+        **Structural** at `5a821898d`, which has neither exclusion table. The base's
+        `copy()` did deepen the fields it copied at all; what it did instead was drop
+        `network_kinetics` and `labeled_atoms` entirely, which the probe measures.
+        """
+        from rmgpy.data.kinetics.family import (_NOT_REPRODUCED,
+                                                _TEMPLATE_NOT_COPIED_BY_REFERENCE)
+
+        reaction, _ = self._built(shape)
+        other = reaction.copy()
+        for name in sorted(set(_TEMPLATE_NOT_COPIED_BY_REFERENCE) - set(_NOT_REPRODUCED)):
+            mine = getattr(reaction, name, None)
+            if mine is None:
+                continue
+            assert mine is not getattr(other, name), (
+                "copy() shares {0!r} with the original, so an edit to one reaches the "
+                "other".format(name))
+
+    @pytest.mark.parametrize("shape", SHAPES)
+    def test_the_copy_does_not_restate_the_rate(self, shape):
+        """
+        The guard on the repair itself. `copy()` carries `degeneracy` through the generic
+        helper now, and the helper must write the storage: assigning the property while
+        kinetics are attached would multiply the copied rate by the degeneracy all over
+        again. Green before the repair because the old `copy()` assigned degeneracy while
+        `kinetics` was still unset -- safety that was positional and unmarked.
+        """
+        reaction, markers = self._built(shape)
+        other = reaction.copy()
+        assert other.degeneracy == 3.0
+        assert other.kinetics.A.value_si == pytest.approx(
+            markers["kinetics"].A.value_si), (
+            "copy() restated the rate while carrying the degeneracy")
+
+    def test_the_sites_that_enumerate_reaction_state_share_one_definition(self):
+        """
+        The census, as a check rather than a claim.
+
+        Five sites in the gated files enumerate reaction state: the loader's
+        `_carry_entry_fields`, and `__reduce__` and `copy` on each of the two reaction
+        classes. Each must reach the shared helpers, and none may read ``self.<field>``
+        for a field the helper is responsible for -- which is what a re-added hand
+        enumeration looks like.
+
+        This is syntactic. It cannot tell that a site calls the helper with the *right*
+        policy, only that it does not enumerate; the value checks above cover the rest.
+
+        **Structural** at `5a821898d` by construction -- it is the census of the repair.
+        The behavioural consequence of the census being wrong is what every other test
+        in this class measures.
+        """
+        from rmgpy.data.kinetics import family as family_module
+        from rmgpy.data.kinetics import library as library_module
+
+        shared = ("reaction_state", "carry_reaction_state", "apply_reaction_state")
+        sites = {
+            "TemplateReaction.__reduce__": TemplateReaction.__reduce__,
+            "TemplateReaction.copy": TemplateReaction.copy,
+            "LibraryReaction.__reduce__": LibraryReaction.__reduce__,
+            "LibraryReaction.copy": LibraryReaction.copy,
+            "_carry_entry_fields": library_module._carry_entry_fields,
+        }
+        assert len(sites) == 5, "the census has changed size without the count moving"
+
+        deepened = set(family_module._TEMPLATE_NOT_COPIED_BY_REFERENCE) - set(
+            family_module._NOT_REPRODUCED)
+        for name, site in sites.items():
+            source = inspect.getsource(site)
+            body = source.split('"""')[-1]
+            assert any(helper in source for helper in shared), (
+                "{0} does not reach the shared definition of reaction state, so it is "
+                "enumerating by hand again".format(name))
+            # On a word boundary: a plain substring test reads `self.labeled_atoms` as a
+            # hand-enumeration of `label`, which is the checker crying wolf rather than
+            # the defect it was written for.
+            enumerated = sorted(
+                field for field in family_module.REACTION_STATE_FIELDS
+                if re.search(r"self\.{0}\b".format(re.escape(field)), body)
+                and field not in deepened)
+            assert not enumerated, (
+                "{0} reads {1} off the object by hand; that is the enumeration this "
+                "round removed".format(name, enumerated))
+
+    def test_the_definition_is_discovered_from_both_halves_of_the_class(self):
+        """
+        `state_fields` must not quietly stop finding things. A discovery that returned an
+        empty set would make every test above pass vacuously.
+
+        **Structural** at `5a821898d`: `state_fields` is this round's function. It is the
+        anti-vacuity guard on the tests above, not evidence of the defect.
+        """
+        from rmgpy.data.kinetics.family import REACTION_STATE_FIELDS, state_fields
+
+        assert len(REACTION_STATE_FIELDS) >= 20, (
+            "the class-half of the discovery has stopped finding fields")
+        reaction, _ = self._built("template")
+        found = state_fields(reaction)
+        assert {"family", "template", "estimator", "reverse", "entry",
+                "labeled_atoms"} <= found, (
+            "the instance-half of the discovery misses TemplateReaction's own fields")
+        assert state_fields(Reaction()) == REACTION_STATE_FIELDS, (
+            "a base Reaction has no instance dictionary, so the two halves must agree")
+
+
+class TestACarryThatCannotCarryRefusesLoudly:
+    """
+    Round 107's MEDIUM. `carry_reaction_state` caught `AttributeError` from both the
+    source read and the target write and continued, so a field the partition called
+    carried could be dropped in silence -- the opposite of what its docstring promised,
+    and exactly the shape (`protons`, round 102) the docstring was written about.
+
+    It raises now. The partition test below is what makes that safe: no field any policy
+    calls carried can reach the raise, so the loud failure costs nothing a correct
+    partition does not already forbid, and announces the partition going stale the moment
+    it stops being correct.
+    """
+
+    #: The (source, target) class pairs the carries actually run on in production. Round
+    #: 105's version of this test probed a bare `Reaction` against itself, so a
+    #: descriptor only the subclasses disagreed about would have passed it.
+    PAIRS = (
+        (Reaction, TemplateReaction),          # the loader, template shape
+        (Reaction, LibraryReaction),           # the loader, both library shapes
+        (TemplateReaction, LibraryReaction),   # rmg/model.py's conversion
+        (TemplateReaction, TemplateReaction),  # __reduce__ / copy
+        (LibraryReaction, LibraryReaction),    # __reduce__ / copy
+    )
+
+    def _policies(self):
+        from rmgpy.data.kinetics import family as family_module
+        from rmgpy.data.kinetics import library as library_module
+        from rmgpy.rmg import model as model_module
+
+        return {
+            "the loader": library_module._NOT_CARRIED_FROM_ENTRY,
+            "the conversion": model_module._NOT_CARRIED_IN_CONVERSION,
+            "the transforms": family_module._NOT_REPRODUCED,
+            "copy()": family_module._TEMPLATE_NOT_COPIED_BY_REFERENCE,
+        }
+
+    def test_every_field_called_carried_can_be_carried_between_the_real_classes(self):
+        """
+        Carried must mean carried, on the classes the carry really runs between.
+
+        **Structural** at `5a821898d`, which has no `_NOT_REPRODUCED`. It would also
+        have *passed* there if it could import: the base swallowed the refusal instead
+        of raising, so silence looked like success. That is the MEDIUM in one sentence,
+        and `test_a_field_the_target_refuses_is_refused_loudly` is what measures it.
+        """
+        from rmgpy.data.kinetics.family import REACTION_STATE_FIELDS, carry_reaction_state
+
+        for policy in self._policies().values():
+            for source_class, target_class in self.PAIRS:
+                source, target = source_class(), target_class()
+                for name in sorted(REACTION_STATE_FIELDS - set(policy)):
+                    carry_reaction_state(target, source, policy, fields={name})
+
+    def test_a_field_the_target_refuses_is_refused_loudly(self):
+        """
+        The acceptance: take the read-only field out of a real policy and the carry must
+        say so rather than continue. `protons` is read-only because it is derived from
+        the charge balance of the reactants and products.
+
+        Written to run **at the base as well as here** -- it imports only names that
+        already existed and names the exception by string -- so its red state is the
+        silence itself (``DID NOT RAISE``) rather than an `ImportError` for a constant
+        the repair adds.
+        """
+        from rmgpy.data.kinetics.library import (_NOT_CARRIED_FROM_ENTRY,
+                                                 carry_reaction_state)
+
+        claimed = {name: reason for name, reason in _NOT_CARRIED_FROM_ENTRY.items()
+                   if name != "protons"}
+        with pytest.raises(Exception) as raised:
+            carry_reaction_state(LibraryReaction(), Reaction(), claimed)
+        assert type(raised.value).__name__ == "ReactionStateNotCarried"
+        assert "protons" in str(raised.value)
+
+    def test_a_source_that_holds_none_of_the_state_is_refused_loudly(self):
+        """
+        The other direction, and the one that was truly unreachable before: with the
+        source read swallowed too, a carry from an object holding none of the state
+        completed in silence and produced a reaction with nothing on it.
+        """
+        from rmgpy.data.kinetics.library import (_NOT_CARRIED_FROM_ENTRY,
+                                                 carry_reaction_state)
+
+        class HoldsNoReactionState:
+            pass
+
+        with pytest.raises(Exception) as raised:
+            carry_reaction_state(LibraryReaction(), HoldsNoReactionState(),
+                                 _NOT_CARRIED_FROM_ENTRY)
+        assert type(raised.value).__name__ == "ReactionStateNotCarried"
+
+    def test_the_refusal_cannot_be_swallowed_by_an_attributeerror_handler(self):
+        """
+        The refusal must not be an `AttributeError`. Both failures it reports *are*
+        `AttributeError`s underneath, and the call sites sit inside loaders full of
+        ``except AttributeError`` -- an exception one of those could catch would restore
+        the silence this round removed.
+        """
+        from rmgpy.data.kinetics.library import (_NOT_CARRIED_FROM_ENTRY,
+                                                 carry_reaction_state)
+
+        claimed = {name: reason for name, reason in _NOT_CARRIED_FROM_ENTRY.items()
+                   if name != "protons"}
+        try:
+            carry_reaction_state(LibraryReaction(), Reaction(), claimed)
+        except AttributeError as error:
+            pytest.fail("the refusal is an AttributeError, which the loaders around it "
+                        "catch and discard: {0!r}".format(error))
+        except Exception:
+            return
+        pytest.fail("a field the target refuses was carried in silence")
+
+    def test_the_documentation_says_it_refuses(self):
+        """
+        The code and the docstring must agree; they did not before this round, which is
+        the MEDIUM in one line. Imported from `library`, where the function was when the
+        docstring made the opposite promise.
+        """
+        from rmgpy.data.kinetics import library as library_module
+
+        checked = 0
+        for name in ("carry_reaction_state", "reaction_state", "apply_reaction_state"):
+            function = getattr(library_module, name, None)
+            if function is None:
+                continue
+            checked += 1
+            assert "raises" in (function.__doc__ or "").lower(), (
+                "{0} refuses a field it cannot carry and does not say so".format(name))
+        assert checked, "none of the carrying helpers is reachable under its own name"

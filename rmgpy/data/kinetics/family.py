@@ -73,6 +73,180 @@ from rmgpy.data.solvation import SoluteData, add_solute_data, SoluteTSData, to_s
 ################################################################################
 
 
+#: Every field a :class:`~rmgpy.reaction.Reaction` carries, discovered from the class
+#: rather than written out here. The three fields round 102 found missing were missing
+#: because a call site enumerated by hand and the hand-kept list fell behind the class;
+#: a second hand-kept list would reproduce the defect one layer up. `getset_descriptor`
+#: is what a Cython ``cdef public`` attribute presents as, which is what separates state
+#: from the methods and the cimported types that also appear in ``dir()``.
+#:
+#: This lives in `family.py` rather than `library.py`, where round 102 first put it,
+#: because `library.py` imports `TemplateReaction` from here and the import cannot run
+#: both ways. `library.py` re-exports the name, so every existing importer is unaffected.
+#: One definition, imported; not one definition per module that needs it.
+REACTION_STATE_FIELDS = frozenset(
+    name for name in dir(Reaction)
+    if not name.startswith('_')
+    and type(getattr(Reaction, name, None)).__name__ == 'getset_descriptor'
+)
+
+#: Fields whose *setter does something other than store the value*, mapped to the storage
+#: to write instead. There is exactly one today, and it is not a detail: assigning
+#: `Reaction.degeneracy` while kinetics are attached multiplies the rate by a ratio and
+#: appends to the kinetics comment (``rmgpy/reaction.py:356``). Carrying a value is not
+#: the same operation as changing it -- a reaction that already states ``degeneracy=3``
+#: has already stated the rate it wants, and re-deriving the rate from the number that was
+#: already true applies it twice. Writing the storage performs the carry and nothing else,
+#: which is the same thing `Reaction.__init__` does with its own ``degeneracy`` argument
+#: (``self._degeneracy = degeneracy``), so this is the constructor's own path rather than
+#: a back door around an invariant. Round 105 closed that at the loader; the transforms
+#: below inherit the rule by sharing this table.
+_CARRIED_THROUGH_STORAGE = {
+    'degeneracy': '_degeneracy',
+}
+
+
+class ReactionStateNotCarried(Exception):
+    """
+    Raised when a field classified as carried cannot in fact be carried.
+
+    Deliberately **not** an `AttributeError` subclass. The class of defect this module
+    keeps finding is a carry that silently drops what it claims to carry, and both places
+    a carry can fail raise `AttributeError` -- so an error an ``except AttributeError``
+    up the stack could swallow would restore the silence this exception exists to break.
+    """
+
+
+def state_fields(source):
+    """
+    Every name that holds state on `source`, discovered rather than listed.
+
+    Two halves, because a `Reaction` subclass has two kinds of field: the ones
+    `Reaction` declares in its ``.pxd``, which are descriptors on the class, and the ones
+    the subclass added in its own ``__init__``, which are ordinary instance attributes
+    because the kinetics subclasses are plain Python. `dir()` finds the first half and
+    ``vars()`` finds the second; between them nothing a subclass holds is invisible.
+
+    A base `Reaction` has no instance dictionary at all (it is a Cython extension type),
+    so for it the second half is empty and this returns exactly `REACTION_STATE_FIELDS`.
+    """
+    return REACTION_STATE_FIELDS.union(getattr(source, '__dict__', {}))
+
+
+def reaction_state(source, not_carried, fields=None):
+    """
+    Read `source`'s state as a ``{name: value}`` dict, excluding `not_carried`.
+
+    `not_carried` maps each excluded field to the reason it is excluded; `fields` is the
+    universe to enumerate, defaulting to the fields `Reaction` itself declares. Call
+    sites that carry state between *different* classes pass the default -- a
+    `TemplateReaction`'s ``template`` is not state a `LibraryReaction` should receive.
+    Call sites that reproduce *one object* -- `__reduce__`, `copy()` -- pass
+    `state_fields(source)` so the subclass's own fields travel too.
+
+    Raises `ReactionStateNotCarried` rather than skipping: a field the source cannot
+    produce is a field the caller was told it would get.
+    """
+    if fields is None:
+        fields = REACTION_STATE_FIELDS
+    state = {}
+    for name in sorted(fields):
+        if name in not_carried:
+            continue
+        try:
+            state[name] = getattr(source, name)
+        except AttributeError as error:
+            raise ReactionStateNotCarried(
+                '{0!r} is classified as carried state of {1} but cannot be read from it: '
+                '{2}'.format(name, type(source).__name__, error))
+    return state
+
+
+def apply_reaction_state(target, state):
+    """
+    Write a state dict onto `target`, through `_CARRIED_THROUGH_STORAGE` where the
+    property is a transformation rather than a store.
+
+    Raises `ReactionStateNotCarried` rather than skipping, for the same reason
+    `reaction_state` does: until round 107 this swallowed `AttributeError` and continued,
+    so a read-only field sitting in a carried set was a silent drop wearing the label of
+    a carry. That is how `protons` spent round 102 being "carried" without ever being
+    assigned. `quarantineTest.py` pins that no field any policy calls carried can reach
+    this raise, so raising costs nothing a correct partition does not already forbid --
+    and announces the partition going stale the moment it stops being correct.
+    """
+    for name, value in state.items():
+        storage = _CARRIED_THROUGH_STORAGE.get(name, name)
+        try:
+            setattr(target, storage, value)
+        except AttributeError as error:
+            raise ReactionStateNotCarried(
+                '{0!r} is classified as carried state but {1} refuses it: {2}'.format(
+                    name, type(target).__name__, error))
+    return target
+
+
+def carry_reaction_state(target, source, not_carried, fields=None):
+    """
+    Copy every field `source` holds onto `target`, except those `not_carried` names.
+
+    Everything not excluded is carried, so a field added to `Reaction` tomorrow is
+    carried by default and can only be left behind by someone writing down why.
+
+    Two of the constructors involved cannot take the fields in question --
+    `TemplateReaction.__init__` has no ``elementary_high_p``, ``allow_pdep_route`` or
+    ``allow_max_rate_violation`` parameter at all -- so the call sites name a handful of
+    fields in a constructor call and use this for the rest. The effect for
+    `elementary_high_p` is not cosmetic: a reaction that loses it misses pressure-
+    dependent routing, silently.
+
+    Raises `ReactionStateNotCarried` if a field either side calls carried cannot in fact
+    be carried. Until round 107 this swallowed both failures and continued, so the
+    docstring's promise above was false in exactly the way the promise was written to
+    prevent.
+    """
+    return apply_reaction_state(target, reaction_state(source, not_carried, fields))
+
+
+#: Fields left out of a `TemplateReaction`'s pickle and its copy alike, each with the
+#: reason. Everything else in `state_fields()` travels, which is the point: the three
+#: flags round 107 found missing from both transforms were missing because both
+#: transforms wrote the field list out by hand, and a fourth round of hand-enumeration
+#: would produce a fourth instance of the same defect.
+_NOT_REPRODUCED = {
+    'protons': 'read-only: it is derived from the charge balance of the reactants and '
+               'products, so it arrives with them rather than being assigned',
+    'k_effective_cache': 'a memo of a computation, not state -- a reproduction that '
+                         'inherited it would answer for rate coefficients it never '
+                         'computed',
+    'SurfaceArrhenius': 'a slot named after a cimported type and assigned by nothing in '
+                        'the codebase; it is always None and is not reaction state',
+    'SurfaceChargeTransfer': 'the same: a never-assigned slot, not reaction state',
+}
+
+#: Additionally left out of the *by-reference* carry in `copy()`, because `copy()` is
+#: documented to be deep and these are the mutable fields it deepens; each is assigned
+#: explicitly there. A shallow carry would hand the copy the original's own lists, which
+#: is the defect `_NOT_CARRIED_FROM_ENTRY` names for the loader one module over. These
+#: are the `Reaction` half, shared by both `copy()` methods; a subclass with mutable
+#: fields of its own adds them at the call (`labeled_atoms`, below).
+_NOT_COPIED_BY_REFERENCE = {
+    'reactants': 'deep-copied in copy(), so an edit to the copy cannot reach the original',
+    'products': 'deep-copied in copy(), for the same reason',
+    'kinetics': 'deep-copied in copy(): a shared rate object is how round 105 escaped '
+                'into the database',
+    'network_kinetics': 'deep-copied in copy(), for the same reason as kinetics',
+    'transition_state': 'deep-copied in copy(), a mutable object of its own',
+    'pairs': 'deep-copied in copy(), a list of tuples over the copied species',
+}
+_NOT_COPIED_BY_REFERENCE.update(_NOT_REPRODUCED)
+
+#: `TemplateReaction`'s own mutable field, added to the exclusions at its `copy()`.
+_TEMPLATE_NOT_COPIED_BY_REFERENCE = dict(
+    _NOT_COPIED_BY_REFERENCE,
+    labeled_atoms='deep-copied in copy(), a dict of dicts the family mutates in place')
+
+
 class TemplateReaction(Reaction):
     """
     A Reaction object generated from a reaction family template. In addition
@@ -140,25 +314,26 @@ class TemplateReaction(Reaction):
     def __reduce__(self):
         """
         A helper function used when pickling an object.
+
+        No constructor arguments: every field travels in the state dict, which is
+        discovered from the object rather than written out here. Until round 107 this
+        listed seventeen fields by hand and silently dropped six of them --
+        `elementary_high_p`, `allow_pdep_route`, `allow_max_rate_violation`, `rank`,
+        `comment` and `label` -- because `TemplateReaction.__init__` has no parameter for
+        the first three and nobody noticed the rest. A `__reduce__` that can only carry
+        what a constructor accepts will always lag the class; a state dict cannot.
         """
-        return (TemplateReaction, (self.index,
-                                   self.reactants,
-                                   self.products,
-                                   self.specific_collider,
-                                   self.kinetics,
-                                   self.reversible,
-                                   self.transition_state,
-                                   self.duplicate,
-                                   self.degeneracy,
-                                   self.pairs,
-                                   self.family,
-                                   self.template,
-                                   self.estimator,
-                                   self.reverse,
-                                   self.is_forward,
-                                   self.electrons,
-                                   self.entry,
-                                   ))
+        return (TemplateReaction, (), reaction_state(self, _NOT_REPRODUCED,
+                                                     state_fields(self)))
+
+    def __setstate__(self, state):
+        """
+        Restore what `__reduce__` sent. Required, and not merely nice: the default
+        unpickling path would do ``self.__dict__.update(state)``, and a `Reaction` field
+        is a descriptor on the class, so every one of them would land in the instance
+        dictionary where the descriptor shadows it and nothing would ever read it again.
+        """
+        apply_reaction_state(self, state)
 
     def __repr__(self):
         """
@@ -194,34 +369,29 @@ class TemplateReaction(Reaction):
     def copy(self):
         """
         creates a new instance of TemplateReaction
+
+        The shallow half is not enumerated here. Every field `state_fields()` finds and
+        `_NOT_COPIED_BY_REFERENCE` does not exclude is carried by the same helper the
+        loader and `__reduce__` use, so the three enumerations round 107 found in
+        disagreement now cannot disagree. The exclusions are the mutable fields, deepened
+        below -- the list this method used to be was missing the three pressure-dependence
+        flags, `rank`, `network_kinetics` and `labeled_atoms`, and left `comment` as
+        ``None`` where the class declares a ``str``.
         """
         other = TemplateReaction.__new__(TemplateReaction)
+        carry_reaction_state(other, self, _TEMPLATE_NOT_COPIED_BY_REFERENCE,
+                             state_fields(self))
 
-        # this was copied from Reaction.copy class
-        other.index = self.index
-        other.label = self.label
-        other.reactants = []
-        for reactant in self.reactants:
-            other.reactants.append(reactant.copy(deep=True))
-        other.products = []
-        for product in self.products:
-            other.products.append(product.copy(deep=True))
-        other.specific_collider = self.specific_collider
-        other.degeneracy = self.degeneracy
+        other.reactants = [reactant.copy(deep=True) for reactant in self.reactants]
+        other.products = [product.copy(deep=True) for product in self.products]
         other.kinetics = deepcopy(self.kinetics)
-        other.reversible = self.reversible
+        other.network_kinetics = deepcopy(self.network_kinetics)
         other.transition_state = deepcopy(self.transition_state)
-        other.duplicate = self.duplicate
         other.pairs = deepcopy(self.pairs)
-        other.electrons = self.electrons
-
-        # added for TemplateReaction information
-        other.family = self.family
-        other.template = self.template
-        other.estimator = self.estimator
-        other.reverse = self.reverse
-        other.is_forward = self.is_forward
-        other.entry = self.entry
+        other.labeled_atoms = deepcopy(self.labeled_atoms)
+        # A memo rather than state, so the copy starts empty -- but it must start, because
+        # `__new__` leaves a `cdef public dict` unset and reading an unset one raises.
+        other.k_effective_cache = {}
 
         return other
 

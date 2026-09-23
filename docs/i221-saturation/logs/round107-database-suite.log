@@ -1,0 +1,2038 @@
+........................................................................ [ 22%]
+................................................EEEE.................... [ 44%]
+........................................................................ [ 66%]
+........................................................................ [ 88%]
+....................................                                     [100%]
+==================================== ERRORS ====================================
+_ ERROR at setup of test_the_estimate_arrives_as_an_ordinary_arrhenius_with_no_electron_temperature _
+
+pinned = '/home/alon/Code/RMG-database-i221-argon-metastable-thermo/input'
+
+    @pytest.fixture(scope='module')
+    def admitted(pinned):
+        """The one reaction this library unlocks, carried all the way through the model
+        admission path that a real run uses: rate-rule estimate -> fix_barrier_height."""
+        pytest.importorskip('rmgpy.rmg.model')
+        from rmgpy.data.rmg import RMGDatabase
+        from rmgpy.rmg.model import CoreEdgeReactionModel
+    
+        db = RMGDatabase()
+        db.load(THIS_DATABASE,
+                thermo_libraries=['primaryThermoLibrary', LIBRARY, CATION_LIBRARY],
+                kinetics_families=[EII], reaction_libraries=[], seed_mechanisms=[],
+                kinetics_depositories=['training'], depository=False, solvation=True,
+                surface=False)
+        fam = db.kinetics.families[EII]
+        try:
+            fam.add_rules_from_training(thermo_database=db.thermo)
+        except Exception:                                            # noqa: BLE001
+            pass
+        fam.fill_rules_by_averaging_up(verbose=True)
+    
+        def generated():
+            reactions = db.kinetics.generate_reactions_from_families(
+                [_species(AR_META, 'Ar(3P2)')], products=None, only_families=[EII],
+                resonance=True)
+            assert len(reactions) == 1
+            one = reactions[0]
+            for s in list(one.reactants) + list(one.products):
+                if s.is_electron():
+                    continue
+                if not s.label:
+                    s.label = str(s)
+                s.thermo = db.thermo.get_thermo_data(s)
+            return one
+    
+        rxn = generated()
+    
+        cerm = CoreEdgeReactionModel()
+        cerm.kinetics_estimator = 'rate rules'
+    
+        # The family now carries a quarantine manifest, written BECAUSE of what the tests below
+        # measure, so admission refuses before any of it can be measured. Assert the refusal
+        # here rather than suppressing it - a fixture that quietly swallowed the exception would
+        # keep passing after the gate stopped firing - then detach the quarantine on the loaded
+        # object, which touches no file, so the evidence that justifies the manifest stays
+        # reproducible now that the manifest exists. The gate itself is tested in
+        # test/test_eii_quarantine.py.
+        from rmgpy.exceptions import QuarantinedKineticsError
+        quarantine = db.kinetics.families[EII].quarantine
+        assert quarantine is not None, (
+            'this family must carry a quarantine manifest; without it the rate these tests '
+            'measure would be admitted to a real mechanism')
+        with pytest.raises(QuarantinedKineticsError):
+            cerm.apply_kinetics_to_reaction(rxn)
+        assert rxn.kinetics is None, 'a refused reaction must be left exactly as generated'
+    
+        db.kinetics.families[EII].quarantine = None
+        try:
+            rxn = generated()
+>           cerm.apply_kinetics_to_reaction(rxn)
+
+test/test_argon_metastable_thermo.py:1873: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../RMG-Py-i221-saturation-fix/rmgpy/rmg/model.py:1141: in apply_kinetics_to_reaction
+    check_quarantine(reaction, stage='kinetics estimation for the reaction model',
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+reaction = TemplateReaction(reactants=[Species(label="[Ar]", thermo=NASA(polynomials=[NASAPolynomial(coeffs=[2.5,0,0,0,0,133268,5...]")], molecular_weight=(39.8775,'amu'))]], family='Plasma_Electron_Impact_Ionization', template=['A_rad'], electrons=1)
+stage = 'kinetics estimation for the reaction model', family = None
+kinetics = ArrheniusEP(A=(1.29298e+08,'m^3/(mol*s)'), n=0, alpha=0, E0=(0,'J/mol'), Tmin=(300,'K'), Tmax=(20000,'K'), comment="""Exact match found for rate rule [A_rad]
+Euclidian distance = 0
+family: Plasma_Electron_Impact_Ionization""")
+source = 'rate rules', entry = <Entry index=1 label="A_rad">
+
+    def check_quarantine(reaction, stage, family=None, kinetics=None, source=None, entry=None):
+        """
+        Refuse `reaction` if its kinetics come from quarantined database data.
+    
+        Raises :class:`QuarantinedKineticsError` naming the family, the rule or
+        training-entry provenance, the generated reaction, the kinetics class, and the
+        reason. Returns ``None`` otherwise, including for every reaction of every family
+        that carries no manifest -- which is all of ordinary chemistry.
+    
+        `stage` names the boundary being crossed, so a reader can tell a refusal at
+        kinetics estimation from one at core or edge admission.
+    
+        The family is resolved by :func:`authoring_family`, which asks who *authored* the
+        rate rather than reading ``reaction.family`` -- a slot whose meaning changes with the
+        wrapper. When a caller passes `family` explicitly it is used as given, because the
+        caller is then holding the family object itself.
+        """
+        if kinetics is None:
+            kinetics = getattr(reaction, 'kinetics', None)
+    
+        if family is not None:
+            # The caller is holding the family itself; nothing to resolve or doubt.
+            candidates = [(get_quarantine(family), True, family)]
+        else:
+            labels = authoring_families(reaction)
+            if not labels:
+                if getattr(reaction, 'library', None) is not None:
+                    _warn_unattributable(reaction, kinetics)
+                return
+            candidates = [resolve_quarantine(label) + (label,) for label in labels]
+    
+        unanswered = [label for quarantine, answered, label in candidates if not answered]
+        for quarantine, answered, _label in candidates:
+            if answered and quarantine is not None and quarantine.applies_to(kinetics):
+                break
+        else:
+            # Nothing matched. Say so where the question could not be asked, rather than
+            # letting a lookup miss look like a clean bill of health.
+            if unanswered:
+                _warn_unanswered(reaction, kinetics, unanswered)
+            return
+    
+        try:
+            described = str(reaction)
+        except Exception:
+            described = repr(reaction)
+    
+>       raise QuarantinedKineticsError(
+            '{state}: refusing to admit a quarantined rate at {stage}.\n'
+            '  family:             {family}\n'
+            '  provenance:         {provenance}\n'
+            '  reaction:           {reaction}\n'
+            '  kinetics class:     {kinetics_class}\n'
+            '  reason:             {reason}\n'
+            '  quarantine record:  {path}\n'
+            'This reaction is not being dropped, averaged, zeroed, reversed, made irreversible, or '
+            'given a substitute rate -- any of those would let the run report success on a mechanism '
+            'that is quietly wrong. The family and its data remain in the database untouched. Remove '
+            '{path} only when the quarantine is genuinely resolved.'.format(
+                state=quarantine.state,
+                stage=stage,
+                family=quarantine.family_label,
+                provenance=describe_provenance(reaction, kinetics=kinetics, source=source, entry=entry),
+                reaction=described,
+                kinetics_class=type(kinetics).__name__,
+                reason=quarantine.reason,
+                path=quarantine.path,
+            ))
+E       rmgpy.exceptions.QuarantinedKineticsError: QUARANTINED FOR QUANTITATIVE PLASMA USE: refusing to admit a quarantined rate at kinetics estimation for the reaction model.
+E         family:             Plasma_Electron_Impact_Ionization
+E         provenance:         rate rule entry 1 "A_rad"; rank 10; template [A_rad]; comment: Exact match found for rate rule [A_rad] Euclidian distance = 0 family: Plasma_Electron_Impact_Ionization
+E         reaction:           [Ar] => [Ar+]
+E         kinetics class:     ArrheniusEP
+E         reason:             estimated rates reach the solver without uses_electron_temperature and are evaluated at the GAS temperature
+E         quarantine record:  /home/alon/Code/RMG-database-i221-argon-metastable-thermo/input/kinetics/families/Plasma_Electron_Impact_Ionization/quarantine.py
+E       This reaction is not being dropped, averaged, zeroed, reversed, made irreversible, or given a substitute rate -- any of those would let the run report success on a mechanism that is quietly wrong. The family and its data remain in the database untouched. Remove /home/alon/Code/RMG-database-i221-argon-metastable-thermo/input/kinetics/families/Plasma_Electron_Impact_Ionization/quarantine.py only when the quarantine is genuinely resolved.
+
+../RMG-Py-i221-saturation-fix/rmgpy/data/kinetics/quarantine.py:1467: QuarantinedKineticsError
+------------------------------ Captured log setup ------------------------------
+WARNING  root:rmg.py:71 An instance of RMGDatabase already exists. Re-initializing it.
+_ ERROR at setup of test_the_barrier_is_set_by_the_mixed_sibling_e0_convention _
+
+pinned = '/home/alon/Code/RMG-database-i221-argon-metastable-thermo/input'
+
+    @pytest.fixture(scope='module')
+    def admitted(pinned):
+        """The one reaction this library unlocks, carried all the way through the model
+        admission path that a real run uses: rate-rule estimate -> fix_barrier_height."""
+        pytest.importorskip('rmgpy.rmg.model')
+        from rmgpy.data.rmg import RMGDatabase
+        from rmgpy.rmg.model import CoreEdgeReactionModel
+    
+        db = RMGDatabase()
+        db.load(THIS_DATABASE,
+                thermo_libraries=['primaryThermoLibrary', LIBRARY, CATION_LIBRARY],
+                kinetics_families=[EII], reaction_libraries=[], seed_mechanisms=[],
+                kinetics_depositories=['training'], depository=False, solvation=True,
+                surface=False)
+        fam = db.kinetics.families[EII]
+        try:
+            fam.add_rules_from_training(thermo_database=db.thermo)
+        except Exception:                                            # noqa: BLE001
+            pass
+        fam.fill_rules_by_averaging_up(verbose=True)
+    
+        def generated():
+            reactions = db.kinetics.generate_reactions_from_families(
+                [_species(AR_META, 'Ar(3P2)')], products=None, only_families=[EII],
+                resonance=True)
+            assert len(reactions) == 1
+            one = reactions[0]
+            for s in list(one.reactants) + list(one.products):
+                if s.is_electron():
+                    continue
+                if not s.label:
+                    s.label = str(s)
+                s.thermo = db.thermo.get_thermo_data(s)
+            return one
+    
+        rxn = generated()
+    
+        cerm = CoreEdgeReactionModel()
+        cerm.kinetics_estimator = 'rate rules'
+    
+        # The family now carries a quarantine manifest, written BECAUSE of what the tests below
+        # measure, so admission refuses before any of it can be measured. Assert the refusal
+        # here rather than suppressing it - a fixture that quietly swallowed the exception would
+        # keep passing after the gate stopped firing - then detach the quarantine on the loaded
+        # object, which touches no file, so the evidence that justifies the manifest stays
+        # reproducible now that the manifest exists. The gate itself is tested in
+        # test/test_eii_quarantine.py.
+        from rmgpy.exceptions import QuarantinedKineticsError
+        quarantine = db.kinetics.families[EII].quarantine
+        assert quarantine is not None, (
+            'this family must carry a quarantine manifest; without it the rate these tests '
+            'measure would be admitted to a real mechanism')
+        with pytest.raises(QuarantinedKineticsError):
+            cerm.apply_kinetics_to_reaction(rxn)
+        assert rxn.kinetics is None, 'a refused reaction must be left exactly as generated'
+    
+        db.kinetics.families[EII].quarantine = None
+        try:
+            rxn = generated()
+>           cerm.apply_kinetics_to_reaction(rxn)
+
+test/test_argon_metastable_thermo.py:1873: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../RMG-Py-i221-saturation-fix/rmgpy/rmg/model.py:1141: in apply_kinetics_to_reaction
+    check_quarantine(reaction, stage='kinetics estimation for the reaction model',
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+reaction = TemplateReaction(reactants=[Species(label="[Ar]", thermo=NASA(polynomials=[NASAPolynomial(coeffs=[2.5,0,0,0,0,133268,5...]")], molecular_weight=(39.8775,'amu'))]], family='Plasma_Electron_Impact_Ionization', template=['A_rad'], electrons=1)
+stage = 'kinetics estimation for the reaction model', family = None
+kinetics = ArrheniusEP(A=(1.29298e+08,'m^3/(mol*s)'), n=0, alpha=0, E0=(0,'J/mol'), Tmin=(300,'K'), Tmax=(20000,'K'), comment="""Exact match found for rate rule [A_rad]
+Euclidian distance = 0
+family: Plasma_Electron_Impact_Ionization""")
+source = 'rate rules', entry = <Entry index=1 label="A_rad">
+
+    def check_quarantine(reaction, stage, family=None, kinetics=None, source=None, entry=None):
+        """
+        Refuse `reaction` if its kinetics come from quarantined database data.
+    
+        Raises :class:`QuarantinedKineticsError` naming the family, the rule or
+        training-entry provenance, the generated reaction, the kinetics class, and the
+        reason. Returns ``None`` otherwise, including for every reaction of every family
+        that carries no manifest -- which is all of ordinary chemistry.
+    
+        `stage` names the boundary being crossed, so a reader can tell a refusal at
+        kinetics estimation from one at core or edge admission.
+    
+        The family is resolved by :func:`authoring_family`, which asks who *authored* the
+        rate rather than reading ``reaction.family`` -- a slot whose meaning changes with the
+        wrapper. When a caller passes `family` explicitly it is used as given, because the
+        caller is then holding the family object itself.
+        """
+        if kinetics is None:
+            kinetics = getattr(reaction, 'kinetics', None)
+    
+        if family is not None:
+            # The caller is holding the family itself; nothing to resolve or doubt.
+            candidates = [(get_quarantine(family), True, family)]
+        else:
+            labels = authoring_families(reaction)
+            if not labels:
+                if getattr(reaction, 'library', None) is not None:
+                    _warn_unattributable(reaction, kinetics)
+                return
+            candidates = [resolve_quarantine(label) + (label,) for label in labels]
+    
+        unanswered = [label for quarantine, answered, label in candidates if not answered]
+        for quarantine, answered, _label in candidates:
+            if answered and quarantine is not None and quarantine.applies_to(kinetics):
+                break
+        else:
+            # Nothing matched. Say so where the question could not be asked, rather than
+            # letting a lookup miss look like a clean bill of health.
+            if unanswered:
+                _warn_unanswered(reaction, kinetics, unanswered)
+            return
+    
+        try:
+            described = str(reaction)
+        except Exception:
+            described = repr(reaction)
+    
+>       raise QuarantinedKineticsError(
+            '{state}: refusing to admit a quarantined rate at {stage}.\n'
+            '  family:             {family}\n'
+            '  provenance:         {provenance}\n'
+            '  reaction:           {reaction}\n'
+            '  kinetics class:     {kinetics_class}\n'
+            '  reason:             {reason}\n'
+            '  quarantine record:  {path}\n'
+            'This reaction is not being dropped, averaged, zeroed, reversed, made irreversible, or '
+            'given a substitute rate -- any of those would let the run report success on a mechanism '
+            'that is quietly wrong. The family and its data remain in the database untouched. Remove '
+            '{path} only when the quarantine is genuinely resolved.'.format(
+                state=quarantine.state,
+                stage=stage,
+                family=quarantine.family_label,
+                provenance=describe_provenance(reaction, kinetics=kinetics, source=source, entry=entry),
+                reaction=described,
+                kinetics_class=type(kinetics).__name__,
+                reason=quarantine.reason,
+                path=quarantine.path,
+            ))
+E       rmgpy.exceptions.QuarantinedKineticsError: QUARANTINED FOR QUANTITATIVE PLASMA USE: refusing to admit a quarantined rate at kinetics estimation for the reaction model.
+E         family:             Plasma_Electron_Impact_Ionization
+E         provenance:         rate rule entry 1 "A_rad"; rank 10; template [A_rad]; comment: Exact match found for rate rule [A_rad] Euclidian distance = 0 family: Plasma_Electron_Impact_Ionization
+E         reaction:           [Ar] => [Ar+]
+E         kinetics class:     ArrheniusEP
+E         reason:             estimated rates reach the solver without uses_electron_temperature and are evaluated at the GAS temperature
+E         quarantine record:  /home/alon/Code/RMG-database-i221-argon-metastable-thermo/input/kinetics/families/Plasma_Electron_Impact_Ionization/quarantine.py
+E       This reaction is not being dropped, averaged, zeroed, reversed, made irreversible, or given a substitute rate -- any of those would let the run report success on a mechanism that is quietly wrong. The family and its data remain in the database untouched. Remove /home/alon/Code/RMG-database-i221-argon-metastable-thermo/input/kinetics/families/Plasma_Electron_Impact_Ionization/quarantine.py only when the quarantine is genuinely resolved.
+
+../RMG-Py-i221-saturation-fix/rmgpy/data/kinetics/quarantine.py:1467: QuarantinedKineticsError
+_ ERROR at setup of test_the_delivered_rate_is_evaluated_at_the_GAS_temperature _
+
+pinned = '/home/alon/Code/RMG-database-i221-argon-metastable-thermo/input'
+
+    @pytest.fixture(scope='module')
+    def admitted(pinned):
+        """The one reaction this library unlocks, carried all the way through the model
+        admission path that a real run uses: rate-rule estimate -> fix_barrier_height."""
+        pytest.importorskip('rmgpy.rmg.model')
+        from rmgpy.data.rmg import RMGDatabase
+        from rmgpy.rmg.model import CoreEdgeReactionModel
+    
+        db = RMGDatabase()
+        db.load(THIS_DATABASE,
+                thermo_libraries=['primaryThermoLibrary', LIBRARY, CATION_LIBRARY],
+                kinetics_families=[EII], reaction_libraries=[], seed_mechanisms=[],
+                kinetics_depositories=['training'], depository=False, solvation=True,
+                surface=False)
+        fam = db.kinetics.families[EII]
+        try:
+            fam.add_rules_from_training(thermo_database=db.thermo)
+        except Exception:                                            # noqa: BLE001
+            pass
+        fam.fill_rules_by_averaging_up(verbose=True)
+    
+        def generated():
+            reactions = db.kinetics.generate_reactions_from_families(
+                [_species(AR_META, 'Ar(3P2)')], products=None, only_families=[EII],
+                resonance=True)
+            assert len(reactions) == 1
+            one = reactions[0]
+            for s in list(one.reactants) + list(one.products):
+                if s.is_electron():
+                    continue
+                if not s.label:
+                    s.label = str(s)
+                s.thermo = db.thermo.get_thermo_data(s)
+            return one
+    
+        rxn = generated()
+    
+        cerm = CoreEdgeReactionModel()
+        cerm.kinetics_estimator = 'rate rules'
+    
+        # The family now carries a quarantine manifest, written BECAUSE of what the tests below
+        # measure, so admission refuses before any of it can be measured. Assert the refusal
+        # here rather than suppressing it - a fixture that quietly swallowed the exception would
+        # keep passing after the gate stopped firing - then detach the quarantine on the loaded
+        # object, which touches no file, so the evidence that justifies the manifest stays
+        # reproducible now that the manifest exists. The gate itself is tested in
+        # test/test_eii_quarantine.py.
+        from rmgpy.exceptions import QuarantinedKineticsError
+        quarantine = db.kinetics.families[EII].quarantine
+        assert quarantine is not None, (
+            'this family must carry a quarantine manifest; without it the rate these tests '
+            'measure would be admitted to a real mechanism')
+        with pytest.raises(QuarantinedKineticsError):
+            cerm.apply_kinetics_to_reaction(rxn)
+        assert rxn.kinetics is None, 'a refused reaction must be left exactly as generated'
+    
+        db.kinetics.families[EII].quarantine = None
+        try:
+            rxn = generated()
+>           cerm.apply_kinetics_to_reaction(rxn)
+
+test/test_argon_metastable_thermo.py:1873: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../RMG-Py-i221-saturation-fix/rmgpy/rmg/model.py:1141: in apply_kinetics_to_reaction
+    check_quarantine(reaction, stage='kinetics estimation for the reaction model',
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+reaction = TemplateReaction(reactants=[Species(label="[Ar]", thermo=NASA(polynomials=[NASAPolynomial(coeffs=[2.5,0,0,0,0,133268,5...]")], molecular_weight=(39.8775,'amu'))]], family='Plasma_Electron_Impact_Ionization', template=['A_rad'], electrons=1)
+stage = 'kinetics estimation for the reaction model', family = None
+kinetics = ArrheniusEP(A=(1.29298e+08,'m^3/(mol*s)'), n=0, alpha=0, E0=(0,'J/mol'), Tmin=(300,'K'), Tmax=(20000,'K'), comment="""Exact match found for rate rule [A_rad]
+Euclidian distance = 0
+family: Plasma_Electron_Impact_Ionization""")
+source = 'rate rules', entry = <Entry index=1 label="A_rad">
+
+    def check_quarantine(reaction, stage, family=None, kinetics=None, source=None, entry=None):
+        """
+        Refuse `reaction` if its kinetics come from quarantined database data.
+    
+        Raises :class:`QuarantinedKineticsError` naming the family, the rule or
+        training-entry provenance, the generated reaction, the kinetics class, and the
+        reason. Returns ``None`` otherwise, including for every reaction of every family
+        that carries no manifest -- which is all of ordinary chemistry.
+    
+        `stage` names the boundary being crossed, so a reader can tell a refusal at
+        kinetics estimation from one at core or edge admission.
+    
+        The family is resolved by :func:`authoring_family`, which asks who *authored* the
+        rate rather than reading ``reaction.family`` -- a slot whose meaning changes with the
+        wrapper. When a caller passes `family` explicitly it is used as given, because the
+        caller is then holding the family object itself.
+        """
+        if kinetics is None:
+            kinetics = getattr(reaction, 'kinetics', None)
+    
+        if family is not None:
+            # The caller is holding the family itself; nothing to resolve or doubt.
+            candidates = [(get_quarantine(family), True, family)]
+        else:
+            labels = authoring_families(reaction)
+            if not labels:
+                if getattr(reaction, 'library', None) is not None:
+                    _warn_unattributable(reaction, kinetics)
+                return
+            candidates = [resolve_quarantine(label) + (label,) for label in labels]
+    
+        unanswered = [label for quarantine, answered, label in candidates if not answered]
+        for quarantine, answered, _label in candidates:
+            if answered and quarantine is not None and quarantine.applies_to(kinetics):
+                break
+        else:
+            # Nothing matched. Say so where the question could not be asked, rather than
+            # letting a lookup miss look like a clean bill of health.
+            if unanswered:
+                _warn_unanswered(reaction, kinetics, unanswered)
+            return
+    
+        try:
+            described = str(reaction)
+        except Exception:
+            described = repr(reaction)
+    
+>       raise QuarantinedKineticsError(
+            '{state}: refusing to admit a quarantined rate at {stage}.\n'
+            '  family:             {family}\n'
+            '  provenance:         {provenance}\n'
+            '  reaction:           {reaction}\n'
+            '  kinetics class:     {kinetics_class}\n'
+            '  reason:             {reason}\n'
+            '  quarantine record:  {path}\n'
+            'This reaction is not being dropped, averaged, zeroed, reversed, made irreversible, or '
+            'given a substitute rate -- any of those would let the run report success on a mechanism '
+            'that is quietly wrong. The family and its data remain in the database untouched. Remove '
+            '{path} only when the quarantine is genuinely resolved.'.format(
+                state=quarantine.state,
+                stage=stage,
+                family=quarantine.family_label,
+                provenance=describe_provenance(reaction, kinetics=kinetics, source=source, entry=entry),
+                reaction=described,
+                kinetics_class=type(kinetics).__name__,
+                reason=quarantine.reason,
+                path=quarantine.path,
+            ))
+E       rmgpy.exceptions.QuarantinedKineticsError: QUARANTINED FOR QUANTITATIVE PLASMA USE: refusing to admit a quarantined rate at kinetics estimation for the reaction model.
+E         family:             Plasma_Electron_Impact_Ionization
+E         provenance:         rate rule entry 1 "A_rad"; rank 10; template [A_rad]; comment: Exact match found for rate rule [A_rad] Euclidian distance = 0 family: Plasma_Electron_Impact_Ionization
+E         reaction:           [Ar] => [Ar+]
+E         kinetics class:     ArrheniusEP
+E         reason:             estimated rates reach the solver without uses_electron_temperature and are evaluated at the GAS temperature
+E         quarantine record:  /home/alon/Code/RMG-database-i221-argon-metastable-thermo/input/kinetics/families/Plasma_Electron_Impact_Ionization/quarantine.py
+E       This reaction is not being dropped, averaged, zeroed, reversed, made irreversible, or given a substitute rate -- any of those would let the run report success on a mechanism that is quietly wrong. The family and its data remain in the database untouched. Remove /home/alon/Code/RMG-database-i221-argon-metastable-thermo/input/kinetics/families/Plasma_Electron_Impact_Ionization/quarantine.py only when the quarantine is genuinely resolved.
+
+../RMG-Py-i221-saturation-fix/rmgpy/data/kinetics/quarantine.py:1467: QuarantinedKineticsError
+_ ERROR at setup of test_nothing_at_the_point_of_use_says_the_rate_is_a_placeholder _
+
+pinned = '/home/alon/Code/RMG-database-i221-argon-metastable-thermo/input'
+
+    @pytest.fixture(scope='module')
+    def admitted(pinned):
+        """The one reaction this library unlocks, carried all the way through the model
+        admission path that a real run uses: rate-rule estimate -> fix_barrier_height."""
+        pytest.importorskip('rmgpy.rmg.model')
+        from rmgpy.data.rmg import RMGDatabase
+        from rmgpy.rmg.model import CoreEdgeReactionModel
+    
+        db = RMGDatabase()
+        db.load(THIS_DATABASE,
+                thermo_libraries=['primaryThermoLibrary', LIBRARY, CATION_LIBRARY],
+                kinetics_families=[EII], reaction_libraries=[], seed_mechanisms=[],
+                kinetics_depositories=['training'], depository=False, solvation=True,
+                surface=False)
+        fam = db.kinetics.families[EII]
+        try:
+            fam.add_rules_from_training(thermo_database=db.thermo)
+        except Exception:                                            # noqa: BLE001
+            pass
+        fam.fill_rules_by_averaging_up(verbose=True)
+    
+        def generated():
+            reactions = db.kinetics.generate_reactions_from_families(
+                [_species(AR_META, 'Ar(3P2)')], products=None, only_families=[EII],
+                resonance=True)
+            assert len(reactions) == 1
+            one = reactions[0]
+            for s in list(one.reactants) + list(one.products):
+                if s.is_electron():
+                    continue
+                if not s.label:
+                    s.label = str(s)
+                s.thermo = db.thermo.get_thermo_data(s)
+            return one
+    
+        rxn = generated()
+    
+        cerm = CoreEdgeReactionModel()
+        cerm.kinetics_estimator = 'rate rules'
+    
+        # The family now carries a quarantine manifest, written BECAUSE of what the tests below
+        # measure, so admission refuses before any of it can be measured. Assert the refusal
+        # here rather than suppressing it - a fixture that quietly swallowed the exception would
+        # keep passing after the gate stopped firing - then detach the quarantine on the loaded
+        # object, which touches no file, so the evidence that justifies the manifest stays
+        # reproducible now that the manifest exists. The gate itself is tested in
+        # test/test_eii_quarantine.py.
+        from rmgpy.exceptions import QuarantinedKineticsError
+        quarantine = db.kinetics.families[EII].quarantine
+        assert quarantine is not None, (
+            'this family must carry a quarantine manifest; without it the rate these tests '
+            'measure would be admitted to a real mechanism')
+        with pytest.raises(QuarantinedKineticsError):
+            cerm.apply_kinetics_to_reaction(rxn)
+        assert rxn.kinetics is None, 'a refused reaction must be left exactly as generated'
+    
+        db.kinetics.families[EII].quarantine = None
+        try:
+            rxn = generated()
+>           cerm.apply_kinetics_to_reaction(rxn)
+
+test/test_argon_metastable_thermo.py:1873: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../RMG-Py-i221-saturation-fix/rmgpy/rmg/model.py:1141: in apply_kinetics_to_reaction
+    check_quarantine(reaction, stage='kinetics estimation for the reaction model',
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+reaction = TemplateReaction(reactants=[Species(label="[Ar]", thermo=NASA(polynomials=[NASAPolynomial(coeffs=[2.5,0,0,0,0,133268,5...]")], molecular_weight=(39.8775,'amu'))]], family='Plasma_Electron_Impact_Ionization', template=['A_rad'], electrons=1)
+stage = 'kinetics estimation for the reaction model', family = None
+kinetics = ArrheniusEP(A=(1.29298e+08,'m^3/(mol*s)'), n=0, alpha=0, E0=(0,'J/mol'), Tmin=(300,'K'), Tmax=(20000,'K'), comment="""Exact match found for rate rule [A_rad]
+Euclidian distance = 0
+family: Plasma_Electron_Impact_Ionization""")
+source = 'rate rules', entry = <Entry index=1 label="A_rad">
+
+    def check_quarantine(reaction, stage, family=None, kinetics=None, source=None, entry=None):
+        """
+        Refuse `reaction` if its kinetics come from quarantined database data.
+    
+        Raises :class:`QuarantinedKineticsError` naming the family, the rule or
+        training-entry provenance, the generated reaction, the kinetics class, and the
+        reason. Returns ``None`` otherwise, including for every reaction of every family
+        that carries no manifest -- which is all of ordinary chemistry.
+    
+        `stage` names the boundary being crossed, so a reader can tell a refusal at
+        kinetics estimation from one at core or edge admission.
+    
+        The family is resolved by :func:`authoring_family`, which asks who *authored* the
+        rate rather than reading ``reaction.family`` -- a slot whose meaning changes with the
+        wrapper. When a caller passes `family` explicitly it is used as given, because the
+        caller is then holding the family object itself.
+        """
+        if kinetics is None:
+            kinetics = getattr(reaction, 'kinetics', None)
+    
+        if family is not None:
+            # The caller is holding the family itself; nothing to resolve or doubt.
+            candidates = [(get_quarantine(family), True, family)]
+        else:
+            labels = authoring_families(reaction)
+            if not labels:
+                if getattr(reaction, 'library', None) is not None:
+                    _warn_unattributable(reaction, kinetics)
+                return
+            candidates = [resolve_quarantine(label) + (label,) for label in labels]
+    
+        unanswered = [label for quarantine, answered, label in candidates if not answered]
+        for quarantine, answered, _label in candidates:
+            if answered and quarantine is not None and quarantine.applies_to(kinetics):
+                break
+        else:
+            # Nothing matched. Say so where the question could not be asked, rather than
+            # letting a lookup miss look like a clean bill of health.
+            if unanswered:
+                _warn_unanswered(reaction, kinetics, unanswered)
+            return
+    
+        try:
+            described = str(reaction)
+        except Exception:
+            described = repr(reaction)
+    
+>       raise QuarantinedKineticsError(
+            '{state}: refusing to admit a quarantined rate at {stage}.\n'
+            '  family:             {family}\n'
+            '  provenance:         {provenance}\n'
+            '  reaction:           {reaction}\n'
+            '  kinetics class:     {kinetics_class}\n'
+            '  reason:             {reason}\n'
+            '  quarantine record:  {path}\n'
+            'This reaction is not being dropped, averaged, zeroed, reversed, made irreversible, or '
+            'given a substitute rate -- any of those would let the run report success on a mechanism '
+            'that is quietly wrong. The family and its data remain in the database untouched. Remove '
+            '{path} only when the quarantine is genuinely resolved.'.format(
+                state=quarantine.state,
+                stage=stage,
+                family=quarantine.family_label,
+                provenance=describe_provenance(reaction, kinetics=kinetics, source=source, entry=entry),
+                reaction=described,
+                kinetics_class=type(kinetics).__name__,
+                reason=quarantine.reason,
+                path=quarantine.path,
+            ))
+E       rmgpy.exceptions.QuarantinedKineticsError: QUARANTINED FOR QUANTITATIVE PLASMA USE: refusing to admit a quarantined rate at kinetics estimation for the reaction model.
+E         family:             Plasma_Electron_Impact_Ionization
+E         provenance:         rate rule entry 1 "A_rad"; rank 10; template [A_rad]; comment: Exact match found for rate rule [A_rad] Euclidian distance = 0 family: Plasma_Electron_Impact_Ionization
+E         reaction:           [Ar] => [Ar+]
+E         kinetics class:     ArrheniusEP
+E         reason:             estimated rates reach the solver without uses_electron_temperature and are evaluated at the GAS temperature
+E         quarantine record:  /home/alon/Code/RMG-database-i221-argon-metastable-thermo/input/kinetics/families/Plasma_Electron_Impact_Ionization/quarantine.py
+E       This reaction is not being dropped, averaged, zeroed, reversed, made irreversible, or given a substitute rate -- any of those would let the run report success on a mechanism that is quietly wrong. The family and its data remain in the database untouched. Remove /home/alon/Code/RMG-database-i221-argon-metastable-thermo/input/kinetics/families/Plasma_Electron_Impact_Ionization/quarantine.py only when the quarantine is genuinely resolved.
+
+../RMG-Py-i221-saturation-fix/rmgpy/data/kinetics/quarantine.py:1467: QuarantinedKineticsError
+=============================== warnings summary ===============================
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:5427: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:5539: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:5628: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:5672: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:5698: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:5860: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:5904: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:5930: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:6097: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:6141: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:6167: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:6295: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:7200: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:7470: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:7726: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:7840: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:8025: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:8128: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:9315: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:10169: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:10258: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:11178: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:20791: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:20884: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:21052: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:21078: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:21531: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:21711: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:21739: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:21927: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:22858: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:22951: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:23114: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:23297: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:23392: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:24051: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:24336: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:27050: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:27143: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:27280: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:27308: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:27491: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:28152: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:30542: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:38231: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:38277: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:38304: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:38507: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:39316: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:41060: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:41126: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:41383: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:42688: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:42759: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:43026: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:43634: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:43680: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:43707: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:51842: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:51867: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:51916: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:52269: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:52295: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:52359: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:52384: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:52461: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:22378: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:22405: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:22458: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:22486: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:22515: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:22545: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:22574: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:22602: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:22631: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:23066: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:23095: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:23125: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:23156: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:23186: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:23214: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:23242: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:23479: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:23508: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:23537: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:24531: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:24668: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:24742: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:24769: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:24798: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:26751: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:26779: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:33222: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:33684: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:33736: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:33780: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:34311: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:34339: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:34368: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:34817: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:34845: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:34938: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:35231: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:35330: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:35376: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:36210: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:36236: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:36783: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:37597: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:40266: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:40293: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:40321: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:40350: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:40378: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:40405: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:40433: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:40458: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:40484: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:40511: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:40537: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:41052: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:41160: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:41225: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:41874: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:44422: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:44449: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:44476: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:49272: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:50344: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:50369: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:50397: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:50424: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:50450: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:50610: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:50636: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:50663: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:50689: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:50716: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:50984: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:51613: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:51732: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_cation_buildtime.py: 2 warnings
+test/test_argon_cation_thermo.py: 2 warnings
+test/test_argon_metastable_thermo.py: 5 warnings
+test/test_eii_quarantine.py: 1 warning
+  <string>:51756: DeprecationWarning: invalid escape sequence \D
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:1371: DeprecationWarning: invalid escape sequence \C
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:1613: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:1630: DeprecationWarning: invalid escape sequence \O
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:1647: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:1664: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:1682: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:1699: DeprecationWarning: invalid escape sequence \T
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:1716: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:1733: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:1751: DeprecationWarning: invalid escape sequence \T
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:1936: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:1954: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:1972: DeprecationWarning: invalid escape sequence \C
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:2046: DeprecationWarning: invalid escape sequence \O
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:2061: DeprecationWarning: invalid escape sequence \C
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:2169: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:2217: DeprecationWarning: invalid escape sequence \C
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:2367: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:2401: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:2801: DeprecationWarning: invalid escape sequence \O
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:2825: DeprecationWarning: invalid escape sequence \C
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:4120: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:4211: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:4226: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:4241: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:4256: DeprecationWarning: invalid escape sequence \C
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:4271: DeprecationWarning: invalid escape sequence \C
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:4286: DeprecationWarning: invalid escape sequence \C
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:4738: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:4752: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:4766: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:4783: DeprecationWarning: invalid escape sequence \C
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:4823: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:4837: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:5291: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:5307: DeprecationWarning: invalid escape sequence \C
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:5323: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:5340: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:5357: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:5375: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:5485: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:5500: DeprecationWarning: invalid escape sequence \C
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:5593: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:5650: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:5666: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:5689: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:5712: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:5761: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:5777: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:5800: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:5973: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:6369: DeprecationWarning: invalid escape sequence \O
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:6456: DeprecationWarning: invalid escape sequence \C
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:7196: DeprecationWarning: invalid escape sequence \C
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:2302: DeprecationWarning: invalid escape sequence \S
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:2320: DeprecationWarning: invalid escape sequence \S
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:7217: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:7248: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:7279: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:7310: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:7341: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:7364: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:7387: DeprecationWarning: invalid escape sequence \C
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:7410: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:7433: DeprecationWarning: invalid escape sequence \C
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:7469: DeprecationWarning: invalid escape sequence \C
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:7501: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:7524: DeprecationWarning: invalid escape sequence \C
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:7547: DeprecationWarning: invalid escape sequence \C
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:7570: DeprecationWarning: invalid escape sequence \C
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:7593: DeprecationWarning: invalid escape sequence \C
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:7616: DeprecationWarning: invalid escape sequence \C
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:7639: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:7666: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:7693: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:7716: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:7739: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:7766: DeprecationWarning: invalid escape sequence \O
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:7793: DeprecationWarning: invalid escape sequence \C
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:7816: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:7839: DeprecationWarning: invalid escape sequence \O
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:7866: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:7889: DeprecationWarning: invalid escape sequence \C
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:7912: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:7935: DeprecationWarning: invalid escape sequence \O
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:7958: DeprecationWarning: invalid escape sequence \C
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:8004: DeprecationWarning: invalid escape sequence \C
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:8046: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:8088: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:8135: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:8179: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:8204: DeprecationWarning: invalid escape sequence \S
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:8238: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:8316: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:8356: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:8386: DeprecationWarning: invalid escape sequence \C
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:8742: DeprecationWarning: invalid escape sequence \O
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:12610: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:12636: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:12688: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:12701: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:12714: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:12727: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:12740: DeprecationWarning: invalid escape sequence \C
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:12753: DeprecationWarning: invalid escape sequence \C
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:12818: DeprecationWarning: invalid escape sequence \O
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:12857: DeprecationWarning: invalid escape sequence \O
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:12896: DeprecationWarning: invalid escape sequence \O
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:12909: DeprecationWarning: invalid escape sequence \C
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:12937: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:12950: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:12963: DeprecationWarning: invalid escape sequence \O
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:12976: DeprecationWarning: invalid escape sequence \C
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:13002: DeprecationWarning: invalid escape sequence \O
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:13027: DeprecationWarning: invalid escape sequence \O
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:13040: DeprecationWarning: invalid escape sequence \O
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:13056: DeprecationWarning: invalid escape sequence \C
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:13071: DeprecationWarning: invalid escape sequence \C
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:42011: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:42076: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:42091: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:42127: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:42143: DeprecationWarning: invalid escape sequence \C
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:2799: DeprecationWarning: invalid escape sequence \O
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:2815: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:3663: DeprecationWarning: invalid escape sequence \O
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:17630: DeprecationWarning: invalid escape sequence \O
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:55492: DeprecationWarning: invalid escape sequence \O
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:56189: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:56209: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:56289: DeprecationWarning: invalid escape sequence \H
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:56373: DeprecationWarning: invalid escape sequence \O
+
+test/test_argon_metastable_thermo.py::test_the_containment_is_written_where_each_family_already_says_it_belongs
+  <string>:56563: DeprecationWarning: invalid escape sequence \O
+
+test/test_argon_metastable_thermo.py::test_the_crash_would_fire_before_any_kinetics_quarantine_could_intercept_it
+test/test_argon_metastable_thermo.py::test_the_advertised_6000_K_now_survives_normal_processing
+test/test_argon_metastable_thermo.py::test_the_estimate_arrives_as_an_ordinary_arrhenius_with_no_electron_temperature
+test/test_eii_quarantine.py::test_arrhenius_would_have_been_the_wrong_criterion
+  <string>:5425: DeprecationWarning: invalid escape sequence \C
+
+test/test_argon_metastable_thermo.py::test_the_crash_would_fire_before_any_kinetics_quarantine_could_intercept_it
+test/test_argon_metastable_thermo.py::test_the_advertised_6000_K_now_survives_normal_processing
+test/test_argon_metastable_thermo.py::test_the_estimate_arrives_as_an_ordinary_arrhenius_with_no_electron_temperature
+test/test_eii_quarantine.py::test_arrhenius_would_have_been_the_wrong_criterion
+  <string>:6531: DeprecationWarning: invalid escape sequence \C
+
+test/test_argon_metastable_thermo.py::test_the_crash_would_fire_before_any_kinetics_quarantine_could_intercept_it
+test/test_argon_metastable_thermo.py::test_being_a_nasa_is_not_enough_the_library_comment_is_the_gate
+  /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=9.78829e-18): result may not be accurate.
+    fu = func(x, *args)
+
+test/test_argon_metastable_thermo.py::test_the_crash_would_fire_before_any_kinetics_quarantine_could_intercept_it
+test/test_argon_metastable_thermo.py::test_being_a_nasa_is_not_enough_the_library_comment_is_the_gate
+  /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=8.30526e-20): result may not be accurate.
+    fu = func(x, *args)
+
+test/test_argon_metastable_thermo.py::test_the_crash_would_fire_before_any_kinetics_quarantine_could_intercept_it
+test/test_argon_metastable_thermo.py::test_being_a_nasa_is_not_enough_the_library_comment_is_the_gate
+  /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=1.38146e-20): result may not be accurate.
+    fu = func(x, *args)
+
+test/test_argon_metastable_thermo.py::test_the_crash_would_fire_before_any_kinetics_quarantine_could_intercept_it
+test/test_argon_metastable_thermo.py::test_being_a_nasa_is_not_enough_the_library_comment_is_the_gate
+  /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=8.43874e-21): result may not be accurate.
+    fu = func(x, *args)
+
+test/test_argon_metastable_thermo.py::test_the_crash_would_fire_before_any_kinetics_quarantine_could_intercept_it
+test/test_argon_metastable_thermo.py::test_being_a_nasa_is_not_enough_the_library_comment_is_the_gate
+  /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=2.11249e-21): result may not be accurate.
+    fu = func(x, *args)
+
+test/test_argon_metastable_thermo.py::test_the_crash_would_fire_before_any_kinetics_quarantine_could_intercept_it
+test/test_argon_metastable_thermo.py::test_being_a_nasa_is_not_enough_the_library_comment_is_the_gate
+  /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=5.2787e-21): result may not be accurate.
+    fu = func(x, *args)
+
+test/test_argon_metastable_thermo.py::test_the_crash_would_fire_before_any_kinetics_quarantine_could_intercept_it
+test/test_argon_metastable_thermo.py::test_being_a_nasa_is_not_enough_the_library_comment_is_the_gate
+  /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=2.26538e-21): result may not be accurate.
+    fu = func(x, *args)
+
+test/test_argon_metastable_thermo.py::test_the_crash_would_fire_before_any_kinetics_quarantine_could_intercept_it
+test/test_argon_metastable_thermo.py::test_being_a_nasa_is_not_enough_the_library_comment_is_the_gate
+  /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=1.9079e-21): result may not be accurate.
+    fu = func(x, *args)
+
+test/test_argon_metastable_thermo.py::test_the_crash_would_fire_before_any_kinetics_quarantine_could_intercept_it
+test/test_argon_metastable_thermo.py::test_being_a_nasa_is_not_enough_the_library_comment_is_the_gate
+  /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=7.53573e-21): result may not be accurate.
+    fu = func(x, *args)
+
+test/test_argon_metastable_thermo.py::test_the_crash_would_fire_before_any_kinetics_quarantine_could_intercept_it
+test/test_argon_metastable_thermo.py::test_being_a_nasa_is_not_enough_the_library_comment_is_the_gate
+  /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=7.43345e-21): result may not be accurate.
+    fu = func(x, *args)
+
+test/test_argon_metastable_thermo.py::test_the_crash_would_fire_before_any_kinetics_quarantine_could_intercept_it
+test/test_argon_metastable_thermo.py::test_being_a_nasa_is_not_enough_the_library_comment_is_the_gate
+  /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=1.47964e-21): result may not be accurate.
+    fu = func(x, *args)
+
+test/test_argon_metastable_thermo.py::test_the_crash_would_fire_before_any_kinetics_quarantine_could_intercept_it
+test/test_argon_metastable_thermo.py::test_being_a_nasa_is_not_enough_the_library_comment_is_the_gate
+  /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=1.34061e-20): result may not be accurate.
+    fu = func(x, *args)
+
+test/test_argon_metastable_thermo.py::test_the_crash_would_fire_before_any_kinetics_quarantine_could_intercept_it
+test/test_argon_metastable_thermo.py::test_being_a_nasa_is_not_enough_the_library_comment_is_the_gate
+  /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=8.87325e-21): result may not be accurate.
+    fu = func(x, *args)
+
+test/test_argon_metastable_thermo.py::test_the_crash_would_fire_before_any_kinetics_quarantine_could_intercept_it
+test/test_argon_metastable_thermo.py::test_being_a_nasa_is_not_enough_the_library_comment_is_the_gate
+  /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=3.20362e-21): result may not be accurate.
+    fu = func(x, *args)
+
+test/test_argon_metastable_thermo.py::test_the_crash_would_fire_before_any_kinetics_quarantine_could_intercept_it
+test/test_argon_metastable_thermo.py::test_being_a_nasa_is_not_enough_the_library_comment_is_the_gate
+  /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=2.39961e-21): result may not be accurate.
+    fu = func(x, *args)
+
+test/test_argon_metastable_thermo.py::test_the_crash_would_fire_before_any_kinetics_quarantine_could_intercept_it
+test/test_argon_metastable_thermo.py::test_being_a_nasa_is_not_enough_the_library_comment_is_the_gate
+  /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=3.56405e-21): result may not be accurate.
+    fu = func(x, *args)
+
+test/test_argon_metastable_thermo.py::test_the_crash_would_fire_before_any_kinetics_quarantine_could_intercept_it
+test/test_argon_metastable_thermo.py::test_being_a_nasa_is_not_enough_the_library_comment_is_the_gate
+  /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=4.40143e-21): result may not be accurate.
+    fu = func(x, *args)
+
+test/test_argon_metastable_thermo.py::test_the_crash_would_fire_before_any_kinetics_quarantine_could_intercept_it
+test/test_argon_metastable_thermo.py::test_being_a_nasa_is_not_enough_the_library_comment_is_the_gate
+  /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=4.71804e-22): result may not be accurate.
+    fu = func(x, *args)
+
+test/test_argon_metastable_thermo.py::test_the_crash_would_fire_before_any_kinetics_quarantine_could_intercept_it
+test/test_argon_metastable_thermo.py::test_being_a_nasa_is_not_enough_the_library_comment_is_the_gate
+  /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=4.97734e-21): result may not be accurate.
+    fu = func(x, *args)
+
+test/test_argon_metastable_thermo.py::test_the_crash_would_fire_before_any_kinetics_quarantine_could_intercept_it
+test/test_argon_metastable_thermo.py::test_being_a_nasa_is_not_enough_the_library_comment_is_the_gate
+  /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=7.47076e-21): result may not be accurate.
+    fu = func(x, *args)
+
+test/test_argon_metastable_thermo.py::test_the_crash_would_fire_before_any_kinetics_quarantine_could_intercept_it
+test/test_argon_metastable_thermo.py::test_being_a_nasa_is_not_enough_the_library_comment_is_the_gate
+  /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=6.10745e-21): result may not be accurate.
+    fu = func(x, *args)
+
+test/test_argon_metastable_thermo.py::test_the_crash_would_fire_before_any_kinetics_quarantine_could_intercept_it
+test/test_argon_metastable_thermo.py::test_being_a_nasa_is_not_enough_the_library_comment_is_the_gate
+  /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=3.69387e-21): result may not be accurate.
+    fu = func(x, *args)
+
+test/test_argon_metastable_thermo.py::test_the_crash_would_fire_before_any_kinetics_quarantine_could_intercept_it
+test/test_argon_metastable_thermo.py::test_being_a_nasa_is_not_enough_the_library_comment_is_the_gate
+  /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=1.30536e-20): result may not be accurate.
+    fu = func(x, *args)
+
+test/test_argon_metastable_thermo.py::test_the_crash_would_fire_before_any_kinetics_quarantine_could_intercept_it
+test/test_argon_metastable_thermo.py::test_being_a_nasa_is_not_enough_the_library_comment_is_the_gate
+  /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=1.51603e-20): result may not be accurate.
+    fu = func(x, *args)
+
+test/test_argon_metastable_thermo.py::test_the_crash_would_fire_before_any_kinetics_quarantine_could_intercept_it
+test/test_argon_metastable_thermo.py::test_being_a_nasa_is_not_enough_the_library_comment_is_the_gate
+  /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/scipy/optimize/_optimize.py:2322: LinAlgWarning: Ill-conditioned matrix (rcond=3.18757e-21): result may not be accurate.
+    fu = func(x, *args)
+
+test/test_argon_metastable_thermo.py::test_the_crash_would_fire_before_any_kinetics_quarantine_could_intercept_it
+test/test_argon_metastable_thermo.py::test_being_a_nasa_is_not_enough_the_library_comment_is_the_gate
+  /home/alon/Code/RMG-Py-i221-saturation-fix/rmgpy/thermo/thermoengine.py:100: LinAlgWarning: Ill-conditioned matrix (rcond=3.18757e-21): result may not be accurate.
+    thermo = wilhoit.to_nasa(Tmin=100.0, Tmax=5000.0, Tint=1000.0)
+
+test/test_argon_metastable_thermo.py::test_the_crash_would_fire_before_any_kinetics_quarantine_could_intercept_it
+test/test_argon_metastable_thermo.py::test_being_a_nasa_is_not_enough_the_library_comment_is_the_gate
+  /home/alon/Code/RMG-Py-i221-saturation-fix/rmgpy/thermo/thermoengine.py:100: LinAlgWarning: Ill-conditioned matrix (rcond=1.08953e-21): result may not be accurate.
+    thermo = wilhoit.to_nasa(Tmin=100.0, Tmax=5000.0, Tint=1000.0)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+ERROR test/test_argon_metastable_thermo.py::test_the_estimate_arrives_as_an_ordinary_arrhenius_with_no_electron_temperature
+ERROR test/test_argon_metastable_thermo.py::test_the_barrier_is_set_by_the_mixed_sibling_e0_convention
+ERROR test/test_argon_metastable_thermo.py::test_the_delivered_rate_is_evaluated_at_the_GAS_temperature
+ERROR test/test_argon_metastable_thermo.py::test_nothing_at_the_point_of_use_says_the_rate_is_a_placeholder
+320 passed, 1615 warnings, 4 errors in 130.31s (0:02:10)

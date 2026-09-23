@@ -36,12 +36,24 @@ import logging
 import os.path
 import re
 from collections import OrderedDict
+from copy import deepcopy
 
 import numpy as np
 
 from rmgpy.data.base import DatabaseError, Database, Entry
 from rmgpy.data.kinetics.common import save_entry
-from rmgpy.data.kinetics.family import TemplateReaction
+# The shared definition of what reaction state *is* lives in `family.py`, because this
+# module imports `TemplateReaction` from there and the import cannot run both ways.
+# The names below are re-exported: every importer round 102 and 105 wrote --
+# `rmgpy/rmg/model.py` and the test tree -- keeps working against one definition
+# rather than acquiring a second one, and `family.py` is where the two transforms
+# that share it live.
+from rmgpy.data.kinetics.family import (TemplateReaction, REACTION_STATE_FIELDS,
+                                        ReactionStateNotCarried,
+                                        _CARRIED_THROUGH_STORAGE, _NOT_REPRODUCED,
+                                        _NOT_COPIED_BY_REFERENCE,
+                                        apply_reaction_state, carry_reaction_state,
+                                        reaction_state, state_fields)
 from rmgpy.kinetics import Arrhenius, ThirdBody, Lindemann, Troe, \
                            PDepArrhenius, MultiArrhenius, MultiPDepArrhenius, Chebyshev, KineticsModel, Marcus
 from rmgpy.kinetics.surface import StickingCoefficient
@@ -103,25 +115,51 @@ class LibraryReaction(Reaction):
     def __reduce__(self):
         """
         A helper function used when pickling an object.
+
+        No constructor arguments: every field travels in the state dict, discovered from
+        the object. The seventeen-field list this replaces did carry the three
+        pressure-dependence flags -- unlike `TemplateReaction`'s, whose constructor has no
+        parameter for them -- but still dropped `rank`, `comment` and `label`, and turned
+        `is_forward` from ``True`` into ``False``. Those are round 105's three fields,
+        reappearing one transform over: the same defect, the same cause, a different list.
         """
-        return (LibraryReaction, (self.index,
-                                  self.reactants,
-                                  self.products,
-                                  self.specific_collider,
-                                  self.kinetics,
-                                  self.network_kinetics,
-                                  self.reversible,
-                                  self.transition_state,
-                                  self.duplicate,
-                                  self.degeneracy,
-                                  self.pairs,
-                                  self.library,
-                                  self.allow_pdep_route,
-                                  self.elementary_high_p,
-                                  self.allow_max_rate_violation,
-                                  self.entry,
-                                  self.electrons,
-                                  ))
+        return (LibraryReaction, (), reaction_state(self, _NOT_REPRODUCED,
+                                                    state_fields(self)))
+
+    def __setstate__(self, state):
+        """
+        Restore what `__reduce__` sent; see `TemplateReaction.__setstate__` for why the
+        default unpickling path will not do.
+        """
+        apply_reaction_state(self, state)
+
+    def copy(self):
+        """
+        Create a deep copy of this reaction, as a `LibraryReaction`.
+
+        Inherited, `Reaction.copy` builds a *base* `Reaction` -- so until round 107 a copy
+        of a library reaction lost `library`, `family` and `entry` outright, and `entry`
+        is the carrier the quarantine gate reads authorship from. Not a theoretical path:
+        `rmgpy/tools/isotopes.py:394` copies whatever `Reaction` it is handed, and the
+        core model it walks is full of these.
+
+        Same shape as `TemplateReaction.copy()`, sharing its helper and its exclusions, so
+        the two cannot drift apart.
+        """
+        other = LibraryReaction.__new__(LibraryReaction)
+        carry_reaction_state(other, self, _NOT_COPIED_BY_REFERENCE, state_fields(self))
+
+        other.reactants = [reactant.copy(deep=True) for reactant in self.reactants]
+        other.products = [product.copy(deep=True) for product in self.products]
+        other.kinetics = deepcopy(self.kinetics)
+        other.network_kinetics = deepcopy(self.network_kinetics)
+        other.transition_state = deepcopy(self.transition_state)
+        other.pairs = deepcopy(self.pairs)
+        # A memo rather than state, so the copy starts empty -- but it must start, because
+        # `__new__` leaves a `cdef public dict` unset and reading an unset one raises.
+        other.k_effective_cache = {}
+
+        return other
 
     def __repr__(self):
         """
@@ -318,38 +356,6 @@ def seed_placement_survives(entry, owner):
     return False
 
 
-#: Every field a :class:`~rmgpy.reaction.Reaction` carries, discovered from the class
-#: rather than written out here. The three fields round 102 found missing were missing
-#: because this call site enumerated by hand and the hand-kept list fell behind the class;
-#: a second hand-kept list would reproduce the defect one layer up. `getset_descriptor` is
-#: what a Cython ``cdef public`` attribute presents as, which is what separates state from
-#: the methods and the cimported types that also appear in ``dir()``.
-#: Public because ``rmgpy/rmg/model.py`` carries the same state across a different
-#: boundary and must enumerate it from the same place. Two discoveries would be two
-#: hand-kept lists again, one layer apart.
-REACTION_STATE_FIELDS = frozenset(
-    name for name in dir(Reaction)
-    if not name.startswith('_')
-    and type(getattr(Reaction, name, None)).__name__ == 'getset_descriptor'
-)
-
-#: Fields whose *setter does something other than store the value*, mapped to the storage
-#: to write instead. There is exactly one today, and it is not a detail: assigning
-#: `Reaction.degeneracy` while kinetics are attached multiplies the rate by a ratio and
-#: appends to the kinetics comment (``rmgpy/reaction.py:356``). At this call site the
-#: attached kinetics object **is** ``entry.data`` -- the shared database object -- so the
-#: edit escapes the reaction being built and reaches every later consumer of that entry.
-#:
-#: Carrying a value is not the same operation as changing it. A reaction whose library
-#: file declares ``degeneracy=3`` already states the rate it wants; re-deriving the rate
-#: from the number that was already true is not a correction, it is a second application.
-#: Writing the storage performs the carry the loop is for and nothing else -- which is the
-#: same thing `Reaction.__init__` does with its own ``degeneracy`` argument
-#: (``self._degeneracy = degeneracy``), so this is the constructor's own path, not a
-#: back door around an invariant.
-_CARRIED_THROUGH_STORAGE = {
-    'degeneracy': '_degeneracy',
-}
 
 #: Fields NOT carried from ``entry.item``, each with the reason. Everything else is
 #: carried, so a field added to `Reaction` tomorrow is carried without anyone noticing --
@@ -365,47 +371,13 @@ _NOT_CARRIED_FROM_ENTRY = {
              'reaction at admission',
     'label': 'the entry label is the reaction string, rebuilt by the reaction itself',
     'comment': 'provenance belongs to the kinetics, which carries its own',
-    'SurfaceArrhenius': 'a cimported type, not reaction state',
-    'SurfaceChargeTransfer': 'a cimported type, not reaction state',
+    'SurfaceArrhenius': 'a slot named after a cimported type and assigned by nothing '
+                        'in the codebase; it is always None and is not reaction state',
+    'SurfaceChargeTransfer': 'the same: a never-assigned slot, not reaction state',
     'k_effective_cache': 'a memo of a computation, not data the entry declares',
     'protons': 'read-only: it is derived from the charge balance of the reactants and '
                'products, so it arrives with them rather than being assigned',
 }
-
-
-def carry_reaction_state(target, source, not_carried):
-    """
-    Copy every :class:`~rmgpy.reaction.Reaction` field `source` holds onto `target`.
-
-    `not_carried` maps each excluded field to the reason it is excluded; everything else
-    in `REACTION_STATE_FIELDS` is carried, so a field added to `Reaction` tomorrow is
-    carried by default and can only be left behind by someone writing down why. Fields in
-    `_CARRIED_THROUGH_STORAGE` are written to their storage rather than through their
-    property, because their setter is a transformation and this is a carry.
-
-    Both call sites name a handful of fields in a constructor call first and use this for
-    the rest, because two of those constructors cannot take the rest:
-    `TemplateReaction.__init__` has no ``elementary_high_p``, ``allow_pdep_route`` or
-    ``allow_max_rate_violation`` parameter at all. The effect for `elementary_high_p` is
-    not cosmetic -- a reaction that loses it misses pressure-dependent routing, silently.
-    """
-    for name in REACTION_STATE_FIELDS:
-        if name in not_carried:
-            continue
-        try:
-            value = getattr(source, name)
-        except AttributeError:
-            # A field the source does not have. Not a reason to abandon the rest.
-            continue
-        storage = _CARRIED_THROUGH_STORAGE.get(name)
-        try:
-            setattr(target, storage or name, value)
-        except AttributeError:
-            # A field the target refuses. `quarantineTest.py` pins that no field the
-            # partition calls carried can land here, so this is the last resort rather
-            # than the mechanism: reaching it means the class changed under the partition.
-            continue
-    return target
 
 
 def _carry_entry_fields(rxn, item):
