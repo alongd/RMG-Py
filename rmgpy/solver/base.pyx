@@ -92,6 +92,21 @@ from rmgpy.solver.termination import (TerminationTime, TerminationConversion, Te
 # dust case slip past it.
 _CHAR_RATE_FLOOR = 1e-100
 
+
+def _defining_class(cls, name):
+    """The class in ``cls``'s MRO whose own namespace defines attribute ``name``."""
+    for klass in cls.__mro__:
+        if name in vars(klass):
+            return klass
+    return None
+
+
+def _frozen_plasma_class():
+    """:class:`PlasmaReactor`, imported lazily: plasma cimports this module."""
+    from rmgpy.solver.plasma import PlasmaReactor
+    return PlasmaReactor
+
+
 cdef class ReactionSystem(DASx):
     """
     A base class for all RMG reaction systems.
@@ -1407,32 +1422,17 @@ cdef class ReactionSystem(DASx):
                     # the R>=1 arm. Fold in that channel's residual and let it arm from the
                     # reactor's known relaxation time. Both default to none/False, so every
                     # ordinary reactor is unchanged.
-                    ss_external_residual = self.steady_state_external_residual(
+                    # Whether an external channel is present is declared by the hook contract
+                    # (round 114): ``steady_state_external_channel`` returns None for "no
+                    # channel" and the reading otherwise. One rule for every reactor, applied in
+                    # update(): None is absence, a finite reading is folded in, a non-finite one
+                    # poisons. Round 113 inferred presence here from the PlasmaReactor's own
+                    # ``has_wall``/``ionisation_source``, which discarded the reading of any
+                    # other reactor overriding the documented hooks.
+                    ss_external = self.steady_state_external_channel(
                         self.t, y_core_species, steady_state_prev_t, steady_state_prev_y)
                     ss_external_armed = self.steady_state_external_armed(self.t, y_core_species)
                     ss_relaxation_time = self.steady_state_relaxation_time(self.t, y_core_species)
-                    # Whether the external channel is IN PLAY is a structural fact about the
-                    # reactor -- does it drive an electron from an ionisation source -- NOT a
-                    # property of the value it happened to report this step (round 113 BLOCKING 1).
-                    # Round 112 keyed presence on ``armed OR isfinite(residual)``, so an UNARMED
-                    # non-finite reading (nan while the electron is unresolvable, or a blown
-                    # +/-inf) was mapped back to None -- 'no channel' -- and a flat generic channel
-                    # fired on it: the same laundering, one layer out from update(). A reactor with
-                    # an active source has a channel every step; ANY non-finite reading it produces
-                    # is a supplied reading that must poison, armed or not, because a bare value
-                    # cannot be told from absence. A reactor with NO source -- an ordinary reactor
-                    # (no hook), or a wall deck whose source-less electron merely decays -- has no
-                    # such channel: its hook reports nan as the documented 'no such channel'
-                    # sentinel, which is genuine absence, so the generic channel decides alone
-                    # (byte-for-byte the ordinary/pumped-afterglow path). The source is the
-                    # reactor's own declaration; read it here without touching plasma.pyx. This is
-                    # a read-only reach for the one bit plasma's overloaded nan (absence AND
-                    # unresolvable) cannot carry; the clean cure -- a hook that returns a distinct
-                    # absence sentinel -- lives in plasma.pyx, which this rework must not move.
-                    ss_source = getattr(self, 'ionisation_source', None)
-                    ss_has_channel = (getattr(self, 'has_wall', False)
-                                      and ss_source is not None and ss_source.value_si > 0.0)
-                    ss_external = ss_external_residual if ss_has_channel else None
                     for term in steady_state_terms:
                         if term.update(y_core_species, self.t, steady_state_prev_y,
                                        steady_state_prev_t, atol, core_species,
@@ -1675,8 +1675,40 @@ cdef class ReactionSystem(DASx):
         saturates far under ``atol`` yet is meaningfully tracked; it overrides this to report
         the electron's own slope, so the criterion fires when the electron converges rather
         than reading only the inert neutrals.
+
+        Overriding this declares a channel: :meth:`steady_state_external_channel` passes every
+        value it returns to the criterion, and a non-finite one poisons it. To report "no
+        channel" on some steps, override :meth:`steady_state_external_channel` to return
+        ``None`` there.
         """
         return float('nan')
+
+    cpdef object steady_state_external_channel(self, double t_now, np.ndarray y_now,
+                                               double t_prev, np.ndarray y_prev):
+        """The external steady-state channel's reading, or ``None`` if the reactor has no such
+        channel. This is the contract :meth:`simulate` reads; presence is declared here, never
+        inferred from the value or from reactor-specific attributes.
+
+        A returned float is a SUPPLIED reading: finite, it is folded into the residual;
+        non-finite (``nan``, ``+/-inf``), it poisons the steady-state decision, because a bare
+        value cannot be told from absence. Override this to return ``None`` on any step the
+        channel is absent.
+
+        The default bridges the ``double`` hook :meth:`steady_state_external_residual`, which
+        cannot return ``None``: a reactor that does not override it has no channel; a reactor
+        that does supplies its reading every step. The one exception is the frozen
+        :class:`PlasmaReactor` implementation, whose ``nan`` documents BOTH "no source-driven
+        wall" and "electron unresolvable"; for that implementation alone the absence it
+        documents (no wall, or no positive ionisation source) is honoured here. A subclass that
+        replaces that implementation is judged by the general rule.
+        """
+        impl = _defining_class(type(self), 'steady_state_external_residual')
+        if impl is ReactionSystem:
+            return None
+        if impl is _frozen_plasma_class():
+            if not (self.has_wall and self.ionisation_source.value_si > 0.0):
+                return None
+        return self.steady_state_external_residual(t_now, y_now, t_prev, y_prev)
 
     cpdef bint steady_state_external_armed(self, double t_now, np.ndarray y_now):
         """Whether an externally-driven channel has passed its known relaxation time, so the

@@ -132,6 +132,8 @@ cdef class ReactionSystem(DASx):
 
     cpdef double steady_state_external_residual(self, double t_now, np.ndarray y_now, double t_prev, np.ndarray y_prev)
 
+    cpdef object steady_state_external_channel(self, double t_now, np.ndarray y_now, double t_prev, np.ndarray y_prev)
+
     cpdef bint steady_state_external_armed(self, double t_now, np.ndarray y_now)
 
     cpdef double steady_state_relaxation_time(self, double t_now, np.ndarray y_now)

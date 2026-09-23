@@ -1670,6 +1670,91 @@ def test_adapter_does_not_launder_a_source_channels_nonfinite_reading_to_absence
             poison, "a non-finite source-channel reading was laundered into a steady state")
 
 
+
+# ================================ round 114 ================================
+# BLOCKING: the adapter decided whether an external channel is present by reading the
+# PlasmaReactor's own ``has_wall and ionisation_source > 0``, so ANY other reactor that
+# overrides the documented hooks had its reading silently discarded. Presence is now
+# declared by the hook contract (``steady_state_external_channel``: None = no channel,
+# a float = a supplied reading), one rule at the adapter for every reactor.
+
+
+def _wallless_hook_run(value, tolerance, hook='legacy'):
+    """A WALL-LESS PlasmaReactor subclass whose steady-state hook returns ``value``, driven
+    through simulate(). ``hook='legacy'`` overrides the documented double hook
+    ``steady_state_external_residual``; ``'channel'`` overrides the object hook."""
+    if hook == 'legacy':
+        class _Hooked(PlasmaReactor):
+            def steady_state_external_residual(self, t_now, y_now, t_prev, y_prev):
+                return value
+    else:
+        class _Hooked(PlasmaReactor):
+            def steady_state_external_channel(self, t_now, y_now, t_prev, y_prev):
+                return value
+    term = [TerminationSteadyState(tolerance=tolerance), TerminationTime((50.0, 's'))]
+    r, core, rxns = _build_reactor(wall=False, termination=term, reactor_cls=_Hooked)
+    terminated, _res, _inv, _ss, _sr, t_final, _conv = _simulate(r, core, rxns)
+    return r, terminated, t_final
+
+
+def test_wallless_control_reaches_steady_state_without_a_hook():
+    """The control the round-114 tests stand on: the same wall-less deck, no hook override,
+    DOES terminate as steady before the 50 s backstop. Without it, 'not steady' below could
+    mean the deck simply never settles rather than that the hook's reading was honoured."""
+    term = [TerminationSteadyState(tolerance=1e-6), TerminationTime((50.0, 's'))]
+    r, core, rxns = _build_reactor(wall=False, termination=term)
+    _t, _res, _inv, _ss, _sr, t_final, _conv = _simulate(r, core, rxns)
+    assert r.steady_state_reached and t_final < 50.0
+
+
+@pytest.mark.parametrize('poison', [float('inf'), float('nan'), float('-inf')])
+def test_wallless_subclass_nonfinite_legacy_hook_poisons_through_simulate(poison):
+    """Round 114 BLOCKING, the reported reproduction: a wall-less subclass whose documented
+    hook returns a non-finite value terminated as steady (1.4049 s, residual 3.97e-11) because
+    the adapter consulted ``has_wall`` and discarded the reading. A reactor that overrides the
+    hook supplies a channel; a non-finite supplied reading must poison the decision."""
+    r, _terminated, t_final = _wallless_hook_run(poison, 1e-6)
+    assert not r.steady_state_reached, (poison, t_final, r.steady_state_residual)
+
+
+def test_wallless_subclass_finite_legacy_hook_is_honoured_through_simulate():
+    """Round 114 BLOCKING, the finite half (a regression against a0de2256d): a supplied finite
+    residual 2.0 is far above tolerance 1e-6, so it must hold the run open -- not be discarded."""
+    r, _terminated, t_final = _wallless_hook_run(2.0, 1e-6)
+    assert not r.steady_state_reached, (t_final, r.steady_state_residual)
+
+
+@pytest.mark.parametrize('poison', [float('inf'), float('nan'), float('-inf')])
+def test_channel_hook_nonfinite_poisons_through_simulate(poison):
+    """The object hook itself: a supplied non-finite reading poisons, for any reactor."""
+    r, _terminated, t_final = _wallless_hook_run(poison, 1e-6, hook='channel')
+    assert not r.steady_state_reached, (poison, t_final)
+
+
+def test_channel_hook_none_is_absence_through_simulate():
+    """None is the contract's 'no channel': the generic criterion decides alone, exactly as
+    the no-hook control does."""
+    r, _terminated, t_final = _wallless_hook_run(None, 1e-6, hook='channel')
+    assert r.steady_state_reached and t_final < 50.0
+
+
+def test_channel_hook_default_declares_absence_for_an_ordinary_and_a_sourceless_plasma():
+    """The default contract: a reactor that overrides nothing has no channel (None), and the
+    frozen PlasmaReactor implementation keeps its documented absence -- no source-driven wall
+    -- so the plasma deck path is unchanged. With a source it supplies its reading every step
+    (nan included), which is what round 113 pinned."""
+    r, _core, _rxns = _build_reactor(wall=False)
+    y = np.array(r.y0[:r.num_core_species], float)
+    assert r.steady_state_external_channel(2.0, y, 1.0, y) is None
+    r, _core, _rxns = _build_reactor(wall=True, gamma=0.5, source=None)
+    assert r.steady_state_external_channel(2.0, y, 1.0, y) is None
+    r, _core, _rxns = _build_reactor(wall=True, gamma=0.5, source=1.0e22)
+    reading = r.steady_state_external_channel(2.0, y, 1.0, y)
+    assert reading is not None
+    assert reading == r.steady_state_external_residual(2.0, y, 1.0, y) or (
+        np.isnan(reading) and np.isnan(r.steady_state_external_residual(2.0, y, 1.0, y)))
+
+
 # ---- HIGH 1: the skeleton key must key charged and neutral species alike ----
 
 def _dme_isotope_species():
@@ -2452,7 +2537,7 @@ def _solver_test_functions(source):
     """(name, FunctionDef) for every ``test_*`` in a test-file source."""
     import ast
     return [(n.name, n) for n in ast.walk(ast.parse(source))
-            if isinstance(n, ast.FunctionDef) and n.name.startswith('test_')]
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name.startswith('test_')]
 
 
 def _tests_without_a_real_assertion(source):
@@ -2497,8 +2582,15 @@ def _tests_without_a_real_assertion(source):
                 and isinstance(func.value, ast.Name) and func.value.id == 'pytest')
 
     def const_truth(test):
-        # True/False if `test` is a compile-time constant truth value, else None.
-        return bool(test.value) if isinstance(test, ast.Constant) else None
+        # True/False if `test` is a compile-time constant truth value, else None. A test that
+        # references no runtime value folds at parse time, so ``if 1 == 0:`` is as dead as
+        # ``if False:`` (round 114 LOW); it holds only literals and operators, so eval is safe.
+        if not is_vacuous(test):
+            return None
+        try:
+            return bool(eval(compile(ast.Expression(test), '<census>', 'eval'), {'__builtins__': {}}))
+        except Exception:
+            return None
 
     def empty_iter(node):
         # A statically-empty iterable, so a ``for`` body over it never runs: [], (), {}, an
@@ -2517,6 +2609,9 @@ def _tests_without_a_real_assertion(source):
 
     def walk(stmts):
         for stmt in stmts:
+            # Nothing after a return/raise/break/continue in the same block runs (round 114 LOW).
+            if isinstance(stmt, (ast.Return, ast.Raise, ast.Break, ast.Continue)):
+                return False
             # An uncalled nested definition never runs in the test body: do not credit its asserts.
             if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 continue
@@ -2567,7 +2662,10 @@ def _tests_without_a_real_assertion(source):
                     return True
         return False
 
-    return [name for name, node in _solver_test_functions(source) if not walk(node.body)]
+    # An ``async def`` test is never awaited without an async plugin, which this suite does not
+    # load: pytest skips it with a warning, so none of its asserts run (round 114 LOW).
+    return [name for name, node in _solver_test_functions(source)
+            if isinstance(node, ast.AsyncFunctionDef) or not walk(node.body)]
 
 
 def test_every_solver_test_asserts_a_property():
@@ -2633,6 +2731,15 @@ def test_the_census_rejects_a_tagged_docstring_with_no_assertion():
         'def test_empty_loop_assert():\n'                     # for _ in [] -- body never runs
         '    for _ in []:\n'
         '        assert compute() == 1\n'
+        # round 114 LOW: three more the round-113 census still credited.
+        'def test_folded_dead_branch_assert():\n'            # `1 == 0` folds to False -- never runs
+        '    if 1 == 0:\n'
+        '        assert compute() == 1\n'
+        'def test_assert_after_return():\n'                  # unreachable after the return
+        '    return\n'
+        '    assert compute() == 1\n'
+        'async def test_async_assert():\n'                   # no async plugin: pytest never awaits it
+        '    assert compute() == 1\n'
     )
     accepted = (
         'def test_real_runtime_value():\n'                    # references a runtime value -> real
@@ -2651,7 +2758,8 @@ def test_the_census_rejects_a_tagged_docstring_with_no_assertion():
         'test_tagged_but_empty', 'test_vacuous_only', 'test_vacuous_compare',
         'test_dead_branch_assert', 'test_uncalled_nested_assert',
         'test_unrelated_raises_context_manager', 'test_bare_raises_cm', 'test_fake_raises_cm',
-        'test_while_false_assert', 'test_empty_loop_assert'}
+        'test_while_false_assert', 'test_empty_loop_assert', 'test_folded_dead_branch_assert',
+        'test_assert_after_return', 'test_async_assert'}
     assert _tests_without_a_real_assertion(accepted) == []
 
 

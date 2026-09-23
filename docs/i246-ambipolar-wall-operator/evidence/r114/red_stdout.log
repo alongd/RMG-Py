@@ -1,0 +1,130 @@
+.FFFFFFF.F                                                               [100%]
+=================================== FAILURES ===================================
+__ test_wallless_subclass_nonfinite_legacy_hook_poisons_through_simulate[inf] __
+
+poison = inf
+
+    @pytest.mark.parametrize('poison', [float('inf'), float('nan'), float('-inf')])
+    def test_wallless_subclass_nonfinite_legacy_hook_poisons_through_simulate(poison):
+        """Round 114 BLOCKING, the reported reproduction: a wall-less subclass whose documented
+        hook returns a non-finite value terminated as steady (1.4049 s, residual 3.97e-11) because
+        the adapter consulted ``has_wall`` and discarded the reading. A reactor that overrides the
+        hook supplies a channel; a non-finite supplied reading must poison the decision."""
+        r, _terminated, t_final = _wallless_hook_run(poison, 1e-6)
+>       assert not r.steady_state_reached, (poison, t_final, r.steady_state_residual)
+E       AssertionError: (inf, 0.00036686168624319715, 0.0)
+E       assert not True
+E        +  where True = <plasmaWallTest._wallless_hook_run.<locals>._Hooked object at 0x5ed1741e4080>.steady_state_reached
+
+test/rmgpy/solver/plasmaWallTest.py:1717: AssertionError
+__ test_wallless_subclass_nonfinite_legacy_hook_poisons_through_simulate[nan] __
+
+poison = nan
+
+    @pytest.mark.parametrize('poison', [float('inf'), float('nan'), float('-inf')])
+    def test_wallless_subclass_nonfinite_legacy_hook_poisons_through_simulate(poison):
+        """Round 114 BLOCKING, the reported reproduction: a wall-less subclass whose documented
+        hook returns a non-finite value terminated as steady (1.4049 s, residual 3.97e-11) because
+        the adapter consulted ``has_wall`` and discarded the reading. A reactor that overrides the
+        hook supplies a channel; a non-finite supplied reading must poison the decision."""
+        r, _terminated, t_final = _wallless_hook_run(poison, 1e-6)
+>       assert not r.steady_state_reached, (poison, t_final, r.steady_state_residual)
+E       AssertionError: (nan, 0.00036686168624319715, 0.0)
+E       assert not True
+E        +  where True = <plasmaWallTest._wallless_hook_run.<locals>._Hooked object at 0x5ed174619290>.steady_state_reached
+
+test/rmgpy/solver/plasmaWallTest.py:1717: AssertionError
+_ test_wallless_subclass_nonfinite_legacy_hook_poisons_through_simulate[-inf] __
+
+poison = -inf
+
+    @pytest.mark.parametrize('poison', [float('inf'), float('nan'), float('-inf')])
+    def test_wallless_subclass_nonfinite_legacy_hook_poisons_through_simulate(poison):
+        """Round 114 BLOCKING, the reported reproduction: a wall-less subclass whose documented
+        hook returns a non-finite value terminated as steady (1.4049 s, residual 3.97e-11) because
+        the adapter consulted ``has_wall`` and discarded the reading. A reactor that overrides the
+        hook supplies a channel; a non-finite supplied reading must poison the decision."""
+        r, _terminated, t_final = _wallless_hook_run(poison, 1e-6)
+>       assert not r.steady_state_reached, (poison, t_final, r.steady_state_residual)
+E       AssertionError: (-inf, 0.00036686168624319715, 0.0)
+E       assert not True
+E        +  where True = <plasmaWallTest._wallless_hook_run.<locals>._Hooked object at 0x5ed174614510>.steady_state_reached
+
+test/rmgpy/solver/plasmaWallTest.py:1717: AssertionError
+____ test_wallless_subclass_finite_legacy_hook_is_honoured_through_simulate ____
+
+    def test_wallless_subclass_finite_legacy_hook_is_honoured_through_simulate():
+        """Round 114 BLOCKING, the finite half (a regression against a0de2256d): a supplied finite
+        residual 2.0 is far above tolerance 1e-6, so it must hold the run open -- not be discarded."""
+        r, _terminated, t_final = _wallless_hook_run(2.0, 1e-6)
+>       assert not r.steady_state_reached, (t_final, r.steady_state_residual)
+E       AssertionError: (0.00036686168624319715, 0.0)
+E       assert not True
+E        +  where True = <plasmaWallTest._wallless_hook_run.<locals>._Hooked object at 0x5ed174619290>.steady_state_reached
+
+test/rmgpy/solver/plasmaWallTest.py:1724: AssertionError
+__________ test_channel_hook_nonfinite_poisons_through_simulate[inf] ___________
+
+poison = inf
+
+    @pytest.mark.parametrize('poison', [float('inf'), float('nan'), float('-inf')])
+    def test_channel_hook_nonfinite_poisons_through_simulate(poison):
+        """The object hook itself: a supplied non-finite reading poisons, for any reactor."""
+        r, _terminated, t_final = _wallless_hook_run(poison, 1e-6, hook='channel')
+>       assert not r.steady_state_reached, (poison, t_final)
+E       AssertionError: (inf, 0.00036686168624319715)
+E       assert not True
+E        +  where True = <plasmaWallTest._wallless_hook_run.<locals>._Hooked object at 0x5ed1741e4080>.steady_state_reached
+
+test/rmgpy/solver/plasmaWallTest.py:1731: AssertionError
+__________ test_channel_hook_nonfinite_poisons_through_simulate[nan] ___________
+
+poison = nan
+
+    @pytest.mark.parametrize('poison', [float('inf'), float('nan'), float('-inf')])
+    def test_channel_hook_nonfinite_poisons_through_simulate(poison):
+        """The object hook itself: a supplied non-finite reading poisons, for any reactor."""
+        r, _terminated, t_final = _wallless_hook_run(poison, 1e-6, hook='channel')
+>       assert not r.steady_state_reached, (poison, t_final)
+E       AssertionError: (nan, 0.00036686168624319715)
+E       assert not True
+E        +  where True = <plasmaWallTest._wallless_hook_run.<locals>._Hooked object at 0x5ed174619290>.steady_state_reached
+
+test/rmgpy/solver/plasmaWallTest.py:1731: AssertionError
+__________ test_channel_hook_nonfinite_poisons_through_simulate[-inf] __________
+
+poison = -inf
+
+    @pytest.mark.parametrize('poison', [float('inf'), float('nan'), float('-inf')])
+    def test_channel_hook_nonfinite_poisons_through_simulate(poison):
+        """The object hook itself: a supplied non-finite reading poisons, for any reactor."""
+        r, _terminated, t_final = _wallless_hook_run(poison, 1e-6, hook='channel')
+>       assert not r.steady_state_reached, (poison, t_final)
+E       AssertionError: (-inf, 0.00036686168624319715)
+E       assert not True
+E        +  where True = <plasmaWallTest._wallless_hook_run.<locals>._Hooked object at 0x5ed174614510>.steady_state_reached
+
+test/rmgpy/solver/plasmaWallTest.py:1731: AssertionError
+_ test_channel_hook_default_declares_absence_for_an_ordinary_and_a_sourceless_plasma _
+
+    def test_channel_hook_default_declares_absence_for_an_ordinary_and_a_sourceless_plasma():
+        """The default contract: a reactor that overrides nothing has no channel (None), and the
+        frozen PlasmaReactor implementation keeps its documented absence -- no source-driven wall
+        -- so the plasma deck path is unchanged. With a source it supplies its reading every step
+        (nan included), which is what round 113 pinned."""
+        r, _core, _rxns = _build_reactor(wall=False)
+        y = np.array(r.y0[:r.num_core_species], float)
+>       assert r.steady_state_external_channel(2.0, y, 1.0, y) is None
+E       AttributeError: 'rmgpy.solver.plasma.PlasmaReactor' object has no attribute 'steady_state_external_channel'
+
+test/rmgpy/solver/plasmaWallTest.py:1748: AttributeError
+=========================== short test summary info ============================
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_wallless_subclass_nonfinite_legacy_hook_poisons_through_simulate[inf]
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_wallless_subclass_nonfinite_legacy_hook_poisons_through_simulate[nan]
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_wallless_subclass_nonfinite_legacy_hook_poisons_through_simulate[-inf]
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_wallless_subclass_finite_legacy_hook_is_honoured_through_simulate
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_channel_hook_nonfinite_poisons_through_simulate[inf]
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_channel_hook_nonfinite_poisons_through_simulate[nan]
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_channel_hook_nonfinite_poisons_through_simulate[-inf]
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_channel_hook_default_declares_absence_for_an_ordinary_and_a_sourceless_plasma
+8 failed, 2 passed, 100 deselected in 2.83s
