@@ -166,13 +166,23 @@ def quarantine(tmp_path):
 
 
 @pytest.fixture
-def registered(monkeypatch, quarantine):
+def registered(monkeypatch, quarantine, tmp_path_factory):
     """
     Register the synthetic quarantined family in the kinetics database singleton.
 
     `check_quarantine` resolves a reaction's family label the same way the rest of RMG
     does, so this is what makes the gate see the synthetic family.
+
+    The database directory is replaced too, with an empty one of its own. Enumeration
+    reads the loaded families AND ``settings['database.directory']/kinetics/families`` on
+    disk; replacing only the first left the second pointing at whatever database the
+    checkout's rmgrc names, so a manifest merged into that database (an Arrhenius one, on
+    2026-09-23) turned `test_an_ordinary_library_rate_says_nothing` red with no change to
+    RMG-Py (round 113). A test that means to read a real database sets it itself.
     """
+    database_directory = tmp_path_factory.mktemp("isolated_database")
+    (database_directory / "kinetics" / "families").mkdir(parents=True)
+    monkeypatch.setitem(settings, "database.directory", str(database_directory))
 
     class _Family:
         label = "Fake_Quarantined_Family"
@@ -805,6 +815,10 @@ class TestProvenanceNotTheFamilySlot:
         The control that keeps the warning from being noise: a library rate that does not
         match any live quarantine criterion must produce no output at all.
         """
+        assert not os.listdir(os.path.join(settings["database.directory"], "kinetics",
+                                           "families")), (
+            "the fixture's database is not its own: this control must not depend on what "
+            "the checked-out database happens to quarantine")
         reaction = make_library_reaction(library="primaryH2O2", comment="")
         reaction.kinetics = Arrhenius(A=(1e13, "cm^3/(mol*s)"), n=0, Ea=(0, "kJ/mol"))
         with caplog.at_level(logging.WARNING):
@@ -4894,6 +4908,7 @@ def _payload_of(reaction):
     return payload
 
 
+@pytest.mark.database
 class TestTheOtherTransportGetsTheSameReducers:
     """
     Round 111's first HIGH. Round 110 completed the five lossy reducers and installed
@@ -5062,6 +5077,7 @@ class TestTheOtherTransportGetsTheSameReducers:
             "react.py does not ask for the reducers it depends on")
 
 
+@pytest.mark.database
 class TestASpeciesOnBothSidesKeepsItsSide:
     """
     Round 111's second HIGH, on the campaign's own reaction.

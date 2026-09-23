@@ -1,0 +1,41 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+rootdir: /home/alon/Code/RMG-Py-i221-saturation-fix
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 1 item
+
+test/rmgpy/data/kinetics/quarantineTest.py::TestProvenanceNotTheFamilySlot::test_an_ordinary_library_rate_says_nothing FAILED
+
+=================================== FAILURES ===================================
+__ TestProvenanceNotTheFamilySlot.test_an_ordinary_library_rate_says_nothing ___
+
+self = <quarantineTest.TestProvenanceNotTheFamilySlot object at 0x7b1e258061c0>
+registered = <KineticsQuarantine 'Fake_Quarantined_Family' QUARANTINED FOR TESTING applies to Marcus>
+caplog = <_pytest.logging.LogCaptureFixture object at 0x7b1e25806c10>
+
+    def test_an_ordinary_library_rate_says_nothing(self, registered, caplog):
+        """
+        The control that keeps the warning from being noise: a library rate that does not
+        match any live quarantine criterion must produce no output at all.
+        """
+        reaction = make_library_reaction(library="primaryH2O2", comment="")
+        reaction.kinetics = Arrhenius(A=(1e13, "cm^3/(mol*s)"), n=0, Ea=(0, "kJ/mol"))
+        with caplog.at_level(logging.WARNING):
+            assert check_quarantine(reaction, stage="a test",
+                                    kinetics=reaction.kinetics) is None
+>       assert caplog.text == ""
+E       AssertionError: assert 'WARNING  roo...ndependent.\n' == ''
+E         
+E         + WARNING  root:quarantine.py:275 Quarantine manifest /home/alon/Code/RMG-database-plasma/input/kinetics/families/Plasma_Electron_Impact_Ionization/quarantine.py declares requiresEngineCallSites. That field is now requiresEngineCallsInSource, which says what is actually checked: that the named modules bind the gate and that their SOURCE TEXT contains a call to it. It is a static syntactic check and never evidence that the call executes. The old spelling is still honoured; rename it in the database when convenient.
+E         + WARNING  root:quarantine.py:1267 Reaction library 'primaryH2O2' supplies Arrhenius ...
+E         
+E         ...Full output truncated (1 line hidden), use '-vv' to show
+
+test/rmgpy/data/kinetics/quarantineTest.py:813: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  root:quarantine.py:275 Quarantine manifest /home/alon/Code/RMG-database-plasma/input/kinetics/families/Plasma_Electron_Impact_Ionization/quarantine.py declares requiresEngineCallSites. That field is now requiresEngineCallsInSource, which says what is actually checked: that the named modules bind the gate and that their SOURCE TEXT contains a call to it. It is a static syntactic check and never evidence that the call executes. The old spelling is still honoured; rename it in the database when convenient.
+WARNING  root:quarantine.py:1267 Reaction library 'primaryH2O2' supplies Arrhenius kinetics, which is the class quarantined for family Plasma_Electron_Impact_Ionization (estimated rates reach the solver without uses_electron_temperature and are evaluated at the GAS temperature), and the entry records no authoring family. A rate copied out of that family would be admitted here unchecked, because nothing in the entry says where it came from. This is NOT a refusal: the same kinetics class from an independent source is legitimate and the gate cannot tell the two apart. To settle it, add a "family: <label>" line to the entry's longDesc -- which is what RMG itself writes for an estimated rate -- or confirm the rate is independent.
+=========================== short test summary info ============================
+FAILED test/rmgpy/data/kinetics/quarantineTest.py::TestProvenanceNotTheFamilySlot::test_an_ordinary_library_rate_says_nothing
+============================== 1 failed in 5.98s ===============================

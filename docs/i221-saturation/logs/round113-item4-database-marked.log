@@ -1,0 +1,34 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python
+rootdir: /home/alon/Code/RMG-Py-i221-saturation-fix
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 263 items / 238 deselected / 25 selected
+
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRealQuarantinedFamily::test_the_family_is_quarantined_with_the_ruling_s_words PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRealQuarantinedFamily::test_the_affected_set_is_enumerated_from_the_database PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRealQuarantinedFamily::test_nothing_was_deleted PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheRealQuarantinedFamily::test_the_rates_themselves_were_not_touched PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheDoorLeftOpen::test_the_database_still_loads PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheDoorLeftOpen::test_the_family_is_still_registered_and_still_generates_reactions PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheDoorLeftOpen::test_the_rate_law_still_evaluates PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheTransportCarriesThePayloadToo::test_the_fixture_carries_the_state_before_anything_is_copied PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheTransportCarriesThePayloadToo::test_the_copy_keeps_both_the_references_and_the_atom_state PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheTransportCarriesThePayloadToo::test_the_familys_own_output_can_be_copied_at_all PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheTransportCarriesThePayloadToo::test_the_copied_atoms_keep_the_interned_atom_types PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheTransportCarriesThePayloadToo::test_deepcopy_of_a_reaction_is_the_copy PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheOtherTransportGetsTheSameReducers::test_the_fixture_carries_a_payload_before_anything_is_transported PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheOtherTransportGetsTheSameReducers::test_the_transport_multiprocessing_uses_carries_the_payload PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheOtherTransportGetsTheSameReducers::test_a_parallel_generation_reproduces_the_serial_one PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheOtherTransportGetsTheSameReducers::test_a_fragment_reaction_survives_the_parallel_transport PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheOtherTransportGetsTheSameReducers::test_a_surface_reaction_survives_the_parallel_transport PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheOtherTransportGetsTheSameReducers::test_both_transports_carry_one_table_rather_than_two PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestTheOtherTransportGetsTheSameReducers::test_the_module_that_needs_the_registration_makes_it PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestASpeciesOnBothSidesKeepsItsSide::test_the_fixture_holds_one_species_on_both_sides PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestASpeciesOnBothSidesKeepsItsSide::test_a_reactant_side_pair_member_is_one_of_the_copys_reactants PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestASpeciesOnBothSidesKeepsItsSide::test_indexing_a_pair_member_does_not_raise PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestASpeciesOnBothSidesKeepsItsSide::test_the_copy_owns_none_of_the_originals_species PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestASpeciesOnBothSidesKeepsItsSide::test_the_collider_is_deepened_rather_than_aliased PASSED
+test/rmgpy/data/kinetics/quarantineTest.py::TestASpeciesOnBothSidesKeepsItsSide::test_a_collider_that_is_a_participant_stays_one_object_with_it PASSED
+
+====================== 25 passed, 238 deselected in 5.16s ======================
