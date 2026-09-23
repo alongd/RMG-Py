@@ -351,6 +351,7 @@ cdef class PlasmaReactor(ReactionSystem):
     # arrays resolved in _resolve_wall_state (0.0 / -1 where undeclared).
     cdef public dict wall_neutral_diffusion
     cdef public dict wall_neutral_dn_by_label
+    cdef public set wall_neutral_absent_warned
     cdef public np.ndarray wall_neutral_dn
     cdef public np.ndarray wall_neutral_target
 
@@ -726,19 +727,21 @@ cdef class PlasmaReactor(ReactionSystem):
         the ion mobility in :meth:`compute_nu_wall`.
 
         The reference diffusivity is given as a pressure product ``D*p`` (e.g.
-        ``(54, 'cm^2*torr/s')``) or a density product ``D*N`` (``1/(m*s)``). ``D*p``
+        ``(47, 'cm^2*torr/s')``) or a density product ``D*N`` (``1/(m*s)``). ``D*p``
         converts to ``D*N = D*p/(k_B*T_gas)`` at the reactor's gas temperature, so a
         ``D*p`` quoted at another temperature is held at its reference value, not
         rescaled -- the declaration states the value at the conditions it applies to.
 
-        Shape, units and the sign/finiteness of the number are checked here. The labels
-        are resolved against the core species in :meth:`_resolve_neutral_wall_diffusion`
-        once the species exist.
+        Shape, units and the sign/finiteness of the number are checked here, and so is
+        the label graph: a chain of declarations that leads back to its start (Ar* -> Ar
+        with Ar -> Ar*) is a cycle and is refused. The labels are resolved against the
+        core species in :meth:`_resolve_neutral_wall_diffusion` once the species exist.
         """
         self.wall_neutral_dn = None
         self.wall_neutral_target = None
         self.wall_neutral_dn_by_label = {}
         self.wall_neutral_diffusion = {}
+        self.wall_neutral_absent_warned = set()
         if wall_neutral_diffusion is None:
             return
         if not isinstance(wall_neutral_diffusion, dict):
@@ -819,6 +822,18 @@ cdef class PlasmaReactor(ReactionSystem):
                 self._identity())
             declaration[label] = {'product': product, 'diffusivity': diffusivity}
             dn_by_label[label] = dn
+        for label in declaration:
+            chain = [label]
+            product = declaration[label]['product']
+            while product in declaration:
+                if product in chain:
+                    raise PlasmaStateError(
+                        "wall_neutral_diffusion contains a cycle: {0}. The wall only de-excites, "
+                        "so no chain of declared products may lead back to a declared "
+                        "source. ({1})".format(" -> ".join(repr(l) for l in chain + [product]),
+                                               self._identity()))
+                chain.append(product)
+                product = declaration[product]['product']
         self.wall_neutral_diffusion = declaration
         self.wall_neutral_dn_by_label = dn_by_label
 
@@ -1984,8 +1999,11 @@ cdef class PlasmaReactor(ReactionSystem):
         during generation, and the loss applies from the iteration the species enters
         it. Once it is in the core, the declaration must resolve completely -- the
         species uncharged, the product a single uncharged core species other than
-        itself with the same elemental composition, so the wall conserves mass and
-        elements -- or it is refused by name.
+        itself with the same nuclei and skeleton (equal :meth:`_skeleton_key`, so the
+        isotope layer must match too), and the species strictly above the product in
+        thermo H298 -- or it is refused by name. H298 is the energy used because it is
+        the only one the reactor holds (no excitation energy is declared); a species
+        without usable thermo is refused, since the ordering cannot then be shown.
         """
         cdef Py_ssize_t n = len(core_species)
         cdef Py_ssize_t i, j
@@ -1996,9 +2014,12 @@ cdef class PlasmaReactor(ReactionSystem):
             product = entry['product']
             carriers = [k for k in range(n) if labels[k] == label]
             if not carriers:
-                logging.info("PlasmaReactor wall: wall_neutral_diffusion declares %r, which "
-                             "is not a core species; no neutral wall loss applied to it.",
-                             label)
+                if label not in self.wall_neutral_absent_warned:
+                    self.wall_neutral_absent_warned.add(label)
+                    logging.warning("PlasmaReactor wall: wall_neutral_diffusion declares %r, "
+                                    "which is not a core species; no neutral wall loss is "
+                                    "applied to it until it enters the core. (Reported "
+                                    "once.)", label)
                 continue
             products = [k for k in range(n) if labels[k] == product]
             for name, found in ((label, carriers), (product, products)):
@@ -2032,14 +2053,35 @@ cdef class PlasmaReactor(ReactionSystem):
                 raise PlasmaStateError(
                     "wall_neutral_diffusion maps {0!r} to itself. ({1})".format(
                         label, self._identity()))
-            elements_i = dict(core_species[i].molecule[0].get_element_count())
-            elements_j = dict(core_species[j].molecule[0].get_element_count())
-            if elements_i != elements_j:
+            key_i = self._skeleton_key(core_species[i])
+            key_j = self._skeleton_key(core_species[j])
+            if key_i is None or key_j is None or key_i != key_j:
                 raise PlasmaStateError(
-                    "wall_neutral_diffusion maps {0!r} ({1}) to {2!r} ({3}): the element "
-                    "counts differ, so the wall would create or destroy atoms. The product "
-                    "must be the ground state of the same composition. ({4})".format(
-                        label, elements_i, product, elements_j, self._identity()))
+                    "wall_neutral_diffusion maps {0!r} ({1}) to {2!r} ({3}): not the same "
+                    "nuclei and skeleton, so the wall would create, destroy or transmute "
+                    "atoms (element or isotope). The product must be the ground state of "
+                    "the same species. ({4})".format(
+                        label, key_i, product, key_j, self._identity()))
+            h_i = self._species_enthalpy(core_species[i], 298.15)
+            h_j = self._species_enthalpy(core_species[j], 298.15)
+            if h_i is None or h_j is None:
+                raise PlasmaStateError(
+                    "wall_neutral_diffusion maps {0!r} to {1!r}, but {2} no usable thermo, "
+                    "so the energy ordering the wall requires (source strictly above "
+                    "product in H298) cannot be established. Give both species thermo. "
+                    "({3})".format(label, product,
+                                   " and ".join(repr(l) for l, h in ((label, h_i), (product, h_j))
+                                                if h is None) + (" have" if h_i is None and h_j is None
+                                                                 else " has"),
+                                   self._identity()))
+            if not h_i > h_j:
+                raise PlasmaStateError(
+                    "wall_neutral_diffusion maps {0!r} (H298={1!r} kJ/mol) to {2!r} "
+                    "(H298={3!r} kJ/mol): the source is not strictly higher in energy than "
+                    "its product, so the wall would pump it uphill or across a degenerate "
+                    "pair. Declare the excited state as the source and its ground state as "
+                    "the product. ({4})".format(label, h_i / 1000.0, product, h_j / 1000.0,
+                                                self._identity()))
             dn[i] = self.wall_neutral_dn_by_label[label]
             target[i] = j
             logging.info("PlasmaReactor wall: %r is lost by neutral diffusion "

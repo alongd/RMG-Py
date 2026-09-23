@@ -781,9 +781,16 @@ The remaining keywords are all optional:
   the reactor's gas temperature, not rescaled with it) or a density product :math:`D N` in
   ``1/(m*s)``; a bare diffusivity is refused, as are non-finite, zero, negative or subnormal
   values.  Every lost molecule returns as ``product`` (no pumping), which must be a different,
-  uncharged, declared species with the same elemental composition.  Nothing is inferred from a
-  species' electronic state: an excited species not listed here is not lost at the wall, and there
-  is no default diffusivity.  The excitation energy deposited at the surface is not modelled.
+  uncharged, declared species with the same nuclei and skeleton (standard InChI without its charge
+  layers, so an isotopologue such as 13C-DME cannot return as DME).  The wall only de-excites: the
+  declared species must lie strictly above its product in thermo ``H298``, so **both need thermo**
+  (a declaration whose ordering cannot be shown is refused), and a chain of declarations that leads
+  back to its start is refused as a cycle.  An excited neutral spelled in an input file needs a graph
+  distinct from its ground state (e.g. ``1 Ar u2 p3 c0`` for Ar*), since an identical graph is
+  refused as a duplicate species.  A declared label not (yet) in the core is skipped with a single
+  warning.  Nothing is inferred from a species' electronic state: an excited species not listed here
+  is not lost at the wall, and there is no default diffusivity.  The excitation energy deposited at
+  the surface is not modelled.
   Requires a wall (``chamberGeometry`` and ``ionReducedMobility``).
 
 * ``ionisationSource`` -- a volumetric external production rate of ion-electron pairs,

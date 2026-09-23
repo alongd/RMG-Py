@@ -55,10 +55,11 @@ from rmgpy.rmg.settings import ModelSettings, SimulatorSettings  # noqa: E402
 from rmgpy.solver.termination import TerminationTime  # noqa: E402
 from rmgpy.solver.plasma import PlasmaReactor  # noqa: E402
 from rmgpy.species import Species  # noqa: E402
+from rmgpy.thermo import ThermoData  # noqa: E402
 
 print("plasma module:", M.assert_provenance())
 
-DP = 54.0                                   # cm^2 Torr/s, the brief's figure (source unverified)
+DP = 47.0                                   # cm^2 Torr/s, Wieme & Lenaerts at 300 K (adopted)
 CM2_TORR_TO_SI = 1.0e-4 * M.TORR_TO_PA
 TE_EV = 3000.0 / M.EV_TO_K                  # the deck Te at which 15.954516 was published
 LAM = M.diffusion_length()
@@ -71,11 +72,22 @@ def check(name, ok, detail):
         failures.append(name)
 
 
+def argon_thermo(excitation_eV):
+    """Monatomic Ar with an electronic offset; the wall declaration requires Ar* to lie
+    strictly above Ar in H298."""
+    return ThermoData(Tdata=([298, 400, 600, 800, 1000, 1500, 2000], 'K'),
+                      Cpdata=([2.5 * constants.R] * 7, 'J/(mol*K)'),
+                      H298=(excitation_eV * constants.e * constants.Na / 1000.0, 'kJ/mol'),
+                      S298=(154.8, 'J/(mol*K)'))
+
+
 def build(tgas, declared, x_meta=1.0e-3, x_ion=1.0e-9, source=None, termination=None):
     electron = Species(label='e-').from_adjacency_list('1 e u1 p0 c-1')
     ground = Species(label='Ar').from_adjacency_list('1 Ar u0 p4 c0')
     meta = Species(label='Ar*').from_adjacency_list('1 Ar u2 p3 c0')
     arp = Species(label='Ar+').from_adjacency_list('multiplicity 2\n1 Ar u1 p3 c+1')
+    ground.thermo = argon_thermo(0.0)
+    meta.thermo = argon_thermo(11.55)
     imf = {electron: x_ion, arp: x_ion, meta: x_meta, ground: 1.0 - 2.0 * x_ion - x_meta}
     kwargs = dict(diffusion_length=(LAM, 'm'),
                   ion_reduced_mobility=(M.MU0_AR_IN_AR, 'm^2/(V*s)'),

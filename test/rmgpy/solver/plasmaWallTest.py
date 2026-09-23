@@ -2625,7 +2625,10 @@ def test_zero_core_flux_with_wall_loss_abstains_on_ratio_but_keeps_an_absolute_c
 # declared ground-state product. The reference value is supplied per species, as D*p
 # or as D*N; nothing is inferred from the electronic state.
 
-DP_AR_META = 54.0                         # cm^2 Torr / s, the deck's reference D*p
+# cm^2 Torr/s, the deck's reference D*p: Wieme & Lenaerts, D(1 Torr) = 3.20e-3*T^1.68,
+# ~47 at 300 K. (The 54 once quoted corresponds to ~330 K.)
+DP_AR_META = 47.0
+AR_META_EV = 11.55                        # Ar(1s5) excitation energy, eV
 CM2_TORR_TO_SI = 1.0e-4 * TORR_TO_PA      # (cm^2 Torr/s) -> (m^2 Pa/s)
 
 
@@ -2634,12 +2637,14 @@ def _meta_declaration(diffusivity=(DP_AR_META, 'cm^2*torr/s'), product='Ar', lab
 
 
 def _neutral_diffusion_reactor(declaration='default', tgas=TGAS, pressure=P_NOMINAL,
-                               gamma=1.0, x_meta=1.0e-3, x_ion=1.0e-6, source=None):
+                               gamma=1.0, x_meta=1.0e-3, x_ion=1.0e-6, source=None,
+                               ground_eV=0.0, meta_eV=AR_META_EV):
     """Ground Ar, metastable Ar*, Ar+, e- on a wall, with the wall's ion product pinned
-    to ground Ar, and (by default) Ar* declared to diffuse to the wall as Ar."""
+    to ground Ar, and (by default) Ar* declared to diffuse to the wall as Ar. The
+    states carry thermo H298 = ground_eV / meta_eV (None for no thermo)."""
     electron = Species(label='e-').from_adjacency_list('1 e u1 p0 c-1')
-    ground = _ground_species('Ar')
-    meta = _metastable_species('Ar*')
+    ground = _ground_species('Ar', ground_eV)
+    meta = _metastable_species('Ar*', meta_eV)
     arp = Species(label='Ar+').from_adjacency_list('multiplicity 2\n1 Ar u1 p3 c+1')
     imf = {electron: x_ion, arp: x_ion, meta: x_meta, ground: 1.0 - 2.0 * x_ion - x_meta}
     kwargs = dict(diffusion_length=(_diffusion_length(), 'm'),
@@ -2672,7 +2677,7 @@ def _meta_state(reactor, core, n_meta=1.0e-3, n_ion=0.0, n_total=1.0):
 def test_neutral_wall_frequency_matches_hand_arithmetic():
     """nu_m = (D*p)/p/Lambda^2 at a state with no charged population, where the
     operator's neutral density is exactly p/(k_B T). Hand value from the declared
-    54 cm^2 Torr/s, 5 Torr and the deck geometry; agreement to 1e-12 relative."""
+    47 cm^2 Torr/s, 5 Torr and the deck geometry; agreement to 1e-12 relative."""
     for tgas in (300.0, TGAS, 600.0):
         r, core = _neutral_diffusion_reactor(tgas=tgas)
         y, idx = _meta_state(r, core, n_ion=0.0)
@@ -2863,3 +2868,84 @@ def test_seeded_metastable_decays_exponentially_on_the_wall():
     lost = y0[idx['Ar*']] - y[idx['Ar*']]
     ion_lost = y0[idx['Ar+']] - y[idx['Ar+']]
     assert abs((gained - ion_lost) / lost - 1.0) < 1e-9
+
+
+# ---- I-269 round 2: the declaration must be a same-nuclei, strictly downhill map ----
+
+def test_neutral_wall_refuses_isotope_transmuting_product():
+    """HIGH 1: element counts cannot tell 13C-DME from DME, so the wall would turn a
+    13C nucleus into a 12C one. Source and product must share the skeleton key
+    (InChI minus charge layers), which keeps the isotope layer."""
+    e, dme12, dme13, dmep13 = _dme_isotope_species()
+    dme13.thermo = _thermo_with_h298(-100.0)       # above DME, so only the nuclei differ
+    imf = {e: 1.0e-6, dmep13: 1.0e-6, dme13: 0.1, dme12: 0.9 - 2.0e-6}
+    reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+                            (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
+                            diffusion_length=(_diffusion_length(), 'm'),
+                            ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
+                            wall_recycling=1.0, wall_single_bath_approximation=True,
+                            wall_neutralization_products={'DME+-13C': 'DME-13C'},
+                            wall_neutral_diffusion=_meta_declaration(label='DME-13C',
+                                                                     product='DME'))
+    with pytest.raises(PlasmaStateError) as exc:
+        reactor.initialize_model([e, dme12, dme13, dmep13], [], [], [])
+    assert 'nuclei' in str(exc.value), str(exc.value)
+
+
+@pytest.mark.parametrize('case, kwargs, fragment', [
+    ("ground declared to pump up to the metastable",
+     dict(declaration=_meta_declaration(label='Ar', product='Ar*')), 'not strictly higher'),
+    ("degenerate source and product",
+     dict(meta_eV=0.0), 'not strictly higher'),
+    ("source thermo absent", dict(meta_eV=None), 'thermo'),
+    ("product thermo absent", dict(ground_eV=None), 'thermo'),
+])
+def test_neutral_wall_refuses_a_declaration_that_is_not_strictly_downhill(case, kwargs, fragment):
+    """HIGH 2: the wall only de-excites. A declaration whose source is not strictly
+    above its product in H298 is refused, and so is one whose ordering cannot be
+    established because a thermo is missing -- no default, no inference."""
+    with pytest.raises(PlasmaStateError) as exc:
+        _neutral_diffusion_reactor(**kwargs)
+    assert fragment in str(exc.value), (case, str(exc.value))
+
+
+def test_neutral_wall_refuses_a_cyclic_declaration_at_construction():
+    """HIGH 2: Ar* -> Ar together with Ar -> Ar* is a cycle; it is refused by label at
+    construction, before any species or thermo exists."""
+    declaration = {'Ar*': {'product': 'Ar', 'diffusivity': (DP_AR_META, 'cm^2*torr/s')},
+                   'Ar': {'product': 'Ar*', 'diffusivity': (DP_AR_META, 'cm^2*torr/s')}}
+    electron, ar, arp = _argon_species()
+    with pytest.raises(PlasmaStateError) as exc:
+        PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), {ar: 1.0}, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+                      n_sims=1, termination=[],
+                      diffusion_length=(_diffusion_length(), 'm'),
+                      ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
+                      wall_neutral_diffusion=declaration)
+    assert 'cycle' in str(exc.value), str(exc.value)
+
+
+def test_neutral_wall_declared_label_absent_from_core_warns_once(caplog):
+    """MEDIUM: a declared label not (yet) in the core stays tolerated, for core growth,
+    but is reported at WARNING, once per label, across repeated model initialisation."""
+    declaration = dict(_meta_declaration())
+    declaration['Kr*'] = {'product': 'Kr', 'diffusivity': (DP_AR_META, 'cm^2*torr/s')}
+    with caplog.at_level(logging.WARNING):
+        r, core = _neutral_diffusion_reactor(declaration=declaration)
+        r.initialize_model(core, [], [], [])
+    hits = [rec for rec in caplog.records
+            if rec.levelno >= logging.WARNING and "'Kr*'" in rec.getMessage()]
+    assert len(hits) == 1, [rec.getMessage() for rec in caplog.records]
+
+
+def test_neutral_wall_frequency_at_the_deck_value_47_torr_cm2_per_s():
+    """LOW: D*p = 47 cm^2 Torr/s (Wieme & Lenaerts at 300 K), 5 Torr, 300 K, R = 5 cm,
+    L = 30 cm. By hand: D = 47e-4/5 m^2/s = 9.4e-4 m^2/s; 1/Lambda^2 = (2.405/0.05)^2
+    + (pi/0.30)^2 = 2313.6100 + 109.6623 = 2423.2723 m^-2; nu_m = 2.2778759 s^-1."""
+    hand = (47.0e-4 / 5.0) * ((2.405 / 0.05) ** 2 + (np.pi / 0.30) ** 2)
+    assert abs(hand - 2.2778759348558) < 1e-12
+    r, core = _neutral_diffusion_reactor(
+        declaration=_meta_declaration(diffusivity=(47.0, 'cm^2*torr/s')), tgas=300.0,
+        pressure=5.0 * 101325.0 / 760.0)
+    y, idx = _meta_state(r, core, n_ion=0.0)       # no charge, so n_neutral = p/(k_B T)
+    nu = r.compute_neutral_wall_frequencies(y, r.compute_volume(y))[idx['Ar*']]
+    assert abs(nu / hand - 1.0) < 1e-12, (nu, hand)
