@@ -892,6 +892,63 @@ The remaining keywords are all optional:
 	``maxIonisationDegree`` ceiling is the one edge the code enforces
 	numerically; the regime limits above are the user's to respect.
 
+.. _plasmaenergybalance:
+
+Solving the Electron Temperature: Electron Energy Balance
+---------------------------------------------------------
+
+With a prescribed ``electronTemperature`` the particle balance fixes Te and leaves the electron
+density free.  ``electronEnergyBalance`` closes the discharge instead: Te becomes a solved state
+(``electronTemperature`` is its initial value) from
+
+.. math::
+
+	\frac{d}{dt}\left(\tfrac{3}{2} N_e k_B T_e\right) = P_{abs} - Q_{inelastic} - Q_{elastic} - Q_{wall} - Q_{flow}
+
+with a Maxwellian electron energy distribution at Te, and n_e follows from the coupled particle
+and power balances.  It needs a charged-particle wall::
+
+	plasmaReactor(
+	    ...
+	    chamberGeometry={'shape': 'cylinder', 'radius': (5, 'cm'), 'length': (30, 'cm')},
+	    ionReducedMobility=(1.535e-4, 'm^2/(V*s)'),
+	    electronEnergyBalance={
+	        'absorbedPower': (0.5, 'W'),
+	        'sheath': 'floatingWall',
+	        'elasticCollisions': {'Ar': {'A': (2.336e-14, 'm^3/s'), 'n': 1.609,
+	                                     'b': 0.0618, 'c': -0.1171}},
+	        'electronEnergies': {'PlasmaArgon:86': (15.76, 'eV'),
+	                             'PlasmaArgon:89': (-11.548, 'eV'),
+	                             ...},
+	    },
+	)
+
+* ``absorbedPower`` -- the power the electrons absorb, deposited in the chamber volume (from a
+  cylinder or sphere ``chamberGeometry``, or stated as ``'chamberVolume': (V, 'm^3')`` when the
+  geometry has none).  This is a global-model **engineering intermediate**: it does not model how
+  a real source couples its power.  A DC glow sustained by secondary emission needs a discharge
+  current + sheath circuit closure, which is not implemented.  Never choose ``absorbedPower`` to
+  reproduce a measured electron density.
+* ``electronEnergies`` -- for **every** library reaction an electron takes part in, keyed
+  ``'<library>:<entry index>'``, the energy one event takes from the electrons (negative: a
+  gain).  It is declared, never inferred: a lumped reaction's enthalpy change need not be what
+  the electron pays (``PlasmaArgon`` entry 91, written ``Ars + e- => Ar + e-``, stands for
+  metastable-to-resonance mixing followed by radiation; the electron pays the ~0.076 eV m->r gap,
+  not the -11.5 eV its enthalpy says).  The thermo enthalpy change is logged beside each
+  declaration as a cross-check.  An undeclared electron reaction in the core is refused.  An
+  electron-consuming reaction is in addition charged 3/2 k_B Te per consumed electron.
+* ``elasticCollisions`` -- per neutral partner, the momentum-transfer rate coefficient
+  ``K_m = A Te^n exp(b ln(Te)^2 + c ln(Te)^3)`` (Te in eV; the form of the Lieberman &
+  Lichtenberg 2005 Table 3.3 fits), giving ``Q_elastic = 3 (m_e/M) K_m n_g n_e k_B (Te - Tgas)``.
+* ``sheath='floatingWall'`` -- each electron lost at the wall carries ``2 k_B Te`` and each ion
+  ``k_B Te (1/2 + 1/2 ln(M/2 pi m_e))`` (Bohm presheath plus floating sheath), both on the same
+  flux the particle balance applies.  ``Q_flow`` is zero: the reactor is a closed batch.
+
+The reactor latches a power budget (``energy_budget``) at every accepted state, with the stored
+energy change taken from the solver's own derivative, and ``discharge_state()`` reports
+``'sustained'`` when the discharge's own ionisation replaces at least half its electron loss,
+``'extinct'`` otherwise (a decaying or source-held state).
+
 .. _simulatortolerances:
 
 Simulator Tolerances

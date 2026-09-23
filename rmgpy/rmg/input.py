@@ -715,6 +715,85 @@ def _plasma_wall_kwargs(chamberGeometry, ionReducedMobility, mobilityReferenceDe
     return kwargs
 
 
+_PLASMA_ENERGY_BALANCE_KEYS = ('absorbedPower', 'sheath', 'elasticCollisions', 'electronEnergies',
+                               'chamberVolume')
+_PLASMA_SHEATH_MODELS = {'floatingWall': 'floating_wall'}
+
+
+def _plasma_chamber_volume(chamberGeometry):
+    """The chamber volume in m^3 for a named finite shape, or None when the geometry
+    carries none (an infinite slab, or a directly stated diffusion length)."""
+    if not isinstance(chamberGeometry, dict):
+        return None
+    shape = chamberGeometry.get('shape')
+    if shape == 'cylinder':
+        r = Quantity(chamberGeometry['radius']).value_si
+        return np.pi * r * r * Quantity(chamberGeometry['length']).value_si
+    if shape == 'sphere':
+        r = Quantity(chamberGeometry['radius']).value_si
+        return 4.0 / 3.0 * np.pi * r ** 3
+    return None
+
+
+def _plasma_energy_balance_kwargs(electronEnergyBalance, chamberGeometry, wall_kwargs):
+    """
+    Turn the ``electronEnergyBalance`` block into the reactor's
+    ``electron_energy_balance`` declaration. Shape, key names and the chamber volume are
+    settled here; units, signs, and whether every electron reaction is declared are
+    checked by the reactor, which is where the reaction set exists.
+    """
+    if electronEnergyBalance is None:
+        return {}
+    if 'diffusion_length' not in wall_kwargs:
+        raise InputError(
+            "electronEnergyBalance was given but no charged-particle wall was declared. The "
+            "wall is where electrons and ions carry their energy out; a wall needs BOTH "
+            "chamberGeometry and ionReducedMobility.")
+    if not isinstance(electronEnergyBalance, dict):
+        raise InputError(
+            "electronEnergyBalance must be a dict with the keys {0}; got {1!r}.".format(
+                list(_PLASMA_ENERGY_BALANCE_KEYS), electronEnergyBalance))
+    unknown = sorted(set(electronEnergyBalance) - set(_PLASMA_ENERGY_BALANCE_KEYS))
+    if unknown:
+        raise InputError(
+            "electronEnergyBalance has unsupported key(s) {0}; the keys are {1}. The only "
+            "discharge closure implemented is a specified absorbedPower (a current + "
+            "sheath circuit closure is not built).".format(unknown, list(_PLASMA_ENERGY_BALANCE_KEYS)))
+    for key in ('absorbedPower', 'sheath', 'elasticCollisions', 'electronEnergies'):
+        if key not in electronEnergyBalance:
+            raise InputError("electronEnergyBalance is missing {0!r}.".format(key))
+    sheath = electronEnergyBalance['sheath']
+    if sheath not in _PLASMA_SHEATH_MODELS:
+        raise InputError(
+            "electronEnergyBalance 'sheath' is {0!r}; the only sheath model is "
+            "'floatingWall'.".format(sheath))
+    from_geometry = _plasma_chamber_volume(chamberGeometry)
+    stated = electronEnergyBalance.get('chamberVolume')
+    if from_geometry is not None and stated is not None:
+        raise InputError(
+            "electronEnergyBalance gives chamberVolume, but chamberGeometry already names a "
+            "finite shape whose volume is {0!r} m^3: two sources of truth for one number. "
+            "Remove chamberVolume.".format(from_geometry))
+    if from_geometry is None and stated is None:
+        raise InputError(
+            "electronEnergyBalance needs the chamber volume the power is deposited in, and "
+            "chamberGeometry ({0!r}) does not give one; state it as chamberVolume=(V, "
+            "'m^3').".format(chamberGeometry))
+    volume = (from_geometry, 'm^3') if stated is None else stated
+    energies = electronEnergyBalance['electronEnergies']
+    elastic = electronEnergyBalance['elasticCollisions']
+    for name, value in (('electronEnergies', energies), ('elasticCollisions', elastic)):
+        if not isinstance(value, dict):
+            raise InputError("electronEnergyBalance {0!r} must be a dict; got {1!r}.".format(name, value))
+    return {'electron_energy_balance': {
+        'absorbed_power': electronEnergyBalance['absorbedPower'],
+        'chamber_volume': volume,
+        'sheath': _PLASMA_SHEATH_MODELS[sheath],
+        'elastic_collisions': {label: dict(fit) for label, fit in elastic.items()},
+        'electron_energies': dict(energies),
+    }}
+
+
 def _plasma_species_charge(label, species_dict, why):
     """
     Return the net charge of the declared species `label`, as an int, raising
@@ -756,6 +835,7 @@ def plasma_reactor(temperature,
                    maxIonisationDegree=None,
                    wallSingleBathApproximation=False,
                    quasineutralElectron=False,
+                   electronEnergyBalance=None,
                    terminationConversion=None,
                    terminationTime=None,
                    terminationRateRatio=None,
@@ -886,6 +966,37 @@ def plasma_reactor(temperature,
     carried algebraically a non-neutral state is not something the equations can represent
     -- without that refusal the solver fails with an unrelated-looking convergence error.
     ``chargeBalanceSpecies`` is the easy way to satisfy it.
+
+    Electron energy balance
+    -----------------------
+
+    ``electronEnergyBalance`` makes ``Te`` a SOLVED quantity instead of a prescribed one:
+    ``electronTemperature`` becomes its initial value, and the electron density follows from
+    the coupled particle and power balances. It needs a wall. The closure is a specified
+    absorbed power -- a global-model **engineering intermediate**, not a model of how a real
+    source couples its power (a DC glow sustained by secondary emission needs a current +
+    sheath circuit closure, which is not built). The EEDF is Maxwellian at ``Te``::
+
+        electronEnergyBalance={
+            'absorbedPower': (0.5, 'W'),
+            'sheath': 'floatingWall',
+            'elasticCollisions': {'Ar': {'A': (2.336e-14, 'm^3/s'), 'n': 1.609,
+                                         'b': 0.0618, 'c': -0.1171}},
+            'electronEnergies': {'PlasmaArgon:86': (15.76, 'eV'), ...},
+        }
+
+    ``absorbedPower`` is deposited in the chamber volume, computed from a cylinder or sphere
+    ``chamberGeometry``, or stated as ``'chamberVolume': (V, 'm^3')`` when the geometry has
+    none. ``sheath='floatingWall'`` charges each ion lost at the wall ``k_B Te (1/2 +
+    1/2 ln(M/2 pi m_e))`` and each electron ``2 k_B Te``, from the same flux the particle
+    balance applies. ``elasticCollisions`` declares, per neutral partner, the momentum-transfer
+    rate coefficient ``K_m = A Te^n exp(b ln(Te)^2 + c ln(Te)^3)`` (Te in eV; the form of the
+    Lieberman & Lichtenberg 2005 Table 3.3 fits). ``electronEnergies`` declares, for EVERY
+    library reaction an electron takes part in (``'<library>:<entry index>'``), the energy
+    one event takes from the electrons (negative: a gain). It is never inferred from thermo:
+    a lumped proxy's enthalpy change need not be what the electron pays. The thermo value is
+    logged beside each declaration as a cross-check. Do not choose ``absorbedPower`` to
+    reproduce an electron density.
 
     .. note::
         The wall operator determines the loss frequency and hence the sustainment /
@@ -1296,6 +1407,9 @@ def plasma_reactor(temperature,
                         "plasmaReactor(...) block. Declared species are "
                         "{2}.".format(role, name, sorted(species_dict.keys())))
         wall_kwargs['wall_neutral_diffusion'] = dict(wallNeutralDiffusion)
+
+    wall_kwargs.update(_plasma_energy_balance_kwargs(electronEnergyBalance, chamberGeometry,
+                                                     wall_kwargs))
 
     # Every argument passed by keyword: PlasmaReactor's fourth positional argument is
     # Te, not n_sims as in simple_reactor -- do not copy that call shape.
@@ -2675,6 +2789,18 @@ def _format_plasma_wall(system):
             # A deliberate opt-in to the single-bath transport approximation on a multi-gas
             # bath; without it the reloaded deck would refuse to construct.
             lines.append('    wallSingleBathApproximation = True,\n')
+    if system.energy_balance:
+        # The saved geometry is a bare diffusion length, so the chamber volume the power
+        # is deposited in is written explicitly.
+        decl = system.electron_energy_balance
+        sheath = {v: k for k, v in _PLASMA_SHEATH_MODELS.items()}[decl['sheath']]
+        lines.append('    electronEnergyBalance = {0!r},\n'.format({
+            'absorbedPower': decl['absorbed_power'],
+            'chamberVolume': decl['chamber_volume'],
+            'sheath': sheath,
+            'elasticCollisions': decl['elastic_collisions'],
+            'electronEnergies': decl['electron_energies'],
+        }))
     return ''.join(lines)
 
 
@@ -2762,7 +2888,10 @@ def save_input_file(path, rmg):
             f.write('plasmaReactor(\n')
             f.write('    temperature = ' + format_temperature(system) + ',\n')
             f.write('    pressure = ' + format_pressure(system) + ',\n')
-            f.write('    electronTemperature = ({0:g},"{1!s}"),\n'.format(system.Te.value, system.Te.units))
+            # With the energy balance on, Te is solved and has moved; the deck's value is
+            # the declared initial one.
+            te_value = system.te_initial if system.energy_balance else system.Te.value
+            f.write('    electronTemperature = ({0:g},"{1!s}"),\n'.format(te_value, system.Te.units))
             # Write the explicit mole fractions the reactor holds, electron included.
             # electronDensity is deliberately not reconstructed: it was an input-time
             # convenience, not reactor state, and the mole fractions are the ground truth.

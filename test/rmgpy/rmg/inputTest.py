@@ -1064,6 +1064,61 @@ class TestInputPlasmaReactor:
         with pytest.raises(InputError, match="excited species 'Ars'"):
             self._read(tmp_path, body)
 
+    # ---- electronEnergyBalance (I-274) -------------------------------------
+
+    _CYLINDER = ("    chamberGeometry={'shape': 'cylinder', 'radius': (5, 'cm'), 'length': (30, 'cm')},\n"
+                 "    ionReducedMobility=(1.535e-4, 'm^2/(V*s)'),\n")
+    _ENERGY = {'absorbedPower': (0.5, 'W'), 'sheath': 'floatingWall',
+               'elasticCollisions': {'Ar': {'A': (2.336e-14, 'm^3/s'), 'n': 1.609,
+                                            'b': 0.0618, 'c': -0.1171}},
+               'electronEnergies': {'PlasmaArgon:86': (15.76, 'eV')}}
+
+    def _energy_body(self, wall, energy, db=False):
+        head = ("database(thermoLibraries=['primaryThermoLibrary'], reactionLibraries=[], "
+                "seedMechanisms=[], kineticsFamilies='default')\n") if db else ""
+        tail = ("simulator(atol=1e-16, rtol=1e-8)\n"
+                "model(toleranceMoveToCore=0.1, toleranceInterruptSimulation=0.1)\n") if db else ""
+        return head + self._preamble() + self._plasma_block(
+            wall + "    electronEnergyBalance={0!r},\n".format(energy) + "    electronDensity=(1e16,'m^-3'),\n",
+            mole_fractions="{'Ar': 1.0}", pressure="(5,'torr')", temperature="(298.15,'K')") + tail
+
+    def test_electron_energy_balance_power_density_from_the_cylinder(self, tmp_path):
+        reactor = self._read(tmp_path, self._energy_body(self._CYLINDER, self._ENERGY)).reaction_systems[0]
+        assert reactor.energy_balance
+        assert reactor.absorbed_power_density == pytest.approx(0.5 / (np.pi * 0.05 ** 2 * 0.30), rel=1e-12)
+        assert reactor.electron_energy_balance['sheath'] == 'floating_wall'
+        assert reactor.electron_energy_balance['electron_energies'] == {'PlasmaArgon:86': (15.76, 'eV')}
+
+    def test_electron_energy_balance_round_trips(self, tmp_path):
+        rmg1 = self._read(tmp_path, self._energy_body(self._CYLINDER, self._ENERGY, db=True))
+        saved = tmp_path / "saved.py"
+        inp.save_input_file(str(saved), rmg1)
+        assert 'electronEnergyBalance' in saved.read_text()
+        rmg2 = RMG()
+        inp.read_input_file(str(saved), rmg2)
+        r1, r2 = rmg1.reaction_systems[0], rmg2.reaction_systems[0]
+        assert r2.energy_balance
+        assert r2.absorbed_power_density == pytest.approx(r1.absorbed_power_density, rel=1e-12)
+        assert r2.electron_energy_balance['electron_energies'] == r1.electron_energy_balance['electron_energies']
+        assert r2.electron_energy_balance['elastic_collisions'] == r1.electron_energy_balance['elastic_collisions']
+
+    def test_electron_energy_balance_without_a_wall_is_refused(self, tmp_path):
+        with pytest.raises(InputError, match='no charged-particle wall'):
+            self._read(tmp_path, self._energy_body("", self._ENERGY))
+
+    def test_electron_energy_balance_needs_a_volume_for_a_bare_diffusion_length(self, tmp_path):
+        with pytest.raises(InputError, match='chamberVolume'):
+            self._read(tmp_path, self._energy_body(self._WALL, self._ENERGY))
+        stated = dict(self._ENERGY, chamberVolume=(2.0, 'L'))
+        reactor = self._read(tmp_path, self._energy_body(self._WALL, stated)).reaction_systems[0]
+        assert reactor.absorbed_power_density == pytest.approx(0.5 / 2.0e-3, rel=1e-12)
+
+    def test_electron_energy_balance_refuses_a_second_volume_and_a_current_closure(self, tmp_path):
+        with pytest.raises(InputError, match='two sources of truth'):
+            self._read(tmp_path, self._energy_body(self._CYLINDER, dict(self._ENERGY, chamberVolume=(2.0, 'L'))))
+        with pytest.raises(InputError, match='dischargeCurrent'):
+            self._read(tmp_path, self._energy_body(self._CYLINDER, dict(self._ENERGY, dischargeCurrent=(1, 'A'))))
+
     # ---- terminationSteadyState (I-170) ------------------------------------
 
     def test_termination_steady_state_bare_tolerance(self, tmp_path):
