@@ -772,6 +772,20 @@ The remaining keywords are all optional:
   only ground-state argon needs nothing declared -- and include it, one line, for any deck that
   carries a metastable alongside its ground state.
 
+* ``wallNeutralDiffusion`` -- an optional dict declaring that an excited **neutral** species is lost
+  to the wall by neutral diffusion and returns as its ground state, e.g.
+  ``{'Ar*': {'product': 'Ar', 'diffusivity': (47.0, 'cm^2*torr/s')}}``.  The loss frequency is
+  :math:`\nu_m = D_m/\Lambda^2`, with the wall's own diffusion length :math:`\Lambda` and
+  :math:`D_m = (D N)_{ref}/n_{neutral}` -- the same neutral density, and the same numerical floor,
+  as the ion mobility.  ``diffusivity`` is a reference pressure product :math:`D p` (converted at
+  the reactor's gas temperature, not rescaled with it) or a density product :math:`D N` in
+  ``1/(m*s)``; a bare diffusivity is refused, as are non-finite, zero, negative or subnormal
+  values.  Every lost molecule returns as ``product`` (no pumping), which must be a different,
+  uncharged, declared species with the same elemental composition.  Nothing is inferred from a
+  species' electronic state: an excited species not listed here is not lost at the wall, and there
+  is no default diffusivity.  The excitation energy deposited at the surface is not modelled.
+  Requires a wall (``chamberGeometry`` and ``ionReducedMobility``).
+
 * ``ionisationSource`` -- a volumetric external production rate of ion-electron pairs,
   ``(6.6e4, 'm^-3/s')`` or ``(0.066, 'cm^-3/s')``.  This is where a *declared physical mechanism*
   such as the cosmic-ray background goes; for a noble gas at a few torr it is of order

@@ -1,0 +1,709 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python3.9
+rootdir: /home/alon/Code/RMG-Py-metastable-wall
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 127 items / 99 deselected / 28 selected
+
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_frequency_matches_hand_arithmetic FAILED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_frequency_scales_inversely_with_pressure FAILED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_dn_form_equals_dp_form FAILED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_residual_moves_metastable_to_ground_only FAILED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_loss_conserves_heavy_particles FAILED
+test/rmgpy/solver/plasmaWallTest.py::test_undeclared_metastable_has_no_neutral_wall_loss FAILED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_jacobian_matches_finite_difference FAILED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_jacobian_scan_can_fail FAILED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_declaration_survives_pickle_and_deepcopy FAILED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_nonfinite_or_nonpositive_diffusivity[nan] FAILED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_nonfinite_or_nonpositive_diffusivity[inf] FAILED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_nonfinite_or_nonpositive_diffusivity[-inf] FAILED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_nonfinite_or_nonpositive_diffusivity[0.0] FAILED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_nonfinite_or_nonpositive_diffusivity[-1.0] FAILED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_nonfinite_or_nonpositive_diffusivity[5e-324] FAILED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_nonfinite_or_nonpositive_diffusivity[1e+308] FAILED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_malformed_declaration[wrong dimension-declaration0-dimension] FAILED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_malformed_declaration[not a dict-declaration1-dict] FAILED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_malformed_declaration[entry missing diffusivity-declaration2-diffusivity] FAILED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_malformed_declaration[entry missing product-declaration3-product] FAILED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_malformed_declaration[unknown entry key-declaration4-gamma] FAILED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_malformed_declaration[charged species declared-declaration5-neutral] FAILED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_malformed_declaration[product is the source-declaration6-itself] FAILED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_malformed_declaration[product not in core-declaration7-Xe] FAILED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_malformed_declaration[product charged-declaration8-neutral] FAILED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_element_changing_product FAILED
+test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_declaration_without_a_wall FAILED
+test/rmgpy/solver/plasmaWallTest.py::test_seeded_metastable_decays_exponentially_on_the_wall FAILED
+
+=================================== FAILURES ===================================
+_____________ test_neutral_wall_frequency_matches_hand_arithmetic ______________
+
+    def test_neutral_wall_frequency_matches_hand_arithmetic():
+        """nu_m = (D*p)/p/Lambda^2 at a state with no charged population, where the
+        operator's neutral density is exactly p/(k_B T). Hand value from the declared
+        54 cm^2 Torr/s, 5 Torr and the deck geometry; agreement to 1e-12 relative."""
+        for tgas in (300.0, TGAS, 600.0):
+>           r, core = _neutral_diffusion_reactor(tgas=tgas)
+
+test/rmgpy/solver/plasmaWallTest.py:2675: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test/rmgpy/solver/plasmaWallTest.py:2653: in _neutral_diffusion_reactor
+    reactor = PlasmaReactor((tgas, 'K'), (pressure, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+>   def __init__(self, T, P, initial_mole_fractions, Te, n_sims=1, termination=None, sensitive_species=None,
+E   TypeError: __init__() got an unexpected keyword argument 'wall_neutral_diffusion'
+
+rmgpy/solver/plasma.pyx:322: TypeError
+__________ test_neutral_wall_frequency_scales_inversely_with_pressure __________
+
+    def test_neutral_wall_frequency_scales_inversely_with_pressure():
+        lam = _diffusion_length()
+        for p_torr in (1.0, 5.0, 20.0):
+>           r, core = _neutral_diffusion_reactor(pressure=p_torr * TORR_TO_PA)
+
+test/rmgpy/solver/plasmaWallTest.py:2688: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test/rmgpy/solver/plasmaWallTest.py:2653: in _neutral_diffusion_reactor
+    reactor = PlasmaReactor((tgas, 'K'), (pressure, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+>   def __init__(self, T, P, initial_mole_fractions, Te, n_sims=1, termination=None, sensitive_species=None,
+E   TypeError: __init__() got an unexpected keyword argument 'wall_neutral_diffusion'
+
+rmgpy/solver/plasma.pyx:322: TypeError
+___________________ test_neutral_wall_dn_form_equals_dp_form ___________________
+
+    def test_neutral_wall_dn_form_equals_dp_form():
+        """(D*N) = (D*p)/(k_B T) at the reactor gas temperature: the two spellings of the
+        same reference coefficient give the same frequency."""
+        dn_si = DP_AR_META * CM2_TORR_TO_SI / (constants.kB * TGAS)
+>       r1, core1 = _neutral_diffusion_reactor()
+
+test/rmgpy/solver/plasmaWallTest.py:2698: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test/rmgpy/solver/plasmaWallTest.py:2653: in _neutral_diffusion_reactor
+    reactor = PlasmaReactor((tgas, 'K'), (pressure, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+>   def __init__(self, T, P, initial_mole_fractions, Te, n_sims=1, termination=None, sensitive_species=None,
+E   TypeError: __init__() got an unexpected keyword argument 'wall_neutral_diffusion'
+
+rmgpy/solver/plasma.pyx:322: TypeError
+__________ test_neutral_wall_residual_moves_metastable_to_ground_only __________
+
+    def test_neutral_wall_residual_moves_metastable_to_ground_only():
+        """The residual loses nu_m*y[Ar*] from Ar* and adds exactly that to Ar. Every
+        charged row, and nu_wall, are bit-identical to the undeclared reactor."""
+>       rd, core_d = _neutral_diffusion_reactor()
+
+test/rmgpy/solver/plasmaWallTest.py:2710: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test/rmgpy/solver/plasmaWallTest.py:2653: in _neutral_diffusion_reactor
+    reactor = PlasmaReactor((tgas, 'K'), (pressure, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+>   def __init__(self, T, P, initial_mole_fractions, Te, n_sims=1, termination=None, sensitive_species=None,
+E   TypeError: __init__() got an unexpected keyword argument 'wall_neutral_diffusion'
+
+rmgpy/solver/plasma.pyx:322: TypeError
+_______________ test_neutral_wall_loss_conserves_heavy_particles _______________
+
+    def test_neutral_wall_loss_conserves_heavy_particles():
+>       rd, core = _neutral_diffusion_reactor(gamma=1.0)
+
+test/rmgpy/solver/plasmaWallTest.py:2735: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test/rmgpy/solver/plasmaWallTest.py:2653: in _neutral_diffusion_reactor
+    reactor = PlasmaReactor((tgas, 'K'), (pressure, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+>   def __init__(self, T, P, initial_mole_fractions, Te, n_sims=1, termination=None, sensitive_species=None,
+E   TypeError: __init__() got an unexpected keyword argument 'wall_neutral_diffusion'
+
+rmgpy/solver/plasma.pyx:322: TypeError
+_____________ test_undeclared_metastable_has_no_neutral_wall_loss ______________
+
+    def test_undeclared_metastable_has_no_neutral_wall_loss():
+        r, core = _neutral_diffusion_reactor(declaration=None)
+        y, idx = _meta_state(r, core, n_ion=1.0e-6)
+>       assert not np.any(r.compute_neutral_wall_frequencies(y, r.compute_volume(y)))
+E       AttributeError: 'rmgpy.solver.plasma.PlasmaReactor' object has no attribute 'compute_neutral_wall_frequencies'
+
+test/rmgpy/solver/plasmaWallTest.py:2746: AttributeError
+_____________ test_neutral_wall_jacobian_matches_finite_difference _____________
+
+    def test_neutral_wall_jacobian_matches_finite_difference():
+>       r, core = _neutral_diffusion_reactor(gamma=0.5)
+
+test/rmgpy/solver/plasmaWallTest.py:2752: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test/rmgpy/solver/plasmaWallTest.py:2653: in _neutral_diffusion_reactor
+    reactor = PlasmaReactor((tgas, 'K'), (pressure, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+>   def __init__(self, T, P, initial_mole_fractions, Te, n_sims=1, termination=None, sensitive_species=None,
+E   TypeError: __init__() got an unexpected keyword argument 'wall_neutral_diffusion'
+
+rmgpy/solver/plasma.pyx:322: TypeError
+___________________ test_neutral_wall_jacobian_scan_can_fail ___________________
+
+    def test_neutral_wall_jacobian_scan_can_fail():
+        """Negative control: dropping the declared coefficient between the analytic
+        Jacobian and the finite differences must break agreement, so the scan above
+        actually sees the neutral wall term."""
+>       r, core = _neutral_diffusion_reactor(gamma=0.5)
+
+test/rmgpy/solver/plasmaWallTest.py:2762: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test/rmgpy/solver/plasmaWallTest.py:2653: in _neutral_diffusion_reactor
+    reactor = PlasmaReactor((tgas, 'K'), (pressure, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+>   def __init__(self, T, P, initial_mole_fractions, Te, n_sims=1, termination=None, sensitive_species=None,
+E   TypeError: __init__() got an unexpected keyword argument 'wall_neutral_diffusion'
+
+rmgpy/solver/plasma.pyx:322: TypeError
+__________ test_neutral_wall_declaration_survives_pickle_and_deepcopy __________
+
+    def test_neutral_wall_declaration_survives_pickle_and_deepcopy():
+>       r, core = _neutral_diffusion_reactor()
+
+test/rmgpy/solver/plasmaWallTest.py:2772: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test/rmgpy/solver/plasmaWallTest.py:2653: in _neutral_diffusion_reactor
+    reactor = PlasmaReactor((tgas, 'K'), (pressure, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+>   def __init__(self, T, P, initial_mole_fractions, Te, n_sims=1, termination=None, sensitive_species=None,
+E   TypeError: __init__() got an unexpected keyword argument 'wall_neutral_diffusion'
+
+rmgpy/solver/plasma.pyx:322: TypeError
+_____ test_neutral_wall_refuses_nonfinite_or_nonpositive_diffusivity[nan] ______
+
+value = nan
+
+    @pytest.mark.parametrize("value", [float('nan'), float('inf'), float('-inf'), 0.0, -1.0,
+                                       5.0e-324, 1.0e308])
+    def test_neutral_wall_refuses_nonfinite_or_nonpositive_diffusivity(value):
+        """One mechanism, one message: NaN, +-inf, zero, negative, a subnormal, and a value
+        whose worst-case frequency overflows are all refused by the same check."""
+        with pytest.raises(PlasmaStateError) as exc:
+>           _neutral_diffusion_reactor(declaration=_meta_declaration(diffusivity=(value, 'cm^2*torr/s')))
+
+test/rmgpy/solver/plasmaWallTest.py:2784: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test/rmgpy/solver/plasmaWallTest.py:2653: in _neutral_diffusion_reactor
+    reactor = PlasmaReactor((tgas, 'K'), (pressure, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+>   def __init__(self, T, P, initial_mole_fractions, Te, n_sims=1, termination=None, sensitive_species=None,
+E   TypeError: __init__() got an unexpected keyword argument 'wall_neutral_diffusion'
+
+rmgpy/solver/plasma.pyx:322: TypeError
+_____ test_neutral_wall_refuses_nonfinite_or_nonpositive_diffusivity[inf] ______
+
+value = inf
+
+    @pytest.mark.parametrize("value", [float('nan'), float('inf'), float('-inf'), 0.0, -1.0,
+                                       5.0e-324, 1.0e308])
+    def test_neutral_wall_refuses_nonfinite_or_nonpositive_diffusivity(value):
+        """One mechanism, one message: NaN, +-inf, zero, negative, a subnormal, and a value
+        whose worst-case frequency overflows are all refused by the same check."""
+        with pytest.raises(PlasmaStateError) as exc:
+>           _neutral_diffusion_reactor(declaration=_meta_declaration(diffusivity=(value, 'cm^2*torr/s')))
+
+test/rmgpy/solver/plasmaWallTest.py:2784: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test/rmgpy/solver/plasmaWallTest.py:2653: in _neutral_diffusion_reactor
+    reactor = PlasmaReactor((tgas, 'K'), (pressure, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+>   def __init__(self, T, P, initial_mole_fractions, Te, n_sims=1, termination=None, sensitive_species=None,
+E   TypeError: __init__() got an unexpected keyword argument 'wall_neutral_diffusion'
+
+rmgpy/solver/plasma.pyx:322: TypeError
+_____ test_neutral_wall_refuses_nonfinite_or_nonpositive_diffusivity[-inf] _____
+
+value = -inf
+
+    @pytest.mark.parametrize("value", [float('nan'), float('inf'), float('-inf'), 0.0, -1.0,
+                                       5.0e-324, 1.0e308])
+    def test_neutral_wall_refuses_nonfinite_or_nonpositive_diffusivity(value):
+        """One mechanism, one message: NaN, +-inf, zero, negative, a subnormal, and a value
+        whose worst-case frequency overflows are all refused by the same check."""
+        with pytest.raises(PlasmaStateError) as exc:
+>           _neutral_diffusion_reactor(declaration=_meta_declaration(diffusivity=(value, 'cm^2*torr/s')))
+
+test/rmgpy/solver/plasmaWallTest.py:2784: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test/rmgpy/solver/plasmaWallTest.py:2653: in _neutral_diffusion_reactor
+    reactor = PlasmaReactor((tgas, 'K'), (pressure, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+>   def __init__(self, T, P, initial_mole_fractions, Te, n_sims=1, termination=None, sensitive_species=None,
+E   TypeError: __init__() got an unexpected keyword argument 'wall_neutral_diffusion'
+
+rmgpy/solver/plasma.pyx:322: TypeError
+_____ test_neutral_wall_refuses_nonfinite_or_nonpositive_diffusivity[0.0] ______
+
+value = 0.0
+
+    @pytest.mark.parametrize("value", [float('nan'), float('inf'), float('-inf'), 0.0, -1.0,
+                                       5.0e-324, 1.0e308])
+    def test_neutral_wall_refuses_nonfinite_or_nonpositive_diffusivity(value):
+        """One mechanism, one message: NaN, +-inf, zero, negative, a subnormal, and a value
+        whose worst-case frequency overflows are all refused by the same check."""
+        with pytest.raises(PlasmaStateError) as exc:
+>           _neutral_diffusion_reactor(declaration=_meta_declaration(diffusivity=(value, 'cm^2*torr/s')))
+
+test/rmgpy/solver/plasmaWallTest.py:2784: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test/rmgpy/solver/plasmaWallTest.py:2653: in _neutral_diffusion_reactor
+    reactor = PlasmaReactor((tgas, 'K'), (pressure, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+>   def __init__(self, T, P, initial_mole_fractions, Te, n_sims=1, termination=None, sensitive_species=None,
+E   TypeError: __init__() got an unexpected keyword argument 'wall_neutral_diffusion'
+
+rmgpy/solver/plasma.pyx:322: TypeError
+_____ test_neutral_wall_refuses_nonfinite_or_nonpositive_diffusivity[-1.0] _____
+
+value = -1.0
+
+    @pytest.mark.parametrize("value", [float('nan'), float('inf'), float('-inf'), 0.0, -1.0,
+                                       5.0e-324, 1.0e308])
+    def test_neutral_wall_refuses_nonfinite_or_nonpositive_diffusivity(value):
+        """One mechanism, one message: NaN, +-inf, zero, negative, a subnormal, and a value
+        whose worst-case frequency overflows are all refused by the same check."""
+        with pytest.raises(PlasmaStateError) as exc:
+>           _neutral_diffusion_reactor(declaration=_meta_declaration(diffusivity=(value, 'cm^2*torr/s')))
+
+test/rmgpy/solver/plasmaWallTest.py:2784: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test/rmgpy/solver/plasmaWallTest.py:2653: in _neutral_diffusion_reactor
+    reactor = PlasmaReactor((tgas, 'K'), (pressure, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+>   def __init__(self, T, P, initial_mole_fractions, Te, n_sims=1, termination=None, sensitive_species=None,
+E   TypeError: __init__() got an unexpected keyword argument 'wall_neutral_diffusion'
+
+rmgpy/solver/plasma.pyx:322: TypeError
+____ test_neutral_wall_refuses_nonfinite_or_nonpositive_diffusivity[5e-324] ____
+
+value = 5e-324
+
+    @pytest.mark.parametrize("value", [float('nan'), float('inf'), float('-inf'), 0.0, -1.0,
+                                       5.0e-324, 1.0e308])
+    def test_neutral_wall_refuses_nonfinite_or_nonpositive_diffusivity(value):
+        """One mechanism, one message: NaN, +-inf, zero, negative, a subnormal, and a value
+        whose worst-case frequency overflows are all refused by the same check."""
+        with pytest.raises(PlasmaStateError) as exc:
+>           _neutral_diffusion_reactor(declaration=_meta_declaration(diffusivity=(value, 'cm^2*torr/s')))
+
+test/rmgpy/solver/plasmaWallTest.py:2784: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test/rmgpy/solver/plasmaWallTest.py:2653: in _neutral_diffusion_reactor
+    reactor = PlasmaReactor((tgas, 'K'), (pressure, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+>   def __init__(self, T, P, initial_mole_fractions, Te, n_sims=1, termination=None, sensitive_species=None,
+E   TypeError: __init__() got an unexpected keyword argument 'wall_neutral_diffusion'
+
+rmgpy/solver/plasma.pyx:322: TypeError
+____ test_neutral_wall_refuses_nonfinite_or_nonpositive_diffusivity[1e+308] ____
+
+value = 1e+308
+
+    @pytest.mark.parametrize("value", [float('nan'), float('inf'), float('-inf'), 0.0, -1.0,
+                                       5.0e-324, 1.0e308])
+    def test_neutral_wall_refuses_nonfinite_or_nonpositive_diffusivity(value):
+        """One mechanism, one message: NaN, +-inf, zero, negative, a subnormal, and a value
+        whose worst-case frequency overflows are all refused by the same check."""
+        with pytest.raises(PlasmaStateError) as exc:
+>           _neutral_diffusion_reactor(declaration=_meta_declaration(diffusivity=(value, 'cm^2*torr/s')))
+
+test/rmgpy/solver/plasmaWallTest.py:2784: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test/rmgpy/solver/plasmaWallTest.py:2653: in _neutral_diffusion_reactor
+    reactor = PlasmaReactor((tgas, 'K'), (pressure, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+>   def __init__(self, T, P, initial_mole_fractions, Te, n_sims=1, termination=None, sensitive_species=None,
+E   TypeError: __init__() got an unexpected keyword argument 'wall_neutral_diffusion'
+
+rmgpy/solver/plasma.pyx:322: TypeError
+_ test_neutral_wall_refuses_malformed_declaration[wrong dimension-declaration0-dimension] _
+
+label = 'wrong dimension'
+declaration = {'Ar*': {'diffusivity': (54.0, 'cm^2/s'), 'product': 'Ar'}}
+fragment = 'dimension'
+
+    @pytest.mark.parametrize("label,declaration,fragment", [
+        ("wrong dimension", _meta_declaration(diffusivity=(54.0, 'cm^2/s')), 'dimension'),
+        ("not a dict", [('Ar*', 'Ar')], 'dict'),
+        ("entry missing diffusivity", {'Ar*': {'product': 'Ar'}}, 'diffusivity'),
+        ("entry missing product", {'Ar*': {'diffusivity': (54.0, 'cm^2*torr/s')}}, 'product'),
+        ("unknown entry key", {'Ar*': {'product': 'Ar', 'diffusivity': (54.0, 'cm^2*torr/s'),
+                                        'gamma': 1.0}}, 'gamma'),
+        ("charged species declared", _meta_declaration(label='Ar+'), 'neutral'),
+        ("product is the source", _meta_declaration(product='Ar*'), 'itself'),
+        ("product not in core", _meta_declaration(product='Xe'), 'Xe'),
+        ("product charged", _meta_declaration(product='Ar+'), 'neutral'),
+    ])
+    def test_neutral_wall_refuses_malformed_declaration(label, declaration, fragment):
+        with pytest.raises(PlasmaStateError) as exc:
+>           _neutral_diffusion_reactor(declaration=declaration)
+
+test/rmgpy/solver/plasmaWallTest.py:2803: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test/rmgpy/solver/plasmaWallTest.py:2653: in _neutral_diffusion_reactor
+    reactor = PlasmaReactor((tgas, 'K'), (pressure, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+>   def __init__(self, T, P, initial_mole_fractions, Te, n_sims=1, termination=None, sensitive_species=None,
+E   TypeError: __init__() got an unexpected keyword argument 'wall_neutral_diffusion'
+
+rmgpy/solver/plasma.pyx:322: TypeError
+_ test_neutral_wall_refuses_malformed_declaration[not a dict-declaration1-dict] _
+
+label = 'not a dict', declaration = [('Ar*', 'Ar')], fragment = 'dict'
+
+    @pytest.mark.parametrize("label,declaration,fragment", [
+        ("wrong dimension", _meta_declaration(diffusivity=(54.0, 'cm^2/s')), 'dimension'),
+        ("not a dict", [('Ar*', 'Ar')], 'dict'),
+        ("entry missing diffusivity", {'Ar*': {'product': 'Ar'}}, 'diffusivity'),
+        ("entry missing product", {'Ar*': {'diffusivity': (54.0, 'cm^2*torr/s')}}, 'product'),
+        ("unknown entry key", {'Ar*': {'product': 'Ar', 'diffusivity': (54.0, 'cm^2*torr/s'),
+                                        'gamma': 1.0}}, 'gamma'),
+        ("charged species declared", _meta_declaration(label='Ar+'), 'neutral'),
+        ("product is the source", _meta_declaration(product='Ar*'), 'itself'),
+        ("product not in core", _meta_declaration(product='Xe'), 'Xe'),
+        ("product charged", _meta_declaration(product='Ar+'), 'neutral'),
+    ])
+    def test_neutral_wall_refuses_malformed_declaration(label, declaration, fragment):
+        with pytest.raises(PlasmaStateError) as exc:
+>           _neutral_diffusion_reactor(declaration=declaration)
+
+test/rmgpy/solver/plasmaWallTest.py:2803: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test/rmgpy/solver/plasmaWallTest.py:2653: in _neutral_diffusion_reactor
+    reactor = PlasmaReactor((tgas, 'K'), (pressure, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+>   def __init__(self, T, P, initial_mole_fractions, Te, n_sims=1, termination=None, sensitive_species=None,
+E   TypeError: __init__() got an unexpected keyword argument 'wall_neutral_diffusion'
+
+rmgpy/solver/plasma.pyx:322: TypeError
+_ test_neutral_wall_refuses_malformed_declaration[entry missing diffusivity-declaration2-diffusivity] _
+
+label = 'entry missing diffusivity', declaration = {'Ar*': {'product': 'Ar'}}
+fragment = 'diffusivity'
+
+    @pytest.mark.parametrize("label,declaration,fragment", [
+        ("wrong dimension", _meta_declaration(diffusivity=(54.0, 'cm^2/s')), 'dimension'),
+        ("not a dict", [('Ar*', 'Ar')], 'dict'),
+        ("entry missing diffusivity", {'Ar*': {'product': 'Ar'}}, 'diffusivity'),
+        ("entry missing product", {'Ar*': {'diffusivity': (54.0, 'cm^2*torr/s')}}, 'product'),
+        ("unknown entry key", {'Ar*': {'product': 'Ar', 'diffusivity': (54.0, 'cm^2*torr/s'),
+                                        'gamma': 1.0}}, 'gamma'),
+        ("charged species declared", _meta_declaration(label='Ar+'), 'neutral'),
+        ("product is the source", _meta_declaration(product='Ar*'), 'itself'),
+        ("product not in core", _meta_declaration(product='Xe'), 'Xe'),
+        ("product charged", _meta_declaration(product='Ar+'), 'neutral'),
+    ])
+    def test_neutral_wall_refuses_malformed_declaration(label, declaration, fragment):
+        with pytest.raises(PlasmaStateError) as exc:
+>           _neutral_diffusion_reactor(declaration=declaration)
+
+test/rmgpy/solver/plasmaWallTest.py:2803: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test/rmgpy/solver/plasmaWallTest.py:2653: in _neutral_diffusion_reactor
+    reactor = PlasmaReactor((tgas, 'K'), (pressure, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+>   def __init__(self, T, P, initial_mole_fractions, Te, n_sims=1, termination=None, sensitive_species=None,
+E   TypeError: __init__() got an unexpected keyword argument 'wall_neutral_diffusion'
+
+rmgpy/solver/plasma.pyx:322: TypeError
+_ test_neutral_wall_refuses_malformed_declaration[entry missing product-declaration3-product] _
+
+label = 'entry missing product'
+declaration = {'Ar*': {'diffusivity': (54.0, 'cm^2*torr/s')}}
+fragment = 'product'
+
+    @pytest.mark.parametrize("label,declaration,fragment", [
+        ("wrong dimension", _meta_declaration(diffusivity=(54.0, 'cm^2/s')), 'dimension'),
+        ("not a dict", [('Ar*', 'Ar')], 'dict'),
+        ("entry missing diffusivity", {'Ar*': {'product': 'Ar'}}, 'diffusivity'),
+        ("entry missing product", {'Ar*': {'diffusivity': (54.0, 'cm^2*torr/s')}}, 'product'),
+        ("unknown entry key", {'Ar*': {'product': 'Ar', 'diffusivity': (54.0, 'cm^2*torr/s'),
+                                        'gamma': 1.0}}, 'gamma'),
+        ("charged species declared", _meta_declaration(label='Ar+'), 'neutral'),
+        ("product is the source", _meta_declaration(product='Ar*'), 'itself'),
+        ("product not in core", _meta_declaration(product='Xe'), 'Xe'),
+        ("product charged", _meta_declaration(product='Ar+'), 'neutral'),
+    ])
+    def test_neutral_wall_refuses_malformed_declaration(label, declaration, fragment):
+        with pytest.raises(PlasmaStateError) as exc:
+>           _neutral_diffusion_reactor(declaration=declaration)
+
+test/rmgpy/solver/plasmaWallTest.py:2803: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test/rmgpy/solver/plasmaWallTest.py:2653: in _neutral_diffusion_reactor
+    reactor = PlasmaReactor((tgas, 'K'), (pressure, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+>   def __init__(self, T, P, initial_mole_fractions, Te, n_sims=1, termination=None, sensitive_species=None,
+E   TypeError: __init__() got an unexpected keyword argument 'wall_neutral_diffusion'
+
+rmgpy/solver/plasma.pyx:322: TypeError
+_ test_neutral_wall_refuses_malformed_declaration[unknown entry key-declaration4-gamma] _
+
+label = 'unknown entry key'
+declaration = {'Ar*': {'diffusivity': (54.0, 'cm^2*torr/s'), 'gamma': 1.0, 'product': 'Ar'}}
+fragment = 'gamma'
+
+    @pytest.mark.parametrize("label,declaration,fragment", [
+        ("wrong dimension", _meta_declaration(diffusivity=(54.0, 'cm^2/s')), 'dimension'),
+        ("not a dict", [('Ar*', 'Ar')], 'dict'),
+        ("entry missing diffusivity", {'Ar*': {'product': 'Ar'}}, 'diffusivity'),
+        ("entry missing product", {'Ar*': {'diffusivity': (54.0, 'cm^2*torr/s')}}, 'product'),
+        ("unknown entry key", {'Ar*': {'product': 'Ar', 'diffusivity': (54.0, 'cm^2*torr/s'),
+                                        'gamma': 1.0}}, 'gamma'),
+        ("charged species declared", _meta_declaration(label='Ar+'), 'neutral'),
+        ("product is the source", _meta_declaration(product='Ar*'), 'itself'),
+        ("product not in core", _meta_declaration(product='Xe'), 'Xe'),
+        ("product charged", _meta_declaration(product='Ar+'), 'neutral'),
+    ])
+    def test_neutral_wall_refuses_malformed_declaration(label, declaration, fragment):
+        with pytest.raises(PlasmaStateError) as exc:
+>           _neutral_diffusion_reactor(declaration=declaration)
+
+test/rmgpy/solver/plasmaWallTest.py:2803: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test/rmgpy/solver/plasmaWallTest.py:2653: in _neutral_diffusion_reactor
+    reactor = PlasmaReactor((tgas, 'K'), (pressure, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+>   def __init__(self, T, P, initial_mole_fractions, Te, n_sims=1, termination=None, sensitive_species=None,
+E   TypeError: __init__() got an unexpected keyword argument 'wall_neutral_diffusion'
+
+rmgpy/solver/plasma.pyx:322: TypeError
+_ test_neutral_wall_refuses_malformed_declaration[charged species declared-declaration5-neutral] _
+
+label = 'charged species declared'
+declaration = {'Ar+': {'diffusivity': (54.0, 'cm^2*torr/s'), 'product': 'Ar'}}
+fragment = 'neutral'
+
+    @pytest.mark.parametrize("label,declaration,fragment", [
+        ("wrong dimension", _meta_declaration(diffusivity=(54.0, 'cm^2/s')), 'dimension'),
+        ("not a dict", [('Ar*', 'Ar')], 'dict'),
+        ("entry missing diffusivity", {'Ar*': {'product': 'Ar'}}, 'diffusivity'),
+        ("entry missing product", {'Ar*': {'diffusivity': (54.0, 'cm^2*torr/s')}}, 'product'),
+        ("unknown entry key", {'Ar*': {'product': 'Ar', 'diffusivity': (54.0, 'cm^2*torr/s'),
+                                        'gamma': 1.0}}, 'gamma'),
+        ("charged species declared", _meta_declaration(label='Ar+'), 'neutral'),
+        ("product is the source", _meta_declaration(product='Ar*'), 'itself'),
+        ("product not in core", _meta_declaration(product='Xe'), 'Xe'),
+        ("product charged", _meta_declaration(product='Ar+'), 'neutral'),
+    ])
+    def test_neutral_wall_refuses_malformed_declaration(label, declaration, fragment):
+        with pytest.raises(PlasmaStateError) as exc:
+>           _neutral_diffusion_reactor(declaration=declaration)
+
+test/rmgpy/solver/plasmaWallTest.py:2803: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test/rmgpy/solver/plasmaWallTest.py:2653: in _neutral_diffusion_reactor
+    reactor = PlasmaReactor((tgas, 'K'), (pressure, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+>   def __init__(self, T, P, initial_mole_fractions, Te, n_sims=1, termination=None, sensitive_species=None,
+E   TypeError: __init__() got an unexpected keyword argument 'wall_neutral_diffusion'
+
+rmgpy/solver/plasma.pyx:322: TypeError
+_ test_neutral_wall_refuses_malformed_declaration[product is the source-declaration6-itself] _
+
+label = 'product is the source'
+declaration = {'Ar*': {'diffusivity': (54.0, 'cm^2*torr/s'), 'product': 'Ar*'}}
+fragment = 'itself'
+
+    @pytest.mark.parametrize("label,declaration,fragment", [
+        ("wrong dimension", _meta_declaration(diffusivity=(54.0, 'cm^2/s')), 'dimension'),
+        ("not a dict", [('Ar*', 'Ar')], 'dict'),
+        ("entry missing diffusivity", {'Ar*': {'product': 'Ar'}}, 'diffusivity'),
+        ("entry missing product", {'Ar*': {'diffusivity': (54.0, 'cm^2*torr/s')}}, 'product'),
+        ("unknown entry key", {'Ar*': {'product': 'Ar', 'diffusivity': (54.0, 'cm^2*torr/s'),
+                                        'gamma': 1.0}}, 'gamma'),
+        ("charged species declared", _meta_declaration(label='Ar+'), 'neutral'),
+        ("product is the source", _meta_declaration(product='Ar*'), 'itself'),
+        ("product not in core", _meta_declaration(product='Xe'), 'Xe'),
+        ("product charged", _meta_declaration(product='Ar+'), 'neutral'),
+    ])
+    def test_neutral_wall_refuses_malformed_declaration(label, declaration, fragment):
+        with pytest.raises(PlasmaStateError) as exc:
+>           _neutral_diffusion_reactor(declaration=declaration)
+
+test/rmgpy/solver/plasmaWallTest.py:2803: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test/rmgpy/solver/plasmaWallTest.py:2653: in _neutral_diffusion_reactor
+    reactor = PlasmaReactor((tgas, 'K'), (pressure, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+>   def __init__(self, T, P, initial_mole_fractions, Te, n_sims=1, termination=None, sensitive_species=None,
+E   TypeError: __init__() got an unexpected keyword argument 'wall_neutral_diffusion'
+
+rmgpy/solver/plasma.pyx:322: TypeError
+_ test_neutral_wall_refuses_malformed_declaration[product not in core-declaration7-Xe] _
+
+label = 'product not in core'
+declaration = {'Ar*': {'diffusivity': (54.0, 'cm^2*torr/s'), 'product': 'Xe'}}
+fragment = 'Xe'
+
+    @pytest.mark.parametrize("label,declaration,fragment", [
+        ("wrong dimension", _meta_declaration(diffusivity=(54.0, 'cm^2/s')), 'dimension'),
+        ("not a dict", [('Ar*', 'Ar')], 'dict'),
+        ("entry missing diffusivity", {'Ar*': {'product': 'Ar'}}, 'diffusivity'),
+        ("entry missing product", {'Ar*': {'diffusivity': (54.0, 'cm^2*torr/s')}}, 'product'),
+        ("unknown entry key", {'Ar*': {'product': 'Ar', 'diffusivity': (54.0, 'cm^2*torr/s'),
+                                        'gamma': 1.0}}, 'gamma'),
+        ("charged species declared", _meta_declaration(label='Ar+'), 'neutral'),
+        ("product is the source", _meta_declaration(product='Ar*'), 'itself'),
+        ("product not in core", _meta_declaration(product='Xe'), 'Xe'),
+        ("product charged", _meta_declaration(product='Ar+'), 'neutral'),
+    ])
+    def test_neutral_wall_refuses_malformed_declaration(label, declaration, fragment):
+        with pytest.raises(PlasmaStateError) as exc:
+>           _neutral_diffusion_reactor(declaration=declaration)
+
+test/rmgpy/solver/plasmaWallTest.py:2803: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test/rmgpy/solver/plasmaWallTest.py:2653: in _neutral_diffusion_reactor
+    reactor = PlasmaReactor((tgas, 'K'), (pressure, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+>   def __init__(self, T, P, initial_mole_fractions, Te, n_sims=1, termination=None, sensitive_species=None,
+E   TypeError: __init__() got an unexpected keyword argument 'wall_neutral_diffusion'
+
+rmgpy/solver/plasma.pyx:322: TypeError
+_ test_neutral_wall_refuses_malformed_declaration[product charged-declaration8-neutral] _
+
+label = 'product charged'
+declaration = {'Ar*': {'diffusivity': (54.0, 'cm^2*torr/s'), 'product': 'Ar+'}}
+fragment = 'neutral'
+
+    @pytest.mark.parametrize("label,declaration,fragment", [
+        ("wrong dimension", _meta_declaration(diffusivity=(54.0, 'cm^2/s')), 'dimension'),
+        ("not a dict", [('Ar*', 'Ar')], 'dict'),
+        ("entry missing diffusivity", {'Ar*': {'product': 'Ar'}}, 'diffusivity'),
+        ("entry missing product", {'Ar*': {'diffusivity': (54.0, 'cm^2*torr/s')}}, 'product'),
+        ("unknown entry key", {'Ar*': {'product': 'Ar', 'diffusivity': (54.0, 'cm^2*torr/s'),
+                                        'gamma': 1.0}}, 'gamma'),
+        ("charged species declared", _meta_declaration(label='Ar+'), 'neutral'),
+        ("product is the source", _meta_declaration(product='Ar*'), 'itself'),
+        ("product not in core", _meta_declaration(product='Xe'), 'Xe'),
+        ("product charged", _meta_declaration(product='Ar+'), 'neutral'),
+    ])
+    def test_neutral_wall_refuses_malformed_declaration(label, declaration, fragment):
+        with pytest.raises(PlasmaStateError) as exc:
+>           _neutral_diffusion_reactor(declaration=declaration)
+
+test/rmgpy/solver/plasmaWallTest.py:2803: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test/rmgpy/solver/plasmaWallTest.py:2653: in _neutral_diffusion_reactor
+    reactor = PlasmaReactor((tgas, 'K'), (pressure, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+>   def __init__(self, T, P, initial_mole_fractions, Te, n_sims=1, termination=None, sensitive_species=None,
+E   TypeError: __init__() got an unexpected keyword argument 'wall_neutral_diffusion'
+
+rmgpy/solver/plasma.pyx:322: TypeError
+______________ test_neutral_wall_refuses_element_changing_product ______________
+
+    def test_neutral_wall_refuses_element_changing_product():
+        """The wall returns the SAME atoms: a declared product with a different element
+        composition is refused."""
+        electron = Species(label='e-').from_adjacency_list('1 e u1 p0 c-1')
+        ground = _ground_species('Ar')
+        meta = _metastable_species('Ar*')
+        he = Species(label='He').from_adjacency_list('1 He u0 p1 c0')
+        arp = Species(label='Ar+').from_adjacency_list('multiplicity 2\n1 Ar u1 p3 c+1')
+        imf = {electron: 1e-6, arp: 1e-6, meta: 1e-3, he: 0.1, ground: 0.9 - 1e-3 - 2e-6}
+>       reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+                                n_sims=1, termination=[],
+                                diffusion_length=(_diffusion_length(), 'm'),
+                                ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
+                                wall_recycling=1.0, wall_neutralization_products={'Ar+': 'Ar'},
+                                wall_single_bath_approximation=True,
+                                wall_neutral_diffusion=_meta_declaration(product='He'))
+
+test/rmgpy/solver/plasmaWallTest.py:2816: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+>   def __init__(self, T, P, initial_mole_fractions, Te, n_sims=1, termination=None, sensitive_species=None,
+E   TypeError: __init__() got an unexpected keyword argument 'wall_neutral_diffusion'
+
+rmgpy/solver/plasma.pyx:322: TypeError
+_____________ test_neutral_wall_refuses_declaration_without_a_wall _____________
+
+    def test_neutral_wall_refuses_declaration_without_a_wall():
+        electron, ar, arp = _argon_species()
+        with pytest.raises(PlasmaStateError) as exc:
+>           PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), {ar: 1.0}, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+                          n_sims=1, termination=[], wall_neutral_diffusion=_meta_declaration())
+
+test/rmgpy/solver/plasmaWallTest.py:2831: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+>   def __init__(self, T, P, initial_mole_fractions, Te, n_sims=1, termination=None, sensitive_species=None,
+E   TypeError: __init__() got an unexpected keyword argument 'wall_neutral_diffusion'
+
+rmgpy/solver/plasma.pyx:322: TypeError
+___________ test_seeded_metastable_decays_exponentially_on_the_wall ____________
+
+    def test_seeded_metastable_decays_exponentially_on_the_wall():
+        """A seeded Ar* in a neutral argon deck (no charged population, no chemistry)
+        decays as exp(-nu_m t) through the production integrator, and ground Ar gains
+        exactly what Ar* loses. Ar* -> Ar leaves the neutral total unchanged, so nu_m is
+        constant along the trajectory and the exponential is exact."""
+>       r, core = _neutral_diffusion_reactor(x_ion=0.0)
+
+test/rmgpy/solver/plasmaWallTest.py:2841: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test/rmgpy/solver/plasmaWallTest.py:2653: in _neutral_diffusion_reactor
+    reactor = PlasmaReactor((tgas, 'K'), (pressure, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+>   def __init__(self, T, P, initial_mole_fractions, Te, n_sims=1, termination=None, sensitive_species=None,
+E   TypeError: __init__() got an unexpected keyword argument 'wall_neutral_diffusion'
+
+rmgpy/solver/plasma.pyx:322: TypeError
+=========================== short test summary info ============================
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_frequency_matches_hand_arithmetic
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_frequency_scales_inversely_with_pressure
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_dn_form_equals_dp_form
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_residual_moves_metastable_to_ground_only
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_loss_conserves_heavy_particles
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_undeclared_metastable_has_no_neutral_wall_loss
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_jacobian_matches_finite_difference
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_jacobian_scan_can_fail
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_declaration_survives_pickle_and_deepcopy
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_nonfinite_or_nonpositive_diffusivity[nan]
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_nonfinite_or_nonpositive_diffusivity[inf]
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_nonfinite_or_nonpositive_diffusivity[-inf]
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_nonfinite_or_nonpositive_diffusivity[0.0]
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_nonfinite_or_nonpositive_diffusivity[-1.0]
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_nonfinite_or_nonpositive_diffusivity[5e-324]
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_nonfinite_or_nonpositive_diffusivity[1e+308]
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_malformed_declaration[wrong dimension-declaration0-dimension]
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_malformed_declaration[not a dict-declaration1-dict]
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_malformed_declaration[entry missing diffusivity-declaration2-diffusivity]
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_malformed_declaration[entry missing product-declaration3-product]
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_malformed_declaration[unknown entry key-declaration4-gamma]
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_malformed_declaration[charged species declared-declaration5-neutral]
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_malformed_declaration[product is the source-declaration6-itself]
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_malformed_declaration[product not in core-declaration7-Xe]
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_malformed_declaration[product charged-declaration8-neutral]
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_element_changing_product
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_neutral_wall_refuses_declaration_without_a_wall
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_seeded_metastable_decays_exponentially_on_the_wall
+====================== 28 failed, 99 deselected in 3.66s =======================

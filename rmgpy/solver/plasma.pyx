@@ -168,6 +168,28 @@ def _coerce_bool_flag(value, name, identity):
         "({3})".format(name, value, type(value).__name__, identity))
 
 
+def _require_finite_normal_positive(value, what, identity):
+    """Return ``value`` as a float, or refuse it unless it is a finite, positive, NORMAL
+    double.
+
+    The ONE refusal every neutral-wall-diffusion input goes through: nan, +-inf, zero,
+    a negative, and a positive subnormal are all the same failure -- a number the loss
+    frequency cannot be built from -- so they are refused by one test, not by a list of
+    cases that a new spelling of "unusable" could slip past. Anything float() rejects is
+    read as nan and refused by the same test.
+    """
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        v = float('nan')
+    if not (np.isfinite(v) and v >= np.finfo(np.float64).tiny):
+        raise PlasmaStateError(
+            "{0} must be a finite, positive, normal number; got {1!r}. A non-finite, "
+            "zero, negative or subnormal value cannot set a wall loss frequency. "
+            "({2})".format(what, value, identity))
+    return v
+
+
 cdef class PlasmaReactor(ReactionSystem):
     """
     A two-temperature plasma reaction system: a homogeneous, isobaric batch
@@ -318,6 +340,19 @@ cdef class PlasmaReactor(ReactionSystem):
     # the multiplier). Set once, at initialization, so the residual and the
     # Jacobian can never disagree about it mid-run.
     cdef public double charge_row_scale
+    # Declared neutral-diffusion wall loss (wall_neutral_diffusion): an excited neutral
+    # that is not charged, so the ambipolar nu_wall does not see it, but that is still
+    # lost at the wall -- by free neutral diffusion, nu_m = D_m/Lambda^2 -- and returns
+    # as its declared ground state. Only DECLARED species are touched; nothing is
+    # inferred from an electronic state. wall_neutral_diffusion is the declaration as
+    # given (label -> {'product', 'diffusivity'}), stored so __reduce__ round-trips it;
+    # wall_neutral_dn_by_label is its reference D*N (1/(m*s)) per label, set in
+    # _configure_wall; wall_neutral_dn / wall_neutral_target are the per-core-species
+    # arrays resolved in _resolve_wall_state (0.0 / -1 where undeclared).
+    cdef public dict wall_neutral_diffusion
+    cdef public dict wall_neutral_dn_by_label
+    cdef public np.ndarray wall_neutral_dn
+    cdef public np.ndarray wall_neutral_target
 
     def __init__(self, T, P, initial_mole_fractions, Te, n_sims=1, termination=None, sensitive_species=None,
                  sensitivity_threshold=1e-3, sens_conditions=None, const_spc_names=None,
@@ -328,7 +363,8 @@ cdef class PlasmaReactor(ReactionSystem):
                  ionisation_source=None,
                  max_ionisation_degree=PLASMA_WALL_MAX_IONISATION_DEGREE,
                  wall_single_bath_approximation=False,
-                 quasineutral_electron=False):
+                 quasineutral_electron=False,
+                 wall_neutral_diffusion=None):
         ReactionSystem.__init__(self, termination, sensitive_species, sensitivity_threshold)
 
         if isinstance(T, list) or isinstance(P, list) or isinstance(Te, list):
@@ -380,14 +416,16 @@ cdef class PlasmaReactor(ReactionSystem):
                              wall_neutralization_products,
                              ionisation_source, max_ionisation_degree,
                              wall_single_bath_approximation,
-                             quasineutral_electron)
+                             quasineutral_electron,
+                             wall_neutral_diffusion)
 
     def _configure_wall(self, diffusion_length, ion_reduced_mobility,
                         mobility_reference_density, wall_recycling,
                         wall_neutralization_products,
                         ionisation_source, max_ionisation_degree,
                         wall_single_bath_approximation,
-                        quasineutral_electron):
+                        quasineutral_electron,
+                        wall_neutral_diffusion=None):
         """
         Validate and store the charged-particle wall boundary parameters.
 
@@ -464,6 +502,8 @@ cdef class PlasmaReactor(ReactionSystem):
                 supplied.append('wall_recycling')
             if max_ionisation_degree != PLASMA_WALL_MAX_IONISATION_DEGREE:
                 supplied.append('max_ionisation_degree')
+            if wall_neutral_diffusion:
+                supplied.append('wall_neutral_diffusion')
             if supplied:
                 raise PlasmaStateError(
                     "wall-only option(s) {0} were given, but there is no wall to apply "
@@ -672,6 +712,116 @@ cdef class PlasmaReactor(ReactionSystem):
                 "positive; got {0!r}. ({1})".format(
                     self.max_ionisation_degree, self._identity()))
 
+        self._configure_neutral_wall_diffusion(wall_neutral_diffusion)
+
+    def _configure_neutral_wall_diffusion(self, wall_neutral_diffusion):
+        """
+        Validate and store the declared neutral-diffusion wall loss.
+
+        ``wall_neutral_diffusion`` maps the label of an excited NEUTRAL species to
+        ``{'product': <ground-state label>, 'diffusivity': <reference D>}``. The
+        species is lost at ``nu_m = D_m/Lambda^2`` and returns as ``product``. The
+        diffusion length is the wall's own ``Lambda``, and ``D_m`` scales as
+        ``1/n_neutral`` -- the same neutral density, with the same numerical floor, as
+        the ion mobility in :meth:`compute_nu_wall`.
+
+        The reference diffusivity is given as a pressure product ``D*p`` (e.g.
+        ``(54, 'cm^2*torr/s')``) or a density product ``D*N`` (``1/(m*s)``). ``D*p``
+        converts to ``D*N = D*p/(k_B*T_gas)`` at the reactor's gas temperature, so a
+        ``D*p`` quoted at another temperature is held at its reference value, not
+        rescaled -- the declaration states the value at the conditions it applies to.
+
+        Shape, units and the sign/finiteness of the number are checked here. The labels
+        are resolved against the core species in :meth:`_resolve_neutral_wall_diffusion`
+        once the species exist.
+        """
+        self.wall_neutral_dn = None
+        self.wall_neutral_target = None
+        self.wall_neutral_dn_by_label = {}
+        self.wall_neutral_diffusion = {}
+        if wall_neutral_diffusion is None:
+            return
+        if not isinstance(wall_neutral_diffusion, dict):
+            raise PlasmaStateError(
+                "wall_neutral_diffusion must be a dict mapping an excited neutral label "
+                "to {{'product': <label>, 'diffusivity': <D*p or D*N>}}; got a {0} "
+                "({1!r}). ({2})".format(type(wall_neutral_diffusion).__name__,
+                                        wall_neutral_diffusion, self._identity()))
+        dp_dim = pq.Quantity(1.0, 'm^2*Pa/s').simplified.dimensionality
+        dn_dim = pq.Quantity(1.0, '1/(m*s)').simplified.dimensionality
+        declaration = {}
+        dn_by_label = {}
+        for label, entry in wall_neutral_diffusion.items():
+            if not isinstance(label, str) or not label:
+                raise PlasmaStateError(
+                    "wall_neutral_diffusion keys must be species labels (non-empty "
+                    "strings); got {0!r}. ({1})".format(label, self._identity()))
+            if not isinstance(entry, dict):
+                raise PlasmaStateError(
+                    "wall_neutral_diffusion[{0!r}] must be a dict with exactly the keys "
+                    "'product' and 'diffusivity'; got {1!r}. ({2})".format(
+                        label, entry, self._identity()))
+            missing = [k for k in ('product', 'diffusivity') if k not in entry]
+            unknown = sorted(repr(k) for k in entry if k not in ('product', 'diffusivity'))
+            if missing or unknown:
+                raise PlasmaStateError(
+                    "wall_neutral_diffusion[{0!r}] must have exactly the keys 'product' "
+                    "and 'diffusivity'; missing {1}, unknown {2}. There is no default "
+                    "for either, and an unknown key is refused rather than ignored. "
+                    "({3})".format(label, missing, unknown, self._identity()))
+            product = entry['product']
+            if not isinstance(product, str) or not product:
+                raise PlasmaStateError(
+                    "wall_neutral_diffusion[{0!r}]['product'] must be the label of the "
+                    "ground-state neutral the species returns as; got {1!r}. "
+                    "({2})".format(label, product, self._identity()))
+            if product == label:
+                raise PlasmaStateError(
+                    "wall_neutral_diffusion[{0!r}] names {0!r} as its own wall product. "
+                    "A species that returns as itself is not lost at the wall; name the "
+                    "ground state it de-excites to. ({1})".format(label, self._identity()))
+            diffusivity = entry['diffusivity']
+            what = ("wall_neutral_diffusion[{0!r}] reference diffusivity (D*N at "
+                    "T_gas={1!r} K, from {2!r})".format(label, self.T.value_si, diffusivity))
+            try:
+                q = Quantity(diffusivity)
+                got = pq.Quantity(1.0, q.units).simplified.dimensionality
+            except Exception as exc:
+                raise PlasmaStateError(
+                    "wall_neutral_diffusion[{0!r}]['diffusivity']={1!r} could not be read "
+                    "as a quantity with units ({2}). Give it as (value, 'cm^2*torr/s') or "
+                    "(value, '1/(m*s)'). ({3})".format(
+                        label, diffusivity, exc, self._identity()))
+            if got == dp_dim:
+                dn = q.value_si / ((constants.R / constants.Na) * self.T.value_si)
+            elif got == dn_dim:
+                dn = q.value_si
+            else:
+                raise PlasmaStateError(
+                    "wall_neutral_diffusion[{0!r}]['diffusivity'] must have the dimension "
+                    "of a diffusivity-pressure product D*p (e.g. cm^2*torr/s) or a "
+                    "diffusivity-density product D*N (1/(m*s)); got units {1!r}. A bare "
+                    "diffusivity carries no pressure scaling and is refused rather than "
+                    "read at an assumed pressure. ({2})".format(
+                        label, q.units, self._identity()))
+            dn = _require_finite_normal_positive(dn, what, self._identity())
+            # Refuse, as compute_nu_wall's guard does, a combination that is finite on its
+            # own but whose loss frequency is not, evaluated at the run-time worst case:
+            # the neutral-density floor, where nu_m is largest.
+            worst_n_neutral = PLASMA_NEUTRAL_DENSITY_FLOOR_FRACTION * PLASMA_LOSCHMIDT
+            _require_finite_normal_positive(
+                dn / (worst_n_neutral * self.diffusion_length.value_si
+                      * self.diffusion_length.value_si),
+                "the wall_neutral_diffusion[{0!r}] loss frequency nu_m = D_m/Lambda^2 at "
+                "the neutral-density floor n_neutral={1!r} m^-3 (D*N={2!r} 1/(m*s), "
+                "Lambda={3!r} m)".format(label, worst_n_neutral, dn,
+                                         self.diffusion_length.value_si),
+                self._identity())
+            declaration[label] = {'product': product, 'diffusivity': diffusivity}
+            dn_by_label[label] = dn
+        self.wall_neutral_diffusion = declaration
+        self.wall_neutral_dn_by_label = dn_by_label
+
     def convert_initial_keys_to_species_objects(self, species_dict):
         """
         Convert the ``initial_mole_fractions`` dictionary from species labels into
@@ -731,7 +881,8 @@ cdef class PlasmaReactor(ReactionSystem):
                  (self.ionisation_source if self.has_wall else None),
                  self.max_ionisation_degree,
                  self.wall_single_bath_approximation,
-                 self.quasineutral_electron))
+                 self.quasineutral_electron,
+                 self.wall_neutral_diffusion))
 
     cpdef initialize_model(self, list core_species, list core_reactions, list edge_species, list edge_reactions,
                           list surface_species=None, list surface_reactions=None, list pdep_networks=None,
@@ -1814,11 +1965,88 @@ cdef class PlasmaReactor(ReactionSystem):
                 delta_h[i] = h_ion - h_neu
         self.wall_neutralization_delta_h = delta_h
 
+        self._resolve_neutral_wall_diffusion(core_species, charges)
+
         self.species_charges = charges
         self.neutral_heavy_mask = neutral_mask
         self.wall_recycle_target = recycle
         self.source_cation_target = source_cation
         self.wall_loss_rates = np.zeros(n, float)
+
+    def _resolve_neutral_wall_diffusion(self, list core_species, charges):
+        """
+        Resolve ``wall_neutral_diffusion`` against the core into ``wall_neutral_dn``
+        (reference D*N per core species, 0.0 where undeclared) and
+        ``wall_neutral_target`` (index of the declared ground-state product, -1 where
+        undeclared).
+
+        A declared label that is not (yet) a core species is skipped: the core grows
+        during generation, and the loss applies from the iteration the species enters
+        it. Once it is in the core, the declaration must resolve completely -- the
+        species uncharged, the product a single uncharged core species other than
+        itself with the same elemental composition, so the wall conserves mass and
+        elements -- or it is refused by name.
+        """
+        cdef Py_ssize_t n = len(core_species)
+        cdef Py_ssize_t i, j
+        dn = np.zeros(n, float)
+        target = np.full(n, -1, dtype=np.int_)
+        labels = [getattr(s, 'label', None) for s in core_species]
+        for label, entry in self.wall_neutral_diffusion.items():
+            product = entry['product']
+            carriers = [k for k in range(n) if labels[k] == label]
+            if not carriers:
+                logging.info("PlasmaReactor wall: wall_neutral_diffusion declares %r, which "
+                             "is not a core species; no neutral wall loss applied to it.",
+                             label)
+                continue
+            products = [k for k in range(n) if labels[k] == product]
+            for name, found in ((label, carriers), (product, products)):
+                if len(found) > 1:
+                    raise PlasmaStateError(
+                        "wall_neutral_diffusion names {0!r}, but {1} core species carry "
+                        "that label (indices {2}); the declaration would be resolved by "
+                        "core ordering. Give each species a distinct label. ({3})".format(
+                            name, len(found), found, self._identity()))
+            i = carriers[0]
+            if i == self.electron_index or charges[i] != 0:
+                raise PlasmaStateError(
+                    "wall_neutral_diffusion declares {0!r}, which is not a neutral species "
+                    "(net charge {1}). Charged species are lost by the ambipolar wall "
+                    "term; neutral diffusion applies only to uncharged heavy species. "
+                    "({2})".format(label, int(charges[i]), self._identity()))
+            if not products:
+                raise PlasmaStateError(
+                    "wall_neutral_diffusion maps {0!r} to product {1!r}, but no core "
+                    "species carries that label. Declared core species are {2}. "
+                    "({3})".format(label, product, sorted(l for l in labels if l),
+                                   self._identity()))
+            j = products[0]
+            if j == self.electron_index or charges[j] != 0:
+                raise PlasmaStateError(
+                    "wall_neutral_diffusion maps {0!r} to {1!r}, which is not a neutral "
+                    "species (net charge {2}); the wall product of a de-excited neutral "
+                    "must be an uncharged ground state. ({3})".format(
+                        label, product, int(charges[j]), self._identity()))
+            if i == j:
+                raise PlasmaStateError(
+                    "wall_neutral_diffusion maps {0!r} to itself. ({1})".format(
+                        label, self._identity()))
+            elements_i = dict(core_species[i].molecule[0].get_element_count())
+            elements_j = dict(core_species[j].molecule[0].get_element_count())
+            if elements_i != elements_j:
+                raise PlasmaStateError(
+                    "wall_neutral_diffusion maps {0!r} ({1}) to {2!r} ({3}): the element "
+                    "counts differ, so the wall would create or destroy atoms. The product "
+                    "must be the ground state of the same composition. ({4})".format(
+                        label, elements_i, product, elements_j, self._identity()))
+            dn[i] = self.wall_neutral_dn_by_label[label]
+            target[i] = j
+            logging.info("PlasmaReactor wall: %r is lost by neutral diffusion "
+                         "(D*N=%g 1/(m*s)) and returns as %r, as declared by "
+                         "wall_neutral_diffusion.", label, dn[i], product)
+        self.wall_neutral_dn = dn
+        self.wall_neutral_target = target
 
     def _species_enthalpy(self, spc, double T):
         """Formation enthalpy (J/mol) at ``T``, or None when thermo is absent or the
@@ -1942,6 +2170,43 @@ cdef class PlasmaReactor(ReactionSystem):
         d_a = mu_i * (constants.R / constants.Na) * self.Te.value_si / constants.e
         lam = self.diffusion_length.value_si
         return d_a / (lam * lam)
+
+    cdef double _neutral_wall_scale(self, np.ndarray y, double V):
+        """
+        ``1/(n_neutral * Lambda^2)``, m^-1, with ``n_neutral`` computed and floored
+        exactly as :meth:`compute_nu_wall` does, so a declared species' loss frequency is
+        ``nu_m = (D*N) * scale`` and follows the same neutral density as the ion mobility.
+        Never raises, for the reason given in :meth:`compute_nu_wall`.
+        """
+        cdef double y_neutral = 0.0, n_neutral, lam
+        cdef Py_ssize_t j
+        for j in range(self.num_core_species):
+            if self.neutral_heavy_mask[j]:
+                y_neutral += y[j]
+        n_neutral = y_neutral * constants.Na / V
+        if not (n_neutral > self.wall_neutral_density_floor):
+            n_neutral = self.wall_neutral_density_floor
+        lam = self.diffusion_length.value_si
+        return 1.0 / (n_neutral * lam * lam)
+
+    cpdef np.ndarray compute_neutral_wall_frequencies(self, np.ndarray y, double V):
+        """
+        Per-core-species neutral-diffusion wall loss frequency, s^-1:
+
+        .. math::
+
+            D_m = \\frac{(D N)_m}{n_{neutral}}, \\quad
+            \\nu_m = \\frac{D_m}{\\Lambda^2}
+
+        Nonzero only for the species declared in ``wall_neutral_diffusion`` and present
+        in the core; zero for every other species, charged or neutral. The diffusion
+        length is the wall's ``Lambda`` and ``n_neutral`` is the same (floored) neutral
+        density :meth:`compute_nu_wall` uses, so ``nu_m/nu_wall`` is independent of the
+        gas density.
+        """
+        if not self.has_wall or self.wall_neutral_dn is None:
+            return np.zeros(self.num_core_species, float)
+        return self.wall_neutral_dn * self._neutral_wall_scale(y, V)
 
     cpdef check_wall_support(self, np.ndarray y):
         """
@@ -2175,6 +2440,17 @@ cdef class PlasmaReactor(ReactionSystem):
                 neutral_available = False
             else:
                 neutral_power += dh * loss
+        # Declared excited neutrals: lost at nu_m and returned in full as the ground state.
+        # The excitation energy they deposit at the surface is not modelled.
+        if self.wall_neutral_target is not None:
+            nu_m_all = self.compute_neutral_wall_frequencies(y, V)
+            for j in range(self.num_core_species):
+                tgt = self.wall_neutral_target[j]
+                if tgt < 0:
+                    continue
+                loss = nu_m_all[j] * y[j]
+                flux[j] -= loss
+                flux[tgt] += loss
         self.wall_flux = flux
         self.nu_wall_latched = nu
         self.wall_diagnostics_time = t
@@ -2796,7 +3072,7 @@ cdef class PlasmaReactor(ReactionSystem):
         ``self.wall_loss_rates`` so a caller can integrate the flux INDEPENDENTLY
         of the gas-phase deficit and compare the two.
         """
-        cdef double nu, loss, y_neutral = 0.0, source_total, rate, y_ionisable = 0.0
+        cdef double nu, loss, y_neutral = 0.0, source_total, rate, y_ionisable = 0.0, scale
         cdef Py_ssize_t j, target
         cdef np.ndarray[np.float64_t, ndim=1] wall
 
@@ -2825,6 +3101,22 @@ cdef class PlasmaReactor(ReactionSystem):
                 # remaining (1-gamma) stays on the wall and leaves the gas phase.
                 res[target] += self.wall_recycling * loss
                 wall[target] += self.wall_recycling * loss
+
+        # Declared excited neutrals diffuse to the wall and return as their ground
+        # state: every lost molecule comes back (no pumping, no gamma), so the term moves
+        # moles between two neutral columns and changes neither the neutral total nor V.
+        # Undeclared species have target -1 and are not visited.
+        if self.wall_neutral_target is not None:
+            scale = self._neutral_wall_scale(y, V)
+            for j in range(self.num_core_species):
+                target = self.wall_neutral_target[j]
+                if target < 0:
+                    continue
+                loss = self.wall_neutral_dn[j] * scale * y[j]
+                res[j] -= loss
+                wall[j] -= loss
+                res[target] += loss
+                wall[target] += loss
 
         # External volumetric source of ion-electron pairs (the declared physical
         # mechanism that replaces the numerical seed). Its total production is
@@ -2971,6 +3263,7 @@ cdef class PlasmaReactor(ReactionSystem):
                               np.ndarray[np.float64_t, ndim=2] pd):
         """Partial derivatives of exactly the terms :meth:`_apply_wall_terms` adds."""
         cdef double nu, y_neutral = 0.0, loss, dnu_rel, dloss, source_total, term, dterm, y_ionisable = 0.0
+        cdef double scale, nu_m
         cdef Py_ssize_t i, k, target
         cdef double gamma = self.wall_recycling
         cdef bint neutral_floored = 0
@@ -3016,6 +3309,30 @@ cdef class PlasmaReactor(ReactionSystem):
                 pd[i, k] -= dloss
                 if target >= 0 and gamma > 0.0:
                     pd[target, k] += gamma * dloss
+
+        # Neutral-diffusion loss of the declared excited neutrals. nu_m shares nu_wall's
+        # 1/n_neutral scaling and its floor, so its relative derivative is the same
+        # dnu_rel as above.
+        if self.wall_neutral_target is not None:
+            scale = self._neutral_wall_scale(y, V)
+            for i in range(self.num_core_species):
+                target = self.wall_neutral_target[i]
+                if target < 0:
+                    continue
+                nu_m = self.wall_neutral_dn[i] * scale
+                loss = nu_m * y[i]
+                for k in range(self.num_core_species):
+                    if neutral_floored:
+                        dnu_rel = 0.0
+                    else:
+                        dnu_rel = dVdy[k] / V
+                        if self.neutral_heavy_mask[k]:
+                            dnu_rel -= 1.0 / y_neutral
+                    dloss = loss * dnu_rel
+                    if k == i:
+                        dloss += nu_m
+                    pd[i, k] -= dloss
+                    pd[target, k] += dloss
 
         # Denominator is the ionisable-neutral total, matching _apply_wall_terms; the
         # d/dy term therefore fires only on an ionisable neutral (the only species in

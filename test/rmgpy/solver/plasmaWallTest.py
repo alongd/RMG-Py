@@ -2616,3 +2616,250 @@ def test_zero_core_flux_with_wall_loss_abstains_on_ratio_but_keeps_an_absolute_c
     with np.errstate(invalid='raise', divide='raise'):
         result = _simulate(r, core, rxns)
     assert result[0] is True, "the wall-only discharge did not terminate through the absolute criterion"
+
+
+# ---- I-269: neutral diffusion wall loss for DECLARED excited neutrals ----
+#
+# A declared excited neutral (Ar* below) is lost to the wall at nu_m = D_m/Lambda^2,
+# with D_m = (D*N)_ref/n_gas scaled exactly like the ion mobility, and returns as the
+# declared ground-state product. The reference value is supplied per species, as D*p
+# or as D*N; nothing is inferred from the electronic state.
+
+DP_AR_META = 54.0                         # cm^2 Torr / s, the deck's reference D*p
+CM2_TORR_TO_SI = 1.0e-4 * TORR_TO_PA      # (cm^2 Torr/s) -> (m^2 Pa/s)
+
+
+def _meta_declaration(diffusivity=(DP_AR_META, 'cm^2*torr/s'), product='Ar', label='Ar*'):
+    return {label: {'product': product, 'diffusivity': diffusivity}}
+
+
+def _neutral_diffusion_reactor(declaration='default', tgas=TGAS, pressure=P_NOMINAL,
+                               gamma=1.0, x_meta=1.0e-3, x_ion=1.0e-6, source=None):
+    """Ground Ar, metastable Ar*, Ar+, e- on a wall, with the wall's ion product pinned
+    to ground Ar, and (by default) Ar* declared to diffuse to the wall as Ar."""
+    electron = Species(label='e-').from_adjacency_list('1 e u1 p0 c-1')
+    ground = _ground_species('Ar')
+    meta = _metastable_species('Ar*')
+    arp = Species(label='Ar+').from_adjacency_list('multiplicity 2\n1 Ar u1 p3 c+1')
+    imf = {electron: x_ion, arp: x_ion, meta: x_meta, ground: 1.0 - 2.0 * x_ion - x_meta}
+    kwargs = dict(diffusion_length=(_diffusion_length(), 'm'),
+                  ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
+                  wall_recycling=gamma,
+                  wall_neutralization_products={'Ar+': 'Ar'})
+    if source is not None:
+        kwargs['ionisation_source'] = (source, 'm^-3/s')
+    if declaration == 'default':
+        declaration = _meta_declaration()
+    if declaration is not None:
+        kwargs['wall_neutral_diffusion'] = declaration
+    reactor = PlasmaReactor((tgas, 'K'), (pressure, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+                            n_sims=1, termination=[], **kwargs)
+    core = [electron, ground, meta, arp]
+    reactor.initialize_model(core, [], [], [])
+    return reactor, core
+
+
+def _meta_state(reactor, core, n_meta=1.0e-3, n_ion=0.0, n_total=1.0):
+    y = np.zeros(reactor.num_core_species, float)
+    idx = {s.label: i for i, s in enumerate(core)}
+    y[idx['Ar*']] = n_meta
+    y[idx['Ar+']] = n_ion
+    y[idx['e-']] = n_ion
+    y[idx['Ar']] = n_total - n_meta - 2.0 * n_ion
+    return y, idx
+
+
+def test_neutral_wall_frequency_matches_hand_arithmetic():
+    """nu_m = (D*p)/p/Lambda^2 at a state with no charged population, where the
+    operator's neutral density is exactly p/(k_B T). Hand value from the declared
+    54 cm^2 Torr/s, 5 Torr and the deck geometry; agreement to 1e-12 relative."""
+    for tgas in (300.0, TGAS, 600.0):
+        r, core = _neutral_diffusion_reactor(tgas=tgas)
+        y, idx = _meta_state(r, core, n_ion=0.0)
+        nu = r.compute_neutral_wall_frequencies(y, r.compute_volume(y))
+        lam = _diffusion_length()
+        hand = DP_AR_META * CM2_TORR_TO_SI / P_NOMINAL / (lam * lam)
+        assert abs(nu[idx['Ar*']] / hand - 1.0) < 1e-12, (tgas, nu[idx['Ar*']], hand)
+        for label in ('Ar', 'Ar+', 'e-'):
+            assert nu[idx[label]] == 0.0
+
+
+def test_neutral_wall_frequency_scales_inversely_with_pressure():
+    lam = _diffusion_length()
+    for p_torr in (1.0, 5.0, 20.0):
+        r, core = _neutral_diffusion_reactor(pressure=p_torr * TORR_TO_PA)
+        y, idx = _meta_state(r, core)
+        nu = r.compute_neutral_wall_frequencies(y, r.compute_volume(y))[idx['Ar*']]
+        assert abs(nu * p_torr * lam * lam / (DP_AR_META * 1.0e-4) - 1.0) < 1e-12
+
+
+def test_neutral_wall_dn_form_equals_dp_form():
+    """(D*N) = (D*p)/(k_B T) at the reactor gas temperature: the two spellings of the
+    same reference coefficient give the same frequency."""
+    # R/Na, not constants.kB: the engine converts with the same Boltzmann constant its
+    # EOS uses, and the two differ at the 6e-8 level (constant vintages).
+    dn_si = DP_AR_META * CM2_TORR_TO_SI / ((constants.R / constants.Na) * TGAS)
+    r1, core1 = _neutral_diffusion_reactor()
+    r2, core2 = _neutral_diffusion_reactor(
+        declaration=_meta_declaration(diffusivity=(dn_si, '1/(m*s)')))
+    y, idx = _meta_state(r1, core1, n_ion=1.0e-6)
+    nu1 = r1.compute_neutral_wall_frequencies(y, r1.compute_volume(y))[idx['Ar*']]
+    nu2 = r2.compute_neutral_wall_frequencies(y, r2.compute_volume(y))[idx['Ar*']]
+    assert abs(nu1 / nu2 - 1.0) < 1e-12
+
+
+def test_neutral_wall_residual_moves_metastable_to_ground_only():
+    """The residual loses nu_m*y[Ar*] from Ar* and adds exactly that to Ar. Every
+    charged row, and nu_wall, are bit-identical to the undeclared reactor."""
+    rd, core_d = _neutral_diffusion_reactor()
+    ru, core_u = _neutral_diffusion_reactor(declaration=None)
+    y, idx = _meta_state(rd, core_d, n_ion=1.0e-6)
+    zeros = np.zeros(rd.num_core_species, float)
+    res_d = np.array(rd.residual(0.0, y, zeros)[0], float)
+    wall_d = np.array(rd.wall_loss_rates, float)
+    res_u = np.array(ru.residual(0.0, y, zeros)[0], float)
+    wall_u = np.array(ru.wall_loss_rates, float)
+    V = rd.compute_volume(y)
+    nu_m = rd.compute_neutral_wall_frequencies(y, V)[idx['Ar*']]
+    loss = nu_m * y[idx['Ar*']]
+    assert loss > 0.0
+
+    assert wall_u[idx['Ar*']] == 0.0
+    assert wall_d[idx['Ar*']] == -loss
+    assert abs((wall_d[idx['Ar']] - wall_u[idx['Ar']]) / loss - 1.0) < 1e-12
+    for label in ('e-', 'Ar+'):
+        assert wall_d[idx[label]] == wall_u[idx[label]]
+        assert res_d[idx[label]] == res_u[idx[label]]
+    assert rd.compute_nu_wall(y, V) == ru.compute_nu_wall(y, V)
+    assert abs((res_u[idx['Ar*']] - res_d[idx['Ar*']]) / loss - 1.0) < 1e-12
+    assert abs((res_d[idx['Ar']] - res_u[idx['Ar']]) / loss - 1.0) < 1e-12
+
+
+def test_neutral_wall_loss_conserves_heavy_particles():
+    rd, core = _neutral_diffusion_reactor(gamma=1.0)
+    y, idx = _meta_state(rd, core, n_ion=1.0e-6)
+    rd.residual(0.0, y, np.zeros(rd.num_core_species, float))
+    wall = np.array(rd.wall_loss_rates, float)
+    heavy = wall[idx['Ar']] + wall[idx['Ar*']] + wall[idx['Ar+']]
+    assert abs(heavy) <= 1e-15 * abs(wall[idx['Ar*']])
+
+
+def test_undeclared_metastable_has_no_neutral_wall_loss():
+    r, core = _neutral_diffusion_reactor(declaration=None)
+    y, idx = _meta_state(r, core, n_ion=1.0e-6)
+    assert not np.any(r.compute_neutral_wall_frequencies(y, r.compute_volume(y)))
+    r.residual(0.0, y, np.zeros(r.num_core_species, float))
+    assert r.wall_loss_rates[idx['Ar*']] == 0.0
+
+
+def test_neutral_wall_jacobian_matches_finite_difference():
+    r, core = _neutral_diffusion_reactor(gamma=0.5)
+    y, _ = _meta_state(r, core, n_ion=1.0e-6)
+    best = _jacobian_scan(r, y)
+    assert best < FD_TOLERANCE, best
+
+
+def test_neutral_wall_jacobian_scan_can_fail():
+    """Negative control: dropping the declared coefficient between the analytic
+    Jacobian and the finite differences must break agreement, so the scan above
+    actually sees the neutral wall term."""
+    r, core = _neutral_diffusion_reactor(gamma=0.5)
+    y, _ = _meta_state(r, core, n_ion=1.0e-6)
+
+    def drop(reactor):
+        reactor.wall_neutral_dn = np.zeros(reactor.num_core_species, float)
+
+    assert _jacobian_scan(r, y, mutate=drop) > FD_TOLERANCE
+
+
+def test_neutral_wall_declaration_survives_pickle_and_deepcopy():
+    r, core = _neutral_diffusion_reactor()
+    for clone in (pickle.loads(pickle.dumps(r)), copy.deepcopy(r)):
+        assert set(clone.wall_neutral_diffusion) == {'Ar*'}
+        assert clone.wall_neutral_diffusion['Ar*']['product'] == 'Ar'
+
+
+@pytest.mark.parametrize("value", [float('nan'), float('inf'), float('-inf'), 0.0, -1.0,
+                                   5.0e-324, 1.0e308])
+def test_neutral_wall_refuses_nonfinite_or_nonpositive_diffusivity(value):
+    """One mechanism, one message: NaN, +-inf, zero, negative, a subnormal, and a value
+    whose worst-case frequency overflows are all refused by the same check."""
+    with pytest.raises(PlasmaStateError) as exc:
+        _neutral_diffusion_reactor(declaration=_meta_declaration(diffusivity=(value, 'cm^2*torr/s')))
+    assert 'finite, positive' in str(exc.value)
+    assert 'Ar*' in str(exc.value)
+
+
+@pytest.mark.parametrize("label,declaration,fragment", [
+    ("wrong dimension", _meta_declaration(diffusivity=(54.0, 'cm^2/s')), 'dimension'),
+    ("not a dict", [('Ar*', 'Ar')], 'dict'),
+    ("entry missing diffusivity", {'Ar*': {'product': 'Ar'}}, 'diffusivity'),
+    ("entry missing product", {'Ar*': {'diffusivity': (54.0, 'cm^2*torr/s')}}, 'product'),
+    ("unknown entry key", {'Ar*': {'product': 'Ar', 'diffusivity': (54.0, 'cm^2*torr/s'),
+                                    'gamma': 1.0}}, 'gamma'),
+    ("charged species declared", _meta_declaration(label='Ar+'), 'neutral'),
+    ("product is the source", _meta_declaration(product='Ar*'), 'itself'),
+    ("product not in core", _meta_declaration(product='Xe'), 'Xe'),
+    ("product charged", _meta_declaration(product='Ar+'), 'neutral'),
+])
+def test_neutral_wall_refuses_malformed_declaration(label, declaration, fragment):
+    with pytest.raises(PlasmaStateError) as exc:
+        _neutral_diffusion_reactor(declaration=declaration)
+    assert fragment in str(exc.value), (label, str(exc.value))
+
+
+def test_neutral_wall_refuses_element_changing_product():
+    """The wall returns the SAME atoms: a declared product with a different element
+    composition is refused."""
+    electron = Species(label='e-').from_adjacency_list('1 e u1 p0 c-1')
+    ground = _ground_species('Ar')
+    meta = _metastable_species('Ar*')
+    he = Species(label='He').from_adjacency_list('1 He u0 p1 c0')
+    arp = Species(label='Ar+').from_adjacency_list('multiplicity 2\n1 Ar u1 p3 c+1')
+    imf = {electron: 1e-6, arp: 1e-6, meta: 1e-3, he: 0.1, ground: 0.9 - 1e-3 - 2e-6}
+    reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+                            n_sims=1, termination=[],
+                            diffusion_length=(_diffusion_length(), 'm'),
+                            ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
+                            wall_recycling=1.0, wall_neutralization_products={'Ar+': 'Ar'},
+                            wall_single_bath_approximation=True,
+                            wall_neutral_diffusion=_meta_declaration(product='He'))
+    with pytest.raises(PlasmaStateError) as exc:
+        reactor.initialize_model([electron, ground, meta, he, arp], [], [], [])
+    assert 'element' in str(exc.value)
+
+
+def test_neutral_wall_refuses_declaration_without_a_wall():
+    electron, ar, arp = _argon_species()
+    with pytest.raises(PlasmaStateError) as exc:
+        PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), {ar: 1.0}, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+                      n_sims=1, termination=[], wall_neutral_diffusion=_meta_declaration())
+    assert 'wall_neutral_diffusion' in str(exc.value)
+
+
+def test_seeded_metastable_decays_exponentially_on_the_wall():
+    """A seeded Ar* in an argon deck with no chemistry decays as exp(-nu_m t) through
+    the production integrator, and argon atoms are conserved: ground Ar gains exactly
+    what Ar* and Ar+ lose (gamma=1). The charged population is a 1e-9 seed held at its
+    steady state by the external source (S = nu_wall * n_e); without it the seed decays
+    at nu_wall >> nu_m through the integrator's tolerance and the accepted-state
+    electron guard stops the run. Ar* -> Ar leaves the neutral total unchanged, so nu_m
+    is constant along the trajectory and the exponential is exact to O(1e-7)."""
+    probe, core = _neutral_diffusion_reactor(x_ion=1.0e-9)
+    y0 = np.array(probe.y0[:probe.num_core_species], float)
+    v0 = probe.compute_volume(y0)
+    n_e = y0[0] * constants.Na / v0
+    r, core = _neutral_diffusion_reactor(x_ion=1.0e-9,
+                                         source=probe.compute_nu_wall(y0, v0) * n_e)
+    y0 = np.array(r.y0[:r.num_core_species], float)
+    idx = {s.label: i for i, s in enumerate(core)}
+    nu_m = r.compute_neutral_wall_frequencies(y0, r.compute_volume(y0))[idx['Ar*']]
+    r.termination = [TerminationTime((1.0 / nu_m, 's'))]
+    _simulate(r, core, [])
+    y = np.array(r.y[:r.num_core_species], float)
+    expected = y0[idx['Ar*']] * np.exp(-nu_m * r.t)
+    assert abs(y[idx['Ar*']] / expected - 1.0) < 1e-4, (y[idx['Ar*']], expected, r.t)
+    gained = y[idx['Ar']] - y0[idx['Ar']]
+    lost = y0[idx['Ar*']] - y[idx['Ar*']]
+    ion_lost = y0[idx['Ar+']] - y[idx['Ar+']]
+    assert abs((gained - ion_lost) / lost - 1.0) < 1e-9
