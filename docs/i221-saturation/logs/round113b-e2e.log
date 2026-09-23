@@ -1,0 +1,61 @@
+DB @ 0d9c5bc2462847c631ed0e977ed2a1dd1c3b4648  RMG-Py @ 2f35a866ab5cea943cca3cf15c7ffe79b78f08da + working tree
+
+== Li
+ok    Li: the family generates a reaction -- 1 reaction(s)
+    view: [Li] + e => [Li+] + e + e
+ok    Li: the view carries the electron on both sides, twice on the right -- placement (1, 2)
+ok    Li: copy() carries every pair to the same positions -- [(1, 1), (0, 0), (0, 2)] -> [(1, 1), (0, 0), (0, 2)]
+ok    Li: no copied pair member is an object of the original -- 0 aliased
+ok    Li: saturating [Li]
+ok    Li: typing [Li]
+ok    Li: typing e
+ok    Li: typing [Li+]
+ok    Li: typing e
+ok    Li: typing e
+ok    Li: copy() keeps the canonical reaction's class and electrons -- TemplateReaction, electrons 1
+ok    Li: make_new_reaction
+ok    Li: the model reaction keeps the pairs at the canonical positions -- [(0, 0)] -> [(0, 0)]
+ok    Li: the model's pair members are the model's own species
+ok    Li: thermo for [Li]
+ok    Li: thermo for [Li+]
+
+== CH3
+ok    CH3: the family generates a reaction -- 1 reaction(s)
+    view: [CH3] + e => [CH3+] + e + e
+ok    CH3: the view carries the electron on both sides, twice on the right -- placement (1, 2)
+ok    CH3: copy() carries every pair to the same positions -- [(0, 0), (1, 1), (1, 2)] -> [(0, 0), (1, 1), (1, 2)]
+ok    CH3: no copied pair member is an object of the original -- 0 aliased
+ok    CH3: saturating [CH3]
+ok    CH3: typing [CH3]
+ok    CH3: typing e
+ok    CH3: typing [CH3+]
+ok    CH3: typing e
+ok    CH3: typing e
+ok    CH3: copy() keeps the canonical reaction's class and electrons -- TemplateReaction, electrons 1
+ok    CH3: make_new_reaction
+ok    CH3: the model reaction keeps the pairs at the canonical positions -- [(0, 0)] -> [(0, 0)]
+ok    CH3: the model's pair members are the model's own species
+ok    CH3: thermo for [CH3]
+ok    CH3: thermo for [CH3+]
+
+== Ar metastable
+ok    Ar metastable: the family generates a reaction -- 1 reaction(s)
+    view: [Ar] + e => [Ar+] + e + e
+ok    Ar metastable: the view carries the electron on both sides, twice on the right -- placement (1, 2)
+ok    Ar metastable: copy() carries every pair to the same positions -- [(1, 1), (0, 0), (0, 2)] -> [(1, 1), (0, 0), (0, 2)]
+ok    Ar metastable: no copied pair member is an object of the original -- 0 aliased
+ok    Ar metastable: saturating [Ar] refused by name (SaturatedStructureError) -- Cannot estimate thermodynamic data by group additivity: replacing the species' 2 radical electron(s)
+ok    Ar metastable: saturating [Ar+]
+ok    Ar metastable: typing [Ar]
+ok    Ar metastable: typing e
+ok    Ar metastable: typing [Ar+]
+ok    Ar metastable: typing e
+ok    Ar metastable: typing e
+ok    Ar metastable: copy() keeps the canonical reaction's class and electrons -- TemplateReaction, electrons 1
+ok    Ar metastable: make_new_reaction
+ok    Ar metastable: the model reaction keeps the pairs at the canonical positions -- [(0, 0)] -> [(0, 0)]
+ok    Ar metastable: the model's pair members are the model's own species
+ok    Ar metastable: thermo for [Ar] refused by name (SaturatedStructureError) -- Cannot estimate thermodynamic data by group additivity: replacing the species' 2 radical electron(s)
+ok    Ar metastable: thermo for [Ar+] refused by the database (DatabaseError) -- Unable to determine thermo parameters for atom {'*': <Atom 'Ar+'>} in molecule <Molecule "[ArH+]">: 
+
+0 failure(s)

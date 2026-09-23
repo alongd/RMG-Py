@@ -113,3 +113,43 @@ failures**.
 
 The five pre-existing `i134DuplicateElectronsTest` failures are outside the focused paths and were
 not touched.
+
+## Rework after PM verification of `2f35a866a`
+
+**Item 3, the verdict cache was not identity-safe.** `_REFUSAL_VERDICTS` was a `WeakKeyDictionary`,
+so a lookup went through the metaclass's `__eq__`/`__hash__`. A benign class under a metaclass
+that compares its instances equal cached `False`, and a late lossy `Molecule` subclass under the
+same metaclass read that `False` and crossed `ForkingPickler` as a base `Molecule`. The cache is
+now a dict keyed on `id(cls)` that holds a weak reference, checked on every hit, plus a
+`weakref.finalize` that evicts the entry. A class that cannot be weakly referenced is never cached.
+
+- Red at `2f35a866a` (`logs/round113b-item3-metaclass-red.log`): **1 failed**, `DID NOT RAISE
+  PicklingError`.
+- Green (`logs/round113b-item3-metaclass-green.log`, subclass, transport and census tests): **44
+  passed**.
+
+**Own-reverse kinetics read the rebuilt reverse.** My item-1 note said nothing reads the reverse's
+order. That was wrong: `generate_kinetics` calls `family.get_kinetics(reaction.reverse, ...)` for
+an own-reverse family. A new database test, `TestTheReverseKineticsSeeTheModelSpecies`, takes a
+real H_Abstraction reaction (`CH4 + OH`) through `make_new_reaction(generate_kinetics=True)`. Its
+reverse comes from the family in template order (`[CH3], O`, not the forward's `O, [CH3]`), with
+objects of its own. The test spies on `get_kinetics` and asserts that the reverse it estimates is
+over the forward's model species, swapped, and that its pairs resolve as occurrences.
+
+- Against `fc60e5ba4`'s `model.py`: **1 failed** with the reverse-side `ValueError`
+  (`logs/round113b-ownreverse-kinetics-at-fc60e5ba4-model.log`).
+- At the fix: **1 passed**.
+- The `model.py` comment is corrected: the reverse holds objects of its own (Species here), not
+  Molecules.
+
+**Test hygiene.** The round-113 insertion of `_deny_access` had separated `_register_families`
+from its `return families`, leaving that line unreachable. It is moved back into
+`_register_families`. No caller used the return value.
+
+**Counts** (DB `0d9c5bc24`):
+
+| run | result | log |
+|---|---|---|
+| focused suite | **511 passed**, 4 skipped, 0 failed (510 + the metaclass test) | `logs/round113b-focused-suite.log` |
+| `-m database` over `quarantineTest.py` and `i221OccurrencePairsTest.py` | **26 passed** (25 + the own-reverse test) | `logs/round113b-database.log` |
+| end-to-end probe | **49 ok, 0 failures** | `logs/round113b-e2e.log` |
