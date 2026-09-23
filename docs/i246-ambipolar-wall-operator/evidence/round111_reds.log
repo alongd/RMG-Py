@@ -1,0 +1,26 @@
+=== ROUND 111 RED-FIRST (source reverted to HEAD ca384f8f3) ===
+# termination.py at HEAD -> HIGH 1 + MEDIUM tests RED (pure Python, no rebuild):
+test/rmgpy/solver/steadyStateTest.py:978: AssertionError
+=========================== short test summary info ============================
+FAILED test/rmgpy/solver/steadyStateTest.py::test_a_nonfinite_external_residual_poisons_even_an_armed_generic_channel
+FAILED test/rmgpy/solver/steadyStateTest.py::test_a_nan_external_residual_from_an_armed_channel_cannot_authorise_termination
+FAILED test/rmgpy/solver/steadyStateTest.py::test_update_returns_a_python_bool_on_the_relaxation_time_fallback
+======================= 3 failed, 41 deselected in 0.84s =======================
+
+# base.pyx source at HEAD -> census detector RED at the unguarded surface division (reads source):
+>       assert not outside, (
+            "line(s) {0} -- an enlargement/pruning/promotion ratio dividing by a rate that can be "
+E       AssertionError: base.pyx divides by char_rate outside the guarded display method log_rates, at line(s) [1123] -- an enlargement/pruning/promotion ratio dividing by a rate that can be zero. Route it through _rate_ratios_or_zero (round 111 HIGH 2); every such division found: [1123, 1638, 1641]
+E       assert not [1123]
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_no_enlargement_ratio_divides_by_char_rate_outside_the_abstaining_helper
+======================= 1 failed, 98 deselected in 1.12s =======================
+
+# HIGH 2 behavioral red, captured LIVE against the pre-rebuild base.so (the buggy division at
+# base.pyx:1123, `max(|prod|,|cons|) / char_rate`) on a reversible surface reaction A<=>B with
+# equal forward/reverse flux (char_rate == 0, gross prod == cons == 6.014e+03 mol/m^3*s):
+#
+#   rmgpy/solver/base.pyx:1123: ZeroDivisionError: float division
+#     (test_a_reversible_surface_reaction_at_equal_flux_does_not_divide_by_zero -> ERROR/RED)
+#
+# The positive-denominator control (char_rate > 0) promoted B on the same path pre-fix
+# ("Moving species CCC from surface to core"), so the criterion was not merely inert.

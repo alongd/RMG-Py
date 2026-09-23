@@ -1,0 +1,4 @@
+hidden-rising:   worst_label='b'  armed_external=False  armed=False
+genuinely settled: armed_external=True
+
+PASS: per-species departing blocks the arm the aggregate maximum hid.

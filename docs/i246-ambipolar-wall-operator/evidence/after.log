@@ -1,0 +1,30 @@
+========================================================================
+H1  deliverable deck (Ar, Ar*, Ar+, e-) wall_recycling=1.0
+  OUTCOME: NO RAISE -> Ar+ recycles to 'Ar'
+========================================================================
+H2  two neutral Ar, NO thermo  (must name thermo)
+  OUTCOME: PlasmaStateError | thermochem=True
+  MESSAGE: the wall returns ion Species(label="Ar+", molecule=[Molecule(smiles="[Ar+]")], molecular_weight=(39.8775,'amu')) as the electronic GROUND STATE of its heavy composition, but 2 of the 2 neutral core species sharing that composition have no usable thermochemistry (Species(label="Ar", molecule=[Molecule(smiles="[Ar]")], molecular_weight=(39.8775,'amu')), Species(label="Ar*", molecule=[Molecule(smiles="[Ar]")], molecular
+========================================================================
+H3  gap = 2*R*T  (must RESOLVE to ground Ar)
+  OUTCOME: NO RAISE -> resolved; Ar+ recycles to 'Ar'
+========================================================================
+H4  gap = 0.5*R*T (must REFUSE near-degeneracy)
+  OUTCOME: PlasmaStateError | ambiguous(old)=True degeneracy=True
+  MESSAGE: the wall's ground-state neutral for ion Species(label="Ar+", molecule=[Molecule(smiles="[Ar+]")], molecular_weight=(39.8775,'amu')) is ambiguous: its two lowest-energy neutral states of that composition, Species(label="Ar", thermo=ThermoData(Tdata=([298,400,600,800,1000,1500,2000],'K'), Cpdata=([20.7862,20.7862,20.7862,20.7862,20.7862,20.7862,20.7862],'J/(mol*K)'), H298=(0,'kJ/mol'), S298=(154.8,'J/(mol*K)')), molecu
+========================================================================
+H5  wallNeutralizationProducts={"Ar+":"Ar"} declaration
+  OUTCOME: NO RAISE -> declared; Ar+ recycles to 'Ar'
+========================================================================
+F   sub-floor accepted state (must be refused)
+  OUTCOME: PlasmaStateError | floor=True
+  MESSAGE: the accepted state has a neutral heavy population of 1e-09 mol, at or below the numerical floor 9.999980000000001e-07 mol that compute_nu_wall clamps to. The clamp exists only to keep a Newton TRIAL state finite; an ACCEPTED state there means the gas inventory has been consumed to where the 1/n_neutral ion mobility is meaningless and the wall loss frequency would be evaluated from the floor rather than the physics. R
+========================================================================
+A   anion in the core with a wall (must be refused)
+  OUTCOME: PlasmaStateError | anion=True
+  MESSAGE: this charged-particle wall supports a single positive-ion species, but the core carries 1 anion(s): Species(label="Cl-", molecule=[Molecule(smiles="[Cl-]")], molecular_weight=(35.4521,'amu')). An anion is confined by the electropositive sheath rather than removed at the wall, so applying the cation's wall loss frequency to it is the wrong sign of physics; the model does not support anions. (PlasmaReactor(label=None,
+========================================================================
+E   NaN electron population (must be refused)
+  OUTCOME: PlasmaStateError | electron-pop=True
+  MESSAGE: the accepted state has an electron population of nan mol, which is not a physical (finite, non-negative) population. The ionisation-degree and quasineutrality bookkeeping the wall model relies on is undefined there, so the run stops rather than continuing on a corrupt charge state. (PlasmaReactor(label=None, T=(298.15,'K'), P=(666.612,'Pa'), Te=(34813.6,'K')))
+========================================================================

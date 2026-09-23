@@ -1,0 +1,7 @@
+INFO:root:At time 1.0000e+00 s, reached target termination time.
+WARNING:root:Terminated on the backstop terminationTime at 1.4049e+00 s WITHOUT reaching steady state: residual 3.9738e-11 against tolerance 1.0000e-08 (5 consecutive steps below it, 2 needed; the integration passed the fastest relaxation time in the system). This result is NOT a steady-state result.
+update() samples: 415
+step size in decades: median=0.008009  max=0.4771
+steps spanning >= 1 full decade (would permit decade-aliasing): 0
+
+PASS: update() is fed every internal DASSL step at fine cadence, never at decade marks. The period-9 decade-aliasing case cannot arise: a periodic composition shows non-zero residual at the interior steps the criterion actually sees.

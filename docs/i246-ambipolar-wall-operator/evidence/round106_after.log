@@ -1,0 +1,18 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0
+rootdir: /home/alon/Code/RMG-Py-i246-ambipolar-wall-operator
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collected 5 items
+
+test/rmgpy/solver/steadyStateTest.py ..                                  [ 40%]
+test/rmgpy/solver/plasmaWallTest.py ...                                  [100%]
+
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED test/rmgpy/solver/steadyStateTest.py::TerminationSteadyStateLatchTest::test_a_species_rising_under_the_aggregate_maximum_still_blocks_the_arm
+PASSED test/rmgpy/solver/steadyStateTest.py::TerminationSteadyStateLatchTest::test_the_window_parameter_is_honoured_as_the_minimum_sample_span
+PASSED test/rmgpy/solver/plasmaWallTest.py::test_wall_single_bath_approximation_is_coerced_by_value_not_truthiness
+PASSED test/rmgpy/solver/plasmaWallTest.py::test_the_ionisation_source_is_validated_at_the_evolved_volume_not_only_the_initial_one
+PASSED test/rmgpy/solver/plasmaWallTest.py::test_every_solver_test_is_a_tagged_defect_reproduction_or_asserts_a_property
+============================== 5 passed in 1.57s ===============================

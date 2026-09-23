@@ -484,9 +484,33 @@ any mole fraction per e-fold of integration time. Because
 :math:`R` is the elapsed time measured in units of the fastest chemistry still running. The
 dict form gives full control::
 
-		terminationSteadyState={'tolerance': 1e-6, 'window': 3},
+		terminationSteadyState={'tolerance': 1e-6, 'window': 4},
 
-where ``window`` is how many consecutive solver steps must satisfy the tolerance.
+where ``window`` is the floor on how many accepted samples a flat interval must span, and it
+is **honoured as given**: a run terminates only after at least ``window`` consecutive flat
+samples (in addition to the physical-span requirement below). It defaults to ``2`` -- the
+irreducible minimum, since a span needs two endpoints and a single flat step, however long,
+is not an interval -- and must be at least ``2``. At the default the verdict is independent
+of the integrator's step-size controller, because any positive physical span already yields
+two samples; raising ``window`` above ``2`` trades that independence for extra insurance
+against a fluke, at your explicit choice. The one number governs two things at once -- the
+flat-streak length *and* how many consecutive samples a species must fail to rise before the
+criterion stops treating it as still moving -- but the two pull the **same** way: a larger
+``window`` requires a longer flat streak *and* holds a species as "still departing" for longer,
+so both make the verdict strictly more conservative. Raising ``window`` can only push
+termination later, never earlier; read it as *how much evidence to require before trusting a
+"no longer changing" verdict*. It is a cheap fluke guard and is deliberately
+**not** sufficient on its own. Persistence is a *physical* span: the flat run
+must also hold for at least one **system relaxation time** -- the timescale on which the
+system settles, which a wall-bounded discharge reports as ``1/nu_wall``. Anchoring to that
+physical time (rather than to a count of accepted steps, or to a fixed factor of the absolute
+clock) makes the verdict independent of the integrator's step-size controller and of *when*
+the flat window happened to open: a late-converging tail needs one more relaxation time to
+confirm, never a growing multiple of the elapsed time. A reactor that knows no such timescale
+(an ordinary gas-phase reactor) falls back to one e-fold of absolute time. There is no
+special case for a residual of exactly zero: equal endpoints do not prove a frozen structure
+(they equally alias an oscillation or a stop-and-restart), so a zero residual earns the same
+one-relaxation-time confirmation as any other flat tail.
 
 Two things about it are worth knowing before you use it:
 
@@ -500,6 +524,30 @@ Two things about it are worth knowing before you use it:
   once the integration has run for longer than the fastest relaxation time present. A model
   that carries no flux at all never arms; such a run terminates, but reports that no steady
   state was demonstrated, because a system that never started has converged to nothing.
+* **A discharge igniting from an** ``ionisationSource`` **is recognised even though its slope
+  never reaches** :math:`R = 1`. An electron population rising from zero to ``S/nu_wall`` is a
+  *saturating* exponential, whose log-log slope :math:`\nu t/(e^{\nu t}-1)` is bounded by 1 and
+  approaches it only as :math:`t \to 0` -- the opposite shape from a decaying transient -- and
+  the electron itself saturates far below the integrator's mole floor, so the generic residual
+  reads only the (flat) neutrals. The reactor therefore supplies the electron's own slope --
+  measured on its **mole fraction**, the same intensive quantity every other residual uses, so
+  a discharge whose composition is stationary while its absolute inventory drifts (a pumped
+  wall) is still recognised as steady -- so firing waits until it has genuinely saturated to
+  ``S/nu_wall``, and arms the criterion once ``t * nu_wall >= 1``, the same "past the fastest
+  relaxation time" standard evaluated from the relaxation time ``1/nu_wall`` the wall knows.
+  This never arms a discharge that never started: a deck with no source has no such channel and
+  is still reported as not a steady state.
+* **The electron's arm vouches only for the electron.** Arming is per quantity: the electron
+  passing ``t * nu_wall >= 1`` may license termination only while no *other* channel is still
+  changing -- specifically while the generic (neutral) residual is not still rising toward its
+  own ``R = 1`` arm. "Still rising" is judged over a *sequence* of samples (the residual has
+  set no new step-over-step rise for ``window`` consecutive steps), not from the two most
+  recent values, so a single flat or noisy sample cannot prematurely license it; and the
+  electron's licence is re-evaluated every step rather than latched, so a neutral that settles
+  and then resumes moving withdraws it. A neutral reaction that has not yet run through its own
+  timescale -- flat only because it has barely started, not because it has settled -- keeps the
+  system reported as *not* steady even after the electron has saturated, so a slow gas-phase
+  channel is never declared stationary on the strength of the discharge having lit.
 
 The run logs the residual it terminated at, so "we integrated to steady state, by this
 criterion, and here is the residual" is a claim a reader can check.
@@ -608,6 +656,220 @@ Omitting ``chargeBalanceSpecies`` leaves the composition exactly as it would be 
 non-neutral initial composition is never an error -- it may be deliberate -- but it is no longer
 silent: ``PlasmaReactor`` logs a warning naming the net charge per mole whenever the initial
 composition is not neutral, whether or not this keyword was used.
+
+.. _plasmawall:
+
+Charged-Particle Wall Boundary
+==============================
+
+Without the keywords in this section a ``plasmaReactor`` is zero-dimensional: it has no geometry
+and no boundary, so every ion and electron it makes stays in the gas forever and the only fate
+available to a charged particle is more chemistry.  Together they give it a wall, as a reactor-level
+ambipolar transport sink, first order in each charged species::
+
+	plasmaReactor(
+	    temperature=(298.15, 'K'),
+	    pressure=(5, 'torr'),
+	    electronTemperature=(34813.5, 'K'),
+	    initialMoleFractions={'Ar': 1.0, 'Arp': 6.2e-8},
+	    chargeBalanceSpecies='Arp',
+	    chamberGeometry={'shape': 'cylinder', 'radius': (5, 'cm'), 'length': (30, 'cm')},
+	    ionReducedMobility=(1.535e-4, 'm^2/(V*s)'),
+	    ionisationSource=(6.6e4, 'm^-3/s'),
+	    terminationTime=(1e-2, 's'),
+	)
+
+The loss frequency is shared by **every** charged species -- the electron and every ion alike::
+
+	mu_i    = ionReducedMobility * mobilityReferenceDensity / n_neutral
+	D_a     = mu_i * k_B * Te / e
+	nu_wall = D_a / Lambda**2
+	loss_i  = nu_wall * n_i
+
+One common frequency, not a separate lifetime per species: because the net charge then decays at a
+rate proportional to the net charge itself, which is zero in a quasineutral gas, no charge is
+created or destroyed at the wall and the zero-net-current (floating wall) condition holds by
+construction rather than by cancellation.
+
+``chamberGeometry`` and ``ionReducedMobility`` declare the wall, and neither means anything without
+the other, so supplying one alone is refused rather than defaulted.  ``chamberGeometry`` is a dict
+naming a shape and its dimensions, from which the characteristic diffusion length ``Lambda`` is
+computed as the lowest diffusion eigenmode of that shape:
+
+============================  =========================================================
+shape                         ``1/Lambda**2``
+============================  =========================================================
+``'cylinder'``                ``(2.405/radius)**2 + (pi/length)**2``
+``'sphere'``                  ``(pi/radius)**2``
+``'slab'``                    ``(pi/gap)**2``
+============================  =========================================================
+
+For a geometry not on that list, state the length directly with
+``chamberGeometry={'diffusionLength': (2.03, 'cm')}``.  Giving both a shape and a
+``diffusionLength`` is refused -- they are two sources of truth for one number.
+
+.. warning::
+	**Geometry is an input, never a calibrated quantity.**  The wall parameters --
+	``chamberGeometry``, ``ionReducedMobility``, ``wallRecycling`` -- must each come from the
+	chamber's actual dimensions or from measured transport data.  Adjusting any of them until a
+	computed electron density matches an expected one will work, and will mean nothing: with the
+	electron temperature prescribed rather than solved for, the electron density cancels out of
+	the particle balance and a free wall coefficient can reproduce any target you like.
+
+The remaining keywords are all optional:
+
+* ``mobilityReferenceDensity`` -- the gas density at which ``ionReducedMobility`` is quoted,
+  defaulting to the Loschmidt constant (2.6867811e25 m^-3), which is what ion-mobility
+  compilations normalise to.  This is a unit convention; changing it means reading the tabulated
+  mobility as something it is not.  Transport reads it only as the product
+  ``ionReducedMobility * mobilityReferenceDensity``, so at construction that product -- and the
+  wall loss frequency it produces at the neutral-density floor, the run-time worst case -- is
+  checked for finiteness: two individually finite inputs whose product overflows (e.g.
+  ``mobilityReferenceDensity=1e308`` with a large ``ionReducedMobility``) are refused, rather than
+  admitted on the strength of a per-input check and then carried into the solver as an infinite
+  ``nu_wall``.
+
+* ``wallRecycling`` -- gamma, the fraction of wall-neutralised ions whose heavy core returns to
+  the gas.  ``1.0`` (the default) is a fully recycling wall; ``0.0`` a fully pumping one.  For a
+  noble gas 1.0 is the physical value: the ion is Auger-neutralised with probability near one and
+  the atom does not chemisorb.  The reactor is a closed batch with no makeup stream, so
+  ``gamma < 1`` removes heavy atoms from the gas permanently.  Every ion must have a neutral
+  counterpart in the core for its heavy core to return to; a cation with no such counterpart is
+  refused rather than guessed at.  The heavy skeleton (a standard InChI with only the charge layers
+  removed) keeps the isotope and stereochemistry layers, because wall neutralisation is a charge
+  transfer that conserves nuclei and does not racemise: an ion never recycles to a different-isotope
+  or different-stereo neutral.  When exactly **one** neutral core species shares an ion's heavy
+  skeleton, the ion returns as it.  When **two or more** do -- ground-state and metastable argon,
+  both keyed ``Ar`` -- the wall **refuses** and requires a ``wallNeutralizationProducts`` declaration
+  (below), rather than picking one.  Formation enthalpy can order the candidates but cannot certify
+  which is the wall's product: the deck carries only relative enthalpies with no absolute
+  ground-state anchor, so the lowest present state is the ground state only if the ground state is
+  present, and an excited-only deck (metastables with the true ground absent) is indistinguishable
+  from ground+metastable.  The candidates need not even be electronic states of one another --
+  standard InChI merges tautomers such as 2-pyridone and 2-hydroxypyridine, distinct constitutional
+  species -- so a lowest-enthalpy pick could transmute one into the other.  Energy is therefore not
+  used to choose an identity at all; it is reported only in the wall-energy interface, as a
+  measurement.  A deck carrying two electronic states is making a modelling claim about which the
+  wall returns, and states it in one line.
+
+  There is one **inherent floor**, documented rather than hidden: when a skeleton has exactly one
+  neutral in the deck, the ion returns as it *because there is no alternative*, not because that
+  neutral is certified as the ground state.  If the only neutral present is a different tautomer or
+  an excited state (the true ground absent from the deck), the ion returns as that.  No rule can
+  tell "the only neutral present is the right product" from "the only neutral present is the wrong
+  one" from a single candidate -- the information is not in the deck.  A
+  ``wallNeutralizationProducts`` entry overrides it.
+
+* ``wallNeutralizationProducts`` -- an optional ``{ion label: neutral label}`` dict naming, per ion,
+  the neutral it returns as at the wall, e.g. ``{'Arp': 'Ar'}``.  It is **required** whenever two or
+  more neutral core species share an ion's heavy skeleton (two argon electronic states, or an ion
+  whose neutral has tautomers), and it is the override for the single-candidate floor above.  The
+  named neutral must be a declared species, uncharged, and share the ion's heavy composition; a key
+  that names no cation in the core (a typo) is refused rather than silently ignored.  The neutral
+  label must identify **one** species: if two core species carry the same label, the declaration is
+  ambiguous and is refused rather than resolved by core ordering -- give each electronic state a
+  distinct label.  Omit it for the common case of a single neutral per skeleton -- a deck carrying
+  only ground-state argon needs nothing declared -- and include it, one line, for any deck that
+  carries a metastable alongside its ground state.
+
+* ``ionisationSource`` -- a volumetric external production rate of ion-electron pairs,
+  ``(6.6e4, 'm^-3/s')`` or ``(0.066, 'cm^-3/s')``.  This is where a *declared physical mechanism*
+  such as the cosmic-ray background goes; for a noble gas at a few torr it is of order
+  1e4 - 1e5 m^-3 s^-1.  It lets a discharge ignite from a neutral gas instead of from a numerical
+  seed, and it is what creates the sub-threshold steady branch ``n_e = S_ext/(nu_wall - nu_ion)``
+  below the sustainment boundary.  Because this source produces electrons at a rate independent of
+  ``n_e``, a deck that declares it **may start from exactly zero electrons** (``electronDensity=(0,
+  'm^-3')`` or an explicit ``e-`` amount of zero) -- the source seeds the first electrons.  Without
+  a source the only electron production is the ``n_e``-proportional gas-phase chemistry, so a
+  zero-electron composition is a fixed point that cannot ignite, and it is **refused**: a strictly
+  positive seed is required there.  A source so small that its volumetric molar rate
+  ``source/Na`` underflows a normal double (a subnormal value such as ``5e-324``, or any value
+  below ``Na * 2.2e-308``) is **refused at construction**: it reads as a declared source -- which
+  switches off the zero-electron guard just described -- yet injects exactly zero, leaving a deck
+  that declares ignition-from-zero it can never achieve.  A source that cannot inject is not a
+  source.  That guard checks ``source/Na``, but the residual actually injects
+  ``source * V / Na`` -- the declared rate times the reactor volume.  At an extreme-but-finite
+  volume that product can overflow to infinity or underflow to zero while ``source/Na`` alone
+  looks finite, so the same check is applied a second time to the *run-time* expression at the
+  actual initial volume: an ``ionisationSource`` whose ``source * V / Na`` is not a usable
+  finite positive rate is refused, evaluating what the run computes rather than a proxy for it.
+
+* ``maxIonisationDegree`` -- the ceiling on ``n_e/n_neutral`` above which the ion-*neutral*
+  ambipolar model is outside its own assumptions, defaulting to 1e-3.  Above it, Coulomb
+  collisions take over the ion mobility and the ``1/n_neutral`` scaling is the wrong functional
+  form, not merely an inaccurate one.  The run **stops**, with a message naming the ionisation
+  degree, rather than extrapolating.  The check is applied to every accepted solver step and to
+  the initial composition.
+
+* ``wallSingleBathApproximation`` -- ``True`` to opt into the single-bath transport approximation
+  on a neutral bath that spans more than one heavy skeleton (Ar with an He diluent, an isomeric
+  co-species).  The wall carries one ``ionReducedMobility``; applied to the summed density of
+  chemically distinct neutrals it is an approximation, not the composition-weighted (Blanc's-law)
+  mobility.  Without this flag such a bath is **refused at construction**, so the approximation is
+  never entered unknowingly; with it the run proceeds and the affected wall fluxes are marked
+  ``available-single-bath-approximation`` (see the wall model warning below).  A single-skeleton
+  bath -- Ar alone, or Ar with its metastables -- is exact and does not need it.  Defaults to
+  ``False``.
+
+* ``quasineutralElectron`` -- when ``True``, the electron is removed from the integrated state and
+  carried on an algebraic charge-conservation row instead, so ``n_e`` is whatever makes the
+  composition neutral.  This eliminates the stiff direction in which ``n_e`` is a small difference
+  of large ionisation and recombination fluxes.  It requires a charge-neutral initial composition
+  and **refuses a non-neutral one** -- with the electron carried algebraically, a non-neutral
+  state is not something the equations can represent.  ``chargeBalanceSpecies`` is the easy way to
+  satisfy it.  Ignition from **exactly zero** charged particles works in this mode too, given an
+  ``ionisationSource``: the algebraic charge row admits a zero initial inventory, and while the
+  whole charged inventory is still below the integrator's absolute tolerance the quasineutrality
+  check stands down -- at that scale the row is enforced to an absolute accuracy and a *relative*
+  imbalance would measure the solver's noise, not a physical charge separation.  Once the inventory
+  clears that resolution the check resumes with full force.  Pass a genuine boolean, not a string: ``'False'`` is a non-empty string and would be
+  truthy, so a boolean-like string is parsed by value and any other string is refused rather than
+  silently enabling the mode.  Anything that is neither a boolean, ``None``, nor a boolean-like
+  string -- a number such as ``2`` or ``0.5``, ``NaN``, an object, an empty list -- is likewise
+  refused: it would otherwise set the mode on the value's truthiness (its type), not its meaning.
+
+.. note::
+	The wall operator determines the loss frequency, and with it the sustainment/extinction
+	boundary -- which for a fixed gas obeys a similarity law in the product of pressure and
+	diffusion length.  It does **not** determine an absolute steady-state electron density.  That
+	requires closing the discharge power balance, which is a separate matter from transport.
+
+.. warning::
+	**When this wall model applies.**  The wall here is a single bulk *ambipolar diffusion* sink:
+	one eigenvalue ``D_a/Lambda**2`` applied to every charged species, with zero net wall current
+	imposed algebraically.  There is no Bohm sheath, no sheath potential, no edge-to-centre density
+	factor, no electrode area, no secondary electron emission and no distinction between discharge
+	modes.  That picture is defensible for an **electropositive, unmagnetised discharge whose wall
+	loss is diffusion-limited** -- an inductively-coupled plasma or the positive column of a DC
+	discharge in a noble gas at roughly a few torr, where charged particles reach the wall by
+	ambipolar diffusion through the neutral gas.  It is **not** reliable where sheath-adjacent
+	ionisation, not diffusion, sets the wall loss: a high-pressure **capacitively-coupled** discharge,
+	a strongly electronegative gas (negative ions are confined by the ambipolar field, not lost at
+	the wall -- the model refuses a core that carries an anion), a magnetised plasma, or any regime
+	where the sheath is a large fraction of the gap.  The model also assumes a single dominant
+	singly-charged cation and refuses a second ion species or a multiply-charged one, whose mobility
+	the single ``ionReducedMobility`` cannot represent.  It likewise assumes a **single bath gas**:
+	``n_neutral`` in ``mu_i = ionReducedMobility * mobilityReferenceDensity / n_neutral`` is the
+	*summed* number density of all neutral heavy species, so the one reduced mobility is applied to
+	the whole neutral gas as if it were the reference bath.  That is exact for an electronic ground
+	state and its metastables (Ar and Ar\* share a heavy skeleton and scatter the ion identically),
+	and an **approximation** for a genuine mixture of chemically distinct neutrals (Ar with an He
+	diluent, or an isomeric co-species): the true mobility is composition-weighted (Blanc's law),
+	which needs a reduced mobility *per* bath gas that this model does not carry.  Such a mixture is
+	**refused at construction unless you opt in** with ``wallSingleBathApproximation=True``.
+	Refusing outright would forbid every multi-species plasma, including the inert-diluent and
+	isomeric-neutral cases the wall is built to handle; running silently on transport that does not
+	describe the gas is worse; so the honest middle is to require the user to consciously accept the
+	approximation.  Once opted in, the run proceeds and the approximation is recorded as an
+	**availability state**, not merely a log line a downstream consumer cannot see: every wall flux
+	built from ``nu_wall`` (``wall_flux`` and the electron-energy flux) is reported as
+	``available-single-bath-approximation`` rather than plain ``available`` in the reactor's
+	``wall_energy_availability`` map, so a caller reading the latched fluxes knows the number is a
+	usable single-bath approximation and not the composition-weighted value.  A warning naming the
+	gases is also emitted for the human running the deck.  A single-skeleton bath (Ar alone, or Ar
+	with its metastables) is exact, needs no opt-in, and reports plain ``available``.  The
+	``maxIonisationDegree`` ceiling is the one edge the code enforces
+	numerically; the regime limits above are the user's to respect.
 
 .. _simulatortolerances:
 

@@ -1,0 +1,91 @@
+==============================================================================
+I-246 WALL OPERATOR VERIFIER
+plasma module: /home/alon/Code/RMG-Py-i246-ambipolar-wall-operator/rmgpy/solver/plasma.cpython-39-x86_64-linux-gnu.so
+==============================================================================
+
+(1) DIMENSIONS AND POPULATION NORMALISATION
+  [PASS] nu_wall agrees with an independent closed-form re-derivation
+         reactor 1.8516597909e+02 s^-1   independent 1.8516597909e+02 s^-1   rel 0.00e+00
+  [PASS] wall loss is first order in the ELECTRON population (per electron = nu_wall)
+         -(wall flux)/N_e = 1.8516597909e+02 s^-1 ; nu_wall = 1.8516597909e+02 s^-1
+  [PASS] the per-NEUTRAL normalisation is a different number (the trap is live)
+         per-neutral would be 1.8517e-04 s^-1, a factor 1.0000e-06 from nu_wall -- an audit earlier in this campaign compared quantities normalised to these two different populations and was wrong by exactly this factor
+  [PASS] D_a is a diffusivity of physically plausible magnitude at 5 torr
+         D_a = 7.641155e-02 m^2/s ; Lambda = 2.031416e-02 m ; nu_wall = 1.851660e+02 s^-1
+
+(2)+(3) GEOMETRY AND THE A_eff/V FACTOR
+  [PASS] halving Lambda^2 exactly doubles nu_wall
+         nu(Lambda) = 1.8516597909e+02 ; nu(Lambda/sqrt2) = 3.7033195817e+02 ; ratio 2.000000000000000
+  [PASS] D_a is geometry-independent: nu_wall*Lambda^2 is constant across radii
+         nu*Lambda^2 over R = 5 mm .. 200 mm: spread 2.22e-16
+
+(4)+(5) CURRENT BALANCE AND CHARGE DRIFT
+  [PASS] net charge flux to the wall is exactly zero on a neutral state (floating wall)
+         sum(z_j * wall_flux_j) = 0.0 mol/s
+  [PASS] NEGATIVE CONTROL: a non-neutral state gives a non-zero wall current
+         net charge -5.000000e-07 mol -> wall current 9.258839e-05 mol/s (and the ratio is -nu_wall = -1.851768e+02 s^-1, as one common loss frequency requires)
+  [PASS] d(net charge)/dt from the full residual (chemistry + wall) is zero
+         drift = 0.000000e+00 mol/s against a term magnitude of 9.404010e+01 mol/s
+
+(6) GAS-PLUS-WALL ARGON UNDER THE DECLARED RECYCLING MODEL
+  [PASS] gamma=1.0: heavy argon leaves the gas at exactly (1-gamma)*nu*N_ion
+         d(N_Ar + N_Ar+)/dt = 0.0000000000e+00 mol/s ; -(1-gamma)*nu*N_ion = -0.0000000000e+00 mol/s
+  [PASS] gamma=0.5: heavy argon leaves the gas at exactly (1-gamma)*nu*N_ion
+         d(N_Ar + N_Ar+)/dt = -9.2582989543e-05 mol/s ; -(1-gamma)*nu*N_ion = -9.2582989543e-05 mol/s
+  [PASS] gamma=0.0: heavy argon leaves the gas at exactly (1-gamma)*nu*N_ion
+         d(N_Ar + N_Ar+)/dt = -1.8516597909e-04 mol/s ; -(1-gamma)*nu*N_ion = -1.8516597909e-04 mol/s
+
+(8)+(9) EXTINCTION, AND NO NEGATIVE AMOUNTS NEAR IT
+      Te = 0.5 eV: nu_ion = 9.3844e-05 s^-1, nu_wall = 3.0857e+01 s^-1, Delta = -3.0857e+01 s^-1
+  [PASS] below threshold the wall wins (nu_wall > nu_ion)
+  [PASS] the electron population decays towards extinction
+         N_e(t=1 s)/N_e(0) = 1.1165e-09  [observable O2/O4: an amount ratio]
+  [PASS] no negative electron or ion amount is produced anywhere on the approach
+         min over the trajectory: N_e = 1.1165e-18, N_Ar+ = 1.1165e-18 mol
+
+(10) ANALYTIC JACOBIAN AGAINST FINITE DIFFERENCES
+      Taken by a STEP SCAN, not at one step. A central difference has
+      truncation error ~h^2 and roundoff error ~eps/h, so a single h proves
+      nothing: at h/|y| = 1e-7 every configuration below -- INCLUDING the
+      pre-existing no-wall path -- disagrees at ~1e-3, purely because res[0] is
+      O(1) while the perturbation changes it by O(1e-14). The scan's minimum is
+      the measurement; the no-wall arm is the control that attributes it.
+  [PASS] CONTROL: no wall at all (pre-existing equations): analytic == finite difference
+         best 9.946e-07 at h/|y| = 1e-03, worst entry (0, 1) (analytic 5.537870e-05, fd 5.537876e-05)
+  [PASS] wall, integrated electron: analytic == finite difference
+         best 9.948e-07 at h/|y| = 1e-03, worst entry (0, 1) (analytic 5.537892e-05, fd 5.537898e-05)
+  [PASS] wall, QUASINEUTRAL electron: analytic == finite difference
+         best 1.969e-07 at h/|y| = 1e-04, worst entry (1, 2) (analytic 1.898488e+02, fd 1.898488e+02)
+  [PASS] wall + external source: analytic == finite difference
+         best 9.948e-07 at h/|y| = 1e-03, worst entry (0, 1) (analytic 5.537892e-05, fd 5.537898e-05)
+  [PASS] gamma = 0.5 (partially pumping): analytic == finite difference
+         best 9.987e-07 at h/|y| = 1e-03, worst entry (1, 1) (analytic -5.537881e-05, fd -5.537887e-05)
+  [PASS] NEGATIVE CONTROL: a 0.5 -> 0.6 change in gamma between the analytic Jacobian and the differences IS caught at this tolerance
+         best over the whole step scan is 1.599e-01 (tolerance 1e-05), worst entry (1, 2) -- so the check above has teeth
+
+(ENVELOPE) HARD FAILURE OUTSIDE THE SUPPORTED REGIME
+      The domain check lives at the ACCEPTED-STEP boundary, not inside the
+      residual. An earlier version raised from compute_nu_wall and it did not
+      work: the solver evaluates the residual at Newton TRIAL states far outside
+      the domain, a Python exception raised inside the Fortran callback is not
+      propagated, and the run died with 'ITERATION MATRIX IS SINGULAR' followed
+      by an unrelated-looking SystemError instead of the message below.
+  [PASS] alpha above the validity ceiling raises PlasmaStateError
+         ionisation degree n_e/n_neutral = 0.01 exceeds the declared validity ceiling 0.001 of the ion-neutral ambipolar transport model: above it Coulomb coll...
+  [PASS] NEGATIVE CONTROL: alpha below the ceiling does not raise
+  [PASS] the residual does NOT raise outside the domain, and stays finite
+         at alpha = 0.9 the residual is [-17827.503  17827.503 -17827.503] -- finite, so DASPK can reject the trial step on its own error test
+
+(ENVELOPE) NON-NEUTRAL INITIAL STATE UNDER THE ALGEBRAIC ELECTRON
+  [PASS] a non-neutral initial state is refused under quasineutral_electron, by US and not by an opaque solver convergence error
+         quasineutral_electron=True carries the electron on an algebraic charge-conservation row, but the initial composition has a net charge of -1e-08 mol (total charge magnitude 3.0000000000000004e-08), whi...
+
+(12) NO TARGET ELECTRON DENSITY IN THE IMPLEMENTATION
+  [PASS] the wall code introduces exactly two numeric constants, both declared
+         PLASMA_LOSCHMIDT = 2.6867811e25; PLASMA_WALL_MAX_IONISATION_DEGREE = 1.0e-3
+  [PASS] neither constant is an electron density (one is a unit convention, one a dimensionless ratio)
+         Loschmidt is the density the tabulated mu_0 is normalised to; the ceiling is n_e/n_neutral, a ratio, fixed by where ion-neutral collisions stop dominating
+
+==============================================================================
+ALL CHECKS PASSED
+==============================================================================

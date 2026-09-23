@@ -128,6 +128,16 @@ cdef class ReactionSystem(DASx):
         list pdep_networks=?, bool prune=?, bool sensitivity=?, list sens_worksheet=?, object model_settings=?,
         object simulator_settings=?, dict conditions=?)
 
+    cpdef double get_non_chemical_char_rate(self)
+
+    cpdef double steady_state_external_residual(self, double t_now, np.ndarray y_now, double t_prev, np.ndarray y_prev)
+
+    cpdef object steady_state_external_channel(self, double t_now, np.ndarray y_now, double t_prev, np.ndarray y_prev)
+
+    cpdef bint steady_state_external_armed(self, double t_now, np.ndarray y_now)
+
+    cpdef double steady_state_relaxation_time(self, double t_now, np.ndarray y_now)
+
     cpdef log_rates(self, double char_rate, object species, double species_rate, double max_dif_ln_accum_num, object network, double network_rate)
      
     cpdef log_conversions(self, species_index, y0)

@@ -1,0 +1,29 @@
+========================================================================
+H1  deliverable deck (Ar, Ar*, Ar+, e-) wall_recycling=1.0
+  OUTCOME: PlasmaStateError | ambiguous(old)=True
+  MESSAGE: the wall recycling fate of cation Species(label="Ar+", molecule=[Molecule(smiles="[Ar+]")], molecular_weight=(39.8775,'amu')) is ambiguous: 2 neutral core species share its heavy composition (Species(label="Ar", thermo=ThermoData(Tdata=([298,400,600,800,1000,1500,2000],'K'), Cpdata=([20.7862,20.7862,20.7862,20.7862,20.7862,20.7862,20.7862],'J/(mol*K)'), H298=(0,'kJ/mol'), S298=(154.8,'J/(mol*K)')), molecule=[Molecule
+========================================================================
+H2  two neutral Ar, NO thermo  (must name thermo)
+  OUTCOME: PlasmaStateError | ambiguous(old)=True
+  MESSAGE: the wall recycling fate of cation Species(label="Ar+", molecule=[Molecule(smiles="[Ar+]")], molecular_weight=(39.8775,'amu')) is ambiguous: 2 neutral core species share its heavy composition (Species(label="Ar", molecule=[Molecule(smiles="[Ar]")], molecular_weight=(39.8775,'amu')), Species(label="Ar*", molecule=[Molecule(smiles="[Ar]")], molecular_weight=(39.8775,'amu'))), so 'the neutral it returns as' has no single
+========================================================================
+H3  gap = 2*R*T  (must RESOLVE to ground Ar)
+  OUTCOME: PlasmaStateError | ambiguous(old)=True
+  MESSAGE: the wall recycling fate of cation Species(label="Ar+", molecule=[Molecule(smiles="[Ar+]")], molecular_weight=(39.8775,'amu')) is ambiguous: 2 neutral core species share its heavy composition (Species(label="Ar", thermo=ThermoData(Tdata=([298,400,600,800,1000,1500,2000],'K'), Cpdata=([20.7862,20.7862,20.7862,20.7862,20.7862,20.7862,20.7862],'J/(mol*K)'), H298=(0,'kJ/mol'), S298=(154.8,'J/(mol*K)')), molecule=[Molecule
+========================================================================
+H4  gap = 0.5*R*T (must REFUSE near-degeneracy)
+  OUTCOME: PlasmaStateError | ambiguous(old)=True
+  MESSAGE: the wall recycling fate of cation Species(label="Ar+", molecule=[Molecule(smiles="[Ar+]")], molecular_weight=(39.8775,'amu')) is ambiguous: 2 neutral core species share its heavy composition (Species(label="Ar", thermo=ThermoData(Tdata=([298,400,600,800,1000,1500,2000],'K'), Cpdata=([20.7862,20.7862,20.7862,20.7862,20.7862,20.7862,20.7862],'J/(mol*K)'), H298=(0,'kJ/mol'), S298=(154.8,'J/(mol*K)')), molecule=[Molecule
+========================================================================
+H5  wallNeutralizationProducts={"Ar+":"Ar"} declaration
+  OUTCOME: OTHER TypeError __init__() got an unexpected keyword argument 'wall_neutralization_products'
+========================================================================
+F   sub-floor accepted state (must be refused)
+  OUTCOME: NO RAISE -> check_wall_support ACCEPTED a sub-floor state (floor=1e-06)
+========================================================================
+A   anion in the core with a wall (must be refused)
+  OUTCOME: NO RAISE -> anion Cl- admitted; it receives the Ar+ mobility
+========================================================================
+E   NaN electron population (must be refused)
+  OUTCOME: NO RAISE -> check_wall_support ACCEPTED a NaN electron population
+========================================================================

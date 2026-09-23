@@ -1,0 +1,2546 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.23, pytest-8.4.1, pluggy-1.6.0 -- /home/alon/anaconda3/envs/rmg_env/bin/python3.9
+rootdir: /home/alon/Code/RMG-Py-i246-ambipolar-wall-operator
+configfile: pytest.ini
+plugins: check-2.5.3, cov-6.2.1, anyio-4.10.0
+collecting ... collected 660 items
+
+test/rmgpy/solver/liquidTest.py::LiquidReactorTest::test_compute_flux PASSED
+test/rmgpy/solver/liquidTest.py::LiquidReactorTest::test_jacobian PASSED
+test/rmgpy/solver/liquidTest.py::LiquidReactorTest::test_compute_derivative PASSED
+test/rmgpy/solver/liquidTest.py::LiquidReactorTest::test_store_constant_species_names PASSED
+test/rmgpy/solver/liquidTest.py::LiquidReactorTest::test_liquid_input_reading PASSED
+test/rmgpy/solver/liquidTest.py::LiquidReactorTest::test_corespecies_rate PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaReactorStateTest::test_single_electron_state_with_positive_amount PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaReactorStateTest::test_two_temperature_eos_active PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaReactorStateTest::test_volume_matches_settled_eos PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaReactorStateTest::test_changing_ne_changes_eos_predictably PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaReactorStateTest::test_changing_te_changes_only_electron_contribution PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaReactorStateTest::test_te_equal_tgas_reduces_continuously PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaReactorStateTest::test_missing_or_zero_electrons_named_failure PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaReactorStateTest::test_missing_te_named_failure PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaReactorStateTest::test_no_electron_density_api PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaReactorStateTest::test_state_packing_preserves_electron PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaReactorStateTest::test_jacobian_matches_finite_differences PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaReactorStateTest::test_electron_consuming_reaction_sign PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaReactorStateTest::test_incident_electron_rate_scaling PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaReactorStateTest::test_charge_and_elemental_balance_over_integration PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaReactorStateTest::test_residual_and_jacobian_consistency PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaReverseRatePolicyTest::test_reversible_te_dependent_rejected_before_integration PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaReverseRatePolicyTest::test_te_equal_tgas_does_not_bypass_guard PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaReverseRatePolicyTest::test_metadata_only_electron_rejected PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaReverseRatePolicyTest::test_reversible_thermal_electron_containing_rejected PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaReverseRatePolicyTest::test_control_thermal_reverse_unchanged PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaReverseRatePolicyTest::test_control_irreversible_electron_impact PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaReverseRatePolicyTest::test_control_forward_and_reverse_pair PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaReverseRatePolicyTest::test_control_te_changes_electron_rates_only PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaReverseRatePolicyTest::test_control_tgas_changes_thermal_no_implicit_reverse PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaReverseRatePolicyTest::test_control_no_reverse_flux_through_any_path PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaReverseRatePolicyTest::test_control_export_reload_preserves_arrows PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaReactorUnsupportedTest::test_sensitivity_unsupported PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaReactorUnsupportedTest::test_ranged_conditions_unsupported PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaReactorUnsupportedTest::test_pdep_kinetics_unsupported PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaReactorUnsupportedTest::test_thirdbody_kinetics_unsupported PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaReactorUnsupportedTest::test_const_species_unsupported PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaReactorUnsupportedTest::test_core_reaction_with_edge_species_rejected PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaReactorUnsupportedTest::test_reaction_arity_out_of_range_rejected PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaReactorUnsupportedTest::test_reaction_with_unknown_species_rejected PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaReactorUnsupportedTest::test_base_class_initialization_bypass_rejected PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaReactorUnsupportedTest::test_electron_density_kinetics_requires_explicit_electron PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaReactorUnsupportedTest::test_foreign_initial_composition_key_rejected PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaReactorUnsupportedTest::test_te_kinetics_without_evaluator_unsupported PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaReactorUnsupportedTest::test_external_conditions_unsupported PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaDatabaseSmokeTest::test_database_loaded_hydrogen_plasma_smoke PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaReactorDriverInterfaceTest::test_plasma_reactor_exposes_trange_as_none PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaReactorDriverInterfaceTest::test_driver_tmin_tmax_expression_reduces_to_scalar_temperature PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaElectronThermoTest::test_u1_electron_resolves_to_canonical_electron_thermo PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaChargeNeutralityWarningTest::test_non_neutral_composition_warns_and_names_the_net_charge PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaChargeNeutralityWarningTest::test_non_neutral_composition_does_not_raise PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaChargeNeutralityWarningTest::test_neutral_composition_is_silent PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaChargeNeutralityWarningTest::test_excess_cation_also_warns PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaChargeNeutralityWarningTest::test_imbalance_below_tolerance_is_silent PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaChargeNeutralityWarningTest::test_weakly_ionized_full_imbalance_is_caught PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaChargeBalanceReachabilityTest::test_defect_a_phantom_balance_is_silent_without_the_directive PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaChargeBalanceReachabilityTest::test_unreachable_balance_ion_warns_and_names_it PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaChargeBalanceReachabilityTest::test_reachable_balance_ion_is_silent PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaChargeBalanceReachabilityTest::test_reversible_reaction_credits_the_reactant_side PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaChargeBalanceReachabilityTest::test_edge_production_is_credited PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaChargeBalanceReachabilityTest::test_unreachable_balance_ion_does_not_raise PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaChargeBalanceReachabilityTest::test_reachability_warning_fires_at_most_once PASSED
+test/rmgpy/solver/plasmaTest.py::PlasmaChargeBalanceReachabilityTest::test_charge_balance_species_label_survives_pickle PASSED
+test/rmgpy/solver/reverseReconstructionGuardTest.py::ReverseReconstructionPredicateTest::test_metadata_electron_is_refused PASSED
+test/rmgpy/solver/reverseReconstructionGuardTest.py::ReverseReconstructionPredicateTest::test_explicit_electron_is_refused PASSED
+test/rmgpy/solver/reverseReconstructionGuardTest.py::ReverseReconstructionPredicateTest::test_thermal_reaction_is_permitted PASSED
+test/rmgpy/solver/reverseReconstructionGuardTest.py::ReverseReconstructionPredicateTest::test_irreversible_declaration_is_not_the_guard_s_business PASSED
+test/rmgpy/solver/reverseReconstructionGuardTest.py::ReverseReconstructionPredicateTest::test_charge_transfer_kinetics_with_a_potential_reference_is_permitted PASSED
+test/rmgpy/solver/reverseReconstructionGuardTest.py::ReverseReconstructionPredicateTest::test_electron_temperature_kinetics_is_refused PASSED
+test/rmgpy/solver/reverseReconstructionGuardTest.py::ReverseReconstructionGuardInReactorsTest::test_simple_reactor_refuses PASSED
+test/rmgpy/solver/reverseReconstructionGuardTest.py::ReverseReconstructionGuardInReactorsTest::test_liquid_reactor_refuses PASSED
+test/rmgpy/solver/reverseReconstructionGuardTest.py::ReverseReconstructionGuardInReactorsTest::test_mb_sampled_reactor_refuses PASSED
+test/rmgpy/solver/reverseReconstructionGuardTest.py::ReverseReconstructionGuardInReactorsTest::test_surface_reactor_refuses PASSED
+test/rmgpy/solver/reverseReconstructionGuardTest.py::ReverseReconstructionGuardInReactorsTest::test_thermal_control_is_bit_identical PASSED
+test/rmgpy/solver/reverseReconstructionGuardTest.py::ReverseReconstructionGuardInReactorsTest::test_irreversible_cation_reaction_still_integrates PASSED
+test/rmgpy/solver/simpleTest.py::SimpleReactorTest::test_solve PASSED
+test/rmgpy/solver/simpleTest.py::SimpleReactorTest::test_collider_model PASSED
+test/rmgpy/solver/simpleTest.py::SimpleReactorTest::test_specific_collider_model PASSED
+test/rmgpy/solver/simpleTest.py::SimpleReactorTest::test_get_const_spc_indices PASSED
+test/rmgpy/solver/simpleTest.py::SimpleReactorTest::test_sensitivity_header_places_electron_for_charged_reaction PASSED
+test/rmgpy/solver/solverBaseTest.py::ReactionSystemTest::test_surface_initialization PASSED
+test/rmgpy/solver/solverBaseTest.py::ReactionSystemTest::test_surface_layering_constraint PASSED
+test/rmgpy/solver/solverBaseTest.py::ReactionSystemTest::test_add_reactions_to_surface PASSED
+test/rmgpy/solver/solverBaseTest.py::ReactionSystemTest::test_attach_detach PASSED
+test/rmgpy/solver/solverBaseTest.py::ReactionSystemTest::test_listen PASSED
+test/rmgpy/solver/solverBaseTest.py::ReactionSystemTest::test_pickle PASSED
+test/rmgpy/solver/solverSurfaceTest.py::SurfaceReactorTest::test_solve_h2 PASSED
+test/rmgpy/solver/solverSurfaceTest.py::SurfaceReactorTest::test_solve_ch3 Surface site density: 2.72e-05
+rxn1 rate coefficient 975571.289042688
+time:  [0.0]
+moles: [array([1.00000000e+00, 1.80922911e-06, 0.00000000e+00])]
+reaction rates: [array([398.93602176])]
+species rates: [array([-398.93602176, -398.93602176,  398.93602176])]
+PASSED
+test/rmgpy/solver/solverSurfaceTest.py::SurfaceReactorTest::test_solve_h2_coverage_dependence Simulation took 4.975e-02 seconds
+PASSED
+test/rmgpy/solver/solverSurfaceTest.py::SurfaceReactorTest::test_solve_ch3_coverage_dependence Surface site density: 2.72e-05
+rxn1 rate coefficient 975571.289042688
+time:  [0.0]
+moles: [array([1.00000000e+00, 1.80922911e-06, 0.00000000e+00])]
+reaction rates: [array([398.93602176])]
+species rates: [array([-398.93602176, -398.93602176,  398.93602176])]
+Simulation took 5.354e-03 seconds
+Simulation took 1.016e-02 seconds
+PASSED
+test/rmgpy/solver/solverSurfaceTest.py::SurfaceReactorTest::test_solve_h2_thermo_coverage_dependence Simulation took 1.245e-02 seconds
+PASSED
+test/rmgpy/solver/solverSurfaceTest.py::SurfaceReactorTest::test_solve_ch3_thermo_coverage_dependence Surface site density: 2.72e-05
+rxn1 rate coefficient 975571.289042688
+time:  [0.0]
+moles: [array([1.00000000e+00, 1.80922911e-06, 0.00000000e+00])]
+reaction rates: [array([398.93602176])]
+species rates: [array([-398.93602176, -398.93602176,  398.93602176])]
+Simulation took 1.138e-01 seconds
+Simulation took 1.188e-01 seconds
+PASSED
+test/rmgpy/solver/solverSurfaceTest.py::SurfaceReactorTest::test_jacobian_with_finite_differences PASSED
+test/rmgpy/solver/solverSurfaceTest.py::SurfaceReactorTest::test_jacobian_with_thermo_coverage_dependence PASSED
+test/rmgpy/solver/solverSurfaceTest.py::SurfaceReactorTest::test_jacobian_with_kinetic_coverage_dependence PASSED
+test/rmgpy/solver/steadyStateTest.py::TerminationSteadyStateResidualTest::test_flat_step_has_zero_residual PASSED
+test/rmgpy/solver/steadyStateTest.py::TerminationSteadyStateResidualTest::test_residual_is_the_log_log_slope PASSED
+test/rmgpy/solver/steadyStateTest.py::TerminationSteadyStateResidualTest::test_residual_is_taken_on_mole_fractions_not_moles PASSED
+test/rmgpy/solver/steadyStateTest.py::TerminationSteadyStateResidualTest::test_first_step_is_not_evaluable PASSED
+test/rmgpy/solver/steadyStateTest.py::TerminationSteadyStateResidualTest::test_species_appearing_is_infinitely_far_from_steady PASSED
+test/rmgpy/solver/steadyStateTest.py::TerminationSteadyStateResidualTest::test_species_below_the_floor_are_ignored PASSED
+test/rmgpy/solver/steadyStateTest.py::TerminationSteadyStateResidualTest::test_a_large_negative_population_poisons_the_residual PASSED
+test/rmgpy/solver/steadyStateTest.py::TerminationSteadyStateResidualTest::test_a_negative_below_the_floor_is_still_treated_as_noise PASSED
+test/rmgpy/solver/steadyStateTest.py::TerminationSteadyStateResidualTest::test_no_live_species_is_not_evaluable PASSED
+test/rmgpy/solver/steadyStateTest.py::TerminationSteadyStateLatchTest::test_early_quiescence_does_not_fire_the_criterion PASSED
+test/rmgpy/solver/steadyStateTest.py::TerminationSteadyStateLatchTest::test_criterion_fires_once_armed_and_flat PASSED
+test/rmgpy/solver/steadyStateTest.py::TerminationSteadyStateLatchTest::test_window_is_enforced PASSED
+test/rmgpy/solver/steadyStateTest.py::TerminationSteadyStateLatchTest::test_a_single_moving_step_resets_the_window PASSED
+test/rmgpy/solver/steadyStateTest.py::TerminationSteadyStateLatchTest::test_never_converges_never_fires_and_keeps_its_residual PASSED
+test/rmgpy/solver/steadyStateTest.py::TerminationSteadyStateLatchTest::test_the_measured_argon_trajectory_never_fires PASSED
+test/rmgpy/solver/steadyStateTest.py::TerminationSteadyStateLatchTest::test_reset_clears_the_latch PASSED
+test/rmgpy/solver/steadyStateTest.py::TerminationSteadyStateLatchTest::test_rejects_nonsense_configuration PASSED
+test/rmgpy/solver/steadyStateTest.py::SteadyStateTerminationInSolverTest::test_relaxing_system_terminates_on_steady_state PASSED
+test/rmgpy/solver/steadyStateTest.py::SteadyStateTerminationInSolverTest::test_never_converges_terminates_on_the_backstop_without_claiming_success PASSED
+test/rmgpy/solver/steadyStateTest.py::SteadyStateTerminationInSolverTest::test_no_flux_system_terminates_but_demonstrates_no_steady_state PASSED
+test/rmgpy/solver/steadyStateTest.py::SteadyStateTerminationInSolverTest::test_absent_criterion_leaves_the_reactor_untouched PASSED
+test/rmgpy/solver/steadyStateTest.py::SteadyStateTerminationInSolverTest::test_latch_does_not_leak_between_simulations PASSED
+test/rmgpy/solver/steadyStateTest.py::SteadyStateTerminationInSolverTest::test_inert_core_with_nonempty_edge_reports_no_steady_state_instead_of_promoting PASSED
+test/rmgpy/solver/zeroFluxPromotionTest.py::ZeroFluxPromotionTest::test_no_promotion_when_the_whole_system_is_inert PASSED
+test/rmgpy/solver/zeroFluxPromotionTest.py::ZeroFluxPromotionTest::test_promotion_still_picks_the_fastest_species_when_the_edge_has_flux PASSED
+test/rmgpy/solver/zeroFluxPromotionTest.py::ZeroFluxPromotionTest::test_no_promotion_when_the_only_edge_flux_is_subnormal_dust PASSED
+test/rmgpy/solver/zeroFluxPromotionTest.py::ZeroFluxPromotionTest::test_no_promotion_when_core_char_rate_is_normal_magnitude_dust PASSED
+test/rmgpy/solver/zeroFluxPromotionTest.py::ZeroFluxPromotionTest::test_a_nan_edge_rate_is_not_selected_as_the_largest_and_promoted PASSED
+test/rmgpy/solver/zeroFluxPromotionTest.py::ZeroFluxPromotionTest::test_a_nan_core_rate_does_not_slip_past_the_char_rate_gate PASSED
+test/rmgpy/rmg/inputTest.py::TestInputDatabase::test_importing_database_reaction_libraries_from_string PASSED
+test/rmgpy/rmg/inputTest.py::TestInputDatabase::test_importing_database_reaction_libraries_from_false_tuple PASSED
+test/rmgpy/rmg/inputTest.py::TestInputDatabase::test_importing_database_reaction_libraries_from_true_tuple PASSED
+test/rmgpy/rmg/inputTest.py::TestInputDatabaseAutoSelection::test_thermo_auto_string PASSED
+test/rmgpy/rmg/inputTest.py::TestInputDatabaseAutoSelection::test_thermo_auto_in_list PASSED
+test/rmgpy/rmg/inputTest.py::TestInputDatabaseAutoSelection::test_thermo_pah_libs_in_list PASSED
+test/rmgpy/rmg/inputTest.py::TestInputDatabaseAutoSelection::test_transport_auto_string PASSED
+test/rmgpy/rmg/inputTest.py::TestInputDatabaseAutoSelection::test_reaction_libraries_auto_string PASSED
+test/rmgpy/rmg/inputTest.py::TestInputDatabaseAutoSelection::test_reaction_libraries_auto_in_list PASSED
+test/rmgpy/rmg/inputTest.py::TestInputDatabaseAutoSelection::test_reaction_libraries_mixed_auto_and_tuple PASSED
+test/rmgpy/rmg/inputTest.py::TestInputDatabaseAutoSelection::test_seed_mechanisms_auto PASSED
+test/rmgpy/rmg/inputTest.py::TestInputDatabaseAutoSelection::test_kinetics_families_auto PASSED
+test/rmgpy/rmg/inputTest.py::TestInputDatabaseAutoSelection::test_kinetics_families_auto_with_exclusion PASSED
+test/rmgpy/rmg/inputTest.py::TestInputDatabaseAutoSelection::test_default_no_auto PASSED
+test/rmgpy/rmg/inputTest.py::TestInputDatabaseAutoSelection::test_pah_libs_standalone_thermo_raises PASSED
+test/rmgpy/rmg/inputTest.py::TestInputDatabaseAutoSelection::test_pah_libs_standalone_reaction_raises PASSED
+test/rmgpy/rmg/inputTest.py::TestInputDatabaseAutoSelection::test_pah_libs_standalone_transport_raises PASSED
+test/rmgpy/rmg/inputTest.py::TestInputDatabaseAutoSelection::test_pah_libs_standalone_seeds_raises PASSED
+test/rmgpy/rmg/inputTest.py::TestInputDatabaseAutoSelection::test_pah_libs_tuple_in_reaction_libs_raises PASSED
+test/rmgpy/rmg/inputTest.py::TestInputMLEstimator::test_ml_estimator SKIPPED
+test/rmgpy/rmg/inputTest.py::TestInputThermoCentralDatabase::test_thermo_central_database PASSED
+test/rmgpy/rmg/inputTest.py::TestInputReactors::test_simple_reactor_mole_fractions PASSED
+test/rmgpy/rmg/inputTest.py::TestInputReactors::test_simple_reactor_mole_fractions_normalize_1 PASSED
+test/rmgpy/rmg/inputTest.py::TestInputReactors::test_simple_reactor_mole_fractions_normalize_2 PASSED
+test/rmgpy/rmg/inputTest.py::TestInputReactors::test_simple_reactor_mole_fractions_ranged PASSED
+test/rmgpy/rmg/inputTest.py::TestInputReactors::test_liquid_reactor_concentrations PASSED
+test/rmgpy/rmg/inputTest.py::TestInputReactors::test_surface_reactor_mole_fractions PASSED
+test/rmgpy/rmg/inputTest.py::TestInputReactors::test_surface_reactor_mole_fractions_normalize_1 PASSED
+test/rmgpy/rmg/inputTest.py::TestInputReactors::test_mb_sampled_reactor_mole_fractions PASSED
+test/rmgpy/rmg/inputTest.py::TestInputReactors::test_mb_sampled_reactor_mole_fractions_normalize_1 PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPressureDependence::test_completed_networks_single PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPressureDependence::test_completed_networks_multiple PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPressureDependence::test_completed_networks_none PASSED
+test/rmgpy/rmg/inputTest.py::TestWriterConfig::test_parse_false_disables PASSED
+test/rmgpy/rmg/inputTest.py::TestWriterConfig::test_parse_true_enables_default_interval PASSED
+test/rmgpy/rmg/inputTest.py::TestWriterConfig::test_parse_true_custom_default_interval PASSED
+test/rmgpy/rmg/inputTest.py::TestWriterConfig::test_parse_dict_full PASSED
+test/rmgpy/rmg/inputTest.py::TestWriterConfig::test_parse_dict_partial PASSED
+test/rmgpy/rmg/inputTest.py::TestWriterConfig::test_parse_invalid_raises PASSED
+test/rmgpy/rmg/inputTest.py::TestWriterConfig::test_should_write_every_iteration PASSED
+test/rmgpy/rmg/inputTest.py::TestWriterConfig::test_should_write_every_n_iterations PASSED
+test/rmgpy/rmg/inputTest.py::TestWriterConfig::test_should_write_end_only PASSED
+test/rmgpy/rmg/inputTest.py::TestWriterConfig::test_should_write_disabled PASSED
+test/rmgpy/rmg/inputTest.py::TestWriterConfig::test_should_write_final_always_writes PASSED
+test/rmgpy/rmg/inputTest.py::TestWriterConfig::test_should_write_final_no_double_write PASSED
+test/rmgpy/rmg/inputTest.py::TestWriterConfig::test_writer_config_to_input_false PASSED
+test/rmgpy/rmg/inputTest.py::TestWriterConfig::test_writer_config_to_input_true PASSED
+test/rmgpy/rmg/inputTest.py::TestWriterConfig::test_writer_config_to_input_dict PASSED
+test/rmgpy/rmg/inputTest.py::TestWriterConfig::test_writer_config_to_input_none PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_electron_density_conversion PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_electron_density_round_trip PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_directive_optional_electron_named_directly PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_guard1_ranged_conditions_rejected PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_guard2_te_units_rejected PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_guard3_q_at_or_above_one_rejected PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_guard4_near_degenerate_q_rejected PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_guard5_duplicate_specification_rejected PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_guard6_zero_density_rejected PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_guard6_negative_density_rejected PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_guard6_infinite_density_rejected PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_guard6_nan_density_rejected PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_guard7_missing_electron_species_rejected PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_guard_density_bare_number_rejected PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_density_molecule_count_units_accepted_with_avogadro PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_density_plural_molecules_units_accepted PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_density_reciprocal_volume_units_accepted PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_guard_density_molar_concentration_still_rejected PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_density_cm3_units_accepted PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_shared_mole_fraction_dict_not_mutated PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_guard_multiple_electron_species_rejected PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_zero_pressure_reported_as_pressure PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_negative_temperature_reported_as_temperature PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_bare_number_electron_temperature_rejected PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_nan_mole_fraction_rejected_plain_path PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_inf_mole_fraction_rejected_plain_path PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_nan_mole_fraction_rejected_density_path PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_inf_mole_fraction_rejected_density_path PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_save_input_file_round_trips_plasma_reactor PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_termination_steady_state_bare_tolerance PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_termination_steady_state_dict_form PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_termination_steady_state_requires_a_backstop_time PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_termination_steady_state_rejects_nonsense[0.0] PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_termination_steady_state_rejects_nonsense[-1e-6] PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_termination_steady_state_rejects_nonsense[{'tolerance': 1e-6, 'window': 0}] PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_termination_steady_state_rejects_unknown_keys PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_termination_steady_state_absent_by_default PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_save_input_file_round_trips_termination_steady_state PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaReactor::test_save_input_file_round_trips_kinetics_depositories_all PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaChargeBalance::test_charge_balance_with_electron_density_is_neutral PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaChargeBalance::test_charge_balance_preserves_electron_density_round_trip PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaChargeBalance::test_charge_balance_with_explicit_electron_fraction PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaChargeBalance::test_charge_balance_accounts_for_charge_already_present PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaChargeBalance::test_multiply_charged_balance_species PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaChargeBalance::test_omitting_the_keyword_leaves_the_composition_untouched PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaChargeBalance::test_balance_species_label_is_carried_to_the_reactor PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaChargeBalance::test_no_balance_species_leaves_reactor_field_none PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaChargeBalance::test_undeclared_balance_species_rejected_at_parse_time PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaChargeBalance::test_uncharged_balance_species_rejected PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaChargeBalance::test_electron_as_balance_species_rejected PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaChargeBalance::test_balance_species_also_in_mole_fractions_rejected PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaChargeBalance::test_non_string_balance_species_rejected PASSED
+test/rmgpy/rmg/inputTest.py::TestInputPlasmaChargeBalance::test_wrong_sign_balance_species_rejected PASSED
+test/rmgpy/rmg/mainTest.py::TestMain::test_rmg_execute PASSED
+test/rmgpy/rmg/mainTest.py::TestMain::test_rmg_increases_reactions PASSED
+test/rmgpy/rmg/mainTest.py::TestMain::test_rmg_seed_mechanism_creation PASSED
+test/rmgpy/rmg/mainTest.py::TestMain::test_rmg_seed_edge_mechanism_creation PASSED
+test/rmgpy/rmg/mainTest.py::TestMain::test_rmg_seed_library_creation PASSED
+test/rmgpy/rmg/mainTest.py::TestMain::test_rmg_seed_edge_library_creation PASSED
+test/rmgpy/rmg/mainTest.py::TestMain::test_rmg_rms_mechanism_files_creation PASSED
+test/rmgpy/rmg/mainTest.py::TestMain::test_rmg_seed_works PASSED
+test/rmgpy/rmg/mainTest.py::TestMain::test_rmg_memory PASSED
+test/rmgpy/rmg/mainTest.py::TestMain::test_make_cantera_input_file_from_ck PASSED
+test/rmgpy/rmg/mainTest.py::TestMain::test_make_cantera_input_file_directly_1 PASSED
+test/rmgpy/rmg/mainTest.py::TestMain::test_make_cantera_input_file_directly_2 PASSED
+test/rmgpy/rmg/mainTest.py::TestMain::test_cantera_input_files_match_chemkin_later PASSED
+test/rmgpy/rmg/mainTest.py::TestMain::test_cantera_input_files_match_chemkin_later ERROR
+test/rmgpy/rmg/mainTest.py::TestRestartWithFilters::test_restart_with_filters RMG execution initiated at Mon Sep 21 10:36:34 2026
+
+#########################################################
+# RMG-Py - Reaction Mechanism Generator in Python       #
+# Version: 4.0.0                                        #
+# Authors: RMG Developers (rmg_dev@mit.edu)             #
+# P.I.s:   William H. Green (whgreen@mit.edu)           #
+#          Richard H. West (r.west@neu.edu)             #
+# Website: http://reactionmechanismgenerator.github.io/ #
+#########################################################
+
+The current git HEAD for RMG-Py is:
+	311818121ba49f335ea3f96bf194eff2281f98c2
+	Mon Sep 14 13:21:43 2026 +0300
+
+The current git HEAD for RMG-database is:
+	20cfc36cc179ecef7877f698a04a296213dfbd8c
+	Mon Sep 14 17:15:32 2026 +0300
+
+Reading input file "/home/alon/Code/RMG-Py-i246-ambipolar-wall-operator/test/rmgpy/test_data/restartTest/restart_w_filters.py"...
+restartFromSeed(path='seed_w_filters')
+
+# Data sources
+database(
+    thermoLibraries = ['primaryThermoLibrary'],
+    reactionLibraries = [],
+    seedMechanisms = [],
+    kineticsDepositories = ['training'],
+    kineticsFamilies = 'default',
+    kineticsEstimator = 'rate rules',
+)
+
+# List of species
+species(
+    label='ethane',
+    reactive=True,
+    structure=SMILES("CC"),
+)
+
+# Reaction systems
+simpleReactor(
+    temperature=(1350,'K'),
+    pressure=(1.0,'bar'),
+    initialMoleFractions={
+        "ethane": 1.0,
+    },
+    terminationConversion={
+        'ethane': 0.9,
+    },
+    terminationTime=(1e6,'s'),
+)
+
+simulator(
+    atol=1e-16,
+    rtol=1e-8,
+)
+
+model(
+    toleranceKeepInEdge=0.0,
+    toleranceMoveToCore=0.1,
+    toleranceInterruptSimulation=0.1,
+    maximumEdgeSpecies=100000,
+    filterReactions=True,
+)
+
+options(
+    units='si',
+    generateOutputHTML=True,
+    generatePlots=False,
+    saveEdgeSpecies=True,
+    saveSimulationProfiles=True,
+)
+
+Using RMG database at: /home/alon/Code/RMG-database-plasma/input (from rmgrc)
+Warning: Generate Output HTML option was turned on. Note that this will slow down model generation.
+Warning: Edge species saving was turned on. This will slow down model generation for large simulations.
+
+Loading transport library from NIST_Fluorine.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport library from PrimaryTransportLibrary.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport library from GRI-Mech.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport library from OneDMinN2.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport library from NOx2018.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport group database from /home/alon/Code/RMG-database-plasma/input/transport/groups...
+Loading frequencies group database from /home/alon/Code/RMG-database-plasma/input/statmech/groups...
+Loading solvation thermodynamics group database from /home/alon/Code/RMG-database-plasma/input/solvation/groups...
+Loading thermodynamics library from primaryThermoLibrary.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics group database from /home/alon/Code/RMG-database-plasma/input/thermo/groups...
+Loading thermodynamics SIDTs from /home/alon/Code/RMG-database-plasma/input/thermo/sidt...
+Adding rate rules from training set in kinetics families...
+Warning: Cphigh is above the theoretical CpInf value for ThermoData object
+ThermoData(Tdata=([300,400,500,600,800,1000,1500],'K'), Cpdata=([60.2599,68.0494,74.7775,80.9311,90.8846,97.4337,105.393],'J/(mol*K)'), H298=(-477.191,'kJ/mol'), S298=(269.551,'J/(mol*K)'), Cp0=(33.2579,'J/(mol*K)'), CpInf=(103.931,'J/(mol*K)'), comment="""Thermo group additivity estimation: group(O2s-(Cds-Cd)(Cds-Cd)) + group(O2s-(Cds-O2d)H) + group(Cds-OdOsOs) + group(Li-OCOdO) + radical(OC=OOJ)""").
+The thermo for this species is probably wrong! Setting CpInf = Cphigh for Entropy calculationat T = 2000.0 K...
+Warning: Cphigh is above the theoretical CpInf value for ThermoData object
+ThermoData(Tdata=([300,400,500,600,800,1000,1500],'K'), Cpdata=([60.2599,68.0494,74.7775,80.9311,90.8846,97.4337,105.393],'J/(mol*K)'), H298=(-477.191,'kJ/mol'), S298=(269.551,'J/(mol*K)'), Cp0=(33.2579,'J/(mol*K)'), CpInf=(103.931,'J/(mol*K)'), comment="""Thermo group additivity estimation: group(O2s-(Cds-Cd)(Cds-Cd)) + group(O2s-(Cds-O2d)H) + group(Cds-OdOsOs) + group(Li-OCOdO) + radical(OC=OOJ)""").
+The thermo for this species is probably wrong! Setting CpInf = Cphigh for Entropy calculationat T = 1666.6666666666665 K...
+Filling in rate rules in kinetics families by averaging...
+Loading kinetics library restart from /home/alon/Code/RMG-Py-i246-ambipolar-wall-operator/rmgpy/../test/rmgpy/test_data/restartTest/output_w_filters/previous_restart/restart/reactions.py...
+Loading kinetics library restart_edge from /home/alon/Code/RMG-Py-i246-ambipolar-wall-operator/rmgpy/../test/rmgpy/test_data/restartTest/output_w_filters/previous_restart/restart_edge/reactions.py...
+Adding seed mechanism restart to model core...
+This library reaction was not new: H(5) + C[CH2](4) <=> ethane(1)
+
+Summary of Model Enlargement
+---------------------------------
+Added 22 new core species
+    ethane(1)
+    [CH3](2)
+    CH4(3)
+    C[CH2](4)
+    H(5)
+    C=C(6)
+    H2(7)
+    [CH2]CC(8)
+    [CH]=C(9)
+    C#C(10)
+    [C]=C(11)
+    [CH2]CC=C(12)
+    [CH2]C1CC1(13)
+    [CH]=CCC(14)
+    C=C[CH]C(15)
+    C=CC=C(16)
+    C1=CCC1(17)
+    [CH2][CH]C=C(18)
+    C=C=CC(19)
+    [CH]=CC(20)
+    [CH]=CC=C(21)
+    [CH2]C1C=C1(22)
+Created 0 new edge species
+Added 70 new core reactions
+    [CH3](2) + [CH3](2) <=> ethane(1)
+    [CH3](2) + ethane(1) <=> CH4(3) + C[CH2](4)
+    H(5) + C[CH2](4) <=> ethane(1)
+    H(5) + [CH3](2) <=> CH4(3)
+    H(5) + C=C(6) <=> C[CH2](4)
+    [CH3](2) + C[CH2](4) <=> CH4(3) + C=C(6)
+    C[CH2](4) + C[CH2](4) <=> C=C(6) + ethane(1)
+    H(5) + ethane(1) <=> H2(7) + C[CH2](4)
+    H(5) + C[CH2](4) <=> H2(7) + C=C(6)
+    H(5) + CH4(3) <=> H2(7) + [CH3](2)
+    H(5) + H(5) <=> H2(7)
+    [CH3](2) + C=C(6) <=> [CH2]CC(8)
+    H(5) + [CH]=C(9) <=> C=C(6)
+    CH4(3) + [CH]=C(9) <=> [CH3](2) + C=C(6)
+    [CH]=C(9) + ethane(1) <=> C=C(6) + C[CH2](4)
+    H(5) + C=C(6) <=> H2(7) + [CH]=C(9)
+    [CH]=C(9) + C[CH2](4) <=> C=C(6) + C=C(6)
+    H(5) + C#C(10) <=> [CH]=C(9)
+    [CH]=C(9) + C[CH2](4) <=> C#C(10) + ethane(1)
+    [CH3](2) + [CH]=C(9) <=> CH4(3) + C#C(10)
+    [CH]=C(9) + [CH]=C(9) <=> C#C(10) + C=C(6)
+    H(5) + [CH]=C(9) <=> H2(7) + C#C(10)
+    [C]=C(11) <=> C#C(10)
+    [CH]=C(9) + C=C(6) <=> [CH2]CC=C(12)
+    [CH2]CC=C(12) <=> [CH2]C1CC1(13)
+    C#C(10) + C[CH2](4) <=> [CH]=CCC(14)
+    [CH]=CCC(14) <=> [CH2]CC=C(12)
+    [CH2]CC=C(12) <=> C=C[CH]C(15)
+    [CH]=CCC(14) <=> C=C[CH]C(15)
+    H(5) + C=CC=C(16) <=> [CH2]CC=C(12)
+    H(5) + C=CC=C(16) <=> C=C[CH]C(15)
+    [CH]=C(9) + [CH]=C(9) <=> C=CC=C(16)
+    C[CH2](4) + [CH2]CC=C(12) <=> ethane(1) + C=CC=C(16)
+    C[CH2](4) + C=C[CH]C(15) <=> ethane(1) + C=CC=C(16)
+    [CH3](2) + [CH2]CC=C(12) <=> CH4(3) + C=CC=C(16)
+    [CH3](2) + C=C[CH]C(15) <=> CH4(3) + C=CC=C(16)
+    [CH]=C(9) + [CH2]CC=C(12) <=> C=C(6) + C=CC=C(16)
+    [CH]=C(9) + C=C[CH]C(15) <=> C=C(6) + C=CC=C(16)
+    H(5) + [CH2]CC=C(12) <=> H2(7) + C=CC=C(16)
+    H(5) + C=C[CH]C(15) <=> H2(7) + C=CC=C(16)
+    C=CC=C(16) <=> C1=CCC1(17)
+    H(5) + [CH2][CH]C=C(18) <=> [CH2]CC=C(12)
+    C[CH2](4) + [CH2][CH]C=C(18) <=> C=C(6) + [CH2]CC=C(12)
+    [CH]=C(9) + [CH2][CH]C=C(18) <=> C#C(10) + [CH2]CC=C(12)
+    H(5) + [CH2][CH]C=C(18) <=> C=C[CH]C(15)
+    C[CH2](4) + [CH2][CH]C=C(18) <=> C=C(6) + C=C[CH]C(15)
+    [CH]=C(9) + [CH2][CH]C=C(18) <=> C#C(10) + C=C[CH]C(15)
+    [CH2][CH]C=C(18) + [CH2]CC=C(12) <=> C=CC=C(16) + C=C[CH]C(15)
+    [CH2][CH]C=C(18) + C=C[CH]C(15) <=> C=CC=C(16) + C=C[CH]C(15)
+    [CH2][CH]C=C(18) <=> C1=CCC1(17)
+    [CH2][CH]C=C(18) => C=CC=C(16)
+    H(5) + C=C=CC(19) <=> C=C[CH]C(15)
+    [CH2][CH]C=C(18) <=> C=C=CC(19)
+    C[CH2](4) + C=C[CH]C(15) <=> ethane(1) + C=C=CC(19)
+    [CH3](2) + C=C[CH]C(15) <=> CH4(3) + C=C=CC(19)
+    [CH]=C(9) + C=C[CH]C(15) <=> C=C(6) + C=C=CC(19)
+    H(5) + C=C[CH]C(15) <=> H2(7) + C=C=CC(19)
+    [CH3](2) + C#C(10) <=> [CH]=CC(20)
+    C#C(10) + [CH]=C(9) <=> [CH]=CC=C(21)
+    H(5) + [CH]=CC=C(21) <=> C=CC=C(16)
+    [CH3](2) + C=CC=C(16) <=> CH4(3) + [CH]=CC=C(21)
+    C[CH2](4) + C=CC=C(16) <=> ethane(1) + [CH]=CC=C(21)
+    H(5) + C=CC=C(16) <=> H2(7) + [CH]=CC=C(21)
+    C[CH2](4) + [CH]=CC=C(21) <=> C=C(6) + C=CC=C(16)
+    [CH]=C(9) + C=CC=C(16) <=> C=C(6) + [CH]=CC=C(21)
+    [CH]=C(9) + [CH]=CC=C(21) <=> C#C(10) + C=CC=C(16)
+    [CH]=CC=C(21) + [CH2]CC=C(12) <=> C=CC=C(16) + C=CC=C(16)
+    [CH]=CC=C(21) + C=C[CH]C(15) <=> C=CC=C(16) + C=CC=C(16)
+    [CH]=CC=C(21) + C=C[CH]C(15) <=> C=C=CC(19) + C=CC=C(16)
+    [CH]=CC=C(21) <=> [CH2]C1C=C1(22)
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 22 species and 70 reactions
+    The model edge has 0 species and 0 reactions
+
+NOT generating reactions for unreactive species Ar
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    Ar
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 23 species and 70 reactions
+    The model edge has 0 species and 0 reactions
+
+
+NOT generating reactions for unreactive species He
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    He
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 24 species and 70 reactions
+    The model edge has 0 species and 0 reactions
+
+
+NOT generating reactions for unreactive species Ne
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    Ne
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 25 species and 70 reactions
+    The model edge has 0 species and 0 reactions
+
+
+NOT generating reactions for unreactive species N2
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    N2
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 26 species and 70 reactions
+    The model edge has 0 species and 0 reactions
+
+
+Adding species ethane(1) to model core
+
+Summary of Model Enlargement
+---------------------------------
+Added 0 new core species
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 26 species and 70 reactions
+    The model edge has 0 species and 0 reactions
+
+
+Initialization complete. Starting model generation.
+
+Generating initial reactions for reaction system 1...
+For reaction generation 1 process is used.
+
+Summary of Secondary Model Edge Enlargement
+---------------------------------
+Added 0 new core species
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 26 species and 70 reactions
+    The model edge has 0 species and 0 reactions
+
+
+Completed initial enlarge edge step.
+
+Saving current model core to Chemkin file...
+Chemkin file contains 70 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 70 reactions.
+Saving current model core and edge to Chemkin file...
+Chemkin file contains 70 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 70 reactions.
+Saving current model core to HTML file...
+Saving current model edge to HTML file...
+Updating RMG execution statistics...
+    Execution time (DD:HH:MM:SS): 00:00:00:23
+    Memory used: 1429.45 MB
+
+Making seed mechanism...
+Beginning model generation stage 1 of 1.
+
+Making seed mechanism...
+Conducting simulation of reaction system 1...
+At time 8.8937e-04 s, reached target termination conversion: 0.900000 of ethane(1)
+    ethane(1) conversion: 0.9008    
+
+
+At time 8.8937e-04 s, reached target termination conversion: 0.900000 of ethane(1)
+    ethane(1) conversion: 0.9008    
+
+For reaction generation 1 process is used.
+
+Summary of Secondary Model Edge Enlargement
+---------------------------------
+Added 0 new core species
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 26 species and 70 reactions
+    The model edge has 0 species and 0 reactions
+
+
+Saving current model core to Chemkin file...
+Chemkin file contains 70 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 70 reactions.
+Saving current model core and edge to Chemkin file...
+Chemkin file contains 70 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 70 reactions.
+Saving current model core to HTML file...
+Saving current model edge to HTML file...
+Updating RMG execution statistics...
+    Execution time (DD:HH:MM:SS): 00:00:00:23
+    Memory used: 1429.83 MB
+
+Making seed mechanism...
+Saving current model core to Chemkin file...
+Chemkin file contains 70 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 70 reactions.
+Saving current model core and edge to Chemkin file...
+Chemkin file contains 70 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 70 reactions.
+Saving current model core to HTML file...
+Saving current model edge to HTML file...
+Updating RMG execution statistics...
+    Execution time (DD:HH:MM:SS): 00:00:00:23
+    Memory used: 1429.83 MB
+
+Translating final chemkin file into Cantera yaml.
+Performing final model checks...
+No collision rate violators found in the model's core.
+
+MODEL GENERATION COMPLETED
+
+The final model core has 26 species and 70 reactions
+The final model edge has 0 species and 0 reactions
+
+RMG execution terminated at Mon Sep 21 10:36:58 2026
+PASSED
+test/rmgpy/rmg/mainTest.py::TestRestartNoFilters::test_restart_no_filters RMG execution initiated at Mon Sep 21 10:36:58 2026
+
+#########################################################
+# RMG-Py - Reaction Mechanism Generator in Python       #
+# Version: 4.0.0                                        #
+# Authors: RMG Developers (rmg_dev@mit.edu)             #
+# P.I.s:   William H. Green (whgreen@mit.edu)           #
+#          Richard H. West (r.west@neu.edu)             #
+# Website: http://reactionmechanismgenerator.github.io/ #
+#########################################################
+
+The current git HEAD for RMG-Py is:
+	311818121ba49f335ea3f96bf194eff2281f98c2
+	Mon Sep 14 13:21:43 2026 +0300
+
+The current git HEAD for RMG-database is:
+	20cfc36cc179ecef7877f698a04a296213dfbd8c
+	Mon Sep 14 17:15:32 2026 +0300
+
+Reading input file "/home/alon/Code/RMG-Py-i246-ambipolar-wall-operator/test/rmgpy/test_data/restartTest/restart_no_filters.py"...
+restartFromSeed(path='seed_no_filters')
+
+# Data sources
+database(
+    thermoLibraries = ['primaryThermoLibrary'],
+    reactionLibraries = [],
+    seedMechanisms = [],
+    kineticsDepositories = ['training'],
+    kineticsFamilies = ['H_Abstraction','Disproportionation','R_Recombination',
+                        'Birad_recombination', 'Birad_R_Recombination'],
+    kineticsEstimator = 'rate rules',
+)
+
+# List of species
+species(
+    label='H2',
+    reactive=True,
+    structure=SMILES("[H][H]"),
+)
+species(
+   label='O2',
+   reactive=True,
+   structure=SMILES("[O][O]"),
+)
+
+# Reaction systems
+simpleReactor(
+    temperature=(1000,'K'),
+    pressure=(1.0,'bar'),
+    initialMoleFractions={
+        'H2':.67, 'O2':.33,
+    },
+    terminationConversion={
+        'H2': 0.9,
+    },
+    terminationTime=(1e6,'s'),
+)
+
+simulator(
+    atol=1e-16,
+    rtol=1e-8,
+)
+
+model(
+    toleranceKeepInEdge=0.0,
+    toleranceMoveToCore=0.001,
+    toleranceInterruptSimulation=0.001,
+    maximumEdgeSpecies=100000,
+)
+
+options(
+    units='si',
+    generateOutputHTML=True,
+    generatePlots=False,
+    saveEdgeSpecies=True,
+    saveSimulationProfiles=True,
+)
+
+Using RMG database at: /home/alon/Code/RMG-database-plasma/input (from rmgrc)
+Warning: Generate Output HTML option was turned on. Note that this will slow down model generation.
+Warning: Edge species saving was turned on. This will slow down model generation for large simulations.
+
+Loading transport library from NIST_Fluorine.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport library from PrimaryTransportLibrary.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport library from GRI-Mech.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport library from OneDMinN2.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport library from NOx2018.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport group database from /home/alon/Code/RMG-database-plasma/input/transport/groups...
+Loading frequencies group database from /home/alon/Code/RMG-database-plasma/input/statmech/groups...
+Loading solvation thermodynamics group database from /home/alon/Code/RMG-database-plasma/input/solvation/groups...
+Loading thermodynamics library from primaryThermoLibrary.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics group database from /home/alon/Code/RMG-database-plasma/input/thermo/groups...
+Loading thermodynamics SIDTs from /home/alon/Code/RMG-database-plasma/input/thermo/sidt...
+Adding rate rules from training set in kinetics families...
+Filling in rate rules in kinetics families by averaging...
+Loading kinetics library restart from /home/alon/Code/RMG-Py-i246-ambipolar-wall-operator/rmgpy/../test/rmgpy/test_data/restartTest/output_no_filters/previous_restart/restart/reactions.py...
+Loading kinetics library restart_edge from /home/alon/Code/RMG-Py-i246-ambipolar-wall-operator/rmgpy/../test/rmgpy/test_data/restartTest/output_no_filters/previous_restart/restart_edge/reactions.py...
+Adding seed mechanism restart to model core...
+This library reaction was not new: H(3) + H(3) <=> H2(1)
+
+Summary of Model Enlargement
+---------------------------------
+Added 5 new core species
+    H2(1)
+    O2(2)
+    H(3)
+    [O]O(4)
+    OO(5)
+Created 0 new edge species
+Added 6 new core reactions
+    H(3) + H(3) <=> H2(1)
+    O2(2) + H2(1) <=> H(3) + [O]O(4)
+    O2(2) + H(3) <=> [O]O(4)
+    H(3) + OO(5) <=> [O]O(4) + H2(1)
+    H(3) + [O]O(4) <=> OO(5)
+    [O]O(4) + [O]O(4) <=> O2(2) + OO(5)
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 5 species and 6 reactions
+    The model edge has 0 species and 0 reactions
+
+NOT generating reactions for unreactive species Ar
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    Ar
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 6 species and 6 reactions
+    The model edge has 0 species and 0 reactions
+
+
+NOT generating reactions for unreactive species He
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    He
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 7 species and 6 reactions
+    The model edge has 0 species and 0 reactions
+
+
+NOT generating reactions for unreactive species Ne
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    Ne
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 8 species and 6 reactions
+    The model edge has 0 species and 0 reactions
+
+
+NOT generating reactions for unreactive species N2
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    N2
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 9 species and 6 reactions
+    The model edge has 0 species and 0 reactions
+
+
+Adding species H2(1) to model core
+
+Summary of Model Enlargement
+---------------------------------
+Added 0 new core species
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 9 species and 6 reactions
+    The model edge has 0 species and 0 reactions
+
+
+Adding species O2(2) to model core
+
+Summary of Model Enlargement
+---------------------------------
+Added 0 new core species
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 9 species and 6 reactions
+    The model edge has 0 species and 0 reactions
+
+
+Warning: No filters were found in file /home/alon/Code/RMG-Py-i246-ambipolar-wall-operator/rmgpy/../test/rmgpy/test_data/restartTest/seed_no_filters/filters/filters.h5. This is to be expected if the restart files specified are from an RMG job without reaction filtering. Therefore, RMG will assume that all of the core species from the restart core seed have already been reacted and will not react them again. Additional species added to the input file but not in the restart core seed WILL be reacted with the rest of the core.
+Initialization complete. Starting model generation.
+
+Generating initial reactions...
+For reaction generation 1 process is used.
+
+Summary of Secondary Model Edge Enlargement
+---------------------------------
+Added 0 new core species
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 9 species and 6 reactions
+    The model edge has 0 species and 0 reactions
+
+
+Completed initial enlarge edge step.
+
+Saving current model core to Chemkin file...
+Chemkin file contains 6 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 6 reactions.
+Saving current model core and edge to Chemkin file...
+Chemkin file contains 6 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 6 reactions.
+Saving current model core to HTML file...
+Saving current model edge to HTML file...
+Updating RMG execution statistics...
+    Execution time (DD:HH:MM:SS): 00:00:00:07
+    Memory used: 1617.44 MB
+
+Making seed mechanism...
+Beginning model generation stage 1 of 1.
+
+Making seed mechanism...
+Conducting simulation of reaction system 1...
+At time 1.0000e+06 s, reached target termination time.
+    H2(1) conversion: 0.4641    
+
+
+For reaction generation 1 process is used.
+
+Summary of Secondary Model Edge Enlargement
+---------------------------------
+Added 0 new core species
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 9 species and 6 reactions
+    The model edge has 0 species and 0 reactions
+
+
+Saving current model core to Chemkin file...
+Chemkin file contains 6 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 6 reactions.
+Saving current model core and edge to Chemkin file...
+Chemkin file contains 6 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 6 reactions.
+Saving current model core to HTML file...
+Saving current model edge to HTML file...
+Updating RMG execution statistics...
+    Execution time (DD:HH:MM:SS): 00:00:00:07
+    Memory used: 1617.44 MB
+
+Making seed mechanism...
+Saving current model core to Chemkin file...
+Chemkin file contains 6 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 6 reactions.
+Saving current model core and edge to Chemkin file...
+Chemkin file contains 6 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 6 reactions.
+Saving current model core to HTML file...
+Saving current model edge to HTML file...
+Updating RMG execution statistics...
+    Execution time (DD:HH:MM:SS): 00:00:00:07
+    Memory used: 1617.44 MB
+
+Translating final chemkin file into Cantera yaml.
+Performing final model checks...
+No collision rate violators found in the model's core.
+
+MODEL GENERATION COMPLETED
+
+The final model core has 9 species and 6 reactions
+The final model edge has 0 species and 0 reactions
+
+RMG execution terminated at Mon Sep 21 10:37:06 2026
+PASSED
+test/rmgpy/rmg/mainTest.py::TestMainFunctions::test_save_seed_modulus RMG execution initiated at Mon Sep 21 10:37:06 2026
+
+#########################################################
+# RMG-Py - Reaction Mechanism Generator in Python       #
+# Version: 4.0.0                                        #
+# Authors: RMG Developers (rmg_dev@mit.edu)             #
+# P.I.s:   William H. Green (whgreen@mit.edu)           #
+#          Richard H. West (r.west@neu.edu)             #
+# Website: http://reactionmechanismgenerator.github.io/ #
+#########################################################
+
+The current git HEAD for RMG-Py is:
+	311818121ba49f335ea3f96bf194eff2281f98c2
+	Mon Sep 14 13:21:43 2026 +0300
+
+The current git HEAD for RMG-database is:
+	20cfc36cc179ecef7877f698a04a296213dfbd8c
+	Mon Sep 14 17:15:32 2026 +0300
+
+Reading input file "/home/alon/Code/RMG-Py-i246-ambipolar-wall-operator/test/rmgpy/test_data/mainTest/superminimal_input.py"...
+# Data sources
+database(
+    thermoLibraries = ['primaryThermoLibrary'],
+    reactionLibraries = [],
+    seedMechanisms = [],
+    kineticsDepositories = ['training'],
+    kineticsFamilies = ['H_Abstraction','Disproportionation','R_Recombination',
+                        'Birad_recombination', 'Birad_R_Recombination'],
+    kineticsEstimator = 'rate rules',
+)
+
+# List of species
+species(
+    label='H2',
+    reactive=True,
+    structure=SMILES("[H][H]"),
+)
+species(
+   label='O2',
+   reactive=True,
+   structure=SMILES("[O][O]"),
+)
+
+# Reaction systems
+simpleReactor(
+    temperature=(1000,'K'),
+    pressure=(1.0,'bar'),
+    initialMoleFractions={
+        'H2':.67, 'O2':.33,
+    },
+    terminationConversion={
+        'H2': 0.9,
+    },
+    terminationTime=(1e6,'s'),
+)
+
+simulator(
+    atol=1e-16,
+    rtol=1e-8,
+)
+
+model(
+    toleranceKeepInEdge=0.0,
+    toleranceMoveToCore=0.001,
+    toleranceInterruptSimulation=0.001,
+    maximumEdgeSpecies=100000,
+)
+
+options(
+    units='si',
+    generateOutputHTML=True,
+    generatePlots=False,
+    saveEdgeSpecies=True,
+    saveSimulationProfiles=True,
+    saveSeedModulus=2,
+
+)
+
+Using RMG database at: /home/alon/Code/RMG-database-plasma/input (from rmgrc)
+Warning: Generate Output HTML option was turned on. Note that this will slow down model generation.
+Warning: Edge species saving was turned on. This will slow down model generation for large simulations.
+
+Overriding max_iterations from input file (None) with command-line value (10).
+Loading transport library from NIST_Fluorine.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport library from PrimaryTransportLibrary.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport library from GRI-Mech.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport library from OneDMinN2.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport library from NOx2018.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport group database from /home/alon/Code/RMG-database-plasma/input/transport/groups...
+Loading frequencies group database from /home/alon/Code/RMG-database-plasma/input/statmech/groups...
+Loading solvation thermodynamics group database from /home/alon/Code/RMG-database-plasma/input/solvation/groups...
+Loading thermodynamics library from primaryThermoLibrary.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics group database from /home/alon/Code/RMG-database-plasma/input/thermo/groups...
+Loading thermodynamics SIDTs from /home/alon/Code/RMG-database-plasma/input/thermo/sidt...
+Adding rate rules from training set in kinetics families...
+Filling in rate rules in kinetics families by averaging...
+NOT generating reactions for unreactive species Ar
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    Ar
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 1 species and 0 reactions
+    The model edge has 2 species and 0 reactions
+
+
+NOT generating reactions for unreactive species He
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    He
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 2 species and 0 reactions
+    The model edge has 2 species and 0 reactions
+
+
+NOT generating reactions for unreactive species Ne
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    Ne
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 3 species and 0 reactions
+    The model edge has 2 species and 0 reactions
+
+
+NOT generating reactions for unreactive species N2
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    N2
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 4 species and 0 reactions
+    The model edge has 2 species and 0 reactions
+
+
+Adding species H2(1) to model core
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    H2(1)
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 5 species and 0 reactions
+    The model edge has 1 species and 0 reactions
+
+
+Adding species O2(2) to model core
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    O2(2)
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 6 species and 0 reactions
+    The model edge has 0 species and 0 reactions
+
+
+Initialization complete. Starting model generation.
+
+Generating initial reactions...
+For reaction generation 1 process is used.
+Species  renamed H based on thermo library name
+Generating thermo for new species...
+
+Summary of Secondary Model Edge Enlargement
+---------------------------------
+Added 0 new core species
+Created 2 new edge species
+    H(3)
+    [O]O(4)
+Added 0 new core reactions
+Created 2 new edge reactions
+    H(3) + H(3) <=> H2(1)
+    O2(2) + H2(1) <=> H(3) + [O]O(4)
+
+After model enlargement:
+    The model core has 6 species and 0 reactions
+    The model edge has 2 species and 2 reactions
+
+
+Completed initial enlarge edge step.
+
+Saving current model core to Chemkin file...
+Chemkin file contains 0 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 0 reactions.
+Saving current model core and edge to Chemkin file...
+Chemkin file contains 2 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 2 reactions.
+Saving current model core to HTML file...
+Saving current model edge to HTML file...
+Updating RMG execution statistics...
+    Execution time (DD:HH:MM:SS): 00:00:00:08
+    Memory used: 1836.64 MB
+
+Making seed mechanism...
+Copying seed from seed directory to /home/alon/Code/RMG-Py-i246-ambipolar-wall-operator/rmgpy/../test/rmgpy/test_data/mainTest/output/previous_seeds/iteration_number_0
+Beginning model generation stage 1 of 1.
+
+Making seed mechanism...
+Conducting simulation of reaction system 1...
+At time 0.0000e+00 s, species H(3) was added to model core to avoid singularity
+
+
+Adding species H(3) to model core
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    H(3)
+Created 0 new edge species
+Moved 1 reactions from edge to core
+    H(3) + H(3) <=> H2(1)
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 7 species and 1 reactions
+    The model edge has 1 species and 1 reactions
+
+
+For reaction generation 1 process is used.
+
+Summary of Secondary Model Edge Enlargement
+---------------------------------
+Added 0 new core species
+Created 0 new edge species
+Added 0 new core reactions
+Created 1 new edge reactions
+    O2(2) + H(3) <=> [O]O(4)
+
+After model enlargement:
+    The model core has 7 species and 1 reactions
+    The model edge has 1 species and 2 reactions
+
+
+Saving current model core to Chemkin file...
+Chemkin file contains 1 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 1 reactions.
+Saving current model core and edge to Chemkin file...
+Chemkin file contains 3 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 3 reactions.
+Saving current model core to HTML file...
+Saving current model edge to HTML file...
+Updating RMG execution statistics...
+    Execution time (DD:HH:MM:SS): 00:00:00:08
+    Memory used: 1836.64 MB
+
+Making seed mechanism...
+Copying seed from seed directory to /home/alon/Code/RMG-Py-i246-ambipolar-wall-operator/rmgpy/../test/rmgpy/test_data/mainTest/output/previous_seeds/iteration_number_2
+Conducting simulation of reaction system 1...
+At time 0.0000e+00 s, species [O]O(4) at 134996897.2931655 exceeded the minimum rate for simulation interruption of 0.001
+Reached max number of objects...preparing to terminate
+At time 0.0000e+00 s, species [O]O(4) at rate ratio 134996897.2931655 exceeded the minimum rate for moving to model core of 0.001
+terminating simulation due to interrupt...
+
+
+Adding species [O]O(4) to model core
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    [O]O(4)
+Created 0 new edge species
+Moved 2 reactions from edge to core
+    O2(2) + H2(1) <=> H(3) + [O]O(4)
+    O2(2) + H(3) <=> [O]O(4)
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 8 species and 3 reactions
+    The model edge has 0 species and 0 reactions
+
+
+For reaction generation 1 process is used.
+Species  renamed OH(D) based on thermo library name
+Species  renamed O(T) based on thermo library name
+For reaction O2(2) + [O]O(4) <=> [O]OOO(8), Ea raised from 86.9 to 93.3 kJ/mol to match endothermicity of reaction.
+Generating thermo for new species...
+
+Summary of Secondary Model Edge Enlargement
+---------------------------------
+Added 0 new core species
+Created 5 new edge species
+    O(T)(6)
+    OH(D)(5)
+    OO(7)
+    [O]OOO(8)
+    OOOO(9)
+Added 0 new core reactions
+Created 6 new edge reactions
+    O(T)(6) + OH(D)(5) <=> [O]O(4)
+    H(3) + OO(7) <=> [O]O(4) + H2(1)
+    O2(2) + [O]O(4) <=> [O]OOO(8)
+    H(3) + [O]O(4) <=> OO(7)
+    [O]O(4) + [O]O(4) <=> O2(2) + OO(7)
+    [O]O(4) + [O]O(4) <=> OOOO(9)
+
+After model enlargement:
+    The model core has 8 species and 3 reactions
+    The model edge has 5 species and 6 reactions
+
+
+Saving current model core to Chemkin file...
+Chemkin file contains 3 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 3 reactions.
+Saving current model core and edge to Chemkin file...
+Chemkin file contains 9 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 9 reactions.
+Saving current model core to HTML file...
+Saving current model edge to HTML file...
+Updating RMG execution statistics...
+    Execution time (DD:HH:MM:SS): 00:00:00:09
+    Memory used: 1836.64 MB
+
+Making seed mechanism...
+Conducting simulation of reaction system 1...
+At time 1.0000e-05 s, species [O]OOO(8) at 0.001149415249853133 exceeded the minimum rate for simulation interruption of 0.001
+Reached max number of objects...preparing to terminate
+At time 1.0000e-05 s, species [O]OOO(8) at rate ratio 0.001149415249853133 exceeded the minimum rate for moving to model core of 0.001
+terminating simulation due to interrupt...
+
+
+Adding species [O]OOO(8) to model core
+Species [O]OOO(8) was Forbidden and not added to Core...Removing from Edge.
+
+Summary of Model Enlargement
+---------------------------------
+Added 0 new core species
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 8 species and 3 reactions
+    The model edge has 4 species and 5 reactions
+
+
+For reaction generation 1 process is used.
+
+Summary of Secondary Model Edge Enlargement
+---------------------------------
+Added 0 new core species
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 8 species and 3 reactions
+    The model edge has 4 species and 5 reactions
+
+
+Saving current model core to Chemkin file...
+Chemkin file contains 3 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 3 reactions.
+Saving current model core and edge to Chemkin file...
+Chemkin file contains 8 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 8 reactions.
+Saving current model core to HTML file...
+Saving current model edge to HTML file...
+Updating RMG execution statistics...
+    Execution time (DD:HH:MM:SS): 00:00:00:09
+    Memory used: 1836.64 MB
+
+Making seed mechanism...
+Copying seed from seed directory to /home/alon/Code/RMG-Py-i246-ambipolar-wall-operator/rmgpy/../test/rmgpy/test_data/mainTest/output/previous_seeds/iteration_number_4
+Conducting simulation of reaction system 1...
+At time 6.6823e-04 s, species OOOO(9) at 0.0013638852012143423 exceeded the minimum rate for simulation interruption of 0.001
+Reached max number of objects...preparing to terminate
+At time 6.6823e-04 s, species OOOO(9) at rate ratio 0.0013638852012143423 exceeded the minimum rate for moving to model core of 0.001
+terminating simulation due to interrupt...
+
+
+Adding species OOOO(9) to model core
+Species OOOO(9) was Forbidden and not added to Core...Removing from Edge.
+
+Summary of Model Enlargement
+---------------------------------
+Added 0 new core species
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 8 species and 3 reactions
+    The model edge has 3 species and 4 reactions
+
+
+For reaction generation 1 process is used.
+
+Summary of Secondary Model Edge Enlargement
+---------------------------------
+Added 0 new core species
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 8 species and 3 reactions
+    The model edge has 3 species and 4 reactions
+
+
+Saving current model core to Chemkin file...
+Chemkin file contains 3 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 3 reactions.
+Saving current model core and edge to Chemkin file...
+Chemkin file contains 7 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 7 reactions.
+Saving current model core to HTML file...
+Saving current model edge to HTML file...
+Updating RMG execution statistics...
+    Execution time (DD:HH:MM:SS): 00:00:00:09
+    Memory used: 1836.64 MB
+
+Making seed mechanism...
+Conducting simulation of reaction system 1...
+At time 1.0000e-03 s, species OO(7) at 0.001009276539908987 exceeded the minimum rate for simulation interruption of 0.001
+Reached max number of objects...preparing to terminate
+At time 1.0000e-03 s, species OO(7) at rate ratio 0.001009276539908987 exceeded the minimum rate for moving to model core of 0.001
+terminating simulation due to interrupt...
+
+
+Adding species OO(7) to model core
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    OO(7)
+Created 0 new edge species
+Moved 3 reactions from edge to core
+    H(3) + OO(7) <=> [O]O(4) + H2(1)
+    H(3) + [O]O(4) <=> OO(7)
+    [O]O(4) + [O]O(4) <=> O2(2) + OO(7)
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 9 species and 6 reactions
+    The model edge has 2 species and 1 reactions
+
+
+For reaction generation 1 process is used.
+
+Summary of Secondary Model Edge Enlargement
+---------------------------------
+Added 0 new core species
+Created 0 new edge species
+Added 0 new core reactions
+Created 1 new edge reactions
+    OH(D)(5) + OH(D)(5) <=> OO(7)
+
+After model enlargement:
+    The model core has 9 species and 6 reactions
+    The model edge has 2 species and 2 reactions
+
+
+Saving current model core to Chemkin file...
+Chemkin file contains 6 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 6 reactions.
+Saving current model core and edge to Chemkin file...
+Chemkin file contains 8 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 8 reactions.
+Saving current model core to HTML file...
+Saving current model edge to HTML file...
+Updating RMG execution statistics...
+    Execution time (DD:HH:MM:SS): 00:00:00:09
+    Memory used: 1836.82 MB
+
+Making seed mechanism...
+Copying seed from seed directory to /home/alon/Code/RMG-Py-i246-ambipolar-wall-operator/rmgpy/../test/rmgpy/test_data/mainTest/output/previous_seeds/iteration_number_6
+Conducting simulation of reaction system 1...
+At time 3.7252e-04 s, species OH(D)(5) at 0.0012249848347041928 exceeded the minimum rate for simulation interruption of 0.001
+Reached max number of objects...preparing to terminate
+At time 3.7252e-04 s, species OH(D)(5) at rate ratio 0.0012249848347041928 exceeded the minimum rate for moving to model core of 0.001
+terminating simulation due to interrupt...
+
+
+Adding species OH(D)(5) to model core
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    OH(D)(5)
+Created 0 new edge species
+Moved 1 reactions from edge to core
+    OH(D)(5) + OH(D)(5) <=> OO(7)
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 10 species and 7 reactions
+    The model edge has 1 species and 1 reactions
+
+
+For reaction generation 1 process is used.
+Species  renamed H2O based on thermo library name
+Species  renamed O2(S) based on thermo library name
+For reaction O2(2) + OH(D)(5) <=> O2(S)(11) + OH(D)(5), Ea raised from 94.3 to 94.3 kJ/mol to match endothermicity of reaction.
+Generating thermo for new species...
+
+Summary of Secondary Model Edge Enlargement
+---------------------------------
+Added 0 new core species
+Created 3 new edge species
+    H2O(10)
+    O2(S)(11)
+    OOO(12)
+Added 0 new core reactions
+Created 11 new edge reactions
+    O(T)(6) + H(3) <=> OH(D)(5)
+    OH(D)(5) + H2(1) <=> H(3) + H2O(10)
+    O(T)(6) + [O]O(4) <=> O2(2) + OH(D)(5)
+    O2(2) + OH(D)(5) <=> O2(S)(11) + OH(D)(5)
+    O(T)(6) + H2(1) <=> H(3) + OH(D)(5)
+    H(3) + OH(D)(5) <=> H2O(10)
+    O2(2) + H2O(10) <=> OH(D)(5) + [O]O(4)
+    O(T)(6) + OO(7) <=> OH(D)(5) + [O]O(4)
+    OH(D)(5) + [O]O(4) <=> OOO(12)
+    OH(D)(5) + OO(7) <=> [O]O(4) + H2O(10)
+    O(T)(6) + H2O(10) <=> OH(D)(5) + OH(D)(5)
+
+After model enlargement:
+    The model core has 10 species and 7 reactions
+    The model edge has 4 species and 12 reactions
+
+
+Saving current model core to Chemkin file...
+Chemkin file contains 7 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 7 reactions.
+Saving current model core and edge to Chemkin file...
+Chemkin file contains 19 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 19 reactions.
+Saving current model core to HTML file...
+Saving current model edge to HTML file...
+Updating RMG execution statistics...
+    Execution time (DD:HH:MM:SS): 00:00:00:10
+    Memory used: 1836.96 MB
+
+Making seed mechanism...
+Conducting simulation of reaction system 1...
+At time 8.7754e-04 s, species H2O(10) at 0.0011214469969096873 exceeded the minimum rate for simulation interruption of 0.001
+Reached max number of objects...preparing to terminate
+At time 8.7754e-04 s, species H2O(10) at rate ratio 0.0011214469969096873 exceeded the minimum rate for moving to model core of 0.001
+terminating simulation due to interrupt...
+
+
+Adding species H2O(10) to model core
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    H2O(10)
+Created 0 new edge species
+Moved 4 reactions from edge to core
+    OH(D)(5) + H2(1) <=> H(3) + H2O(10)
+    H(3) + OH(D)(5) <=> H2O(10)
+    O2(2) + H2O(10) <=> OH(D)(5) + [O]O(4)
+    OH(D)(5) + OO(7) <=> [O]O(4) + H2O(10)
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 11 species and 11 reactions
+    The model edge has 3 species and 8 reactions
+
+
+For reaction generation 1 process is used.
+
+Summary of Secondary Model Edge Enlargement
+---------------------------------
+Added 0 new core species
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 11 species and 11 reactions
+    The model edge has 3 species and 8 reactions
+
+
+Saving current model core to Chemkin file...
+Chemkin file contains 11 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 11 reactions.
+Saving current model core and edge to Chemkin file...
+Chemkin file contains 19 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 19 reactions.
+Saving current model core to HTML file...
+Saving current model edge to HTML file...
+Updating RMG execution statistics...
+    Execution time (DD:HH:MM:SS): 00:00:00:10
+    Memory used: 1837.48 MB
+
+Making seed mechanism...
+Copying seed from seed directory to /home/alon/Code/RMG-Py-i246-ambipolar-wall-operator/rmgpy/../test/rmgpy/test_data/mainTest/output/previous_seeds/iteration_number_8
+Conducting simulation of reaction system 1...
+At time 1.2683e-03 s, species O2(S)(11) at 0.001035364274932903 exceeded the minimum rate for simulation interruption of 0.001
+Reached max number of objects...preparing to terminate
+At time 1.2683e-03 s, species O2(S)(11) at rate ratio 0.001035364274932903 exceeded the minimum rate for moving to model core of 0.001
+terminating simulation due to interrupt...
+
+
+Adding species O2(S)(11) to model core
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    O2(S)(11)
+Created 0 new edge species
+Moved 1 reactions from edge to core
+    O2(2) + OH(D)(5) <=> O2(S)(11) + OH(D)(5)
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 12 species and 12 reactions
+    The model edge has 2 species and 7 reactions
+
+
+For reaction generation 1 process is used.
+
+Summary of Secondary Model Edge Enlargement
+---------------------------------
+Added 0 new core species
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 12 species and 12 reactions
+    The model edge has 2 species and 7 reactions
+
+
+Saving current model core to Chemkin file...
+Chemkin file contains 12 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 12 reactions.
+Saving current model core and edge to Chemkin file...
+Chemkin file contains 19 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 19 reactions.
+Saving current model core to HTML file...
+Saving current model edge to HTML file...
+Updating RMG execution statistics...
+    Execution time (DD:HH:MM:SS): 00:00:00:10
+    Memory used: 1838.05 MB
+
+Making seed mechanism...
+Conducting simulation of reaction system 1...
+At time 2.7144e-03 s, species OOO(12) at 0.0010948450099315789 exceeded the minimum rate for simulation interruption of 0.001
+Reached max number of objects...preparing to terminate
+At time 2.7144e-03 s, species OOO(12) at rate ratio 0.0010948450099315789 exceeded the minimum rate for moving to model core of 0.001
+terminating simulation due to interrupt...
+
+
+Adding species OOO(12) to model core
+Species OOO(12) was Forbidden and not added to Core...Removing from Edge.
+
+Summary of Model Enlargement
+---------------------------------
+Added 0 new core species
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 12 species and 12 reactions
+    The model edge has 1 species and 6 reactions
+
+
+For reaction generation 1 process is used.
+
+Summary of Secondary Model Edge Enlargement
+---------------------------------
+Added 0 new core species
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 12 species and 12 reactions
+    The model edge has 1 species and 6 reactions
+
+
+Saving current model core to Chemkin file...
+Chemkin file contains 12 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 12 reactions.
+Saving current model core and edge to Chemkin file...
+Chemkin file contains 18 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 18 reactions.
+Saving current model core to HTML file...
+Saving current model edge to HTML file...
+Updating RMG execution statistics...
+    Execution time (DD:HH:MM:SS): 00:00:00:11
+    Memory used: 1838.37 MB
+
+Making seed mechanism...
+Copying seed from seed directory to /home/alon/Code/RMG-Py-i246-ambipolar-wall-operator/rmgpy/../test/rmgpy/test_data/mainTest/output/previous_seeds/iteration_number_10
+Conducting simulation of reaction system 1...
+At time 1.3081e-02 s, species O(T)(6) at 0.001007035063103586 exceeded the minimum rate for simulation interruption of 0.001
+Reached max number of objects...preparing to terminate
+At time 1.3081e-02 s, species O(T)(6) at rate ratio 0.001007035063103586 exceeded the minimum rate for moving to model core of 0.001
+terminating simulation due to interrupt...
+
+
+Adding species O(T)(6) to model core
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    O(T)(6)
+Created 0 new edge species
+Moved 6 reactions from edge to core
+    O(T)(6) + OH(D)(5) <=> [O]O(4)
+    O(T)(6) + H(3) <=> OH(D)(5)
+    O(T)(6) + [O]O(4) <=> O2(2) + OH(D)(5)
+    O(T)(6) + H2(1) <=> H(3) + OH(D)(5)
+    O(T)(6) + OO(7) <=> OH(D)(5) + [O]O(4)
+    O(T)(6) + H2O(10) <=> OH(D)(5) + OH(D)(5)
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 13 species and 18 reactions
+    The model edge has 0 species and 0 reactions
+
+
+For reaction generation 1 process is used.
+Generating thermo for new species...
+
+Summary of Secondary Model Edge Enlargement
+---------------------------------
+Added 0 new core species
+Created 1 new edge species
+    [O]O[O](13)
+Added 1 new core reactions
+    O(T)(6) + [O]O(4) <=> O2(S)(11) + OH(D)(5)
+Created 1 new edge reactions
+    O(T)(6) + O2(2) <=> [O]O[O](13)
+
+After model enlargement:
+    The model core has 13 species and 19 reactions
+    The model edge has 1 species and 1 reactions
+
+
+Saving current model core to Chemkin file...
+Chemkin file contains 19 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 19 reactions.
+Saving current model core and edge to Chemkin file...
+Chemkin file contains 20 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 20 reactions.
+Saving current model core to HTML file...
+Saving current model edge to HTML file...
+Updating RMG execution statistics...
+    Execution time (DD:HH:MM:SS): 00:00:00:11
+    Memory used: 1838.83 MB
+
+MODEL GENERATION TERMINATED
+
+The maximum number of iterations of 10 has been reached
+The output model may be incomplete.
+
+The current model core has 13 species and 19 reactions
+The current model edge has 1 species and 1 reactions
+Making seed mechanism...
+Saving current model core to Chemkin file...
+Chemkin file contains 19 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 19 reactions.
+Saving current model core and edge to Chemkin file...
+Chemkin file contains 20 reactions.
+Saving annotated version of Chemkin file...
+Chemkin file contains 20 reactions.
+Saving current model core to HTML file...
+Saving current model edge to HTML file...
+Updating RMG execution statistics...
+    Execution time (DD:HH:MM:SS): 00:00:00:11
+    Memory used: 1838.83 MB
+
+Translating final chemkin file into Cantera yaml.
+Performing final model checks...
+No collision rate violators found in the model's core.
+
+RMG execution terminated at Mon Sep 21 10:37:17 2026
+PASSED
+test/rmgpy/rmg/mainTest.py::TestMainFunctions::test_max_iter PASSED
+test/rmgpy/rmg/mainTest.py::TestProfiling::test_make_profile_graph PASSED
+test/rmgpy/rmg/mainTest.py::TestCanteraOutputConversion::test_chemkin_to_cantera_conversion *******************************************************************************
+No thermo data found for species 'ethane(1)'
+Error: Error converting to Cantera format.
+Traceback (most recent call last):
+  File "/home/alon/Code/RMG-Py-i246-ambipolar-wall-operator/rmgpy/rmg/main.py", line 2260, in generate_cantera_files_from_chemkin
+    parser.convert_mech(chemkin_file, transport_file=transport_file, out_name=out_name, quiet=True, permissive=True, **kwargs)
+  File "/home/alon/Code/Cantera/build/python/cantera/ck2yaml.py", line 2216, in convert_mech
+    raise InputError('\n'.join(parser.handler.errors))
+cantera.ck2yaml.InputError: No thermo data found for species 'ethane(1)'
+Please check https://cantera.org/stable/userguide/ck2yaml-tutorial.html#debugging-common-errors-in-ck-files
+for the correct Chemkin syntax.
+Trying again without transport data file.
+*******************************************************************************
+No thermo data found for species 'ethane(1)'
+*******************************************************************************
+No thermo data found for species 'CH3(4)'
+Error: Error converting to Cantera format.
+Traceback (most recent call last):
+  File "/home/alon/Code/RMG-Py-i246-ambipolar-wall-operator/rmgpy/rmg/main.py", line 2260, in generate_cantera_files_from_chemkin
+    parser.convert_mech(chemkin_file, transport_file=transport_file, out_name=out_name, quiet=True, permissive=True, **kwargs)
+  File "/home/alon/Code/Cantera/build/python/cantera/ck2yaml.py", line 2216, in convert_mech
+    raise InputError('\n'.join(parser.handler.errors))
+cantera.ck2yaml.InputError: No thermo data found for species 'CH3(4)'
+Please check https://cantera.org/stable/userguide/ck2yaml-tutorial.html#debugging-common-errors-in-ck-files
+for the correct Chemkin syntax.
+Trying again without transport data file.
+*******************************************************************************
+No thermo data found for species 'CH3(4)'
+PASSED
+test/rmgpy/rmg/modelTest.py::TestSpecies::test_get_thermo_data Loading thermodynamics library from PlasmaCationThermo.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from LithiumAdditionalThermo.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from SulfurLibrary.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from halogens.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from CO2RR_Adsorbates_Cu111.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from primaryNS.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from CH.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from CHOFCl_G4.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from bio_oil.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from BurkeH2O2.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from CHO.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from SulfurHaynes.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from C3.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from CHOClBr_G4.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from JetSurF2.0.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from electrocatLiThermo.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from CHOBr_G4.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from LithiumPrimaryThermo.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from CHOF_G4.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from C10H11.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from SulfurGlarborgNS.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from Narayanaswamy.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from CBS_QB3_1dHR.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from NH3.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from SulfurGlarborgMarshall.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from CO2RR_Adsorbates_Ag111.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from CN.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from 2-BTP.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from surfaceThermoCovDepPt111.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from SulfurGlarborgH2S.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from Spiekermann_refining_elementary_reactions.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from CHOFBr_G4.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from iodinated_Hydrocarbons.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from FormicAcid.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from DFT_QCI_thermo.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from NISTThermoLibrary.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from primaryThermoLibrary.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from SulfurGlarborgBozzelli.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from Butadiene_Dimerization.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from naphthalene_H.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from Chernov.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from Chlorination.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from FFCM1(-).py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from Fluorine.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from CHOCl_G4.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from Lai_Hexylbenzene.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from Fulvene_H.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from CHOFClBr_G4.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from USC-Mech-ii.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from GRI-Mech3.0.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from Klippenstein_Glarborg2016.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from s3_5_7_ane.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from Elliott_OOQOOH.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from LithiumPrimaryThermo2.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from surfaceThermoNi111.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from heavy_oil_ccsdtf12_1dHR.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from surfaceThermoLi.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from CurranPentane.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from CHON.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from NitrogenCurran.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from SABIC_aromatics_1dHR_extended.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from LithiumSurface.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from BurcatNS.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from electrocatThermo.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from JetSurF1.0.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from Chlorinated_Hydrocarbons.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from thermo_DFT_CCSDTF12_BAC.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from SABIC_aromatics_1dHR.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from GRI-Mech3.0-N.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from CO2RR_Adsorbates_Cu3Sn0001.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from 2-BTP_G4.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from NOx2018.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from SABIC_aromatics.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from CHON_G4.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from vinylCPD_H.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from surfaceThermoPt111.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from CHN.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics library from computationalLithiumElectrode.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics group database from /home/alon/Code/RMG-database-plasma/input/thermo/groups...
+Loading thermodynamics SIDTs from /home/alon/Code/RMG-database-plasma/input/thermo/sidt...
+PASSED
+test/rmgpy/rmg/modelTest.py::TestCoreEdgeReactionModel::test_add_new_surface_objects Warning: An instance of RMGDatabase already exists. Re-initializing it.
+For reaction generation 2 processes are used.
+For reaction generation 2 processes are used.
+PASSED
+test/rmgpy/rmg/modelTest.py::TestCoreEdgeReactionModel::test_make_new_species PASSED
+test/rmgpy/rmg/modelTest.py::TestCoreEdgeReactionModel::test_append_unreactive_structure PASSED
+test/rmgpy/rmg/modelTest.py::TestCoreEdgeReactionModel::test_make_new_species_does_not_collapse_opposite_charges PASSED
+test/rmgpy/rmg/modelTest.py::TestCoreEdgeReactionModel::test_check_for_existing_species_cache_branch_is_charge_aware PASSED
+test/rmgpy/rmg/modelTest.py::TestCoreEdgeReactionModel::test_make_new_reaction For reaction generation 2 processes are used.
+PASSED
+test/rmgpy/rmg/modelTest.py::TestCoreEdgeReactionModel::test_thermo_filter_species Removing species [CH2](4) with Gibbs energy 332913.32347432553 from edge because it's Gibbs number 1.1148750163211094 is greater than the thermo_tol_keep_spc_in_edge of 0.0 
+PASSED
+test/rmgpy/rmg/modelTest.py::TestCoreEdgeReactionModel::test_thermo_filter_down Reached maximum number of edge species
+Attempting to remove excess edge species with Thermodynamic filtering
+Removing species [CH2](4) from edge to meet maximum number of edge species, Gibbs number is 1.1148750163211094
+Removing species [CH3](3) from edge to meet maximum number of edge species, Gibbs number is 0.0
+Removing species [OH](1) from edge to meet maximum number of edge species, Gibbs number is -0.4875090493531258
+Garbage collector: collected 2377 objects.
+PASSED
+test/rmgpy/rmg/modelTest.py::TestCoreEdgeReactionModel::test_check_for_existing_reaction_eliminates_identical_reactions PASSED
+test/rmgpy/rmg/modelTest.py::TestCoreEdgeReactionModel::test_check_for_existing_reaction_keeps_identical_reactions_with_duplicate_flag PASSED
+test/rmgpy/rmg/modelTest.py::TestCoreEdgeReactionModel::test_check_for_existing_reaction_eliminates_identical_reactions_without_duplicate_flag PASSED
+test/rmgpy/rmg/modelTest.py::TestCoreEdgeReactionModel::test_check_for_existing_reaction_removes_duplicates_in_opposite_directions PASSED
+test/rmgpy/rmg/modelTest.py::TestCoreEdgeReactionModel::test_check_for_existing_reaction_eliminates_same_reaction_from_reverse_multiple_templates PASSED
+test/rmgpy/rmg/modelTest.py::TestEnlarge::test_enlarge_1_add_nonreactive_species Loading transport library from NIST_Fluorine.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport library from PrimaryTransportLibrary.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport library from GRI-Mech.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport library from OneDMinN2.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport library from NOx2018.py in /home/alon/Code/RMG-database-plasma/input/transport/libraries...
+Loading transport group database from /home/alon/Code/RMG-database-plasma/input/transport/groups...
+Loading frequencies library from halogens_G4.py in /home/alon/Code/RMG-database-plasma/input/statmech/libraries...
+Loading frequencies group database from /home/alon/Code/RMG-database-plasma/input/statmech/groups...
+Loading solvation thermodynamics group database from /home/alon/Code/RMG-database-plasma/input/solvation/groups...
+Loading thermodynamics library from primaryThermoLibrary.py in /home/alon/Code/RMG-database-plasma/input/thermo/libraries...
+Loading thermodynamics group database from /home/alon/Code/RMG-database-plasma/input/thermo/groups...
+Loading thermodynamics SIDTs from /home/alon/Code/RMG-database-plasma/input/thermo/sidt...
+NOT generating reactions for unreactive species He
+Updating 0 modified unimolecular reaction networks (out of 0)...
+
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    He
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 1 species and 0 reactions
+    The model edge has 0 species and 0 reactions
+
+
+PASSED
+test/rmgpy/rmg/modelTest.py::TestEnlarge::test_enlarge_2_add_reactive_species Adding species C2H4(1) to model core
+Updating 0 modified unimolecular reaction networks (out of 0)...
+
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    C2H4(1)
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 2 species and 0 reactions
+    The model edge has 0 species and 0 reactions
+
+
+Adding species CH3(2) to model core
+Updating 0 modified unimolecular reaction networks (out of 0)...
+
+
+Summary of Model Enlargement
+---------------------------------
+Added 1 new core species
+    CH3(2)
+Created 0 new edge species
+Added 0 new core reactions
+Created 0 new edge reactions
+
+After model enlargement:
+    The model core has 3 species and 0 reactions
+    The model edge has 0 species and 0 reactions
+
+
+PASSED
+test/rmgpy/rmg/modelTest.py::TestEnlarge::test_enlarge_3_react_edge For reaction generation 1 process is used.
+Species  renamed H based on thermo library name
+Generating thermo for new species...
+Updating 1 modified unimolecular reaction networks (out of 1)...
+Updating PDepNetwork #1
+Warning: For CC, more characteristic frequencies were generated than vibrational modes allowed. Removed 1 groups (9 frequencies) to compensate.
+Warning: Maximum number of iterations reached when fitting spectral data for CC.
+Warning: Statmech node 'C_R1' and all its parents have data = None
+Warning: For C[CH2], more characteristic frequencies were generated than vibrational modes allowed. Removed 1 groups (6 frequencies) to compensate.
+Calculating densities of states for PDepNetwork #1 network...
+Using 540 grains from -0.00 to 1118.80 kJ/mol in steps of 2.08 kJ/mol to compute densities of states
+Calculating phenomenological rate coefficients for H(4) + C[CH2](3) <=> C2H4(1)...
+Using 250 grains from -0.00 to 517.68 kJ/mol in steps of 2.08 kJ/mol to compute the k(T,P) values at 302.491 K
+Using 252 grains from -0.00 to 525.09 kJ/mol in steps of 2.09 kJ/mol to compute the k(T,P) values at 323.355 K
+Using 260 grains from -0.00 to 541.83 kJ/mol in steps of 2.09 kJ/mol to compute the k(T,P) values at 370.585 K
+Using 274 grains from -0.00 to 571.12 kJ/mol in steps of 2.09 kJ/mol to compute the k(T,P) values at 457.988 K
+Using 299 grains from -0.00 to 623.41 kJ/mol in steps of 2.09 kJ/mol to compute the k(T,P) values at 614.983 K
+Using 344 grains from -0.00 to 717.56 kJ/mol in steps of 2.09 kJ/mol to compute the k(T,P) values at 900.017 K
+Using 423 grains from -0.00 to 882.82 kJ/mol in steps of 2.09 kJ/mol to compute the k(T,P) values at 1394.8 K
+Using 517 grains from -0.00 to 1079.47 kJ/mol in steps of 2.09 kJ/mol to compute the k(T,P) values at 1985.54 K
+========================================================================
+PDepNetwork #1 network information
+----------------------------------
+Isomers:
+    C2H4(1)                                          -3.12436e-06 kJ/mol
+Reactant channels:
+    CH3(2) + CH3(2)                                       367.507 kJ/mol
+Product channels:
+    H(4) + C[CH2](3)                                      417.075 kJ/mol
+Path reactions:
+    CH3(2) + CH3(2) <=> C2H4(1)                           368.072 kJ/mol
+    H(4) + C[CH2](3) <=> C2H4(1)                          417.075 kJ/mol
+Net reactions:
+    C2H4(1) => CH3(2) + CH3(2)                      
+    C2H4(1) => H(4) + C[CH2](3)                     
+========================================================================
+
+
+
+Summary of Secondary Model Edge Enlargement
+---------------------------------
+Added 0 new core species
+Created 2 new edge species
+    H(4)
+    C[CH2](3)
+Added 1 new core reactions
+    C2H4(1) <=> CH3(2) + CH3(2)
+Created 1 new edge reactions
+    C2H4(1) => H(4) + C[CH2](3)
+
+After model enlargement:
+    The model core has 3 species and 1 reactions
+    The model edge has 2 species and 1 reactions
+
+
+PASSED
+test/rmgpy/rmg/modelTest.py::TestEnlarge::test_enlarge_4_create_pdep_network PASSED
+test/rmgpy/rmg/outputTest.py::TestOutput::test_save_output_html Thermo file has default temperature range 300.0 to 1000.0 and 1000.0 to 5000.0
+PASSED
+test/rmgpy/rmg/outputTest.py::TestOutput::test_save_output_html_edge_places_electron_for_charged_reaction Thermo file has default temperature range 300.0 to 1000.0 and 1000.0 to 5000.0
+PASSED
+test/rmgpy/rmg/pdepTest.py::TestPdep::test_energy_filter Error: to TS
+PASSED
+test/rmgpy/rmg/pdepTest.py::TestPdep::test_flux_filter Warning: Falling back flux reduction from Steady State analysis to rate coefficient analysis
+PASSED
+test/rmgpy/rmg/pdepTest.py::TestPdep::test_copy PASSED
+test/rmgpy/rmg/reactTest.py::TestReact::test_react For reaction generation 1 process is used.
+PASSED
+test/rmgpy/rmg/reactTest.py::TestReact::test_react_parallel For reaction generation 2 processes are used.
+PASSED
+test/rmgpy/rmg/reactTest.py::TestReact::test_react_all For reaction generation 1 process is used.
+PASSED
+test/rmgpy/rmg/reactTest.py::TestReact::test_react_all_parallel For reaction generation 2 processes are used.
+PASSED
+test/rmgpy/rmg/rmgTest.py::TestRMGWorkFlow::test_deterministic_reaction_template_matching SKIPPED
+test/rmgpy/rmg/rmgTest.py::TestRMGWorkFlow::test_check_for_existing_species_for_bi_aromatics PASSED
+test/rmgpy/rmg/rmgTest.py::TestRMGScript::test_parse_command_line_arguments_defaults PASSED
+test/rmgpy/rmg/rmgTest.py::TestRMGScript::test_parse_command_line_non_defaults PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestArrhenius::test_a_factor PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestArrhenius::test_n PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestArrhenius::test_ea PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestArrhenius::test_temperature0 PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestArrhenius::test_temperature_min PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestArrhenius::test_temperature_max PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestArrhenius::test_comment PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestArrhenius::test_is_temperature_valid PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestArrhenius::test_get_rate_coefficient PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestArrhenius::test_change_t0 PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestArrhenius::test_fit_to_data PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestArrhenius::test_fit_to_negative_data PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestArrhenius::test_pickle PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestArrhenius::test_repr PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestArrhenius::test_change_rate PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestArrhenius::test_to_cantera_kinetics PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestArrhenius::test_to_arrhenius_ep PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestArrhenius::test_to_arrhenius_ep_with_alpha_and_hrxn PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestArrhenius::test_to_arrhenius_ep_throws_error_with_just_alpha PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestArrheniusEP::test_a_factor PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestArrheniusEP::test_n PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestArrheniusEP::test_alpha PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestArrheniusEP::test_e0 PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestArrheniusEP::test_temperature_min PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestArrheniusEP::test_temperature_max PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestArrheniusEP::test_comment PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestArrheniusEP::test_is_temperature_valid PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestArrheniusEP::test_get_rate_coefficient PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestArrheniusEP::test_pickle PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestArrheniusEP::test_repr PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestArrheniusEP::test_change_rate PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestArrheniusBM::test_a_factor PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestArrheniusBM::test_n PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestArrheniusBM::test_w0 PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestArrheniusBM::test_e0 PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestArrheniusBM::test_temperature_min PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestArrheniusBM::test_temperature_max PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestArrheniusBM::test_is_temperature_valid PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestArrheniusBM::test_fit_to_data PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestArrheniusBM::test_get_activation_energy PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestPDepArrhenius::test_pressures PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestPDepArrhenius::test_arrhenius PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestPDepArrhenius::test_temperature_min PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestPDepArrhenius::test_temperature_max PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestPDepArrhenius::test_pressure_min PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestPDepArrhenius::test_pressure_max PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestPDepArrhenius::test_comment PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestPDepArrhenius::test_is_pressure_dependent PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestPDepArrhenius::test_get_rate_coefficient PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestPDepArrhenius::test_fit_to_data PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestPDepArrhenius::test_pickle PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestPDepArrhenius::test_repr PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestPDepArrhenius::test_change_rate PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestMultiArrhenius::test_arrhenius PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestMultiArrhenius::test_temperature_min PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestMultiArrhenius::test_temperature_max PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestMultiArrhenius::test_comment PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestMultiArrhenius::test_is_temperature_valid PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestMultiArrhenius::test_get_rate_coefficient PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestMultiArrhenius::test_pickle PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestMultiArrhenius::test_repr PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestMultiArrhenius::test_to_arrhenius PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestMultiArrhenius::test_to_arrhenius_temperature_range PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestMultiArrhenius::test_to_arrhenius_multiple PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestMultiArrhenius::test_change_rate PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestMultiPDepArrhenius::test_arrhenius PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestMultiPDepArrhenius::test_temperature_min PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestMultiPDepArrhenius::test_temperature_max PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestMultiPDepArrhenius::test_pressure_min PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestMultiPDepArrhenius::test_pressure_max PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestMultiPDepArrhenius::test_comment PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestMultiPDepArrhenius::test_is_temperature_valid PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestMultiPDepArrhenius::test_is_pressure_valid PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestMultiPDepArrhenius::test_get_rate_coefficient PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestMultiPDepArrhenius::test_get_rate_coefficient_diff_plist PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestMultiPDepArrhenius::test_pickle PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestMultiPDepArrhenius::test_repr PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestMultiPDepArrhenius::test_change_rate PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestMultiPDepArrhenius::test_generate_reverse_rate_coefficient PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestTwoTemperaturePlasma::test_a_factor PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestTwoTemperaturePlasma::test_n PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestTwoTemperaturePlasma::test_ea_g PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestTwoTemperaturePlasma::test_ea_e PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestTwoTemperaturePlasma::test_t0 PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestTwoTemperaturePlasma::test_temperature_min PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestTwoTemperaturePlasma::test_temperature_max PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestTwoTemperaturePlasma::test_comment PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestTwoTemperaturePlasma::test_uses_electron_temperature_flag PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestTwoTemperaturePlasma::test_is_temperature_valid PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestTwoTemperaturePlasma::test_reduces_to_single_temp_when_Te_equals_Tgas PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestTwoTemperaturePlasma::test_rate_increases_with_electron_temperature PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestTwoTemperaturePlasma::test_change_rate PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestTwoTemperaturePlasma::test_pickle PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestTwoTemperaturePlasma::test_repr PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestTwoTemperaturePlasma::test_cantera_yaml_structure PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestElectronCollisionPlasma::test_energy_grid PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestElectronCollisionPlasma::test_cross_section PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestElectronCollisionPlasma::test_temperature_min PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestElectronCollisionPlasma::test_temperature_max PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestElectronCollisionPlasma::test_comment PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestElectronCollisionPlasma::test_uses_electron_temperature_flag PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestElectronCollisionPlasma::test_is_temperature_valid PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestElectronCollisionPlasma::test_get_rate_coefficient_alias PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestElectronCollisionPlasma::test_rate_increases_with_electron_temperature PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestElectronCollisionPlasma::test_change_rate PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestElectronCollisionPlasma::test_is_identical_to_distinguishes_cross_sections PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestElectronCollisionPlasma::test_pickle PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestElectronCollisionPlasma::test_repr PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestElectronCollisionPlasma::test_cantera_yaml_structure PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestBadnellRRArrhenius::test_a_factor_per_molecule_units PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestBadnellRRArrhenius::test_b_parameter PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestBadnellRRArrhenius::test_t_params PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestBadnellRRArrhenius::test_optional_cterms_present PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestBadnellRRArrhenius::test_temperature_min_max PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestBadnellRRArrhenius::test_comment PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestBadnellRRArrhenius::test_electron_flags_on_direct_parameter_path PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestBadnellRRArrhenius::test_is_temperature_valid PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestBadnellRRArrhenius::test_get_rate_coefficient_matches_formula_per_molecule_input PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestBadnellRRArrhenius::test_get_rate_coefficient_matches_formula_per_mole_input PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestBadnellRRArrhenius::test_change_rate PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestBadnellRRArrhenius::test_repr PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestBadnellRRArrhenius::test_match_power_law_fit_over_narrow_window PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestBadnellRRArrhenius::test_electron_flags_on_yaml_path PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestBadnellRRArrhenius::test_init_from_yaml_Z1_N0_basic_loads_and_sets_window_and_rate PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestBadnellRRArrhenius::test_init_from_yaml_Z2_N1_with_C_T2_and_rate PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestBadnellRRArrhenius::test_init_from_yaml_comment_override_is_appended PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestBadnellRRArrhenius::test_init_from_yaml_default_path_resolution_works PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestBadnellRRArrhenius::test_init_from_yaml_blocks_Z_gt36_by_default PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestBadnellRRArrhenius::test_init_from_yaml_early_return_overrides_manual_values PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestBadnellRRArrhenius::test_init_from_yaml_validates_integer_ZN PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestBadnellRRArrhenius::test_to_two_temp_plasma_structure_and_flags PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestBadnellRRArrhenius::test_to_two_temp_plasma_matches_badnell_along_TeqTe PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestBadnellRRArrhenius::test_to_two_temp_plasma_Ea_partitioning PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestBadnellRRArrhenius::test_to_cantera_kinetics_uses_two_temp_rate PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestVoronovEIArrhenius::test_a_factor_per_molecule_units PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestVoronovEIArrhenius::test_a_factor_is_stored_at_the_declared_magnitude_in_every_spelling[cm^3/(molecule*s)] PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestVoronovEIArrhenius::test_a_factor_is_stored_at_the_declared_magnitude_in_every_spelling[m^3/(molecule*s)] PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestVoronovEIArrhenius::test_a_factor_is_stored_at_the_declared_magnitude_in_every_spelling[cm^3/(mol*s)] PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestVoronovEIArrhenius::test_a_factor_is_stored_at_the_declared_magnitude_in_every_spelling[m^3/(mol*s)] PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestVoronovEIArrhenius::test_dimensionless_params PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestVoronovEIArrhenius::test_threshold_energy_stored_as_double PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestVoronovEIArrhenius::test_temperature_min_max PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestVoronovEIArrhenius::test_comment_and_stage PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestVoronovEIArrhenius::test_electron_flags_on_direct_parameter_path PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestVoronovEIArrhenius::test_is_temperature_valid PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestVoronovEIArrhenius::test_get_rate_coefficient_matches_formula_per_molecule_input PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestVoronovEIArrhenius::test_get_rate_coefficient_matches_formula_per_mole_input PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestVoronovEIArrhenius::test_change_rate PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestVoronovEIArrhenius::test_repr_roundtrip PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestVoronovEIArrhenius::test_missing_dE_raises_rather_than_fabricating_a_threshold PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestVoronovEIArrhenius::test_electron_flags_on_yaml_path PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestVoronovEIArrhenius::test_init_from_yaml_Z1_N1_loads_hydrogen_row PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestVoronovEIArrhenius::test_populate_from_yaml_selects_correct_entry_by_ZN_per_molecule PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestVoronovEIArrhenius::test_populate_from_yaml_selects_correct_entry_by_ZN_per_mole PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestVoronovEIArrhenius::test_populate_from_yaml_rate_matches_formula PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestVoronovEIArrhenius::test_to_two_temp_plasma_structure_and_flags PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestVoronovEIArrhenius::test_to_two_temp_plasma_Ea_partitioning PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestVoronovEIArrhenius::test_to_cantera_kinetics_generates_correct_object PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestVoronovFactoryInventory::test_voronov_factory_inventory_is_complete PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestVoronovFactoryInventory::test_voronov_factory_no_construction_site_invents_a_parameter PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestVoronovFactoryInventory::test_voronov_factory_direct_parameters_demands_an_explicit_threshold PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestVoronovFactoryInventory::test_voronov_factory_table_constructor_takes_the_threshold_from_the_table PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestVoronovFactoryInventory::test_voronov_factory_from_yaml_takes_the_threshold_from_the_table PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestVoronovFactoryInventory::test_voronov_factory_table_paths_refuse_a_row_without_a_threshold PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestVoronovFactoryInventory::test_voronov_factory_pickle_carries_the_threshold_across PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestPlasmaKineticsReprRoundTrip::test_repr_roundtrip_is_loadable_python[TwoTemperaturePlasma] PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestPlasmaKineticsReprRoundTrip::test_repr_roundtrip_is_loadable_python[ElectronCollisionPlasma] PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestPlasmaKineticsReprRoundTrip::test_repr_roundtrip_is_loadable_python[BadnellRRArrhenius] PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestPlasmaKineticsReprRoundTrip::test_repr_roundtrip_is_loadable_python[VoronovEIArrhenius] PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestPlasmaKineticsReprRoundTrip::test_repr_roundtrip_is_loadable_python_preserves_reference_temperature PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestPlasmaKineticsReprRoundTrip::test_repr_roundtrip_is_loadable_python_preserves_ionization_threshold PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestTwoTemperaturePlasmaIdentity::test_identity_is_sensitive_to_every_rate_bearing_field[A] PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestTwoTemperaturePlasmaIdentity::test_identity_is_sensitive_to_every_rate_bearing_field[n] PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestTwoTemperaturePlasmaIdentity::test_identity_is_sensitive_to_every_rate_bearing_field[Ea_g] PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestTwoTemperaturePlasmaIdentity::test_identity_is_sensitive_to_every_rate_bearing_field[Ea_e] PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestTwoTemperaturePlasmaIdentity::test_identity_is_sensitive_to_every_rate_bearing_field[T0] PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestTwoTemperaturePlasmaIdentity::test_identity_is_sensitive_to_type PASSED
+test/rmgpy/kinetics/arrheniusTest.py::TestTwoTemperaturePlasmaIdentity::test_identity_holds_for_an_unperturbed_copy PASSED
+test/rmgpy/kinetics/chebyshevTest.py::TestChebyshev::test_coeffs PASSED
+test/rmgpy/kinetics/chebyshevTest.py::TestChebyshev::test_temperature_min PASSED
+test/rmgpy/kinetics/chebyshevTest.py::TestChebyshev::test_temperature_max PASSED
+test/rmgpy/kinetics/chebyshevTest.py::TestChebyshev::test_pressure_min PASSED
+test/rmgpy/kinetics/chebyshevTest.py::TestChebyshev::test_pressure_max PASSED
+test/rmgpy/kinetics/chebyshevTest.py::TestChebyshev::test_comment PASSED
+test/rmgpy/kinetics/chebyshevTest.py::TestChebyshev::test_is_pressure_dependent PASSED
+test/rmgpy/kinetics/chebyshevTest.py::TestChebyshev::test_get_rate_coefficient PASSED
+test/rmgpy/kinetics/chebyshevTest.py::TestChebyshev::test_fit_to_data PASSED
+test/rmgpy/kinetics/chebyshevTest.py::TestChebyshev::test_fit_to_data2 PASSED
+test/rmgpy/kinetics/chebyshevTest.py::TestChebyshev::test_pickle PASSED
+test/rmgpy/kinetics/chebyshevTest.py::TestChebyshev::test_repr PASSED
+test/rmgpy/kinetics/chebyshevTest.py::TestChebyshev::test_change_rate PASSED
+test/rmgpy/kinetics/chebyshevTest.py::TestChebyshev::test_is_identical_to PASSED
+test/rmgpy/kinetics/diffusionLimitedTest.py::TestDiffusionLimited::test_get_effective_rate_unimolecular Loading solvation thermodynamics group database from /home/alon/Code/RMG-database-plasma/input/solvation/groups...
+Enabling diffusion-limited kinetics...
+PASSED
+test/rmgpy/kinetics/diffusionLimitedTest.py::TestDiffusionLimited::test_get_effective_rate_2_to_1 PASSED
+test/rmgpy/kinetics/diffusionLimitedTest.py::TestDiffusionLimited::test_get_effective_rate_3_to_2 PASSED
+test/rmgpy/kinetics/falloffTest.py::TestThirdBody::test_arrhenius_low PASSED
+test/rmgpy/kinetics/falloffTest.py::TestThirdBody::test_temperature_min PASSED
+test/rmgpy/kinetics/falloffTest.py::TestThirdBody::test_temperature_max PASSED
+test/rmgpy/kinetics/falloffTest.py::TestThirdBody::test_pressure_min PASSED
+test/rmgpy/kinetics/falloffTest.py::TestThirdBody::test_pressure_max PASSED
+test/rmgpy/kinetics/falloffTest.py::TestThirdBody::test_comment PASSED
+test/rmgpy/kinetics/falloffTest.py::TestThirdBody::test_is_pressure_dependent PASSED
+test/rmgpy/kinetics/falloffTest.py::TestThirdBody::test_get_effective_pressure PASSED
+test/rmgpy/kinetics/falloffTest.py::TestThirdBody::test_get_effective_collider_efficiencies PASSED
+test/rmgpy/kinetics/falloffTest.py::TestThirdBody::test_get_rate_coefficient PASSED
+test/rmgpy/kinetics/falloffTest.py::TestThirdBody::test_pickle PASSED
+test/rmgpy/kinetics/falloffTest.py::TestThirdBody::test_repr PASSED
+test/rmgpy/kinetics/falloffTest.py::TestThirdBody::test_change_rate PASSED
+test/rmgpy/kinetics/falloffTest.py::TestLindemann::test_arrhenius_high PASSED
+test/rmgpy/kinetics/falloffTest.py::TestLindemann::test_arrhenius_low PASSED
+test/rmgpy/kinetics/falloffTest.py::TestLindemann::test_temperature_min PASSED
+test/rmgpy/kinetics/falloffTest.py::TestLindemann::test_temperature_max PASSED
+test/rmgpy/kinetics/falloffTest.py::TestLindemann::test_pressure_min PASSED
+test/rmgpy/kinetics/falloffTest.py::TestLindemann::test_pressure_max PASSED
+test/rmgpy/kinetics/falloffTest.py::TestLindemann::test_comment PASSED
+test/rmgpy/kinetics/falloffTest.py::TestLindemann::test_is_pressure_dependent PASSED
+test/rmgpy/kinetics/falloffTest.py::TestLindemann::test_get_rate_coefficient PASSED
+test/rmgpy/kinetics/falloffTest.py::TestLindemann::test_pickle PASSED
+test/rmgpy/kinetics/falloffTest.py::TestLindemann::test_repr PASSED
+test/rmgpy/kinetics/falloffTest.py::TestLindemann::test_change_rate PASSED
+test/rmgpy/kinetics/falloffTest.py::TestTroe::test_arrhenius_high PASSED
+test/rmgpy/kinetics/falloffTest.py::TestTroe::test_arrhenius_low PASSED
+test/rmgpy/kinetics/falloffTest.py::TestTroe::test_alpha PASSED
+test/rmgpy/kinetics/falloffTest.py::TestTroe::test_t3 PASSED
+test/rmgpy/kinetics/falloffTest.py::TestTroe::test_t1 PASSED
+test/rmgpy/kinetics/falloffTest.py::TestTroe::test_t2 PASSED
+test/rmgpy/kinetics/falloffTest.py::TestTroe::test_temperature_min PASSED
+test/rmgpy/kinetics/falloffTest.py::TestTroe::test_temperature_max PASSED
+test/rmgpy/kinetics/falloffTest.py::TestTroe::test_pressure_min PASSED
+test/rmgpy/kinetics/falloffTest.py::TestTroe::test_pressure_max PASSED
+test/rmgpy/kinetics/falloffTest.py::TestTroe::test_comment PASSED
+test/rmgpy/kinetics/falloffTest.py::TestTroe::test_is_pressure_dependent PASSED
+test/rmgpy/kinetics/falloffTest.py::TestTroe::test_get_rate_coefficient PASSED
+test/rmgpy/kinetics/falloffTest.py::TestTroe::test_pickle PASSED
+test/rmgpy/kinetics/falloffTest.py::TestTroe::test_repr PASSED
+test/rmgpy/kinetics/falloffTest.py::TestTroe::test_change_rate PASSED
+test/rmgpy/kinetics/kineticsModelTest.py::TestKineticsModel::test_is_identical_to PASSED
+test/rmgpy/kinetics/kineticsModelTest.py::TestKineticsModel::test_repr PASSED
+test/rmgpy/kinetics/kineticsModelTest.py::TestKineticsModel::test_pickle PASSED
+test/rmgpy/kinetics/kineticsModelTest.py::TestOrder::test_to_order_zeroth PASSED
+test/rmgpy/kinetics/kineticsModelTest.py::TestOrder::test_to_order_first PASSED
+test/rmgpy/kinetics/kineticsModelTest.py::TestOrder::test_to_order_second PASSED
+test/rmgpy/kinetics/kineticsModelTest.py::TestOrder::test_to_order_third PASSED
+test/rmgpy/kinetics/kineticsModelTest.py::TestOrder::test_to_units_zeroth PASSED
+test/rmgpy/kinetics/kineticsModelTest.py::TestOrder::test_to_units_first PASSED
+test/rmgpy/kinetics/kineticsModelTest.py::TestOrder::test_to_units_second PASSED
+test/rmgpy/kinetics/kineticsModelTest.py::TestOrder::test_to_units_third PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestStickingCoefficient::test_A PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestStickingCoefficient::test_n PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestStickingCoefficient::test_Ea PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestStickingCoefficient::test_T0 PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestStickingCoefficient::test_Tmin PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestStickingCoefficient::test_Tmax PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestStickingCoefficient::test_comment PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestStickingCoefficient::test_coverage_dependence PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestStickingCoefficient::test_is_temperature_valid PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestStickingCoefficient::test_pickle PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestStickingCoefficient::test_repr PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestStickingCoefficient::test_copy PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestStickingCoefficient::test_is_identical_to PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestSurfaceArrhenius::test_A PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestSurfaceArrhenius::test_n PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestSurfaceArrhenius::test_Ea PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestSurfaceArrhenius::test_T0 PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestSurfaceArrhenius::test_Tmin PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestSurfaceArrhenius::test_Tmax PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestSurfaceArrhenius::test_comment PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestSurfaceArrhenius::test_coverage_dependence PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestSurfaceArrhenius::test_is_temperature_valid PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestSurfaceArrhenius::test_pickle PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestSurfaceArrhenius::test_repr PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestSurfaceArrhenius::test_copy PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestSurfaceArrhenius::test_is_identical_to PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestSurfaceArrhenius::test_to_surface_charge_transfer PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestSurfaceChargeTransfer::test_A PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestSurfaceChargeTransfer::test_n PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestSurfaceChargeTransfer::test_ne PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestSurfaceChargeTransfer::test_alpha PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestSurfaceChargeTransfer::test_Ea PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestSurfaceChargeTransfer::test_T0 PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestSurfaceChargeTransfer::test_Tmin PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestSurfaceChargeTransfer::test_Tmax PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestSurfaceChargeTransfer::test_V0 PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestSurfaceChargeTransfer::test_comment PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestSurfaceChargeTransfer::test_is_temperature_valid PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestSurfaceChargeTransfer::test_pickle PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestSurfaceChargeTransfer::test_repr PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestSurfaceChargeTransfer::test_copy PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestSurfaceChargeTransfer::test_is_identical_to PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestSurfaceChargeTransfer::test_to_surface_arrhenius PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestSurfaceChargeTransfer::test_get_activation_energy_from_potential PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestSurfaceChargeTransfer::test_get_rate_coefficient PASSED
+test/rmgpy/kinetics/kineticsSurfaceTest.py::TestSurfaceChargeTransfer::test_change_v0 PASSED
+test/rmgpy/kinetics/kineticsdataTest.py::TestKineticsData::test_temperature_data PASSED
+test/rmgpy/kinetics/kineticsdataTest.py::TestKineticsData::test_kdata PASSED
+test/rmgpy/kinetics/kineticsdataTest.py::TestKineticsData::test_temperature_min PASSED
+test/rmgpy/kinetics/kineticsdataTest.py::TestKineticsData::test_temperature_max PASSED
+test/rmgpy/kinetics/kineticsdataTest.py::TestKineticsData::test_comment PASSED
+test/rmgpy/kinetics/kineticsdataTest.py::TestKineticsData::test_is_temperature_valid PASSED
+test/rmgpy/kinetics/kineticsdataTest.py::TestKineticsData::test_get_rate_coefficient PASSED
+test/rmgpy/kinetics/kineticsdataTest.py::TestKineticsData::test_pickle PASSED
+test/rmgpy/kinetics/kineticsdataTest.py::TestKineticsData::test_repr PASSED
+test/rmgpy/kinetics/kineticsdataTest.py::TestPDepKineticsData::test_temperature_data PASSED
+test/rmgpy/kinetics/kineticsdataTest.py::TestPDepKineticsData::test_pressure_data PASSED
+test/rmgpy/kinetics/kineticsdataTest.py::TestPDepKineticsData::test_kdata PASSED
+test/rmgpy/kinetics/kineticsdataTest.py::TestPDepKineticsData::test_temperature_min PASSED
+test/rmgpy/kinetics/kineticsdataTest.py::TestPDepKineticsData::test_temperature_max PASSED
+test/rmgpy/kinetics/kineticsdataTest.py::TestPDepKineticsData::test_pressure_min PASSED
+test/rmgpy/kinetics/kineticsdataTest.py::TestPDepKineticsData::test_pressure_max PASSED
+test/rmgpy/kinetics/kineticsdataTest.py::TestPDepKineticsData::test_comment PASSED
+test/rmgpy/kinetics/kineticsdataTest.py::TestPDepKineticsData::test_is_temperature_valid PASSED
+test/rmgpy/kinetics/kineticsdataTest.py::TestPDepKineticsData::test_is_pressure_valid PASSED
+test/rmgpy/kinetics/kineticsdataTest.py::TestPDepKineticsData::test_get_rate_coefficient PASSED
+test/rmgpy/kinetics/kineticsdataTest.py::TestPDepKineticsData::test_pickle PASSED
+test/rmgpy/kinetics/kineticsdataTest.py::TestPDepKineticsData::test_repr PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestWorkTermsEnterTheBarrier::test_nonzero_wr_raises_the_barrier PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestWorkTermsEnterTheBarrier::test_nonzero_wr_changes_the_rate PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestWorkTermsEnterTheBarrier::test_wp_shifts_the_driving_force PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestWorkTermsEnterTheBarrier::test_equal_work_terms_do_not_cancel PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestWorkTermsEnterTheBarrier::test_work_terms_break_identity PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestWorkTermsRefusedOnRmsExport::test_nonzero_wr_is_refused PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestWorkTermsRefusedOnRmsExport::test_nonzero_wp_is_refused PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestWorkTermsRefusedOnRmsExport::test_zero_work_terms_export PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestWorkTermsRefusedOnRmsExport::test_non_marcus_kinetics_are_not_the_guard_s_business PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestWorkTermsRefusedOnRmsExport::test_yaml_rms_writer_refuses PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestZeroWorkTermsAreANoOp::test_barrier_reduces_to_the_bare_quadratic[-200000.0-300.0] PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestZeroWorkTermsAreANoOp::test_barrier_reduces_to_the_bare_quadratic[-200000.0-800.0] PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestZeroWorkTermsAreANoOp::test_barrier_reduces_to_the_bare_quadratic[-200000.0-1500.0] PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestZeroWorkTermsAreANoOp::test_barrier_reduces_to_the_bare_quadratic[-200000.0-2500.0] PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestZeroWorkTermsAreANoOp::test_barrier_reduces_to_the_bare_quadratic[-50000.0-300.0] PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestZeroWorkTermsAreANoOp::test_barrier_reduces_to_the_bare_quadratic[-50000.0-800.0] PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestZeroWorkTermsAreANoOp::test_barrier_reduces_to_the_bare_quadratic[-50000.0-1500.0] PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestZeroWorkTermsAreANoOp::test_barrier_reduces_to_the_bare_quadratic[-50000.0-2500.0] PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestZeroWorkTermsAreANoOp::test_barrier_reduces_to_the_bare_quadratic[0.0-300.0] PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestZeroWorkTermsAreANoOp::test_barrier_reduces_to_the_bare_quadratic[0.0-800.0] PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestZeroWorkTermsAreANoOp::test_barrier_reduces_to_the_bare_quadratic[0.0-1500.0] PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestZeroWorkTermsAreANoOp::test_barrier_reduces_to_the_bare_quadratic[0.0-2500.0] PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestZeroWorkTermsAreANoOp::test_barrier_reduces_to_the_bare_quadratic[50000.0-300.0] PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestZeroWorkTermsAreANoOp::test_barrier_reduces_to_the_bare_quadratic[50000.0-800.0] PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestZeroWorkTermsAreANoOp::test_barrier_reduces_to_the_bare_quadratic[50000.0-1500.0] PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestZeroWorkTermsAreANoOp::test_barrier_reduces_to_the_bare_quadratic[50000.0-2500.0] PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestZeroWorkTermsAreANoOp::test_rate_reduces_to_the_bare_expression[-200000.0-300.0] PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestZeroWorkTermsAreANoOp::test_rate_reduces_to_the_bare_expression[-200000.0-800.0] PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestZeroWorkTermsAreANoOp::test_rate_reduces_to_the_bare_expression[-200000.0-1500.0] PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestZeroWorkTermsAreANoOp::test_rate_reduces_to_the_bare_expression[-200000.0-2500.0] PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestZeroWorkTermsAreANoOp::test_rate_reduces_to_the_bare_expression[-50000.0-300.0] PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestZeroWorkTermsAreANoOp::test_rate_reduces_to_the_bare_expression[-50000.0-800.0] PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestZeroWorkTermsAreANoOp::test_rate_reduces_to_the_bare_expression[-50000.0-1500.0] PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestZeroWorkTermsAreANoOp::test_rate_reduces_to_the_bare_expression[-50000.0-2500.0] PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestZeroWorkTermsAreANoOp::test_rate_reduces_to_the_bare_expression[0.0-300.0] PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestZeroWorkTermsAreANoOp::test_rate_reduces_to_the_bare_expression[0.0-800.0] PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestZeroWorkTermsAreANoOp::test_rate_reduces_to_the_bare_expression[0.0-1500.0] PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestZeroWorkTermsAreANoOp::test_rate_reduces_to_the_bare_expression[0.0-2500.0] PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestZeroWorkTermsAreANoOp::test_rate_reduces_to_the_bare_expression[50000.0-300.0] PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestZeroWorkTermsAreANoOp::test_rate_reduces_to_the_bare_expression[50000.0-800.0] PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestZeroWorkTermsAreANoOp::test_rate_reduces_to_the_bare_expression[50000.0-1500.0] PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestZeroWorkTermsAreANoOp::test_rate_reduces_to_the_bare_expression[50000.0-2500.0] PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestZeroWorkTermsAreANoOp::test_defaulted_work_terms_are_zero PASSED
+test/rmgpy/kinetics/marcusWorkTermsTest.py::TestZeroWorkTermsAreANoOp::test_round_trip_preserves_work_terms PASSED
+test/rmgpy/kinetics/plasmaKineticsConsolidationTest.py::PlasmaKineticsConsolidationTest::test_reference_and_live_share_the_spread PASSED
+test/rmgpy/kinetics/plasmaKineticsConsolidationTest.py::PlasmaKineticsConsolidationTest::test_rate_paths_reproduce_origin99[TwoTemp_grc] PASSED
+test/rmgpy/kinetics/plasmaKineticsConsolidationTest.py::PlasmaKineticsConsolidationTest::test_rate_paths_reproduce_origin99[TwoTemp_two_temp] PASSED
+test/rmgpy/kinetics/plasmaKineticsConsolidationTest.py::PlasmaKineticsConsolidationTest::test_rate_paths_reproduce_origin99[ECP_grc] PASSED
+test/rmgpy/kinetics/plasmaKineticsConsolidationTest.py::PlasmaKineticsConsolidationTest::test_rate_paths_reproduce_origin99[ECP_electron_temp] PASSED
+test/rmgpy/kinetics/plasmaKineticsConsolidationTest.py::PlasmaKineticsConsolidationTest::test_rate_paths_reproduce_origin99[Badnell_grc] PASSED
+test/rmgpy/kinetics/plasmaKineticsConsolidationTest.py::PlasmaKineticsConsolidationTest::test_rate_paths_reproduce_origin99[Voronov_grc] PASSED
+test/rmgpy/kinetics/plasmaKineticsConsolidationTest.py::PlasmaKineticsConsolidationTest::test_scalar_A_normalization_matches PASSED
+test/rmgpy/kinetics/plasmaKineticsConsolidationTest.py::PlasmaKineticsConsolidationTest::test_voronov_A_setter_divergence PASSED
+test/rmgpy/kinetics/plasmaKineticsConsolidationTest.py::PlasmaKineticsConsolidationTest::test_electron_temp_delegation PASSED
+test/rmgpy/kinetics/plasmaKineticsConsolidationTest.py::PlasmaKineticsConsolidationTest::test_table_driven_rates_reproduce_origin99 PASSED
+test/rmgpy/kinetics/plasmaKineticsConsolidationTest.py::PlasmaKineticsConsolidationTest::test_module_under_test_is_in_this_worktree PASSED
+test/rmgpy/kinetics/plasmaKineticsConsolidationTest.py::PlasmaKineticsConsolidationTest::test_fixture_provenance_is_computed PASSED
+test/rmgpy/kinetics/tunnelingTest.py::TestWigner::test_frequency PASSED
+test/rmgpy/kinetics/tunnelingTest.py::TestWigner::test_calculate_tunneling_factor PASSED
+test/rmgpy/kinetics/tunnelingTest.py::TestWigner::test_pickle PASSED
+test/rmgpy/kinetics/tunnelingTest.py::TestWigner::test_repr PASSED
+test/rmgpy/kinetics/tunnelingTest.py::TestEckart::test_frequency PASSED
+test/rmgpy/kinetics/tunnelingTest.py::TestEckart::test_e0_reac PASSED
+test/rmgpy/kinetics/tunnelingTest.py::TestEckart::test_e0_ts PASSED
+test/rmgpy/kinetics/tunnelingTest.py::TestEckart::test_e0_prod PASSED
+test/rmgpy/kinetics/tunnelingTest.py::TestEckart::test_calculate_tunneling_factor PASSED
+test/rmgpy/kinetics/tunnelingTest.py::TestEckart::test_pickle PASSED
+test/rmgpy/kinetics/tunnelingTest.py::TestEckart::test_repr PASSED
+test/rmgpy/kinetics/uncertaintiesTest.py::TestUncertainties::test_expected_uncertainty PASSED
+
+==================================== ERRORS ====================================
+__ ERROR at teardown of TestMain.test_cantera_input_files_match_chemkin_later __
+
+cls = <class 'mainTest.TestMain'>
+
+    @classmethod
+    def teardown_class(cls):
+        """A function that is run ONCE after all unit tests in this class."""
+        # Reset module level database
+        import rmgpy.data.rmg
+    
+        rmgpy.data.rmg.database = None
+    
+        # Remove output directory
+        shutil.rmtree(os.path.join(cls.testDir, cls.outputDir))
+    
+        # Delete the seed libraries created in database
+>       shutil.rmtree(cls.seedKinetics)
+
+test/rmgpy/rmg/mainTest.py:82: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../../anaconda3/envs/rmg_env/lib/python3.9/shutil.py:724: in rmtree
+    onerror(os.lstat, path, sys.exc_info())
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+path = '/home/alon/Code/RMG-database-plasma/input/kinetics/libraries/testSeed'
+ignore_errors = False
+onerror = <function rmtree.<locals>.onerror at 0x792536abf820>
+
+    def rmtree(path, ignore_errors=False, onerror=None):
+        """Recursively delete a directory tree.
+    
+        If ignore_errors is set, errors are ignored; otherwise, if onerror
+        is set, it is called to handle the error with arguments (func,
+        path, exc_info) where func is platform and implementation dependent;
+        path is the argument to that function that caused it to fail; and
+        exc_info is a tuple returned by sys.exc_info().  If ignore_errors
+        is false and onerror is None, an exception is raised.
+    
+        """
+        sys.audit("shutil.rmtree", path)
+        if ignore_errors:
+            def onerror(*args):
+                pass
+        elif onerror is None:
+            def onerror(*args):
+                raise
+        if _use_fd_functions:
+            # While the unsafe rmtree works fine on bytes, the fd based does not.
+            if isinstance(path, bytes):
+                path = os.fsdecode(path)
+            # Note: To guard against symlink races, we use the standard
+            # lstat()/open()/fstat() trick.
+            try:
+>               orig_st = os.lstat(path)
+E               FileNotFoundError: [Errno 2] No such file or directory: '/home/alon/Code/RMG-database-plasma/input/kinetics/libraries/testSeed'
+
+../../anaconda3/envs/rmg_env/lib/python3.9/shutil.py:722: FileNotFoundError
+=============================== warnings summary ===============================
+test/rmgpy/solver/steadyStateTest.py::SteadyStateTerminationInSolverTest::test_no_flux_system_terminates_but_demonstrates_no_steady_state
+test/rmgpy/solver/steadyStateTest.py::SteadyStateTerminationInSolverTest::test_latch_does_not_leak_between_simulations
+  /home/alon/Code/RMG-Py-i246-ambipolar-wall-operator/test/rmgpy/solver/steadyStateTest.py:327: RuntimeWarning: invalid value encountered in divide
+    return reactor.simulate(
+
+test/rmgpy/solver/steadyStateTest.py::SteadyStateTerminationInSolverTest::test_inert_core_with_nonempty_edge_reports_no_steady_state_instead_of_promoting
+  /home/alon/Code/RMG-Py-i246-ambipolar-wall-operator/test/rmgpy/solver/steadyStateTest.py:460: RuntimeWarning: invalid value encountered in divide
+    terminated, _res, invalid_objects, _ss, _sr, _t, _x = reactor.simulate(
+
+test/rmgpy/solver/zeroFluxPromotionTest.py::ZeroFluxPromotionTest::test_no_promotion_when_the_whole_system_is_inert
+test/rmgpy/solver/zeroFluxPromotionTest.py::ZeroFluxPromotionTest::test_promotion_still_picks_the_fastest_species_when_the_edge_has_flux
+test/rmgpy/solver/zeroFluxPromotionTest.py::ZeroFluxPromotionTest::test_no_promotion_when_the_only_edge_flux_is_subnormal_dust
+test/rmgpy/solver/zeroFluxPromotionTest.py::ZeroFluxPromotionTest::test_a_nan_edge_rate_is_not_selected_as_the_largest_and_promoted
+  /home/alon/Code/RMG-Py-i246-ambipolar-wall-operator/test/rmgpy/solver/zeroFluxPromotionTest.py:133: RuntimeWarning: invalid value encountered in divide
+    return rxn_system.simulate(
+
+test/rmgpy/solver/zeroFluxPromotionTest.py::ZeroFluxPromotionTest::test_promotion_still_picks_the_fastest_species_when_the_edge_has_flux
+test/rmgpy/solver/zeroFluxPromotionTest.py::ZeroFluxPromotionTest::test_no_promotion_when_the_only_edge_flux_is_subnormal_dust
+  /home/alon/Code/RMG-Py-i246-ambipolar-wall-operator/test/rmgpy/solver/zeroFluxPromotionTest.py:133: RuntimeWarning: divide by zero encountered in divide
+    return rxn_system.simulate(
+
+test/rmgpy/rmg/mainTest.py::TestMainFunctions::test_save_seed_modulus
+  /home/alon/Code/RMG-Py-i246-ambipolar-wall-operator/rmgpy/rmg/main.py:1147: RuntimeWarning: invalid value encountered in divide
+    terminated, resurrected, obj, new_surface_species, new_surface_reactions, t, x = reaction_system.simulate(
+
+test/rmgpy/rmg/mainTest.py::TestMainFunctions::test_save_seed_modulus
+  /home/alon/Code/RMG-Py-i246-ambipolar-wall-operator/rmgpy/rmg/main.py:1147: RuntimeWarning: divide by zero encountered in divide
+    terminated, resurrected, obj, new_surface_species, new_surface_reactions, t, x = reaction_system.simulate(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+ERROR test/rmgpy/rmg/mainTest.py::TestMain::test_cantera_input_files_match_chemkin_later
+======= 658 passed, 2 skipped, 11 warnings, 1 error in 106.71s (0:01:46) =======

@@ -1,0 +1,36 @@
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/solver/base.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+rmgpy/solver/base.c: In function ‘__pyx_f_5rmgpy_6solver_4base_14ReactionSystem_simulate’:
+rmgpy/solver/base.c:19960:24: warning: ‘__pyx_v_RTP’ may be used uninitialized [-Wmaybe-uninitialized]
+19960 |           __pyx_t_19 = PyFloat_FromDouble(__pyx_v_RTP); if (unlikely(!__pyx_t_19)) __PYX_ERR(0, 857, __pyx_L1_error)
+      |                        ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+rmgpy/solver/base.c:16317:10: note: ‘__pyx_v_RTP’ was declared here
+16317 |   double __pyx_v_RTP;
+      |          ^~~~~~~~~~~
+rmgpy/solver/base.c:20066:40: warning: ‘__pyx_pybuffernd_sens_species_indices.diminfo[0].shape’ may be used uninitialized [-Wmaybe-uninitialized]
+20066 |         if (__pyx_t_24 < 0) __pyx_t_24 += __pyx_pybuffernd_sens_species_indices.diminfo[0].shape;
+      |                             ~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+rmgpy/solver/base.c:16465:21: note: ‘__pyx_pybuffernd_sens_species_indices.diminfo[0].shape’ was declared here
+16465 |   __Pyx_LocalBuf_ND __pyx_pybuffernd_sens_species_indices;
+      |                     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+rmgpy/solver/base.c:2978:73: warning: ‘__pyx_pybuffernd_sens_species_indices.diminfo[0].strides’ may be used uninitialized [-Wmaybe-uninitialized]
+ 2978 | #define __Pyx_BufPtrStrided1d(type, buf, i0, s0) (type)((char*)buf + i0 * s0)
+      |                                                                         ^
+rmgpy/solver/base.c:20067:24: note: in expansion of macro ‘__Pyx_BufPtrStrided1d’
+20067 |         __pyx_t_40 = (*__Pyx_BufPtrStrided1d(__pyx_t_5numpy_int_t *, __pyx_pybuffernd_sens_species_indices.rcbuffer->pybuffer.buf, __pyx_t_24, __pyx_pybuffernd_sens_species_indices.diminfo[0].strides));
+      |                        ^~~~~~~~~~~~~~~~~~~~~
+rmgpy/solver/base.c:16465:21: note: ‘__pyx_pybuffernd_sens_species_indices.diminfo[0].strides’ was declared here
+16465 |   __Pyx_LocalBuf_ND __pyx_pybuffernd_sens_species_indices;
+      |                     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/solver/plasma.c:1140:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~

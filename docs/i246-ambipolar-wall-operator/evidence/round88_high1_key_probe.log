@@ -1,0 +1,19 @@
+[21:14:03] WARNING: Accepted unusual valence(s): O+1(2)
+
+[21:14:03] WARNING: Accepted unusual valence(s): O+1(2)
+
+[21:14:03] WARNING: Accepted unusual valence(s): O+1(2)
+
+[21:14:03] WARNING: Accepted unusual valence(s): O+1(2)
+
+name               inchi                                    OLD key                        NEW key
+Ar                 InChI=1S/Ar                              InChI=1S/Ar                    InChI=1S/Ar
+neutral 13C-DME    InChI=1S/C2H6O/c1-3-2/h1-2H3/i1+1        InChI=1S/C2H6O/c1-3-2/h1-2H3/i1+1 InChI=1S/C2H6O/c1-3-2/h1-2H3/i1+1
+13C-DME cation     InChI=1S/C2H6O/c1-3-2/h1-2H3/q+1/i1+1    InChI=1S/C2H6O/c1-3-2/h1-2H3   InChI=1S/C2H6O/c1-3-2/h1-2H3/i1+1
+12C-DME            InChI=1S/C2H6O/c1-3-2/h1-2H3             InChI=1S/C2H6O/c1-3-2/h1-2H3   InChI=1S/C2H6O/c1-3-2/h1-2H3
+ethanol            InChI=1S/C2H6O/c1-2-3/h3H,2H2,1H3        InChI=1S/C2H6O/c1-2-3/h3H,2H2,1H3 InChI=1S/C2H6O/c1-2-3/h3H,2H2,1H3
+
+OLD: 13C-DME cation == 12C-DME neutral (the transmutation bug): True
+NEW: 13C-DME cation == 12C-DME neutral (must be False): False
+NEW: 13C-DME neutral == 13C-DME cation (charge independence kept): True
+NEW: Ar == Ar+ (electronic states still coincide): True

@@ -1,0 +1,93 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_ test_adapter_does_not_launder_a_source_channels_nonfinite_reading_to_absence _
+
+    def test_adapter_does_not_launder_a_source_channels_nonfinite_reading_to_absence():
+        """Round 113 BLOCKING 1, THROUGH the production path (the base.pyx adapter), not by calling
+        update() directly. Round 112 closed the reproductions inside update(), but base.pyx mapped
+        every UNARMED non-finite hook value back to None -- 'no channel' -- so a source-driven
+        electron channel that reported nan/+inf/-inf while unarmed was laundered to absence and a flat
+        generic channel could fire on it. A reactor with an active ionisation source has a channel IN
+        PLAY every step; a non-finite reading it produces must poison, armed or not. Driven through the
+        reactor's own simulate(): the adapter must hand the poison to the criterion (never None), and
+        the run must not reach steady state on it. (A wall deck with NO source keeps reporting nan as
+        its documented 'no such channel' sentinel, and is still judged on the generic channel -- pinned
+        by ``test_wall_only_deck_integrates_past_t0_on_the_production_path``.)"""
+        orig = TerminationSteadyState.update
+        for poison in (float('nan'), float('inf'), float('-inf')):
+            class _PoisonChannel(PlasmaReactor):
+                def steady_state_external_residual(self, t_now, y_now, t_prev, y_prev):
+                    return poison
+                def steady_state_external_armed(self, t_now, y_now):
+                    return False
+    
+            term = [TerminationSteadyState(tolerance=1e-8), TerminationTime((50.0, 's'))]
+            r, core, rxns = _build_reactor(wall=True, gamma=0.5, with_chemistry=False,
+                                           x_ion=1.0e-4, source=1.0e22, termination=term,
+                                           reactor_cls=_PoisonChannel)
+            seen = []
+    
+            def spy(self, *a, **k):
+                ret = orig(self, *a, **k)
+                seen.append((k.get('external_residual'), ret))
+                return ret
+    
+            TerminationSteadyState.update = spy
+            try:
+                _simulate(r, core, rxns)
+            finally:
+                TerminationSteadyState.update = orig
+    
+            supplied = [v for v, ret in seen if v is not None]
+>           assert supplied, (poison, "the adapter laundered every source-channel reading to None")
+E           AssertionError: (nan, 'the adapter laundered every source-channel reading to None')
+E           assert []
+
+test/rmgpy/solver/plasmaWallTest.py:1667: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  root:plasmaWallTest.py:1594 Terminated on the backstop terminationTime at 5.1008e+01 s WITHOUT reaching steady state: residual 2.6534e-12 against tolerance 1.0000e-08 (66 consecutive steps below it, 2 needed; the integration never reached the fastest relaxation time in the system). This result is NOT a steady-state result.
+_____ test_rate_ratios_refuse_a_nonfinite_ratio_over_a_finite_denominator ______
+
+    def test_rate_ratios_refuse_a_nonfinite_ratio_over_a_finite_denominator():
+        """Round 112 HIGH 2 (the interrupt, network-promotion and surface-promotion decision sites).
+        Every enlargement/interrupt/promotion ratio -- core, edge, network-leak and surface -- routes
+        through ``_rate_ratios_or_zero``; it is the single decision-input gate for all four sites. A
+        finite, positive denominator does NOT guarantee a finite ratio: a +/-inf rate makes the ratio
+        non-finite (the network-leak ``lr > tol_interrupt`` interrupt), and a finite but huge gross
+        rate OVERFLOWS to +inf even over a finite denominator (the surface ``ratio > tol`` promotion).
+        A non-finite ratio then interrupts the run and promotes numerical garbage. The helper must
+        refuse -- stop loudly -- rather than return it, while still ABSTAINING (zeros) on a
+        zero/negative/non-finite denominator and passing finite ratios straight through."""
+        from rmgpy.solver.base import ReactionSystem
+        ratios = ReactionSystem._rate_ratios_or_zero
+    
+        # Interrupt / network-leak site: a +/-inf or nan rate over a finite, positive denominator.
+        for bad in (np.inf, -np.inf, np.nan):
+            with pytest.raises(ValueError, match='(?i)non-finite'):
+                ratios(np.array([1.0, bad, 2.0]), 4.0)
+    
+        # Surface-promotion site: finite gross rate, finite denominator, the RATIO overflows to +inf.
+        with pytest.raises(ValueError, match='(?i)non-finite'):
+            ratios(np.array([1.0e308, 1.0e308]), 1.0e-300)
+    
+        # Round 113 BLOCKING 2: a non-finite NUMERATOR stops loudly REGARDLESS of the denominator.
+        # The zero/non-finite-denominator abstention is NOT a licence to launder an inf rate to zero
+        # (core_species_rates=[0], char_rate=0, network_leak_rates=[inf] must not quietly promote or
+        # interrupt on a zeroed inf). This inverts the round-112 assertion, which blessed exactly that
+        # laundering.
+        for denom in (0.0, -1.0, float('nan'), float('inf')):
+            with pytest.raises(ValueError, match='(?i)non-finite'):
+>               ratios(np.array([np.inf, 1.0]), denom)
+E               Failed: DID NOT RAISE <class 'ValueError'>
+
+test/rmgpy/solver/steadyStateTest.py:1269: Failed
+=============================== warnings summary ===============================
+test/rmgpy/solver/steadyStateTest.py::test_rate_ratios_refuse_a_nonfinite_ratio_over_a_finite_denominator
+  /home/alon/Code/RMG-Py-i246-ambipolar-wall-operator/test/rmgpy/solver/steadyStateTest.py:1260: RuntimeWarning: overflow encountered in divide
+    ratios(np.array([1.0e308, 1.0e308]), 1.0e-300)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED test/rmgpy/solver/plasmaWallTest.py::test_adapter_does_not_launder_a_source_channels_nonfinite_reading_to_absence
+FAILED test/rmgpy/solver/steadyStateTest.py::test_rate_ratios_refuse_a_nonfinite_ratio_over_a_finite_denominator
+2 failed, 1 warning in 1.30s

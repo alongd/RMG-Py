@@ -92,6 +92,21 @@ from rmgpy.solver.termination import (TerminationTime, TerminationConversion, Te
 # dust case slip past it.
 _CHAR_RATE_FLOOR = 1e-100
 
+
+def _defining_class(cls, name):
+    """The class in ``cls``'s MRO whose own namespace defines attribute ``name``."""
+    for klass in cls.__mro__:
+        if name in vars(klass):
+            return klass
+    return None
+
+
+def _frozen_plasma_class():
+    """:class:`PlasmaReactor`, imported lazily: plasma cimports this module."""
+    from rmgpy.solver.plasma import PlasmaReactor
+    return PlasmaReactor
+
+
 cdef class ReactionSystem(DASx):
     """
     A base class for all RMG reaction systems.
@@ -642,6 +657,7 @@ cdef class ReactionSystem(DASx):
         cdef int index, spc_index, max_species_index, max_network_index
         cdef int num_core_species, num_edge_species, num_pdep_networks, num_core_reactions
         cdef double step_time, char_rate, max_species_rate, max_network_rate, maxEdgeReactionAccum, stdan
+        cdef double non_chemical_char_rate, total_char_rate
         cdef np.ndarray[np.float64_t, ndim=1] y0  # Vector containing the number of moles of each species
         cdef np.ndarray[np.float64_t, ndim=1] core_species_rates, edge_species_rates, network_leak_rates
         cdef np.ndarray[np.float64_t, ndim=1] core_species_production_rates, core_species_consumption_rates, total_div_accum_nums
@@ -881,9 +897,62 @@ cdef class ReactionSystem(DASx):
             core_species_production_rates = self.core_species_production_rates
             edge_species_rates = np.abs(self.edge_species_rates)
             network_leak_rates = np.abs(self.network_leak_rates)
-            core_species_rate_ratios = np.abs(self.core_species_rates / char_rate)
-            edge_species_rate_ratios = np.abs(self.edge_species_rates / char_rate)
-            network_leak_rate_ratios = np.abs(self.network_leak_rates / char_rate)
+            # char_rate is the CHEMISTRY characteristic rate (the norm of core_species_rates).
+            # The enlargement/pruning rate RATIOS (core/edge/network) and the branching numbers
+            # that read them are DIMENSIONLESS signals compared against dimensionless tolerances,
+            # so their denominator must be char_rate: a wall or source term must not rescale which
+            # edge species looks fast, and only that gas-phase rate makes the ratio dimensionless.
+            # Only the inert / termination GATES read the TOTAL flux (total_char_rate, via
+            # get_non_chemical_char_rate): the zero-flux promotion below and the steady-state block
+            # later. max_char_rate and the non-finite guard read char_rate, chemistry diagnostics.
+            #
+            # The ratio criterion is EVALUATED ONLY when char_rate is finite and strictly positive
+            # -- the sole case in which edge/char_rate is a dimensionless ratio (round 110 HIGH 2,
+            # owner's ruling). When char_rate is zero the ratio is UNDEFINED, and this relative
+            # criterion ABSTAINS: it can neither promote nor terminate. The separately-defined,
+            # dimensioned ABSOLUTE criterion below (total_char_rate against the _CHAR_RATE_FLOOR
+            # band -- the zero-flux promotion block and the steady-state-inert block) is what
+            # governs the zero-core-flux case instead; it already exists, so no policy is invented
+            # here. Substituting 1.0, an epsilon, or any other floor for the denominator would
+            # compare a DIMENSIONAL rate against a dimensionless tolerance -- a category error, and
+            # exactly the bug being fixed (1.0 was the previous form; a smaller number is the same
+            # bug). Abstention returns zeros, which promote nothing and launder no 0/0 NaN through
+            # argmax or the branching numbers.
+            #
+            # A non-finite rate is a broken integration, not a physical flux, and it defeats every
+            # gate below: NaN fails all comparisons silently (``NaN <= floor`` and ``NaN < tiny``
+            # are both False), and np.argmax treats a NaN as the largest value, so an overflow or
+            # invalid kinetics would be selected as "the fastest species" and promoted into the
+            # core -- numerical garbage presented as model growth. Treating it as zero flux would
+            # be just as wrong: it converts a detectable numerical failure into a quiet inert
+            # result. Stop loudly, naming what went non-finite, BEFORE the ratios are formed, so a
+            # broken rate never reaches ``_rate_ratios_or_zero`` (whose own abstention would
+            # otherwise launder a non-finite network-leak rate to zero over a zero char_rate --
+            # round 113 BLOCKING 2). Network leak rates are inspected here too, which the
+            # pre-round-113 guard omitted.
+            if not (np.isfinite(char_rate)
+                    and np.isfinite(edge_species_rates).all()
+                    and np.isfinite(network_leak_rates).all()):
+                bad_core = np.flatnonzero(~np.isfinite(self.core_species_rates))
+                bad_edge = np.flatnonzero(~np.isfinite(edge_species_rates))
+                bad_network = np.flatnonzero(~np.isfinite(network_leak_rates))
+                raise ValueError(
+                    'Non-finite reaction rate at time {0:10.4e} s in reaction system {1} (the one '
+                    'named in the "Conducting simulation of reaction system" line above): the '
+                    'characteristic core rate is {2!r}, with {3:d} of {4:d} core species rates, '
+                    '{5:d} of {6:d} edge species rates and {7:d} of {8:d} network leak rates '
+                    'non-finite (NaN or infinite). A non-finite rate is a broken integration -- an '
+                    'overflow or invalid kinetics -- not a physical flux; it is neither promoted '
+                    'into the core nor reported as an inert result. Core species indices with '
+                    'non-finite rates: {9}; edge species indices: {10}; network indices: {11}.'.format(
+                        self.t, type(self).__name__, char_rate,
+                        bad_core.size, self.num_core_species,
+                        bad_edge.size, len(edge_species_rates),
+                        bad_network.size, len(network_leak_rates),
+                        list(bad_core), list(bad_edge), list(bad_network)))
+            core_species_rate_ratios = self._rate_ratios_or_zero(self.core_species_rates, char_rate)
+            edge_species_rate_ratios = self._rate_ratios_or_zero(self.edge_species_rates, char_rate)
+            network_leak_rate_ratios = self._rate_ratios_or_zero(self.network_leak_rates, char_rate)
             num_edge_reactions = self.num_edge_reactions
             core_reaction_rates = self.core_reaction_rates
             product_indices = self.product_indices
@@ -898,35 +967,25 @@ cdef class ReactionSystem(DASx):
                 if max_network_leak_rate_ratios[i] < network_leak_rate_ratios[index]:
                     max_network_leak_rate_ratios[i] = network_leak_rate_ratios[index]
 
-            # A non-finite rate is a broken integration, not a physical flux, and it defeats
-            # every gate below: NaN fails all comparisons silently (``NaN <= floor`` and
-            # ``NaN < tiny`` are both False), and np.argmax treats a NaN as the largest value,
-            # so an overflow or invalid kinetics would be selected as "the fastest species" and
-            # promoted into the core -- numerical garbage presented as model growth. Treating it
-            # as zero flux would be just as wrong: it converts a detectable numerical failure
-            # into a quiet inert result. Stop loudly instead, naming what went non-finite, so the
-            # failure is diagnosable rather than laundered into the mechanism.
-            if not (np.isfinite(char_rate) and np.isfinite(edge_species_rates).all()):
-                bad_core = np.flatnonzero(~np.isfinite(self.core_species_rates))
-                bad_edge = np.flatnonzero(~np.isfinite(edge_species_rates))
-                raise ValueError(
-                    'Non-finite reaction rate at time {0:10.4e} s in reaction system {1} (the one '
-                    'named in the "Conducting simulation of reaction system" line above): the '
-                    'characteristic core rate is {2!r}, with {3:d} of {4:d} core species rates and '
-                    '{5:d} of {6:d} edge species rates non-finite (NaN or infinite). A non-finite '
-                    'rate is a broken integration -- an overflow or invalid kinetics -- not a '
-                    'physical flux; it is neither promoted into the core nor reported as an inert '
-                    'result. Core species indices with non-finite rates: {7}; edge species indices: '
-                    '{8}.'.format(self.t, type(self).__name__, char_rate,
-                                  bad_core.size, self.num_core_species,
-                                  bad_edge.size, len(edge_species_rates),
-                                  list(bad_core), list(bad_edge)))
+            # The inert / termination tests below ask whether the composition can still
+            # change, which is a question about the reactor's TOTAL flux, not its
+            # gas-phase chemistry diagnostic. get_non_chemical_char_rate() is 0.0 for every
+            # reactor without transport/source terms, so total_char_rate == char_rate and their
+            # behaviour is unchanged; for a PlasmaReactor whose wall is depleting the plasma it
+            # is non-zero, which is the dimensioned ABSOLUTE signal that keeps a wall-driven
+            # system from being reported as one that never started, and that governs the
+            # zero-core-flux case the (dimensionless) enlargement ratio abstains from. char_rate
+            # itself is left untouched -- it stays the chemistry diagnostic the ratios and the
+            # logs read.
+            non_chemical_char_rate = self.get_non_chemical_char_rate()
+            total_char_rate = sqrt(char_rate * char_rate
+                                   + non_chemical_char_rate * non_chemical_char_rate)
 
             # No resolvable flux (exact zero OR normal-magnitude dust). When a terminationSteadyState
             # criterion is present this block stands down: a no-flux exit is that criterion's to
             # report (as "NO STEADY STATE WAS DEMONSTRATED"), and breaking here would take the
             # promotion path before control ever reached the steady-state termination logic below.
-            if char_rate <= _CHAR_RATE_FLOOR and len(edge_species_rates) > 0 and not steady_state_terms:
+            if total_char_rate <= _CHAR_RATE_FLOOR and len(edge_species_rates) > 0 and not steady_state_terms:
                 max_species_index = np.argmax(edge_species_rates)
                 max_species = edge_species[max_species_index]
                 max_species_rate = edge_species_rates[max_species_index]
@@ -1079,15 +1138,25 @@ cdef class ReactionSystem(DASx):
 
                 #Determination of species moving from surface to core on-the-fly
 
-                surface_species_rate_ratios = np.zeros(len(surface_species_indices))
                 surface_species_production = core_species_production_rates[surface_species_indices]
                 surface_species_consumption = core_species_consumption_rates[surface_species_indices]
+                # Route the surface-species ratio through the SAME abstention policy as the
+                # core/edge/network ratios (round 111 HIGH 2). ``max(|production|, |consumption|)
+                # / char_rate`` is a DIMENSIONLESS ratio only where ``char_rate`` is finite and
+                # strictly positive. On a reversible surface reaction with equal forward and
+                # reverse flux the net rates cancel, so ``char_rate == 0`` while gross production
+                # and consumption are both positive: the bare division gave ``positive / 0 = inf``
+                # and promoted a surface species through a criterion that is undefined. The helper
+                # abstains there -- returns zeros, promoting nothing -- with no ``1.0``, epsilon or
+                # floor (a floored denominator compares a dimensional rate against a dimensionless
+                # tolerance). This was the second entry point the round-110 helper did not cover:
+                # the repair lived in ``_rate_ratios_or_zero`` and this call site bypassed it.
+                surface_species_rates = np.maximum(np.abs(surface_species_production),
+                                                   np.abs(surface_species_consumption))
+                surface_species_rate_ratios = self._rate_ratios_or_zero(surface_species_rates, char_rate)
 
                 for i in range(len(surface_species_indices)):
-                    rr = max(abs(surface_species_production[i]), abs(surface_species_consumption[i])) / char_rate
-                    surface_species_rate_ratios[i] = rr
-
-                    if rr > tol_move_surface_species_to_core:
+                    if surface_species_rate_ratios[i] > tol_move_surface_species_to_core:
                         sind = surface_species_indices[i]
                         surface_object_indices.append(sind)
                         surface_objects.append(core_species[sind])
@@ -1339,15 +1408,49 @@ cdef class ReactionSystem(DASx):
             # below reads it, so that a run stopping on its backstop time can still report
             # the residual it got to whatever order the criteria were declared in.
             if steady_state_terms:
+                # Which criterion actually fired this step, so the readback and the success log
+                # name IT and not always criterion zero (round 110 MEDIUM). With several criteria
+                # of different tolerance, quoting criterion zero produced statements false on
+                # their face -- "below tolerance 1.0000e-30 for 0 consecutive steps" while a
+                # different criterion is what terminated the run. None until one fires; the
+                # per-step residual readback falls back to criterion zero exactly as before.
+                steady_state_fired = None
                 if steady_state_prev_y is not None:
+                    # A reactor may resolve a state variable BELOW the mole floor (a plasma
+                    # electron seeded from zero by an external source) that the generic
+                    # residual cannot see, and whose bounded saturating slope never reaches
+                    # the R>=1 arm. Fold in that channel's residual and let it arm from the
+                    # reactor's known relaxation time. Both default to none/False, so every
+                    # ordinary reactor is unchanged.
+                    # Whether an external channel is present is declared by the hook contract
+                    # (round 114): ``steady_state_external_channel`` returns None for "no
+                    # channel" and the reading otherwise. One rule for every reactor, applied in
+                    # update(): None is absence, a finite reading is folded in, a non-finite one
+                    # poisons. Round 113 inferred presence here from the PlasmaReactor's own
+                    # ``has_wall``/``ionisation_source``, which discarded the reading of any
+                    # other reactor overriding the documented hooks.
+                    ss_external = self.steady_state_external_channel(
+                        self.t, y_core_species, steady_state_prev_t, steady_state_prev_y)
+                    ss_external_armed = self.steady_state_external_armed(self.t, y_core_species)
+                    ss_relaxation_time = self.steady_state_relaxation_time(self.t, y_core_species)
                     for term in steady_state_terms:
                         if term.update(y_core_species, self.t, steady_state_prev_y,
-                                       steady_state_prev_t, atol, core_species):
+                                       steady_state_prev_t, atol, core_species,
+                                       external_residual=ss_external,
+                                       external_armed=ss_external_armed,
+                                       relaxation_time=ss_relaxation_time):
                             steady_state_satisfied = True
+                            if steady_state_fired is None:
+                                steady_state_fired = term
                 if not steady_state_satisfied:
                     steady_state_prev_y = y_core_species.copy()
                     steady_state_prev_t = self.t
-                self.steady_state_residual = steady_state_terms[0].residual
+                # Report the criterion that fired; before any fires, the latest residual from
+                # criterion zero (so a backstop stop still has a number to quote).
+                if steady_state_fired is not None:
+                    self.steady_state_residual = steady_state_fired.residual
+                else:
+                    self.steady_state_residual = steady_state_terms[0].residual
 
                 # A system carrying no net flux cannot change again, so there is nothing
                 # left to integrate and the run must stop. The ordinary path above already
@@ -1365,7 +1468,15 @@ cdef class ReactionSystem(DASx):
                 # is the sole owner of the no-flux exit and must cover the whole inert band it
                 # would have caught, not just exact zero, or a dust-rate system would neither
                 # promote nor terminate and would churn to the backstop time.
-                if char_rate <= _CHAR_RATE_FLOOR and not steady_state_satisfied:
+                #
+                # Tested on total_char_rate, not char_rate: "no flux" here means the
+                # reactor's TOTAL flux is at the floor, chemistry AND any non-chemical
+                # transport/source term. A wall that is depleting the plasma carries no
+                # gas-phase char_rate but is moving the composition, so gating on char_rate
+                # alone would call it inert and let the warning below claim, falsely, that
+                # "the composition cannot change". total_char_rate == char_rate for every
+                # reactor without such terms, so their inert exit is unchanged.
+                if total_char_rate <= _CHAR_RATE_FLOOR and not steady_state_satisfied:
                     steady_state_inert = True
                     for term in steady_state_terms:
                         if term.armed:
@@ -1387,7 +1498,9 @@ cdef class ReactionSystem(DASx):
                         'composition that cannot move carries no information about whether it has '
                         'settled.'.format(self.t))
                 else:
-                    term = steady_state_terms[0]
+                    # The criterion that fired (round 110 MEDIUM), not always criterion zero, so
+                    # the tolerance and streak quoted are the ones that actually terminated the run.
+                    term = steady_state_fired if steady_state_fired is not None else steady_state_terms[0]
                     logging.info('At time {0:10.4e} s, reached steady state: residual {1:10.4e} below '
                                  'tolerance {2:10.4e} for {3:d} consecutive steps (slowest species: '
                                  '{4}).'.format(self.t, self.steady_state_residual, term.tolerance,
@@ -1475,6 +1588,146 @@ cdef class ReactionSystem(DASx):
         # Return the invalid object (if the simulation was invalid) or None
         # (if the simulation was valid)
         return terminated, False, invalid_objects, surface_species, surface_reactions, self.t, conversion
+
+    cpdef double get_non_chemical_char_rate(self):
+        """
+        The L2 norm, in core-species-rate units (mol/m^3/s), of any NON-CHEMICAL
+        contribution to the core species rates at the current accepted state -- flux
+        that changes the composition but is deliberately kept out of
+        ``core_species_rates`` (the gas-phase chemistry diagnostic).
+
+        Zero for every reactor without such terms, so the inert / termination tests in
+        :meth:`simulate` are unchanged for them. A reactor with transport or source
+        terms that move the composition without appearing in ``core_species_rates``
+        (e.g. :class:`PlasmaReactor`'s charged-particle wall) overrides this, so those
+        tests can ask about the reactor's TOTAL flux -- "can the composition still
+        change?" -- rather than about its chemistry diagnostic alone.
+        """
+        return 0.0
+
+    @staticmethod
+    def _rate_ratios_or_zero(rates, denominator):
+        """Enlargement/pruning rate ratios ``|rates / denominator|`` -- the DIMENSIONLESS
+        quantity model growth and pruning compare against dimensionless tolerances.
+
+        Evaluated ONLY when the denominator (the characteristic chemistry rate ``char_rate``)
+        is finite and strictly positive: that is the sole case in which the ratio is
+        dimensionless and the criterion is physically applicable. When the denominator is
+        zero, negative, or non-finite the ratio is UNDEFINED and this relative criterion
+        ABSTAINS -- it returns zeros, so it promotes nothing and terminates nothing, and the
+        separately-defined dimensioned ABSOLUTE criterion (``total_char_rate`` against the
+        ``_CHAR_RATE_FLOOR`` band) is left to govern the zero-core-flux case.
+
+        Returning zeros -- rather than dividing by ``1.0``, an epsilon, or any other floored
+        denominator -- is the point (round 110 HIGH 2, owner's ruling): a floored denominator
+        compares a DIMENSIONAL rate against a dimensionless tolerance, a category error that
+        promotes or suppresses edge species by their raw magnitude (``1.0`` was the previous
+        form; a smaller constant is the same bug). Zeros also avoid laundering a ``0/0`` NaN
+        through ``argmax`` and the branching numbers.
+        """
+        rates = np.asarray(rates, dtype=np.float64)
+        # A non-finite NUMERATOR is a broken integration REGARDLESS of the denominator -- an
+        # overflow, an invalid rate, a +/-inf. The zero/non-finite-denominator abstention below is
+        # NOT a licence to launder it to zero: ``core_species_rates=[0]``, ``char_rate=0``,
+        # ``network_leak_rates=[inf]`` must NOT quietly promote or interrupt on a zeroed inf
+        # (round 113 BLOCKING 2). Stop loudly first, before the denominator is even consulted, so
+        # abstention applies only to FINITE numerators whose ratio is undefined (0/0, x/0).
+        if not np.isfinite(rates).all():
+            bad = np.flatnonzero(~np.isfinite(rates))
+            raise ValueError(
+                'Non-finite enlargement rate: {0:d} of {1:d} rates are NaN or infinite -- a broken '
+                'integration, not a physical flux; such a rate is neither promoted into the core nor '
+                'used to interrupt the simulation, whatever the characteristic rate {2!r}. Offending '
+                'indices: {3}; their rates: {4}.'.format(
+                    bad.size, rates.size, denominator, list(np.flatnonzero(~np.isfinite(rates))),
+                    list(rates[bad])))
+        # The relative criterion is defined only over a finite, positive denominator; even there
+        # the ratio of FINITE rates can OVERFLOW to +inf (a gross rate over a tiny char_rate),
+        # which is equally unusable and defeats every gate that reads it (``inf > tol`` interrupts
+        # and promotes garbage; ``nan`` slips comparisons yet is the argmax maximum). Every
+        # enlargement/pruning/interrupt/promotion ratio -- core, edge, network-leak, surface --
+        # routes through here, so this is the one place that closes the overflow by construction.
+        # Compute under a SUPPRESSED error state so the finiteness verdict does not depend on
+        # NumPy's global divide/overflow settings (round 113 LOW): check the result explicitly.
+        if np.isfinite(denominator) and denominator > 0.0:
+            with np.errstate(all='ignore'):
+                ratios = np.abs(rates / denominator)
+            if not np.isfinite(ratios).all():
+                bad = np.flatnonzero(~np.isfinite(ratios))
+                raise ValueError(
+                    'Non-finite enlargement rate ratio: {0:d} of {1:d} ratios overflowed to NaN or '
+                    'infinite over the finite, positive characteristic rate {2!r} -- a gross-rate '
+                    'overflow, not a physical flux; it is neither promoted into the core nor used to '
+                    'interrupt the simulation. Offending indices: {3}; their rates: {4}.'.format(
+                        bad.size, ratios.size, denominator, list(bad), list(rates[bad])))
+            return ratios
+        # Finite numerators over a zero/negative/non-finite denominator: the relative criterion is
+        # undefined, so ABSTAIN (return zeros, round 110/111). Reached only for finite rates now.
+        return np.zeros_like(rates)
+
+    cpdef double steady_state_external_residual(self, double t_now, np.ndarray y_now,
+                                                double t_prev, np.ndarray y_prev):
+        """Steady-state residual of a state variable the reactor resolves BELOW the
+        integrator's mole floor, which :class:`TerminationSteadyState` therefore cannot see
+        (default: none, ``nan``).
+
+        A :class:`PlasmaReactor` whose electron is seeded from zero by an external source
+        saturates far under ``atol`` yet is meaningfully tracked; it overrides this to report
+        the electron's own slope, so the criterion fires when the electron converges rather
+        than reading only the inert neutrals.
+
+        Overriding this declares a channel: :meth:`steady_state_external_channel` passes every
+        value it returns to the criterion, and a non-finite one poisons it. To report "no
+        channel" on some steps, override :meth:`steady_state_external_channel` to return
+        ``None`` there.
+        """
+        return float('nan')
+
+    cpdef object steady_state_external_channel(self, double t_now, np.ndarray y_now,
+                                               double t_prev, np.ndarray y_prev):
+        """The external steady-state channel's reading, or ``None`` if the reactor has no such
+        channel. This is the contract :meth:`simulate` reads; presence is declared here, never
+        inferred from the value or from reactor-specific attributes.
+
+        A returned float is a SUPPLIED reading: finite, it is folded into the residual;
+        non-finite (``nan``, ``+/-inf``), it poisons the steady-state decision, because a bare
+        value cannot be told from absence. Override this to return ``None`` on any step the
+        channel is absent.
+
+        The default bridges the ``double`` hook :meth:`steady_state_external_residual`, which
+        cannot return ``None``: a reactor that does not override it has no channel; a reactor
+        that does supplies its reading every step. The one exception is the frozen
+        :class:`PlasmaReactor` implementation, whose ``nan`` documents BOTH "no source-driven
+        wall" and "electron unresolvable"; for that implementation alone the absence it
+        documents (no wall, or no positive ionisation source) is honoured here. A subclass that
+        replaces that implementation is judged by the general rule.
+        """
+        impl = _defining_class(type(self), 'steady_state_external_residual')
+        if impl is ReactionSystem:
+            return None
+        if impl is _frozen_plasma_class():
+            if not (self.has_wall and self.ionisation_source.value_si > 0.0):
+                return None
+        return self.steady_state_external_residual(t_now, y_now, t_prev, y_prev)
+
+    cpdef bint steady_state_external_armed(self, double t_now, np.ndarray y_now):
+        """Whether an externally-driven channel has passed its known relaxation time, so the
+        steady-state criterion may arm even though its bounded log-log slope never reaches
+        the generic ``R >= 1`` (default: no).
+        """
+        return False
+
+    cpdef double steady_state_relaxation_time(self, double t_now, np.ndarray y_now):
+        """The system relaxation time (s) a flat run must persist across before the
+        steady-state criterion accepts it (default: ``nan``, unknown).
+
+        :class:`TerminationSteadyState` anchors its persistence requirement to this physical
+        time rather than to a count of accepted solver steps, so the verdict does not depend
+        on the integrator's step controller. A :class:`PlasmaReactor` with a wall overrides
+        it with ``1/nu_wall``; a reactor that knows no such time leaves it ``nan`` and the
+        criterion falls back to one e-fold of absolute time.
+        """
+        return float('nan')
 
     cpdef log_rates(self, double char_rate, object species, double species_rate, double max_dif_ln_accum_num, object network,
                     double network_rate):

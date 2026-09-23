@@ -1,0 +1,177 @@
+
+Checking for solvers before compiling...
+
+DASPK solver found. Compiling with DASPK and sensitivity analysis capability...
+
+python setup.py build_ext --inplace
+warning: rmgpy/solver/surface.pyx:415:61: Unreachable code
+Compiling rmgpy/solver/base.pyx because it changed.
+Compiling rmgpy/solver/simple.pyx because it depends on rmgpy/solver/base.pxd.
+Compiling rmgpy/solver/liquid.pyx because it depends on rmgpy/solver/base.pxd.
+Compiling rmgpy/solver/mbSampled.pyx because it depends on rmgpy/solver/base.pxd.
+Compiling rmgpy/solver/surface.pyx because it depends on rmgpy/solver/base.pxd.
+Compiling rmgpy/solver/plasma.pyx because it changed.
+[1/6] Cythonizing rmgpy/solver/base.pyx
+[2/6] Cythonizing rmgpy/solver/plasma.pyx
+[3/6] Cythonizing rmgpy/solver/liquid.pyx
+[4/6] Cythonizing rmgpy/solver/mbSampled.pyx
+[5/6] Cythonizing rmgpy/solver/simple.pyx
+[6/6] Cythonizing rmgpy/solver/surface.pyx
+running build_ext
+building 'rmgpy.solver.base' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/solver/base.c -o build/temp.linux-x86_64-cpython-39/rmgpy/solver/base.o
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/solver/base.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+rmgpy/solver/base.c: In function ‘__pyx_f_5rmgpy_6solver_4base_14ReactionSystem_simulate’:
+rmgpy/solver/base.c:19897:24: warning: ‘__pyx_v_RTP’ may be used uninitialized [-Wmaybe-uninitialized]
+19897 |           __pyx_t_19 = PyFloat_FromDouble(__pyx_v_RTP); if (unlikely(!__pyx_t_19)) __PYX_ERR(0, 857, __pyx_L1_error)
+      |                        ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+rmgpy/solver/base.c:16258:10: note: ‘__pyx_v_RTP’ was declared here
+16258 |   double __pyx_v_RTP;
+      |          ^~~~~~~~~~~
+rmgpy/solver/base.c:20003:40: warning: ‘__pyx_pybuffernd_sens_species_indices.diminfo[0].shape’ may be used uninitialized [-Wmaybe-uninitialized]
+20003 |         if (__pyx_t_24 < 0) __pyx_t_24 += __pyx_pybuffernd_sens_species_indices.diminfo[0].shape;
+      |                             ~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+rmgpy/solver/base.c:16402:21: note: ‘__pyx_pybuffernd_sens_species_indices.diminfo[0].shape’ was declared here
+16402 |   __Pyx_LocalBuf_ND __pyx_pybuffernd_sens_species_indices;
+      |                     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+rmgpy/solver/base.c:2975:73: warning: ‘__pyx_pybuffernd_sens_species_indices.diminfo[0].strides’ may be used uninitialized [-Wmaybe-uninitialized]
+ 2975 | #define __Pyx_BufPtrStrided1d(type, buf, i0, s0) (type)((char*)buf + i0 * s0)
+      |                                                                         ^
+rmgpy/solver/base.c:20004:24: note: in expansion of macro ‘__Pyx_BufPtrStrided1d’
+20004 |         __pyx_t_40 = (*__Pyx_BufPtrStrided1d(__pyx_t_5numpy_int_t *, __pyx_pybuffernd_sens_species_indices.rcbuffer->pybuffer.buf, __pyx_t_24, __pyx_pybuffernd_sens_species_indices.diminfo[0].strides));
+      |                        ^~~~~~~~~~~~~~~~~~~~~
+rmgpy/solver/base.c:16402:21: note: ‘__pyx_pybuffernd_sens_species_indices.diminfo[0].strides’ was declared here
+16402 |   __Pyx_LocalBuf_ND __pyx_pybuffernd_sens_species_indices;
+      |                     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/temp.linux-x86_64-cpython-39/rmgpy/solver/base.o -o build/lib.linux-x86_64-cpython-39/rmgpy/solver/base.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.solver.simple' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/solver/simple.c -o build/temp.linux-x86_64-cpython-39/rmgpy/solver/simple.o
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/solver/simple.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+rmgpy/solver/simple.c: In function ‘__pyx_pf_5rmgpy_6solver_6simple_13SimpleReactor_20residual’:
+rmgpy/solver/simple.c:11393:12: warning: ‘__pyx_v_j’ may be used uninitialized [-Wmaybe-uninitialized]
+11393 |         if (__pyx_t_21 < 0) __pyx_t_21 += __pyx_pybuffernd_kf.diminfo[0].shape;
+      |            ^
+rmgpy/solver/simple.c:10329:14: note: ‘__pyx_v_j’ was declared here
+10329 |   Py_ssize_t __pyx_v_j;
+      |              ^~~~~~~~~
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/temp.linux-x86_64-cpython-39/rmgpy/solver/simple.o -o build/lib.linux-x86_64-cpython-39/rmgpy/solver/simple.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.solver.liquid' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/solver/liquid.c -o build/temp.linux-x86_64-cpython-39/rmgpy/solver/liquid.o
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/solver/liquid.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/temp.linux-x86_64-cpython-39/rmgpy/solver/liquid.o -o build/lib.linux-x86_64-cpython-39/rmgpy/solver/liquid.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.solver.mbSampled' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/solver/mbSampled.c -o build/temp.linux-x86_64-cpython-39/rmgpy/solver/mbSampled.o
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/solver/mbSampled.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/temp.linux-x86_64-cpython-39/rmgpy/solver/mbSampled.o -o build/lib.linux-x86_64-cpython-39/rmgpy/solver/mbSampled.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.solver.surface' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/solver/surface.c -o build/temp.linux-x86_64-cpython-39/rmgpy/solver/surface.o
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/solver/surface.c:1139:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+rmgpy/solver/surface.c: In function ‘__pyx_pf_5rmgpy_6solver_7surface_14SurfaceReactor_18residual’:
+rmgpy/solver/surface.c:2843:73: warning: ‘__pyx_pybuffernd_coverages.diminfo[0].strides’ may be used uninitialized [-Wmaybe-uninitialized]
+ 2843 | #define __Pyx_BufPtrStrided1d(type, buf, i0, s0) (type)((char*)buf + i0 * s0)
+      |                                                                         ^
+rmgpy/solver/surface.c:14909:41: note: in expansion of macro ‘__Pyx_BufPtrStrided1d’
+14909 |       __pyx_v_surface_site_fraction = (*__Pyx_BufPtrStrided1d(__pyx_t_5numpy_float64_t *, __pyx_pybuffernd_coverages.rcbuffer->pybuffer.buf, __pyx_t_14, __pyx_pybuffernd_coverages.diminfo[0].strides));
+      |                                         ^~~~~~~~~~~~~~~~~~~~~
+rmgpy/solver/surface.c:13550:21: note: ‘__pyx_pybuffernd_coverages.diminfo[0].strides’ was declared here
+13550 |   __Pyx_LocalBuf_ND __pyx_pybuffernd_coverages;
+      |                     ^~~~~~~~~~~~~~~~~~~~~~~~~~
+rmgpy/solver/surface.c:14908:38: warning: ‘__pyx_pybuffernd_coverages.diminfo[0].shape’ may be used uninitialized [-Wmaybe-uninitialized]
+14908 |       if (__pyx_t_14 < 0) __pyx_t_14 += __pyx_pybuffernd_coverages.diminfo[0].shape;
+      |                           ~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+rmgpy/solver/surface.c:13550:21: note: ‘__pyx_pybuffernd_coverages.diminfo[0].shape’ was declared here
+13550 |   __Pyx_LocalBuf_ND __pyx_pybuffernd_coverages;
+      |                     ^~~~~~~~~~~~~~~~~~~~~~~~~~
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/temp.linux-x86_64-cpython-39/rmgpy/solver/surface.o -o build/lib.linux-x86_64-cpython-39/rmgpy/solver/surface.cpython-39-x86_64-linux-gnu.so
+building 'rmgpy.solver.plasma' extension
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -Wno-unused-result -Wsign-compare -DNDEBUG -fwrapv -O2 -Wall -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -O2 -isystem /home/alon/anaconda3/envs/rmg_env/include -fPIC -I/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include -I/home/alon/anaconda3/envs/rmg_env/include/python3.9 -c rmgpy/solver/plasma.c -o build/temp.linux-x86_64-cpython-39/rmgpy/solver/plasma.o
+In file included from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarraytypes.h:1929,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/ndarrayobject.h:12,
+                 from /home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/arrayobject.h:5,
+                 from rmgpy/solver/plasma.c:1140:
+/home/alon/anaconda3/envs/rmg_env/lib/python3.9/site-packages/numpy/core/include/numpy/npy_1_7_deprecated_api.h:17:2: warning: #warning "Using deprecated NumPy API, disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION" [-Wcpp]
+   17 | #warning "Using deprecated NumPy API, disable it with " \
+      |  ^~~~~~~
+gcc -pthread -B /home/alon/anaconda3/envs/rmg_env/compiler_compat -shared -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib -Wl,--allow-shlib-undefined -Wl,-rpath,/home/alon/anaconda3/envs/rmg_env/lib -Wl,-rpath-link,/home/alon/anaconda3/envs/rmg_env/lib -L/home/alon/anaconda3/envs/rmg_env/lib build/temp.linux-x86_64-cpython-39/rmgpy/solver/plasma.o -o build/lib.linux-x86_64-cpython-39/rmgpy/solver/plasma.cpython-39-x86_64-linux-gnu.so
+copying build/lib.linux-x86_64-cpython-39/rmgpy/rmgobject.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/arrhenius.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/chebyshev.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/kineticsdata.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/falloff.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/model.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/tunneling.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/surface.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/kinetics/uncertainties.cpython-39-x86_64-linux-gnu.so -> rmgpy/kinetics
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/atomtype.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/element.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/graph.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/group.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/molecule.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/symmetry.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/vf2.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/converter.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/translator.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/util.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/inchi.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/resonance.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/pathfinder.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/molecule/kekulize.cpython-39-x86_64-linux-gnu.so -> rmgpy/molecule
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/collision.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/configuration.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/me.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/msc.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/reaction.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/rs.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/pdep/cse.cpython-39-x86_64-linux-gnu.so -> rmgpy/pdep
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/conformer.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/mode.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/rotation.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/schrodinger.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/torsion.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/translation.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/statmech/vibration.cpython-39-x86_64-linux-gnu.so -> rmgpy/statmech
+copying build/lib.linux-x86_64-cpython-39/rmgpy/thermo/thermodata.cpython-39-x86_64-linux-gnu.so -> rmgpy/thermo
+copying build/lib.linux-x86_64-cpython-39/rmgpy/thermo/model.cpython-39-x86_64-linux-gnu.so -> rmgpy/thermo
+copying build/lib.linux-x86_64-cpython-39/rmgpy/thermo/nasa.cpython-39-x86_64-linux-gnu.so -> rmgpy/thermo
+copying build/lib.linux-x86_64-cpython-39/rmgpy/thermo/wilhoit.cpython-39-x86_64-linux-gnu.so -> rmgpy/thermo
+copying build/lib.linux-x86_64-cpython-39/rmgpy/constants.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/quantity.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/reaction.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/species.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/chemkin.cpython-39-x86_64-linux-gnu.so -> rmgpy
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/base.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/simple.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/liquid.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/mbSampled.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/surface.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
+copying build/lib.linux-x86_64-cpython-39/rmgpy/solver/plasma.cpython-39-x86_64-linux-gnu.so -> rmgpy/solver
