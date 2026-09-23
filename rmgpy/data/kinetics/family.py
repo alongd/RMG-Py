@@ -41,6 +41,7 @@ import random
 import math
 import re
 import warnings
+import weakref
 from collections import OrderedDict
 from copy import deepcopy
 from multiprocessing.reduction import ForkingPickler
@@ -475,29 +476,45 @@ def _refuse_unregistered_subclass(obj):
             type(obj).__module__, type(obj).__qualname__, base.__name__))
 
 
+#: ``class -> refused?``, the per-class answer `_refuse_by_mro` caches. Weak, so a class
+#: defined at run time (a test's, a plugin's) is not kept alive by having been pickled.
+_REFUSAL_VERDICTS = weakref.WeakKeyDictionary()
+
+
+def _refuse_by_mro(pickler, obj):
+    """
+    A ``reducer_override``: refuse `obj` if its class inherits a lossy reducer from a class
+    in `_LOSSY_REDUCERS` without being in the table itself; otherwise ``NotImplemented``,
+    which hands `obj` on to the dispatch table and then to its own ``__reduce__``.
+
+    Resolved by MRO **at reduce time**, because it has to catch a subclass defined at any
+    time -- including after `install_complete_reducers` last ran, which a table entry per
+    subclass cannot (round 113). It is called only for instances of user classes -- never
+    for ``None``, ``bool``, ``int``, ``float``, ``str``, ``bytes`` or the builtin containers --
+    and it answers from a per-class cache.
+    """
+    cls = type(obj)
+    try:
+        refused = _REFUSAL_VERDICTS[cls]
+    except KeyError:
+        refused = _REFUSAL_VERDICTS[cls] = _unregistered_lossy_base(cls) is not None
+    except TypeError:
+        # A class that cannot be weakly referenced is answered without the cache.
+        refused = _unregistered_lossy_base(cls) is not None
+    if refused:
+        _refuse_unregistered_subclass(obj)
+    return NotImplemented
+
+
 class _CompletePickler(pickle.Pickler):
     """
     A pickler that consults `_LOSSY_REDUCERS` before an object's own ``__reduce__``, and
-    refuses a subclass of one of those classes that is not itself in the table.
-
-    The refusal is a ``reducer_override`` rather than a table entry because it has to catch
-    a subclass defined at any time, including after import. It is called only for instances
-    of user classes -- never for ``None``, ``bool``, ``int``, ``float``, ``str``, ``bytes`` or
-    the builtin containers -- and it answers from a per-class cache.
+    refuses a subclass of one of those classes that is not itself in the table; see
+    `_refuse_by_mro`.
     """
 
     dispatch_table = COMPLETE_REDUCERS
-    _verdicts = {}
-
-    def reducer_override(self, obj):
-        cls = type(obj)
-        try:
-            refused = self._verdicts[cls]
-        except KeyError:
-            refused = self._verdicts[cls] = _unregistered_lossy_base(cls) is not None
-        if refused:
-            _refuse_unregistered_subclass(obj)
-        return NotImplemented
+    reducer_override = _refuse_by_mro
 
 
 def install_complete_reducers():
@@ -529,28 +546,27 @@ def install_complete_reducers():
     and raises. It would also change pickling for code that never imported this module.
     Registering with the pickler that has the problem is the narrower true statement.
 
-    Every *unregistered* subclass of a registered class that is loaded at the time is
-    registered too, with `_refuse_unregistered_subclass`: `multiprocessing` would otherwise
-    hand it the inherited lossy reducer. A table entry rather than a ``reducer_override``,
-    because this is the stdlib's class and every payload any library sends through it would
-    pay a per-object call for a hook only RMG's classes need. The cost of that choice is a
-    subclass defined after the last call; the subclass census in `quarantineTest.py` is what
-    covers the tree against it.
+    An *unregistered* subclass of a registered class is refused by `_refuse_by_mro`, set as
+    ``ForkingPickler.reducer_override``: `multiprocessing` would otherwise hand it the
+    inherited lossy reducer, which rebuilds the parent and drops what the subclass adds.
+    Round 112 registered a refusal per subclass instead, to spare the stdlib's pickler a
+    per-object call -- and so missed every subclass defined after the last call, which
+    round-tripped as a base `Molecule` in silence (round 113). The per-object cost is one
+    cached dict lookup, paid only for non-builtin objects; the stdlib's `ForkingPickler`
+    defines no ``reducer_override`` of its own, and one that someone else installed is
+    refused here rather than overwritten.
 
     Idempotent: registering a class twice overwrites one dict entry with itself.
     """
     for cls, (reducer, _reason) in _LOSSY_REDUCERS.items():
         ForkingPickler.register(cls, reducer)
-        for sub in _all_subclasses(cls):
-            if sub not in COMPLETE_REDUCERS:
-                ForkingPickler.register(sub, _refuse_unregistered_subclass)
+    existing = getattr(ForkingPickler, 'reducer_override', None)
+    if existing is not None and existing is not _refuse_by_mro:
+        raise RuntimeError('multiprocessing.reduction.ForkingPickler already carries a '
+                           'reducer_override ({0!r}); RMG will not replace it silently, and '
+                           'without its own the subclass refusal is lost.'.format(existing))
+    ForkingPickler.reducer_override = _refuse_by_mro
     return COMPLETE_REDUCERS
-
-
-def _all_subclasses(cls):
-    for sub in cls.__subclasses__():
-        yield sub
-        yield from _all_subclasses(sub)
 
 
 # At import, because the parent process pickles the *arguments* to `Pool.map` and a child

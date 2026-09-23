@@ -5898,9 +5898,9 @@ class TestWhatAnUnlistedLossyClassCosts:
     def test_the_multiprocessing_pickler_refuses_a_subclass_loaded_before_install(self):
         """
         Behavioural at `71ae97bd5`: ``ForkingPickler`` fell through to the inherited
-        reducer. `install_complete_reducers` now registers a refusal for every unregistered
-        subclass loaded when it runs -- a dispatch-table entry, so the multiprocessing
-        path pays nothing per object for it.
+        reducer. Round 112 registered a refusal per subclass loaded when
+        `install_complete_reducers` ran; round 113 resolves by MRO at reduce time instead,
+        which covers this case and the one defined after it (next test).
         """
         from multiprocessing.reduction import ForkingPickler
         from rmgpy.data.kinetics.family import install_complete_reducers
@@ -5912,6 +5912,31 @@ class TestWhatAnUnlistedLossyClassCosts:
                 ForkingPickler.dumps([Sub(smiles="C")])
         finally:
             ForkingPickler._extra_reducers.pop(Sub, None)
+
+    def test_the_multiprocessing_pickler_refuses_a_subclass_defined_after_install(self):
+        """
+        Round 113. `install_complete_reducers` ran at import, long before this class
+        existed, and nothing re-runs it. Behavioural at `fc60e5ba4`: ``ForkingPickler``
+        rebuilt a base `Molecule` and the extra field was gone.
+        """
+        from multiprocessing.connection import Pipe
+        from multiprocessing.reduction import ForkingPickler
+
+        Sub = self._subclass_of(Molecule)
+        assert Sub not in ForkingPickler._extra_reducers
+        molecule = Sub(smiles="C")
+        molecule.extra = "carried"
+
+        with pytest.raises(pickle.PicklingError, match="UnregisteredMolecule"):
+            ForkingPickler.dumps([Species(molecule=[molecule])])
+        # The transport itself, not only its pickler: `Connection.send` is what `Pool` uses.
+        sender, receiver = Pipe()
+        try:
+            with pytest.raises(pickle.PicklingError, match="UnregisteredMolecule"):
+                sender.send(molecule)
+        finally:
+            sender.close()
+            receiver.close()
 
     def test_registered_classes_still_travel(self):
         """The control: the refusal is for subclasses, not for the classes themselves."""
