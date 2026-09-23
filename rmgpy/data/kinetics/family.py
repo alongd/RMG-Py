@@ -43,6 +43,7 @@ import re
 import warnings
 from collections import OrderedDict
 from copy import deepcopy
+from multiprocessing.reduction import ForkingPickler
 
 import numpy as np
 from scipy.optimize import OptimizeWarning
@@ -428,10 +429,61 @@ _LOSSY_REDUCERS = {
 }
 
 
+#: `_LOSSY_REDUCERS` as a pickler's ``dispatch_table``: consulted *before* an object's own
+#: ``__reduce__``, keyed on the exact type. One table, shared by every pickler this module
+#: completes, so a class added above is carried by all of them and by none of them only if
+#: it is carried by none.
+COMPLETE_REDUCERS = {cls: reducer for cls, (reducer, _) in _LOSSY_REDUCERS.items()}
+
+
 class _CompletePickler(pickle.Pickler):
     """A pickler that consults `_LOSSY_REDUCERS` before an object's own ``__reduce__``."""
 
-    dispatch_table = {cls: reducer for cls, (reducer, _) in _LOSSY_REDUCERS.items()}
+    dispatch_table = COMPLETE_REDUCERS
+
+
+def install_complete_reducers():
+    """
+    Give `multiprocessing`'s pickler the same complete reducers `copy()` uses.
+
+    Round 110 installed them **inside `copy()`**, which is where the finding was, and a
+    ``dispatch_table`` belongs to the pickler carrying it -- so every other transport in
+    RMG went on getting the lossy ones. The sharpest of those is the one production takes
+    on every parallel run: `Pool.map` (`rmgpy/rmg/react.py`) serialises the generated
+    reactions with `multiprocessing.reduction.ForkingPickler`, in both directions, and
+    measured at `13e3227b2` a parallel generation came back with every atom id ``-1`` and
+    every ``props`` empty, while a fragment or surface reaction raised ``KeyError`` where
+    the serial run succeeded. Same mechanism, same defect, one call site over: the shape
+    rounds 95, 102, 107 and 110 each closed on the path that was named and left standing
+    on the path beside it.
+
+    ``ForkingPickler.register`` is `multiprocessing`'s own, supported hook: it adds to the
+    class's ``_extra_reducers``, which every instance copies into its ``dispatch_table``.
+    So this is not a second mechanism -- it is the *same* table, handed to the other
+    pickler, and a class added to `_LOSSY_REDUCERS` is carried by both without anyone
+    remembering to do it twice.
+
+    **Not** `copyreg.pickle()`, which would have covered every pickler at once. Measured
+    and rejected: `copy.deepcopy` consults `copyreg.dispatch_table` too, and passes the
+    reduce tuple straight into ``copy._reconstruct``, whose sixth positional parameter is
+    ``deepcopy`` rather than the ``state_setter`` the six-element tuple means -- so a
+    process-wide registration hands `_restore` to `_reconstruct` as its recursion function
+    and raises. It would also change pickling for code that never imported this module.
+    Registering with the pickler that has the problem is the narrower true statement.
+
+    Idempotent: registering a class twice overwrites one dict entry with itself.
+    """
+    for cls, (reducer, _reason) in _LOSSY_REDUCERS.items():
+        ForkingPickler.register(cls, reducer)
+    return COMPLETE_REDUCERS
+
+
+# At import, because the parent process pickles the *arguments* to `Pool.map` and a child
+# forked after this point inherits the registration. `rmgpy/rmg/react.py` calls it again
+# at its own import for the same reason `library.py` re-exports these names: so the
+# dependency is written down at the site that needs it rather than inferred from an import
+# graph that may be reordered.
+install_complete_reducers()
 
 
 def complete_round_trip(value):
@@ -439,11 +491,12 @@ def complete_round_trip(value):
     Reproduce `value` -- with every reference inside it preserved, and with every object's
     own state preserved.
 
-    This is the one transport `copy()` uses. A plain ``pickle.dumps(reaction)`` still
-    reaches the lossy reducers, because `__reduce__` cannot dictate how the objects nested
+    This is the transport `copy()` uses, and -- since `install_complete_reducers` --
+    `multiprocessing` uses the same reducers. A plain ``pickle.dumps(reaction)`` still
+    reaches the lossy ones, because `__reduce__` cannot dictate how the objects nested
     inside its state are pickled; that residue is upstream, is named in
-    `docs/i221-saturation/round110-findings.md`, and would take either a change to
-    `rmgpy/molecule/` or a process-wide `copyreg` registration to close.
+    `docs/i221-saturation/round111-findings.md`, and closing it takes a change to
+    `rmgpy/molecule/`.
     """
     buffer = io.BytesIO()
     _CompletePickler(buffer, pickle.HIGHEST_PROTOCOL).dump(value)
@@ -527,6 +580,14 @@ _COPIED_BY_REFERENCE = {
     'entry': 'the shared database Entry, deliberately not copied: it is the object the '
              'quarantine gate reads authorship from, and a clone would answer for an '
              'entry the database does not have',
+    'depository': 'the shared KineticsDepository, for the same reason as entry: a '
+                  "DepositoryReaction's source is a database object, and a clone would "
+                  'answer for a depository the database does not have. Held by '
+                  'DepositoryReaction only, which is why it is discovered through '
+                  'state_fields() rather than declared on Reaction',
+    'network': 'the PDepNetwork this reaction belongs to, shared: it is a back-pointer '
+               'that holds the reaction in turn, so deepening it would reproduce the '
+               'whole network around one of its own members. Held by PDepReaction only',
     'reverse': 'the reverse reaction object, shared: deepening it would reproduce the '
                'whole reaction graph a second time, and every consumer treats it as a '
                'back-pointer rather than as state of its own',
@@ -1176,7 +1237,10 @@ class KineticsFamily(Database):
         self.depositories = []
 
         # A KineticsQuarantine if the family directory carries a quarantine.py sidecar,
-        # None for every ordinary family. See rmgpy.data.kinetics.quarantine.
+        # None for every ordinary family, and QUARANTINE_UNREADABLE if there is a sidecar
+        # here that could not be read -- which is not the same as either of the other two
+        # and must not be tested for with a bare `is None`. See
+        # rmgpy.data.kinetics.quarantine.
         self.quarantine = None
         # Where that answer came from, so `resolve_quarantine` can re-read the manifest
         # against its own signature instead of trusting this object for the life of the run.

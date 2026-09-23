@@ -538,6 +538,40 @@ class KineticsQuarantine(object):
         return {'rules': rules, 'training': training}
 
 
+class _UnreadableQuarantine(object):
+    """
+    The answer "there is a manifest here and this process could not read it".
+
+    A singleton rather than a `KineticsQuarantine` with empty fields, because it must
+    never be mistaken for a criterion: it has no ``applies_to``, so any code that tries to
+    gate on it fails loudly instead of gating on nothing.
+    """
+
+    def __repr__(self):
+        return 'QUARANTINE_UNREADABLE'
+
+    def __bool__(self):
+        # Truthy. A refusal is *not* the absence of a quarantine, and the commonest way
+        # this value will be met is a legacy `if family.quarantine:` written when None was
+        # the only other possibility. Truthy makes such a test take the "there is
+        # something here" branch, which is the safe direction: the alternative is that the
+        # one value meaning "I could not check" reads as "nothing to check".
+        return True
+
+
+#: Returned wherever a manifest exists and could not be read, parsed, or verified as the
+#: file that was checked. Round 99 established that a failed check must not read as a clean
+#: bill of health, and closed it at `resolve_quarantine`; this is the same finding one layer
+#: down, at the loader. `_read_manifest` used to answer ``(None, None)`` for a manifest that
+#: was a symlink, a FIFO, unreadable, or rewritten mid-read, and `load_family_quarantine`
+#: turned that into ``family.quarantine = None`` -- the same value every ordinary family in
+#: the database has. `check_quarantine(..., family=family)` then called it **answered**, and
+#: a refused read became a clean bill. Callers must map this to *unanswered*, never to
+#: *unquarantined*; `resolve_quarantine` and `check_quarantine` both do, and
+#: `quarantineTest.py` pins that they keep doing it.
+QUARANTINE_UNREADABLE = _UnreadableQuarantine()
+
+
 def _resolve_kinetics_class(name, path):
     """
     Resolve a kinetics class *name* from a manifest against :mod:`rmgpy.kinetics`.
@@ -658,8 +692,15 @@ def _read_manifest(family_path):
     on the read, and a directory would raise from inside a gate whose entire purpose is to
     keep running and refuse.
 
-    ``None`` covers three cases the caller separates by other means: no manifest (every
-    ordinary family), a manifest refused as a file, and one that vanished mid-read.
+    Two different answers, and they used to be one. ``(None, None)`` means **no manifest**
+    -- every ordinary family, and the only case reached through `FileNotFoundError` or
+    `NotADirectoryError`. ``(QUARANTINE_UNREADABLE, None)`` means **there is one here and
+    this process could not read it**: a link, a FIFO, a permission error, a read or
+    `fstat` that failed after the file was open, or a file rewritten while it was being
+    read. Both of those were ``None`` until round 111, so a refused manifest arrived at
+    `family.quarantine` as the same value an unquarantined family has, and
+    `check_quarantine(..., family=family)` reported a clean bill of health produced by the
+    failure of the check itself. That is round 99's finding at the loader.
     """
     if os.open not in os.supports_dir_fd:
         # Without directory descriptors no component can be opened relative to one, so
@@ -671,7 +712,7 @@ def _read_manifest(family_path):
             family_path,
             'this platform provides no directory descriptors, so no component of the '
             'path can be opened without following links')
-        return None, None
+        return QUARANTINE_UNREADABLE, None
 
     if not getattr(os, 'O_NOFOLLOW', 0):
         # The second half of the same requirement, and the one that could evaporate
@@ -690,7 +731,7 @@ def _read_manifest(family_path):
             family_path,
             'this platform does not define O_NOFOLLOW, so no component of the path can '
             'be opened without following links')
-        return None, None
+        return QUARANTINE_UNREADABLE, None
 
     anchor, components = _anchor_and_components(family_path)
     if anchor is None:
@@ -698,7 +739,7 @@ def _read_manifest(family_path):
             family_path,
             'it does not name a family directory below a directory this process may '
             'anchor on')
-        return None, None
+        return QUARANTINE_UNREADABLE, None
 
     nofollow = os.O_NOFOLLOW          # refused above when absent; never a silent 0 here
     directory = getattr(os, 'O_DIRECTORY', 0)
@@ -713,6 +754,9 @@ def _read_manifest(family_path):
             fd = os.open(QUARANTINE_FILENAME, os.O_RDONLY | nofollow,
                          dir_fd=descriptors[-1])
         except (FileNotFoundError, NotADirectoryError):
+            # The one absence: the descent found no such file, or no such directory to hold
+            # it. Nothing is here, which is an answer, and it is the answer every
+            # ordinary family gives.
             return None, None
         except OSError as error:
             # ELOOP lands here for every link below the anchor -- an intermediate
@@ -720,12 +764,12 @@ def _read_manifest(family_path):
             # rather than resolved, and the caller turns the refusal into an unanswered
             # question, never a clean bill.
             _warn_unsafe_manifest(family_path, error)
-            return None, None
+            return QUARANTINE_UNREADABLE, None
 
         info = os.fstat(fd)
         if not stat.S_ISREG(info.st_mode):
             _warn_unsafe_manifest(family_path, 'it is not a regular file')
-            return None, None
+            return QUARANTINE_UNREADABLE, None
         # The identity comes from THIS descriptor, not from a second look at the name.
         # `_manifest_signature` stats the path independently, and a rename between that
         # stat and this open would otherwise cache the content of B under the identity of
@@ -749,10 +793,10 @@ def _read_manifest(family_path):
             after = _identity_of(os.fstat(handle.fileno()))
         if after != identity:
             _warn_unsafe_manifest(family_path, 'it changed while it was being read')
-            return None, None
+            return QUARANTINE_UNREADABLE, None
         return content, identity
     except OSError:
-        return None, None
+        return QUARANTINE_UNREADABLE, None
     finally:
         for descriptor in [fd] + descriptors:
             if descriptor is not None:
@@ -769,6 +813,12 @@ def load_family_quarantine(family_label, family_path):
     Returns a :class:`KineticsQuarantine`, or ``None`` when the family carries no
     manifest -- which is the case for every ordinary family, and is why this costs
     a single failed :func:`os.open` per family load.
+
+    Returns :data:`QUARANTINE_UNREADABLE` for the third case: a manifest that is here and
+    could not be read. This is the value `KineticsFamily.load` stores in
+    ``family.quarantine``, so the distinction survives all the way to the gate; it is
+    **not** ``None``, and every caller that treats ``None`` as "no quarantine" must treat
+    this one as "no answer".
 
     The manifest is executed the way the rest of the database is, with builtins
     stripped, so it stays a declarative data file rather than a script.
@@ -798,13 +848,19 @@ def _load_with_identity(family_label, family_path):
     """
     path = os.path.join(family_path, QUARANTINE_FILENAME)
     content, identity = _read_manifest(family_path)
+    if content is QUARANTINE_UNREADABLE:
+        # There is a manifest here and it could not be read: a link, a FIFO, a permission
+        # error, a read or `fstat` that failed, or a file rewritten mid-read. Passed on as
+        # the refusal it is rather than flattened to ``None``. Until round 111 this and
+        # the case below were one value, and `load_family_quarantine` handed it straight
+        # to `family.quarantine`, where it was indistinguishable from what every
+        # unquarantined family in the database carries -- so a check that failed became a
+        # clean bill of health. Raising instead would kill a run over a concurrent
+        # database edit; the caller turns it into an unanswered question.
+        return QUARANTINE_UNREADABLE, None
     if content is None:
-        # No manifest, or one this database may not execute, or one that vanished between
-        # being seen and being read. All three are ``None`` here and the caller decides
-        # what that means: `resolve_quarantine` knows which of the three it saw, from the
-        # signature it took, and turns the last two into an unanswered question rather
-        # than a clean bill of health. Raising instead would kill a run over a concurrent
-        # database edit.
+        # No manifest. Every ordinary family reaches this line, and it IS an answer:
+        # there is nothing here to gate on.
         return None, None
 
     local_context = {'__builtins__': None}
@@ -947,19 +1003,70 @@ def authoring_families(reaction):
     return labels
 
 
-def iter_quarantines():
+def _iter_loaded_quarantines():
     """
-    Yield every :class:`KineticsQuarantine` in the loaded kinetics database.
+    Yield ``(label, quarantine)`` for every loaded family that carries one.
 
-    Empty when no database is loaded, and -- as in all of ordinary chemistry -- when no
-    family carries a manifest.
+    `QUARANTINE_UNREADABLE` is skipped: it is the answer "there is a manifest here and I
+    could not read it", which is not a criterion and must never be gated on. The family
+    load already logged it, and `check_quarantine` turns it into an unanswered question.
     """
     import rmgpy.data.rmg
     database = getattr(rmgpy.data.rmg, 'database', None)
     families = getattr(getattr(database, 'kinetics', None), 'families', None) or {}
-    for family in families.values():
+    for label, family in families.items():
         quarantine = getattr(family, 'quarantine', None)
-        if quarantine is not None:
+        if quarantine is not None and quarantine is not QUARANTINE_UNREADABLE:
+            yield label, quarantine
+
+
+def iter_quarantines():
+    """
+    Yield every :class:`KineticsQuarantine` this database has -- loaded **or on disk**.
+
+    It used to be the loaded families alone, and that made its one consumer,
+    :func:`_warn_unattributable`, go silent in exactly the situation it exists for. A
+    manifest is a sidecar file in a family's directory; reading it needs no family object,
+    and `_database_has_any_quarantine` learned that in round 99 while this function did
+    not. So a library rate whose ``family:`` line had been deleted, in a database whose
+    quarantined family was on disk and not loaded, met an empty enumeration and passed
+    with no refusal and no warning -- and that is the ordinary case, because
+    ``CoreEdgeReactionModel.add_seed_mechanism_to_core`` converts a seed reaction whose
+    family is unavailable into a library reaction rather than loading the family.
+
+    The disk half goes through :func:`resolve_quarantine`, so it is signature-validated
+    and cached exactly like every other disk answer, and a family already yielded from the
+    loaded half is not read twice. Cost when nothing is quarantined: one `listdir` of the
+    families directory. Both consumers ask their own de-duplicating question first, so
+    this runs once per distinct unanswered question rather than once per reaction.
+
+    Empty when no database is loaded and none is configured, and -- as in all of ordinary
+    chemistry -- when no family carries a manifest anywhere.
+    """
+    seen = set()
+    for label, quarantine in _iter_loaded_quarantines():
+        seen.add(label)
+        yield quarantine
+
+    from rmgpy import settings
+    directory = (settings or {}).get('database.directory')
+    if not directory:
+        return
+    families_root = os.path.join(directory, 'kinetics', 'families')
+    try:
+        names = sorted(os.listdir(families_root))
+    except OSError:
+        return
+    for name in names:
+        if name in seen:
+            continue
+        if not os.path.lexists(os.path.join(families_root, name, QUARANTINE_FILENAME)):
+            # The cheap negative first: every ordinary family answers here, with one
+            # `lexists` and without opening anything. Only a family that has *something*
+            # at the manifest's path is worth the validated read below.
+            continue
+        quarantine, answered = resolve_quarantine(name)
+        if answered and quarantine is not None:
             yield quarantine
 
 
@@ -984,7 +1091,11 @@ def _database_has_any_quarantine():
     this warning appear or not appear -- never a refusal, which goes through
     :func:`resolve_quarantine` and re-checks the manifest's own signature every time.
     """
-    if any(True for _ in iter_quarantines()):
+    if any(True for _ in _iter_loaded_quarantines()):
+        # The loaded half deliberately, not `iter_quarantines()`: that one now reads the
+        # families directory itself, and this function's own disk half below answers the
+        # same question with one `listdir` and one `lexists` per family instead of a
+        # validated read of every manifest it finds. Same answer, cheaper question.
         return True
 
     from rmgpy import settings
@@ -1030,6 +1141,13 @@ def _warn_unattributable(reaction, kinetics):
     """
     Warn when a library rate matches a live quarantine criterion but cannot be attributed.
 
+    "Live" means anywhere in this database, loaded or on disk -- see
+    :func:`iter_quarantines`, which enumerated the loaded families alone until round 111
+    and therefore said nothing at all in the commonest case: a foreign seed converted to a
+    library reaction, whose quarantined family is in the database directory and was never
+    loaded. Silence there is indistinguishable from a clean bill of health, which is the
+    one thing this gate must never produce.
+
     Deliberately a warning and not a refusal. The criterion is a kinetics class, which is
     not by itself evidence of quarantined origin -- a ``Marcus`` rate in a genuine
     electrochemistry library is exactly the legitimate case a quarantine must not touch.
@@ -1039,12 +1157,17 @@ def _warn_unattributable(reaction, kinetics):
     """
     if kinetics is None:
         return
-    matches = [q for q in iter_quarantines() if q.applies_to(kinetics)]
-    if not matches:
-        return
     library = getattr(reaction, 'library', None)
     key = (library, type(kinetics).__name__)
     if key in _UNATTRIBUTED_WARNED:
+        # Asked BEFORE the enumeration, not after. The key is only ever in this set
+        # because a match was found and warned about once already, so the early return is
+        # the same answer; what it saves is the enumeration, which since round 111 reads
+        # the families directory rather than a dict of loaded objects. `_warn_unanswered`
+        # states the same ordering for the same reason.
+        return
+    matches = [q for q in iter_quarantines() if q.applies_to(kinetics)]
+    if not matches:
         return
     _UNATTRIBUTED_WARNED.add(key)
     logging.warning(
@@ -1213,6 +1336,22 @@ def _manifest_signature(family_path):
 _UNANSWERED_WARNED = set()
 
 
+def _answer_from_attribute(family):
+    """
+    A loaded family's own ``quarantine`` attribute as an ``(quarantine, answered)`` pair.
+
+    Three values, three answers, and until round 111 there were two of each: a family
+    whose manifest could not be read carried ``None``, the same value an unquarantined
+    family carries, so a refused read answered ``answered=True`` with no quarantine --
+    a clean bill of health produced by the failure of the check itself. That is round 99's
+    finding, one layer below where round 99 closed it.
+    """
+    quarantine = getattr(family, 'quarantine', None)
+    if quarantine is QUARANTINE_UNREADABLE:
+        return None, False
+    return quarantine, True
+
+
 def resolve_quarantine(label):
     """
     Answer "is family `label` quarantined?" as ``(quarantine, answered)``.
@@ -1253,9 +1392,10 @@ def resolve_quarantine(label):
     directory = (settings or {}).get('database.directory')
     if not directory:
         # Nothing to re-read against. A loaded family's own attribute is then the only
-        # answer there is, and it is still an answer.
+        # answer there is, and it is still an answer -- unless the attribute is itself the
+        # record of a failed read, which is no answer at all.
         if loaded is not None:
-            return getattr(loaded, 'quarantine', None), True
+            return _answer_from_attribute(loaded)
         return None, False
 
     families_root = os.path.join(directory, 'kinetics', 'families')
@@ -1298,7 +1438,7 @@ def resolve_quarantine(label):
             # a property of that key. Caching it made the next lookup of the same label,
             # with no database loaded at all, inherit a quarantine from an object that was
             # no longer there.
-            return getattr(loaded, 'quarantine', None), True
+            return _answer_from_attribute(loaded)
         answer = (None, False)
     elif manifest_stat is None:
         # The family is in this database and carries no manifest. That is an answer.
@@ -1311,6 +1451,12 @@ def resolve_quarantine(label):
         answer = (None, False)
     else:
         quarantine, parsed = _load_with_identity(label, family_path)
+        if quarantine is QUARANTINE_UNREADABLE:
+            # The file was stat'd as a regular file above and refused by the loader's own
+            # descent -- a link swapped in between the two, a read that failed, a rewrite
+            # mid-read. `_read_manifest` has already said so loudly. Unanswered, and NOT
+            # cached: the condition is transient by nature and the next call may succeed.
+            return None, False
         if quarantine is None:
             # The manifest was there when this function looked and gone when the loader
             # did. Two different databases produce that, neither of them benign: a
@@ -1351,6 +1497,12 @@ def _warn_unanswered(reaction, kinetics, labels):
     What must not happen is that it passes in silence, which is what a bare ``None``
     achieved. The residual risk is stated rather than closed: if the missing family is
     quarantined *in its own database*, this run cannot know it.
+
+    Since round 111 there are two ways to be unanswered, and the message says which. The
+    family may be absent -- the original case -- or it may be here with a manifest this
+    process could not read. Both admit the rate; they are repaired differently, and a
+    message that named only the first would send a reader looking for a family that is
+    sitting in front of them.
     """
     if kinetics is None:
         return
@@ -1367,13 +1519,56 @@ def _warn_unanswered(reaction, kinetics, labels):
         return
     _UNANSWERED_WARNED.add(key)
     logging.warning(
-        'Cannot tell whether %s kinetics authored by family %s are quarantined: this '
-        'database has no such family, so its manifest -- if it has one -- cannot be '
-        'consulted. The rate IS being admitted. This is not the same as a rate with no '
-        'recorded authorship: the authorship is here and the answer is not. If that '
-        'family is quarantined in the database it came from, this run cannot know it. '
-        'Load that family, or supply the rate from a source this database can check.',
-        type(kinetics).__name__, ', '.join(str(label) for label in labels))
+        'Cannot tell whether %s kinetics authored by family %s are quarantined: %s. The '
+        'rate IS being admitted. This is not the same as a rate with no recorded '
+        'authorship: the authorship is here and the answer is not. If that family is '
+        'quarantined in the database it came from, this run cannot know it. %s',
+        type(kinetics).__name__, ', '.join(str(label) for label in labels),
+        *_why_unanswered(labels))
+
+
+def _why_unanswered(labels):
+    """
+    Which of the two unanswered cases each label is in, and what to do about it, read off
+    the disk rather than threaded through the call.
+
+    Returns ``(cause, remedy)``. The remedy differs, which is the reason this is measured
+    at all: "load that family" is the repair for an absent one and useless advice for a
+    manifest that is present and unreadable, where loading it produces the same refusal.
+
+    A label whose family directory holds *something* at the manifest's path is the
+    unreadable case -- the refusal itself was logged by `_warn_unsafe_manifest` -- and
+    anything else is the absent case. Derived here rather than passed down because the
+    decision to call this function is made from an ``answered`` flag that three different
+    paths produce, and a reason threaded through all three is a fourth thing to keep in
+    step.
+    """
+    from rmgpy import settings
+    directory = (settings or {}).get('database.directory')
+    unreadable = []
+    if directory:
+        families_root = os.path.join(directory, 'kinetics', 'families')
+        for label in labels:
+            family_path = _family_directory(families_root, str(label))
+            if family_path and os.path.lexists(
+                    os.path.join(family_path, QUARANTINE_FILENAME)):
+                unreadable.append(str(label))
+    if not unreadable:
+        return ('this database has no such family, so its manifest -- if it has one -- '
+                'cannot be consulted',
+                'Load that family, or supply the rate from a source this database can '
+                'check.')
+    if len(unreadable) == len(labels):
+        return ('the family is here and its quarantine manifest could not be read (the '
+                'refusal is logged above), so what it declares is unknown',
+                'Repair the manifest named in that refusal -- it must be a regular file '
+                'inside its own family directory -- or supply the rate from a source '
+                'this database can check.')
+    return ('the manifest of {0} is here and could not be read (the refusal is logged '
+            'above), and this database has no such family as the rest'.format(
+                ', '.join(unreadable)),
+            'Repair the manifest named in that refusal, load the missing families, or '
+            'supply the rate from a source this database can check.')
 
 
 def get_quarantine(source):
@@ -1388,6 +1583,10 @@ def get_quarantine(source):
     **Prefer :func:`resolve_quarantine` in a gate.** This function cannot distinguish
     "no manifest" from "no such family", and a gate that cannot tell those apart admits
     on a lookup miss.
+
+    It can return :data:`QUARANTINE_UNREADABLE`, which is neither a quarantine nor the
+    absence of one. A caller that gates must send that value to *unanswered*;
+    `check_quarantine` does it through :func:`_answer_from_attribute`.
     """
     if source is None:
         return None
@@ -1465,8 +1664,13 @@ def check_quarantine(reaction, stage, family=None, kinetics=None, source=None, e
         kinetics = getattr(reaction, 'kinetics', None)
 
     if family is not None:
-        # The caller is holding the family itself; nothing to resolve or doubt.
-        candidates = [(get_quarantine(family), True, family)]
+        # The caller is holding the family itself, so there is nothing to resolve -- but
+        # there is still something to doubt: a family whose manifest could not be read
+        # carries `QUARANTINE_UNREADABLE`, and calling that answered would turn a refused
+        # read into a clean bill of health. `_answer_from_attribute` is the one place that
+        # distinction is made, so this branch and `resolve_quarantine` cannot disagree.
+        quarantine, answered = _answer_from_attribute(family)
+        candidates = [(quarantine, answered, getattr(family, 'label', family))]
     else:
         labels = authoring_families(reaction)
         if not labels:

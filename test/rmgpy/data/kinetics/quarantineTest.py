@@ -2800,12 +2800,22 @@ class TestContainmentIsRefusedRatherThanApproximated:
         write_manifest(str(tmp_path))
         monkeypatch.chdir(str(tmp_path))
 
-        assert load_family_quarantine("A_Family", "") is None, (
+        from rmgpy.data.kinetics.quarantine import QUARANTINE_UNREADABLE
+
+        answer = load_family_quarantine("A_Family", "")
+        assert not isinstance(answer, KineticsQuarantine), (
             "an empty family path read `quarantine.py` from the current working "
             "directory and executed it")
+        assert answer is QUARANTINE_UNREADABLE, (
+            "round 111: the refusal must not be spelled `None`, which is what every "
+            "ordinary family's clean bill of health is spelled")
 
     def test_a_root_family_path_is_refused(self, tmp_path):
-        assert load_family_quarantine("A_Family", os.sep) is None
+        from rmgpy.data.kinetics.quarantine import QUARANTINE_UNREADABLE
+
+        answer = load_family_quarantine("A_Family", os.sep)
+        assert not isinstance(answer, KineticsQuarantine)
+        assert answer is QUARANTINE_UNREADABLE
 
     def test_the_descent_is_refused_when_directory_descriptors_are_unavailable(
             self, monkeypatch, tmp_path):
@@ -4676,7 +4686,8 @@ class TestTheManifestIdentityBracketsTheRead:
         **Behavioural** at `2e4ff991d`: the content comes back as the rewritten version
         keyed to the identity of the version before it.
         """
-        from rmgpy.data.kinetics.quarantine import _read_manifest
+        from rmgpy.data.kinetics.quarantine import (QUARANTINE_UNREADABLE,
+                                                    _read_manifest)
 
         family_path, manifest = self._family(tmp_path)
         rewritten = self.MANIFEST.format("a reason nobody has ever approved")
@@ -4696,9 +4707,14 @@ class TestTheManifestIdentityBracketsTheRead:
         assert state["done"], (
             "the rewrite never fired, so this test did not exercise the window it was "
             "written for")
-        assert content is None and identity is None, (
+        assert content is QUARANTINE_UNREADABLE and identity is None, (
             "the manifest changed under the read and was answered for anyway: the "
-            "content is {0!r}".format((content or "")[:60]))
+            "content is {0!r}".format(content if content is QUARANTINE_UNREADABLE
+                                      else (content or "")[:60]))
+        assert content is not None, (
+            "round 111: a refusal must not be spelled the same way as an absent "
+            "manifest -- that is what made `family.quarantine = None` mean both 'this "
+            "family is fine' and 'I could not check'")
 
     def test_an_unchanged_manifest_is_still_read(self, tmp_path):
         """
@@ -4832,3 +4848,730 @@ class TestTheFlagTheReviewNamed:
         assert "Reaction.copy" in _COPIED_BY_REFERENCE["allow_max_rate_violation"], (
             "the entry does not say why it is worth naming")
         assert "is_forward" in _COPIED_BY_REFERENCE
+
+
+IONISATION_FAMILY = "Plasma_Electron_Impact_Ionization"
+
+
+def _payload_of(reaction):
+    """
+    Every atom's ``(id, props)`` in a reaction, in order.
+
+    The payload, not the labels. Round 110's pickle assertions collapse structures to
+    labels (`TestEveryTransformReproducesTheWholeState`), which is a comparison no severed
+    payload can fail: a reaction whose atoms have all lost their ids still prints the same
+    SMILES.
+    """
+    payload = []
+    for structure in list(reaction.reactants) + list(reaction.products):
+        molecules = (structure.molecule if isinstance(structure, Species)
+                     else [structure])
+        for molecule in molecules:
+            for atom in molecule.atoms:
+                payload.append((atom.id, dict(atom.props)))
+    return payload
+
+
+class TestTheOtherTransportGetsTheSameReducers:
+    """
+    Round 111's first HIGH. Round 110 completed the five lossy reducers and installed
+    them **inside `copy()`**, as one pickler's ``dispatch_table``. A dispatch table
+    belongs to the pickler carrying it, so every other transport went on getting the
+    lossy ones -- and the one production takes on every parallel run is `Pool.map`
+    (``rmgpy/rmg/react.py``), which serialises with `multiprocessing`'s `ForkingPickler`
+    in both directions.
+
+    Measured at `13e3227b2`: a model generated with ``procnum=2`` came back with every
+    atom id ``-1`` and every ``props`` empty, against the same generation at ``procnum=1``
+    -- and a fragment or surface reaction raised ``KeyError`` on the parallel path where
+    the serial path succeeded.
+
+    Every reaction here comes out of the family, and `generate_reactions` is called with
+    **default** arguments. Round 110's own verification passed ``delete_labels=False``,
+    which made the state observable and the path unreachable.
+    """
+
+    @classmethod
+    def setup_class(cls):
+        families_path = os.path.join(settings["database.directory"], "kinetics", "families")
+        if not os.path.isdir(os.path.join(families_path, REAL_FAMILY)):
+            pytest.skip(f"database at {settings['database.directory']} has no "
+                        f"{REAL_FAMILY} to generate reactions from")
+        cls.database = KineticsDatabase()
+        cls.database.load_families(path=families_path, families=[REAL_FAMILY])
+        cls.family = cls.database.families[REAL_FAMILY]
+
+    @staticmethod
+    def _reactant_species():
+        species = []
+        for smiles in ("[Li+]", "[CH3]"):
+            one = Species(molecule=[Molecule(smiles=smiles)])
+            one.generate_resonance_structures()
+            species.append(one)
+        return species
+
+    def _generated(self):
+        """The family's own output, with **default** arguments. No keyword is passed."""
+        reactants = [one.molecule[0] for one in self._reactant_species()]
+        reactions = self.family.generate_reactions(reactants)
+        assert reactions, "the family generated nothing, so there is nothing to transport"
+        return reactions[0]
+
+    @staticmethod
+    def _through_multiprocessing(value):
+        from multiprocessing.reduction import ForkingPickler
+        return ForkingPickler.loads(ForkingPickler.dumps(value))
+
+    def test_the_fixture_carries_a_payload_before_anything_is_transported(self):
+        """Anti-vacuity: the ids and props under test are production's, not the test's."""
+        payload = _payload_of(self._generated())
+        assert payload, "no atoms were found to compare"
+        assert any(identifier != -1 for identifier, _ in payload), (
+            "no atom carries an id, so an assertion that ids survive could not fail")
+        assert any(props for _, props in payload), (
+            "no atom carries props, so an assertion that props survive could not fail")
+
+    def test_the_transport_multiprocessing_uses_carries_the_payload(self):
+        """
+        Behavioural at `13e3227b2`: ids ``-32768...`` came back ``-1`` and
+        ``props {'inRing': False}`` came back ``{}``.
+        """
+        reaction = self._generated()
+        before = _payload_of(reaction)
+        after = _payload_of(self._through_multiprocessing(reaction))
+        assert after == before, (
+            "the transport `Pool.map` uses dropped per-atom state that `copy()` keeps; "
+            "ids {0} -> {1}".format([b[0] for b in before[:4]],
+                                    [a[0] for a in after[:4]]))
+
+    def test_a_parallel_generation_reproduces_the_serial_one(self):
+        """
+        The finding in production's own terms: the same model, generated serially and in
+        parallel, compared on atom payload rather than on labels.
+
+        Behavioural at `13e3227b2`. `react()` is the real entry point -- this starts a
+        real `Pool` -- with the loaded database installed where `get_db` reads it.
+        """
+        import rmgpy.data.rmg
+        from rmgpy.rmg.react import react
+
+        class _Stub:
+            pass
+
+        stub = _Stub()
+        stub.kinetics = self.database
+        previous = getattr(rmgpy.data.rmg, "database", None)
+        rmgpy.data.rmg.database = stub
+        try:
+            reactants = self._reactant_species()
+            task = [((reactants[0], reactants[1]), [REAL_FAMILY])]
+            serial = react(list(task), procnum=1)[0]
+            parallel = react(list(task), procnum=2)[0]
+        finally:
+            rmgpy.data.rmg.database = previous
+
+        assert serial and parallel, "the generation produced nothing to compare"
+        assert len(serial) == len(parallel)
+        assert _payload_of(parallel[0]) == _payload_of(serial[0]), (
+            "a model generated in parallel differs from the same model generated "
+            "serially: the atoms came back without the ids that drive "
+            "resonance-structure correspondence and without the props that feed group "
+            "matching")
+
+    def test_a_fragment_reaction_survives_the_parallel_transport(self):
+        """
+        Behavioural at `13e3227b2`: ``KeyError: 'R'``. `CuttingLabel` inherits
+        `Atom.__reduce__`, which hands its symbol to `get_element`.
+        """
+        from rmgpy.molecule.fragment import CuttingLabel, Fragment
+
+        reaction = Reaction(reactants=[Fragment().from_smiles_like_string("CCR")],
+                            products=[Fragment().from_smiles_like_string("[CH3]")])
+        after = self._through_multiprocessing(reaction)
+        assert isinstance(after.reactants[0], Fragment)
+        assert any(isinstance(atom, CuttingLabel) for atom in after.reactants[0].atoms), (
+            "the cutting label did not survive the transport")
+
+    def test_a_surface_reaction_survives_the_parallel_transport(self):
+        """
+        Behavioural at `13e3227b2`: ``KeyError: 'Pt'``. `Molecule.__reduce__` passes
+        ``metal`` into ``__init__``'s ``inchi`` parameter.
+        """
+        molecule = Molecule(smiles="C")
+        molecule.metal = "Pt"
+        molecule.facet = "111"
+        after = self._through_multiprocessing(
+            Reaction(reactants=[molecule], products=[Molecule(smiles="C")]))
+        assert (after.reactants[0].metal, after.reactants[0].facet) == ("Pt", "111")
+
+    def test_both_transports_carry_one_table_rather_than_two(self):
+        """
+        The anti-drift property, and the reason this is a repair to the mechanism rather
+        than a second copy of it: `multiprocessing`'s pickler is handed the *same* dict
+        `copy()`'s pickler carries, so a class added to `_LOSSY_REDUCERS` is carried by
+        both without anyone remembering to do it twice.
+
+        **Structural** at `13e3227b2` -- it names something the repair adds.
+        """
+        from multiprocessing.reduction import ForkingPickler
+
+        from rmgpy.data.kinetics.family import (COMPLETE_REDUCERS, _CompletePickler,
+                                                _LOSSY_REDUCERS)
+
+        assert set(COMPLETE_REDUCERS) == set(_LOSSY_REDUCERS)
+        assert _CompletePickler.dispatch_table is COMPLETE_REDUCERS
+        for cls, reducer in COMPLETE_REDUCERS.items():
+            assert ForkingPickler._extra_reducers.get(cls) is reducer, (
+                "{0} is completed for copy() and not for the parallel "
+                "path".format(cls.__name__))
+
+    def test_the_module_that_needs_the_registration_makes_it(self):
+        """
+        Where the repair lives. `react.py` is the module whose correctness depends on the
+        registration, so it calls for it rather than inheriting it from an import graph
+        that may be reordered.
+
+        **Structural** at `13e3227b2`.
+        """
+        import rmgpy.rmg.react
+
+        source = inspect.getsource(rmgpy.rmg.react)
+        assert "install_complete_reducers()" in source, (
+            "react.py does not ask for the reducers it depends on")
+
+
+class TestASpeciesOnBothSidesKeepsItsSide:
+    """
+    Round 111's second HIGH, on the campaign's own reaction.
+
+    `Reaction.copy()` built one ``id(original) -> copy`` map over reactants and products
+    together, so a `Species` on both sides had its reactant entry overwritten by the
+    product one. Every electron-impact reaction is that shape:
+    `electron_placement.py:_place_declared_electrons` appends the *same* canonical
+    electron object to both sides, so ``Li + e- => Li+ + e- + e-`` holds one object three
+    times.
+
+    Measured at `13e3227b2` on the resolver's own view object: pair 0's reactant-side
+    member was in ``copy.products`` and not in ``copy.reactants``, and
+    ``reactants.index(pair[0])`` raised ``ValueError``.
+
+    The existing test (`test_the_base_reaction_copy_keeps_its_pairs`) uses distinct
+    species only, which is why it stayed green through all of this.
+    """
+
+    @classmethod
+    def setup_class(cls):
+        families_path = os.path.join(settings["database.directory"], "kinetics", "families")
+        if not os.path.isdir(os.path.join(families_path, IONISATION_FAMILY)):
+            pytest.skip(f"database at {settings['database.directory']} has no "
+                        f"{IONISATION_FAMILY} to generate the electron-impact case from")
+        database = KineticsDatabase()
+        database.load_families(path=families_path, families=[IONISATION_FAMILY])
+        cls.family = database.families[IONISATION_FAMILY]
+
+    def _view(self):
+        from rmgpy.electron_placement import resolve_electron_placement
+
+        reaction = self.family.generate_reactions([Molecule(smiles="[Li]")])[0]
+        reaction.kinetics = self.family.get_kinetics(
+            reaction, template_labels=reaction.template,
+            degeneracy=reaction.degeneracy)[0][0]
+        reaction.ensure_species()
+        electron = Species(label="e", molecule=[Molecule(smiles="e")])
+        view = resolve_electron_placement(
+            reaction, [electron] + list(reaction.reactants) + list(reaction.products))
+        view.generate_pairs()
+        return view
+
+    def test_the_fixture_holds_one_species_on_both_sides(self):
+        """
+        Anti-vacuity. Without this, every assertion below passes on a reaction whose
+        species happen to be distinct -- which is exactly how the defect survived.
+        """
+        view = self._view()
+        shared = [r for r in view.reactants for p in view.products if r is p]
+        assert shared, (
+            "the fixture does not hold one Species object on both sides, so it cannot "
+            "exercise the defect")
+        assert view.pairs, "the fixture has no pairs to sever"
+
+    def test_a_reactant_side_pair_member_is_one_of_the_copys_reactants(self):
+        """Behavioural at `13e3227b2`: pair 0's member was in products only."""
+        view = self._view()
+        copied = view.copy()
+        for index, pair in enumerate(copied.pairs):
+            assert any(species is pair[0] for species in copied.reactants), (
+                "pair {0}'s reactant-side member ({1!s}) is not one of the copy's "
+                "reactants".format(index, pair[0]))
+            assert any(species is pair[1] for species in copied.products), (
+                "pair {0}'s product-side member ({1!s}) is not one of the copy's "
+                "products".format(index, pair[1]))
+
+    def test_indexing_a_pair_member_does_not_raise(self):
+        """
+        Behavioural at `13e3227b2`: ``ValueError``. This is how the defect actually
+        surfaces -- `Species.__eq__` is identity, so the exception lands in unrelated
+        code far from the copy that caused it.
+        """
+        copied = self._view().copy()
+        for pair in copied.pairs:
+            copied.reactants.index(pair[0])
+            copied.products.index(pair[1])
+
+    def test_the_copy_owns_none_of_the_originals_species(self):
+        """The property the side-aware map must not have cost: it is still a deep copy."""
+        view = self._view()
+        copied = view.copy()
+        originals = list(view.reactants) + list(view.products)
+        for species in list(copied.reactants) + list(copied.products):
+            assert not any(species is other for other in originals)
+
+    def test_the_collider_is_deepened_rather_than_aliased(self):
+        """
+        Behavioural at `13e3227b2`: ``copy().specific_collider is
+        reaction.specific_collider``. The docstring says "deep copy", and an edit to the
+        copy's collider reached the original's.
+        """
+        reaction = self._view().copy()
+        reaction.specific_collider = Species(label="M", molecule=[Molecule(smiles="[He]")])
+        copied = reaction.copy()
+        assert copied.specific_collider is not reaction.specific_collider
+        assert copied.specific_collider.label == reaction.specific_collider.label
+
+    def test_a_collider_that_is_a_participant_stays_one_object_with_it(self):
+        """
+        The other half of the same property: deepening the collider independently would
+        hand the copy a third-body species that is not the reactant it is supposed to be,
+        which is the `pairs` defect one field over.
+        """
+        view = self._view()
+        reaction = view.copy()
+        reaction.specific_collider = reaction.reactants[0]
+        copied = reaction.copy()
+        assert copied.specific_collider is copied.reactants[0]
+
+
+class TestARefusedManifestIsNotAnAbsentOne:
+    """
+    Round 111's first MEDIUM, and round 99's finding one layer down.
+
+    `_read_manifest` answered ``(None, None)`` for every refusal -- a link, a FIFO, a
+    permission error, a read or `fstat` that failed, a file rewritten mid-read -- and
+    `load_family_quarantine` handed that to ``family.quarantine``, where it is the same
+    value every ordinary family carries. `check_quarantine(..., family=family)` then
+    called it **answered**, so a check that failed produced a clean bill of health.
+    """
+
+    @staticmethod
+    def _families(tmp_path):
+        root = str(tmp_path)
+        readable = os.path.join(root, "kinetics", "families", "Readable")
+        unreadable = os.path.join(root, "kinetics", "families", "Unreadable")
+        absent = os.path.join(root, "kinetics", "families", "Absent")
+        for path in (readable, unreadable, absent):
+            os.makedirs(path)
+        write_manifest(readable)
+        # A link is refused by the O_NOFOLLOW descent: the manifest is here and cannot be
+        # read, which is the state that must not read as absence.
+        target = os.path.join(root, "elsewhere.py")
+        with open(target, "w") as handle:
+            handle.write(MANIFEST)
+        os.symlink(target, os.path.join(unreadable, QUARANTINE_FILENAME))
+        return root, readable, unreadable, absent
+
+    def test_the_three_answers_are_three_values(self, tmp_path):
+        """
+        Behavioural at `13e3227b2` for the middle one: it was ``None``, the same value as
+        the right-hand one.
+        """
+        from rmgpy.data.kinetics.quarantine import QUARANTINE_UNREADABLE
+
+        _root, readable, unreadable, absent = self._families(tmp_path)
+
+        assert isinstance(load_family_quarantine("Readable", readable), KineticsQuarantine)
+        assert load_family_quarantine("Unreadable", unreadable) is QUARANTINE_UNREADABLE
+        assert load_family_quarantine("Absent", absent) is None
+
+    def test_a_refused_manifest_is_unanswered_at_the_gate(self, tmp_path, monkeypatch):
+        """
+        Behavioural at `13e3227b2`: `check_quarantine` returned in silence, which is what
+        it does for a family that is genuinely not quarantined.
+        """
+        import rmgpy.data.rmg
+
+        root, _readable, unreadable, _absent = self._families(tmp_path)
+        _clear_gate_caches()
+        monkeypatch.setitem(settings, "database.directory", root)
+        monkeypatch.setattr(rmgpy.data.rmg, "database", None, raising=False)
+
+        class _Family:
+            label = "Unreadable"
+            quarantine = load_family_quarantine("Unreadable", unreadable)
+
+        reaction = make_library_reaction()
+        reaction.kinetics = make_marcus()
+
+        messages = []
+        monkeypatch.setattr(logging, "warning",
+                            lambda msg, *args, **kw: messages.append(msg % args))
+        check_quarantine(reaction, "test", family=_Family())
+        _clear_gate_caches()
+
+        assert any("Cannot tell" in message for message in messages), (
+            "a manifest that could not be read was answered for in silence")
+        assert any("could not be read" in message for message in messages), (
+            "the warning does not say which of the two unanswered cases this is; "
+            '"load that family" is useless advice for a manifest that is already here')
+
+    def test_an_absent_manifest_is_still_a_clean_answer(self, tmp_path, monkeypatch):
+        """
+        The control. The repair must not turn every ordinary family into an unanswered
+        question -- that would put a warning into every run in the world.
+        """
+        import rmgpy.data.rmg
+
+        root, _readable, _unreadable, absent = self._families(tmp_path)
+        _clear_gate_caches()
+        monkeypatch.setitem(settings, "database.directory", root)
+        monkeypatch.setattr(rmgpy.data.rmg, "database", None, raising=False)
+
+        class _Family:
+            label = "Absent"
+            quarantine = load_family_quarantine("Absent", absent)
+
+        reaction = make_library_reaction()
+        reaction.kinetics = make_marcus()
+
+        messages = []
+        monkeypatch.setattr(logging, "warning",
+                            lambda msg, *args, **kw: messages.append(msg % args))
+        check_quarantine(reaction, "test", family=_Family())
+        _clear_gate_caches()
+
+        assert not messages, "an ordinary family was reported as unanswered: {0}".format(
+            messages[:1])
+
+    def test_the_refusal_is_not_cached_as_an_answer(self, tmp_path, monkeypatch):
+        """
+        The condition that produces a refusal is transient. Caching it would make a
+        momentary failure permanent for the life of the run -- and caching it as an
+        *answer* would be the original defect with a memory.
+        """
+        import rmgpy.data.rmg
+
+        root, _readable, unreadable, _absent = self._families(tmp_path)
+        _clear_gate_caches()
+        monkeypatch.setitem(settings, "database.directory", root)
+        monkeypatch.setattr(rmgpy.data.rmg, "database", None, raising=False)
+
+        assert resolve_quarantine("Unreadable") == (None, False)
+
+        # Repair the manifest in place; the next lookup must see it rather than a cached
+        # refusal.
+        os.unlink(os.path.join(unreadable, QUARANTINE_FILENAME))
+        write_manifest(unreadable)
+        quarantine, answered = resolve_quarantine("Unreadable")
+        _clear_gate_caches()
+
+        assert answered is True
+        assert isinstance(quarantine, KineticsQuarantine)
+
+
+class TestTheEnumerationReadsTheDiskToo:
+    """
+    Round 111's third HIGH. `_warn_unattributable` enumerated **loaded** families only,
+    so a library rate whose ``family:`` line is missing met an empty enumeration and
+    passed with neither a refusal nor a warning -- while the quarantined family sat in the
+    database directory, unloaded.
+
+    That is the ordinary case rather than a contrived one:
+    ``CoreEdgeReactionModel.add_seed_mechanism_to_core`` converts a seed reaction whose
+    family is unavailable into a library reaction rather than loading the family, so
+    "authorship lost, family not loaded" is the normal path for any foreign seed.
+    """
+
+    @staticmethod
+    def _database_with_a_quarantine_on_disk(tmp_path, label="A_Family_On_Disk"):
+        family_path = os.path.join(str(tmp_path), "kinetics", "families", label)
+        os.makedirs(family_path)
+        write_manifest(family_path)
+        return str(tmp_path)
+
+    @staticmethod
+    def _unattributed_reaction():
+        reaction = make_library_reaction(library="a_seed_with_no_family_line")
+        reaction.kinetics = make_marcus()
+        reaction.entry = Entry(index=1, label="no authorship", long_desc="nothing here")
+        return reaction
+
+    def test_an_unattributed_rate_is_reported_when_the_family_is_only_on_disk(
+            self, tmp_path, monkeypatch):
+        """
+        Behavioural at `13e3227b2`: nothing was logged at all.
+        """
+        import rmgpy.data.rmg
+
+        root = self._database_with_a_quarantine_on_disk(tmp_path)
+        _clear_gate_caches()
+        monkeypatch.setitem(settings, "database.directory", root)
+        monkeypatch.setattr(rmgpy.data.rmg, "database", None, raising=False)
+
+        messages = []
+        monkeypatch.setattr(logging, "warning",
+                            lambda msg, *args, **kw: messages.append(msg % args))
+        check_quarantine(self._unattributed_reaction(), "test")
+        _clear_gate_caches()
+
+        assert messages, (
+            "the rate was admitted in silence: the manifest is on disk, its criterion is "
+            "this rate's own kinetics class, and the entry records no author")
+        assert "A_Family_On_Disk" in messages[0], (
+            "the warning does not name the family whose criterion matched")
+        assert "NOT a refusal" in messages[0], (
+            "the warning stopped saying that it is deliberately not a refusal")
+
+    def test_nothing_is_said_when_the_database_quarantines_nothing(
+            self, tmp_path, monkeypatch):
+        """
+        The control, and the promise this whole module rests on: a database with no
+        manifest anywhere behaves exactly as it did before.
+        """
+        import rmgpy.data.rmg
+
+        os.makedirs(os.path.join(str(tmp_path), "kinetics", "families", "Ordinary"))
+        _clear_gate_caches()
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+        monkeypatch.setattr(rmgpy.data.rmg, "database", None, raising=False)
+
+        messages = []
+        monkeypatch.setattr(logging, "warning",
+                            lambda msg, *args, **kw: messages.append(msg % args))
+        check_quarantine(self._unattributed_reaction(), "test")
+        _clear_gate_caches()
+
+        assert not messages, "an ordinary database gained a warning: {0}".format(
+            messages[:1])
+
+    def test_a_loaded_family_is_not_enumerated_twice(self, tmp_path, monkeypatch):
+        """
+        The loaded half and the disk half are the same families. Yielding one twice would
+        double every count taken over this enumeration.
+        """
+        import rmgpy.data.rmg
+        from rmgpy.data.kinetics.quarantine import iter_quarantines
+
+        label = "A_Family_On_Disk"
+        root = self._database_with_a_quarantine_on_disk(tmp_path, label)
+        _clear_gate_caches()
+        monkeypatch.setitem(settings, "database.directory", root)
+
+        class _Family:
+            def __init__(self, q):
+                self.quarantine = q
+
+        class _Kinetics:
+            def __init__(self, f):
+                self.families = f
+
+        class _Database:
+            def __init__(self, f):
+                self.kinetics = _Kinetics(f)
+
+        loaded = load_family_quarantine(
+            label, os.path.join(root, "kinetics", "families", label))
+        monkeypatch.setattr(rmgpy.data.rmg, "database",
+                            _Database({label: _Family(loaded)}), raising=False)
+
+        found = list(iter_quarantines())
+        _clear_gate_caches()
+
+        assert len(found) == 1, "the family was enumerated {0} times".format(len(found))
+        assert found[0] is loaded, "the loaded object was not the one yielded"
+
+    def test_an_unreadable_manifest_is_not_enumerated_as_a_criterion(
+            self, tmp_path, monkeypatch):
+        """
+        `QUARANTINE_UNREADABLE` has no ``applies_to``, so an enumeration that yielded it
+        would raise inside the gate. It is skipped here and reported by the unanswered
+        path instead.
+        """
+        import rmgpy.data.rmg
+        from rmgpy.data.kinetics.quarantine import (QUARANTINE_UNREADABLE,
+                                                    iter_quarantines)
+
+        _clear_gate_caches()
+        monkeypatch.setitem(settings, "database.directory", str(tmp_path))
+
+        class _Family:
+            quarantine = QUARANTINE_UNREADABLE
+
+        class _Kinetics:
+            families = {"Unreadable": _Family()}
+
+        class _Database:
+            kinetics = _Kinetics()
+
+        monkeypatch.setattr(rmgpy.data.rmg, "database", _Database(), raising=False)
+        found = list(iter_quarantines())
+        _clear_gate_caches()
+
+        assert found == [], "a refusal was enumerated as if it were a criterion"
+
+
+class TestTheSubclassesCopyAsThemselves:
+    """
+    Round 111's second MEDIUM. Round 110 gave `TemplateReaction` and `LibraryReaction` a
+    `copy()` that reproduces the whole object and stopped there; `DepositoryReaction` and
+    `PDepReaction` kept the inherited method, which builds a base `Reaction`.
+    `rmgpy/tools/isotopes.py:394` copies whatever `Reaction` it is handed.
+    """
+
+    @staticmethod
+    def _depository_reaction():
+        from rmgpy.data.kinetics.depository import DepositoryReaction, KineticsDepository
+
+        reaction = DepositoryReaction(
+            reactants=[Species(label="Lip", molecule=[Molecule(smiles="[Li+]")])],
+            products=[Species(label="CH3Li", molecule=[Molecule(smiles="C[Li]")])],
+            depository=KineticsDepository(label="Some_Family/training"),
+            family="Some_Family",
+            entry=Entry(index=7, label="a training reaction"))
+        reaction.allow_max_rate_violation = True
+        reaction.rank = 3
+        reaction.comment = "a comment"
+        reaction.label = "a label"
+        return reaction
+
+    @staticmethod
+    def _pdep_reaction():
+        from rmgpy.rmg.pdep import PDepReaction
+
+        reaction = PDepReaction(
+            reactants=[Species(label="Lip", molecule=[Molecule(smiles="[Li+]")])],
+            products=[Species(label="CH3Li", molecule=[Molecule(smiles="C[Li]")])],
+            network="a network stand-in")
+        reaction.allow_max_rate_violation = True
+        reaction.rank = 3
+        reaction.comment = "a comment"
+        reaction.elementary_high_p = True
+        return reaction
+
+    def test_a_depository_reaction_copies_as_one(self):
+        """
+        Behavioural at `13e3227b2`: the copy was a base `Reaction` and `entry` was gone --
+        and `entry` is the carrier the quarantine gate reads authorship from, so a copied
+        training reaction became unattributable.
+        """
+        from rmgpy.data.kinetics.depository import DepositoryReaction
+
+        reaction = self._depository_reaction()
+        copied = reaction.copy()
+
+        assert isinstance(copied, DepositoryReaction)
+        assert copied.entry is reaction.entry
+        assert copied.depository is reaction.depository
+        assert copied.family == reaction.family
+        assert copied.allow_max_rate_violation is True
+        assert copied.rank == 3
+
+    def test_a_pdep_reaction_copies_as_one(self):
+        """
+        Behavioural at `13e3227b2`: the copy was a base `Reaction` and `network` was gone,
+        which is the only thing `get_source` has to report.
+        """
+        from rmgpy.rmg.pdep import PDepReaction
+
+        reaction = self._pdep_reaction()
+        copied = reaction.copy()
+
+        assert isinstance(copied, PDepReaction)
+        assert copied.network is reaction.network
+        assert copied.get_source() == reaction.get_source()
+        assert copied.allow_max_rate_violation is True
+        assert copied.elementary_high_p is True
+
+    def test_both_subclasses_survive_a_pickle_round_trip_whole(self):
+        """
+        Behavioural at `13e3227b2`: the hand-written reducers turned
+        ``allow_max_rate_violation=True`` into ``False`` and ``rank=3`` into ``None``.
+        Round 105's fields, in a third and fourth hand-written list.
+        """
+        for reaction in (self._depository_reaction(), self._pdep_reaction()):
+            after = pickle.loads(pickle.dumps(reaction))
+            assert type(after) is type(reaction)
+            assert after.allow_max_rate_violation is True
+            assert after.rank == 3
+            assert after.comment == "a comment"
+
+    def test_a_deep_copy_of_either_keeps_its_class(self):
+        """`deepcopy` and `copy()` are one mechanism, for these two as for the other two."""
+        from copy import deepcopy
+
+        for reaction in (self._depository_reaction(), self._pdep_reaction()):
+            assert type(deepcopy(reaction)) is type(reaction)
+
+    def test_the_two_new_fields_are_classified_explicitly(self):
+        """
+        The partition has no silent default, so a subclass field must be named before its
+        reaction can be copied at all. Both are carried by reference, and both say why.
+
+        **Structural** at `13e3227b2`.
+        """
+        from rmgpy.data.kinetics.family import _COPIED_BY_REFERENCE
+
+        for field in ("depository", "network"):
+            assert field in _COPIED_BY_REFERENCE
+            assert len(_COPIED_BY_REFERENCE[field]) > 40, (
+                "{0!r} is classified without a reason".format(field))
+
+
+class TestWhatAnUnlistedLossyClassCosts:
+    """
+    The census's own question, answered by measurement: the set of lossy classes is
+    hand-enumerated, so what happens to a class nobody has added to it?
+
+    **Quietly wrong, not loud.** There is no mechanism that could notice -- a reducer that
+    omits a field is indistinguishable from a class that does not have one -- so the field
+    arrives as whatever the constructor leaves behind. That is exactly how `Atom.id` and
+    `Atom.props` survived two rounds of this campaign, and it is why the test below exists
+    rather than a comment saying so.
+    """
+
+    class _Lossy:
+        """A class whose own reducer forgets a field, standing in for the next one."""
+
+        def __init__(self, kept=None, forgotten=None):
+            self.kept = kept
+            self.forgotten = forgotten
+
+        def __reduce__(self):
+            return (type(self), (self.kept,))
+
+    def test_an_unlisted_lossy_class_loses_its_field_without_a_word(self):
+        """
+        The measurement. Nothing raises, nothing is logged: the value is simply gone.
+        """
+        before = self._Lossy(kept="here", forgotten="gone")
+        after = pickle.loads(pickle.dumps(before))
+
+        assert after.kept == "here"
+        assert after.forgotten is None, (
+            "the stand-in is not lossy, so this test proves nothing")
+
+    def test_the_only_measured_member_of_the_table_is_atom(self):
+        """
+        What "hand-enumerated" means precisely. `Atom`'s losses are *measured* by
+        `fields_the_reducer_drops`, on a probe, so upstream can add or remove a field and
+        the restore follows. The other four are judgements written down with reasons, and
+        the census test is what keeps them honest.
+
+        **Structural** at `13e3227b2` in part -- `COMPLETE_REDUCERS` is new -- and a
+        statement of scope rather than a defect.
+        """
+        from rmgpy.data.kinetics.family import _LOSSY_REDUCERS, _REDUCER_PROBES
+        from rmgpy.molecule.molecule import Atom
+
+        assert set(_REDUCER_PROBES) == {Atom}
+        assert set(_REDUCER_PROBES) <= set(_LOSSY_REDUCERS)
+        for _cls, (_reducer, reason) in _LOSSY_REDUCERS.items():
+            assert len(reason) > 40, "a table entry carries no reason"

@@ -2039,33 +2039,68 @@ class Reaction:
         for product in self.products:
             other.products.append(product.copy(deep=True))
         other.degeneracy = self.degeneracy
-        other.specific_collider = self.specific_collider
+        # One map per SIDE, not one map over both. A `Species` can be a reactant and a
+        # product of the same reaction -- every electron-impact reaction is, because
+        # `electron_placement.py` appends one canonical electron object to both sides, so
+        # `Li + e- => Li+ + e- + e-` holds the same object three times. A single
+        # `id(original) -> copy` dict keyed over the concatenation lets the product entry
+        # overwrite the reactant one, and the reactant-side `pairs` member then resolves to
+        # a species that is in `other.products` and NOT in `other.reactants`. Measured at
+        # `13e3227b2` on that reaction: `reactants.index(pair[0])` raised `ValueError`.
+        # Written as loops rather than comprehensions on purpose: this is a `cpdef` method,
+        # and Cython refuses closures inside one.
+        reactant_copy = {}
+        for i in range(len(self.reactants)):
+            reactant_copy[id(self.reactants[i])] = other.reactants[i]
+        product_copy = {}
+        for i in range(len(self.products)):
+            product_copy[id(self.products[i])] = other.products[i]
+        # A collider that is one of the participants stays one object with it; any other
+        # collider is deepened. Aliasing it -- which is what this line did until round 111
+        # -- breaks the deep-copy contract this method's docstring states: the collider is
+        # a `Species`, and an edit to the copy's reached the original's.
+        if self.specific_collider is None:
+            other.specific_collider = None
+        elif id(self.specific_collider) in reactant_copy:
+            other.specific_collider = reactant_copy[id(self.specific_collider)]
+        elif id(self.specific_collider) in product_copy:
+            other.specific_collider = product_copy[id(self.specific_collider)]
+        else:
+            other.specific_collider = self.specific_collider.copy(deep=True)
         other.kinetics = deepcopy(self.kinetics)
         other.network_kinetics = deepcopy(self.network_kinetics)
         other.reversible = self.reversible
         other.transition_state = deepcopy(self.transition_state)
         other.duplicate = self.duplicate
         # `pairs` holds the reaction's *own* species -- `generate_pairs` appends them
-        # straight out of `self.reactants` and `self.products` -- so deep-copying that
-        # list separately from the lists it points into hands the copy species it does not
-        # own. `Species.__eq__` is identity, so `reactants.index(pair[0])` then raises
-        # somewhere else entirely. Map each member onto the copy's own species instead:
-        # the copies above are positional, so the correspondence is exact.
+        # straight out of `self.reactants` and `self.products` (`reaction.py:1919`) -- so
+        # deep-copying that list separately from the lists it points into hands the copy
+        # species it does not own. `Species.__eq__` is identity, so
+        # `reactants.index(pair[0])` then raises somewhere else entirely. Each member is
+        # resolved against its OWN side first: a pair is ``(reactant, product)`` by
+        # construction, and the side is the only thing that disambiguates a species that is
+        # on both. The other side is the fallback rather than an error, because a pair
+        # naming a species this reaction does not hold is not this method's to diagnose.
         if self.pairs is None:
             other.pairs = None
         else:
-            # Written as loops rather than comprehensions on purpose: this is a `cpdef`
-            # method, and Cython refuses closures inside one.
-            originals = list(self.reactants) + list(self.products)
-            copies = list(other.reactants) + list(other.products)
-            own = {}
-            for i in range(len(originals)):
-                own[id(originals[i])] = copies[i]
             other.pairs = []
             for pair in self.pairs:
                 mapped = []
-                for member in pair:
-                    mapped.append(own.get(id(member), member))
+                for position in range(len(pair)):
+                    member = pair[position]
+                    if position == 0:
+                        own = reactant_copy
+                        fallback = product_copy
+                    else:
+                        own = product_copy
+                        fallback = reactant_copy
+                    if id(member) in own:
+                        mapped.append(own[id(member)])
+                    elif id(member) in fallback:
+                        mapped.append(fallback[id(member)])
+                    else:
+                        mapped.append(member)
                 other.pairs.append(tuple(mapped))
         other.allow_pdep_route = self.allow_pdep_route
         other.elementary_high_p = self.elementary_high_p
