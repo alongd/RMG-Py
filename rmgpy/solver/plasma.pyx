@@ -137,6 +137,16 @@ PLASMA_NEUTRAL_DENSITY_FLOOR_FRACTION = 1.0e-10
 # not depend on, any electron density the model is expected to produce.
 PLASMA_WALL_MAX_IONISATION_DEGREE = 1.0e-3
 
+# Extinction as a TERMINAL state (energy balance only). Once the discharge is extinct and
+# stays so -- its own ionisation below PLASMA_EXTINCT_RATIO of its electron loss and Te
+# within PLASMA_EXTINCT_TE_BAND_K of the gas, at PLASMA_EXTINCT_STEPS consecutive accepted
+# steps -- the run stops and records it. What remains is a dead plasma decaying on the wall
+# time to its source-held floor; integrating it there proves nothing, and in the tail the
+# decayed neutrals sit at solver noise, where the wall check (rightly) refuses states.
+PLASMA_EXTINCT_RATIO = 1.0e-6
+PLASMA_EXTINCT_TE_BAND_K = 1.0
+PLASMA_EXTINCT_STEPS = 10
+
 
 def _coerce_bool_flag(value, name, identity):
     """Coerce a user-supplied boolean flag by VALUE, not by truthiness.
@@ -386,6 +396,8 @@ cdef class PlasmaReactor(ReactionSystem):
     cdef public dict electron_energy_terms        # scratch of the LAST residual evaluation
     cdef public dict energy_budget                # LATCHED at accepted states, like wall_flux
     cdef public list energy_history               # (t, Te, n_e) at each accepted state
+    cdef public int energy_extinct_streak         # consecutive accepted steps meeting extinction
+    cdef public object energy_terminal            # None, or the recorded terminal state (dict)
 
     def __init__(self, T, P, initial_mole_fractions, Te, n_sims=1, termination=None, sensitive_species=None,
                  sensitivity_threshold=1e-3, sens_conditions=None, const_spc_names=None,
@@ -932,6 +944,8 @@ cdef class PlasmaReactor(ReactionSystem):
         self.electron_energy_terms = {}
         self.energy_budget = {}
         self.energy_history = []
+        self.energy_extinct_streak = 0
+        self.energy_terminal = None
         if electron_energy_balance is None:
             return
         if not isinstance(electron_energy_balance, dict):
@@ -1353,6 +1367,38 @@ cdef class PlasmaReactor(ReactionSystem):
         self.wall_ion_energy_flux = b['Q_wall_ion']
         self.wall_energy_availability['wall_ion_energy_flux'] = 'available-floating-wall-sheath-model'
 
+    def _update_terminal_state(self, np.ndarray y, double t):
+        """Count consecutive ACCEPTED steps at which the latched budget says extinct, with
+        nu_ionisation < PLASMA_EXTINCT_RATIO * nu_loss and |Te - Tg| <= PLASMA_EXTINCT_TE_BAND_K;
+        a miss restarts the count. At PLASMA_EXTINCT_STEPS the terminal state is recorded once,
+        with its time and state, for :meth:`terminal_state` to report. Energy balance only."""
+        if not self.energy_balance or self.energy_terminal is not None:
+            return
+        b = self.energy_budget
+        te = y[self.te_index]
+        if (b['discharge_state'] == 'extinct' and b['nu_loss'] > 0.0
+                and b['nu_ionisation'] < PLASMA_EXTINCT_RATIO * b['nu_loss']
+                and abs(te - self.T.value_si) <= PLASMA_EXTINCT_TE_BAND_K):
+            self.energy_extinct_streak += 1
+        else:
+            self.energy_extinct_streak = 0
+        if self.energy_extinct_streak >= PLASMA_EXTINCT_STEPS:
+            self.energy_terminal = {
+                'termination': 'extinct', 't': t, 'Te': te, 'Tg': self.T.value_si,
+                'n_e': b['n_e'], 'nu_ionisation': b['nu_ionisation'], 'nu_loss': b['nu_loss'],
+                'streak': self.energy_extinct_streak, 'y': [float(v) for v in y]}
+            logging.info('PlasmaReactor: discharge extinct and holding at t = %.6g s (Te = %.4f K, '
+                         'Tg = %.4f K, nu_iz/nu_loss = %.3e, %d consecutive accepted steps); '
+                         'terminating as extinct. (%s)', t, te, self.T.value_si,
+                         b['nu_ionisation'] / b['nu_loss'], self.energy_extinct_streak,
+                         self._identity())
+
+    cpdef object terminal_state(self):
+        """'extinct' once the extinction criterion has held (energy balance only), else None."""
+        if not self.energy_balance or self.energy_terminal is None:
+            return None
+        return self.energy_terminal['termination']
+
     def discharge_state(self):
         """'sustained' or 'extinct' at the last accepted state (energy balance only)."""
         if not self.energy_balance:
@@ -1587,6 +1633,8 @@ cdef class PlasmaReactor(ReactionSystem):
         # consumer a valid interface before the first step, at t = 0.
         if self.has_wall:
             self._latch_wall_diagnostics(self.y0, self.compute_volume(self.y0), 0.0)
+        self.energy_extinct_streak = 0
+        self.energy_terminal = None
         if self.energy_balance:
             self.energy_history = []
             self._latch_energy_budget(self.y0, 0.0)
@@ -3263,6 +3311,7 @@ cdef class PlasmaReactor(ReactionSystem):
             self._latch_wall_diagnostics(self.y, self.compute_volume(self.y), self.t)
         if self.energy_balance:
             self._latch_energy_budget(self.y, self.t)
+            self._update_terminal_state(self.y, self.t)
         return result
 
     cpdef step(self, double tout):
@@ -3286,6 +3335,7 @@ cdef class PlasmaReactor(ReactionSystem):
             self._latch_wall_diagnostics(self.y, self.compute_volume(self.y), self.t)
         if self.energy_balance:
             self._latch_energy_budget(self.y, self.t)
+            self._update_terminal_state(self.y, self.t)
         return result
 
     cpdef double compute_volume(self, np.ndarray y) except -1:

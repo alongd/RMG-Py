@@ -54,7 +54,9 @@ from rmgpy.exceptions import PlasmaStateError
 from rmgpy.data.kinetics.library import LibraryReaction
 from rmgpy.kinetics import TwoTemperaturePlasma
 from rmgpy.reaction import Reaction
+from rmgpy.rmg.settings import ModelSettings, SimulatorSettings
 from rmgpy.solver.plasma import PLASMA_LOSCHMIDT, PlasmaReactor
+from rmgpy.solver.termination import TerminationTime
 from rmgpy.species import Species
 from rmgpy.thermo import ThermoData
 
@@ -137,7 +139,7 @@ def _toy(index, reactants, products, kinetics, entries):
 
 def _build(te_ev=1.0, x_ion=1.0e-6, power_w=0.5, energy=True, metastable=False,
            recombination=False, elastic=True, source=None, radius=RADIUS, mixing=False,
-           energies=None):
+           energies=None, termination=None):
     electron = Species(label='e-').from_adjacency_list('1 e u1 p0 c-1')
     ar = Species(label='Ar').from_adjacency_list('1 Ar u0 p4 c0')
     arp = Species(label='Ar+').from_adjacency_list('multiplicity 2\n1 Ar u1 p3 c+1')
@@ -171,7 +173,7 @@ def _build(te_ev=1.0, x_ion=1.0e-6, power_w=0.5, energy=True, metastable=False,
                       if int(k[4:]) in entries})
     ToyLibraryReactor.toy_entries = entries
     reactor = ToyLibraryReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf, (te_ev * EV_TO_K, 'K'),
-                            n_sims=1, termination=[], **kwargs)
+                            n_sims=1, termination=termination or [], **kwargs)
     reactor.initialize_model(core, rxns, [], [])
     return reactor, core, rxns
 
@@ -511,6 +513,75 @@ def test_zero_power_is_reported_as_extinction():
     r2, _, _ = _build(te_ev=1.0, x_ion=1e-9, power_w=0.5, source=6.6e4)
     _run(r2)
     assert r2.discharge_state() == 'sustained'
+
+
+def _simulate(r, core, rxns):
+    """The production entry, as the model builder drives it."""
+    return r.simulate(core, rxns, [], [], [], [],
+                      model_settings=ModelSettings(tol_keep_in_edge=0, tol_move_to_core=1e5,
+                                                   tol_interrupt_simulation=1e8),
+                      simulator_settings=SimulatorSettings())
+
+
+def test_zero_power_run_terminates_as_extinct_on_simulate():
+    """Clause 5 (PM ruling): extinction is a TERMINAL state. Once the discharge is extinct and
+    stays so -- Te within 1 K of Tg and nu_iz/nu_loss < 1e-6 for 10 consecutive accepted
+    steps -- simulate() stops and records it, rather than integrating a dead plasma to its
+    noise floor (where the 1x-atol clamp bound refuses the LXCat P=0 arm)."""
+    r, core, rxns = _build(te_ev=1.0, x_ion=1e-9, power_w=0.0, source=6.6e4,
+                           termination=[TerminationTime((40.0, 's'))])
+    terminated, _res, _inv, _ss, _sr, t_final, _conv = _simulate(r, core, rxns)
+    assert terminated
+    assert r.terminal_state() == 'extinct'
+    rec = r.energy_terminal
+    assert rec['termination'] == 'extinct'
+    assert rec['t'] == t_final < 1.0            # far short of the 40 s backstop
+    assert abs(rec['Te'] - TGAS) <= 1.0
+    assert rec['nu_ionisation'] < 1e-6 * rec['nu_loss']
+    assert rec['streak'] == 10
+    assert rec['n_e'] == pytest.approx(_n_e(r), rel=1e-12)
+
+
+def test_sustained_run_never_triggers_extinction():
+    r, core, rxns = _build(te_ev=1.0, x_ion=1e-9, power_w=0.5, source=6.6e4,
+                           termination=[TerminationTime((40.0, 's'))])
+    terminated, _res, _inv, _ss, _sr, t_final, _conv = _simulate(r, core, rxns)
+    assert terminated and t_final >= 40.0
+    assert r.terminal_state() is None and r.energy_terminal is None
+    assert r.discharge_state() == 'sustained'
+
+
+def test_extinction_needs_ten_consecutive_qualifying_steps():
+    """One extinct-looking step is not a terminal state: the criterion must HOLD, and a
+    single miss (Te 2 K off Tg) restarts the count."""
+    r, core, _ = _build(te_ev=1.0, x_ion=1e-9, power_w=0.0, source=6.6e4)
+    _run(r, t_end=0.05)
+    assert r.discharge_state() == 'extinct' and abs(r.y[r.te_index] - TGAS) <= 1.0
+    y = np.array(r.y, float)
+    r.energy_extinct_streak = 0
+    r.energy_terminal = None
+    for _ in range(9):
+        r._update_terminal_state(y, 1.0)
+    assert r.terminal_state() is None
+    miss = y.copy()
+    miss[r.te_index] = TGAS + 2.0
+    r._update_terminal_state(miss, 1.0)
+    assert r.energy_extinct_streak == 0
+    for _ in range(9):
+        r._update_terminal_state(y, 1.0)
+    assert r.terminal_state() is None
+    r._update_terminal_state(y, 2.0)
+    assert r.terminal_state() == 'extinct' and r.energy_terminal['t'] == 2.0
+
+
+def test_energy_off_reactor_has_no_terminal_state():
+    """The criterion belongs to the energy balance: with Te prescribed the reactor never
+    evaluates it, so the energy-off path is unchanged."""
+    r, core, rxns = _build(te_ev=1.0, x_ion=1e-9, energy=False, source=6.6e4,
+                           termination=[TerminationTime((1e-3, 's'))])
+    _simulate(r, core, rxns)
+    assert r.terminal_state() is None and r.energy_terminal is None
+    assert r.energy_extinct_streak == 0
 
 
 def test_latched_budget_closes_at_steady_state():

@@ -949,6 +949,14 @@ energy change taken from the solver's own derivative, and ``discharge_state()`` 
 ``'sustained'`` when the discharge's own ionisation replaces at least half its electron loss,
 ``'extinct'`` otherwise (a decaying or source-held state).
 
+Extinction is a terminal state.  Once the discharge is extinct and stays so -- its own ionisation
+frequency below ``1e-6`` of its electron loss frequency and ``Te`` within 1 K of the gas
+temperature, at 10 consecutive accepted steps -- the simulation stops normally, logs the terminal
+state, and records it (time, ``Te``, ``n_e``, the frequencies and the state vector) in the
+reactor's ``energy_terminal``; ``terminal_state()`` then returns ``'extinct'``.  The decay of the
+dead plasma to its source-held floor is not integrated.  Without ``electronEnergyBalance`` the
+criterion is never evaluated.
+
 .. _simulatortolerances:
 
 Simulator Tolerances
