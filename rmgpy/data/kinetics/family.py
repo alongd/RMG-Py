@@ -55,8 +55,8 @@ from rmgpy.data.kinetics.depository import KineticsDepository
 from rmgpy.data.kinetics.groups import KineticsGroups
 from rmgpy.data.kinetics.quarantine import load_family_quarantine
 from rmgpy.data.kinetics.rules import KineticsRules
-from rmgpy.exceptions import ActionError, DatabaseError, InvalidActionError, KekulizationError, KineticsError, \
-                             ForbiddenStructureException, UndeterminableKineticsError
+from rmgpy.exceptions import ActionError, AtomTypeError, DatabaseError, InvalidActionError, KekulizationError, \
+                             KineticsError, ForbiddenStructureException, UndeterminableKineticsError
 from rmgpy.kinetics import Arrhenius, SurfaceArrhenius, SurfaceArrheniusBEP, StickingCoefficient, \
                            StickingCoefficientBEP, ArrheniusBM, SurfaceChargeTransfer, ArrheniusChargeTransfer, \
                            ArrheniusChargeTransferBM, KineticsModel, Marcus
@@ -71,6 +71,37 @@ import rmgpy.constants as constants
 from rmgpy.data.solvation import SoluteData, add_solute_data, SoluteTSData, to_soluteTSdata
 
 ################################################################################
+
+
+class UntypeableStructureError(Exception):
+    """
+    Raised when applying a reaction family's recipe builds a product structure
+    that no atom type can represent -- i.e. ``get_atomtype`` fails inside
+    ``Molecule.update()`` while the recipe is being applied.
+
+    This is a *named* replacement for the anonymous ``AtomTypeError`` that the
+    atom-typing layer raises. That error names only the shape of the impossible
+    atom; it withholds the two facts a modeller can act on -- which family
+    template matched, and which reacting species it grew from. This exception
+    carries both, plus the reacting species as adjacency lists and the original
+    impossible-atom shape (chained as ``__cause__``), and it names the three
+    actions a modeller can take.
+
+    It is a **direct** ``Exception`` subclass, deliberately NOT an
+    ``AtomTypeError`` subclass. Reaction generation catches ``AtomTypeError`` in
+    many places (resonance generation, kekulization, adjacency-list parsing) to
+    skip a structure and continue. Subclassing ``AtomTypeError`` would let one
+    of those handlers turn this loud refusal back into a silent skip -- the
+    exact failure this diagnostic exists to prevent. As a direct ``Exception``
+    subclass, no ``except AtomTypeError`` can swallow it, so the refusal stays a
+    refusal: same severity, same abort, non-zero exit.
+    """
+
+    def __init__(self, message, family=None, template=None, reactants=None):
+        super().__init__(message)
+        self.family = family
+        self.template = template
+        self.reactants = reactants
 
 
 class TemplateReaction(Reaction):
@@ -1684,6 +1715,39 @@ class KineticsFamily(Database):
             for struct in reactant_structures:
                 logging.info('{0}\n{1}\n'.format(struct, struct.to_adjacency_list()))
             raise
+        except AtomTypeError as e:
+            # The recipe built a product structure that no atom type can represent. The raw
+            # AtomTypeError names only the impossible atom's shape; re-raise a named refusal that
+            # also names the family, the matched top-level template, and the reacting species -- the
+            # facts a modeller needs to forbid the template, remove the species, or narrow the family
+            # list. Keep the refusal a refusal (do NOT swallow-and-continue): the original error is
+            # chained as the cause so nothing is lost.
+            direction = 'forward' if forward else 'reverse'
+            template = self.forward_template if forward else self.reverse_template
+            template_labels = [entry.label for entry in template.reactants] if template is not None else []
+            reactant_adjlists = [struct.to_adjacency_list() for struct in reactant_structures]
+            message = (
+                "Reaction family {family!r} matched the reacting species below in the {direction} "
+                "direction (top-level template reactant groups: {template}), but applying its recipe "
+                "built a product structure that no atom type can represent.\n"
+                "Underlying atom-typing failure (the shape of the impossible atom):\n    {cause}\n"
+                "The product structure itself is untypeable, so it is not emitted as an adjacency "
+                "list; the reacting species it grew from are (adjacency lists):\n\n{reactants}\n"
+                "To resolve, do one of:\n"
+                "  - forbid this template so it stops matching these reactants (in the RMG-database "
+                "{family} family);\n"
+                "  - remove one of the reacting species above from your model;\n"
+                "  - narrow the reaction family list so {family!r} is not applied."
+            ).format(
+                family=self.label,
+                direction=direction,
+                template=template_labels,
+                cause=str(e),
+                reactants='\n'.join(reactant_adjlists),
+            )
+            raise UntypeableStructureError(
+                message, family=self.label, template=template_labels, reactants=reactant_adjlists,
+            ) from e
 
         # Apply the generated species constraints (if given)
         for struct in product_structures:

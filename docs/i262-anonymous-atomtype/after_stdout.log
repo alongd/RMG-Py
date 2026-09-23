@@ -1,0 +1,80 @@
+Loaded families: ['Birad_R_Recombination', 'Plasma_Radiative_Recombination', 'R_Recombination']
+family.py in use: /home/alon/Code/RMG-Py-i262-anonymous-atomtype/rmgpy/data/kinetics/family.py
+
+==============================================================================
+CELL: Ar_ground unimolecular   (expected family: Plasma_Radiative_Recombination)
+==============================================================================
+  EXCEPTION CLASS: rmgpy.data.kinetics.family.UntypeableStructureError
+  __cause__ CLASS: AtomTypeError
+  MESSAGE:
+    | Reaction family 'Plasma_Radiative_Recombination' matched the reacting species below in the forward direction (top-level template reactant groups: ['A']), but applying its recipe built a product structure that no atom type can represent.
+    | Underlying atom-typing failure (the shape of the impossible atom):
+    |     Unable to determine atom type for atom Ar.-, which has 0 single bonds, 0 double bonds (0 to O, 0 to S, 0 others), 0 triple bonds, 0 quadruple bonds, 0 benzene bonds, 4 lone pairs, and -1 charge.
+    | The product structure itself is untypeable, so it is not emitted as an adjacency list; the reacting species it grew from are (adjacency lists):
+    | 
+    | 1 *1 Ar u0 p4 c0
+    | 
+    | To resolve, do one of:
+    |   - forbid this template so it stops matching these reactants (in the RMG-database Plasma_Radiative_Recombination family);
+    |   - remove one of the reacting species above from your model;
+    |   - narrow the reaction family list so 'Plasma_Radiative_Recombination' is not applied.
+  ROUND-TRIP of adjacency lists from exception.reactants (i262):
+    reactant[0] re-parsed OK -> Ar charge 0 mult 1
+
+==============================================================================
+CELL: Ar2+ + H   (expected family: R_Recombination)
+==============================================================================
+  EXCEPTION CLASS: rmgpy.data.kinetics.family.UntypeableStructureError
+  __cause__ CLASS: AtomTypeError
+  MESSAGE:
+    | Reaction family 'R_Recombination' matched the reacting species below in the forward direction (top-level template reactant groups: ['Root']), but applying its recipe built a product structure that no atom type can represent.
+    | Underlying atom-typing failure (the shape of the impossible atom):
+    |     Unable to determine atom type for atom Ar, which has 2 single bonds, 0 double bonds (0 to O, 0 to S, 0 others), 0 triple bonds, 0 quadruple bonds, 0 benzene bonds, 3 lone pairs, and +0 charge.
+    | The product structure itself is untypeable, so it is not emitted as an adjacency list; the reacting species it grew from are (adjacency lists):
+    | 
+    | multiplicity 2
+    | 1 * H u1 p0 c0
+    | 
+    | multiplicity 2
+    | 1 * Ar u1 p3 c0 {2,S}
+    | 2   Ar u0 p3 c+1 {1,S}
+    | 
+    | To resolve, do one of:
+    |   - forbid this template so it stops matching these reactants (in the RMG-database R_Recombination family);
+    |   - remove one of the reacting species above from your model;
+    |   - narrow the reaction family list so 'R_Recombination' is not applied.
+  ROUND-TRIP of adjacency lists from exception.reactants (i262):
+    reactant[0] re-parsed OK -> H charge 0 mult 2
+    reactant[1] re-parsed OK -> Ar2 charge 1 mult 2
+
+==============================================================================
+CELL: Ar2+ + Ar_meta_3P2   (expected family: Birad_R_Recombination)
+==============================================================================
+  EXCEPTION CLASS: rmgpy.data.kinetics.family.UntypeableStructureError
+  __cause__ CLASS: AtomTypeError
+  MESSAGE:
+    | Reaction family 'Birad_R_Recombination' matched the reacting species below in the forward direction (top-level template reactant groups: ['Y_rad', 'Birad']), but applying its recipe built a product structure that no atom type can represent.
+    | Underlying atom-typing failure (the shape of the impossible atom):
+    |     Unable to determine atom type for atom Ar, which has 2 single bonds, 0 double bonds (0 to O, 0 to S, 0 others), 0 triple bonds, 0 quadruple bonds, 0 benzene bonds, 3 lone pairs, and +0 charge.
+    | The product structure itself is untypeable, so it is not emitted as an adjacency list; the reacting species it grew from are (adjacency lists):
+    | 
+    | multiplicity 3
+    | 1 *2 Ar u2 p3 c0
+    | 
+    | multiplicity 2
+    | 1 *1 Ar u1 p3 c0 {2,S}
+    | 2    Ar u0 p3 c+1 {1,S}
+    | 
+    | To resolve, do one of:
+    |   - forbid this template so it stops matching these reactants (in the RMG-database Birad_R_Recombination family);
+    |   - remove one of the reacting species above from your model;
+    |   - narrow the reaction family list so 'Birad_R_Recombination' is not applied.
+  ROUND-TRIP of adjacency lists from exception.reactants (i262):
+    reactant[0] re-parsed OK -> Ar charge 0 mult 3
+    reactant[1] re-parsed OK -> Ar2 charge 1 mult 2
+
+==============================================================================
+SUMMARY
+  cells that did NOT crash (bad): False
+  round-trip failures: []
+  OK: every cell refused loudly and every printed adjacency list round-tripped.
