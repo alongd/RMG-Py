@@ -1,0 +1,54 @@
+
+absent       copy of a template reaction leaves pairs pointing outside it
+    every pairs member is one of the reaction's own species, and none is the original's
+
+absent       pickle of a template reaction leaves pairs pointing outside it
+    every pairs member is one of the reaction's own species, and none is the original's
+
+absent       copy of a library reaction leaves pairs pointing outside it
+    every pairs member is one of the reaction's own species, and none is the original's
+
+absent       pickle of a library reaction leaves pairs pointing outside it
+    every pairs member is one of the reaction's own species, and none is the original's
+
+absent       copy leaves labeled_atoms pointing outside the reaction
+    every labelled atom is an atom of one of the reaction's own molecules
+
+absent       relabelling through labeled_atoms after a copy is a silent no-op
+    the new label is visible on an atom the reaction owns, and did not leak back into the original (no leak)
+
+absent       pickle leaves labeled_atoms pointing outside the reaction
+    every labelled atom is an atom of one of the reaction's own molecules
+
+absent       relabelling through labeled_atoms after a pickle is a silent no-op
+    the new label is visible on an atom the reaction owns, and did not leak back into the original (no leak)
+
+holds        control: the fixture points into its own species before any copy
+    pairs and labeled_atoms are the reaction's own objects to begin with, so a severed reference below is the transform's doing and not the fixture's
+
+holds        control: each transform really copies the species
+    no species of any transformed reaction is an object of the original, so 'points into the copy' is a real property and not aliasing
+
+holds        control: copy() still shares the entry by reference
+    entry is the shared database object the gate reads authorship from, and copy() still hands the copy the same one -- the repair deepened nothing new
+
+holds        control: value comparison passes whether or not the references survive
+    pairs compare equal by label and labeled_atoms by key, at this tip and at the base alike. A test written that way is structurally unable to fail on this defect, which is why round 107's tests were green throughout.
+
+note        one shared memo fixes pairs and cannot fix labeled_atoms
+    deepcopy through one memo shares the atom: False
+    `Molecule.__deepcopy__` (rmgpy/molecule/molecule.py:1064) is
+        return self.copy(deep=True)
+    -- it takes the memo and discards it, so a caller cannot make two references to one molecule come out as two references to one copy. Species-level sharing survives because Species has no such override; atom-level sharing cannot. pickle keeps its own memo, which __deepcopy__ never sees, and is 3x faster than deepcopy on the same state besides. rmgpy/molecule/ is out of gates.
+
+note        the sites with the same defect that this round cannot touch
+      reaction.py:2017   Reaction.copy          `other.pairs = deepcopy(self.pairs)` beside separately copied reactants -- the same severing, for every subclass that does not override copy()
+      family.py:3854     deepcopy(rxn)          deepcopy consults Molecule.__deepcopy__, so labelled atoms are severed there too
+      database.py:755    deepcopy(reaction)     the same
+    
+    pickle is unaffected at every one of them, which is why `copy()` now uses it.
+
+==============================================================================
+findings reproduced : 0 of 8
+controls holding    : 4 of 4
+noted, not findings : 2

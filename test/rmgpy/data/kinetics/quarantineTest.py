@@ -3515,6 +3515,10 @@ _COMPARED_BY = {
     "entry": lambda v: None if v is None else (v.index, v.label),
     "reverse": lambda v: None if v is None else v.index,
     "labeled_atoms": lambda v: sorted(v),
+    # By value, so a *detached* copy still compares equal here. Identity is asserted
+    # separately, by `TestTheCopyIsOneGraphNotFourLists`, because it is exactly the
+    # property a value comparison structurally cannot see.
+    "pairs": lambda v: [tuple(s.label for s in pair) for pair in v],
 }
 
 
@@ -3566,7 +3570,11 @@ class TestEveryTransformReproducesTheWholeState:
             "label": "Lip + CH3 <=> CH3Li",
             "network_kinetics": Arrhenius(A=(3.0, "m^3/(mol*s)"), n=0, Ea=(0, "kJ/mol"),
                                           T0=(1, "K")),
-            "pairs": [("Lip", "CH3Li")],
+            # `pairs` and `labeled_atoms` are filled in by `_built`, from the species it
+            # owns. String stand-ins stood here until round 108 and were exactly why the
+            # tests could not see a severed cross-reference: a string cannot point into a
+            # copied structure, so no assertion over one can notice that it stopped.
+            "pairs": None,
             "products": None,          # filled in by `_built`, which owns the species
             "rank": 7,
             "reactants": None,         # likewise
@@ -3588,6 +3596,9 @@ class TestEveryTransformReproducesTheWholeState:
         products = [Species(label="CH3Li", molecule=[Molecule(smiles="C[Li]")])]
         markers["reactants"] = reactants
         markers["products"] = products
+        markers["pairs"] = [(reactants[0], products[0])]
+        labelled = reactants[0].molecule[0].atoms[0]
+        labelled.label = "*1"
         entry = Entry(index=4, label="an entry", long_desc="family: A_Family")
 
         if shape == "template":
@@ -3599,7 +3610,7 @@ class TestEveryTransformReproducesTheWholeState:
                 "estimator": "rate rules",
                 "reverse": TemplateReaction(index=99),
                 "entry": entry,
-                "labeled_atoms": {"reactants": {"*1": "Lip"}, "products": {}},
+                "labeled_atoms": {"reactants": {"*1": labelled}, "products": {}},
             })
         else:
             reaction = LibraryReaction(reactants=reactants, products=products,
@@ -3745,7 +3756,12 @@ class TestEveryTransformReproducesTheWholeState:
         from rmgpy.data.kinetics import family as family_module
         from rmgpy.data.kinetics import library as library_module
 
-        shared = ("reaction_state", "carry_reaction_state", "apply_reaction_state")
+        # `copy_reaction` counts because it *is* the shared definition for the copies --
+        # it reaches the other three itself. Round 108 moved both `copy()` bodies into it
+        # and this check went red on the delegation, which was the checker being too
+        # literal rather than a site enumerating by hand again.
+        shared = ("reaction_state", "carry_reaction_state", "apply_reaction_state",
+                  "copy_reaction")
         sites = {
             "TemplateReaction.__reduce__": TemplateReaction.__reduce__,
             "TemplateReaction.copy": TemplateReaction.copy,
@@ -3924,3 +3940,212 @@ class TestACarryThatCannotCarryRefusesLoudly:
             assert "raises" in (function.__doc__ or "").lower(), (
                 "{0} refuses a field it cannot carry and does not say so".format(name))
         assert checked, "none of the carrying helpers is reachable under its own name"
+
+
+class TestTheCopyIsOneGraphNotFourLists:
+    """
+    Round 108's HIGH. A reaction is not a bag of independent fields. `pairs` holds the
+    reaction's own `Species` objects -- `Reaction.generate_pairs` appends them straight out
+    of `self.reactants` and `self.products` -- and `labeled_atoms` holds `Atom` objects out
+    of those species' molecules. Its internal consistency is a property of the references
+    *between* those four lists, not of the lists separately.
+
+    `copy()` deep-copied each of them in its own call, each with its own memo, which severs
+    exactly those references. Measured at `56156ac9a`: after a copy, `pairs[0][0]` was in
+    neither the copy's reactants nor the original's, and relabelling through
+    `labeled_atoms` changed nothing any structure could see. `Species.__eq__` is identity,
+    so `reactants.index(pair[0])` raises on the first; the second is silent.
+
+    Every assertion here is `is`, deliberately. Round 107's tests compare by value and are
+    green at `56156ac9a` throughout -- a detached clone has all the right values. Value
+    equality is structurally unable to see this defect, which is the second half of the
+    finding and the reason these fixtures hold real species and real atoms rather than the
+    strings they held until this round.
+    """
+
+    TRANSFORMS = ("copy", "pickle")
+
+    def _built(self, shape):
+        """A reaction whose `pairs` and `labeled_atoms` point into its own species."""
+        reactants = [Species(label="ethane", molecule=[Molecule(smiles="CC")])]
+        products = [Species(label="ethyl", molecule=[Molecule(smiles="C[CH2]")])]
+        if shape == "template":
+            reaction = TemplateReaction(reactants=reactants, products=products,
+                                        family="A_Family")
+        else:
+            reaction = LibraryReaction(reactants=reactants, products=products,
+                                       library="a_library")
+        reaction.pairs = [(reactants[0], products[0])]
+        labelled = reactants[0].molecule[0].atoms[0]
+        labelled.label = "*1"
+        if shape == "template":
+            reaction.labeled_atoms = {"reactants": {"*1": labelled}, "products": {}}
+        return reaction
+
+    def _transformed(self, transform, reaction):
+        if transform == "pickle":
+            return pickle.loads(pickle.dumps(reaction))
+        return reaction.copy()
+
+    @staticmethod
+    def _atoms_of(reaction):
+        return [atom
+                for species in list(reaction.reactants) + list(reaction.products)
+                for molecule in species.molecule
+                for atom in molecule.atoms]
+
+    def test_the_fixture_holds_the_invariant_before_anything_is_copied(self):
+        """
+        Anti-vacuity. If the fixture did not point into its own species -- as the string
+        version did not -- every assertion below would be about nothing.
+
+        **Green at `56156ac9a`** by construction: it is the guard on the other tests, not
+        evidence of the defect.
+        """
+        for shape in ("template", "library"):
+            reaction = self._built(shape)
+            assert any(reaction.pairs[0][0] is s for s in reaction.reactants)
+            assert any(reaction.pairs[0][1] is s for s in reaction.products)
+            if shape == "template":
+                assert any(reaction.labeled_atoms["reactants"]["*1"] is a
+                           for a in self._atoms_of(reaction))
+
+    @pytest.mark.parametrize("transform", TRANSFORMS)
+    @pytest.mark.parametrize("shape", ("template", "library"))
+    def test_every_pair_member_is_one_of_the_copys_own_species(self, shape, transform):
+        """Every `pairs` member must be a species the transformed reaction owns.
+
+        The ``copy`` arms are the behavioural red state at `56156ac9a`. The ``pickle``
+        arms are **green at the base**: one state dict, one pickle memo, so the
+        references survive by construction and always did. Pinned, not claimed.
+        """
+        reaction = self._built(shape)
+        after = self._transformed(transform, reaction)
+        owned = list(after.reactants) + list(after.products)
+        original = list(reaction.reactants) + list(reaction.products)
+        for pair in after.pairs:
+            for member in pair:
+                assert any(member is s for s in owned), (
+                    "after {0} of a {1} reaction, a pairs member is a species the "
+                    "reaction does not own; Species.__eq__ is identity, so "
+                    "reactants.index(pair[0]) raises".format(transform, shape))
+                assert not any(member is s for s in original), (
+                    "after {0}, a pairs member is still the *original* reaction's "
+                    "species, so the copy is not a copy".format(transform))
+
+    @pytest.mark.parametrize("transform", TRANSFORMS)
+    def test_every_labelled_atom_is_inside_one_of_the_copys_own_species(self, transform):
+        """Every labelled atom must be an atom of one of the copy's own molecules.
+
+        The ``copy`` arms are the behavioural red state at `56156ac9a`. The ``pickle``
+        arms are **green at the base**: one state dict, one pickle memo, so the
+        references survive by construction and always did. Pinned, not claimed.
+        """
+        reaction = self._built("template")
+        after = self._transformed(transform, reaction)
+        owned = self._atoms_of(after)
+        original = self._atoms_of(reaction)
+        for group in after.labeled_atoms.values():
+            for label, atom in group.items():
+                for one in (atom if isinstance(atom, list) else [atom]):
+                    assert any(one is a for a in owned), (
+                        "after {0}, labelled atom {1!r} is not inside any species the "
+                        "copy owns, so relabelling through it reaches nothing".format(
+                            transform, label))
+                    assert not any(one is a for a in original), (
+                        "after {0}, labelled atom {1!r} is still the original's "
+                        "atom".format(transform, label))
+
+    @pytest.mark.parametrize("transform", TRANSFORMS)
+    def test_relabelling_through_labeled_atoms_is_observable_in_the_structure(
+            self, transform):
+        """
+        The consequence rather than the mechanism. `family.py:2593` relabels the reaction's
+        structures out of `labeled_atoms` before regenerating `pairs` and `template`; a
+        detached atom makes that a no-op that reports nothing.
+
+        The ``copy`` arms are the behavioural red state at `56156ac9a`. The ``pickle``
+        arms are **green at the base**: one state dict, one pickle memo, so the
+        references survive by construction and always did. Pinned, not claimed.
+        """
+        reaction = self._built("template")
+        after = self._transformed(transform, reaction)
+        after.labeled_atoms["reactants"]["*1"].label = "*9"
+
+        assert any(a.label == "*9" for a in self._atoms_of(after)), (
+            "relabelling through labeled_atoms after a {0} changed nothing the reaction "
+            "can see".format(transform))
+        assert all(a.label != "*9" for a in self._atoms_of(reaction)), (
+            "relabelling the copy reached back into the original")
+
+    @pytest.mark.parametrize("shape", ("template", "library"))
+    def test_the_shallow_half_is_still_shallow(self, shape):
+        """
+        The repair must not deepen what was deliberately shallow. `entry` is the shared
+        database object the quarantine gate reads authorship from; a copy that cloned it
+        would be a different defect in the same place.
+
+        **Green at `56156ac9a`** -- a guard against the repair overshooting.
+        """
+        entry = Entry(index=4, label="an entry", long_desc="family: A_Family")
+        reaction = self._built(shape)
+        reaction.entry = entry
+        assert reaction.copy().entry is entry
+
+    def test_the_two_copies_are_one_implementation(self):
+        """
+        `TemplateReaction.copy` and `LibraryReaction.copy` must not be two bodies that
+        happen to agree -- that is how round 107's four sites drifted in the first place.
+        Both are one call to the shared helper, differing only in the policy argument.
+
+        **Structural**, but it runs at `56156ac9a` and fails on the base's actual source
+        -- two bodies, each with its own `deepcopy` calls -- rather than on a missing
+        name. It pins the repair's shape; the four `copy` arms above carry the defect.
+        """
+        for site in (TemplateReaction.copy, LibraryReaction.copy):
+            body = inspect.getsource(site).split('"""')[-1]
+            assert "copy_reaction(" in body, (
+                "a copy() has stopped delegating to the shared helper")
+            assert "deepcopy" not in body, (
+                "a copy() deepens a field itself again; that is the per-field memo this "
+                "round removed")
+
+    def test_molecule_copy_still_preserves_atom_order(self):
+        """
+        The repair does not rely on this, but `Molecule.copy` does -- it pairs
+        `self.vertices[i]` with `other.vertices[i]` to carry connectivity across. Pinned
+        here because if that stops holding, a whole class of index-based reasoning about
+        copied structures goes quietly wrong.
+
+        **Green at `56156ac9a`** -- an upstream contract, pinned, not repaired.
+        """
+        molecule = Molecule(smiles="C[CH2]")
+        other = molecule.copy(deep=True)
+        assert [a.element.symbol for a in other.atoms] == \
+               [a.element.symbol for a in molecule.atoms]
+        assert all(a is not b for a in other.atoms for b in molecule.atoms)
+
+    def test_a_deepcopy_cannot_do_this_and_the_reason_is_upstream(self):
+        """
+        The negative control on the choice of mechanism, so the workaround cannot outlive
+        its reason.
+
+        `copy()` reproduces the deepened half through `pickle` rather than `deepcopy`,
+        which looks like the odd choice until the obvious one is tried:
+        `Molecule.__deepcopy__` is ``return self.copy(deep=True)`` -- it accepts the memo
+        and discards it, so no amount of memo-sharing by a caller can make two references
+        to one molecule come out as two references to one copy. If upstream ever honours
+        the memo, this fails and says the simpler mechanism has become available.
+
+        **Green at `56156ac9a`** -- it measures upstream, which this round did not touch.
+        """
+        from copy import deepcopy
+
+        molecule = Molecule(smiles="CC")
+        atom = molecule.atoms[0]
+        memo = {}
+        copied_atom = deepcopy(atom, memo)
+        copied_molecule = deepcopy(molecule, memo)
+        assert not any(copied_atom is a for a in copied_molecule.atoms), (
+            "Molecule.__deepcopy__ now honours the memo, so copy() could use a single "
+            "deepcopy instead of a pickle round trip -- simplify it")

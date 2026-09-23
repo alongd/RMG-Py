@@ -35,6 +35,7 @@ import itertools
 import logging
 import multiprocessing as mp
 import os.path
+import pickle
 import random
 import math
 import re
@@ -247,6 +248,63 @@ _TEMPLATE_NOT_COPIED_BY_REFERENCE = dict(
     labeled_atoms='deep-copied in copy(), a dict of dicts the family mutates in place')
 
 
+def copy_reaction(reaction, not_copied_by_reference):
+    """
+    Deep copy `reaction`, preserving the references *between* its components.
+
+    A reaction is not a bag of independent fields. `pairs` holds the reaction's own
+    `Species` objects -- `Reaction.generate_pairs` appends them straight out of
+    ``self.reactants`` and ``self.products`` -- and `labeled_atoms` holds `Atom` objects
+    out of those species' molecules (``family.py``, ``_create_reaction``). Its internal
+    consistency is a property of those references, not of the four lists separately:
+
+    * `Species.__eq__` is identity, so a `pairs` entry that is not one of the copy's own
+      reactants makes ``reactants.index(pair[0])`` raise;
+    * `labeled_atoms` is read back to relabel the reaction's structures before pairs and
+      templates are regenerated (``family.py:2593``), so an atom that is not inside one of
+      the copy's molecules relabels nothing and reports nothing.
+
+    Until round 108 this deep-copied each field in a separate `deepcopy` call, each with
+    its own memo, which severs exactly those references. The whole deepened half goes
+    through **one round trip** now, so two fields that referred to one object still refer
+    to one object on the other side.
+
+    That round trip is `pickle`, and not for want of trying `deepcopy` first. A single
+    `deepcopy` with a shared memo fixes `pairs` and **cannot** fix `labeled_atoms`:
+    `Molecule.__deepcopy__` (``rmgpy/molecule/molecule.py:1064``) is
+    ``return self.copy(deep=True)`` -- it takes the memo and discards it, so every
+    molecule is rebuilt with fresh atoms no matter what the caller has already copied.
+    Measured at `56156ac9a`: through one memo, a `pairs` species is shared and a labelled
+    atom is not. `pickle` has its own memo, which `__deepcopy__` cannot intercept, and it
+    keeps both -- measured, and 3x faster than `deepcopy` on the same state besides.
+    `rmgpy/molecule/` is out of gates; the `__deepcopy__` override is named in the findings
+    rather than changed.
+
+    So `copy()` and the pickle path are now literally the same mechanism rather than two
+    implementations of one idea: both reproduce the reaction through `__reduce__`, so a
+    field that survives one survives the other by construction. The two *halves* cannot
+    drift either, because they are complementary in code rather than by agreement:
+    `not_copied_by_reference` minus `_NOT_REPRODUCED` is the deepened set, so a field
+    added to either table lands in exactly one half, and a field added to `Reaction` with
+    no table entry is carried by reference and named by the partition tests.
+    """
+    other = type(reaction).__new__(type(reaction))
+
+    # The shallow half: a label, a rate model, the authoring entry. Carried by reference
+    # deliberately -- `entry` is the shared database object the quarantine gate reads.
+    carry_reaction_state(other, reaction, not_copied_by_reference, state_fields(reaction))
+
+    deepened = set(not_copied_by_reference) - set(_NOT_REPRODUCED)
+    state = reaction_state(reaction, {}, deepened)
+    apply_reaction_state(
+        other, pickle.loads(pickle.dumps(state, pickle.HIGHEST_PROTOCOL)))
+
+    # A memo of a computation rather than state, so the copy starts empty -- but it must
+    # start, because `__new__` leaves a `cdef public dict` unset and reading one raises.
+    other.k_effective_cache = {}
+    return other
+
+
 class TemplateReaction(Reaction):
     """
     A Reaction object generated from a reaction family template. In addition
@@ -370,30 +428,13 @@ class TemplateReaction(Reaction):
         """
         creates a new instance of TemplateReaction
 
-        The shallow half is not enumerated here. Every field `state_fields()` finds and
-        `_NOT_COPIED_BY_REFERENCE` does not exclude is carried by the same helper the
-        loader and `__reduce__` use, so the three enumerations round 107 found in
-        disagreement now cannot disagree. The exclusions are the mutable fields, deepened
-        below -- the list this method used to be was missing the three pressure-dependence
-        flags, `rank`, `network_kinetics` and `labeled_atoms`, and left `comment` as
-        ``None`` where the class declares a ``str``.
+        Neither half is enumerated here. `copy_reaction` carries the shallow half with the
+        same helper the loader and `__reduce__` use -- so the enumerations round 107 found
+        in disagreement cannot disagree -- and deepens the rest through **one shared
+        memo**, so `pairs` and `labeled_atoms` keep pointing at the copy's own species and
+        atoms rather than at clones of their own.
         """
-        other = TemplateReaction.__new__(TemplateReaction)
-        carry_reaction_state(other, self, _TEMPLATE_NOT_COPIED_BY_REFERENCE,
-                             state_fields(self))
-
-        other.reactants = [reactant.copy(deep=True) for reactant in self.reactants]
-        other.products = [product.copy(deep=True) for product in self.products]
-        other.kinetics = deepcopy(self.kinetics)
-        other.network_kinetics = deepcopy(self.network_kinetics)
-        other.transition_state = deepcopy(self.transition_state)
-        other.pairs = deepcopy(self.pairs)
-        other.labeled_atoms = deepcopy(self.labeled_atoms)
-        # A memo rather than state, so the copy starts empty -- but it must start, because
-        # `__new__` leaves a `cdef public dict` unset and reading an unset one raises.
-        other.k_effective_cache = {}
-
-        return other
+        return copy_reaction(self, _TEMPLATE_NOT_COPIED_BY_REFERENCE)
 
     def apply_solvent_correction(self, solvent):
         """

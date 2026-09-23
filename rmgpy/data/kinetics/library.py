@@ -53,7 +53,7 @@ from rmgpy.data.kinetics.family import (TemplateReaction, REACTION_STATE_FIELDS,
                                         _CARRIED_THROUGH_STORAGE, _NOT_REPRODUCED,
                                         _NOT_COPIED_BY_REFERENCE,
                                         apply_reaction_state, carry_reaction_state,
-                                        reaction_state, state_fields)
+                                        copy_reaction, reaction_state, state_fields)
 from rmgpy.kinetics import Arrhenius, ThirdBody, Lindemann, Troe, \
                            PDepArrhenius, MultiArrhenius, MultiPDepArrhenius, Chebyshev, KineticsModel, Marcus
 from rmgpy.kinetics.surface import StickingCoefficient
@@ -143,23 +143,14 @@ class LibraryReaction(Reaction):
         `rmgpy/tools/isotopes.py:394` copies whatever `Reaction` it is handed, and the
         core model it walks is full of these.
 
-        Same shape as `TemplateReaction.copy()`, sharing its helper and its exclusions, so
-        the two cannot drift apart.
+        The same call as `TemplateReaction.copy()` with the same helper and the same
+        exclusions, differing only in the one table entry `LibraryReaction` has no field
+        for -- so the two are not two implementations and cannot drift apart. In
+        particular a copied `pairs` entry is one of the copy's own reactants, not a clone
+        of it; see `copy_reaction` for why that is a property of the reaction rather than
+        of its lists.
         """
-        other = LibraryReaction.__new__(LibraryReaction)
-        carry_reaction_state(other, self, _NOT_COPIED_BY_REFERENCE, state_fields(self))
-
-        other.reactants = [reactant.copy(deep=True) for reactant in self.reactants]
-        other.products = [product.copy(deep=True) for product in self.products]
-        other.kinetics = deepcopy(self.kinetics)
-        other.network_kinetics = deepcopy(self.network_kinetics)
-        other.transition_state = deepcopy(self.transition_state)
-        other.pairs = deepcopy(self.pairs)
-        # A memo rather than state, so the copy starts empty -- but it must start, because
-        # `__new__` leaves a `cdef public dict` unset and reading an unset one raises.
-        other.k_effective_cache = {}
-
-        return other
+        return copy_reaction(self, _NOT_COPIED_BY_REFERENCE)
 
     def __repr__(self):
         """
