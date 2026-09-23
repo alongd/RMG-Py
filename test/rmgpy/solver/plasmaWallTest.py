@@ -1508,6 +1508,97 @@ def test_check_wall_support_refuses_an_individual_negative_neutral():
     assert 'negative' in str(exc.value)
 
 
+def _noise_reactor():
+    """Ar/He/Ar+/e- with a wall, and a state vector the caller perturbs one entry of."""
+    electron = Species(label='e-').from_adjacency_list('1 e u1 p0 c-1')
+    ar = _ground_species('Ar')
+    he = Species(label='He').from_adjacency_list('1 He u0 p1 c0')
+    arp = Species(label='Ar+').from_adjacency_list('multiplicity 2\n1 Ar u1 p3 c+1')
+    imf = {electron: 1.0e-7, arp: 1.0e-7, he: 0.5, ar: 0.5 - 2.0e-7}
+    reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+                            (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
+                            diffusion_length=(_diffusion_length(), 'm'),
+                            ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
+                            wall_single_bath_approximation=True)
+    core = [electron, ar, he, arp]
+    reactor.initialize_model(core, [], [], [])
+    z = reactor.species_charges
+    ie = reactor.electron_index
+    idx = {'e-': ie,
+           'Ar': [j for j in range(len(z)) if z[j] == 0 and core[j].label == 'Ar'][0],
+           'He': [j for j in range(len(z)) if z[j] == 0 and core[j].label == 'He'][0],
+           'Ar+': [j for j in range(len(z)) if z[j] == 1 and j != ie][0]}
+    y = np.zeros(reactor.num_core_species, float)
+    y[idx['He']] = 0.5
+    y[idx['Ar']] = 0.5
+    y[idx['Ar+']] = 1.0e-7
+    y[idx['e-']] = 1.0e-7
+    return reactor, idx, y
+
+
+def test_check_wall_support_clamps_a_neutral_negative_within_its_own_atol():
+    """I-274 clause 5: once a neutral decays to zero the integrator's accepted value of
+    it is noise of either sign, bounded by that species' absolute tolerance -- the P=0
+    FULL arm was refused at Ars = -2e-32 mol with atol 1e-16. A negative no larger than
+    the species' OWN atol is inside the solver's stated resolution: it is clamped to
+    exactly zero in the accepted state, not refused. The clamp is applied to the array
+    passed in, which is the published accepted state on the step path."""
+    reactor, idx, y = _noise_reactor()
+    atol = reactor.atol_array[idx['Ar']]
+    y[idx['Ar']] = -0.5 * atol
+    reactor.check_wall_support(y)
+    assert y[idx['Ar']] == 0.0
+
+
+def test_neutral_noise_tolerance_is_the_species_own_atol():
+    """The bound is per species, not the deck-wide atol: raising one neutral's atol widens
+    only its tolerance, and a negative beyond a species' own atol is still refused."""
+    reactor, idx, y = _noise_reactor()
+    reactor.atol_array[idx['Ar']] = 1.0e-10
+    y[idx['Ar']] = -1.0e-12             # 1e4 x the deck atol, inside Ar's own
+    reactor.check_wall_support(y)
+    assert y[idx['Ar']] == 0.0
+    reactor, idx, y = _noise_reactor()
+    reactor.atol_array[idx['He']] = 1.0e-20
+    y[idx['He']] = -1.0e-18             # inside the deck atol, outside He's own
+    y[idx['Ar']] = 1.0
+    with pytest.raises(PlasmaStateError) as exc:
+        reactor.check_wall_support(y)
+    assert 'negative' in str(exc.value)
+
+
+def test_neutral_negative_beyond_its_atol_is_still_refused_and_left_unclamped():
+    reactor, idx, y = _noise_reactor()
+    atol = reactor.atol_array[idx['Ar']]
+    y[idx['Ar']] = -2.0 * atol
+    with pytest.raises(PlasmaStateError) as exc:
+        reactor.check_wall_support(y)
+    assert 'negative' in str(exc.value)
+    assert y[idx['Ar']] == -2.0 * atol
+
+
+@pytest.mark.parametrize('label', ['e-', 'Ar+'])
+def test_charged_negative_within_atol_is_never_accepted(label):
+    """The noise tolerance is for NEUTRALS only. A charged population below zero, however
+    small, corrupts the charge bookkeeping the wall operator rests on and stays refused."""
+    reactor, idx, y = _noise_reactor()
+    atol = reactor.atol_array[idx[label]]
+    y[idx['Ar+']] = 0.0
+    y[idx['e-']] = 0.0
+    y[idx[label]] = -0.5 * atol
+    with pytest.raises(PlasmaStateError):
+        reactor.check_wall_support(y)
+    assert y[idx[label]] == -0.5 * atol
+
+
+def test_non_finite_neutral_is_still_refused():
+    reactor, idx, y = _noise_reactor()
+    y[idx['Ar']] = float('nan')
+    with pytest.raises(PlasmaStateError) as exc:
+        reactor.check_wall_support(y)
+    assert 'non-finite' in str(exc.value)
+
+
 def test_direct_construction_checks_mobility_reference_density_dimension():
     """MED: a directly-constructed reactor must reject mobility_reference_density given
     in the wrong dimension. (3, 'kg') is a mass, not a number density; taking its SI

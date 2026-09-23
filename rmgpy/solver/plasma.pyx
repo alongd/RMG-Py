@@ -2829,7 +2829,9 @@ cdef class PlasmaReactor(ReactionSystem):
         read off the floor, not off ``n_neutral``); an electron or ion population that is
         not finite and non-negative; any INDIVIDUAL neutral population negative (the
         aggregate can stay positive while one goes negative, and the source is
-        apportioned per species); a net charge outside quasineutrality (a cation species
+        apportioned per species) beyond that species' own absolute tolerance -- a
+        neutral negative within it is decay-to-zero noise and is clamped to 0.0 in ``y``
+        instead; a net charge outside quasineutrality (a cation species
         can be present at zero MOLES, so the topology guard elsewhere does not see it),
         which would let the common loss frequency remove electrons with no ion partner;
         a declared ionisation source with no ionisable neutral inventory left to receive
@@ -2850,6 +2852,16 @@ cdef class PlasmaReactor(ReactionSystem):
                 # wall source and recycle over per-species populations, where a negative
                 # one becomes a negative (injecting) allocation. Inventory governs per
                 # species, not in total.
+                # A neutral that has decayed to zero is accepted as noise of either sign,
+                # bounded by its own absolute tolerance (the P=0 arm: Ars = -2e-32 mol at
+                # atol 1e-16). A negative no larger than that is inside the solver's
+                # stated resolution: clamp it to exactly zero in the state passed in -- the
+                # published accepted state -- rather than refuse. NEUTRALS only; a charged
+                # negative of any size stays refused below. The integrator's own history
+                # is not touched, and carries the same noise inside its tolerance.
+                if (y[j] < 0.0 and self.atol_array is not None
+                        and y[j] >= -self.atol_array[j]):
+                    y[j] = 0.0
                 if not np.isfinite(y[j]) or y[j] < 0.0:
                     raise PlasmaStateError(
                         "the accepted state has a negative or non-finite population {0!r} "
