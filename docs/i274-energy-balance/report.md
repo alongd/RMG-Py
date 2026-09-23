@@ -59,7 +59,7 @@ left `declared-absent`, is now filled with the sheath term (`available-floating-
 | 3 | **Cl. 2 + 3**: n_e vs P_abs, no wall retune; hand check | 13 powers, 0.001–10 W: n_e 1.90e13 → 1.91e17 m⁻³, log-log slope **1.0006**. Global formula at 0.5 W: ν_w 55.474 s⁻¹, E_c 2489 eV, E_e 1.798 eV, E_i 4.655 eV → n_e(hand) 9.5538e15 vs solver 9.5538e15 (2.5e-6) | **closed** |
 | 4 | **Cl. 4**: radius ±50 % at 0.5 W | R 2.5 / 5 / 7.5 cm → Te* 0.9754 / 0.8989 / 0.8611 eV (smaller chamber, larger wall loss, higher Te*); n_e 2.49e16 / 9.55e15 / 5.09e15 | **closed** |
 | 5 | **Cl. 5**: extinction vs sustained | P_abs = 0: Te reaches Tg within 0.2 ms; state `extinct` (ν_iz/ν_loss = 1e-48). Toy-model test integrates P = 0 to the source floor. Every P_abs > 0 sustains. After PM ruling (2) the FULL run completes: exit 0 at t = 28.2 s (steady), Te = 298.14 K, n_e = 4.1626e4 m⁻³ vs hand floor 4.1624e4 (3.8e-5) | **closed** (finding 4) |
-| 6 | **Cl. 6 + 10**: ±20 % sensitivity at 0.5 W | ionisation ×0.8/×1.2: Te +11.6/−9.3 meV, n_e −5.6/+4.6 %. D_a ×0.8/×1.2: Te −11.6/+9.7 meV, n_e +5.9/−4.8 %. P_abs ×0.8/×1.2: Te +0.08/−0.06 meV, n_e −20.0/+20.0 %. | reported. Cl. 10 **open**: one-at-a-time only, no joint propagation and no EEDF systematic |
+| 6 | **Cl. 6 + 10**: ±20 % sensitivity at 0.5 W | ionisation ×0.8/×1.2: Te +11.6/−9.3 meV, n_e −5.6/+4.6 %. D_a ×0.8/×1.2: Te −11.6/+9.7 meV, n_e +5.9/−4.8 %. P_abs ×0.8/×1.2: Te +0.08/−0.06 meV, n_e −20.0/+20.0 %. K_el ×0.8/×1.2: Te −0.06/+0.05 meV, n_e +19.9/−14.2 %. **Joint 2⁴ corner sweep** (PM ruling 3, L&L K_el baseline, 16 runs, all steady): Te **0.8781–0.9206 eV** (−20.7/+21.7 meV), n_e **5.91e15–1.53e16 m⁻³** (×0.62/×1.60 of 9.55e15). Each corner is within 1.2 % of the product of the one-at-a-time factors (`results.md`) | Cl. 10 **closed for these four inputs**. Not covered: the Maxwellian-EEDF systematic, and a possible move of the K_el baseline pending the LXCat check (finding 2) |
 | 7 | **Cl. 7**: budget closure | 0.5 W steady state: \|P − ΣQ − dU/dt\|/P = **6.9e-14**, dU/dt/P = 1.9e-12. Table in `budget_0p5W.md`: elastic 82.9 %, excitation (87) 16.2 %, ionisation 0.62 %, wall ions 0.19 %, wall electrons 0.07 % | **closed** |
 | 8 | **Cl. 8**: wall energy uses the particle flux | Q_wall,e / latched `wall_electron_energy_flux` = 1.000000000000000. Both are built from the same `wall_loss_rates` evaluation (unit test pins it at 1e-15) | **closed** |
 | 9 | Regression, energy off | FULL arm vs `mainline-FULL`: final state, rates, wall flux, V, t and every trace snapshot **bit-identical**. nu_wall re-measured **15.954491 s⁻¹** (this worktree's .so). Tests `test/rmgpy/solver/` + `inputTest.py`: **398 passed, 1 skipped** before → **428 passed, 1 skipped** after; **434 / 1** after the clamp. Re-checked after the clamp: FULL-off still bit-identical to `mainline-FULL` (`clamp/FULL-off/`) | **closed** |
@@ -133,6 +133,15 @@ of the power at 5 torr. Removing 91 moves Te by −1.19 meV, as report7 found un
    is collisional, so the ion's ambipolar-field energy loss in the bulk is not counted. The wall
    terms together are 0.26 % of P_abs here, so this is immaterial at 5 torr. It would matter at
    low pressure.
+
+8. **What moves Te and what moves n_e (corner sweep).** Te is set by the ratio of ionisation to
+   ambipolar loss. Moving ionisation and D_a in opposite directions shifts Te by ±21 meV, and moving
+   them together cancels (≤0.3 meV). K_el and P_abs barely touch Te (≤0.1 meV) but carry n_e:
+   d ln n_e/d ln P_abs = +1.00 and d ln n_e/d ln K_el ≈ −0.83. The elastic term is 83 % of the
+   power, so it enters E_c with that weight. Ionisation and D_a each move n_e by only about ∓0.26 per
+   unit log. The response is nearly separable: every corner is within 1.2 % of the product of the
+   one-at-a-time factors. The n_e envelope, ×0.62 to ×1.60, is therefore dominated by P_abs and K_el,
+   which is why the LXCat check on K_el matters.
 
 ## What is and isn't predicted
 
