@@ -1194,3 +1194,91 @@ guarded).
   2.5543e-20). `plasma.pyx` is untouched in the round-111 diff. Evidence: `evidence/round111_remeasure.log`.
 - No file under `rmgpy/molecule/`, `rmgpy/kinetics/`, `rmgpy/data/` or the database touched. Nothing
   pushed, merged or rebased.
+
+## Round 112: one gate for every non-finite, at the decision boundary — two HIGH, one LOW
+
+The non-finite defect at its fourth appearance. Rounds 109→110→111 closed it value-by-value; round 112
+closes it by CONSTRUCTION at each decision boundary, so a value the enumeration never named is refused
+without being enumerated. `plasma.pyx` is byte-identical (verified against both `HEAD` and the round-110
+base `ca384f8f3` — the wall physics did not move, a close condition); only `termination.py` (pure Python)
+and `base.pyx` (rebuilt) changed.
+
+### HIGH 1 — the steady-state decision: absence made distinct from a supplied non-finite value
+
+Two reproductions of one defect. (a) `termination.py` poisoned a `nan` external residual only when the
+channel was `external_armed=True`; with `external_armed=False` a supplied `nan` slipped onto the benign
+"no information" path and a flat, armed generic channel fired on it (`False, True` over two flat
+intervals). (b) `_slope_analysis` took each live species' log-log slope and **dropped** any that came
+out non-finite (`finite = np.isfinite(slope)`, keeping only `finite[j]` entries): with moles
+`[1e308, 1e-20]` and a floor below `1e-20` the trace species is live but its mole fraction
+`1e-20 / 1e308` underflows to zero, `log(0) = -inf`, `inf - inf = nan`; the finite heavy species then
+governed and, once armed and flat, two intervals returned `False, True`.
+
+The root of (a) was that a bare `nan` VALUE could not be told apart from "no external channel" — so the
+guard keyed on the arm FLAG. The fix makes **absence a distinct sentinel**: `external_residual` defaults
+to `None`, structurally distinct from any supplied non-finite value. When a channel is supplied (any
+non-`None` value), a non-finite reading — `nan` or ±inf, armed or not — poisons the folded residual with
+`inf` so the single existing guard `if not np.isfinite(r): self.streak = 0; return False` refuses. No
+per-case branch on `isnan`/`isinf`/`armed`; the value is never dropped. For (b), a non-finite per-species
+slope now returns status `'inf'` (the whole step poisoned, `r = inf`), naming the offending species,
+exactly as an appearing or large-negative species already was — closed with `np.isfinite(slope).all()`,
+never a per-element comparison a `nan` slips through.
+
+`base.pyx` maps its overloaded plasma hooks onto the new sentinel at the call site: the external channel
+is in play only when it has something to say this step — `ss_external_armed or np.isfinite(ss_external_
+residual)` — otherwise `None`. This reproduces the pre-round-112 INTEGRATION behaviour byte-for-byte (an
+ordinary reactor, and a wall deck with no ionisation source whose electron merely decays, both report an
+unarmed `nan` and are absent → the generic channel decides), while the unit-level guarantee is newly
+enforced for direct callers. **The first cut of this map keyed presence on a finite `relaxation_time`
+and regressed the gamma=0 wall-only deck** (`test_wall_only_deck_integrates_past_t0_on_the_production_
+path`): that deck has a finite `relaxation_time` but an unarmed `nan` residual, so the criterion refused
+termination, the run over-integrated, and the electron drifted to `-3e-18 mol` and tripped the wall
+guard. "Has something to say" is the correct presence signal; the caught regression is recorded because
+the discriminator is exactly the kind of adjacent-quantity read this campaign keeps finding.
+
+### HIGH 2 — the enlargement/interrupt/promotion ratios: one finiteness gate they all route through
+
+A finite, positive denominator does not guarantee a finite ratio. `_rate_ratios_or_zero` returned
+`np.abs(rates / denominator)` unchecked, so a ±inf rate (an unresolved network-leak rate never covered by
+the raw-rate guard at `base.pyx:931`, which checks only `char_rate` and the edge rates) produced an
+`inf` ratio, and a finite-but-huge surface gross rate **overflowed** to `inf` even over a finite
+denominator. Either non-finite ratio then defeats the gates that read it — `inf > tol_interrupt`
+interrupts the run and promotes numerical garbage into the core (`base.pyx:1216`, `:1307`), and `nan`
+slips every comparison yet is picked as the `argmax` maximum (surface promotion, `base.pyx:1136`).
+
+Core, edge, network-leak and surface ratios **all route through `_rate_ratios_or_zero`** — the round-111
+census proves no site bypasses it — so the single mechanism lives there: over a finite, positive
+denominator, if any computed ratio is non-finite the helper stops loudly (`ValueError`), naming the
+offending indices and their rates, rather than promote it or launder it to zero. The round-110/111
+abstention on a zero/negative/non-finite denominator (return zeros) is preserved, and the existing
+non-finite-RATE guard at `:931` still fires first for a `nan` `char_rate` (the helper abstains there).
+A new input path into any of the four sites is covered by construction.
+
+### LOW — the assertion census still had four holes
+
+`has_real_assertion` walked the whole function with `ast.walk` and accepted: `assert 1 == 1` (a constant
+COMPARE — the round-111 census only rejected a bare `ast.Constant`); an `assert` under `if False:` that
+never runs; an `assert` inside an uncalled nested function that `ast.walk` reaches but the body never
+executes; and a context manager whose AST merely CONTAINS the substring `raises`/`warns` (e.g. a helper
+named `a_thing_that_raises`). The detector now walks reachable statements only — never into a nested
+def/class or a statically-dead branch — treats an assert whose test references no runtime value as
+vacuous, and recognises `pytest.raises`/`.warns` by the call TARGET, not a substring. The census's own
+self-test gained the four reproductions (red before, green after); running the tightened census over the
+two solver test files flagged no live test this round.
+
+### Close gate
+
+- Full solver suite rebuilt and green: `pytest test/rmgpy/solver/ test/rmgpy/rmg/inputTest.py -o
+  addopts="" -p no:cacheprovider` → **348 passed, 1 skipped** (`test/rmgpy/solver/` alone: **247 passed**,
+  0 collection errors, all 9 files collected). The new tests are red on `8dcfcd223` and green after:
+  `evidence/round112_reds.log` (3 failed pre-fix), `evidence/round112_greens.log`.
+- Only `base.pyx` (compiled) and `termination.py` (pure Python) changed; `base.so` rebuilt (`make build`,
+  exit 0). `.so` proven by value: `strings base.*.so | grep 'Non-finite enlargement rate ratio'` shows
+  the new gate string compiled in, and the HIGH 2 reproduction flips DID-NOT-RAISE → `ValueError` on the
+  rebuilt module.
+- **`plasma.pyx` byte-identical** (`git diff HEAD -- rmgpy/solver/plasma.pyx` and `git diff ca384f8f3 --
+  …` both clean). **Wall-loss frequency re-measured and unchanged:** `compute_nu_wall` = 15.954491 s⁻¹,
+  closed form 15.954492 s⁻¹, sub-threshold floor 2.33e-20 — identical to round 111. Evidence:
+  `evidence/round112_remeasure.log`.
+- No file under `rmgpy/molecule/`, `rmgpy/kinetics/`, `rmgpy/data/` or the database touched. Nothing
+  pushed, merged or rebased.
