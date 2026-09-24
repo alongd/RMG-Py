@@ -32,7 +32,7 @@ any of these is out of support and the reactor is expected to refuse rather than
 
 | parameter | value | source |
 |---|---|---|
-| reduced zero-field mobility `μ₀(Ar⁺ in Ar)` | **1.535 × 10⁻⁴ m²/(V·s)**, i.e. 1.535 cm²/(V·s), **±3 %** | Ellis, McDaniel & Albritton, *Transport properties of gaseous ions over a wide energy range*, At. Data Nucl. Data Tables **17** (1976) 177. Low-E/N limit. The ±3 % is the compilation's own stated accuracy |
+| reduced zero-field mobility `μ₀(Ar⁺ in Ar)` | **1.535 × 10⁻⁴ m²/(V·s)**, i.e. 1.535 cm²/(V·s), **±3 %** | Ellis, Pai, McDaniel, Mason & Viehland, *Transport properties of gaseous ions over a wide energy range*, At. Data Nucl. Data Tables **17**, 177 (1976), doi:10.1016/0092-640X(76)90001-2. The exact table entry behind 1.535 is unverified. Low-E/N limit. The ±3 % is an inherited assumption, not traced to the compilation |
 | reference density `N₀` | 2.6867811 × 10²⁵ m⁻³ | CODATA Loschmidt constant (273.15 K, 101 325 Pa). A **unit convention**: it is the density the tabulated μ₀ is normalised to |
 | ambipolar diffusivity `D_a` | `μ_i · k_B T_e / e` | `D_a = D_i(1 + T_e/T_i)` in the `T_e ≫ T_i` limit, via the Einstein relation. **Drops a factor `(1 + T_i/T_e)`** — at Te/Tgas = 117 that is a 0.85 % underestimate of ν_wall, carried inside the interval below, not corrected away |
 | ionisation rate `k_iz(Te)` | Voronov fit, Ar (Z=18, N=18): A = 5.99e-8 cm³/(molecule·s), P = 1, X = 0.136, K = 0.26, ΔE = 15.8 eV | Voronov, At. Data Nucl. Data Tables **65** (1997) 1. Read from the repository's own `voronov.yaml` through the compiled `VoronovEIArrhenius`, not re-implemented here |
@@ -41,9 +41,11 @@ any of these is out of support and the reactor is expected to refuse rather than
 
 ### Total uncertainty carried on ν_wall
 
-`ν_wall = μ₀ N₀ (k_B T_e/e) / (n_neutral Λ²)`. Independent contributions: μ₀ ±3 %, the dropped
+`ν_wall = μ₀ N₀ (k_B T_e/e) / (n_neutral Λ²)`. Contributions: μ₀ ±3 % (the inherited assumption
+of §1, not traced to the compilation and not an independently sourced accuracy), the dropped
 `(1 + T_i/T_e)` −0.85 %. **ν_wall is therefore reported as a central value with a −0.85 %/+3 %
-interval**, and every quantity derived from it inherits it. No term of this interval was obtained
+interval, whose μ₀ half is assumed rather than sourced**, and every quantity derived from it
+inherits it. No term of this interval was obtained
 by comparing anything to an electron density.
 
 ---
@@ -83,8 +85,8 @@ A grid point is classified by these rules, applied in order:
 **Why 1e2 and 1e-2, chosen now and not later.** `C_wall = (1−f)/f` in the ionisation fraction
 `f`, so `C_wall > 1e2` is exactly `f < ~1 %`: the threshold states that a 1 % relative error in
 the wall coefficient must not move `n_e` by more than a factor e. It is a statement about
-admissible error propagation, fixed by the accuracy of the transport data in §1 (±3 % on μ₀),
-not by which points turn out to fail. The 1 % on `|Δν|` is the same statement on the balance
+admissible error propagation, fixed by the ±3 % carried on μ₀ in §1 (an untraced inherited
+assumption, not a sourced accuracy of the transport data), not by which points turn out to fail. The 1 % on `|Δν|` is the same statement on the balance
 itself: ν_ion and ν_wall each carry ≳1 % uncertainty, so a difference smaller than that is not
 resolvable by this model at all and must not be reported as a sign.
 

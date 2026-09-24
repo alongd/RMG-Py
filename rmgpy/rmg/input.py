@@ -991,11 +991,19 @@ def plasma_reactor(temperature,
     adjust it until a computed electron density matches an expected one.
 
     ``ionReducedMobility`` is the measured zero-field reduced mobility of the dominant ion
-    in its parent gas, e.g. ``(1.535e-4, 'm^2/(V*s)')`` for Ar+ in Ar (Ellis, McDaniel &
-    Albritton, At. Data Nucl. Data Tables 17 (1976) 177). It is quoted at
-    ``mobilityReferenceDensity``, which defaults to the Loschmidt constant -- the density
-    such compilations normalise to. Changing that default means reading the tabulated
-    mobility as something it is not.
+    in its parent gas, e.g. ``(1.535e-4, 'm^2/(V*s)')`` for Ar+ in Ar (Ellis, Pai, McDaniel,
+    Mason & Viehland, At. Data Nucl. Data Tables 17, 177 (1976),
+    doi:10.1016/0092-640X(76)90001-2; the exact table entry behind 1.535 is unverified). It
+    is quoted at ``mobilityReferenceDensity``, which defaults to the Loschmidt constant --
+    the density such compilations normalise to. Changing that default means reading the
+    tabulated mobility as something it is not.
+
+    Without a law, the reduced mobility is held at its declared value at every gas
+    temperature. ``mobilityReferenceTemperature=(T_ref, 'K')`` together with
+    ``mobilityTemperatureExponent=m`` declare ``K0(Tg) = K0*(Tg/T_ref)**m`` (both or
+    neither). ``ambipolarIonTemperature='gas'`` keeps the ``(1 + Ti/Te)`` factor of
+    ``D_a`` with ``Ti = Tg``; omitted, ``D_a = mu_i*k_B*Te/e`` (the ``Te >> Ti`` limit).
+    All three require a wall.
 
     ``wallRecycling`` is gamma, the fraction of wall-neutralised ions whose heavy core
     returns to the gas: ``1.0`` (the default) is a fully recycling wall, ``0.0`` a fully

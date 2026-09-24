@@ -44,9 +44,10 @@ TE_NOMINAL_EV = 3.0
 R_NOMINAL = 0.05                         # m, cylinder radius
 L_NOMINAL = 0.30                         # m, cylinder length
 
-# Ellis, McDaniel & Albritton, At. Data Nucl. Data Tables 17 (1976) 177.
+# Ellis, Pai, McDaniel, Mason & Viehland, At. Data Nucl. Data Tables 17, 177 (1976),
+# doi:10.1016/0092-640X(76)90001-2. The exact table entry behind 1.535 is unverified.
 MU0_AR_IN_AR = 1.535e-4                  # m^2/(V s) at the Loschmidt density
-MU0_AR_IN_AR_REL_UNCERTAINTY = 0.03      # the compilation's own stated accuracy
+MU0_AR_IN_AR_REL_UNCERTAINTY = 0.03      # an inherited assumption, not traced to the compilation
 
 # Cosmic-ray / ambient background ionisation: 2-10 ion pairs cm^-3 s^-1 at 1 atm,
 # scaled by gas density. Carried as the interval it is; NEVER narrowed.

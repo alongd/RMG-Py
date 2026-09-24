@@ -72,7 +72,8 @@ TE_NOMINAL_EV = 3.0
 R_NOMINAL = 0.05                          # m, cylinder radius
 L_NOMINAL = 0.30                          # m, cylinder length
 
-# Ellis, McDaniel & Albritton, At. Data Nucl. Data Tables 17 (1976) 177.
+# Ellis, Pai, McDaniel, Mason & Viehland, At. Data Nucl. Data Tables 17, 177 (1976),
+# doi:10.1016/0092-640X(76)90001-2. The exact table entry behind 1.535 is unverified.
 MU0_AR_IN_AR = 1.535e-4                   # m^2/(V s) at the Loschmidt density
 
 # Resolve the Voronov coefficients from the configured database, the way the rest of
@@ -2977,7 +2978,8 @@ def test_zero_core_flux_with_wall_loss_abstains_on_ratio_but_keeps_an_absolute_c
 # or as D*N; nothing is inferred from the electronic state.
 
 # cm^2 Torr/s, the deck's reference D*p: Wieme & Lenaerts, D(1 Torr) = 3.20e-3*T^1.68,
-# ~47 at 300 K. (The 54 once quoted corresponds to ~330 K.)
+# 46.4 at 300 K and 47.0 at 302.2 K; full citation in documentation/source/users/rmg/
+# input.rst (wallNeutralDiffusion). (The 54 once quoted corresponds to ~330 K.)
 DP_AR_META = 47.0
 AR_META_EV = 11.55                        # Ar(1s5) excitation energy, eV
 CM2_TORR_TO_SI = 1.0e-4 * TORR_TO_PA      # (cm^2 Torr/s) -> (m^2 Pa/s)
