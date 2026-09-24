@@ -47,23 +47,24 @@ thermo value. Te-dependent rate coefficients are re-evaluated from the Te state.
 this mode is a central difference of the residual (the analytic one assumes a fixed Te). In this
 mode only, the charged species' atol is 1e-12× smaller, so N_e stays resolved down to the
 source floor, because the Te row divides by N_e. A power budget is latched at accepted states,
-with dU_e/dt taken from the solver's own derivative. `discharge_state()` returns `sustained`
-when ν_ionisation ≥ ½ ν_loss and `extinct` otherwise. The M8-A field `wall_ion_energy_flux`,
+with dU_e/dt taken from the solver's own derivative. `discharge_state()` returns
+`self-sustained` when ν_ionisation ≥ (1 − 1e-3) ν_loss, `source-supported` when the external
+source makes up the deficit, and `extinct` otherwise (round 3; it was a ≥ ½ cutoff). The M8-A field `wall_ion_energy_flux`,
 left `declared-absent`, is now filled with the sheath term (`available-floating-wall-sheath-model`).
 
 ## Verifier results (contract §11 clause numbers)
 
 | # | item | result | status |
 |---|---|---|---|
-| 1 | **Cl. 1 + 9**: Te solved; two initial Te converge | Te0 = 0.6, 1.0, 2.0 eV → 0.89881340 eV all three; n_e 1.17344689e16 m⁻³ agree to 1e-9 | **closed** |
+| 1 | **Cl. 1 + 9**: Te solved; two initial Te converge | Te0 = 0.6, 1.0, 2.0 eV → 0.89881340 eV all three; n_e 1.17344391e16 m⁻³ agree to 1e-9 | **closed** |
 | 2 | Te vs particle-balance Te* (tolerance 0.5 meV) | 0.5 W: 0.89881 eV vs Te*_FULL 0.89886. Across 0.001–10 W Te follows Te*(n_e) of report7: 0.89979 @2.3e14 (0.8998), 0.89960 @1.2e15 (0.8996), 0.89881 @1.2e16 (0.8989), 0.89903 @1.2e17 (0.8990). Energy equation does **not** overturn particle balance. | **closed** |
 | 3 | **Cl. 2 + 3**: n_e vs P_abs, no wall retune; hand check | 13 powers, 0.001–10 W: n_e 2.33e13 → 2.34e17 m⁻³, log-log slope **1.0006**. Global formula at 0.5 W (LXCat K_el): ν_w 55.470 s⁻¹, E_c 2025.5 eV, E_e 1.798 eV, E_i 4.655 eV → n_e(hand) 1.1734e16 vs solver 1.1734e16 (2.3e-6, RMG's Ar mass) | **closed** |
 | 4 | **Cl. 4**: radius ±50 % at 0.5 W | R 2.5 / 5 / 7.5 cm → Te 0.9755 / 0.8988 / 0.8610 eV (smaller chamber, larger wall loss, higher Te*); n_e 2.93e16 / 1.17e16 / 6.35e15 | **closed** |
-| 5 | **Cl. 5**: extinction vs sustained | P_abs = 0 (LXCat K_el, default atol): Te within 1 % of Tg by 1.9 ms; the run **exits 0 with termination = 'extinct' at t = 2.45 ms**, after 10 consecutive accepted steps with Te within 1 K of Tg (298.06 K) and ν_iz/ν_loss < 1e-6 (5e-16). No refusal in stderr. The 0.5 W run never triggers it (termination None, every other output field identical to the previous run). Energy-off FULL stays byte-identical to `mainline-FULL` (`terminal/FULL-off/`). Every P_abs > 0 sustains | **closed** (finding 4) |
+| 5 | **Cl. 5**: extinction vs sustained | P_abs = 0 (LXCat K_el, default atol): Te within 1 % of Tg by 1.9 ms; the run **exits 0 with termination = 'extinct' at t = 1.28 s**: the extinct condition held from 2.1 ms for 1.28 s against the required 1.26 s (2 × the slower of 1/ν_loss and the energy-relaxation time; round 3, finding 4). No refusal in stderr. Every tested P_abs, 0.001–10 W, is `self-sustained` and never terminates; the cold-start test does not stop while heating. Energy-off FULL stays byte-identical to `mainline-FULL` (`round3-FULL-off/`) | **closed** |
 | 6 | **Cl. 6 + 10**: ±20 % sensitivity at 0.5 W | ionisation ×0.8/×1.2: Te +11.6/−9.3 meV, n_e −6.0/+5.0 %. D_a ×0.8/×1.2: Te −11.6/+9.7 meV, n_e +6.4/−5.3 %. P_abs ×0.8/×1.2: Te +0.07/−0.04 meV, n_e −20.0/+20.0 %. K_el ×0.8/×1.2: Te −0.04/+0.04 meV, n_e +18.8/−13.7 %. **Joint 2⁴ corner sweep** (PM ruling 3, LXCat K_el baseline, 16 runs, all steady): Te **0.8781–0.9205 eV** (−20.7/+21.7 meV), n_e **7.25e15–1.88e16 m⁻³** (×0.62/×1.60 of 1.17e16). Each corner is within 1.3 % of the product of the one-at-a-time factors. The same sweep on L&L (`arms-LL/`) gives ×0.62/×1.60 about 9.55e15 (`results.md`) | Cl. 10 **closed for these four inputs**. Not covered: the Maxwellian-EEDF systematic |
 | 7 | **Cl. 7**: budget closure | 0.5 W steady state: \|P − ΣQ − dU/dt\|/P = **1.2e-12**, dU/dt/P = 1.5e-12. Table in `budget_0p5W.md`: elastic 79.0 %, excitation (87) 19.9 %, ionisation 0.76 %, wall ions 0.23 %, wall electrons 0.09 % (L&L: elastic 82.9 %, closure 6.9e-14) | **closed** |
 | 8 | **Cl. 8**: wall energy uses the particle flux | Q_wall,e / latched `wall_electron_energy_flux` = 1.000000000000000. Both are built from the same `wall_loss_rates` evaluation (unit test pins it at 1e-15) | **closed** |
-| 9 | Regression, energy off | FULL arm vs `mainline-FULL`: final state, rates, wall flux, V, t and every trace snapshot **bit-identical**. nu_wall re-measured **15.954491 s⁻¹** (this worktree's .so). Tests `test/rmgpy/solver/` + `inputTest.py`: **398 passed, 1 skipped** before → **428 passed, 1 skipped** after; **434 / 1** after the clamp, **438 / 1** after the terminal state. Re-checked after the clamp: FULL-off still bit-identical to `mainline-FULL` (`clamp/FULL-off/`) | **closed** |
+| 9 | Regression, energy off | FULL arm vs `mainline-FULL`: final state, rates, wall flux, V, t and every trace snapshot **bit-identical**, re-checked after round 3 (`round3-FULL-off/`). nu_wall re-measured **15.954491 s⁻¹** (`round3-nu-wall/`). The five report7 arms refused on an Ars negative are refused again with report7's own message and a byte-identical trace (`round3-report7/`): with Te prescribed the wall check is the pre-I-274 code. Tests `test/rmgpy/solver/` + `inputTest.py`: **398 passed, 1 skipped** before I-274 → **467 passed, 1 skipped** after round 3 | **closed** |
 | 10 | Red-first unit tests | `test/rmgpy/solver/plasmaEnergyBalanceTest.py`: 23 tests run red before implementation (`red/stdout.log`), including a hand value for each loss term and the energy-conservation row. The declared-energy and input-keyword tests were added with the PM correction and written alongside the code, not run red first | closed, with that exception |
 | 11 | Both streams captured | every arm dir has `stdout.log` + `stderr.log`, as do the suites, analysis and remeasure | **closed** |
 
@@ -77,11 +78,12 @@ Clauses 11–12 (experimental observable) are out of scope: no observable is rat
 | 91 removed | 0.89721 (−1.60 meV) | 1.1845e16 (+0.9 %) |
 | 91 at its enthalpy −11.548 eV (ruled out; counterfactual) | 0.89879 (−0.02 meV) | 1.2844e16 (+9.5 %) |
 
-LXCat K_el. On L&L the same three cases gave 0.89888 / 0.89769 / 0.89885 eV and n_e +0.6 % /
-+6.5 %. The PM expected that crediting 91 with its enthalpy would move Te. **It does not.** Te is
-pinned by particle balance, so the spurious heating shows up only in n_e, as +9.5 % at 0.5 W
-(+6.5 % on L&L: the smaller elastic share, 79 % against 83 %, leaves the spurious heating a larger
-share of the budget). Removing 91 moves Te by −1.6 meV, as report7 found under prescribed Te
+Production (LXCat K_el) Te is 0.898813 eV. On the L&L sensitivity case the same three cases gave
+0.89888 / 0.89769 / 0.89885 eV and n_e +0.6 % / +6.5 %. The PM expected that crediting 91 with its
+enthalpy would move Te. **It does not.** Te is pinned by particle balance, so the spurious heating
+shows up only in n_e: +9.5 % at 0.5 W on LXCat, +6.5 % on L&L. The elastic loss is 79 % of P_abs
+on LXCat and 83 % on L&L, so on LXCat the same spurious heating is a larger share of the loss it
+offsets, and n_e moves more. Removing 91 moves Te by −1.6 meV, as report7 found under prescribed Te
 (−1.3 meV).
 
 ## Findings
@@ -129,33 +131,36 @@ share of the budget). Removing 91 moves Te by −1.6 meV, as report7 found under
    `arms/P0-atol20-refused`, `arms/P0-atol30`). DASPK bounds only the weighted RMS error over the
    neq = 5 components, so one component can reach about √5 × its own atol.
 
-   **PM ruling: keep the 1× bound; extinction is a terminal state.** Widening the bound would tune a
-   tolerance to make one run pass. Instead, in energy-balance mode only, the reactor counts
-   consecutive accepted steps at which `discharge_state()` is `extinct`, ν_iz/ν_loss < 1e-6 and
-   |Te − Tg| ≤ 1 K (module constants `PLASMA_EXTINCT_RATIO`, `PLASMA_EXTINCT_TE_BAND_K`,
-   `PLASMA_EXTINCT_STEPS` = 10). At 10 it records `energy_terminal` (termination, t, Te, Tg, n_e, both
-   frequencies, the streak and the state vector). `ReactionSystem.simulate` asks a new hook,
-   `terminal_state()`, after each accepted step (base default None) and stops normally when it names a
-   state. Four tests ran red first (`terminal-red/`): the toy P = 0 run on `simulate()` ends
-   `extinct` far short of its 40 s backstop; the toy 0.5 W run reaches the backstop with no terminal
-   state; the count needs 10 consecutive steps and restarts on a miss; an energy-off reactor never
-   evaluates it. Suites 438 passed, 1 skipped. On the production deck, P0 (LXCat, default atol) exits
-   0 with termination `extinct` at 2.45 ms, n_e = 9.9e15 m⁻³ at the stop, and no refusal. The decay
-   to the 4.16e4 m⁻³ floor is not integrated; the figure marks that floor as a hand value. Tg − Te
-   in the refused runs' tail was 0.49 K (LXCat fit) against 0.011 K (L&L): wall-lost electrons carry
-   2kTe against a mean 3/2 kTe, which cools the rest, and elastic heating from the gas restores
-   them, so the deficit scales as 1/K_el(Tg). The ratio of the two rates at Tg (57) predicts 0.63 K.
+   **PM ruling: keep the 1× bound; extinction is a terminal state** (round 2, reworked in round 3).
+   Widening the bound would tune a tolerance to make one run pass. In energy-balance mode only, the
+   extinct condition — `discharge_state()` `extinct`, ν_iz/ν_loss < 1e-6 and |Te − Tg| ≤ 1 K
+   (`PLASMA_EXTINCT_RATIO`, `PLASMA_EXTINCT_TE_BAND_K`) — must hold at every accepted step over
+   **physical time** for `PLASMA_EXTINCT_PERSIST_MULTIPLE` = 2 times the slower of 1/ν_loss and the
+   elastic energy-relaxation time 1/(3 Σ (m_e/M) K_m n). Calls at a time not after the last counted
+   one never count, and a miss restarts the clock. It is allowed only at P_abs = 0 or once the
+   discharge has been `self-sustained`. The round-2 rule counted 10 accepted steps, and the round-3
+   red run showed it stopping a powered cold start (Te0 = Tg + 0.5 K) during its heating transient.
+   On success the reactor records `energy_terminal` (termination, start, end, duration, required
+   persistence, Te, Tg, n_e, the three frequencies and the state vector). `ReactionSystem.simulate`
+   asks the `terminal_state()` hook after each accepted step (base default None) and stops normally.
+   On the production deck P0 (LXCat, default atol) exits 0 as `extinct` at **t = 1.28 s**. The
+   condition held from 2.1 ms, against a required 1.26 s (2/ν_loss at Tg; the energy-relaxation time
+   there is ~0.2 ms). n_e at the stop is 1.28e15 m⁻³, and there is no refusal. The decay to the
+   4.16e4 m⁻³ floor, where the state would read `source-supported`, is not integrated; the figure
+   marks that floor as a hand value. Tg − Te in the tail is 0.49 K (LXCat fit) against 0.011 K
+   (L&L): wall-lost electrons carry 2kTe against a mean 3/2 kTe, which cools the rest, and elastic
+   heating from the gas restores them, so the deficit scales as 1/K_el(Tg). The ratio of the two
+   rates at Tg (57) predicts 0.63 K.
 
-   **report7 refusals do not change outcome.** The five f0d9c arms refused on an Ars negative
-   (FULL-91OFF, SWEEP-0.80, SWEEP-0.80-91OFF, SWEEP-0.85, SWEEP-0.85-91OFF; Ars −1.2e-19 to
-   −1.0e-18 mol, atol 1e-16) were rerun with this engine (`clamp/report7/`). Each still exits 1 at
-   the **same accepted step** (same t to all digits, trace byte-identical). The Ars negative is now
-   clamped, but that same state also carries a **negative electron population** (−4.6e-19 to
-   −9.5e-18 mol), which is charged and stays refused. The neutral check simply ran first and
-   named Ars. The real limit of those sub-threshold prescribed-Te arms is that the electrons are
-   below atol, which the energy-mode charged-atol ×1e-12 addresses and prescribed-Te mode does
-   not. They are unchanged here.
-5. **This closure has no minimum sustaining power.** Every P_abs > 0 sustains a discharge at Te*
+   **report7 refusals: unchanged.** In round 2 the clamp also ran with Te prescribed, and the five
+   f0d9c arms refused on an Ars negative (FULL-91OFF, SWEEP-0.80, SWEEP-0.80-91OFF, SWEEP-0.85,
+   SWEEP-0.85-91OFF) instead failed one check later at the same step, on a negative electron amount
+   (`clamp/report7/`). Round 3 gates the clamp to energy mode at accepted steps, so with Te prescribed
+   the check is the pre-I-274 code. All five are again refused with report7's own Ars message at
+   the same step, with byte-identical traces (`round3-report7/`).
+
+5. **This closure has no minimum sustaining power** over the tested range. Every tested P_abs,
+   0.001–10 W, sustains a discharge at Te*
    with n_e ∝ P_abs, down to 0.001 W (2.3e13 m⁻³), until n_e would meet the source floor near
    ~2e-12 W. A real discharge's extinction threshold (coupling-mode change, sheath/circuit
    limits) is outside a specified-power model. Contract §10's caveat bites here.
@@ -179,6 +184,62 @@ share of the budget). Removing 91 moves Te by −1.6 meV, as report7 found under
    only about ∓0.28 per unit log. The response is nearly separable: every corner is within 1.3 % of
    the product of the one-at-a-time factors. The n_e envelope, ×0.62 to ×1.60 on either K_el
    baseline, is therefore dominated by P_abs and K_el.
+
+## Round 3 (Codex round 19 on aa3dbf83a; PM brief `i274-round3.md`)
+
+The physics bookkeeping held. Seven boundary fixes, each with tests run red on aa3dbf83a
+(`round3-red/`) and green after (`round3-green/`):
+
+1. **Energy-off regression.** The neutral-noise clamp runs only with the energy balance and only
+   at accepted steps (`check_wall_support(y, accepted=True)`). The initial composition is refused,
+   never repaired. The energy-off test that blessed the clamp is replaced by one asserting the old
+   refusal. Energy-off FULL is byte-identical and the report7 arms are refused as before (row 9).
+2. **Extinction by physical time**, eligible only at P_abs = 0 or after self-sustainment (finding 4).
+   Tested: identical and backward times never count, a miss restarts the clock, a powered run that
+   was never sustained cannot stop, and a powered cold start runs to its backstop.
+3. **Three discharge states** from `classify_discharge(ν_iz, ν_source, ν_loss)`. Every boundary is
+   tested, including the old ½ cutoff, which now reads `extinct`. The P = 0 toy decays as `extinct`
+   and settles on the source-held floor as `source-supported`.
+4. **Zero electrons.** Energy mode refuses N_e ≤ 0 at initialisation ("the electron temperature is
+   undefined"), even with a source declared. The 1e-300 floor in the Te row is now a named
+   unreachable-state error. The Jacobian goes one-sided within one step of zero, so it never
+   evaluates a negative amount; a spy test on the residual pins that. No run in either set reached
+   the unreachable error.
+5. **P_abs is a total power.** The reactor is a fixed-inventory image of the chamber, scaled once
+   by V_ref = N_heavy(t0) R Tg / P, and heated with the constant P_abs V_ref / V_chamber (W), not
+   (P_abs/V_chamber) V(state). **Electron pdV work under the constant-pressure EOS is neglected.**
+   Bound: V(state)/V_ref − 1 = n_e k Te / P, at most **5.1e-5** over every accepted state of every
+   production arm (10 W, `results.md`). The round-2 → round-3 shift in n_e is the same size (5.05e-5
+   at 10 W, 2.5e-6 at 0.5 W). The hand check now uses the same definition and closes to 2.3e-6.
+6. **Elastic partners complete.** Every core neutral declares an elastic rate or
+   `{'ignore': '<reason>'}`, and an undeclared neutral is refused. The production deck declares Ars
+   ignored: it is ~5e-8 of the gas, so its elastic loss is < 1e-7 of Ar's.
+7. **Initial Te** below Tg/2, the evaluation floor, is refused.
+
+**Physics declared.**
+- **Ion wall energy.** The 5.18 kTe ion wall energy is a collisionless floating sheath, while at
+  5 torr the sheath is collisional, so the true value lies between 0 and that. A 0.5 W rerun with
+  the term at 0 (`arms/ION0`, `ION_SHEATH_SCALE=0`) gives ΔTe = −0.001 meV and Δn_e = +0.23 %, the
+  size of the term (0.23 % of P_abs). Immaterial at 5 torr.
+- **Source electrons.** Electrons from the external ionisation source enter with **zero energy**.
+  This is a declaration of the model, in the code and the docs.
+
+**Tests added:**
+- pooling (entry 90's shape, a declared −7.34 eV credit, no 3/2 kTe charge);
+- the production deck, added as `examples/rmg/plasma_argon_energy_balance/input.py`, with its LXCat
+  coefficients, the Ars ignore and the −7.3371 / +0.0752 / −11.5484 / +15.7596 eV declarations
+  pinned in `inputTest.py`;
+- every Jacobian column (electron, ion, ground, metastable, Te) and the mass matrix at cj = 3.7e3
+  against finite differences of the residual in y and in dy/dt;
+- a budget closure recomputed from the rates, the declared energies, the hand elastic fit and the
+  wall scratch. Its sabotage twin, the engine's ion sheath term zeroed, fails it. The tolerance is
+  5e-6 of P: the hand/engine eV-constant vintage differs by 1.0e-6 in Te, which the elastic term
+  (∝ ~Te^1.6) carries into the sum.
+
+All arms of both sets were rerun on the round-3 engine (`arms/`, `arms-LL/`; the round-2 arms are
+kept in `arms-r2/`, `arms-LL-r2/`), and the results, budget, figure, caption, summary and both
+corner sweeps were regenerated. At the precision quoted above, only the initial-Te row's n_e
+moved.
 
 ## What is and isn't predicted
 
