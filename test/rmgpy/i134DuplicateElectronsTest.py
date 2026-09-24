@@ -4447,20 +4447,79 @@ class TestLithiumChargeNetworkReachesTheModel(_PlasmaLibraryFixture):
         an *asserted* attribute: two entries rendering the same reaction string in
         one library means two entries claiming to be the same chemistry, which is
         what ``check_for_duplicates`` exists to arbitrate.
+
+        **One exemption, and what it has to earn.** A label group whose every
+        member is authored ``duplicate = True`` is two physical channels with one
+        net equation, declared as such -- ``PlasmaArgon`` 89 (superelastic quench)
+        and 91 (the collapsed metastable-to-resonance mixing proxy), both
+        ``Ars + e- => Ar + e-``, measured on database ``0d9c5bc24``. The declaration
+        alone is not taken as sufficient, because the defect this file is about is
+        a duplicate silently dropping one side. So each declared group must also
+        survive the path that dropped it: every member ties back by object identity
+        to its own reaction in ``get_library_reactions``, still flagged duplicate
+        and carrying its own kinetics object, and every member enters
+        ``CoreEdgeReactionModel.make_new_reaction`` as new. A group with even one
+        undeclared member is not exempt, and is refused as before.
         """
         libraries = list(self.SHIPPED_CHANNELS) + list(self.LIBRARIES_NOT_SWEPT)
         database = LoadedLibraries(self.libraries_path, libraries)
         assert set(database.libraries) == set(libraries), (
             'not every plasma library loaded, so this sweep is over fewer than it claims')
+        declared = {}
         for label in libraries:
             entries = list(database.libraries[label].entries.values())
             assert entries, '{0} loaded no entries, so this check is vacuous on it'.format(label)
-            labels = [entry.label for entry in entries]
-            duplicated = sorted({name for name in labels if labels.count(name) > 1})
-            assert not duplicated, (
-                '{0} carries {1} entr(ies) under duplicated label(s) {2}, so two entries '
-                'of one library render the same chemistry'.format(
-                    label, len(entries), duplicated))
+            groups = {}
+            for entry in entries:
+                groups.setdefault(entry.label, []).append(entry)
+            collided = {name: group for name, group in groups.items() if len(group) > 1}
+            undeclared = sorted(name for name, group in collided.items()
+                                if not all(entry.item.duplicate is True for entry in group))
+            assert not undeclared, (
+                '{0} carries {1} entr(ies) under duplicated label(s) {2}, not every one '
+                'declared duplicate=True, so two entries of one library render the same '
+                'chemistry: {3}'.format(
+                    label, len(entries), undeclared,
+                    {name: [(entry.index, entry.item.duplicate) for entry in collided[name]]
+                     for name in undeclared}))
+            for name, group in collided.items():
+                declared[(label, name)] = group
+
+        reactions = {label: database.libraries[label].get_library_reactions()
+                     for label in {label for label, _ in declared}}
+        with _GlobalKineticsDatabase(database.kinetics_database):
+            for (label, name), group in declared.items():
+                built = []
+                for entry in group:
+                    fingerprint = _entry_fingerprint(entry)
+                    matches = [rxn for rxn in reactions[label]
+                               if _reaction_fingerprint(rxn) == fingerprint]
+                    assert len(matches) == 1, (
+                        '{0} entry {1} ({2!r}) is exempt as a declared duplicate but ties '
+                        'back to {3} reaction(s) in get_library_reactions, not 1'.format(
+                            label, entry.index, name, len(matches)))
+                    assert matches[0].duplicate is True and matches[0].kinetics is entry.data, (
+                        '{0} entry {1} ({2!r}) lost its duplicate flag or its own kinetics '
+                        'on the way to the library reaction'.format(label, entry.index, name))
+                    built.append(matches[0])
+                assert len({id(rxn.kinetics) for rxn in built}) == len(group), (
+                    '{0} {1!r}: the declared duplicates share one kinetics object, so one '
+                    'side was folded into the other'.format(label, name))
+                model = CoreEdgeReactionModel()
+                model.kinetics_database = database.kinetics_database
+                verdicts = [model.make_new_reaction(rxn, generate_thermo=False,
+                                                    generate_kinetics=False)[1]
+                            for rxn in built]
+                assert verdicts == [True] * len(group), (
+                    '{0} {1!r}: a declared duplicate was discarded on entering the model '
+                    '(is_new per entry {2}): {3}'.format(
+                        label, name, [entry.index for entry in group], verdicts))
+        assert {key: sorted(entry.index for entry in group)
+                for key, group in declared.items()} == {
+            ('PlasmaArgon', 'Ars + e- => Ar + e-'): [89, 91]}, (
+            'the declared-duplicate label groups changed from the one measured on '
+            'database 0d9c5bc24; each exemption is a decision, not a drift: {0}'.format(
+                {key: [entry.index for entry in group] for key, group in declared.items()}))
 
     def test_a_second_library_of_the_same_name_does_not_pass_as_the_first(self, tmp_path):
         """Two libraries calling themselves the same thing are not the same library.
@@ -5773,6 +5832,12 @@ class TestTheShippedCrossSectionsAreRead:
         readers rather than what it is -- those libraries are chemically
         heterogeneous, so a single-order or single-response sweep over them would
         be false.
+
+        **Database 0d9c5bc24 moved ``PlasmaArgon`` out of the exception.** The merge
+        that added the metastable argon loss channels left it with one
+        cross-section, 3 ``Arrhenius`` and 4 ``TwoTemperaturePlasma`` entries, so
+        the retraction now holds for all three libraries. Its census is pinned
+        exactly: a kind added or removed is a change someone has to decide on here.
         """
         database = self._database()
         census = {}
@@ -5781,7 +5846,11 @@ class TestTheShippedCrossSectionsAreRead:
                        for entry in database.libraries[label].entries.values()]
             census[label] = {name: classes.count(name) for name in sorted(set(classes))}
 
-        assert set(census['PlasmaArgon']) == {'ElectronCollisionPlasma'}, census
+        assert census['PlasmaArgon'] == {'Arrhenius': 3, 'ElectronCollisionPlasma': 1,
+                                         'TwoTemperaturePlasma': 4}, (
+            'PlasmaArgon is no longer the composition measured on database 0d9c5bc24, '
+            'in which it is NOT written wholly in ElectronCollisionPlasma: '
+            '{0}'.format(census['PlasmaArgon']))
         for label in ('PlasmaAir', 'PlasmaAlkali'):
             assert len(census[label]) > 1, (
                 '{0} is written in a single kinetics class after all, so the claim this '
