@@ -1507,6 +1507,16 @@ cdef class ReactionSystem(DASx):
                                                 term.streak, term.worst_label))
                 self.log_conversions(species_index, y0)
 
+            # A terminal state declared by the reactor itself (a dead discharge) ends the run
+            # normally. Reactors set it only at accepted steps, so it is None at t0.
+            if not terminated:
+                terminal = self.terminal_state()
+                if terminal is not None:
+                    terminated = True
+                    logging.info('At time {0:10.4e} s, the reactor reached the terminal state '
+                                 '{1!r}.'.format(self.t, terminal))
+                    self.log_conversions(species_index, y0)
+
             for term in self.termination:
                 if terminated:
                     break
@@ -1716,6 +1726,13 @@ cdef class ReactionSystem(DASx):
         the generic ``R >= 1`` (default: no).
         """
         return False
+
+    cpdef object terminal_state(self):
+        """A terminal state the reactor has reached at the last accepted step, by name, or
+        None (default: never). :meth:`simulate` stops normally when it names one; a
+        :class:`PlasmaReactor` with an electron energy balance reports ``'extinct'``.
+        """
+        return None
 
     cpdef double steady_state_relaxation_time(self, double t_now, np.ndarray y_now):
         """The system relaxation time (s) a flat run must persist across before the
