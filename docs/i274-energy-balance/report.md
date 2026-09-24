@@ -21,7 +21,7 @@ is one extra DAE state after the core species:
 
 | term | form | source |
 |---|---|---|
-| P_abs | absorbedPower / chamber volume (cylinder/sphere geometry, or `chamberVolume`) | deck (illustrative) |
+| P_abs | absorbedPower, a constant total on the reactor inventory: P_abs V_ref / V_chamber (W), V_ref = N_heavy(t0) R Tg / P fixed at t0; V_chamber from the cylinder/sphere geometry or `chamberVolume` (round 3, fix 5) | deck (illustrative) |
 | Q_inelastic | sum_j r_j eps_j, eps_j **declared per library entry** (`'PlasmaArgon:86': (15.76, 'eV')`); electron-consuming reactions also remove 3/2 k_B Te per electron | declaration; thermo dH logged as a cross-check only |
 | Q_elastic | 3 (m_e/M) K_m(Te) n_Ar n_e k_B (Te - Tg), K_m = A Te^n exp(b ln²Te + c ln³Te); production A = 1.8017e-14 m³/s, n = 1.54096, b = −0.019608, c = −0.057221 | **LXCat Phelps** e+Ar EFFECTIVE σ_m (www.lxcat.net, Phelps database, retrieved 2026-09-23; Yamabe, Buckman & Phelps, PRA 27, 1345 (1983), rev. 1997), Maxwell-averaged and fitted over 0.5–3 eV (finding 2). Sensitivity case: Lieberman & Lichtenberg 2005 Table 3.3 (2.336e-14 Te^1.609 exp(0.0618 ln² − 0.1171 ln³)) |
 | Q_wall | 2 k_B Te per lost electron + k_B Te (1/2 + 1/2 ln(M/2π m_e)) = 5.18 k_B Te per lost Ar⁺ (Bohm presheath + floating sheath) | L&L 2005 §10.2; built from the **same** wall-loss array the species rows apply |
@@ -136,8 +136,10 @@ offsets, and n_e moves more. Removing 91 moves Te by −1.6 meV, as report7 foun
    extinct condition — `discharge_state()` `extinct`, ν_iz/ν_loss < 1e-6 and |Te − Tg| ≤ 1 K
    (`PLASMA_EXTINCT_RATIO`, `PLASMA_EXTINCT_TE_BAND_K`) — must hold at every accepted step over
    **physical time** for `PLASMA_EXTINCT_PERSIST_MULTIPLE` = 2 times the slower of 1/ν_loss and the
-   elastic energy-relaxation time 1/(3 Σ (m_e/M) K_m n). Calls at a time not after the last counted
-   one never count, and a miss restarts the clock. It is allowed only at P_abs = 0 or once the
+   elastic energy-relaxation time 1/(2 Σ (m_e/M) K_m n) (from U_e = 3/2 N_e k Te and
+   Q_el = 3 (m_e/M) K_m n N_e k (Te − Tg); round 4, it read 3), taking the longest requirement seen
+   since the clock started. Calls at a time not after the last counted one never count, and a miss
+   restarts the clock and its requirement. It is allowed only at P_abs = 0 or once the
    discharge has been `self-sustained`. The round-2 rule counted 10 accepted steps, and the round-3
    red run showed it stopping a powered cold start (Te0 = Tg + 0.5 K) during its heating transient.
    On success the reactor records `energy_terminal` (termination, start, end, duration, required
@@ -145,7 +147,7 @@ offsets, and n_e moves more. Removing 91 moves Te by −1.6 meV, as report7 foun
    asks the `terminal_state()` hook after each accepted step (base default None) and stops normally.
    On the production deck P0 (LXCat, default atol) exits 0 as `extinct` at **t = 1.28 s**. The
    condition held from 2.1 ms, against a required 1.26 s (2/ν_loss at Tg; the energy-relaxation time
-   there is ~0.2 ms). n_e at the stop is 1.28e15 m⁻³, and there is no refusal. The decay to the
+   there is 0.28 ms). n_e at the stop is 1.28e15 m⁻³, and there is no refusal. The decay to the
    4.16e4 m⁻³ floor, where the state would read `source-supported`, is not integrated; the figure
    marks that floor as a hand value. Tg − Te in the tail is 0.49 K (LXCat fit) against 0.011 K
    (L&L): wall-lost electrons carry 2kTe against a mean 3/2 kTe, which cools the rest, and elastic
@@ -240,6 +242,37 @@ All arms of both sets were rerun on the round-3 engine (`arms/`, `arms-LL/`; the
 kept in `arms-r2/`, `arms-LL-r2/`), and the results, budget, figure, caption, summary and both
 corner sweeps were regenerated. At the precision quoted above, only the initial-Te row's n_e
 moved.
+
+## Round 4 (Codex round 20 on 96ddf1476)
+
+Codex closed round-3 items 1, 5, 6 and 7 and the declarations. The remaining six were fixed
+test-first (`round4-red/`, `round4-green/`):
+
+- **(a) Relaxation factor.** U_e = 3/2 N_e k Te with Q_el = 3 (m_e/M) K n N_e k (Te − Tg) gives
+  dTe/dt = −2 (m_e/M) K n (Te − Tg). The rate is therefore 2 (m_e/M) K n; the code had 3. The test
+  now derives the rate from those two definitions, and a second test pins τ_E with the loss time
+  made negligible. It was red at 2/3 of the hand value. τ_E at Tg is 0.28 ms, not ~0.2 ms.
+- **(b) Persistence clock.** The required duration is the longest persistence time seen since
+  the clock started, and a miss resets it. On the old code a τ that fell from 10 to 1 at t = 3
+  stopped the run at 2 of the 10 required.
+- **(c) Zero electrons.** Solver initialisation also refuses N_e ≤ 0 in energy mode. The test
+  zeroes the composition after construction, with a source declared. The Jacobian goes one-sided
+  at y − h ≤ 0, and the spy asserts that every evaluated amount is > 0. The old code evaluated the
+  Te row at N_e = 0 exactly when y = h.
+- **(d) Finiteness.** `classify_discharge`, the latched frequencies in the termination check, and
+  the relaxation rate refuse a non-finite value; before, each was classified or compared. Test
+  cases include (0, 0, inf), (inf, 0, inf) and nan in each slot. A nan relaxation rate would
+  otherwise vanish inside `max`.
+- **(e)** The deck test pins 87 (+11.5484 eV), 88 (+4.2113 eV), `PlasmaRadiativeRecombination:1`
+  (0 eV) and the exact key set. Each value, mutated in turn, fails it (`round4-red/pin_mutation.log`).
+- **(f)** The docs are corrected: the stale two-state paragraph is gone from input.rst, P_abs is a
+  total, and τ_E is right.
+
+**No reported number moves.** With the new engine, P0 stops at the same t = 1.2822 s with a
+bit-identical termination record and history. At Tg, 1/ν_loss = 0.63 s dominates τ_E, and ν_loss
+is flat over the extinct interval. P0.5 is bit-identical (`arms-r4check/`). Energy-off FULL is
+byte-identical to `mainline-FULL` (`round4-FULL-off/`). Every other arm is self-sustained
+throughout, so the persistence clock never starts there. The artifacts from round 3 stand.
 
 ## What is and isn't predicted
 
