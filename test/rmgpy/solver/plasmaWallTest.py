@@ -3300,3 +3300,359 @@ def test_neutral_wall_frequency_at_the_deck_value_47_torr_cm2_per_s():
     y, idx = _meta_state(r, core, n_ion=0.0)       # no charge, so n_neutral = p/(k_B T)
     nu = r.compute_neutral_wall_frequencies(y, r.compute_volume(y))[idx['Ar*']]
     assert abs(nu / hand - 1.0) < 1e-12, (nu, hand)
+
+
+# ---- I-279: gas-temperature laws for the two wall-transport coefficients ----
+#
+# Both laws are opt-in declarations. Absent, the ion reduced mobility mu0*N_L and the
+# metastable D*p are held at their declared values at every Tg, exactly as before; the
+# tests below pin that the keys-absent arithmetic is today's, operation for operation.
+#   ion:        mu0*N_L -> mu0*N_L * (Tg/T_ref)^m       (mobilityReferenceTemperature,
+#                                                       mobilityTemperatureExponent)
+#   ion temp.:  D_a     -> D_a * (1 + Tg/Te)           (ambipolarIonTemperature='gas')
+#   metastable: D*p     -> D*p * (Tg/T_ref)^m          ('referenceTemperature',
+#                                                       'temperatureExponent')
+
+TGAS_HOT = 1000.0                         # K
+MU0_T_REF = 300.0                         # K, the mobility law's reference temperature
+MU0_T_EXP = -0.35
+DP_T_REF = 302.2                          # K, where Wieme & Lenaerts give D*p = 47
+DP_T_EXP = 1.68
+KB_ENGINE = constants.R / constants.Na    # the Boltzmann constant the engine's EOS uses
+
+
+def _mobility_law(t_ref=MU0_T_REF, m=MU0_T_EXP):
+    return dict(mobility_reference_temperature=(t_ref, 'K'), mobility_temperature_exponent=m)
+
+
+def _meta_law_declaration(t_ref=DP_T_REF, m=DP_T_EXP, label='Ar*'):
+    decl = _meta_declaration(label=label)
+    decl[label]['referenceTemperature'] = (t_ref, 'K')
+    decl[label]['temperatureExponent'] = m
+    return decl
+
+
+def _ion_law_reactor(tgas=TGAS, te_ev=TE_NOMINAL_EV, declaration=None, **ion_kwargs):
+    """Ground Ar, Ar*, Ar+, e- on the nominal wall, with optional ion-law keywords."""
+    electron = Species(label='e-').from_adjacency_list('1 e u1 p0 c-1')
+    ground = _ground_species('Ar', 0.0)
+    meta = _metastable_species('Ar*', AR_META_EV)
+    arp = Species(label='Ar+').from_adjacency_list('multiplicity 2\n1 Ar u1 p3 c+1')
+    imf = {electron: 1.0e-6, arp: 1.0e-6, meta: 1.0e-3, ground: 1.0 - 2.0e-6 - 1.0e-3}
+    kwargs = dict(diffusion_length=(_diffusion_length(), 'm'),
+                  ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
+                  wall_recycling=1.0, wall_neutralization_products={'Ar+': 'Ar'})
+    if declaration is not None:
+        kwargs['wall_neutral_diffusion'] = declaration
+    kwargs.update(ion_kwargs)
+    reactor = PlasmaReactor((tgas, 'K'), (P_NOMINAL, 'Pa'), imf, (te_ev * EV_TO_K, 'K'),
+                            n_sims=1, termination=[], **kwargs)
+    core = [electron, ground, meta, arp]
+    reactor.initialize_model(core, [], [], [])
+    return reactor, core
+
+
+def _engine_n_neutral(reactor, y, V):
+    """n_neutral exactly as compute_nu_wall forms it: the same summation order, the same
+    Avogadro product, the same floor."""
+    y_neutral = 0.0
+    for j in range(reactor.num_core_species):
+        if reactor.neutral_heavy_mask[j]:
+            y_neutral += y[j]
+    n = y_neutral * constants.Na / V
+    return n if n > reactor.wall_neutral_density_floor else reactor.wall_neutral_density_floor
+
+
+def test_tgas_laws_declared_at_the_gas_temperature_are_bit_identical_to_no_law():
+    """I-279 test 1a: both laws declared with T_ref equal to Tg give (Tg/T_ref)^m =
+    pow(1.0, m) = 1.0 exactly, so nu_wall and nu_m are == to the reactor with no law."""
+    decl = _meta_law_declaration(t_ref=TGAS)
+    r_law, core = _ion_law_reactor(declaration=decl, **_mobility_law(t_ref=TGAS))
+    r_off, _ = _ion_law_reactor(declaration=_meta_declaration())
+    y, _ = _meta_state(r_law, core, n_ion=1.0e-6)
+    V = r_law.compute_volume(y)
+    assert r_law.compute_nu_wall(y, V) == r_off.compute_nu_wall(y, V)
+    assert np.array_equal(r_law.compute_neutral_wall_frequencies(y, V),
+                          r_off.compute_neutral_wall_frequencies(y, V))
+
+
+def test_tgas_laws_absent_keep_todays_arithmetic_at_1000_k():
+    """I-279 test 1b: at Tg = 1000 K with no law declared, nu_wall and nu_m are == to
+    today's expressions, re-evaluated here in the engine's own operation order."""
+    r, core = _ion_law_reactor(tgas=TGAS_HOT, declaration=_meta_declaration())
+    y, idx = _meta_state(r, core, n_ion=1.0e-6)
+    V = r.compute_volume(y)
+    n = _engine_n_neutral(r, y, V)
+    lam = r.diffusion_length.value_si
+    mu_i = MU0_AR_IN_AR * PLASMA_LOSCHMIDT / n
+    d_a = mu_i * (constants.R / constants.Na) * r.Te.value_si / constants.e
+    assert r.compute_nu_wall(y, V) == d_a / (lam * lam)
+    dn = (DP_AR_META * CM2_TORR_TO_SI) / ((constants.R / constants.Na) * TGAS_HOT)
+    assert r.wall_neutral_dn_by_label['Ar*'] == dn
+    assert r.compute_neutral_wall_frequencies(y, V)[idx['Ar*']] == dn * (1.0 / (n * lam * lam))
+
+
+def test_ion_mobility_law_at_1000_k_and_5_torr():
+    """I-279 test 2: with mobilityReferenceTemperature = 300 K and exponent -0.35, the
+    ion mobility at 1000 K is mu0*N_L/n * (1000/300)^-0.35, at a state with no charged
+    population where n = p/(k_B T) exactly. Red before I-279: the keyword is unknown."""
+    r, core = _ion_law_reactor(tgas=TGAS_HOT, **_mobility_law())
+    y, _ = _meta_state(r, core, n_ion=0.0)
+    n = P_NOMINAL / (KB_ENGINE * TGAS_HOT)
+    lam = _diffusion_length()
+    hand = (MU0_AR_IN_AR * PLASMA_LOSCHMIDT / n * (TGAS_HOT / MU0_T_REF) ** MU0_T_EXP
+            * KB_ENGINE * (TE_NOMINAL_EV * EV_TO_K) / constants.e / (lam * lam))
+    nu = r.compute_nu_wall(y, r.compute_volume(y))
+    assert abs(nu / hand - 1.0) < 1e-12, (nu, hand)
+    # and the law actually moved it: (1000/300)^-0.35 = 0.65613
+    assert abs(nu / _nu_wall_closed_form(TE_NOMINAL_EV, n, lam) - 0.65613) < 1e-5
+
+
+def test_metastable_diffusion_law_at_1000_k_and_5_torr():
+    """I-279 test 3: with referenceTemperature = 302.2 K and exponent 1.68, D*p = 47 at
+    302.2 K becomes 47*(1000/302.2)^1.68 at 1000 K, so nu_m = 47e-4*(1000/302.2)^1.68/5
+    /Lambda^2 = 17.0073 s^-1. Red before I-279: the entry key is refused as unknown."""
+    lam = _diffusion_length()
+    hand = 47.0e-4 * (TGAS_HOT / DP_T_REF) ** DP_T_EXP / 5.0 / (lam * lam)
+    assert abs(hand - 17.0073) < 1e-4, hand
+    r, core = _neutral_diffusion_reactor(declaration=_meta_law_declaration(), tgas=TGAS_HOT)
+    y, idx = _meta_state(r, core, n_ion=0.0)
+    nu = r.compute_neutral_wall_frequencies(y, r.compute_volume(y))[idx['Ar*']]
+    assert abs(nu / hand - 1.0) < 1e-12, (nu, hand)
+
+
+def test_metastable_diffusion_law_in_dn_form_scales_dn_itself():
+    """For a D*N declaration the exponent is that of D*N itself (m_p - 1): D*N quoted at
+    T_ref with exponent 0.68 is the same law as D*p at T_ref with exponent 1.68."""
+    dn_ref = DP_AR_META * CM2_TORR_TO_SI / (KB_ENGINE * DP_T_REF)
+    decl = {'Ar*': {'product': 'Ar', 'diffusivity': (dn_ref, '1/(m*s)'),
+                    'referenceTemperature': (DP_T_REF, 'K'), 'temperatureExponent': DP_T_EXP - 1.0}}
+    r_dn, core = _neutral_diffusion_reactor(declaration=decl, tgas=TGAS_HOT)
+    r_dp, _ = _neutral_diffusion_reactor(declaration=_meta_law_declaration(), tgas=TGAS_HOT)
+    assert abs(r_dn.wall_neutral_dn_by_label['Ar*'] / r_dp.wall_neutral_dn_by_label['Ar*']
+               - 1.0) < 1e-12
+
+
+@pytest.mark.parametrize('te_ev', [1.0, TE_NOMINAL_EV])
+def test_ambipolar_ion_temperature_gas_multiplies_nu_wall_by_one_plus_tg_over_te(te_ev):
+    """I-279 test 4: ambipolarIonTemperature='gas' restores the (1 + Ti/Te) factor with
+    Ti = Tg, so nu_wall/nu_wall(off) = 1 + Tg/Te, at two electron temperatures (to
+    rounding: the factor multiplies D_a before the division by Lambda^2)."""
+    r_on, core = _ion_law_reactor(tgas=TGAS_HOT, te_ev=te_ev, ambipolar_ion_temperature='gas')
+    r_off, _ = _ion_law_reactor(tgas=TGAS_HOT, te_ev=te_ev)
+    y, _ = _meta_state(r_on, core, n_ion=1.0e-6)
+    V = r_on.compute_volume(y)
+    ratio = r_on.compute_nu_wall(y, V) / r_off.compute_nu_wall(y, V)
+    expected = 1.0 + TGAS_HOT / (te_ev * EV_TO_K)
+    assert abs(ratio / expected - 1.0) < 1e-15, (ratio, expected)
+
+
+def test_ambipolar_ion_temperature_rereads_te_on_every_call():
+    """The (1 + Tg/Te) factor follows the CURRENT Te, which the energy balance solves;
+    it is not frozen at the constructor's value."""
+    r, core = _ion_law_reactor(tgas=TGAS_HOT, ambipolar_ion_temperature='gas')
+    y, _ = _meta_state(r, core, n_ion=1.0e-6)
+    V = r.compute_volume(y)
+    te0 = r.Te.value_si
+    nu0 = r.compute_nu_wall(y, V)
+    r.Te.value_si = 2.0 * te0
+    nu1 = r.compute_nu_wall(y, V)
+    expected = 2.0 * (1.0 + TGAS_HOT / (2.0 * te0)) / (1.0 + TGAS_HOT / te0)
+    assert abs(nu1 / nu0 / expected - 1.0) < 1e-14
+
+
+@pytest.mark.parametrize('case, ion_kwargs, fragment', [
+    ("half ion law, T_ref only", dict(mobility_reference_temperature=(300.0, 'K')),
+     'mobility_temperature_exponent'),
+    ("half ion law, exponent only", dict(mobility_temperature_exponent=-0.35),
+     'mobility_reference_temperature'),
+    ("dimensioned ion exponent", _mobility_law(m=(-0.35, 'K')), 'mobility_temperature_exponent'),
+    ("bool ion exponent", _mobility_law(m=True), 'mobility_temperature_exponent'),
+    ("non-finite ion exponent", _mobility_law(m=float('nan')), 'mobility_temperature_exponent'),
+    ("ion exponent too large for a float", _mobility_law(m=10 ** 400), 'mobility_temperature_exponent'),
+    ("zero ion T_ref", _mobility_law(t_ref=0.0), 'mobility_reference_temperature'),
+    ("negative ion T_ref", _mobility_law(t_ref=-300.0), 'mobility_reference_temperature'),
+    ("ion T_ref not a temperature", dict(mobility_reference_temperature=(300.0, 'm'),
+                                         mobility_temperature_exponent=-0.35),
+     'mobility_reference_temperature'),
+    ("unknown ambipolar value", dict(ambipolar_ion_temperature='ion'), 'ambipolar_ion_temperature'),
+    ("boolean ambipolar value", dict(ambipolar_ion_temperature=True), 'ambipolar_ion_temperature'),
+])
+def test_ion_tgas_law_refusals(case, ion_kwargs, fragment):
+    """I-279 test 5 (ion, reactor level): half a law, a dimensioned or non-numeric
+    exponent, T_ref <= 0 or not a temperature, and an unknown ambipolarIonTemperature
+    value are each refused, naming the parameter."""
+    with pytest.raises(PlasmaStateError) as exc:
+        _ion_law_reactor(**ion_kwargs)
+    assert fragment in str(exc.value), (case, str(exc.value))
+
+
+@pytest.mark.parametrize('case, entry_update, fragment', [
+    ("half law, referenceTemperature only", {'referenceTemperature': (DP_T_REF, 'K')},
+     'temperatureExponent'),
+    ("half law, temperatureExponent only", {'temperatureExponent': DP_T_EXP},
+     'referenceTemperature'),
+    ("dimensioned exponent", {'referenceTemperature': (DP_T_REF, 'K'),
+                              'temperatureExponent': (1.68, 'K')}, 'temperatureExponent'),
+    ("zero T_ref", {'referenceTemperature': (0.0, 'K'), 'temperatureExponent': DP_T_EXP},
+     'referenceTemperature'),
+    ("negative T_ref", {'referenceTemperature': (-302.2, 'K'), 'temperatureExponent': DP_T_EXP},
+     'referenceTemperature'),
+    ("T_ref not a temperature", {'referenceTemperature': (302.2, 's'),
+                                 'temperatureExponent': DP_T_EXP}, 'referenceTemperature'),
+    ("bare float T_ref", {'referenceTemperature': DP_T_REF, 'temperatureExponent': DP_T_EXP},
+     'referenceTemperature'),
+    ("bare int T_ref", {'referenceTemperature': 302, 'temperatureExponent': DP_T_EXP},
+     'referenceTemperature'),
+    ("exponent too large for a float", {'referenceTemperature': (DP_T_REF, 'K'),
+                                        'temperatureExponent': 10 ** 400}, 'temperatureExponent'),
+])
+def test_metastable_tgas_law_refusals(case, entry_update, fragment):
+    """I-279 test 5 (metastable): half a law, a dimensioned exponent and T_ref <= 0 or
+    not a temperature are each refused, naming the entry key -- by the law's own
+    validation, not by the unknown-key refusal that named the key before I-279."""
+    decl = _meta_declaration()
+    decl['Ar*'].update(entry_update)
+    with pytest.raises(PlasmaStateError) as exc:
+        _neutral_diffusion_reactor(declaration=decl)
+    msg = str(exc.value)
+    assert fragment in msg and 'Ar*' in msg and 'unknown' not in msg, (case, msg)
+
+
+def test_ion_overflow_guard_refuses_a_subnormal_worst_case_from_the_law_factor():
+    """I-279: the mobility law's factor (10/1)^-10 = 1e-10 is itself a normal number, but
+    with mu0 = 1e-280 and Lambda = 1.7e15 m it takes the worst-case nu_wall (at the
+    neutral-density floor) from a normal ~1e-300 to a positive SUBNORMAL ~1e-310, which
+    the construction guard must refuse by the same finite-normal-positive predicate the
+    other wall inputs use. The same deck without the law is admitted (control). The
+    smallness comes from Lambda^2, not mu0: in the guard's operation order a tiny mu_i
+    underflows to exactly 0 at the k_B product, which was always refused."""
+    mu0, tg, lam = 1.0e-280, TGAS, 1.7e15
+    law = dict(mobility_reference_temperature=(tg / 10.0, 'K'), mobility_temperature_exponent=-10.0)
+    geometry = dict(ion_reduced_mobility=(mu0, 'm^2/(V*s)'), diffusion_length=(lam, 'm'))
+    # The guard's expression, in its operation order, as a precondition on both arms.
+    worst_n = rmgpy.solver.plasma.PLASMA_NEUTRAL_DENSITY_FLOOR_FRACTION * PLASMA_LOSCHMIDT
+    tiny = np.finfo(np.float64).tiny
+    for factor, subnormal in ((1.0, False), ((tg / (tg / 10.0)) ** -10.0, True)):
+        worst_mu = mu0 * PLASMA_LOSCHMIDT / worst_n * factor
+        worst_nu = (worst_mu * KB_ENGINE * (TE_NOMINAL_EV * EV_TO_K) / constants.e) / (lam * lam)
+        assert (0.0 < worst_nu < tiny) if subnormal else (worst_nu >= tiny), (factor, worst_nu)
+    _ion_law_reactor(tgas=tg, **geometry)
+    with pytest.raises(PlasmaStateError) as exc:
+        _ion_law_reactor(tgas=tg, **geometry, **law)
+    assert 'wall loss frequency' in str(exc.value), str(exc.value)
+
+
+@pytest.mark.parametrize('name, value', [
+    ('mobility_reference_temperature', (300.0, 'K')),
+    ('mobility_temperature_exponent', -0.35),
+    ('ambipolar_ion_temperature', 'gas'),
+])
+def test_ion_tgas_keys_without_a_wall_are_refused(name, value):
+    """I-279 test 5: each ion key given to a wall-less reactor is refused by name, at the
+    reactor and at the input directive, rather than stored and silently ignored."""
+    from rmgpy.exceptions import InputError
+    from rmgpy.rmg.input import _plasma_wall_kwargs
+    electron, ar, arp = _argon_species()
+    with pytest.raises(PlasmaStateError) as exc:
+        PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), {ar: 1.0}, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+                      n_sims=1, termination=[], **{name: value})
+    assert name in str(exc.value)
+    deck_name = {'mobility_reference_temperature': 'mobilityReferenceTemperature',
+                 'mobility_temperature_exponent': 'mobilityTemperatureExponent',
+                 'ambipolar_ion_temperature': 'ambipolarIonTemperature'}[name]
+    with pytest.raises(InputError) as exc:
+        _plasma_wall_kwargs(None, None, None, 1.0, None, None, **{deck_name: value})
+    assert deck_name in str(exc.value)
+
+
+@pytest.mark.parametrize('case, deck_kwargs, fragment', [
+    ("half law", dict(mobilityReferenceTemperature=(300.0, 'K')), 'mobilityTemperatureExponent'),
+    ("dimensioned exponent", dict(mobilityReferenceTemperature=(300.0, 'K'),
+                                  mobilityTemperatureExponent=(-0.35, 'K')),
+     'mobilityTemperatureExponent'),
+    ("zero T_ref", dict(mobilityReferenceTemperature=(0.0, 'K'), mobilityTemperatureExponent=-0.35),
+     'mobilityReferenceTemperature'),
+    ("T_ref in eV", dict(mobilityReferenceTemperature=(0.025, 'eV'),
+                         mobilityTemperatureExponent=-0.35), 'mobilityReferenceTemperature'),
+    ("exponent too large for a float", dict(mobilityReferenceTemperature=(300.0, 'K'),
+                                            mobilityTemperatureExponent=10 ** 400),
+     'mobilityTemperatureExponent'),
+    ("unknown ambipolar value", dict(ambipolarIonTemperature='ion'), 'ambipolarIonTemperature'),
+])
+def test_ion_tgas_law_refusals_at_the_input_directive(case, deck_kwargs, fragment):
+    """I-279 test 5 (ion, input level): the deck keywords are validated while the input
+    file is read, naming the keyword."""
+    from rmgpy.exceptions import InputError
+    from rmgpy.rmg.input import _plasma_wall_kwargs
+    with pytest.raises(InputError) as exc:
+        _plasma_wall_kwargs({'diffusionLength': (2.03, 'cm')}, (MU0_AR_IN_AR, 'm^2/(V*s)'),
+                            None, 1.0, None, None, **deck_kwargs)
+    assert fragment in str(exc.value), (case, str(exc.value))
+
+
+def test_ion_tgas_keys_resolve_at_the_input_directive():
+    """The input directive converts the deck keywords to the reactor's arguments, the
+    reference temperature in K, and emits none of them when they are absent."""
+    from rmgpy.rmg.input import _plasma_wall_kwargs
+    kwargs = _plasma_wall_kwargs({'diffusionLength': (2.03, 'cm')}, (MU0_AR_IN_AR, 'm^2/(V*s)'),
+                                 None, 1.0, None, None,
+                                 mobilityReferenceTemperature=(300.0, 'K'),
+                                 mobilityTemperatureExponent=-0.35,
+                                 ambipolarIonTemperature='gas')
+    assert kwargs['mobility_reference_temperature'] == 300.0
+    assert kwargs['mobility_temperature_exponent'] == -0.35
+    assert kwargs['ambipolar_ion_temperature'] == 'gas'
+    bare = _plasma_wall_kwargs({'diffusionLength': (2.03, 'cm')}, (MU0_AR_IN_AR, 'm^2/(V*s)'),
+                               None, 1.0, None, None)
+    for key in ('mobility_reference_temperature', 'mobility_temperature_exponent',
+                'ambipolar_ion_temperature'):
+        assert key not in bare
+
+
+def test_tgas_laws_survive_deepcopy_pickle_and_the_input_writer():
+    """I-279 test 6: __reduce__ (so deepcopy and pickle) and _format_plasma_wall carry
+    all three ion keys and both new neutral-diffusion keys. The neutral half fails if
+    the stored declaration is rebuilt from 'product' and 'diffusivity' alone."""
+    from rmgpy.rmg.input import _format_plasma_wall
+    r, core = _ion_law_reactor(tgas=TGAS_HOT, declaration=_meta_law_declaration(),
+                               ambipolar_ion_temperature='gas', **_mobility_law())
+    assert r.mobility_T_factor != 1.0
+    for clone in (copy.deepcopy(r), pickle.loads(pickle.dumps(r))):
+        assert clone.mobility_reference_temperature == MU0_T_REF
+        assert clone.mobility_temperature_exponent == MU0_T_EXP
+        assert clone.ambipolar_ion_temperature == 'gas'
+        assert clone.mobility_T_factor == r.mobility_T_factor
+        entry = clone.wall_neutral_diffusion['Ar*']
+        assert entry['referenceTemperature'] == (DP_T_REF, 'K')
+        assert entry['temperatureExponent'] == DP_T_EXP
+        assert clone.wall_neutral_dn_by_label == r.wall_neutral_dn_by_label
+    text = _format_plasma_wall(r)
+    assert 'mobilityReferenceTemperature = (300.0,"K")' in text, text
+    assert 'mobilityTemperatureExponent = -0.35' in text, text
+    assert "ambipolarIonTemperature = 'gas'" in text, text
+    assert "'referenceTemperature': (302.2, 'K')" in text, text
+    assert "'temperatureExponent': 1.68" in text, text
+
+
+def test_undeclared_tgas_laws_reconstruct_as_none():
+    """I-279 test 6: a wall reactor with no mobility law, and a wall-less reactor, both
+    reconstruct with None for the three ion keys -- no internal default or sentinel
+    leaks into __reduce__ (a wall-less copy would otherwise trip the no-wall refusal) --
+    and the writer emits none of the new keywords."""
+    from rmgpy.rmg.input import _format_plasma_wall
+    r_wall, _ = _ion_law_reactor(declaration=_meta_declaration())
+    electron, ar, arp = _argon_species()
+    r_bare = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), {ar: 1.0},
+                           (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[])
+    for r in (r_wall, r_bare):
+        args = r.__reduce__()[1]
+        assert args[-3:] == (None, None, None), args[-3:]
+        clone = copy.deepcopy(r)
+        assert clone.mobility_reference_temperature is None
+        assert clone.mobility_temperature_exponent is None
+        assert clone.ambipolar_ion_temperature is None
+        text = _format_plasma_wall(r)
+        for keyword in ('mobilityReferenceTemperature', 'mobilityTemperatureExponent',
+                        'ambipolarIonTemperature', 'referenceTemperature', 'temperatureExponent'):
+            assert keyword not in text
