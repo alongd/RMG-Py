@@ -1107,7 +1107,8 @@ class TestInputPlasmaReactor:
         """The 5 torr argon energy-balance deck ships as an example; its load-bearing
         declarations are pinned here: the LXCat Phelps elastic fit, the metastable's
         explicit elastic ignore, the pooling credit (-7.3371 eV) and the m->r mixing
-        proxy (+0.0752 eV)."""
+        proxy (+0.0752 eV), and every other declared energy: 86-89 and the radiative
+        recombination (0 eV: the recombining electron is charged its 3/2 kTe only)."""
         import rmgpy
         path = os.path.join(os.path.dirname(os.path.dirname(rmgpy.__file__)), 'examples', 'rmg',
                             'plasma_argon_energy_balance', 'input.py')
@@ -1124,6 +1125,11 @@ class TestInputPlasmaReactor:
         assert e['PlasmaArgon:91'][0] == pytest.approx(+0.0752, abs=5e-5) and e['PlasmaArgon:91'][1] == 'eV'
         assert e['PlasmaArgon:89'][0] == pytest.approx(-11.5484, abs=5e-5)
         assert e['PlasmaArgon:86'][0] == pytest.approx(15.7596, abs=5e-5)
+        assert e['PlasmaArgon:87'][0] == pytest.approx(11.5484, abs=5e-5)
+        assert e['PlasmaArgon:88'][0] == pytest.approx(4.2113, abs=5e-5)
+        assert e['PlasmaRadiativeRecombination:1'][0] == 0.0
+        assert all(v[1] == 'eV' for v in e.values())
+        assert set(e) == {'PlasmaArgon:%d' % i for i in range(86, 92)} | {'PlasmaRadiativeRecombination:1'}
 
     def test_electron_energy_balance_without_a_wall_is_refused(self, tmp_path):
         with pytest.raises(InputError, match='no charged-particle wall'):

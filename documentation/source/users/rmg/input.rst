@@ -951,20 +951,20 @@ and power balances.  It needs a charged-particle wall::
   flux the particle balance applies.  ``Q_flow`` is zero: the reactor is a closed batch.
 
 The reactor latches a power budget (``energy_budget``) at every accepted state, with the stored
-energy change taken from the solver's own derivative, and ``discharge_state()`` reports
-``'sustained'`` when the discharge's own ionisation replaces at least half its electron loss,
-``'extinct'`` otherwise (a decaying or source-held state).
+energy change taken from the solver's own derivative.
 
 ``discharge_state()`` names one of three states, from the discharge's own ionisation frequency,
 the external source's, and the electron loss frequency: ``'self-sustained'`` when its own
 ionisation replaces the loss (to ``1e-3``), ``'source-supported'`` when an ``ionisationSource``
-makes up the deficit, and ``'extinct'`` otherwise (the electron population is decaying).
+makes up the deficit, and ``'extinct'`` otherwise (the electron population is decaying).  A
+non-finite frequency is refused, never classified.
 Electrons from the ``ionisationSource`` enter with zero energy.
 
 Extinction is a terminal state.  Once the discharge is extinct and stays so -- its own ionisation
 frequency below ``1e-6`` of its electron loss frequency and ``Te`` within 1 K of the gas
 temperature -- over physical time for twice the slower of the electron loss time and the
-elastic energy-relaxation time, the simulation stops normally, logs the terminal state, and
+elastic energy-relaxation time ``1/(2 sum (m_e/M) K_m n_g)`` (the longest such requirement since
+the condition began to hold; a lapse restarts it), the simulation stops normally, logs the terminal state, and
 records it (start and end time, ``Te``, ``n_e``, the frequencies and the state vector) in the
 reactor's ``energy_terminal``; ``terminal_state()`` then returns ``'extinct'``.  It can happen only
 with ``absorbedPower`` zero or after the discharge has been self-sustained: a powered run started

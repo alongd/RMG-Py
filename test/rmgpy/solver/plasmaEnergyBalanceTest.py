@@ -607,8 +607,10 @@ def _extinct_toy():
 
 
 def test_extinction_persistence_time_is_the_slower_of_loss_and_energy_relaxation():
-    """The persistence time is the declared multiple of max(1/nu_loss, tau_E), with
-    tau_E = 1 / (3 sum_p (m_e/M_p) K_p(Te) n_p) the elastic energy-relaxation time."""
+    """The persistence time is the declared multiple of max(1/nu_loss, tau_E), tau_E the
+    elastic energy-relaxation time. Derived here from its two definitions, not copied:
+    U_e = 3/2 N_e k Te and Q_el = 3 (m/M) K n N_e k (Te - Tg) give
+    dTe/dt = -Q_el / (3/2 N_e k) = -(Te - Tg) / tau_E."""
     r, core, y = _extinct_toy()
     b = r.energy_budget
     V = r.compute_volume(y)
@@ -616,9 +618,76 @@ def test_extinction_persistence_time_is_the_slower_of_loss_and_energy_relaxation
     lt = np.log(te_ev)
     k = 2.336e-14 * te_ev ** 1.609 * np.exp(0.0618 * lt * lt - 0.1171 * lt ** 3)
     m_ar = core[[s.label for s in core].index('Ar')].molecular_weight.value_si
-    nu_e = 3.0 * constants.m_e / m_ar * k * y[_idx(r, core, 'Ar')] * constants.Na / V
+    n_ar = y[_idx(r, core, 'Ar')] * constants.Na / V
+    n_e, dT = 1.0e15, 100.0                                  # any electron density and excess
+    q_el = 3.0 * constants.m_e / m_ar * k * n_ar * n_e * constants.kB * dT
+    nu_e = q_el / (1.5 * n_e * constants.kB) / dT            # -(dTe/dt) / (Te - Tg)
     hand = plasma_module.PLASMA_EXTINCT_PERSIST_MULTIPLE * max(1.0 / b['nu_loss'], 1.0 / nu_e)
+    assert nu_e == pytest.approx(2.0 * constants.m_e / m_ar * k * n_ar, rel=1e-12)
+    # The loss time dominates in this toy; the relaxation term alone is pinned below.
     assert r.extinction_persistence_time(y) == pytest.approx(hand, rel=CONST_RTOL)
+
+
+def test_energy_relaxation_time_is_the_elastic_rate_2_m_over_M_K_n():
+    """With the loss time made negligible the persistence time is the multiple of tau_E
+    alone, so a wrong factor in tau_E (3 instead of 2) shows directly."""
+    r, core, y = _extinct_toy()
+    V = r.compute_volume(y)
+    te_ev = y[r.te_index] / EV_TO_K
+    lt = np.log(te_ev)
+    k = 2.336e-14 * te_ev ** 1.609 * np.exp(0.0618 * lt * lt - 0.1171 * lt ** 3)
+    m_ar = core[[s.label for s in core].index('Ar')].molecular_weight.value_si
+    n_ar = y[_idx(r, core, 'Ar')] * constants.Na / V
+    q_per_electron_per_k = 3.0 * constants.m_e / m_ar * k * n_ar * constants.kB
+    nu_e = q_per_electron_per_k / (1.5 * constants.kB)
+    r.energy_budget['nu_loss'] = 1.0e12                      # 1/nu_loss negligible
+    assert r.extinction_persistence_time(y) == pytest.approx(
+        plasma_module.PLASMA_EXTINCT_PERSIST_MULTIPLE / nu_e, rel=CONST_RTOL)
+
+
+class _TauReactor(ToyLibraryReactor):
+    """Returns a scripted persistence time per call time (for the clock tests)."""
+    tau_at = None
+
+    def extinction_persistence_time(self, y):
+        return _TauReactor.tau_at(self.energy_extinct_last_t)
+
+
+def test_persistence_clock_keeps_the_longest_requirement_since_it_started():
+    """The required duration is the longest persistence time seen since the clock started,
+    not the current one: a tau that falls mid-interval must not end the wait early."""
+    r0, core, y = _extinct_toy()
+    r, _, _ = _build(te_ev=1.0, x_ion=1e-9, power_w=0.0, source=6.6e4, cls=_TauReactor)
+    r.energy_budget = dict(r0.energy_budget)
+    r.energy_extinct_since = float('nan')
+    r.energy_extinct_last_t = float('nan')
+    _TauReactor.tau_at = lambda t: 10.0 if t < 3.0 else 1.0
+    for t in (1.0, 2.0, 3.0, 5.0, 8.0, 10.9):
+        r._update_terminal_state(y, t)
+        assert r.terminal_state() is None, t
+    r._update_terminal_state(y, 11.1)
+    assert r.terminal_state() == 'extinct'
+    assert r.energy_terminal['persistence_time'] == 10.0
+    assert r.energy_terminal['since'] == 1.0
+
+
+def test_a_miss_resets_the_longest_requirement():
+    r0, core, y = _extinct_toy()
+    r, _, _ = _build(te_ev=1.0, x_ion=1e-9, power_w=0.0, source=6.6e4, cls=_TauReactor)
+    r.energy_budget = dict(r0.energy_budget)
+    r.energy_extinct_since = float('nan')
+    r.energy_extinct_last_t = float('nan')
+    _TauReactor.tau_at = lambda t: 10.0 if t < 3.0 else 1.0
+    r._update_terminal_state(y, 1.0)
+    miss = y.copy()
+    miss[r.te_index] = TGAS + 2.0
+    r._update_terminal_state(miss, 4.0)                      # restarts the clock, and its max
+    r._update_terminal_state(y, 5.0)
+    r._update_terminal_state(y, 5.9)
+    assert r.terminal_state() is None
+    r._update_terminal_state(y, 6.1)
+    assert r.terminal_state() == 'extinct'
+    assert r.energy_terminal['persistence_time'] == 1.0
 
 
 def test_extinction_counts_physical_time_not_calls():
@@ -688,6 +757,37 @@ def test_three_discharge_states_at_their_boundaries(nu_iz, nu_src, expect):
     assert plasma_module.classify_discharge(nu_iz, nu_src, 1.0) == expect
 
 
+INF, NAN = float('inf'), float('nan')
+
+
+@pytest.mark.parametrize('nu', [(0.0, 0.0, INF), (INF, 0.0, INF), (INF, 0.0, 1.0), (0.0, INF, 1.0),
+                                (NAN, 0.0, 1.0), (0.0, NAN, 1.0), (0.0, 0.0, NAN), (0.0, 0.0, -INF)])
+def test_a_non_finite_frequency_is_refused_never_classified(nu):
+    with pytest.raises(PlasmaStateError, match='non-finite'):
+        plasma_module.classify_discharge(*nu)
+
+
+@pytest.mark.parametrize('key', ['nu_loss', 'nu_ionisation', 'nu_source'])
+@pytest.mark.parametrize('value', [INF, NAN])
+def test_termination_refuses_a_non_finite_frequency(key, value):
+    r, core, y = _extinct_toy()
+    r.energy_extinct_since = float('nan')
+    r.energy_extinct_last_t = float('nan')
+    r.energy_budget[key] = value
+    with pytest.raises(PlasmaStateError, match='non-finite'):
+        r._update_terminal_state(y, 1.0)
+    assert r.terminal_state() is None
+
+
+def test_termination_refuses_a_non_finite_relaxation_rate():
+    """max(t_loss, nan) is t_loss in Python: a nan relaxation rate would be silently
+    dropped from the persistence time. Refused instead."""
+    r, core, y = _extinct_toy()
+    r.energy_elastic_params[0, 0] = NAN
+    with pytest.raises(PlasmaStateError, match='non-finite'):
+        r.extinction_persistence_time(y)
+
+
 def test_latched_state_reads_the_external_source():
     """At P_abs = 0 the discharge decays (extinct); the latched budget carries the source
     frequency the classification used."""
@@ -748,6 +848,17 @@ def test_energy_mode_refuses_zero_initial_electrons():
         _build(x_ion=0.0, source=6.6e4)
 
 
+def test_solver_initialisation_refuses_zero_electrons_in_energy_mode():
+    """The same refusal at the packed state: a composition mutated after construction to
+    zero electrons (with a source declared, which admits zero with Te prescribed) must not
+    reach the Te row."""
+    r, core, _ = _build(x_ion=1e-9, source=6.6e4)
+    for label in ('e-', 'Ar+'):                              # neutral gas: quasineutral
+        r.initial_mole_fractions[[s for s in core if s.label == label][0]] = 0.0
+    with pytest.raises(PlasmaStateError, match='electron temperature is undefined'):
+        r.set_initial_conditions()
+
+
 def test_nonpositive_electrons_in_the_residual_are_an_unreachable_state():
     r, core, _ = _build()
     y = np.array(r.y0, float)
@@ -770,10 +881,14 @@ def test_jacobian_never_steps_a_mole_amount_below_zero():
     one (a negative electron count for the Te row). One-sided there."""
     r, core, _ = _build(te_ev=1.0, cls=_SpyReactor)
     y = np.array(r.y0, float)
-    y[r.electron_index] = 1.0e-40
-    _SpyReactor.seen = []
-    r.jacobian(0.0, y, np.zeros_like(y), 0.0)
-    assert _SpyReactor.seen and min(_SpyReactor.seen) >= 0.0
+    ie = r.electron_index
+    # 1e-40: far inside one step. 6e-6 atol: exactly one step, so a central difference
+    # lands on exactly zero -- where the Te row is as undefined as below it.
+    for ne in (1.0e-40, 6.0e-6 * r.atol_array[ie]):
+        y[ie] = ne
+        _SpyReactor.seen = []
+        r.jacobian(0.0, y, np.zeros_like(y), 0.0)
+        assert _SpyReactor.seen and min(_SpyReactor.seen) > 0.0, ne
 
 
 def test_absorbed_power_is_a_constant_total_on_the_reactor_inventory():

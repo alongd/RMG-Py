@@ -162,7 +162,12 @@ PLASMA_EXTINCT_PERSIST_MULTIPLE = 2.0
 def classify_discharge(double nu_iz, double nu_src, double nu_loss):
     """'self-sustained', 'source-supported' or 'extinct' from the discharge's own ionisation
     frequency, the external source frequency and the electron loss frequency (all per
-    electron, s^-1). See PLASMA_SELF_SUSTAINED_RTOL."""
+    electron, s^-1). See PLASMA_SELF_SUSTAINED_RTOL. A non-finite frequency is refused, never
+    classified: every comparison below would read it as a state."""
+    if not (np.isfinite(nu_iz) and np.isfinite(nu_src) and np.isfinite(nu_loss)):
+        raise PlasmaStateError(
+            "classify_discharge: non-finite frequency (nu_ionisation={0!r}, nu_source={1!r}, "
+            "nu_loss={2!r} s^-1); the discharge state is undefined.".format(nu_iz, nu_src, nu_loss))
     cdef double need = (1.0 - PLASMA_SELF_SUSTAINED_RTOL) * nu_loss
     if nu_loss <= 0.0:
         if nu_iz > 0.0:
@@ -425,6 +430,7 @@ cdef class PlasmaReactor(ReactionSystem):
     cdef public list energy_history               # (t, Te, n_e) at each accepted state
     cdef public double energy_extinct_since       # t the extinct condition began to hold, or nan
     cdef public double energy_extinct_last_t      # last accepted time counted, or nan
+    cdef public double energy_extinct_required    # longest persistence time since the clock started
     cdef public bint energy_was_self_sustained    # has the discharge been self-sustained once
     cdef public object energy_terminal            # None, or the recorded terminal state (dict)
     cdef public dict energy_elastic_ignored       # label -> declared reason its elastic loss is ignored
@@ -990,6 +996,7 @@ cdef class PlasmaReactor(ReactionSystem):
         self.energy_history = []
         self.energy_extinct_since = float('nan')
         self.energy_extinct_last_t = float('nan')
+        self.energy_extinct_required = 0.0
         self.energy_was_self_sustained = False
         self.energy_terminal = None
         self.energy_elastic_ignored = {}
@@ -1402,9 +1409,9 @@ cdef class PlasmaReactor(ReactionSystem):
             h = 6.0e-6 * max(abs(y[k]), self.atol_array[k])
             yp = y.copy()
             yp[k] += h
-            if k < self.num_core_species and y[k] - h < 0.0:
+            if k < self.num_core_species and y[k] - h <= 0.0:
                 # A mole amount within one step of zero: one-sided, so no residual is ever
-                # evaluated at a negative amount (for N_e, the Te row is undefined there).
+                # evaluated at a zero or negative amount (for N_e, the Te row is undefined there).
                 if base is None:
                     base = np.asarray(self.residual(t, y, dydt)[0]).copy()
                 pd[:, k] = (np.asarray(self.residual(t, yp, dydt)[0]) - base) / (yp[k] - y[k])
@@ -1469,7 +1476,10 @@ cdef class PlasmaReactor(ReactionSystem):
     def extinction_persistence_time(self, np.ndarray y):
         """PLASMA_EXTINCT_PERSIST_MULTIPLE times the slower of the electron loss time
         1/nu_loss (latched budget) and the elastic energy-relaxation time
-        1/(3 sum_p (m_e/M_p) K_p(Te) n_p) at ``y``. Infinite when either is undefined."""
+        1/(2 sum_p (m_e/M_p) K_p(Te) n_p) at ``y``: with U_e = 3/2 N_e k Te and
+        Q_elastic = 3 (m_e/M) K n N_e k (Te - Tg), dTe/dt = -2 (m_e/M) K n (Te - Tg). A zero
+        rate makes its time infinite; a non-finite rate is refused (``max`` would silently
+        drop a nan)."""
         cdef double V = self.compute_volume(y), te_ev, lt, nu_e = 0.0, k, t_loss, t_e
         cdef Py_ssize_t p
         te_ev = y[self.te_index] * (constants.R / constants.Na) / constants.e
@@ -1478,9 +1488,13 @@ cdef class PlasmaReactor(ReactionSystem):
             k = (self.energy_elastic_params[p, 0] * te_ev ** self.energy_elastic_params[p, 1]
                  * np.exp(self.energy_elastic_params[p, 2] * lt * lt
                           + self.energy_elastic_params[p, 3] * lt * lt * lt))
-            nu_e += (3.0 * self.energy_elastic_mass_ratio[p] * k
+            nu_e += (2.0 * self.energy_elastic_mass_ratio[p] * k
                      * y[self.energy_elastic_index[p]] * constants.Na / V)
         nu_loss = self.energy_budget.get('nu_loss', 0.0)
+        if not (np.isfinite(nu_e) and np.isfinite(nu_loss)):
+            raise PlasmaStateError(
+                "extinction persistence time: non-finite rate (energy relaxation {0!r}, "
+                "nu_loss {1!r} s^-1). ({2})".format(nu_e, nu_loss, self._identity()))
         t_loss = 1.0 / nu_loss if nu_loss > 0.0 else float('inf')
         t_e = 1.0 / nu_e if nu_e > 0.0 else float('inf')
         return PLASMA_EXTINCT_PERSIST_MULTIPLE * max(t_loss, t_e)
@@ -1490,14 +1504,22 @@ cdef class PlasmaReactor(ReactionSystem):
         after the last one counted never counts. The condition -- the latched budget
         extinct, nu_ionisation < PLASMA_EXTINCT_RATIO nu_loss, |Te - Tg| <=
         PLASMA_EXTINCT_TE_BAND_K -- must hold at every accepted step for
-        :meth:`extinction_persistence_time`; a miss restarts the clock. Only at P_abs = 0,
-        or once the discharge has been self-sustained. Energy balance only."""
+        the longest :meth:`extinction_persistence_time` seen since the clock started (a
+        requirement that falls mid-interval never shortens the wait); a miss restarts the
+        clock and that maximum. Only at P_abs = 0, or once the discharge has been
+        self-sustained. A non-finite frequency is refused. Energy balance only."""
         if not self.energy_balance or self.energy_terminal is not None:
             return
         if not (t > self.energy_extinct_last_t) and not np.isnan(self.energy_extinct_last_t):
             return
         self.energy_extinct_last_t = t
         b = self.energy_budget
+        for key in ('nu_ionisation', 'nu_loss', 'nu_source'):
+            if not np.isfinite(b[key]):
+                raise PlasmaStateError(
+                    "extinction check at t = {0!r} s: non-finite {1} = {2!r} s^-1 in the latched "
+                    "budget; the discharge state is undefined. ({3})".format(
+                        t, key, b[key], self._identity()))
         state = b['discharge_state']
         if state == 'self-sustained':
             self.energy_was_self_sustained = True
@@ -1507,10 +1529,14 @@ cdef class PlasmaReactor(ReactionSystem):
                 and b['nu_ionisation'] < PLASMA_EXTINCT_RATIO * b['nu_loss']
                 and abs(te - self.T.value_si) <= PLASMA_EXTINCT_TE_BAND_K):
             self.energy_extinct_since = float('nan')
+            self.energy_extinct_required = 0.0
             return
         if np.isnan(self.energy_extinct_since):
             self.energy_extinct_since = t
-        tau = self.extinction_persistence_time(y)
+            self.energy_extinct_required = 0.0
+        self.energy_extinct_required = max(self.energy_extinct_required,
+                                           self.extinction_persistence_time(y))
+        tau = self.energy_extinct_required
         if t - self.energy_extinct_since >= tau:
             self.energy_terminal = {
                 'termination': 'extinct', 't': t, 'since': self.energy_extinct_since,
@@ -1768,6 +1794,7 @@ cdef class PlasmaReactor(ReactionSystem):
             self._latch_wall_diagnostics(self.y0, self.compute_volume(self.y0), 0.0)
         self.energy_extinct_since = float('nan')
         self.energy_extinct_last_t = float('nan')
+        self.energy_extinct_required = 0.0
         self.energy_was_self_sustained = False
         self.energy_terminal = None
         if self.energy_balance:
@@ -3545,6 +3572,12 @@ cdef class PlasmaReactor(ReactionSystem):
         # ignite. The two checks are kept in lockstep so the packed state and the declared
         # composition agree on what is admissible.
         e0 = self.y0[self.electron_index]
+        if self.energy_balance and not e0 > 0.0:
+            raise PlasmaStateError(
+                "packed initial electron amount is {0!r} with electron_energy_balance declared: "
+                "Te is an energy per electron, so with no electrons the electron temperature is "
+                "undefined and the Te row cannot be evaluated, source or not. ({1})".format(
+                    e0, self._identity()))
         if not np.isfinite(e0) or e0 < 0.0 or (
                 e0 == 0.0 and not (self.ionisation_source.value_si > 0.0)):
             raise PlasmaStateError(
