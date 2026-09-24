@@ -137,15 +137,42 @@ PLASMA_NEUTRAL_DENSITY_FLOOR_FRACTION = 1.0e-10
 # not depend on, any electron density the model is expected to produce.
 PLASMA_WALL_MAX_IONISATION_DEGREE = 1.0e-3
 
+# Discharge states (energy balance only). 'self-sustained': the discharge's own ionisation
+# replaces its electron loss, nu_iz >= (1 - PLASMA_SELF_SUSTAINED_RTOL) nu_loss (a steady
+# discharge sits at nu_iz = nu_loss - nu_source, a hair below 1). 'source-supported': it
+# does not, but the external pair source makes up the deficit. 'extinct': neither -- the
+# electron population is decaying.
+PLASMA_SELF_SUSTAINED_RTOL = 1.0e-3
+
 # Extinction as a TERMINAL state (energy balance only). Once the discharge is extinct and
 # stays so -- its own ionisation below PLASMA_EXTINCT_RATIO of its electron loss and Te
-# within PLASMA_EXTINCT_TE_BAND_K of the gas, at PLASMA_EXTINCT_STEPS consecutive accepted
-# steps -- the run stops and records it. What remains is a dead plasma decaying on the wall
-# time to its source-held floor; integrating it there proves nothing, and in the tail the
-# decayed neutrals sit at solver noise, where the wall check (rightly) refuses states.
+# within PLASMA_EXTINCT_TE_BAND_K of the gas -- over PHYSICAL time for
+# PLASMA_EXTINCT_PERSIST_MULTIPLE times the slower of the electron loss time 1/nu_loss and
+# the elastic energy-relaxation time, the run stops and records it. It may stop only when
+# P_abs = 0, or after the discharge has been self-sustained once: a powered run starting
+# cold looks extinct until it heats, and must never stop there. What remains after a real
+# extinction is a dead plasma decaying on the wall time to its source-held floor;
+# integrating it there proves nothing, and in that tail the decayed neutrals sit at solver
+# noise, where the wall check (rightly) refuses states beyond their own atol.
 PLASMA_EXTINCT_RATIO = 1.0e-6
 PLASMA_EXTINCT_TE_BAND_K = 1.0
-PLASMA_EXTINCT_STEPS = 10
+PLASMA_EXTINCT_PERSIST_MULTIPLE = 2.0
+
+
+def classify_discharge(double nu_iz, double nu_src, double nu_loss):
+    """'self-sustained', 'source-supported' or 'extinct' from the discharge's own ionisation
+    frequency, the external source frequency and the electron loss frequency (all per
+    electron, s^-1). See PLASMA_SELF_SUSTAINED_RTOL."""
+    cdef double need = (1.0 - PLASMA_SELF_SUSTAINED_RTOL) * nu_loss
+    if nu_loss <= 0.0:
+        if nu_iz > 0.0:
+            return 'self-sustained'
+        return 'source-supported' if nu_src > 0.0 else 'extinct'
+    if nu_iz >= need:
+        return 'self-sustained'
+    if nu_iz + nu_src >= need:
+        return 'source-supported'
+    return 'extinct'
 
 
 def _coerce_bool_flag(value, name, identity):
@@ -396,8 +423,14 @@ cdef class PlasmaReactor(ReactionSystem):
     cdef public dict electron_energy_terms        # scratch of the LAST residual evaluation
     cdef public dict energy_budget                # LATCHED at accepted states, like wall_flux
     cdef public list energy_history               # (t, Te, n_e) at each accepted state
-    cdef public int energy_extinct_streak         # consecutive accepted steps meeting extinction
+    cdef public double energy_extinct_since       # t the extinct condition began to hold, or nan
+    cdef public double energy_extinct_last_t      # last accepted time counted, or nan
+    cdef public bint energy_was_self_sustained    # has the discharge been self-sustained once
     cdef public object energy_terminal            # None, or the recorded terminal state (dict)
+    cdef public dict energy_elastic_ignored       # label -> declared reason its elastic loss is ignored
+    cdef public double absorbed_power_total       # W, the declared P_abs of the chamber
+    cdef public double absorbed_power_reactor     # W, P_abs on the reactor inventory (constant)
+    cdef public double energy_v_ref               # m^3, the reactor's reference volume at t0
 
     def __init__(self, T, P, initial_mole_fractions, Te, n_sims=1, termination=None, sensitive_species=None,
                  sensitivity_threshold=1e-3, sens_conditions=None, const_spc_names=None,
@@ -900,8 +933,13 @@ cdef class PlasmaReactor(ReactionSystem):
           discharge-current + sheath closure would enter as a different key (it is not
           built, and naming it is refused).
         - ``'chamber_volume'``: the plasma volume the power is deposited in, ``(V, 'm^3')``.
-          The reactor's own V is the ideal-gas volume of its mole inventory, not the
-          chamber, so the heating enters as the power DENSITY absorbed_power/chamber_volume.
+          The reactor holds a fixed mole inventory, not the chamber's, so it is treated as a
+          scaled image of the chamber: at initialisation its reference volume
+          ``V_ref = N_heavy(t0) R Tg / P`` fixes the heating on its inventory as the
+          CONSTANT total ``absorbed_power * V_ref / chamber_volume`` (W). It is not rescaled
+          by the state's volume as the electrons expand it under the constant-pressure
+          equation of state; the electrons' pdV work that expansion implies is neglected
+          (it is of order n_e Te / (n_gas Tg) of U_e; the argon runs bound V(state)/V_ref).
         - ``'sheath'``: ``'floating_wall'``. An ion lost at the wall carries
           ``k_B Te (1/2 + 1/2 ln(M/(2 pi m_e)))`` -- the Bohm presheath energy plus the
           floating-wall sheath drop (Lieberman & Lichtenberg 2005, sec. 10.2), taken from
@@ -919,8 +957,14 @@ cdef class PlasmaReactor(ReactionSystem):
         - ``'elastic_collisions'``: ``{label: {'A': (A, 'm^3/s'), 'n': n, 'b': b, 'c': c}}``,
           the Maxwellian momentum-transfer rate coefficient of each declared heavy partner
           in the form ``K_m = A Te^n exp(b (ln Te)^2 + c (ln Te)^3)``, Te in eV (the form of
-          the Lieberman & Lichtenberg 2005 Table 3.3 fits). The rate is declared, never
-          inferred: an undeclared neutral has no elastic loss, and is logged as such.
+          the Lieberman & Lichtenberg 2005 Table 3.3 fits), or ``{label: {'ignore':
+          '<reason>'}}`` to leave that partner's elastic loss out, with the reason stated.
+          The rate is declared, never inferred, and EVERY core neutral must have one or the
+          other: an undeclared neutral is refused at initialisation.
+
+        Electrons produced by the external ``ionisation_source`` enter the electron gas with
+        ZERO energy: the source adds electrons and no energy, so each dilutes U_e. That is a
+        declaration of this model, not a measurement.
         """
         self.electron_energy_balance = None
         self.energy_balance = False
@@ -944,8 +988,14 @@ cdef class PlasmaReactor(ReactionSystem):
         self.electron_energy_terms = {}
         self.energy_budget = {}
         self.energy_history = []
-        self.energy_extinct_streak = 0
+        self.energy_extinct_since = float('nan')
+        self.energy_extinct_last_t = float('nan')
+        self.energy_was_self_sustained = False
         self.energy_terminal = None
+        self.energy_elastic_ignored = {}
+        self.absorbed_power_total = 0.0
+        self.absorbed_power_reactor = 0.0
+        self.energy_v_ref = float('nan')
         if electron_energy_balance is None:
             return
         if not isinstance(electron_energy_balance, dict):
@@ -1005,12 +1055,23 @@ cdef class PlasmaReactor(ReactionSystem):
                 "electron_energy_balance['elastic_collisions'] must be a dict of label -> "
                 "{{'A', 'n', 'b', 'c'}}; got {0!r}. ({1})".format(elastic, self._identity()))
         params = {}
+        ignored = {}
         for label, fit in elastic.items():
+            if isinstance(fit, dict) and 'ignore' in fit:
+                reason = fit['ignore']
+                if set(fit) != {'ignore'} or not isinstance(reason, str) or not reason.strip():
+                    raise PlasmaStateError(
+                        "electron_energy_balance['elastic_collisions'][{0!r}] = {1!r}: an "
+                        "'ignore' declaration is exactly {{'ignore': '<reason>'}}, with a "
+                        "non-empty reason and no rate. ({2})".format(label, fit, self._identity()))
+                ignored[label] = reason
+                continue
             if not isinstance(fit, dict) or set(fit) != {'A', 'n', 'b', 'c'}:
                 raise PlasmaStateError(
                     "electron_energy_balance['elastic_collisions'][{0!r}] must be a dict with "
                     "exactly the keys 'A', 'n', 'b', 'c' (K_m = A Te^n exp(b ln(Te)^2 + "
-                    "c ln(Te)^3), Te in eV); got {1!r}. ({2})".format(label, fit, self._identity()))
+                    "c ln(Te)^3), Te in eV), or {{'ignore': '<reason>'}}; got {1!r}. "
+                    "({2})".format(label, fit, self._identity()))
             a = _si("elastic_collisions'][{0!r}]['A".format(label), fit['A'], 'm^3/s', True)
             rest = []
             for key in ('n', 'b', 'c'):
@@ -1056,11 +1117,15 @@ cdef class PlasmaReactor(ReactionSystem):
                     "({1})".format(key, self._identity()))
             declared[(parts[0], int(parts[1]))] = eps
         self.energy_declared = declared
-        if not params:
-            logging.warning(
-                'PlasmaReactor: electron_energy_balance declares no elastic collision partner; '
-                'the elastic electron energy loss is ZERO, which is not a physical statement. '
-                '(%s)', self._identity())
+        # The Te row and every Te-dependent rate are evaluated no lower than Tg/2 (see
+        # _sync_electron_temperature); an initial Te below that would silently be evaluated
+        # at the floor. Refuse it.
+        if self.te_initial < 0.5 * self.T.value_si:
+            raise PlasmaStateError(
+                "the initial electron temperature Te0 = {0!r} K is below half the gas "
+                "temperature ({1!r} K), the floor the energy balance evaluates Te at; it would "
+                "be silently raised to the floor. Declare Te0 >= Tg/2. ({2})".format(
+                    self.te_initial, 0.5 * self.T.value_si, self._identity()))
 
         self.electron_energy_balance = {
             'absorbed_power': electron_energy_balance['absorbed_power'],
@@ -1070,7 +1135,9 @@ cdef class PlasmaReactor(ReactionSystem):
             'electron_energies': dict(energies),
         }
         self.energy_balance = True
+        self.absorbed_power_total = power
         self.absorbed_power_density = power / volume
+        self.energy_elastic_ignored = ignored
         self.sheath_model = sheath
         self.energy_elastic_params = np.array([params[l] for l in params], float).reshape(-1, 4)
         self.energy_elastic_labels = list(params)
@@ -1214,13 +1281,25 @@ cdef class PlasmaReactor(ReactionSystem):
             mass_ratio.append(constants.m_e / core_species[hits[0]].molecular_weight.value_si)
         self.energy_elastic_index = np.array(index, int)
         self.energy_elastic_mass_ratio = np.array(mass_ratio, float)
+        for label, reason in self.energy_elastic_ignored.items():
+            hits = [i for i, l in enumerate(labels) if l == label]
+            if len(hits) != 1 or self.species_charges[self.species_index[core_species[hits[0]]]] != 0:
+                raise PlasmaStateError(
+                    "electron_energy_balance['elastic_collisions'] ignores {0!r}, which is not "
+                    "exactly one neutral core species of {1!r}. ({2})".format(
+                        label, labels, self._identity()))
+            logging.info('PlasmaReactor energy balance: elastic loss of %r IGNORED as declared: %s',
+                         label, reason)
         undeclared = [s.label for s in core_species
                       if self.neutral_heavy_mask[self.species_index[s]]
-                      and s.label not in self.energy_elastic_labels]
+                      and s.label not in self.energy_elastic_labels
+                      and s.label not in self.energy_elastic_ignored]
         if undeclared:
-            logging.info(
-                'PlasmaReactor: no elastic electron collision rate declared for %s; their '
-                'elastic energy loss is not modelled. (%s)', undeclared, self._identity())
+            raise PlasmaStateError(
+                "electron_energy_balance['elastic_collisions'] declares nothing for the core "
+                "neutral(s) {0!r}. Every core neutral needs an elastic rate or an explicit "
+                "{{'ignore': '<reason>'}}; an undeclared partner would silently carry no "
+                "elastic loss. ({1})".format(undeclared, self._identity()))
 
         sheath = np.zeros(self.num_core_species, float)
         for spc in core_species:
@@ -1263,7 +1342,9 @@ cdef class PlasmaReactor(ReactionSystem):
         cdef double ne, p_abs, q_inel = 0.0, q_el = 0.0, q_we, q_wi = 0.0, dne, te_ev, lt, k
         cdef Py_ssize_t j, p, i, ie = self.electron_index
         ne = y[ie]
-        p_abs = self.absorbed_power_density * V
+        # A CONSTANT total power on the reactor inventory (see _configure_energy_balance);
+        # the electrons' pdV work under the constant-pressure EOS is neglected.
+        p_abs = self.absorbed_power_reactor
         by_rxn = np.zeros(self.num_core_reactions, float)
         for j in range(self.num_core_reactions):
             if self.energy_participates[j]:
@@ -1290,8 +1371,18 @@ cdef class PlasmaReactor(ReactionSystem):
             'Q_wall_electron': q_we, 'Q_wall_ion': q_wi, 'Q_flow': 0.0,
             'Q_inelastic_by_reaction': by_rxn, 'dNe_dt': dne,
         }
-        if not ne > 1.0e-300:
-            ne = 1.0e-300
+        # The row is an energy PER ELECTRON. N_e <= 0 is refused at initialisation and at
+        # every accepted step, and the Jacobian never steps a mole amount below zero, so it
+        # is unreachable here; were it reached, the row would be undefined, not small.
+        if not ne > 0.0:
+            raise PlasmaStateError(
+                "the electron energy row was evaluated at N_e = {0!r} mol; this state is "
+                "unreachable by construction (refused at initialisation and at accepted "
+                "steps, never stepped into by the Jacobian), and the energy per electron is "
+                "undefined there. ({1})".format(ne, self._identity()))
+        # Electrons from the external ionisation_source enter with zero energy: dne counts
+        # them, so each is charged 3/2 R Te out of U_e -- the dilution a zero-energy
+        # electron causes -- and nothing is added for them.
         return (p_abs - q_inel - q_el - q_we - q_wi - 1.5 * R * te * dne) / (1.5 * R * ne)
 
     def _energy_jacobian(self, double t, np.ndarray y, np.ndarray dydt, double cj):
@@ -1303,14 +1394,22 @@ cdef class PlasmaReactor(ReactionSystem):
         cdef double h
         y = np.array(y, float)
         pd = np.zeros((n, n), float)
+        base = None
         for k in range(n):
             # Relative step, floored at the component's own atol (DASPK's convention): a
             # floor shared across components would exceed a small N_e outright and step
             # the electrons negative.
             h = 6.0e-6 * max(abs(y[k]), self.atol_array[k])
             yp = y.copy()
-            ym = y.copy()
             yp[k] += h
+            if k < self.num_core_species and y[k] - h < 0.0:
+                # A mole amount within one step of zero: one-sided, so no residual is ever
+                # evaluated at a negative amount (for N_e, the Te row is undefined there).
+                if base is None:
+                    base = np.asarray(self.residual(t, y, dydt)[0]).copy()
+                pd[:, k] = (np.asarray(self.residual(t, yp, dydt)[0]) - base) / (yp[k] - y[k])
+                continue
+            ym = y.copy()
             ym[k] -= h
             pd[:, k] = (np.asarray(self.residual(t, yp, dydt)[0])
                         - np.asarray(self.residual(t, ym, dydt)[0])) / (yp[k] - ym[k])
@@ -1345,9 +1444,9 @@ cdef class PlasmaReactor(ReactionSystem):
         b['Te'] = te
         b['n_e'] = ne_mol * constants.Na / V
         b['V'] = V
-        # Sustainment: the discharge's own ionisation frequency against its electron loss
-        # frequency. Sustained when its own ionisation replaces at least half the loss; a
-        # state held up by the external source, or decaying, is extinct.
+        # Sustainment (see PLASMA_SELF_SUSTAINED_RTOL and classify_discharge): the
+        # discharge's own ionisation frequency and the external source's, against the
+        # electron loss frequency.
         gain = loss = 0.0
         for j in range(self.num_core_reactions):
             net = self.energy_electron_net[j]
@@ -1358,8 +1457,8 @@ cdef class PlasmaReactor(ReactionSystem):
         loss += -self.wall_loss_rates[ie]
         b['nu_ionisation'] = gain / ne_mol if ne_mol > 0.0 else 0.0
         b['nu_loss'] = loss / ne_mol if ne_mol > 0.0 else 0.0
-        b['discharge_state'] = ('sustained' if b['nu_loss'] > 0.0
-                                and b['nu_ionisation'] >= 0.5 * b['nu_loss'] else 'extinct')
+        b['nu_source'] = self._source_total_at_volume(V) / ne_mol if ne_mol > 0.0 else 0.0
+        b['discharge_state'] = classify_discharge(b['nu_ionisation'], b['nu_source'], b['nu_loss'])
         self.energy_budget = b
         self.energy_history.append((t, te, b['n_e']))
         # The ion sheath energy the M8-A interface leaves declared-absent is what this
@@ -1367,31 +1466,64 @@ cdef class PlasmaReactor(ReactionSystem):
         self.wall_ion_energy_flux = b['Q_wall_ion']
         self.wall_energy_availability['wall_ion_energy_flux'] = 'available-floating-wall-sheath-model'
 
+    def extinction_persistence_time(self, np.ndarray y):
+        """PLASMA_EXTINCT_PERSIST_MULTIPLE times the slower of the electron loss time
+        1/nu_loss (latched budget) and the elastic energy-relaxation time
+        1/(3 sum_p (m_e/M_p) K_p(Te) n_p) at ``y``. Infinite when either is undefined."""
+        cdef double V = self.compute_volume(y), te_ev, lt, nu_e = 0.0, k, t_loss, t_e
+        cdef Py_ssize_t p
+        te_ev = y[self.te_index] * (constants.R / constants.Na) / constants.e
+        lt = log(te_ev)
+        for p in range(self.energy_elastic_index.shape[0]):
+            k = (self.energy_elastic_params[p, 0] * te_ev ** self.energy_elastic_params[p, 1]
+                 * np.exp(self.energy_elastic_params[p, 2] * lt * lt
+                          + self.energy_elastic_params[p, 3] * lt * lt * lt))
+            nu_e += (3.0 * self.energy_elastic_mass_ratio[p] * k
+                     * y[self.energy_elastic_index[p]] * constants.Na / V)
+        nu_loss = self.energy_budget.get('nu_loss', 0.0)
+        t_loss = 1.0 / nu_loss if nu_loss > 0.0 else float('inf')
+        t_e = 1.0 / nu_e if nu_e > 0.0 else float('inf')
+        return PLASMA_EXTINCT_PERSIST_MULTIPLE * max(t_loss, t_e)
+
     def _update_terminal_state(self, np.ndarray y, double t):
-        """Count consecutive ACCEPTED steps at which the latched budget says extinct, with
-        nu_ionisation < PLASMA_EXTINCT_RATIO * nu_loss and |Te - Tg| <= PLASMA_EXTINCT_TE_BAND_K;
-        a miss restarts the count. At PLASMA_EXTINCT_STEPS the terminal state is recorded once,
-        with its time and state, for :meth:`terminal_state` to report. Energy balance only."""
+        """Judge extinction at an ACCEPTED state over PHYSICAL time. A call at a time not
+        after the last one counted never counts. The condition -- the latched budget
+        extinct, nu_ionisation < PLASMA_EXTINCT_RATIO nu_loss, |Te - Tg| <=
+        PLASMA_EXTINCT_TE_BAND_K -- must hold at every accepted step for
+        :meth:`extinction_persistence_time`; a miss restarts the clock. Only at P_abs = 0,
+        or once the discharge has been self-sustained. Energy balance only."""
         if not self.energy_balance or self.energy_terminal is not None:
             return
+        if not (t > self.energy_extinct_last_t) and not np.isnan(self.energy_extinct_last_t):
+            return
+        self.energy_extinct_last_t = t
         b = self.energy_budget
+        state = b['discharge_state']
+        if state == 'self-sustained':
+            self.energy_was_self_sustained = True
         te = y[self.te_index]
-        if (b['discharge_state'] == 'extinct' and b['nu_loss'] > 0.0
+        eligible = self.absorbed_power_total == 0.0 or self.energy_was_self_sustained
+        if not (eligible and state == 'extinct' and b['nu_loss'] > 0.0
                 and b['nu_ionisation'] < PLASMA_EXTINCT_RATIO * b['nu_loss']
                 and abs(te - self.T.value_si) <= PLASMA_EXTINCT_TE_BAND_K):
-            self.energy_extinct_streak += 1
-        else:
-            self.energy_extinct_streak = 0
-        if self.energy_extinct_streak >= PLASMA_EXTINCT_STEPS:
+            self.energy_extinct_since = float('nan')
+            return
+        if np.isnan(self.energy_extinct_since):
+            self.energy_extinct_since = t
+        tau = self.extinction_persistence_time(y)
+        if t - self.energy_extinct_since >= tau:
             self.energy_terminal = {
-                'termination': 'extinct', 't': t, 'Te': te, 'Tg': self.T.value_si,
-                'n_e': b['n_e'], 'nu_ionisation': b['nu_ionisation'], 'nu_loss': b['nu_loss'],
-                'streak': self.energy_extinct_streak, 'y': [float(v) for v in y]}
-            logging.info('PlasmaReactor: discharge extinct and holding at t = %.6g s (Te = %.4f K, '
-                         'Tg = %.4f K, nu_iz/nu_loss = %.3e, %d consecutive accepted steps); '
-                         'terminating as extinct. (%s)', t, te, self.T.value_si,
-                         b['nu_ionisation'] / b['nu_loss'], self.energy_extinct_streak,
-                         self._identity())
+                'termination': 'extinct', 't': t, 'since': self.energy_extinct_since,
+                'duration': t - self.energy_extinct_since, 'persistence_time': tau,
+                'Te': te, 'Tg': self.T.value_si, 'n_e': b['n_e'],
+                'nu_ionisation': b['nu_ionisation'], 'nu_loss': b['nu_loss'],
+                'nu_source': b['nu_source'], 'y': [float(v) for v in y]}
+            logging.info('PlasmaReactor: discharge extinct and holding from t = %.6g s to %.6g s '
+                         '(>= %.4g s, %g x the slower of 1/nu_loss and the energy-relaxation '
+                         'time; Te = %.4f K, Tg = %.4f K, nu_iz/nu_loss = %.3e); terminating as '
+                         'extinct. (%s)', self.energy_extinct_since, t, tau,
+                         PLASMA_EXTINCT_PERSIST_MULTIPLE, te, self.T.value_si,
+                         b['nu_ionisation'] / b['nu_loss'], self._identity())
 
     cpdef object terminal_state(self):
         """'extinct' once the extinction criterion has held (energy balance only), else None."""
@@ -1400,7 +1532,8 @@ cdef class PlasmaReactor(ReactionSystem):
         return self.energy_terminal['termination']
 
     def discharge_state(self):
-        """'sustained' or 'extinct' at the last accepted state (energy balance only)."""
+        """'self-sustained', 'source-supported' or 'extinct' at the last accepted state
+        (energy balance only; see classify_discharge)."""
         if not self.energy_balance:
             raise PlasmaStateError(
                 "discharge_state needs electron_energy_balance: with Te prescribed the "
@@ -1633,7 +1766,9 @@ cdef class PlasmaReactor(ReactionSystem):
         # consumer a valid interface before the first step, at t = 0.
         if self.has_wall:
             self._latch_wall_diagnostics(self.y0, self.compute_volume(self.y0), 0.0)
-        self.energy_extinct_streak = 0
+        self.energy_extinct_since = float('nan')
+        self.energy_extinct_last_t = float('nan')
+        self.energy_was_self_sustained = False
         self.energy_terminal = None
         if self.energy_balance:
             self.energy_history = []
@@ -1836,6 +1971,13 @@ cdef class PlasmaReactor(ReactionSystem):
             raise PlasmaStateError(
                 "initial electron amount must be finite and non-negative; got "
                 "{0!r}. ({1})".format(electron_amount, self._identity()))
+        if self.energy_balance and not electron_amount > 0.0:
+            raise PlasmaStateError(
+                "initial electron amount is {0!r} with electron_energy_balance declared: Te is "
+                "an energy per electron, so with no electrons the electron temperature is "
+                "undefined and the Te row cannot be evaluated. Seed a strictly positive "
+                "electron (and matching cation) amount. ({1})".format(
+                    electron_amount, self._identity()))
         # Zero initial electrons is admissible ONLY when an external ionisation_source is
         # declared. That source is a zeroth-order production of electron-ion pairs -- its
         # rate does not depend on n_e -- so it seeds the first electrons and the discharge
@@ -2855,7 +2997,7 @@ cdef class PlasmaReactor(ReactionSystem):
             return np.zeros(self.num_core_species, float)
         return self.wall_neutral_dn * self._neutral_wall_scale(y, V)
 
-    cpdef check_wall_support(self, np.ndarray y):
+    cpdef check_wall_support(self, np.ndarray y, bint accepted=True):
         """
         Refuse an ACCEPTED state that lies outside the transport model's domain.
 
@@ -2877,9 +3019,9 @@ cdef class PlasmaReactor(ReactionSystem):
         read off the floor, not off ``n_neutral``); an electron or ion population that is
         not finite and non-negative; any INDIVIDUAL neutral population negative (the
         aggregate can stay positive while one goes negative, and the source is
-        apportioned per species) beyond that species' own absolute tolerance -- a
-        neutral negative within it is decay-to-zero noise and is clamped to 0.0 in ``y``
-        instead; a net charge outside quasineutrality (a cation species
+        apportioned per species) -- in energy-balance mode, at an accepted step
+        (``accepted``, the default), a neutral negative within that species' own absolute
+        tolerance is decay-to-zero noise and is clamped to 0.0 in ``y`` instead; a net charge outside quasineutrality (a cation species
         can be present at zero MOLES, so the topology guard elsewhere does not see it),
         which would let the common loss frequency remove electrons with no ion partner;
         a declared ionisation source with no ionisable neutral inventory left to receive
@@ -2900,15 +3042,17 @@ cdef class PlasmaReactor(ReactionSystem):
                 # wall source and recycle over per-species populations, where a negative
                 # one becomes a negative (injecting) allocation. Inventory governs per
                 # species, not in total.
-                # A neutral that has decayed to zero is accepted as noise of either sign,
-                # bounded by its own absolute tolerance (the P=0 arm: Ars = -2e-32 mol at
-                # atol 1e-16). A negative no larger than that is inside the solver's
-                # stated resolution: clamp it to exactly zero in the state passed in -- the
-                # published accepted state -- rather than refuse. NEUTRALS only; a charged
-                # negative of any size stays refused below. The integrator's own history
-                # is not touched, and carries the same noise inside its tolerance.
-                if (y[j] < 0.0 and self.atol_array is not None
-                        and y[j] >= -self.atol_array[j]):
+                # ENERGY BALANCE ONLY, and at ACCEPTED steps only: a neutral that has decayed
+                # to zero is accepted as noise of either sign, bounded by its own absolute
+                # tolerance (the P=0 arm: Ars = -2e-32 mol at atol 1e-16). A negative no
+                # larger than that is inside the solver's stated resolution: clamp it to
+                # exactly zero in the state passed in -- the published accepted state --
+                # rather than refuse. NEUTRALS only; a charged negative of any size stays
+                # refused below. The initial composition (accepted=False) is input and is
+                # never repaired; with Te prescribed this is the pre-I-274 check exactly.
+                # The integrator's own history is not touched.
+                if (accepted and self.energy_balance and y[j] < 0.0
+                        and self.atol_array is not None and y[j] >= -self.atol_array[j]):
                     y[j] = 0.0
                 if not np.isfinite(y[j]) or y[j] < 0.0:
                     raise PlasmaStateError(
@@ -3381,6 +3525,17 @@ cdef class PlasmaReactor(ReactionSystem):
             self.y0[i] = mole_frac
         if self.energy_balance:
             self.y0[self.te_index] = self.te_initial
+            # The reactor is a fixed-inventory image of the chamber: its reference volume
+            # at t0 (heavy species at Tg; the electrons' share is excluded so the heating
+            # does not depend on Te0) scales the chamber's total P_abs onto it, once, before
+            # any residual is evaluated.
+            n_heavy = 0.0
+            for i in range(self.num_core_species):
+                if i != self.electron_index:
+                    n_heavy += self.y0[i]
+            self.energy_v_ref = n_heavy * constants.R * self.T.value_si / self.P.value_si
+            chamber = Quantity(self.electron_energy_balance['chamber_volume']).value_si
+            self.absorbed_power_reactor = self.absorbed_power_total * self.energy_v_ref / chamber
 
         # Non-positive electrons are refused for the same reason _validate_electron_state
         # refuses them upstream -- except that exactly zero is admissible when a positive
@@ -3471,7 +3626,7 @@ cdef class PlasmaReactor(ReactionSystem):
                     "({1})".format(y_neutral0, self._identity()))
             self.wall_neutral_density_floor = (
                 PLASMA_NEUTRAL_DENSITY_FLOOR_FRACTION * PLASMA_LOSCHMIDT)
-            self.check_wall_support(self.y0)
+            self.check_wall_support(self.y0, accepted=False)
 
     @cython.boundscheck(False)
     def residual(self, double t, np.ndarray[np.float64_t, ndim=1] y, np.ndarray[np.float64_t, ndim=1] dydt,

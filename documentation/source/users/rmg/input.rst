@@ -915,8 +915,9 @@ and power balances.  It needs a charged-particle wall::
 	    electronEnergyBalance={
 	        'absorbedPower': (0.5, 'W'),
 	        'sheath': 'floatingWall',
-	        'elasticCollisions': {'Ar': {'A': (2.336e-14, 'm^3/s'), 'n': 1.609,
-	                                     'b': 0.0618, 'c': -0.1171}},
+	        'elasticCollisions': {'Ar': {'A': (1.8017e-14, 'm^3/s'), 'n': 1.54096,
+	                                     'b': -0.019608, 'c': -0.057221},
+	                              'Ars': {'ignore': 'metastable fraction ~5e-8 of the gas'}},
 	        'electronEnergies': {'PlasmaArgon:86': (15.76, 'eV'),
 	                             'PlasmaArgon:89': (-11.548, 'eV'),
 	                             ...},
@@ -928,7 +929,10 @@ and power balances.  It needs a charged-particle wall::
   geometry has none).  This is a global-model **engineering intermediate**: it does not model how
   a real source couples its power.  A DC glow sustained by secondary emission needs a discharge
   current + sheath circuit closure, which is not implemented.  Never choose ``absorbedPower`` to
-  reproduce a measured electron density.
+  reproduce a measured electron density.  It is a total power: the reactor holds a fixed mole
+  inventory, not the chamber's, so it is treated as a scaled image of the chamber and receives
+  the constant ``absorbedPower * V_ref / V_chamber``, with ``V_ref`` its heavy-species volume at
+  the start.  The electrons' pdV work as they expand the constant-pressure volume is neglected.
 * ``electronEnergies`` -- for **every** library reaction an electron takes part in, keyed
   ``'<library>:<entry index>'``, the energy one event takes from the electrons (negative: a
   gain).  It is declared, never inferred: a lumped reaction's enthalpy change need not be what
@@ -939,7 +943,9 @@ and power balances.  It needs a charged-particle wall::
   electron-consuming reaction is in addition charged 3/2 k_B Te per consumed electron.
 * ``elasticCollisions`` -- per neutral partner, the momentum-transfer rate coefficient
   ``K_m = A Te^n exp(b ln(Te)^2 + c ln(Te)^3)`` (Te in eV; the form of the Lieberman &
-  Lichtenberg 2005 Table 3.3 fits), giving ``Q_elastic = 3 (m_e/M) K_m n_g n_e k_B (Te - Tgas)``.
+  Lichtenberg 2005 Table 3.3 fits), giving ``Q_elastic = 3 (m_e/M) K_m n_g n_e k_B (Te - Tgas)``,
+  or ``{'ignore': '<reason>'}`` to leave a partner's elastic loss out with the reason stated.
+  **Every** core neutral needs one or the other; an undeclared neutral is refused.
 * ``sheath='floatingWall'`` -- each electron lost at the wall carries ``2 k_B Te`` and each ion
   ``k_B Te (1/2 + 1/2 ln(M/2 pi m_e))`` (Bohm presheath plus floating sheath), both on the same
   flux the particle balance applies.  ``Q_flow`` is zero: the reactor is a closed batch.
@@ -949,13 +955,25 @@ energy change taken from the solver's own derivative, and ``discharge_state()`` 
 ``'sustained'`` when the discharge's own ionisation replaces at least half its electron loss,
 ``'extinct'`` otherwise (a decaying or source-held state).
 
+``discharge_state()`` names one of three states, from the discharge's own ionisation frequency,
+the external source's, and the electron loss frequency: ``'self-sustained'`` when its own
+ionisation replaces the loss (to ``1e-3``), ``'source-supported'`` when an ``ionisationSource``
+makes up the deficit, and ``'extinct'`` otherwise (the electron population is decaying).
+Electrons from the ``ionisationSource`` enter with zero energy.
+
 Extinction is a terminal state.  Once the discharge is extinct and stays so -- its own ionisation
 frequency below ``1e-6`` of its electron loss frequency and ``Te`` within 1 K of the gas
-temperature, at 10 consecutive accepted steps -- the simulation stops normally, logs the terminal
-state, and records it (time, ``Te``, ``n_e``, the frequencies and the state vector) in the
-reactor's ``energy_terminal``; ``terminal_state()`` then returns ``'extinct'``.  The decay of the
-dead plasma to its source-held floor is not integrated.  Without ``electronEnergyBalance`` the
-criterion is never evaluated.
+temperature -- over physical time for twice the slower of the electron loss time and the
+elastic energy-relaxation time, the simulation stops normally, logs the terminal state, and
+records it (start and end time, ``Te``, ``n_e``, the frequencies and the state vector) in the
+reactor's ``energy_terminal``; ``terminal_state()`` then returns ``'extinct'``.  It can happen only
+with ``absorbedPower`` zero or after the discharge has been self-sustained: a powered run started
+cold is not stopped while it heats.  The decay of the dead plasma to its source-held floor is not
+integrated.  Without ``electronEnergyBalance`` the criterion is never evaluated.
+
+The initial composition must carry electrons (Te is an energy per electron), and the initial
+``electronTemperature`` must be at least half the gas temperature, the lowest Te the balance
+evaluates.
 
 .. _simulatortolerances:
 

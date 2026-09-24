@@ -1536,35 +1536,18 @@ def _noise_reactor():
     return reactor, idx, y
 
 
-def test_check_wall_support_clamps_a_neutral_negative_within_its_own_atol():
-    """I-274 clause 5: once a neutral decays to zero the integrator's accepted value of
-    it is noise of either sign, bounded by that species' absolute tolerance -- the P=0
-    FULL arm was refused at Ars = -2e-32 mol with atol 1e-16. A negative no larger than
-    the species' OWN atol is inside the solver's stated resolution: it is clamped to
-    exactly zero in the accepted state, not refused. The clamp is applied to the array
-    passed in, which is the published accepted state on the step path."""
+def test_energy_off_wall_check_refuses_a_neutral_negative_within_atol():
+    """I-274 round 3: the neutral-noise clamp belongs to the energy balance. With Te
+    prescribed the wall check is exactly the pre-I-274 code: an individual negative neutral,
+    however small, is refused and left as it was."""
     reactor, idx, y = _noise_reactor()
+    assert not reactor.energy_balance
     atol = reactor.atol_array[idx['Ar']]
     y[idx['Ar']] = -0.5 * atol
-    reactor.check_wall_support(y)
-    assert y[idx['Ar']] == 0.0
-
-
-def test_neutral_noise_tolerance_is_the_species_own_atol():
-    """The bound is per species, not the deck-wide atol: raising one neutral's atol widens
-    only its tolerance, and a negative beyond a species' own atol is still refused."""
-    reactor, idx, y = _noise_reactor()
-    reactor.atol_array[idx['Ar']] = 1.0e-10
-    y[idx['Ar']] = -1.0e-12             # 1e4 x the deck atol, inside Ar's own
-    reactor.check_wall_support(y)
-    assert y[idx['Ar']] == 0.0
-    reactor, idx, y = _noise_reactor()
-    reactor.atol_array[idx['He']] = 1.0e-20
-    y[idx['He']] = -1.0e-18             # inside the deck atol, outside He's own
-    y[idx['Ar']] = 1.0
     with pytest.raises(PlasmaStateError) as exc:
         reactor.check_wall_support(y)
     assert 'negative' in str(exc.value)
+    assert y[idx['Ar']] == -0.5 * atol
 
 
 def test_neutral_negative_beyond_its_atol_is_still_refused_and_left_unclamped():

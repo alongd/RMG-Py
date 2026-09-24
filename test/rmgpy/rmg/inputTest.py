@@ -27,6 +27,7 @@
 #                                                                             #
 ###############################################################################
 
+import os
 from unittest.mock import patch
 
 import numpy as np
@@ -1101,6 +1102,28 @@ class TestInputPlasmaReactor:
         assert r2.absorbed_power_density == pytest.approx(r1.absorbed_power_density, rel=1e-12)
         assert r2.electron_energy_balance['electron_energies'] == r1.electron_energy_balance['electron_energies']
         assert r2.electron_energy_balance['elastic_collisions'] == r1.electron_energy_balance['elastic_collisions']
+
+    def test_production_argon_deck_declarations_are_pinned(self):
+        """The 5 torr argon energy-balance deck ships as an example; its load-bearing
+        declarations are pinned here: the LXCat Phelps elastic fit, the metastable's
+        explicit elastic ignore, the pooling credit (-7.3371 eV) and the m->r mixing
+        proxy (+0.0752 eV)."""
+        import rmgpy
+        path = os.path.join(os.path.dirname(os.path.dirname(rmgpy.__file__)), 'examples', 'rmg',
+                            'plasma_argon_energy_balance', 'input.py')
+        rmg = RMG()
+        inp.read_input_file(path, rmg)
+        decl = rmg.reaction_systems[0].electron_energy_balance
+        ar = decl['elastic_collisions']['Ar']
+        assert ar['A'] == (1.801726711209142e-14, 'm^3/s')
+        assert (ar['n'], ar['b'], ar['c']) == (1.5409569651442587, -0.019608394905836768,
+                                               -0.057221062443922666)
+        assert set(decl['elastic_collisions']['Ars']) == {'ignore'}
+        e = decl['electron_energies']
+        assert e['PlasmaArgon:90'][0] == pytest.approx(-7.3371, abs=5e-5) and e['PlasmaArgon:90'][1] == 'eV'
+        assert e['PlasmaArgon:91'][0] == pytest.approx(+0.0752, abs=5e-5) and e['PlasmaArgon:91'][1] == 'eV'
+        assert e['PlasmaArgon:89'][0] == pytest.approx(-11.5484, abs=5e-5)
+        assert e['PlasmaArgon:86'][0] == pytest.approx(15.7596, abs=5e-5)
 
     def test_electron_energy_balance_without_a_wall_is_refused(self, tmp_path):
         with pytest.raises(InputError, match='no charged-particle wall'):
