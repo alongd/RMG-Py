@@ -210,6 +210,13 @@ def _coerce_bool_flag(value, name, identity):
         "({3})".format(name, value, type(value).__name__, identity))
 
 
+def _is_finite_normal_positive(double v):
+    """The predicate behind :func:`_require_finite_normal_positive`, for a guard that
+    raises its own, more specific message: finite, and at least the smallest normal
+    double (so zero, negatives, subnormals and nan all fail)."""
+    return bool(np.isfinite(v) and v >= np.finfo(np.float64).tiny)
+
+
 def _require_finite_normal_positive(value, what, identity):
     """Return ``value`` as a float, or refuse it unless it is a finite, positive, NORMAL
     double.
@@ -224,12 +231,79 @@ def _require_finite_normal_positive(value, what, identity):
         v = float(value)
     except (TypeError, ValueError):
         v = float('nan')
-    if not (np.isfinite(v) and v >= np.finfo(np.float64).tiny):
+    if not _is_finite_normal_positive(v):
         raise PlasmaStateError(
             "{0} must be a finite, positive, normal number; got {1!r}. A non-finite, "
             "zero, negative or subnormal value cannot set a wall loss frequency. "
             "({2})".format(what, value, identity))
     return v
+
+
+def _reference_temperature_kelvin(value, what, identity, allow_si_float=False):
+    """Return a transport law's reference temperature in K, or refuse it.
+
+    It must be a ``(value, 'K')`` quantity; a bare number is refused rather than assumed
+    to be kelvin. The one exception is ``allow_si_float``, the ion key's ``__reduce__``
+    round-trip path, which hands back the stored SI float, as for
+    ``mobility_reference_density``; the neutral-diffusion declaration is stored as given
+    and never needs it. Only kelvin is accepted, as for ``electronTemperature``: an offset
+    scale ('degC') would be read as a multiplicative unit and give a wrong absolute
+    temperature, and a non-temperature has no business in (Tg/T_ref)^m.
+    """
+    if allow_si_float and isinstance(value, float):
+        t_ref = value
+    elif isinstance(value, (bool, int, float, np.number)):
+        raise PlasmaStateError(
+            "{0}={1!r} is a bare number; a reference temperature must carry its unit, "
+            "(value, 'K'), and is not assumed to be kelvin. ({2})".format(what, value, identity))
+    else:
+        try:
+            q = Quantity(value)
+            units = q.units
+        except Exception as exc:
+            raise PlasmaStateError(
+                "{0}={1!r} could not be read as a temperature ({2}); give it as "
+                "(value, 'K'). ({3})".format(what, value, exc, identity))
+        if units != 'K':
+            raise PlasmaStateError(
+                "{0} must be an absolute temperature in kelvin, (value, 'K'); got units "
+                "{1!r}. ({2})".format(what, units, identity))
+        t_ref = q.value_si
+    return _require_finite_normal_positive(t_ref, what, identity)
+
+
+def _temperature_exponent(value, what, identity):
+    """Return a transport law's temperature exponent as a float, or refuse it: it must be
+    a finite, dimensionless real number. A (value, units) pair, a bool and a string are
+    refused rather than coerced."""
+    if isinstance(value, (bool, np.bool_)) or not isinstance(value, (int, float, np.integer, np.floating)):
+        raise PlasmaStateError(
+            "{0} is the dimensionless exponent m of a (T/T_ref)^m law and must be a plain "
+            "real number; got {1!r}. A dimensioned or non-numeric exponent is refused. "
+            "({2})".format(what, value, identity))
+    # An int too large for a double (10**400) raises OverflowError from float(); it is the
+    # same failure as inf and gets the same named refusal.
+    try:
+        m = float(value)
+    except OverflowError:
+        m = float('inf')
+    if not np.isfinite(m):
+        raise PlasmaStateError(
+            "{0} is the exponent m of a (T/T_ref)^m law and must be finite; got {1!r}. "
+            "({2})".format(what, value, identity))
+    return m
+
+
+def _temperature_law_factor(t_gas, t_ref, m, what, identity):
+    """(t_gas/t_ref)^m, refused unless it is a finite, positive, normal number. With
+    t_ref == t_gas it is pow(1.0, m) = 1.0 exactly."""
+    try:
+        factor = (t_gas / t_ref) ** m
+    except OverflowError:
+        factor = float('inf')
+    return _require_finite_normal_positive(
+        factor, "the (T_gas/T_ref)^m factor of {0} (T_gas={1!r} K, T_ref={2!r} K, "
+        "m={3!r})".format(what, t_gas, t_ref, m), identity)
 
 
 cdef class PlasmaReactor(ReactionSystem):
@@ -299,6 +373,17 @@ cdef class PlasmaReactor(ReactionSystem):
     # parent gas; never fitted here.
     cdef public ScalarQuantity ion_reduced_mobility
     cdef public double mobility_reference_density        # m^-3
+    # Optional gas-temperature law for mu0*N_ref: mu0*N_ref * (Tg/T_ref)^m. Both or
+    # neither; None when undeclared (no sentinel), in which case mu0*N_ref is held at its
+    # declared value at every Tg. Tg is a fixed reactor input, so the factor
+    # (Tg/T_ref)^m is computed once, in _configure_wall; it is 1.0 when undeclared and
+    # compute_nu_wall then does not apply it at all.
+    cdef public object mobility_reference_temperature    # K, or None
+    cdef public object mobility_temperature_exponent     # dimensionless, or None
+    cdef public double mobility_T_factor
+    # None (the default: D_a = mu_i*k_B*Te/e, the Te >> Ti limit) or 'gas': D_a carries
+    # (1 + Ti/Te) with Ti = Tg, re-read against the current Te on every evaluation.
+    cdef public object ambipolar_ion_temperature
     # gamma: the fraction of ions neutralised at the wall whose heavy core returns
     # to the gas. 1.0 = fully recycling wall, 0.0 = fully pumping wall.
     cdef public double wall_recycling
@@ -449,7 +534,10 @@ cdef class PlasmaReactor(ReactionSystem):
                  wall_single_bath_approximation=False,
                  quasineutral_electron=False,
                  wall_neutral_diffusion=None,
-                 electron_energy_balance=None):
+                 electron_energy_balance=None,
+                 mobility_reference_temperature=None,
+                 mobility_temperature_exponent=None,
+                 ambipolar_ion_temperature=None):
         ReactionSystem.__init__(self, termination, sensitive_species, sensitivity_threshold)
 
         if isinstance(T, list) or isinstance(P, list) or isinstance(Te, list):
@@ -502,7 +590,10 @@ cdef class PlasmaReactor(ReactionSystem):
                              ionisation_source, max_ionisation_degree,
                              wall_single_bath_approximation,
                              quasineutral_electron,
-                             wall_neutral_diffusion)
+                             wall_neutral_diffusion,
+                             mobility_reference_temperature,
+                             mobility_temperature_exponent,
+                             ambipolar_ion_temperature)
         self._configure_energy_balance(electron_energy_balance)
 
     def _configure_wall(self, diffusion_length, ion_reduced_mobility,
@@ -511,7 +602,10 @@ cdef class PlasmaReactor(ReactionSystem):
                         ionisation_source, max_ionisation_degree,
                         wall_single_bath_approximation,
                         quasineutral_electron,
-                        wall_neutral_diffusion=None):
+                        wall_neutral_diffusion=None,
+                        mobility_reference_temperature=None,
+                        mobility_temperature_exponent=None,
+                        ambipolar_ion_temperature=None):
         """
         Validate and store the charged-particle wall boundary parameters.
 
@@ -590,6 +684,11 @@ cdef class PlasmaReactor(ReactionSystem):
                 supplied.append('max_ionisation_degree')
             if wall_neutral_diffusion:
                 supplied.append('wall_neutral_diffusion')
+            for name, value in (('mobility_reference_temperature', mobility_reference_temperature),
+                                ('mobility_temperature_exponent', mobility_temperature_exponent),
+                                ('ambipolar_ion_temperature', ambipolar_ion_temperature)):
+                if value is not None:
+                    supplied.append(name)
             if supplied:
                 raise PlasmaStateError(
                     "wall-only option(s) {0} were given, but there is no wall to apply "
@@ -679,6 +778,40 @@ cdef class PlasmaReactor(ReactionSystem):
                 "density (m^-3); got {0!r}. ({1})".format(
                     self.mobility_reference_density, self._identity()))
 
+        # Optional gas-temperature law for the reduced mobility, mu0*N_ref*(Tg/T_ref)^m.
+        # Half a law is refused, like half a wall: a reference temperature with no
+        # exponent (or the reverse) states no law. Undeclared, both stay None -- no
+        # internal default -- so __reduce__ hands back exactly what was declared.
+        self.mobility_reference_temperature = None
+        self.mobility_temperature_exponent = None
+        self.mobility_T_factor = 1.0
+        if (mobility_reference_temperature is None) != (mobility_temperature_exponent is None):
+            raise PlasmaStateError(
+                "a gas-temperature law for the ion reduced mobility needs BOTH "
+                "mobility_reference_temperature and mobility_temperature_exponent, but only "
+                "one was supplied (mobility_reference_temperature={0!r}, "
+                "mobility_temperature_exponent={1!r}). Supply both, or neither to hold "
+                "mu0*N_ref at its declared value at every gas temperature. ({2})".format(
+                    mobility_reference_temperature, mobility_temperature_exponent,
+                    self._identity()))
+        if mobility_reference_temperature is not None:
+            self.mobility_reference_temperature = _reference_temperature_kelvin(
+                mobility_reference_temperature, 'mobility_reference_temperature', self._identity(),
+                allow_si_float=True)
+            self.mobility_temperature_exponent = _temperature_exponent(
+                mobility_temperature_exponent, 'mobility_temperature_exponent', self._identity())
+            self.mobility_T_factor = _temperature_law_factor(
+                self.T.value_si, self.mobility_reference_temperature,
+                self.mobility_temperature_exponent, 'the ion reduced mobility law',
+                self._identity())
+        if ambipolar_ion_temperature is not None and not (
+                isinstance(ambipolar_ion_temperature, str) and ambipolar_ion_temperature == 'gas'):
+            raise PlasmaStateError(
+                "ambipolar_ion_temperature must be None (D_a = mu_i*k_B*Te/e, the Te >> Ti "
+                "limit) or 'gas' (D_a = mu_i*k_B*(Te + Tg)/e, ions at the gas temperature); "
+                "got {0!r}. ({1})".format(ambipolar_ion_temperature, self._identity()))
+        self.ambipolar_ion_temperature = ambipolar_ion_temperature
+
         # Each input above is finite and positive on its own, yet their COMBINATION can
         # still make nu_wall non-finite at RUN TIME -- and the guard must evaluate the SAME
         # expression the run time will, not a proxy for it. compute_nu_wall forms
@@ -694,24 +827,34 @@ cdef class PlasmaReactor(ReactionSystem):
             worst_n_neutral = PLASMA_NEUTRAL_DENSITY_FLOOR_FRACTION * PLASMA_LOSCHMIDT
             worst_mu_i = (self.ion_reduced_mobility.value_si
                           * self.mobility_reference_density / worst_n_neutral)
+            # The declared gas-temperature factors enter the run-time expression, so they
+            # enter the guard too: the mobility law's (Tg/T_ref)^m, and (1 + Tg/Te) at the
+            # initial Te. Neither is applied when undeclared.
+            if self.mobility_reference_temperature is not None:
+                worst_mu_i *= self.mobility_T_factor
             worst_nu = (worst_mu_i * (constants.R / constants.Na)
                         * self.Te.value_si / constants.e) / (
                         self.diffusion_length.value_si * self.diffusion_length.value_si)
-            if not np.isfinite(worst_nu) or worst_nu <= 0.0:
+            if self.ambipolar_ion_temperature is not None:
+                worst_nu *= 1.0 + self.T.value_si / self.Te.value_si
+            # The same predicate as _require_finite_normal_positive: a positive SUBNORMAL
+            # nu_wall is refused too, not only zero and non-finite values.
+            if not _is_finite_normal_positive(worst_nu):
                 raise PlasmaStateError(
                     "the wall loss frequency nu_wall = D_a/Lambda^2, evaluated at the "
                     "run-time worst case (mu_i = mu0*Nref/n_neutral at the neutral-density "
-                    "floor n_neutral={0!r} m^-3), is {1!r} s^-1, not a finite positive "
-                    "number: the combination of ion_reduced_mobility={2!r} m^2/(V*s), "
-                    "mobility_reference_density={3!r} m^-3, Te={4!r} K and "
-                    "diffusion_length={5!r} m overflows or underflows even though each is "
-                    "finite on its own -- most often because the product mu0*Nref is not "
-                    "finite. A reactor whose wall term cannot be evaluated is refused here "
-                    "rather than carried into the solver as a non-finite residual. "
-                    "({6})".format(
+                    "floor n_neutral={0!r} m^-3), is {1!r} s^-1, not a finite, positive, "
+                    "normal number: the combination of ion_reduced_mobility={2!r} m^2/(V*s), "
+                    "mobility_reference_density={3!r} m^-3, Te={4!r} K, "
+                    "diffusion_length={5!r} m and the declared mobility-law factor {6!r} "
+                    "overflows or underflows even though each is finite on its own -- most "
+                    "often because the product mu0*Nref is not finite. A reactor whose wall "
+                    "term cannot be evaluated is refused here rather than carried into the "
+                    "solver as a non-finite or subnormal residual. ({7})".format(
                         worst_n_neutral, worst_nu, self.ion_reduced_mobility.value_si,
                         self.mobility_reference_density, self.Te.value_si,
-                        self.diffusion_length.value_si, self._identity()))
+                        self.diffusion_length.value_si, self.mobility_T_factor,
+                        self._identity()))
 
         self.wall_recycling = float(wall_recycling)
         if not np.isfinite(self.wall_recycling) or not (0.0 <= self.wall_recycling <= 1.0):
@@ -813,9 +956,14 @@ cdef class PlasmaReactor(ReactionSystem):
 
         The reference diffusivity is given as a pressure product ``D*p`` (e.g.
         ``(47, 'cm^2*torr/s')``) or a density product ``D*N`` (``1/(m*s)``). ``D*p``
-        converts to ``D*N = D*p/(k_B*T_gas)`` at the reactor's gas temperature, so a
-        ``D*p`` quoted at another temperature is held at its reference value, not
+        converts to ``D*N = D*p/(k_B*T_gas)`` at the reactor's gas temperature. Without a
+        law, a ``D*p`` quoted at another temperature is held at its reference value, not
         rescaled -- the declaration states the value at the conditions it applies to.
+        The optional pair ``'referenceTemperature': (T_ref, 'K')`` and
+        ``'temperatureExponent': m`` (both or neither) declares the law
+        ``(D*p)(T_gas) = D*p * (T_gas/T_ref)^m``; for a ``D*N`` declaration ``m`` is the
+        exponent of ``D*N`` itself, i.e. ``m_p - 1``. The stored declaration keeps both
+        keys, so a copy or a saved input file carries the law.
 
         Shape, units and the sign/finiteness of the number are checked here, and so is
         the label graph: a chain of declarations that leads back to its start (Ar* -> Ar
@@ -846,17 +994,27 @@ cdef class PlasmaReactor(ReactionSystem):
                     "strings); got {0!r}. ({1})".format(label, self._identity()))
             if not isinstance(entry, dict):
                 raise PlasmaStateError(
-                    "wall_neutral_diffusion[{0!r}] must be a dict with exactly the keys "
-                    "'product' and 'diffusivity'; got {1!r}. ({2})".format(
+                    "wall_neutral_diffusion[{0!r}] must be a dict with the keys 'product' "
+                    "and 'diffusivity' (and optionally both of 'referenceTemperature' and "
+                    "'temperatureExponent'); got {1!r}. ({2})".format(
                         label, entry, self._identity()))
             missing = [k for k in ('product', 'diffusivity') if k not in entry]
-            unknown = sorted(repr(k) for k in entry if k not in ('product', 'diffusivity'))
+            unknown = sorted(repr(k) for k in entry
+                             if k not in ('product', 'diffusivity', 'referenceTemperature',
+                                          'temperatureExponent'))
             if missing or unknown:
                 raise PlasmaStateError(
-                    "wall_neutral_diffusion[{0!r}] must have exactly the keys 'product' "
-                    "and 'diffusivity'; missing {1}, unknown {2}. There is no default "
-                    "for either, and an unknown key is refused rather than ignored. "
-                    "({3})".format(label, missing, unknown, self._identity()))
+                    "wall_neutral_diffusion[{0!r}] must have the keys 'product' and "
+                    "'diffusivity', and may add both of 'referenceTemperature' and "
+                    "'temperatureExponent'; missing {1}, unknown {2}. There is no default "
+                    "for either required key, and an unknown key is refused rather than "
+                    "ignored. ({3})".format(label, missing, unknown, self._identity()))
+            if ('referenceTemperature' in entry) != ('temperatureExponent' in entry):
+                raise PlasmaStateError(
+                    "wall_neutral_diffusion[{0!r}] gives only one of 'referenceTemperature' "
+                    "and 'temperatureExponent'; a gas-temperature law for the diffusivity "
+                    "needs both, or neither to hold it at its declared value. "
+                    "({1})".format(label, self._identity()))
             product = entry['product']
             if not isinstance(product, str) or not product:
                 raise PlasmaStateError(
@@ -892,6 +1050,21 @@ cdef class PlasmaReactor(ReactionSystem):
                     "diffusivity carries no pressure scaling and is refused rather than "
                     "read at an assumed pressure. ({2})".format(
                         label, q.units, self._identity()))
+            law = 'referenceTemperature' in entry
+            if law:
+                # (T/T_ref)^m multiplies the converted D*N, for either spelling; for D*N the
+                # exponent is D*N's own. Undeclared, dn is today's expression untouched.
+                t_ref = _reference_temperature_kelvin(
+                    entry['referenceTemperature'],
+                    "wall_neutral_diffusion[{0!r}]['referenceTemperature']".format(label),
+                    self._identity())
+                m = _temperature_exponent(
+                    entry['temperatureExponent'],
+                    "wall_neutral_diffusion[{0!r}]['temperatureExponent']".format(label),
+                    self._identity())
+                dn = dn * _temperature_law_factor(
+                    self.T.value_si, t_ref, m,
+                    "wall_neutral_diffusion[{0!r}]".format(label), self._identity())
             dn = _require_finite_normal_positive(dn, what, self._identity())
             # Refuse, as compute_nu_wall's guard does, a combination that is finite on its
             # own but whose loss frequency is not, evaluated at the run-time worst case:
@@ -905,7 +1078,12 @@ cdef class PlasmaReactor(ReactionSystem):
                 "Lambda={3!r} m)".format(label, worst_n_neutral, dn,
                                          self.diffusion_length.value_si),
                 self._identity())
+            # The stored entry is what __reduce__ and the input writer serialise, so it must
+            # carry the law's keys too, or a copy or a saved deck silently loses the law.
             declaration[label] = {'product': product, 'diffusivity': diffusivity}
+            if law:
+                declaration[label]['referenceTemperature'] = entry['referenceTemperature']
+                declaration[label]['temperatureExponent'] = entry['temperatureExponent']
             dn_by_label[label] = dn
         for label in declaration:
             chain = [label]
@@ -1631,7 +1809,14 @@ cdef class PlasmaReactor(ReactionSystem):
                  self.wall_single_bath_approximation,
                  self.quasineutral_electron,
                  self.wall_neutral_diffusion,
-                 self.electron_energy_balance))
+                 self.electron_energy_balance,
+                 # None whenever undeclared (they are stored as None then, never as a
+                 # default), and unconditionally None without a wall, as for
+                 # mobility_reference_density: a wall-less copy must not trip the
+                 # no-wall refusal.
+                 (self.mobility_reference_temperature if self.has_wall else None),
+                 (self.mobility_temperature_exponent if self.has_wall else None),
+                 (self.ambipolar_ion_temperature if self.has_wall else None)))
 
     cpdef initialize_model(self, list core_species, list core_reactions, list edge_species, list edge_reactions,
                           list surface_species=None, list surface_reactions=None, list pdep_networks=None,
@@ -2942,10 +3127,15 @@ cdef class PlasmaReactor(ReactionSystem):
         construction rather than by cancellation.
 
         ``D_a = mu_i * k_B*T_e/e`` is the ``T_e >> T_i`` limit of
-        ``D_a = D_i (1 + T_e/T_i)``; it drops a factor ``(1 + T_i/T_e)``, which at
-        the ratios this reactor runs at is an underestimate of order 1%. That
-        approximation is carried as part of the transport interval, not corrected
-        away silently.
+        ``D_a = D_i (1 + T_e/T_i)``; it drops a factor ``(1 + T_i/T_e)``, which with
+        ``T_i = T_gas`` is an underestimate of ≈3 % at 298 K and ≈8 % at 1000 K (at
+        the solved Te of the 5 torr argon deck). That limit is the default;
+        ``ambipolar_ion_temperature='gas'`` restores the factor with ``T_i = T_gas``.
+
+        ``mu_0 N_ref`` is held at its declared value at every gas temperature unless a
+        law is declared (``mobility_reference_temperature`` and
+        ``mobility_temperature_exponent``), in which case it is scaled by the
+        precomputed ``(T_gas/T_ref)^m``.
 
         The ion mobility scales as ``1/n_neutral``, so ``nu_wall`` rises without
         bound as the neutral gas is consumed. That divergence is an artefact of
@@ -2981,9 +3171,16 @@ cdef class PlasmaReactor(ReactionSystem):
         if not (n_neutral > self.wall_neutral_density_floor):
             n_neutral = self.wall_neutral_density_floor
         mu_i = self.ion_reduced_mobility.value_si * self.mobility_reference_density / n_neutral
+        # Declared gas-temperature laws only; with neither declared, no extra operation runs
+        # and nu_wall is today's expression bit for bit.
+        if self.mobility_reference_temperature is not None:
+            mu_i *= self.mobility_T_factor
         # k_B*T_e/e in volts. constants.R / constants.Na is the same Boltzmann
         # constant compute_volume's EOS is built from, so the two never disagree.
         d_a = mu_i * (constants.R / constants.Na) * self.Te.value_si / constants.e
+        if self.ambipolar_ion_temperature is not None:
+            # Te is re-read here, not cached: under the energy balance it is solved.
+            d_a *= 1.0 + self.T.value_si / self.Te.value_si
         lam = self.diffusion_length.value_si
         return d_a / (lam * lam)
 

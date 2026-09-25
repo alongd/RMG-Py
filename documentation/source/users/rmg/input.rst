@@ -682,9 +682,18 @@ ambipolar transport sink, first order in each charged species::
 The loss frequency is shared by **every** charged species -- the electron and every ion alike::
 
 	mu_i    = ionReducedMobility * mobilityReferenceDensity / n_neutral
+	          [ * (Tg/mobilityReferenceTemperature)**mobilityTemperatureExponent ]
 	D_a     = mu_i * k_B * Te / e
+	          [ * (1 + Tg/Te)   with ambipolarIonTemperature='gas' ]
 	nu_wall = D_a / Lambda**2
 	loss_i  = nu_wall * n_i
+
+The bracketed factors apply only when declared (see below); without them the reduced mobility is
+held at its declared value at every gas temperature ``Tg``, and ``D_a`` is the ``Te >> Ti`` limit.
+The argon value ``1.535e-4 m^2/(V*s)`` used in the examples is attributed to H. W. Ellis,
+R. Y. Pai, E. W. McDaniel, E. A. Mason and L. A. Viehland, "Transport properties of gaseous ions
+over a wide energy range", *At. Data Nucl. Data Tables* **17**, 177 (1976),
+doi:10.1016/0092-640X(76)90001-2; the exact table entry behind 1.535 is unverified.
 
 One common frequency, not a separate lifetime per species: because the net charge then decays at a
 rate proportional to the net charge itself, which is zero in a quasineutral gas, no charge is
@@ -728,6 +737,27 @@ The remaining keywords are all optional:
   ``mobilityReferenceDensity=1e308`` with a large ``ionReducedMobility``) are refused, rather than
   admitted on the strength of a per-input check and then carried into the solver as an infinite
   ``nu_wall``.
+
+* ``mobilityReferenceTemperature`` and ``mobilityTemperatureExponent`` -- a gas-temperature law
+  for the reduced mobility, ``K0(Tg) = K0 * (Tg/T_ref)**m``, e.g.
+  ``mobilityReferenceTemperature=(300.0, 'K'), mobilityTemperatureExponent=-0.35``.  Both or
+  neither: half a law is refused.  ``T_ref`` is the gas temperature at which
+  ``ionReducedMobility`` was measured, in kelvin, finite and positive; ``m`` is a finite
+  dimensionless number.  Since ``Tg`` is a fixed reactor input, the factor is computed once.  For
+  Ar+ in Ar, **m = -0.35 is a heuristic value**, the effective slope over 300-1500 K of a
+  first-approximation Chapman-Enskog mobility built on the Phelps (1994) Ar+/Ar momentum-transfer
+  cross section; treat it as lying in the interval **-0.50 ... -0.30** (-0.50 is the pure
+  ``T**-1/2`` charge-transfer limit), not as a sourced number.  Declared with ``T_ref`` equal to
+  the reactor's gas temperature, the factor is exactly 1 and the result is unchanged.
+
+* ``ambipolarIonTemperature`` -- ``'gas'`` keeps the factor ``(1 + Ti/Te)`` in
+  ``D_a = mu_i k_B (Te + Ti)/e`` with ``Ti = Tg`` (ions at the gas temperature), re-evaluated
+  against the current ``Te`` whenever the energy balance solves it.  Omitted (the default), the
+  ``Te >> Ti`` limit ``D_a = mu_i k_B Te/e`` is used, which underestimates ``D_a`` by about 3 % at
+  298 K and 8 % at 1000 K in the 5 torr argon deck.  Any other value is refused.
+
+  These three keywords require a wall (``chamberGeometry`` and ``ionReducedMobility``), and are
+  written back when an input file is saved.
 
 * ``wallRecycling`` -- gamma, the fraction of wall-neutralised ions whose heavy core returns to
   the gas.  ``1.0`` (the default) is a fully recycling wall; ``0.0`` a fully pumping one.  For a
@@ -778,9 +808,20 @@ The remaining keywords are all optional:
   :math:`\nu_m = D_m/\Lambda^2`, with the wall's own diffusion length :math:`\Lambda` and
   :math:`D_m = (D N)_{ref}/n_{neutral}` -- the same neutral density, and the same numerical floor,
   as the ion mobility.  ``diffusivity`` is a reference pressure product :math:`D p` (converted at
-  the reactor's gas temperature, not rescaled with it) or a density product :math:`D N` in
-  ``1/(m*s)``; a bare diffusivity is refused, as are non-finite, zero, negative or subnormal
-  values.  Every lost molecule returns as ``product`` (no pumping), which must be a different,
+  the reactor's gas temperature, and without a law not rescaled with it) or a density product
+  :math:`D N` in ``1/(m*s)``; a bare diffusivity is refused, as are non-finite, zero, negative or
+  subnormal values.  The value 47 cm^2 torr/s for Ar(4s) metastables in argon follows from
+  W. Wieme and J. Lenaerts, "Diffusion of metastable atoms in rare gases", *Physica B+C* **98**,
+  229 (1980), doi:10.1016/0378-4363(80)90082-0, whose fit
+  :math:`D(1\ \mathrm{torr}) = 3.20(\pm 0.25)\times 10^{-3}\, T^{1.68(\pm 0.04)}` cm^2/s over
+  200-400 K gives 45.9 at 298.15 K and 47.0 at 302.2 K.  An entry may add both of
+  ``'referenceTemperature': (T_ref, 'K')`` and ``'temperatureExponent': m`` (both or neither) to
+  declare the law :math:`(D p)(T_g) = (D p)\,(T_g/T_{ref})^m`, e.g.
+  ``{'Ar*': {'product': 'Ar', 'diffusivity': (47.0, 'cm^2*torr/s'),
+  'referenceTemperature': (302.2, 'K'), 'temperatureExponent': 1.68}}``.  For a :math:`D N`
+  declaration, ``temperatureExponent`` is the exponent of :math:`D N` itself, i.e. :math:`m_p - 1`
+  for a :math:`D p` exponent :math:`m_p`.  Above 400 K the Wieme & Lenaerts exponent is an
+  extrapolation.  Every lost molecule returns as ``product`` (no pumping), which must be a different,
   uncharged, declared species with the same nuclei and skeleton (standard InChI without its charge
   layers, so an isotopologue such as 13C-DME cannot return as DME).  The wall only de-excites: the
   declared species must lie strictly above its product in thermo ``H298``, so **both need thermo**

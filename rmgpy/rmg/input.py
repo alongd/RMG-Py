@@ -540,7 +540,10 @@ def _plasma_inverse_lambda_squared(shape, dims):
 
 def _plasma_wall_kwargs(chamberGeometry, ionReducedMobility, mobilityReferenceDensity,
                         wallRecycling, ionisationSource, maxIonisationDegree,
-                        wallSingleBathApproximation=False):
+                        wallSingleBathApproximation=False,
+                        mobilityReferenceTemperature=None,
+                        mobilityTemperatureExponent=None,
+                        ambipolarIonTemperature=None):
     """
     Turn the ``plasmaReactor(...)`` wall keywords into :class:`PlasmaReactor`
     constructor arguments, resolving a named chamber shape into a diffusion length.
@@ -557,7 +560,10 @@ def _plasma_wall_kwargs(chamberGeometry, ionReducedMobility, mobilityReferenceDe
                                    ('ionisationSource', ionisationSource, None),
                                    ('mobilityReferenceDensity', mobilityReferenceDensity, None),
                                    ('maxIonisationDegree', maxIonisationDegree, None),
-                                   ('wallSingleBathApproximation', wallSingleBathApproximation, False)):
+                                   ('wallSingleBathApproximation', wallSingleBathApproximation, False),
+                                   ('mobilityReferenceTemperature', mobilityReferenceTemperature, None),
+                                   ('mobilityTemperatureExponent', mobilityTemperatureExponent, None),
+                                   ('ambipolarIonTemperature', ambipolarIonTemperature, None)):
             if value != inert:
                 raise InputError(
                     "{0}={1!r} was given but no charged-particle wall was declared, so it "
@@ -666,6 +672,55 @@ def _plasma_wall_kwargs(chamberGeometry, ionReducedMobility, mobilityReferenceDe
         'ion_reduced_mobility': (mobility.value_si, 'm^2/(V*s)'),
         'wall_recycling': wallRecycling,
     }
+
+    # Optional gas-temperature law for the reduced mobility, K0(Tg) = K0*(Tg/T_ref)^m.
+    # Both keywords or neither: half a law states nothing, and is refused like half a wall.
+    if (mobilityReferenceTemperature is None) != (mobilityTemperatureExponent is None):
+        raise InputError(
+            "a gas-temperature law for ionReducedMobility needs BOTH "
+            "mobilityReferenceTemperature and mobilityTemperatureExponent, but only one was "
+            "supplied (mobilityReferenceTemperature={0!r}, mobilityTemperatureExponent={1!r}). "
+            "Supply both, or neither to hold the mobility at its declared value at every gas "
+            "temperature.".format(mobilityReferenceTemperature, mobilityTemperatureExponent))
+    if mobilityReferenceTemperature is not None:
+        try:
+            t_ref = Quantity(mobilityReferenceTemperature)
+        except Exception as exc:
+            raise InputError(
+                "mobilityReferenceTemperature={0!r} could not be read as a temperature ({1}); "
+                "give it as (value, 'K').".format(mobilityReferenceTemperature, exc))
+        if t_ref.units != 'K':
+            raise InputError(
+                "mobilityReferenceTemperature is the gas temperature at which "
+                "ionReducedMobility was measured and must be given in kelvin, e.g. "
+                "(300.0, 'K'); got units {0!r}.".format(t_ref.units))
+        if not np.isfinite(t_ref.value_si) or t_ref.value_si <= 0.0:
+            raise InputError(
+                "mobilityReferenceTemperature must be a finite, strictly positive "
+                "temperature; got {0!r} K.".format(t_ref.value_si))
+        # float() first, under try: np.isfinite on an int too large for a double (10**400)
+        # raises TypeError, and float() raises OverflowError; both are the non-finite case.
+        exponent_ok = (not isinstance(mobilityTemperatureExponent, bool)
+                       and isinstance(mobilityTemperatureExponent, (int, float)))
+        if exponent_ok:
+            try:
+                exponent_ok = bool(np.isfinite(float(mobilityTemperatureExponent)))
+            except OverflowError:
+                exponent_ok = False
+        if not exponent_ok:
+            raise InputError(
+                "mobilityTemperatureExponent is the dimensionless exponent m of "
+                "K0 ~ Tg^m and must be a finite plain number, e.g. -0.35; got "
+                "{0!r}.".format(mobilityTemperatureExponent))
+        kwargs['mobility_reference_temperature'] = float(t_ref.value_si)
+        kwargs['mobility_temperature_exponent'] = float(mobilityTemperatureExponent)
+    if ambipolarIonTemperature is not None:
+        if ambipolarIonTemperature != 'gas' or not isinstance(ambipolarIonTemperature, str):
+            raise InputError(
+                "ambipolarIonTemperature must be 'gas' (D_a carries (1 + Tg/Te), ions at "
+                "the gas temperature) or omitted (the Te >> Ti limit); got "
+                "{0!r}.".format(ambipolarIonTemperature))
+        kwargs['ambipolar_ion_temperature'] = 'gas'
 
     if mobilityReferenceDensity is not None:
         ref = Quantity(mobilityReferenceDensity)
@@ -828,6 +883,9 @@ def plasma_reactor(temperature,
                    chamberGeometry=None,
                    ionReducedMobility=None,
                    mobilityReferenceDensity=None,
+                   mobilityReferenceTemperature=None,
+                   mobilityTemperatureExponent=None,
+                   ambipolarIonTemperature=None,
                    wallRecycling=1.0,
                    wallNeutralizationProducts=None,
                    wallNeutralDiffusion=None,
@@ -933,11 +991,19 @@ def plasma_reactor(temperature,
     adjust it until a computed electron density matches an expected one.
 
     ``ionReducedMobility`` is the measured zero-field reduced mobility of the dominant ion
-    in its parent gas, e.g. ``(1.535e-4, 'm^2/(V*s)')`` for Ar+ in Ar (Ellis, McDaniel &
-    Albritton, At. Data Nucl. Data Tables 17 (1976) 177). It is quoted at
-    ``mobilityReferenceDensity``, which defaults to the Loschmidt constant -- the density
-    such compilations normalise to. Changing that default means reading the tabulated
-    mobility as something it is not.
+    in its parent gas, e.g. ``(1.535e-4, 'm^2/(V*s)')`` for Ar+ in Ar (Ellis, Pai, McDaniel,
+    Mason & Viehland, At. Data Nucl. Data Tables 17, 177 (1976),
+    doi:10.1016/0092-640X(76)90001-2; the exact table entry behind 1.535 is unverified). It
+    is quoted at ``mobilityReferenceDensity``, which defaults to the Loschmidt constant --
+    the density such compilations normalise to. Changing that default means reading the
+    tabulated mobility as something it is not.
+
+    Without a law, the reduced mobility is held at its declared value at every gas
+    temperature. ``mobilityReferenceTemperature=(T_ref, 'K')`` together with
+    ``mobilityTemperatureExponent=m`` declare ``K0(Tg) = K0*(Tg/T_ref)**m`` (both or
+    neither). ``ambipolarIonTemperature='gas'`` keeps the ``(1 + Ti/Te)`` factor of
+    ``D_a`` with ``Ti = Tg``; omitted, ``D_a = mu_i*k_B*Te/e`` (the ``Te >> Ti`` limit).
+    All three require a wall.
 
     ``wallRecycling`` is gamma, the fraction of wall-neutralised ions whose heavy core
     returns to the gas: ``1.0`` (the default) is a fully recycling wall, ``0.0`` a fully
@@ -1344,7 +1410,10 @@ def plasma_reactor(temperature,
     wall_kwargs = _plasma_wall_kwargs(
         chamberGeometry, ionReducedMobility, mobilityReferenceDensity,
         wallRecycling, ionisationSource, maxIonisationDegree,
-        wallSingleBathApproximation=wallSingleBathApproximation)
+        wallSingleBathApproximation=wallSingleBathApproximation,
+        mobilityReferenceTemperature=mobilityReferenceTemperature,
+        mobilityTemperatureExponent=mobilityTemperatureExponent,
+        ambipolarIonTemperature=ambipolarIonTemperature)
 
     # wallNeutralizationProducts names, per ion, the neutral GROUND STATE it returns as
     # at the wall -- the escape hatch for the case the energy rule cannot infer (two
@@ -1393,8 +1462,9 @@ def plasma_reactor(temperature,
         if not isinstance(wallNeutralDiffusion, dict):
             raise InputError(
                 "wallNeutralDiffusion must be a dict mapping an excited neutral label to "
-                "{{'product': <ground-state label>, 'diffusivity': (D*p, 'cm^2*torr/s')}}; "
-                "got {0!r}.".format(wallNeutralDiffusion))
+                "{{'product': <ground-state label>, 'diffusivity': (D*p, 'cm^2*torr/s')}}, "
+                "optionally with both 'referenceTemperature': (T_ref, 'K') and "
+                "'temperatureExponent': m for D*p ~ Tg^m; got {0!r}.".format(wallNeutralDiffusion))
         for label, entry in wallNeutralDiffusion.items():
             names = [('excited species', label)]
             if isinstance(entry, dict) and 'product' in entry:
@@ -2771,6 +2841,14 @@ def _format_plasma_wall(system):
                      ''.format(system.ion_reduced_mobility.value_si))
         lines.append('    mobilityReferenceDensity = ({0!r},"m^-3"),\n'
                      ''.format(system.mobility_reference_density))
+        if system.mobility_reference_temperature is not None:
+            lines.append('    mobilityReferenceTemperature = ({0!r},"K"),\n'
+                         ''.format(system.mobility_reference_temperature))
+            lines.append('    mobilityTemperatureExponent = {0!r},\n'
+                         ''.format(system.mobility_temperature_exponent))
+        if system.ambipolar_ion_temperature is not None:
+            lines.append('    ambipolarIonTemperature = {0!r},\n'
+                         ''.format(system.ambipolar_ion_temperature))
         lines.append('    wallRecycling = {0!r},\n'.format(system.wall_recycling))
         if system.wall_neutralization_products:
             # The declaration fallback for what energy inference cannot resolve; it
