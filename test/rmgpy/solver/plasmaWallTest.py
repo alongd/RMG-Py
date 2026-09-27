@@ -43,6 +43,7 @@ as a loss frequency, a charge, a ratio, or a conservation statement.
 
 import copy
 import logging
+import math
 import os
 import pickle
 import re
@@ -224,6 +225,524 @@ def test_wall_loss_is_first_order_in_electron_population():
         "normalising the electron wall flux to the neutral population instead "
         "of the electron population should be orders of magnitude off nu_wall, "
         "but was only {0!r}".format(per_neutral / nu))
+
+
+def test_per_ion_wall_losses_preserve_charge_and_return_dimer_atoms():
+    """An opt-in mobility map gives each cation its own ambipolar loss and
+    returns two Ar atoms for one Ar2+ neutralised at a fully recycling wall."""
+    electron, ar, arp = _argon_species()
+    ar2p = Species(label='Ar2+').from_adjacency_list(
+        'multiplicity 2\n1 Ar u0 p3 c+1 {2,S}\n2 Ar u1 p3 c0 {1,S}')
+    reactor = PlasmaReactor(
+        (TGAS, 'K'), (P_NOMINAL, 'Pa'),
+        {electron: 5e-6, ar: 1.0, arp: 2e-6, ar2p: 3e-6},
+        (TE_NOMINAL_EV * EV_TO_K, 'K'), diffusion_length=(_diffusion_length(), 'm'),
+        ion_reduced_mobilities={'Ar+': (MU0_AR_IN_AR, 'm^2/(V*s)'),
+                                'Ar2+': (2.0 * MU0_AR_IN_AR, 'm^2/(V*s)')},
+        wall_neutralization_products={'Ar+': 'Ar', 'Ar2+': ('Ar', 2)}, wall_recycling=1.0)
+    core = [electron, ar, arp, ar2p]
+    reactor.initialize_model(core, [], [], [])
+    y = np.array([5e-6, 1.0, 2e-6, 3e-6])
+    res = reactor.residual(0.0, y, np.zeros(4))[0]
+    ie, iar, iarp, iar2p = 0, 1, 2, 3
+    wall = reactor.wall_loss_rates
+    nu1, nu2 = -wall[iarp] / y[iarp], -wall[iar2p] / y[iar2p]
+    assert nu2 / nu1 == pytest.approx(2.0, rel=1e-14)
+    assert wall[ie] == wall[iarp] + wall[iar2p]
+    assert wall[iar] == -(wall[iarp] + 2.0 * wall[iar2p])
+    assert res[iarp] == wall[iarp]
+    assert res[iar2p] == wall[iar2p]
+    assert res[ie] == wall[ie]
+
+
+def test_per_ion_wall_jacobian_matches_finite_difference():
+    """The mobility-map wall Jacobian differentiates per-ion losses, their
+    charge-weighted electron partner, and multiplicity-aware recycling."""
+    electron, ar, arp = _argon_species()
+    ar2p = Species(label='Ar2+').from_adjacency_list(
+        'multiplicity 2\n1 Ar u0 p3 c+1 {2,S}\n2 Ar u1 p3 c0 {1,S}')
+    reactor = PlasmaReactor(
+        (TGAS, 'K'), (P_NOMINAL, 'Pa'),
+        {electron: 5e-6, ar: 1.0, arp: 2e-6, ar2p: 3e-6},
+        (TE_NOMINAL_EV * EV_TO_K, 'K'), diffusion_length=(_diffusion_length(), 'm'),
+        ion_reduced_mobilities={'Ar+': (MU0_AR_IN_AR, 'm^2/(V*s)'),
+                                'Ar2+': (2.0 * MU0_AR_IN_AR, 'm^2/(V*s)')},
+        wall_neutralization_products={'Ar+': 'Ar', 'Ar2+': ('Ar', 2)}, wall_recycling=0.5)
+    reactor.initialize_model([electron, ar, arp, ar2p], [], [], [])
+    best = _jacobian_scan(reactor, np.array([5e-6, 1.0, 2e-6, 3e-6]))
+    assert best < FD_TOLERANCE, best
+
+
+def _scalar_dimer_reactor(gamma=1.0):
+    """A LEGACY SCALAR-MODE wall reactor (single ion_reduced_mobility, no
+    ion_reduced_mobilities map) whose only ion is Ar2+, declared via a tuple
+    wallNeutralizationProducts product ('Ar', 2). Thermo is attached to Ar and
+    Ar2+ so the neutralisation energy diagnostic (h_ion - m*h_neu) is available,
+    which is what the Round-49 bug report's 'energy term consistent' check reads
+    against the atom-conserving flux fixed at the same three sites."""
+    electron = Species(label='e-').from_adjacency_list('1 e u1 p0 c-1')
+    ar = Species(label='Ar').from_adjacency_list('1 Ar u0 p4 c0')
+    ar.thermo = _argon_thermo(0.0)
+    ar2p = Species(label='Ar2+').from_adjacency_list(
+        'multiplicity 2\n1 Ar u0 p3 c+1 {2,S}\n2 Ar u1 p3 c0 {1,S}')
+    ar2p.thermo = _thermo_with_h298(1000.0)
+    reactor = PlasmaReactor(
+        (TGAS, 'K'), (P_NOMINAL, 'Pa'),
+        {electron: 3e-6, ar: 1.0, ar2p: 3e-6},
+        (TE_NOMINAL_EV * EV_TO_K, 'K'), diffusion_length=(_diffusion_length(), 'm'),
+        ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
+        wall_neutralization_products={'Ar2+': ('Ar', 2)}, wall_recycling=gamma)
+    core = [electron, ar, ar2p]
+    reactor.initialize_model(core, [], [], [])
+    return reactor, core
+
+
+def test_scalar_mode_ar2p_recycling_conserves_atoms():
+    """Round 49: in legacy SCALAR mode (no ion_reduced_mobilities map), a tuple
+    wallNeutralizationProducts product must still conserve atoms -- the same
+    ('Ar', 2) declaration that map mode already honours. Before the fix, the
+    residual/latched-flux sites gated the multiplicity on map mode only, so a
+    scalar-mode Ar2+ returned one Ar per ion instead of two, silently losing
+    atoms. The energy diagnostic was already mode-independent, which is the
+    tell this test also checks: the atom-conserving flux and the multiplicity-
+    scaled energy drop must agree on the same recycle_multiplicity."""
+    reactor, core = _scalar_dimer_reactor(gamma=1.0)
+    ie, iar, iar2p = 0, 1, 2
+    y = np.array([3e-6, 1.0, 3e-6])
+    res = reactor.residual(0.0, y, np.zeros(3))[0]
+    wall = reactor.wall_loss_rates
+    # One common scalar nu for every charged species: the ion loses at nu*y, and
+    # (with a single ion species) all of it is Ar2+, so ion wall loss = -wall[iar2p].
+    ion_wall_loss = -wall[iar2p]
+    assert ion_wall_loss > 0.0
+    # Argon atom flux returned = 2 x ion wall loss (fully recycling wall).
+    assert wall[iar] == pytest.approx(2.0 * ion_wall_loss, rel=1e-14)
+    assert res[iar2p] == wall[iar2p]
+    assert res[iar] == wall[iar]
+    assert res[ie] == wall[ie]
+
+    # Energy term consistent: _latch_wall_diagnostics is mode-independent and was
+    # already applying the multiplicity to delta_h; after the fix the flux is
+    # multiplicity-consistent with it too.
+    reactor._latch_wall_diagnostics(y, reactor.compute_volume(y), 0.0)
+    # The latched flux carries the same atom-conserving return as the residual.
+    assert reactor.wall_flux[iar2p] == pytest.approx(-ion_wall_loss, rel=1e-14)
+    assert reactor.wall_flux[iar] == pytest.approx(2.0 * ion_wall_loss, rel=1e-14)
+    dh = reactor.wall_neutralization_delta_h[iar2p]
+    assert np.isfinite(dh)
+    h_ion = reactor._species_enthalpy(core[iar2p], TGAS)
+    h_neu = reactor._species_enthalpy(core[iar], TGAS)
+    assert dh == pytest.approx(h_ion - 2.0 * h_neu, rel=1e-12)
+    assert reactor.wall_energy_availability['wall_neutralization_energy_flux'] == 'available'
+    assert reactor.wall_neutralization_energy_flux == pytest.approx(dh * ion_wall_loss, rel=1e-12)
+
+
+def test_scalar_mode_ar2p_wall_jacobian_matches_finite_difference():
+    """Round 49 test (b): the scalar-mode wall Jacobian for a tuple-product Ar2+
+    recycling case agrees with a finite difference, reusing the existing FD scan
+    helper. Exercises the scalar Jacobian fix at _apply_wall_jacobian's else
+    branch (~line 4735)."""
+    reactor, core = _scalar_dimer_reactor(gamma=0.5)
+    best = _jacobian_scan(reactor, np.array([3e-6, 1.0, 3e-6]))
+    assert best < FD_TOLERANCE, best
+
+
+def test_scalar_mode_ar2p_matches_map_mode_multiplicity_regression():
+    """Round 49 test (c): the same Ar2+ tuple-product recycling in MAP mode
+    (an ion_reduced_mobilities map, not a scalar ion_reduced_mobility) still
+    conserves atoms exactly as it did before the fix -- the map-mode branch of
+    all three sites was already correct and untouched by the Round-49 edits.
+    This is the mode-parity companion to
+    test_scalar_mode_ar2p_recycling_conserves_atoms above."""
+    electron, ar, arp = _argon_species()
+    ar2p = Species(label='Ar2+').from_adjacency_list(
+        'multiplicity 2\n1 Ar u0 p3 c+1 {2,S}\n2 Ar u1 p3 c0 {1,S}')
+    reactor = PlasmaReactor(
+        (TGAS, 'K'), (P_NOMINAL, 'Pa'),
+        {electron: 5e-6, ar: 1.0, arp: 2e-6, ar2p: 3e-6},
+        (TE_NOMINAL_EV * EV_TO_K, 'K'), diffusion_length=(_diffusion_length(), 'm'),
+        ion_reduced_mobilities={'Ar+': (MU0_AR_IN_AR, 'm^2/(V*s)'),
+                                'Ar2+': (2.0 * MU0_AR_IN_AR, 'm^2/(V*s)')},
+        wall_neutralization_products={'Ar+': 'Ar', 'Ar2+': ('Ar', 2)}, wall_recycling=1.0)
+    core = [electron, ar, arp, ar2p]
+    reactor.initialize_model(core, [], [], [])
+    y = np.array([5e-6, 1.0, 2e-6, 3e-6])
+    res = reactor.residual(0.0, y, np.zeros(4))[0]
+    ie, iar, iarp, iar2p = 0, 1, 2, 3
+    wall = reactor.wall_loss_rates
+    nu1, nu2 = -wall[iarp] / y[iarp], -wall[iar2p] / y[iar2p]
+    assert nu2 / nu1 == pytest.approx(2.0, rel=1e-14)
+    assert wall[iar] == -(wall[iarp] + 2.0 * wall[iar2p])
+    assert res[iar2p] == wall[iar2p]
+    assert res[ie] == wall[ie]
+
+
+@pytest.mark.parametrize('copy_kind', ('pickle', 'deepcopy'))
+def test_mapped_wall_round_trip_preserves_only_the_map(copy_kind):
+    """Mapped walls reconstruct without also passing the synthetic scalar mobility."""
+    electron, ar, arp = _argon_species()
+    ar2p = Species(label='Ar2+').from_adjacency_list(
+        'multiplicity 2\n1 Ar u0 p3 c+1 {2,S}\n2 Ar u1 p3 c0 {1,S}')
+    mapped = {'Ar+': (MU0_AR_IN_AR, 'm^2/(V*s)'),
+              'Ar2+': (2 * MU0_AR_IN_AR, 'm^2/(V*s)')}
+    reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'),
+        {electron: 5e-6, ar: 1.0, arp: 2e-6, ar2p: 3e-6},
+        (TE_NOMINAL_EV * EV_TO_K, 'K'), diffusion_length=(_diffusion_length(), 'm'),
+        ion_reduced_mobilities=mapped,
+        wall_neutralization_products={'Ar+': 'Ar', 'Ar2+': ('Ar', 2)})
+    reactor.initialize_model([electron, ar, arp, ar2p], [], [], [])
+    clone = pickle.loads(pickle.dumps(reactor)) if copy_kind == 'pickle' else copy.deepcopy(reactor)
+    assert clone.ion_reduced_mobilities == mapped
+    clone.initialize_model(list(clone.initial_mole_fractions), [], [], [])
+
+
+def test_compute_nu_wall_refuses_map_mode_scalar_answer():
+    """Map mode must not publish a plausible first-ion scalar frequency."""
+    electron, ar, arp = _argon_species()
+    reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'),
+        {electron: 1e-6, ar: 1.0, arp: 1e-6}, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+        diffusion_length=(_diffusion_length(), 'm'),
+        ion_reduced_mobilities={'Ar+': (MU0_AR_IN_AR, 'm^2/(V*s)')})
+    reactor.initialize_model([electron, ar, arp], [], [], [])
+    with pytest.raises(PlasmaStateError, match='no single physical value'):
+        reactor.compute_nu_wall(reactor.y0, reactor.compute_volume(reactor.y0))
+
+
+def test_multi_ion_sheath_root_reproduces_one_ion_legacy_factor_to_one_ulp():
+    """The map's common-Maxwellian root has the exact one-cation limit.
+
+    For one positive flux, log(Gamma*exp(f-1/2)/Gamma) is f-1/2, so the
+    common ion-energy factor 1/2+phi agrees with the legacy mass factor to
+    at most one IEEE-754 ulp.
+    """
+    _, _, arp = _argon_species()
+    legacy = 0.5 + 0.5 * np.log(arp.molecular_weight.value_si /
+                                (2.0 * np.pi * constants.m_e))
+    gamma = np.float64(3.0)
+    phi = np.log(gamma * np.exp(legacy - 0.5) / gamma)
+    root_factor = 0.5 + phi
+    assert abs(root_factor - legacy) <= np.spacing(legacy)
+
+
+def test_mapped_energy_residual_uses_common_flux_weighted_sheath():
+    """Exercise the reactor energy residual, not a standalone sheath formula."""
+    electron, ar, arp = _argon_species()
+    ar2p = Species(label='Ar2+').from_adjacency_list(
+        'multiplicity 2\n1 Ar u0 p3 c+1 {2,S}\n2 Ar u1 p3 c0 {1,S}')
+    energy = {'absorbed_power': (0.0, 'W'), 'chamber_volume': (1e-3, 'm^3'),
+              'sheath': 'floating_wall', 'electron_energies': {},
+              'elastic_collisions': {'Ar': {'ignore': 'wall-sheath unit test'}}}
+    r = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'),
+        {electron: 5e-6, ar: 1.0, arp: 2e-6, ar2p: 3e-6},
+        (TE_NOMINAL_EV * EV_TO_K, 'K'), diffusion_length=(_diffusion_length(), 'm'),
+        ion_reduced_mobilities={'Ar+': (MU0_AR_IN_AR, 'm^2/(V*s)'),
+                                'Ar2+': (2*MU0_AR_IN_AR, 'm^2/(V*s)')},
+        wall_neutralization_products={'Ar+': 'Ar', 'Ar2+': ('Ar', 2)},
+        electron_energy_balance=energy)
+    r.initialize_model([electron, ar, arp, ar2p], [], [], [])
+    y = r.y0.copy(); r.residual(0.0, y, np.zeros(r.neq))
+    flux = -r.wall_loss_rates
+    ions = [i for i in range(r.num_core_species) if r.species_charges[i] > 0]
+    total = sum(flux[i] for i in ions)
+    phi = np.log(sum(flux[i] * np.exp(r.energy_ion_sheath_factor[i] - .5) for i in ions) / total)
+    observed = r.electron_energy_terms['Q_wall_ion'] / (constants.R * r.Te.value_si * total) - .5
+    assert observed == pytest.approx(phi, rel=1e-12)
+
+
+def test_mapped_energy_residual_ions_have_unequal_mass_and_unequal_flux():
+    """The existing common-sheath test above already exercises two cations of
+    unequal mass with unequal flux through the reactor -- this test just makes
+    that fact explicit and permanent, rather than adding a duplicate. Ar2+ is
+    twice the mass of Ar+, seeded at a different mole fraction (3e-6 vs 2e-6)
+    and given twice the mobility, so its wall flux is not incidentally equal
+    to Ar+'s."""
+    electron, ar, arp = _argon_species()
+    ar2p = Species(label='Ar2+').from_adjacency_list(
+        'multiplicity 2\n1 Ar u0 p3 c+1 {2,S}\n2 Ar u1 p3 c0 {1,S}')
+    assert not math.isclose(ar2p.molecular_weight.value_si, arp.molecular_weight.value_si,
+                            rel_tol=1e-6)
+    r = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'),
+        {electron: 5e-6, ar: 1.0, arp: 2e-6, ar2p: 3e-6},
+        (TE_NOMINAL_EV * EV_TO_K, 'K'), diffusion_length=(_diffusion_length(), 'm'),
+        ion_reduced_mobilities={'Ar+': (MU0_AR_IN_AR, 'm^2/(V*s)'),
+                                'Ar2+': (2 * MU0_AR_IN_AR, 'm^2/(V*s)')},
+        wall_neutralization_products={'Ar+': 'Ar', 'Ar2+': ('Ar', 2)})
+    r.initialize_model([electron, ar, arp, ar2p], [], [], [])
+    y = r.y0.copy()
+    r.residual(0.0, y, np.zeros(r.neq))
+    ions = [i for i in range(r.num_core_species) if r.species_charges[i] > 0]
+    flux = -r.wall_loss_rates
+    assert flux[ions[0]] != pytest.approx(flux[ions[1]], rel=1e-6)
+
+
+def test_invalid_per_ion_flux_falls_back_without_a_stray_contribution():
+    """Newton trials can hand the energy row a clipped, invalid per-ion flux
+    (the reactor's own comment above the fallback cascade). Read literally,
+    ``_electron_energy_row`` gates a cation's contribution to Q_wall_ion on the
+    SAME ``wall_loss_rates`` entry it uses to decide whether that cation counts
+    toward the flux-weighted sheath factor: the final loop re-checks
+    ``isfinite(k) and k > 0`` for every cation regardless of which fallback
+    tier (flux-weighted, density-weighted, or equal-weight) resolved ``phi``.
+    So when every cation's own flux is invalid, every cation is excluded from
+    the final sum too, and the reactor's own correct closed form for
+    Q_wall_ion is exactly 0.0 -- not merely "some fallback-weighted value" --
+    no matter which tier the fallback cascade internally chose. This test
+    injects one zero flux and one sign-flipped (negative) flux -- two of the
+    three documented invalid cases -- directly into the reactor's own
+    wall_loss_rates scratch (a legitimate white-box technique matching the
+    code's own "Newton trials" comment), calls the reactor's real
+    ``_electron_energy_row`` directly, and asserts it reaches that closed form
+    without raising or producing a non-finite result.
+
+    Round-48 review, item 3: which tier does THIS test hit? Both cations' ``y``
+    entries (2e-6, 3e-6 mol) are finite and positive, so the density fallback's
+    ``density_sum > 0`` guard passes and phi is resolved there -- this test
+    exercises the DENSITY-WEIGHTED tier specifically, never reaching equal-weight
+    (see the companion test below for that one). Is Q_wall_ion nonzero there? No:
+    it is forced to exactly 0.0, and that is not a defect of this test's fallback
+    tier -- it is true of every fallback tier, because the final sum's gate is the
+    same broken ``wall_loss_rates`` that forced the fallback in the first place
+    (see the reasoning above); a prior corruption run that observed a nonzero
+    Q_wall_ion (-1908.36) after flipping phi's sign came from a DIFFERENT,
+    partial-validity scenario where at least one cation's flux was still valid --
+    that is the flux-weighted tier acting on a subset, not this fallback case, and
+    it is exercised separately below where phi's sign genuinely matters."""
+    electron, ar, arp = _argon_species()
+    ar2p = Species(label='Ar2+').from_adjacency_list(
+        'multiplicity 2\n1 Ar u0 p3 c+1 {2,S}\n2 Ar u1 p3 c0 {1,S}')
+    energy = {'absorbed_power': (0.0, 'W'), 'chamber_volume': (1e-3, 'm^3'),
+              'sheath': 'floating_wall', 'electron_energies': {},
+              'elastic_collisions': {'Ar': {'ignore': 'wall-sheath unit test'}}}
+    r = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'),
+        {electron: 5e-6, ar: 1.0, arp: 2e-6, ar2p: 3e-6},
+        (TE_NOMINAL_EV * EV_TO_K, 'K'), diffusion_length=(_diffusion_length(), 'm'),
+        ion_reduced_mobilities={'Ar+': (MU0_AR_IN_AR, 'm^2/(V*s)'),
+                                'Ar2+': (2 * MU0_AR_IN_AR, 'm^2/(V*s)')},
+        wall_neutralization_products={'Ar+': 'Ar', 'Ar2+': ('Ar', 2)},
+        electron_energy_balance=energy)
+    r.initialize_model([electron, ar, arp, ar2p], [], [], [])
+    y = r.y0.copy()
+    res = np.zeros(r.neq)
+    r.residual(0.0, y, res)
+    ions = [i for i in range(r.num_core_species) if r.species_charges[i] > 0]
+    assert len(ions) == 2
+    # Sanity check: with a real, valid trial the reactor does report a nonzero
+    # ion sheath term -- otherwise the assertion below (== 0.0) would be a
+    # vacuous truth about a reactor that never had anything to fall back from.
+    assert r.electron_energy_terms['Q_wall_ion'] > 0.0
+    V = r.compute_volume(y)
+    corrupted = r.wall_loss_rates.copy()
+    corrupted[ions[0]] = 0.0   # zero flux: invalid
+    corrupted[ions[1]] = 5.0   # positive raw value -> k = -wall_loss_rates < 0: invalid
+    r.wall_loss_rates = corrupted
+    dtedt = r._electron_energy_row(y, V, res)
+    assert r.electron_energy_terms['Q_wall_ion'] == 0.0
+    assert np.isfinite(dtedt)
+
+
+def test_invalid_flux_and_invalid_density_falls_back_to_equal_weight_and_still_zero():
+    """Round-48 review, item 3, second required case ("the other tier"): force the
+    cascade past BOTH the flux-weighted tier and the density-weighted tier, down to
+    the equal-cation-weight tier, by handing ``_electron_energy_row`` a corrupted
+    ``y`` (zeroed cation densities) on top of the corrupted ``wall_loss_rates``
+    already used above.
+
+    Read the cascade in ``_electron_energy_row`` (plasma.pyx ~1630-1673): the SAME
+    ``isfinite(k) and k > 0`` test on ``wall_loss_rates`` gates both (a) whether a
+    cation counts in the flux-weighted attempt and (b) whether it is ever added into
+    the final ``Q_wall_ion`` sum -- there is no second, independent flux array. So
+    whichever tier resolves ``phi`` (flux-weighted, density-weighted, or
+    equal-weight), reaching the fallback branch AT ALL already means gamma_sum was
+    0 in the first attempt, i.e. every cation failed that gate; the identical gate
+    in the final sum then excludes every cation there too. Q_wall_ion == 0.0 is
+    therefore forced by construction whenever fallback fires, independent of which
+    tier computed phi or what phi's value is -- this test demonstrates that this
+    holds even for the equal-weight tier specifically, not only the density-weighted
+    one exercised above."""
+    electron, ar, arp = _argon_species()
+    ar2p = Species(label='Ar2+').from_adjacency_list(
+        'multiplicity 2\n1 Ar u0 p3 c+1 {2,S}\n2 Ar u1 p3 c0 {1,S}')
+    energy = {'absorbed_power': (0.0, 'W'), 'chamber_volume': (1e-3, 'm^3'),
+              'sheath': 'floating_wall', 'electron_energies': {},
+              'elastic_collisions': {'Ar': {'ignore': 'wall-sheath unit test'}}}
+    r = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'),
+        {electron: 5e-6, ar: 1.0, arp: 2e-6, ar2p: 3e-6},
+        (TE_NOMINAL_EV * EV_TO_K, 'K'), diffusion_length=(_diffusion_length(), 'm'),
+        ion_reduced_mobilities={'Ar+': (MU0_AR_IN_AR, 'm^2/(V*s)'),
+                                'Ar2+': (2 * MU0_AR_IN_AR, 'm^2/(V*s)')},
+        wall_neutralization_products={'Ar+': 'Ar', 'Ar2+': ('Ar', 2)},
+        electron_energy_balance=energy)
+    r.initialize_model([electron, ar, arp, ar2p], [], [], [])
+    y = r.y0.copy()
+    res = np.zeros(r.neq)
+    r.residual(0.0, y, res)
+    ions = [i for i in range(r.num_core_species) if r.species_charges[i] > 0]
+    assert len(ions) == 2
+    assert r.electron_energy_terms['Q_wall_ion'] > 0.0
+    V = r.compute_volume(y)
+    corrupted_rates = r.wall_loss_rates.copy()
+    corrupted_rates[ions[0]] = 0.0    # zero flux: invalid
+    corrupted_rates[ions[1]] = 5.0    # k = -wall_loss_rates < 0: invalid
+    r.wall_loss_rates = corrupted_rates
+    # Also zero the cation densities in the y handed to the row: the density
+    # fallback (the "clipped density weights" tier) requires y[i] > 0 for at least
+    # one cation, so zeroing both denies it and pushes the cascade one tier further,
+    # to equal cation weights.
+    corrupted_y = y.copy()
+    corrupted_y[ions[0]] = 0.0
+    corrupted_y[ions[1]] = 0.0
+    dtedt = r._electron_energy_row(corrupted_y, V, res)
+    assert r.electron_energy_terms['Q_wall_ion'] == 0.0
+    assert np.isfinite(dtedt)
+
+
+def test_partial_valid_flux_uses_only_the_valid_subset_with_unequal_masses():
+    """Round-48 review, item 3: a non-vacuous, weight-sensitive Q_wall_ion check.
+
+    The two tests above show that the density- and equal-weight FALLBACK tiers can
+    only ever be reached when literally every cation's flux is invalid, and in that
+    exact state the final sum -- gated by the same flux validity check -- forces
+    Q_wall_ion to exactly 0.0 regardless of phi. So there is no reachable state in
+    which a fallback-tier phi drives a NONZERO, weight-sensitive Q_wall_ion: asking
+    for "the closed form computed from the fallback weights, nonzero, with unequal
+    masses so the weights matter" describes a case the current code cannot produce.
+
+    What the code CAN produce, and what this test exercises instead, is the
+    flux-weighted tier acting on a SUBSET of cations when only some have valid
+    flux: Ne+ is added as a third cation with invalidated flux (so it is excluded
+    from both phi and the final sum, exactly like the fallback tests), while Ar+
+    and Ar2+ -- unequal mass, both valid -- go through the ordinary flux-weighted
+    branch. This never touches the fallback branch at all (gamma_sum > 0 on the
+    first attempt already, from Ar+ and Ar2+), but it does exercise the exclusion
+    logic in a state where the surviving cations' unequal masses make phi differ
+    from either one's own legacy single-ion factor, and the result is asserted
+    against an independently computed closed form."""
+    electron, ar, arp = _argon_species()
+    ar2p = Species(label='Ar2+').from_adjacency_list(
+        'multiplicity 2\n1 Ar u0 p3 c+1 {2,S}\n2 Ar u1 p3 c0 {1,S}')
+    ne = Species(label='Ne').from_adjacency_list('1 Ne u0 p4 c0')
+    nep = Species(label='Ne+').from_adjacency_list('multiplicity 2\n1 Ne u1 p3 c+1')
+    assert not math.isclose(ar2p.molecular_weight.value_si, arp.molecular_weight.value_si,
+                            rel_tol=1e-6)
+    energy = {'absorbed_power': (0.0, 'W'), 'chamber_volume': (1e-3, 'm^3'),
+              'sheath': 'floating_wall', 'electron_energies': {},
+              'elastic_collisions': {'Ar': {'ignore': 'wall-sheath unit test'},
+                                     'Ne': {'ignore': 'wall-sheath unit test'}}}
+    r = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'),
+        {electron: 6e-6, ar: 1.0, arp: 2e-6, ar2p: 3e-6, ne: 1e-4, nep: 1e-6},
+        (TE_NOMINAL_EV * EV_TO_K, 'K'), diffusion_length=(_diffusion_length(), 'm'),
+        ion_reduced_mobilities={'Ar+': (MU0_AR_IN_AR, 'm^2/(V*s)'),
+                                'Ar2+': (2 * MU0_AR_IN_AR, 'm^2/(V*s)'),
+                                'Ne+': (3 * MU0_AR_IN_AR, 'm^2/(V*s)')},
+        wall_neutralization_products={'Ar+': 'Ar', 'Ar2+': ('Ar', 2), 'Ne+': 'Ne'},
+        wall_single_bath_approximation=True,
+        electron_energy_balance=energy)
+    r.initialize_model([electron, ar, arp, ar2p, ne, nep], [], [], [])
+    y = r.y0.copy()
+    res = np.zeros(r.neq)
+    r.residual(0.0, y, res)
+    # core species were declared [electron, ar, arp, ar2p, ne, nep] to
+    # initialize_model, so the reactor's index order follows that declaration
+    # exactly; species_index is not a public attribute on the reactor.
+    i_arp, i_ar2p, i_nep = 2, 3, 5
+    ions = [i for i in range(r.num_core_species) if r.species_charges[i] > 0]
+    assert len(ions) == 3
+    assert set(ions) == {i_arp, i_ar2p, i_nep}
+    V = r.compute_volume(y)
+    corrupted = r.wall_loss_rates.copy()
+    corrupted[i_nep] = 5.0   # k = -wall_loss_rates < 0: invalid, Ne+ excluded
+    r.wall_loss_rates = corrupted
+    dtedt = r._electron_energy_row(y, V, res)
+    flux_arp = -corrupted[i_arp]
+    flux_ar2p = -corrupted[i_ar2p]
+    assert flux_arp > 0.0 and flux_ar2p > 0.0
+    total = flux_arp + flux_ar2p
+    mass_sum = (flux_arp * np.exp(r.energy_ion_sheath_factor[i_arp] - 0.5)
+                + flux_ar2p * np.exp(r.energy_ion_sheath_factor[i_ar2p] - 0.5))
+    phi = np.log(mass_sum / total)
+    expected_q_wall_ion = (0.5 + phi) * constants.R * r.Te.value_si * total
+    assert r.electron_energy_terms['Q_wall_ion'] == pytest.approx(expected_q_wall_ion, rel=1e-12)
+    # Weight-sensitivity: phi must differ from either surviving cation's own
+    # legacy single-ion factor (0.5 subtracted), since it is a flux-weighted
+    # blend of both unequal masses, not either one alone.
+    legacy_arp = r.energy_ion_sheath_factor[i_arp] - 0.5
+    legacy_ar2p = r.energy_ion_sheath_factor[i_ar2p] - 0.5
+    assert phi != pytest.approx(legacy_arp, rel=1e-9)
+    assert phi != pytest.approx(legacy_ar2p, rel=1e-9)
+    assert np.isfinite(dtedt)
+
+
+def test_relaxation_time_ignores_a_cation_below_the_1e3_charge_share_threshold():
+    """PM decision (round 48): ``steady_state_relaxation_time`` dropped its old 1e-3
+    charge-share threshold entirely. The rule is now the MAX over every cation present in
+    positive amount of its own ``1/nu_i``, conservative by construction: a trace slow ion
+    can only delay settling, never be declared settled early by being weighted out of the
+    reported timescale. This test's name is kept (it targets the same code site as before
+    the round-48 fix) but its assertion is now the OPPOSITE of the old one: a trace cation
+    below the old 1e-3 threshold DOES set tau when its own candidate ``1/nu`` is the larger
+    one. Ar2+ is given a mobility 100x LOWER than Ar+'s, so its candidate ``1/nu`` is far
+    larger than Ar+'s. Two states are built from the SAME reactor (so n_neutral and Te are
+    identical): one where Ar2+'s charge share is far below the old 1e-3 threshold, and one
+    where its share clears it. Under the new no-threshold rule BOTH must report tau set by
+    Ar2+'s (slower) frequency -- trace or not -- since per-ion ``nu_wall`` here depends on
+    mobility and the shared neutral density, not on that ion's own partial density share.
+    The reactor's own ``_compute_nu_wall_per_ion`` is unreachable from Python (a ``cdef``
+    method), so each ion's expected ``nu_wall`` is re-derived independently via the same
+    closed form used elsewhere in this file (``_nu_wall_closed_form``), substituting that
+    ion's own mu0."""
+    electron, ar, arp = _argon_species()
+    ar2p = Species(label='Ar2+').from_adjacency_list(
+        'multiplicity 2\n1 Ar u0 p3 c+1 {2,S}\n2 Ar u1 p3 c0 {1,S}')
+    mu0_arp = MU0_AR_IN_AR
+    mu0_ar2p = MU0_AR_IN_AR / 100.0
+    x_arp = 2.0e-6
+    x_below = x_arp * 1.0e-4    # Ar2+ charge share ~1e-4, well below the OLD 1e-3 threshold
+    x_above = x_arp * 1.0e-2    # Ar2+ charge share ~1e-2, above the OLD 1e-3 threshold
+
+    def make(x_ar2p):
+        x_e = x_arp + x_ar2p          # both cations carry charge +1: keep charge-neutral
+        r = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'),
+            {electron: x_e, ar: 1.0, arp: x_arp, ar2p: x_ar2p},
+            (TE_NOMINAL_EV * EV_TO_K, 'K'), diffusion_length=(_diffusion_length(), 'm'),
+            ion_reduced_mobilities={'Ar+': (mu0_arp, 'm^2/(V*s)'),
+                                    'Ar2+': (mu0_ar2p, 'm^2/(V*s)')},
+            wall_neutralization_products={'Ar+': 'Ar', 'Ar2+': ('Ar', 2)})
+        r.initialize_model([electron, ar, arp, ar2p], [], [], [])
+        return r, np.array([x_e, 1.0, x_arp, x_ar2p])
+
+    r_below, y_below = make(x_below)
+    r_above, y_above = make(x_above)
+    # core species were declared [electron, ar, arp, ar2p] to initialize_model, so the
+    # reactor's index order follows that declaration exactly.
+    assert r_below.species_charges[1] == 0.0 and r_below.species_charges[2] > 0 and \
+        r_below.species_charges[3] > 0
+
+    lam = _diffusion_length()
+
+    def n_neutral_of(r, y):
+        return y[1] * constants.Na / r.compute_volume(y)   # index 1 is Ar in the packing above
+
+    tau_below = r_below.steady_state_relaxation_time(0.0, y_below)
+    nu_ar2p_below = _nu_wall_closed_form(TE_NOMINAL_EV, n_neutral_of(r_below, y_below), lam,
+                                         mu0=mu0_ar2p)
+    assert tau_below == pytest.approx(1.0 / nu_ar2p_below, rel=1e-9), (
+        "a trace Ar2+, even one below the OLD 1e-3 charge-share threshold, must now set "
+        "tau under the no-threshold max-over-cations rule, since its own candidate 1/nu "
+        "is far larger than Ar+'s")
+
+    tau_above = r_above.steady_state_relaxation_time(0.0, y_above)
+    nu_ar2p_above = _nu_wall_closed_form(TE_NOMINAL_EV, n_neutral_of(r_above, y_above), lam,
+                                         mu0=mu0_ar2p)
+    assert tau_above == pytest.approx(1.0 / nu_ar2p_above, rel=1e-9), (
+        "with a larger Ar2+ share the same rule applies: Ar2+ still sets tau, since its "
+        "100x lower mobility gives it the larger candidate 1/nu regardless of density"
+    )
+    assert tau_below == pytest.approx(tau_above, rel=1e-4), (
+        "per-ion nu_wall depends on mobility and the shared neutral density, not on "
+        "that ion's own partial density share (the two states differ in Ar2+'s trace "
+        "density by two orders of magnitude, both negligible next to the bulk Ar), so tau "
+        "must be nearly identical whether Ar2+ is trace or not -- this is the direct "
+        "evidence that the threshold is gone")
 
 
 # ---------------------------------------------------------------- item 4
@@ -3543,6 +4062,51 @@ def test_ion_overflow_guard_refuses_a_subnormal_worst_case_from_the_law_factor()
     with pytest.raises(PlasmaStateError) as exc:
         _ion_law_reactor(tgas=tg, **geometry, **law)
     assert 'wall loss frequency' in str(exc.value), str(exc.value)
+
+
+def test_map_mode_first_entry_is_not_wrongly_refused_by_the_stale_scalar_guard():
+    """Round-48 review, item 1: in map mode, ``self.mobility_T_factor`` is only a
+    scalar-compatibility echo of the map's first entry and always stays 1.0 (map mode
+    requires the top-level ``mobility_reference_temperature`` to be None), so the scalar
+    overflow guard -- if it ran in map mode -- would evaluate entry zero's worst-case
+    ``nu_wall`` at factor=1.0 rather than at entry zero's own declared per-ion law factor.
+    That is a stale proxy, not the run-time expression: the per-entry loop right below the
+    scalar guard already evaluates entry zero (and every other entry) with its correct
+    factor, so the scalar guard is skipped entirely in map mode.
+
+    This test builds a map whose first entry, Ar+, declares a mobility law strong enough
+    that the two evaluations disagree in exactly the way that matters: at factor=1.0 the
+    worst-case nu_wall is inf (would trip the scalar guard, were it not skipped), while at
+    Ar+'s own declared factor (~1e-60, from (Tg/T_ref)^m with T_ref=10*Tg, m=60) the
+    worst-case nu_wall is a finite normal number (~2.7e238), so the per-entry guard admits
+    it. The reactor must construct without raising -- proving the map is judged by its own
+    per-entry arithmetic, not by the stale scalar-guard proxy."""
+    worst_n = rmgpy.solver.plasma.PLASMA_NEUTRAL_DENSITY_FLOOR_FRACTION * PLASMA_LOSCHMIDT
+    tiny = np.finfo(np.float64).tiny
+    mu0, nref, tref, exponent = 1.0e10, 1.0e300, 2981.5, 60.0
+    factor_law = (TGAS / tref) ** exponent
+    for factor, label in ((1.0, 'stale scalar-guard proxy'), (factor_law, "Ar+'s own law")):
+        worst_mu = mu0 * factor * nref / worst_n
+        worst_nu = (worst_mu * KB_ENGINE * (TE_NOMINAL_EV * EV_TO_K) / constants.e) / (
+            _diffusion_length() * _diffusion_length())
+        if factor == 1.0:
+            assert not np.isfinite(worst_nu), (label, worst_nu)
+        else:
+            assert np.isfinite(worst_nu) and worst_nu >= tiny, (label, worst_nu)
+
+    electron, ar, arp = _argon_species()
+    ar2p = Species(label='Ar2+').from_adjacency_list(
+        'multiplicity 2\n1 Ar u0 p3 c+1 {2,S}\n2 Ar u1 p3 c0 {1,S}')
+    r = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'),
+        {electron: 2.0e-6, ar: 1.0 - 3.0e-6, arp: 1.0e-6, ar2p: 1.0e-6},
+        (TE_NOMINAL_EV * EV_TO_K, 'K'), diffusion_length=(_diffusion_length(), 'm'),
+        mobility_reference_density=nref,
+        ion_reduced_mobilities={
+            'Ar+': {'mobility': (mu0, 'm^2/(V*s)'),
+                    'referenceTemperature': (tref, 'K'), 'temperatureExponent': exponent},
+            'Ar2+': (MU0_AR_IN_AR, 'm^2/(V*s)')},
+        wall_neutralization_products={'Ar+': 'Ar', 'Ar2+': ('Ar', 2)})
+    r.initialize_model([electron, ar, arp, ar2p], [], [], [])
 
 
 @pytest.mark.parametrize('name, value', [

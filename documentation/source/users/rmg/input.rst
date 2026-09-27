@@ -700,6 +700,32 @@ rate proportional to the net charge itself, which is zero in a quasineutral gas,
 created or destroyed at the wall and the zero-net-current (floating wall) condition holds by
 construction rather than by cancellation.
 
+For a plasma with more than one cation, declare ``ionReducedMobilities`` instead of
+``ionReducedMobility``::
+
+	ionReducedMobilities={'Arp': (1.535e-4, 'm^2/(V*s)'),
+	                      'Ar2p': {'mobility': (1.833e-4, 'm^2/(V*s)'),
+	                               'referenceTemperature': (300, 'K'),
+	                               'temperatureExponent': -0.35}}
+
+Every core cation must have exactly one entry.  The map is mutually exclusive with
+``ionReducedMobility`` and with the global mobility-temperature-law keywords.  Each
+ion then has ``nu_i`` from its own reduced mobility, while the electron wall loss is
+the charge-weighted sum ``sum(z_i * nu_i * n_i)``.  This is the similar-ion-profile,
+per-ion ambipolar closure; it is not a Blanc's-law mixture calculation.
+Map mode has no single ``nu_wall``: each cation has its own ``nu_i`` and the
+electron loss is their charge-weighted sum. Its sheath uses one common floating
+potential from those same ion fluxes, not a separate sheath for each cation.
+
+``wallNeutralizationProducts`` may use ``{'Ar2p': ('Ar', 2)}`` for a molecular ion.
+The reactor verifies isotope-aware atom conservation and returns ``2*gamma`` neutral
+atoms per lost dimer ion.  For the multi-ion energy closure it uses one floating
+sheath potential, derived from the same Maxwellian electron-flux law implicit in the
+legacy one-ion factor (Lieberman & Lichtenberg, 2005, sec. 10.2):
+``e*dphi/(kTe) = ln(sum(g_i*sqrt(M_i))/sqrt(2*pi*m_e))``.  Here ``g_i`` is the
+per-ion wall-flux fraction.  With one ion this reduces exactly to the legacy
+``0.5*ln(M/(2*pi*m_e))`` expression.
+
 ``chamberGeometry`` and ``ionReducedMobility`` declare the wall, and neither means anything without
 the other, so supplying one alone is refused rather than defaulted.  ``chamberGeometry`` is a dict
 naming a shape and its dimensions, from which the characteristic diffusion length ``Lambda`` is
