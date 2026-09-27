@@ -543,7 +543,8 @@ def _plasma_wall_kwargs(chamberGeometry, ionReducedMobility, mobilityReferenceDe
                         wallSingleBathApproximation=False,
                         mobilityReferenceTemperature=None,
                         mobilityTemperatureExponent=None,
-                        ambipolarIonTemperature=None):
+                        ambipolarIonTemperature=None,
+                        ionReducedMobilities=None):
     """
     Turn the ``plasmaReactor(...)`` wall keywords into :class:`PlasmaReactor`
     constructor arguments, resolving a named chamber shape into a diffusion length.
@@ -553,7 +554,10 @@ def _plasma_wall_kwargs(chamberGeometry, ionReducedMobility, mobilityReferenceDe
     so while its input file is being read -- naming the block that is wrong -- rather
     than several minutes into a run.
     """
-    if chamberGeometry is None and ionReducedMobility is None:
+    if ionReducedMobilities is not None and ionReducedMobility is not None:
+        raise InputError("ionReducedMobility and ionReducedMobilities are mutually exclusive.")
+    mobility_declaration = ionReducedMobilities if ionReducedMobilities is not None else ionReducedMobility
+    if chamberGeometry is None and mobility_declaration is None:
         # No wall. Every other wall keyword is then inert, and silently ignoring a
         # deck that set one would hide a typo in the geometry keyword.
         for name, value, inert in (('wallRecycling', wallRecycling, 1.0),
@@ -571,12 +575,12 @@ def _plasma_wall_kwargs(chamberGeometry, ionReducedMobility, mobilityReferenceDe
                     "ionReducedMobility; supply them, or remove {0}.".format(name, value))
         return {}
 
-    if chamberGeometry is None or ionReducedMobility is None:
+    if chamberGeometry is None or mobility_declaration is None:
         raise InputError(
             "a charged-particle wall needs BOTH chamberGeometry and ionReducedMobility "
             "-- nu_wall = D_a / Lambda**2 is undefined without each of them -- but only "
             "one was supplied (chamberGeometry={0!r}, ionReducedMobility={1!r}).".format(
-                chamberGeometry, ionReducedMobility))
+                chamberGeometry, mobility_declaration))
 
     if not isinstance(chamberGeometry, dict):
         raise InputError(
@@ -649,29 +653,91 @@ def _plasma_wall_kwargs(chamberGeometry, ionReducedMobility, mobilityReferenceDe
             "the characteristic diffusion length resolved to {0!r} m, which is not a "
             "length; a zero Lambda is an infinite wall loss frequency.".format(lam.value_si))
 
-    mobility = Quantity(ionReducedMobility)
     mobility_dimensionality = pq.Quantity(1.0, 'm**2/(V*s)').simplified.dimensionality
-    try:
-        given_dimensionality = pq.Quantity(1.0, mobility.units).simplified.dimensionality
-    except Exception:
-        given_dimensionality = None
-    if given_dimensionality != mobility_dimensionality:
-        raise InputError(
-            "ionReducedMobility must have the dimensions of a mobility, e.g. "
-            "(1.535e-4, 'm^2/(V*s)') or (1.535, 'cm^2/(V*s)'); got units {0!r}. A "
-            "diffusivity (m^2/s) is NOT a mobility and is rejected -- reading one as "
-            "the other would silently rescale the wall loss by k_B*T_e/e.".format(
-                mobility.units))
-    if not np.isfinite(mobility.value_si) or mobility.value_si <= 0.0:
-        raise InputError(
-            "ionReducedMobility must be finite and strictly positive; got {0!r} "
-            "m^2/(V*s).".format(mobility.value_si))
-
-    kwargs = {
-        'diffusion_length': (lam.value_si, 'm'),
-        'ion_reduced_mobility': (mobility.value_si, 'm^2/(V*s)'),
-        'wall_recycling': wallRecycling,
-    }
+    if ionReducedMobilities is not None:
+        if mobilityReferenceTemperature is not None or mobilityTemperatureExponent is not None:
+            raise InputError("ionReducedMobilities cannot be combined with mobilityReferenceTemperature or mobilityTemperatureExponent.")
+        if not isinstance(ionReducedMobilities, dict) or not ionReducedMobilities:
+            raise InputError("ionReducedMobilities must be a non-empty dict mapping cation labels to mobilities.")
+        checked = {}
+        for label, entry in ionReducedMobilities.items():
+            if not isinstance(label, str) or not label:
+                raise InputError("ionReducedMobilities keys must be cation labels (strings).")
+            if isinstance(entry, dict):
+                keys = set(entry)
+                allowed = {'mobility', 'referenceTemperature', 'temperatureExponent'}
+                if keys not in ({'mobility'}, allowed):
+                    raise InputError(
+                        "ionReducedMobilities[{0!r}] must be a mobility or a dict with "
+                        "'mobility' alone, or 'mobility', 'referenceTemperature', and "
+                        "'temperatureExponent'; got keys {1!r}.".format(label, sorted(keys)))
+                item = entry['mobility']
+            else:
+                item = entry
+            try:
+                q = Quantity(item)
+            except Exception as exc:
+                raise InputError("ionReducedMobilities[{0!r}] is not a mobility ({1}).".format(label, exc))
+            try:
+                dimensionality = pq.Quantity(1.0, q.units).simplified.dimensionality
+            except Exception:
+                dimensionality = None
+            if dimensionality != mobility_dimensionality:
+                raise InputError(
+                    "ionReducedMobilities[{0!r}] must have mobility dimensions, e.g. "
+                    "(1.535e-4, 'm^2/(V*s)'); got units {1!r}.".format(label, q.units))
+            if not np.isfinite(q.value_si) or q.value_si <= 0.0:
+                raise InputError("ionReducedMobilities[{0!r}] must be finite and strictly positive.".format(label))
+            if isinstance(entry, dict) and 'referenceTemperature' in entry:
+                tref = Quantity(entry['referenceTemperature'])
+                if tref.units != 'K' or not np.isfinite(tref.value_si) or tref.value_si <= 0.0:
+                    raise InputError(
+                        "ionReducedMobilities[{0!r}]['referenceTemperature'] must be a "
+                        "finite, strictly positive temperature in 'K'.".format(label))
+                exponent = entry['temperatureExponent']
+                exponent_ok = not isinstance(exponent, bool) and isinstance(exponent, (int, float))
+                if exponent_ok:
+                    try:
+                        exponent_ok = bool(np.isfinite(float(exponent)))
+                    except OverflowError:
+                        exponent_ok = False
+                if not exponent_ok:
+                    raise InputError(
+                        "ionReducedMobilities[{0!r}]['temperatureExponent'] must be a "
+                        "finite plain number.".format(label))
+            # Preserve the deck's representation (and optional per-ion Tg law) for the
+            # reactor's persistence and input writer.  The reactor resolves units.
+            checked[label] = dict(entry) if isinstance(entry, dict) else item
+        kwargs = {
+            'diffusion_length': (lam.value_si, 'm'),
+            'ion_reduced_mobilities': checked,
+            'wall_recycling': wallRecycling,
+        }
+        mobility_for_log = next(iter(checked.values()))
+        mobility_for_log = mobility_for_log.get('mobility') if isinstance(mobility_for_log, dict) else mobility_for_log
+        mobility = Quantity(mobility_for_log)
+    else:
+        mobility = Quantity(ionReducedMobility)
+        try:
+            given_dimensionality = pq.Quantity(1.0, mobility.units).simplified.dimensionality
+        except Exception:
+            given_dimensionality = None
+        if given_dimensionality != mobility_dimensionality:
+            raise InputError(
+                "ionReducedMobility must have the dimensions of a mobility, e.g. "
+                "(1.535e-4, 'm^2/(V*s)') or (1.535, 'cm^2/(V*s)'); got units {0!r}. A "
+                "diffusivity (m^2/s) is NOT a mobility and is rejected -- reading one as "
+                "the other would silently rescale the wall loss by k_B*T_e/e.".format(
+                    mobility.units))
+        if not np.isfinite(mobility.value_si) or mobility.value_si <= 0.0:
+            raise InputError(
+                "ionReducedMobility must be finite and strictly positive; got {0!r} "
+                "m^2/(V*s).".format(mobility.value_si))
+        kwargs = {
+            'diffusion_length': (lam.value_si, 'm'),
+            'ion_reduced_mobility': (mobility.value_si, 'm^2/(V*s)'),
+            'wall_recycling': wallRecycling,
+        }
 
     # Optional gas-temperature law for the reduced mobility, K0(Tg) = K0*(Tg/T_ref)^m.
     # Both keywords or neither: half a law states nothing, and is refused like half a wall.
@@ -897,10 +963,15 @@ def plasma_reactor(temperature,
                    terminationConversion=None,
                    terminationTime=None,
                    terminationRateRatio=None,
-                   terminationSteadyState=None):
+                   terminationSteadyState=None,
+                   ionReducedMobilities=None):
     """
     Define a two-temperature plasma batch reactor (:class:`PlasmaReactor`) from an
     input file.
+
+    ``ionReducedMobilities`` is the opt-in multi-cation wall form. Each mapped
+    cation receives its own ambipolar loss frequency; the electron loss and the
+    common floating-potential sheath are formed from their charge-weighted fluxes.
 
     ``electronTemperature`` sets the electron temperature ``Te`` and must be given in
     the exact ``(value, 'K')`` form (the check is on the unit string ``'K'``; bare
@@ -1413,7 +1484,8 @@ def plasma_reactor(temperature,
         wallSingleBathApproximation=wallSingleBathApproximation,
         mobilityReferenceTemperature=mobilityReferenceTemperature,
         mobilityTemperatureExponent=mobilityTemperatureExponent,
-        ambipolarIonTemperature=ambipolarIonTemperature)
+        ambipolarIonTemperature=ambipolarIonTemperature,
+        ionReducedMobilities=ionReducedMobilities)
 
     # wallNeutralizationProducts names, per ion, the neutral GROUND STATE it returns as
     # at the wall -- the escape hatch for the case the energy rule cannot infer (two
@@ -1434,11 +1506,16 @@ def plasma_reactor(temperature,
                 "label of the neutral it returns as at the wall, e.g. {'Ar+': 'Ar'}; got "
                 "{0!r}.".format(wallNeutralizationProducts))
         for ion_label, neutral_label in wallNeutralizationProducts.items():
-            if not isinstance(ion_label, str) or not isinstance(neutral_label, str):
+            product_label = neutral_label[0] if type(neutral_label) is tuple and len(neutral_label) == 2 else neutral_label
+            valid_product = isinstance(neutral_label, str) or (
+                type(neutral_label) is tuple and len(neutral_label) == 2
+                and isinstance(neutral_label[0], str) and type(neutral_label[1]) is int
+                and neutral_label[1] >= 1)
+            if not isinstance(ion_label, str) or not valid_product:
                 raise InputError(
-                    "wallNeutralizationProducts maps ion labels to neutral labels and "
-                    "both must be strings; got {0!r}: {1!r}.".format(ion_label, neutral_label))
-            for role, label in (('ion', ion_label), ('neutral product', neutral_label)):
+                    "wallNeutralizationProducts maps ion labels to a neutral label or "
+                    "(neutral label, positive integer multiplicity); got {0!r}: {1!r}.".format(ion_label, neutral_label))
+            for role, label in (('ion', ion_label), ('neutral product', product_label)):
                 if label not in species_dict:
                     raise InputError(
                         "wallNeutralizationProducts names {0} {1!r}, which is not a "
@@ -2837,8 +2914,16 @@ def _format_plasma_wall(system):
     if system.has_wall:
         lines.append('    chamberGeometry = {{"diffusionLength": ({0!r},"m")}},\n'
                      ''.format(system.diffusion_length.value_si))
-        lines.append('    ionReducedMobility = ({0!r},"m^2/(V*s)"),\n'
-                     ''.format(system.ion_reduced_mobility.value_si))
+        if system.ion_reduced_mobilities is None:
+            # Keep the established scalar spelling byte-for-byte for legacy decks.
+            lines.append('    ionReducedMobility = ({0!r},"m^2/(V*s)"),\n'
+                         ''.format(system.ion_reduced_mobility.value_si))
+        else:
+            # A map is the opt-in multi-ion closure.  Preserve the individual
+            # declarations, including a per-ion temperature law, rather than
+            # reducing them to the representative scalar stored for legacy APIs.
+            lines.append('    ionReducedMobilities = {0!r},\n'
+                         ''.format(system.ion_reduced_mobilities))
         lines.append('    mobilityReferenceDensity = ({0!r},"m^-3"),\n'
                      ''.format(system.mobility_reference_density))
         if system.mobility_reference_temperature is not None:

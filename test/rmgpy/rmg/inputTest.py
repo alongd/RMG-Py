@@ -34,7 +34,7 @@ import numpy as np
 
 import rmgpy.constants as constants
 import rmgpy.rmg.input as inp
-from rmgpy.exceptions import InputError
+from rmgpy.exceptions import InputError, PlasmaStateError
 from rmgpy.rmg.input import _parse_writer_config, _writer_config_to_input
 from rmgpy.rmg.main import RMG
 from rmgpy.rmg.model import CoreEdgeReactionModel
@@ -1022,6 +1022,121 @@ class TestInputPlasmaReactor:
     _WALL = ("    chamberGeometry={'diffusionLength': (2.03, 'cm')},\n"
              "    ionReducedMobility=(1.2e-4, 'm^2/(V*s)'),\n")
     _DECL = "    wallNeutralDiffusion={'Ars': {'product': 'Ar', 'diffusivity': (47.0, 'cm^2*torr/s')}},\n"
+
+    def test_per_ion_reduced_mobilities_parse_and_writer_preserves_map(self, tmp_path):
+        """The map is the opt-in form: it reaches the reactor without a synthetic
+        scalar, and the writer retains both per-ion Tg declarations."""
+        from rmgpy.rmg.input import _format_plasma_wall
+        mobilities = {
+            'Ar+': (1.2e-4, 'm^2/(V*s)'),
+            'Ar2+': {'mobility': (2.4e-4, 'm^2/(V*s)'),
+                     'referenceTemperature': (300.0, 'K'),
+                     'temperatureExponent': -0.5},
+        }
+        body = self._preamble() + self._plasma_block(
+            "    chamberGeometry={{'diffusionLength': (2.03, 'cm')}},\n"
+            "    ionReducedMobilities={0!r},\n".format(mobilities),
+            mole_fractions="{'Ar': 1.0, 'e-': 1e-9}")
+        reactor = self._read(tmp_path, body).reaction_systems[0]
+        assert reactor.ion_reduced_mobilities == mobilities
+        text = _format_plasma_wall(reactor)
+        assert 'ionReducedMobilities' in text
+        assert 'ionReducedMobility =' not in text
+        assert "'referenceTemperature': (300.0, 'K')" in text
+
+    def test_per_ion_reduced_mobility_map_rejects_non_mobility_and_half_law(self, tmp_path):
+        invalid = ({'Ar+': (1.0e-4, 'm^2/s')}, 'mobility dimensions')
+        half_law = ({'Ar+': {'mobility': (1.0e-4, 'm^2/(V*s)'),
+                             'referenceTemperature': (300.0, 'K')}}, 'temperatureExponent')
+        for mobilities, message in (invalid, half_law):
+            body = self._preamble() + self._plasma_block(
+                "    chamberGeometry={{'diffusionLength': (2.03, 'cm')}},\n"
+                "    ionReducedMobilities={0!r},\n".format(mobilities),
+                mole_fractions="{'Ar': 1.0, 'e-': 1e-9}")
+            with pytest.raises(InputError, match=message):
+                self._read(tmp_path, body)
+
+    def test_per_ion_map_rejects_bad_nonfirst_entry(self, tmp_path):
+        """Validation must not stop at the first entry used for compatibility."""
+        mobilities = {'Ar+': (1.0e-4, 'm^2/(V*s)'), 'Ar2+': (1.0, 's')}
+        body = self._preamble() + self._plasma_block(
+            "    chamberGeometry={{'diffusionLength': (2.03, 'cm')}},\n"
+            "    ionReducedMobilities={0!r},\n".format(mobilities),
+            mole_fractions="{'Ar': 1.0, 'e-': 1e-9}")
+        with pytest.raises(InputError, match='Ar2'):
+            self._read(tmp_path, body)
+
+    def test_per_ion_map_rejects_bad_nonfirst_entry_overflow(self, tmp_path):
+        """Round-48 review, item 4: the sibling test above only exercises a non-first
+        entry with the WRONG UNITS. The per-entry overflow guard is a separate check --
+        each entry's mobility * per-ion (Tg/T_ref)^m temperature factor * reference
+        density must combine, at the neutral-density floor, to a finite normal
+        worst-case nu_wall -- and that check must also reach a non-first entry, not
+        just entry zero. Ar+ (entry zero) is an ordinary, unremarkable mobility with no
+        law. Ar2+ (entry one) declares mu0=1e-4 m^2/(V*s) -- innocuous on its own -- with
+        a temperature law (T_ref = Tg/1000, m=100) whose factor (Tg/T_ref)^m = 1000^100
+        is astronomically large; combined with mu0 and the (default, Loschmidt) reference
+        density the worst-case nu_wall overflows to inf. This must be refused by the
+        per-entry guard with a message naming Ar2+, rather than only being caught
+        downstream when the solver runs.
+
+        Unlike the wrong-units case above, this is NOT caught by input.py's own
+        shallow ionReducedMobilities pre-validation (_plasma_wall_kwargs, which only
+        checks shape/units/finite-and-positive per entry and raises InputError) --
+        that layer has no notion of the combined worst-case nu_wall at the neutral-
+        density floor. The overflow itself can only be detected by the deeper,
+        reactor-level per-entry guard in plasma.pyx's _configure_wall (~line 930),
+        which raises PlasmaStateError, propagated uncaught through read_input_file
+        (its exec() only catches NameError/TypeError/SyntaxError)."""
+        mobilities = {
+            'Ar+': (1.0e-4, 'm^2/(V*s)'),
+            'Ar2+': {'mobility': (1.0e-4, 'm^2/(V*s)'),
+                     'referenceTemperature': (1.0, 'K'),
+                     'temperatureExponent': 100.0},
+        }
+        body = self._preamble() + self._plasma_block(
+            "    chamberGeometry={{'diffusionLength': (2.03, 'cm')}},\n"
+            "    ionReducedMobilities={0!r},\n".format(mobilities),
+            mole_fractions="{'Ar': 1.0, 'e-': 1e-9}")
+        with pytest.raises(PlasmaStateError, match='Ar2'):
+            self._read(tmp_path, body)
+
+    def test_ion_reduced_mobilities_survive_a_full_write_read_round_trip(self, tmp_path):
+        """The map form must round-trip through an actual file, not just through
+        ``_format_plasma_wall`` in isolation: ``save_input_file`` writes it,
+        ``read_input_file`` re-parses it, and the reactor's map must come back
+        identical, including the per-ion temperature law on one entry."""
+        mobilities = {
+            'Ar+': (1.2e-4, 'm^2/(V*s)'),
+            'Ar2+': {'mobility': (2.4e-4, 'm^2/(V*s)'),
+                     'referenceTemperature': (300.0, 'K'),
+                     'temperatureExponent': -0.5},
+        }
+        body = (
+            "database(thermoLibraries=['primaryThermoLibrary'], reactionLibraries=[], "
+            "seedMechanisms=[], kineticsFamilies='default')\n"
+            + self._preamble() + self._plasma_block(
+                "    chamberGeometry={{'diffusionLength': (2.03, 'cm')}},\n"
+                "    ionReducedMobilities={0!r},\n".format(mobilities),
+                mole_fractions="{'Ar': 1.0, 'e-': 1e-9}")
+            + "simulator(atol=1e-16, rtol=1e-8)\n"
+            + "model(toleranceMoveToCore=0.1, toleranceInterruptSimulation=0.1)\n"
+        )
+        rmg1 = self._read(tmp_path, body)
+        reactor1 = rmg1.reaction_systems[0]
+        assert reactor1.ion_reduced_mobilities == mobilities
+
+        saved = tmp_path / "saved.py"
+        inp.save_input_file(str(saved), rmg1)
+        written = saved.read_text()
+        assert 'ionReducedMobilities' in written
+        assert 'ionReducedMobility =' not in written
+
+        rmg2 = RMG()
+        inp.read_input_file(str(saved), rmg2)
+        reactor2 = rmg2.reaction_systems[0]
+        assert reactor2.ion_reduced_mobilities == mobilities
+        assert reactor2.ion_reduced_mobilities == reactor1.ion_reduced_mobilities
 
     def _metastable_preamble(self):
         # The triplet-spelled argon the verifier uses for Ar*. Its being lost at the wall
