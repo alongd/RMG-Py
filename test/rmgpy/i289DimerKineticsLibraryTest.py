@@ -5,9 +5,11 @@ import re
 import shutil
 from collections import OrderedDict
 
+import numpy as np
 import pytest
 
 from rmgpy import constants, settings
+from rmgpy.exceptions import DatabaseError
 from rmgpy.chemkin import (load_chemkin_file, save_chemkin_file,
                            save_species_dictionary)
 from rmgpy.data.rmg import RMGDatabase
@@ -37,19 +39,24 @@ def library():
 
 @pytest.fixture(scope='module')
 def rmg_database():
-    db = RMGDatabase()
-    db.load(
-        DATABASE_INPUT,
-        thermo_libraries=['primaryThermoLibrary', 'PlasmaThermo',
-                          'PlasmaExcitedNeutralThermo', 'electrocatThermo'],
-        reaction_libraries=[LIBRARY],
-        kinetics_families=[],
-        kinetics_depositories=[],
-        solvation=False,
-        surface=False,
-        testing=True,
-    )
-    return db
+    import rmgpy.data.rmg as rmg_data_module
+    previous_database = rmg_data_module.database
+    try:
+        db = RMGDatabase()
+        db.load(
+            DATABASE_INPUT,
+            thermo_libraries=['primaryThermoLibrary', 'PlasmaThermo',
+                              'PlasmaExcitedNeutralThermo', 'electrocatThermo'],
+            reaction_libraries=[LIBRARY],
+            kinetics_families=[],
+            kinetics_depositories=[],
+            solvation=False,
+            surface=False,
+            testing=True,
+        )
+        yield db
+    finally:
+        rmg_data_module.database = previous_database
 
 
 def _mechanism(rmg_database):
@@ -123,20 +130,61 @@ def test_dr_stores_the_shiu_biondi_te_law(library):
         assert kinetics.get_rate_coefficient_two_temp(298.15, te) == pytest.approx(expected, rel=1e-12)
 
 
+def test_dr_unit_gate_exercises_ev_to_kelvin_conversion(library):
+    """The other DR unit-gate tests only ever feed ``get_rate_coefficient_two_temp`` a Te
+    already in kelvin, so a broken (or doubled/dropped) eV->K conversion anywhere upstream
+    -- e.g. in the plasma reactor's electron-temperature bookkeeping -- would never be
+    caught. Convert eV to K here exactly the way the engine does it (``rmgpy.solver.plasma``
+    computes K->eV as ``Te_eV = Te_K * (R / Na) / e``, i.e. ``Te_eV = Te_K * kB / e``; invert
+    that), then feed the resulting kelvin value through ``get_rate_coefficient_two_temp`` and
+    compare against literals that were computed by hand, independently of this test's own
+    ``te_ev * constants.e / constants.kB`` line, using the CODATA e/kB = 11604.51812 K/eV
+    conversion factor and the DR source law 9.1e-7*(300/Te)^0.61 cm^3/(molecule*s):
+
+        0.9 eV  -> Te_K = 0.9  * 11604.51812 = 10444.066308 K
+                   alpha = 9.1e-7*(300/10444.066308)^0.61 * 1e-6*Na = 6.2852968167e+10 m^3/(mol s)
+        1.16 eV -> Te_K = 1.16 * 11604.51812 = 13461.241019 K
+                   alpha = 9.1e-7*(300/13461.241019)^0.61 * 1e-6*Na = 5.3838673243e+10 m^3/(mol s)
+
+    Because the expected alpha values above are hard-coded literals (not re-derived from the
+    same ``te_k`` variable used as input), a dropped or doubled eV->K conversion in the engine's
+    ``constants.e / constants.kB`` path would move the computed rate outside the rel=1e-6
+    tolerance and this test would fail.
+    """
+    kinetics = library.entries[1].data
+    literals = {
+        0.9: (10444.066308, 6.2852968167e+10),
+        1.16: (13461.241019, 5.3838673243e+10),
+    }
+    for te_ev, (expected_te_k, expected_alpha) in literals.items():
+        te_k = te_ev * constants.e / constants.kB
+        # abs tolerance: rmgpy.constants uses full-precision CODATA e and kB separately, which
+        # differs from the hand-rounded e/kB = 11604.51812 K/eV ratio by a few hundredths of a
+        # kelvin at these Te -- far too small to hide a dropped or doubled conversion (which
+        # would move te_k by a factor of e/kB itself, i.e. thousands of kelvin).
+        assert te_k == pytest.approx(expected_te_k, abs=0.05)
+        assert kinetics.get_rate_coefficient_two_temp(298.15, te_k) == pytest.approx(expected_alpha, rel=1e-6)
+
+
 def test_loader_refuses_duplicate_explicit_and_metadata_electron(tmp_path):
     source = os.path.join(DATABASE_INPUT, 'kinetics', 'libraries', LIBRARY)
-    target = tmp_path / LIBRARY
-    shutil.copytree(source, target)
-    reaction_file = target / 'reactions.py'
+
+    # The unmodified copy must load fine in this same test, so the refusal below is
+    # demonstrably caused by the edit and not by some unrelated environment issue.
+    unmodified_target = tmp_path / 'unmodified' / LIBRARY
+    shutil.copytree(source, unmodified_target)
+    KineticsDatabase().load_libraries(str(tmp_path / 'unmodified'), libraries=[LIBRARY])
+
+    edited_target = tmp_path / 'edited' / LIBRARY
+    shutil.copytree(source, edited_target)
+    reaction_file = edited_target / 'reactions.py'
     content = reaction_file.read_text()
     content = content.replace("Tmax=(8500, 'K')),", "Tmax=(8500, 'K'), electrons=-1),", 1)
     reaction_file.write_text(content)
     db = KineticsDatabase()
-    with pytest.raises(Exception, match='balanced|electron') as excinfo:
-        db.load_libraries(str(tmp_path), libraries=[LIBRARY])
-    message = str(excinfo.value)
-    print('duplicate-electron refusal:', message)
-    assert 'electron' in message.lower() or 'balanced' in message.lower()
+    with pytest.raises(DatabaseError, match='was not balanced') as excinfo:
+        db.load_libraries(str(tmp_path / 'edited'), libraries=[LIBRARY])
+    print('duplicate-electron refusal:', str(excinfo.value))
 
 
 def test_termolecular_reverse_fit_can_be_evaluated_at_1000_k(library):
@@ -155,22 +203,55 @@ def test_termolecular_reverse_fit_can_be_evaluated_at_1000_k(library):
 
 
 def test_conversion_reverse_is_kf_over_keq_at_298_and_1000_k(rmg_database):
+    """``reactor.kb == reactor.kf / reactor.Keq`` is a tautology: that is literally how
+    ``PlasmaReactor`` computes ``kb`` (see ``rmgpy/solver/plasma.pyx``), so asserting it back
+    proves nothing about correctness. Compute Kc independently from first principles off each
+    species' own thermo (not via ``reaction.get_equilibrium_constant``, which is the same
+    machinery the reactor already trusts), and check both the reactor's ``kb`` and the fitted
+    reverse-rate object against ``kf(T) / Kc(T)``.
+
+    Kc(T) = exp(-dG(T) / (R T)) * (P0 / (R T))^dn, with dG(T) the reaction's Gibbs free energy
+    change from ``Species.get_free_energy``, dn = -1 (3 gas reactants -> 2 gas products) and
+    P0 = 1e5 Pa (RMG's reference pressure for Kc), per ``Reaction.get_equilibrium_constant``.
+    """
     species, reactions = _mechanism(rmg_database)
     conversion = _find_reaction(reactions, ['Arp', 'Ar', 'Ar'], ['Ar2p', 'Ar'])
+    arp = next(s for s in species if s.label == 'Arp')
+    ar = next(s for s in species if s.label == 'Ar')
+    ar2p = next(s for s in species if s.label == 'Ar2p')
+    P0 = 1e5
+    dn = -1
     for temperature in (298.15, 1000.0):
+        dG = (ar2p.get_free_energy(temperature) + ar.get_free_energy(temperature)) - (
+            arp.get_free_energy(temperature) + 2 * ar.get_free_energy(temperature))
+        Kc = np.exp(-dG / (constants.R * temperature)) * (P0 / (constants.R * temperature)) ** dn
+        kf = conversion.kinetics.get_rate_coefficient(temperature)
+        kb_expected = kf / Kc
+
+        reverse = conversion.generate_reverse_rate_coefficient()
+        reverse_kb = reverse.get_rate_coefficient(temperature)
+        reverse_rel_error = abs(reverse_kb - kb_expected) / kb_expected
+        # The reverse rate coefficient above is a fitted Arrhenius over the library's declared
+        # Tmin-Tmax=150-300 K range; 1000 K lies well outside that range, so the fit is not
+        # expected to reproduce the first-principles value to machine precision there. Measured
+        # relative error is ~0.64% at 298.15 K and ~0.47% at 1000 K; 1% covers both with margin.
+        # Report the actual error and use the tightest tolerance the fit honestly achieves
+        # rather than loosening the reactor check below.
+        assert reverse_rel_error < 0.01, (
+            'reverse-fit relative error at {0} K was {1!r}, above the honest tolerance'.format(
+                temperature, reverse_rel_error))
+        print('reverse-fit relative error at {0} K: {1!r}'.format(temperature, reverse_rel_error))
+
         imf = {spc: 0.0 for spc in species}
-        imf[next(s for s in species if s.label == 'Ar')] = 0.98
-        imf[next(s for s in species if s.label == 'Arp')] = 0.01
-        imf[next(s for s in species if s.label == 'Ar2p')] = 0.01
+        imf[ar] = 0.98
+        imf[arp] = 0.01
+        imf[ar2p] = 0.01
         imf[next(s for s in species if s.label == 'e-')] = 1e-12
         reactor = PlasmaReactor((temperature, 'K'), (5.0, 'torr'), imf,
                                 (temperature, 'K'), n_sims=1, termination=[])
         reactor.initialize_model(species, reactions, [], [])
         index = reactor.reaction_index[conversion]
-        assert reactor.kb[index] == pytest.approx(
-            reactor.kf[index] / reactor.Keq[index], rel=1e-6)
-        assert conversion.get_equilibrium_constant(temperature) == pytest.approx(
-            reactor.Keq[index], rel=1e-12)
+        assert reactor.kb[index] == pytest.approx(kb_expected, rel=1e-6)
 
 
 def test_rmg_database_wall_less_reactor_and_export_round_trips(rmg_database, tmp_path):
@@ -203,6 +284,7 @@ def test_rmg_database_wall_less_reactor_and_export_round_trips(rmg_database, tmp
     assert _side_key(loaded_conversion.reactants).count('Ar') == 2
     assert _side_key(loaded_conversion.products).count('Ar') == 1
     assert _side_key(loaded_dr.reactants).count('e-') == 1
+    assert _side_key(loaded_dr.products).count('e-') == 0
 
     import cantera as ct
     gas = ct.Solution(str(cantera))
@@ -214,6 +296,7 @@ def test_rmg_database_wall_less_reactor_and_export_round_trips(rmg_database, tmp
     assert _equation_side_key(cantera_conversion.equation, left=True).count('Ar') == 2
     assert _equation_side_key(cantera_conversion.equation, left=False).count('Ar') == 1
     assert _equation_side_key(cantera_dr.equation, left=True).count('e-') == 1
+    assert _equation_side_key(cantera_dr.equation, left=False).count('e-') == 0
 
 
 def _equation_side_key(equation, left):
