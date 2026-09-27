@@ -9,7 +9,7 @@
 # radius = 5.0 cm, ion mobility x1.0, entry 91 = on, atol = 1e-16, K_el = lxcat x1.0. ENGINEERING INTERMEDIATE.
 # K_el source: LXCat Phelps EFFECTIVE sigma_m, www.lxcat.net retrieved 2026-09-23, Maxwell-averaged, fit 0.5-3 eV
 database(
-    thermoLibraries=['primaryThermoLibrary', 'PlasmaCationThermo', 'electrocatThermo', 'PlasmaExcitedNeutralThermo'],
+    thermoLibraries=['primaryThermoLibrary', 'PlasmaThermo', 'electrocatThermo', 'PlasmaExcitedNeutralThermo'],
     reactionLibraries=['PlasmaArgon', 'PlasmaRadiativeRecombination'],
     seedMechanisms=[],
     kineticsDepositories=['training'],
