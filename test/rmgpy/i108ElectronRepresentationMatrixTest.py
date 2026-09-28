@@ -90,6 +90,7 @@ from rmgpy.kinetics.arrhenius import (Arrhenius, BadnellRRArrhenius, TwoTemperat
 from rmgpy.reaction import Reaction
 from rmgpy.solver.plasma import PlasmaReactor
 from rmgpy.species import Species
+from rmgpy.thermo import ThermoData
 
 ################################################################################
 
@@ -428,7 +429,30 @@ def gate_reactor(row):
     others = [s for s in core_species if not s.is_electron()]
     for s in others:
         imf[s] = (1.0 - Y_E0) / len(others)
-    reactor = PlasmaReactor(T_GAS, P0, imf, (T_E, 'K'), n_sims=1, termination=[])
+    # This matrix tests electron representation, not thermo provenance. Give
+    # its synthetic ions explicit standalone thermo declarations.
+    assertions = []
+    for species in core_species:
+        if species.is_electron() or species.get_net_charge() == 0:
+            continue
+        species.thermo = ThermoData(
+            Tdata=([300.0, 1000.0], 'K'),
+            Cpdata=([30.0, 30.0], 'J/(mol*K)'),
+            H298=(0.0, 'J/mol'),
+            S298=(0.0, 'J/(mol*K)'),
+            Cp0=(30.0, 'J/(mol*K)'),
+            CpInf=(30.0, 'J/(mol*K)'),
+        )
+        assertions.append(species.label or species.smiles)
+    reactor = PlasmaReactor(
+        T_GAS,
+        P0,
+        imf,
+        (T_E, 'K'),
+        n_sims=1,
+        termination=[],
+        thermo_source_assertions=assertions,
+    )
     try:
         reactor.initialize_model(core_species, [rxn], [], [])
     except Exception as exc:

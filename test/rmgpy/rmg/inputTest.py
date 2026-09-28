@@ -40,6 +40,7 @@ from rmgpy.rmg.main import RMG
 from rmgpy.rmg.model import CoreEdgeReactionModel
 from rmgpy.rmg.settings import WriterConfig
 from rmgpy.ml.estimator import ADMONITION
+from rmgpy.thermo import ThermoData
 
 import pytest
 
@@ -1448,6 +1449,18 @@ class TestInputPlasmaChargeBalance:
             "    chargeBalanceSpecies='Arp',\n")
         reactor = self._read(tmp_path, body).reaction_systems[0]
         core = list(reactor.initial_mole_fractions.keys())
+        # This test pins the charge-balance input path, not thermo provenance.
+        # Give its synthetic cation explicit standalone thermo and declaration.
+        cation = next(species for species in core if species.label == 'Arp')
+        cation.thermo = ThermoData(
+            Tdata=([300.0, 1000.0], 'K'),
+            Cpdata=([30.0, 30.0], 'J/(mol*K)'),
+            H298=(0.0, 'J/mol'),
+            S298=(0.0, 'J/(mol*K)'),
+            Cp0=(30.0, 'J/(mol*K)'),
+            CpInf=(30.0, 'J/(mol*K)'),
+        )
+        reactor.thermo_source_assertions.add(cation.label)
         reactor.initialize_model(core, [], [], [])
         volume = reactor.compute_volume(reactor.y0)
         n_e_recovered = reactor.y0[reactor.electron_index] * constants.Na / volume
