@@ -1138,6 +1138,83 @@ class TestInputPlasmaReactor:
         assert reactor2.ion_reduced_mobilities == mobilities
         assert reactor2.ion_reduced_mobilities == reactor1.ion_reduced_mobilities
 
+    # ---- per-bath (Blanc's-law) transport (I-294) --------------------------
+    # PLACEHOLDER, NOT SOURCED: the He-bath numbers below are test-only stand-ins.
+
+    _BLANC_MOBILITIES = {'Arp': {'perBath': {'Ar': (1.535e-4, 'm^2/(V*s)'),
+                                              'He': (2.0e-3, 'm^2/(V*s)')}}}
+
+    def _blanc_preamble(self):
+        return (self._preamble()
+                + "species(label='Arp', structure=adjacencyList(\"multiplicity 2\\n1 Ar u1 p3 c+1\"))\n"
+                + "species(label='Ars', structure=adjacencyList(\"1 Ar u2 p3 c0\"))\n")
+
+    def _blanc_body(self, extra, mobilities=None, db=False):
+        head = ("database(thermoLibraries=['primaryThermoLibrary'], reactionLibraries=[], "
+                "seedMechanisms=[], kineticsFamilies='default')\n") if db else ""
+        tail = ("simulator(atol=1e-16, rtol=1e-8)\n"
+                "model(toleranceMoveToCore=0.1, toleranceInterruptSimulation=0.1)\n") if db else ""
+        mobilities = self._BLANC_MOBILITIES if mobilities is None else mobilities
+        return head + self._blanc_preamble() + self._plasma_block(
+            "    chamberGeometry={'diffusionLength': (2.03, 'cm')},\n"
+            "    ionReducedMobilities=" + repr(mobilities) + ",\n"
+            "    wallNeutralizationProducts={'Arp': 'Ar'},\n" + extra,
+            mole_fractions="{'Ar': 0.9, 'He': 0.1, 'Ars': 1e-6, 'Arp': 1e-9, 'e-': 1e-9}") + tail
+
+    _BLANC_ARS = {'Ars': {'product': 'Ar',
+                          'diffusivity': {'Ar': (47.0, 'cm^2*torr/s'),
+                                          'He': (150.0, 'cm^2*torr/s')}}}
+
+    def test_per_bath_mobilities_and_diffusivities_reach_the_reactor(self, tmp_path):
+        body = self._blanc_body("    wallNeutralDiffusion={0!r},\n"
+                                "    wallBathThreshold=1e-6,\n".format(self._BLANC_ARS))
+        reactor = self._read(tmp_path, body).reaction_systems[0]
+        assert reactor.ion_reduced_mobilities == self._BLANC_MOBILITIES
+        assert reactor.wall_neutral_diffusion == self._BLANC_ARS
+        assert reactor.wall_bath_threshold == 1e-6
+
+    def test_per_bath_declarations_survive_a_full_write_read_round_trip(self, tmp_path):
+        body = self._blanc_body("    wallNeutralDiffusion={0!r},\n"
+                                "    wallBathThreshold=1e-6,\n".format(self._BLANC_ARS), db=True)
+        rmg1 = self._read(tmp_path, body)
+        saved = tmp_path / "saved.py"
+        inp.save_input_file(str(saved), rmg1)
+        written = saved.read_text()
+        assert 'wallBathThreshold = 1e-06' in written
+        rmg2 = RMG()
+        inp.read_input_file(str(saved), rmg2)
+        reactor2 = rmg2.reaction_systems[0]
+        assert reactor2.ion_reduced_mobilities == self._BLANC_MOBILITIES
+        assert reactor2.wall_neutral_diffusion == self._BLANC_ARS
+        assert reactor2.wall_bath_threshold == 1e-6
+
+    def test_per_bath_mobility_names_an_undeclared_bath(self, tmp_path):
+        mobilities = {'Arp': {'perBath': {'Ar': (1.535e-4, 'm^2/(V*s)'), 'Ne': (4.0e-4, 'm^2/(V*s)')}}}
+        with pytest.raises(InputError, match="'Ne'"):
+            self._read(tmp_path, self._blanc_body("", mobilities=mobilities))
+
+    def test_per_bath_mobility_checks_units_of_every_bath(self, tmp_path):
+        mobilities = {'Arp': {'perBath': {'Ar': (1.535e-4, 'm^2/(V*s)'), 'He': (2.0e-3, 'm^2/s')}}}
+        with pytest.raises(InputError, match=r"\['Arp'\]\['He'\]"):
+            self._read(tmp_path, self._blanc_body("", mobilities=mobilities))
+
+    def test_per_bath_diffusivity_names_an_undeclared_bath(self, tmp_path):
+        wnd = {'Ars': {'product': 'Ar', 'diffusivity': {'Ar': (47.0, 'cm^2*torr/s'),
+                                                        'Ne': (100.0, 'cm^2*torr/s')}}}
+        with pytest.raises(InputError, match="'Ne'"):
+            self._read(tmp_path, self._blanc_body("    wallNeutralDiffusion={0!r},\n".format(wnd)))
+
+    def test_wall_bath_threshold_without_a_wall_is_refused(self, tmp_path):
+        body = self._preamble() + self._plasma_block(
+            "    wallBathThreshold=1e-3,\n", mole_fractions="{'Ar': 1.0, 'e-': 1e-9}")
+        with pytest.raises(InputError, match='wallBathThreshold'):
+            self._read(tmp_path, body)
+
+    def test_wall_bath_threshold_must_be_a_mole_fraction(self, tmp_path):
+        for bad in ("1.5", "-1e-3", "'1e-3'", "True", "10**400"):
+            with pytest.raises(InputError, match='wallBathThreshold'):
+                self._read(tmp_path, self._blanc_body("    wallBathThreshold={0},\n".format(bad)))
+
     def _metastable_preamble(self):
         # The triplet-spelled argon the verifier uses for Ar*. Its being lost at the wall
         # comes from the declaration, not from its electronic state.
