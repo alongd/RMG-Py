@@ -67,10 +67,14 @@ cimport numpy as np
 
 import rmgpy.constants as constants
 cimport rmgpy.constants as constants
+import rmgpy.data.rmg as rmg_data_module
+from rmgpy.data.thermo import find_cp0_and_cpinf
 from rmgpy.exceptions import NonEquilibriumReverseRateError, PlasmaStateError
 from rmgpy.quantity import Quantity
 from rmgpy.quantity cimport ScalarQuantity
 from rmgpy.solver.base cimport ReactionSystem
+from rmgpy.thermo import NASA, ThermoData, Wilhoit
+from rmgpy.thermo.thermoengine import process_thermo_data
 
 
 # Tolerance for every net-charge / quasineutrality check in this module. A state is
@@ -145,6 +149,15 @@ PLASMA_WALL_MAX_IONISATION_DEGREE = 1.0e-3
 # electron population is decaying.
 PLASMA_SELF_SUSTAINED_RTOL = 1.0e-3
 
+# A library match is made from evaluated thermo values, never comments. Chemkin
+# writes NASA coefficients with enough precision that a non-verbose write/reload
+# changes the sampled values by about 2e-9 relative for the PlasmaThermo Ar+ entry.
+# 1e-7 is therefore tight while leaving two orders of magnitude for serialization
+# roundoff. The SI absolute tolerance governs only values at or extremely near zero.
+PLASMA_THERMO_PROVENANCE_RTOL = 1.0e-7
+PLASMA_THERMO_PROVENANCE_ATOL = 1.0e-4
+PLASMA_THERMO_CALLER_ASSERTION = 'caller-asserted, not verified'
+
 # Extinction as a TERMINAL state (energy balance only). Once the discharge is extinct and
 # stays so -- its own ionisation below PLASMA_EXTINCT_RATIO of its electron loss and Te
 # within PLASMA_EXTINCT_TE_BAND_K of the gas -- over PHYSICAL time for
@@ -216,6 +229,346 @@ def _is_finite_normal_positive(double v):
     raises its own, more specific message: finite, and at least the smallest normal
     double (so zero, negatives, subnormals and nan all fail)."""
     return bool(np.isfinite(v) and v >= np.finfo(np.float64).tiny)
+
+
+def _charged_species_identity(species):
+    """Use a species' stable label when available, otherwise its SMILES."""
+    return species.label if species.label else species.smiles
+
+
+def _thermo_comparison_segments(thermo, reference):
+    """Return interior samples for every polynomial-bounded overlap segment."""
+    lower_bounds = [model.Tmin.value_si for model in (thermo, reference)
+                    if model.Tmin is not None]
+    upper_bounds = [model.Tmax.value_si for model in (thermo, reference)
+                    if model.Tmax is not None]
+    lower = max(lower_bounds) if lower_bounds else None
+    upper = min(upper_bounds) if upper_bounds else None
+    if lower is None and upper is None:
+        lower, upper = 300.0, 2000.0
+    elif lower is None:
+        lower = min(300.0, 0.5 * upper)
+    elif upper is None:
+        upper = max(2000.0, lower + 1000.0)
+    if not (np.isfinite(lower) and np.isfinite(upper)) or lower >= upper:
+        return ()
+    boundaries = {lower, upper}
+    for model in (thermo, reference):
+        if isinstance(model, NASA):
+            for polynomial in model.polynomials:
+                for limit in (polynomial.Tmin, polynomial.Tmax):
+                    if limit is not None and lower < limit.value_si < upper:
+                        boundaries.add(limit.value_si)
+    boundaries = sorted(boundaries)
+    segments = []
+    for segment_lower, segment_upper in zip(boundaries[:-1], boundaries[1:]):
+        span = segment_upper - segment_lower
+        temperatures = tuple(segment_lower + span * fraction
+                             for fraction in (1.0 / 6.0, 2.0 / 6.0, 3.0 / 6.0,
+                                              4.0 / 6.0, 5.0 / 6.0))
+        segments.append((segment_lower, segment_upper, temperatures))
+    return tuple(segments)
+
+
+def _thermo_coverage_gap(thermo):
+    """Return the first uncovered interval in a NASA model's declared range."""
+    if not isinstance(thermo, NASA):
+        return None
+    if thermo.Tmin is None or thermo.Tmax is None:
+        return None
+    lower = thermo.Tmin.value_si
+    upper = thermo.Tmax.value_si
+    if not (np.isfinite(lower) and np.isfinite(upper)) or lower >= upper:
+        return None
+    boundaries = {lower, upper}
+    for polynomial in thermo.polynomials:
+        for limit in (polynomial.Tmin, polynomial.Tmax):
+            if limit is not None and lower < limit.value_si < upper:
+                boundaries.add(limit.value_si)
+    boundaries = sorted(boundaries)
+    for segment_lower, segment_upper in zip(boundaries[:-1], boundaries[1:]):
+        midpoint = 0.5 * (segment_lower + segment_upper)
+        if not any(polynomial.is_temperature_valid(midpoint)
+                   for polynomial in thermo.polynomials):
+            return segment_lower, segment_upper
+    return None
+
+
+def _thermodata_cp_breakpoints(thermo, lower, upper):
+    """Return every point where a ThermoData Cp line may change."""
+    temperatures = tuple(thermo.Tdata.value_si)
+    cp_values = tuple(thermo.Cpdata.value_si)
+    breakpoints = {
+        temperature for temperature in temperatures
+        if lower <= temperature <= upper
+    }
+    breakpoints.update((lower, upper))
+    if lower < temperatures[0] and thermo.Cp0 is not None:
+        slope = ((cp_values[1] - cp_values[0])
+                 / (temperatures[1] - temperatures[0]))
+        if slope != 0.0:
+            clamp = temperatures[0] + (
+                thermo.Cp0.value_si - cp_values[0]) / slope
+            if lower < clamp < temperatures[0]:
+                breakpoints.add(clamp)
+    if temperatures[-1] < upper and thermo.CpInf is not None:
+        slope = ((cp_values[-1] - cp_values[-2])
+                 / (temperatures[-1] - temperatures[-2]))
+        if slope != 0.0:
+            clamp = temperatures[-1] + (
+                thermo.CpInf.value_si - cp_values[-1]) / slope
+            if temperatures[-1] < clamp < upper:
+                breakpoints.add(clamp)
+    return breakpoints
+
+
+def _thermo_comparison_plan(thermo, reference):
+    """Return shared evaluation temperatures and the comparison's exactness."""
+    segments = _thermo_comparison_segments(thermo, reference)
+    if not segments:
+        return None
+    lower = segments[0][0]
+    upper = segments[-1][1]
+    if isinstance(thermo, Wilhoit) or isinstance(reference, Wilhoit):
+        if lower <= 0.0:
+            raise ValueError(
+                'Wilhoit comparison needs a positive overlap for log spacing')
+        return {
+            'comparison': (
+                'sampled Wilhoit comparison (20 log-spaced Cp points)'),
+            'reference_temperatures': (np.sqrt(lower * upper),),
+            'cp_temperatures': tuple(np.geomspace(lower, upper, num=20)),
+        }
+    if isinstance(thermo, ThermoData) or isinstance(reference, ThermoData):
+        boundaries = {lower, upper}
+        for segment_lower, segment_upper, _ in segments:
+            boundaries.update((segment_lower, segment_upper))
+        for model in (thermo, reference):
+            if isinstance(model, ThermoData):
+                boundaries.update(
+                    _thermodata_cp_breakpoints(model, lower, upper))
+        cp_temperatures = set(boundaries)
+        both_thermodata = (isinstance(thermo, ThermoData)
+                           and isinstance(reference, ThermoData))
+        if not both_thermodata:
+            ordered_boundaries = sorted(boundaries)
+            for interval_lower, interval_upper in zip(
+                    ordered_boundaries[:-1], ordered_boundaries[1:]):
+                span = interval_upper - interval_lower
+                cp_temperatures.update(
+                    interval_lower + span * fraction
+                    for fraction in (1.0 / 6.0, 2.0 / 6.0,
+                                     3.0 / 6.0, 4.0 / 6.0,
+                                     5.0 / 6.0)
+                )
+        comparison = (
+            'exact ThermoData piecewise-linear comparison'
+            if both_thermodata
+            else 'exact mixed ThermoData/NASA piecewise comparison')
+        return {
+            'comparison': comparison,
+            'reference_temperatures': (0.5 * (lower + upper),),
+            'cp_temperatures': tuple(sorted(cp_temperatures)),
+        }
+    return {
+        'comparison': 'exact NASA polynomial-piece comparison',
+        'segments': segments,
+    }
+
+
+def _thermo_sample_values(thermo, plan):
+    """Evaluate H, S, and Cp at every point in a shared comparison plan."""
+    values = []
+    if 'segments' in plan:
+        for _, _, temperatures in plan['segments']:
+            reference_temperature = temperatures[len(temperatures) // 2]
+            values.extend((thermo.get_enthalpy(reference_temperature),
+                           thermo.get_entropy(reference_temperature)))
+            values.extend(thermo.get_heat_capacity(temperature)
+                          for temperature in temperatures)
+    else:
+        for reference_temperature in plan['reference_temperatures']:
+            values.extend((thermo.get_enthalpy(reference_temperature),
+                           thermo.get_entropy(reference_temperature)))
+        values.extend(thermo.get_heat_capacity(temperature)
+                      for temperature in plan['cp_temperatures'])
+    return tuple(values)
+
+
+def _thermo_values_match(thermo, reference):
+    """Return the match verdict, comparison kind, and structured mismatch."""
+    if thermo is None or reference is None:
+        return False, None, {'kind': 'missing thermo'}
+    gap = _thermo_coverage_gap(thermo)
+    if gap is not None:
+        return False, None, {
+            'kind': 'coverage gap',
+            'side': 'species thermo',
+            'lower': gap[0],
+            'upper': gap[1],
+        }
+    gap = _thermo_coverage_gap(reference)
+    if gap is not None:
+        return False, None, {
+            'kind': 'coverage gap',
+            'side': 'library entry thermo',
+            'lower': gap[0],
+            'upper': gap[1],
+        }
+    try:
+        plan = _thermo_comparison_plan(thermo, reference)
+    except Exception as error:
+        return False, None, {
+            'kind': 'malformed thermo',
+            'side': 'thermo comparison',
+            'error': '{0}: {1}'.format(type(error).__name__, error),
+        }
+    if plan is None:
+        return False, None, {'kind': 'no overlapping validity interval'}
+    try:
+        actual_values = _thermo_sample_values(thermo, plan)
+    except Exception as error:
+        return False, None, {
+            'kind': 'malformed thermo',
+            'side': 'species thermo',
+            'error': '{0}: {1}'.format(type(error).__name__, error),
+        }
+    try:
+        reference_values = _thermo_sample_values(reference, plan)
+    except Exception as error:
+        return False, None, {
+            'kind': 'malformed thermo',
+            'side': 'library entry thermo',
+            'error': '{0}: {1}'.format(type(error).__name__, error),
+        }
+    for actual, expected in zip(actual_values, reference_values):
+        if not (np.isfinite(actual) and np.isfinite(expected)):
+            return False, None, {'kind': 'non-finite thermo value'}
+        if not np.isclose(actual, expected,
+                          rtol=PLASMA_THERMO_PROVENANCE_RTOL,
+                          atol=PLASMA_THERMO_PROVENANCE_ATOL):
+            return False, None, {'kind': 'thermo values differ'}
+    return True, plan['comparison'], None
+
+
+def _thermo_mismatch_reason_text(reason):
+    """Format one structured library-candidate mismatch for a user message."""
+    candidate = '{0}/{1}'.format(reason['library'], reason['entry'])
+    if reason['kind'] == 'coverage gap':
+        return ('{0}: {1} has a NASA polynomial coverage gap from {2:g} K '
+                'to {3:g} K').format(
+                    candidate, reason['side'], reason['lower'],
+                    reason['upper'])
+    if reason['kind'] == 'malformed thermo':
+        return '{0}: {1} is malformed ({2})'.format(
+            candidate, reason['side'], reason['error'])
+    return '{0}: {1}'.format(candidate, reason['kind'])
+
+
+def _thermo_mismatch_summary(reasons):
+    """Return a concise suffix for recorded candidate rejections."""
+    if not reasons:
+        return ''
+    return ' Candidate rejections: {0}.'.format(
+        '; '.join(_thermo_mismatch_reason_text(reason) for reason in reasons))
+
+
+def _thermo_match_diagnostic(outcome):
+    """Return the public diagnostic for a successful ordered library search."""
+    library_label, entry_label = outcome['match']
+    diagnostic = ('value-matched to library {0}/{1} '
+                  '(first match in library_order)').format(
+                      library_label, entry_label)
+    if outcome['comparison'].startswith('sampled'):
+        diagnostic += ' using ' + outcome['comparison']
+    if outcome['mismatches']:
+        diagnostic += ' after skipping ' + '; '.join(
+            _thermo_mismatch_reason_text(reason)
+            for reason in outcome['mismatches'])
+    return diagnostic
+
+
+def _library_entry_thermo_forms(data, species, entry_label):
+    """Return stored thermo and any form RMG's thermo engine attaches."""
+    reference = copy.deepcopy(data)
+    reference.label = entry_label
+    find_cp0_and_cpinf(species, reference)
+    forms = [reference]
+    if isinstance(reference, NASA):
+        return tuple(forms)
+    if not isinstance(reference, (ThermoData, Wilhoit)):
+        return tuple(forms)
+    processed_source = copy.deepcopy(reference)
+    processed = process_thermo_data(
+        copy.deepcopy(species), processed_source)
+    forms.append(processed)
+    return tuple(forms)
+
+
+def _charged_thermo_formula_charge_key(molecule):
+    """Return the formula/charge bucket used before exact isomorphism."""
+    return molecule.get_formula(), molecule.get_net_charge()
+
+
+def _build_charged_thermo_library_index(thermo_database):
+    """Index gas-phase entries by structure, preserving library order."""
+    index = {}
+    ordinal = 0
+    for library_label in thermo_database.library_order:
+        library = thermo_database.libraries[library_label]
+        if library.solvent:
+            continue
+        for entry in library.entries.values():
+            if entry.data is None or entry.item.get_net_charge() == 0:
+                continue
+            key = _charged_thermo_formula_charge_key(entry.item)
+            index.setdefault(key, []).append(
+                (ordinal, library_label, entry.label, entry.item, entry.data))
+            ordinal += 1
+    return index
+
+
+def _charged_species_library_thermo_match(species, library_index,
+                                           reference_cache):
+    """Return the first match and reasons for rejected candidates."""
+    outcome = {'match': None, 'comparison': None, 'mismatches': []}
+    structure_keys = tuple(sorted({_charged_thermo_formula_charge_key(molecule)
+                                   for molecule in species.molecule}))
+    candidates = {}
+    for structure_key in structure_keys:
+        for candidate in library_index.get(structure_key, ()):
+            candidates[candidate[0]] = candidate
+    for ordinal in sorted(candidates):
+        (_, library_label, entry_label,
+         entry_item, entry_data) = candidates[ordinal]
+        if not any(molecule.is_isomorphic(entry_item)
+                   for molecule in species.molecule):
+            continue
+        if ordinal not in reference_cache:
+            try:
+                reference_cache[ordinal] = _library_entry_thermo_forms(
+                    entry_data, species, entry_label)
+            except Exception as error:
+                outcome['mismatches'].append({
+                    'kind': 'malformed thermo',
+                    'side': 'library entry thermo',
+                    'error': '{0}: {1}'.format(type(error).__name__, error),
+                    'library': library_label,
+                    'entry': entry_label,
+                })
+                continue
+        candidate_mismatches = []
+        for reference in reference_cache[ordinal]:
+            matched, comparison, mismatch = _thermo_values_match(
+                species.thermo, reference)
+            if matched:
+                outcome['match'] = (library_label, entry_label)
+                outcome['comparison'] = comparison
+                return outcome
+            mismatch.update({'library': library_label, 'entry': entry_label})
+            candidate_mismatches.append(mismatch)
+        outcome['mismatches'].extend(candidate_mismatches)
+    return outcome
 
 
 def _require_finite_normal_positive(value, what, identity):
@@ -344,6 +697,9 @@ cdef class PlasmaReactor(ReactionSystem):
     # rate coefficients through a base-class initialization that skipped the
     # plasma validation.
     cdef public bint _plasma_validated
+    cdef public set thermo_source_assertions
+    cdef public dict thermo_provenance_diagnostics
+    cdef public set _unsourced_charged_edge_warnings
 
     # The LABEL of the chargeBalanceSpecies the deck named (or None). The directive
     # in rmgpy/rmg/input.py assigns this ion a mole fraction so the initial
@@ -543,7 +899,8 @@ cdef class PlasmaReactor(ReactionSystem):
                  mobility_reference_temperature=None,
                  mobility_temperature_exponent=None,
                  ambipolar_ion_temperature=None,
-                 ion_reduced_mobilities=None):
+                 ion_reduced_mobilities=None,
+                 thermo_source_assertions=None):
         ReactionSystem.__init__(self, termination, sensitive_species, sensitivity_threshold)
 
         if isinstance(T, list) or isinstance(P, list) or isinstance(Te, list):
@@ -583,6 +940,25 @@ cdef class PlasmaReactor(ReactionSystem):
         self.electron_index = -1
         self.electron_species = None
         self._plasma_validated = False
+        if thermo_source_assertions is None:
+            thermo_source_assertions = []
+        if isinstance(thermo_source_assertions, str):
+            raise PlasmaStateError(
+                "thermo_source_assertions must be a collection of species labels, not "
+                "one string; got {0!r}. ({1})".format(
+                    thermo_source_assertions, self._identity()))
+        if not isinstance(thermo_source_assertions, (list, tuple, set)):
+            raise PlasmaStateError(
+                "thermo_source_assertions must be a list, tuple, or set of species "
+                "labels; got {0!r}. ({1})".format(
+                    thermo_source_assertions, self._identity()))
+        if any(not isinstance(label, str) or not label for label in thermo_source_assertions):
+            raise PlasmaStateError(
+                "every thermo_source_assertions entry must be a non-empty species label; "
+                "got {0!r}. ({1})".format(thermo_source_assertions, self._identity()))
+        self.thermo_source_assertions = set(thermo_source_assertions)
+        self.thermo_provenance_diagnostics = {}
+        self._unsourced_charged_edge_warnings = set()
 
         self.sens_conditions = sens_conditions
         self.n_sims = n_sims
@@ -1944,7 +2320,8 @@ cdef class PlasmaReactor(ReactionSystem):
                  (self.mobility_reference_temperature if self.has_wall else None),
                  (self.mobility_temperature_exponent if self.has_wall else None),
                  (self.ambipolar_ion_temperature if self.has_wall else None),
-                 self.ion_reduced_mobilities if self.has_wall else None))
+                 self.ion_reduced_mobilities if self.has_wall else None,
+                 sorted(self.thermo_source_assertions)))
 
     cpdef initialize_model(self, list core_species, list core_reactions, list edge_species, list edge_reactions,
                           list surface_species=None, list surface_reactions=None, list pdep_networks=None,
@@ -1955,6 +2332,8 @@ cdef class PlasmaReactor(ReactionSystem):
         kinetic model. All electron-state and reverse-rate-policy validation
         happens here, before the first residual or Jacobian evaluation.
         """
+        self.thermo_provenance_diagnostics = {}
+
         # Unsupported features fail loudly instead of being silently ignored.
         if surface_species or surface_reactions:
             raise PlasmaStateError(
@@ -1979,6 +2358,10 @@ cdef class PlasmaReactor(ReactionSystem):
                 "PlasmaReactor does not accept externally supplied ranged/override "
                 "conditions {0!r}; construct the reactor directly with scalar T, P "
                 "and Te. ({1})".format(conditions, self._identity()))
+
+        # Every core species reaches this point on every model initialization,
+        # including restart, standalone Chemkin/Cantera loading, and promotion.
+        self._check_charged_species_thermo_provenance(core_species, edge_species)
 
         # THE electron-representation boundary. This is the single production
         # call site of the family-declared electron-placement resolver: the
@@ -2113,6 +2496,82 @@ cdef class PlasmaReactor(ReactionSystem):
         if self.energy_balance:
             self.energy_history = []
             self._latch_energy_budget(self.y0, 0.0)
+
+    def _check_charged_species_thermo_provenance(self, core_species, edge_species):
+        """Refuse core ions without a library value match and warn once for edge ions."""
+        database = rmg_data_module.database
+        thermo_database = None if database is None else getattr(database, 'thermo', None)
+        library_index = (None if thermo_database is None else
+                         _build_charged_thermo_library_index(thermo_database))
+        reference_cache = {}
+
+        for species in core_species:
+            charge = species.get_net_charge()
+            if charge == 0 or species.is_electron():
+                continue
+            identity = _charged_species_identity(species)
+            if species.thermo is None:
+                raise PlasmaStateError(
+                    "PlasmaReactor charged species {0!r} (net charge {1:+d}) has no "
+                    "thermo data; charged core species require a matching loaded thermo "
+                    "library entry.".format(identity, charge))
+            if thermo_database is None:
+                if identity in self.thermo_source_assertions:
+                    self.thermo_provenance_diagnostics[identity] = PLASMA_THERMO_CALLER_ASSERTION
+                    continue
+                raise PlasmaStateError(
+                    "PlasmaReactor cannot value-match thermo for charged species "
+                    "{0!r} (net charge {1:+d}) because no thermo database is loaded. "
+                    "Load the job's thermo libraries, or for a standalone reload explicitly "
+                    "pass thermo_source_assertions=[{0!r}]; that declaration is recorded as "
+                    "'{2}'.".format(identity, charge, PLASMA_THERMO_CALLER_ASSERTION))
+            outcome = _charged_species_library_thermo_match(
+                species, library_index, reference_cache)
+            if outcome['match'] is None:
+                raise PlasmaStateError(
+                    "PlasmaReactor charged species {0!r} (net charge {1:+d}) has thermo "
+                    "that could not be value-matched to an isomorphic entry in any loaded "
+                    "gas-phase thermo library "
+                    "at rtol={2:g}, atol={3:g} SI. Group additivity, HBI, QM, ML, and "
+                    "other estimates do not establish a charged-species library value match."
+                    "{4}"
+                    .format(identity, charge, PLASMA_THERMO_PROVENANCE_RTOL,
+                            PLASMA_THERMO_PROVENANCE_ATOL,
+                            _thermo_mismatch_summary(outcome['mismatches'])))
+            self.thermo_provenance_diagnostics[identity] = \
+                _thermo_match_diagnostic(outcome)
+
+        for species in edge_species:
+            charge = species.get_net_charge()
+            if charge == 0 or species.is_electron():
+                continue
+            identity = _charged_species_identity(species)
+            value_matched = False
+            if species.thermo is not None:
+                if thermo_database is None:
+                    value_matched = identity in self.thermo_source_assertions
+                    if value_matched:
+                        self.thermo_provenance_diagnostics[identity] = \
+                            PLASMA_THERMO_CALLER_ASSERTION
+                else:
+                    outcome = _charged_species_library_thermo_match(
+                        species, library_index, reference_cache)
+                    value_matched = outcome['match'] is not None
+                    if value_matched:
+                        self.thermo_provenance_diagnostics[identity] = \
+                            _thermo_match_diagnostic(outcome)
+            if (not value_matched
+                    and identity not in self._unsourced_charged_edge_warnings):
+                self._unsourced_charged_edge_warnings.add(identity)
+                logging.warning(
+                    "PlasmaReactor edge species %r (net charge %+d) has thermo that is "
+                    "not value-matched to an eligible gas-phase library; it may "
+                    "remain in the edge, but "
+                    "will be refused if promoted to the core.%s",
+                    identity, charge,
+                    (_thermo_mismatch_summary(outcome['mismatches'])
+                     if thermo_database is not None
+                     and species.thermo is not None else ''))
 
     def _rekey_reaction_index_to_model(self, core_reactions, edge_reactions):
         """
