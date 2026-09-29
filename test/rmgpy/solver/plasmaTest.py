@@ -128,9 +128,24 @@ def _mole_fractions(electron, ar, ar_ion, spc_a=None, spc_b=None, y_e=Y_E0):
     return imf
 
 
-def _reactor(imf, T=T_GAS, Te=T_E, P=P0):
-    return PlasmaReactor(T, P, imf, (Te, 'K') if not isinstance(Te, tuple) else Te,
-                         n_sims=1, termination=[])
+def _reactor(imf, T=T_GAS, Te=T_E, P=P0, **kwargs):
+    """Build a reactor for tests of solver behavior, not thermo provenance."""
+    assertions = []
+    for species in imf:
+        if species.is_electron() or species.get_net_charge() == 0:
+            continue
+        species.thermo = _thermo(0.0, 150.0)
+        assertions.append(species.label or species.smiles)
+    return PlasmaReactor(
+        T,
+        P,
+        imf,
+        (Te, 'K') if not isinstance(Te, tuple) else Te,
+        n_sims=1,
+        termination=[],
+        thermo_source_assertions=assertions,
+        **kwargs,
+    )
 
 
 def _initialize(reactor, core_species, core_reactions):
@@ -1008,8 +1023,7 @@ class PlasmaChargeBalanceReachabilityTest:
         return electron, ar, ar_ion, spc_a, spc_b, imf
 
     def _reactor_with_balance(self, imf, label):
-        return PlasmaReactor(T_GAS, P0, imf, (T_E, 'K'), n_sims=1, termination=[],
-                             charge_balance_species=label)
+        return _reactor(imf, charge_balance_species=label)
 
     _UNREACHABLE = 'no reaction in the loaded model produces'
 
@@ -1029,7 +1043,7 @@ class PlasmaChargeBalanceReachabilityTest:
         electron, ar, ar_ion, spc_a, spc_b, imf = self._neutral_imf()
         core_species = [ar, electron, ar_ion, spc_a, spc_b]
         core_reactions = [_thermal(spc_a, spc_b)]        # Ar+ produced by nothing
-        reactor = PlasmaReactor(T_GAS, P0, imf, (T_E, 'K'), n_sims=1, termination=[])
+        reactor = _reactor(imf)
         assert reactor.charge_balance_species is None
         with caplog.at_level(logging.WARNING):
             _initialize(reactor, core_species, core_reactions)

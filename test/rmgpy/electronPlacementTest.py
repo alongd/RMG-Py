@@ -61,6 +61,7 @@ from rmgpy.kinetics.arrhenius import TwoTemperaturePlasma
 from rmgpy.reaction import Reaction
 from rmgpy.solver.plasma import PlasmaReactor
 from rmgpy.species import Species
+from rmgpy.thermo import ThermoData
 
 FAMILY = "Plasma_Electron_Attachment"
 # An electron-bearing family that also declares electrons = -1 but carries NO
@@ -81,6 +82,24 @@ Y_E0 = 1.0e-4     # mol, seeded electrons
 
 def _electron():
     return Species(label="e-").from_adjacency_list("1 e u1 p0 c-1")
+
+
+def _charged_thermo_assertions(species):
+    """Declare synthetic charged fixtures whose tests are not about thermo."""
+    assertions = []
+    for spc in species:
+        if spc.is_electron() or spc.get_net_charge() == 0:
+            continue
+        spc.thermo = ThermoData(
+            Tdata=([300.0, 1000.0], "K"),
+            Cpdata=([30.0, 30.0], "J/(mol*K)"),
+            H298=(0.0, "J/mol"),
+            S298=(0.0, "J/(mol*K)"),
+            Cp0=(30.0, "J/(mol*K)"),
+            CpInf=(30.0, "J/(mol*K)"),
+        )
+        assertions.append(spc.label or spc.smiles)
+    return assertions
 
 
 def _o2():
@@ -462,7 +481,17 @@ class TestAttachmentPlacementDatabase:
 
     def _reactor(self):
         imf = {self.electron: Y_E0, self.reaction.reactants[0]: 1.0}
-        return PlasmaReactor(T_GAS, P0, imf, (T_E, "K"), n_sims=1, termination=[])
+        return PlasmaReactor(
+            T_GAS,
+            P0,
+            imf,
+            (T_E, "K"),
+            n_sims=1,
+            termination=[],
+            thermo_source_assertions=_charged_thermo_assertions(
+                self.species_list
+            ),
+        )
 
     def _core_species(self):
         return [self.electron, self.reaction.reactants[0], self.reaction.products[0]]
@@ -593,7 +622,16 @@ class TestElectronPlacementReactorIntegration:
 
     def _reactor(self):
         imf = {self.electron: Y_E0, self.o2: 1.0}
-        return PlasmaReactor(T_GAS, P0, imf, (T_E, "K"), n_sims=1, termination=[])
+        core_species = self._core_species()
+        return PlasmaReactor(
+            T_GAS,
+            P0,
+            imf,
+            (T_E, "K"),
+            n_sims=1,
+            termination=[],
+            thermo_source_assertions=_charged_thermo_assertions(core_species),
+        )
 
     def _initialized_reactor(self):
         """Build a fresh reactor and run the FULL production pipeline: the
@@ -822,7 +860,15 @@ class TestElectronPlacementReactorIntegration:
         electron = _electron()
         core_species = [electron, fresh_reaction.reactants[0], fresh_reaction.products[0]]
         imf = {electron: Y_E0, fresh_reaction.reactants[0]: 1.0}
-        reactor = PlasmaReactor(T_GAS, P0, imf, (T_E, "K"), n_sims=1, termination=[])
+        reactor = PlasmaReactor(
+            T_GAS,
+            P0,
+            imf,
+            (T_E, "K"),
+            n_sims=1,
+            termination=[],
+            thermo_source_assertions=_charged_thermo_assertions(core_species),
+        )
         reactor.initialize_model(core_species, [fresh_reaction], [], [])
         # The fresh canonical reaction bridges into reaction_index by identity
         # (not a cache, not a view) and was resolved anew AT the reactor: the
@@ -876,7 +922,15 @@ class TestElectronPlacementReactorIntegration:
         the reaction from the reactor's reaction set."""
         core_species = [self.o2, self.o2_anion]  # no electron
         imf = {self.o2: 1.0}
-        reactor = PlasmaReactor(T_GAS, P0, imf, (T_E, "K"), n_sims=1, termination=[])
+        reactor = PlasmaReactor(
+            T_GAS,
+            P0,
+            imf,
+            (T_E, "K"),
+            n_sims=1,
+            termination=[],
+            thermo_source_assertions=_charged_thermo_assertions(core_species),
+        )
         with pytest.raises(ElectronPlacementError, match="[Nn]o electron species"):
             reactor.initialize_model(core_species, [self.reaction], [], [])
 
@@ -1118,7 +1172,15 @@ class TestCationRecombinationPlacement:
         view = self._resolve()
         core_species = [self.electron] + list(view.reactants[:-1]) + list(view.products)
         imf = {self.electron: Y_E0, view.reactants[0]: 1.0}
-        reactor = PlasmaReactor(T_GAS, P0, imf, (T_E, "K"), n_sims=1, termination=[])
+        reactor = PlasmaReactor(
+            T_GAS,
+            P0,
+            imf,
+            (T_E, "K"),
+            n_sims=1,
+            termination=[],
+            thermo_source_assertions=_charged_thermo_assertions(core_species),
+        )
         with pytest.raises(NonEquilibriumReverseRateError,
                            match="electron-containing reaction"):
             reactor.initialize_model(core_species, [view], [], [])

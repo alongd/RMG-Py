@@ -50,6 +50,7 @@ import pytest
 from scipy.optimize import brentq
 
 import rmgpy.constants as constants
+import rmgpy.data.rmg as rmg_data_module
 from rmgpy.exceptions import PlasmaStateError
 from rmgpy.data.kinetics.library import LibraryReaction
 from rmgpy.kinetics import Arrhenius, TwoTemperaturePlasma
@@ -87,6 +88,16 @@ E_POOL_EV = 2.0 * E_EX_EV - E_IZ_EV       # 7.34 eV, credited to the ejected ele
 # Lieberman & Lichtenberg (2005) Table 3.3, argon elastic scattering:
 #     K_el = 2.336e-14 Te^1.609 exp(0.0618 (ln Te)^2 - 0.1171 (ln Te)^3)  m^3/s, Te in eV
 LL_AR_ELASTIC = {'A': (2.336e-14, 'm^3/s'), 'n': 1.609, 'b': 0.0618, 'c': -0.1171}
+
+
+@pytest.fixture(autouse=True)
+def _isolate_synthetic_thermo_database():
+    saved = rmg_data_module.database
+    rmg_data_module.database = None
+    try:
+        yield
+    finally:
+        rmg_data_module.database = saved
 
 
 def _thermo(h_ev):
@@ -174,6 +185,8 @@ def _build(te_ev=1.0, x_ion=1.0e-6, power_w=0.5, energy=True, metastable=False,
         rxns.append(_toy(4, [arp, electron], [ar], _two_temp(A_RC, 0.0), entries))
     lam = 1.0 / np.sqrt((2.405 / radius) ** 2 + (np.pi / LENGTH) ** 2)
     kwargs = dict(diffusion_length=(lam, 'm'), ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'))
+    # This isolated solver fixture uses synthetic charged thermo deliberately.
+    kwargs['thermo_source_assertions'] = ['Ar+']
     if metastable:
         kwargs['wall_neutralization_products'] = {'Ar+': 'Ar'}
     if source is not None:
@@ -455,7 +468,7 @@ def test_undeclared_elastic_partner_is_refused_at_initialisation():
     r = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), {electron: 1e-6, arp: 1e-6, ar: 1 - 2e-6},
                       (EV_TO_K, 'K'), diffusion_length=(LAMBDA, 'm'),
                       ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
-                      electron_energy_balance=decl)
+                      electron_energy_balance=decl, thermo_source_assertions=['Ar+'])
     with pytest.raises(PlasmaStateError, match="'He'"):
         r.initialize_model([electron, ar, arp], [], [], [])
 

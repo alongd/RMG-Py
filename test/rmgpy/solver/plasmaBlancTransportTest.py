@@ -137,7 +137,9 @@ def _ars_two_bath():
 def _reactor(labels=('e-', 'Ar', 'He', 'Ar+'), x=None, mobilities=None, pressure_torr=None,
              te_ev=TE_EV, cls=PlasmaReactor, rxns=None, spc=None, **kwargs):
     """A wall reactor over the named species, initialised. ``x`` maps label -> mole
-    fraction; the default is 0.5 torr He in 5 torr Ar with a 1e-6 charge-neutral seed."""
+    fraction; the default is 0.5 torr He in 5 torr Ar with a 1e-6 charge-neutral seed.
+    These synthetic transport fixtures declare their charged thermo explicitly;
+    they do not exercise thermo provenance."""
     spc = spc or _species()
     if x is None:
         x = {'Ar': P_AR_TORR / (P_AR_TORR + P_HE_TORR), 'He': P_HE_TORR / (P_AR_TORR + P_HE_TORR)}
@@ -160,6 +162,11 @@ def _reactor(labels=('e-', 'Ar', 'He', 'Ar+'), x=None, mobilities=None, pressure
         mobilities = _arp_two_bath() if 'Ar2+' not in labels else _two_ion_two_bath()
     if mobilities is not None:
         kwargs['ion_reduced_mobilities'] = mobilities
+    kwargs.setdefault(
+        'thermo_source_assertions',
+        [spc[label].label for label in labels
+         if not spc[label].is_electron() and spc[label].get_net_charge() != 0],
+    )
     p = (P_AR_TORR + P_HE_TORR) if pressure_torr is None else pressure_torr
     reactor = cls((TGAS, 'K'), (p * TORR_TO_PA, 'Pa'), imf, (te_ev * EV_TO_K, 'K'),
                   n_sims=1, termination=kwargs.pop('termination', []), **kwargs)
@@ -762,7 +769,8 @@ def test_unlabelled_or_duplicate_label_neutrals_do_not_merge(ambiguous_label):
         diffusion_length=(LAMBDA, 'm'),
         ion_reduced_mobilities={
             'Ar+': {'perBath': {'Ar': (K0_ARP_AR, MU)}}},
-        wall_neutralization_products={'Ar+': 'Ar'}, wall_bath_threshold=0.01)
+        wall_neutralization_products={'Ar+': 'Ar'}, wall_bath_threshold=0.01,
+        thermo_source_assertions=['Ar+'])
     core = [spc['e-'], spc['Ar'], first, second, spc['Ar+']]
     reactor.initialize_model(core, [], [], [])
     assert reactor.wall_bath_group[2] != reactor.wall_bath_group[3]

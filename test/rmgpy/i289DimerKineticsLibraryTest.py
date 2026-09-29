@@ -17,6 +17,7 @@ from rmgpy.data.kinetics.database import KineticsDatabase
 from rmgpy.data.thermo import ThermoDatabase
 from rmgpy.rmg.model import ReactionModel
 from rmgpy.solver.plasma import PlasmaReactor
+from rmgpy.thermo.thermoengine import process_thermo_data
 from rmgpy.transport import TransportData
 from rmgpy.yaml_cantera2 import save_cantera_model
 
@@ -67,9 +68,8 @@ def _mechanism(rmg_database):
             species.setdefault(spc.label, spc)
     for index, spc in enumerate(species.values(), start=1):
         spc.index = index
-        spc.thermo = rmg_database.thermo.get_thermo_data(spc)
-        if spc.thermo.__class__.__name__ != 'NASA':
-            spc.thermo = spc.thermo.to_nasa(100, 5000, 1000)
+        source_thermo = rmg_database.thermo.get_thermo_data(spc)
+        spc.thermo = process_thermo_data(spc, source_thermo)
         spc.transport_data = TransportData(
             shapeIndex=0 if len(spc.molecule[0].atoms) == 1 else 1,
             sigma=(3.0, 'angstrom'), epsilon=(100.0, 'K'),

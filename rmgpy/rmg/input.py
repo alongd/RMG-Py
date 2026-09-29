@@ -1045,7 +1045,8 @@ def plasma_reactor(temperature,
                    terminationSteadyState=None,
                    ionReducedMobilities=None,
                    wallBathThreshold=None,
-                   wallBathLumping=None):
+                   wallBathLumping=None,
+                   thermoSourceAssertions=None):
     """
     Define a two-temperature plasma batch reactor (:class:`PlasmaReactor`) from an
     input file.
@@ -1084,6 +1085,13 @@ def plasma_reactor(temperature,
     Ordering: because ``electronDensity`` is resolved against the declared electron
     pseudo-species, the ``species(...)`` directive declaring the electron must appear
     **before** this ``plasmaReactor(...)`` block in the input file.
+
+    ``thermoSourceAssertions`` is the explicit escape hatch for standalone reload
+    tools that have no thermo database loaded. It is a collection of charged-species
+    labels whose thermo the caller asserts came from a library; the
+    reactor records these as ``caller-asserted, not verified``. It is ignored as
+    authority when a thermo database is available, where an actual gas-phase
+    library-value match is required instead.
 
     When ``electronDensity`` is supplied it is converted, entirely on the driver side,
     into an electron mole fraction ``x_e`` that is inserted into
@@ -1241,6 +1249,21 @@ def plasma_reactor(temperature,
         electron density come out right would work, and would mean nothing.
     """
     logging.debug('Found PlasmaReactor reaction system')
+
+    if thermoSourceAssertions is None:
+        thermoSourceAssertions = []
+    if isinstance(thermoSourceAssertions, str) or not isinstance(
+            thermoSourceAssertions, (list, tuple, set)):
+        raise InputError(
+            "thermoSourceAssertions must be a collection of species labels; "
+            "got {0!r}.".format(thermoSourceAssertions))
+    thermoSourceAssertions = list(thermoSourceAssertions)
+    invalid_assertions = [label for label in thermoSourceAssertions
+                          if not isinstance(label, str) or not label]
+    if invalid_assertions:
+        raise InputError(
+            "thermoSourceAssertions contains invalid species labels: {0!r}; "
+            "every entry must be a non-empty string.".format(invalid_assertions))
 
     # Defensive copy: the conversion below mutates this dict (scaling heavy fractions,
     # inserting the electron) and the SAME object is then stored on the reactor. An
@@ -1698,6 +1721,7 @@ def plasma_reactor(temperature,
         # place the loaded reaction set exists, so the check that the neutrality this
         # keyword achieves is not fictitious runs there, against that set.
         charge_balance_species=chargeBalanceSpecies,
+        thermo_source_assertions=thermoSourceAssertions,
     )
     rmg.reaction_systems.append(system)
 
@@ -3028,6 +3052,9 @@ def _format_plasma_wall(system):
     round trip is unit-testable without a whole RMG object.
     """
     lines = []
+    if system.thermo_source_assertions:
+        lines.append('    thermoSourceAssertions = {0!r},\n'
+                     ''.format(sorted(system.thermo_source_assertions)))
     if system.quasineutral_electron:
         lines.append('    quasineutralElectron = True,\n')
     if system.has_wall:

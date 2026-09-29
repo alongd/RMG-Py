@@ -52,6 +52,7 @@ import numpy as np
 import pytest
 
 import rmgpy.constants as constants
+import rmgpy.data.rmg as rmg_data_module
 import rmgpy.solver.plasma
 from rmgpy import settings
 from rmgpy.exceptions import PlasmaStateError
@@ -82,6 +83,36 @@ MU0_AR_IN_AR = 1.535e-4                   # m^2/(V s) at the Loschmidt density
 # ``database.directory`` comes from the worktree's rmgrc (see docs/rmgrc.md).
 VORONOV_YAML = os.path.join(settings['database.directory'], 'kinetics', 'voronov.yaml')
 
+# These wall-equation fixtures intentionally use synthetic thermo so their hand
+# calculations stay independent of database values. Declare that fact explicitly;
+# provenance behavior itself is exercised with real libraries in the I-293 tests.
+_FIXTURE_THERMO_SOURCE_ASSERTIONS = [
+    'Ar+', 'Ar2+', 'Ne+', 'Cl-', 'DME+', 'DME+-13C',
+]
+
+
+@pytest.fixture(autouse=True)
+def _isolate_synthetic_thermo_database():
+    saved = rmg_data_module.database
+    rmg_data_module.database = None
+    try:
+        yield
+    finally:
+        rmg_data_module.database = saved
+
+
+def _fixture_plasma_reactor(*args, **kwargs):
+    # The provenance guard fails closed on thermo=None even for an assertion. Give
+    # every charged fixture species in the declared initial composition a real
+    # ThermoData object when the wall test itself did not provide one.
+    for species in args[2]:
+        if (species.get_net_charge() != 0 and not species.is_electron()
+                and species.thermo is None):
+            species.thermo = _argon_thermo(15.76)
+    kwargs.setdefault('thermo_source_assertions',
+                      list(_FIXTURE_THERMO_SOURCE_ASSERTIONS))
+    return PlasmaReactor(*args, **kwargs)
+
 
 def _diffusion_length(radius=R_NOMINAL, length=L_NOMINAL):
     """Lowest diffusion eigenmode of a finite cylinder: 1/Lambda^2 = (2.405/R)^2 + (pi/L)^2."""
@@ -102,6 +133,7 @@ def _argon_species():
     electron = Species(label='e-').from_adjacency_list('1 e u1 p0 c-1')
     ar = Species(label='Ar').from_adjacency_list('1 Ar u0 p4 c0')
     arp = Species(label='Ar+').from_adjacency_list('multiplicity 2\n1 Ar u1 p3 c+1')
+    arp.thermo = _argon_thermo(15.76)
     return electron, ar, arp
 
 
@@ -132,6 +164,7 @@ def _build_reactor(te_ev=TE_NOMINAL_EV, pressure=P_NOMINAL, tgas=TGAS,
             kwargs['ionisation_source'] = (source, 'm^-3/s')
         if max_alpha is not None:
             kwargs['max_ionisation_degree'] = max_alpha
+    kwargs['thermo_source_assertions'] = list(_FIXTURE_THERMO_SOURCE_ASSERTIONS)
     reactor = (reactor_cls or PlasmaReactor)(
         (tgas, 'K'), (pressure, 'Pa'), imf, (te_ev * EV_TO_K, 'K'),
         n_sims=1, termination=termination or [],
@@ -233,7 +266,7 @@ def test_per_ion_wall_losses_preserve_charge_and_return_dimer_atoms():
     electron, ar, arp = _argon_species()
     ar2p = Species(label='Ar2+').from_adjacency_list(
         'multiplicity 2\n1 Ar u0 p3 c+1 {2,S}\n2 Ar u1 p3 c0 {1,S}')
-    reactor = PlasmaReactor(
+    reactor = _fixture_plasma_reactor(
         (TGAS, 'K'), (P_NOMINAL, 'Pa'),
         {electron: 5e-6, ar: 1.0, arp: 2e-6, ar2p: 3e-6},
         (TE_NOMINAL_EV * EV_TO_K, 'K'), diffusion_length=(_diffusion_length(), 'm'),
@@ -261,7 +294,7 @@ def test_per_ion_wall_jacobian_matches_finite_difference():
     electron, ar, arp = _argon_species()
     ar2p = Species(label='Ar2+').from_adjacency_list(
         'multiplicity 2\n1 Ar u0 p3 c+1 {2,S}\n2 Ar u1 p3 c0 {1,S}')
-    reactor = PlasmaReactor(
+    reactor = _fixture_plasma_reactor(
         (TGAS, 'K'), (P_NOMINAL, 'Pa'),
         {electron: 5e-6, ar: 1.0, arp: 2e-6, ar2p: 3e-6},
         (TE_NOMINAL_EV * EV_TO_K, 'K'), diffusion_length=(_diffusion_length(), 'm'),
@@ -286,7 +319,7 @@ def _scalar_dimer_reactor(gamma=1.0):
     ar2p = Species(label='Ar2+').from_adjacency_list(
         'multiplicity 2\n1 Ar u0 p3 c+1 {2,S}\n2 Ar u1 p3 c0 {1,S}')
     ar2p.thermo = _thermo_with_h298(1000.0)
-    reactor = PlasmaReactor(
+    reactor = _fixture_plasma_reactor(
         (TGAS, 'K'), (P_NOMINAL, 'Pa'),
         {electron: 3e-6, ar: 1.0, ar2p: 3e-6},
         (TE_NOMINAL_EV * EV_TO_K, 'K'), diffusion_length=(_diffusion_length(), 'm'),
@@ -357,7 +390,7 @@ def test_scalar_mode_ar2p_matches_map_mode_multiplicity_regression():
     electron, ar, arp = _argon_species()
     ar2p = Species(label='Ar2+').from_adjacency_list(
         'multiplicity 2\n1 Ar u0 p3 c+1 {2,S}\n2 Ar u1 p3 c0 {1,S}')
-    reactor = PlasmaReactor(
+    reactor = _fixture_plasma_reactor(
         (TGAS, 'K'), (P_NOMINAL, 'Pa'),
         {electron: 5e-6, ar: 1.0, arp: 2e-6, ar2p: 3e-6},
         (TE_NOMINAL_EV * EV_TO_K, 'K'), diffusion_length=(_diffusion_length(), 'm'),
@@ -385,7 +418,7 @@ def test_mapped_wall_round_trip_preserves_only_the_map(copy_kind):
         'multiplicity 2\n1 Ar u0 p3 c+1 {2,S}\n2 Ar u1 p3 c0 {1,S}')
     mapped = {'Ar+': (MU0_AR_IN_AR, 'm^2/(V*s)'),
               'Ar2+': (2 * MU0_AR_IN_AR, 'm^2/(V*s)')}
-    reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'),
+    reactor = _fixture_plasma_reactor((TGAS, 'K'), (P_NOMINAL, 'Pa'),
         {electron: 5e-6, ar: 1.0, arp: 2e-6, ar2p: 3e-6},
         (TE_NOMINAL_EV * EV_TO_K, 'K'), diffusion_length=(_diffusion_length(), 'm'),
         ion_reduced_mobilities=mapped,
@@ -399,7 +432,7 @@ def test_mapped_wall_round_trip_preserves_only_the_map(copy_kind):
 def test_compute_nu_wall_refuses_map_mode_scalar_answer():
     """Map mode must not publish a plausible first-ion scalar frequency."""
     electron, ar, arp = _argon_species()
-    reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'),
+    reactor = _fixture_plasma_reactor((TGAS, 'K'), (P_NOMINAL, 'Pa'),
         {electron: 1e-6, ar: 1.0, arp: 1e-6}, (TE_NOMINAL_EV * EV_TO_K, 'K'),
         diffusion_length=(_diffusion_length(), 'm'),
         ion_reduced_mobilities={'Ar+': (MU0_AR_IN_AR, 'm^2/(V*s)')})
@@ -432,7 +465,7 @@ def test_mapped_energy_residual_uses_common_flux_weighted_sheath():
     energy = {'absorbed_power': (0.0, 'W'), 'chamber_volume': (1e-3, 'm^3'),
               'sheath': 'floating_wall', 'electron_energies': {},
               'elastic_collisions': {'Ar': {'ignore': 'wall-sheath unit test'}}}
-    r = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'),
+    r = _fixture_plasma_reactor((TGAS, 'K'), (P_NOMINAL, 'Pa'),
         {electron: 5e-6, ar: 1.0, arp: 2e-6, ar2p: 3e-6},
         (TE_NOMINAL_EV * EV_TO_K, 'K'), diffusion_length=(_diffusion_length(), 'm'),
         ion_reduced_mobilities={'Ar+': (MU0_AR_IN_AR, 'm^2/(V*s)'),
@@ -461,7 +494,7 @@ def test_mapped_energy_residual_ions_have_unequal_mass_and_unequal_flux():
         'multiplicity 2\n1 Ar u0 p3 c+1 {2,S}\n2 Ar u1 p3 c0 {1,S}')
     assert not math.isclose(ar2p.molecular_weight.value_si, arp.molecular_weight.value_si,
                             rel_tol=1e-6)
-    r = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'),
+    r = _fixture_plasma_reactor((TGAS, 'K'), (P_NOMINAL, 'Pa'),
         {electron: 5e-6, ar: 1.0, arp: 2e-6, ar2p: 3e-6},
         (TE_NOMINAL_EV * EV_TO_K, 'K'), diffusion_length=(_diffusion_length(), 'm'),
         ion_reduced_mobilities={'Ar+': (MU0_AR_IN_AR, 'm^2/(V*s)'),
@@ -513,7 +546,7 @@ def test_invalid_per_ion_flux_falls_back_without_a_stray_contribution():
     energy = {'absorbed_power': (0.0, 'W'), 'chamber_volume': (1e-3, 'm^3'),
               'sheath': 'floating_wall', 'electron_energies': {},
               'elastic_collisions': {'Ar': {'ignore': 'wall-sheath unit test'}}}
-    r = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'),
+    r = _fixture_plasma_reactor((TGAS, 'K'), (P_NOMINAL, 'Pa'),
         {electron: 5e-6, ar: 1.0, arp: 2e-6, ar2p: 3e-6},
         (TE_NOMINAL_EV * EV_TO_K, 'K'), diffusion_length=(_diffusion_length(), 'm'),
         ion_reduced_mobilities={'Ar+': (MU0_AR_IN_AR, 'm^2/(V*s)'),
@@ -565,7 +598,7 @@ def test_invalid_flux_and_invalid_density_falls_back_to_equal_weight_and_still_z
     energy = {'absorbed_power': (0.0, 'W'), 'chamber_volume': (1e-3, 'm^3'),
               'sheath': 'floating_wall', 'electron_energies': {},
               'elastic_collisions': {'Ar': {'ignore': 'wall-sheath unit test'}}}
-    r = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'),
+    r = _fixture_plasma_reactor((TGAS, 'K'), (P_NOMINAL, 'Pa'),
         {electron: 5e-6, ar: 1.0, arp: 2e-6, ar2p: 3e-6},
         (TE_NOMINAL_EV * EV_TO_K, 'K'), diffusion_length=(_diffusion_length(), 'm'),
         ion_reduced_mobilities={'Ar+': (MU0_AR_IN_AR, 'm^2/(V*s)'),
@@ -628,7 +661,7 @@ def test_partial_valid_flux_uses_only_the_valid_subset_with_unequal_masses():
               'sheath': 'floating_wall', 'electron_energies': {},
               'elastic_collisions': {'Ar': {'ignore': 'wall-sheath unit test'},
                                      'Ne': {'ignore': 'wall-sheath unit test'}}}
-    r = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'),
+    r = _fixture_plasma_reactor((TGAS, 'K'), (P_NOMINAL, 'Pa'),
         {electron: 6e-6, ar: 1.0, arp: 2e-6, ar2p: 3e-6, ne: 1e-4, nep: 1e-6},
         (TE_NOMINAL_EV * EV_TO_K, 'K'), diffusion_length=(_diffusion_length(), 'm'),
         ion_reduced_mobilities={'Ar+': (MU0_AR_IN_AR, 'm^2/(V*s)'),
@@ -701,7 +734,7 @@ def test_relaxation_time_ignores_a_cation_below_the_1e3_charge_share_threshold()
 
     def make(x_ar2p):
         x_e = x_arp + x_ar2p          # both cations carry charge +1: keep charge-neutral
-        r = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'),
+        r = _fixture_plasma_reactor((TGAS, 'K'), (P_NOMINAL, 'Pa'),
             {electron: x_e, ar: 1.0, arp: x_arp, ar2p: x_ar2p},
             (TE_NOMINAL_EV * EV_TO_K, 'K'), diffusion_length=(_diffusion_length(), 'm'),
             ion_reduced_mobilities={'Ar+': (mu0_arp, 'm^2/(V*s)'),
@@ -1001,7 +1034,7 @@ def test_nonneutral_initial_state_raises_under_quasineutral_electron():
     """A non-charge-neutral initial composition with quasineutral_electron=True
     raises PlasmaStateError naming the net charge."""
     electron, ar, arp = _argon_species()
-    bad = PlasmaReactor(
+    bad = _fixture_plasma_reactor(
         (TGAS, 'K'), (P_NOMINAL, 'Pa'),
         {electron: 2.0e-8, arp: 1.0e-8, ar: 1.0 - 3.0e-8},
         (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
@@ -1021,14 +1054,14 @@ def test_diffusion_length_and_mobility_must_be_declared_together():
     imf = {electron: 1.0e-6, arp: 1.0e-6, ar: 1.0 - 2.0e-6}
 
     with pytest.raises(PlasmaStateError):
-        PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+        _fixture_plasma_reactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
                       (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
                       diffusion_length=(_diffusion_length(), 'm'))
 
     electron2, ar2, arp2 = _argon_species()
     imf2 = {electron2: 1.0e-6, arp2: 1.0e-6, ar2: 1.0 - 2.0e-6}
     with pytest.raises(PlasmaStateError):
-        PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf2,
+        _fixture_plasma_reactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf2,
                       (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
                       ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'))
 
@@ -1046,7 +1079,7 @@ def test_wall_parameter_bounds_each_raise():
         kwargs = dict(diffusion_length=(_diffusion_length(), 'm'),
                       ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'))
         kwargs.update(overrides)
-        return PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+        return _fixture_plasma_reactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
                              (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1,
                              termination=[], **kwargs)
 
@@ -1440,20 +1473,21 @@ def _ground_species(label='Ar', excitation_eV=None):
 
 def _metastable_reactor(ground_eV=0.0, meta_eV=11.5, meta_label='Ar*', gamma=1.0,
                         neutralization=None, with_meta_thermo=True,
-                        with_ground_thermo=True):
+                        with_ground_thermo=True, ion_eV=15.76):
     """A wall reactor whose core carries ground Ar, a second neutral Ar state, Ar+
     and e-. Thermo is attached locally so the ground-state energy rule can run."""
     electron = Species(label='e-').from_adjacency_list('1 e u1 p0 c-1')
     ground = _ground_species('Ar', ground_eV if with_ground_thermo else None)
     meta = _metastable_species(meta_label, meta_eV if with_meta_thermo else None)
     arp = Species(label='Ar+').from_adjacency_list('multiplicity 2\n1 Ar u1 p3 c+1')
+    arp.thermo = _argon_thermo(ion_eV)
     imf = {electron: 1.0e-6, arp: 1.0e-6, meta: 1.0e-6, ground: 1.0 - 3.0e-6}
     kwargs = dict(diffusion_length=(_diffusion_length(), 'm'),
                   ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
                   wall_recycling=gamma)
     if neutralization is not None:
         kwargs['wall_neutralization_products'] = neutralization
-    reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+    reactor = _fixture_plasma_reactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
                             n_sims=1, termination=[], **kwargs)
     core = [electron, ground, meta, arp]
     reactor.initialize_model(core, [], [], [])
@@ -1608,7 +1642,7 @@ def test_wall_refuses_anion_in_core():
     imf = {electron: 1e-6, arp: 1e-6, cln: 1e-6, cl: 1e-6, ground: 1.0 - 4e-6}
     # Ar and Cl are distinct heavy skeletons, so the neutral bath is a mixture; opt into
     # the single-bath approximation so this deck reaches the anion check it is about.
-    reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+    reactor = _fixture_plasma_reactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
                             (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
                             diffusion_length=(_diffusion_length(), 'm'),
                             ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
@@ -1673,7 +1707,7 @@ def _isomer_reactor(gamma=1.0, dme_kj=-184.0, eth_kj=-235.0, neutralization=None
                   wall_single_bath_approximation=True)
     if neutralization is not None:
         kwargs['wall_neutralization_products'] = neutralization
-    reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+    reactor = _fixture_plasma_reactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
                             (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[], **kwargs)
     core = [electron, dme, eth, dmep]
     reactor.initialize_model(core, [], [], [])
@@ -1717,7 +1751,7 @@ def test_wall_refuses_electron_without_a_cation():
     electron = Species(label='e-').from_adjacency_list('1 e u1 p0 c-1')
     ar = _ground_species('Ar')
     imf = {electron: 1.0e-6, ar: 1.0 - 1.0e-6}
-    reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+    reactor = _fixture_plasma_reactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
                             (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
                             diffusion_length=(_diffusion_length(), 'm'),
                             ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'))
@@ -1751,7 +1785,7 @@ def test_declared_source_is_delivered_in_full_in_a_mixture():
     arp = Species(label='Ar+').from_adjacency_list('multiplicity 2\n1 Ar u1 p3 c+1')
     source = 1.0e18
     imf = {electron: 1.0e-6, arp: 1.0e-6, he: 0.5, ar: 0.5 - 2.0e-6}
-    reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+    reactor = _fixture_plasma_reactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
                             (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
                             diffusion_length=(_diffusion_length(), 'm'),
                             ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
@@ -1789,7 +1823,7 @@ def test_direct_construction_checks_diffusion_length_dimension():
     electron, ar, arp = _argon_species()
     imf = {electron: 1.0e-6, arp: 1.0e-6, ar: 1.0 - 2.0e-6}
     with pytest.raises(PlasmaStateError) as exc:
-        PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+        _fixture_plasma_reactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
                       (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
                       diffusion_length=(2.0, 's'),
                       ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'))
@@ -1801,7 +1835,7 @@ def test_direct_construction_checks_mobility_dimension():
     electron, ar, arp = _argon_species()
     imf = {electron: 1.0e-6, arp: 1.0e-6, ar: 1.0 - 2.0e-6}
     with pytest.raises(PlasmaStateError) as exc:
-        PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+        _fixture_plasma_reactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
                       (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
                       diffusion_length=(_diffusion_length(), 'm'),
                       ion_reduced_mobility=(1.0e-4, 'm^2/s'))
@@ -1828,8 +1862,9 @@ def test_wall_energy_interface_declares_ion_term_absent_not_broken():
     from UNAVAILABLE (could not compute) from AVAILABLE, in code, without reading a
     docstring. The ion directed/sheath term is declared-absent (a sheath model is a
     contract non-goal); the electron thermal term is available from T_e; the
-    neutralisation term is unavailable here because Ar+ carries no thermo."""
-    r, core = _metastable_reactor(gamma=1.0, neutralization={'Ar+': 'Ar'})
+    neutralisation term is unavailable here because Ar+ carries non-finite thermo."""
+    r, core = _metastable_reactor(gamma=1.0, neutralization={'Ar+': 'Ar'},
+                                  ion_eV=float('nan'))
     avail = r.wall_energy_availability
     assert avail['wall_ion_energy_flux'] == 'declared-absent'
     assert r.wall_ion_energy_flux is None
@@ -1861,7 +1896,7 @@ def test_source_apportionment_jacobian_matches_fd_in_a_mixture():
     he = Species(label='He').from_adjacency_list('1 He u0 p1 c0')
     arp = Species(label='Ar+').from_adjacency_list('multiplicity 2\n1 Ar u1 p3 c+1')
     imf = {electron: 1.0e-7, arp: 1.0e-7, he: 0.4, ar: 0.6 - 2.0e-7}
-    reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+    reactor = _fixture_plasma_reactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
                             (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
                             diffusion_length=(_diffusion_length(), 'm'),
                             ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
@@ -1972,7 +2007,7 @@ def test_declared_source_refused_when_no_ionisable_inventory_remains():
     he = Species(label='He').from_adjacency_list('1 He u0 p1 c0')
     arp = Species(label='Ar+').from_adjacency_list('multiplicity 2\n1 Ar u1 p3 c+1')
     imf = {electron: 1.0e-7, arp: 1.0e-7, he: 0.5, ar: 0.5 - 2.0e-7}
-    reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+    reactor = _fixture_plasma_reactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
                             (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
                             diffusion_length=(_diffusion_length(), 'm'),
                             ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
@@ -2006,7 +2041,7 @@ def test_check_wall_support_refuses_an_individual_negative_neutral():
     he = Species(label='He').from_adjacency_list('1 He u0 p1 c0')
     arp = Species(label='Ar+').from_adjacency_list('multiplicity 2\n1 Ar u1 p3 c+1')
     imf = {electron: 1.0e-7, arp: 1.0e-7, he: 0.5, ar: 0.5 - 2.0e-7}
-    reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+    reactor = _fixture_plasma_reactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
                             (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
                             diffusion_length=(_diffusion_length(), 'm'),
                             ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
@@ -2035,7 +2070,7 @@ def _noise_reactor():
     he = Species(label='He').from_adjacency_list('1 He u0 p1 c0')
     arp = Species(label='Ar+').from_adjacency_list('multiplicity 2\n1 Ar u1 p3 c+1')
     imf = {electron: 1.0e-7, arp: 1.0e-7, he: 0.5, ar: 0.5 - 2.0e-7}
-    reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+    reactor = _fixture_plasma_reactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
                             (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
                             diffusion_length=(_diffusion_length(), 'm'),
                             ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
@@ -2107,7 +2142,7 @@ def test_direct_construction_checks_mobility_reference_density_dimension():
     in the wrong dimension. (3, 'kg') is a mass, not a number density; taking its SI
     value as m^-3 would scale the ion mobility from the wrong quantity."""
     with pytest.raises(PlasmaStateError) as exc:
-        PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'),
+        _fixture_plasma_reactor((TGAS, 'K'), (P_NOMINAL, 'Pa'),
                       {Species(label='e-').from_adjacency_list('1 e u1 p0 c-1'): 1.0},
                       (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
                       diffusion_length=(_diffusion_length(), 'm'),
@@ -2121,7 +2156,7 @@ def test_direct_construction_checks_ionisation_source_dimension():
     """MED: ionisation_source given as (7, 'kg') is a mass, not a rate density; the
     constructor must reject it rather than take 7 as 7 m^-3 s^-1."""
     with pytest.raises(PlasmaStateError) as exc:
-        PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'),
+        _fixture_plasma_reactor((TGAS, 'K'), (P_NOMINAL, 'Pa'),
                       {Species(label='e-').from_adjacency_list('1 e u1 p0 c-1'): 1.0},
                       (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
                       diffusion_length=(_diffusion_length(), 'm'),
@@ -2136,7 +2171,7 @@ def test_wall_only_options_without_a_wall_are_refused():
     the deck would run as a plain volume reactor with the source doing nothing. Refuse,
     naming the option."""
     with pytest.raises(PlasmaStateError) as exc:
-        PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'),
+        _fixture_plasma_reactor((TGAS, 'K'), (P_NOMINAL, 'Pa'),
                       {Species(label='e-').from_adjacency_list('1 e u1 p0 c-1'): 1.0},
                       (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
                       ionisation_source=(1.0e18, 'm^-3/s'))
@@ -2153,7 +2188,7 @@ def test_wall_neutralization_products_unknown_ion_key_is_refused():
     ar = _ground_species('Ar')
     arp = Species(label='Ar+').from_adjacency_list('multiplicity 2\n1 Ar u1 p3 c+1')
     imf = {electron: 1.0e-6, arp: 1.0e-6, ar: 1.0 - 2.0e-6}
-    reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+    reactor = _fixture_plasma_reactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
                             (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
                             diffusion_length=(_diffusion_length(), 'm'),
                             ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
@@ -2385,7 +2420,7 @@ def test_declared_isotopic_neutral_is_not_hidden_by_key_truncation():
     kept, ion and its isotopic neutral share a key and the declaration resolves."""
     e, _dme12, dme13, dmep13 = _dme_isotope_species()
     imf = {e: 1.0e-6, dmep13: 1.0e-6, dme13: 1.0 - 2.0e-6}
-    reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+    reactor = _fixture_plasma_reactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
                             (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
                             diffusion_length=(_diffusion_length(), 'm'),
                             ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
@@ -2408,7 +2443,7 @@ def test_quasineutrality_bound_is_relative_not_an_absolute_mole_floor():
     ar = _ground_species('Ar')
     arp = Species(label='Ar+').from_adjacency_list('multiplicity 2\n1 Ar u1 p3 c+1')
     imf = {e: 1.0e-13, arp: 0.0, ar: 1.0 - 1.0e-13}
-    reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+    reactor = _fixture_plasma_reactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
                             (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
                             diffusion_length=(_diffusion_length(), 'm'),
                             ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
@@ -2427,7 +2462,7 @@ def test_initial_quasineutrality_bound_is_relative_under_algebraic_electron():
     ar = _ground_species('Ar')
     arp = Species(label='Ar+').from_adjacency_list('multiplicity 2\n1 Ar u1 p3 c+1')
     imf = {e: 1.0e-13, arp: 5.0e-13, ar: 1.0 - 6.0e-13}
-    reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+    reactor = _fixture_plasma_reactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
                             (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
                             quasineutral_electron=True)
     with pytest.raises(PlasmaStateError) as exc:
@@ -2443,7 +2478,7 @@ def _energy_reactor(gamma):
     arp = Species(label='Ar+').from_adjacency_list('multiplicity 2\n1 Ar u1 p3 c+1')
     arp.thermo = _argon_thermo(15.76)          # ionisation energy as the enthalpy offset
     imf = {e: 1.0e-6, arp: 1.0e-6, ar: 1.0 - 2.0e-6}
-    reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+    reactor = _fixture_plasma_reactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
                             (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
                             diffusion_length=(_diffusion_length(), 'm'),
                             ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
@@ -2488,12 +2523,12 @@ def test_quasineutral_electron_flag_parses_boolean_strings_strictly():
     True."""
     e, ar, arp = _argon_species()
     imf = {e: 1.0e-6, arp: 1.0e-6, ar: 1.0 - 2.0e-6}
-    r = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+    r = _fixture_plasma_reactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
                       (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
                       quasineutral_electron='False')
     assert r.quasineutral_electron is False
     with pytest.raises(PlasmaStateError):
-        PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+        _fixture_plasma_reactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
                       (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
                       quasineutral_electron='maybe')
 
@@ -2726,7 +2761,7 @@ def test_neutral_mixture_is_refused_unless_the_single_bath_approximation_is_opte
 
     # Without the opt-in: refused at construction, naming the gases and the keyword.
     with pytest.raises(PlasmaStateError) as exc:
-        r = PlasmaReactor(
+        r = _fixture_plasma_reactor(
             (TGAS, 'K'), (P_NOMINAL, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
             n_sims=1, termination=[],
             diffusion_length=(_diffusion_length(), 'm'),
@@ -2737,7 +2772,7 @@ def test_neutral_mixture_is_refused_unless_the_single_bath_approximation_is_opte
 
     # With the opt-in: constructs and warns.
     with caplog.at_level(logging.WARNING):
-        reactor = PlasmaReactor(
+        reactor = _fixture_plasma_reactor(
             (TGAS, 'K'), (P_NOMINAL, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
             n_sims=1, termination=[],
             diffusion_length=(_diffusion_length(), 'm'),
@@ -2765,7 +2800,7 @@ def test_density_floor_is_invariant_under_mobility_reparameterisation():
     def floor_of(c):
         e, ar, arp = _argon_species()
         imf = {e: 1.0e-6, arp: 1.0e-6, ar: 1.0 - 2.0e-6}
-        r = PlasmaReactor(
+        r = _fixture_plasma_reactor(
             (TGAS, 'K'), (P_NOMINAL, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
             n_sims=1, termination=[],
             diffusion_length=(_diffusion_length(), 'm'),
@@ -2822,7 +2857,7 @@ def _slow_neutral_drift_reactor(slow_k, xseed, source=1.0e5, gamma=1.0,
     x = Species(label='X').from_adjacency_list('1 He u0 p1 c0')
     x.thermo = _thermo_with_h298(0.0)
     imf = {e: 0.0, arp: 0.0, ar: 1.0 - xseed, x: xseed}
-    r = PlasmaReactor(
+    r = _fixture_plasma_reactor(
         (TGAS, 'K'), (P_NOMINAL, 'Pa'), imf, (te_ev * EV_TO_K, 'K'), n_sims=1,
         termination=termination or [], diffusion_length=(_diffusion_length(), 'm'),
         ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'), wall_recycling=gamma,
@@ -2888,7 +2923,7 @@ def test_the_wall_guard_evaluates_the_runtime_expression_not_a_reference_proxy()
     imf = {e: 1.0e-6, arp: 1.0e-6, ar: 1.0 - 2.0e-6}
 
     def _make(mu0, nref):
-        return PlasmaReactor(
+        return _fixture_plasma_reactor(
             (TGAS, 'K'), (P_NOMINAL, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1,
             termination=[], diffusion_length=(_diffusion_length(), 'm'),
             ion_reduced_mobility=(mu0, 'm^2/(V*s)'),
@@ -2912,7 +2947,7 @@ def test_multi_gas_bath_records_an_availability_state_not_just_a_warning():
     he = Species(label='He').from_adjacency_list('1 He u0 p1 c0')
     he.thermo = _thermo_with_h298(0.0)
     imf = {e: 1.0e-6, arp: 1.0e-6, ar: 0.5 - 1.0e-6, he: 0.5 - 1.0e-6}
-    reactor = PlasmaReactor(
+    reactor = _fixture_plasma_reactor(
         (TGAS, 'K'), (P_NOMINAL, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1,
         termination=[], diffusion_length=(_diffusion_length(), 'm'),
         ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'), wall_recycling=1.0,
@@ -2968,7 +3003,7 @@ def test_the_source_guard_evaluates_the_runtime_expression_at_the_actual_volume(
     imf = {e: 0.0, arp: 0.0, ar: 1.0}
 
     def make(P, source):
-        r = PlasmaReactor((TGAS, 'K'), (P, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+        r = _fixture_plasma_reactor((TGAS, 'K'), (P, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
                           n_sims=1, termination=[], diffusion_length=(_diffusion_length(), 'm'),
                           ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
                           wall_recycling=0.0, ionisation_source=(source, 'm^-3/s'))
@@ -3037,7 +3072,7 @@ def _wall_reactor_with_flag(flag):
     bypassing _build_reactor (which does not expose the flag)."""
     electron, ar, arp = _argon_species()
     imf = {electron: 1.0e-6, arp: 1.0e-6, ar: 1.0 - 2.0e-6}
-    return PlasmaReactor(
+    return _fixture_plasma_reactor(
         (TGAS, 'K'), (P_NOMINAL, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
         n_sims=1, termination=[],
         diffusion_length=(_diffusion_length(), 'm'),
@@ -3529,7 +3564,7 @@ def _neutral_diffusion_reactor(declaration='default', tgas=TGAS, pressure=P_NOMI
         declaration = _meta_declaration()
     if declaration is not None:
         kwargs['wall_neutral_diffusion'] = declaration
-    reactor = PlasmaReactor((tgas, 'K'), (pressure, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+    reactor = _fixture_plasma_reactor((tgas, 'K'), (pressure, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
                             n_sims=1, termination=[], **kwargs)
     core = [electron, ground, meta, arp]
     reactor.initialize_model(core, [], [], [])
@@ -3694,7 +3729,7 @@ def test_neutral_wall_refuses_element_changing_product():
     he = Species(label='He').from_adjacency_list('1 He u0 p1 c0')
     arp = Species(label='Ar+').from_adjacency_list('multiplicity 2\n1 Ar u1 p3 c+1')
     imf = {electron: 1e-6, arp: 1e-6, meta: 1e-3, he: 0.1, ground: 0.9 - 1e-3 - 2e-6}
-    reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+    reactor = _fixture_plasma_reactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf, (TE_NOMINAL_EV * EV_TO_K, 'K'),
                             n_sims=1, termination=[],
                             diffusion_length=(_diffusion_length(), 'm'),
                             ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
@@ -3709,7 +3744,7 @@ def test_neutral_wall_refuses_element_changing_product():
 def test_neutral_wall_refuses_declaration_without_a_wall():
     electron, ar, arp = _argon_species()
     with pytest.raises(PlasmaStateError) as exc:
-        PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), {ar: 1.0}, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+        _fixture_plasma_reactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), {ar: 1.0}, (TE_NOMINAL_EV * EV_TO_K, 'K'),
                       n_sims=1, termination=[], wall_neutral_diffusion=_meta_declaration())
     assert 'wall_neutral_diffusion' in str(exc.value)
 
@@ -3751,7 +3786,7 @@ def test_neutral_wall_refuses_isotope_transmuting_product():
     e, dme12, dme13, dmep13 = _dme_isotope_species()
     dme13.thermo = _thermo_with_h298(-100.0)       # above DME, so only the nuclei differ
     imf = {e: 1.0e-6, dmep13: 1.0e-6, dme13: 0.1, dme12: 0.9 - 2.0e-6}
-    reactor = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
+    reactor = _fixture_plasma_reactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), imf,
                             (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[],
                             diffusion_length=(_diffusion_length(), 'm'),
                             ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
@@ -3788,7 +3823,7 @@ def test_neutral_wall_refuses_a_cyclic_declaration_at_construction():
                    'Ar': {'product': 'Ar*', 'diffusivity': (DP_AR_META, 'cm^2*torr/s')}}
     electron, ar, arp = _argon_species()
     with pytest.raises(PlasmaStateError) as exc:
-        PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), {ar: 1.0}, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+        _fixture_plasma_reactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), {ar: 1.0}, (TE_NOMINAL_EV * EV_TO_K, 'K'),
                       n_sims=1, termination=[],
                       diffusion_length=(_diffusion_length(), 'm'),
                       ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
@@ -3866,7 +3901,7 @@ def _ion_law_reactor(tgas=TGAS, te_ev=TE_NOMINAL_EV, declaration=None, **ion_kwa
     if declaration is not None:
         kwargs['wall_neutral_diffusion'] = declaration
     kwargs.update(ion_kwargs)
-    reactor = PlasmaReactor((tgas, 'K'), (P_NOMINAL, 'Pa'), imf, (te_ev * EV_TO_K, 'K'),
+    reactor = _fixture_plasma_reactor((tgas, 'K'), (P_NOMINAL, 'Pa'), imf, (te_ev * EV_TO_K, 'K'),
                             n_sims=1, termination=[], **kwargs)
     core = [electron, ground, meta, arp]
     reactor.initialize_model(core, [], [], [])
@@ -4097,7 +4132,7 @@ def test_map_mode_first_entry_is_not_wrongly_refused_by_the_stale_scalar_guard()
     electron, ar, arp = _argon_species()
     ar2p = Species(label='Ar2+').from_adjacency_list(
         'multiplicity 2\n1 Ar u0 p3 c+1 {2,S}\n2 Ar u1 p3 c0 {1,S}')
-    r = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'),
+    r = _fixture_plasma_reactor((TGAS, 'K'), (P_NOMINAL, 'Pa'),
         {electron: 2.0e-6, ar: 1.0 - 3.0e-6, arp: 1.0e-6, ar2p: 1.0e-6},
         (TE_NOMINAL_EV * EV_TO_K, 'K'), diffusion_length=(_diffusion_length(), 'm'),
         mobility_reference_density=nref,
@@ -4121,7 +4156,7 @@ def test_ion_tgas_keys_without_a_wall_are_refused(name, value):
     from rmgpy.rmg.input import _plasma_wall_kwargs
     electron, ar, arp = _argon_species()
     with pytest.raises(PlasmaStateError) as exc:
-        PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), {ar: 1.0}, (TE_NOMINAL_EV * EV_TO_K, 'K'),
+        _fixture_plasma_reactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), {ar: 1.0}, (TE_NOMINAL_EV * EV_TO_K, 'K'),
                       n_sims=1, termination=[], **{name: value})
     assert name in str(exc.value)
     deck_name = {'mobility_reference_temperature': 'mobilityReferenceTemperature',
@@ -4206,11 +4241,11 @@ def test_undeclared_tgas_laws_reconstruct_as_none():
     from rmgpy.rmg.input import _format_plasma_wall
     r_wall, _ = _ion_law_reactor(declaration=_meta_declaration())
     electron, ar, arp = _argon_species()
-    r_bare = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), {ar: 1.0},
+    r_bare = _fixture_plasma_reactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), {ar: 1.0},
                            (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[])
     for r in (r_wall, r_bare):
         args = r.__reduce__()[1]
-        assert args[-3:] == (None, None, None), args[-3:]
+        assert args[-4:-1] == (None, None, None), args[-4:-1]
         clone = copy.deepcopy(r)
         assert clone.mobility_reference_temperature is None
         assert clone.mobility_temperature_exponent is None

@@ -657,6 +657,63 @@ non-neutral initial composition is never an error -- it may be deliberate -- but
 silent: ``PlasmaReactor`` logs a warning naming the net charge per mole whenever the initial
 composition is not neutral, whether or not this keyword was used.
 
+Charged-species thermo provenance
+---------------------------------
+
+A plasma reactor accepts a charged core species other than the electron only when its evaluated
+thermo values match an isomorphic entry in one of the loaded **gas-phase** thermo libraries.
+Liquid/solvent-specific libraries are excluded.  For every piece of the common validity interval
+bounded by either model's NASA-polynomial breakpoints, the comparison evaluates H and S at the
+centre and Cp at five distinct interior points.  Before finding that common interval, each NASA
+model's complete declared range is checked for polynomial coverage.  No overlap means no match; a
+coverage gap anywhere in either declared range is refused with the species, library entry, and gap
+named.  ThermoData comparisons evaluate Cp at the union of every ``Tdata`` point in the overlap,
+plus the overlap endpoint and any CpInf clamp transition beyond the final point; because the
+representation is piecewise linear, matching those breakpoints and H/S at one temperature is
+exact within the stated tolerance.  When the other form is NASA, five interior Cp points in every
+piece bounded by either form's breakpoints additionally pin that polynomial between ThermoData
+nodes.  A comparison involving Wilhoit thermo instead evaluates Cp at
+20 logarithmically spaced overlap temperatures and H/S at one temperature.  The diagnostic calls
+that a **sampled Wilhoit comparison**; it is not an exact functional identity.
+
+For a library entry stored as ThermoData or Wilhoit, the matcher compares both the stored form and
+the result of passing that entry through RMG's own ``process_thermo_data`` function.  This is the
+same fitted NASA representation the thermo engine attaches to a species, so the value comparison
+is like-for-like even though a NASA fit need not reproduce its source form at ``rtol=1e-7``.
+No comment is trusted as evidence: the candidate is selected first by the loaded library's entry
+and molecular structure, then its copied data is processed.
+
+Comments do not establish a match: group-additivity, HBI, QM, and ML estimates are refused even
+when their comments name a seed library.  Unmatched charged edge species produce one warning and
+are refused if later promoted to the core.  Coverage gaps and malformed library candidates are
+recorded as mismatch reasons rather than aborting the search: a later eligible entry may match,
+and the diagnostic records which earlier candidates were skipped and why.  Edge species remain
+fail-soft for every mismatch reason; the warning carries the reason, while core membership or
+later promotion turns it into a refusal.
+
+If several gas-phase libraries contain the same matching values, the diagnostic reports
+``value-matched to library <library>/<entry> (first match in library_order)``.  This is a value
+match, not independent verification of data provenance.  Each reactor builds one ordered
+formula/charge library index of charged entries within an ``initialize_model`` call and then
+checks exact isomorphism.  Neutral library entries are not indexed.  The next initialization
+rebuilds the index and recomputes every value match, so in-place thermo changes and same-size
+library-entry replacements cannot inherit an earlier verdict.  Provenance diagnostics are likewise
+rebuilt on every initialization.
+
+Standalone reload tools sometimes construct a reactor without loading a thermo database.  In that
+case only, the deck may make the missing provenance check explicit by listing the relevant model
+species labels, including labels that appear only after core promotion::
+
+	plasmaReactor(
+	    # ...
+	    thermoSourceAssertions=['Arp', 'Ar2p'],
+	)
+
+The reactor records each such declaration as ``caller-asserted, not verified``.  It never infers
+this declaration from a thermo comment, and ``thermoSourceAssertions`` cannot override a failed
+value match when a thermo database is loaded.  A charged species with no thermo data is always
+refused.
+
 .. _plasmawall:
 
 Charged-Particle Wall Boundary
