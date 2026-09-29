@@ -30,7 +30,7 @@
 import numpy as np
 cimport numpy as np
 import os
-from libc.math cimport exp, sqrt, log10, pow
+from libc.math cimport exp, sqrt, log, log10, pow, isfinite
 from scipy.optimize import curve_fit, fsolve
 
 cimport rmgpy.constants as constants
@@ -489,10 +489,10 @@ cdef class TwoTemperaturePlasma(KineticsModel):
         T  : gas temperature [K]
         Te : electron temperature [K]
         """
-        cdef double A_si, bval, Eag, Eae, T0
+        cdef double A_si, bval, Eag, Eae, T0, exponent, log_rate, rate
 
-        if T <= 0.0 or Te <= 0.0:
-            raise ValueError("TwoTemperaturePlasma: T and Te must be > 0 K.")
+        if not isfinite(T) or not isfinite(Te) or T <= 0.0 or Te <= 0.0:
+            raise ValueError("TwoTemperaturePlasma: T and Te must be finite and > 0 K.")
 
         A_si = self._A.value_si           # e.g. m^3/(mol*s)
         bval = self._n.value_si
@@ -500,7 +500,26 @@ cdef class TwoTemperaturePlasma(KineticsModel):
         Eag  = self._Ea_g.value_si        # J/mol
         Eae  = self._Ea_e.value_si        # J/mol
 
-        return A_si * (Te / T0) ** bval * exp(-Eag / (constants.R * T)) * exp(Eae * (Te - T) / (constants.R * T * Te))
+        if not isfinite(A_si) or not isfinite(bval) or not isfinite(T0) or not isfinite(Eag) or not isfinite(Eae):
+            raise ValueError("TwoTemperaturePlasma: A, n, T0, Ea_g, and Ea_e must be finite.")
+        if T0 <= 0.0:
+            raise ValueError("TwoTemperaturePlasma: T0 must be > 0 K.")
+
+        # Preserve the three structural identities exactly.  Away from them
+        # the general form is backward-stable.
+        if T == Te:
+            exponent = -(Eag / constants.R) / T
+        elif Eae == Eag:
+            exponent = -(Eae / constants.R) / Te
+        else:
+            exponent = -(Eag / constants.R) / T + ((Eae / constants.R) / T) * ((Te - T) / Te)
+        if A_si == 0.0:
+            return 0.0
+        log_rate = log(abs(A_si)) + bval * (log(Te) - log(T0)) + exponent
+        rate = exp(log_rate) if A_si > 0.0 else -exp(log_rate)
+        if not isfinite(rate):
+            raise ValueError("TwoTemperaturePlasma: calculated rate is not finite.")
+        return rate
 
     cpdef double get_rate_coefficient(self, double T, double P=0.0) except -1:
         """
