@@ -712,10 +712,61 @@ Every core cation must have exactly one entry.  The map is mutually exclusive wi
 ``ionReducedMobility`` and with the global mobility-temperature-law keywords.  Each
 ion then has ``nu_i`` from its own reduced mobility, while the electron wall loss is
 the charge-weighted sum ``sum(z_i * nu_i * n_i)``.  This is the similar-ion-profile,
-per-ion ambipolar closure; it is not a Blanc's-law mixture calculation.
+per-ion ambipolar closure; with single-bath values it is not a Blanc's-law mixture
+calculation (see the per-bath form below).
 Map mode has no single ``nu_wall``: each cation has its own ``nu_i`` and the
 electron loss is their charge-weighted sum. Its sheath uses one common floating
 potential from those same ion fluxes, not a separate sheath for each cation.
+
+**Mixed neutral baths (Blanc's law).**  When the neutral gas is a mixture of chemically distinct
+gases (Ar with a He diluent, say), give each cation's reduced mobility *per bath gas*, keyed by the
+label of a declared neutral species of that bath::
+
+	ionReducedMobilities={'Arp': {'perBath': {
+	                              'Ar': (1.535e-4, 'm^2/(V*s)'),
+	                              'He': (K0_ArpHe, 'm^2/(V*s)')}}},
+	wallNeutralDiffusion={'Ars': {'product': 'Ar',
+	                              'diffusivity': {'Ar': (47.0, 'cm^2*torr/s'),
+	                                              'He': (Dp_ArsHe, 'cm^2*torr/s')}}},
+
+The ion's mobility in the mixture is then composition-weighted by Blanc's law,
+
+.. math:: \frac{1}{\mu_i} = \sum_b \frac{x_b}{\mu_{i,b}}, \qquad
+          \mu_{i,b} = K_{0,i,b}\,\frac{N_{ref}}{N},
+
+where :math:`N` is the total neutral density (floored exactly as in the single-bath form) and
+:math:`x_b` the mole fraction of bath :math:`b` among the baths the ion declares, **read from the
+reactor state** at every evaluation, so it follows consumption and production.  A declared
+metastable's diffusivity combines the same way, :math:`1/(DN)_m = \sum_b x_b/(DN)_{m,b}`.  Each
+ion's own ``nu_i`` and the multi-ion electron loss and sheath are then built exactly as above from
+these mixture values.  A *bath* is a labelled neutral collision partner: Ar and Ar* are distinct
+baths even though they have the same heavy skeleton.  If a deck deliberately approximates Ar* as
+carrying Ar's transport coefficient, it must say so explicitly::
+
+	wallBathLumping={'Ars': 'Ar'}
+
+Each source must label exactly one core neutral and each target must be a declared bath label carried
+by exactly one core neutral.  Self maps, chains, cycles, ions, and absent endpoints are refused.
+Unlabelled or duplicate-label neutrals never merge implicitly.  Within one per-bath map, declaring
+both a lump source and its target is also refused rather than letting one value overwrite the other.
+``wallBathLumping`` is refused outside the per-bath form, where it would otherwise do nothing.
+
+The per-bath form is all-or-nothing: every cation, and every ``wallNeutralDiffusion`` entry, must
+then be per-bath (a single-bath value on a mixture is the approximation this form replaces), and it
+cannot be combined with ``wallSingleBathApproximation``.  Each value may be a quantity or the
+``{'mobility': ..., 'referenceTemperature': ..., 'temperatureExponent': ...}`` form above, per
+pair.  Coverage is enforced: every (cation, bath) and (metastable, bath) pair whose bath is present
+in the core must be declared, or the reactor refuses, naming the missing pairs -- whatever the
+bath's amount.  To leave a minor bath gas out, declare ``wallBathThreshold``: a heuristic composition
+cutoff in ``[0, 0.01]``.  An undeclared bath at or below it is left out of the composition weights
+(it still counts in :math:`N`), and a state -- the initial composition or every accepted solver step
+-- in which it exceeds the cutoff is refused, naming the pair and its mole fraction.  This limits only
+the omitted mole fraction, not transport error: even a small amount of a very low-mobility bath can
+dominate the Blanc denominator.  It is an explicit approximation, not permission to apply one bath's
+coefficient to a substantial admixture.  With one bath
+the per-bath form reproduces the single-bath map form bit for bit.  The reactor exposes
+``compute_mixture_reduced_mobilities(y)`` and ``compute_ion_wall_frequencies(y, V)`` for
+diagnostics.
 
 ``wallNeutralizationProducts`` may use ``{'Ar2p': ('Ar', 2)}`` for a molecular ion.
 The reactor verifies isotope-aware atom conservation and returns ``2*gamma`` neutral
@@ -895,9 +946,16 @@ The remaining keywords are all optional:
   chemically distinct neutrals it is an approximation, not the composition-weighted (Blanc's-law)
   mobility.  Without this flag such a bath is **refused at construction**, so the approximation is
   never entered unknowingly; with it the run proceeds and the affected wall fluxes are marked
-  ``available-single-bath-approximation`` (see the wall model warning below).  A single-skeleton
-  bath -- Ar alone, or Ar with its metastables -- is exact and does not need it.  Defaults to
-  ``False``.
+  ``available-single-bath-approximation`` (see the wall model warning below).  The scalar
+  compatibility check groups Ar with its metastables and therefore does not require this flag;
+  this grouping does not assert identical transport.  Defaults to ``False``.
+
+* ``wallBathThreshold`` -- with per-bath ``ionReducedMobilities`` only: a heuristic composition
+  cutoff on the neutral mole fraction of a bath gas with no declared (species, bath) value.  At or
+  below it the bath may be left out of the Blanc's-law weights; above it, at the initial composition
+  or any accepted step, the run is refused naming the pair.  This limits omitted composition, not
+  transport error.  Without it every bath present in the core must be fully declared.  Defaults to
+  ``None`` (no bath may be ignored).
 
 * ``quasineutralElectron`` -- when ``True``, the electron is removed from the integrated state and
   carried on an algebraic charge-conservation row instead, so ``n_e`` is whatever makes the
@@ -939,11 +997,14 @@ The remaining keywords are all optional:
 	the single ``ionReducedMobility`` cannot represent.  It likewise assumes a **single bath gas**:
 	``n_neutral`` in ``mu_i = ionReducedMobility * mobilityReferenceDensity / n_neutral`` is the
 	*summed* number density of all neutral heavy species, so the one reduced mobility is applied to
-	the whole neutral gas as if it were the reference bath.  That is exact for an electronic ground
-	state and its metastables (Ar and Ar\* share a heavy skeleton and scatter the ion identically),
-	and an **approximation** for a genuine mixture of chemically distinct neutrals (Ar with an He
-	diluent, or an isomeric co-species): the true mobility is composition-weighted (Blanc's law),
-	which needs a reduced mobility *per* bath gas that this model does not carry.  Such a mixture is
+	the whole neutral gas as if it were the reference bath.  The scalar form cannot distinguish an
+	electronic ground state from its metastables by bath label; applying one coefficient to Ar and
+	Ar\* is an approximation, not a claim that they scatter identically.  A genuine mixture of
+	chemically distinct neutrals (Ar with an He diluent, or an isomeric co-species) likewise needs
+	composition-weighted mobility (Blanc's law),
+	which needs a reduced mobility *per* bath gas -- the per-bath ``ionReducedMobilities`` form
+	above, which is exact within Blanc's law and reports plain ``available``.  With single-bath
+	values, such a mixture is
 	**refused at construction unless you opt in** with ``wallSingleBathApproximation=True``.
 	Refusing outright would forbid every multi-species plasma, including the inert-diluent and
 	isomeric-neutral cases the wall is built to handle; running silently on transport that does not
@@ -954,10 +1015,24 @@ The remaining keywords are all optional:
 	``available-single-bath-approximation`` rather than plain ``available`` in the reactor's
 	``wall_energy_availability`` map, so a caller reading the latched fluxes knows the number is a
 	usable single-bath approximation and not the composition-weighted value.  A warning naming the
-	gases is also emitted for the human running the deck.  A single-skeleton bath (Ar alone, or Ar
-	with its metastables) is exact, needs no opt-in, and reports plain ``available``.  The
+	gases is also emitted for the human running the deck.  Scalar compatibility grouping does not
+	require an opt-in for Ar with its metastables and reports plain ``available``; that grouping is
+	not a statement that their transport is identical or exact.  The
 	``maxIonisationDegree`` ceiling is the one edge the code enforces
 	numerically; the regime limits above are the user's to respect.
+
+	The accepted-state output contract is the reactor's public ``wall_flux``,
+	``wall_electron_energy_flux``, ``wall_neutralization_energy_flux``,
+	``wall_ion_energy_flux``, and ``wall_energy_availability`` attributes.  Every flux has an
+	availability entry.  A usable flux is finite; an unavailable or ``declared-absent`` flux is
+	``None`` (JSON ``null``).  A deck-side JSON writer should convert a non-None ``wall_flux`` NumPy
+	array with ``tolist()`` and serialize these attributes directly.  Approximation labels apply
+	per field: an omitted live ion-mobility pair affects charged wall flux and energy terms, whereas
+	an omitted live neutral-diffusion pair affects only ``wall_flux``.  With electron energy balance,
+	the ion term is labelled ``available-floating-wall-sheath-model``; when its charged-wall transport
+	is approximate, that label retains the corresponding ``-blanc-threshold-approximation`` or
+	``-single-bath-approximation`` suffix.  A non-finite sheath term is instead ``None`` with an
+	``unavailable`` label, so direct serialization with ``allow_nan=False`` remains valid.
 
 .. _plasmaenergybalance:
 

@@ -211,6 +211,15 @@ def _coerce_bool_flag(value, name, identity):
         "({3})".format(name, value, type(value).__name__, identity))
 
 
+def _is_per_bath_mobility(entry):
+    """True only for ``{'perBath': {bath_label: mobility}}``.
+
+    Bath labels belong to the deck and are never distinguished from mobility-option
+    names by a reserved-key heuristic.
+    """
+    return isinstance(entry, dict) and set(entry) == {'perBath'}
+
+
 def _is_finite_normal_positive(double v):
     """The predicate behind :func:`_require_finite_normal_positive`, for a guard that
     raises its own, more specific message: finite, and at least the smallest normal
@@ -314,6 +323,19 @@ cdef class PlasmaReactor(ReactionSystem):
     temperature ``Te``, with an explicit electron population carried in the
     state vector. See the module docstring for the equation of state and the
     supported-configuration rules.
+
+    Accepted-state wall output is exposed through ``wall_flux``,
+    ``wall_electron_energy_flux``, ``wall_neutralization_energy_flux``,
+    ``wall_ion_energy_flux``, and ``wall_energy_availability``. Flux attributes
+    are finite values when usable and ``None`` when unavailable or declared
+    absent. Convert a non-None ``wall_flux`` array with
+    :meth:`numpy.ndarray.tolist` before JSON serialization. The availability
+    dictionary carries one state per flux field, including per-field
+    transport-approximation labels. In electron-energy-balance mode, the ion
+    term's ``available-floating-wall-sheath-model`` state retains any
+    ``-blanc-threshold-approximation`` or ``-single-bath-approximation``
+    qualifier. A non-finite sheath term is exposed as ``None`` with state
+    ``unavailable``.
     """
 
     cdef public ScalarQuantity T
@@ -430,19 +452,20 @@ cdef class PlasmaReactor(ReactionSystem):
     cdef public np.ndarray wall_flux              # mol/s, per core species, signed, latched
     cdef public double nu_wall_latched            # s^-1, at the latched accepted state
     cdef public double wall_diagnostics_time      # s, the accepted time the latch is for
-    cdef public double wall_electron_energy_flux  # W, 2 k_B T_e * electron loss rate
-    cdef public double wall_neutralization_energy_flux  # W, released on neutralisation
-    cdef public double wall_ion_energy_flux       # W, ion directed/sheath energy: NOT
+    # Wall energy fluxes are W when usable and None otherwise.
+    cdef public object wall_electron_energy_flux
+    cdef public object wall_neutralization_energy_flux
+    cdef public object wall_ion_energy_flux       # None when declared absent
                                                   # promised here (a sheath model is a
-                                                  # contract non-goal) -- NaN sentinel
-    cdef public dict wall_energy_availability     # field -> available|available-single-bath-approximation|declared-absent|unavailable
-    # True when the neutral bath spans more than one heavy skeleton (Ar and He, two
-    # isomers): the single ion reduced mobility is then applied to the summed neutral
-    # density as an approximation, so every wall flux built from nu_wall is a
-    # single-bath approximation, not a quantitatively exact number. Recorded as an
-    # availability STATE on those fields (not merely a log warning), set in
-    # _resolve_wall_state. False for a single-skeleton bath, including a ground state
-    # and its metastables, which share a skeleton and are one bath exactly.
+                                                  # contract non-goal)
+    # Public field -> availability/provenance label.
+    cdef public dict wall_energy_availability
+    # In legacy scalar mode, true when the neutral inventory spans multiple
+    # heavy-skeleton compatibility groups (Ar and He, or two isomers).
+    # One mobility then applies to the summed density as an approximation, so
+    # every nu_wall-derived flux is labelled accordingly. These compatibility
+    # groups are scalar-mode implementation details, not Blanc baths.
+    # Blanc bath identity is label-based.
     cdef public bint wall_bath_is_mixture
     # The user's explicit opt-in to the single-bath transport approximation on a multi-gas
     # neutral bath. Without it a multi-skeleton bath is REFUSED at construction rather than
@@ -450,6 +473,38 @@ cdef class PlasmaReactor(ReactionSystem):
     # affected fluxes carry the 'available-single-bath-approximation' state. False by
     # default, so the approximation is never entered unless asked for.
     cdef public bint wall_single_bath_approximation
+    # --- composition-weighted (Blanc's-law) multi-bath transport (I-294) ------------
+    # wall_blanc is True when the ion mobilities are declared PER (ion, bath gas) pair
+    # (ion_reduced_mobilities={'Ar+': {'Ar': K0, 'He': K0}}).
+    # Each neutral species label defines a distinct bath.
+    # Only wall_bath_lumping can combine a source label with a declared target
+    # label. The mobility is
+    #     1/mu_i = sum_b x_b / mu_{i,b},   mu_{i,b} = K0_{i,b} * N_ref / N,
+    # with x_b read from the STATE (declared-bath amounts, normalised over the baths the
+    # ion declares) and N the total neutral density, and a declared metastable's D*N
+    # combines the same way. Resolved against the core in _resolve_bath_transport:
+    #   wall_bath_group[j]       label-based bath index, -1 for non-neutrals
+    #   wall_bath_labels[g]      display label of bath g (the declared label if any)
+    #   wall_ion_bath_k0[i, g]   K0*(Tg law) of cation i in bath g; 0.0 = undeclared
+    #   wall_neutral_bath_dn[j, g]  D*N of declared metastable j in bath g; 0.0 = undeclared
+    #   wall_bath_missing        all undeclared (species index, bath index)
+    #                            pairs
+    #   wall_ion_bath_missing    undeclared ion-mobility pairs
+    #   wall_neutral_bath_missing undeclared neutral-diffusion pairs
+    # Missing pairs exist only with an explicit wall_bath_threshold and must
+    # stay at or below it at every accepted state.
+    cdef public bint wall_blanc
+    cdef public object wall_bath_threshold
+    cdef public dict wall_bath_lumping
+    cdef public list wall_bath_labels
+    cdef public np.ndarray wall_bath_group
+    cdef public np.ndarray wall_ion_bath_k0
+    cdef public np.ndarray wall_neutral_bath_dn
+    cdef public list wall_bath_missing
+    cdef list wall_ion_bath_missing
+    cdef list wall_neutral_bath_missing
+    cdef public set wall_bath_absent_warned
+    cdef list _bath_labels_by_species
     cdef public np.ndarray wall_neutralization_delta_h  # J/mol per ion, H_ion-H_neutral, or NaN
     # Purely NUMERICAL floor on the neutral population inside compute_nu_wall, set
     # from the initial composition. It exists so that a Newton TRIAL state with no
@@ -543,7 +598,9 @@ cdef class PlasmaReactor(ReactionSystem):
                  mobility_reference_temperature=None,
                  mobility_temperature_exponent=None,
                  ambipolar_ion_temperature=None,
-                 ion_reduced_mobilities=None):
+                 ion_reduced_mobilities=None,
+                 wall_bath_threshold=None,
+                 wall_bath_lumping=None):
         ReactionSystem.__init__(self, termination, sensitive_species, sensitivity_threshold)
 
         if isinstance(T, list) or isinstance(P, list) or isinstance(Te, list):
@@ -600,7 +657,9 @@ cdef class PlasmaReactor(ReactionSystem):
                              mobility_reference_temperature,
                              mobility_temperature_exponent,
                              ambipolar_ion_temperature,
-                             ion_reduced_mobilities)
+                             ion_reduced_mobilities,
+                             wall_bath_threshold,
+                             wall_bath_lumping)
         self._configure_energy_balance(electron_energy_balance)
 
     def _configure_wall(self, diffusion_length, ion_reduced_mobility,
@@ -613,7 +672,9 @@ cdef class PlasmaReactor(ReactionSystem):
                         mobility_reference_temperature=None,
                         mobility_temperature_exponent=None,
                         ambipolar_ion_temperature=None,
-                        ion_reduced_mobilities=None):
+                        ion_reduced_mobilities=None,
+                        wall_bath_threshold=None,
+                        wall_bath_lumping=None):
         """
         Validate and store the charged-particle wall boundary parameters.
 
@@ -626,6 +687,17 @@ cdef class PlasmaReactor(ReactionSystem):
         self.wall_loss_rates = None
         self._ion_reduced_mobilities = None
         self._ion_mobility_derived = None
+        self.wall_blanc = False
+        self.wall_bath_threshold = None
+        self.wall_bath_lumping = {}
+        self.wall_bath_labels = []
+        self.wall_bath_group = None
+        self.wall_ion_bath_k0 = None
+        self.wall_neutral_bath_dn = None
+        self.wall_bath_missing = []
+        self.wall_ion_bath_missing = []
+        self.wall_neutral_bath_missing = []
+        self.wall_bath_absent_warned = set()
         self.nu_wall = 0.0
         self.species_charges = None
         self.neutral_heavy_mask = None
@@ -641,9 +713,9 @@ cdef class PlasmaReactor(ReactionSystem):
         self.wall_flux = None
         self.nu_wall_latched = float('nan')
         self.wall_diagnostics_time = float('nan')
-        self.wall_electron_energy_flux = float('nan')
-        self.wall_neutralization_energy_flux = float('nan')
-        self.wall_ion_energy_flux = float('nan')
+        self.wall_electron_energy_flux = None
+        self.wall_neutralization_energy_flux = None
+        self.wall_ion_energy_flux = None
         self.wall_energy_availability = {
             'wall_flux': 'unavailable',
             'wall_electron_energy_flux': 'unavailable',
@@ -669,8 +741,29 @@ cdef class PlasmaReactor(ReactionSystem):
             # transport constants. Per-label quantities and optional Tg factors are
             # retained separately and resolved once the core species is available.
             first = next(iter(ion_reduced_mobilities.values()))
+            if _is_per_bath_mobility(first):
+                # Per-bath (Blanc) form: validate every pair first, so a refusal names its
+                # (ion, bath) pair rather than the scalar echo below; then echo the first.
+                for ion_label, entry in ion_reduced_mobilities.items():
+                    if _is_per_bath_mobility(entry):
+                        if (not isinstance(entry['perBath'], dict)
+                                or not entry['perBath']):
+                            raise PlasmaStateError(
+                                "ion_reduced_mobilities[{0!r}]['perBath'] "
+                                "must be a non-empty dict. ({1})".format(
+                                    ion_label, self._identity()))
+                        for bath, value in entry['perBath'].items():
+                            self._derive_mobility_entry(
+                                "ion_reduced_mobilities[{0!r}]['perBath'][{1!r}]".format(ion_label, bath), value)
+                first = next(iter(first['perBath'].values()))
             ion_reduced_mobility = first.get('mobility') if isinstance(first, dict) else first
             self._ion_reduced_mobilities = copy.deepcopy(ion_reduced_mobilities)
+        elif isinstance(ion_reduced_mobility, dict):
+            raise PlasmaStateError(
+                "ion_reduced_mobility is the single-ion, single-bath mobility and takes one "
+                "quantity; got a dict {0!r}. Per-bath (Blanc's-law) mobilities are declared "
+                "per cation in ion_reduced_mobilities, e.g. {{'Ar+': {{'Ar': (K0, 'm^2/(V*s)'), "
+                "'He': (K0, 'm^2/(V*s)')}}}}. ({1})".format(ion_reduced_mobility, self._identity()))
         if (diffusion_length is None) != (ion_reduced_mobility is None):
             raise PlasmaStateError(
                 "a charged-particle wall needs BOTH a diffusion length and an ion "
@@ -695,6 +788,10 @@ cdef class PlasmaReactor(ReactionSystem):
             supplied = []
             if mobility_reference_density is not None:
                 supplied.append('mobility_reference_density')
+            if wall_bath_threshold is not None:
+                supplied.append('wall_bath_threshold')
+            if wall_bath_lumping:
+                supplied.append('wall_bath_lumping')
             if wall_neutralization_products:
                 supplied.append('wall_neutralization_products')
             if ionisation_source is not None:
@@ -837,27 +934,37 @@ cdef class PlasmaReactor(ReactionSystem):
             if mobility_reference_temperature is not None or mobility_temperature_exponent is not None:
                 raise PlasmaStateError("global mobility temperature-law keys cannot be combined with ion_reduced_mobilities. ({0})".format(self._identity()))
             self._ion_mobility_derived = {}
+            per_bath = [label for label, entry in self._ion_reduced_mobilities.items()
+                        if _is_per_bath_mobility(entry)]
+            if per_bath and len(per_bath) != len(self._ion_reduced_mobilities):
+                raise PlasmaStateError(
+                    "ion_reduced_mobilities mixes the per-bath form ({0}) with the single-bath "
+                    "form ({1}). A composition-weighted (Blanc's-law) wall needs every cation's "
+                    "mobility per bath gas; a single-bath value applied to a mixture is the "
+                    "approximation the per-bath form replaces. Give every cation per-bath "
+                    "values. ({2})".format(
+                        sorted(per_bath),
+                        sorted(l for l in self._ion_reduced_mobilities if l not in per_bath),
+                        self._identity()))
+            self.wall_blanc = bool(per_bath)
             for label, entry in self._ion_reduced_mobilities.items():
-                value = entry.get('mobility') if isinstance(entry, dict) else entry
-                q = Quantity(value)
-                want = pq.Quantity(1.0, 'm**2/(V*s)').simplified.dimensionality
-                try:
-                    got = pq.Quantity(1.0, q.units).simplified.dimensionality
-                except Exception:
-                    got = None
-                if got != want:
-                    raise PlasmaStateError("ion_reduced_mobilities[{0!r}] must have mobility dimensions. ({1})".format(label, self._identity()))
-                if not np.isfinite(q.value_si) or q.value_si <= 0.0:
-                    raise PlasmaStateError("ion_reduced_mobilities[{0!r}] must be finite and positive. ({1})".format(label, self._identity()))
-                factor = 1.0
-                if isinstance(entry, dict):
-                    if set(entry) not in ({'mobility'}, {'mobility', 'referenceTemperature', 'temperatureExponent'}):
-                        raise PlasmaStateError("ion_reduced_mobilities[{0!r}] has unsupported keys. ({1})".format(label, self._identity()))
-                    if 'referenceTemperature' in entry:
-                        tref = _reference_temperature_kelvin(entry['referenceTemperature'], 'ion_reduced_mobilities referenceTemperature', self._identity())
-                        exponent = _temperature_exponent(entry['temperatureExponent'], 'ion_reduced_mobilities temperatureExponent', self._identity())
-                        factor = _temperature_law_factor(self.T.value_si, tref, exponent, 'the ion reduced mobility law', self._identity())
-                self._ion_mobility_derived[label] = (q, factor)
+                if self.wall_blanc:
+                    if not isinstance(entry, dict) or not entry:
+                        raise PlasmaStateError(
+                            "ion_reduced_mobilities[{0!r}] must map at least one bath-gas label "
+                            "to a reduced mobility. ({1})".format(label, self._identity()))
+                    derived = {}
+                    for bath, value in entry['perBath'].items():
+                        if not isinstance(bath, str) or not bath:
+                            raise PlasmaStateError(
+                                "ion_reduced_mobilities[{0!r}] keys must be bath-gas species "
+                                "labels; got {1!r}. ({2})".format(label, bath, self._identity()))
+                        derived[bath] = self._derive_mobility_entry(
+                            "ion_reduced_mobilities[{0!r}]['perBath'][{1!r}]".format(label, bath), value)
+                    self._ion_mobility_derived[label] = derived
+                else:
+                    self._ion_mobility_derived[label] = self._derive_mobility_entry(
+                        "ion_reduced_mobilities[{0!r}]".format(label), entry)
 
         # Each input above is finite and positive on its own, yet their COMBINATION can
         # still make nu_wall non-finite at RUN TIME -- and the guard must evaluate the SAME
@@ -918,7 +1025,16 @@ cdef class PlasmaReactor(ReactionSystem):
             # own correct per-ion factor; the scalar guard above is skipped entirely rather
             # than standing in for entry zero with a stale factor.
             if self._ion_mobility_derived is not None:
-                for label, (quantity_obj, factor) in self._ion_mobility_derived.items():
+                # A Blanc mixture mobility lies between its smallest and largest pair value,
+                # so checking every declared (ion, bath) pair bounds it on both sides.
+                pairs = []
+                for label, derived in self._ion_mobility_derived.items():
+                    if isinstance(derived, dict):
+                        pairs.extend(("{0!r} in bath {1!r}".format(label, bath), value)
+                                     for bath, value in derived.items())
+                    else:
+                        pairs.append((repr(label), derived))
+                for name, (quantity_obj, factor) in pairs:
                     worst_mu_i = (quantity_obj.value_si * factor
                                   * self.mobility_reference_density / worst_n_neutral)
                     worst_nu = (worst_mu_i * (constants.R / constants.Na)
@@ -928,9 +1044,9 @@ cdef class PlasmaReactor(ReactionSystem):
                         worst_nu *= 1.0 + self.T.value_si / self.Te.value_si
                     if not _is_finite_normal_positive(worst_nu):
                         raise PlasmaStateError(
-                            "ion_reduced_mobilities[{0!r}] forms a non-finite or subnormal "
+                            "ion_reduced_mobilities[{0}] forms a non-finite or subnormal "
                             "worst-case wall frequency {1!r} s^-1. ({2})".format(
-                                label, worst_nu, self._identity()))
+                                name, worst_nu, self._identity()))
 
         self.wall_recycling = float(wall_recycling)
         if not np.isfinite(self.wall_recycling) or not (0.0 <= self.wall_recycling <= 1.0):
@@ -1022,6 +1138,174 @@ cdef class PlasmaReactor(ReactionSystem):
                     self.max_ionisation_degree, self._identity()))
 
         self._configure_neutral_wall_diffusion(wall_neutral_diffusion)
+        if wall_bath_lumping is not None:
+            if not isinstance(wall_bath_lumping, dict) or not all(
+                    isinstance(source, str) and source and isinstance(target, str) and target
+                    for source, target in wall_bath_lumping.items()):
+                raise PlasmaStateError("wall_bath_lumping must map non-empty neutral species labels to declared bath labels. ({0})".format(self._identity()))
+            self.wall_bath_lumping = dict(wall_bath_lumping)
+        self._configure_bath_transport(wall_bath_threshold)
+
+    def _derive_mobility_entry(self, str what, entry):
+        """
+        Validate one declared reduced mobility -- a quantity, or ``{'mobility': q}`` with
+        optionally both ``'referenceTemperature'`` and ``'temperatureExponent'`` -- and
+        return ``(Quantity, (Tg/T_ref)^m factor)``. ``what`` names it in every refusal.
+        """
+        value = entry.get('mobility') if isinstance(entry, dict) else entry
+        try:
+            q = Quantity(value)
+        except Exception as exc:
+            raise PlasmaStateError("{0} is not a mobility quantity ({1}). ({2})".format(
+                what, exc, self._identity()))
+        want = pq.Quantity(1.0, 'm**2/(V*s)').simplified.dimensionality
+        try:
+            got = pq.Quantity(1.0, q.units).simplified.dimensionality
+        except Exception:
+            got = None
+        if got != want:
+            raise PlasmaStateError("{0} must have mobility dimensions. ({1})".format(what, self._identity()))
+        if not np.isfinite(q.value_si) or q.value_si <= 0.0:
+            raise PlasmaStateError("{0} must be finite and positive. ({1})".format(what, self._identity()))
+        factor = 1.0
+        if isinstance(entry, dict):
+            if set(entry) not in ({'mobility'}, {'mobility', 'referenceTemperature', 'temperatureExponent'}):
+                raise PlasmaStateError("{0} has unsupported keys. ({1})".format(what, self._identity()))
+            if 'referenceTemperature' in entry:
+                tref = _reference_temperature_kelvin(entry['referenceTemperature'], 'ion_reduced_mobilities referenceTemperature', self._identity())
+                exponent = _temperature_exponent(entry['temperatureExponent'], 'ion_reduced_mobilities temperatureExponent', self._identity())
+                factor = _temperature_law_factor(self.T.value_si, tref, exponent, 'the ion reduced mobility law', self._identity())
+        return (q, factor)
+
+    def _configure_bath_transport(self, wall_bath_threshold):
+        """
+        Cross-check the per-bath (Blanc's-law) declarations and store the optional
+        ``wall_bath_threshold``, once both the ion mobilities and the metastable
+        diffusivities are configured. The per-bath form is all-or-nothing: with per-bath
+        ion mobilities every declared metastable diffusivity must be per-bath too (a
+        single-bath value on a mixture is the approximation this form replaces), and a
+        per-bath metastable needs per-bath ions. The single-bath approximation opt-in
+        contradicts the per-bath form and is refused with it; a threshold is meaningful
+        only with it.
+        """
+        per_bath_meta = sorted(label for label, dn in self.wall_neutral_dn_by_label.items()
+                               if isinstance(dn, dict))
+        flat_meta = sorted(label for label, dn in self.wall_neutral_dn_by_label.items()
+                           if not isinstance(dn, dict))
+        if per_bath_meta and not self.wall_blanc:
+            raise PlasmaStateError(
+                "wall_neutral_diffusion declares per-bath diffusivities for {0}, but the ion "
+                "mobilities are not per-bath. The composition-weighted (Blanc's-law) wall "
+                "needs per-bath values for the ions too: declare ion_reduced_mobilities per "
+                "bath, e.g. {{'Ar+': {{'Ar': (K0, 'm^2/(V*s)')}}}}. ({1})".format(
+                    per_bath_meta, self._identity()))
+        if self.wall_blanc and flat_meta:
+            raise PlasmaStateError(
+                "ion_reduced_mobilities is per-bath (Blanc's law), but wall_neutral_diffusion "
+                "gives a single-bath diffusivity for {0}. Give it per-bath too, "
+                "'diffusivity': {{'Ar': (D*p, 'cm^2*torr/s'), ...}}, so the metastable's "
+                "diffusivity is composition-weighted like the ions'. ({1})".format(
+                    flat_meta, self._identity()))
+        if self.wall_blanc and self.wall_single_bath_approximation:
+            raise PlasmaStateError(
+                "wall_single_bath_approximation=True was given together with per-bath "
+                "(Blanc's-law) ion mobilities. The opt-in accepts ONE mobility standing in "
+                "for a mixture; the per-bath form replaces exactly that approximation. The "
+                "two contradict each other: drop wall_single_bath_approximation. "
+                "({0})".format(self._identity()))
+        if self.wall_bath_lumping and not self.wall_blanc:
+            raise PlasmaStateError(
+                "wall_bath_lumping is only meaningful with per-bath "
+                "(Blanc's-law) wall transport; a non-empty map outside that "
+                "mode would be silently ignored. Declare "
+                "ion_reduced_mobilities in the "
+                "{{'perBath': ...}} form, or remove "
+                "wall_bath_lumping. ({0})".format(self._identity()))
+        if wall_bath_threshold is None:
+            self.wall_bath_threshold = None
+            return
+        threshold_ok = (
+            not isinstance(wall_bath_threshold, (bool, np.bool_))
+            and isinstance(
+                wall_bath_threshold,
+                (int, float, np.integer, np.floating)))
+        threshold_value = None
+        if threshold_ok:
+            try:
+                threshold_value = float(wall_bath_threshold)
+            except (OverflowError, TypeError, ValueError):
+                threshold_ok = False
+            else:
+                threshold_ok = (np.isfinite(threshold_value)
+                                and 0.0 <= threshold_value <= 0.01)
+        if not threshold_ok:
+            raise PlasmaStateError(
+                "wall_bath_threshold is a heuristic composition cutoff for an "
+                "undeclared bath and must be a finite plain neutral mole "
+                "fraction in [0, 0.01]. It limits only omitted composition, "
+                "not transport "
+                "error; got {0!r}. ({1})".format(
+                    wall_bath_threshold, self._identity()))
+        if not self.wall_blanc:
+            raise PlasmaStateError(
+                "wall_bath_threshold={0!r} was given, but the ion mobilities are not per-bath, "
+                "so there are no (ion, bath) pairs for it to relax; it would be silently "
+                "ignored. Declare ion_reduced_mobilities per bath gas, or remove "
+                "wall_bath_threshold. ({1})".format(wall_bath_threshold, self._identity()))
+        self.wall_bath_threshold = threshold_value
+
+    def _neutral_dn_value(self, str what, diffusivity, law_entry, dp_dim, dn_dim):
+        """
+        Convert one declared reference diffusivity (``D*p`` or ``D*N``) to ``D*N``
+        (1/(m*s)) at the reactor's gas temperature, apply the declared law of
+        ``law_entry`` (the wall_neutral_diffusion entry, or None), and refuse a value --
+        or a worst-case loss frequency -- that is not a finite, normal positive number.
+        ``what`` names the declaration in every refusal.
+        """
+        cdef double worst_n_neutral
+        try:
+            q = Quantity(diffusivity)
+            got = pq.Quantity(1.0, q.units).simplified.dimensionality
+        except Exception as exc:
+            raise PlasmaStateError(
+                "{0}={1!r} could not be read as a quantity with units ({2}). Give it as "
+                "(value, 'cm^2*torr/s') or (value, '1/(m*s)'). ({3})".format(
+                    what, diffusivity, exc, self._identity()))
+        if got == dp_dim:
+            dn = q.value_si / ((constants.R / constants.Na) * self.T.value_si)
+        elif got == dn_dim:
+            dn = q.value_si
+        else:
+            raise PlasmaStateError(
+                "{0} must have the dimension of a diffusivity-pressure product D*p (e.g. "
+                "cm^2*torr/s) or a diffusivity-density product D*N (1/(m*s)); got units "
+                "{1!r}. A bare diffusivity carries no pressure scaling and is refused rather "
+                "than read at an assumed pressure. ({2})".format(what, q.units, self._identity()))
+        if law_entry is not None:
+            # (T/T_ref)^m multiplies the converted D*N, for either spelling; for D*N the
+            # exponent is D*N's own. Undeclared, dn is today's expression untouched.
+            t_ref = _reference_temperature_kelvin(
+                law_entry['referenceTemperature'], "{0} referenceTemperature".format(what),
+                self._identity())
+            m = _temperature_exponent(
+                law_entry['temperatureExponent'], "{0} temperatureExponent".format(what),
+                self._identity())
+            dn = dn * _temperature_law_factor(self.T.value_si, t_ref, m, what, self._identity())
+        dn = _require_finite_normal_positive(
+            dn, "{0} reference diffusivity (D*N at T_gas={1!r} K, from {2!r})".format(
+                what, self.T.value_si, diffusivity), self._identity())
+        # Refuse, as compute_nu_wall's guard does, a combination that is finite on its
+        # own but whose loss frequency is not, evaluated at the run-time worst case:
+        # the neutral-density floor, where nu_m is largest.
+        worst_n_neutral = PLASMA_NEUTRAL_DENSITY_FLOOR_FRACTION * PLASMA_LOSCHMIDT
+        _require_finite_normal_positive(
+            dn / (worst_n_neutral * self.diffusion_length.value_si
+                  * self.diffusion_length.value_si),
+            "the {0} loss frequency nu_m = D_m/Lambda^2 at the neutral-density floor "
+            "n_neutral={1!r} m^-3 (D*N={2!r} 1/(m*s), Lambda={3!r} m)".format(
+                what, worst_n_neutral, dn, self.diffusion_length.value_si),
+            self._identity())
+        return dn
 
     def _configure_neutral_wall_diffusion(self, wall_neutral_diffusion):
         """
@@ -1107,60 +1391,33 @@ cdef class PlasmaReactor(ReactionSystem):
                     "A species that returns as itself is not lost at the wall; name the "
                     "ground state it de-excites to. ({1})".format(label, self._identity()))
             diffusivity = entry['diffusivity']
-            what = ("wall_neutral_diffusion[{0!r}] reference diffusivity (D*N at "
-                    "T_gas={1!r} K, from {2!r})".format(label, self.T.value_si, diffusivity))
-            try:
-                q = Quantity(diffusivity)
-                got = pq.Quantity(1.0, q.units).simplified.dimensionality
-            except Exception as exc:
-                raise PlasmaStateError(
-                    "wall_neutral_diffusion[{0!r}]['diffusivity']={1!r} could not be read "
-                    "as a quantity with units ({2}). Give it as (value, 'cm^2*torr/s') or "
-                    "(value, '1/(m*s)'). ({3})".format(
-                        label, diffusivity, exc, self._identity()))
-            if got == dp_dim:
-                dn = q.value_si / ((constants.R / constants.Na) * self.T.value_si)
-            elif got == dn_dim:
-                dn = q.value_si
-            else:
-                raise PlasmaStateError(
-                    "wall_neutral_diffusion[{0!r}]['diffusivity'] must have the dimension "
-                    "of a diffusivity-pressure product D*p (e.g. cm^2*torr/s) or a "
-                    "diffusivity-density product D*N (1/(m*s)); got units {1!r}. A bare "
-                    "diffusivity carries no pressure scaling and is refused rather than "
-                    "read at an assumed pressure. ({2})".format(
-                        label, q.units, self._identity()))
             law = 'referenceTemperature' in entry
-            if law:
-                # (T/T_ref)^m multiplies the converted D*N, for either spelling; for D*N the
-                # exponent is D*N's own. Undeclared, dn is today's expression untouched.
-                t_ref = _reference_temperature_kelvin(
-                    entry['referenceTemperature'],
-                    "wall_neutral_diffusion[{0!r}]['referenceTemperature']".format(label),
-                    self._identity())
-                m = _temperature_exponent(
-                    entry['temperatureExponent'],
-                    "wall_neutral_diffusion[{0!r}]['temperatureExponent']".format(label),
-                    self._identity())
-                dn = dn * _temperature_law_factor(
-                    self.T.value_si, t_ref, m,
-                    "wall_neutral_diffusion[{0!r}]".format(label), self._identity())
-            dn = _require_finite_normal_positive(dn, what, self._identity())
-            # Refuse, as compute_nu_wall's guard does, a combination that is finite on its
-            # own but whose loss frequency is not, evaluated at the run-time worst case:
-            # the neutral-density floor, where nu_m is largest.
-            worst_n_neutral = PLASMA_NEUTRAL_DENSITY_FLOOR_FRACTION * PLASMA_LOSCHMIDT
-            _require_finite_normal_positive(
-                dn / (worst_n_neutral * self.diffusion_length.value_si
-                      * self.diffusion_length.value_si),
-                "the wall_neutral_diffusion[{0!r}] loss frequency nu_m = D_m/Lambda^2 at "
-                "the neutral-density floor n_neutral={1!r} m^-3 (D*N={2!r} 1/(m*s), "
-                "Lambda={3!r} m)".format(label, worst_n_neutral, dn,
-                                         self.diffusion_length.value_si),
-                self._identity())
+            if isinstance(diffusivity, dict):
+                # Per-bath (Blanc's-law) form: {bath label: D*p or D*N}. Each value is
+                # converted and checked exactly as a single-bath value is; the declared
+                # law, if any, applies to every bath.
+                if not diffusivity:
+                    raise PlasmaStateError(
+                        "wall_neutral_diffusion[{0!r}]['diffusivity'] is an empty per-bath "
+                        "map; name at least one bath gas. ({1})".format(label, self._identity()))
+                dn = {}
+                for bath, value in diffusivity.items():
+                    if not isinstance(bath, str) or not bath:
+                        raise PlasmaStateError(
+                            "wall_neutral_diffusion[{0!r}]['diffusivity'] keys must be bath-gas "
+                            "species labels; got {1!r}. ({2})".format(label, bath, self._identity()))
+                    dn[bath] = self._neutral_dn_value(
+                        "wall_neutral_diffusion[{0!r}]['diffusivity'][{1!r}]".format(label, bath),
+                        value, entry if law else None, dp_dim, dn_dim)
+            else:
+                dn = self._neutral_dn_value(
+                    "wall_neutral_diffusion[{0!r}]['diffusivity']".format(label),
+                    diffusivity, entry if law else None, dp_dim, dn_dim)
             # The stored entry is what __reduce__ and the input writer serialise, so it must
             # carry the law's keys too, or a copy or a saved deck silently loses the law.
-            declaration[label] = {'product': product, 'diffusivity': diffusivity}
+            declaration[label] = {'product': product,
+                                  'diffusivity': (dict(diffusivity) if isinstance(diffusivity, dict)
+                                                  else diffusivity)}
             if law:
                 declaration[label]['referenceTemperature'] = entry['referenceTemperature']
                 declaration[label]['temperatureExponent'] = entry['temperatureExponent']
@@ -1767,10 +2024,27 @@ cdef class PlasmaReactor(ReactionSystem):
         b['discharge_state'] = classify_discharge(b['nu_ionisation'], b['nu_source'], b['nu_loss'])
         self.energy_budget = b
         self.energy_history.append((t, te, b['n_e']))
-        # The ion sheath energy the M8-A interface leaves declared-absent is what this
-        # workstream supplies: publish it on the latched interface, under its own state.
-        self.wall_ion_energy_flux = b['Q_wall_ion']
-        self.wall_energy_availability['wall_ion_energy_flux'] = 'available-floating-wall-sheath-model'
+        # Energy balance supplies the ion sheath energy. The M8-A
+        # interface leaves it declared absent. Keep the charged-wall
+        # transport provenance latched on the electron term: a missing
+        # ion-mobility pair and the explicit scalar single-bath
+        # approximation affect this term too. A public value is
+        # available only when strict JSON can carry it.
+        q_wall_ion = b['Q_wall_ion']
+        if np.isfinite(q_wall_ion):
+            self.wall_ion_energy_flux = q_wall_ion
+            _ion_state = 'available-floating-wall-sheath-model'
+            _transport_state = self.wall_energy_availability[
+                'wall_electron_energy_flux']
+            if _transport_state == 'available-blanc-threshold-approximation':
+                _ion_state += '-blanc-threshold-approximation'
+            elif _transport_state == 'available-single-bath-approximation':
+                _ion_state += '-single-bath-approximation'
+            self.wall_energy_availability['wall_ion_energy_flux'] = _ion_state
+        else:
+            self.wall_ion_energy_flux = None
+            self.wall_energy_availability[
+                'wall_ion_energy_flux'] = 'unavailable'
 
     def extinction_persistence_time(self, np.ndarray y):
         """PLASMA_EXTINCT_PERSIST_MULTIPLE times the slower of the electron loss time
@@ -1944,7 +2218,10 @@ cdef class PlasmaReactor(ReactionSystem):
                  (self.mobility_reference_temperature if self.has_wall else None),
                  (self.mobility_temperature_exponent if self.has_wall else None),
                  (self.ambipolar_ion_temperature if self.has_wall else None),
-                 self.ion_reduced_mobilities if self.has_wall else None))
+                 self.ion_reduced_mobilities if self.has_wall else None,
+                 (self.wall_bath_threshold if self.has_wall else None),
+                 (self.wall_bath_lumping
+                  if self.has_wall and self.wall_bath_lumping else None)))
 
     cpdef initialize_model(self, list core_species, list core_reactions, list edge_species, list edge_reactions,
                           list surface_species=None, list surface_reactions=None, list pdep_networks=None,
@@ -2835,16 +3112,12 @@ cdef class PlasmaReactor(ReactionSystem):
             # electronic ground state with its own metastable.
             skeletons[i] = self._skeleton_key(spc)
 
-        # Single bath gas: the approximation is OPT-IN, refused by default. The wall carries
-        # ONE ion reduced mobility (mu_i for the ion in its bath gas), but compute_nu_wall
-        # sums n_neutral over EVERY neutral heavy species. That is EXACT only when those
-        # neutrals are one gas -- an electronic ground state and its metastables share a
-        # heavy skeleton and collide with the ion identically, so summing them is summing
-        # one bath (the Ar/Ar* deliverable). When the neutrals span distinct heavy skeletons
-        # (Ar and He, or two isomers), the single reduced mobility is applied to the summed
-        # density as if the whole gas were the reference bath -- an approximation, not the
-        # true composition-weighted (Blanc's-law) mobility, which would need a reduced
-        # mobility PER bath gas that this model does not carry.
+        # Legacy scalar transport is OPT-IN and refused by default on mixtures.
+        # compute_nu_wall sums all neutral-heavy species while carrying one
+        # reduced mobility. The scalar compatibility check coalesces electronic
+        # states by heavy skeleton. That legacy grouping is not Blanc bath
+        # identity. Blanc transport gives each species label a distinct bath
+        # unless wall_bath_lumping combines it with a declared target label.
         #
         # A warning is not enough (a consumer of the latched fluxes cannot read a log line)
         # and neither is a passive availability label alone (round 96): it documents the
@@ -2857,9 +3130,16 @@ cdef class PlasmaReactor(ReactionSystem):
         # and running silently is wrong; the opt-in is the honest middle. When it is given,
         # the run proceeds, the affected fluxes carry the 'available-single-bath-
         # approximation' state (set in _latch_wall_diagnostics via wall_bath_is_mixture), and
-        # a warning names the gases. Keyed on the heavy skeleton, the identity the recycle
-        # uses; input.rst carries the same statement at the mobility keyword.
-        if self.has_wall:
+        # a warning names the gases. The scalar compatibility check uses the
+        # heavy-skeleton key as recycling, while Blanc bath identity remains
+        # label-based; input.rst distinguishes both modes.
+        if self.has_wall and self.wall_blanc:
+            # Per-bath (Blanc's-law) transport: a mixture is described exactly, not
+            # approximated, so it is neither refused nor marked. Coverage of every (species,
+            # bath) pair is enforced in _resolve_bath_transport, once the cations and the
+            # declared metastables are resolved.
+            self.wall_bath_is_mixture = False
+        elif self.has_wall:
             neutral_baths = sorted(repr(s) for s in
                                    {skeletons[j] for j in range(n) if neutral_mask[j]})
             self.wall_bath_is_mixture = len(neutral_baths) > 1
@@ -2869,23 +3149,28 @@ cdef class PlasmaReactor(ReactionSystem):
                         "PlasmaReactor wall: the neutral bath spans more than one gas ({0}), "
                         "but the wall carries a single ion reduced mobility that describes the "
                         "ion in ONE bath. Applied to the summed density of distinct gases it is "
-                        "an approximation, not the composition-weighted (Blanc's-law) mobility, "
-                        "which would need a reduced mobility per bath gas this model does not "
-                        "carry. Refusing rather than running silently on transport that does not "
-                        "describe this gas. To proceed on the single-bath approximation -- "
+                        "an approximation, not the composition-weighted (Blanc's-law) mobility. "
+                        "Refusing rather than running silently on transport that does not "
+                        "describe this gas. For the composition-weighted mobility, declare a "
+                        "reduced mobility per (ion, bath gas) pair, e.g. "
+                        "ion_reduced_mobilities={{'Ar+': {{'Ar': (K0, 'm^2/(V*s)'), 'He': (K0, "
+                        "'m^2/(V*s)')}}}}. To proceed on the single-bath approximation instead -- "
                         "accepting that one reduced mobility stands in for the whole bath -- set "
                         "wall_single_bath_approximation=True; the wall fluxes will then be marked "
-                        "'available-single-bath-approximation'. An electronic ground state and "
-                        "its metastables share a skeleton and are ONE bath (exact), and do not "
-                        "trigger this. ({1})".format(', '.join(neutral_baths), self._identity()))
+                        "'available-single-bath-approximation'. The legacy "
+                        "scalar compatibility check groups an electronic "
+                        "ground "
+                        "state with its metastables by skeleton; Blanc bath "
+                        "identity remains label-based. ({1})".format(
+                            ', '.join(neutral_baths), self._identity()))
                 logging.warning(
                     "PlasmaReactor wall: the neutral bath spans more than one gas (%s); "
                     "wall_single_bath_approximation=True was given, so a single ion reduced "
                     "mobility is applied to the summed neutral density as if the whole gas were "
                     "the reference bath. This is an approximation -- the true mobility is "
                     "composition-weighted (Blanc's law), which needs a reduced mobility per bath "
-                    "gas that this model does not carry. The nu_wall-derived fluxes are marked "
-                    "'available-single-bath-approximation'. (%s)",
+                    "gas (declare ion_reduced_mobilities per bath for it). The nu_wall-derived "
+                    "fluxes are marked 'available-single-bath-approximation'. (%s)",
                     ', '.join(neutral_baths), self._identity())
 
         # ion -> neutral counterpart at the wall. Matched on the heavy skeleton; when
@@ -3121,11 +3406,18 @@ cdef class PlasmaReactor(ReactionSystem):
         if self._ion_mobility_derived is not None:
             for i in range(n):
                 if i != self.electron_index and charges[i] > 0:
+                    if self.wall_blanc:
+                        # No single value: the mixture mobility is a function of the state
+                        # (wall_ion_bath_k0 below). NaN, so a stray read cannot pass as one.
+                        self.wall_ion_mobility_si[i] = float('nan')
+                        continue
                     self.wall_ion_mobility_si[i] = self._ion_mobility_derived[
                         getattr(core_species[i], 'label', None)][0].value_si * self._ion_mobility_derived[
                         getattr(core_species[i], 'label', None)][1]
         self.source_cation_target = source_cation
         self.wall_loss_rates = np.zeros(n, float)
+        if self.has_wall and self.wall_blanc:
+            self._resolve_bath_transport(core_species)
 
     def _resolve_neutral_wall_diffusion(self, list core_species, charges):
         """
@@ -3221,13 +3513,372 @@ cdef class PlasmaReactor(ReactionSystem):
                     "pair. Declare the excited state as the source and its ground state as "
                     "the product. ({4})".format(label, h_i / 1000.0, product, h_j / 1000.0,
                                                 self._identity()))
-            dn[i] = self.wall_neutral_dn_by_label[label]
             target[i] = j
+            if isinstance(self.wall_neutral_dn_by_label[label], dict):
+                # Per-bath (Blanc's-law): D*N is a function of the state, resolved in
+                # _resolve_bath_transport. NaN here, so a stray read cannot pass as a value.
+                dn[i] = float('nan')
+                logging.info("PlasmaReactor wall: %r is lost by neutral diffusion with "
+                             "per-bath D*N %r 1/(m*s) (Blanc's law over the state's "
+                             "composition) and returns as %r, as declared by "
+                             "wall_neutral_diffusion.", label,
+                             self.wall_neutral_dn_by_label[label], product)
+                continue
+            dn[i] = self.wall_neutral_dn_by_label[label]
             logging.info("PlasmaReactor wall: %r is lost by neutral diffusion "
                          "(D*N=%g 1/(m*s)) and returns as %r, as declared by "
                          "wall_neutral_diffusion.", label, dn[i], product)
         self.wall_neutral_dn = dn
         self.wall_neutral_target = target
+
+    def _resolve_bath_transport(self, list core_species):
+        """
+        Resolve the per-bath (Blanc's-law) declarations against the core.
+
+        Every neutral heavy core species is its own bath unless
+        ``wall_bath_lumping`` explicitly maps its unique label to the unique
+        neutral
+        core species carrying a declared target bath label. Unlabelled and
+        duplicate-label species remain distinct. Self maps, chains, cycles,
+        charged/absent endpoints, and duplicate declarations resolving to one
+        lumped group are refused rather than made order-dependent.
+
+        Coverage: every cation, and every declared metastable in the core, needs a value
+        for every bath present in the core. Without an explicit ``wall_bath_threshold``
+        a missing pair is refused here whatever the bath's amount, naming each missing
+        (species, bath) pair. With one, the missing pairs are recorded in
+        ``wall_bath_missing`` and :meth:`check_wall_support` refuses any state (initial or
+        accepted) in which such a bath's neutral mole fraction exceeds the threshold;
+        below it the bath is left out of that species' composition weights (it still
+        counts in the total neutral density N).
+        """
+        cdef Py_ssize_t n = len(core_species)
+        cdef Py_ssize_t i, j, g
+        labels = [getattr(spc, 'label', None) for spc in core_species]
+        charges = self.species_charges
+        # Every declared bath label, from the ions and the metastables.
+        declared = []
+        for entry in self._ion_mobility_derived.values():
+            declared.extend(b for b in entry if b not in declared)
+        for dn_row in self.wall_neutral_dn_by_label.values():
+            declared.extend(b for b in dn_row if b not in declared)
+
+        label_indices = {}
+        for j, label in enumerate(labels):
+            label_indices.setdefault(label, []).append(j)
+        for source, target in self.wall_bath_lumping.items():
+            source_indices = label_indices.get(source, [])
+            if (len(source_indices) != 1
+                    or source_indices[0] == self.electron_index
+                    or charges[source_indices[0]] != 0):
+                raise PlasmaStateError(
+                    "wall_bath_lumping source {0!r} must label exactly one "
+                    "core "
+                    "neutral "
+                    "species; matching core indices are {1}. ({2})".format(
+                        source, source_indices, self._identity()))
+            target_indices = label_indices.get(target, [])
+            if (target not in declared or len(target_indices) != 1
+                    or target_indices[0] == self.electron_index
+                    or charges[target_indices[0]] != 0):
+                raise PlasmaStateError(
+                    "wall_bath_lumping target {0!r} must be a declared bath "
+                    "label carried by exactly one core neutral species; "
+                    "matching "
+                    "core "
+                    "indices are {1}, "
+                    "declared baths are {2}. ({3})".format(
+                        target, target_indices, sorted(declared),
+                        self._identity()))
+            if source == target:
+                raise PlasmaStateError(
+                    "wall_bath_lumping contains a self-map {0!r} -> {0!r}; a "
+                    "source must "
+                    "map to a different declared target bath. ({1})".format(
+                        source, self._identity()))
+        for source in self.wall_bath_lumping:
+            path = [source]
+            target = self.wall_bath_lumping[source]
+            while target in self.wall_bath_lumping:
+                if target in path:
+                    raise PlasmaStateError(
+                        "wall_bath_lumping contains a cycle: {0}. Lumping "
+                        "must "
+                        "be "
+                        "a "
+                        "one-hop source-to-target map. ({1})".format(
+                            " -> ".join(
+                                repr(label) for label in path + [target]),
+                            self._identity()))
+                path.append(target)
+                target = self.wall_bath_lumping[target]
+            if len(path) > 1:
+                raise PlasmaStateError(
+                    "wall_bath_lumping contains a chain: {0}. Lumping must be "
+                    "a "
+                    "one-hop "
+                    "source-to-declared-target map. ({1})".format(
+                        " -> ".join(repr(label) for label in path + [target]),
+                        self._identity()))
+
+        group = np.full(n, -1, dtype=np.int_)
+        group_of = {}
+        bath_labels = []
+        for j in range(n):
+            if self.neutral_heavy_mask[j]:
+                label = labels[j]
+                if label in self.wall_bath_lumping:
+                    display = self.wall_bath_lumping[label]
+                    key = ('declared', display)
+                elif label and len(label_indices[label]) == 1:
+                    display = label
+                    key = ('declared', label)
+                else:
+                    # A missing or duplicate label is not an identity.
+                    # Give each core
+                    # species its own group so it can never merge implicitly.
+                    display = "{0} [core index {1}]".format(
+                        repr(label) if label else '<unlabelled>', j)
+                    key = ('core-index', j)
+                if key not in group_of:
+                    group_of[key] = len(bath_labels)
+                    bath_labels.append(display)
+                group[j] = group_of[key]
+        n_groups = len(bath_labels)
+
+        bath_group = {}
+        for bath in declared:
+            carriers = [k for k in range(n) if labels[k] == bath]
+            if not carriers:
+                if bath not in self.wall_bath_absent_warned:
+                    self.wall_bath_absent_warned.add(bath)
+                    logging.warning("PlasmaReactor wall: a per-bath transport value names bath "
+                                    "%r, which is not a core species; that bath carries no "
+                                    "weight until it enters the core. (Reported once.)", bath)
+                continue
+            if len(carriers) > 1:
+                raise PlasmaStateError(
+                    "a per-bath transport value names bath {0!r}, but {1} core species carry "
+                    "that label (indices {2}); the bath would be chosen by core ordering. "
+                    "Give each species a distinct label. ({3})".format(
+                        bath, len(carriers), carriers, self._identity()))
+            k = carriers[0]
+            if k == self.electron_index or charges[k] != 0:
+                raise PlasmaStateError(
+                    "a per-bath transport value names bath {0!r}, which is not a neutral "
+                    "species (net charge {1}); a bath gas is a neutral collision partner. "
+                    "({2})".format(bath, int(charges[k]), self._identity()))
+            bath_group[bath] = int(group[k])
+
+        k0 = np.zeros((n, n_groups), float)
+        dn = np.zeros((n, n_groups), float)
+        ion_missing = []
+        neutral_missing = []
+        for i in range(n):
+            if i == self.electron_index or charges[i] <= 0:
+                continue
+            assigned = {}
+            for bath, (quantity_obj, factor) in self._ion_mobility_derived[labels[i]].items():
+                if bath in bath_group:
+                    g = bath_group[bath]
+                    if g in assigned:
+                        raise PlasmaStateError(
+                            "ion_reduced_mobilities[{0!r}] names both bath "
+                            "{1!r} and bath {2!r}, which lump to the same "
+                            "declared target {3!r}; the later value would "
+                            "silently overwrite the "
+                            "earlier one. ({4})".format(
+                                labels[i], assigned[g], bath, bath_labels[g],
+                                self._identity()))
+                    assigned[g] = bath
+                    k0[i, g] = quantity_obj.value_si * factor
+            if not (k0[i] > 0.0).any():
+                raise PlasmaStateError(
+                    "ion_reduced_mobilities[{0!r}] names no bath gas present in the core "
+                    "(declared {1}; core baths {2}), so the ion has no mobility at all. "
+                    "({3})".format(labels[i], sorted(self._ion_mobility_derived[labels[i]]),
+                                   bath_labels, self._identity()))
+            ion_missing.extend(
+                (i, g) for g in range(n_groups) if k0[i, g] == 0.0)
+        if self.wall_neutral_target is not None:
+            for j in range(n):
+                if self.wall_neutral_target[j] < 0:
+                    continue
+                assigned = {}
+                for bath, value in self.wall_neutral_dn_by_label[labels[j]].items():
+                    if bath in bath_group:
+                        g = bath_group[bath]
+                        if g in assigned:
+                            raise PlasmaStateError(
+                                "wall_neutral_diffusion[{0!r}] names both "
+                                "bath "
+                                "{1!r} and bath {2!r}, which lump to the same "
+                                "declared target {3!r}; the later value would "
+                                "silently overwrite the earlier one. "
+                                "({4})".format(labels[j], assigned[g], bath,
+                                               bath_labels[g],
+                                               self._identity()))
+                        assigned[g] = bath
+                        dn[j, g] = value
+                if not (dn[j] > 0.0).any():
+                    raise PlasmaStateError(
+                        "wall_neutral_diffusion[{0!r}] names no bath gas present in the core "
+                        "(declared {1}; core baths {2}). ({3})".format(
+                            labels[j], sorted(self.wall_neutral_dn_by_label[labels[j]]),
+                            bath_labels, self._identity()))
+                neutral_missing.extend(
+                    (j, g) for g in range(n_groups) if dn[j, g] == 0.0)
+        missing = ion_missing + neutral_missing
+        if missing and self.wall_bath_threshold is None:
+            raise PlasmaStateError(
+                "per-bath (Blanc's-law) wall transport: no value is declared for the "
+                "(species, bath) pair(s) {0}, and each of those baths is in the core. The "
+                "composition-weighted mobility (and metastable diffusivity) needs every pair "
+                "whose bath is present; none is assumed. Declare the missing values, or -- to "
+                "ignore a minor bath gas -- declare wall_bath_threshold, the neutral mole "
+                "fraction at or below which an undeclared bath may be left out. "
+                "({1})".format(', '.join("({0!r}, {1!r})".format(labels[i], bath_labels[g])
+                                         for i, g in missing), self._identity()))
+        self.wall_bath_group = group
+        self.wall_bath_labels = bath_labels
+        self.wall_ion_bath_k0 = k0
+        self.wall_neutral_bath_dn = dn
+        self.wall_bath_missing = missing
+        self.wall_ion_bath_missing = ion_missing
+        self.wall_neutral_bath_missing = neutral_missing
+        # A threshold drops and renormalises missing baths while retaining them
+        # in N. It is a heuristic composition cutoff, not a transport-error
+        # bound, and the resulting transport is never exact Blanc.
+        if missing:
+            self.wall_bath_is_mixture = True
+        self._bath_labels_by_species = labels
+
+    cdef np.ndarray _bath_amounts(self, np.ndarray y):
+        """Moles by label-based bath, with negative trials clipped at zero."""
+        cdef Py_ssize_t j, g
+        cdef np.ndarray[np.float64_t, ndim=1] out = np.zeros(len(self.wall_bath_labels), float)
+        for j in range(self.num_core_species):
+            g = self.wall_bath_group[j]
+            if g >= 0 and y[j] > 0.0:
+                out[g] += y[j]
+        return out
+
+    cdef double _blanc_combine(self, np.ndarray row, np.ndarray bath_y, double *y_decl,
+                               int *n_weighted):
+        """
+        Blanc's law on one species' per-bath values ``row`` (0.0 = undeclared):
+        ``1/v_eff = sum_b x_b / v_b`` with ``x_b = bath_y[b] / sum of bath_y over the
+        declared baths``. Undeclared baths (only possible below an explicit threshold) are
+        outside the weights. When exactly one declared bath carries gas the result is that
+        bath's value itself -- the exact single-bath expression, bit for bit, not the
+        reciprocal of its reciprocal. With no declared gas at all (a Newton trial) the
+        declared baths are weighted equally, so the value stays finite. ``y_decl`` and
+        ``n_weighted`` return the declared-bath total and the number of baths weighted.
+        Never raises (it runs inside the residual).
+        """
+        cdef Py_ssize_t g, last = -1
+        cdef Py_ssize_t n_groups = row.shape[0]
+        cdef double total = 0.0, inv = 0.0, v
+        cdef int count = 0, declared = 0
+        for g in range(n_groups):
+            if row[g] > 0.0:
+                declared += 1
+                if bath_y[g] > 0.0:
+                    total += bath_y[g]
+                    count += 1
+                    last = g
+        y_decl[0] = total
+        n_weighted[0] = count
+        if count == 1:
+            return row[last]
+        if count == 0:
+            for g in range(n_groups):
+                if row[g] > 0.0:
+                    inv += 1.0 / row[g]
+            return declared / inv
+        for g in range(n_groups):
+            v = row[g]
+            if v > 0.0 and bath_y[g] > 0.0:
+                inv += (bath_y[g] / total) / v
+        return 1.0 / inv
+
+    cpdef np.ndarray compute_mixture_reduced_mobilities(self, np.ndarray y):
+        """
+        Per-core-species reduced mobility K0_eff (m^2/(V*s), at the reference density)
+        the wall applies to each cation at state ``y``; 0.0 for every other species.
+        With per-bath values this is the Blanc's-law combination over the state's
+        composition; otherwise it is the declared (Tg-law-scaled) value.
+        """
+        cdef Py_ssize_t i
+        cdef double yd
+        cdef int nw
+        out = np.zeros(self.num_core_species, float)
+        if not self.has_wall:
+            return out
+        bath_y = self._bath_amounts(y) if self.wall_blanc else None
+        for i in range(self.num_core_species):
+            if i == self.electron_index or self.species_charges[i] <= 0:
+                continue
+            if self.wall_blanc:
+                out[i] = self._blanc_combine(self.wall_ion_bath_k0[i], bath_y, &yd, &nw)
+            elif self._ion_mobility_derived is not None:
+                out[i] = self.wall_ion_mobility_si[i]
+            else:
+                out[i] = self.ion_reduced_mobility.value_si * (
+                    self.mobility_T_factor if self.mobility_reference_temperature is not None else 1.0)
+        return out
+
+    cpdef np.ndarray compute_ion_wall_frequencies(self, np.ndarray y, double V):
+        """
+        Per-core-species ambipolar wall loss frequency (s^-1) of each cation at state
+        ``y``, exactly as the residual applies it; 0.0 for every other species. In the
+        single-mobility (scalar) mode every cation carries the common ``compute_nu_wall``.
+        """
+        cdef Py_ssize_t i
+        cdef double nu
+        out = np.zeros(self.num_core_species, float)
+        if not self.has_wall:
+            return out
+        if self._ion_mobility_derived is not None:
+            self._compute_nu_wall_per_ion(y, V, out)
+            return out
+        nu = self.compute_nu_wall(y, V)
+        for i in range(self.num_core_species):
+            if i != self.electron_index and self.species_charges[i] > 0:
+                out[i] = nu
+        return out
+
+    def _check_bath_threshold(self, np.ndarray y):
+        """
+        Refuse a state where a bath has an undeclared (species, bath) pair --
+        allowed only under an explicit ``wall_bath_threshold`` heuristic
+        composition cutoff -- and a neutral mole fraction above that cutoff.
+        Called from :meth:`check_wall_support`, at the initial composition and
+        at every accepted step. The cutoff bounds omitted composition, not
+        transport error.
+        """
+        if not self.wall_blanc or not self.wall_bath_missing:
+            return
+        bath_y = self._bath_amounts(y)
+        total = float(bath_y.sum())
+        if not total > 0.0:
+            return
+        over = []
+        for i, g in self.wall_bath_missing:
+            fraction = bath_y[g] / total
+            if fraction > self.wall_bath_threshold:
+                over.append("({0!r}, {1!r}) at x={2:.6g}".format(
+                    self._bath_labels_by_species[i], self.wall_bath_labels[g], fraction))
+        if over:
+            raise PlasmaStateError(
+                "per-bath (Blanc's-law) wall transport: the (species, bath) pair(s) {0} have "
+                "no declared value, and their bath's neutral mole fraction exceeds the declared "
+                "heuristic composition cutoff wall_bath_threshold={1!r}. "
+                "Below the cutoff an undeclared bath may be left out of the "
+                "composition weights; this limits omitted composition, not "
+                "transport error. "
+                "Above it the missing values must be declared. ({2})".format(
+                    ', '.join(over), self.wall_bath_threshold, self._identity()))
 
     def _species_enthalpy(self, spc, double T):
         """Formation enthalpy (J/mol) at ``T``, or None when thermo is absent or the
@@ -3376,8 +4027,12 @@ cdef class PlasmaReactor(ReactionSystem):
         return d_a / (lam * lam)
 
     cdef _compute_nu_wall_per_ion(self, np.ndarray y, double V, np.ndarray out):
-        """Per-cation version of :meth:`compute_nu_wall`; the legacy helper is untouched."""
-        cdef double y_neutral = 0.0, n_neutral, mu_i, d_a, lam
+        """Per-cation version of :meth:`compute_nu_wall`; the legacy helper is untouched.
+        With per-bath values the cation's reduced mobility is the Blanc's-law combination
+        over the state's composition (:meth:`_blanc_combine`); N is still the total
+        neutral density, floored exactly as before."""
+        cdef double y_neutral = 0.0, n_neutral, mu_i, d_a, lam, k0, yd
+        cdef int nw
         cdef Py_ssize_t i
         for i in range(self.num_core_species):
             if self.neutral_heavy_mask[i]:
@@ -3387,10 +4042,15 @@ cdef class PlasmaReactor(ReactionSystem):
         if not (n_neutral > self.wall_neutral_density_floor):
             n_neutral = self.wall_neutral_density_floor
         lam = self.diffusion_length.value_si
+        bath_y = self._bath_amounts(y) if self.wall_blanc else None
         for i in range(self.num_core_species):
             if i == self.electron_index or self.species_charges[i] <= 0:
                 continue
-            mu_i = self.wall_ion_mobility_si[i] * self.mobility_reference_density / n_neutral
+            if self.wall_blanc:
+                k0 = self._blanc_combine(self.wall_ion_bath_k0[i], bath_y, &yd, &nw)
+            else:
+                k0 = self.wall_ion_mobility_si[i]
+            mu_i = k0 * self.mobility_reference_density / n_neutral
             d_a = mu_i * (constants.R / constants.Na) * self.Te.value_si / constants.e
             if self.ambipolar_ion_temperature is not None:
                 d_a *= 1.0 + self.T.value_si / self.Te.value_si
@@ -3431,7 +4091,24 @@ cdef class PlasmaReactor(ReactionSystem):
         """
         if not self.has_wall or self.wall_neutral_dn is None:
             return np.zeros(self.num_core_species, float)
+        if self.wall_blanc:
+            return self._neutral_dn_effective(y) * self._neutral_wall_scale(y, V)
         return self.wall_neutral_dn * self._neutral_wall_scale(y, V)
+
+    cdef np.ndarray _neutral_dn_effective(self, np.ndarray y):
+        """Per-core-species D*N of the declared metastables at state ``y``: the Blanc's-law
+        combination of their per-bath values (0.0 for every undeclared species)."""
+        cdef Py_ssize_t j
+        cdef double yd
+        cdef int nw
+        out = np.zeros(self.num_core_species, float)
+        if self.wall_neutral_target is None:
+            return out
+        bath_y = self._bath_amounts(y)
+        for j in range(self.num_core_species):
+            if self.wall_neutral_target[j] >= 0:
+                out[j] = self._blanc_combine(self.wall_neutral_bath_dn[j], bath_y, &yd, &nw)
+        return out
 
     cpdef check_wall_support(self, np.ndarray y, bint accepted=True):
         """
@@ -3637,6 +4314,9 @@ cdef class PlasmaReactor(ReactionSystem):
                     "so it would deposit ZERO and vanish silently. Refusing rather than "
                     "delivering none of a declared source. ({2})".format(
                         self.ionisation_source.value_si, y_ionisable, self._identity()))
+        # Per-bath transport under an explicit threshold: an undeclared bath may be left
+        # out only while it stays at or below the threshold.
+        self._check_bath_threshold(y)
 
     def _latch_wall_diagnostics(self, np.ndarray y, double V, double t):
         """
@@ -3733,17 +4413,25 @@ cdef class PlasmaReactor(ReactionSystem):
         # infinite nu_wall from an extreme mobility, say) is marked 'unavailable', never
         # asserted available. The flag must not withdraw the scepticism that a bare NaN/Inf
         # would otherwise draw.
-        self.wall_energy_availability['wall_flux'] = (
-            'available' if np.isfinite(self.wall_flux).all() else 'unavailable')
-        self.wall_energy_availability['wall_electron_energy_flux'] = (
-            'available' if np.isfinite(self.wall_electron_energy_flux) else 'unavailable')
+        if np.isfinite(self.wall_flux).all():
+            self.wall_energy_availability['wall_flux'] = 'available'
+        else:
+            self.wall_flux = None
+            self.wall_energy_availability['wall_flux'] = 'unavailable'
+        if np.isfinite(self.wall_electron_energy_flux):
+            self.wall_energy_availability[
+                'wall_electron_energy_flux'] = 'available'
+        else:
+            self.wall_electron_energy_flux = None
+            self.wall_energy_availability[
+                'wall_electron_energy_flux'] = 'unavailable'
         if neutral_available and np.isfinite(neutral_power):
             self.wall_neutralization_energy_flux = neutral_power
             self.wall_energy_availability['wall_neutralization_energy_flux'] = 'available'
         else:
-            self.wall_neutralization_energy_flux = float('nan')
+            self.wall_neutralization_energy_flux = None
             self.wall_energy_availability['wall_neutralization_energy_flux'] = 'unavailable'
-        self.wall_ion_energy_flux = float('nan')
+        self.wall_ion_energy_flux = None
         self.wall_energy_availability['wall_ion_energy_flux'] = 'declared-absent'
         # A multi-gas neutral bath makes every nu_wall-derived flux a single-bath
         # approximation (see wall_bath_is_mixture): the number is finite and usable, but it
@@ -3752,7 +4440,28 @@ cdef class PlasmaReactor(ReactionSystem):
         # they are otherwise available -- an already 'unavailable' field (a NaN that slipped
         # through) stays unavailable; the approximation label never launders a broken number
         # into a usable one. wall_ion_energy_flux is declared-absent and untouched.
-        if self.wall_bath_is_mixture:
+        if self.wall_bath_missing:
+            # A declared threshold is only an approximation in a state where a
+            # a coefficient is omitted from a live transport calculation: the
+            # excluded bath and affected species are both populated.
+            _bath_y = self._bath_amounts(y)
+            _ion_threshold_applies = any(
+                _bath_y[_g] > 0.0 and y[_i] > 0.0
+                for _i, _g in self.wall_ion_bath_missing)
+            _neutral_threshold_applies = any(
+                _bath_y[_g] > 0.0 and y[_i] > 0.0
+                for _i, _g in self.wall_neutral_bath_missing)
+            if _ion_threshold_applies:
+                for _field in ('wall_flux', 'wall_electron_energy_flux',
+                               'wall_neutralization_energy_flux'):
+                    if self.wall_energy_availability[_field] == 'available':
+                        self.wall_energy_availability[_field] = (
+                            'available-blanc-threshold-approximation')
+            elif _neutral_threshold_applies:
+                if self.wall_energy_availability['wall_flux'] == 'available':
+                    self.wall_energy_availability['wall_flux'] = (
+                        'available-blanc-threshold-approximation')
+        elif self.wall_bath_is_mixture:
             for _field in ('wall_flux', 'wall_electron_energy_flux',
                            'wall_neutralization_energy_flux'):
                 if self.wall_energy_availability[_field] == 'available':
@@ -3951,17 +4660,48 @@ cdef class PlasmaReactor(ReactionSystem):
         a ``cpdef`` method is bypassed entirely by C-level callers, which would leave
         :meth:`ReactionSystem.simulate` running unguarded.
         """
-        result = ReactionSystem.advance(self, tout)
-        if self.energy_balance:
-            self._check_energy_state(self.y)
-            self._sync_electron_temperature(self.y)
-        self.check_wall_support(self.y)
-        if self.has_wall:
-            # Latch the interface at the just-accepted state, AFTER the domain check.
-            self._latch_wall_diagnostics(self.y, self.compute_volume(self.y), self.t)
-        if self.energy_balance:
-            self._latch_energy_budget(self.y, self.t)
-            self._update_terminal_state(self.y, self.t)
+        if self.wall_bath_threshold is None:
+            # Legacy decks must execute the legacy method byte-for-byte. In
+            # particular, do not replace DASx.advance's endpoint/interpolation
+            # semantics with a loop over step() unless a declared threshold
+            # requires accepted-state visibility.
+            result = ReactionSystem.advance(self, tout)
+            if self.energy_balance:
+                self._check_energy_state(self.y)
+                self._sync_electron_temperature(self.y)
+            self.check_wall_support(self.y)
+            if self.has_wall:
+                self._latch_wall_diagnostics(
+                    self.y, self.compute_volume(self.y), self.t)
+            if self.energy_balance:
+                self._latch_energy_budget(self.y, self.t)
+                self._update_terminal_state(self.y, self.t)
+            return result
+
+        # DASx.advance may accept several internal states before returning. A
+        # declared threshold needs every accepted state, so take one real
+        # solver
+        # step at a time. PlasmaReactor.step performs the same ordered
+        # checks/latches as the legacy post-advance path above. DASx.step(tout)
+        # retains endpoint semantics: its final accepted state lands on tout.
+        result = None
+        while self.t < tout:
+            previous_t = self.t
+            result = self.step(tout)
+            if self.t <= previous_t:
+                raise PlasmaStateError(
+                    "thresholded PlasmaReactor.advance made no progress "
+                    "toward tout={0!r}: the accepted time remained {1!r}. "
+                    "Refusing to "
+                    "return before the "
+                    "requested endpoint. ({2})".format(
+                        tout, self.t, self._identity()))
+        if self.t != tout:
+            raise PlasmaStateError(
+                "thresholded PlasmaReactor.advance did not land on "
+                "tout={0!r}; "
+                "the solver returned accepted time {1!r}. ({2})".format(
+                    tout, self.t, self._identity()))
         return result
 
     cpdef step(self, double tout):
@@ -4487,11 +5227,12 @@ cdef class PlasmaReactor(ReactionSystem):
         # Undeclared species have target -1 and are not visited.
         if self.wall_neutral_target is not None:
             scale = self._neutral_wall_scale(y, V)
+            dn_state = self._neutral_dn_effective(y) if self.wall_blanc else self.wall_neutral_dn
             for j in range(self.num_core_species):
                 target = self.wall_neutral_target[j]
                 if target < 0:
                     continue
-                loss = self.wall_neutral_dn[j] * scale * y[j]
+                loss = dn_state[j] * scale * y[j]
                 res[j] -= loss
                 wall[j] -= loss
                 res[target] += loss
@@ -4647,8 +5388,9 @@ cdef class PlasmaReactor(ReactionSystem):
                               np.ndarray[np.float64_t, ndim=2] pd):
         """Partial derivatives of exactly the terms :meth:`_apply_wall_terms` adds."""
         cdef double nu, y_neutral = 0.0, loss, dnu_rel, dloss, source_total, term, dterm, y_ionisable = 0.0
-        cdef double scale, nu_m, recycle
-        cdef Py_ssize_t i, k, target
+        cdef double scale, nu_m, recycle, k_eff = 0.0, y_decl = 0.0
+        cdef int n_weighted = 0
+        cdef Py_ssize_t i, k, target, g
         cdef double gamma = self.wall_recycling
         cdef bint neutral_floored = 0
         cdef np.ndarray[np.float64_t, ndim=1] nu_all
@@ -4668,6 +5410,8 @@ cdef class PlasmaReactor(ReactionSystem):
         if not (y_neutral * constants.Na / V > self.wall_neutral_density_floor):
             neutral_floored = 1
 
+        if self.wall_blanc:
+            bath_y = self._bath_amounts(y)
         if self._ion_mobility_derived is not None:
             # The map path removes each cation at its own transport frequency, and
             # removes the corresponding number of electrons as the charge-neutral
@@ -4684,6 +5428,9 @@ cdef class PlasmaReactor(ReactionSystem):
                 loss = nu_all[i] * y[i]
                 target = self.wall_recycle_target[i]
                 recycle = gamma * self.wall_recycle_multiplicity[i]
+                if self.wall_blanc:
+                    k_row = self.wall_ion_bath_k0[i]
+                    k_eff = self._blanc_combine(k_row, bath_y, &y_decl, &n_weighted)
                 for k in range(self.num_core_species):
                     # Each nu_i has the same n_neutral^-1 dependence as the
                     # legacy frequency; only its constant mobility differs.
@@ -4693,6 +5440,13 @@ cdef class PlasmaReactor(ReactionSystem):
                         dnu_rel = dVdy[k] / V
                         if self.neutral_heavy_mask[k]:
                             dnu_rel -= 1.0 / y_neutral
+                    if self.wall_blanc and y_decl > 0.0 and y[k] >= 0.0:
+                        # Blanc weights: d ln K_eff / d y_k = (1 - K_eff/K_{i,b}) / Y_decl for
+                        # a species k of declared bath b (independent of the density floor,
+                        # which clamps N, not the composition).
+                        g = self.wall_bath_group[k]
+                        if g >= 0 and k_row[g] > 0.0:
+                            dnu_rel += (1.0 - k_eff / k_row[g]) / y_decl
                     dloss = loss * dnu_rel
                     if k == i:
                         dloss += nu_all[i]
@@ -4746,7 +5500,12 @@ cdef class PlasmaReactor(ReactionSystem):
                 target = self.wall_neutral_target[i]
                 if target < 0:
                     continue
-                nu_m = self.wall_neutral_dn[i] * scale
+                if self.wall_blanc:
+                    k_row = self.wall_neutral_bath_dn[i]
+                    k_eff = self._blanc_combine(k_row, bath_y, &y_decl, &n_weighted)
+                    nu_m = k_eff * scale
+                else:
+                    nu_m = self.wall_neutral_dn[i] * scale
                 loss = nu_m * y[i]
                 for k in range(self.num_core_species):
                     if neutral_floored:
@@ -4755,6 +5514,10 @@ cdef class PlasmaReactor(ReactionSystem):
                         dnu_rel = dVdy[k] / V
                         if self.neutral_heavy_mask[k]:
                             dnu_rel -= 1.0 / y_neutral
+                    if self.wall_blanc and y_decl > 0.0 and y[k] >= 0.0:
+                        g = self.wall_bath_group[k]
+                        if g >= 0 and k_row[g] > 0.0:
+                            dnu_rel += (1.0 - k_eff / k_row[g]) / y_decl
                     dloss = loss * dnu_rel
                     if k == i:
                         dloss += nu_m
