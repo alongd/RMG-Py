@@ -1891,6 +1891,153 @@ class TestTwoTemperaturePlasma:
         k_high = self.plasma.get_rate_coefficient_two_temp(T, 8000.0)
         assert k_high > k_low
 
+    def test_combined_exponent_avoids_intermediate_overflow(self):
+        """The 20.07 eV law is finite and equals its Te-only analytical value."""
+        plasma = TwoTemperaturePlasma(
+            A=(1.0e-8, "cm^3/(molecule*s)"), n=0.37,
+            Ea_g=(20.07, "eV/molecule"), Ea_e=(20.07, "eV/molecule"), T0=(7000.0, "K"),
+        )
+        te = constants.e / constants.kB
+        expected = (plasma.A.value_si * (te / plasma.T0.value_si) ** plasma.n.value_si
+                    * math.exp(-plasma.Ea_e.value_si / (constants.R * te)))
+        assert plasma.get_rate_coefficient_two_temp(298.0, te) == pytest.approx(expected, rel=1e-12)
+
+    def test_equal_temperatures_recover_gas_activation_with_huge_electron_energy(self):
+        """At Te=T, the exact result is independent of a much larger Ea_e."""
+        plasma = TwoTemperaturePlasma(A=(1.0, "s^-1"), n=0.0,
+                                     Ea_g=(1.0, "eV/molecule"), Ea_e=(1.0e8, "eV/molecule"))
+        temperature = 1.0e9
+        expected = math.exp(-plasma.Ea_g.value_si / (constants.R * temperature))
+        assert plasma.get_rate_coefficient_two_temp(temperature, temperature) == pytest.approx(expected, rel=1e-12)
+
+    def test_electron_energy_below_gas_energy_avoids_cancellation(self):
+        """When Te << T and Ea_e is zero, the rate is the gas-activation law."""
+        plasma = TwoTemperaturePlasma(A=(1.0, "s^-1"), n=0.0,
+                                     Ea_g=(0.1, "eV/molecule"), Ea_e=(0.0, "eV/molecule"))
+        expected = math.exp(-plasma.Ea_g.value_si / (constants.R * 1000.0))
+        assert plasma.get_rate_coefficient_two_temp(1000.0, 1.0e-9) == pytest.approx(expected, rel=1e-12)
+
+    def test_large_negative_electron_energy_at_equal_temperatures(self):
+        """At Te=T, cancellation must also be exact for a large negative Ea_e."""
+        plasma = TwoTemperaturePlasma(A=(1.0, "s^-1"), n=0.0,
+                                     Ea_g=(-0.1, "eV/molecule"), Ea_e=(-1.0e16, "eV/molecule"))
+        temperature = 1.0e9
+        expected = math.exp(-plasma.Ea_g.value_si / (constants.R * temperature))
+        assert plasma.get_rate_coefficient_two_temp(temperature, temperature) == pytest.approx(expected, rel=1e-12)
+
+    def test_equal_activation_energies_are_stable_at_cold_gas_temperature(self):
+        """At cold T, Ea_g=Ea_e recovers the pure-Te activation law."""
+        plasma = TwoTemperaturePlasma(A=(1.0, "s^-1"), n=0.0,
+                                     Ea_g=(20.07, "eV/molecule"), Ea_e=(20.07, "eV/molecule"))
+        temperature = 150.0
+        electron_temperature = constants.e / constants.kB
+        expected = math.exp(-plasma.Ea_e.value_si / (constants.R * electron_temperature))
+        assert plasma.get_rate_coefficient_two_temp(temperature, electron_temperature) == pytest.approx(expected, rel=1e-12)
+
+    def test_equal_activation_energies_preserve_the_two_to_54_identity(self):
+        """Removing the equality branch gives 1 instead of exp(-1); the naive
+        combined mutation gives exponent 1.317656444833609e17, not -1."""
+        temperature = 1.0
+        electron_temperature = float(2 ** 54)
+        activation_energy = constants.R * electron_temperature
+        plasma = TwoTemperaturePlasma(A=(1.0, "s^-1"), n=0.0,
+                                     Ea_g=(activation_energy, "J/mol"), Ea_e=(activation_energy, "J/mol"))
+        assert plasma.get_rate_coefficient_two_temp(temperature, electron_temperature) == pytest.approx(math.exp(-1.0), rel=1e-12)
+
+    def test_large_gas_activation_energy_avoids_rt_overflow(self):
+        plasma = TwoTemperaturePlasma(A=(1.0, "s^-1"), n=0.0,
+                                     Ea_g=(1.0e308, "J/mol"), Ea_e=(0.0, "J/mol"))
+        expected = math.exp(-(1.0e308 / constants.R) / 1.0e308)
+        assert plasma.get_rate_coefficient_two_temp(1.0e308, 2.0e307) == pytest.approx(expected, rel=1e-12)
+
+    def test_large_electron_activation_energy_avoids_rt_overflow(self):
+        plasma = TwoTemperaturePlasma(A=(1.0, "s^-1"), n=0.0,
+                                     Ea_g=(0.0, "J/mol"), Ea_e=(1.0e200, "J/mol"))
+        expected = math.exp(((1.0e200 / constants.R) / 1.0e200) * 0.5)
+        assert plasma.get_rate_coefficient_two_temp(1.0e200, 2.0e200) == pytest.approx(expected, rel=1e-12)
+
+    def test_equal_temperatures_do_not_form_inf_times_zero(self):
+        plasma = TwoTemperaturePlasma(A=(1.0, "s^-1"), n=0.0,
+                                     Ea_g=(0.0, "J/mol"), Ea_e=(1.0, "J/mol"))
+        assert plasma.get_rate_coefficient_two_temp(1.0e-320, 1.0e-320) == pytest.approx(1.0, rel=1e-12)
+
+    def test_log_space_keeps_small_a_and_large_positive_exponent_finite(self):
+        plasma = TwoTemperaturePlasma(A=(1.0e-310, "s^-1"), n=0.0,
+                                     Ea_g=(-720.0 * constants.R, "J/mol"), Ea_e=(-720.0 * constants.R, "J/mol"))
+        expected = math.exp(math.log(1.0e-310) + 720.0)
+        assert plasma.get_rate_coefficient_two_temp(300.0, 1.0) == pytest.approx(expected, rel=1e-12)
+
+    def test_log_space_keeps_compensating_power_and_exponent_finite(self):
+        n = 1100.0
+        electron_temperature = 2.0
+        activation_energy = constants.R * electron_temperature * n * math.log(2.0)
+        plasma = TwoTemperaturePlasma(A=(1.0, "s^-1"), n=n, T0=(1.0, "K"),
+                                     Ea_g=(activation_energy, "J/mol"), Ea_e=(activation_energy, "J/mol"))
+        expected = math.exp(n * math.log(2.0) - activation_energy / (constants.R * electron_temperature))
+        assert plasma.get_rate_coefficient_two_temp(300.0, electron_temperature) == pytest.approx(expected, rel=1e-12)
+
+    def test_log_space_keeps_overflowing_temperature_ratio_finite(self):
+        plasma = TwoTemperaturePlasma(A=(1.0e-308, "s^-1"), n=1.0, T0=(1.0e-308, "K"),
+                                     Ea_g=(0.0, "J/mol"), Ea_e=(0.0, "J/mol"))
+        expected = math.exp(math.log(1.0e-308) + math.log(1.0e308) - math.log(1.0e-308))
+        assert plasma.get_rate_coefficient_two_temp(300.0, 1.0e308) == pytest.approx(expected, rel=1e-12)
+
+    def test_log_space_keeps_underflowing_temperature_ratio_finite(self):
+        plasma = TwoTemperaturePlasma(A=(1.0e308, "s^-1"), n=1.0, T0=(1.0e308, "K"),
+                                     Ea_g=(0.0, "J/mol"), Ea_e=(0.0, "J/mol"))
+        expected = math.exp(math.log(1.0e308) + math.log(1.0e-308) - math.log(1.0e308))
+        assert plasma.get_rate_coefficient_two_temp(300.0, 1.0e-308) == pytest.approx(expected, rel=1e-12)
+
+    def test_zero_a_does_not_bypass_invalid_t0(self):
+        plasma = TwoTemperaturePlasma(A=(0.0, "s^-1"), n=0.0, T0=(-1.0, "K"),
+                                     Ea_g=(0.0, "J/mol"), Ea_e=(0.0, "J/mol"))
+        with pytest.raises(ValueError, match="T0 must be > 0 K"):
+            plasma.get_rate_coefficient_two_temp(300.0, 1000.0)
+
+    def test_rejects_nonfinite_calculated_rate(self):
+        plasma = TwoTemperaturePlasma(A=(1.0e300, "m^3/(mol*s)"), n=2.0,
+                                     Ea_g=(0.0, "J/mol"), Ea_e=(0.0, "J/mol"), T0=(1.0, "K"))
+        with pytest.raises(ValueError, match="calculated rate is not finite"):
+            plasma.get_rate_coefficient_two_temp(300.0, 1.0e10)
+
+    def test_accepts_finite_rate_above_1e300(self):
+        plasma = TwoTemperaturePlasma(A=(1.0e305, "m^3/(mol*s)"), n=0.0,
+                                     Ea_g=(0.0, "J/mol"), Ea_e=(0.0, "J/mol"), T0=(1.0, "K"))
+        assert plasma.get_rate_coefficient_two_temp(300.0, 300.0) > 1.0e300
+
+    @pytest.mark.parametrize("field, value", [
+        ("A", (float("inf"), "s^-1")),
+        ("n", float("inf")),
+        ("T0", (float("inf"), "K")),
+        ("Ea_g", (float("inf"), "J/mol")),
+        ("Ea_e", (float("inf"), "J/mol")),
+    ])
+    def test_rejects_nonfinite_kinetic_parameters(self, field, value):
+        parameters = {"A": (1.0, "s^-1"), "n": 0.0, "T0": (1.0, "K"),
+                      "Ea_g": (0.0, "J/mol"), "Ea_e": (0.0, "J/mol")}
+        parameters[field] = value
+        plasma = TwoTemperaturePlasma(**parameters)
+        with pytest.raises(ValueError, match="A, n, T0, Ea_g, and Ea_e must be finite"):
+            plasma.get_rate_coefficient_two_temp(300.0, 1000.0)
+
+    @pytest.mark.parametrize("temperature, electron_temperature", [
+        (float("nan"), 1000.0), (float("inf"), 1000.0),
+        (1000.0, float("nan")), (1000.0, float("inf")),
+    ])
+    def test_rejects_nonfinite_temperatures(self, temperature, electron_temperature):
+        with pytest.raises(ValueError, match="finite and > 0 K"):
+            self.plasma.get_rate_coefficient_two_temp(temperature, electron_temperature)
+
+    def test_combined_exponent_matches_separate_factors_when_finite(self):
+        """Combining exponents preserves the previous finite evaluation to roundoff."""
+        temperature, te = 800.0, 12000.0
+        eag, eae = self.plasma.Ea_g.value_si, self.plasma.Ea_e.value_si
+        expected = (self.plasma.A.value_si * (te / self.plasma.T0.value_si) ** self.plasma.n.value_si
+                    * math.exp(-eag / (constants.R * temperature))
+                    * math.exp(eae * (te - temperature) / (constants.R * temperature * te)))
+        actual = self.plasma.get_rate_coefficient_two_temp(temperature, te)
+        assert actual == pytest.approx(expected, rel=2.0e-15)
+
     def test_change_rate(self):
         """
         change_rate(factor) should scale the rate coefficient by that factor.

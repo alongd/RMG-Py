@@ -538,13 +538,74 @@ def _plasma_inverse_lambda_squared(shape, dims):
     raise InputError('unreachable chamber shape {0!r}'.format(shape))
 
 
+def _plasma_is_per_bath(entry):
+    """True only for the explicit per-bath Blanc form.
+
+    ``perBath`` is deliberately structural rather than inferred from dictionary keys:
+    bath labels are user labels and may legitimately be ``mobility`` or
+    ``referenceTemperature``.
+    """
+    return isinstance(entry, dict) and set(entry) == {'perBath'}
+
+
+def _plasma_check_mobility_entry(where, entry, mobility_dimensionality):
+    """Validate one declared reduced mobility -- a quantity, or ``{'mobility': q}`` with
+    optionally both ``'referenceTemperature'`` and ``'temperatureExponent'`` -- naming it
+    as ``where``; return the deck's representation for the reactor and the writer."""
+    if isinstance(entry, dict):
+        keys = set(entry)
+        allowed = {'mobility', 'referenceTemperature', 'temperatureExponent'}
+        if keys not in ({'mobility'}, allowed):
+            raise InputError(
+                "{0} must be a mobility or a dict with 'mobility' alone, or 'mobility', "
+                "'referenceTemperature', and 'temperatureExponent'; got keys {1!r}.".format(
+                    where, sorted(keys)))
+        item = entry['mobility']
+    else:
+        item = entry
+    try:
+        q = Quantity(item)
+    except Exception as exc:
+        raise InputError("{0} is not a mobility ({1}).".format(where, exc))
+    try:
+        dimensionality = pq.Quantity(1.0, q.units).simplified.dimensionality
+    except Exception:
+        dimensionality = None
+    if dimensionality != mobility_dimensionality:
+        raise InputError(
+            "{0} must have mobility dimensions, e.g. (1.535e-4, 'm^2/(V*s)'); got units "
+            "{1!r}.".format(where, q.units))
+    if not np.isfinite(q.value_si) or q.value_si <= 0.0:
+        raise InputError("{0} must be finite and strictly positive.".format(where))
+    if isinstance(entry, dict) and 'referenceTemperature' in entry:
+        tref = Quantity(entry['referenceTemperature'])
+        if tref.units != 'K' or not np.isfinite(tref.value_si) or tref.value_si <= 0.0:
+            raise InputError(
+                "{0}['referenceTemperature'] must be a finite, strictly positive temperature "
+                "in 'K'.".format(where))
+        exponent = entry['temperatureExponent']
+        exponent_ok = not isinstance(exponent, bool) and isinstance(exponent, (int, float))
+        if exponent_ok:
+            try:
+                exponent_ok = bool(np.isfinite(float(exponent)))
+            except OverflowError:
+                exponent_ok = False
+        if not exponent_ok:
+            raise InputError("{0}['temperatureExponent'] must be a finite plain number.".format(where))
+    # Preserve the deck's representation (and optional per-ion Tg law) for the
+    # reactor's persistence and input writer.  The reactor resolves units.
+    return dict(entry) if isinstance(entry, dict) else item
+
+
 def _plasma_wall_kwargs(chamberGeometry, ionReducedMobility, mobilityReferenceDensity,
                         wallRecycling, ionisationSource, maxIonisationDegree,
                         wallSingleBathApproximation=False,
                         mobilityReferenceTemperature=None,
                         mobilityTemperatureExponent=None,
                         ambipolarIonTemperature=None,
-                        ionReducedMobilities=None):
+                        ionReducedMobilities=None,
+                        wallBathThreshold=None,
+                        wallBathLumping=None):
     """
     Turn the ``plasmaReactor(...)`` wall keywords into :class:`PlasmaReactor`
     constructor arguments, resolving a named chamber shape into a diffusion length.
@@ -567,7 +628,9 @@ def _plasma_wall_kwargs(chamberGeometry, ionReducedMobility, mobilityReferenceDe
                                    ('wallSingleBathApproximation', wallSingleBathApproximation, False),
                                    ('mobilityReferenceTemperature', mobilityReferenceTemperature, None),
                                    ('mobilityTemperatureExponent', mobilityTemperatureExponent, None),
-                                   ('ambipolarIonTemperature', ambipolarIonTemperature, None)):
+                                   ('ambipolarIonTemperature', ambipolarIonTemperature, None),
+                                   ('wallBathThreshold', wallBathThreshold, None),
+                                   ('wallBathLumping', wallBathLumping, None)):
             if value != inert:
                 raise InputError(
                     "{0}={1!r} was given but no charged-particle wall was declared, so it "
@@ -660,60 +723,46 @@ def _plasma_wall_kwargs(chamberGeometry, ionReducedMobility, mobilityReferenceDe
         if not isinstance(ionReducedMobilities, dict) or not ionReducedMobilities:
             raise InputError("ionReducedMobilities must be a non-empty dict mapping cation labels to mobilities.")
         checked = {}
+        per_bath = {label: _plasma_is_per_bath(entry) for label, entry in ionReducedMobilities.items()}
+        if any(per_bath.values()) and not all(per_bath.values()):
+            raise InputError(
+                "ionReducedMobilities mixes the per-bath form ({0}) with the single-bath form "
+                "({1}); give every cation its mobility per bath gas, e.g. "
+                "{{'Ar+': {{'Ar': (K0, 'm^2/(V*s)'), 'He': (K0, 'm^2/(V*s)')}}}}.".format(
+                    sorted(l for l, pb in per_bath.items() if pb),
+                    sorted(l for l, pb in per_bath.items() if not pb)))
         for label, entry in ionReducedMobilities.items():
             if not isinstance(label, str) or not label:
                 raise InputError("ionReducedMobilities keys must be cation labels (strings).")
-            if isinstance(entry, dict):
-                keys = set(entry)
-                allowed = {'mobility', 'referenceTemperature', 'temperatureExponent'}
-                if keys not in ({'mobility'}, allowed):
+            if per_bath[label]:
+                # Per-bath (Blanc's-law) form: {bath label: mobility or mobility dict}.
+                if not entry:
                     raise InputError(
-                        "ionReducedMobilities[{0!r}] must be a mobility or a dict with "
-                        "'mobility' alone, or 'mobility', 'referenceTemperature', and "
-                        "'temperatureExponent'; got keys {1!r}.".format(label, sorted(keys)))
-                item = entry['mobility']
+                        "ionReducedMobilities[{0!r}] is an empty per-bath map; name at least "
+                        "one bath gas.".format(label))
+                bath_checked = {}
+                if not isinstance(entry['perBath'], dict) or not entry['perBath']:
+                    raise InputError("ionReducedMobilities[{0!r}]['perBath'] must be a non-empty dict.".format(label))
+                for bath, bath_entry in entry['perBath'].items():
+                    if not isinstance(bath, str) or not bath:
+                        raise InputError(
+                            "ionReducedMobilities[{0!r}] keys must be bath-gas species labels; "
+                            "got {1!r}.".format(label, bath))
+                    bath_checked[bath] = _plasma_check_mobility_entry(
+                        "ionReducedMobilities[{0!r}][{1!r}]".format(label, bath),
+                        bath_entry, mobility_dimensionality)
+                checked[label] = {'perBath': bath_checked}
             else:
-                item = entry
-            try:
-                q = Quantity(item)
-            except Exception as exc:
-                raise InputError("ionReducedMobilities[{0!r}] is not a mobility ({1}).".format(label, exc))
-            try:
-                dimensionality = pq.Quantity(1.0, q.units).simplified.dimensionality
-            except Exception:
-                dimensionality = None
-            if dimensionality != mobility_dimensionality:
-                raise InputError(
-                    "ionReducedMobilities[{0!r}] must have mobility dimensions, e.g. "
-                    "(1.535e-4, 'm^2/(V*s)'); got units {1!r}.".format(label, q.units))
-            if not np.isfinite(q.value_si) or q.value_si <= 0.0:
-                raise InputError("ionReducedMobilities[{0!r}] must be finite and strictly positive.".format(label))
-            if isinstance(entry, dict) and 'referenceTemperature' in entry:
-                tref = Quantity(entry['referenceTemperature'])
-                if tref.units != 'K' or not np.isfinite(tref.value_si) or tref.value_si <= 0.0:
-                    raise InputError(
-                        "ionReducedMobilities[{0!r}]['referenceTemperature'] must be a "
-                        "finite, strictly positive temperature in 'K'.".format(label))
-                exponent = entry['temperatureExponent']
-                exponent_ok = not isinstance(exponent, bool) and isinstance(exponent, (int, float))
-                if exponent_ok:
-                    try:
-                        exponent_ok = bool(np.isfinite(float(exponent)))
-                    except OverflowError:
-                        exponent_ok = False
-                if not exponent_ok:
-                    raise InputError(
-                        "ionReducedMobilities[{0!r}]['temperatureExponent'] must be a "
-                        "finite plain number.".format(label))
-            # Preserve the deck's representation (and optional per-ion Tg law) for the
-            # reactor's persistence and input writer.  The reactor resolves units.
-            checked[label] = dict(entry) if isinstance(entry, dict) else item
+                checked[label] = _plasma_check_mobility_entry(
+                    "ionReducedMobilities[{0!r}]".format(label), entry, mobility_dimensionality)
         kwargs = {
             'diffusion_length': (lam.value_si, 'm'),
             'ion_reduced_mobilities': checked,
             'wall_recycling': wallRecycling,
         }
         mobility_for_log = next(iter(checked.values()))
+        if _plasma_is_per_bath(mobility_for_log):
+            mobility_for_log = next(iter(mobility_for_log['perBath'].values()))
         mobility_for_log = mobility_for_log.get('mobility') if isinstance(mobility_for_log, dict) else mobility_for_log
         mobility = Quantity(mobility_for_log)
     else:
@@ -825,6 +874,36 @@ def _plasma_wall_kwargs(chamberGeometry, ionReducedMobility, mobilityReferenceDe
     # reads the string "False" as True, silently enabling the approximation a deck meant to
     # decline -- the same trap quasineutralElectron avoids by passing raw (see below).
     kwargs['wall_single_bath_approximation'] = wallSingleBathApproximation
+
+    # wallBathThreshold is a heuristic cutoff: an undeclared bath at or below
+    # this neutral mole fraction may be omitted from the Blanc weights. It
+    # limits omitted composition, not transport error; the reactor enforces it
+    # at every accepted state and refuses it without per-bath mobilities.
+    if wallBathThreshold is not None:
+        ok = (not isinstance(wallBathThreshold, bool)
+              and isinstance(wallBathThreshold, (int, float)))
+        threshold_value = None
+        if ok:
+            try:
+                threshold_value = float(wallBathThreshold)
+            except (OverflowError, TypeError, ValueError):
+                ok = False
+            else:
+                ok = (bool(np.isfinite(threshold_value))
+                      and 0.0 <= threshold_value <= 0.01)
+        if not ok:
+            raise InputError(
+                "wallBathThreshold is a heuristic composition cutoff and must "
+                "be a finite plain neutral mole fraction in [0, 0.01]. It "
+                "limits only "
+                "omitted composition, not transport error; got {0!r}.".format(
+                    wallBathThreshold))
+        kwargs['wall_bath_threshold'] = threshold_value
+    if wallBathLumping is not None:
+        if not isinstance(wallBathLumping, dict) or not all(isinstance(a, str) and a and isinstance(b, str) and b
+                                                            for a, b in wallBathLumping.items()):
+            raise InputError("wallBathLumping must map non-empty neutral species labels to non-empty declared bath labels.")
+        kwargs['wall_bath_lumping'] = dict(wallBathLumping)
 
     logging.info(
         'plasmaReactor: charged-particle wall declared. Geometry: %s -> Lambda = %r m. '
@@ -965,6 +1044,8 @@ def plasma_reactor(temperature,
                    terminationRateRatio=None,
                    terminationSteadyState=None,
                    ionReducedMobilities=None,
+                   wallBathThreshold=None,
+                   wallBathLumping=None,
                    thermoSourceAssertions=None):
     """
     Define a two-temperature plasma batch reactor (:class:`PlasmaReactor`) from an
@@ -973,6 +1054,22 @@ def plasma_reactor(temperature,
     ``ionReducedMobilities`` is the opt-in multi-cation wall form. Each mapped
     cation receives its own ambipolar loss frequency; the electron loss and the
     common floating-potential sheath are formed from their charge-weighted fluxes.
+    Given per bath gas -- ``{'Arp': {'perBath':
+    {'Ar': (K0, 'm^2/(V*s)'), 'He': (K0, 'm^2/(V*s)')}}}`` -- each cation's
+    mobility in a mixed neutral bath is composition-weighted by Blanc's law
+    over the reactor state. ``wallNeutralDiffusion`` diffusivities are then
+    given per
+    bath too. Ar and Ar* are distinct baths unless
+    ``wallBathLumping={'Ars': 'Ar'}`` explicitly adopts the approximation. Lump
+    sources and declared targets must be unique core neutrals; self maps,
+    chains,
+    cycles, and source/target double declarations are refused.
+    ``wallBathThreshold`` is a heuristic composition cutoff in ``[0, 0.01]``.
+    It lets an undeclared minor bath gas be omitted only while its mole
+    fraction
+    stays at or below the cutoff, and every accepted solver state is checked.
+    The cutoff limits omitted composition, not transport error: even a small
+    amount of a very low-mobility bath can dominate the Blanc denominator.
 
     ``electronTemperature`` sets the electron temperature ``Te`` and must be given in
     the exact ``(value, 'K')`` form (the check is on the unit string ``'K'``; bare
@@ -1508,7 +1605,29 @@ def plasma_reactor(temperature,
         mobilityReferenceTemperature=mobilityReferenceTemperature,
         mobilityTemperatureExponent=mobilityTemperatureExponent,
         ambipolarIonTemperature=ambipolarIonTemperature,
-        ionReducedMobilities=ionReducedMobilities)
+        ionReducedMobilities=ionReducedMobilities,
+        wallBathThreshold=wallBathThreshold,
+        wallBathLumping=wallBathLumping)
+
+    # Per-bath (Blanc's-law) values name their bath gas by a species label: it must be a
+    # declared species, or the value would silently carry no weight.
+    per_bath_names = []
+    if isinstance(ionReducedMobilities, dict):
+        for ion_label, entry in ionReducedMobilities.items():
+            if _plasma_is_per_bath(entry):
+                per_bath_names.extend(("ionReducedMobilities[{0!r}]['perBath']".format(ion_label), bath)
+                                      for bath in entry['perBath'])
+    if isinstance(wallNeutralDiffusion, dict):
+        for label, entry in wallNeutralDiffusion.items():
+            if isinstance(entry, dict) and isinstance(entry.get('diffusivity'), dict):
+                per_bath_names.extend(("wallNeutralDiffusion[{0!r}]['diffusivity']".format(label), bath)
+                                      for bath in entry['diffusivity'])
+    for where, bath in per_bath_names:
+        if bath not in species_dict:
+            raise InputError(
+                "{0} names bath gas {1!r}, which is not a declared species; declare it with a "
+                "species(...) directive before the plasmaReactor(...) block. Declared species "
+                "are {2}.".format(where, bath, sorted(species_dict.keys())))
 
     # wallNeutralizationProducts names, per ion, the neutral GROUND STATE it returns as
     # at the wall -- the escape hatch for the case the energy rule cannot infer (two
@@ -2979,6 +3098,12 @@ def _format_plasma_wall(system):
             # A deliberate opt-in to the single-bath transport approximation on a multi-gas
             # bath; without it the reloaded deck would refuse to construct.
             lines.append('    wallSingleBathApproximation = True,\n')
+        if system.wall_bath_threshold is not None:
+            # The declared minor-bath threshold of the per-bath (Blanc's-law) wall; without
+            # it the reloaded deck would refuse any undeclared bath gas.
+            lines.append('    wallBathThreshold = {0!r},\n'.format(system.wall_bath_threshold))
+        if system.wall_bath_lumping:
+            lines.append('    wallBathLumping = {0!r},\n'.format(dict(system.wall_bath_lumping)))
     if system.energy_balance:
         # The saved geometry is a bare diffusion length, so the chamber volume the power
         # is deposited in is written explicitly.

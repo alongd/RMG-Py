@@ -1867,11 +1867,11 @@ def test_wall_energy_interface_declares_ion_term_absent_not_broken():
                                   ion_eV=float('nan'))
     avail = r.wall_energy_availability
     assert avail['wall_ion_energy_flux'] == 'declared-absent'
-    assert np.isnan(r.wall_ion_energy_flux)
+    assert r.wall_ion_energy_flux is None
     assert avail['wall_electron_energy_flux'] == 'available'
     assert np.isfinite(r.wall_electron_energy_flux) and r.wall_electron_energy_flux > 0.0
     assert avail['wall_neutralization_energy_flux'] == 'unavailable'
-    assert np.isnan(r.wall_neutralization_energy_flux)
+    assert r.wall_neutralization_energy_flux is None
 
 
 def test_saved_input_preserves_wall_neutralization_products():
@@ -2208,7 +2208,7 @@ def test_nonfinite_recycle_thermo_leaves_energy_unavailable():
                                         neutralization={'Ar+': 'Ar'})
     avail = reactor.wall_energy_availability['wall_neutralization_energy_flux']
     assert avail == 'unavailable'
-    assert np.isnan(reactor.wall_neutralization_energy_flux)
+    assert reactor.wall_neutralization_energy_flux is None
 
 
 # ================================ round 88 ================================
@@ -2599,7 +2599,7 @@ def test_non_finite_wall_flux_is_not_reported_available():
     V = r.compute_volume(y)
     y[r.electron_index] = float('inf')
     r._latch_wall_diagnostics(y, V, 0.0)
-    assert not np.isfinite(np.asarray(r.wall_flux)).all()
+    assert r.wall_flux is None
     assert r.wall_energy_availability['wall_flux'] == 'unavailable'
 
 
@@ -4237,10 +4237,7 @@ def test_tgas_laws_survive_deepcopy_pickle_and_the_input_writer():
 
 
 def test_undeclared_tgas_laws_reconstruct_as_none():
-    """I-279 test 6: a wall reactor with no mobility law, and a wall-less reactor, both
-    reconstruct with None for the three ion keys -- no internal default or sentinel
-    leaks into __reduce__ (a wall-less copy would otherwise trip the no-wall refusal) --
-    and the writer emits none of the new keywords."""
+    """Undeclared fields reconstruct without internal defaults."""
     from rmgpy.rmg.input import _format_plasma_wall
     r_wall, _ = _ion_law_reactor(declaration=_meta_declaration())
     electron, ar, arp = _argon_species()
@@ -4253,6 +4250,9 @@ def test_undeclared_tgas_laws_reconstruct_as_none():
         assert clone.mobility_reference_temperature is None
         assert clone.mobility_temperature_exponent is None
         assert clone.ambipolar_ion_temperature is None
+        assert clone.ion_reduced_mobilities is None
+        assert clone.wall_bath_threshold is None
+        assert clone.wall_bath_lumping == {}
         text = _format_plasma_wall(r)
         for keyword in ('mobilityReferenceTemperature', 'mobilityTemperatureExponent',
                         'ambipolarIonTemperature', 'referenceTemperature', 'temperatureExponent'):
