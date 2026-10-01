@@ -51,7 +51,7 @@ from rmgpy.data.rmg import get_db
 from rmgpy.data.vaporLiquidMassTransfer import vapor_liquid_mass_transfer
 from rmgpy.display import display
 from rmgpy.electron_balance import get_electron_placement_counts
-from rmgpy.exceptions import ForbiddenStructureException
+from rmgpy.exceptions import DatabaseError, ForbiddenStructureException
 from rmgpy.kinetics import Arrhenius, KineticsData
 from rmgpy.kinetics.surface import StickingCoefficient
 from rmgpy.molecule.fragment import Fragment
@@ -1796,10 +1796,8 @@ class CoreEdgeReactionModel:
             raise NotImplementedError("react=True doesn't work yet")
         database = rmgpy.data.rmg.database
 
-        library_names = list(database.kinetics.libraries.keys())
         family_names = list(database.kinetics.families.keys())
 
-        path = os.path.join(settings["database.directory"], "kinetics", "libraries")
         from rmgpy.rmg.input import rmg
 
         self.new_reaction_list = []
@@ -1811,17 +1809,14 @@ class CoreEdgeReactionModel:
 
         logging.info("Adding seed mechanism {0} to model core...".format(seed_mechanism))
 
-        seed_mechanism = database.kinetics.libraries[seed_mechanism]
+        seed_mechanism = database.kinetics.resolve_library(seed_mechanism)
 
         rxns = seed_mechanism.get_library_reactions()
 
         for rxn in rxns:
-            if (
-                isinstance(rxn, LibraryReaction) and not (rxn.library in library_names) and not (rxn.library == "kineticsjobs")
-            ):  # if one of the reactions in the library is from another library load that library
-                database.kinetics.library_order.append((rxn.library, "Internal"))
-                database.kinetics.load_libraries(path=path, libraries=[rxn.library])
-                library_names = list(database.kinetics.libraries.keys())
+            if isinstance(rxn, LibraryReaction) and rxn.library != 'kineticsjobs':
+                database.kinetics.resolve_library(rxn.library, source=getattr(rxn, 'library_source', None),
+                                                  library_type='Internal')
             if isinstance(rxn, TemplateReaction) and not (rxn.family in family_names):
                 logging.warning("loading reaction {0} originally from family {1} as a library reaction".format(str(rxn), rxn.family))
                 rxn = as_library_reaction(rxn, seed_mechanism.name)
@@ -1917,9 +1912,7 @@ class CoreEdgeReactionModel:
         """
 
         database = rmgpy.data.rmg.database
-        library_names = list(database.kinetics.libraries.keys())
         family_names = list(database.kinetics.families.keys())
-        path = os.path.join(settings["database.directory"], "kinetics", "libraries")
 
         from rmgpy.rmg.input import rmg
 
@@ -1930,21 +1923,13 @@ class CoreEdgeReactionModel:
         num_old_edge_reactions = len(self.edge.reactions)
 
         logging.info("Adding reaction library {0} to model edge...".format(reaction_library))
-        if reaction_library in database.kinetics.libraries:
-            reaction_library = database.kinetics.libraries[reaction_library]
-        elif reaction_library in database.kinetics.external_library_labels:
-            reaction_library = database.kinetics.libraries[database.kinetics.external_library_labels[reaction_library]]
-        else:
-            raise ValueError(f'Library {reaction_library} not found.')
+        reaction_library = database.kinetics.resolve_library(reaction_library)
 
         rxns = reaction_library.get_library_reactions()
         for rxn in rxns:
-            if isinstance(rxn, LibraryReaction) and not (
-                rxn.library in library_names
-            ):  # if one of the reactions in the library is from another library load that library
-                database.kinetics.library_order.append((rxn.library, "Internal"))
-                database.kinetics.load_libraries(path=path, libraries=[rxn.library])
-                library_names = list(database.kinetics.libraries.keys())
+            if isinstance(rxn, LibraryReaction) and rxn.library != 'kineticsjobs':
+                database.kinetics.resolve_library(rxn.library, source=getattr(rxn, 'library_source', None),
+                                                  library_type='Internal')
             if isinstance(rxn, TemplateReaction) and not (rxn.family in family_names):
                 logging.warning("loading reaction {0} originally from family {1} as a library reaction".format(str(rxn), rxn.family))
                 rxn = as_library_reaction(rxn, reaction_library.name)
@@ -2048,6 +2033,7 @@ class CoreEdgeReactionModel:
         """
 
         logging.info("Adding reaction library {0} to output file...".format(reaction_library))
+        reaction_library = rmgpy.data.rmg.database.kinetics.resolve_library(reaction_library).label
 
         # Append the edge reactions that are from the selected reaction library to an output species and output reactions list
         for rxn in self.edge.reactions:

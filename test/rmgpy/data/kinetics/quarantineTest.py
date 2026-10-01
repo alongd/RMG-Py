@@ -1465,19 +1465,14 @@ def _model_database(monkeypatch, libraries, families):
     """
     The pieces `add_seed_mechanism_to_core` and `add_reaction_library_to_edge` read.
 
-    Duck-typed, and the duck-typing is the point of the two tests below being run
-    against the REAL methods rather than a copy of them: everything the methods touch on
-    the way to the gate is here, and nothing else is stubbed.
+    Use the real kinetics resolver with preloaded libraries, while the forbidden
+    structure check is stubbed to isolate the quarantine gate.
     """
+    from rmgpy.data.kinetics.database import KineticsDatabase
 
-    class _Kinetics(object):
-        def __init__(self):
-            self.libraries = libraries
-            self.families = families
-            self.library_order = []
-
-        def load_libraries(self, path=None, libraries=None):
-            raise AssertionError("every library in this test is already known")
+    kinetics = KineticsDatabase()
+    kinetics.libraries = libraries
+    kinetics.families = families
 
     class _Forbidden(object):
         def is_molecule_forbidden(self, molecule):
@@ -1485,7 +1480,7 @@ def _model_database(monkeypatch, libraries, families):
 
     class _Database(object):
         def __init__(self):
-            self.kinetics = _Kinetics()
+            self.kinetics = kinetics
             self.forbidden_structures = _Forbidden()
 
     import rmgpy.data.rmg

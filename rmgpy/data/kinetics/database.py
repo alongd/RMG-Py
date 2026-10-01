@@ -34,6 +34,7 @@ from copy import deepcopy
 
 import numpy as np
 
+from rmgpy import settings
 import rmgpy.constants as constants
 from rmgpy.data.base import LogicNode
 from rmgpy.data.kinetics.common import ensure_species, generate_molecule_combos, \
@@ -69,6 +70,7 @@ class KineticsDatabase(object):
         self.families = {}
         self.libraries = {}
         self.external_library_labels = {}
+        self.library_sources = {}
         self.library_order = []  # a list of tuples in the format ('library_label', LibraryType),
                                  # where LibraryType is set to either 'Reaction Library' or 'Seed'.
         self.local_context = {
@@ -113,6 +115,8 @@ class KineticsDatabase(object):
             'families': self.families,
             'libraries': self.libraries,
             'library_order': self.library_order,
+            'external_library_labels': self.external_library_labels,
+            'library_sources': self.library_sources,
         }
         return KineticsDatabase, (), d
 
@@ -123,6 +127,8 @@ class KineticsDatabase(object):
         self.families = d['families']
         self.libraries = d['libraries']
         self.library_order = d['library_order']
+        self.external_library_labels = d.get('external_library_labels', {})
+        self.library_sources = d.get('library_sources', {label: source for source, label in self.external_library_labels.items()})
 
     def load(self, path, families=None, libraries=None, depositories=None):
         """
@@ -244,61 +250,113 @@ class KineticsDatabase(object):
                 raise
             self.families[label] = family
 
-    def load_libraries(self, path, libraries=None):
-        """
-        Load the listed kinetics libraries from the given `path` on disk.
-        
-        Loads them all if `libraries` list is not specified or `None`.
-        The `path` points to the folder of kinetics libraries in the database,
-        and the libraries should be in files like :file:`<path>/<library>.py`.
-        """
-        self.external_library_labels = dict()
-        if libraries is not None:
-            for library_name in libraries:
-                library_file = os.path.join(path, library_name, 'reactions.py')
-                if os.path.exists(library_name):
-                    library_file = os.path.join(library_name, 'reactions.py')
-                    short_library_name = os.path.basename(library_name.rstrip(os.path.sep))
-                    logging.info(f'Loading kinetics library {short_library_name} from {library_name}...')
-                    library = KineticsLibrary(label=short_library_name)
-                    library.load(library_file, self.local_context, self.global_context)
-                    self.libraries[library.label] = library
-                    self.external_library_labels[library_name] = library.label
-                elif os.path.exists(library_file):
-                    logging.info(f'Loading kinetics library {library_name} from {library_file}...')
-                    library = KineticsLibrary(label=library_name)
-                    library.load(library_file, self.local_context, self.global_context)
-                    self.libraries[library.label] = library
-                else:
-                    raise IOError(f"Couldn't find kinetics library {library_file}")
+    def _check_library_source(self, label, source):
+        """Return an existing binding, refusing a different canonical source."""
+        if label in self.libraries and self.library_sources.get(label) != source:
+            raise DatabaseError("Kinetics library label {!r} is already in use by a different source."
+                                .format(label))
+        return self.libraries.get(label)
 
+    def _register_library(self, library, source, external=False):
+        """Bind every library insertion to one canonical source identity."""
+        source = os.path.realpath(source)
+        self._check_library_source(library.label, source)
+        self.libraries[library.label] = library
+        self.library_sources[library.label] = source
+        if external:
+            self.external_library_labels[source] = library.label
+        return library
+
+    def resolve_library(self, label, source=None, path=None, library_type=None):
+        """Resolve a semantic label or external path to one loaded library.
+
+        ``source`` is a recorded external directory; it must still exist and its
+        canonical basename must provide ``label``. ``path`` is an explicit database
+        library directory. With neither, an already loaded semantic label is reused,
+        or the configured database directory is searched. Recorded sources never
+        fall back to that directory. Each canonical binding is parsed once.
+        """
+        if source is None and path is None and label not in self.libraries:
+            canonical = os.path.realpath(label)
+            if canonical in self.external_library_labels or os.path.isdir(label):
+                source = canonical
+                label = self.external_library_labels.get(canonical, os.path.basename(canonical))
+
+        external = source is not None
+        if external:
+            source = os.path.realpath(source)
+            if not os.path.isfile(os.path.join(source, 'reactions.py')):
+                raise IOError("External kinetics library {!r} recorded by restart seed is missing.".format(source))
+            if os.path.basename(source) != label:
+                raise DatabaseError("External kinetics library {!r} does not provide the restart label {!r}."
+                                    .format(source, label))
+        elif path is not None:
+            source = os.path.realpath(path)
+        elif label in self.libraries:
+            library = self.libraries[label]
+            source = None
         else:
-            # load all the libraries you can find
-            # this cannot be activated in a normal RMG job. Only activated when loading the database for other purposes
-            self.library_order = []
-            for (root, dirs, files) in os.walk(os.path.join(path)):
-                for f in files:
-                    if f.lower() == 'reactions.py':
-                        library_file = os.path.join(root, f)
-                        dirname = os.path.dirname(library_file)
-                        if dirname == path:
-                            label = os.path.basename(dirname)
-                        else:
-                            label = os.path.relpath(dirname, path)
+            source = os.path.realpath(os.path.join(settings['database.directory'], 'kinetics', 'libraries', label))
 
-                        if not label:
-                            logging.warning(f"Empty label for {library_file}. Using 'default'.")
-                            label = "default"
-                        
-                        logging.info(f'Loading kinetics library {label} from {library_file}...')
-                        library = KineticsLibrary(label=label)
-                        try:
-                            library.load(library_file, self.local_context, self.global_context)
-                        except:
-                            logging.error("Problem loading reaction library {0!r}".format(library_file))
-                            raise
-                        self.libraries[library.label] = library
-                        self.library_order.append((library.label, 'Reaction Library'))
+        if source is not None:
+            library = self._check_library_source(label, source)
+            if library is None:
+                library_file = os.path.join(source, 'reactions.py')
+                if not os.path.isfile(library_file):
+                    raise IOError("Couldn't find kinetics library {}".format(library_file))
+                logging.info('Loading kinetics library %s from %s...', label, library_file)
+                library = KineticsLibrary(label=label)
+                library.load(library_file, self.local_context, self.global_context)
+                self._register_library(library, source, external=external)
+
+        # A cached database library can also be requested by its external path.
+        # Keep that declaration even when no parsing or registration is needed.
+        if external:
+            self.external_library_labels[source] = label
+        if library_type and not any(name == label for name, kind in self.library_order):
+            self.library_order.append((label, library_type))
+        return library
+
+    def load_libraries(self, path, libraries=None, additive=False):
+        """Load requested libraries, or scan ``path`` through the resolver.
+
+        A load-all scan replaces the active library ordering by default. Restart
+        explicitly uses ``additive=True`` to retain input-deck libraries while
+        loading its generated seeds. Cached source bindings remain validated.
+        """
+        if libraries is not None:
+            for name in libraries:
+                canonical = os.path.realpath(name)
+                is_external_path = os.path.isdir(name) or canonical in self.external_library_labels
+                if name in self.libraries:
+                    if is_external_path and canonical != self.library_sources.get(name):
+                        raise DatabaseError("Kinetics library input {!r} is ambiguous: its loaded label and "
+                                            "filesystem path refer to different sources.".format(name))
+                    if is_external_path:
+                        self.resolve_library(name, source=canonical)
+                    else:
+                        self.resolve_library(name, path=os.path.join(path, name))
+                elif is_external_path:
+                    if not os.path.isfile(os.path.join(canonical, 'reactions.py')):
+                        raise IOError("Couldn't find kinetics library {}".format(os.path.join(canonical, 'reactions.py')))
+                    self.resolve_library(os.path.basename(canonical), source=canonical)
+                else:
+                    self.resolve_library(name, path=os.path.join(path, name))
+            # Input-deck ordering may contain relative paths or symlink spellings.
+            self.library_order = [
+                (name if name in self.libraries else
+                 self.external_library_labels.get(os.path.realpath(name), name), kind)
+                for name, kind in self.library_order
+            ]
+        else:
+            if not additive:
+                self.library_order = []
+            for root, dirs, files in os.walk(path):
+                for filename in files:
+                    if filename.lower() == 'reactions.py':
+                        label = (os.path.basename(os.path.normpath(root)) if os.path.realpath(root) == os.path.realpath(path)
+                                 else os.path.relpath(root, path))
+                        self.resolve_library(label, path=root, library_type='Reaction Library')
 
     def save(self, path):
         """
@@ -388,6 +446,8 @@ and immediately used in input files without any additional changes.
         """
         self.families = {}
         self.libraries = {}
+        self.library_sources = {}
+        self.external_library_labels = {}
 
         libraries_path = os.path.join(path, 'kinetics_libraries')
         for (root, dirs, files) in os.walk(os.path.join(path, 'kinetics_libraries')):
@@ -396,7 +456,7 @@ and immediately used in input files without any additional changes.
                 library = KineticsLibrary(label=root[len(libraries_path) + 1:], name=root[len(libraries_path) + 1:])
                 logging.warning("Loading {0}".format(root))
                 library.load_old(root)
-                self.libraries[library.label] = library
+                self._register_library(library, root)
 
         for (root, dirs, files) in os.walk(os.path.join(path, 'kinetics_groups')):
             if os.path.exists(os.path.join(root, 'dictionary.txt')) and \

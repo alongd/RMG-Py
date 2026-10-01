@@ -41,7 +41,7 @@ from copy import deepcopy
 import numpy as np
 
 from rmgpy.data.base import DatabaseError, Database, Entry
-from rmgpy.data.kinetics.common import save_entry
+from rmgpy.data.kinetics.common import save_entry, parse_external_library_provenance
 # The shared definition of what reaction state *is* lives in `family.py`, because this
 # module imports `TemplateReaction` from there and the import cannot run both ways.
 # The names below are re-exported: every importer round 102 and 105 wrote --
@@ -418,10 +418,18 @@ class KineticsLibrary(Database):
             # being written to a library ("family: <label>"), and it is the only carrier
             # when the kinetics comment has been stripped. Constructing the reaction
             # without it discards that provenance at the one point it is still in hand.
-            if self.auto_generated and entry.long_desc and 'Originally from reaction library: ' in entry.long_desc:
-                lib = [line for line in entry.long_desc.split('\n') if 'Originally from reaction library: ' in line]
-                lib = lib[0].replace('Originally from reaction library: ', '')
-                lib = lib.replace('\n', '')
+            provenance = parse_external_library_provenance(entry.long_desc) if self.auto_generated else None
+            if self.auto_generated and (provenance or (entry.long_desc and 'Originally from reaction library: ' in entry.long_desc)):
+                declarations = [line.strip().replace('Originally from reaction library: ', '', 1)
+                                for line in entry.long_desc.splitlines()
+                                if line.strip().startswith('Originally from reaction library: ')]
+                if provenance:
+                    lib = provenance['label']
+                    if any(declared != lib for declared in declarations):
+                        raise DatabaseError('Conflicting external library provenance labels.')
+                else:
+                    lib = [line for line in entry.long_desc.split('\n') if 'Originally from reaction library: ' in line]
+                    lib = lib[0].replace('Originally from reaction library: ', '').strip()
                 # Clean up any leading indents in kinetics comment
                 entry.data.comment = '\n'.join([line.strip() for line in entry.data.comment.split('\n')])
                 rxn = LibraryReaction(reactants=entry.item.reactants[:], products=entry.item.products[:],
@@ -431,6 +439,8 @@ class KineticsLibrary(Database):
                                       elementary_high_p=entry.item.elementary_high_p,
                                       electrons=entry.item.electrons, entry=entry)
                 _carry_entry_fields(rxn, entry.item)
+                if provenance:
+                    rxn.library_source = provenance['source']
                 rxn.family = self.label  # the library the reaction was loaded from (opposed to originally from)
             elif self.auto_generated and entry.long_desc and 'rate rule' in entry.long_desc:  # template reaction
                 family = ''
