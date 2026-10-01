@@ -30,7 +30,9 @@
 import logging
 import os
 import shutil
+import textwrap
 from unittest.mock import patch
+import tempfile
 
 import pandas as pd
 import pytest
@@ -44,6 +46,138 @@ originalPath = get_path()
 
 
 @pytest.mark.functional
+def test_external_library_seed_restart_round_trip(tmp_path, monkeypatch):
+    """A seed restart reopens its external library by absolute source path."""
+    _external_library_restart_round_trip(tmp_path, monkeypatch, three_reactions=False)
+
+
+@pytest.mark.functional
+def test_external_library_three_reaction_core_and_edge_restart(tmp_path, monkeypatch):
+    """Core and restart_edge share a single load of a three-reaction source."""
+    _external_library_restart_round_trip(tmp_path, monkeypatch, three_reactions=True)
+
+
+def _external_library_restart_round_trip(tmp_path, monkeypatch, three_reactions):
+    library = tmp_path / "external" / "tiny-external"
+    library.mkdir(parents=True)
+    (library / "reactions.py").write_text(textwrap.dedent("""
+        name = "tiny-external"
+        entry(index=1, label="H2 + O2 <=> H + HO2",
+              kinetics=Arrhenius(A=(1.0e6, 'm^3/(mol*s)'), n=0, Ea=(0, 'kJ/mol')))
+    """))
+    (library / "dictionary.txt").write_text(textwrap.dedent("""
+        H2
+        1 H u0 p0 c0 {2,S}
+        2 H u0 p0 c0 {1,S}
+
+        O2
+        1 O u1 p2 c0 {2,S}
+        2 O u1 p2 c0 {1,S}
+
+        H
+        1 H u1 p0 c0
+
+        HO2
+        1 O u1 p2 c0 {2,S}
+        2 O u0 p2 c0 {1,S} {3,S}
+        3 H u0 p0 c0 {2,S}
+    """))
+    if three_reactions:
+        with (library / 'reactions.py').open('a') as f:
+            f.write("entry(index=2, label='H2 + O2 <=> OH + OH', "
+                    "kinetics=Arrhenius(A=(1.0e6, 'm^3/(mol*s)'), n=0, Ea=(0, 'kJ/mol')))\n")
+            f.write("entry(index=3, label='H2O2 + H2 <=> H2O + H2O', "
+                    "kinetics=Arrhenius(A=(1.0e6, 'm^3/(mol*s)'), n=0, Ea=(0, 'kJ/mol')))\n")
+        with (library / 'dictionary.txt').open('a') as f:
+            f.write(textwrap.dedent("""
+                OH
+                1 O u1 p2 c0 {2,S}
+                2 H u0 p0 c0 {1,S}
+
+                H2O2
+                1 O u0 p2 c0 {2,S} {3,S}
+                2 O u0 p2 c0 {1,S} {4,S}
+                3 H u0 p0 c0 {1,S}
+                4 H u0 p0 c0 {2,S}
+
+                H2O
+                1 O u0 p2 c0 {2,S} {3,S}
+                2 H u0 p0 c0 {1,S}
+                3 H u0 p0 c0 {1,S}
+            """))
+    source = os.path.realpath(str(library))
+    first = tmp_path / "first"
+    first.mkdir()
+    input_file = first / "input.py"
+    input_file.write_text(textwrap.dedent("""
+        database(thermoLibraries=['primaryThermoLibrary'], reactionLibraries=[{source!r}],
+                 seedMechanisms=[], kineticsDepositories=['training'],
+                 kineticsFamilies=['H_Abstraction'], kineticsEstimator='rate rules')
+        species(label='H2', reactive=True, structure=SMILES('[H][H]'))
+        species(label='O2', reactive=True, structure=SMILES('[O][O]'))
+        simpleReactor(temperature=(1000,'K'), pressure=(1,'bar'),
+                      initialMoleFractions={{'H2': .67, 'O2': .33}}, terminationTime=(1e-12,'s'))
+        simulator(atol=1e-16, rtol=1e-8)
+        model(toleranceKeepInEdge=0, toleranceMoveToCore=1e-3, toleranceInterruptSimulation=1e-3)
+        options(name='external-restart', generateOutputHTML=False, generatePlots=False,
+                saveSimulationProfiles=False, saveEdgeSpecies=False)
+    """.format(source=source)))
+    RMG(input_file=str(input_file), output_directory=str(first)).execute()
+    assert source in (first / 'seed' / 'seed' / 'reactions.py').read_text()
+
+    restart_dir = tmp_path / "restart"
+    restart_dir.mkdir()
+    restart_input = first / "restart_from_seed.py"
+    monkeypatch.chdir(restart_dir)
+    restart = RMG(input_file=str(restart_input), output_directory=str(restart_dir))
+    restart.execute()
+    reactions = restart.database.kinetics.libraries['restart'].get_library_reactions()
+    assert restart.database.kinetics.external_library_labels[source] == 'tiny-external'
+    assert all(rxn.library != source for rxn in reactions if hasattr(rxn, 'library'))
+    assert any(rxn.library == 'tiny-external' for rxn in reactions)
+
+    seed_only_input = tmp_path / 'seed_only_restart.py'
+    seed_only_input.write_text(
+        restart_input.read_text()
+        .replace("restartFromSeed(path='seed')", "restartFromSeed(path={!r})".format(str(first / 'seed')))
+        .replace("reactionLibraries=[{!r}]".format(source), "reactionLibraries=[]")
+    )
+    seed_only = tmp_path / 'seed-only'
+    seed_only.mkdir()
+    restarted_from_seed = RMG(input_file=str(seed_only_input), output_directory=str(seed_only))
+    if three_reactions:
+        from rmgpy.data.kinetics.library import KineticsLibrary
+        loads = []
+        original_load = KineticsLibrary.load
+
+        def tracked_load(self, filename, *args, **kwargs):
+            if os.path.realpath(filename) == os.path.join(source, 'reactions.py'):
+                loads.append(filename)
+            return original_load(self, filename, *args, **kwargs)
+
+        with patch.object(KineticsLibrary, 'load', tracked_load):
+            restarted_from_seed.execute()
+            # Startup loads restart_edge but does not currently admit it. Exercise
+            # its public admission path against the actual first job's seed output.
+            edge = restarted_from_seed.database.kinetics.libraries['restart_edge'].get_library_reactions()
+            assert any(getattr(rxn, 'library', None) == 'tiny-external' for rxn in edge)
+            restarted_from_seed.reaction_model.add_reaction_library_to_edge('restart_edge')
+        assert len(loads) == 1
+        assert len(restarted_from_seed.database.kinetics.libraries['tiny-external'].entries) == 3
+        assert sum(label == 'tiny-external' for label, kind in
+                   restarted_from_seed.database.kinetics.library_order) == 1
+    else:
+        restarted_from_seed.execute()
+    assert restarted_from_seed.database.kinetics.external_library_labels[source] == 'tiny-external'
+
+    shutil.move(str(library), str(tmp_path / 'moved-external'))
+    missing = tmp_path / 'missing'
+    missing.mkdir()
+    with pytest.raises(IOError, match='External kinetics library .* recorded by restart seed is missing'):
+        RMG(input_file=str(seed_only_input), output_directory=str(missing)).execute()
+
+
+@pytest.mark.functional
 class TestMain:
     @classmethod
     def setup_class(cls):
@@ -52,20 +186,37 @@ class TestMain:
         cls.outputDir = "output"
         cls.databaseDirectory = settings["database.directory"]
 
-        cls.seedKinetics = os.path.join(cls.databaseDirectory, "kinetics", "libraries", "testSeed")
-        cls.seedKineticsEdge = os.path.join(cls.databaseDirectory, "kinetics", "libraries", "testSeed_edge")
+        # Read database content through symlinks, but keep export destinations
+        # local so saveSeedToDatabase exercises the real writer safely.
+        cls.seedExport = tempfile.TemporaryDirectory(prefix='rmg-main-seeds-')
+        database_root = cls.seedExport.name
+        for name in os.listdir(cls.databaseDirectory):
+            if name != 'kinetics':
+                os.symlink(os.path.join(cls.databaseDirectory, name), os.path.join(database_root, name))
+        kinetics_root = os.path.join(database_root, 'kinetics')
+        os.mkdir(kinetics_root)
+        for name in os.listdir(os.path.join(cls.databaseDirectory, 'kinetics')):
+            if name != 'libraries':
+                os.symlink(os.path.join(cls.databaseDirectory, 'kinetics', name), os.path.join(kinetics_root, name))
+        libraries_root = os.path.join(kinetics_root, 'libraries')
+        os.mkdir(libraries_root)
+        for name in os.listdir(os.path.join(cls.databaseDirectory, 'kinetics', 'libraries')):
+            if name not in ('testSeed', 'testSeed_edge'):
+                os.symlink(os.path.join(cls.databaseDirectory, 'kinetics', 'libraries', name),
+                           os.path.join(libraries_root, name))
+        cls.seedKinetics = os.path.join(libraries_root, 'testSeed')
+        cls.seedKineticsEdge = os.path.join(libraries_root, 'testSeed_edge')
+        assert not os.path.exists(cls.seedKinetics)
+        assert not os.path.exists(cls.seedKineticsEdge)
 
         output_path = os.path.join(cls.testDir, cls.outputDir)
         if os.path.exists(output_path):
             shutil.rmtree(output_path)
         os.mkdir(output_path)
 
-        cls.rmg = RMG(
-            input_file=os.path.join(cls.testDir, "input.py"),
-            output_directory=os.path.join(cls.testDir, cls.outputDir),
-        )
-
-        cls.rmg.execute()
+        cls.rmg = RMG(input_file=os.path.join(cls.testDir, 'input.py'), output_directory=output_path)
+        with patch.dict(settings, {'database.directory': database_root}):
+            cls.rmg.execute()
 
     @classmethod
     def teardown_class(cls):
@@ -78,9 +229,7 @@ class TestMain:
         # Remove output directory
         shutil.rmtree(os.path.join(cls.testDir, cls.outputDir))
 
-        # Delete the seed libraries created in database
-        shutil.rmtree(cls.seedKinetics)
-        shutil.rmtree(cls.seedKineticsEdge)
+        cls.seedExport.cleanup()
 
     def test_rmg_execute(self):
         """Test that RMG.execute completed successfully."""
@@ -116,11 +265,15 @@ class TestMain:
 
     def test_rmg_seed_library_creation(self):
         """Test that seed mechanisms are created in the correct database locations."""
-        assert os.path.exists(self.seedKinetics)
+        assert self.rmg.save_seed_to_database
+        assert os.path.isfile(os.path.join(self.seedKinetics, 'reactions.py'))
+        assert os.path.isfile(os.path.join(self.seedKinetics, 'dictionary.txt'))
 
     def test_rmg_seed_edge_library_creation(self):
         """Test that edge seed mechanisms are created in the correct database locations."""
-        assert os.path.exists(self.seedKinetics)
+        assert self.rmg.save_seed_to_database
+        assert os.path.isfile(os.path.join(self.seedKineticsEdge, 'reactions.py'))
+        assert os.path.isfile(os.path.join(self.seedKineticsEdge, 'dictionary.txt'))
 
     def test_rmg_rms_mechanism_files_creation(self):
         """Test that rms mechanisms are created in the correct location."""
@@ -136,8 +289,8 @@ class TestMain:
         self.rmg.database.load(
             path=self.databaseDirectory,
             thermo_libraries=[],
-            reaction_libraries=["testSeed", "testSeed_edge"],
-            seed_mechanisms=["testSeed", "testSeed_edge"],
+            reaction_libraries=[self.seedKinetics, self.seedKineticsEdge],
+            seed_mechanisms=[self.seedKinetics, self.seedKineticsEdge],
             kinetics_families="default",
             kinetics_depositories=[],
             depository=False,

@@ -1942,6 +1942,18 @@ Once the restart job has begun, RMG will move the seed mechanism files to a new 
 entitled ``previous_restart``. This is to back-up the seed mechanism used for restarting, as everything in the ``seed``
 subfolder of the output directory is overwritten by RMG during the course of mechanism generation.
 
+External kinetics libraries keep their semantic labels on restart. Generated core and
+edge seed entries carry their canonical source directories in reserved, delimited
+``[RMG external library provenance v1]`` JSON records. Restart admission refuses a
+missing source, a different source already bound to the same label, conflicting
+records, or a source whose canonical basename does not match the recorded label.
+Each source is loaded once across core and edge admission. Relative input paths and
+symlink aliases resolve to the same source. Plain ``External library source:`` text
+in older seeds or user comments is not interpreted as a source declaration.
+A loaded semantic label keeps its binding even if the working directory contains
+an alias with the same name. An input library spelling that names both a loaded
+label and a different filesystem source is refused as ambiguous.
+
 RMG also outputs a file entitled ``restart_from_seed.py`` the first time a seed mechanism is generated during the course
 of an RMG job (so long as the RMG job was not itself a restarted job). This file is an exact duplicate of the original
 input file with the exception that the restart block has been added on automatically for convenience. In this way this

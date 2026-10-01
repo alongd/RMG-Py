@@ -1311,7 +1311,7 @@ class Group(Graph):
         """
         A helper function used when pickling an object.
         """
-        return (Group, (self.vertices, self.props))
+        return (Group, (self.vertices, self.props, self.multiplicity, self.metal, self.facet))
 
     def _repr_png_(self):
         """
@@ -1497,7 +1497,13 @@ class Group(Graph):
         """
         other = cython.declare(Group)
         g = Graph.copy(self, deep)
-        other = Group(g.vertices)
+        if deep:
+            other = Group(g.vertices, props=deepcopy(self.props),
+                          multiplicity=deepcopy(self.multiplicity),
+                          metal=deepcopy(self.metal), facet=deepcopy(self.facet))
+        else:
+            other = Group(g.vertices, props=self.props, multiplicity=self.multiplicity,
+                          metal=self.metal, facet=self.facet)
         return other
 
     def update(self):

@@ -57,6 +57,7 @@ from rmgpy.chemkin import ChemkinWriter, kinetics_has_plasma_rate
 from rmgpy.constraints import fails_species_constraints
 from rmgpy.data.auto_database import auto_select_libraries, to_reaction_library_tuples
 from rmgpy.data.base import Entry
+from rmgpy.data.kinetics.common import format_external_library_provenance
 from rmgpy.data.kinetics.library import KineticsLibrary, seed_placement_survives
 from rmgpy.electron_balance import get_placement_owner, is_isomorphic_same_charge
 from rmgpy.data.rmg import RMGDatabase
@@ -730,7 +731,7 @@ class RMG(util.Subject):
             shutil.copyfile(self.species_map_path, os.path.join(filters_restart, "species_map.yml"))
 
             # Load the seed mechanism to get the core and edge species
-            self.database.kinetics.load_libraries(restart_dir)#, libraries=["restart", "restart_edge"])
+            self.database.kinetics.load_libraries(restart_dir, additive=True)
             self.seed_mechanisms.append("restart")
 #            self.reaction_libraries.append(("restart_edge", False))
 
@@ -2056,7 +2057,15 @@ class RMG(util.Subject):
                 if "rate rule" in reaction.kinetics.comment:
                     entry.long_desc = reaction.kinetics.comment
                 elif hasattr(reaction, "library") and reaction.library:
-                    entry.long_desc = "Originally from reaction library: " + reaction.library + "\n" + reaction.kinetics.comment
+                    library_source = None
+                    for external_path, library_label in self.database.kinetics.external_library_labels.items():
+                        if library_label == reaction.library:
+                            library_source = external_path
+                            break
+                    entry.long_desc = "Originally from reaction library: " + reaction.library + "\n"
+                    if library_source:
+                        entry.long_desc += format_external_library_provenance(reaction.library, library_source) + "\n"
+                    entry.long_desc += reaction.kinetics.comment
                 else:
                     entry.long_desc = reaction.kinetics.comment
 
@@ -2074,7 +2083,15 @@ class RMG(util.Subject):
                     data=reaction.kinetics,
                 )
                 try:
-                    entry.long_desc = "Originally from reaction library: " + reaction.library + "\n" + reaction.kinetics.comment
+                    library_source = None
+                    for external_path, library_label in self.database.kinetics.external_library_labels.items():
+                        if library_label == reaction.library:
+                            library_source = external_path
+                            break
+                    entry.long_desc = "Originally from reaction library: " + reaction.library + "\n"
+                    if library_source:
+                        entry.long_desc += format_external_library_provenance(reaction.library, library_source) + "\n"
+                    entry.long_desc += reaction.kinetics.comment
                 except AttributeError:
                     entry.long_desc = reaction.kinetics.comment
                 warn_if_seed_loses_placement(reaction, entry, "edge")

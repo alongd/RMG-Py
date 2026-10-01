@@ -32,7 +32,139 @@ from rmgpy.exceptions import InchiException
 from rmgpy.molecule.element import get_element, element_list
 from rmgpy.molecule.group import Group, ActionError
 from rmgpy.molecule.molecule import Atom, Bond, Molecule
+import pickle
 import pytest
+
+
+class PickleMoleculeSubclass(Molecule):
+    pass
+
+
+class StatefulMoleculeSubclass(Molecule):
+    __slots__ = ('slot_extra', '__dict__')
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.extra = 0
+        self.slot_extra = 'default'
+
+
+class SameNameSlotMoleculeSubclass(Molecule):
+    __slots__ = ('extra', '__dict__')
+
+
+class ShadowedSlotMoleculeSubclass(SameNameSlotMoleculeSubclass):
+    __slots__ = ('extra',)
+
+
+class DifferentConstructorMoleculeSubclass(Molecule):
+    def __init__(self, required_keyword):
+        super().__init__(smiles='C')
+        self.extra = required_keyword
+
+
+@pytest.mark.parametrize('transport', ['pickle', 'quarantine'])
+@pytest.mark.parametrize('molecule_class', [StatefulMoleculeSubclass, DifferentConstructorMoleculeSubclass])
+def test_molecule_subclass_state_survives_transport(transport, molecule_class):
+    from rmgpy.data.kinetics.family import complete_round_trip
+
+    if molecule_class is DifferentConstructorMoleculeSubclass:
+        molecule = molecule_class(required_keyword=42)
+    else:
+        molecule = molecule_class(smiles='C')
+    molecule.extra = 42
+    if molecule_class is StatefulMoleculeSubclass:
+        molecule.slot_extra = 'kept'
+    molecule.self_reference = molecule
+    restored = (pickle.loads(pickle.dumps(molecule)) if transport == 'pickle'
+                else complete_round_trip(molecule))
+    assert type(restored) is molecule_class
+    assert restored.extra == 42
+    assert restored.self_reference is restored
+    assert restored.is_isomorphic(molecule)
+    if molecule_class is StatefulMoleculeSubclass:
+        assert restored.slot_extra == 'kept'
+
+
+@pytest.mark.parametrize('transport', ['pickle', 'quarantine'])
+def test_molecule_cyclic_props_survive_transport(transport):
+    from rmgpy.data.kinetics.family import complete_round_trip
+
+    molecule = Molecule(smiles='C')
+    molecule.props['owner'] = molecule
+    molecule.props['properties'] = molecule.props
+    restored = (pickle.loads(pickle.dumps(molecule)) if transport == 'pickle'
+                else complete_round_trip(molecule))
+    assert restored.props['owner'] is restored
+    assert restored.props['properties'] is restored.props
+    assert restored.is_isomorphic(molecule)
+
+
+@pytest.mark.parametrize('transport', ['pickle', 'quarantine'])
+@pytest.mark.parametrize('molecule_class', [SameNameSlotMoleculeSubclass, ShadowedSlotMoleculeSubclass])
+def test_molecule_distinct_dictionary_and_slot_state_survives_transport(transport, molecule_class):
+    from rmgpy.data.kinetics.family import complete_round_trip
+
+    molecule = molecule_class(smiles='C')
+    molecule.__dict__['extra'] = 'dictionary value'
+    SameNameSlotMoleculeSubclass.extra.__set__(molecule, 42)
+    if molecule_class is ShadowedSlotMoleculeSubclass:
+        ShadowedSlotMoleculeSubclass.extra.__set__(molecule, molecule)
+    restored = (pickle.loads(pickle.dumps(molecule)) if transport == 'pickle'
+                else complete_round_trip(molecule))
+    assert type(restored) is molecule_class
+    assert restored.__dict__['extra'] == 'dictionary value'
+    assert SameNameSlotMoleculeSubclass.extra.__get__(restored) == 42
+    if molecule_class is ShadowedSlotMoleculeSubclass:
+        assert ShadowedSlotMoleculeSubclass.extra.__get__(restored) is restored
+    assert restored.is_isomorphic(molecule)
+
+
+@pytest.mark.parametrize('transport', ['pickle', 'quarantine'])
+def test_molecule_saved_vertex_order_survives_transport(transport):
+    from rmgpy.data.kinetics.family import complete_round_trip
+
+    molecule = Molecule(smiles='CCO')
+    for index, atom in enumerate(molecule.atoms):
+        atom.label = str(index)
+    original_order = [atom.label for atom in molecule.atoms]
+    molecule.sort_vertices(save_order=True)
+    molecule.atoms.reverse()
+    restored = (pickle.loads(pickle.dumps(molecule)) if transport == 'pickle'
+                else complete_round_trip(molecule))
+    transported_atoms = {atom.label: atom for atom in restored.atoms}
+    restored.restore_vertex_order()
+    assert [atom.label for atom in restored.atoms] == original_order
+    assert all(atom is transported_atoms[atom.label] for atom in restored.atoms)
+
+
+def test_molecule_reduce_preserves_surface_and_clears_derived_string_fields():
+    surface = Molecule().from_adjacency_list('1 X u0 p0 c0')
+    surface.metal = 'Pt'
+    surface.facet = '111'
+    restored = pickle.loads(pickle.dumps(surface))
+    assert restored.metal == 'Pt'
+    assert restored.facet == '111'
+
+    molecule = Molecule(smiles='C')
+    cached_smiles = molecule.smiles
+    molecule.atoms[0].radical_electrons = 1
+    restored = pickle.loads(pickle.dumps(molecule))
+    assert restored.smiles == restored.to_smiles()
+    assert restored.smiles != cached_smiles
+
+
+def test_molecule_reduce_preserves_subclass_type():
+    restored = pickle.loads(pickle.dumps(PickleMoleculeSubclass(smiles='C')))
+    assert type(restored) is PickleMoleculeSubclass
+
+
+def test_molecule_find_subgraph_isomorphisms_early_exits_return_lists():
+    molecule = Molecule(smiles='C')
+    group = Group().from_adjacency_list('1 C u0 {2,S}\n2 H u0 {1,S}')
+    group.metal = ['Pt']
+    group.facet = ['111']
+    assert molecule.find_subgraph_isomorphisms(group) == []
 
 
 class TestAtom:

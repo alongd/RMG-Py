@@ -32,8 +32,39 @@ import rmgpy.molecule.element as elements
 from rmgpy.molecule import Molecule
 from rmgpy.molecule.atomtype import ATOMTYPES
 from rmgpy.molecule.group import ActionError, GroupAtom, GroupBond, Group
+import pickle
 
 import pytest
+
+
+def test_group_copy_and_pickle_preserve_state_fields():
+    group = Group().from_adjacency_list('1 C u0')
+    group.multiplicity = [2]
+    group.metal = ['Pt']
+    group.facet = ['111']
+    copied = group.copy()
+    restored = pickle.loads(pickle.dumps(group))
+    for candidate in (copied, restored):
+        assert candidate.multiplicity == [2]
+        assert candidate.metal == ['Pt']
+        assert candidate.facet == ['111']
+
+
+def test_group_deep_copy_does_not_alias_metadata():
+    group = Group().from_adjacency_list('1 C u0')
+    group.props = {'nested': []}
+    group.multiplicity = [2]
+    group.metal = ['Pt']
+    group.facet = ['111']
+    copied = group.copy(deep=True)
+    copied.props['nested'].append('changed')
+    copied.multiplicity.append(3)
+    copied.metal.append('Ni')
+    copied.facet.append('100')
+    assert group.props == {'nested': []}
+    assert group.multiplicity == [2]
+    assert group.metal == ['Pt']
+    assert group.facet == ['111']
 
 
 class TestGroupAtom:

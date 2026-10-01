@@ -2198,16 +2198,11 @@ class _BoundLibraries:
 class LoadedLibraries:
     """Kinetics libraries, each bound to the file it was actually loaded from.
 
-    **The defect this answers.** A library label is not an identity.
-    ``KineticsDatabase.load_libraries`` derives the label from the *directory
-    name* and then does ``self.libraries[library.label] = library``
-    (``rmgpy/data/kinetics/database.py:247``, and the external-path branch four
-    lines above it) -- so loading a second library whose directory happens to be
-    called ``PlasmaRadiativeRecombination``, from anywhere on disk, silently
-    replaces the first and every later lookup by label returns the replacement.
-    Two libraries that call themselves the same thing are not the same library,
-    and until this class existed nothing in this suite could tell them apart:
-    ``select_entry`` verified ``library.label`` and nothing else.
+    **The identity this guards.** A library label is not a source identity.
+    ``KineticsDatabase.load_libraries`` now refuses a label bound to a different
+    canonical source, including a byte-identical copy. This helper additionally
+    verifies that later lookups retain the object and source bytes it bound;
+    direct registry mutation or a source changed on disk must still be detected.
 
     **Why the library cannot answer this itself.** Measured:
     ``KineticsLibrary.load(self, path, ...)`` takes the path and does not keep it
@@ -2220,8 +2215,8 @@ class LoadedLibraries:
     label, its sha256, and the identity of the ``KineticsLibrary`` object the
     database registered for it. At every lookup: that the object registered under
     the label is still that same object, and that the source file still hashes to
-    what it hashed to when it was read. The first catches a same-label library
-    loaded over the top; the second catches the source being rewritten underneath
+    what it hashed to when it was read. The first catches registry replacement
+    outside the loader; the second catches the source being rewritten underneath
     a running check, which is precisely what the mutation drivers in
     ``evidence/`` do to a *copy* and must never do to the real tree.
 
@@ -2350,12 +2345,9 @@ class LoadedLibraries:
             raise AssertionError(
                 'library {0!r} is no longer the library this set loaded. It was loaded '
                 'from\n    {1}\nand the object now registered under that label is a '
-                'DIFFERENT object{2}.\nKineticsDatabase.load_libraries keys its registry '
-                'on the directory name alone and assigns without checking '
-                '(rmgpy/data/kinetics/database.py:247), so a second library whose '
-                'directory is also called {0!r} -- from any checkout, any path -- '
-                'replaces the first silently and every lookup by label from then on '
-                'returns the replacement. A label is not an identity.'.format(
+                'DIFFERENT object{2}.\nThe loader refuses conflicting canonical '
+                'sources; the registry binding changed outside that guarded load. '
+                'A label is not an identity.'.format(
                     label, self.sources[label],
                     '' if not external else ', loaded from an external path: {0}'.format(
                         sorted(external))))
@@ -4522,27 +4514,12 @@ class TestLithiumChargeNetworkReachesTheModel(_PlasmaLibraryFixture):
                 {key: [entry.index for entry in group] for key, group in declared.items()}))
 
     def test_a_second_library_of_the_same_name_does_not_pass_as_the_first(self, tmp_path):
-        """Two libraries calling themselves the same thing are not the same library.
+        """A same-label copy from another source is refused before rebinding.
 
-        Built, not argued: a byte-for-byte copy of ``PlasmaRadiativeRecombination``
-        is placed in a scratch directory of the same name and loaded into the same
-        ``KineticsDatabase`` by path. ``load_libraries`` takes the label from the
-        directory name and assigns into ``self.libraries`` without checking
-        (``rmgpy/data/kinetics/database.py:247``), so the registry entry is
-        replaced.
-
-        Two things are asserted, and the first is the finding:
-
-        1. The overwrite really happens, and the old label check cannot see it --
-           the impostor's ``label`` is identical, so ``library.label ==
-           reference.library`` is as true of the replacement as of the original.
-        2. :class:`LoadedLibraries` refuses it, naming the file the library it
-           bound was actually loaded from.
-
-        The copy is *identical* on purpose. An impostor with different chemistry
-        would be caught by the assertions further down and would prove nothing
-        about identity; this one differs from the original in nothing but where it
-        came from, which is exactly the case a label cannot distinguish.
+        A byte-identical copy of ``PlasmaRadiativeRecombination`` has a different
+        canonical source even though its label and chemistry match. The kinetics
+        loader must raise ``DatabaseError``, leave the original object registered,
+        and keep the source binding verified by ``LoadedLibraries`` usable.
         """
         database = self._database()
         original = database.library(RECOMBINATION)
@@ -4550,25 +4527,33 @@ class TestLithiumChargeNetworkReachesTheModel(_PlasmaLibraryFixture):
 
         impostor_dir = tmp_path / 'elsewhere' / RECOMBINATION
         shutil.copytree(os.path.join(self.libraries_path, RECOMBINATION), str(impostor_dir))
-        database.kinetics_database.load_libraries(str(tmp_path / 'elsewhere'),
-                                                  libraries=[str(impostor_dir)])
-        impostor = database.kinetics_database.libraries[RECOMBINATION]
+        with pytest.raises(DatabaseError, match='already in use by a different source'):
+            database.kinetics_database.load_libraries(str(tmp_path / 'elsewhere'),
+                                                      libraries=[str(impostor_dir)])
 
-        assert impostor is not original, (
-            'the second load did not replace the first, so this check is not measuring '
-            'the overwrite it claims to measure')
-        assert impostor.label == original.label == RECOMBINATION, (
-            'the impostor does not call itself the same thing, so the label check would '
-            'have caught it and nothing here is at issue')
+        assert database.kinetics_database.libraries[RECOMBINATION] is original
+        assert database.library(RECOMBINATION) is original
+        assert select_entry(database.library(RECOMBINATION), LITHIUM_RECOMBINATION) is (
+            original.entries[LITHIUM_RECOMBINATION.entry_index])
 
+    def test_direct_registry_replacement_does_not_pass_as_the_bound_library(self, tmp_path):
+        """The identity guard refuses a same-label copy inserted outside the loader."""
+        database = self._database()
+        original = database.library(RECOMBINATION)
+        impostor_dir = tmp_path / 'elsewhere' / RECOMBINATION
+        shutil.copytree(os.path.join(self.libraries_path, RECOMBINATION), str(impostor_dir))
+        impostor = KineticsLibrary(label=RECOMBINATION)
+        impostor.load(str(impostor_dir / 'reactions.py'),
+                      database.kinetics_database.local_context,
+                      database.kinetics_database.global_context)
+        assert impostor is not original
+        assert impostor.label == original.label == RECOMBINATION
+
+        database.kinetics_database.libraries[RECOMBINATION] = impostor
         with pytest.raises(AssertionError) as raised:
             database.library(RECOMBINATION)
-        message = str(raised.value)
-        assert 'no longer the library this set loaded' in message
-        assert database.sources[RECOMBINATION] in message, (
-            'the refusal does not name the file the bound library came from, which is '
-            'the one thing a human needs in order to tell the two apart')
-
+        assert 'no longer the library this set loaded' in str(raised.value)
+        assert database.sources[RECOMBINATION] in str(raised.value)
         with pytest.raises(AssertionError):
             select_entry(database.libraries[RECOMBINATION], LITHIUM_RECOMBINATION)
 

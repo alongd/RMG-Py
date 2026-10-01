@@ -33,6 +33,8 @@ in this subpackage.
 """
 import itertools
 import logging
+import json
+import os
 
 from rmgpy.data.base import LogicNode
 from rmgpy.exceptions import DatabaseError
@@ -43,6 +45,50 @@ from rmgpy.species import Species
 
 
 ################################################################################
+
+
+_EXTERNAL_PROVENANCE_START = '[RMG external library provenance v1] '
+_EXTERNAL_PROVENANCE_END = ' [/RMG external library provenance v1]'
+
+
+def format_external_library_provenance(label, source):
+    """Encode a reserved full-line restart record with a semantic label and source."""
+    return (_EXTERNAL_PROVENANCE_START
+            + json.dumps({'label': label, 'source': os.path.realpath(source)}, sort_keys=True)
+            + _EXTERNAL_PROVENANCE_END)
+
+
+def parse_external_library_provenance(description):
+    """Read only reserved full-line records, refusing malformed or conflicting ones."""
+    def unique_keys(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise DatabaseError('Conflicting external library provenance JSON keys.')
+            result[key] = value
+        return result
+
+    provenance = None
+    for line in description.splitlines():
+        line = line.strip()
+        if not line.startswith(_EXTERNAL_PROVENANCE_START.rstrip()):
+            continue
+        if not line.startswith(_EXTERNAL_PROVENANCE_START) or not line.endswith(_EXTERNAL_PROVENANCE_END):
+            raise DatabaseError('Malformed external library provenance record.')
+        try:
+            record = json.loads(line[len(_EXTERNAL_PROVENANCE_START):-len(_EXTERNAL_PROVENANCE_END)],
+                                object_pairs_hook=unique_keys)
+        except (TypeError, ValueError) as error:
+            raise DatabaseError('Malformed external library provenance JSON.') from error
+        if (not isinstance(record, dict) or set(record) != {'label', 'source'}
+                or not all(isinstance(value, str) and value for value in record.values())
+                or not os.path.isabs(record['source'])):
+            raise DatabaseError('Invalid external library provenance fields.')
+        record['source'] = os.path.realpath(record['source'])
+        if provenance is not None and provenance != record:
+            raise DatabaseError('Conflicting external library provenance records.')
+        provenance = record
+    return provenance
 
 
 def save_entry(f, entry):
@@ -133,7 +179,11 @@ def save_entry(f, entry):
     if entry.short_desc.strip() != '':
         f.write(f'    shortDesc = """{entry.short_desc.strip()}""",\n')
     if entry.long_desc.strip() != '':
-        f.write(f'    longDesc = \n"""\n{entry.long_desc.strip()}\n""",\n')
+        if parse_external_library_provenance(entry.long_desc):
+            # repr preserves JSON escapes through the Python library-file reader.
+            f.write('    longDesc = {!r},\n'.format(entry.long_desc.strip()))
+        else:
+            f.write(f'    longDesc = \n"""\n{entry.long_desc.strip()}\n""",\n')
 
     # write metal attributes
     if entry.metal:
