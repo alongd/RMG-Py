@@ -193,6 +193,64 @@ class TestStaleTopologyRejection:
         assert rs is not None and len(core) > 0
 
 
+class TestRepeatMassFailsLoud:
+    """The consumer-world repeat mass must FAIL LOUD, never coerce to 0.0.
+
+    ``condensed_mass_g == mu1*monomer_mw_g_mol - mu0*chain_mass_defect_g_mol``,
+    so a missing/null/non-finite/non-positive ``monomer_mw_g_mol`` does not
+    degrade honestly: it reports a pool of ZERO condensed mass while every
+    moment stays healthy, and every downstream mass sensor reads "fine" on a
+    pool that quietly stopped carrying mass. The loader used to write
+    ``float(p.get("monomer_mw_g_mol") or 0.0)``, which turned exactly that
+    corruption into a silent default.
+    """
+
+    def _artifact_with_mw(self, deck, value, drop=False):
+        chem_path, art_path = deck
+        with open(art_path) as fh:
+            artifact = json.load(fh)
+        pool = artifact["pools"][0]
+        assert pool["label"] == "poly"
+        assert pool.get("monomer_mw_g_mol"), "fixture must carry a real MW"
+        if drop:
+            pool.pop("monomer_mw_g_mol")
+        else:
+            pool["monomer_mw_g_mol"] = value
+        return chem_path, artifact
+
+    def _build(self, chem_path, artifact):
+        species, reactions = load_chem_yaml(chem_path)
+        return build_system_from_artifact(
+            artifact, species, reactions, T0=800.0, P=1.0e5, V_poly=1.0,
+            initial_moles={"N2(1)": 1.0}, mass_transfer_spec=[])
+
+    @pytest.mark.parametrize("value,drop", [
+        (None, True),      # field absent entirely
+        (None, False),     # explicit null
+        ("28.05", False),  # non-numeric (string that would float() fine)
+        (0.0, False),      # the silent-zero case itself
+        (-28.05, False),   # negative
+        (float("nan"), False),
+        (float("inf"), False),
+    ])
+    def test_bad_repeat_mass_rejected_naming_the_pool(self, deck, value, drop):
+        chem_path, artifact = self._artifact_with_mw(deck, value, drop=drop)
+        # Match the RUNNER's own wording ("artifact field ..."), not just any
+        # ValueError: PolymerPoolConfig.__post_init__ independently rejects the
+        # non-finite/negative cases downstream, and a looser match would let
+        # this test pass on that second guard alone.
+        with pytest.raises(ValueError,
+                           match=r"Pool 'poly'.*artifact field "
+                                 r"'monomer_mw_g_mol'"):
+            self._build(chem_path, artifact)
+
+    def test_good_repeat_mass_still_loads(self, deck):
+        """Positive control: the guard is a rejection, not a dead loader."""
+        chem_path, artifact = self._artifact_with_mw(deck, 104.15)
+        rs, core, _ = self._build(chem_path, artifact)
+        assert rs.polymer_pools[0].monomer_mw_g_mol == pytest.approx(104.15)
+
+
 class TestRadicalQssaArtifactLoader:
     """build_system_from_artifact must parse + validate the sidecar's
     radical_qssa_unzip block (milestone 3): shared-validator field rules,

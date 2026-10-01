@@ -348,7 +348,13 @@ class CoreEdgeReactionModel:
                 # monomer_product_species. Transfer them onto the canonical
                 # existing Polymer (same posture as the gas-veto props
                 # transfer in make_new_species, commit c133b34e1).
-                from rmgpy.polymer import merge_unzip_channel_on_dedup
+                from rmgpy.polymer import (assert_same_repeat_mass_on_dedup,
+                                           merge_unzip_channel_on_dedup)
+                # The discarded incoming object also carries a repeat mass. A
+                # DIFFERING one must never be silently dropped: the survivor's
+                # mass basis would rewrite the incoming pool's condensed-mass
+                # contract (mu1*monomer_mw_g_mol). Hard-fail instead.
+                assert_same_repeat_mass_on_dedup(spec, poly)
                 merge_unzip_channel_on_dedup(spec, poly)
                 return spec, False
 

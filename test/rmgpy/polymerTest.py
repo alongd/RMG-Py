@@ -4941,6 +4941,87 @@ def test_impostor_polymer_scale_discrete_row_refused_both_orientations():
     assert rxn_rev.polymer_refused_accumulating is False
 
 
+def test_conduit_refusal_log_names_the_distinct_rule_per_site(caplog):
+    """Attribution premise (this task): five independent refusal rules in
+    rmgpy/polymer.py all collapse into the same ``conduit-deferred``
+    ``refused_reason`` string when rendered by the solver -- log-side
+    attribution is the only place the FIRING RULE can be told apart. Two
+    rows refused by two DIFFERENT rules (r63 gas-association-orientation
+    and r82 impostor-discrete, both reusing the fixtures above) must log
+    two DIFFERENT site identifiers via :func:`_log_conduit_refusal`, while
+    ``refused_reason`` (``polymer_refused_accumulating is False`` ->
+    "conduit-deferred") stays IDENTICAL and UNCHANGED for both -- this half
+    of the assertion is a deliberate regression guard on the closed
+    ``refused_reason`` vocabulary premise (TA-schema32 mechanism.py
+    ``REFUSED_REASONS``): it must fail if anyone later widens that
+    vocabulary or changes how the reason string is derived instead of
+    keeping attribution log-only."""
+    import logging as _logging
+    from rmgpy.polymer import Polymer, stamp_gas_association_refusal
+    from rmgpy.species import Species
+    from rmgpy.molecule import Molecule
+    from rmgpy.reaction import Reaction
+    pp = Polymer(label="polypropylene", monomer="[CH2][CH]C",
+                 Mn=5000.0, Mw=8000.0, initial_mass=1.0)
+    # Site A: r63 gas-association-orientation (pure gas radicals -> proxy).
+    r1 = Species(molecule=[Molecule().from_smiles("[CH2]C(C)C")])
+    r2 = Species(molecule=[Molecule().from_smiles("C[CH]CCC")])
+    rxn_a = Reaction(reactants=[r1, r2], products=[pp], reversible=True)
+    # Site B: r82 impostor-discrete. NOTE the orientation matters: the
+    # association orientation (impostor+gas -> proxy) has ``p_condensed``
+    # True unconditionally, so it is caught by r63's association-orientation
+    # conjunct FIRST (p_condensed alone short-circuits _all_gas_radicals).
+    # Only the reverse orientation (proxy -> impostor+gas, non-radical
+    # products) falls through r63 and reaches the r82 impostor conjunct.
+    impostor = Species(molecule=[Molecule().from_smiles(
+        "C=CCC(C)CC(C)CC(C)CC(C)CC(C)CC(C)CC(C)C")])
+    br2 = Species(molecule=[Molecule().from_smiles("BrBr")])
+    rxn_b = Reaction(reactants=[pp], products=[br2, impostor], reversible=True)
+    with caplog.at_level(_logging.WARNING):
+        stamp_gas_association_refusal(rxn_a)
+        stamp_gas_association_refusal(rxn_b)
+    # refused_reason (via polymer_refused_accumulating) is UNCHANGED and
+    # IDENTICAL across both rows -- the census string still cannot tell
+    # them apart; only the log can.
+    assert rxn_a.polymer_refused is True
+    assert rxn_a.polymer_refused_accumulating is False   # -> "conduit-deferred"
+    assert rxn_b.polymer_refused is True
+    assert rxn_b.polymer_refused_accumulating is False   # -> "conduit-deferred"
+    hits = [r for r in caplog.records
+            if "POLYMER CONDUIT REFUSAL SITE:" in r.getMessage()]
+    assert len(hits) == 2
+    site_a = hits[0].getMessage()
+    site_b = hits[1].getMessage()
+    assert "r63_gas_association_orientation" in site_a
+    assert "r82_impostor_discrete" in site_b
+    assert site_a != site_b
+
+
+def test_conduit_refusal_site_identifiers_are_pairwise_distinct():
+    """Copy-paste guard: the five ``_log_conduit_refusal`` call sites in
+    rmgpy/polymer.py (one per independently-adjudicated refusal rule) must
+    each carry a DISTINCT ``site`` identifier -- a duplicate would silently
+    collapse two rules back into the same unattributable bucket this task
+    exists to split apart. Reads the five identifiers directly out of the
+    call sites in the module source so a future copy-paste duplicate fails
+    this test even before any row happens to exercise both sites.
+
+    FIVE, not six: ``readjudicate_conduit_admission`` also clears
+    ``polymer_refused_accumulating``, but on its ADMIT arm (it sets
+    ``polymer_refused = False`` immediately above). Logging that one through
+    a "REFUSAL SITE" line would make the log name an ADMITTED row as
+    refused -- the exact opposite of what this attribution is for -- so it
+    is deliberately not a call site."""
+    import inspect
+    import re
+    import rmgpy.polymer as polymer_module
+    source = inspect.getsource(polymer_module)
+    site_ids = re.findall(
+        r'_log_conduit_refusal\(\s*forward,\s*\n?\s*"([^"]+)"', source)
+    assert len(site_ids) == 5, site_ids
+    assert len(set(site_ids)) == 5, site_ids
+
+
 def test_impostor_threshold_spares_dp2_volatile_and_gas_only_rows():
     """Negative controls for the r82 impostor conjunct (pinned):
 
@@ -4960,10 +5041,22 @@ def test_impostor_threshold_spares_dp2_volatile_and_gas_only_rows():
     hexene = Species(molecule=[Molecule().from_smiles("C=CCCCC")])
     br2 = Species(molecule=[Molecule().from_smiles("BrBr")])
     # (a) 2.0 monomer-equivalents: below the 2.5 polymer-sized threshold.
-    rxn = Reaction(reactants=[br2, hexene], products=[pp], reversible=True)
+    #
+    # Orientation note (2026-07-27): this pin is written in the HOMOLYSIS
+    # orientation (Polymer among reactants). It used to ride on the
+    # association orientation (`br2 + hexene <=> pp`), which is now refused
+    # class-level because that orientation is unstampable by construction --
+    # for an orientation reason, not a size reason. The size conjunct this
+    # pin actually protects is unchanged and still governs here, which is why
+    # the row stays live; the direct predicate assertion below pins the size
+    # axis without depending on any orientation at all.
+    rxn = Reaction(reactants=[pp], products=[br2, hexene], reversible=True)
     stamp_gas_association_refusal(rxn)
     assert rxn.polymer_refused is False
     assert rxn.polymer_refused_accumulating is False
+    # Orientation-independent form of the same claim.
+    from rmgpy.polymer import _discrete_is_polymer_sized
+    assert _discrete_is_polymer_sized(hexene, pp) is False
     # (b) gas-only XY addition: Br2 + hexene -> 1,2-dibromohexane.
     dibromide = Species(molecule=[Molecule().from_smiles("CCCCC(Br)CBr")])
     gas_only = Reaction(reactants=[br2, hexene], products=[dibromide],
@@ -5019,18 +5112,19 @@ def test_impostor_undecidable_axis_never_degenerates_to_mass_only(caplog):
     # uncomputable (monomer stripped), so the predicate must NOT degenerate to
     # a mass-only refusal -- it announces the case undecidable instead.
     br2 = Species(molecule=[Molecule().from_smiles("BrC(Br)(Br)Br")])
-    rxn = Reaction(reactants=[br2], products=[pp], reversible=True)
+    # Orientation note (2026-07-27): the undecidable-axis claim is pinned in
+    # the HOMOLYSIS orientation (Polymer among reactants), where the impostor
+    # size conjunct is what decides. The association orientation is now
+    # refused class-level for a structural reason (it can never receive an
+    # archetype stamp), which would mask the axis behavior this pin exists to
+    # protect rather than test it.
+    rxn = Reaction(reactants=[pp], products=[br2], reversible=True)
     with caplog.at_level(logging.WARNING):
         stamp_gas_association_refusal(rxn)
     assert rxn.polymer_refused is False
     assert rxn.polymer_refused_accumulating is False
     assert any("IMPOSTOR AXIS UNDECIDABLE" in r.getMessage()
                for r in caplog.records)
-    # Reverse orientation: same undecidable shape, same non-refusal.
-    rxn_rev = Reaction(reactants=[pp], products=[br2], reversible=True)
-    stamp_gas_association_refusal(rxn_rev)
-    assert rxn_rev.polymer_refused is False
-    assert rxn_rev.polymer_refused_accumulating is False
 
 
 def test_impostor_undecidable_mass_axis_also_refuses_to_refuse():
@@ -9642,3 +9736,639 @@ def test_hybrid_polymer_reactor_reader_half_ranged_keeps_sweep():
         temperature=[(750.0, 'K'), (4000.0, 'K')],
         pressure=(1.0, 'bar'))
     assert system.n_sims == 6
+
+
+class TestCopolymerComposition:
+    """
+    Composition-weighted random (Bernoullian) copolymer support: a pool
+    declared with ``monomers=[...]`` instead of a single ``monomer``.
+
+    The four properties these tests pin, in the order they matter:
+
+      1. REGRESSION EQUIVALENCE -- a one-unit composition at fraction 1.0 is
+         the homopolymer. The extension must be a strict generalization; if a
+         single-unit copolymer differs from the legacy declaration in ANY
+         observable (repeat mass, moments, proxy graph), every existing deck is
+         at risk.
+      2. MASS INVARIANTS -- the repeat mass is sum_i f_i M_i, and it is the
+         ONLY route by which composition enters Mn/Mw/moments.
+      3. DYAD COVERAGE -- mixed-neighbour bonds exist in real proxy graphs.
+      4. REFUSALS -- malformed compositions fail loudly at construction.
+    """
+
+    # Ethylene / propylene / ENB-like diene repeat units. The diene stands in
+    # for 5-ethylidene-2-norbornene's backbone-facing unit; what matters for
+    # these tests is that it is a THIRD, distinct unit carrying an olefinic
+    # (weak-link) site, not that it is the exact ENB graph.
+    ETHYLENE = '[CH2][CH2]'
+    PROPYLENE = '[CH2][CH](C)'
+    DIENE = '[CH2][CH](C=C)'
+
+    @staticmethod
+    def _copolymer(units, label='EPDM', **kwargs):
+        params = dict(end_groups=['[CH3]', '[H]'], cutoff=3,
+                      Mn=5000.0, Mw=10000.0, initial_mass=1.0)
+        params.update(kwargs)
+        return Polymer(label=label,
+                       monomers=[dict(monomer=m, fraction=f) for m, f in units],
+                       **params)
+
+    # ------------------------------------------------------------------
+    # 1. Regression equivalence
+    # ------------------------------------------------------------------
+
+    def test_single_unit_copolymer_equals_homopolymer(self):
+        """A one-entry composition at fraction 1.0 IS the homopolymer."""
+        homo = Polymer(label='PE_homo', monomer=self.ETHYLENE,
+                       end_groups=['[CH3]', '[H]'], cutoff=3,
+                       Mn=5000.0, Mw=10000.0, initial_mass=1.0)
+        copo = self._copolymer([(self.ETHYLENE, 1.0)], label='PE_copo')
+
+        assert copo.monomer_mw_g_mol == pytest.approx(homo.monomer_mw_g_mol)
+        assert copo.Mn == homo.Mn and copo.Mw == homo.Mw
+        assert np.allclose(copo.moments, homo.moments)
+        # Same reactive graph: the dominant unit's trimer, with no extra proxy.
+        assert copo.baseline_proxy.is_isomorphic(homo.baseline_proxy)
+        assert copo.dyad_proxies == []
+
+    def test_homopolymer_pool_is_untouched(self):
+        """The legacy path stores no composition and no dyad proxies."""
+        homo = Polymer(label='PE_homo', monomer=self.ETHYLENE,
+                       end_groups=['[CH3]', '[H]'], cutoff=3,
+                       Mn=5000.0, Mw=10000.0, initial_mass=1.0)
+        assert homo.comonomers is None
+        assert homo.dyad_proxies == []
+        assert '_Copoly-' not in homo.fingerprint
+
+    # ------------------------------------------------------------------
+    # 2. Mass invariants
+    # ------------------------------------------------------------------
+
+    def test_repeat_mass_is_composition_weighted(self):
+        """<M_repeat> = sum_i f_i M_i, not the dominant unit's mass."""
+        units = [(self.ETHYLENE, 0.60), (self.PROPYLENE, 0.35), (self.DIENE, 0.05)]
+        copo = self._copolymer(units)
+        expected = sum(
+            f * Molecule(smiles=smi).get_molecular_weight() * 1000.0
+            for smi, f in units)
+        assert copo.monomer_mw_g_mol == pytest.approx(expected, rel=1e-9)
+        # And it is genuinely different from the dominant unit alone --
+        # otherwise this test would pass on a broken implementation.
+        dominant = Molecule(smiles=self.ETHYLENE).get_molecular_weight() * 1000.0
+        assert abs(copo.monomer_mw_g_mol - dominant) > 1.0
+
+    def test_composition_propagates_into_moments(self):
+        """Two compositions with the same Mn/Mw differ in DP, hence in moments."""
+        light = self._copolymer([(self.ETHYLENE, 0.95), (self.DIENE, 0.05)],
+                                label='light')
+        heavy = self._copolymer([(self.ETHYLENE, 0.50), (self.DIENE, 0.50)],
+                                label='heavy')
+        # Heavier repeat unit at fixed Mn => fewer repeat units per chain.
+        assert heavy.monomer_mw_g_mol > light.monomer_mw_g_mol
+        assert heavy.moments[1] < light.moments[1]
+
+    def test_dominant_unit_becomes_the_repeat_unit(self):
+        """self.monomer is the largest-fraction unit regardless of deck order."""
+        copo = self._copolymer([(self.DIENE, 0.05), (self.ETHYLENE, 0.60),
+                                (self.PROPYLENE, 0.35)])
+        assert copo.monomer.is_isomorphic(Molecule(smiles=self.ETHYLENE))
+        assert copo.comonomers[0]['fraction'] == pytest.approx(0.60)
+
+    def test_composition_is_in_the_fingerprint(self):
+        """Same dominant unit, different composition => different pool."""
+        a = self._copolymer([(self.ETHYLENE, 0.95), (self.DIENE, 0.05)], label='a')
+        b = self._copolymer([(self.ETHYLENE, 0.90), (self.DIENE, 0.10)], label='b')
+        assert a.fingerprint != b.fingerprint
+
+    def test_copy_preserves_composition(self):
+        """A copy must not silently demote to a homopolymer."""
+        copo = self._copolymer([(self.ETHYLENE, 0.6), (self.PROPYLENE, 0.35),
+                                (self.DIENE, 0.05)])
+        other = copo.copy(deep=True)
+        assert other.comonomers is not None
+        assert len(other.comonomers) == 3
+        assert other.monomer_mw_g_mol == pytest.approx(copo.monomer_mw_g_mol)
+        assert other.fingerprint == copo.fingerprint
+
+    # ------------------------------------------------------------------
+    # 3. Dyad coverage -- the reason a copolymer is not a blend
+    # ------------------------------------------------------------------
+
+    def test_dyad_proxies_cover_every_pair(self):
+        """N units => N(N+1)/2 dyads, minus the dominant homo-dyad (baseline)."""
+        copo = self._copolymer([(self.ETHYLENE, 0.6), (self.PROPYLENE, 0.35),
+                                (self.DIENE, 0.05)])
+        dyads = copo.dyad_proxies
+        n = 3
+        assert len(dyads) == n * (n + 1) // 2 - 1
+        pairs = {d['pair'] for d in dyads}
+        assert (0, 0) not in pairs           # that IS the baseline proxy
+        for i in range(n):
+            for j in range(i, n):
+                if (i, j) != (0, 0):
+                    assert (i, j) in pairs
+
+    def test_dyad_proxy_contains_the_mixed_neighbour_bond(self):
+        """
+        The ethylene--diene dyad proxy must contain BOTH units bonded together:
+        this is the graph a reaction family needs in order to ever generate the
+        allylic-scission chemistry that a dominant-unit-only proxy cannot.
+        """
+        copo = self._copolymer([(self.ETHYLENE, 0.6), (self.PROPYLENE, 0.35),
+                                (self.DIENE, 0.05)])
+        # Comonomer order is descending fraction: 0=ethylene, 1=propylene, 2=diene.
+        dyad = next(d for d in copo.dyad_proxies if d['pair'] == (0, 2))
+        mol = dyad['species'].molecule[0]
+        # The diene's olefinic bond survives into the proxy (the weak link) ...
+        assert any(bond.is_double() for atom in mol.atoms
+                   for bond in atom.bonds.values()), \
+            'the diene unit lost its olefinic site in the stitched dyad proxy'
+        # ... and the proxy is bigger than either homo-dyad trimer, i.e. it is a
+        # genuine mixed chain and not a silently-substituted homopolymer trimer.
+        assert mol.get_num_atoms() > copo.baseline_proxy.molecule[0].get_num_atoms()
+
+    def test_dyad_proxies_are_distinct_species(self):
+        """No two dyad proxies collapse onto the same graph."""
+        copo = self._copolymer([(self.ETHYLENE, 0.6), (self.PROPYLENE, 0.35),
+                                (self.DIENE, 0.05)])
+        dyads = copo.dyad_proxies
+        for i, first in enumerate(dyads):
+            for second in dyads[i + 1:]:
+                assert not first['species'].is_isomorphic(second['species'])
+            assert not first['species'].is_isomorphic(copo.baseline_proxy)
+
+    # ------------------------------------------------------------------
+    # 4. Refusals -- every one of these would otherwise corrupt the mass
+    # ------------------------------------------------------------------
+
+    def test_monomer_and_monomers_are_mutually_exclusive(self):
+        with pytest.raises(InputError, match='mutually exclusive'):
+            Polymer(label='both', monomer=self.ETHYLENE,
+                    monomers=[dict(monomer=self.PROPYLENE, fraction=1.0)],
+                    end_groups=['[CH3]', '[H]'], Mn=5000.0, Mw=10000.0)
+
+    def test_neither_monomer_nor_monomers_refused(self):
+        with pytest.raises(InputError, match='either'):
+            Polymer(label='neither', end_groups=['[CH3]', '[H]'],
+                    Mn=5000.0, Mw=10000.0)
+
+    def test_fractions_must_sum_to_one(self):
+        with pytest.raises(InputError, match='sum to 1'):
+            self._copolymer([(self.ETHYLENE, 0.6), (self.PROPYLENE, 0.2)])
+
+    def test_zero_or_negative_fraction_refused(self):
+        with pytest.raises(InputError, match='finite and > 0'):
+            self._copolymer([(self.ETHYLENE, 1.0), (self.PROPYLENE, 0.0)])
+
+    def test_duplicate_repeat_unit_refused(self):
+        with pytest.raises(InputError, match='duplicate repeat unit'):
+            self._copolymer([(self.ETHYLENE, 0.5), (self.ETHYLENE, 0.5)])
+
+    def test_unknown_key_refused(self):
+        with pytest.raises(InputError, match='unrecognized'):
+            Polymer(label='typo',
+                    monomers=[dict(monomer=self.ETHYLENE, fraction=1.0,
+                                   fractoin=0.5)],
+                    end_groups=['[CH3]', '[H]'], Mn=5000.0, Mw=10000.0)
+
+    def test_missing_fraction_refused(self):
+        with pytest.raises(InputError, match="must define both"):
+            Polymer(label='nofrac', monomers=[dict(monomer=self.ETHYLENE)],
+                    end_groups=['[CH3]', '[H]'], Mn=5000.0, Mw=10000.0)
+
+    def test_empty_composition_refused(self):
+        with pytest.raises(InputError, match='non-empty list'):
+            Polymer(label='empty', monomers=[], end_groups=['[CH3]', '[H]'],
+                    Mn=5000.0, Mw=10000.0)
+
+    # --- 5. DAUGHTER REPEAT-MASS INHERITANCE -------------------------------
+    #
+    # Every daughter constructor hands __init__ a single `monomer=self.monomer`,
+    # which for a copolymer parent is only the DOMINANT unit. Left to __init__
+    # the daughter would therefore sit on the dominant unit's mass while its
+    # parent sits on the composition-weighted mean (EPDM: 28.053 vs 32.057).
+    # That is a live mass leak, not a cosmetic mismatch -- see
+    # Polymer._inherit_repeat_mass_to for the closure argument.
+
+    def _epdm(self):
+        """The 3-unit EPDM composition, with an ENB-like feature.
+
+        The FRACTIONS are the Vistalon 5601 deck's (examples/rmg/epdm/input.py:
+        0.7886 / 0.1981 / 0.0133). The diene is deliberately this class's small
+        stand-in unit, NOT the deck's real ENB graph (see the class docstring),
+        so the weighted repeat mass here is 31.178 g/mol against the deck's
+        32.057 -- an expected consequence of the lighter stand-in, not fixture
+        drift. Nothing in these tests depends on the absolute value; they pin
+        that the weighted mass is carried consistently.
+        """
+        return self._copolymer(
+            [(self.ETHYLENE, 0.7886),
+             (self.PROPYLENE, 0.1981),
+             (self.DIENE, 0.0133)],
+            feature_monomer=self.DIENE)
+
+    def test_mod_daughter_inherits_composition_weighted_repeat_mass(self):
+        """The _mod (feature H-loss) daughter of a COPOLYMER parent carries the
+        parent's weighted repeat mass, not the dominant unit's."""
+        parent = self._epdm()
+        daughter = parent._born_at_zero_mod_daughter(
+            parent.feature_monomer.copy(deep=True),
+            source='radical_feature_h_loss')
+
+        assert daughter.monomer_mw_g_mol == pytest.approx(
+            parent.monomer_mw_g_mol)
+        # ... and that value really is the weighted mean, not the dominant unit
+        dominant_mw = parent.monomer.get_molecular_weight() * 1000.0
+        assert daughter.monomer_mw_g_mol != pytest.approx(dominant_mw)
+
+    def test_end_radical_daughters_inherit_composition_weighted_repeat_mass(self):
+        """Both end-radical daughters of a COPOLYMER parent likewise."""
+        parent = self._epdm()
+        primary, secondary = parent.generate_end_radical_daughters()
+
+        for d in (primary, secondary):
+            assert d.monomer_mw_g_mol == pytest.approx(parent.monomer_mw_g_mol)
+
+    def test_daughters_do_not_become_copolymers(self):
+        """Inheriting the MASS must NOT hand the daughter the composition.
+
+        Copying `comonomers` onto a daughter would register dyad proxies for
+        it and expand the species universe -- a model-changing side effect.
+        The daughter stays a homopolymer-shaped pool that merely carries the
+        weighted mass, so it emits no `composition` block and no dyads.
+        """
+        parent = self._epdm()
+        daughters = [parent._born_at_zero_mod_daughter(
+            parent.feature_monomer.copy(deep=True),
+            source='radical_feature_h_loss')]
+        daughters.extend(parent.generate_end_radical_daughters())
+
+        assert parent.comonomers is not None
+        for d in daughters:
+            assert d.comonomers is None
+            assert d.dyad_proxies == []
+
+    def test_homopolymer_daughter_mass_is_regression_identical(self):
+        """Axis-1 regression equivalence: for a homopolymer parent the
+        inheritance is a no-op, so every pre-copolymer artifact is untouched."""
+        homo = Polymer(label='PE_homo', monomer=self.ETHYLENE,
+                       feature_monomer=self.DIENE,
+                       end_groups=['[CH3]', '[H]'], cutoff=3,
+                       Mn=5000.0, Mw=10000.0, initial_mass=1.0)
+        daughter = homo._born_at_zero_mod_daughter(
+            homo.feature_monomer.copy(deep=True),
+            source='radical_feature_h_loss')
+
+        assert daughter.monomer_mw_g_mol == pytest.approx(
+            homo.monomer.get_molecular_weight() * 1000.0)
+        assert daughter.monomer_mw_g_mol == pytest.approx(homo.monomer_mw_g_mol)
+
+    def test_shared_repeat_mass_makes_a_raw_mu1_transfer_mass_safe(self):
+        """WHY the inheritance matters, stated as the closure it protects.
+
+        Condensed mass is ``mu1*monomer_mw_g_mol - mu0*chain_mass_defect_g_mol``
+        and the FLUX_UNRESOLVED arm (the ``legacy_mu1`` archetype in
+        rmgpy/solver/polymer.pyx) moves a raw chain-unit COUNT between pools
+        with no molar-mass conversion. A transfer of ``r`` units therefore
+        changes total condensed mass by ``r * (MW_dst - MW_src)``, booked by no
+        channel. Equal repeat masses are exactly what zeroes that term.
+
+        NOTE: this pins the daughter-side fix, NOT a general guarantee. Two
+        pools with genuinely different repeat masses still leak across that
+        arm; conversion there is a separate, larger design question.
+        """
+        parent = self._epdm()
+        daughter = parent._born_at_zero_mod_daughter(
+            parent.feature_monomer.copy(deep=True),
+            source='radical_feature_h_loss')
+
+        r = 1.0e-3  # mol of chain units moved parent -> daughter
+        minted = r * (daughter.monomer_mw_g_mol - parent.monomer_mw_g_mol)
+        assert minted == pytest.approx(0.0, abs=1e-12)
+
+        # The same transfer under the pre-fix basis is what it protects against.
+        dominant_mw = parent.monomer.get_molecular_weight() * 1000.0
+        would_have_minted = r * (dominant_mw - parent.monomer_mw_g_mol)
+        assert abs(would_have_minted) > 1e-6
+
+    # --- 6. THE MASS BASIS SURVIVES THE SOLVER-CONFIG BOUNDARY --------------
+    #
+    # Inheriting the weighted mass onto the daughter Polymer objects is only
+    # half the closure: what the solver integrates is a PolymerPoolConfig, and
+    # the ROOT pool's config used to RECOMPUTE monomer_mw_g_mol structurally
+    # from PolymerPool.monomer -- the DOMINANT unit -- while
+    # derive_daughter_pool_configs read the daughter Polymer's (weighted)
+    # attribute. A root pool and its own daughters therefore reached the solver
+    # on different repeat masses (EPDM fixture: 28.053 vs 31.178), which is
+    # exactly the cross-pool mass mint the inheritance exists to prevent.
+
+    def _epdm_root_pool(self, parent, label=None):
+        """A deck-shaped root PolymerPool for ``parent`` (proxy_species set, as
+        read_polymer_phase sets it), plus the spc_map its config needs."""
+        from rmgpy.rmg.polymer_input import PolymerPool
+
+        label = label or parent.label
+        mu = [_moment_dummy(f'{label}_mu{k}') for k in (0, 1, 2)]
+        pool = PolymerPool(label=label, xs=parent.cutoff, monomer=parent.monomer,
+                           explicit_map={}, mu_species=mu, proxy_species=parent)
+        return pool, {s: i for i, s in enumerate(mu)}
+
+    def test_root_pool_config_carries_the_weighted_repeat_mass(self):
+        """The ROOT pool's config mass is the parent Polymer's weighted mean,
+        NOT the dominant unit's MW."""
+        parent = self._epdm()
+        pool, spc_map = self._epdm_root_pool(parent)
+
+        cfg = pool.to_config(spc_map)
+
+        assert cfg.monomer_mw_g_mol == pytest.approx(parent.monomer_mw_g_mol,
+                                                     rel=1e-12)
+        # ... and the two really are distinguishable, so this cannot pass on a
+        # dominant-unit recompute.
+        dominant_mw = parent.monomer.get_molecular_weight() * 1000.0
+        assert abs(cfg.monomer_mw_g_mol - dominant_mw) > 1.0
+
+    def test_root_and_daughter_pool_configs_agree_on_the_repeat_mass(self):
+        """The regression: one lineage, ONE repeat mass, all the way into the
+        configs the solver integrates.
+
+        A live cross-pool row between a root and its own daughter moves a raw
+        chain-unit COUNT (the FLUX_UNRESOLVED / legacy_mu1 arm), so a config-
+        level mass disagreement mints r*(MW_dst - MW_src) g/s booked by no
+        channel.
+        """
+        from rmgpy.rmg.polymer_input import derive_daughter_pool_configs
+
+        parent = self._epdm()
+        pool, spc_map = self._epdm_root_pool(parent)
+        root_cfg = pool.to_config(spc_map)
+
+        daughter = parent._born_at_zero_mod_daughter(
+            parent.feature_monomer.copy(deep=True),
+            source='radical_feature_h_loss')
+        core = [daughter] + [_moment_dummy(f'{daughter.label}_mu{k}')
+                             for k in (0, 1, 2)]
+        d_cfgs = derive_daughter_pool_configs(
+            core, {s: i for i, s in enumerate(core)},
+            existing_pool_labels={parent.label})
+
+        assert len(d_cfgs) == 1
+        assert d_cfgs[0].monomer_mw_g_mol == pytest.approx(
+            root_cfg.monomer_mw_g_mol, rel=1e-12)
+
+    def test_homopolymer_root_pool_config_mass_is_regression_identical(self):
+        """Axis-1: for a homopolymer the proxy read and the structural recompute
+        agree, so the legacy config value is untouched."""
+        homo = Polymer(label='PE_homo', monomer=self.ETHYLENE,
+                       end_groups=['[CH3]', '[H]'], cutoff=3,
+                       Mn=5000.0, Mw=10000.0, initial_mass=1.0)
+        pool, spc_map = self._epdm_root_pool(homo)
+
+        cfg = pool.to_config(spc_map)
+
+        assert cfg.monomer_mw_g_mol == pytest.approx(
+            homo.monomer.get_molecular_weight() * 1000.0, rel=1e-12)
+
+    # --- 7. THE MASS BASIS IS PART OF POOL IDENTITY -------------------------
+    #
+    # Daughters deliberately drop `comonomers`, so the `_Copoly-` fingerprint
+    # segment (emitted only when comonomers is not None) cannot separate a
+    # copolymer's daughter from a homopolymer's daughter over the same dominant
+    # unit. _register_polymer dedups BY FINGERPRINT and is first-writer-wins, so
+    # such a collision would silently hand one pool the other's repeat mass.
+
+    def test_homopolymer_fingerprint_is_byte_identical(self):
+        """Regression guard for the `_RepeatMW-` segment: a homopolymer's mass
+        is already implied by its monomer, so its fingerprint must not move."""
+        homo = Polymer(label='PE_homo', monomer=self.ETHYLENE,
+                       end_groups=['[CH3]', '[H]'], cutoff=3,
+                       Mn=5000.0, Mw=10000.0, initial_mass=1.0)
+
+        assert homo.fingerprint == (
+            'Polymer_C02H04N00O00S00'
+            '_EG-C01H03N00O00S00_C00H01N00O00S00_3')
+        assert '_RepeatMW-' not in homo.fingerprint
+
+    def test_copolymer_daughter_does_not_collide_with_a_homopolymer_daughter(self):
+        """Same dominant unit, same end groups, same cutoff, same feature unit,
+        no composition on either daughter -- only the repeat MASS differs. The
+        fingerprint must still separate them, or dedup swaps their mass bases."""
+        copo = self._epdm()
+        copo_daughter = copo._born_at_zero_mod_daughter(
+            copo.feature_monomer.copy(deep=True),
+            source='radical_feature_h_loss')
+        homo = Polymer(label='PE_homo', monomer=self.ETHYLENE,
+                       feature_monomer=self.DIENE,
+                       end_groups=['[CH3]', '[H]'], cutoff=3,
+                       Mn=5000.0, Mw=10000.0, initial_mass=1.0)
+        homo_daughter = homo._born_at_zero_mod_daughter(
+            homo.feature_monomer.copy(deep=True),
+            source='radical_feature_h_loss')
+
+        assert copo_daughter.comonomers is None
+        assert homo_daughter.comonomers is None
+        assert copo_daughter.monomer_mw_g_mol != pytest.approx(
+            homo_daughter.monomer_mw_g_mol)
+        assert copo_daughter.fingerprint != homo_daughter.fingerprint
+
+    def test_dedup_on_a_mismatched_mass_basis_hard_fails(self):
+        """If two pools ever DO fingerprint-identically on different repeat
+        masses, registration must refuse loudly instead of first-writer-wins
+        silently rewriting one pool's condensed-mass contract."""
+        from rmgpy.rmg.model import CoreEdgeReactionModel
+
+        model = CoreEdgeReactionModel()
+        first = Polymer(label='PE_a', monomer=self.ETHYLENE,
+                        end_groups=['[CH3]', '[H]'], cutoff=3,
+                        Mn=5000.0, Mw=10000.0, initial_mass=1.0)
+        model._register_polymer(first, generate_thermo=False)
+
+        second = Polymer(label='PE_b', monomer=self.ETHYLENE,
+                         end_groups=['[CH3]', '[H]'], cutoff=3,
+                         Mn=5000.0, Mw=10000.0, initial_mass=1.0)
+        # Pin the (identical) fingerprint FIRST, then move the mass basis: this
+        # manufactures exactly the collision the fingerprint segment is meant to
+        # make impossible, so the last-line refusal is tested on its own.
+        assert second.fingerprint == first.fingerprint
+        second.monomer_mw_g_mol = first.monomer_mw_g_mol * 1.5
+
+        with pytest.raises(ValueError, match='DIFFERENT repeat-mass'):
+            model._register_polymer(second, generate_thermo=False)
+
+    def test_dedup_of_equal_mass_bases_still_dedups(self):
+        """The refusal must not break ordinary fingerprint dedup."""
+        from rmgpy.rmg.model import CoreEdgeReactionModel
+
+        model = CoreEdgeReactionModel()
+        kwargs = dict(monomer=self.ETHYLENE, end_groups=['[CH3]', '[H]'],
+                      cutoff=3, Mn=5000.0, Mw=10000.0, initial_mass=1.0)
+        first, _ = model._register_polymer(Polymer(label='PE_a', **kwargs),
+                                           generate_thermo=False)
+        second, is_new = model._register_polymer(Polymer(label='PE_b', **kwargs),
+                                                 generate_thermo=False)
+
+        assert is_new is False and second is first
+
+    # --- 8. THE ATOM-TRANSFER MASS-DEFECT BASIS MUST TRACK THE ORIGINATING --
+    # --- COMONOMER, NOT A FIXED POOL-LEVEL UNIT -----------------------------
+    #
+    # `_born_at_zero_mod_daughter` books the shed-hydrogen mass defect as
+    # `basis.get_molecular_weight() - feature_monomer.get_molecular_weight()`.
+    # `basis` used to be a FIXED pool-level unit (`self.feature_monomer` or
+    # `self.monomer`) regardless of which comonomer the feature actually came
+    # from. For an EPDM pool (monomer=ethylene, 28.053 g/mol) an ENB-derived
+    # H-loss feature (119.183 g/mol) measured against the fixed ethylene basis
+    # gives delta_g = 28.053 - 119.183 = -91.1 g/mol: the gate
+    # (`0 < delta_g < 0.5 * monomer_mw_g_mol`) refuses it and the shed
+    # hydrogen goes unbooked -- a silent per-chain mass leak. `basis` must
+    # instead resolve to the comonomer `feature_monomer` actually derives
+    # from.
+
+    @staticmethod
+    def _h_loss_unit_of(smiles):
+        """A real single-H-loss feature unit of the repeat unit ``smiles``,
+        built the same way the production H-loss producer builds one
+        (:meth:`Polymer._h_loss_feature_units`): one H removed from an
+        H-bearing heavy atom, one radical electron added. Wrapping the
+        SMILES in a throwaway homopolymer pool reuses the production
+        enumeration instead of hand-building the graph."""
+        probe = Polymer(label='probe', monomer=smiles,
+                        end_groups=['[CH3]', '[H]'], cutoff=3,
+                        Mn=5000.0, Mw=10000.0, initial_mass=1.0)
+        units = probe._h_loss_feature_units()
+        assert units, f'no H-loss unit generated for {smiles!r}'
+        return units[0]
+
+    def test_enb_derived_h_loss_feature_books_delta(self):
+        """The regression test: an ENB(diene)-derived H-loss feature must
+        book delta_g = MW(H) against the DIENE basis, not go unbooked
+        against the fixed ethylene/pool-level basis.
+
+        Deliberately does NOT reuse ``self._epdm()`` (which pins
+        ``feature_monomer=self.DIENE`` for its OWN, unrelated mass-inheritance
+        tests): with that override present the pre-fix fixed basis
+        (``self.feature_monomer``) already happens to equal DIENE, which
+        would make this regression test pass even on the broken code. The
+        production scenario this bug hits never sets ``feature_monomer`` at
+        the pool level, so this builds the same EPDM composition without it."""
+        parent = self._copolymer(
+            [(self.ETHYLENE, 0.7886), (self.PROPYLENE, 0.1981),
+             (self.DIENE, 0.0133)])
+        assert parent.feature_monomer is None
+        feature = self._h_loss_unit_of(self.DIENE)
+
+        daughter = parent._born_at_zero_mod_daughter(
+            feature, source='radical_feature_h_loss')
+
+        diene_mw = Molecule(smiles=self.DIENE).get_molecular_weight() * 1000.0
+        expected_delta = diene_mw - feature.get_molecular_weight() * 1000.0
+        assert expected_delta == pytest.approx(1.008, abs=1e-2)
+        assert daughter.chain_mass_defect_g_mol == pytest.approx(
+            expected_delta, abs=1e-2)
+        # ... and NOT left unbooked (the pre-fix defect: the ethylene-basis
+        # delta is deeply negative and fails the gate).
+        ethylene_mw = parent.monomer.get_molecular_weight() * 1000.0
+        broken_delta = ethylene_mw - feature.get_molecular_weight() * 1000.0
+        assert broken_delta < 0.0
+        assert daughter.chain_mass_defect_g_mol != pytest.approx(0.0, abs=1e-6)
+
+    def test_ethylene_derived_h_loss_feature_still_books_delta(self):
+        """Unchanged behavior: the dominant unit's own H-loss feature books
+        the same way it always did."""
+        parent = self._epdm()
+        feature = self._h_loss_unit_of(self.ETHYLENE)
+
+        daughter = parent._born_at_zero_mod_daughter(
+            feature, source='radical_feature_h_loss')
+
+        assert daughter.chain_mass_defect_g_mol == pytest.approx(1.008, abs=1e-2)
+
+    def test_propylene_derived_h_loss_feature_books_delta(self):
+        """A non-dominant, non-feature comonomer's H-loss feature must
+        likewise book against ITS OWN unit."""
+        parent = self._epdm()
+        feature = self._h_loss_unit_of(self.PROPYLENE)
+
+        daughter = parent._born_at_zero_mod_daughter(
+            feature, source='radical_feature_h_loss')
+
+        assert daughter.chain_mass_defect_g_mol == pytest.approx(1.008, abs=1e-2)
+
+    def test_homopolymer_basis_resolution_is_regression_identical(self):
+        """Invariant 1: for a homopolymer (comonomers is None) the resolved
+        basis must equal today's `self.feature_monomer or self.monomer`,
+        byte-identical (same object)."""
+        homo = Polymer(label='PE_homo', monomer=self.ETHYLENE,
+                       end_groups=['[CH3]', '[H]'], cutoff=3,
+                       Mn=5000.0, Mw=10000.0, initial_mass=1.0)
+        assert homo.comonomers is None
+        feature = self._h_loss_unit_of(self.ETHYLENE)
+
+        basis = homo._resolve_atom_transfer_basis(feature)
+
+        assert basis is homo.monomer
+        assert basis is (homo.feature_monomer
+                        if homo.feature_monomer is not None else homo.monomer)
+
+    def test_homopolymer_with_feature_monomer_basis_is_regression_identical(self):
+        """Invariant 1 variant: a homopolymer WITH `feature_monomer` set must
+        still resolve to `self.feature_monomer`, not `self.monomer` -- and
+        must still match today's fixed expression exactly."""
+        homo = Polymer(label='PE_homo', monomer=self.ETHYLENE,
+                       feature_monomer=self.PROPYLENE,
+                       end_groups=['[CH3]', '[H]'], cutoff=3,
+                       Mn=5000.0, Mw=10000.0, initial_mass=1.0)
+        feature = self._h_loss_unit_of(self.PROPYLENE)
+
+        basis = homo._resolve_atom_transfer_basis(feature)
+
+        assert basis is homo.feature_monomer
+        assert basis is (homo.feature_monomer
+                        if homo.feature_monomer is not None else homo.monomer)
+
+    def test_unmatchable_feature_falls_back_to_old_basis(self):
+        """Invariant 3: a feature that is nobody's single-H-loss product must
+        not raise, and must fall back to today's fixed basis rather than
+        guessing -- the delta computed off that stale basis is negative
+        here, so the gate refuses it and the defect stays unbooked, exactly
+        the pre-fix (safe) behavior for an unmatched shape."""
+        parent = self._epdm()
+        # A structurally unrelated feature unit (styrene repeat unit minus
+        # one H, built the same way as the real H-loss features so it still
+        # carries the '*1'/'*2' stitch labels a daughter's feature_monomer
+        # requires): not a single-H-loss product of ethylene, propylene, the
+        # diene, OR the pool's feature_monomer.
+        unrelated = self._h_loss_unit_of('[CH2][CH](c1ccccc1)')
+
+        basis = parent._resolve_atom_transfer_basis(unrelated)
+        assert basis is (parent.feature_monomer
+                         if parent.feature_monomer is not None
+                         else parent.monomer)
+
+        daughter = parent._born_at_zero_mod_daughter(
+            unrelated, source='radical_feature_h_loss')
+        # No exception, and the defect is left exactly as inherited (0.0 for
+        # this parent) because the stale-basis delta fails the gate.
+        assert daughter.chain_mass_defect_g_mol == pytest.approx(0.0, abs=1e-6)
+
+    def test_chained_daughters_accumulate_the_defect(self):
+        """defect_dst = defect_src + delta, and it ACCUMULATES across a
+        second generation of H-loss daughters."""
+        parent = self._epdm()
+        feature1 = self._h_loss_unit_of(self.ETHYLENE)
+        gen1 = parent._born_at_zero_mod_daughter(
+            feature1, source='radical_feature_h_loss')
+        assert gen1.chain_mass_defect_g_mol == pytest.approx(1.008, abs=1e-2)
+
+        # A second H-loss event on the (already-defected) gen1 daughter. gen1
+        # is a homopolymer-shaped pool (comonomers is None -- see
+        # test_daughters_do_not_become_copolymers), so the only candidate
+        # basis for a SECOND ethylene H-loss is gen1.monomer (== parent's
+        # dominant unit) itself.
+        feature2 = self._h_loss_unit_of(self.ETHYLENE)
+        gen2 = gen1._born_at_zero_mod_daughter(
+            feature2, source='radical_feature_h_loss')
+
+        assert gen2.chain_mass_defect_g_mol == pytest.approx(
+            gen1.chain_mass_defect_g_mol + 1.008, abs=1e-2)
+        assert gen2.chain_mass_defect_g_mol == pytest.approx(2.016, abs=2e-2)

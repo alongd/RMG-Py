@@ -235,7 +235,8 @@ class Polymer(Species):
 
     def __init__(self,
                  label: str,
-                 monomer: Union[Molecule, str],
+                 monomer: Optional[Union[Molecule, str]] = None,
+                 monomers: Optional[List[dict]] = None,
                  feature_monomer: Optional[Union[Molecule, str]] = None,
                  end_groups: Optional[List[Union[str, Molecule]]] = None,
                  cutoff: int = 4,
@@ -351,7 +352,25 @@ class Polymer(Species):
 
         super(Polymer, self).__init__(label=label, **kwargs)
 
-        self.monomer = self._validate_monomer(monomer, label)
+        # Composition-weighted random (Bernoullian) copolymer support: a pool
+        # may be declared either with ONE repeat unit (``monomer``, the legacy
+        # homopolymer path, byte-identical) or with a composition
+        # (``monomers``, a list of {monomer, fraction, ...} dicts). The two are
+        # mutually exclusive -- a pool has exactly one composition, and
+        # accepting both would leave the repeat-unit mass ambiguous.
+        #
+        # For a copolymer the dominant (largest-fraction) unit becomes
+        # ``self.monomer``, so every downstream consumer that reasons about
+        # "the" repeat unit (fingerprint, side-group site selectors,
+        # end-radical oligomers, daughter spawning) keeps working unchanged;
+        # what changes is that ``monomer_mw_g_mol`` becomes the
+        # composition-weighted repeat mass (below) and the pool additionally
+        # exposes dyad proxies covering mixed-neighbour bonds.
+        self.comonomers = self._validate_comonomers(monomers, monomer, label)
+        if self.comonomers is not None:
+            self.monomer = self.comonomers[0]['monomer']
+        else:
+            self.monomer = self._validate_monomer(monomer, label)
         if feature_monomer:
             self.feature_monomer = self._validate_monomer(feature_monomer, label)
         else:
@@ -361,8 +380,21 @@ class Polymer(Species):
         self.Mn, self.Mw, self.moments = None, None, None
 
         self.initial_mass_g = initial_mass * 1000.0  # convert to grams
-        self.monomer_mw_g_mol = self.monomer.get_molecular_weight() * 1000.0
+        if self.comonomers is not None:
+            # Composition-weighted repeat mass for a random copolymer:
+            # <M_repeat> = sum_i f_i * M_i over the declared mole fractions.
+            # This is the ONLY place the copolymer composition enters the mass
+            # bookkeeping, and it propagates by construction to DPn/DPw, Mn/Mw,
+            # the moments, and every condensed-mass term the solver computes as
+            # mu1*monomer_mw_g_mol -- so the distribution stays consistent with
+            # the declared composition without any second, drifting copy.
+            self.monomer_mw_g_mol = sum(
+                entry['fraction'] * entry['monomer'].get_molecular_weight() * 1000.0
+                for entry in self.comonomers)
+        else:
+            self.monomer_mw_g_mol = self.monomer.get_molecular_weight() * 1000.0
 
+        self._dyad_proxies = None
         self._baseline_proxy = None
         self._feature_proxy = None
         self._end_radical_proxy = None
@@ -532,9 +564,58 @@ class Polymer(Species):
                     er_mol = self.end_radical_proxy.molecule[0]
                     feat += (f'_EndRad-{self.end_radical_site}'
                              f'-rad{_radical_site_descriptor(er_mol)}')
+                if self.comonomers is not None:
+                    # Copolymer pools: two pools can share a dominant repeat
+                    # unit and still be different materials (EPDM at 5% vs 10%
+                    # diene has a different repeat mass and different weak-link
+                    # density). Keying identity on the full composition --
+                    # every unit's fingerprint with its fraction, in the
+                    # canonical descending-fraction order -- keeps them
+                    # distinct in _register_polymer's fingerprint dedup, while
+                    # an identical composition still reuses one pool. Homopolymer
+                    # pools carry no segment (byte-identical legacy identity).
+                    feat += '_Copoly-' + '+'.join(
+                        f"{entry['monomer'].fingerprint}@{entry['fraction']:.6g}"
+                        for entry in self.comonomers)
+                feat += self._repeat_mass_basis_segment()
                 eg = '_'.join(eg.fingerprint for eg in self.end_groups) if self.end_groups else ''
                 self._fingerprint = f'Polymer_{self.monomer.fingerprint}{feat}_EG-{eg}_{self.cutoff}'
         return self._fingerprint
+
+    def _repeat_mass_basis_segment(self) -> str:
+        """``_RepeatMW-<mw>`` segment, emitted ONLY when this pool's repeat mass
+        is not already implied by the structural content of its fingerprint.
+
+        The fingerprint is the sole dedup key in
+        ``CoreEdgeReactionModel._register_polymer`` (first-writer-wins: the
+        incoming object is discarded and the pre-existing one returned). For a
+        homopolymer-shaped pool ``monomer_mw_g_mol`` is exactly
+        ``monomer.get_molecular_weight()*1000``, so the ``monomer`` segment
+        already carries the mass basis and NO segment is emitted -- every legacy
+        homopolymer fingerprint stays byte-identical.
+
+        A COPOLYMER's daughter breaks that implication: daughters deliberately
+        drop ``comonomers`` (``_inherit_repeat_mass_to`` gives them the weighted
+        MASS, not the composition), so a copolymer daughter and a homopolymer
+        daughter over the same dominant unit / end groups / cutoff / features
+        would fingerprint IDENTICALLY while sitting on different repeat masses.
+        Dedup would then silently hand one pool the other's mass basis --
+        i.e. silently rewrite the ``mu1*monomer_mw_g_mol`` condensed-mass
+        contract of a chemically different pool. Emitting the mass whenever it
+        deviates from the dominant unit's own mass keeps those two apart.
+        (``:.6g`` -- the same rounding idiom as the ``_Copoly-`` fractions.)
+        """
+        mw = getattr(self, 'monomer_mw_g_mol', None)
+        try:
+            mw = float(mw)
+            implied = float(self.monomer.get_molecular_weight()) * 1000.0
+        except (TypeError, ValueError, AttributeError):
+            return ''
+        if not math.isfinite(mw) or not math.isfinite(implied):
+            return ''
+        if math.isclose(mw, implied, rel_tol=1e-9, abs_tol=1e-12):
+            return ''
+        return f'_RepeatMW-{mw:.6g}'
 
     @property
     def baseline_proxy(self) -> Species:
@@ -542,6 +623,70 @@ class Polymer(Species):
         if self._baseline_proxy is None:
             self._baseline_proxy = self._stitch_trimer(self.monomer)
         return self._baseline_proxy
+
+    @property
+    def dyad_proxies(self) -> List[dict]:
+        """
+        Cached dyad proxies of a copolymer pool: one capped trimer per
+        *unordered* pair of comonomers {i, j}, built as [i, j, i] so the
+        i--j backbone bond exists in a real proxy graph.
+
+        Why this and not one averaged proxy: the reason a copolymer is not a
+        blend is that its units are chemically bonded to each other, and the
+        selectivity of decomposition lives on those mixed-neighbour bonds (in
+        EPDM, the allylic C--C beside a diene unit is the weak link, and it
+        only exists where a diene unit meets a backbone unit). A single
+        dominant-unit trimer contains no such bond, so no reaction family
+        could ever generate that chemistry -- the pool would silently model a
+        homopolymer wearing a copolymer's mass.
+
+        The dominant homo-dyad [d, d, d] IS the baseline proxy and is skipped
+        here, so it is never registered twice. Empty list on homopolymer pools.
+
+        SCOPE LIMIT (decided 2026-07-27, GRAPHS ONLY): these proxies deliver the
+        mixed-neighbour GRAPHS, not yet mixed-neighbour FLUX. Registered as
+        ordinary core species they are chain-scale proxy-derived discretes, so
+        the adjudicated policy defers their rows (stamp-but-keep, flux zeroed)
+        whenever they co-occur with a pool or eliminate a feature radical -- an
+        EPDM run generates the dyad chemistry and then applies none of it (1266
+        FEATURE-RADICAL + 124 r93 refusals; zero core reactions touching a dyad).
+        Do not read a dyad proxy's presence in the core as evidence that its
+        chemistry contributed. Revisiting this (own-pool per dyad,
+        ``feature_monomer`` routing, or conduit admission) is deliberately
+        deferred until TGA scoring can measure whether the missing flux matters.
+
+        Returns:
+            list: [{'flank': Molecule, 'center': Molecule, 'species': Species,
+                    'pair': (i, j)}], deterministic in composition order.
+        """
+        if self.comonomers is None:
+            return []
+        if self._dyad_proxies is None:
+            proxies = []
+            n = len(self.comonomers)
+            for i in range(n):
+                for j in range(i, n):
+                    # [i, j, i] covers the unordered dyad {i, j}. The i == j == 0
+                    # case is the baseline proxy itself; skip it rather than
+                    # register a duplicate species.
+                    if i == j == 0:
+                        continue
+                    flank = self.comonomers[i]['monomer']
+                    center = self.comonomers[j]['monomer']
+                    spc = self._stitch_trimer(center, flank_unit=flank)
+                    if spc is None:
+                        raise ValueError(
+                            f"Polymer '{self.label}': failed to stitch the dyad "
+                            f"proxy for comonomer pair ({i}, {j}) "
+                            f"('{flank.to_smiles()}' -- '{center.to_smiles()}'). "
+                            f"Every declared pair must form a valid backbone "
+                            f"bond; a pair that cannot stitch means one of the "
+                            f"repeat units is mis-specified (check the *1/*2 "
+                            f"labels).")
+                    proxies.append({'flank': flank, 'center': center,
+                                    'species': spc, 'pair': (i, j)})
+            self._dyad_proxies = proxies
+        return self._dyad_proxies
 
     @property
     def feature_proxy(self) -> Species:
@@ -650,6 +795,15 @@ class Polymer(Species):
         other.label = self.label
         other.thermo = deepcopy(self.thermo)
         other.monomer = self.monomer.copy(deep=deep)
+        # Copolymer composition travels with the copy: dropping it here would
+        # silently demote a copy of a copolymer pool to a homopolymer pool with
+        # a mismatched (still composition-weighted) repeat mass.
+        other.comonomers = ([{'monomer': entry['monomer'].copy(deep=deep),
+                              'fraction': entry['fraction'],
+                              'monomer_product': entry['monomer_product']}
+                             for entry in self.comonomers]
+                            if getattr(self, 'comonomers', None) is not None else None)
+        other._dyad_proxies = None  # rebuilt lazily off the copied comonomers
         other.feature_monomer = self.feature_monomer.copy(deep=deep) if self.feature_monomer else None
         other.end_groups = list()
         for eg in self.end_groups:
@@ -717,6 +871,111 @@ class Polymer(Species):
         other.is_polymer = True
         other._cached_backbone_group = None
         return other
+
+    @staticmethod
+    def _validate_comonomers(monomers: Optional[List[dict]],
+                             monomer: Optional[Union[Molecule, str]],
+                             label: str,
+                             ) -> Optional[List[dict]]:
+        """
+        Validate a copolymer composition and return it in canonical form.
+
+        A composition is a list of dicts, each carrying the repeat unit and its
+        mole fraction in the chain (Bernoullian / random-copolymer statistics --
+        no sequence information is claimed or used):
+
+            monomers=[dict(monomer='[CH2][CH2]', fraction=0.6),
+                      dict(monomer='[CH2][CH](C)', fraction=0.35, monomer_product='C=CC'),
+                      dict(monomer=<ENB SMILES>, fraction=0.05)]
+
+        Returns the entries sorted by DESCENDING fraction (so entry 0 is the
+        dominant unit that becomes ``self.monomer``), each normalized to
+        {'monomer': Molecule, 'fraction': float, 'monomer_product': str|None}.
+        Returns None when no composition was declared (the legacy homopolymer
+        path, which must stay byte-identical).
+
+        Args:
+            monomers (list): Declared composition, or None.
+            monomer: The single-unit declaration, or None (mutually exclusive).
+            label (str): The polymer label (for error messages).
+        """
+        if monomers is None:
+            if monomer is None:
+                raise InputError(
+                    f"Polymer '{label}': must declare either 'monomer' (a single "
+                    f"repeat unit) or 'monomers' (a copolymer composition); got "
+                    f"neither.")
+            return None
+        # Mutual exclusion: with both declared, the repeat-unit mass that feeds
+        # the moments would have two conflicting definitions and one of them
+        # would silently win.
+        if monomer is not None:
+            raise InputError(
+                f"Polymer '{label}': 'monomer' and 'monomers' are mutually "
+                f"exclusive -- 'monomer' declares a single repeat unit, "
+                f"'monomers' declares a copolymer composition. Declaring both "
+                f"leaves the composition-weighted repeat mass ambiguous. Keep "
+                f"one.")
+        if not isinstance(monomers, (list, tuple)) or not monomers:
+            raise InputError(
+                f"Polymer '{label}': 'monomers' must be a non-empty list of "
+                f"dicts, each with 'monomer' and 'fraction'. Got {monomers!r}.")
+        allowed = {'monomer', 'fraction', 'monomer_product'}
+        entries = []
+        for i, entry in enumerate(monomers):
+            if not isinstance(entry, dict):
+                raise InputError(
+                    f"Polymer '{label}': monomers[{i}] must be a dict with "
+                    f"'monomer' and 'fraction', got {entry!r} of type "
+                    f"{type(entry)}.")
+            extra = set(entry) - allowed
+            if extra:
+                raise InputError(
+                    f"Polymer '{label}': monomers[{i}] has unrecognized "
+                    f"key(s) {sorted(extra)}; allowed keys are "
+                    f"{sorted(allowed)}.")
+            if 'monomer' not in entry or 'fraction' not in entry:
+                raise InputError(
+                    f"Polymer '{label}': monomers[{i}] must define both "
+                    f"'monomer' and 'fraction'; got keys {sorted(entry)}.")
+            try:
+                fraction = float(entry['fraction'])
+            except (TypeError, ValueError):
+                raise InputError(
+                    f"Polymer '{label}': monomers[{i}] fraction must be a "
+                    f"number, got {entry['fraction']!r}.")
+            if not math.isfinite(fraction) or fraction <= 0.0:
+                raise InputError(
+                    f"Polymer '{label}': monomers[{i}] fraction must be finite "
+                    f"and > 0, got {fraction!r}. A zero or negative fraction is "
+                    f"not a unit of this copolymer -- remove the entry instead.")
+            entries.append({
+                'monomer': Polymer._validate_monomer(entry['monomer'], label),
+                'fraction': fraction,
+                'monomer_product': entry.get('monomer_product'),
+            })
+        total = sum(e['fraction'] for e in entries)
+        if abs(total - 1.0) > COMONOMER_FRACTION_TOLERANCE:
+            raise InputError(
+                f"Polymer '{label}': monomer fractions must sum to 1 (within "
+                f"{COMONOMER_FRACTION_TOLERANCE:g}), got {total:.6g}. The "
+                f"fractions set the composition-weighted repeat mass, so a "
+                f"non-normalized composition would silently rescale every "
+                f"condensed-mass term. Normalize them in the deck.")
+        # Duplicate repeat units would double-count one unit's fraction while
+        # presenting as two independent channels.
+        for i, first in enumerate(entries):
+            for second in entries[i + 1:]:
+                if first['monomer'].is_isomorphic(second['monomer']):
+                    raise InputError(
+                        f"Polymer '{label}': duplicate repeat unit "
+                        f"'{first['monomer'].to_smiles()}' declared twice in "
+                        f"'monomers'. Merge them into one entry and sum their "
+                        f"fractions.")
+        # Descending fraction: entry 0 is the dominant unit. Ties keep deck
+        # order (stable sort), so the choice is deterministic and reproducible.
+        entries.sort(key=lambda e: -e['fraction'])
+        return entries
 
     @staticmethod
     def _validate_monomer(monomer: Union[Molecule, str],
@@ -997,7 +1256,8 @@ class Polymer(Species):
         else:
             return self.feature_proxy or self.baseline_proxy
 
-    def _stitch_trimer(self, center_unit: Molecule) -> Optional[Species]:
+    def _stitch_trimer(self, center_unit: Molecule,
+                       flank_unit: Optional[Molecule] = None) -> Optional[Species]:
         """
         Constructs a capped trimer proxy (3 repeat units) with end-groups:
             [HeadCap *1] -– [*2 Baseline *1] -– [*2 Center *1] –- [*2 Baseline *1] –- [*2 TailCap]
@@ -1006,11 +1266,18 @@ class Polymer(Species):
         Args:
             center_unit (Molecule): The monomer unit to place in the center.
                                     Either baseline (original) or feature (reacted).
+            flank_unit (Molecule, optional): The repeat unit placed on BOTH
+                                    flanks. Defaults to ``self.monomer`` (the
+                                    homopolymer construction, unchanged). A
+                                    copolymer pool passes a comonomer here to
+                                    build the flank--center dyad proxies, so
+                                    mixed-neighbour backbone bonds exist in a
+                                    real proxy graph and generate chemistry.
 
         Returns:
             Optional[Species]: The stitched trimer species.
         """
-        baseline = self.monomer.copy(deep=True)
+        baseline = (flank_unit if flank_unit is not None else self.monomer).copy(deep=True)
         center = center_unit.copy(deep=True)
         head = self.end_groups[0].copy(deep=True)
         tail = self.end_groups[1].copy(deep=True)
@@ -1127,6 +1394,46 @@ class Polymer(Species):
         spc.is_polymer_proxy = True
         return spc
 
+    def _inherit_repeat_mass_to(self, daughter: 'Polymer') -> None:
+        """Give ``daughter`` this pool's repeat-unit mass.
+
+        Every daughter constructor below hands ``Polymer.__init__`` a single
+        ``monomer=self.monomer``, so the daughter takes the HOMOPOLYMER branch
+        of the ``monomer_mw_g_mol`` derivation and lands on the mass of that
+        one molecule. For a homopolymer parent that IS the parent's repeat
+        mass, so this call is a no-op and every pre-copolymer artifact stays
+        byte-identical. For a COPOLYMER parent it is not: ``self.monomer`` is
+        only the dominant unit, while the parent's ``monomer_mw_g_mol`` is the
+        composition-weighted mean, and the daughter would silently sit on a
+        different mass basis than its own parent (EPDM: 28.053 vs 32.057, a
+        12.5 % gap).
+
+        That gap is not cosmetic. Condensed mass is
+        ``mu1*monomer_mw_g_mol - mu0*chain_mass_defect_g_mol``, and the
+        FLUX_UNRESOLVED residual arm (rmgpy/solver/polymer.pyx, the
+        ``legacy_mu1`` archetype) moves raw ``r_mol_s`` out of the src pool's
+        mu1 and into the dst pool's mu1 with NO molar-mass conversion -- the
+        transfer is a chain-unit count, not a mass. So a live cross-pool row
+        between pools whose repeat masses disagree mints or destroys
+        ``r * (MW_dst - MW_src)`` of condensed mass every second, booked by no
+        channel and visible to no audit. Keeping daughter and parent on ONE
+        repeat mass is what makes that arm mass-safe.
+
+        A daughter is the same chains as its parent -- an end radical, a
+        scission fragment, a feature-modified or gas-losing copy -- so its
+        repeat-unit composition, and therefore its repeat mass, is the
+        parent's by construction. Mass actually shed by the spawn event is
+        carried by ``chain_mass_defect_g_mol``, NOT by a shifted repeat mass.
+
+        Deliberately does NOT copy ``comonomers``: the daughter stays a
+        homopolymer-shaped pool that merely carries the weighted mass. Handing
+        it the composition list would register dyad proxies for it and expand
+        the species universe, which is a model-changing decision, not a
+        mass-closure fix. This mirrors the ``derive_daughter_pool_configs``
+        precedent, which likewise sets the daughter's mass explicitly.
+        """
+        daughter.monomer_mw_g_mol = self.monomer_mw_g_mol
+
     def generate_end_radical_daughters(self) -> Tuple['Polymer', 'Polymer']:
         """
         Producer for the radical-homolysis initiation conduit (Stage 1,
@@ -1144,8 +1451,11 @@ class Polymer(Species):
 
         Each daughter: born-at-zero moments (spawned_empty pattern, mirrors
         _born_at_zero_mod_daughter), parent's monomer (monomer_mw_g_mol
-        pinned by __init__), spawned provenance markers, and an end-radical
-        reactive proxy with its own strict assertion path.
+        inherited via _inherit_repeat_mass_to -- __init__ alone would land a
+        COPOLYMER parent's daughter on the dominant unit's mass, not the
+        parent's composition-weighted repeat mass), spawned provenance
+        markers, and an end-radical reactive proxy with its own strict
+        assertion path.
         """
         daughters = []
         for site, suffix in (('primary', '_rad_primary_end'),
@@ -1163,6 +1473,7 @@ class Polymer(Species):
                 end_radical_site=site,
                 **dist_kwargs,
             )
+            self._inherit_repeat_mass_to(daughter)
             daughter.parent_pool_label = self.label
             # Literal pinned as module constant HOMOLYSIS_SPAWN_SOURCE
             # (defined below; used at call time) -- both closure guards
@@ -1699,7 +2010,7 @@ class Polymer(Species):
             # from it and ignore the halved values.)
             new_Mn = self.Mn / 2.0 if self.Mn else None
             new_Mw = self.Mw / 2.0 if self.Mw else None
-            return Polymer(label=f"{self.label}_scission_tail",
+            tail = Polymer(label=f"{self.label}_scission_tail",
                            monomer=self.monomer,
                            feature_monomer=None,
                            end_groups=[self.end_groups[0].copy(deep=True), new_tail],
@@ -1709,6 +2020,8 @@ class Polymer(Species):
                            initial_mass=0.0,
                            moments=None,
                            )
+            self._inherit_repeat_mass_to(tail)
+            return tail
 
         if tail_atoms:
             try:
@@ -1726,7 +2039,7 @@ class Polymer(Species):
                 return None
             new_Mn = self.Mn / 2.0 if self.Mn else None
             new_Mw = self.Mw / 2.0 if self.Mw else None
-            return Polymer(label=f"{self.label}_scission_head",
+            head = Polymer(label=f"{self.label}_scission_head",
                            monomer=self.monomer,
                            feature_monomer=None,
                            end_groups=[new_head, self.end_groups[1].copy(deep=True)],
@@ -1735,6 +2048,8 @@ class Polymer(Species):
                            Mw=new_Mw,
                            initial_mass=0.0,
                            moments=None)
+            self._inherit_repeat_mass_to(head)
+            return head
 
         return None
 
@@ -1911,6 +2226,108 @@ class Polymer(Species):
         return self._born_at_zero_mod_daughter(feature,
                                                source="radical_feature_h_loss")
 
+    @staticmethod
+    def _is_single_h_loss_parent(unit_counts: dict, feature_counts: dict) -> bool:
+        """``True`` iff ``feature_counts`` is ``unit_counts`` with exactly one
+        fewer H and every other element count unchanged -- the element-count
+        signature of a single mid-chain H-abstraction. Used only to screen
+        candidate repeat units in :meth:`_resolve_atom_transfer_basis`."""
+        if unit_counts.get('H', 0) - feature_counts.get('H', 0) != 1:
+            return False
+        unit_heavy = {el: n for el, n in unit_counts.items() if el != 'H'}
+        feature_heavy = {el: n for el, n in feature_counts.items() if el != 'H'}
+        return unit_heavy == feature_heavy
+
+    @staticmethod
+    def _same_heavy_skeleton(mol_a: Molecule, mol_b: Molecule) -> bool:
+        """Heavy-atom-only structural equivalence, used ONLY to break formula
+        ties in :meth:`_resolve_atom_transfer_basis` (two isomeric candidate
+        units with identical element counts). The two sides legitimately
+        differ in radical/electron state (one is a repeat unit, the other its
+        H-loss product), so hydrogens are stripped and multiplicities
+        equalized on throwaway copies before the isomorphism check --
+        heavy-skeleton connectivity is all that discriminates isomers here.
+        Fails closed (``False``) on any structure-query error."""
+        try:
+            a = mol_a.copy(deep=True)
+            b = mol_b.copy(deep=True)
+            a.delete_hydrogens()
+            b.delete_hydrogens()
+            a.multiplicity = b.multiplicity = 1
+            return a.is_isomorphic(b, strict=False)
+        except Exception:
+            return False
+
+    def _resolve_atom_transfer_basis(self, feature_monomer: Optional[Molecule]
+                                     ) -> Optional[Molecule]:
+        """
+        Resolve the repeat unit that ``feature_monomer`` is a single-H-loss
+        product OF, for the atom-transfer mass-defect basis in
+        :meth:`_born_at_zero_mod_daughter` -- see the comment there for WHY a
+        fixed pool-level unit (``self.feature_monomer`` or ``self.monomer``)
+        is wrong for a copolymer pool (the -91.1 g/mol EPDM/ENB case).
+
+        Candidates: ``self.feature_monomer`` (precedence preserved -- it is
+        tried FIRST, so today's behavior survives whenever it is itself a
+        valid single-H-loss parent), ``self.monomer``, and every comonomer
+        unit in ``self.comonomers`` (de-duplicated; ``self.monomer`` IS
+        ``self.comonomers[0]['monomer']`` when comonomers exist). A candidate
+        qualifies when it has the same non-H element counts as
+        ``feature_monomer`` plus exactly one more H. Ties among isomeric
+        candidates break on heavy-atom-skeleton isomorphism
+        (:meth:`_same_heavy_skeleton`). If no candidate qualifies, or the tie
+        survives the skeleton check, this refuses to guess and falls back to
+        today's fixed basis unchanged -- a missing match must not become a
+        new failure mode.
+        """
+        default_basis = (self.feature_monomer if self.feature_monomer is not None
+                         else self.monomer)
+        if feature_monomer is None:
+            return default_basis
+
+        candidates = []
+        seen_ids = set()
+
+        def _add(unit):
+            if unit is None or id(unit) in seen_ids:
+                return
+            seen_ids.add(id(unit))
+            candidates.append(unit)
+
+        _add(self.feature_monomer)
+        _add(self.monomer)
+        for entry in (self.comonomers or []):
+            _add(entry.get('monomer'))
+
+        if not candidates:
+            return default_basis
+
+        try:
+            feature_counts = feature_monomer.get_element_count()
+        except Exception:
+            return default_basis
+
+        matches = []
+        for unit in candidates:
+            try:
+                unit_counts = unit.get_element_count()
+            except Exception:
+                continue
+            if self._is_single_h_loss_parent(unit_counts, feature_counts):
+                matches.append(unit)
+
+        if not matches:
+            return default_basis
+        if len(matches) == 1:
+            return matches[0]
+
+        skeleton_matches = [u for u in matches
+                            if self._same_heavy_skeleton(u, feature_monomer)]
+        if len(skeleton_matches) == 1:
+            return skeleton_matches[0]
+
+        return default_basis
+
     def _born_at_zero_mod_daughter(self, feature_monomer: Molecule,
                                    source: str) -> 'Polymer':
         """
@@ -1942,6 +2359,7 @@ class Polymer(Species):
             moments=None,
             initial_mass=0.0,
         )
+        self._inherit_repeat_mass_to(daughter)
         daughter.parent_pool_label = self.label
         daughter.spawn_metadata = {"source": source}
         # P1-2 atom-transfer mass defect (adjudicated regen-#2 ruling): an
@@ -1960,8 +2378,22 @@ class Polymer(Species):
         # atom transfer, and a mass-GAIN feature (delta < 0) keeps the
         # inherited defect (its conduit stays a growth leg, existing
         # behavior).
-        basis = self.feature_monomer if self.feature_monomer is not None \
-            else self.monomer
+        #
+        # `basis` MUST be the repeat unit the shed H actually came FROM, not
+        # a fixed pool-level unit -- a copolymer pool's dominant `self.monomer`
+        # (or `self.feature_monomer`) is only the right basis when the
+        # feature happens to derive from that SAME unit. Concretely, for an
+        # EPDM pool (monomer=ethylene, 28.053 g/mol) an ENB-derived H-loss
+        # feature (119.183 g/mol) measured against the fixed ethylene basis
+        # gives delta_g = 28.053 - 119.183 = -91.1 g/mol: negative, so the
+        # gate below silently refuses to book the shed hydrogen and the
+        # daughter inherits the parent's defect unchanged -- a silent
+        # per-chain mass leak. `_resolve_atom_transfer_basis` instead
+        # searches every candidate repeat unit of this pool (the dominant
+        # monomer, every comonomer, and `self.feature_monomer`) for the one
+        # `feature_monomer` is a single-H-loss product of, so ENB books
+        # against ENB and ethylene books against ethylene.
+        basis = self._resolve_atom_transfer_basis(feature_monomer)
         defect_src = float(getattr(self, "chain_mass_defect_g_mol", 0.0)
                            or 0.0)
         daughter.chain_mass_defect_g_mol = defect_src
@@ -2065,6 +2497,7 @@ class Polymer(Species):
             moments=None,
             initial_mass=0.0,
         )
+        self._inherit_repeat_mass_to(daughter)
         daughter.parent_pool_label = self.label
         daughter.spawn_metadata = {"source": CONCERTED_LOSS_SPAWN_SOURCE,
                                    "gas": gas_formula}
@@ -2787,6 +3220,29 @@ def _reaction_census_label(rxn) -> str:
     return str(rxn)
 
 
+def _log_conduit_refusal(forward, site, detail="") -> None:
+    """Name the rule that refused this row. Log-side ONLY -- ``refused_reason``
+    is a closed, load-bearing vocabulary (TA-schema32 mechanism.py
+    ``REFUSED_REASONS`` hard-rejects anything outside {"conduit-deferred",
+    "qssa-invalid", "qssa-unassessable"}, and polymer_moments_runner.py
+    reconstructs solver state FROM the reason string on replay) and must
+    never carry this identity. This helper exists purely so RMG.log can say
+    WHICH of the several independent refusal sites fired for a given row,
+    something the collapsed ``refused_reason`` string cannot express.
+
+    ``site`` is a short, stable identifier for the rule (distinct per call
+    site -- there are FIVE, one per genuine refusal rule). Note that
+    ``readjudicate_conduit_admission`` also clears
+    ``polymer_refused_accumulating``, but on its ADMIT arm (it sets
+    ``polymer_refused = False``); that is not a refusal and is deliberately
+    NOT logged here, or the log would name an admitted row as refused.
+    ``detail`` is an optional free-text suffix for extra context."""
+    logging.warning(
+        "POLYMER CONDUIT REFUSAL SITE: %s -- refused by '%s'%s",
+        _reaction_census_label(forward), site,
+        (" (%s)" % detail) if detail else "")
+
+
 _double_count_warned = set()
 
 
@@ -2960,6 +3416,13 @@ _VE_ATOM_TRANSFER_UNITS = 0.5  # source-monomer-equivalents; below => census-onl
 # -- the construction asserts against this constant, so a future proxy-size
 # change must move it and everything derived from it moves too).
 PROXY_STITCH_REPEAT_UNITS = 3
+
+#: Tolerance on the sum of declared copolymer mole fractions
+#: (Polymer._validate_comonomers). Fractions set the composition-weighted
+#: repeat mass, so they must be normalized in the deck; this only absorbs
+#: round-off in hand-written decks (e.g. 0.6 + 0.35 + 0.05), never a genuinely
+#: un-normalized composition.
+COMONOMER_FRACTION_TOLERANCE = 1e-6
 
 # r82 impostor-row refusal (FR1 run-2): a discrete (non-Polymer) participant at
 # or above this many source-monomer-equivalents on EVERY axis (mass AND
@@ -3739,6 +4202,7 @@ def stamp_gas_association_refusal(forward, pool_registry=None) -> None:
             forward.polymer_conduit_admission_pending = True
         forward.polymer_refused = True
         forward.polymer_refused_accumulating = False  # -> "conduit-deferred"
+        _log_conduit_refusal(forward, "r93_general_chain_scale_pool_coupling")
         # M18.2 (census-only): classify the refused row for the future
         # moment_credit_conduit/1 and APPEND the structured annotation to
         # the unchanged census line below. Zero behavior change: the row
@@ -3785,10 +4249,50 @@ def stamp_gas_association_refusal(forward, pool_registry=None) -> None:
                 return False
         return True
 
-    if ((p_condensed and _all_gas_radicals(reactants))
-            or (r_condensed and _all_gas_radicals(products))):
+    # ASSOCIATION-ORIENTATION COMPLETENESS (grounded in the EPDM/PE run,
+    # 2026-07-27): the association half of the r63 conjunct is widened from
+    # "all gas reactants are radicals" to the whole orientation, because the
+    # orientation is UNSTAMPABLE BY CONSTRUCTION and refusal is therefore its
+    # only lawful classification -- not a policy choice about which shapes we
+    # dislike.
+    #
+    # The argument is structural, not shape-based. Exactly one side carries a
+    # Polymer here (both-condensed and no-condensed returned above), so
+    # ``p_condensed`` means the row's ONLY Polymer participant is a PRODUCT.
+    # ``stamp_polymer_flux_archetype`` is reachable only under
+    # ``if polymer_reactants:`` (rmgpy/rmg/model.py:684 and :760), and
+    # ``restamp_flipped_polymer_archetype`` only re-derives an archetype for a
+    # row that already carries one. So no path in the engine can ever assign
+    # an archetype to a polymer-as-product-only row: it either gets refused
+    # here, or it reaches the solver rebuild unstamped and dies at the r71
+    # hard-fail. Leaving any such row unrefused is a guaranteed run kill.
+    #
+    # Grounding case: a pyrolysis deck whose pool proxy is a small SATURATED
+    # alkane (any polyolefin pool -- PE, PP, EPDM -- at a low cutoff) generates
+    # ``[CH2] + CCCCCC <=> <pool>``: CH2 inserting into hexane reconstitutes
+    # the C7H16 baseline proxy. The gas side is a radical PLUS a closed-shell
+    # partner, so the r63 all-radicals conjunct never fires; hexane is 86 g/mol
+    # against the r95 absolute chain-scale floor (ABS_CHAIN_SCALE_MW = 300), so
+    # the r82 impostor conjunct correctly declines too. The row fell through
+    # every enumerated shape and killed the run at r71 -- reproduced identically
+    # on a copolymer EPDM deck and on a plain PE homopolymer control, so it is
+    # a coverage gap in the refusal vocabulary, not a deck defect.
+    #
+    # This follows r93's own adjudicated conclusion that "shape enumeration
+    # loses to generation depth": prefer the class-level predicate that
+    # subsumes the enumerated members over adding a fifth, sixth, ... shape.
+    # Cost asymmetry backs it: an over-refused row is stamp-but-keep with its
+    # flux zeroed (chemistry retained, flux lost), while an under-refused row
+    # is a dead run.
+    #
+    # The HOMOLYSIS orientation (Polymer among reactants only) is deliberately
+    # NOT widened: that orientation IS reachable by the archetype stamping
+    # path, so volatile-ejection / chip / migration rows there must stay live
+    # and keep the narrow r63 all-gas-radicals conjunct.
+    if p_condensed or (r_condensed and _all_gas_radicals(products)):
         forward.polymer_refused = True
         forward.polymer_refused_accumulating = False  # -> "conduit-deferred"
+        _log_conduit_refusal(forward, "r63_gas_association_orientation")
         return
 
     # THIRD refused shape (adjudicated adversarial round 82, grounded in FR1
@@ -3814,6 +4318,7 @@ def stamp_gas_association_refusal(forward, pool_registry=None) -> None:
                for poly in poly_side):
             forward.polymer_refused = True
             forward.polymer_refused_accumulating = False  # "conduit-deferred"
+            _log_conduit_refusal(forward, "r82_impostor_discrete")
             return
 
 
@@ -4230,6 +4735,7 @@ def _stamp_reference_state_split_refusal(forward, reactants, products,
         return  # classification pairs off; the tripwire's U cancels
     forward.polymer_refused = True
     forward.polymer_refused_accumulating = False  # -> "conduit-deferred"
+    _log_conduit_refusal(forward, "r87_reference_state_split")
 
 
 def _polymer_participants_identical(polymer_reactants, polymer_products) -> bool:
@@ -4321,6 +4827,7 @@ def _stamp_same_proxy_refusal(forward, reactants, products,
         return
     forward.polymer_refused = True
     forward.polymer_refused_accumulating = False  # -> "conduit-deferred"
+    _log_conduit_refusal(forward, "r74_same_proxy_refusal")
 
 
 def merge_polymer_adjudication_stamps(source, target) -> None:
@@ -6007,6 +6514,16 @@ POLYMER_POOLS_SIDECAR_SCHEMA_VERSION_SIDE_GROUP_V2 = "3.0"
 # in-place amendment of the conduit LAW is /2 on the archetype name, never
 # a recipe token.
 POLYMER_POOLS_SIDECAR_SCHEMA_VERSION_MOMENT_CREDIT = "3.1"
+
+# Copolymer composition (schema 3.2): stamped whenever ANY pool block carries a
+# `composition` object (a pool declared with `monomers=[...]`). A consumer
+# pinned below 3.2 reading such an artifact would take `monomer_smiles` as THE
+# repeat unit and silently reconstruct the pool's mass from the dominant unit's
+# molecular weight instead of the composition-weighted repeat mass -- a wrong
+# condensed mass, not a missing field, which is exactly what a version stamp
+# exists to prevent. Homopolymer artifacts emit no composition block and keep
+# their older stamp byte-identically.
+POLYMER_POOLS_SIDECAR_SCHEMA_VERSION_COPOLYMER = "3.2"
 POLYMER_POOLS_SIDECAR_FILENAME = "polymer_pools.json"
 
 # Recognized thermal_analysis_inputs fields (schema 2.9). Per-pool fields
@@ -7804,6 +8321,26 @@ def _serialize_pool_for_sidecar(pool: 'Polymer',
         ],
         "cutoff": getattr(pool, "cutoff", None),
         "parent_pool": getattr(pool, "parent_pool_label", None),
+        # Copolymer composition (schema 3.2): ABSENT on homopolymer pools, so
+        # every pre-copolymer artifact stays byte-identical. When present, it
+        # is the single source of truth for what the pool's repeat unit MEANS:
+        # `monomer_smiles` alone names only the dominant unit, and a consumer
+        # that normalizes a measured composite TGA against the pool mass needs
+        # the whole composition and the composition-weighted repeat mass, not
+        # the dominant unit's mass.
+        **({"composition": {
+            "statistics": "bernoullian_random",
+            "monomer_mw_g_mol": float(getattr(pool, "monomer_mw_g_mol", 0.0) or 0.0),
+            "units": [
+                {"monomer_smiles": (entry["monomer"].to_smiles()
+                                    if hasattr(entry["monomer"], "to_smiles") else ""),
+                 "fraction": float(entry["fraction"]),
+                 "monomer_mw_g_mol": (entry["monomer"].get_molecular_weight() * 1000.0
+                                      if hasattr(entry["monomer"], "get_molecular_weight")
+                                      else None)}
+                for entry in getattr(pool, "comonomers", None) or []
+            ],
+        }} if getattr(pool, "comonomers", None) is not None else {}),
         "spawn_iteration": getattr(pool, "spawn_iteration", 0),
         "spawn_event_metadata": spawn_metadata,
         "mu_indices": mu_indices,
@@ -8946,6 +9483,28 @@ def build_polymer_moments_artifact(pool_registry,
                 "kernel first (DESIGN §1.3)." % sgh_v1_carriers)
         schema_version = POLYMER_POOLS_SIDECAR_SCHEMA_VERSION_MOMENT_CREDIT
 
+    # Copolymer composition rung (schema 3.2), evaluated LAST so it wins
+    # deterministically over every 2.x/3.x rung above: a composition block
+    # changes what `monomer_smiles` MEANS for mass reconstruction, so no older
+    # stamp may carry it. Mirrors the conduit rung's SGH kernel-v1 tripwire for
+    # the same reason -- a major>=3 stamp lives in the SGH-v2 world by
+    # construction, and co-serializing a v1 block would emit a
+    # self-contradictory artifact that consumers hard-reject. Raise, never
+    # demote.
+    copolymer_pools = [p["label"] for p in pools if p.get("composition")]
+    if copolymer_pools:
+        sgh_v1_carriers = [p["label"] for p in side_group_carriers
+                           if p not in side_group_v2_carriers]
+        if sgh_v1_carriers:
+            raise RuntimeError(
+                "Polymer artifact: copolymer composition vocabulary (schema "
+                "3.2, pools %s) cannot co-serialize SGH kernel-v1 vocabulary "
+                "(pools %s carry a side_group_homolysis/1 block): a 3.2 stamp "
+                "lives in the SGH-v2 world by construction (consumers "
+                "hard-reject v1 blocks under major >= 3). Migrate the deck to "
+                "the v2 kernel first." % (copolymer_pools, sgh_v1_carriers))
+        schema_version = POLYMER_POOLS_SIDECAR_SCHEMA_VERSION_COPOLYMER
+
     # conventions.condensed_species closure (schema 2.5): a spawned pool's
     # phase_species (canonical proxy + mu-dummies collected from the same
     # core universe, already declared condensed ROW-side) join the normative
@@ -9195,14 +9754,33 @@ def _same_repeat_chemistry(daughter: 'Polymer', parent: 'Polymer') -> bool:
     M1 condition under which the elementary initiation/depropagation/
     termination constants transfer (same monomer chemistry AND monomer_mw).
 
-    Round-25 P2-1 probe finding: ``monomer_mw_g_mol`` derives SOLELY from
-    ``monomer`` (Polymer.__init__), and every daughter constructor site
-    passes the parent's monomer verbatim -- so an mw-only gate would be
-    vacuously true for the _mod shape. The truthful discriminator for a
-    feature modification is ``feature_monomer``: a daughter whose feature
+    The mw arm is WEAK, and deliberately so -- do not read it as a repeat-
+    chemistry test:
+
+    - Round-25 P2-1 (pre-copolymer) probe finding: ``monomer_mw_g_mol``
+      derived SOLELY from ``monomer`` (Polymer.__init__), and every daughter
+      constructor site passes the parent's monomer verbatim, so the mw arm
+      was vacuously true for the _mod shape.
+    - Post-copolymer that derivation no longer holds: for a pool declared
+      with ``monomers=[...]`` the mass is the composition-weighted mean
+      ``sum_i f_i M_i``, so equal masses no longer imply equal repeat units
+      (two different compositions can average to the same mass), and unequal
+      masses no longer imply different monomers. On top of that,
+      ``Polymer._inherit_repeat_mass_to`` COPIES the parent's weighted mass
+      onto every daughter -- daughters that deliberately drop ``comonomers``
+      -- so the arm is again forced true along a lineage by construction.
+
+    Net: the mw arm can only ever REJECT (a daughter that somehow landed on a
+    different mass basis), never confirm. The truthful discriminator for a
+    feature modification remains ``feature_monomer``: a daughter whose feature
     unit differs from the parent's carries CHANGED chain chemistry (the
     defect unit participates in initiation/depropagation), so the parent's
-    constants do not apply.
+    constants do not apply. Composition itself (``comonomers``) is NOT gated
+    on, because the daughters this predicate governs never carry it; a future
+    composition-bearing daughter shape would need this gate revisited.
+
+    Gate BEHAVIOUR is unchanged by the copolymer work -- only this docstring's
+    account of why it is sound.
     """
     if getattr(daughter, 'monomer_mw_g_mol', None) != \
             getattr(parent, 'monomer_mw_g_mol', None):
@@ -9323,6 +9901,56 @@ def _inherit_spawned_pool_channel(daughter: 'Polymer', parent: 'Polymer',
     return False
 
 
+def assert_same_repeat_mass_on_dedup(existing: 'Polymer',
+                                     incoming: 'Polymer') -> None:
+    """Refuse a fingerprint dedup between two pools on DIFFERENT repeat masses.
+
+    ``CoreEdgeReactionModel._register_polymer`` is first-writer-wins: on a
+    fingerprint match the incoming object is discarded and the pre-existing one
+    returned in its place. Every attribute of the incoming pool is dropped --
+    including ``monomer_mw_g_mol``, the repeat mass that the condensed-mass
+    contract ``mu1*monomer_mw_g_mol - mu0*chain_mass_defect_g_mol`` is written
+    in. Silently discarding a DIFFERING mass hands one pool the other's mass
+    basis, which mints or destroys condensed mass with no channel to book it
+    against.
+
+    Two objects that fingerprint identically are supposed to be the same pool,
+    so a mass disagreement here means the fingerprint failed to separate two
+    distinct mass bases (see ``Polymer._repeat_mass_basis_segment``) -- a bug in
+    the identity key, not a conflict to paper over. Fail loudly, naming both
+    labels and both masses.
+
+    Only raises when BOTH masses are finite and positive; a missing/zero mass is
+    an un-derived best-effort value, not a competing basis.
+    """
+    def _mass(poly):
+        try:
+            value = float(getattr(poly, 'monomer_mw_g_mol', None))
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(value) or value <= 0.0:
+            return None
+        return value
+
+    ex_mw, inc_mw = _mass(existing), _mass(incoming)
+    if ex_mw is None or inc_mw is None:
+        return
+    if math.isclose(ex_mw, inc_mw, rel_tol=1e-9, abs_tol=1e-12):
+        return
+    raise ValueError(
+        f"Polymer fingerprint dedup refused: '{getattr(incoming, 'label', '')}' "
+        f"(monomer_mw_g_mol={inc_mw:.6g}) fingerprint-matches the already "
+        f"registered '{getattr(existing, 'label', '')}' "
+        f"(monomer_mw_g_mol={ex_mw:.6g}), but they sit on DIFFERENT repeat-mass "
+        f"bases. Dedup is first-writer-wins, so the incoming pool would be "
+        f"discarded and silently adopt the existing pool's repeat mass, "
+        f"rewriting its condensed-mass contract "
+        f"(mu1*monomer_mw_g_mol - mu0*chain_mass_defect_g_mol) by "
+        f"{abs(inc_mw - ex_mw):.6g} g per mol of chain units. Two pools with "
+        f"different repeat masses must not share a fingerprint: the identity "
+        f"key is failing to separate their mass bases.")
+
+
 def merge_unzip_channel_on_dedup(existing: 'Polymer',
                                  incoming: 'Polymer') -> None:
     """Fingerprint-dedup channel merge (round-25 P2-2).
@@ -9427,6 +10055,7 @@ def drain_spawn_intents(
         # Override fingerprint so _register_polymer's dedup sees the daughter
         # as distinct from the parent (which shares monomer + end_groups +
         # cutoff and would otherwise hash to the same fingerprint).
+        parent._inherit_repeat_mass_to(new_pool)
         new_pool._fingerprint = f"{parent.fingerprint}_daughter-{new_label}"
         # Honest-empty seeding (item #14a, amended 2026-06-12 uniform-t=0):
         # a just-spawned daughter genuinely contains nothing, and the

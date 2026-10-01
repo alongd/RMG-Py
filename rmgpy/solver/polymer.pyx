@@ -964,9 +964,19 @@ class PolymerPoolConfig:
 
     # Monomer (repeat-unit) molecular weight [g/mol]. Consumed by
     # spawn_gate_flux_snapshot (E[n]*MW event-mass calibration, spec
-    # 2026-06-10-mass-flux-spawn-gate-design.md §3). Default 0.0 zeroes the
-    # pool's snapshot contribution (honest degradation: the spawn gate
-    # defers; nothing is fabricated).
+    # 2026-06-10-mass-flux-spawn-gate-design.md §3).
+    #
+    # The 0.0 default is reserved for an explicitly NON-MASS-BEARING
+    # placeholder config -- one that never books a condensed mass and declares
+    # no mass-bearing kernel. It is NOT an honest degradation for a pool that
+    # does carry mass: ``condensed_mass_g`` would report a pool of exactly
+    # ZERO condensed mass (or, with a nonzero chain_mass_defect_g_mol, a
+    # NEGATIVE one) while every moment stays healthy, so nothing downstream
+    # can tell the difference. ``__post_init__`` therefore rejects 0.0 for any
+    # config that declares a mass-bearing kernel, and ``condensed_mass_g``
+    # refuses to answer for a pool that actually holds chain units. Every
+    # production producer (PolymerPool.to_config, derive_daughter_pool_configs,
+    # the artifact loader) passes a real positive mass.
     monomer_mw_g_mol: float = 0.0
 
     # Monomer (repeat-unit) heavy-atom (non-H) count. The SECOND axis of the
@@ -1099,6 +1109,62 @@ class PolymerPoolConfig:
     tail_kinetics: Optional[Callable[[float, float, float, float, float, float],
                                      Tuple[float, float, float, Dict[int, float]]]] = None
 
+    def __post_init__(self):
+        """Repeat-mass sanity (the fail-open a 0.0 default used to hide).
+
+        Two rules, both fail-loud and both naming the pool:
+
+        1. ``monomer_mw_g_mol`` must be finite and non-negative. A NaN/inf/
+           negative mass is never a degradation -- it poisons or inverts every
+           ``mu1*MW`` product downstream.
+        2. A config that declares a MASS-BEARING kernel -- one whose whole
+           bookkeeping runs through ``condensed_mass_g`` -- may not carry a
+           non-positive repeat mass. ``chain_mass_defect_g_mol`` (the X-loss
+           per-chain defect) and ``side_group_homolysis`` (the kernel that
+           mints that defect) are exactly those: with MW == 0 the pool's
+           condensed mass is ``-mu0*defect``, i.e. NEGATIVE, and the
+           side-group kernel's mass-closure test would "pass" against it.
+           ``k_depropagation`` joins them because it books a per-event
+           repeat-unit mass out to the gas monomer.
+
+        Deliberately NOT enforced here: a blanket "every pool must carry a
+        positive mass". The 0.0 default is load-bearing across the existing
+        test corpus (410 constructions in the polymer suites alone) and
+        tightening it is a corpus-wide sweep, not a config change. The
+        consumption-point guard in ``condensed_mass_g`` covers the gap: a
+        placeholder that never books a mass stays legal, a pool that actually
+        holds chain units cannot answer 0.
+        """
+        mw = self.monomer_mw_g_mol
+        try:
+            mw = float(mw)
+        except (TypeError, ValueError):
+            raise ValueError(
+                f"Pool {self.label!r}: monomer_mw_g_mol must be a number, got "
+                f"{self.monomer_mw_g_mol!r}.")
+        if not math.isfinite(mw) or mw < 0.0:
+            raise ValueError(
+                f"Pool {self.label!r}: monomer_mw_g_mol must be finite and "
+                f"non-negative, got {mw!r}. Every condensed mass in the solver "
+                f"is mu1*monomer_mw_g_mol - mu0*chain_mass_defect_g_mol.")
+        if mw > 0.0:
+            return
+        mass_bearing = []
+        if self.chain_mass_defect_g_mol:
+            mass_bearing.append("chain_mass_defect_g_mol")
+        if self.side_group_homolysis:
+            mass_bearing.append("side_group_homolysis")
+        if self.k_depropagation:
+            mass_bearing.append("k_depropagation")
+        if mass_bearing:
+            raise ValueError(
+                f"Pool {self.label!r}: monomer_mw_g_mol is {mw!r} but the pool "
+                f"declares mass-bearing kernel state ({', '.join(mass_bearing)}). "
+                f"Its condensed mass mu1*monomer_mw_g_mol - "
+                f"mu0*chain_mass_defect_g_mol would be zero or NEGATIVE while "
+                f"every moment stayed healthy. 0.0 is reserved for explicitly "
+                f"non-mass-bearing placeholder configs.")
+
     def condensed_mass_g(self, mu0_mol, mu1_mol):
         """EXACT condensed mass [g] of this pool at the given extensive
         moments [mol] (FR1-K1 mass contract): mu1*monomer_mw_g_mol minus the
@@ -1107,7 +1173,21 @@ class PolymerPoolConfig:
         feature pools it carries the one-lost-X-per-chain correction so that
         d(condensed mass)/dt + d(gas X mass)/dt = 0 holds exactly on the
         side-group kernel's contributions (pinned by test). Also works on
-        rates: feeding d(mu)/dt returns d(mass)/dt."""
+        rates: feeding d(mu)/dt returns d(mass)/dt.
+
+        FAIL-LOUD on a non-positive repeat mass whenever there are chain units
+        (or a chain-unit rate) to weigh: ``mu1 != 0`` with ``MW <= 0`` would
+        report a pool of exactly ZERO condensed mass -- or, with a nonzero
+        defect, a NEGATIVE one -- while mu0/mu1/mu2 all stay healthy, so no
+        mass sensor downstream can tell the pool stopped carrying mass. A
+        genuinely non-mass-bearing placeholder (mu1 == 0) still answers 0.0."""
+        if mu1_mol and not (self.monomer_mw_g_mol > 0.0):
+            raise ValueError(
+                f"Pool {self.label!r}: condensed_mass_g asked to weigh "
+                f"mu1={mu1_mol!r} chain units against a non-positive "
+                f"monomer_mw_g_mol ({self.monomer_mw_g_mol!r}). That would "
+                f"silently report zero (or negative) condensed mass for a pool "
+                f"whose moments are healthy. Configure the pool's repeat mass.")
         return (mu1_mol * self.monomer_mw_g_mol
                 - mu0_mol * self.chain_mass_defect_g_mol)
 
