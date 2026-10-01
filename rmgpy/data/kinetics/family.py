@@ -366,9 +366,8 @@ def _reduce_whole_object(obj):
 
     For the three classes registered with this reducer the argument list is not merely
     incomplete, it is *wrong*: `Fragment` and `CuttingLabel` inherit reducers that name
-    `Molecule` and `Atom` as the thing to rebuild, and `Molecule.__reduce__` passes
-    ``metal`` and ``facet`` into ``__init__``'s ``inchi`` and ``smiles`` parameters, which
-    are the fifth and sixth positional arguments rather than the seventh and eighth.
+    `Molecule` and `Atom` as the thing to rebuild, while their extra state is not
+    represented by those reducers.
 
     The state travels as the reduce tuple's third element with an explicit state setter
     (the sixth), not as constructor arguments, because the graph is cyclic -- an atom's
@@ -414,9 +413,6 @@ _LOSSY_REDUCERS = {
     Atom: (_reduce_completed,
            'its reducer omits id, coords and props; ids drive resonance-structure '
            "correspondence and props carries 'inRing', which feeds group matching"),
-    Molecule: (_reduce_whole_object,
-               'its reducer passes metal and facet into __init__(..., inchi, smiles), so '
-               "a surface molecule is rebuilt from metal='Pt' as an InChI and raises"),
     Species: (_reduce_whole_object,
               'its reducer omits aug_inchi, creation_iteration, explicitly_allowed and '
               'symmetry_number'),
@@ -441,12 +437,10 @@ COMPLETE_REDUCERS = {cls: reducer for cls, (reducer, _) in _LOSSY_REDUCERS.items
 #: with the reason. The census in `quarantineTest.py` imports every module of `rmgpy` and
 #: `arkane`, walks ``__subclasses__()`` under each registered class, and fails on one that is
 #: in neither table -- so a new subclass has to be decided, not inherited by accident.
-_ACCEPTED_UNREGISTERED_SUBCLASSES = {
-    'arkane.encorr.data.Molecule':
-        'a BAC-fitting wrapper that adds a mol_id; it is built and consumed inside one '
-        'Arkane process, never enters a reaction, and reaches no pickler -- and should it '
-        'ever reach one of these two, the refusal below names it',
-}
+#:
+#: This is currently empty. Molecule is no longer a lossy registered base, so its Arkane
+#: subclass is outside this census as well.
+_ACCEPTED_UNREGISTERED_SUBCLASSES = {}
 
 
 def _unregistered_lossy_base(cls):

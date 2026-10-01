@@ -31,10 +31,10 @@
 I-221 round 112, HIGH 3 -- every process transport in the source tree carries the complete
 reducers, checked mechanically rather than by a list someone keeps.
 
-The reducers in `rmgpy/molecule/` lose state (`Atom.id`, `Atom.props`; a surface
-`Molecule` or a `Fragment` raises), and fixing them there is out of this campaign's gates.
-`family.install_complete_reducers()` hands `multiprocessing`'s pickler the completing
-table instead. That is per-transport, so the question a reviewer has to be able to answer
+Some reducers in `rmgpy/molecule/` still lose state (`Atom.id`, `Atom.props`,
+and Fragment state). `family.install_complete_reducers()` hands multiprocessing's
+pickler the completing table for those classes. Molecule now has a complete own
+reducer; its surface, subclass and cyclic state must survive without a table entry. That is per-transport, so the question a reviewer has to be able to answer
 is not "was it installed where the finding was" but "is there a transport it was not
 installed at" -- rounds 95, 102, 107, 110 and 111 each closed the named site and left the
 one beside it. This module answers it by parsing every source file:
@@ -83,8 +83,8 @@ EXPECTED_TRANSPORTS = {
 }
 
 #: The only module that imports a pickler at all. This is what makes the plain-pickle path
-#: -- `Reaction.__reduce__`, `LibraryReaction.__reduce__`, `ReactionModel.__reduce__`, all
-#: of which nest the lossy reducers in `rmgpy/molecule/` -- accepted rather than a defect:
+#: -- `Reaction.__reduce__`, `LibraryReaction.__reduce__`, `ReactionModel.__reduce__`, some
+#: of whose nested classes still have lossy reducers -- accepted rather than a defect:
 #: no code in the tree reaches it. family.py's own uses are an in-memory probe and
 #: `_CompletePickler` on a BytesIO. A caller outside the tree who pickles a reaction with
 #: plain `pickle` gets the lossy result; making that correct needs the molecule reducers,
@@ -275,21 +275,77 @@ class TestTheCheckCanFail:
 
 
 class TestFreshImportRegisters:
-    """Round 111's measurement, repeated in a fresh interpreter for each transport module:
-    importing it alone must leave `Molecule` and `Species` in ForkingPickler's table."""
+    """Each fresh transport import registers lossy classes and carries Molecule state.
+
+    Atom and Species need table entries; Molecule uses its complete own reducer.
+    Check real ForkingPickler transport in that same fresh interpreter.
+    """
 
     @pytest.mark.parametrize('module', sorted({rel for rel, _ in EXPECTED_TRANSPORTS}))
     def test_fresh_import(self, module):
         name = module[:-3].replace('/', '.')
-        probe = textwrap.dedent('''
+        probe = textwrap.dedent("""
             import importlib
             from multiprocessing.reduction import ForkingPickler
-            importlib.import_module({0!r})
+            importlib.import_module(__TRANSPORT_MODULE__)
             from rmgpy.molecule.molecule import Molecule, Atom
             from rmgpy.species import Species
-            table = ForkingPickler._extra_reducers
-            print(all(cls in table for cls in (Atom, Molecule, Species)))
-        ''').format(name)
+
+            class StatefulMolecule(Molecule):
+                __slots__ = ('extra', '__dict__')
+
+                def __init__(self, marker):
+                    super().__init__(smiles='CO', symmetry=3, reactive=False,
+                                     props={'kind': 'subclass'}, metal='Au', facet='100')
+                    self.marker = marker
+                    self.extra = 42
+                    self.self_reference = self
+
+            def base_state(molecule):
+                saved_order = (None if molecule.ordered_vertices is None else
+                               tuple(next(index for index, atom in enumerate(molecule.atoms)
+                                          if atom is saved)
+                                     for saved in molecule.ordered_vertices))
+                return (molecule.to_adjacency_list(), molecule.symmetry_number,
+                        molecule.multiplicity, molecule.reactive, molecule.metal,
+                        molecule.facet, [(atom.id, atom.props) for atom in molecule.atoms],
+                        saved_order)
+
+            def round_trip(molecule):
+                return ForkingPickler.loads(ForkingPickler.dumps(molecule))
+
+            checks = [all(cls in ForkingPickler._extra_reducers for cls in (Atom, Species))]
+            surface = Molecule().from_adjacency_list('1 X u0 p0 c0')
+            surface.metal, surface.facet = 'Pt', '111'
+            surface.symmetry_number, surface.multiplicity, surface.reactive = 7, 1, False
+            surface.props = {'kind': 'surface'}
+            surface.atoms[0].id, surface.atoms[0].props = 17, {'site': 'top'}
+            surface.sort_vertices(save_order=True)
+            restored = round_trip(surface)
+            checks.extend([type(restored) is Molecule,
+                           base_state(restored) == base_state(surface),
+                           restored.props == surface.props])
+
+            subclass = StatefulMolecule('kept')
+            restored = round_trip(subclass)
+            checks.extend([type(restored) is StatefulMolecule,
+                           base_state(restored) == base_state(subclass),
+                           restored.props == subclass.props, restored.marker == 'kept',
+                           restored.extra == 42, restored.self_reference is restored])
+
+            cyclic = Molecule(smiles='C', symmetry=5, reactive=False)
+            cyclic.props['kind'] = 'cyclic'
+            cyclic.props['owner'] = cyclic
+            cyclic.props['properties'] = cyclic.props
+            restored = round_trip(cyclic)
+            checks.extend([type(restored) is Molecule,
+                           base_state(restored) == base_state(cyclic),
+                           set(restored.props) == {'kind', 'owner', 'properties'},
+                           restored.props['kind'] == 'cyclic',
+                           restored.props['owner'] is restored,
+                           restored.props['properties'] is restored.props])
+            print(all(checks))
+        """).replace('__TRANSPORT_MODULE__', repr(name))
         out = subprocess.run([sys.executable, '-c', probe], cwd=ROOT, capture_output=True,
                              text=True, check=True)
         assert out.stdout.strip().splitlines()[-1] == 'True', out.stderr

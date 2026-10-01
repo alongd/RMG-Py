@@ -44,6 +44,7 @@ from urllib.parse import quote
 from operator import attrgetter
 
 import cython
+from types import MemberDescriptorType
 import numpy as np
 
 import rmgpy.constants as constants
@@ -68,6 +69,13 @@ def _skip_first(in_tuple):
     return in_tuple[1:]
 
 bond_orders = {'S': 1, 'D': 2, 'T': 3, 'B': 1.5, 'vdW': 0}
+
+
+def _rebuild_molecule(cls):
+    """Allocate before restoring reference-bearing graph and property state."""
+    molecule = Molecule.__new__(cls)
+    Molecule.__init__(molecule)
+    return molecule
 
 globals().update({
     'bond_orders': bond_orders,
@@ -1121,7 +1129,33 @@ class Molecule(Graph):
         """
         A helper function used when pickling an object.
         """
-        return (Molecule, (self.vertices, self.symmetry_number, self.multiplicity, self.reactive, self.props, self.metal, self.facet))
+        # Keep dictionary and declaring-class slot state distinct, including
+        # shadowed slots. All references are restored after memoisation.
+        attributes = dict(getattr(self, '__dict__', {}))
+        slots = []
+        for cls in type(self).__mro__:
+            if cls is Molecule:
+                break
+            for name, descriptor in vars(cls).items():
+                if isinstance(descriptor, MemberDescriptorType):
+                    try:
+                        value = descriptor.__get__(self, type(self))
+                    except AttributeError:
+                        continue  # An uninitialised slot has no state to restore.
+                    slots.append((cls, name, value))
+        graph_state = (self.vertices, self.ordered_vertices, self.symmetry_number,
+                       self.multiplicity, self.reactive, self.props, self.metal, self.facet)
+        return (_rebuild_molecule, (type(self),), (graph_state, attributes, slots))
+
+    def __setstate__(self, state):
+        """Restore graph, dictionary and declaring-class slots after memoisation."""
+        graph_state, attributes, slots = state
+        (self.vertices, self.ordered_vertices, self.symmetry_number,
+         self.multiplicity, self.reactive, self.props, self.metal, self.facet) = graph_state
+        if attributes:
+            self.__dict__.update(attributes)
+        for cls, name, value in slots:
+            vars(cls)[name].__set__(self, value)
 
     @property
     def atoms(self):
@@ -1843,10 +1877,10 @@ class Molecule(Graph):
             if self.multiplicity not in group.multiplicity: return []
         #check metal
         if group.metal:
-            if self.metal not in group.metal: return False
+            if self.metal not in group.metal: return []
         #check facet
         if group.facet:
-            if self.facet not in group.facet: return False
+            if self.facet not in group.facet: return []
         # Compare radical counts
         if self.get_radical_count() < group.radicalCount:
             return []

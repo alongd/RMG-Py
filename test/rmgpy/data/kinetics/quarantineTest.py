@@ -4479,7 +4479,9 @@ class TestTheClassesWhoseOwnReducerLoses:
         This is what keeps the registry from going stale in the direction that matters: a
         class that starts losing state, or one that stops.
 
-        **Structural** at `2e4ff991d`, which has no `_LOSSY_REDUCERS`.
+        Molecule is intentionally absent: its own reducer now preserves the graph, cached
+        InChI/SMILES, surface fields, and plain state. This assertion changes with Defect A;
+        it no longer encodes the old lossy reducer bug.
         """
         import numpy as np
 
@@ -5871,8 +5873,8 @@ class TestWhatAnUnlistedLossyClassCosts:
     * **A subclass of a registered class is refused, loudly, at pickling time.** The
       registration is exact-type, so a subclass would otherwise fall through to the lossy
       reducer it inherits -- the one that names its *parent* as the class to rebuild. This
-      is not hypothetical: `arkane.encorr.data.Molecule` is such a subclass, and a plain
-      pickle of it comes back a base `Molecule` without its ``id``.
+      is exercised below with an unregistered `Atom` subclass, and a plain pickle of it
+      would otherwise come back as a base `Atom` without its added state.
     * **An unrelated class with its own lossy ``__reduce__`` stays undetectable**, and that
       is accepted, with the reason: a reducer that omits a field is indistinguishable from
       a class that does not have one. What keeps the table honest there is the census,
@@ -5888,20 +5890,22 @@ class TestWhatAnUnlistedLossyClassCosts:
 
     def test_an_unregistered_subclass_is_refused_by_the_copy_transport(self):
         """
-        Behavioural at `71ae97bd5`: `complete_round_trip` returned a base `Molecule`,
+        Behavioural at `71ae97bd5`: `complete_round_trip` returned a base `Atom`,
         class and extra field gone, without a word.
         """
         from rmgpy.data.kinetics.family import complete_round_trip
 
-        Sub = self._subclass_of(Molecule)
-        molecule = Sub(smiles="CC")
+        from rmgpy.molecule.molecule import Atom
+
+        Sub = self._subclass_of(Atom)
+        molecule = Sub(element="C")
         molecule.extra = "carried"
 
-        with pytest.raises(pickle.PicklingError, match="UnregisteredMolecule"):
+        with pytest.raises(pickle.PicklingError, match="UnregisteredAtom"):
             complete_round_trip(molecule)
-        # Nested is the case that matters: the subclass sits inside a reaction's state.
-        with pytest.raises(pickle.PicklingError, match="UnregisteredMolecule"):
-            complete_round_trip([Species(molecule=[molecule])])
+        # Nested is the case that matters: the subclass sits inside a container's state.
+        with pytest.raises(pickle.PicklingError, match="UnregisteredAtom"):
+            complete_round_trip([molecule])
 
     def test_an_unregistered_atom_subclass_is_refused_too(self):
         """`Atom` is registered with the *other* reducer; the refusal must not care which."""
@@ -5921,11 +5925,13 @@ class TestWhatAnUnlistedLossyClassCosts:
         from multiprocessing.reduction import ForkingPickler
         from rmgpy.data.kinetics.family import install_complete_reducers
 
-        Sub = self._subclass_of(Molecule)
+        from rmgpy.molecule.molecule import Atom
+
+        Sub = self._subclass_of(Atom)
         install_complete_reducers()
         try:
-            with pytest.raises(pickle.PicklingError, match="UnregisteredMolecule"):
-                ForkingPickler.dumps([Sub(smiles="C")])
+            with pytest.raises(pickle.PicklingError, match="UnregisteredAtom"):
+                ForkingPickler.dumps([Sub(element="C")])
         finally:
             ForkingPickler._extra_reducers.pop(Sub, None)
 
@@ -5933,22 +5939,24 @@ class TestWhatAnUnlistedLossyClassCosts:
         """
         Round 113. `install_complete_reducers` ran at import, long before this class
         existed, and nothing re-runs it. Behavioural at `fc60e5ba4`: ``ForkingPickler``
-        rebuilt a base `Molecule` and the extra field was gone.
+        rebuilt a base `Atom` and the extra field was gone.
         """
         from multiprocessing.connection import Pipe
         from multiprocessing.reduction import ForkingPickler
 
-        Sub = self._subclass_of(Molecule)
+        from rmgpy.molecule.molecule import Atom
+
+        Sub = self._subclass_of(Atom)
         assert Sub not in ForkingPickler._extra_reducers
-        molecule = Sub(smiles="C")
+        molecule = Sub(element="C")
         molecule.extra = "carried"
 
-        with pytest.raises(pickle.PicklingError, match="UnregisteredMolecule"):
-            ForkingPickler.dumps([Species(molecule=[molecule])])
+        with pytest.raises(pickle.PicklingError, match="UnregisteredAtom"):
+            ForkingPickler.dumps([molecule])
         # The transport itself, not only its pickler: `Connection.send` is what `Pool` uses.
         sender, receiver = Pipe()
         try:
-            with pytest.raises(pickle.PicklingError, match="UnregisteredMolecule"):
+            with pytest.raises(pickle.PicklingError, match="UnregisteredAtom"):
                 sender.send(molecule)
         finally:
             sender.close()
@@ -5977,11 +5985,13 @@ class TestWhatAnUnlistedLossyClassCosts:
         # The verdict is cached before pickle finds a local class unpicklable by reference.
         with pytest.raises((AttributeError, pickle.PicklingError), match="local object"):
             ForkingPickler.dumps(Benign())
-        Sub = Colliding("UnregisteredMolecule", (Molecule,), {})
-        molecule = Sub(smiles="C")
+        from rmgpy.molecule.molecule import Atom
+
+        Sub = Colliding("UnregisteredAtom", (Atom,), {})
+        molecule = Sub(element="C")
         molecule.extra = "carried"
 
-        with pytest.raises(pickle.PicklingError, match="UnregisteredMolecule"):
+        with pytest.raises(pickle.PicklingError, match="UnregisteredAtom"):
             ForkingPickler.dumps(molecule)
 
     def test_registered_classes_still_travel(self):
