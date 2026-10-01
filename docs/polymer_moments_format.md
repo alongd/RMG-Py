@@ -989,9 +989,13 @@ inert handshake) and a species outside the artifact's core universe.
     `µ0 > 1e-9 mol/m³ AND µ1/µ0 > xs + 1e-9`; `p_cond = P(DP = xs+1 |
     DP > xs)` under the gamma distribution moment-matched to (µ0, µ1, µ2)
     (`k = 1/(PDI−1)`, `θ = mean/k`, half-integer bins on the regularized
-    lower incomplete gamma), with a triangular fallback on
-    `tail_mean ∈ (xs+1, xs+2)` peaking at `xs+1.5` when the gamma is
-    unrealizable; `p_cond` clamped to [0, 1];
+    lower incomplete gamma), with a monodisperse fallback when the gamma is
+    unrealizable: `p_cond = clip((xs+2) − tail_mean, 0, 1)`, the mass at
+    `DP = xs+1` of the minimum-variance distribution on the tail's integer
+    support `{xs+1, xs+2, …}` with that mean — `1.0` at
+    `tail_mean ≤ xs+1` (there the mean equals the support's minimum, so
+    every chain is in the boundary bin), falling linearly to `0.0` at
+    `tail_mean ≥ xs+2`; `p_cond` clamped to [0, 1];
     `N_boundary = min(µ0·p_cond, µ0, µ1/xs, µ2/xs²)` [mol/m³];
     `F = k_chain·N_boundary`; `dn(species[xs])/dt += F·V_poly`;
     `dµ0 −= F; dµ1 −= xs·F; dµ2 −= xs²·F`.

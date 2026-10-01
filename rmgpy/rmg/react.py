@@ -33,6 +33,7 @@ Contains functions for generating reactions.
 import logging
 from multiprocessing import Pool
 
+from rmgpy.data.kinetics.family import note_generation_procnum
 from rmgpy.data.rmg import get_db
 
 
@@ -61,6 +62,11 @@ def react(spc_fam_tuples, procnum=1):
     # Execute multiprocessing map. It blocks until the result is ready.
     # This method chops the iterable into a number of chunks which it
     # submits to the process pool as separate tasks.
+    # I-067: the wasted-build profiler accumulates into a module global, which a forked
+    # worker mutates in its own address space and then discards. Record the parallelism so
+    # the profile reports itself as invalid rather than reporting a near-zero fraction.
+    note_generation_procnum(procnum)
+
     if procnum == 1:
         logging.info('For reaction generation {0} process is used.'.format(procnum))
         reactions = list(map(_react_species_star, spc_fam_tuples))

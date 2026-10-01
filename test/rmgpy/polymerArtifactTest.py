@@ -1836,7 +1836,7 @@ class TestSpawnedPoolMoments:
 # (NOT imported from the emitter constant — an emitter edit must fail here,
 # same idiom as WEAKLINK_PINNED_RECIPE). Transcribed from the implemented
 # oracle: boundary flux polymer.pyx:3475-3524 (gamma-conditional p_cond,
-# triangular fallback, flux clamps), gamma helpers polymer.pyx:491-525,
+# monodisperse fallback, flux clamps), gamma helpers polymer.pyx:491-525,
 # k_chain arm selection polymer.pyx:3484-3488, t=0 tail split
 # set_initial_conditions step 6 / _explicit_moment_contributions
 # (polymer.pyx:2109-2132, :471-488: seeded moments = declared TOTAL minus
@@ -1860,10 +1860,15 @@ EXPLICIT_DP_PINNED_RECIPE = {
                       "(k = 1/(PDI - 1), theta = mean/k; half-integer bins: "
                       "[F((xs+1.5)/theta) - F((xs+0.5)/theta)] / "
                       "[1 - F((xs+0.5)/theta)] with F the regularized lower "
-                      "incomplete gamma); triangular fallback on tail_mean "
-                      "in (xs+1, xs+2) peaking 1.0 at xs+1.5 when the gamma "
-                      "is unrealizable (any moment <= 1e-30, PDI <= 1+1e-6, "
-                      "or non-finite params); p_cond clamped to [0, 1]; "
+                      "incomplete gamma); monodisperse fallback when the "
+                      "gamma is unrealizable (any moment <= 1e-30, PDI <= "
+                      "1+1e-6, or non-finite params): p_cond = "
+                      "clip((xs+2) - tail_mean, 0, 1), the mass at "
+                      "DP = xs+1 of the minimum-variance distribution on "
+                      "the tail's integer support {xs+1, xs+2, ...} with "
+                      "that mean -- 1.0 at tail_mean <= xs+1, falling "
+                      "linearly to 0.0 at tail_mean >= xs+2; p_cond "
+                      "clamped to [0, 1]; "
                       "N_boundary = min(mu0*p_cond, mu0, mu1/xs, mu2/xs^2) "
                       "[mol/m^3]; F_flux = k_chain * N_boundary; "
                       "dn(species[xs])/dt += F_flux*V_poly; dmu0 -= F_flux; "

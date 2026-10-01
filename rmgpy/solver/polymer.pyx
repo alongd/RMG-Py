@@ -61,6 +61,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 cimport cython
 from libc.math cimport exp as _c_exp
+from libc.math cimport fabs
 import numpy as np
 cimport numpy as np
 
@@ -150,6 +151,24 @@ ATTRIBUTION_TRUST_K = 100.0
 # max(..., SMALL_EPS). Generic solver infrastructure OUTSIDE the 2.8 kernel
 # contract -- the sidecar recipe strings are deliberately untouched.
 EXHAUSTION_FLOOR_K = 100.0
+# i061 MOMENT ERROR-WEIGHT FLOOR (DASPK step-collapse fix). The moment-
+# coordinate state slots (a pool's mu0/mu1/mu2 positions and any is_moment_dummy
+# core species) are BOOKKEEPING coordinates carrying dmu/dt, not molar species
+# amounts. The chemistry already declares any moment at |mu_k| <= EXHAUSTION_
+# FLOOR_K*atol to be AT THE FLOOR -- indistinguishable from zero for the r81
+# negative-moment tripwire, the exhaustion census, the softclamp and the
+# attribution trust band. Yet with the deck atol (e.g. 1e-14) DASPK's error
+# weight ewt = rtol*|y| + atol still demands the integrator resolve those slots
+# to atol, i.e. TWO DECADES BELOW the model's own accepted-state floor. At the
+# all-monomer moment boundary ~43/70 slots sit there at once and DDASPK
+# collapses its step to ~1e-9 s chasing noise the chemistry discards (i061:
+# ~40-55 days to reach terminationTime). We therefore floor the DASPK atol of
+# the MOMENT slots ONLY to the model's own accepted-state floor, so error
+# control stops one decade before the chemistry does. Anchored to EXHAUSTION_
+# FLOOR_K's rationale but a SEPARATE constant per the idiom above (error control
+# and chemistry exhaustion are two jobs that may diverge). NEVER applied to a
+# physical species -- see the include-mask scoping in initialize_model.
+MOMENT_EWT_FLOOR_K = 100.0
 # Near-exhaustion bundle limiter band (P1-A, round-27 re-adjudication of the
 # P1-1 hard-min): the cross-pool bundle cap S_cap is TAIL-ONLY. The band is
 # measured by the debited pool's ACCEPTED-STATE FLOOR DISTANCE
@@ -275,6 +294,56 @@ LN_EXP_OVERFLOW_GUARD = 700.0
 # astride the boundary. Genuine deep violations (mu1 < mu0 - band)
 # still return 0.0 unchanged.
 MU3_CLOSURE_BOUNDARY_REL = float(np.sqrt(np.finfo(np.float64).eps))
+CONE_B1_NOISE_REL_FLOOR = MU3_CLOSURE_BOUNDARY_REL
+# Cone-margin dead-band NARROWING (I-090). See _bundle_limited_site's
+# stage-2 block for the law; the reasoning about its WIDTH is here.
+#
+# Inside the dead band the round-62 law returns 0.0 for EVERY b1c. That is
+# the right answer where the stage-2 bound S_cone = Q10/(V*(b1c - 1)) is a
+# real bound, and the wrong one right at b1c == 1, where S_cone DIVERGES
+# and therefore caps nothing: the hard zero there discards a rate this
+# gate has no business capping, and does it with a jump (S_free on the
+# b1c <= 1 side, 0.0 on the other) that DASPK's corrector cannot step
+# across -- the round-62/I-077b never-returns signature.
+#
+# So the completion is kept on a neighbourhood of the b1c == 1 surface and
+# handed back to the exact hard zero outside it. The width of that
+# neighbourhood is the scale below which b1c - 1 = (mu2 - mu1)/mu1 is not a
+# difference the accepted state ever RESOLVED -- which is just the
+# propagated uncertainty of the two moments the difference is taken
+# between, in exactly the error-weight form the integrator itself enforces:
+#
+#     ewt(mu_k) = rtol*|mu_k| + f_k          (DASPK's own per-slot weight,
+#                                             f_k the r81 accepted-state
+#                                             floor already read here)
+#     band      = (ewt(mu1) + ewt(mu2)) / mu1
+#               = (rtol*(mu1 + mu2) + f1 + f2) / mu1
+#
+# The two uncertainties ADD because the numerator is their difference;
+# dividing by mu1 converts the result from moment units into b1c units.
+# Every input is a scale this function already carries for other reasons --
+# the deck's declared rtol, and the SAME r81 per-moment floors the dead
+# band itself rests on -- so nothing here is tunable against a test.
+# CONE_B1_NOISE_REL_FLOOR is the degenerate-case floor UNDER both terms,
+# not the band: sqrt(machine eps), this file's own scale for "this
+# difference is rounding noise, not signal" (MU3_CLOSURE_BOUNDARY_REL, used
+# identically one moment down at _safe_mu3_from_mu012's mu0 - mu1 guard,
+# line ~1176, and for FD step sizing, line ~5736). Nothing is resolvable
+# below it however tight the tolerances are asked to be.
+#
+# The band must be RELATIVE (a width in b1c - 1), not absolute (a width in
+# mu2 - mu1), and that is not a stylistic choice -- it is what the divergent
+# -bound argument is about. The obvious absolute alternative is seductive:
+# measure mu2 - mu1 against the SAME CONE_MARGIN_M_LO floors-count this gate
+# applies to Q10 = mu1 - mu0 one line earlier, which introduces no constant
+# at all. It is REFUTED, by measurement rather than taste:
+# test_bundle_limiter_two_regime_unit_pins drives the TAIL case at
+# mu = (1.9, 26, 610)*1e-15 -- mu2 - mu1 = 58 floors, so "noise" by that
+# standard, yet b1c - 1 = 22.46, where S_cone is a perfectly finite 1.07e-15
+# and the completion has nothing to repair. The absolute form returns a
+# nonzero site there and the pin correctly refuses it. An absolute width
+# says "b1c is near 1" only while mu1 is far from its floor; the relative
+# width says it always.
 TAIL_CONC_MIN = 1e-9  # Minimum concentration (mol/m^3) to actuate handshake
 
 # Gas constant for the radical_qssa_unzip Arrhenius evaluations, J/(mol K).
@@ -1259,11 +1328,14 @@ def _discrete_gamma_fallback(target: int, xs: int, k: float, theta: float) -> fl
 # The gate g = 1 - sp(1 - mean) is therefore EXACTLY 1 in the realizable
 # region mean >= 1 (the healthy law is exact, no perturbation) and rolls
 # off C2-smoothly below it (r74 SS5: no hard max(...,0) cliff at
-# exhaustion -- the DASPK grind / IDID=-7 class). Residual monomer release
-# from a pathological mu1 = 0, mu0 > 0 noise state is bounded by
-# k_dep*mu0*W^2 (documented honest degradation; the chain count keeps
-# draining at the full -k_dep*mu0 there, so the state cannot become a
-# stiff no-outlet grind).
+# exhaustion -- the DASPK grind / IDID=-7 class). This gate alone left a
+# residual monomer release of k_dep*mu0*W^2 at the pathological mu1 = 0,
+# mu0 > 0 noise state (it bottoms out at W^2/(1 + W^2), not at zero);
+# since I-065 that residual is closed to EXACTLY zero by the additional
+# _release_units_gate factor, which is itself C2 and exactly 1.0 for
+# mean >= 1 so it costs the smoothness nothing. The chain count still
+# drains at the full -k_dep*mu0 there, so the state cannot become a stiff
+# no-outlet grind.
 KDEP_GATE_WIDTH = 1.0e-2
 
 
@@ -1274,6 +1346,54 @@ def _smooth_pos(x: float, w: float) -> float:
     if x <= 0.0:
         return 0.0
     return x * x * x / (x * x + w * w)
+
+
+def _release_units_gate(mu0: float, mu1: float) -> float:
+    """Availability gate on chain-end monomer RELEASE: the fraction of the
+    chain-end event rate the pool actually holds repeat units for.
+
+    Every chain-end release channel sets its event rate from the CHAIN count
+    (one active end per chain), never from the repeat units on offer. Inside
+    the realizable cone mu1 >= mu0 >= 0 that is right -- every chain carries
+    at least one unit, so every event has one to give. OUTSIDE the cone it
+    fabricates: at mu1 = 0, mu0 > 0 the rate is still k*mu0 > 0, which
+    debits mu1 further negative AND emits that much gas monomer with no
+    repeat unit behind it. Defence in depth for I-055: the realizable-cone
+    invariant should not be the only thing between the solver and mass it
+    never had.
+
+    Returns a C2 quintic smootherstep in t = mu1/mu0:
+        t <= 0  -> 0.0 EXACTLY  (no units, no release, no gas)
+        t >= 1  -> 1.0 EXACTLY  (on/inside the cone: bit-for-bit no-op,
+                                 x*1.0 == x in IEEE-754)
+        else    -> 10t^3 - 15t^4 + 6t^5, with value, first AND second
+                   derivative continuous at both ends.
+    The quintic is not decoration. A hard min(mu0, mu1) limiter is exactly
+    zero at mu1 = 0 too, but introduces a first-derivative kink at mean
+    DP = 1 -- the boundary a fully-unzipping pool legitimately ENDS on --
+    and that kink is a real cliff: it fails the existing
+    test_deprop_smooth_exhaustion_gate_no_cliff pin (release rate must move
+    by < 1e-4 relative across mean = 1; a linear rolloff moves it by 1e-3)
+    and reopens the DASPK grind / IDID=-7 class the r74 SS5 gate was
+    designed against. The quintic is C2 there and exactly 1.0 above it.
+
+    mu0 <= 0 returns 0.0: no chains means no chain ends, hence no events.
+    On the legacy channel that replaces a NEGATIVE release rate (k*mu0 < 0,
+    i.e. gas emitted as a negative amount) with none at all.
+
+    Applies to the release only, never to the I-055 chain-termination debit
+    on mu0: that debit must keep draining at full strength off the cone, or
+    a mean-DP < 1 noise state has no way back (r74: dmu0 = 0 stalls the
+    residue instead of terminating it)."""
+    cdef double t
+    if mu0 <= 0.0:
+        return 0.0
+    if mu1 >= mu0:
+        return 1.0
+    if mu1 <= 0.0:
+        return 0.0
+    t = mu1 / mu0
+    return t * t * t * (10.0 + t * (6.0 * t - 15.0))
 
 
 def _deprop_dp1_fraction(mu0: float, mu1: float, mu2: float) -> float:
@@ -1668,6 +1788,11 @@ class HybridPolymerSystem(ReactionSystem):
         # (pydas' own atol/rtol arrays are cdef-private).
         self._jac_wt_atol = None
         self._jac_wt_rtol = None
+        # i061: pre-floor copy of atol_array (see MOMENT_EWT_FLOOR_K). The
+        # moment error-weight floor raises atol_array on the mu-slots for DASPK
+        # error control; chemistry noise-floor consumers read this preserved
+        # array so their behaviour is bitwise unchanged. Set in initialize_model.
+        self._chem_atol_array = None
 
         self._scratch_C_gas = None
         self._scratch_C_poly = None
@@ -1697,6 +1822,11 @@ class HybridPolymerSystem(ReactionSystem):
         self._pool_worst_trial_excursion = None
         self._pool_mu_floors = None
         self._exhaustion_census_emitted = set()
+        # I-090 cone-margin dead-band narrowing: the rtol half of the b1c - 1
+        # noise band, rebound from the live tolerances by
+        # initiate_tolerances. The base-class default stands in so the law is
+        # well-defined on a system whose tolerances were never initiated.
+        self._cone_b1_rtol = 1.0e-8
 
     def initiate_tolerances(self, atol=1e-16, rtol=1e-8, sensitivity=False,
                             sens_atol=1e-6, sens_rtol=1e-4):
@@ -1719,6 +1849,13 @@ class HybridPolymerSystem(ReactionSystem):
         """
         ReactionSystem.initiate_tolerances(self, atol, rtol, sensitivity,
                                            sens_atol, sens_rtol)
+        # I-090: bind the rtol half of the cone-margin dead-band b1c noise
+        # band to the tolerance actually in force. Taken from the scalar rtol
+        # here for the same reason _softclamp_lam takes the scalar atol --
+        # these are scalar-tolerance decks; the per-state generalization is
+        # deferred with its sibling's. The floor half of the band comes from
+        # the pool's own r81 floors, read at the call site.
+        self._cone_b1_rtol = float(rtol)
         n_weak = 0
         for pool in self.polymer_pools:
             q = pool.radical_qssa_unzip
@@ -4096,12 +4233,144 @@ class HybridPolymerSystem(ReactionSystem):
         # proven; detection does NOT re-run per step). Runs on every
         # rebuild so the layout validation tracks the live model.
         self._setup_scoped_jacobian()
+
+        # i061 moment error-weight floor (see MOMENT_EWT_FLOOR_K). Applied HERE,
+        # AFTER _pool_mu_floors (4060), _softclamp_lam (4082) and the scoped
+        # Jacobian's _jac_wt_atol have all been computed from the ORIGINAL
+        # atol_array, and immediately BEFORE initialize_solver hands the array to
+        # DASPK -- so the only consumer that sees the floored value is DASPK's
+        # own error weight. Chemistry noise-floor consumers are left bitwise
+        # unchanged: _chem_atol_array preserves the pre-floor array for the one
+        # LIVE reader (attribution trust, get_polymer_pool_stats). Scope is the
+        # complement of _char_rate_include_mask -- exactly the pool mu_indices
+        # and is_moment_dummy core positions (bookkeeping coordinates), NEVER a
+        # physical species -- a claim that i075 turned into a GUARD rather than
+        # a comment: _assert_moment_slots_carry_no_molar_amount refuses the
+        # floor outright if any slot in the mask complement looks like real
+        # chemistry. Inert when there are no moment slots.
+        self._chem_atol_array = np.array(self.atol_array, dtype=float)
+        if self._char_rate_include_mask is not None:
+            _floor = MOMENT_EWT_FLOOR_K * atol
+            _moment_slots = [i for i in range(self.num_core_species)
+                             if not self._char_rate_include_mask[i]]
+            self._assert_moment_slots_carry_no_molar_amount(
+                _moment_slots, core_species, _floor)
+            _floored = []
+            for i in _moment_slots:
+                if self.atol_array[i] < _floor:
+                    self.atol_array[i] = _floor
+                    _floored.append(i)
+            if _floored:
+                _labels = ", ".join(
+                    "%d:%s" % (i, getattr(core_species[i], "label", "?"))
+                    for i in _floored)
+                logging.info(
+                    "i061 moment error-weight floor: raised DASPK atol to "
+                    "%.3e on %d moment-coordinate slot(s) [%s]; physical "
+                    "species untouched.", _floor, len(_floored), _labels)
+
         ReactionSystem.initialize_solver(self)
 
         self.diagnose_polymer_mapping(core_species)
 
+    def _assert_moment_slots_carry_no_molar_amount(self, moment_slots,
+                                                   core_species, floor):
+        """i075 d3: refuse the moment error-weight floor on anything that could
+        be a physical species.
 
+        The floor's scope is the complement of _char_rate_include_mask. That
+        complement is NOT provably free of physical species from the mask's own
+        construction:
 
+          * the flag arm (`is_moment_dummy`) is a plain mutable Species
+            attribute, set at exactly one site (rmgpy/rmg/model.py) but never
+            re-validated afterwards; and
+          * the authoritative arm, a pool's `mu_indices`, is resolved by LABEL
+            -- polymer_input.to_config maps `mu_species` through the core
+            spc_map, and those mu_species come from
+            `species_dict["{proxy}_mu{k}"]`. `_register_polymer` deliberately
+            SKIPS creating the dummy when a species of that label "already
+            exists (e.g., from the input file)", and no code path checks
+            `is_moment_dummy` on the species it reuses. A deck that names a
+            real species `PS_mu0` therefore binds it as a moment coordinate.
+
+        So the claim is enforced here instead of assumed. Three properties of a
+        bookkeeping coordinate, each independent of the mask that selected the
+        slot and each a direct statement that the slot carries a REAL MOLAR
+        AMOUNT when it fails:
+
+          1. it takes part in no reaction anywhere in the network -- a moment
+             coordinate carries dmu/dt, never a chemical flux;
+          2. the deck declares no mole fraction for it -- a moment coordinate's
+             t=0 value comes from initial_polymer_moments, never from
+             initial_mole_fractions;
+          3. it is not classified GAS -- moment coordinates are condensed-phase
+             bookkeeping, and a gas slot is by definition a molar amount in the
+             gas volume.
+
+        Any of the three failing means relaxing DASPK's error control -- two
+        decades, silently -- on something that is not a bookkeeping coordinate,
+        which is exactly the failure this guard exists to make impossible. Hard
+        error, never a warning: the alternative is a quietly under-resolved
+        species.
+
+        NOT checked, deliberately: `reactive`. Moment dummies are created
+        reactive=False by rmgpy/rmg/model.py, but nothing in the solver contract
+        requires it, and every synthetic pool fixture in the solver test suite
+        builds its mu-species with the Species default (reactive=True). Keying
+        on it would refuse legal models. LIMIT of what is checked: a species
+        that is genuinely inert, carries no deck loading and is condensed --
+        an unreacting condensed diluent -- would still pass all three arms if it
+        were mis-bound into a mu slot. That case is unreachable through
+        polymer_input (a mu slot is bound only from `{proxy}_mu{k}`), but it is
+        not excluded by this guard.
+        """
+        cdef int i
+        if not moment_slots:
+            return
+        _network_species = None
+        _mf = getattr(self, "initial_mole_fractions", None) or {}
+        _mf_labels = set()
+        for _k in _mf:
+            _lbl = getattr(_k, "label", None)
+            _mf_labels.add(_lbl if _lbl is not None else _k)
+        gas_mask = self.gas_species_mask
+        for i in moment_slots:
+            spc = core_species[i] if i < len(core_species) else None
+            label = getattr(spc, "label", "?")
+            reason = None
+            if _network_species is None:
+                _network_species = set()
+                for arr in (self.reactant_indices, self.product_indices):
+                    if arr is None:
+                        continue
+                    flat = np.asarray(arr).ravel()
+                    _network_species.update(int(v) for v in flat[flat >= 0])
+            if i in _network_species:
+                reason = ("it appears in the reaction network "
+                          "(reactant_indices/product_indices), so it carries "
+                          "chemical flux")
+            elif spc is not None and (spc in _mf or label in _mf_labels):
+                reason = ("the deck declares an initial MOLE FRACTION for it; "
+                          "a moment coordinate is loaded through "
+                          "initial_polymer_moments")
+            elif (gas_mask is not None and i < len(gas_mask)
+                    and bool(gas_mask[i])):
+                reason = ("it is classified GAS, so its state slot is a molar "
+                          "amount in the gas volume, not condensed-phase "
+                          "bookkeeping")
+            if reason is not None:
+                raise ValueError(
+                    "i061 moment error-weight floor: core slot %d (%r) is in "
+                    "the complement of _char_rate_include_mask -- the solver "
+                    "is treating it as a moment COORDINATE and would relax "
+                    "its DASPK atol to %.3e -- but %s. A physical species must "
+                    "never receive the moment floor. Fix the pool's "
+                    "mu_indices / is_moment_dummy binding rather than the "
+                    "floor: a species labelled like a moment dummy but "
+                    "carrying real molar amounts is already being integrated "
+                    "as dmu/dt."
+                    % (i, label, float(floor), reason))
 
     def diagnose_polymer_mapping(self, core_species):
         w = 90
@@ -4850,7 +5119,15 @@ class HybridPolymerSystem(ReactionSystem):
         # SMALL_EPS (pre-floor behavior, honest).
         n_pools = len(self.polymer_pools)
         e_n_by_pool = [0.0] * n_pools
-        atol_arr = getattr(self, "atol_array", None)
+        # i061: the attribution trust band is a CHEMISTRY noise floor and must
+        # stay anchored to the deck atol, so read the PRE-floor copy. The moment
+        # error-weight floor (initialize_model) raised atol_array on the mu-slots
+        # for DASPK error control only. Falls back to atol_array when no floor
+        # was applied (e.g. a snapshot before initialize_model, atol_mu0->0.0,
+        # the pre-existing honest degeneracy).
+        atol_arr = getattr(self, "_chem_atol_array", None)
+        if atol_arr is None:
+            atol_arr = getattr(self, "atol_array", None)
         for p in range(n_pools):
             i0 = self.pool_mu0_indices[p]
             i1 = self.pool_mu1_indices[p]
@@ -5159,6 +5436,92 @@ class HybridPolymerSystem(ReactionSystem):
             raw0 = y[idx0]
             raw1 = y[idx1]
             raw2 = y[idx2]
+            # CONE census on the ACCEPTED state. The negative check below
+            # fires on mu1 < 0, which is DOWNSTREAM of the actual violation:
+            # the realizable set is mu1 >= mu0 >= 0 (a k>=1 distribution has
+            # at least one repeat unit per chain), and a pool exits it at
+            # mu1 = mu0, strictly before mu1 = 0. Measured on the legacy
+            # k_unzip kernel against a scission-fed pool, the two are ~10 ms
+            # apart at k_unzip/k_scission = 100 -- but the mu1 = 0 crossing
+            # exists ONLY above k_unzip = k_scission/4 (there the (mu0, mu1)
+            # subsystem's eigenvalues go complex and the trajectory spirals
+            # through zero), whereas the cone exit happens at EVERY positive
+            # k_unzip. Below that ratio a pool could leave the realizable
+            # cone and no accepted-state check would ever fire.
+            # Deliberately a warn-once CENSUS, not a raise: leaving the cone
+            # says a moment SOURCE TERM is wrong, which is the diagnosis the
+            # (default-off) debug_check_realizability warning already
+            # carries, whereas the r81 raise below is scoped to integrator
+            # corruption. A pool that fully unzips legitimately ENDS at the
+            # boundary mu1 = mu0, so promoting this to a hard error would
+            # kill runs on boundary ULP noise; that is a policy change to
+            # adjudicate on its own, not a rider on a kernel fix. The
+            # tolerance is the SUM of the two moments' own exhaustion
+            # floors -- each is trusted to within its floor, so their
+            # difference is trusted to within both. No existing floor,
+            # tolerance or check is altered.
+            if (raw1 < raw0 - (f0 + f1)
+                    and self.polymer_pools[p].label
+                    not in self._realizability_warned):
+                pool = self.polymer_pools[p]
+                self._realizability_warned.add(pool.label)
+                logging.warning(
+                    "POOL CONE CENSUS: pool %s left the realizable cone on an "
+                    "ACCEPTED state: mu1=%.6e < mu0=%.6e mol (gap %.6e, "
+                    "tolerance %.6e = f_mu0 + f_mu1). Require mu1 >= mu0 >= 0 "
+                    "-- every chain carries at least one repeat unit. This is "
+                    "a moment SOURCE TERM defect, not exhaustion, and it "
+                    "precedes any negative moment; census only, the r81 "
+                    "negative check below is unchanged.",
+                    pool.label, raw1, raw0, raw1 - raw0, f0 + f1)
+
+            # VARIANCE census on the ACCEPTED state -- the OTHER half of
+            # three-moment realizability, which nothing checked (I-065
+            # defect 2). mu1 >= mu0 >= 0 above is necessary but not
+            # sufficient: any distribution also satisfies Cauchy-Schwarz,
+            #     mu0*mu2 >= mu1^2   (equivalently Var[n] = mu2/mu0 -
+            #     (mu1/mu0)^2 >= 0, i.e. a NON-NEGATIVE chain-length
+            #     variance), with equality only for a monodisperse pool.
+            # A state that violates it has an imaginary spread: PDI < 1,
+            # _gamma_params_from_mu012 returns no params, and the mu3
+            # log-Lagrange closure mu0*(mu2/mu1)^3 stops describing any
+            # distribution at all -- the same class of corruption the cone
+            # exit is, and just as invisible to the mu1 < 0 raise below.
+            # Tolerance is first-order propagation of the moments' own
+            # exhaustion floors through the product, plus the two
+            # second-order terms so an all-at-floor state cannot trip it:
+            #     d(mu0*mu2 - mu1^2) <= f0*|mu2| + f2*|mu0| + 2*f1*|mu1|
+            #                           + f0*f2 + f1*f1
+            # No existing floor, tolerance or check is altered, and the
+            # same warn-once/never-raise policy as the cone census applies
+            # -- promoting either to a hard error is a policy change to
+            # adjudicate on its own, not a rider on a kernel fix. Keyed
+            # separately in the warn set so a pool that already reported a
+            # cone exit can still report a variance violation.
+            if (raw0 * raw2 < raw1 * raw1 - (f0 * fabs(raw2)
+                                             + f2 * fabs(raw0)
+                                             + 2.0 * f1 * fabs(raw1)
+                                             + f0 * f2 + f1 * f1)
+                    and (self.polymer_pools[p].label, "variance")
+                    not in self._realizability_warned):
+                pool = self.polymer_pools[p]
+                self._realizability_warned.add((pool.label, "variance"))
+                logging.warning(
+                    "POOL VARIANCE CENSUS: pool %s violated moment "
+                    "realizability on an ACCEPTED state: mu0*mu2=%.6e < "
+                    "mu1^2=%.6e (mu0=%.6e, mu1=%.6e, mu2=%.6e mol, deficit "
+                    "%.6e, tolerance %.6e). Cauchy-Schwarz requires "
+                    "mu0*mu2 >= mu1^2 for ANY chain-length distribution; "
+                    "below it the chain-length variance is negative, the "
+                    "gamma closure has no parameters and the mu3 "
+                    "log-Lagrange closure describes nothing. This is a "
+                    "moment SOURCE TERM defect; census only, the r81 "
+                    "negative check below is unchanged.",
+                    pool.label, raw0 * raw2, raw1 * raw1, raw0, raw1, raw2,
+                    raw0 * raw2 - raw1 * raw1,
+                    (f0 * fabs(raw2) + f2 * fabs(raw0) + 2.0 * f1 * fabs(raw1)
+                     + f0 * f2 + f1 * f1))
+
             if raw0 < -f0 or raw1 < -f1 or raw2 < -f2:
                 pool = self.polymer_pools[p]
                 raise ValueError(
@@ -5670,8 +6033,56 @@ class HybridPolymerSystem(ReactionSystem):
         # remaining discontinuity from an unresolvable noise scale
         # (Q10 == 0) up to the resolvable M_LO band edge, where DASSL's
         # corrector can actually take a step across it.
+        #
+        # I-090 NARROWING. That argument has a domain: it holds wherever
+        # S_cone = q10/(V_poly*(b1c - 1)) is a bound at all. It is VOID on
+        # the b1c == 1 surface, where S_cone DIVERGES and therefore caps
+        # nothing -- there the hard zero is not "declining to trust noise",
+        # it is discarding a rate this gate has no business capping, and
+        # doing it across a jump (s_free on the b1c <= 1 side of the
+        # surface, 0.0 on the other) that the corrector cannot step over.
+        # That jump is the measured never-returns signature: the poly_102
+        # mod_2..mod_5 pools ride |b1c - 1| <= 5e-5 through the crash
+        # window and DASPK's step size collapses against it indefinitely.
+        #
+        # So the dead band now runs the divergence-repairing completion
+        # softmin_p(s_free, S_cone) on a noise-scale neighbourhood of
+        # b1c == 1 ONLY, and hands back to the SAME exact hard zero outside
+        # it. Both handoffs are C1, so the narrowing gives back nothing the
+        # completion bought and introduces no new edge:
+        #   * b1c -> 1+ : S_cone -> +inf so the completion -> s_free, and
+        #     u -> 1 with u' = 0, so the law meets the b1c <= 1 branch's
+        #     s_free continuously and with matching slope.
+        #   * b1c - 1 -> b1_band : u -> 0 with u' = 0, so the law meets the
+        #     N5b hard zero continuously, and BIT-FOR-BIT 0.0 beyond it --
+        #     not merely small. Everything at O(1) b1c - 1 (all bulk
+        #     cone-shrinking debits) is unchanged from round-62.
+        #   * across the M_LO band edge the law is now no WORSE and near
+        #     the surface strictly better: the pre-existing edge jump is
+        #     scaled by (1 - u), so it vanishes exactly where u -> 1.
+        # The neighbourhood half-width is derived, not fitted: it is the
+        # propagated error weight of the two moments b1c is built from, and
+        # it must be RELATIVE rather than absolute -- see the I-090 block
+        # comment near CONE_B1_NOISE_REL_FLOOR. (mirrored in the numpy
+        # oracle consumer's MIRRORED SOLVER LAW block and in _s_eff in
+        # solverPolymerTest.py -- keep all three in sync)
         if m_dist <= CONE_MARGIN_M_LO:
-            return 0.0
+            b1_band = ((self._cone_b1_rtol * (y1c + y2c)
+                        + floors[pool_idx, 1] + floors[pool_idx, 2]) / y1c)
+            if b1_band < CONE_B1_NOISE_REL_FLOOR:
+                b1_band = CONE_B1_NOISE_REL_FLOOR
+            b1_n = (b1c - 1.0) / b1_band
+            if b1_n >= 1.0:
+                return 0.0      # b1c - 1 is resolved signal: the N5b regime
+            s_cone = q10 / (V_poly * (b1c - 1.0))
+            if s_free <= 0.0:
+                return s_free
+            m = s_cone if s_cone < s_free else s_free
+            p = BUNDLE_LIMITER_SOFTMIN_P
+            acc = (m / s_free) ** p + (m / s_cone) ** p
+            cap = m * acc ** (-1.0 / p)
+            u = 1.0 - b1_n * b1_n * (3.0 - 2.0 * b1_n)
+            return u * cap
         s_cone = q10 / (V_poly * (b1c - 1.0))
         if s_free <= 0.0:
             return s_free
@@ -6826,9 +7237,74 @@ class HybridPolymerSystem(ReactionSystem):
                         dmu2_dt += pool.k_scission * (mu1 - mu3) / 3.0
 
                 if pool.k_unzip > 0:
+                    # Chain-end monomer release: one active end per chain, so
+                    # events occur at k_unzip*mu0 and each removes ONE repeat
+                    # unit from its chain.
+                    #   dmu1 = -k_u*mu0
+                    #   dmu2 = -k_u*(2*mu1 - mu0)   (a DP=n chain loses 2n-1)
+                    #   dmu0 = -k_u*N1              (see below)
+                    # The dmu0 term is what the legacy form never carried. At
+                    # the all-monomer boundary mu1 = mu0 every chain has
+                    # length 1, and unzipping its last unit removes a CHAIN,
+                    # not just a unit. Without that debit the drain -k_u*mu0
+                    # stays at full strength as mu1 falls to mu0, so mu1 is
+                    # pushed THROUGH mu0, out of the realizable cone
+                    # (mu1 >= mu0 >= 0 for any k>=1 distribution) and then
+                    # through zero -- the accepted-state r81 raise, not a
+                    # trial-state excursion. With it the boundary is an
+                    # INVARIANT set of the vector field:
+                    #   d(mu1 - mu0)/dt = -k_u*mu0*(1 - p1) -> 0 as p1 -> 1,
+                    # which is the same self-limiting structure the scission
+                    # kernel above gets from its (mu1 - mu0) factor.
+                    # N1 = mu0*p1 comes from the SAME closure the
+                    # k_depropagation sibling uses (_deprop_dp1_fraction:
+                    # gamma leg plus a smooth terminal floor with p1 == 1 for
+                    # mean DP <= 1). That floor is also what keeps this a
+                    # TERMINATION rather than a stall: the last repeat unit
+                    # per chain still drains, at dmu0 = -k_u*mu0, instead of
+                    # freezing the residue (r74).
+                    # Deliberately NOT gated: the unit drain, the mu2 drain
+                    # and the released-monomer flux are unchanged, bit for
+                    # bit, so this fixes realizability without touching how
+                    # much mass the unzip channel removes.
+                    #
+                    # The debit is written as (release rate)*N1 because that
+                    # is the CHANNEL-INDEPENDENT form of the law: releases
+                    # occur one per active chain end, so a fraction N1 of
+                    # them land on a DP=1 chain and remove it. The QSSA
+                    # channel below carries the SAME term against its own
+                    # release rate r_qssa -- the two are the same chain-end
+                    # event, and the solver PINS them equivalent, so the
+                    # debit must be applied to both or to neither.
+                    # NOT gated on the explicit-tail handshake. The handshake
+                    # removes chains at DP=xs and hands them to an explicit
+                    # species; this removes chains at DP=1 that unzipped
+                    # their last unit -- different populations, both real. A
+                    # gate on the handshake's map entry was tried and is
+                    # WRONG: it makes the debit differ between two configs
+                    # that differ ONLY in whether the tail is explicit, which
+                    # breaks the auto-gen path's ON/OFF differencing pin.
+                    #
+                    # I-065 defect 1: the EVENT rate is set by the chain
+                    # count, so off the cone (mu1 = 0, mu0 > 0) it drained
+                    # mu1 further negative and emitted k_unzip*mu0 of gas
+                    # monomer with no repeat unit behind it -- the solver
+                    # reporting mass it never had. _release_units_gate is
+                    # EXACTLY 1.0 for mu1 >= mu0, so on every state inside
+                    # the realizable cone this is a bit-for-bit no-op
+                    # (x*1.0 == x), and it is exactly 0.0 at mu1 <= 0. It
+                    # scales the RELEASE -- the mu1 drain, the mu2 drain and
+                    # the gas emission, which must move together or the
+                    # ledger fabricates/destroys mass -- and deliberately
+                    # NOT the I-055 chain-termination debit on mu0 below,
+                    # which keeps draining at full strength so a mean-DP < 1
+                    # state heals back toward the cone instead of stalling.
                     r_events = pool.k_unzip * mu0
-                    dmu1_dt -= r_events
-                    dmu2_dt -= pool.k_unzip * (2.0 * mu1 - mu0)
+                    r_release = r_events * _release_units_gate(mu0, mu1)
+                    dmu1_dt -= r_release
+                    dmu2_dt -= (pool.k_unzip * (2.0 * mu1 - mu0)
+                                * _release_units_gate(mu0, mu1))
+                    dmu0_dt -= r_events * _deprop_dp1_fraction(mu0, mu1, mu2)
                     if pool.monomer_poly_index is not None:
                         # Released monomer is emitted to the GAS species
                         # amount basis (incident 2026-07-03, design B-prime):
@@ -6836,7 +7312,7 @@ class HybridPolymerSystem(ReactionSystem):
                         # dn_dt += r*V_poly [mol/s] on the gas-masked
                         # monomer_poly_index. Mass conservation: one gas
                         # monomer mole per drained mu1 repeat unit.
-                        small_src[pool.monomer_poly_index] = r_events
+                        small_src[pool.monomer_poly_index] = r_release
 
             # Radical-homolysis initiation kernel (Stage 1, adjudicated round
             # 66). Independent of tail_kinetics (a custom tail closure does
@@ -7197,25 +7673,57 @@ class HybridPolymerSystem(ReactionSystem):
                         R_ss = math.sqrt(fkiB / kt_qssa)
                     r_qssa = self.qssa_monomer_yield[pool_i] * kdp_qssa * R_ss
                 if r_qssa > 0.0:
-                    # Chain-END monomer release signature: mu0 untouched (no
-                    # chain created/destroyed), mu1 drains one unit per
-                    # release, mu2 drains (2 E[n] - 1) per release with the
-                    # same-pool-VE clamp (>0 only: the drain must never make
-                    # mu2 increase; mu0 ~ 0 guarded by the eps clamp).
+                    # Chain-END monomer release signature: mu1 drains one
+                    # unit per release, mu2 drains (2 E[n] - 1) per release
+                    # with the same-pool-VE clamp (>0 only: the drain must
+                    # never make mu2 increase; mu0 ~ 0 guarded by the eps
+                    # clamp).
                     # monomer_yield already scales r_qssa, so the moment
                     # drain and the gas emission below scale TOGETHER --
                     # scaling only one side would fabricate/destroy mass.
-                    dmu1_dt -= r_qssa
+                    # I-055 (see the k_unzip kernel above for the derivation).
+                    # This channel used to leave mu0 untouched ("no
+                    # chain created/destroyed"), which is wrong for the same
+                    # reason it was wrong on the legacy k_unzip channel
+                    # above -- a release that consumes a DP=1 chain's LAST
+                    # repeat unit destroys the CHAIN, not just the unit.
+                    # Without the debit mu1 is driven down through mu0, out
+                    # of the realizable cone mu1 >= mu0 >= 0, and then
+                    # negative: the accepted-state r81 raise that killed run
+                    # poly_104. A fraction N1 of releases land on a DP=1
+                    # chain, so the debit is r_qssa*N1 -- the SAME
+                    # (release rate)*N1 law the legacy channel carries.
+                    # It must be applied to both channels or to neither:
+                    # the solver pins them equivalent
+                    # (test_qssa_handshake_equivalence_with_k_unzip), and
+                    # fixing only one breaks that pin.
+                    # I-065 defect 1, sibling channel. The availability gate
+                    # carried by the legacy channel above is applied here
+                    # too, because the two are pinned equivalent and a
+                    # release law must hold on both or on neither. On THIS
+                    # channel it is provably dead code today: the release
+                    # rate is r_qssa ~ sqrt(B_qssa) with
+                    # B_qssa = max(mu1 - mu0, 0) and the whole block is
+                    # gated `elif B_qssa > 0.0`, so the channel is already
+                    # identically zero everywhere the gate is < 1, and
+                    # exactly 1.0 (bit-for-bit no-op) everywhere it fires.
+                    # It is kept because that safety is B_qssa's accident,
+                    # not this kernel's contract: loosen the initiation
+                    # gate and the fabrication returns.
+                    r_release_qssa = r_qssa * _release_units_gate(mu0, mu1)
+                    dmu1_dt -= r_release_qssa
+                    dmu0_dt -= r_qssa * _deprop_dp1_fraction(mu0, mu1, mu2)
                     qssa_mu2_dec = 2.0 * (mu1 / max(mu0, SMALL_EPS)) - 1.0
                     if qssa_mu2_dec > 0.0:
-                        dmu2_dt -= r_qssa * qssa_mu2_dec
+                        dmu2_dt -= r_release_qssa * qssa_mu2_dec
                     # monomer_poly_index is non-None whenever enabled (M1
                     # invariant); emission flows through the SAME small_src
                     # -> dn_dt * V_poly path as the k_unzip channel, i.e.
                     # to the GAS species amount basis (incident 2026-07-03,
                     # design B-prime).
                     small_src[pool.monomer_poly_index] = (
-                        small_src.get(pool.monomer_poly_index, 0.0) + r_qssa)
+                        small_src.get(pool.monomer_poly_index, 0.0)
+                        + r_release_qssa)
 
             # End-radical DEPROPAGATION kernel (adjudicated round 74 SS2, the
             # run-6 no-outlet wall fix). Reads ONLY the flattened kdep_*
@@ -7228,6 +7736,8 @@ class HybridPolymerSystem(ReactionSystem):
             # Law, per radical-end pool (ONE active radical end per chain),
             # k_dep(T) = A*T^n*exp(-Ea/(R_gas*T)) at the RUNTIME T:
             #   R    = k_dep * mu0 * g   unzip events == monomer release
+            #        (g carries BOTH the r74 exhaustion gate and the I-065
+            #         availability gate; both are exactly 1 for mean >= 1)
             #   gas  = +R at kdep_gas    (the SAME float as the mu1 drain:
             #                             d(condensed) + d(gas monomer) = 0
             #                             EXACTLY under MW multiplication)
@@ -7265,7 +7775,21 @@ class HybridPolymerSystem(ReactionSystem):
                         f"Ea={self.kdep_Ea[pool_i]:g} J/mol. Refusing to "
                         f"integrate a poisoned kernel.")
                 mean_kdep = mu1 / mu0
-                g_kdep = 1.0 - _smooth_pos(1.0 - mean_kdep, KDEP_GATE_WIDTH)
+                # I-065 defect 1, sibling channel. The r74 SS5 exhaustion
+                # gate g is exactly 1 for mean >= 1 but bottoms out at
+                # W^2/(1 + W^2) = 1e-4, so at the mu1 = 0, mu0 > 0 noise
+                # state this channel still emitted k_dep*mu0*1e-4 of gas
+                # with no repeat unit behind it -- bounded fabrication, but
+                # fabrication. _release_units_gate takes it to EXACTLY zero
+                # there while staying EXACTLY 1.0 (bit-for-bit no-op) for
+                # mean >= 1, and is C2 at the boundary, so the no-cliff
+                # property g was designed for survives
+                # (test_deprop_smooth_exhaustion_gate_no_cliff).
+                # dmu0 below stays UNGATED, as r74 requires: chains keep
+                # draining at -k_dep*mu0 so a mean < 1 state heals back
+                # toward the cone rather than grinding.
+                g_kdep = ((1.0 - _smooth_pos(1.0 - mean_kdep, KDEP_GATE_WIDTH))
+                          * _release_units_gate(mu0, mu1))
                 r_kdep = k_dep * mu0 * g_kdep
                 if r_kdep > 0.0:
                     dmu1_dt -= r_kdep
@@ -7279,7 +7803,54 @@ class HybridPolymerSystem(ReactionSystem):
 
             # Hybrid Handshake
             tail_mean = mu1 / mu0 if mu0 > SMALL_EPS else 0.0
-            valid_tail = (mu0 > TAIL_CONC_MIN) and (tail_mean > xs + 1e-9)
+            # I-060. `mu0 > TAIL_CONC_MIN` is the half that does real work
+            # and it is kept unchanged: below 1e-9 mol/m^3 the tail is
+            # numerically empty, every quantity the handshake computes comes
+            # through the division mu1/mu0, and depositing that quotient into
+            # a REAL core species would seed an oligomer out of round-off.
+            #
+            # The other half, `tail_mean > xs + 1e-9`, asked a real question --
+            # can the pool afford the chain the handshake is about to remove?
+            # -- and answered it with an average, as a hard boolean, on the
+            # wrong side of the flux's own maximum. Measured on a scission-fed
+            # k_unzip pool (xs=3, k_unzip/k_scission = 5, PDI 1.5): the flux is
+            # LARGEST just above the threshold and the boolean took it to zero
+            # there -- F(mean = xs + 1e-6) = 3.8390e-02, F(mean = xs) = 0.0,
+            # a finite JUMP in the residual on a surface the trajectory
+            # crosses, with dmu0 flipping sign across it
+            # (-2.1377e-02 -> +1.7013e-02). That is a zeroth-order
+            # discontinuity, strictly worse than the first-derivative kink the
+            # _release_units_gate quintic exists to avoid, and downstream of
+            # it the handshake -- the tail's ONLY outlet into the explicit
+            # ladder -- stayed off for the rest of the run: the DP=xs species
+            # froze and the whole sub-cutoff residue left as gas monomer.
+            #
+            # The boolean is therefore removed here and replaced, at the flux
+            # below, by explicit per-state BUDGETS on the boundary population
+            # -- one from each realizability inequality, derived there. An
+            # average over the whole tail was never the right instrument: the
+            # question is how many chains sit at DP = xs, and mean DP > xs is
+            # neither necessary nor sufficient for that.
+            #
+            # Not to be confused with the tail's REPRESENTATION invariant,
+            # which is a different inequality: the tail holds chains with
+            # n > xs (module docstring 'Moment Tail: ... chains with DP > xs';
+            # polymer_input.PolymerPool xs doc), so its support starts at xs+1
+            # and it satisfies mu1 >= (xs+1)*mu0. The handshake is the only
+            # term that pushes THAT quantity back up -- dmu0 -= F and
+            # dmu1 -= xs*F give d(mu1 - (xs+1)*mu0)/dt += +F exactly -- which
+            # is why losing it below the boundary is a defect and not merely
+            # a branch not taken.
+            #
+            # Removing the condition and putting nothing in its place was
+            # tried and is WRONG: at full strength below the boundary the
+            # handshake removes chains it has no units for, and the pool is
+            # driven clean out of the mu1 >= mu0 cone (min(mu1 - mu0) =
+            # -1.51e-01 on the trajectory above, against +1.85e-20 unfixed).
+            # So was a smooth availability FRACTION -- the budgets below are
+            # absolute chain counts, and a fraction of the wrong base is not
+            # a bound (see the derivation at the flux clamp).
+            valid_tail = mu0 > TAIL_CONC_MIN
 
             # Per-chain unzip frequency feeding the handshake: the legacy
             # k_unzip IS that frequency; the QSSA equivalent is
@@ -7302,12 +7873,85 @@ class HybridPolymerSystem(ReactionSystem):
                         k_shape, theta = params
                         p_cond = _gamma_prob_conditional_hybrid(xs + 1, xs, k_shape, theta)
                     else:
-                        if tail_mean <= xs + 1.0:
-                            p_cond = 0.0
-                        elif tail_mean >= xs + 2.0:
-                            p_cond = 0.0
-                        else:
-                            p_cond = 1.0 - abs(tail_mean - (xs + 1.5)) / 0.5
+                        # I-098 MONODISPERSE FALLBACK.
+                        #
+                        # The closure has declined -- any moment <=
+                        # SMALL_EPS, PDI <= 1 + 1e-6, or non-finite params --
+                        # so there is no fitted distribution here and the
+                        # distributional assumption has to be STATED. It is
+                        # the substance of this branch, not a footnote.
+                        #
+                        # What p_cond means. The gamma leg above computes
+                        # P(DP = xs+1 | DP > xs): the fraction of tail chains
+                        # in the BOUNDARY BIN. The tail's support starts at
+                        # xs + 1 (module docstring; the representation
+                        # invariant mu1 >= (xs+1)*mu0 is spelled out at the
+                        # valid_tail note above), so the boundary bin IS the
+                        # support's minimum. Hence tail_mean = xs + 1 is the
+                        # mean equalling the minimum, which on a non-negative
+                        # lattice forces EVERY chain onto that minimum:
+                        # p_cond = 1 exactly, with no assumption at all.
+                        #
+                        # The triangle that stood here returned 0.0 there and
+                        # peaked at xs + 1.5, i.e. it ran monotone in the
+                        # wrong direction across the entire lower half of its
+                        # support. Measured against this branch's own inputs:
+                        # 0.0000 at xs+1 (truth 1.0), 2.0e-12 as
+                        # tail_mean -> (xs+1)+, 1.0 at xs+1.5 (truth 0.5).
+                        #
+                        # THE ASSUMPTION. The closure refuses precisely
+                        # because the variance collapsed, so take the
+                        # MINIMUM-VARIANCE distribution on the tail's integer
+                        # support {xs+1, xs+2, ...} with this mean. On a
+                        # lattice that distribution is unique -- all mass on
+                        # the two sites bracketing the mean, split so the
+                        # mean is reproduced -- and its mass at xs + 1 is
+                        # 1 - (tail_mean - (xs+1)) on [xs+1, xs+2], 0 above,
+                        # 1 below (a mean under the support's minimum is not
+                        # realizable; the nearest state that is puts
+                        # everything on the minimum). That is the single
+                        # clamped expression below. Its only constants are
+                        # the lattice offsets 1 and 2, in units of one repeat
+                        # unit; nothing is fitted, and nothing needs a scale
+                        # this function does not already carry.
+                        #
+                        # Why this is not merely one defensible choice among
+                        # many: the trigger is itself a realizability filter.
+                        # A lattice distribution with mean n + f has variance
+                        # >= f*(1-f), so PDI - 1 >= f*(1-f)/mean^2, and
+                        # reaching PDI <= 1 + 1e-6 needs f <= 1.6e-5 at
+                        # xs = 3 (4.0e-6 at xs = 1, 2.6e-3 at xs = 50). Every
+                        # state that can actually arrive here therefore sits
+                        # within ~1e-5 of an INTEGER mean, where the answer is
+                        # not an interpolation at all: 1 at xs+1, 0 at xs+2
+                        # and beyond. The old triangle returned 0 at BOTH of
+                        # those. The interior is lattice-unrealizable, and the
+                        # linear form is the unique CONTINUOUS interpolant of
+                        # the two realizable endpoints -- continuity is not
+                        # optional, since a step would put a zeroth-order jump
+                        # in the residual on a surface the trajectory crosses,
+                        # which is the defect the I-060 note above exists to
+                        # record.
+                        #
+                        # Meeting the gamma leg. As PDI -> 1+ the gamma leg
+                        # tends to nearest-lattice-site ROUNDING -- its
+                        # half-integer bins give 1.0 below xs+1.5, 0.0 above,
+                        # 0.500133 at it -- and this bracket is exactly that
+                        # step's continuous interpolant, so the two agree at
+                        # frac = 0, 0.5 and 1. Measured across the trigger at
+                        # fixed mean (PDI = 1+1e-6 vs 1+1e-6+1e-9), over the
+                        # lattice-realizable states that can reach it,
+                        # sup|fallback - gamma| falls from 1.000000 to
+                        # 1.0e-05. Over the whole interval including the
+                        # unrealizable interior it falls from 1.000000 to
+                        # 0.475000; that residue is the gamma leg's own
+                        # rounding step at frac = 0.5, which a continuous law
+                        # cannot reproduce and should not try to.
+                        #
+                        # Monotone non-increasing, as the truth is: the mass
+                        # on the lowest site can only fall as the mean leaves
+                        # it. The triangle was not.
+                        p_cond = max(0.0, min(1.0, (xs + 2.0) - tail_mean))
 
                     p_cond = min(1.0, max(0.0, p_cond))
 
@@ -7319,6 +7963,139 @@ class HybridPolymerSystem(ReactionSystem):
                     if xs > 0:
                         N_boundary = min(N_boundary, mu1 / xs)
                         N_boundary = min(N_boundary, mu2 / (xs * xs))
+                    # I-060 REALIZABILITY BUDGETS.
+                    #
+                    # p_cond above is the gamma closure's ESTIMATE of what
+                    # fraction of the tail sits at the boundary. The three
+                    # clamps above are the elementary bounds on the same
+                    # population: mu0 = SUM c_n >= c_xs, mu1 = SUM n c_n >=
+                    # xs*c_xs, mu2 = SUM n^2 c_n >= xs^2*c_xs. The two below
+                    # are the bounds the two REALIZABILITY inequalities give,
+                    # and neither is implied by those three. Each is an
+                    # absolute upper bound on c_xs; each is ATTAINED by an
+                    # explicit realizable distribution, so neither is slack
+                    # that could be dropped; and a handshake respecting all
+                    # five can never remove chains the pool provably is not
+                    # holding.
+                    #
+                    # (a) From mu1 >= mu0 -- every chain carries at least one
+                    #     repeat unit:
+                    #         mu1 - mu0 = SUM (n - 1) c_n >= (xs - 1)*c_xs
+                    #     so c_xs <= (mu1 - mu0)/(xs - 1). One event spends
+                    #     (xs - 1) of that excess, so this IS the excess
+                    #     budget, and it makes mu1 = mu0 an invariant set:
+                    #     d(mu1 - mu0)/dt carries -(xs - 1)*F with F now
+                    #     bounded by k*(mu1 - mu0), which vanishes there. The
+                    #     I-055 chain-termination debit cannot supply that --
+                    #     its own release term vanishes at the edge (p1 -> 1)
+                    #     while F did not. xs <= 1 spends no excess per event,
+                    #     so no budget is owed and none is applied.
+                    #
+                    # (b) From mu0*mu2 >= mu1^2 (Cauchy-Schwarz). Take moments
+                    #     about xs, m_k = SUM (n - xs)^k c_n. Then
+                    #     Q := mu0*mu2 - mu1^2 = m_0*m_2 - m_1^2, since Q is
+                    #     mu0^2 * Var and so translation invariant. A
+                    #     handshake event takes m_0 -> m_0 - F and leaves m_1
+                    #     and m_2 untouched, because it removes chains at
+                    #     exactly n = xs, where (n - xs) = 0. Hence
+                    #         dQ/dt = -F * m_2 = -F * SUM (n - xs)^2 c_n <= 0
+                    #     for EVERY realizable state -- unconditional, not a
+                    #     corner case. That sign is not itself the defect:
+                    #     deleting a monodisperse sub-population is supposed
+                    #     to cut the variance, and what is left of a real
+                    #     distribution is still a real distribution. The
+                    #     defect is running the drain past its budget. Split
+                    #     m_0 = c_xs + r over the n = xs atom and the rest;
+                    #     m_1 and m_2 see only the rest, so
+                    #         Q = c_xs*m_2 + (r*m_2 - m_1^2) >= c_xs*m_2
+                    #     by Cauchy-Schwarz on the restricted measure, giving
+                    #         c_xs <= Q / m_2.
+                    #     TIGHT: for an atom c_xs at xs plus an atom at
+                    #     xs + d it returns exactly c_xs. Capping here makes
+                    #     Q = 0 an invariant set (dQ/dt >= -k*Q) without
+                    #     clamping Q itself, which would hide the drain
+                    #     rather than stop it. m_2 = 0 means the pool is
+                    #     monodisperse at exactly xs: Q = 0, dQ/dt = 0 for any
+                    #     F, no budget is owed and the whole pool may
+                    #     legitimately cross -- so the bound is skipped rather
+                    #     than evaluated as 0/0.
+                    #
+                    # On the BASIS question these replace. Round 1 wrote (a) as
+                    # _release_units_gate((xs-1)*mu0, mu1-mu0), i.e. as a
+                    # FRACTION with mu0 in the denominator, and review asked
+                    # whether the denominator should have been N_boundary --
+                    # the population the rate is actually drawn from -- rather
+                    # than all tail chains. By _release_units_gate's own
+                    # semantics (units on offer / units the event rate implies)
+                    # review is right that mu0 is the wrong base: the demand is
+                    # (xs-1)*N_boundary. But N_boundary is not the fix either.
+                    # A gate of the form N*h(B/N) is self-referential -- it
+                    # DECREASES as the attempt grows, going to zero like
+                    # 10*B^3/N^2 -- and it still is not a bound, since
+                    # h(t) > t for t > 0.5. The error was not the choice of
+                    # base; it was treating a BUDGET as a fraction at all. A
+                    # budget is an absolute count of chains, so the operator
+                    # that respects it is min(attempt, budget), which needs no
+                    # denominator and is what is written here.
+                    #
+                    # Hard min rather than the C2 quintic _release_units_gate
+                    # carries for the 1-unit release channels, and the choice
+                    # is forced: a smooth multiplier that is exactly 1.0 above
+                    # the boundary must exceed the budget just below it (the
+                    # quintic has h(t) > t for t > 0.5), so it cannot be both
+                    # inert above and a bound below. Round 1 shipped the
+                    # quintic and was a bound only by measurement, not by
+                    # construction. Inertness is not given up: (a) is exactly
+                    # slack for mean >= xs, where (mu1 - mu0)/(xs - 1) >= mu0
+                    # >= N_boundary. (b) is NOT slack there and does change
+                    # the flux above the cutoff -- deliberately, since the
+                    # over-budget removal is a pre-existing defect that the
+                    # old boolean never addressed (measured: 8 of 77 swept
+                    # states on the unfixed build, all at mean >= xs + 0.5).
+                    # The kink a binding min leaves is first-order, against
+                    # the zeroth-order jump the old boolean put on a surface
+                    # the trajectory crosses; the three clamps above are
+                    # already min() in this same expression; and the no-cliff
+                    # pin (test_deprop_smooth_exhaustion_gate_no_cliff) is
+                    # about the release rate at mean = 1, not this population.
+                    if xs > 1:
+                        N_boundary = min(N_boundary, (mu1 - mu0) / (xs - 1))
+                    m2_about_xs = mu2 - 2.0 * xs * mu1 + xs * xs * mu0
+                    q_cone = mu0 * mu2 - mu1 * mu1
+                    if m2_about_xs > 0.0:
+                        N_boundary = min(N_boundary, q_cone / m2_about_xs)
+                    elif m2_about_xs < 0.0 or q_cone < 0.0:
+                        # m2_about_xs is SUM (n - xs)^2 c_n, a sum of squares
+                        # against non-negative concentrations: it cannot be
+                        # negative for ANY realizable tail. Reaching here means
+                        # the triple is already off the cone, so no budget
+                        # above describes a realizable population -- and the
+                        # one that would have caught it was skipped by the
+                        # m2 <= 0 test itself. Do NOT read the other clamps as
+                        # protection here: at xs = 2, (mu0, mu1, mu2) =
+                        # (1, 3.5, 9) has q_cone = -3.25 and m2_about_xs = -1,
+                        # every other budget is positive, and before this
+                        # branch existed the handshake ran there at its full
+                        # unclamped rate (measured F = 1.000000e-01).
+                        #
+                        # m2_about_xs == 0 with q_cone == 0 is the one
+                        # degenerate case that IS realizable -- the whole tail
+                        # sitting exactly at n = xs -- and it falls through to
+                        # the clamps above, which are correct for it.
+                        # m2_about_xs == 0 forces q_cone = -m1^2 <= 0, so
+                        # q_cone > 0 cannot occur in this branch at all.
+                        #
+                        # Refusing the flux is the conservative reading, not a
+                        # diagnosis. Whether an accepted off-cone state should
+                        # be fatal rather than warned about belongs to the
+                        # variance census, which owns that call.
+                        N_boundary = 0.0
+                    # A negative N_boundary would run the handshake BACKWARDS,
+                    # inventing tail chains out of the explicit species. It
+                    # arises where a budget IS computed and comes out negative:
+                    # q_cone < 0 with m2_about_xs > 0, or mu1 < mu0.
+                    if N_boundary < 0.0:
+                        N_boundary = 0.0
 
                     F = k_chain_handshake * N_boundary
 

@@ -18,6 +18,7 @@ from rmgpy.kinetics import Arrhenius
 from rmgpy.molecule import Molecule
 from rmgpy.polymer import Polymer, PolymerFluxArchetype, build_polymer_moments_artifact
 from rmgpy.reaction import Reaction
+from rmgpy.solver.polymer import MOMENT_EWT_FLOOR_K
 from rmgpy.species import Species
 from rmgpy.thermo import NASA, NASAPolynomial
 
@@ -3507,7 +3508,16 @@ class TestAtolReplayParity:
         """build_system_from_artifact(atol=...) must anchor the solver's
         per-pool r81 floors at max(SMALL_EPS, 100*atol) AND the DASPK
         atol array; ArtifactConsumer(atol=...) must anchor the identical
-        mu_floor -- the two consumers share one regularization envelope."""
+        mu_floor -- the two consumers share one regularization envelope.
+
+        i075: the DASPK arm is now pinned per SLOT CLASS rather than as one
+        uniform array. The i061 moment error-weight floor deliberately raises
+        the DASPK atol of the moment-coordinate slots to MOMENT_EWT_FLOOR_K*
+        atol; the deck atol still reaches every PHYSICAL slot untouched, and
+        it reaches the chemistry everywhere through the preserved pre-floor
+        copy. Pinning all three is strictly more than the single
+        `np.all(atol_array == atol)` this replaced -- the moment-slot value
+        had no pin at all before."""
         _, _, artifact, species, reactions = self._load(deck)
         rs, core, _ = build_system_from_artifact(
             artifact, species, reactions, T0=650.0, P=1.0e5, V_poly=1.0,
@@ -3517,7 +3527,16 @@ class TestAtolReplayParity:
         assert floors.shape == (1, 3)
         assert np.all(floors == 1.0e-10)          # max(SMALL_EPS, 100*atol)
         atol_arr = np.asarray(rs.atol_array)
-        assert np.all(atol_arr == 1.0e-12)
+        moment = np.zeros(rs.neq, dtype=bool)
+        moment[:rs.num_core_species] = ~np.asarray(
+            rs._char_rate_include_mask, dtype=bool)
+        assert moment.any()                       # the deck HAS moment slots
+        assert np.all(atol_arr[~moment] == 1.0e-12)   # physical: deck atol
+        # against the NAMED constant, never a literal: if the floor's factor
+        # moves, this pin moves with it instead of passing on a stale number.
+        assert np.all(atol_arr[moment] == MOMENT_EWT_FLOOR_K * 1.0e-12)
+        # the chemistry noise floor still sees the deck atol on every slot
+        assert np.all(np.asarray(rs._chem_atol_array) == 1.0e-12)
         assert np.all(np.asarray(rs.rtol_array) == 1.0e-4)
         # the numpy oracle consumer anchors the SAME floor from the same
         # deck atol (scalar-atol form).
@@ -3529,13 +3548,26 @@ class TestAtolReplayParity:
     def test_default_tolerances_unchanged(self, deck):
         """Backward compatibility: omitting atol/rtol keeps the historical
         runner defaults (1e-16/1e-8 -> floors 1e-14), byte-identical
-        replays for existing invocations."""
+        replays for existing invocations.
+
+        i075: same partition as the sibling test above -- the DASPK arm is
+        pinned per slot class (physical == the default atol, moment ==
+        MOMENT_EWT_FLOOR_K*atol) and the chemistry arm is pinned uniform,
+        which together say strictly more than the one uniform assertion this
+        replaced."""
         _, _, artifact, species, reactions = self._load(deck)
         rs, core, _ = build_system_from_artifact(
             artifact, species, reactions, T0=650.0, P=1.0e5, V_poly=1.0,
             initial_moles={"N2(1)": 1.0}, mass_transfer_spec=[])
         assert np.all(np.asarray(rs._pool_mu_floors) == 1.0e-14)
-        assert np.all(np.asarray(rs.atol_array) == 1.0e-16)
+        atol_arr = np.asarray(rs.atol_array)
+        moment = np.zeros(rs.neq, dtype=bool)
+        moment[:rs.num_core_species] = ~np.asarray(
+            rs._char_rate_include_mask, dtype=bool)
+        assert moment.any()
+        assert np.all(atol_arr[~moment] == 1.0e-16)
+        assert np.all(atol_arr[moment] == MOMENT_EWT_FLOOR_K * 1.0e-16)
+        assert np.all(np.asarray(rs._chem_atol_array) == 1.0e-16)
         assert np.all(np.asarray(rs.rtol_array) == 1.0e-8)
         consumer = ArtifactConsumer(
             artifact, [s.label for s in core], P=1.0e5, V_poly=1.0)
