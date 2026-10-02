@@ -10,6 +10,7 @@ import subprocess
 import sys
 from collections import Counter
 from copy import deepcopy
+from dataclasses import replace
 from fractions import Fraction
 from pathlib import Path
 
@@ -30,6 +31,7 @@ from rmgpy.kmc.ssa import (
     SumPairKernel,
     ThinningBoundError,
     _forward_rate_bound,
+    _PropensityTree,
     build_met_population,
     canonical_propensities,
     epsilon_propensity,
@@ -846,10 +848,7 @@ def test_r0_pristine_chain_smoke_fires_10000_events_and_reports_irreversibility(
     )
 
 
-@slow
-def test_r0_melt_density_mixed_pristine_chains_fire_non_inverse_chemistry(
-    real_ps_artifact, independent_state_oracle
-):
+def _mixed_pristine_melt_state(real_ps_artifact, independent_state_oracle):
     records = tuple(
         EventRecord.from_dict(data)
         for data in real_ps_artifact["records"]
@@ -936,6 +935,334 @@ def test_r0_melt_density_mixed_pristine_chains_fire_non_inverse_chemistry(
         "PS repeat-equivalent density neglects terminal end-cap mass",
         flush=True,
     )
+    return state, records, volume_m3
+
+
+def _assert_identical_ssa_trace(
+    state,
+    records,
+    seed,
+    events,
+    *,
+    temperature,
+    volume,
+    table=None,
+    change_temperature=False,
+):
+    engines = [
+        IsothermalSSA(
+            state() if callable(state) else deepcopy(state),
+            records,
+            temperature=temperature,
+            volume=volume,
+            rng=np.random.default_rng(seed),
+            termination_table=table,
+            incremental=incremental,
+        )
+        for incremental in (False, True)
+    ]
+    digest = hashlib.sha256()
+    for ordinal in range(events):
+        if change_temperature and ordinal == events // 2:
+            for engine in engines:
+                engine.temperature = 750.0
+        if ordinal % 100 == 0:
+            assert (
+                engines[0].channel_propensities() == engines[1].channel_propensities()
+            )
+        original, incremental = (engine.step() for engine in engines)
+        assert original is not None, f"absorbed at {ordinal} seed={seed}"
+        assert incremental == original, f"trace mismatch at {ordinal} seed={seed}"
+        assert engines[0].state.state_hash() == engines[1].state.state_hash()
+        assert engines[0].rng.bit_generator.state == engines[1].rng.bit_generator.state
+        digest.update(
+            f"{original.event_id}:{original.state_hash}:{original.time.hex()}\n".encode()
+        )
+        if (ordinal + 1) % 200 == 0:
+            print(f"I038 TRACE seed={seed} identical_steps={ordinal + 1}", flush=True)
+    assert engines[0].run(max_events=0) == engines[1].run(max_events=0)
+    print(
+        f"I038 TRACE seed={seed} records={len(records)} events={events} "
+        f"event_state_time_sha256={digest.hexdigest()}",
+        flush=True,
+    )
+
+
+@pytest.mark.parametrize("seed", (8038, 8039, 8040))
+def test_incremental_ssa_bit_identical_short_trace_and_temperature_change(seed):
+    forward = _one_atom_radical_record()
+    reverse = replace(
+        forward,
+        event_id="",
+        participant_site_types=["pristine"],
+        radical_delta=1,
+        bond_ops=[{"action": "set_radical", "atom": 0, "value": 1}],
+        reactant_graphs=forward.product_graphs,
+        product_graphs=forward.reactant_graphs,
+        k_table={**forward.k_table, "k": [0.5, 8.0]},
+    )
+    refused = _leak_records(1.0, 0.2)[1]
+    state = KMCState(
+        tuple(
+            _radical_strand(f"chain-{index}", f"carbon-{index}", 5 + index)
+            for index in range(3)
+        )
+    )
+    _assert_identical_ssa_trace(
+        state,
+        (forward, reverse, refused),
+        seed,
+        64,
+        temperature=700.0,
+        volume=1.0,
+        change_temperature=True,
+    )
+
+
+def test_incremental_tree_preserves_odd_reduction_rounding_and_draws():
+    rng = np.random.default_rng(38)
+    for count in (1, 2, 3, 5, 31, 314):
+        values = {
+            f"event-{index:03}": float(2.0 ** rng.integers(-50, 50))
+            for index in range(count)
+        }
+        tree = _PropensityTree(values)
+        for step in range(20):
+            key = list(values)[step % count]
+            values[key] = 0.0 if step % 3 == 0 else float(2.0 ** rng.integers(-50, 50))
+            tree.update(key, values[key])
+            oracle = canonical_propensities(values.items())
+            assert tree.total.hex() == oracle.total.hex()
+            left = np.random.default_rng(step)
+            right = np.random.default_rng(step)
+            assert [tree.draw(left) for _ in range(50)] == [
+                oracle.draw(right) for _ in range(50)
+            ]
+            assert left.bit_generator.state == right.bit_generator.state
+
+
+def test_incremental_invalidates_mapping_changes_with_unchanged_atom_set(
+    independent_state_oracle,
+):
+    record = replace(
+        _one_atom_radical_record(),
+        event_id="",
+        radical_delta=0,
+        reactant_graphs=["1 *1 C u1 p0 c0 {2,S}\n2 *2 C u0 p0 c0 {1,S}"],
+        product_graphs=["1 *1 C u0 p0 c0 {2,S}\n2 *2 C u1 p0 c0 {1,S}"],
+        bond_ops=[
+            {"action": "set_radical", "atom": 0, "value": 0},
+            {"action": "set_radical", "atom": 1, "value": 1},
+        ],
+    )
+    state, _, _ = independent_state_oracle._harness(
+        record, roles={(0, "position"): 0, (1, "position"): 0}
+    )
+    _assert_identical_ssa_trace(state, (record,), 38, 32, temperature=700.0, volume=1.0)
+
+
+def test_incremental_rates_are_lazy_and_invalidated_by_temperature(monkeypatch):
+    import rmgpy.kmc.ssa as ssa
+
+    active = _one_atom_radical_record()
+    inactive = replace(active, event_id="", reactant_graphs=["1 *1 Si u1 p0 c0"])
+    engine = IsothermalSSA(
+        KMCState((_radical_strand("strand", "carbon", 5),)),
+        (active, inactive),
+        temperature=700.0,
+        volume=1.0,
+        rng=np.random.default_rng(38),
+    )
+    original = ssa.record_rate
+    calls = []
+
+    def counted(record, temperature):
+        calls.append((record.event_id, temperature))
+        return original(record, temperature)
+
+    monkeypatch.setattr(ssa, "record_rate", counted)
+    engine.channel_propensities()
+    engine.channel_propensities()
+    assert calls == [(active.event_id, 700.0)]
+    engine.temperature = 750.0
+    engine.channel_propensities()
+    assert calls == [(active.event_id, 700.0), (active.event_id, 750.0)]
+    engine.step()
+    assert engine.channel_propensities().total_enabled == 0.0
+    assert len(calls) == 2
+
+
+def test_incremental_reports_keep_zero_leaves_and_earlier_values():
+    active = _one_atom_radical_record()
+    inactive = replace(active, event_id="", reactant_graphs=["1 *1 Si u1 p0 c0"])
+    engine = IsothermalSSA(
+        KMCState((_radical_strand("strand", "carbon", 5),)),
+        (active, inactive),
+        temperature=700.0,
+        volume=1.0,
+        rng=np.random.default_rng(38),
+    )
+    before = engine.channel_propensities()
+    assert tuple(before.propensities) == tuple(
+        sorted((active.event_id, inactive.event_id))
+    )
+    assert dict(before.propensities) == {active.event_id: 2.0, inactive.event_id: 0.0}
+    with pytest.raises(KeyError):
+        before.propensities["absent"]
+    engine.step()
+    after = engine.channel_propensities()
+    assert dict(after.propensities) == {active.event_id: 0.0, inactive.event_id: 0.0}
+    assert before.propensities[active.event_id] == 2.0
+    assert before.enabled_channel_ids == after.enabled_channel_ids
+
+
+def test_site_population_revision_tracks_strand_lengths_with_fixed_component_length():
+    from rmgpy.kmc.met import CompiledChannel, CompiledTerminationTable, RateTable
+    from rmgpy.kmc.ssa import radical_site_class
+
+    left = _radical_strand("left", "left-C", 3)
+    right = _radical_strand("right", "right-C", 3)
+    left.atom_refs[0] = AtomRef("left-C", "left", 2, "chain_end")
+    left.atom_graph["left-C"]["edges"] = {"right-C": "1.0"}
+    right.atom_graph["right-C"]["edges"] = {"left-C": "1.0"}
+    state = KMCState((left, right, _radical_strand("foreign", "foreign-C", 5)))
+    state.junctions = {("left-C", "right-C")}
+    state._refresh_components()
+    record = replace(
+        _one_atom_radical_record(),
+        event_id="",
+        family="R_Recombination",
+        arity=2,
+        reactant_multiplicities=[2],
+        radical_delta=-2,
+        rate_order=2,
+        rate_units="m^3 mol^-1 s^-1",
+        status="irreversible",
+        status_reason="toy termination",
+        k_table={"T": [600.0, 800.0], "k": [1e12, 1e12]},
+        reactant_graphs=["1 *1 C u1 p0 c0", "1 *1 C u1 p0 c0"],
+        product_graphs=["1 *1 C u0 p0 c0 {2,S}\n2 *2 C u0 p0 c0 {1,S}"],
+        bond_ops=[
+            {"action": "set_radical", "atom": 0, "value": 0},
+            {"action": "set_radical", "atom": 1, "value": 0},
+            {"action": "form", "atoms": [0, 1], "order": "S"},
+        ],
+        reactant_pair_convention="unordered-identical-pair N(N-1)/2",
+    )
+    channel = CompiledChannel(
+        record.event_id,
+        record.event_id,
+        record.family,
+        "R0",
+        RateTable((600.0, 800.0), (1e12, 1e12)),
+        1.0,
+        False,
+        None,
+        None,
+        None,
+        None,
+        (),
+    )
+    table = CompiledTerminationTable(
+        "bulk", TRANSPORT_ARMS["A0_REF_H_CROSS_NEc"], "R0", (channel,)
+    )
+    engine = IsothermalSSA(
+        state,
+        (record,),
+        temperature=700.0,
+        volume=1.0,
+        rng=np.random.default_rng(38),
+        termination_table=table,
+    )
+    index = engine.index
+    candidate = next(
+        candidate
+        for candidate in index.candidates(record.event_id)
+        if candidate[0].strand_id == "left"
+    )
+    assert radical_site_class(candidate[0], state) == "end"
+    before = dict(state.component_lengths)
+    before_rate = engine.channel_propensities().total_enabled
+    state.strands["left"].length, state.strands["right"].length = 4, 2
+    state._refresh_components()
+    assert state.component_lengths == before
+    assert radical_site_class(candidate[0], state) == "mid"
+    index._update_populations()
+    oracle = IsothermalSSA(
+        deepcopy(state),
+        (record,),
+        temperature=700.0,
+        volume=1.0,
+        rng=np.random.default_rng(38),
+        termination_table=table,
+        incremental=False,
+    )
+    after = engine.channel_propensities()
+    assert after == oracle.channel_propensities()
+    assert after.total_enabled != before_rate
+
+
+def test_incremental_met_replay_invalidates_temperature_and_bound(
+    real_ps_artifact, independent_state_oracle
+):
+    records = tuple(
+        EventRecord.from_dict(data) for data in _active_r1_record_data(real_ps_artifact)
+    )
+    table = compile_bulk_table(records, TRANSPORT_ARMS["A0_REF_H_CROSS_NEc"], "R1")
+    _assert_identical_ssa_trace(
+        lambda: _real_cycle_state(
+            real_ps_artifact, independent_state_oracle, 8_013_700
+        ),
+        records,
+        8_013_700,
+        64,
+        temperature=700.0,
+        volume=1e-50,
+        table=table,
+        change_temperature=True,
+    )
+
+
+@slow
+@pytest.mark.parametrize(
+    "seed,pristine", ((8_013_700, False), (8_013_701, False), (35_000_002, True))
+)
+def test_incremental_full_catalogue_bit_identical_2000_events(
+    real_ps_artifact, independent_state_oracle, seed, pristine
+):
+    records = tuple(EventRecord.from_dict(data) for data in real_ps_artifact["records"])
+    assert len(records) == 14_998
+    if pristine:
+        state, _, volume = _mixed_pristine_melt_state(
+            real_ps_artifact, independent_state_oracle
+        )
+        temperature, table = 800.0, None
+    else:
+
+        def state():
+            return _real_cycle_state(real_ps_artifact, independent_state_oracle, seed)
+
+        temperature, volume = 700.0, 1e-50
+        table = compile_bulk_table(records, TRANSPORT_ARMS["A0_REF_H_CROSS_NEc"], "R1")
+    _assert_identical_ssa_trace(
+        state,
+        records,
+        seed,
+        2_000,
+        temperature=temperature,
+        volume=volume,
+        table=table,
+    )
+
+
+@slow
+def test_r0_melt_density_mixed_pristine_chains_fire_non_inverse_chemistry(
+    real_ps_artifact, independent_state_oracle
+):
+    state, records, volume_m3 = _mixed_pristine_melt_state(
+        real_ps_artifact, independent_state_oracle
+    )
+    initial_ledger = state.total_ledger
     engine = IsothermalSSA(
         state,
         records,
