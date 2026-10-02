@@ -1116,6 +1116,92 @@ def test_incremental_reports_keep_zero_leaves_and_earlier_values():
     assert before.enabled_channel_ids == after.enabled_channel_ids
 
 
+def test_site_population_revision_tracks_strand_lengths_with_fixed_component_length():
+    from rmgpy.kmc.met import CompiledChannel, CompiledTerminationTable, RateTable
+    from rmgpy.kmc.ssa import radical_site_class
+
+    left = _radical_strand("left", "left-C", 3)
+    right = _radical_strand("right", "right-C", 3)
+    left.atom_refs[0] = AtomRef("left-C", "left", 2, "chain_end")
+    left.atom_graph["left-C"]["edges"] = {"right-C": "1.0"}
+    right.atom_graph["right-C"]["edges"] = {"left-C": "1.0"}
+    state = KMCState((left, right, _radical_strand("foreign", "foreign-C", 5)))
+    state.junctions = {("left-C", "right-C")}
+    state._refresh_components()
+    record = replace(
+        _one_atom_radical_record(),
+        event_id="",
+        family="R_Recombination",
+        arity=2,
+        reactant_multiplicities=[2],
+        radical_delta=-2,
+        rate_order=2,
+        rate_units="m^3 mol^-1 s^-1",
+        status="irreversible",
+        status_reason="toy termination",
+        k_table={"T": [600.0, 800.0], "k": [1e12, 1e12]},
+        reactant_graphs=["1 *1 C u1 p0 c0", "1 *1 C u1 p0 c0"],
+        product_graphs=["1 *1 C u0 p0 c0 {2,S}\n2 *2 C u0 p0 c0 {1,S}"],
+        bond_ops=[
+            {"action": "set_radical", "atom": 0, "value": 0},
+            {"action": "set_radical", "atom": 1, "value": 0},
+            {"action": "form", "atoms": [0, 1], "order": "S"},
+        ],
+        reactant_pair_convention="unordered-identical-pair N(N-1)/2",
+    )
+    channel = CompiledChannel(
+        record.event_id,
+        record.event_id,
+        record.family,
+        "R0",
+        RateTable((600.0, 800.0), (1e12, 1e12)),
+        1.0,
+        False,
+        None,
+        None,
+        None,
+        None,
+        (),
+    )
+    table = CompiledTerminationTable(
+        "bulk", TRANSPORT_ARMS["A0_REF_H_CROSS_NEc"], "R0", (channel,)
+    )
+    engine = IsothermalSSA(
+        state,
+        (record,),
+        temperature=700.0,
+        volume=1.0,
+        rng=np.random.default_rng(38),
+        termination_table=table,
+    )
+    index = engine.index
+    candidate = next(
+        candidate
+        for candidate in index.candidates(record.event_id)
+        if candidate[0].strand_id == "left"
+    )
+    assert radical_site_class(candidate[0], state) == "end"
+    before = dict(state.component_lengths)
+    before_rate = engine.channel_propensities().total_enabled
+    state.strands["left"].length, state.strands["right"].length = 4, 2
+    state._refresh_components()
+    assert state.component_lengths == before
+    assert radical_site_class(candidate[0], state) == "mid"
+    index._update_populations()
+    oracle = IsothermalSSA(
+        deepcopy(state),
+        (record,),
+        temperature=700.0,
+        volume=1.0,
+        rng=np.random.default_rng(38),
+        termination_table=table,
+        incremental=False,
+    )
+    after = engine.channel_propensities()
+    assert after == oracle.channel_propensities()
+    assert after.total_enabled != before_rate
+
+
 def test_incremental_met_replay_invalidates_temperature_and_bound(
     real_ps_artifact, independent_state_oracle
 ):

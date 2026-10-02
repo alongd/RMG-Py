@@ -553,8 +553,12 @@ class SiteIndex:
                                 (
                                     local,
                                     node["atom_ref"].uuid,
+                                    node["atom_ref"].strand_id,
                                     node["atom_ref"].position,
                                     node["atom_ref"].role,
+                                    self.state.strands[
+                                        node["atom_ref"].strand_id
+                                    ].length,
                                 )
                                 for local, node in sorted(site.graph.items())
                             ),
