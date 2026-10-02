@@ -116,6 +116,66 @@ class CanonicalPropensities:
         return node[1]
 
 
+class _PropensityTree:
+    """Update the original binary reduction tree without changing its leaves."""
+
+    def __init__(self, values: Mapping[str, float]):
+        vector = canonical_propensities(values.items())
+        self.event_ids = vector.event_ids
+        self.positions = {key: index for index, key in enumerate(self.event_ids)}
+        self.levels = [list(vector.values)]
+        while len(self.levels[-1]) > 1:
+            level = self.levels[-1]
+            self.levels.append(
+                [
+                    (
+                        level[index] + level[index + 1]
+                        if index + 1 < len(level)
+                        else level[index]
+                    )
+                    for index in range(0, len(level), 2)
+                ]
+            )
+
+    @property
+    def total(self) -> float:
+        return self.levels[-1][0] if self.event_ids else 0.0
+
+    @property
+    def absorbing(self) -> bool:
+        return self.total == 0.0
+
+    def update(self, event_id: str, value: float) -> None:
+        if not math.isfinite(value):
+            raise PropensityError(E_PROPENSITY_NONFINITE, event_id, value)
+        if value < 0.0:
+            raise PropensityError(E_PROPENSITY_NEGATIVE, event_id, value)
+        position = self.positions[event_id]
+        self.levels[0][position] = value
+        for depth in range(1, len(self.levels)):
+            position //= 2
+            lower = self.levels[depth - 1]
+            left = 2 * position
+            self.levels[depth][position] = (
+                lower[left] + lower[left + 1] if left + 1 < len(lower) else lower[left]
+            )
+
+    def draw(self, rng: Any) -> str | None:
+        if self.absorbing:
+            return None
+        threshold = float(rng.random()) * self.total
+        if threshold >= self.total:
+            threshold = math.nextafter(self.total, 0.0)
+        position = 0
+        for level in reversed(self.levels[:-1]):
+            position *= 2
+            # An unpaired node is carried unchanged to its parent.
+            if position + 1 < len(level) and threshold >= level[position]:
+                threshold -= level[position]
+                position += 1
+        return self.event_ids[position]
+
+
 def canonical_propensities(
     propensities: Iterable[tuple[str, float]],
 ) -> CanonicalPropensities:
@@ -370,10 +430,16 @@ class _PreparedRecord:
     site_types: tuple[str, ...]
 
 
-def _prepare_record(record: Any) -> _PreparedRecord:
-    graphs = tuple(
-        _parse_adjacency(text) for text in _field(record, "reactant_graphs", ())
-    )
+def _prepare_record(record: Any, graph_cache: dict, graph_ids: dict) -> _PreparedRecord:
+    graphs, graph_keys = [], []
+    for text in _field(record, "reactant_graphs", ()):
+        if text not in graph_cache:
+            graph = _parse_adjacency(text)
+            key = _graph_key(graph)
+            graph_cache[text] = graph, graph_ids.setdefault(key, len(graph_ids))
+        graph, key = graph_cache[text]
+        graphs.append(graph)
+        graph_keys.append(key)
     offsets = []
     offset = 0
     for graph in graphs:
@@ -387,8 +453,8 @@ def _prepare_record(record: Any) -> _PreparedRecord:
     return _PreparedRecord(
         record,
         str(_field(record, "event_id", "")),
-        graphs,
-        tuple(_graph_key(graph) for graph in graphs),
+        tuple(graphs),
+        tuple(graph_keys),
         tuple(offsets),
         _record_labels(record),
         site_types,
@@ -441,19 +507,75 @@ class SiteIndex:
         self.records = tuple(
             sorted(records, key=lambda record: str(_field(record, "event_id", "")))
         )
-        self._prepared = tuple(_prepare_record(record) for record in self.records)
+        graph_cache, graph_ids = {}, {}
+        self._prepared = tuple(
+            _prepare_record(record, graph_cache, graph_ids) for record in self.records
+        )
         identifiers = [prepared.event_id for prepared in self._prepared]
         if not all(identifiers) or len(identifiers) != len(set(identifiers)):
             raise ValueError("site-index records need unique event IDs")
+        self._graphs = {}
+        self._records_for_graph: dict[Hashable, set[int]] = {}
+        for ordinal, prepared in enumerate(self._prepared):
+            for key, graph in zip(prepared.graph_keys, prepared.graphs):
+                self._graphs[key] = graph
+                self._records_for_graph.setdefault(key, set()).add(ordinal)
         self._components: dict[tuple[str, ...], dict[str, Any]] = {}
         self._matches: dict[
             tuple[Hashable, tuple[str, ...]], tuple[dict[int, str], ...]
         ] = {}
-        self._candidates: dict[str, tuple[tuple[Site, ...], ...]] = {}
+        self._candidates: dict[str, tuple[tuple[Site, ...], ...]] = dict.fromkeys(
+            identifiers, ()
+        )
         self._state_cache: OrderedDict[str, tuple[Any, Any, Any]] = OrderedDict()
         self.last_rescanned_atom_uuids: frozenset[str] = frozenset()
+        self.revision = 0
+        self.changed_event_ids: frozenset[str] = frozenset()
+        self.active_event_ids: frozenset[str] = frozenset()
+        self._population_signatures: dict[str, Any] = {}
+        self._eligible: dict[str, tuple[tuple[Site, ...], ...]] = {}
         self._full_rescan()
+        self._update_populations()
         self._remember_state()
+
+    def _update_populations(self) -> None:
+        signatures = {}
+        for event_id, candidates in self._candidates.items():
+            if candidates:
+                signatures[event_id] = tuple(
+                    tuple(
+                        (
+                            _site_key(site),
+                            site.strand_id,
+                            site.position,
+                            tuple(
+                                (
+                                    local,
+                                    node["atom_ref"].uuid,
+                                    node["atom_ref"].position,
+                                    node["atom_ref"].role,
+                                )
+                                for local, node in sorted(site.graph.items())
+                            ),
+                            self.state.components[site.strand_id],
+                            self.state.component_lengths[
+                                self.state.components[site.strand_id]
+                            ],
+                        )
+                        for site in candidate
+                    )
+                    for candidate in candidates
+                )
+        self.changed_event_ids = frozenset(
+            key
+            for key in self._population_signatures.keys() | signatures.keys()
+            if self._population_signatures.get(key) != signatures.get(key)
+        )
+        self.active_event_ids = frozenset(signatures)
+        self._population_signatures = signatures
+        for key in self.changed_event_ids:
+            self._eligible.pop(key, None)
+        self.revision += 1
 
     def _remember_state(self) -> None:
         state_hash = self.state.state_hash()
@@ -468,12 +590,7 @@ class SiteIndex:
 
     def _scan_components(self, component_keys: Iterable[tuple[str, ...]]) -> None:
         keys = tuple(component_keys)
-        graphs = {
-            graph_key: graph
-            for prepared in self._prepared
-            for graph_key, graph in zip(prepared.graph_keys, prepared.graphs)
-        }
-        for graph_key, graph in graphs.items():
+        for graph_key, graph in self._graphs.items():
             for key in keys:
                 self._matches[(graph_key, key)] = _subgraph_mappings(
                     graph, self._components[key]
@@ -531,20 +648,24 @@ class SiteIndex:
         )
 
     def _rebuild_candidates(self) -> None:
-        candidates: dict[str, tuple[tuple[Site, ...], ...]] = {}
+        candidates = self._candidates.copy()
+        for event_id in self.active_event_ids:
+            candidates[event_id] = ()
         component_keys = tuple(sorted(self._components))
-        for prepared in self._prepared:
-            groups = []
-            for ordinal in range(len(prepared.graphs)):
-                groups.append(
-                    tuple(
-                        (key, mapping)
-                        for key in component_keys
-                        for mapping in self._matches.get(
-                            (prepared.graph_keys[ordinal], key), ()
-                        )
-                    )
-                )
+        groups_by_graph = {}
+        possible = set()
+        for graph_key in self._graphs:
+            matches = tuple(
+                (key, mapping)
+                for key in component_keys
+                for mapping in self._matches.get((graph_key, key), ())
+            )
+            if matches:
+                groups_by_graph[graph_key] = matches
+                possible.update(self._records_for_graph[graph_key])
+        for record_ordinal in sorted(possible):
+            prepared = self._prepared[record_ordinal]
+            groups = [groups_by_graph.get(key, ()) for key in prepared.graph_keys]
             found = []
             if groups and all(groups):
                 for combination in product(*groups):
@@ -610,6 +731,7 @@ class SiteIndex:
             self._candidates = candidates
             self._state_cache.move_to_end(state_hash)
             self.last_rescanned_atom_uuids = frozenset()
+            self._update_populations()
             return entry
         current = _graph_components(self.state)
         stale_keys = {
@@ -627,6 +749,7 @@ class SiteIndex:
             atom_uuid for key in refreshed for atom_uuid in key
         )
         self._rebuild_candidates()
+        self._update_populations()
         self._remember_state()
         return entry
 
@@ -1263,10 +1386,103 @@ def build_met_population(
     volume: float,
     spin_factor: float,
     bound_temperature: float | None = None,
+    _layout: Any = None,
+    _rates: Any = None,
 ) -> METPopulation:
     """Build component-level MET bins from current indexed radical sites."""
     if table.kernel != "bulk":
         raise ValueError("SSA termination needs a bulk MET table")
+    if _layout is not None:
+        channels, grouped_sites, component_channels = _layout.populations(state, index)
+        activation = {pair: 0.0 for pair in channels}
+    else:
+        channels, grouped_sites, component_channels, activation = _full_met_populations(
+            state, index, records, table, temperature
+        )
+
+    forward = (
+        (lambda channel: channel.forward_rate(temperature))
+        if _rates is None
+        else _rates.forward
+    )
+    maximum_temperature = (
+        temperature if bound_temperature is None else bound_temperature
+    )
+    bound = (
+        (lambda channel: _forward_rate_bound(channel, temperature, maximum_temperature))
+        if _rates is None
+        else (lambda channel: _rates.bound(channel, maximum_temperature))
+    )
+    items = []
+    item_sites = {}
+    for (component, site_type, site_class), sites_by_key in sorted(
+        grouped_sites.items()
+    ):
+        item_id = f"{component}:{site_type}:{site_class}"
+        sites = tuple(sites_by_key[key] for key in sorted(sites_by_key))
+        item_sites[item_id] = sites
+        items.append(
+            PairItem(
+                item_id,
+                component,
+                int(state.component_lengths[component]),
+                (site_type, site_class),
+            )
+        )
+    available_kinds = {item.kind for item in items}
+    pair_kinds = []
+    for left in sorted(available_kinds, key=repr):
+        for right in sorted(available_kinds, key=repr):
+            if repr(right) < repr(left):
+                continue
+            if _pair_type(str(left[0]), str(right[0])) in channels:
+                pair_kinds.append((left, right))
+    component_activation = {
+        key: pairwise_sum(forward(option.channel) for option in options)
+        for key, options in component_channels.items()
+    }
+    component_bound_activation = {
+        key: pairwise_sum(bound(option.channel) for option in options)
+        for key, options in component_channels.items()
+    }
+    bound_activation = {
+        pair: max(
+            (
+                rate
+                for (*_, component_pair), rate in component_bound_activation.items()
+                if component_pair == pair
+            ),
+            default=0.0,
+        )
+        for pair in channels
+    }
+    kernel = METPairKernel(
+        activation,
+        table.arm,
+        temperature,
+        spin_factor=spin_factor,
+        bound_temperature=bound_temperature,
+        bound_activation_rates=bound_activation,
+        component_activation_rates=component_activation,
+        component_bound_activation_rates=component_bound_activation,
+    )
+    sampler = LengthBinnedThinningSampler(
+        items,
+        kernel,
+        pair_kinds,
+        volume=volume,
+        normalization=N_A,
+    )
+    return METPopulation(
+        sampler,
+        {pair: tuple(options) for pair, options in channels.items()},
+        {key: tuple(options) for key, options in component_channels.items()},
+        item_sites,
+    )
+
+
+def _full_met_populations(state, index, records, table, temperature):
+    """The uncached full-catalogue oracle's population discovery."""
     by_event = {str(_field(record, "event_id", "")): record for record in records}
     ortho_records = tuple(
         record for record in records if _ortho_label(record) is not None
@@ -1320,80 +1536,7 @@ def build_met_population(
                     (components[0], components[1], pair), []
                 ).append(option)
 
-    items = []
-    item_sites = {}
-    for (component, site_type, site_class), sites_by_key in sorted(
-        grouped_sites.items()
-    ):
-        item_id = f"{component}:{site_type}:{site_class}"
-        sites = tuple(sites_by_key[key] for key in sorted(sites_by_key))
-        item_sites[item_id] = sites
-        items.append(
-            PairItem(
-                item_id,
-                component,
-                int(state.component_lengths[component]),
-                (site_type, site_class),
-            )
-        )
-    available_kinds = {item.kind for item in items}
-    pair_kinds = []
-    for left in sorted(available_kinds, key=repr):
-        for right in sorted(available_kinds, key=repr):
-            if repr(right) < repr(left):
-                continue
-            if _pair_type(str(left[0]), str(right[0])) in channels:
-                pair_kinds.append((left, right))
-    component_activation = {
-        key: pairwise_sum(
-            option.channel.forward_rate(temperature) for option in options
-        )
-        for key, options in component_channels.items()
-    }
-    maximum_temperature = (
-        temperature if bound_temperature is None else bound_temperature
-    )
-    component_bound_activation = {
-        key: pairwise_sum(
-            _forward_rate_bound(option.channel, temperature, maximum_temperature)
-            for option in options
-        )
-        for key, options in component_channels.items()
-    }
-    bound_activation = {
-        pair: max(
-            (
-                rate
-                for (*_, component_pair), rate in component_bound_activation.items()
-                if component_pair == pair
-            ),
-            default=0.0,
-        )
-        for pair in channels
-    }
-    kernel = METPairKernel(
-        activation,
-        table.arm,
-        temperature,
-        spin_factor=spin_factor,
-        bound_temperature=bound_temperature,
-        bound_activation_rates=bound_activation,
-        component_activation_rates=component_activation,
-        component_bound_activation_rates=component_bound_activation,
-    )
-    sampler = LengthBinnedThinningSampler(
-        items,
-        kernel,
-        pair_kinds,
-        volume=volume,
-        normalization=N_A,
-    )
-    return METPopulation(
-        sampler,
-        {pair: tuple(options) for pair, options in channels.items()},
-        {key: tuple(options) for key, options in component_channels.items()},
-        item_sites,
-    )
+    return channels, grouped_sites, component_channels, activation
 
 
 def record_rate(record: Any, temperature: float) -> float:
@@ -1404,6 +1547,147 @@ def record_rate(record: Any, temperature: float) -> float:
     return RateTable.from_mapping(table)(temperature) * float(
         _field(record, "ssa_multiplier", 1.0)
     )
+
+
+class _RateCache:
+    """Lazy fixed-temperature rates; a new temperature gets a fresh cache."""
+
+    def __init__(self, temperature: float):
+        self.temperature = temperature
+        self.records: dict[str, float] = {}
+        self.channels: dict[str, float] = {}
+        self.bounds: dict[tuple[str, float], float] = {}
+
+    def record(self, record: Any) -> float:
+        key = str(_field(record, "event_id", ""))
+        if key not in self.records:
+            self.records[key] = record_rate(record, self.temperature)
+        return self.records[key]
+
+    def forward(self, channel: CompiledChannel) -> float:
+        if channel.channel_id not in self.channels:
+            self.channels[channel.channel_id] = channel.forward_rate(self.temperature)
+        return self.channels[channel.channel_id]
+
+    def bound(self, channel: CompiledChannel, maximum_temperature: float) -> float:
+        key = channel.channel_id, maximum_temperature
+        if key not in self.bounds:
+            self.bounds[key] = (
+                self.forward(channel)
+                if maximum_temperature == self.temperature
+                else _forward_rate_bound(channel, self.temperature, maximum_temperature)
+            )
+        return self.bounds[key]
+
+
+def _indexed_eligible(state: KMCState, index: SiteIndex, record: Any):
+    key = str(_field(record, "event_id", ""))
+    if key not in index._eligible:
+        index._eligible[key] = eligible_candidates(state, index, record)
+    return index._eligible[key]
+
+
+class _METLayout:
+    """Static channel layout with changed-record site/pair contributions."""
+
+    def __init__(self, records: Sequence[Any], table: CompiledTerminationTable):
+        if table.kernel != "bulk":
+            raise ValueError("SSA termination needs a bulk MET table")
+        by_event = {str(_field(record, "event_id", "")): record for record in records}
+        self.record_order = {key: ordinal for ordinal, key in enumerate(by_event)}
+        ortho = tuple(record for record in records if _ortho_label(record) is not None)
+        self.records = {
+            key: record
+            for key, record in by_event.items()
+            if _record_is_met(record)
+            and _field(record, "status", "enabled") != "refused"
+        }
+        self.channels: dict[tuple[str, str], list[METChannelOption]] = {}
+        self.options_by_event: dict[str, list[tuple[Any, int, METChannelOption]]] = {}
+        self.met_event_ids: set[str] = set()
+        self.channel_ids: set[str] = set()
+        for ordinal, channel in enumerate(table.channels):
+            option_records = (
+                ortho
+                if channel.channel_id == "J_ortho"
+                else (by_event[channel.event_id],)
+            )
+            types = _expanded_site_types(option_records[0])
+            if len(types) != 2:
+                raise ValueError(f"MET channel {channel.channel_id} is not bimolecular")
+            pair = _pair_type(*types)
+            option = METChannelOption(channel, option_records)
+            self.channels.setdefault(pair, []).append(option)
+            self.channel_ids.add(channel.channel_id)
+            for record in option_records:
+                key = str(_field(record, "event_id", ""))
+                self.met_event_ids.add(key)
+                self.options_by_event.setdefault(key, []).append(
+                    (pair, ordinal, option)
+                )
+                self.records[key] = record
+        self.contributions: dict[str, tuple[Any, Any]] = {}
+        self.revision = -1
+
+    def populations(self, state: KMCState, index: SiteIndex):
+        changed = (
+            index.changed_event_ids
+            if self.revision == index.revision - 1
+            else self.records.keys()
+        )
+        for key in changed:
+            record = self.records.get(key)
+            if record is None:
+                continue
+            sites = {}
+            if (
+                _record_is_met(record)
+                and _field(record, "status", "enabled") != "refused"
+            ):
+                for candidate in index.candidates(key):
+                    for site in candidate:
+                        component = state.components[site.strand_id]
+                        group = (
+                            component,
+                            site.site_type,
+                            radical_site_class(site, state),
+                        )
+                        sites.setdefault(group, {})[_site_key(site)] = site
+            pairs = (
+                {
+                    tuple(
+                        sorted(state.components[site.strand_id] for site in candidate)
+                    )
+                    for candidate in _indexed_eligible(state, index, record)
+                    if len({state.components[site.strand_id] for site in candidate})
+                    == 2
+                }
+                if key in self.options_by_event
+                else set()
+            )
+            if sites or pairs:
+                self.contributions[key] = sites, pairs
+            else:
+                self.contributions.pop(key, None)
+        self.revision = index.revision
+        grouped_sites = {}
+        # Preserve the full builder's overwrite order for equivalent sites.
+        for key in sorted(self.contributions, key=self.record_order.__getitem__):
+            sites, _ = self.contributions[key]
+            for group, entries in sites.items():
+                grouped_sites.setdefault(group, {}).update(entries)
+        indexed_options = {}
+        for key, (_, pairs) in self.contributions.items():
+            for pair, ordinal, option in self.options_by_event.get(key, ()):
+                for left, right in pairs:
+                    indexed_options.setdefault((left, right, pair), {})[
+                        ordinal
+                    ] = option
+        component_channels = {
+            key: [options[ordinal] for ordinal in sorted(options)]
+            for key, options in indexed_options.items()
+        }
+        return self.channels, grouped_sites, component_channels
 
 
 def _candidate_key(candidate: Sequence[Site]) -> tuple[tuple[str, ...], ...]:
@@ -1465,7 +1749,7 @@ class ChannelPropensityReport:
 
 
 def _met_channel_propensities(
-    population: METPopulation, temperature: float
+    population: METPopulation, temperature: float, _rates: _RateCache | None = None
 ) -> dict[str, float]:
     result: dict[str, float] = {}
     for cell in population.sampler.cells:
@@ -1478,7 +1762,12 @@ def _met_channel_propensities(
             if not options:
                 continue
             option_rates = [
-                option.channel.forward_rate(temperature) for option in options
+                (
+                    option.channel.forward_rate(temperature)
+                    if _rates is None
+                    else _rates.forward(option.channel)
+                )
+                for option in options
             ]
             activation = pairwise_sum(option_rates)
             exact = population.sampler.kernel.exact_rate(left, right) / (
@@ -1553,6 +1842,128 @@ class SSARunResult:
     bound_violations: int
 
 
+class _IncrementalPropensities:
+    """Per-engine maintenance, independent even when engines share an index."""
+
+    def __init__(self, engine: Any):
+        self.engine = engine
+        self.rates = _RateCache(engine.temperature)
+        self.layout = (
+            _METLayout(engine.records, engine.termination_table)
+            if engine.termination_table is not None
+            else None
+        )
+        met_ids = self.layout.met_event_ids if self.layout else set()
+        self.records = {
+            str(_field(record, "event_id", "")): record
+            for record in engine.records
+            if str(_field(record, "event_id", "")) not in met_ids
+        }
+        self.enabled = {
+            key: 0.0
+            for key, record in self.records.items()
+            if _field(record, "status", "enabled") != "refused"
+        }
+        self.refused = {key: 0.0 for key in self.records if key not in self.enabled}
+        self.refused_tree = _PropensityTree(self.refused)
+        sampling = {
+            key: value
+            for key, value in self.enabled.items()
+            if self.layout is None or key not in self.layout.channel_ids
+        }
+        if self.layout is not None:
+            sampling[engine._MET_LEAF] = 0.0
+        self.sampling_tree = _PropensityTree(sampling)
+        self.enabled_trees: OrderedDict[tuple[str, ...], _PropensityTree] = (
+            OrderedDict()
+        )
+        self.enabled_tree = _PropensityTree(self.enabled)
+        self.population: METPopulation | None = None
+        self.met_values: dict[str, float] = {}
+        self.revision = -1
+
+    def sync(self) -> None:
+        engine = self.engine
+        index = engine.index
+        if self.revision == index.revision:
+            return
+        consecutive = self.revision == index.revision - 1
+        changed = index.changed_event_ids if consecutive else self.records.keys()
+        updates = {}
+        for key in changed:
+            record = self.records.get(key)
+            if record is None:
+                continue
+            arity = int(_field(record, "arity", 0))
+            if arity not in {1, 2}:
+                raise ValueError(f"SSA supports only arity one or two, got {arity}")
+            candidates = _indexed_eligible(engine.state, index, record)
+            # Ineligible records do not construct or interpolate rate tables.
+            value = self.rates.record(record) * len(candidates) if candidates else 0.0
+            if arity == 2:
+                value /= N_A * engine.volume
+            if key in self.refused:
+                self.refused[key] = value
+                self.refused_tree.update(key, value)
+            else:
+                self.enabled[key] = value
+                updates[key] = value
+                if key in self.sampling_tree.positions:
+                    self.sampling_tree.update(key, value)
+        met_changed = self.layout is not None and (
+            not consecutive
+            or bool(index.changed_event_ids & self.layout.records.keys())
+        )
+        if met_changed:
+            self.population = build_met_population(
+                engine.state,
+                index,
+                engine.records,
+                engine.termination_table,
+                temperature=engine.temperature,
+                volume=engine.volume,
+                spin_factor=engine.spin_factor,
+                bound_temperature=engine.bound_temperature,
+                _layout=self.layout,
+                _rates=self.rates,
+            )
+            self.met_values = _met_channel_propensities(
+                self.population, engine.temperature, self.rates
+            )
+            self.sampling_tree.update(
+                engine._MET_LEAF, self.population.sampler.total_bound_propensity
+            )
+        # MET report leaves exist only when eligible. Cache each exact tree
+        # shape; zero padding or dropping other zero leaves would change rounding.
+        shape = tuple(sorted(self.met_values))
+        tree = self.enabled_trees.get(shape)
+        for cached in self.enabled_trees.values():
+            for key, value in updates.items():
+                cached.update(key, value)
+        if tree is None:
+            tree = _PropensityTree({**self.enabled, **self.met_values})
+            self.enabled_trees[shape] = tree
+        else:
+            for key, value in self.met_values.items():
+                tree.update(key, value)
+        self.enabled_trees.move_to_end(shape)
+        while len(self.enabled_trees) > 8:
+            self.enabled_trees.popitem(last=False)
+        self.enabled_tree = tree
+        self.revision = index.revision
+
+    def report(self) -> ChannelPropensityReport:
+        self.sync()
+        values = {**self.enabled, **self.met_values}
+        return ChannelPropensityReport(
+            frozenset(values),
+            {key: values[key] for key in self.enabled_tree.event_ids},
+            {key: self.refused[key] for key in self.refused_tree.event_ids},
+            self.enabled_tree.total,
+            self.refused_tree.total,
+        )
+
+
 class IsothermalSSA:
     """Direct-method isothermal SSA with MET thinning and exact leak clocks."""
 
@@ -1569,6 +1980,7 @@ class IsothermalSSA:
         termination_table: CompiledTerminationTable | None = None,
         spin_factor: float = 1.0,
         bound_temperature: float | None = None,
+        incremental: bool = True,
     ):
         self.state = state
         self.records = tuple(records)
@@ -1580,6 +1992,9 @@ class IsothermalSSA:
         self.termination_table = termination_table
         self.spin_factor = float(spin_factor)
         self.bound_temperature = bound_temperature
+        self.incremental = bool(incremental)
+        self._maintenance: _IncrementalPropensities | None = None
+        self._maintenance_configuration: tuple[Any, ...] | None = None
         self.index = SiteIndex(state, self.records)
         self.time = 0.0
         self.leak_num = 0.0
@@ -1593,6 +2008,10 @@ class IsothermalSSA:
         }
 
     def _met_population(self) -> METPopulation | None:
+        if self.incremental:
+            maintenance = self._incremental_propensities()
+            maintenance.sync()
+            return maintenance.population
         if self.termination_table is None:
             return None
         return build_met_population(
@@ -1607,6 +2026,8 @@ class IsothermalSSA:
         )
 
     def channel_propensities(self) -> ChannelPropensityReport:
+        if self.incremental:
+            return self._incremental_propensities().report()
         return channel_propensities(
             self.state,
             self.index,
@@ -1615,6 +2036,24 @@ class IsothermalSSA:
             self.volume,
             met_population=self._met_population(),
         )
+
+    def _incremental_propensities(self) -> _IncrementalPropensities:
+        configuration = (
+            id(self.index),
+            id(self.records),
+            id(self.termination_table),
+            self.temperature,
+            self.volume,
+            self.spin_factor,
+            self.bound_temperature,
+        )
+        if configuration != self._maintenance_configuration or (
+            self._maintenance is not None and self._maintenance.engine is not self
+        ):
+            self._maintenance = _IncrementalPropensities(self)
+            self._maintenance_configuration = configuration
+        assert self._maintenance is not None
+        return self._maintenance
 
     def _integrate(self, elapsed: float, enabled: float, refused: float) -> None:
         self.leak_num += refused * elapsed
@@ -1636,7 +2075,11 @@ class IsothermalSSA:
 
     def _fire_non_met(self, event_id: str) -> SSAEvent:
         record = self._records_by_id[event_id]
-        candidates = eligible_candidates(self.state, self.index, record)
+        candidates = (
+            _indexed_eligible(self.state, self.index, record)
+            if self.incremental
+            else eligible_candidates(self.state, self.index, record)
+        )
         if not candidates:
             raise AssertionError("positive record propensity has no candidate")
         participants = candidates[int(self.rng.integers(len(candidates)))]
@@ -1652,7 +2095,14 @@ class IsothermalSSA:
         )
         options = population.component_channels[(components[0], components[1], pair)]
         vector = canonical_propensities(
-            (option.channel.channel_id, option.channel.forward_rate(self.temperature))
+            (
+                option.channel.channel_id,
+                (
+                    self._incremental_propensities().rates.forward(option.channel)
+                    if self.incremental
+                    else option.channel.forward_rate(self.temperature)
+                ),
+            )
             for option in options
         )
         channel_id = vector.draw(self.rng)
@@ -1690,57 +2140,68 @@ class IsothermalSSA:
     def step(self, *, until: float | None = None) -> SSAEvent | None:
         """Advance through null proposals until one event fires or a horizon ends."""
         while until is None or self.time < until:
-            population = self._met_population()
-            report = channel_propensities(
-                self.state,
-                self.index,
-                self.records,
-                self.temperature,
-                self.volume,
-                met_population=population,
-            )
-            met_ids = (
-                {
-                    option.channel.channel_id
-                    for options in population.channels.values()
-                    for option in options
-                }
-                if population is not None
-                else set()
-            )
-            leaves = [
-                (event_id, value)
-                for event_id, value in report.propensities.items()
-                if event_id not in met_ids
-            ]
-            if population is not None:
-                leaves.append(
-                    (self._MET_LEAF, population.sampler.total_bound_propensity)
+            if self.incremental:
+                maintenance = self._incremental_propensities()
+                maintenance.sync()
+                population = maintenance.population
+                vector = maintenance.sampling_tree
+                enabled = maintenance.enabled_tree.total
+                refused = maintenance.refused_tree.total
+            else:
+                population = self._met_population()
+                report = channel_propensities(
+                    self.state,
+                    self.index,
+                    self.records,
+                    self.temperature,
+                    self.volume,
+                    met_population=population,
                 )
-            vector = canonical_propensities(leaves)
+                met_ids = (
+                    {
+                        option.channel.channel_id
+                        for options in population.channels.values()
+                        for option in options
+                    }
+                    if population is not None
+                    else set()
+                )
+                leaves = [
+                    (event_id, value)
+                    for event_id, value in report.propensities.items()
+                    if event_id not in met_ids
+                ]
+                if population is not None:
+                    leaves.append(
+                        (self._MET_LEAF, population.sampler.total_bound_propensity)
+                    )
+                vector = canonical_propensities(leaves)
+                enabled, refused = report.total_enabled, report.total_refused
             if vector.absorbing:
                 if until is not None:
                     self._integrate(
                         until - self.time,
-                        report.total_enabled,
-                        report.total_refused,
+                        enabled,
+                        refused,
                     )
                 return None
             elapsed = float(self.rng.exponential(1.0 / vector.total))
             if until is not None and self.time + elapsed > until:
-                self._integrate(
-                    until - self.time, report.total_enabled, report.total_refused
-                )
+                self._integrate(until - self.time, enabled, refused)
                 return None
-            self._integrate(elapsed, report.total_enabled, report.total_refused)
+            self._integrate(elapsed, enabled, refused)
             selected = vector.draw(self.rng)
             if selected != self._MET_LEAF:
                 assert selected is not None
                 return self._fire_non_met(selected)
             assert population is not None
+            checks, violations = (
+                population.sampler.bound_checks,
+                population.sampler.bound_violations,
+            )
             proposal = population.sampler.select_pair(self.rng)
-            self.bound_checks += population.sampler.bound_checks
-            self.bound_violations += population.sampler.bound_violations
+            self.bound_checks += population.sampler.bound_checks - checks
+            self.bound_violations += population.sampler.bound_violations - violations
             if proposal is None or not proposal.accepted:
                 continue
             record, participants = self._choose_met_record(population, proposal)
