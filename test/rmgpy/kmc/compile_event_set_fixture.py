@@ -17,6 +17,7 @@ from rmgpy.kmc.compiler import (
     EventSetCompiler,
     PS_FAMILY_CANDIDATES,
     PS_PROXY_UNITS,
+    prepare_rate_rules,
     ps_proxy_set,
 )
 
@@ -51,6 +52,8 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("database")
     parser.add_argument("output")
+    parser.add_argument("--database-sha", help="commit of a materialized pinned snapshot")
+    parser.add_argument("--family-universe", type=Path, help="JSON list from the pinned git tree")
     args = parser.parse_args()
     logger = logging.getLogger("rmgpy.kmc.compiler")
     logger.addHandler(logging.StreamHandler())
@@ -61,6 +64,8 @@ def main() -> None:
     family_universe = sorted(
         path.name for path in family_root.iterdir() if (path / "groups.py").is_file()
     )
+    if args.family_universe:
+        family_universe = json.loads(args.family_universe.read_text())
 
     database = RMGDatabase()
     print("loading pinned RMG families", flush=True)
@@ -76,12 +81,15 @@ def main() -> None:
         thermo_libraries=["primaryThermoLibrary"],
         depository=True,
     )
-    commits = "-".join(
-        subprocess.check_output(
-            ["git", "-C", str(path), "rev-parse", "HEAD"], text=True
-        ).strip()
-        for path in (Path.cwd(), database_path)
-    )
+    print("preparing non-auto-generated rate rules from training", flush=True)
+    prepare_rate_rules(database.kinetics, database.thermo, verbose=True)
+    repository_commit = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], text=True
+    ).strip()
+    database_commit = args.database_sha or subprocess.check_output(
+        ["git", "-C", str(database_path), "rev-parse", "HEAD"], text=True
+    ).strip()
+    commits = repository_commit + "-" + database_commit
     generated_cache = (
         Path(os.environ.get("RMG_KMC_CACHE_ROOT", str(Path.cwd() / ".kmc-cache")))
         / "generated-reactions"
@@ -157,6 +165,7 @@ def main() -> None:
         database_path=database_path,
         thermo_database=database.thermo,
         reaction_cache=reactions,
+        rmg_database_sha=database_commit,
     )
     print(
         f"compiling {sum(len(value) for value in reactions.values())} generated reactions",

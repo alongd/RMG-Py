@@ -367,6 +367,16 @@ def rmg_database():
 @pytest.fixture(scope="module")
 def compilation(rmg_database):
     proxies = ps_proxy_set(PS_PROXY_UNITS)
+    supplied = os.environ.get("RMG_KMC_ARTIFACT")
+    if supplied:
+        path = Path(supplied)
+        payload = path.read_bytes()
+        assert path.stem == hashlib.sha256(payload).hexdigest()
+        artifact = json.loads(payload)
+        assert artifact["provenance"]["compiler_sources_sha256"] == compiler_source_hash()
+        validate_artifact(artifact)
+        return (None, artifact, proxies, None, artifact["families"],
+                artifact["excluded_families"], path, None, (path,))
     context = multiprocessing.get_context("fork")
     receive_oracle, send_oracle = context.Pipe(duplex=False)
     oracle_process = context.Process(
@@ -506,6 +516,8 @@ def test_family_enumeration_covers_every_database_family(compilation, rmg_databa
 def test_cross_process_hash_seed_determinism(compilation):
     """Independent interpreters must emit identical canonical artifact bytes."""
     *_, paths = compilation
+    if len(paths) != 2:
+        pytest.skip("a supplied artifact does not reproduce two independent compiles")
     seed_zero, seed_4242 = paths
     zero_bytes = seed_zero.read_bytes()
     other_bytes = seed_4242.read_bytes()

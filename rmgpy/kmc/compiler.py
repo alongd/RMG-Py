@@ -133,6 +133,104 @@ def _git_sha(path: str | Path | None) -> str | None:
         return None
 
 
+def prepare_rate_rules(kinetics_database, thermo_database, *,
+                       kinetics_depositories=("training",), verbose=True):
+    """Apply RMG.load_database's non-ATG rate-rule preparation once per family.
+
+    Training reactions must not inherit model-growth species/polymer limits.
+    Keep the caller's global input and constraints intact, including on failure.
+    Existing family methods perform all rule construction and averaging.
+    """
+    from rmgpy.rmg import input as rmg_input
+
+    families = getattr(kinetics_database, "families", {})
+    add_training = "!training" not in kinetics_depositories
+    policy = {"training_requested": add_training, "verbose": verbose}
+    prepared = {}
+    original_input = rmg_input.rmg
+    owner = original_input or SimpleNamespace(
+        species_constraints={}, polymer_constraints=None, quantum_mechanics=None,
+        ml_estimator=None, ml_settings=None, thermo_central_database=None,
+    )
+    species_constraints = owner.species_constraints
+    polymer_constraints = owner.polymer_constraints
+    try:
+        rmg_input.rmg = owner
+        owner.species_constraints = {}
+        owner.polymer_constraints = None
+        for label, family in sorted(families.items()):
+            # Lightweight compiler fixtures may have no RMG family objects.
+            if not hasattr(family, "auto_generated") or family.auto_generated:
+                continue
+            previous = getattr(family, "_kmc_rate_rule_preparation", None)
+            if previous is not None:
+                if previous["policy"] != policy:
+                    raise ValueError("rate-rule preparation policy changed on a loaded family")
+                prepared[label] = copy.deepcopy(previous)
+                continue
+            if add_training and thermo_database is None:
+                raise ValueError("training rate rules require a thermo database")
+            count = lambda: sum(len(entries) for entries in family.rules.entries.values())
+            before = count()
+            if add_training:
+                logging.getLogger(__name__).info("adding training rate rules: %s", label)
+                family.add_rules_from_training(thermo_database=thermo_database)
+            after_training = count()
+            # RMG restores constraints before averaging the resulting rules.
+            owner.species_constraints = species_constraints
+            owner.polymer_constraints = polymer_constraints
+            family.fill_rules_by_averaging_up(verbose=verbose)
+            owner.species_constraints = {}
+            owner.polymer_constraints = None
+            result = {
+                "policy": policy, "training_rules_added": add_training,
+                "rules_before": before, "rules_after_training": after_training,
+                "rules_after_averaging": count(),
+            }
+            family._kmc_rate_rule_preparation = copy.deepcopy(result)
+            prepared[label] = result
+    finally:
+        owner.species_constraints = species_constraints
+        owner.polymer_constraints = polymer_constraints
+        rmg_input.rmg = original_input
+    return {
+        "procedure": "RMG add_rules_from_training then fill_rules_by_averaging_up",
+        "families": prepared,
+        "auto_generated_families_untouched": sorted(
+            label for label, family in families.items()
+            if getattr(family, "auto_generated", False)
+        ),
+    }
+
+
+def _rate_rule_source(family, reaction):
+    """Serialize RMG's own source extraction without replacing its comment."""
+    training, source = family.extract_source_from_comments(reaction)
+
+    def entry_data(entry):
+        return {"index": entry.index, "label": entry.label, "rank": entry.rank,
+                "short_desc": entry.short_desc}
+
+    result = {"template": _template(reaction),
+              "comment": reaction.kinetics.comment}
+    if training:
+        result["training"] = [{"entry": entry_data(source[1]),
+                                "reverse": source[2], "weight": 1.0}]
+        result["rules"] = []
+    else:
+        details = source[1]
+        result["exact"] = details["exact"]
+        result["rules"] = [
+            {"entry": entry_data(entry), "weight": weight}
+            for entry, weight in details["rules"]
+        ]
+        result["training"] = [
+            {"rule": entry_data(rule), "entry": entry_data(entry), "weight": weight}
+            for rule, entry, weight in details["training"]
+        ]
+    return result
+
+
 def _atom_total_order(atom) -> tuple[Any, ...]:
     """Explicit order for RMG atoms; never inherit container iteration order."""
     identifier = getattr(atom, "id", None)
@@ -1379,6 +1477,7 @@ class EventSetCompiler:
         ceiling_monomer_concentration_mol_m3: float = 1000.0,
         reaction_cache: dict[str, Sequence[Any]] | None = None,
         family_candidates: Iterable[str] = PS_FAMILY_CANDIDATES,
+        kinetics_depositories: Iterable[str] = ("training",),
     ):
         self.kinetics_database = kinetics_database
         self.proxies = tuple(proxies)
@@ -1393,6 +1492,10 @@ class EventSetCompiler:
         self.rmgpy_sha = rmgpy_sha
         self.rmg_database_sha = rmg_database_sha
         self.thermo_database = thermo_database
+        self.rate_rule_preparation = prepare_rate_rules(
+            kinetics_database, thermo_database,
+            kinetics_depositories=tuple(kinetics_depositories), verbose=True,
+        )
         self.reference_thermo_provider = (
             reference_thermo_provider
             or GasPhaseRMGReferenceThermo(
@@ -1739,6 +1842,9 @@ class EventSetCompiler:
             "family_template_direction": "forward" if estimated_forward else "reverse",
             "reference_thermo": self.reference_thermo_provider.provenance,
         }
+        family = getattr(self.kinetics_database, "families", {}).get(estimate.family)
+        if family is not None and getattr(family, "auto_generated", True) is False:
+            rate_source.update(_rate_rule_source(family, estimate))
         reverse_view = _reverse_view(source)
         structural_reverse = self._record(
             self._direction_proxy(proxy, reverse_view),
@@ -1822,6 +1928,8 @@ class EventSetCompiler:
                 or get_rate_coefficient_units_from_reaction_order(reverse.arity),
                 "reference": "k_family / Kc",
                 **self.reference_thermo_provider.provenance,
+                **({"forward_rate_source": rate_source}
+                   if "comment" in rate_source else {}),
             },
             rate_units=get_rate_coefficient_units_from_reaction_order(reverse.arity),
             thermo_provenance=thermo,
@@ -2143,6 +2251,10 @@ class EventSetCompiler:
             "rmgpy_sha": self.rmgpy_sha or _git_sha(self.rmgpy_path),
             "rmg_database_sha": self.rmg_database_sha or _git_sha(self.database_path),
             "proxy_set_sha256": sha256_json(proxy_inputs),
+            "rate_rule_preparation": {
+                **self.rate_rule_preparation,
+                "database_sha": self.rmg_database_sha or _git_sha(self.database_path),
+            },
         }
         if "R_Recombination" in self.families:
             provenance["archived_j_para_rate"] = copy.deepcopy(
