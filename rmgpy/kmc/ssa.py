@@ -122,6 +122,7 @@ class _PropensityTree:
     def __init__(self, values: Mapping[str, float]):
         vector = canonical_propensities(values.items())
         self.event_ids = vector.event_ids
+        self.identifiers = frozenset(self.event_ids)
         self.positions = {key: index for index, key in enumerate(self.event_ids)}
         self.levels = [list(vector.values)]
         while len(self.levels[-1]) > 1:
@@ -1748,6 +1749,25 @@ class ChannelPropensityReport:
     total_refused: float
 
 
+class _PropensitySnapshot(Mapping):
+    """Immutable canonical view including zeros, with only nonzeros copied."""
+
+    def __init__(self, tree: _PropensityTree, values: Mapping[str, float]):
+        self._tree = tree
+        self._values = dict(values)
+
+    def __getitem__(self, key: str) -> float:
+        if key not in self._tree.positions:
+            raise KeyError(key)
+        return self._values.get(key, 0.0)
+
+    def __iter__(self):
+        return iter(self._tree.event_ids)
+
+    def __len__(self) -> int:
+        return len(self._tree.event_ids)
+
+
 def _met_channel_propensities(
     population: METPopulation, temperature: float, _rates: _RateCache | None = None
 ) -> dict[str, float]:
@@ -1865,6 +1885,8 @@ class _IncrementalPropensities:
             if _field(record, "status", "enabled") != "refused"
         }
         self.refused = {key: 0.0 for key in self.records if key not in self.enabled}
+        self.enabled_nonzero: dict[str, float] = {}
+        self.refused_nonzero: dict[str, float] = {}
         self.refused_tree = _PropensityTree(self.refused)
         sampling = {
             key: value
@@ -1904,9 +1926,17 @@ class _IncrementalPropensities:
                 value /= N_A * engine.volume
             if key in self.refused:
                 self.refused[key] = value
+                if value != 0.0 or math.copysign(1.0, value) < 0.0:
+                    self.refused_nonzero[key] = value
+                else:
+                    self.refused_nonzero.pop(key, None)
                 self.refused_tree.update(key, value)
             else:
                 self.enabled[key] = value
+                if value != 0.0 or math.copysign(1.0, value) < 0.0:
+                    self.enabled_nonzero[key] = value
+                else:
+                    self.enabled_nonzero.pop(key, None)
                 updates[key] = value
                 if key in self.sampling_tree.positions:
                     self.sampling_tree.update(key, value)
@@ -1954,11 +1984,12 @@ class _IncrementalPropensities:
 
     def report(self) -> ChannelPropensityReport:
         self.sync()
-        values = {**self.enabled, **self.met_values}
         return ChannelPropensityReport(
-            frozenset(values),
-            {key: values[key] for key in self.enabled_tree.event_ids},
-            {key: self.refused[key] for key in self.refused_tree.event_ids},
+            self.enabled_tree.identifiers,
+            _PropensitySnapshot(
+                self.enabled_tree, {**self.enabled_nonzero, **self.met_values}
+            ),
+            _PropensitySnapshot(self.refused_tree, self.refused_nonzero),
             self.enabled_tree.total,
             self.refused_tree.total,
         )

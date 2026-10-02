@@ -1092,6 +1092,30 @@ def test_incremental_rates_are_lazy_and_invalidated_by_temperature(monkeypatch):
     assert len(calls) == 2
 
 
+def test_incremental_reports_keep_zero_leaves_and_earlier_values():
+    active = _one_atom_radical_record()
+    inactive = replace(active, event_id="", reactant_graphs=["1 *1 Si u1 p0 c0"])
+    engine = IsothermalSSA(
+        KMCState((_radical_strand("strand", "carbon", 5),)),
+        (active, inactive),
+        temperature=700.0,
+        volume=1.0,
+        rng=np.random.default_rng(38),
+    )
+    before = engine.channel_propensities()
+    assert tuple(before.propensities) == tuple(
+        sorted((active.event_id, inactive.event_id))
+    )
+    assert dict(before.propensities) == {active.event_id: 2.0, inactive.event_id: 0.0}
+    with pytest.raises(KeyError):
+        before.propensities["absent"]
+    engine.step()
+    after = engine.channel_propensities()
+    assert dict(after.propensities) == {active.event_id: 0.0, inactive.event_id: 0.0}
+    assert before.propensities[active.event_id] == 2.0
+    assert before.enabled_channel_ids == after.enabled_channel_ids
+
+
 def test_incremental_met_replay_invalidates_temperature_and_bound(
     real_ps_artifact, independent_state_oracle
 ):
