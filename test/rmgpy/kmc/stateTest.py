@@ -830,6 +830,42 @@ def _slow_stress_worker(arguments):
     return _exercise_evolving_chain(_STRESS_ARTIFACT, family, count, 8675309 + worker)
 
 
+def _slow_stress_jobs(total_steps, families, shards=24):
+    """Return the stable million-step stress-test shard plan."""
+    base, remainder = divmod(total_steps, shards)
+    return [
+        (worker, base + (worker < remainder), families[worker % len(families)])
+        for worker in range(shards)
+    ]
+
+
+def _slow_stress_processes(shards):
+    """Return the bounded process-pool size for the slow stress test."""
+    configured = os.environ.get("RMG_KMC_STRESS_PROCESSES")
+    processes = (
+        min(4, multiprocessing.cpu_count()) if configured is None else int(configured)
+    )
+    return min(processes, shards)
+
+
+def test_slow_stress_shard_plan_and_pool_size(monkeypatch):
+    families = ["alpha", "beta", "gamma"]
+    assert _slow_stress_jobs(1_000_000, families) == [
+        (worker, 41_667 if worker < 16 else 41_666, families[worker % 3])
+        for worker in range(24)
+    ]
+
+    monkeypatch.setattr(multiprocessing, "cpu_count", lambda: 8)
+    monkeypatch.delenv("RMG_KMC_STRESS_PROCESSES", raising=False)
+    assert _slow_stress_processes(24) == 4
+
+    monkeypatch.setenv("RMG_KMC_STRESS_PROCESSES", "3")
+    assert _slow_stress_processes(24) == 3
+
+    monkeypatch.setenv("RMG_KMC_STRESS_PROCESSES", "30")
+    assert _slow_stress_processes(24) == 24
+
+
 def test_zero_radical_seed_fires_real_selected_initiator(ps_artifact, monkeypatch):
     record_data = next(
         record
@@ -1143,13 +1179,11 @@ def test_ledger_components_and_moments_over_seeded_real_draws(ps_artifact):
     if os.environ.get("RMG_KMC_SLOW") == "1":
         global _STRESS_ARTIFACT
         _STRESS_ARTIFACT = ps_artifact
-        workers = min(24, multiprocessing.cpu_count())
-        base, remainder = divmod(total_steps, workers)
-        jobs = [
-            (worker, base + (worker < remainder), families[worker % len(families)])
-            for worker in range(workers)
-        ]
-        with multiprocessing.get_context("fork").Pool(workers) as pool:
+        jobs = _slow_stress_jobs(total_steps, families)
+        processes = _slow_stress_processes(len(jobs))
+        with multiprocessing.get_context("fork").Pool(
+            processes, maxtasksperchild=1
+        ) as pool:
             results = pool.map(_slow_stress_worker, jobs)
     else:
         base, remainder = divmod(total_steps, len(families))
