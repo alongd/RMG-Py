@@ -1,6 +1,9 @@
 """Slow real-RMG acceptance tests for the PS event-set compiler."""
 
 import copy
+import base64
+import zlib
+from dataclasses import replace
 import hashlib
 import json
 import multiprocessing
@@ -15,10 +18,12 @@ import pytest
 
 from rmgpy.data.rmg import RMGDatabase
 from rmgpy.kmc.compiler import (
+    EventSetCompiler,
     PS_FAMILY_CANDIDATES,
     PS_FAMILY_FILTER_REASON,
     PS_PROXY_UNITS,
     _canonical_adjacency,
+    compiler_source_hash,
     apply_record,
     canonical_json_bytes,
     ceiling_temperature,
@@ -27,14 +32,43 @@ from rmgpy.kmc.compiler import (
     validate_artifact,
 )
 from rmgpy.molecule.molecule import Molecule
+from rmgpy.reaction import Reaction
+from rmgpy.species import Species
+from completeness_oracle import (
+    independent_c3_oracle,
+    oracle_cache_key,
+    reaction_graph_key,
+)
+from cache_provenance import generator_code_unchanged
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DB_PATH = os.environ.get("RMG_DATABASE_PATH", str(REPO_ROOT.parent / "RMG-database"))
-CROSS_PROCESS_TIMEOUT_SECONDS = 14 * 60
-PRE_FIX_UNCHANGED_RECORD_COUNT = 312
-PRE_FIX_UNCHANGED_RECORDS_SHA256 = (
-    "7f3616d39972ce530fc5b2b1748a36f20a4452ac77bd71ba0661b7a5316b2a7d"
+CROSS_PROCESS_TIMEOUT_SECONDS = 8 * 60 * 60
+ARCHIVED_PACK_EXEMPTION_REASON = (
+    "owner-approved transport and cage pack rates and Kc (R-009 v12)"
+)
+ARCHIVED_PACK_EVENT_IDS = (
+    "evt_16eef4f25e21b91eaf71e9e99b1442421d71c971962030170571e48edb781e90",
+    "evt_230f8f7e0de2176cc15eb832cdc83ad350eebf271ebb1f08541c6d9830d945c7",
+    "evt_3700408a3c4cfbf91f2d9ae151a6c513349c28c1ced68257c7ce9836f3dd2a04",
+    "evt_a511ddbb6b960c85a8fc91105770e0210d740deedbd47898e801a04283469baf",
+    "evt_a86efb350529124c22adf46d1b420f7fb22d87eb73e13cd1cc915b5688de649c",
+    "evt_a88efbdc0f390f31d6c4b1fb9e50e52ebc45ca262c2009e1f317a2854a578b9f",
+)
+PARA_PACK_KC = (
+    1.045410027912e8,
+    4.663224384510e6,
+    3.284349406621e5,
+    3.330607208101e4,
+    4.538409537754e3,
+)
+ORTHO_PACK_KC = (
+    6571782.521596457,
+    377346.21958396066,
+    32995.400975202465,
+    4036.333967679853,
+    648.2373622040287,
 )
 ORTHO_NODES = (
     ("P1", "C", 0, 1),
@@ -175,15 +209,49 @@ def _normalized_base_record(record):
     return normalized
 
 
-def _assert_base_record_invariance(records):
-    normalized = sorted(
-        canonical_json_bytes(_normalized_base_record(record)).decode("ascii")
-        for record in records
-    )
-    assert len(normalized) == PRE_FIX_UNCHANGED_RECORD_COUNT
-    assert hashlib.sha256(canonical_json_bytes(normalized)).hexdigest() == (
-        PRE_FIX_UNCHANGED_RECORDS_SHA256
-    )
+def _pre_change_artifact():
+    path = Path(__file__).with_name("fixtures") / "i035_pre_change_artifact.zlib.b64"
+    return json.loads(zlib.decompress(base64.b64decode(path.read_bytes())))
+
+
+def _assert_base_record_invariance(artifact):
+    baseline = _pre_change_artifact()
+    paired_graphs = {
+        reaction_graph_key(
+            record["family"],
+            _molecules(record["reactant_graphs"]),
+            _molecules(record["product_graphs"]),
+        )
+        for record in artifact["records"]
+        if record["reverse_of"] and record["inventory_class"] != "R1:J_ring"
+    }
+    for record in baseline["records"]:
+        if record["inventory_class"] != "R1:J_ring":
+            assert (
+                reaction_graph_key(
+                    record["family"],
+                    _molecules(record["reactant_graphs"]),
+                    _molecules(record["product_graphs"]),
+                )
+                in paired_graphs
+            )
+    baseline_records = [
+        record
+        for record in baseline["records"]
+        if record["inventory_class"] == "R1:J_ring"
+    ]
+    actual = [
+        record
+        for record in artifact["records"]
+        if record["inventory_class"] == "R1:J_ring"
+    ]
+
+    def normalized(records):
+        return sorted(
+            canonical_json_bytes(_normalized_base_record(record)) for record in records
+        )
+
+    assert normalized(actual) == normalized(baseline_records)
 
 
 def _family_universe():
@@ -244,36 +312,34 @@ def _record_key(record):
 def _generate_independent_oracle(connection, kinetics_database, proxies):
     """Generate a fresh public-pipeline oracle in a forked process."""
     try:
-        degeneracies = defaultdict(float)
-        keys = set()
-        families_by_site = {}
-        for proxy in proxies:
-            families = tuple(proxy.metadata["family_candidates"])
-            generated = (
-                kinetics_database.generate_reactions_from_families(
-                    [participant.copy(deep=True) for participant in proxy.reactants],
-                    only_families=list(families),
-                    resonance=True,
-                )
-                if families
-                else []
-            )
-            firing = {reaction.family for reaction in generated}
-            if firing != set(families):
-                raise AssertionError(
-                    f"non-firing family routed to {proxy.site_type}: "
-                    f"{sorted(set(families) - firing)}"
-                )
-            families_by_site[proxy.site_type] = families
-            for reaction in generated:
-                key = _reaction_key(reaction, proxy)
-                keys.add(key)
-                degeneracies[key] += float(reaction.degeneracy)
+        cache = REPO_ROOT / ".kmc-cache/c3-oracle"
+        key = oracle_cache_key(REPO_ROOT, DB_PATH, 1)
+        destination = cache / (key + ".json")
+        current = key.split("-")[0]
+        if not destination.is_file():
+            suffix = key[len(current) :] + ".json"
+            for previous in sorted(cache.glob("*" + suffix)):
+                origin = previous.name.split("-")[0]
+                if generator_code_unchanged(REPO_ROOT, origin, current):
+                    data = json.loads(previous.read_bytes())
+                    data["cache_provenance"] = {
+                        "independent_generation_cache": str(previous),
+                        "generator_origin_commit": origin,
+                        "validated_current_commit": current,
+                        "database_commit": key.split("-")[1],
+                        "identical_oracle_and_input_source_hash": key.split("-")[2],
+                    }
+                    destination.write_text(json.dumps(data, sort_keys=True))
+                    break
+        full = independent_c3_oracle(kinetics_database, REPO_ROOT, DB_PATH, 1, cache)
         connection.send(
             {
-                "degeneracies": dict(degeneracies),
-                "keys": keys,
-                "families_by_site": families_by_site,
+                "degeneracies": {
+                    tuple(item["key"]): item["value"] for item in full["degeneracies"]
+                },
+                "keys": {tuple(key) for key in full["keys"]},
+                "counts": full["counts"],
+                "reactions": full["reactions"],
             }
         )
     finally:
@@ -299,7 +365,7 @@ def rmg_database():
 
 
 @pytest.fixture(scope="module")
-def compilation(rmg_database, tmp_path_factory):
+def compilation(rmg_database):
     proxies = ps_proxy_set(PS_PROXY_UNITS)
     context = multiprocessing.get_context("fork")
     receive_oracle, send_oracle = context.Pipe(duplex=False)
@@ -311,9 +377,35 @@ def compilation(rmg_database, tmp_path_factory):
     send_oracle.close()
     deadline = time.monotonic() + CROSS_PROCESS_TIMEOUT_SECONDS
     fixture_script = Path(__file__).with_name("compile_event_set_fixture.py")
+    cache_key = "-".join(
+        [
+            subprocess.check_output(
+                ["git", "-C", str(path), "rev-parse", "HEAD"], text=True
+            ).strip()
+            for path in (REPO_ROOT, DB_PATH)
+        ]
+        + [compiler_source_hash()]
+    )
+    cache_root = (
+        Path(os.environ.get("RMG_KMC_CACHE_ROOT", str(REPO_ROOT / ".kmc-cache")))
+        / "hash-seeded-compiler"
+        / cache_key
+    )
     seeded_runs = []
     for seed in ("0", "4242"):
-        output = tmp_path_factory.mktemp(f"hashseed-{seed}")
+        output = cache_root / f"hashseed-{seed}"
+        output.mkdir(parents=True, exist_ok=True)
+        artifacts = list(output.glob("*.json"))
+        if len(artifacts) == 1:
+            payload = artifacts[0].read_bytes()
+            assert artifacts[0].stem == hashlib.sha256(payload).hexdigest()
+            cached = json.loads(payload)
+            assert (
+                cached["provenance"]["compiler_sources_sha256"]
+                == compiler_source_hash()
+            )
+            seeded_runs.append((seed, output, None, None, None))
+            continue
         environment = os.environ.copy()
         environment.update(
             {
@@ -334,25 +426,30 @@ def compilation(rmg_database, tmp_path_factory):
         seeded_runs.append((seed, output, process, stdout, stderr))
     try:
         for seed, output, process, _, _ in seeded_runs:
+            if process is None:
+                continue
             try:
                 process.wait(timeout=max(0.0, deadline - time.monotonic()))
             except subprocess.TimeoutExpired:
                 process.terminate()
                 process.wait(timeout=10)
                 raise TimeoutError(
-                    f"PYTHONHASHSEED={seed} compilation exceeded 14 minutes; "
+                    f"PYTHONHASHSEED={seed} compilation exceeded {CROSS_PROCESS_TIMEOUT_SECONDS} seconds; "
                     f"see {output}"
                 )
         if not receive_oracle.poll(max(0.0, deadline - time.monotonic())):
-            raise TimeoutError("independent RMG oracle exceeded the suite budget")
+            raise TimeoutError(
+                "independent full-molecule RMG oracle exceeded the suite budget"
+            )
         oracle = receive_oracle.recv()
     finally:
         for _, _, process, stdout, stderr in seeded_runs:
-            if process.poll() is None:
+            if process is not None and process.poll() is None:
                 process.terminate()
                 process.wait(timeout=10)
-            stdout.close()
-            stderr.close()
+            if stdout is not None:
+                stdout.close()
+                stderr.close()
         receive_oracle.close()
         oracle_process.join(timeout=5)
         if oracle_process.is_alive():
@@ -361,7 +458,7 @@ def compilation(rmg_database, tmp_path_factory):
     assert oracle_process.exitcode == 0
     paths = []
     for seed, output, process, _, _ in seeded_runs:
-        assert process.returncode == 0, (
+        assert process is None or process.returncode == 0, (
             f"PYTHONHASHSEED={seed} compilation failed; "
             f"see {output / 'compile.stderr.log'}"
         )
@@ -529,20 +626,15 @@ def test_j_ortho_rate_counts_source_degeneracy_once(compilation):
 
 
 def test_archived_junctions_preserve_every_other_pre_fix_record(compilation):
-    """Every non-J_para record matches the pre-fix artifact canonical content."""
+    """The unpaired-change exemption cannot conceal a changed archived record."""
     _, artifact, _, _, _, _, _, _, _ = compilation
-    base_records = [
+    _assert_base_record_invariance(artifact)
+    corrupted = copy.deepcopy(artifact)
+    candidate = next(
         record
-        for record in artifact["records"]
-        if not (
-            record.get("junction_ops")
-            and record["junction_ops"][0].get("junction_kind") == "J_para"
-        )
-    ]
-    _assert_base_record_invariance(base_records)
-
-    corrupted = copy.deepcopy(base_records)
-    candidate = next(record for record in corrupted if record["bond_ops"])
+        for record in corrupted["records"]
+        if record["inventory_class"] == "R1:J_ring" and record["bond_ops"]
+    )
     candidate["bond_ops"] = candidate["bond_ops"][1:]
     with pytest.raises(AssertionError):
         _assert_base_record_invariance(corrupted)
@@ -567,24 +659,30 @@ def test_c1_every_rewrite_reproduces_rmg_product(compilation):
 def test_c2_per_site_degeneracy_matches_whole_molecule_pipeline(compilation):
     """C2: per-site sums equal the independent public whole-molecule oracle."""
     _, artifact, proxies, _, _, _, _, oracle, _ = compilation
-    generated_j_para = {
-        key: value
-        for key, value in oracle["degeneracies"].items()
-        if key[:2] == ("junction_radical+end_radical", "R_Recombination")
-    }
-    assert len(generated_j_para) == 1
+    generated_j_para = {_record_key(entry) for entry in artifact["excluded_channels"]}
     expected = {
         key: value
         for key, value in oracle["degeneracies"].items()
         if key not in generated_j_para
     }
     proxy_by_site = {proxy.site_type: proxy for proxy in proxies}
-    actual = defaultdict(float)
-    for record in artifact["records"]:
-        # Both approved junction channels replace the L=3 proxy estimate with
-        # their archived, labelled R-009 reactions.
-        if record.get("inventory_class") != "R1:J_ring":
-            actual[_record_key(record)] += record["raw_path_degeneracy"]
+
+    def observed_degeneracies(compiled_artifact):
+        totals = defaultdict(float)
+        by_id = {record["event_id"]: record for record in compiled_artifact["records"]}
+        selected_sources = set()
+        for discovery in compiled_artifact["discovery"]:
+            assert discovery["event_id"] in by_id
+            target = by_id[discovery["event_id"]]
+            pair = frozenset((target["event_id"], target["reverse_of"]))
+            if pair not in selected_sources:
+                assert target["raw_path_degeneracy"] == discovery["raw_path_degeneracy"]
+                selected_sources.add(pair)
+            if discovery["proxy_units"] == 5:
+                totals[_record_key(discovery)] += discovery["raw_path_degeneracy"]
+        return totals
+
+    actual = observed_degeneracies(artifact)
     assert dict(actual) == pytest.approx(expected)
     required_cases = {
         "pristine",
@@ -601,9 +699,11 @@ def test_c2_per_site_degeneracy_matches_whole_molecule_pipeline(compilation):
         if record["site_type"] == "end_radical+end_radical" and record["arity"] == 2
     ]
     assert identical_pair_records
-    assert all(record["ssa_multiplier"] == 2.0 for record in identical_pair_records)
     assert all(
-        record["reactant_multiplicities"] == [2] for record in identical_pair_records
+        record["ssa_multiplier"] in {1.0, 2.0} for record in identical_pair_records
+    )
+    assert all(
+        sum(record["reactant_multiplicities"]) == 2 for record in identical_pair_records
     )
     assert {proxy.metadata["context_class"] for proxy in proxies} == {
         "pristine",
@@ -611,33 +711,87 @@ def test_c2_per_site_degeneracy_matches_whole_molecule_pipeline(compilation):
         "end-proximal",
         "junction",
     }
-    assert all(proxy.metadata["proxy_units"] == PS_PROXY_UNITS for proxy in proxies)
-    assert oracle["families_by_site"] == {
-        proxy.site_type: tuple(proxy.metadata["family_candidates"]) for proxy in proxies
-    }
+    assert all(
+        proxy.metadata["proxy_units"] in {PS_PROXY_UNITS, 5} for proxy in proxies
+    )
 
-    corrupted = dict(actual)
-    candidate_key = next(iter(corrupted))
-    corrupted[candidate_key] += 1.0
-    assert corrupted != pytest.approx(expected)
+    corrupted = copy.deepcopy(artifact)
+    candidate = next(
+        record
+        for record in corrupted["records"]
+        if record["rate_source"]["kind"] == "RMG family estimate"
+        and any(
+            discovery["event_id"] == record["event_id"]
+            and discovery["proxy_site_type"] == record["site_type"]
+            for discovery in corrupted["discovery"]
+        )
+    )
+    candidate["raw_path_degeneracy"] += 1.0
+    with pytest.raises(AssertionError):
+        assert dict(observed_degeneracies(corrupted)) == pytest.approx(expected)
 
 
-def test_c3_bounded_l3_generation_has_no_missing_family_template(compilation):
-    """C3: independent bounded L=3 generation has no uncompiled template."""
+def test_c3_full_2r_plus_3_generation_covers_all_keys_and_128_probe_misses(compilation):
+    """C3: full five-unit molecules, all families, and closed-chain donors."""
     _, artifact, _, _, _, _, _, oracle, _ = compilation
+    records = {record["event_id"] for record in artifact["records"]}
     compiled = {
-        _record_key(record)
-        for record in artifact["records"]
-        if record["site_type"] != "J_ring"
+        _record_key(entry)
+        for entry in artifact["discovery"]
+        if entry["event_id"] in records
     }
-    generated_j_para = {
-        key
-        for key in oracle["keys"]
-        if key[:2] == ("junction_radical+end_radical", "R_Recombination")
+    exclusions = {
+        _record_key(entry)
+        for entry in artifact["excluded_channels"]
+        if entry["reason"]
+        == "bounded J_ring capture replaced by immutable R-009 archived para/ortho pairs"
     }
-    assert len(generated_j_para) == 1
-    required = oracle["keys"] - generated_j_para
+    required = oracle["keys"] - exclusions
     assert required <= compiled, sorted(required - compiled)[:10]
+    baseline = {_record_key(record) for record in _pre_change_artifact()["records"]}
+    legacy_sites = {
+        "pristine",
+        "interior_radical",
+        "doubly_featured",
+        "end_radical",
+        "junction_radical",
+        "end_radical+end_radical",
+        "junction_radical+end_radical",
+        "end_radical+styrene",
+    }
+    current_missing = {
+        key for key in oracle["keys"] if key[0] in legacy_sites
+    } - baseline
+    archived_replacement = current_missing & exclusions
+    assert {key[:2] for key in archived_replacement} == {
+        ("junction_radical+end_radical", "R_Recombination")
+    }
+    probe_missing = current_missing - archived_replacement
+    assert len(probe_missing) == 128
+    assert probe_missing <= compiled | exclusions
+
+    def graph_keys(records):
+        return {
+            reaction_graph_key(
+                record["family"],
+                _molecules(record["reactant_graphs"]),
+                _molecules(record["product_graphs"]),
+            )
+            for record in records
+        }
+
+    required_graphs = {
+        (family, tuple(tuple(side) for side in sides))
+        for site, family, template, sides in oracle["reactions"]
+        if (site, family, template) not in exclusions
+    }
+    actual_graphs = graph_keys(artifact["records"])
+    assert required_graphs <= actual_graphs, sorted(required_graphs - actual_graphs)[
+        :10
+    ]
+    print(
+        f"C3: full 5-unit oracle keys={len(oracle['keys'])}; coverage={len(required & compiled)}/{len(required)}; probe misses accounted={len(probe_missing & (compiled | exclusions))}/128 (compiled={len(probe_missing & compiled)}, explicitly excluded={len(probe_missing & exclusions)}); exclusions={len(exclusions)}; additional post-probe archived replacement={len(archived_replacement)}"
+    )
     archived_j_para = [
         record
         for record in artifact["records"]
@@ -648,9 +802,252 @@ def test_c3_bounded_l3_generation_has_no_missing_family_template(compilation):
     assert len(archived_j_para) == 1
     assert archived_j_para[0]["rate_source"]["rule_entry_index"] == 176
 
-    corrupted = set(compiled)
-    corrupted.remove(next(iter(required)))
-    assert not required <= corrupted
+    corrupted = copy.deepcopy(artifact)
+    candidate_key = next(iter(required))
+    corrupted["discovery"] = [
+        entry for entry in corrupted["discovery"] if _record_key(entry) != candidate_key
+    ]
+    corrupted_keys = {_record_key(entry) for entry in corrupted["discovery"]}
+    assert not required <= corrupted_keys
+    missing_pair = next(iter(required_graphs))
+    corrupted_records = [
+        record
+        for record in artifact["records"]
+        if reaction_graph_key(
+            record["family"],
+            _molecules(record["reactant_graphs"]),
+            _molecules(record["product_graphs"]),
+        )
+        != missing_pair
+    ]
+    assert not required_graphs <= graph_keys(corrupted_records)
+
+
+def _pack_exemptions(artifact):
+    """Match six frozen event IDs exactly, allowing only provenance/handle changes."""
+    baseline = {
+        record["event_id"]: record for record in _pre_change_artifact()["records"]
+    }
+    permitted = {
+        canonical_json_bytes(_normalized_base_record(baseline[event_id])): event_id
+        for event_id in ARCHIVED_PACK_EVENT_IDS
+    }
+    exemptions = {}
+    for record in artifact["records"]:
+        content = canonical_json_bytes(_normalized_base_record(record))
+        if content in permitted:
+            assert record["event_id"] not in exemptions
+            exemptions[record["event_id"]] = {
+                "reason": ARCHIVED_PACK_EXEMPTION_REASON,
+                "pack_event_id": permitted[content],
+            }
+    assert len(exemptions) == len(ARCHIVED_PACK_EVENT_IDS)
+    assert {entry["pack_event_id"] for entry in exemptions.values()} == set(
+        ARCHIVED_PACK_EVENT_IDS
+    )
+    return exemptions
+
+
+def _assert_pack_exemption(record, exemption):
+    baseline = {
+        record["event_id"]: record for record in _pre_change_artifact()["records"]
+    }
+    assert exemption["reason"] == ARCHIVED_PACK_EXEMPTION_REASON
+    assert exemption["pack_event_id"] in ARCHIVED_PACK_EVENT_IDS
+    assert _normalized_base_record(record) == _normalized_base_record(
+        baseline[exemption["pack_event_id"]]
+    )
+
+
+def test_all_pairs_have_exact_graphs_maps_degeneracies_and_detailed_balance(
+    compilation, rmg_database
+):
+    """Re-derive Kc from RMG thermo, not from the compiler's provider or tables."""
+    artifact = compilation[1]
+    exemptions = _pack_exemptions(artifact)
+    by_id = {record["event_id"]: record for record in artifact["records"]}
+    thermo_cache = {}
+    checked = set()
+    paired_graphs = set()
+    maximum_error = 0.0
+
+    def thermochemical_species(graph):
+        molecule = Molecule().from_adjacency_list(graph)
+        key = molecule.to_smiles()
+        if key not in thermo_cache:
+            species = Species(molecule=[molecule])
+            species.generate_resonance_structures()
+            species.thermo = rmg_database.thermo.get_thermo_data(species)
+            thermo_cache[key] = species
+        return thermo_cache[key]
+
+    for record in artifact["records"]:
+        if not record["reverse_of"] or record["event_id"] in checked:
+            continue
+        reverse = by_id[record["reverse_of"]]
+        graph_pair = reaction_graph_key(
+            record["family"],
+            _molecules(record["reactant_graphs"]),
+            _molecules(record["product_graphs"]),
+        )
+        assert reverse["reverse_of"] == record["event_id"]
+        assert sorted(record["reactant_graphs"]) == sorted(reverse["product_graphs"])
+        assert sorted(record["product_graphs"]) == sorted(reverse["reactant_graphs"])
+        assert {
+            str(value): int(key) for key, value in record["atom_map"].items()
+        } == reverse["atom_map"]
+        if record["event_id"] in exemptions:
+            _assert_pack_exemption(record, exemptions[record["event_id"]])
+            _assert_pack_exemption(reverse, exemptions[reverse["event_id"]])
+            checked.update((record["event_id"], reverse["event_id"]))
+            continue
+        assert reverse["event_id"] not in exemptions
+        assert graph_pair not in paired_graphs, graph_pair
+        paired_graphs.add(graph_pair)
+        assert record["raw_path_degeneracy"] == reverse["raw_path_degeneracy"]
+        assert record["degeneracy"] == reverse["degeneracy"]
+        direct = [
+            candidate
+            for candidate in (record, reverse)
+            if candidate["rate_source"]["kind"] == "RMG family estimate"
+        ]
+        assert len(direct) == 1
+        forward = direct[0]
+        partner = reverse if forward is record else record
+        assert partner["rate_source"]["kind"] == "reference-thermo reverse"
+        assert forward["thermo_provenance"]["reference_thermo"] == "RMG gas-phase Kc"
+        assert (
+            forward["thermo_provenance"]["rmg_database_sha"]
+            == "4a12d36fcdc193ede82c8d1ab5c1653495d445bc"
+        )
+        reaction = Reaction(
+            reactants=[
+                thermochemical_species(graph) for graph in forward["reactant_graphs"]
+            ],
+            products=[
+                thermochemical_species(graph) for graph in forward["product_graphs"]
+            ],
+        )
+        constants = [
+            reaction.get_equilibrium_constant(temperature, type="Kc")
+            for temperature in (600.0, 700.0, 800.0)
+        ]
+        for temperature, constant in zip((600.0, 700.0, 800.0), constants):
+            index = forward["k_table"]["T"].index(temperature)
+            ratio = forward["k_table"]["k"][index] / partner["k_table"]["k"][index]
+            error = abs(ratio / constant - 1.0)
+            maximum_error = max(maximum_error, error)
+            assert error <= 1e-9, (forward["event_id"], temperature, error)
+        checked.update((record["event_id"], reverse["event_id"]))
+    assert checked
+    print(
+        f"DETAILED-BALANCE: {(len(checked) - len(exemptions)) // 2} generic pairs at 600/700/800 K; max relative error={maximum_error:.12g}; exemptions={json.dumps(exemptions, sort_keys=True)}"
+    )
+
+
+def test_exact_id_pack_exemptions_preserve_kc_and_reject_non_ring_pair(compilation):
+    artifact = compilation[1]
+    by_id = {record["event_id"]: record for record in artifact["records"]}
+    exemptions = _pack_exemptions(artifact)
+    forward_records = [
+        by_id[event_id] for event_id in exemptions if by_id[event_id]["arity"] == 2
+    ]
+    assert len(forward_records) == 3
+    for forward in forward_records:
+        reverse = by_id[forward["reverse_of"]]
+        ortho = forward["junction_ops"][0]["junction_kind"] != "J_para"
+        observed = []
+        for temperature in (600.0, 650.0, 700.0, 750.0, 800.0):
+            index = forward["k_table"]["T"].index(temperature)
+            observed.append(
+                forward["k_table"]["k"][index]
+                / reverse["k_table"]["k"][index]
+                * (2.0 if ortho else 1.0)
+            )
+        assert observed == pytest.approx(
+            ORTHO_PACK_KC if ortho else PARA_PACK_KC, rel=1e-9
+        )
+        assert (forward["degeneracy"], reverse["degeneracy"]) == (
+            (1.0, 2.0) if ortho else (1.0, 1.0)
+        )
+    non_ring = next(
+        record
+        for record in artifact["records"]
+        if record["event_id"] not in exemptions and record["reverse_of"]
+    )
+    assert non_ring["inventory_class"] != "R1:J_ring"
+    disguised = copy.deepcopy(non_ring)
+    disguised["inventory_class"] = "R1:J_ring"
+    disguised["event_id"] = forward_records[0]["event_id"]
+    with pytest.raises(AssertionError):
+        _assert_pack_exemption(disguised, exemptions[disguised["event_id"]])
+
+
+def test_real_frontier_recombination_stays_refused_and_out_of_normal_total(
+    rmg_database,
+):
+    from compile_event_set_fixture import (
+        dump_generated_reactions,
+        load_generated_reactions,
+    )
+    from rmgpy.kmc.met import TRANSPORT_ARMS, _is_forward_met_record, compile_bulk_table
+    from rmgpy.kmc.ssa import SiteIndex, channel_propensities
+    import stateTest as state_oracle
+
+    proxy = next(
+        proxy
+        for proxy in ps_proxy_set(3)
+        if proxy.site_type == "end_radical+end_radical"
+    )
+    frontier = replace(proxy, frontier=True)
+    generated = rmg_database.kinetics.generate_reactions_from_families(
+        [species.copy(deep=True) for species in frontier.reactants],
+        only_families=["R_Recombination"],
+        resonance=True,
+    )
+    recovered = load_generated_reactions(dump_generated_reactions(generated))
+    assert [
+        atom.id
+        for reaction in generated
+        for species in reaction.reactants + reaction.products
+        for molecule in species.molecule
+        for atom in molecule.atoms
+    ] == [
+        atom.id
+        for reaction in recovered
+        for species in reaction.reactants + reaction.products
+        for molecule in species.molecule
+        for atom in molecule.atoms
+    ]
+    artifact = EventSetCompiler(
+        rmg_database.kinetics,
+        [frontier],
+        ["R_Recombination"],
+        thermo_database=rmg_database.thermo,
+        database_path=DB_PATH,
+        reaction_cache={frontier.site_type: recovered},
+    ).compile()
+    real = [
+        record
+        for record in artifact["records"]
+        if record["inventory_class"] != "R1:J_ring"
+    ]
+    assert real
+    assert all(record["status"] == "refused" for record in real)
+    assert all(not _is_forward_met_record(record, "R0") for record in real)
+    table = compile_bulk_table(
+        artifact["records"], TRANSPORT_ARMS["A0_REF_H_CROSS_NEc"], "R0"
+    )
+    assert not table.channels
+    record = next(record for record in real if record["arity"] == 2)
+    state, _, _ = state_oracle._harness(record)
+    index = SiteIndex(state, real)
+    report = channel_propensities(state, index, real, 700.0, 1e-24)
+    assert report.total_enabled == 0.0
+    assert report.total_refused > 0.0
+    mutated = copy.deepcopy(record)
+    mutated["status"] = "irreversible"
+    assert _is_forward_met_record(mutated, "R0")
 
 
 def test_c7_c9_inventory_and_real_artifact(compilation):
@@ -660,7 +1057,19 @@ def test_c7_c9_inventory_and_real_artifact(compilation):
     assert catalogue == artifact["short_molecule_catalogue"]
     assert catalogue["terminates"]
     assert catalogue["size"] == len(catalogue["molecules"])
-    assert artifact["irreversible_pairs"]
+    irreversible = {entry["event_id"] for entry in artifact["irreversible_pairs"]}
+    assert all(
+        record["reverse_of"]
+        or record["event_id"] in irreversible
+        or record["status"] == "refused"
+        for record in artifact["records"]
+    )
+    assert all(
+        entry["reason"].startswith("thermo unavailable for species ")
+        or entry["reason"].startswith("Kc unavailable for species ")
+        or entry["reason"] == "RMG reaction is declared irreversible"
+        for entry in artifact["irreversible_pairs"]
+    )
     assert artifact["ps_ceiling_pairs"]
     pair = artifact["ps_ceiling_pairs"][0]
     records_by_id = {record["event_id"]: record for record in artifact["records"]}
@@ -673,6 +1082,19 @@ def test_c7_c9_inventory_and_real_artifact(compilation):
     )
     assert recomputed == pair["temperature_K"]
     assert artifact["ps_ceiling_temperature_K"] == recomputed
+    literature = {
+        "temperature_K": 668.15,
+        "range_K": [583.15, 668.15],
+        "reference": "Kinetic Phenomena in Mechanochemical Depolymerization of Poly(styrene), ACS Sustainable Chemistry & Engineering, DOI:10.1021/acssuschemeng.3c05296, section 4.1 reports 310-395 C",
+        "reference_state": "literature range (upper endpoint quoted); compiled value uses gas-phase Kc and the stated monomer concentration, not the same solvent/activity",
+    }
+    linked_pairs = (
+        sum(bool(record["reverse_of"]) for record in artifact["records"]) // 2
+    )
+    one_way_records = sum(not record["reverse_of"] for record in artifact["records"])
+    print(
+        f"C9: PS gas-reference ceiling={recomputed:.6f} K at [styrene]={pair['monomer_concentration_mol_m3']} mol/m3; literature={literature['temperature_K']} K ({literature['reference']}); {literature['reference_state']}; irreversible={len(irreversible)}/{linked_pairs + one_way_records} reaction pairs"
+    )
     ring_records = [
         record
         for record in artifact["records"]

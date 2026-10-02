@@ -1140,6 +1140,15 @@ def _channel_id(record: Any) -> str:
         _field(record, "ssa_multiplier", 1.0), "SSA multiplier"
     )
     family = str(_field(record, "family", ""))
+    if (
+        _field(record, "inventory_class") != "R1:J_ring"
+        and isinstance(source, Mapping)
+        and (
+            "family_template_direction" in source
+            or source.get("kind") == "reference-thermo reverse"
+        )
+    ):
+        return f"{family}:{_field(record, 'event_id', '')}"
     candidates = (
         ("J_para", "J_ortho")
         if _field(record, "inventory_class") == "R1:J_ring"

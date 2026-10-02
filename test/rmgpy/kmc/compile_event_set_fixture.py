@@ -1,7 +1,16 @@
 """Compile the real PS event set in an isolated hash-seeded interpreter."""
 
 import argparse
+import hashlib
+import inspect
+import json
+import logging
+import os
+import pickle
+import subprocess
 from pathlib import Path
+
+from cache_provenance import generator_code_unchanged
 
 from rmgpy.data.rmg import RMGDatabase
 from rmgpy.kmc.compiler import (
@@ -12,11 +21,41 @@ from rmgpy.kmc.compiler import (
 )
 
 
+def dump_generated_reactions(reactions):
+    pending = list(reactions)
+    visited = set()
+    atoms = {}
+    while pending:
+        reaction = pending.pop()
+        if id(reaction) in visited:
+            continue
+        visited.add(id(reaction))
+        for species in reaction.reactants + reaction.products:
+            for molecule in species.molecule:
+                for atom in molecule.atoms:
+                    atoms[id(atom)] = atom, atom.id
+        reverse = getattr(reaction, "reverse", None)
+        if reverse is not None:
+            pending.append(reverse)
+    return pickle.dumps((reactions, list(atoms.values())), protocol=4)
+
+
+def load_generated_reactions(payload):
+    reactions, atom_ids = pickle.loads(payload)
+    for atom, identifier in atom_ids:
+        atom.id = identifier
+    return reactions
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("database")
     parser.add_argument("output")
     args = parser.parse_args()
+    logger = logging.getLogger("rmgpy.kmc.compiler")
+    logger.addHandler(logging.StreamHandler())
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
     database_path = Path(args.database)
     family_root = database_path / "input/kinetics/families"
     family_universe = sorted(
@@ -24,6 +63,7 @@ def main() -> None:
     )
 
     database = RMGDatabase()
+    print("loading pinned RMG families", flush=True)
     database.load_kinetics(
         str(database_path / "input/kinetics"),
         reaction_libraries=[],
@@ -36,6 +76,72 @@ def main() -> None:
         thermo_libraries=["primaryThermoLibrary"],
         depository=True,
     )
+    commits = "-".join(
+        subprocess.check_output(
+            ["git", "-C", str(path), "rev-parse", "HEAD"], text=True
+        ).strip()
+        for path in (Path.cwd(), database_path)
+    )
+    generated_cache = (
+        Path(os.environ.get("RMG_KMC_CACHE_ROOT", str(Path.cwd() / ".kmc-cache")))
+        / "generated-reactions"
+        / commits
+        / os.environ.get("PYTHONHASHSEED", "default")
+    )
+    generated_cache.mkdir(parents=True, exist_ok=True)
+    repository_commit, database_commit = commits.split("-")
+    reusable_caches = []
+    for candidate in generated_cache.parent.parent.iterdir():
+        if candidate.name.endswith("-" + database_commit) and candidate.name != commits:
+            origin = candidate.name.split("-")[0]
+            if generator_code_unchanged(Path.cwd(), origin, repository_commit):
+                reusable_caches.append(candidate / generated_cache.name)
+    generate = database.kinetics.generate_reactions_from_families
+    generation_source = hashlib.sha256(inspect.getsource(generate).encode()).hexdigest()
+
+    def cached_generate(reactants, products=None, only_families=None, resonance=True):
+        parameters = {
+            "cache_schema": 1,
+            "generator_source": generation_source,
+            "reactants": [
+                [
+                    molecule.to_adjacency_list(remove_h=False)
+                    for molecule in species.molecule
+                ]
+                for species in reactants
+            ],
+            "products": (
+                None if products is None else [str(species) for species in products]
+            ),
+            "families": only_families,
+            "resonance": resonance,
+        }
+        key = hashlib.sha256(
+            json.dumps(parameters, sort_keys=True).encode()
+        ).hexdigest()
+        path = generated_cache / (key + ".pickle")
+        if not path.is_file():
+            for origin in reusable_caches:
+                previous = origin / path.name
+                if previous.is_file():
+                    temporary = path.with_suffix(f".{os.getpid()}.tmp")
+                    temporary.write_bytes(previous.read_bytes())
+                    temporary.replace(path)
+                    print(
+                        f"reused unchanged public RMG generator: {previous}", flush=True
+                    )
+                    break
+        if path.is_file():
+            print(f"cached public RMG generation: {only_families}", flush=True)
+            return load_generated_reactions(path.read_bytes())
+        reactions = generate(reactants, products, only_families, resonance)
+        temporary = path.with_suffix(f".{os.getpid()}.tmp")
+        temporary.write_bytes(dump_generated_reactions(reactions))
+        temporary.replace(path)
+        return reactions
+
+    database.kinetics.generate_reactions_from_families = cached_generate
+    print("discovering PS chemistry", flush=True)
     proxies = ps_proxy_set(PS_PROXY_UNITS)
     active, excluded, reactions = EventSetCompiler.discover_family_reactions(
         database.kinetics,
@@ -51,6 +157,10 @@ def main() -> None:
         database_path=database_path,
         thermo_database=database.thermo,
         reaction_cache=reactions,
+    )
+    print(
+        f"compiling {sum(len(value) for value in reactions.values())} generated reactions",
+        flush=True,
     )
     path, _ = compiler.write_artifact(args.output)
     print(path)

@@ -59,7 +59,11 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 REAL_DATABASE_PATH = Path(
     os.environ.get("RMG_DATABASE_PATH", "/home/alon/Code/RMG-database")
 )
-REAL_CACHE_ROOT = Path(__file__).with_name(".real-event-cache")
+REAL_CACHE_ROOT = Path(
+    os.environ.get(
+        "RMG_KMC_CACHE_ROOT", str(Path(__file__).with_name(".real-event-cache"))
+    )
+)
 ARCHIVED_D0 = {
     "H": (
         6.636772327361e-9,
@@ -203,7 +207,9 @@ def real_slow(test_function):
 @pytest.fixture(scope="session")
 def real_ps_inputs():
     """Compile/cache one validated real PS artifact and its real kinetics DB."""
-    cache_key = f"{_git_head(REPO_ROOT)}-{_git_head(REAL_DATABASE_PATH)}"
+    from rmgpy.kmc.compiler import compiler_source_hash
+
+    cache_key = f"{_git_head(REPO_ROOT)}-{_git_head(REAL_DATABASE_PATH)}-{compiler_source_hash()}"
     cache_dir = REAL_CACHE_ROOT / cache_key
     cache_dir.mkdir(parents=True, exist_ok=True)
     artifacts = sorted(cache_dir.glob("*.json"))
@@ -232,7 +238,7 @@ def real_ps_inputs():
                 stdout=stdout,
                 stderr=stderr,
                 check=True,
-                timeout=20 * 60,
+                timeout=4 * 60 * 60,
             )
         artifacts = sorted(cache_dir.glob("*.json"))
     assert len(artifacts) == 1

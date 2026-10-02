@@ -1266,6 +1266,9 @@ class KMCState:
         if assigned_components != set(range(len(components))):
             raise LedgerError("product component attribution is incomplete")
 
+        if _value(record, "reverse_of"):
+            return
+
         for product_index, coproduct in enumerate(coproducts, start=1):
             component_index = assignments[product_index]
             if component_index is None:

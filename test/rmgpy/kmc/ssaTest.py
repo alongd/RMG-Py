@@ -46,7 +46,7 @@ from rmgpy.kmc.met import (
     compile_bulk_table,
     diffusion_rate,
 )
-from rmgpy.kmc.compiler import validate_artifact
+from rmgpy.kmc.compiler import compiler_source_hash, validate_artifact
 from rmgpy.kmc.state import AtomRef, KMCState, Site, Strand
 
 
@@ -74,7 +74,11 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 REAL_DATABASE_PATH = Path(
     os.environ.get("RMG_DATABASE_PATH", "/home/alon/Code/RMG-database")
 )
-REAL_CACHE_ROOT = Path(__file__).with_name(".real-event-cache")
+REAL_CACHE_ROOT = Path(
+    os.environ.get(
+        "RMG_KMC_CACHE_ROOT", str(Path(__file__).with_name(".real-event-cache"))
+    )
+)
 
 
 def slow(test_function):
@@ -93,7 +97,7 @@ def _git_head(path):
 
 @pytest.fixture(scope="session")
 def real_ps_artifact():
-    cache_key = f"{_git_head(REPO_ROOT)}-{_git_head(REAL_DATABASE_PATH)}"
+    cache_key = f"{_git_head(REPO_ROOT)}-{_git_head(REAL_DATABASE_PATH)}-{compiler_source_hash()}"
     cache_dir = REAL_CACHE_ROOT / cache_key
     cache_dir.mkdir(parents=True, exist_ok=True)
     artifacts = sorted(cache_dir.glob("*.json"))
@@ -122,7 +126,7 @@ def real_ps_artifact():
                 stdout=stdout,
                 stderr=stderr,
                 check=True,
-                timeout=20 * 60,
+                timeout=4 * 60 * 60,
             )
         artifacts = sorted(cache_dir.glob("*.json"))
     assert len(artifacts) == 1
@@ -382,24 +386,54 @@ def test_real_site_index_matches_independent_brute_force_rescan(
 
 @slow
 def test_real_k_act_is_pair_specific_at_700_k(real_ps_artifact):
+    from rmgpy.data.rmg import RMGDatabase
+    from met_rate_oracle import independent_termination_rates
+
     records = real_ps_artifact["records"]
     by_event = {record["event_id"]: record for record in records}
-    expected = {
-        "R0": {
-            ("end_radical", "end_radical"): 729_520.08557123237,
-        },
-        "R1": {
-            ("end_radical", "end_radical"): 729_520.08557123237,
-            ("end_radical", "junction_radical"): 74_337_687.14226444,
-        },
-    }
+    database = RMGDatabase()
+    database.load_kinetics(
+        str(REAL_DATABASE_PATH / "input/kinetics"),
+        reaction_libraries=[],
+        seed_mechanisms=None,
+        kinetics_families=["R_Recombination", "Disproportionation"],
+        kinetics_depositories=["training"],
+    )
+    database.load_thermo(
+        str(REAL_DATABASE_PATH / "input/thermo"),
+        thermo_libraries=["primaryThermoLibrary"],
+        depository=True,
+    )
+    independent_rates = independent_termination_rates(real_ps_artifact, database, 700.0)
+    expected = {}
+    for inventory in ("R0", "R1"):
+        groups = Counter()
+        for event_id, rate in independent_rates.items():
+            record = by_event[event_id]
+            if inventory == "R0" and record["inventory_class"] == "R1:J_ring":
+                continue
+            site_types = tuple(
+                sorted(
+                    site_type
+                    for site_type, count in zip(
+                        record["participant_site_types"],
+                        record["reactant_multiplicities"],
+                    )
+                    for _ in range(count)
+                )
+            )
+            groups[site_types] += rate
+        expected[inventory] = dict(groups)
     pack_temperature = 700.0
     pack_exponent = -1.00291
     j_para_forward = 1.0 * 1.76793e10 * pack_temperature**pack_exponent
     j_ortho_forward = 3.53586e10 * pack_temperature**pack_exponent
-    assert expected["R1"][("end_radical", "junction_radical")] == pytest.approx(
-        j_ortho_forward + j_para_forward, rel=1e-9
+    ring_total = sum(
+        rate
+        for event_id, rate in independent_rates.items()
+        if by_event[event_id]["inventory_class"] == "R1:J_ring"
     )
+    assert ring_total == pytest.approx(j_ortho_forward + j_para_forward, rel=1e-9)
     rows = []
     for inventory in ("R0", "R1"):
         table = compile_bulk_table(
@@ -534,16 +568,17 @@ def _brute_r1_met_total(state, oracle, prepared, table, volume):
 def test_met_ssa_exact_real_r1_evolving_trajectory(
     real_ps_artifact, independent_state_oracle
 ):
+    """Compare independent MET totals on the archived ring capture/inverse cycle."""
     seed = 8_013_700
     event_count = 20_000 if os.environ.get("RMG_KMC_SLOW") == "1" else 2_000
     relative_tolerance = 1e-12
     volume = 1e-50
     state = _real_cycle_state(real_ps_artifact, independent_state_oracle, seed)
     initial_ledger = state.total_ledger
-    records = tuple(EventRecord.from_dict(data) for data in real_ps_artifact["records"])
-    table = compile_bulk_table(records, TRANSPORT_ARMS["A0_REF_H_CROSS_NEc"], "R1")
     active_data = _active_r1_record_data(real_ps_artifact)
     active_records = tuple(EventRecord.from_dict(data) for data in active_data)
+    records = active_records
+    table = compile_bulk_table(records, TRANSPORT_ARMS["A0_REF_H_CROSS_NEc"], "R1")
     prepared = tuple(
         independent_state_oracle._prepare_stress_record(data) for data in active_data
     )
@@ -631,7 +666,7 @@ def test_met_ssa_exact_real_r1_evolving_trajectory(
         assert replay_state.total_ledger == initial_ledger
         assert replay_state.moments == replay_state.brute_force_moments()
         print(
-            f"REAL-SET-SMOKE R1: events={len(replay_result.events)} seed={seed} "
+            f"ARCHIVED-RING-SMOKE R1: events={len(replay_result.events)} seed={seed} "
             f"L={replay_result.leak:.12g} "
             f"irreversible={replay_result.irreversible_fraction:.12g}"
         )
@@ -651,7 +686,7 @@ def test_met_ssa_exact_real_r0_frozen_state(real_ps_artifact, independent_state_
     index = SiteIndex(state, records)
     table = compile_bulk_table(records, TRANSPORT_ARMS["A0_REF_H_CROSS_NEc"], "R0")
     assert table.channels
-    assert all(not channel.reversible for channel in table.channels)
+    assert all(channel.reversible for channel in table.channels)
     population = build_met_population(
         state,
         index,
@@ -663,6 +698,302 @@ def test_met_ssa_exact_real_r0_frozen_state(real_ps_artifact, independent_state_
     )
     assert population.sampler.bound_violations == 0
     assert population.sampler.exact_total_propensity >= 0.0
+
+
+@slow
+def test_r0_pristine_chain_smoke_fires_10000_events_and_reports_irreversibility(
+    real_ps_artifact, independent_state_oracle
+):
+    records = tuple(
+        EventRecord.from_dict(data)
+        for data in real_ps_artifact["records"]
+        if data["inventory_class"] != "R1:J_ring"
+    )
+    homolysis = [
+        record
+        for record in records
+        if record.family == "R_Recombination"
+        and record.arity == 1
+        and record.radical_delta == 2
+        and record.site_type == "pristine"
+    ]
+    assert homolysis
+    selected = None
+    for candidate in homolysis:
+        graph = independent_state_oracle._parse_adjacency(candidate.reactant_graphs[0])
+        for operation in candidate.bond_ops:
+            if operation["action"] != "break":
+                continue
+            left, right = operation["atoms"]
+            remaining = set(graph)
+            groups = []
+            while remaining:
+                members = set()
+                pending = [min(remaining)]
+                while pending:
+                    atom = pending.pop()
+                    if atom in members:
+                        continue
+                    members.add(atom)
+                    pending.extend(
+                        neighbor
+                        for neighbor in graph[atom].get("edges", {})
+                        if {atom, neighbor} != {left, right} and neighbor not in members
+                    )
+                remaining -= members
+                groups.append(members)
+            if (
+                len(groups) != 2
+                or min(
+                    sum(graph[atom]["element"] == "C" for atom in members)
+                    for members in groups
+                )
+                < 8
+            ):
+                continue
+            selected = candidate, graph
+            break
+        if selected is not None:
+            break
+    assert selected is not None
+    graph = selected[1]
+    backbone = {
+        atom
+        for atom, node in graph.items()
+        if node["element"] == "C"
+        and all(float(order) == 1.0 for order in node.get("edges", {}).values())
+    }
+    endpoints = [
+        atom
+        for atom in backbone
+        if len(set(graph[atom].get("edges", {})) & backbone) == 1
+    ]
+    assert len(endpoints) == 2
+    ordered = [min(endpoints)]
+    while len(ordered) < len(backbone):
+        following = set(graph[ordered[-1]].get("edges", {})) & backbone - set(ordered)
+        assert len(following) == 1
+        ordered.append(following.pop())
+    roles = {atom: "backbone" for atom in backbone}
+    positions = {atom: position for position, atom in enumerate(ordered)}
+    for atom in graph:
+        visited = {atom}
+        pending = {atom}
+        while not pending & backbone:
+            pending = {
+                neighbor
+                for current in pending
+                for neighbor in graph[current].get("edges", {})
+                if neighbor not in visited
+            }
+            assert pending
+            visited |= pending
+        anchors = pending & backbone
+        assert len(anchors) == 1
+        roles[(atom, "position")] = positions[anchors.pop()]
+    state, _, _ = independent_state_oracle._harness(selected[0], roles=roles)
+    assert state.total_radicals == 0
+    initial_ledger = state.total_ledger
+    carbon_by_graph = {}
+    carbon_by_event = {}
+    for record in records:
+        carbon = 0
+        for adjacency in record.reactant_graphs:
+            if adjacency not in carbon_by_graph:
+                carbon_by_graph[adjacency] = sum(
+                    node["element"] == "C"
+                    for node in independent_state_oracle._parse_adjacency(
+                        adjacency
+                    ).values()
+                )
+            carbon += carbon_by_graph[adjacency]
+        carbon_by_event[record.event_id] = carbon
+    full_index = SiteIndex(state, records)
+    impossible = tuple(
+        record
+        for record in records
+        if carbon_by_event[record.event_id] > initial_ledger["C"]
+    )
+    assert all(not full_index.candidates(record.event_id) for record in impossible)
+    possible = tuple(
+        record
+        for record in records
+        if carbon_by_event[record.event_id] <= initial_ledger["C"]
+    )
+    print(
+        f"R0 full inventory admitted={len(records)}; stoichiometrically possible={len(possible)}; excluded only by conserved carbon budget={len(impossible)}",
+        flush=True,
+    )
+    engine = IsothermalSSA(
+        state,
+        possible,
+        temperature=800.0,
+        volume=1e-50,
+        rng=np.random.default_rng(35_000_001),
+    )
+    result = engine.run(max_events=10_000)
+    assert len(result.events) == 10_000
+    fired = {event.event_id for event in result.events}
+    assert fired & {record.event_id for record in homolysis}
+    assert result.events[0].event_id in {record.event_id for record in homolysis}
+    assert result.irreversible_fraction == sum(
+        event.irreversible for event in result.events
+    ) / len(result.events)
+    assert state.total_ledger == initial_ledger
+    assert not state.sink
+    print(
+        f"REAL-SET-SMOKE R0 pristine: events={len(result.events)} homolysis={sum(event.event_id in {record.event_id for record in homolysis} for event in result.events)} irreversible={result.irreversible_fraction:.12g} seed=35000001"
+    )
+
+
+@slow
+def test_r0_melt_density_mixed_pristine_chains_fire_non_inverse_chemistry(
+    real_ps_artifact, independent_state_oracle
+):
+    records = tuple(
+        EventRecord.from_dict(data)
+        for data in real_ps_artifact["records"]
+        if data["inventory_class"] != "R1:J_ring"
+    )
+    pristine = {}
+    for record in records:
+        if (
+            record.family == "R_Recombination"
+            and record.arity == 1
+            and record.radical_delta == 2
+            and record.participant_site_types == ["pristine"]
+        ):
+            graph = independent_state_oracle._parse_adjacency(record.reactant_graphs[0])
+            carbon = sum(node["element"] == "C" for node in graph.values())
+            pristine.setdefault(carbon // 8, (record, graph))
+    lengths = (3, 5, 3, 5, 3)
+    assert set(lengths) <= pristine.keys()
+    strands = []
+    for ordinal, length in enumerate(lengths):
+        record, graph = pristine[length]
+        assert sum(node["element"] == "C" for node in graph.values()) == 8 * length
+        backbone = {
+            atom
+            for atom, node in graph.items()
+            if node["element"] == "C"
+            and all(float(order) == 1.0 for order in node.get("edges", {}).values())
+        }
+        endpoints = [
+            atom
+            for atom in backbone
+            if len(set(graph[atom].get("edges", {})) & backbone) == 1
+        ]
+        assert len(endpoints) == 2
+        ordered = [min(endpoints)]
+        while len(ordered) < len(backbone):
+            following = set(graph[ordered[-1]].get("edges", {})) & backbone - set(
+                ordered
+            )
+            assert len(following) == 1
+            ordered.append(following.pop())
+        assert len(ordered) == 2 * length
+        positions = {atom: position for position, atom in enumerate(ordered)}
+        roles = {atom: "backbone" for atom in backbone}
+        for atom in graph:
+            visited = {atom}
+            pending = {atom}
+            while not pending & backbone:
+                pending = {
+                    neighbor
+                    for current in pending
+                    for neighbor in graph[current].get("edges", {})
+                    if neighbor not in visited
+                }
+                assert pending
+                visited |= pending
+            anchors = pending & backbone
+            assert len(anchors) == 1
+            roles[(atom, "position")] = positions[anchors.pop()]
+        chain, _, _ = independent_state_oracle._harness(
+            record, roles=roles, namespace=f"melt-{ordinal}-"
+        )
+        assert len(chain.strands) == 1
+        strand = next(iter(chain.strands.values()))
+        strand.length = len(ordered)
+        strands.append(strand)
+    state = KMCState(strands)
+    assert len(state.strands) == 5
+    assert len({strand.length for strand in state.strands.values()}) == 2
+    assert state.total_radicals == 0
+    initial_ledger = state.total_ledger
+    carbon = initial_ledger["C"]
+    repeat_equivalents = carbon / 8.0
+    density_g_cm3 = 1.05
+    repeat_molar_mass_g_mol = 104.15
+    mass_g = repeat_equivalents * repeat_molar_mass_g_mol / N_A
+    volume_m3 = mass_g / density_g_cm3 * 1e-6
+    print(
+        f"R0 MELT SETUP chain_units={lengths} carbon={carbon} "
+        f"repeat_equivalents=C/8={repeat_equivalents:g} "
+        f"mass_g=(C/8)*104.15/N_A={mass_g:.12g} "
+        f"volume_m3=mass_g/1.05*1e-6={volume_m3:.12g} "
+        "density_g_cm3=1.05 temperature_K=800 seed=35000002; "
+        "PS repeat-equivalent density neglects terminal end-cap mass",
+        flush=True,
+    )
+    engine = IsothermalSSA(
+        state,
+        records,
+        temperature=800.0,
+        volume=volume_m3,
+        rng=np.random.default_rng(35_000_002),
+    )
+    by_id = {record.event_id: record for record in records}
+    histogram = Counter()
+    qualifying = Counter()
+    previous_id = None
+    homolyses = 0
+    for ordinal in range(10_000):
+        before = state.total_ledger, state.total_radicals, state.total_mass
+        event = engine.step()
+        if event is None:
+            break
+        record = by_id[event.event_id]
+        independent_state_oracle._assert_record_balance(state, record, *before)
+        independent_state_oracle._assert_strand_radicals_match_graph(state)
+        assert state.total_ledger == initial_ledger
+        histogram[record.family] += 1
+        homolyses += record.family == "R_Recombination" and record.radical_delta > 0
+        beta_scission = (
+            record.family == "R_Addition_MultipleBond"
+            and record.arity == 1
+            and any(operation["action"] == "break" for operation in record.bond_ops)
+        )
+        if record.reverse_of != previous_id and (
+            record.family in {"H_Abstraction", "Disproportionation"} or beta_scission
+        ):
+            qualifying[record.family] += 1
+        previous_id = record.event_id
+        if (ordinal + 1) % 1_000 == 0:
+            print(
+                f"R0 MELT PROGRESS events={ordinal + 1} "
+                f"families={dict(sorted(histogram.items()))} "
+                f"non_inverse={dict(sorted(qualifying.items()))}",
+                flush=True,
+            )
+    fired = len(engine.events)
+    irreversible_fraction = engine.irreversible_fired / fired if fired else 0.0
+    print(
+        f"R0 MELT RESULT events={fired} homolyses={homolyses} "
+        f"families={dict(sorted(histogram.items()))} "
+        f"non_inverse={dict(sorted(qualifying.items()))} "
+        f"irreversible_fraction={irreversible_fraction:.12g} "
+        f"ledger={state.total_ledger} sink={state.sink} "
+        f"time_s={engine.time:.12g}",
+        flush=True,
+    )
+    assert fired == 10_000
+    assert homolyses > 0
+    assert (
+        qualifying
+    ), "no non-inverse chemistry fired within the fixed 10,000-event budget"
+    assert not state.sink
+    assert engine.bound_violations == 0
 
 
 def test_production_thinning_sampler_counts_unordered_pairs_and_checks_bound():

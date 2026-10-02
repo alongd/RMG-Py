@@ -9,8 +9,10 @@ frozen reactions and kinetics reconstructed from their archived RMG runs.
 from __future__ import annotations
 
 import copy
+from contextvars import ContextVar
 import hashlib
 import json
+import logging
 import math
 import subprocess
 from dataclasses import dataclass, field, replace
@@ -21,9 +23,15 @@ from types import SimpleNamespace
 
 from rmgpy.kmc.atom_map import extract_atom_map
 from rmgpy.kmc.event_record import EventRecord, ssa_multiplier_for
+from rmgpy.kmc.reference_thermo import (
+    GasPhaseRMGReferenceThermo,
+    ReferenceThermoProvider,
+    ThermoUnavailable,
+)
 from rmgpy.kinetics.model import get_rate_coefficient_units_from_reaction_order
 
 
+_PAIR_MOLECULE_CACHE = ContextVar("pair_molecule_cache", default=None)
 SCHEMA_VERSION = "kmc_event_set/0.1"
 DEFAULT_T_GRID = tuple(float(temperature) for temperature in range(300, 1001, 25))
 ATOMIC_MASS_NUMBERS = {"H": 1, "C": 12, "N": 14, "O": 16, "S": 32}
@@ -91,6 +99,25 @@ def canonical_json_bytes(value: Any) -> bytes:
 
 def sha256_json(value: Any) -> str:
     return hashlib.sha256(canonical_json_bytes(value)).hexdigest()
+
+
+def compiler_source_hash() -> str:
+    """Fingerprint the code loaded by this interpreter, not later file edits."""
+    return _LOADED_SOURCE_HASH
+
+
+_LOADED_SOURCE_HASH = hashlib.sha256(
+    b"".join(
+        (Path(__file__).parent / filename).read_bytes()
+        for filename in (
+            "compiler.py",
+            "reference_thermo.py",
+            "event_record.py",
+            "atom_map.py",
+        )
+    )
+).hexdigest()
+_LOADED_COMPILER_HASH = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 
 
 def _git_sha(path: str | Path | None) -> str | None:
@@ -183,13 +210,21 @@ def _canonical_resonance_representative(molecule):
 
 
 def _molecule(species_or_molecule):
+    cache = _PAIR_MOLECULE_CACHE.get()
+    identity = id(species_or_molecule)
+    if cache is not None and identity in cache:
+        return cache[identity][1]
     if not hasattr(species_or_molecule, "molecule"):
-        return _canonical_resonance_representative(species_or_molecule)
-    molecules = species_or_molecule.molecule
-    if not molecules:
-        raise ValueError("compiled species has no molecular graph")
-    candidates = [_canonical_resonance_representative(item) for item in molecules]
-    return min(candidates, key=_molecule_total_order)
+        selected = _canonical_resonance_representative(species_or_molecule)
+    else:
+        molecules = species_or_molecule.molecule
+        if not molecules:
+            raise ValueError("compiled species has no molecular graph")
+        candidates = [_canonical_resonance_representative(item) for item in molecules]
+        selected = min(candidates, key=_molecule_total_order)
+    if cache is not None:
+        cache[identity] = species_or_molecule, selected
+    return selected
 
 
 def _formula(molecules: Iterable) -> dict[str, int]:
@@ -567,12 +602,11 @@ def _orient_to_proxy(proxy, reaction):
 
 
 def ps_proxy_set(units: int = PS_PROXY_UNITS) -> tuple[SiteProxy, ...]:
-    """The declared finite PS proxies used for discovery and the C1--C3 oracle.
+    """Centred PS structures; discover firing families through RMG generation.
 
-    These are deliberately structure inputs, not rate inputs.  The bounded
-    L=3 set covers pristine, featured, end-proximal, and junction contexts,
-    plus only the bimolecular combinations needed for degeneracy, ring capture,
-    and the real propagation/depropagation ceiling check.
+    Retain the original three-unit structures and add full five-unit contexts
+    for the radius-one completeness bound.  All five candidate families are
+    tried on every structure, including radical/closed-chain donor pairs.
     """
     from rmgpy.molecule.molecule import Molecule
     from rmgpy.species import Species
@@ -595,18 +629,15 @@ def ps_proxy_set(units: int = PS_PROXY_UNITS) -> tuple[SiteProxy, ...]:
         molecule = Molecule(smiles=smiles)
         molecule.update()
         species[name] = Species(molecule=[molecule])
-    unimolecular_candidates = (
-        "R_Addition_MultipleBond",
-        "intra_H_migration",
-    )
-    radical_pair_candidates = ("Disproportionation", "R_Recombination")
+    unimolecular_candidates = PS_FAMILY_CANDIDATES
+    radical_pair_candidates = PS_FAMILY_CANDIDATES
     declarations = (
         (
             "pristine",
             ("pristine",),
             ("pristine",),
             "pristine",
-            (),
+            PS_FAMILY_CANDIDATES,
         ),
         (
             "interior_radical",
@@ -634,7 +665,7 @@ def ps_proxy_set(units: int = PS_PROXY_UNITS) -> tuple[SiteProxy, ...]:
             ("junction_radical",),
             ("junction_radical",),
             "junction",
-            (),
+            PS_FAMILY_CANDIDATES,
         ),
         (
             "end_radical+end_radical",
@@ -648,17 +679,30 @@ def ps_proxy_set(units: int = PS_PROXY_UNITS) -> tuple[SiteProxy, ...]:
             ("junction_radical", "end_radical"),
             ("junction_radical", "end_radical"),
             "junction",
-            ("R_Recombination",),
+            PS_FAMILY_CANDIDATES,
         ),
         (
             "end_radical+styrene",
-            ("end_radical_short", "styrene"),
+            ("end_radical_short" if units == 3 else "end_radical", "styrene"),
             ("end_radical", "styrene"),
             "end-proximal",
-            ("R_Addition_MultipleBond",),
+            PS_FAMILY_CANDIDATES,
         ),
+    ) + tuple(
+        (
+            f"{radical}+pristine",
+            (radical, "pristine"),
+            (radical, "pristine"),
+            "junction" if radical == "junction_radical" else "featured",
+            PS_FAMILY_CANDIDATES,
+        )
+        for radical in (
+            "interior_radical",
+            "end_radical",
+            "junction_radical",
+        )
     )
-    return tuple(
+    proxies = tuple(
         SiteProxy(
             site_type,
             tuple(species[name] for name in participants),
@@ -686,6 +730,17 @@ def ps_proxy_set(units: int = PS_PROXY_UNITS) -> tuple[SiteProxy, ...]:
             proxy_candidates,
         ) in declarations
     )
+    if units == 3:
+        extended = tuple(
+            replace(
+                proxy,
+                site_type=f"{proxy.site_type}@5",
+                metadata={**proxy.metadata, "coverage_site_type": proxy.site_type},
+            )
+            for proxy in ps_proxy_set(5)
+        )
+        return proxies + extended
+    return proxies
 
 
 def _archived_junction_proxy(junction_kind: str) -> SiteProxy:
@@ -1320,6 +1375,7 @@ class EventSetCompiler:
         rmgpy_sha: str | None = None,
         rmg_database_sha: str | None = None,
         thermo_database=None,
+        reference_thermo_provider: ReferenceThermoProvider | None = None,
         ceiling_monomer_concentration_mol_m3: float = 1000.0,
         reaction_cache: dict[str, Sequence[Any]] | None = None,
         family_candidates: Iterable[str] = PS_FAMILY_CANDIDATES,
@@ -1337,6 +1393,12 @@ class EventSetCompiler:
         self.rmgpy_sha = rmgpy_sha
         self.rmg_database_sha = rmg_database_sha
         self.thermo_database = thermo_database
+        self.reference_thermo_provider = (
+            reference_thermo_provider
+            or GasPhaseRMGReferenceThermo(
+                thermo_database, rmg_database_sha or _git_sha(self.database_path)
+            )
+        )
         self.ceiling_monomer_concentration_mol_m3 = float(
             ceiling_monomer_concentration_mol_m3
         )
@@ -1353,10 +1415,16 @@ class EventSetCompiler:
                 for reaction in self.reaction_cache[proxy.site_type]
                 if reaction.family in self.families
             ]
-        reactants = [_copy_participant(item) for item in proxy.reactants]
-        return self.kinetics_database.generate_reactions_from_families(
-            reactants, only_families=list(self.families), resonance=True
-        )
+        reactions = []
+        for family in self.families:
+            reactions.extend(
+                self.kinetics_database.generate_reactions_from_families(
+                    [_copy_participant(item) for item in proxy.reactants],
+                    only_families=[family],
+                    resonance=True,
+                )
+            )
+        return reactions
 
     def _rate_table(self, reaction) -> tuple[dict[str, Any] | None, dict[str, Any]]:
         source_reaction = getattr(reaction, "source_reaction", reaction)
@@ -1470,6 +1538,7 @@ class EventSetCompiler:
         reaction,
         provenance: dict[str, Any],
         orientation: str = "as_generated",
+        rate_override=None,
     ) -> EventRecord:
         # The public pipeline returns Species.  atom_map accepts molecule lists.
         graph_reaction = SimpleNamespace(
@@ -1490,6 +1559,11 @@ class EventSetCompiler:
             proxy, reaction
         )
         inventory_class = _inventory_class(reaction)
+        if (
+            proxy.metadata.get("generic_reference_pair")
+            and inventory_class == "R1:J_ring"
+        ):
+            inventory_class = None
         is_ring = inventory_class == "R1:J_ring"
         template = _template(reaction)
         arity = len(reaction.reactants)
@@ -1510,16 +1584,13 @@ class EventSetCompiler:
         # Kinetics estimation is allowed to normalize resonance forms in-place.
         # Capture the generated structural oracle first so the record always
         # represents the public pipeline reaction that actually fired.
-        k_table, rate_source = self._rate_table(reaction)
+        k_table, rate_source = (
+            rate_override if rate_override is not None else self._rate_table(reaction)
+        )
         status, reason = (
             ("refused", "frontier channel") if proxy.frontier else ("enabled", "")
         )
-        if not is_ring and getattr(reaction, "reversible", True):
-            status, reason = (
-                "irreversible",
-                "condensed-phase reference thermochemistry unavailable",
-            )
-        elif not getattr(reaction, "reversible", True):
+        if not proxy.frontier and not getattr(reaction, "reversible", True):
             status, reason = "irreversible", "RMG reaction is declared irreversible"
         if not rate_source["available"]:
             status, reason = "refused", "RMG family kinetics unavailable"
@@ -1559,7 +1630,7 @@ class EventSetCompiler:
                     "condensed_phase_constraint": "UNKNOWN",
                 }
                 if is_ring
-                else {"condensed_phase": "unavailable"}
+                else self.reference_thermo_provider.provenance
             ),
             provenance=provenance,
             reactant_graphs=reactant_graphs,
@@ -1571,6 +1642,195 @@ class EventSetCompiler:
             ],
             junction_ops=junction_ops,
         )
+
+    def _direction_proxy(self, proxy, reaction):
+        if _same_participants(proxy.reactants, reaction.reactants):
+            return proxy
+        labels = []
+        for participant in reaction.reactants:
+            radical_count = _radicals([participant])
+            molecule = _molecule(participant)
+            radicals = [atom for atom in molecule.atoms if atom.radical_electrons]
+            if radical_count > 1:
+                label = "doubly_featured"
+            elif (
+                radical_count
+                and hasattr(molecule, "is_atom_in_cycle")
+                and molecule.is_atom_in_cycle(radicals[0])
+            ):
+                label = "junction_radical"
+            elif (
+                radical_count
+                and sum(
+                    neighbor.element.number == 6
+                    for neighbor in getattr(radicals[0], "edges", {})
+                )
+                >= 3
+            ):
+                label = "interior_radical"
+            elif radical_count:
+                label = "end_radical"
+            else:
+                label = (
+                    "styrene"
+                    if hasattr(molecule, "to_smiles")
+                    and molecule.to_smiles() == "C=Cc1ccccc1"
+                    else "pristine"
+                )
+            labels.append(label)
+        return replace(
+            proxy, reactants=reaction.reactants, participant_site_types=tuple(labels)
+        )
+
+    def _linked_family_pair(self, proxy, reaction, provenance):
+        """Reuse immutable structural representatives only within this pair."""
+        token = _PAIR_MOLECULE_CACHE.set({})
+        try:
+            return self._build_linked_family_pair(proxy, reaction, provenance)
+        finally:
+            _PAIR_MOLECULE_CACHE.reset(token)
+
+    def _build_linked_family_pair(self, proxy, reaction, provenance):
+        """Estimate exactly one direction, then invert its reference-state Kc."""
+        source = getattr(reaction, "source_reaction", reaction)
+        proxy = replace(
+            proxy, metadata={**proxy.metadata, "generic_reference_pair": True}
+        )
+        structural_forward = self._record(
+            self._direction_proxy(proxy, source),
+            source,
+            provenance,
+            rate_override=(None, {"available": True}),
+        )
+        estimate = copy.deepcopy(source)
+        kinetics = getattr(estimate, "kinetics", None)
+        estimated_forward = True
+        source_name, entry = "attached", None
+        if kinetics is None:
+            family = self.kinetics_database.families[estimate.family]
+            try:
+                kinetics, source_name, entry, estimated_forward = family.get_kinetics(
+                    estimate,
+                    template_labels=estimate.template,
+                    degeneracy=estimate.degeneracy,
+                    return_all_kinetics=False,
+                )
+            except Exception as error:
+                refused = replace(
+                    structural_forward,
+                    status="refused",
+                    status_reason=f"RMG family kinetics unavailable: {error}",
+                    event_id="",
+                )
+                return [refused], refused
+        estimate.kinetics = kinetics
+        if not estimated_forward:
+            estimate.reactants, estimate.products = (
+                estimate.products,
+                estimate.reactants,
+            )
+        forward_table, rate_source = self._rate_table(estimate)
+        rate_source = {
+            **rate_source,
+            "source": str(source_name),
+            "entry": str(entry) if entry else None,
+            "rank": getattr(entry, "rank", None),
+            "generated_is_forward": getattr(source, "is_forward", None),
+            "family_template_direction": "forward" if estimated_forward else "reverse",
+            "reference_thermo": self.reference_thermo_provider.provenance,
+        }
+        reverse_view = _reverse_view(source)
+        structural_reverse = self._record(
+            self._direction_proxy(proxy, reverse_view),
+            reverse_view,
+            provenance,
+            "reversed",
+            rate_override=(None, {"available": True}),
+        )
+        forward, reverse = (
+            (structural_forward, structural_reverse)
+            if estimated_forward
+            else (structural_reverse, structural_forward)
+        )
+        forward = replace(
+            forward,
+            k_table=forward_table,
+            rate_source=rate_source,
+            rate_units=rate_source.get("units", ""),
+            event_id="",
+        )
+        initiated_forward = _same_participants(proxy.reactants, estimate.reactants)
+        if forward_table is None:
+            refused = replace(
+                forward,
+                status="refused",
+                status_reason="RMG family kinetics unavailable",
+                event_id="",
+            )
+            return [refused], refused
+        if not getattr(source, "reversible", True):
+            irreversible = replace(
+                forward,
+                status="refused" if proxy.frontier else "irreversible",
+                status_reason=(
+                    "frontier channel"
+                    if proxy.frontier
+                    else "RMG reaction is declared irreversible"
+                ),
+                event_id="",
+            )
+            return [irreversible], irreversible
+        try:
+            constants = self.reference_thermo_provider.equilibrium_constants(
+                estimate, self.temperature_grid
+            )
+        except (ThermoUnavailable, AttributeError) as error:
+            irreversible = replace(
+                forward,
+                status="refused" if proxy.frontier else "irreversible",
+                status_reason="frontier channel" if proxy.frontier else str(error),
+                event_id="",
+            )
+            return [irreversible], irreversible
+        reverse_table = {
+            **forward_table,
+            "k": [
+                rate / constant for rate, constant in zip(forward_table["k"], constants)
+            ],
+        }
+        if any(not math.isfinite(rate) or rate <= 0 for rate in reverse_table["k"]):
+            raise ValueError(
+                "reference-thermo reverse rates must be positive and finite"
+            )
+        thermo = {
+            **self.reference_thermo_provider.provenance,
+            "equilibrium_constant_table": {
+                "T": list(self.temperature_grid),
+                "Kc": constants,
+            },
+        }
+        forward = replace(
+            forward, thermo_provenance=thermo, reverse_of=LINK_PLACEHOLDER, event_id=""
+        )
+        reverse = replace(
+            reverse,
+            k_table=reverse_table,
+            rate_source={
+                "kind": "reference-thermo reverse",
+                "available": True,
+                "units": reverse.rate_units
+                or get_rate_coefficient_units_from_reaction_order(reverse.arity),
+                "reference": "k_family / Kc",
+                **self.reference_thermo_provider.provenance,
+            },
+            rate_units=get_rate_coefficient_units_from_reaction_order(reverse.arity),
+            thermo_provenance=thermo,
+            reverse_of=forward.event_id,
+            event_id="",
+        )
+        forward = replace(forward, reverse_of=reverse.event_id, event_id="")
+        reverse = replace(reverse, reverse_of=forward.event_id, event_id="")
+        return [forward, reverse], forward if initiated_forward else reverse
 
     def _linked_ortho_pair(
         self,
@@ -1804,21 +2064,38 @@ class EventSetCompiler:
         scheduled_set: set[str] = set()
         reaction_cache = {}
         for proxy in proxies:
+            logging.getLogger(__name__).info(
+                "generating all candidate families on %s", proxy.site_type
+            )
             proxy_candidates = sorted(
                 set(proxy.metadata.get("family_candidates", candidates))
                 & set(candidates)
             )
             scheduled_set.update(proxy_candidates)
-            reactions = (
-                kinetics_database.generate_reactions_from_families(
+            reactions = []
+            for family in proxy_candidates:
+                logging.getLogger(__name__).info(
+                    "generating %s on %s", family, proxy.site_type
+                )
+                generated = kinetics_database.generate_reactions_from_families(
                     [_copy_participant(item) for item in proxy.reactants],
-                    only_families=proxy_candidates,
+                    only_families=[family],
                     resonance=True,
                 )
-                if proxy_candidates
-                else []
+                reactions.extend(generated)
+                logging.getLogger(__name__).info(
+                    "generated %d %s reactions on %s",
+                    len(generated),
+                    family,
+                    proxy.site_type,
+                )
+            proxy.metadata["generated_families"] = sorted(
+                {reaction.family for reaction in reactions}
             )
             reaction_cache[proxy.site_type] = reactions
+            logging.getLogger(__name__).info(
+                "generated %d reactions on %s", len(reactions), proxy.site_type
+            )
             active_set.update(reaction.family for reaction in reactions)
         active = sorted(active_set)
         excluded = {}
@@ -1859,7 +2136,8 @@ class EventSetCompiler:
             for p in sorted(self.proxies, key=lambda p: p.site_type)
         ]
         provenance = {
-            "compiler_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+            "compiler_sha256": _LOADED_COMPILER_HASH,
+            "compiler_sources_sha256": compiler_source_hash(),
             "family_list_sha256": sha256_json(self.families),
             "family_filter_sha256": sha256_json(self.family_candidates),
             "rmgpy_sha": self.rmgpy_sha or _git_sha(self.rmgpy_path),
@@ -1871,13 +2149,77 @@ class EventSetCompiler:
                 ARCHIVED_J_PARA_RATE_PROVENANCE
             )
         records = []
+        discovery = []
+        excluded_channels = []
+        pairs = {}
         for proxy in sorted(self.proxies, key=lambda p: p.site_type):
+            logging.getLogger(__name__).info("compiling pairs on %s", proxy.site_type)
+            candidates = []
             for reaction in self._generate(proxy):
-                oriented, orientation = _orient_to_proxy(proxy, reaction)
-                forward = self._record(proxy, oriented, provenance, orientation)
-                if forward.inventory_class == "R1:J_ring":
+                reactant_side = tuple(sorted(_graph_adjacencies(reaction.reactants)))
+                product_side = tuple(sorted(_graph_adjacencies(reaction.products)))
+                candidates.append(
+                    (
+                        (
+                            reaction.family,
+                            _template(reaction),
+                            reactant_side,
+                            product_side,
+                            float(reaction.degeneracy),
+                        ),
+                        reaction,
+                        tuple(sorted((reactant_side, product_side))),
+                    )
+                )
+            for _, reaction, sides in sorted(candidates, key=lambda item: item[0]):
+                oriented, _ = _orient_to_proxy(proxy, reaction)
+                coverage_site = proxy.metadata.get(
+                    "coverage_site_type", proxy.site_type
+                )
+                if (
+                    _inventory_class(oriented) == "R1:J_ring"
+                    and coverage_site == "junction_radical+end_radical"
+                ):
+                    excluded_channels.append(
+                        {
+                            "site_type": coverage_site,
+                            "family": reaction.family,
+                            "template": _template(reaction),
+                            "reason": "bounded J_ring capture replaced by immutable R-009 archived para/ortho pairs",
+                        }
+                    )
                     continue
-                records.append(forward)
+                pair_key = (reaction.family, proxy.frontier, sides)
+                if pair_key not in pairs:
+                    pair_records, initiating = self._linked_family_pair(
+                        proxy, reaction, provenance
+                    )
+                    pairs[pair_key] = pair_records
+                    records.extend(pair_records)
+                else:
+                    pair_records = pairs[pair_key]
+                    initiating = next(
+                        (
+                            record
+                            for record in pair_records
+                            if _graph_lists_isomorphic(
+                                record.reactant_graphs,
+                                _graph_adjacencies(oriented.reactants),
+                            )
+                        ),
+                        pair_records[0] if pair_records else None,
+                    )
+                discovery.append(
+                    {
+                        "site_type": coverage_site,
+                        "proxy_site_type": proxy.site_type,
+                        "proxy_units": proxy.metadata.get("proxy_units"),
+                        "family": reaction.family,
+                        "template": _template(reaction),
+                        "raw_path_degeneracy": float(reaction.degeneracy),
+                        "event_id": initiating.event_id if initiating else None,
+                    }
+                )
         records.extend(self._para_junction_records(provenance))
         records.sort(key=lambda record: record.event_id)
         records = [
@@ -1913,6 +2255,8 @@ class EventSetCompiler:
                 "span_radius": self.span_radius,
             },
             "records": [record.to_dict() for record in records],
+            "discovery": discovery,
+            "excluded_channels": excluded_channels,
             "irreversible_pairs": [
                 {
                     "event_id": r.event_id,
@@ -1933,6 +2277,15 @@ class EventSetCompiler:
             if record.family == "R_Addition_MultipleBond"
             and record.arity == 2
             and record.k_table
+            and "C=Cc1ccccc1" in _graph_list_key(record.reactant_graphs)
+            and any(
+                _graph_lists_isomorphic(
+                    record.product_graphs, _graph_adjacencies(proxy.reactants)
+                )
+                for proxy in self.proxies
+                if proxy.metadata.get("coverage_site_type", proxy.site_type)
+                == "end_radical"
+            )
         ]
         depropagation = [
             record

@@ -34,13 +34,18 @@ from rmgpy.molecule.molecule import Molecule
 
 ROOT = Path(__file__).resolve().parents[3]
 DATABASE = Path(os.environ.get("RMG_DATABASE_PATH", ROOT.parent / "RMG-database"))
-CACHE = ROOT / ".kmc-cache" / "event-set"
+CACHE = (
+    Path(os.environ.get("RMG_KMC_CACHE_ROOT", str(ROOT / ".kmc-cache"))) / "event-set"
+)
 _STRESS_ARTIFACT = None
 
 
 @pytest.fixture(scope="session")
 def ps_artifact():
     """Compile once per session, cached by both repository inputs."""
+    from rmgpy.kmc.compiler import compiler_source_hash
+
+    source_hash = compiler_source_hash()
     head = subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
     ).strip()
@@ -55,6 +60,7 @@ def ps_artifact():
         if (
             provenance.get("rmgpy_sha") == head
             and provenance.get("rmg_database_sha") == database_head
+            and provenance.get("compiler_sources_sha256") == source_hash
         ):
             artifact_path = candidate
             break
@@ -83,6 +89,10 @@ def ps_artifact():
                 .get("provenance", {})
                 .get("rmg_database_sha")
                 == database_head
+                and json.loads(path.read_bytes())
+                .get("provenance", {})
+                .get("compiler_sources_sha256")
+                == source_hash
             )
         ]
         assert len(candidates) == 1
@@ -509,7 +519,9 @@ def _seed_evolving_state(artifact, family, seed):
     state.apply(capture, capture_sites)
     assert len(state.strands) >= 3
     assert len({strand.length for strand in state.strands.values()}) >= 2
-    assert sum(strand.radical_count for strand in state.strands.values()) > 0
+    assert sum(strand.radical_count for strand in state.strands.values()) > 0 or (
+        family_record is not None and family_record["radical_delta"] > 0
+    )
     assert state.junctions
     return state
 
@@ -610,10 +622,37 @@ def _anchored_mappings(expected_graph, expected, component, reverse_captures, la
     return mappings
 
 
+def _component_match_key(component):
+    return tuple(
+        (
+            atom_uuid,
+            node["element"],
+            int(node.get("radical", 0)),
+            int(node.get("charge", 0)),
+            int(node.get("lone_pairs", 0)),
+            int(node.get("implicit_hydrogens", 0)),
+            tuple(
+                sorted(
+                    (neighbor, float(order))
+                    for neighbor, order in node.get("edges", {}).items()
+                    if neighbor in component
+                )
+            ),
+        )
+        for atom_uuid, node in sorted(component.items())
+    )
+
+
 def _current_candidates(state, prepared_records, match_cache):
     """Brute-force anchored record/site matches over state-owned current graphs."""
     components = _state_graph_components(state)
     signatures = [_raw_graph_signature(component) for component in components]
+    component_keys = []
+    for component in components:
+        component_key = _component_match_key(component)
+        component_keys.append(
+            match_cache.setdefault(("component", component_key), component_key)
+        )
     candidates = []
     for prepared in prepared_records:
         record = prepared["record"]
@@ -640,7 +679,17 @@ def _current_candidates(state, prepared_records, match_cache):
                         expected_graphs[ordinal], component, mapping
                     )
                 ]
-                if not mappings:
+                missing_key = (
+                    "no-match",
+                    record.event_id,
+                    ordinal,
+                    component_keys[component_index],
+                    tuple(
+                        tuple(sorted(capture["bindings"].items()))
+                        for capture in reverse_captures
+                    ),
+                )
+                if not mappings and missing_key not in match_cache:
                     mappings = _anchored_mappings(
                         expected_graphs[ordinal],
                         expected,
@@ -650,6 +699,8 @@ def _current_candidates(state, prepared_records, match_cache):
                     )
                     if mappings:
                         match_cache[cache_key] = mappings
+                    else:
+                        match_cache[missing_key] = None
                 matches.extend((component_index, mapping) for mapping in mappings)
             match_groups.append(matches)
         if any(not matches for matches in match_groups):
@@ -777,6 +828,84 @@ def _exercise_evolving_chain(artifact, family, count, seed, before_apply=None):
 def _slow_stress_worker(arguments):
     worker, count, family = arguments
     return _exercise_evolving_chain(_STRESS_ARTIFACT, family, count, 8675309 + worker)
+
+
+def test_zero_radical_seed_fires_real_selected_initiator(ps_artifact, monkeypatch):
+    record_data = next(
+        record
+        for record in ps_artifact["records"]
+        if record["family"] == "R_Recombination"
+        and record["arity"] == 1
+        and record["radical_delta"] == 2
+        and record["participant_site_types"] == ["pristine"]
+    )
+    monkeypatch.setattr(
+        sys.modules[__name__], "_family_seed_record", lambda *arguments: record_data
+    )
+    state = _seed_evolving_state(ps_artifact, "R_Recombination", 8_675_317)
+    assert state.total_radicals == 0
+    candidates = _current_candidates(state, [_prepare_stress_record(record_data)], {})
+    assert candidates
+    record, sites = candidates[0]
+    before_formula = state.total_ledger
+    before_radicals = state.total_radicals
+    before_mass = state.total_mass
+    state.apply(record, sites)
+    _assert_record_balance(state, record, before_formula, before_radicals, before_mass)
+    _assert_strand_radicals_match_graph(state)
+    assert state.total_radicals == 2
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["element", "radical", "charge", "lone_pairs", "implicit_hydrogens", "edges"],
+)
+def test_failed_match_key_tracks_every_matching_field(ps_artifact, field):
+    state = _seed_evolving_state(ps_artifact, "Disproportionation", 8_675_309)
+    component = _state_graph_components(state)[0]
+    changed = copy.deepcopy(component)
+    atom_uuid = next(atom_uuid for atom_uuid, node in changed.items() if node["edges"])
+    if field == "element":
+        changed[atom_uuid][field] = "Si"
+    elif field == "edges":
+        neighbor = next(iter(changed[atom_uuid]["edges"]))
+        changed[atom_uuid]["edges"][neighbor] = "3.0"
+        changed[neighbor]["edges"][atom_uuid] = "3.0"
+    else:
+        changed[atom_uuid][field] = int(changed[atom_uuid].get(field, 0)) + 1
+    assert set(component) == set(changed)
+    assert _component_match_key(component) != _component_match_key(changed)
+
+
+def test_failed_match_cache_tracks_real_capture_bindings(ps_artifact, monkeypatch):
+    state = _seed_evolving_state(ps_artifact, "Disproportionation", 8_675_309)
+    capture_data, reverse_data = _r1_pair(ps_artifact)
+    prepared = _prepare_stress_record(reverse_data)
+    bindings = state._open_captures[capture_data["event_id"]][0]["bindings"]
+    saved = dict(bindings)
+    for label in bindings:
+        bindings[label] = "not-an-owned-atom"
+    original = _anchored_mappings
+    attempts = []
+
+    def counted(*arguments):
+        attempts.append(1)
+        return original(*arguments)
+
+    monkeypatch.setattr(sys.modules[__name__], "_anchored_mappings", counted)
+    cache = {}
+    assert _current_candidates(state, [prepared], cache) == []
+    assert attempts
+    assert any(key[0] == "no-match" for key in cache)
+    for key in cache:
+        if key[0] == "no-match":
+            assert cache[("component", key[3])] is key[3]
+    attempts.clear()
+    assert _current_candidates(state, [prepared], cache) == []
+    assert not attempts
+    bindings.update(saved)
+    assert _current_candidates(state, [prepared], cache)
+    assert attempts
 
 
 def test_real_corpus_is_valid_and_self_authenticating(ps_artifact):

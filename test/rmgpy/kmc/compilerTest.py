@@ -159,7 +159,8 @@ def test_family_filter_accounts_for_every_loaded_family_and_keeps_only_firing():
     assert "bounded L=3 PS proxy set" in excluded["No_Firing_Path"]
     assert [reaction.family for reaction in reactions["featured"]] == active
     assert database.calls == [
-        (["H_Abstraction", "No_Firing_Path"], True),
+        (["H_Abstraction"], True),
+        (["No_Firing_Path"], True),
     ]
 
 
@@ -205,11 +206,45 @@ def test_junction_proxy_places_the_capture_radical_on_a_ring_atom():
 
     assert len(radical_atoms) == 1
     assert molecule.is_atom_in_cycle(radical_atoms[0])
-    assert proxy.metadata["family_candidates"] == []
+    assert proxy.metadata["family_candidates"] == list(
+        compiler_module.PS_FAMILY_CANDIDATES
+    )
     pair = next(
         proxy for proxy in proxies if proxy.site_type == "junction_radical+end_radical"
     )
-    assert pair.metadata["family_candidates"] == ["R_Recombination"]
+    assert pair.metadata["family_candidates"] == list(
+        compiler_module.PS_FAMILY_CANDIDATES
+    )
+
+
+def test_pair_graph_cache_is_scoped_and_cleared_after_failure(monkeypatch):
+    from rmgpy.molecule.molecule import Molecule
+    from rmgpy.species import Species
+
+    species = Species(molecule=[Molecule(smiles="[CH3]")])
+    compiler = EventSetCompiler(None, [], [])
+    selected = []
+    ordered = []
+    original_order = compiler_module._molecule_total_order
+
+    def observed_order(molecule):
+        ordered.append(molecule)
+        return original_order(molecule)
+
+    monkeypatch.setattr(compiler_module, "_molecule_total_order", observed_order)
+
+    def fail_pair(*args):
+        selected.append(compiler_module._molecule(species))
+        assert compiler_module._molecule(species) is selected[0]
+        raise ValueError("induced pair failure")
+
+    monkeypatch.setattr(compiler, "_build_linked_family_pair", fail_pair)
+    with pytest.raises(ValueError, match="induced pair failure"):
+        compiler._linked_family_pair(None, None, {})
+    assert compiler_module._PAIR_MOLECULE_CACHE.get() is None
+    assert len(ordered) == 1
+    compiler_module._molecule(species)
+    assert len(ordered) == 2
 
 
 def test_ortho_reflection_swaps_the_persistent_attacked_atom_id():
