@@ -100,6 +100,7 @@ class Gaussian:
             )
 
     def run(self):
+        self.check_file_names()
         self.test_ready()
         # submits the input file to Gaussian
         process = Popen(
@@ -257,6 +258,7 @@ class GaussianMol(QMMolecule, Gaussian):
         Using the :class:`Geometry` object, write the input file
         for the `attempt`.
         """
+        self.check_file_names()
         molfile = self.get_mol_file_path_for_calculation(attempt)
         atomline = re.compile(
             r"\s*([\- ][0-9.]+\s+[\-0-9.]+\s+[\-0-9.]+)\s+([A-Za-z]+)"

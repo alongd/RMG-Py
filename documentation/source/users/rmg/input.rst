@@ -322,6 +322,53 @@ The following is an example of a typical species item, based on methane using SM
 			"""
 	)
 
+Molecule adjacency lists may carry optional ``electronicstate <token>`` and
+``vibrationallevel <n>`` headers before the atom lines. The electronic token is
+case-sensitive, contains 1–32 ASCII characters, and may contain letters,
+digits, ``+``, ``-``, ``_``, ``.``, ``,``, and parentheses; use ``2P1_2``
+rather than ``2P1/2``. Longer tokens raise ``InvalidAdjacencyListError``
+when parsing an adjacency list and ``ValueError`` during Molecule construction,
+attribute assignment, or augmented InChI reading. Tokens are never truncated
+or hashed. The vibrational level is an integer from 0 through 2147483647
+(the signed 32-bit upper bound), and both headers may appear together::
+
+    electronicstate A3Su+
+    vibrationallevel 2
+    1 N u0 p1 c0 {2,T}
+    2 N u0 p1 c0 {1,T}
+
+These headers distinguish species with the same molecular graph. Omitting
+them preserves the existing unresolved identity; an explicit level zero is
+distinct from an omitted level. Resolved molecules do not match reaction
+family templates in this phase. Groups, Fragments, conversion to a group,
+and old-style adjacency lists cannot represent a resolved state. SMILES and
+standard InChI omit the state; augmented InChI strings append
+``/es:<token>`` and/or ``/v:<n>``. Augmented InChI keys use filename-safe
+``-es<ASCII hex token>`` and/or ``-v<n>`` suffixes instead; for example,
+``A3Su+`` becomes ``-es413353752b``. Distinct tokens, including case and
+punctuation, remain distinct, and unresolved keys retain their existing form.
+These suffixes avoid unsafe filename characters, but the full key can still be
+too long for a filename because its existing unpaired-electron or lone-pair
+layers may be long. Before writing any per-molecule files, QM checks all planned
+filenames and raises ``QMFileNameError`` if a name exceeds the target directory's
+``NAME_MAX`` in bytes (queried with ``os.pathconf`` for an existing directory,
+otherwise 255). The error identifies the species, longest offending filename,
+byte count, directory and limit. The same check applies to unresolved molecules.
+Use adjacency lists to store or reconstruct resolved species. The augmented InChI reader restores the state layers and
+refuses malformed or duplicate layers before backend parsing. SMILES and standard
+InChI replacement reads reset a molecule's state to unresolved; explicit Molecule
+constructor state arguments survive those reads.
+
+State assignments are validated, including assignments on Fragments. Species
+fingerprint and augmented InChI caches are invalidated when molecule state changes,
+including changes before the first cache read after transport. Identity access refuses
+inconsistent state among a Species' resonance structures.
+A connected molecule's split and resonance hybrid preserve its resolved identity;
+merging resolved molecules or splitting a disconnected resolved molecule raises
+``NotImplementedError``. Internal structural calculations use state-blind working
+graphs; symmetry, ring perception, resonance and drawing remain available. Updating a
+resolved molecule preserves its declared spin.
+
 For long lists of initial core species, you can specify a coreSpeciesList, shown below::
 
     coreSpeciesList(

@@ -30,6 +30,7 @@
 import logging
 import math
 import os
+import tempfile
 
 import numpy as np
 
@@ -47,6 +48,7 @@ import rmgpy.quantity
 import rmgpy.statmech
 import rmgpy.thermo
 from rmgpy.qm.qmdata import parse_cclib_data
+from rmgpy.qm import _check_file_names
 from rmgpy.thermo import ThermoData
 
 
@@ -69,6 +71,9 @@ class Geometry(object):
 
     """
 
+    crude_file_extension = ".crude.mol"
+    refined_file_extension = ".refined.mol"
+
     def __init__(self, settings, unique_id, molecule, unique_id_long=None):
         self.settings = settings
         #: A short unique ID such as an augmented InChI Key.
@@ -88,6 +93,8 @@ class Geometry(object):
         else:
             self.fileStore = None
             self.scratchDirectory = None
+
+        self.check_file_names()
 
         if self.fileStore and not os.path.exists(self.fileStore):
             logging.info(
@@ -111,18 +118,29 @@ class Geometry(object):
         If called with `scratch=False` then it will be in the `fileStore` directory,
         else `scratch=True` is assumed and it will be in the `scratchDirectory` directory.
         """
+        self.check_file_names(extension, scratch)
         return os.path.join(
             self.settings.scratchDirectory if scratch else self.settings.fileStore,
             self.unique_id + extension,
         )
 
+    def check_file_names(self, extension=None, scratch=True):
+        """Refuse an over-budget geometry before either MOL file is written."""
+        directory = self.settings.scratchDirectory if self.settings is not None else self.scratchDirectory
+        files = [(directory, self.unique_id + suffix)
+                 for suffix in (self.crude_file_extension, self.refined_file_extension) if directory]
+        if extension is not None:
+            files.append((self.settings.scratchDirectory if scratch else self.settings.fileStore,
+                          self.unique_id + extension))
+        _check_file_names(self.unique_id_long, files)
+
     def get_crude_mol_file_path(self):
         """Returns the path of the crude mol file."""
-        return self.get_file_path(".crude.mol")
+        return self.get_file_path(self.crude_file_extension)
 
     def get_refined_mol_file_path(self):
         """Returns the path the the refined mol file."""
-        return self.get_file_path(".refined.mol")
+        return self.get_file_path(self.refined_file_extension)
 
     def generate_rdkit_geometries(self):
         """
@@ -158,6 +176,7 @@ class Geometry(object):
         """
         Embed the RDKit molecule and create the crude molecule file.
         """
+        self.check_file_names()
         # `good_embed` is a flag to indicate conformers are not from random coordinates or 2D coordinates
         # `good_opt` is a flag to indicate at least one conformer is successfully optimized using force field
         good_embed, good_opt = True, False
@@ -318,12 +337,39 @@ class QMMolecule(object):
 
     """
 
+    thermo_file_extension = ".thermo"
+
     def __init__(self, molecule, settings):
         self.molecule = molecule
         self.settings = settings
 
         self.unique_id = self.molecule.to_augmented_inchi_key()
         self.unique_id_long = self.molecule.to_augmented_inchi()
+        self.check_file_names()
+
+    def check_file_names(self, extension=None, scratch=True):
+        """Validate every filename this molecule's QM run can create."""
+        if self.settings is None:
+            return
+        scratch_extensions = [Geometry.crude_file_extension, Geometry.refined_file_extension,
+                              symmetry.SymmetryJob.input_file_extension]
+        for field in ('input_file_extension', 'output_file_extension'):
+            suffix = getattr(self, field, None)
+            if suffix:
+                scratch_extensions.append(suffix)
+        files = [(self.settings.scratchDirectory, self.unique_id + suffix)
+                 for suffix in scratch_extensions if self.settings.scratchDirectory]
+        if self.settings.fileStore:
+            files.append((self.settings.fileStore, self.unique_id + self.thermo_file_extension))
+        if extension is not None:
+            files.append((self.settings.scratchDirectory if scratch else self.settings.fileStore,
+                          self.unique_id + extension))
+        if getattr(self, 'uses_temporary_directory', False):
+            # MOPAC copies input/output through a future directory in the system temp filesystem.
+            for directory in (None, tempfile.gettempdir()):
+                files.extend((directory, self.unique_id + suffix)
+                             for suffix in (self.input_file_extension, self.output_file_extension))
+        _check_file_names(self.unique_id_long, files)
 
     def get_file_path(self, extension, scratch=True):
         """
@@ -334,6 +380,7 @@ class QMMolecule(object):
         else `scratch=True` is assumed and it will be in the `scratchDirectory` directory.
         """
         # ToDo: this is duplicated in Geometry class. Should be refactored.
+        self.check_file_names(extension, scratch)
         return os.path.join(
             self.settings.scratchDirectory if scratch else self.settings.fileStore,
             self.unique_id + extension,
@@ -351,7 +398,7 @@ class QMMolecule(object):
 
     def get_thermo_file_path(self):
         """Returns the path the thermo data file."""
-        return self.get_file_path(".thermo", scratch=False)
+        return self.get_file_path(self.thermo_file_extension, scratch=False)
 
     @property
     def script_attempts(self):
@@ -386,17 +433,20 @@ class QMMolecule(object):
         self.settings.scratchDirectory = os.path.expandvars(
             self.settings.scratchDirectory
         )
+        self.check_file_names()
         for path in [self.settings.fileStore, self.settings.scratchDirectory]:
             if not os.path.exists(path):
                 logging.info(
                     "Creating directory %s for QM files." % os.path.abspath(path)
                 )
                 os.makedirs(path)
+        self.check_file_names()
 
     def create_geometry(self):
         """
         Creates self.geometry with RDKit geometries
         """
+        self.check_file_names()
         self.geometry = Geometry(
             self.settings,
             self.unique_id,
@@ -486,6 +536,7 @@ class QMMolecule(object):
         """
         Save the generated thermo data.
         """
+        self.check_file_names()
         self.thermo.H298.units = "kcal/mol"
         self.thermo.S298.units = "cal/mol/K"
         self.thermo.Cpdata.units = "cal/mol/K"

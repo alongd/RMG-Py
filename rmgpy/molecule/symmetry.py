@@ -59,7 +59,7 @@ def calculate_atom_symmetry_number(molecule, atom):
 
     # Create temporary structures for each functional group attached to atom
     molecule0 = molecule
-    molecule = molecule0.copy(True)
+    molecule = molecule0._copy_for_structure()
     atom = molecule.vertices[molecule0.vertices.index(atom)]
     molecule.remove_atom(atom)
     groups = molecule.split()
@@ -167,7 +167,7 @@ def calculate_bond_symmetry_number(molecule, atom1, atom2):
             symmetry_number = 2
         else:
             molecule.remove_bond(bond)
-            structure = molecule.copy(True)
+            structure = molecule._copy_for_structure()
             molecule.add_bond(bond)
 
             atom1 = structure.atoms[molecule.atoms.index(atom1)]
@@ -316,7 +316,7 @@ def calculate_axis_symmetry_number(molecule):
             bond = atom1.edges[atom2]
             bond_list.append(bond)
             molecule.remove_bond(bond)
-        structure = molecule.copy(True)
+        structure = molecule._copy_for_structure()
         terminal_atoms = [structure.vertices[molecule.vertices.index(atom)] for atom in terminal_atoms]
         for bond in bond_list:
             molecule.add_bond(bond)

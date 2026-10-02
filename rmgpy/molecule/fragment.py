@@ -132,7 +132,11 @@ class Fragment(Molecule):
         props=None,
         inchi="",
         smiles="",
+        electronic_state="",
+        vibrational_level=-1,
     ):
+        if electronic_state != "" or vibrational_level != -1:
+            raise ValueError("Fragment cannot represent a resolved state")
         if inchi and smiles:
             logging.warning(
                 "Both InChI and SMILES provided for Fragment instantiation, "
@@ -207,6 +211,8 @@ class Fragment(Molecule):
         Merge two fragments so as to store them in a single :class:`Fragment`
         object. The merged :class:`Fragment` object is returned.
         """
+        if isinstance(other, Molecule) and other.has_resolved_state():
+            raise NotImplementedError('Cannot merge molecules with a resolved state')
         g = Graph.merge(self, other)
         fragment = Fragment(vertices=g.vertices)
         return fragment

@@ -39,6 +39,7 @@ import cclib
 from rmgpy.exceptions import DependencyError, AtomTypeError
 from rmgpy.molecule.molecule import Molecule
 from rmgpy.qm.molecule import QMMolecule
+from rmgpy.qm import _check_file_names
 
 
 class Mopac(object):
@@ -50,6 +51,7 @@ class Mopac(object):
 
     input_file_extension = ".mop"
     output_file_extension = ".out"
+    uses_temporary_directory = True
 
     executable_path = shutil.which("mopac")
 
@@ -80,6 +82,7 @@ class Mopac(object):
     success_keys = ["DESCRIPTION OF VIBRATIONS", "MOPAC DONE"]
 
     def run(self):
+        self.check_file_names()
         # ensure that the executable is present
         if not os.path.exists(self.executable_path):
             raise DependencyError(
@@ -89,6 +92,9 @@ class Mopac(object):
         # submits the input file to mopac
 
         dir_path = tempfile.mkdtemp()
+        _check_file_names(self.unique_id_long,
+                          [(dir_path, self.unique_id + suffix)
+                           for suffix in (self.input_file_extension, self.output_file_extension)])
         # copy input file to temp dir:
         temp_input_file = os.path.join(dir_path, os.path.basename(self.input_file_path))
         shutil.copy(self.input_file_path, dir_path)
@@ -266,6 +272,7 @@ class MopacMol(QMMolecule, Mopac):
         for the `attempt`.
         """
 
+        self.check_file_names()
         molfile = self.get_mol_file_path_for_calculation(attempt)
         atomline = re.compile(
             r"\s*([\- ][0-9.]+)\s+([\- ][0-9.]+)+\s+([\- ][0-9.]+)\s+([A-Za-z]+)"

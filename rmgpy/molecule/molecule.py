@@ -38,6 +38,7 @@ describe the corresponding atom or bond.
 import itertools
 import logging
 import os
+import re
 from collections import OrderedDict, defaultdict
 from copy import deepcopy
 from urllib.parse import quote
@@ -1035,6 +1036,8 @@ class Molecule(Graph):
     `fingerprint`           ``str``     A representation for fast comparison, set as molecular formula
     `metal`                 ``str``     The metal of the metal surface the molecule is associated with
     `facet`                 ``str``     The facet of the metal surface the molecule is associated with
+    `electronic_state`      ``str``     Case-sensitive state token; empty means unresolved
+    `vibrational_level`     ``int``     Non-negative resolved level; -1 means unresolved
     ======================= =========== ========================================
 
     A new molecule object can be easily instantiated by passing the `smiles` or
@@ -1042,7 +1045,7 @@ class Molecule(Graph):
     """
 
     def __init__(self, atoms=None, symmetry=-1, multiplicity=-187, reactive=True, props=None, inchi='', smiles='', 
-                 metal='', facet=''):
+                 metal='', facet='', electronic_state='', vibrational_level=-1):
         Graph.__init__(self, atoms)
         self.symmetry_number = symmetry
         self.multiplicity = multiplicity
@@ -1053,6 +1056,9 @@ class Molecule(Graph):
         self.props = props or {}
         self.metal = metal
         self.facet = facet
+        # Empty electronic state and vibrational level -1 retain unresolved identity.
+        self.electronic_state = self._validate_electronic_state(electronic_state)
+        self.vibrational_level = self._validate_vibrational_level(vibrational_level)
         self._sssr = None
         self._symm_sssr = None
 
@@ -1065,6 +1071,10 @@ class Molecule(Graph):
         elif smiles:
             self.from_smiles(smiles)
             self._smiles = smiles
+
+        # Identifier readers replace state, but these are explicit constructor declarations.
+        self.electronic_state = electronic_state
+        self.vibrational_level = vibrational_level
 
         if multiplicity != -187:  # it was set explicitly, so re-set it (from_smiles etc may have changed it)
             self.multiplicity = multiplicity
@@ -1115,6 +1125,9 @@ class Molecule(Graph):
         """
         cython.declare(multiplicity=cython.int)
         multiplicity = self.multiplicity
+        if self.has_resolved_state():
+            # SMILES cannot carry the state, so a SMILES repr would silently reconstruct the ground state
+            return 'Molecule().from_adjacency_list("""{}""")'.format(self.to_adjacency_list())
         try:
             if multiplicity != self.get_radical_count() + 1:
                 return 'Molecule(smiles="{0}", multiplicity={1:d})'.format(self.to_smiles(), multiplicity)
@@ -1145,13 +1158,17 @@ class Molecule(Graph):
                     slots.append((cls, name, value))
         graph_state = (self.vertices, self.ordered_vertices, self.symmetry_number,
                        self.multiplicity, self.reactive, self.props, self.metal, self.facet)
+        if self.has_resolved_state():
+            graph_state += (self.electronic_state, self.vibrational_level)
         return (_rebuild_molecule, (type(self),), (graph_state, attributes, slots))
 
     def __setstate__(self, state):
         """Restore graph, dictionary and declaring-class slots after memoisation."""
         graph_state, attributes, slots = state
         (self.vertices, self.ordered_vertices, self.symmetry_number,
-         self.multiplicity, self.reactive, self.props, self.metal, self.facet) = graph_state
+         self.multiplicity, self.reactive, self.props, self.metal, self.facet) = graph_state[:8]
+        # Accept existing pickles, whose graph state predates these optional fields.
+        self.electronic_state, self.vibrational_level = graph_state[8:] if len(graph_state) > 8 else ('', -1)
         if attributes:
             self.__dict__.update(attributes)
         for cls, name, value in slots:
@@ -1187,7 +1204,62 @@ class Molecule(Graph):
             all_elements = sorted(self.get_element_count().items(), key=lambda x: x[0])  # Sort alphabetically
             element_dict.update(all_elements)
             self._fingerprint = ''.join([f'{symbol}{num:0>2}' for symbol, num in element_dict.items()])
-        return self._fingerprint
+        # State fields are public: append their current values to the cached formula.
+        return self._fingerprint + self.state_suffix()
+
+    @property
+    def electronic_state(self):
+        """Case-sensitive electronic token, validated on every assignment."""
+        return self._electronic_state
+
+    @electronic_state.setter
+    def electronic_state(self, value):
+        value = self._validate_electronic_state(value)
+        if value:
+            from rmgpy.molecule.fragment import Fragment
+            if isinstance(self, Fragment):
+                raise ValueError('Fragment cannot represent a resolved state')
+        self._electronic_state = value
+
+    @property
+    def vibrational_level(self):
+        """Resolved level or -1, validated on every assignment."""
+        return self._vibrational_level
+
+    @vibrational_level.setter
+    def vibrational_level(self, value):
+        value = self._validate_vibrational_level(value)
+        if value >= 0:
+            from rmgpy.molecule.fragment import Fragment
+            if isinstance(self, Fragment):
+                raise ValueError('Fragment cannot represent a resolved state')
+        self._vibrational_level = value
+
+    def has_resolved_state(self):
+        """Return ``True`` if this molecule carries a resolved electronic state or vibrational level."""
+        return self.electronic_state != '' or self.vibrational_level >= 0
+
+    @staticmethod
+    def _validate_electronic_state(value):
+        """Validate the header-token charset and length, also for direct construction."""
+        from rmgpy.molecule.adjlist import validate_electronic_state
+        return validate_electronic_state(value)
+
+    @staticmethod
+    def _validate_vibrational_level(value):
+        """Validate a resolved non-negative integer or the unresolved sentinel."""
+        if not isinstance(value, int) or isinstance(value, bool) or not -1 <= value <= 2**31 - 1:
+            raise ValueError("Invalid vibrational level: {!r}".format(value))
+        return value
+
+    def state_suffix(self):
+        """Identity suffix for a resolved state; empty for an unresolved molecule, so its fingerprint is unchanged."""
+        suffix = ''
+        if self.electronic_state != '':
+            suffix += '|es:' + self.electronic_state
+        if self.vibrational_level >= 0:
+            suffix += '|v:{0:d}'.format(self.vibrational_level)
+        return suffix
 
     @fingerprint.setter
     def fingerprint(self, fingerprint):
@@ -1385,7 +1457,8 @@ class Molecule(Graph):
         self.update_lone_pairs()
         self.update_charge()
         self.update_atomtypes(log_species=log_species, raise_exception=raise_atomtype_exception)
-        self.update_multiplicity()
+        if not self.has_resolved_state() or self.multiplicity == -187:
+            self.update_multiplicity()
         if sort_atoms:
             self.sort_atoms()
         self.identify_ring_membership()
@@ -1511,13 +1584,24 @@ class Molecule(Graph):
         other.reactive = self.reactive
         other.metal = self.metal 
         other.facet = self.facet
+        other.electronic_state = self.electronic_state
+        other.vibrational_level = self.vibrational_level
         return other
+
+    def _copy_for_structure(self):
+        """Return a private working graph for state-blind structural calculations."""
+        molecule = self.copy(deep=True)
+        molecule.electronic_state = ''
+        molecule.vibrational_level = -1
+        return molecule
 
     def merge(self, other):
         """
         Merge two molecules so as to store them in a single :class:`Molecule`
         object. The merged :class:`Molecule` object is returned.
         """
+        if self.has_resolved_state() or (isinstance(other, Molecule) and other.has_resolved_state()):
+            raise NotImplementedError('Cannot merge molecules with a resolved state')
         g = Graph.merge(self, other)
         molecule = Molecule(atoms=g.vertices)
         return molecule
@@ -1527,6 +1611,12 @@ class Molecule(Graph):
         Convert a single :class:`Molecule` object containing two or more
         unconnected molecules into separate class:`Molecule` objects.
         """
+        if self.has_resolved_state():
+            # Split a plain graph to avoid recursive Molecule.split dispatch.
+            graphs = Graph.split(Graph(self.vertices))
+            if len(graphs) != 1:
+                raise NotImplementedError('Cannot split a disconnected molecule with a resolved state')
+            return [self.copy()]
         graphs = Graph.split(self)
         molecules = []
         for g in graphs:
@@ -1733,6 +1823,9 @@ class Molecule(Graph):
         #check facet
         if self.facet != other.facet:
             return False
+        # check resolved state
+        if self.electronic_state != other.electronic_state or self.vibrational_level != other.vibrational_level:
+            return False
         # if given an initial map, ensure that it's valid.
         if initial_map:
             if not self.is_mapping_valid(other, initial_map, equivalent=True):
@@ -1776,6 +1869,9 @@ class Molecule(Graph):
         #check facet
         if self.facet != other.facet:
             return []
+        # check resolved state
+        if self.electronic_state != other.electronic_state or self.vibrational_level != other.vibrational_level:
+            return []
         # Do the isomorphism comparison
         result = Graph.find_isomorphism(self, other, initial_map, save_order=save_order, strict=strict)
         return result
@@ -1798,6 +1894,9 @@ class Molecule(Graph):
                 'Got a {0} object for parameter "other", when a Group object is required.'.format(other.__class__))
         group = other
 
+        # Group templates only represent unresolved molecules in this phase.
+        if self.has_resolved_state():
+            return False
         # Check multiplicity
         if group.multiplicity:
             if self.multiplicity not in group.multiplicity: return False
@@ -1872,6 +1971,9 @@ class Molecule(Graph):
                 'Got a {0} object for parameter "other", when a Group object is required.'.format(other.__class__))
         group = other
 
+        # Group templates only represent unresolved molecules in this phase.
+        if self.has_resolved_state():
+            return []
         # Check multiplicity
         if group.multiplicity:
             if self.multiplicity not in group.multiplicity: return []
@@ -1982,8 +2084,11 @@ class Molecule(Graph):
         """
         from rmgpy.molecule.adjlist import from_adjacency_list
 
+        state = {}
         self.vertices, self.multiplicity, self.metal, self.facet = from_adjacency_list(adjlist, group=False, saturate_h=saturate_h,
-                                                               check_consistency=check_consistency)
+                                                               check_consistency=check_consistency, state=state)
+        self.electronic_state = self._validate_electronic_state(state.get('electronic_state', ''))
+        self.vibrational_level = self._validate_vibrational_level(state.get('vibrational_level', -1))
         self.update_atomtypes(raise_exception=raise_atomtype_exception)
 
         # identify ring membership iff it's not a suspicious molecule
@@ -2156,7 +2261,8 @@ class Molecule(Graph):
         Convert the molecular structure to a string adjacency list.
         """
         from rmgpy.molecule.adjlist import to_adjacency_list
-        result = to_adjacency_list(self.vertices, self.multiplicity, metal=self.metal, facet=self.facet, 
+        result = to_adjacency_list(self.vertices, self.multiplicity, metal=self.metal, facet=self.facet,
+                                   electronic_state=self.electronic_state, vibrational_level=self.vibrational_level,
                                    label=label, group=False, remove_h=remove_h,
                                    remove_lone_pairs=remove_lone_pairs, old_style=old_style)
         return result
@@ -2601,6 +2707,8 @@ class Molecule(Graph):
         """
 
         cython.declare(atom=Atom, bonded_atom=Atom, bond=Bond, group=gr.Group)
+        if self.has_resolved_state():
+            raise NotImplementedError('to_group would drop the resolved state of\n{0}'.format(self.to_adjacency_list()))
         # Create GroupAtom object for each atom in the molecule
         group_atoms = OrderedDict()  # preserver order of atoms in original container
         for atom in self.vertices:
@@ -3054,6 +3162,9 @@ class Molecule(Graph):
         atom_ids = set([atom.id for atom in self.vertices])
         other_ids = set([atom.id for atom in other.vertices])
 
+        if isinstance(other, Molecule) and (self.electronic_state != other.electronic_state
+                                            or self.vibrational_level != other.vibrational_level):
+            return False
         if atom_ids == other_ids:
             # If the two molecules have the same indices, then they might be identical
             # Sort the atoms by ID
