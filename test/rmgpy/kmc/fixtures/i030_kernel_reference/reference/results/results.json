@@ -1,0 +1,2027 @@
+{
+  "schema": 1,
+  "parameters_sha256": "0e99129828cd966e7acb3db73f2c202466941caa618ef9eae7874a2a0e1262fe",
+  "met_source_sha256": "1a8176c2e49c3fcfb5909c73bf01ad8d7230f2e5ad724e7461984a7b8388a7c1",
+  "mapped": {
+    "N": 16,
+    "temperature_K": 700.0,
+    "Rg_m": 1.097890097717739e-09,
+    "bond_rms_m": 6.736346132413793e-10,
+    "sigma0_m": 6.766081442101e-10,
+    "sigma_effective_m": 2.195780195435478e-09,
+    "D0_m2_s": 2.755363626147875e-08,
+    "D_CM_m2_s": 1.7221022663424218e-09,
+    "bead_friction_kg_s": 3.5075381369940914e-13,
+    "spring_constant_N_m": 0.06389307480729174,
+    "time_unit_s": 6.99936751855475e-10,
+    "tau_R_reduced": 0.2040918998427793,
+    "tau_R_s": 1.4285142145596787e-10,
+    "capture_reduced": 0.6162803960219814,
+    "rate_unit_m3_s": 1.8906790254746214e-18,
+    "rate_unit_m3_mol_s": 1138593.5223387796,
+    "bond_squared_reduced": 0.3764705882352941,
+    "entanglement_threshold_units": 142.10273643783003,
+    "mid_bead_index_zero_based": 7
+  },
+  "independent_checks": {
+    "Rg_squared_reduced": 0.999999999999996,
+    "max_mode_variance_error": 6.994405055138486e-15,
+    "FFT_covariance_check": "PASS",
+    "local_relative_D_reduced": 32.0
+  },
+  "simulation": [
+    {
+      "survival": [
+        1.0,
+        0.994384765625,
+        0.985107421875,
+        0.974853515625,
+        0.958984375,
+        0.931640625,
+        0.895751953125,
+        0.829833984375,
+        0.719970703125,
+        0.66552734375,
+        0.560546875,
+        0.4736328125
+      ],
+      "survival_se": [
+        0.0,
+        0.001167565358632303,
+        0.0018925473982793865,
+        0.0024464049426060866,
+        0.0030988493133516835,
+        0.003943149804814092,
+        0.00477471959044915,
+        0.005871540345026132,
+        0.007015831876242229,
+        0.007371965385849517,
+        0.0077550083981769175,
+        0.007801629490739504
+      ],
+      "bins": [
+        {
+          "t1": 0.0,
+          "t2": 0.02,
+          "survivors_start": 4096,
+          "survivors_end": 4073,
+          "k_reduced": 281.5529535465573,
+          "se_reduced": 58.70792669970431
+        },
+        {
+          "t1": 0.02,
+          "t2": 0.05,
+          "survivors_start": 4073,
+          "survivors_end": 4035,
+          "k_reduced": 312.4508981454498,
+          "se_reduced": 50.68641429112836
+        },
+        {
+          "t1": 0.05,
+          "t2": 0.1,
+          "survivors_start": 4035,
+          "survivors_end": 3993,
+          "k_reduced": 209.26947281655708,
+          "se_reduced": 32.29112800704697
+        },
+        {
+          "t1": 0.1,
+          "t2": 0.2,
+          "survivors_start": 3993,
+          "survivors_end": 3928,
+          "k_reduced": 164.12437588864896,
+          "se_reduced": 20.35735188539592
+        },
+        {
+          "t1": 0.2,
+          "t2": 0.4,
+          "survivors_start": 3928,
+          "survivors_end": 3816,
+          "k_reduced": 144.63818453089712,
+          "se_reduced": 13.66750033151206
+        },
+        {
+          "t1": 0.4,
+          "t2": 0.8,
+          "survivors_start": 3816,
+          "survivors_end": 3669,
+          "k_reduced": 98.20902053223752,
+          "se_reduced": 8.10066434149717
+        },
+        {
+          "t1": 0.8,
+          "t2": 1.6,
+          "survivors_start": 3669,
+          "survivors_end": 3399,
+          "k_reduced": 95.54734332395749,
+          "se_reduced": 5.81624184907291
+        },
+        {
+          "t1": 1.6,
+          "t2": 3.2,
+          "survivors_start": 3399,
+          "survivors_end": 2949,
+          "k_reduced": 88.75946305052487,
+          "se_reduced": 4.187678243523672
+        },
+        {
+          "t1": 3.2,
+          "t2": 4.0,
+          "survivors_start": 2949,
+          "survivors_end": 2726,
+          "k_reduced": 98.28849569849801,
+          "se_reduced": 6.583580231472086
+        },
+        {
+          "t1": 4.0,
+          "t2": 6.0,
+          "survivors_start": 2726,
+          "survivors_end": 2296,
+          "k_reduced": 85.83342740851047,
+          "se_reduced": 4.1443398756466605
+        },
+        {
+          "t1": 6.0,
+          "t2": 8.0,
+          "survivors_start": 2296,
+          "survivors_end": 1940,
+          "k_reduced": 84.24025269104162,
+          "se_reduced": 4.470006930625557
+        }
+      ],
+      "name": "base",
+      "pair_class": "end/end",
+      "seed": 103001,
+      "replicas": 4096,
+      "dt_reduced": 0.0001,
+      "box_over_Rg": 10.0,
+      "numerical_capture_reduced": 0.6628881686571022,
+      "concentration_mol_m3": 1.2547941737333341,
+      "long": {
+        "window": [
+          4.0,
+          8.0
+        ],
+        "events": 786,
+        "k_box_reduced": 85.036840049776,
+        "se_box_reduced": 3.047807202101024,
+        "k_infinite_reduced": 43.38609918835784,
+        "se_infinite_reduced": 0.7933676237014131,
+        "effective_radius_over_Rg": 1.7262780368256045
+      },
+      "late_halves": [
+        {
+          "window": [
+            4.0,
+            6.0
+          ],
+          "events": 430,
+          "k_box_reduced": 85.83342740851047,
+          "se_box_reduced": 4.1443398756466605,
+          "k_infinite_reduced": 43.59250994321191,
+          "se_infinite_reduced": 1.068971694933153,
+          "effective_radius_over_Rg": 1.7344908598111932
+        },
+        {
+          "window": [
+            6.0,
+            8.0
+          ],
+          "events": 356,
+          "k_box_reduced": 84.24025269104162,
+          "se_box_reduced": 4.470006930625557,
+          "k_infinite_reduced": 43.177785597128334,
+          "se_infinite_reduced": 1.1743285125420984,
+          "effective_radius_over_Rg": 1.7179895023862546
+        }
+      ],
+      "hit_indices_sha256": "d4ef47aa0ffcf61baa5987129d4c0fbc1d79704e67e9ce70dc7ca02f89936565"
+    },
+    {
+      "survival": [
+        1.0,
+        0.992919921875,
+        0.986572265625,
+        0.980712890625,
+        0.96875,
+        0.948486328125,
+        0.914306640625,
+        0.857421875,
+        0.766357421875,
+        0.722900390625,
+        0.618896484375,
+        0.540771484375
+      ],
+      "survival_se": [
+        0.0,
+        0.0013100750122719202,
+        0.0017983981536580475,
+        0.002148941235658998,
+        0.0027186349427880964,
+        0.0034537970741960653,
+        0.004373604898491871,
+        0.005463157928222672,
+        0.006611678156116212,
+        0.006993220347236706,
+        0.007588405172841225,
+        0.007786483024202652
+      ],
+      "bins": [
+        {
+          "t1": 0.0,
+          "t2": 0.02,
+          "survivors_start": 4096,
+          "survivors_end": 4067,
+          "k_reduced": 355.26304060595913,
+          "se_reduced": 65.97082923857616
+        },
+        {
+          "t1": 0.02,
+          "t2": 0.05,
+          "survivors_start": 4067,
+          "survivors_end": 4041,
+          "k_reduced": 213.78136095835893,
+          "se_reduced": 41.92604613029421
+        },
+        {
+          "t1": 0.05,
+          "t2": 0.1,
+          "survivors_start": 4041,
+          "survivors_end": 4017,
+          "k_reduced": 119.1366143838278,
+          "se_reduced": 24.31869553190957
+        },
+        {
+          "t1": 0.1,
+          "t2": 0.2,
+          "survivors_start": 4017,
+          "survivors_end": 3968,
+          "k_reduced": 122.73165954518878,
+          "se_reduced": 17.533204263471113
+        },
+        {
+          "t1": 0.2,
+          "t2": 0.4,
+          "survivors_start": 3968,
+          "survivors_end": 3885,
+          "k_reduced": 105.69602801507784,
+          "se_reduced": 11.601862316024242
+        },
+        {
+          "t1": 0.4,
+          "t2": 0.8,
+          "survivors_start": 3885,
+          "survivors_end": 3745,
+          "k_reduced": 91.7534171260699,
+          "se_reduced": 7.755014316952284
+        },
+        {
+          "t1": 0.8,
+          "t2": 1.6,
+          "survivors_start": 3745,
+          "survivors_end": 3512,
+          "k_reduced": 80.29492649539077,
+          "se_reduced": 5.261199969030193
+        },
+        {
+          "t1": 1.6,
+          "t2": 3.2,
+          "survivors_start": 3512,
+          "survivors_end": 3139,
+          "k_reduced": 70.17587369565852,
+          "se_reduced": 3.635478007661336
+        },
+        {
+          "t1": 3.2,
+          "t2": 4.0,
+          "survivors_start": 3139,
+          "survivors_end": 2961,
+          "k_reduced": 72.97153592545278,
+          "se_reduced": 5.470224529163939
+        },
+        {
+          "t1": 4.0,
+          "t2": 6.0,
+          "survivors_start": 2961,
+          "survivors_end": 2535,
+          "k_reduced": 77.66670603815392,
+          "se_reduced": 3.766748451090791
+        },
+        {
+          "t1": 6.0,
+          "t2": 8.0,
+          "survivors_start": 2535,
+          "survivors_end": 2215,
+          "k_reduced": 67.47061677302379,
+          "se_reduced": 3.7745844496044927
+        }
+      ],
+      "name": "base",
+      "pair_class": "end/mid",
+      "seed": 103002,
+      "replicas": 4096,
+      "dt_reduced": 0.0001,
+      "box_over_Rg": 10.0,
+      "numerical_capture_reduced": 0.6628881686571022,
+      "concentration_mol_m3": 1.2547941737333341,
+      "long": {
+        "window": [
+          4.0,
+          8.0
+        ],
+        "events": 746,
+        "k_box_reduced": 72.5686614055888,
+        "se_box_reduced": 2.666265255980307,
+        "k_infinite_reduced": 39.88942497283877,
+        "se_infinite_reduced": 0.8056022686690724,
+        "effective_radius_over_Rg": 1.5871497903801457
+      },
+      "late_halves": [
+        {
+          "window": [
+            4.0,
+            6.0
+          ],
+          "events": 426,
+          "k_box_reduced": 77.66670603815392,
+          "se_box_reduced": 3.766748451090791,
+          "k_infinite_reduced": 41.38254459246452,
+          "se_infinite_reduced": 1.0693779596231192,
+          "effective_radius_over_Rg": 1.6465591324028779
+        },
+        {
+          "window": [
+            6.0,
+            8.0
+          ],
+          "events": 320,
+          "k_box_reduced": 67.47061677302379,
+          "se_box_reduced": 3.7745844496044927,
+          "k_infinite_reduced": 38.29874729840511,
+          "se_infinite_reduced": 1.2162109912897678,
+          "effective_radius_over_Rg": 1.5238587366921366
+        }
+      ],
+      "hit_indices_sha256": "da03379e6a49fcb3184ef0d1e83250cf6aecba741961115fe0b3e4a01d7cfb6a"
+    },
+    {
+      "survival": [
+        1.0,
+        0.9931640625,
+        0.9912109375,
+        0.987060546875,
+        0.9765625,
+        0.962646484375,
+        0.9345703125,
+        0.899169921875,
+        0.824462890625,
+        0.790283203125,
+        0.708251953125,
+        0.626220703125
+      ],
+      "survival_se": [
+        0.0,
+        0.0012874476114280915,
+        0.001458392241400817,
+        0.0017658340361481372,
+        0.0023638814368941753,
+        0.002962914927407455,
+        0.0038637893369647455,
+        0.00470474363421101,
+        0.005944154014250817,
+        0.006361038288002831,
+        0.007102608799772322,
+        0.007559470178559146
+      ],
+      "bins": [
+        {
+          "t1": 0.0,
+          "t2": 0.02,
+          "survivors_start": 4096,
+          "survivors_end": 4068,
+          "k_reduced": 342.9704775446601,
+          "se_reduced": 64.81545497061778
+        },
+        {
+          "t1": 0.02,
+          "t2": 0.05,
+          "survivors_start": 4068,
+          "survivors_end": 4060,
+          "k_reduced": 65.61681908907177,
+          "se_reduced": 23.199052614577703
+        },
+        {
+          "t1": 0.05,
+          "t2": 0.1,
+          "survivors_start": 4060,
+          "survivors_end": 4043,
+          "k_reduced": 83.91965910014862,
+          "se_reduced": 20.353521903918914
+        },
+        {
+          "t1": 0.1,
+          "t2": 0.2,
+          "survivors_start": 4043,
+          "survivors_end": 4000,
+          "k_reduced": 106.92629538743236,
+          "se_reduced": 16.306184857454884
+        },
+        {
+          "t1": 0.2,
+          "t2": 0.4,
+          "survivors_start": 4000,
+          "survivors_end": 3943,
+          "k_reduced": 71.76253112200293,
+          "se_reduced": 9.505261033727587
+        },
+        {
+          "t1": 0.4,
+          "t2": 0.8,
+          "survivors_start": 3943,
+          "survivors_end": 3828,
+          "k_reduced": 73.99845326195569,
+          "se_reduced": 6.900643249426782
+        },
+        {
+          "t1": 0.8,
+          "t2": 1.6,
+          "survivors_start": 3828,
+          "survivors_end": 3683,
+          "k_reduced": 48.2685451597244,
+          "se_reduced": 4.008733544004591
+        },
+        {
+          "t1": 1.6,
+          "t2": 3.2,
+          "survivors_start": 3683,
+          "survivors_end": 3377,
+          "k_reduced": 54.21243503718602,
+          "se_reduced": 3.1000902758135878
+        },
+        {
+          "t1": 3.2,
+          "t2": 4.0,
+          "survivors_start": 3377,
+          "survivors_end": 3237,
+          "k_reduced": 52.925958074154124,
+          "se_reduced": 4.473393999166339
+        },
+        {
+          "t1": 4.0,
+          "t2": 6.0,
+          "survivors_start": 3237,
+          "survivors_end": 2901,
+          "k_reduced": 54.795734902420136,
+          "se_reduced": 2.9908485986109086
+        },
+        {
+          "t1": 6.0,
+          "t2": 8.0,
+          "survivors_start": 2901,
+          "survivors_end": 2565,
+          "k_reduced": 61.54851325826707,
+          "se_reduced": 3.359867059410238
+        }
+      ],
+      "name": "base",
+      "pair_class": "mid/mid",
+      "seed": 103003,
+      "replicas": 4096,
+      "dt_reduced": 0.0001,
+      "box_over_Rg": 10.0,
+      "numerical_capture_reduced": 0.6628881686571022,
+      "concentration_mol_m3": 1.2547941737333341,
+      "long": {
+        "window": [
+          4.0,
+          8.0
+        ],
+        "events": 672,
+        "k_box_reduced": 58.17212408034363,
+        "se_box_reduced": 2.2491043771200814,
+        "k_infinite_reduced": 35.11283768756568,
+        "se_infinite_reduced": 0.8194295571060418,
+        "effective_radius_over_Rg": 1.3970954209898685
+      },
+      "late_halves": [
+        {
+          "window": [
+            4.0,
+            6.0
+          ],
+          "events": 336,
+          "k_box_reduced": 54.795734902420136,
+          "se_box_reduced": 2.9908485986109086,
+          "k_infinite_reduced": 33.85372887791736,
+          "se_infinite_reduced": 1.1415999488305404,
+          "effective_radius_over_Rg": 1.3469970732533478
+        },
+        {
+          "window": [
+            6.0,
+            8.0
+          ],
+          "events": 336,
+          "k_box_reduced": 61.54851325826707,
+          "se_box_reduced": 3.359867059410238,
+          "k_infinite_reduced": 36.31531174818892,
+          "se_infinite_reduced": 1.1696785179473639,
+          "effective_radius_over_Rg": 1.4449403436618613
+        }
+      ],
+      "hit_indices_sha256": "123f3f1026aa09d06fc9ea73c9afea2194c4cb37c6bec21de5d28af041140336"
+    },
+    {
+      "survival": [
+        1.0,
+        0.9892578125,
+        0.98388671875,
+        0.9775390625,
+        0.9619140625,
+        0.939453125,
+        0.8955078125,
+        0.8251953125,
+        0.71630859375,
+        0.66259765625,
+        0.548828125,
+        0.45263671875
+      ],
+      "survival_se": [
+        0.0,
+        0.0022779077515277346,
+        0.002782271881912699,
+        0.003274281572755477,
+        0.004229465492461997,
+        0.005270095048496071,
+        0.006759454108827729,
+        0.008392472699492809,
+        0.009961120519639639,
+        0.010448020572239175,
+        0.010995733685467772,
+        0.010998861792791578
+      ],
+      "bins": [
+        {
+          "t1": 0.0,
+          "t2": 0.02,
+          "survivors_start": 2048,
+          "survivors_end": 2026,
+          "k_reduced": 540.0150675384823,
+          "se_reduced": 115.13215881364266
+        },
+        {
+          "t1": 0.02,
+          "t2": 0.05,
+          "survivors_start": 2026,
+          "survivors_end": 2015,
+          "k_reduced": 181.4736809281802,
+          "se_reduced": 54.71644111557136
+        },
+        {
+          "t1": 0.05,
+          "t2": 0.1,
+          "survivors_start": 2015,
+          "survivors_end": 2002,
+          "k_reduced": 129.4502901123504,
+          "se_reduced": 35.903113334334435
+        },
+        {
+          "t1": 0.1,
+          "t2": 0.2,
+          "survivors_start": 2002,
+          "survivors_end": 1970,
+          "k_reduced": 161.13138143131707,
+          "se_reduced": 28.48458126332568
+        },
+        {
+          "t1": 0.2,
+          "t2": 0.4,
+          "survivors_start": 1970,
+          "survivors_end": 1924,
+          "k_reduced": 118.13595253191211,
+          "se_reduced": 17.418601086590023
+        },
+        {
+          "t1": 0.4,
+          "t2": 0.8,
+          "survivors_start": 1924,
+          "survivors_end": 1834,
+          "k_reduced": 119.76744602310418,
+          "se_reduced": 12.625804602229909
+        },
+        {
+          "t1": 0.8,
+          "t2": 1.6,
+          "survivors_start": 1834,
+          "survivors_end": 1690,
+          "k_reduced": 102.21355612411364,
+          "se_reduced": 8.520169625315091
+        },
+        {
+          "t1": 1.6,
+          "t2": 3.2,
+          "survivors_start": 1690,
+          "survivors_end": 1467,
+          "k_reduced": 88.44314360883588,
+          "se_reduced": 5.927533807468105
+        },
+        {
+          "t1": 3.2,
+          "t2": 4.0,
+          "survivors_start": 1467,
+          "survivors_end": 1357,
+          "k_reduced": 97.42889788514066,
+          "se_reduced": 9.291832553122239
+        },
+        {
+          "t1": 4.0,
+          "t2": 6.0,
+          "survivors_start": 1357,
+          "survivors_end": 1124,
+          "k_reduced": 94.19131469061634,
+          "se_reduced": 6.179806622119102
+        },
+        {
+          "t1": 6.0,
+          "t2": 8.0,
+          "survivors_start": 1124,
+          "survivors_end": 927,
+          "k_reduced": 96.34773244389065,
+          "se_reduced": 6.875117021943963
+        }
+      ],
+      "name": "step",
+      "pair_class": "end/end",
+      "seed": 103101,
+      "replicas": 2048,
+      "dt_reduced": 2.5e-05,
+      "box_over_Rg": 10.0,
+      "numerical_capture_reduced": 0.6395842823395418,
+      "concentration_mol_m3": 1.2547941737333341,
+      "long": {
+        "window": [
+          4.0,
+          8.0
+        ],
+        "events": 430,
+        "k_box_reduced": 95.26952356725349,
+        "se_box_reduced": 4.622154366532199,
+        "k_infinite_reduced": 45.90149216474341,
+        "se_infinite_reduced": 1.0729761446098969,
+        "effective_radius_over_Rg": 1.8263623433282044
+      },
+      "late_halves": [
+        {
+          "window": [
+            4.0,
+            6.0
+          ],
+          "events": 233,
+          "k_box_reduced": 94.19131469061634,
+          "se_box_reduced": 6.179806622119102,
+          "k_infinite_reduced": 45.6497227335174,
+          "se_infinite_reduced": 1.4515414974428726,
+          "effective_radius_over_Rg": 1.8163447559534407
+        },
+        {
+          "window": [
+            6.0,
+            8.0
+          ],
+          "events": 197,
+          "k_box_reduced": 96.34773244389065,
+          "se_box_reduced": 6.875117021943963,
+          "k_infinite_reduced": 46.15032574380545,
+          "se_infinite_reduced": 1.577417448298443,
+          "effective_radius_over_Rg": 1.8362631168569474
+        }
+      ],
+      "hit_indices_sha256": "1d1c22d9ab2c7ab4ee0248b3b1919e6ad119806cd7243625027b05ac7d02c01e"
+    },
+    {
+      "survival": [
+        1.0,
+        0.98828125,
+        0.98291015625,
+        0.9736328125,
+        0.96142578125,
+        0.94287109375,
+        0.9130859375,
+        0.85986328125,
+        0.75732421875,
+        0.71533203125,
+        0.61865234375,
+        0.53466796875
+      ],
+      "survival_se": [
+        0.0,
+        0.002378022429050068,
+        0.00286392065171448,
+        0.0035404994270635086,
+        0.004255410641230942,
+        0.0051284855868369075,
+        0.006224950122154677,
+        0.007670535741301623,
+        0.009473035500003535,
+        0.009971446449526562,
+        0.010732944803801114,
+        0.011021953677214872
+      ],
+      "bins": [
+        {
+          "t1": 0.0,
+          "t2": 0.02,
+          "survivors_start": 2048,
+          "survivors_end": 2024,
+          "k_reduced": 589.3977876021087,
+          "se_reduced": 120.31101617328407
+        },
+        {
+          "t1": 0.02,
+          "t2": 0.05,
+          "survivors_start": 2024,
+          "survivors_end": 2013,
+          "k_reduced": 181.65349225215613,
+          "se_reduced": 54.77065647069681
+        },
+        {
+          "t1": 0.05,
+          "t2": 0.1,
+          "survivors_start": 2013,
+          "survivors_end": 1994,
+          "k_reduced": 189.66950236015617,
+          "se_reduced": 43.513331135892614
+        },
+        {
+          "t1": 0.1,
+          "t2": 0.2,
+          "survivors_start": 1994,
+          "survivors_end": 1969,
+          "k_reduced": 126.16871882657992,
+          "se_reduced": 25.233911134191338
+        },
+        {
+          "t1": 0.2,
+          "t2": 0.4,
+          "survivors_start": 1969,
+          "survivors_end": 1931,
+          "k_reduced": 97.43898105305504,
+          "se_reduced": 15.806940105024989
+        },
+        {
+          "t1": 0.4,
+          "t2": 0.8,
+          "survivors_start": 1931,
+          "survivors_end": 1870,
+          "k_reduced": 80.24893144970555,
+          "se_reduced": 10.275263931376543
+        },
+        {
+          "t1": 0.8,
+          "t2": 1.6,
+          "survivors_start": 1870,
+          "survivors_end": 1761,
+          "k_reduced": 75.07075169053263,
+          "se_reduced": 7.191554577771284
+        },
+        {
+          "t1": 1.6,
+          "t2": 3.2,
+          "survivors_start": 1761,
+          "survivors_end": 1551,
+          "k_reduced": 79.36371582479204,
+          "se_reduced": 5.480296905120473
+        },
+        {
+          "t1": 3.2,
+          "t2": 4.0,
+          "survivors_start": 1551,
+          "survivors_end": 1465,
+          "k_reduced": 71.30580215671387,
+          "se_reduced": 7.690144977796734
+        },
+        {
+          "t1": 4.0,
+          "t2": 6.0,
+          "survivors_start": 1465,
+          "survivors_end": 1267,
+          "k_reduced": 72.60167056501436,
+          "se_reduced": 5.164109942208296
+        },
+        {
+          "t1": 6.0,
+          "t2": 8.0,
+          "survivors_start": 1267,
+          "survivors_end": 1095,
+          "k_reduced": 72.94876903526891,
+          "se_reduced": 5.5672261157660845
+        }
+      ],
+      "name": "step",
+      "pair_class": "end/mid",
+      "seed": 103102,
+      "replicas": 2048,
+      "dt_reduced": 2.5e-05,
+      "box_over_Rg": 10.0,
+      "numerical_capture_reduced": 0.6395842823395418,
+      "concentration_mol_m3": 1.2547941737333341,
+      "long": {
+        "window": [
+          4.0,
+          8.0
+        ],
+        "events": 370,
+        "k_box_reduced": 72.77521980014164,
+        "se_box_reduced": 3.796776202230074,
+        "k_infinite_reduced": 39.95175593906378,
+        "se_infinite_reduced": 1.1442467592760972,
+        "effective_radius_over_Rg": 1.5896298607257469
+      },
+      "late_halves": [
+        {
+          "window": [
+            4.0,
+            6.0
+          ],
+          "events": 198,
+          "k_box_reduced": 72.60167056501436,
+          "se_box_reduced": 5.164109942208296,
+          "k_infinite_reduced": 39.899396526757435,
+          "se_infinite_reduced": 1.5596778553469475,
+          "effective_radius_over_Rg": 1.5875465459042615
+        },
+        {
+          "window": [
+            6.0,
+            8.0
+          ],
+          "events": 172,
+          "k_box_reduced": 72.94876903526891,
+          "se_box_reduced": 5.5672261157660845,
+          "k_infinite_reduced": 40.004002839600105,
+          "se_infinite_reduced": 1.674209584850958,
+          "effective_radius_over_Rg": 1.5917086988461435
+        }
+      ],
+      "hit_indices_sha256": "3458adb8418728b1ceaae18e452f3914164e8b4ee928ed3da70819db1cd4c124"
+    },
+    {
+      "survival": [
+        1.0,
+        0.98876953125,
+        0.9853515625,
+        0.97509765625,
+        0.96533203125,
+        0.953125,
+        0.931640625,
+        0.8916015625,
+        0.822265625,
+        0.7890625,
+        0.701171875,
+        0.63671875
+      ],
+      "survival_se": [
+        0.0,
+        0.0023285282077074973,
+        0.0026547662012694514,
+        0.0034433343262175154,
+        0.0040423841330187015,
+        0.004670685173268797,
+        0.005576455932436912,
+        0.006869607837397141,
+        0.008447472895025305,
+        0.009015039276189822,
+        0.010114816365698824,
+        0.010627480946525771
+      ],
+      "bins": [
+        {
+          "t1": 0.0,
+          "t2": 0.02,
+          "survivors_start": 2048,
+          "survivors_end": 2025,
+          "k_reduced": 564.7003309379456,
+          "se_reduced": 117.74878442925812
+        },
+        {
+          "t1": 0.02,
+          "t2": 0.05,
+          "survivors_start": 2025,
+          "survivors_end": 2018,
+          "k_reduced": 115.42595423617183,
+          "se_reduced": 43.62693176126276
+        },
+        {
+          "t1": 0.05,
+          "t2": 0.1,
+          "survivors_start": 2018,
+          "survivors_end": 1997,
+          "k_reduced": 209.21734995478295,
+          "se_reduced": 45.65517687533891
+        },
+        {
+          "t1": 0.1,
+          "t2": 0.2,
+          "survivors_start": 1997,
+          "survivors_end": 1977,
+          "k_reduced": 100.65510245198367,
+          "se_reduced": 22.507260149191954
+        },
+        {
+          "t1": 0.2,
+          "t2": 0.4,
+          "survivors_start": 1977,
+          "survivors_end": 1952,
+          "k_reduced": 63.63028098789562,
+          "se_reduced": 12.726142073448674
+        },
+        {
+          "t1": 0.4,
+          "t2": 0.8,
+          "survivors_start": 1952,
+          "survivors_end": 1908,
+          "k_reduced": 56.99728741201507,
+          "se_reduced": 8.592850483046682
+        },
+        {
+          "t1": 0.8,
+          "t2": 1.6,
+          "survivors_start": 1908,
+          "survivors_end": 1826,
+          "k_reduced": 54.90973856664764,
+          "se_reduced": 6.0642537776875525
+        },
+        {
+          "t1": 1.6,
+          "t2": 3.2,
+          "survivors_start": 1826,
+          "survivors_end": 1684,
+          "k_reduced": 50.59741647040106,
+          "se_reduced": 4.247200459849101
+        },
+        {
+          "t1": 3.2,
+          "t2": 4.0,
+          "survivors_start": 1684,
+          "survivors_end": 1616,
+          "k_reduced": 51.52244465153924,
+          "se_reduced": 6.248456454349253
+        },
+        {
+          "t1": 4.0,
+          "t2": 6.0,
+          "survivors_start": 1616,
+          "survivors_end": 1436,
+          "k_reduced": 59.046244736435646,
+          "se_reduced": 4.403605025869334
+        },
+        {
+          "t1": 6.0,
+          "t2": 8.0,
+          "survivors_start": 1436,
+          "survivors_end": 1304,
+          "k_reduced": 48.21250356078565,
+          "se_reduced": 4.197985694371955
+        }
+      ],
+      "name": "step",
+      "pair_class": "mid/mid",
+      "seed": 103103,
+      "replicas": 2048,
+      "dt_reduced": 2.5e-05,
+      "box_over_Rg": 10.0,
+      "numerical_capture_reduced": 0.6395842823395418,
+      "concentration_mol_m3": 1.2547941737333341,
+      "long": {
+        "window": [
+          4.0,
+          8.0
+        ],
+        "events": 312,
+        "k_box_reduced": 53.629374148610594,
+        "se_box_reduced": 3.041990348193648,
+        "k_infinite_reduced": 33.40488030889074,
+        "se_infinite_reduced": 1.1802451219996721,
+        "effective_radius_over_Rg": 1.3291379561382701
+      },
+      "late_halves": [
+        {
+          "window": [
+            4.0,
+            6.0
+          ],
+          "events": 180,
+          "k_box_reduced": 59.046244736435646,
+          "se_box_reduced": 4.403605025869334,
+          "k_infinite_reduced": 35.429425519198894,
+          "se_infinite_reduced": 1.5854480455989786,
+          "effective_radius_over_Rg": 1.409692050571661
+        },
+        {
+          "window": [
+            6.0,
+            8.0
+          ],
+          "events": 132,
+          "k_box_reduced": 48.21250356078565,
+          "se_box_reduced": 4.197985694371955,
+          "k_infinite_reduced": 31.21999428493863,
+          "se_infinite_reduced": 1.760302171994182,
+          "effective_radius_over_Rg": 1.2422041034371762
+        }
+      ],
+      "hit_indices_sha256": "4856673c5e2cadb9fd28f7fc44dc32566fc7563eda75975ba8cbbaa6231c1e54"
+    },
+    {
+      "survival": [
+        1.0,
+        0.99755859375,
+        0.994384765625,
+        0.99169921875,
+        0.98681640625,
+        0.97705078125,
+        0.963623046875,
+        0.9384765625,
+        0.893798828125,
+        0.87255859375,
+        0.825927734375,
+        0.781005859375
+      ],
+      "survival_se": [
+        0.0,
+        0.0007710974362757729,
+        0.001167565358632303,
+        0.001417651546875779,
+        0.0017821945553348477,
+        0.0023397127785112575,
+        0.0029254102279079137,
+        0.0037544993885651693,
+        0.00481398320709651,
+        0.005210418457635394,
+        0.0059245564502436706,
+        0.006461947415721082
+      ],
+      "bins": [
+        {
+          "t1": 0.0,
+          "t2": 0.02,
+          "survivors_start": 4096,
+          "survivors_end": 4086,
+          "k_reduced": 335.3704920917274,
+          "se_reduced": 106.05348790524218
+        },
+        {
+          "t1": 0.02,
+          "t2": 0.05,
+          "survivors_start": 4086,
+          "survivors_end": 4073,
+          "k_reduced": 291.4738749600261,
+          "se_reduced": 80.84034202248519
+        },
+        {
+          "t1": 0.05,
+          "t2": 0.1,
+          "survivors_start": 4073,
+          "survivors_end": 4062,
+          "k_reduced": 148.4155790835685,
+          "se_reduced": 44.7489944422692
+        },
+        {
+          "t1": 0.1,
+          "t2": 0.2,
+          "survivors_start": 4062,
+          "survivors_end": 4042,
+          "k_reduced": 135.43956421039442,
+          "se_reduced": 30.285237984461418
+        },
+        {
+          "t1": 0.2,
+          "t2": 0.4,
+          "survivors_start": 4042,
+          "survivors_end": 4002,
+          "k_reduced": 136.45065228885642,
+          "se_reduced": 21.574831388015095
+        },
+        {
+          "t1": 0.4,
+          "t2": 0.8,
+          "survivors_start": 4002,
+          "survivors_end": 3947,
+          "k_reduced": 94.93169483850494,
+          "se_reduced": 12.800689260250984
+        },
+        {
+          "t1": 0.8,
+          "t2": 1.6,
+          "survivors_start": 3947,
+          "survivors_end": 3844,
+          "k_reduced": 90.69710811423728,
+          "se_reduced": 8.936911962037994
+        },
+        {
+          "t1": 1.6,
+          "t2": 3.2,
+          "survivors_start": 3844,
+          "survivors_end": 3661,
+          "k_reduced": 83.65282420345905,
+          "se_reduced": 6.184407743920287
+        },
+        {
+          "t1": 3.2,
+          "t2": 4.0,
+          "survivors_start": 3661,
+          "survivors_end": 3574,
+          "k_reduced": 82.49464668495955,
+          "se_reduced": 8.844567644463288
+        },
+        {
+          "t1": 4.0,
+          "t2": 6.0,
+          "survivors_start": 3574,
+          "survivors_end": 3383,
+          "k_reduced": 75.35370695984822,
+          "se_reduced": 5.4530881981633375
+        },
+        {
+          "t1": 6.0,
+          "t2": 8.0,
+          "survivors_start": 3383,
+          "survivors_end": 3199,
+          "k_reduced": 76.72859075639319,
+          "se_reduced": 5.6572439145305475
+        }
+      ],
+      "name": "box",
+      "pair_class": "end/end",
+      "seed": 103201,
+      "replicas": 4096,
+      "dt_reduced": 0.0001,
+      "box_over_Rg": 14.0,
+      "numerical_capture_reduced": 0.6628881686571022,
+      "concentration_mol_m3": 0.4572865064625853,
+      "long": {
+        "window": [
+          4.0,
+          8.0
+        ],
+        "events": 375,
+        "k_box_reduced": 76.04114885812075,
+        "se_box_reduced": 3.9287586972681714,
+        "k_infinite_reduced": 47.137519824427926,
+        "se_infinite_reduced": 1.5097028403053712,
+        "effective_radius_over_Rg": 1.8755423212874787
+      },
+      "late_halves": [
+        {
+          "window": [
+            4.0,
+            6.0
+          ],
+          "events": 191,
+          "k_box_reduced": 75.35370695984822,
+          "se_box_reduced": 5.4530881981633375,
+          "k_infinite_reduced": 46.87244587386627,
+          "se_infinite_reduced": 2.1099322517627783,
+          "effective_radius_over_Rg": 1.8649953639082826
+        },
+        {
+          "window": [
+            6.0,
+            8.0
+          ],
+          "events": 184,
+          "k_box_reduced": 76.72859075639319,
+          "se_box_reduced": 5.6572439145305475,
+          "k_infinite_reduced": 47.40077826655133,
+          "se_infinite_reduced": 2.159043562726568,
+          "effective_radius_over_Rg": 1.8860170418811315
+        }
+      ],
+      "hit_indices_sha256": "30e76c48c1d5f6d9364e31be2b04cfa30b28ebd6e85b9499c8eac5e765ead7da"
+    },
+    {
+      "survival": [
+        1.0,
+        0.9970703125,
+        0.996337890625,
+        0.994140625,
+        0.990478515625,
+        0.983154296875,
+        0.9677734375,
+        0.947265625,
+        0.910888671875,
+        0.895263671875,
+        0.8544921875,
+        0.814208984375
+      ],
+      "survival_se": [
+        0.0,
+        0.0008444881654065986,
+        0.0009438196282682814,
+        0.001192530742344966,
+        0.0015173818514724264,
+        0.0020108303809868444,
+        0.0027593949589380094,
+        0.0034922298198414277,
+        0.004451630761498353,
+        0.004784583950365874,
+        0.005509563972436771,
+        0.006077155171221583
+      ],
+      "bins": [
+        {
+          "t1": 0.0,
+          "t2": 0.02,
+          "survivors_start": 4096,
+          "survivors_end": 4084,
+          "k_reduced": 402.54307605285464,
+          "se_reduced": 116.20421833970242
+        },
+        {
+          "t1": 0.02,
+          "t2": 0.05,
+          "survivors_start": 4084,
+          "survivors_end": 4081,
+          "k_reduced": 67.21372010970262,
+          "se_reduced": 38.805860271702755
+        },
+        {
+          "t1": 0.05,
+          "t2": 0.1,
+          "survivors_start": 4081,
+          "survivors_end": 4072,
+          "k_reduced": 121.16281138853512,
+          "se_reduced": 40.38761199869833
+        },
+        {
+          "t1": 0.1,
+          "t2": 0.2,
+          "survivors_start": 4072,
+          "survivors_end": 4057,
+          "k_reduced": 101.26718345612827,
+          "se_reduced": 26.147089174393493
+        },
+        {
+          "t1": 0.2,
+          "t2": 0.4,
+          "survivors_start": 4057,
+          "survivors_end": 4027,
+          "k_reduced": 101.83124431050412,
+          "se_reduced": 18.591799196561645
+        },
+        {
+          "t1": 0.4,
+          "t2": 0.8,
+          "survivors_start": 4027,
+          "survivors_end": 3964,
+          "k_reduced": 108.16892865480825,
+          "se_reduced": 13.628145220282612
+        },
+        {
+          "t1": 0.8,
+          "t2": 1.6,
+          "survivors_start": 3964,
+          "survivors_end": 3880,
+          "k_reduced": 73.46532751567878,
+          "se_reduced": 8.01587760627797
+        },
+        {
+          "t1": 1.6,
+          "t2": 3.2,
+          "survivors_start": 3880,
+          "survivors_end": 3731,
+          "k_reduced": 67.15744386441666,
+          "se_reduced": 5.502103698002823
+        },
+        {
+          "t1": 3.2,
+          "t2": 4.0,
+          "survivors_start": 3731,
+          "survivors_end": 3667,
+          "k_reduced": 59.34724966392298,
+          "se_reduced": 7.418498744677653
+        },
+        {
+          "t1": 4.0,
+          "t2": 6.0,
+          "survivors_start": 3667,
+          "survivors_end": 3500,
+          "k_reduced": 63.950183054722494,
+          "se_reduced": 4.949061718126801
+        },
+        {
+          "t1": 6.0,
+          "t2": 8.0,
+          "survivors_start": 3500,
+          "survivors_end": 3335,
+          "k_reduced": 66.25427668331534,
+          "se_reduced": 5.158389623540071
+        }
+      ],
+      "name": "box",
+      "pair_class": "end/mid",
+      "seed": 103202,
+      "replicas": 4096,
+      "dt_reduced": 0.0001,
+      "box_over_Rg": 14.0,
+      "numerical_capture_reduced": 0.6628881686571022,
+      "concentration_mol_m3": 0.4572865064625853,
+      "long": {
+        "window": [
+          4.0,
+          8.0
+        ],
+        "events": 332,
+        "k_box_reduced": 65.10222986901887,
+        "se_box_reduced": 3.5742899783759174,
+        "k_infinite_reduced": 42.69088228011463,
+        "se_infinite_reduced": 1.536980352022885,
+        "effective_radius_over_Rg": 1.6986162349586118
+      },
+      "late_halves": [
+        {
+          "window": [
+            4.0,
+            6.0
+          ],
+          "events": 167,
+          "k_box_reduced": 63.950183054722494,
+          "se_box_reduced": 4.949061718126801,
+          "k_infinite_reduced": 42.192454327260094,
+          "se_infinite_reduced": 2.1543133054924963,
+          "effective_radius_over_Rg": 1.6787844168406185
+        },
+        {
+          "window": [
+            6.0,
+            8.0
+          ],
+          "events": 165,
+          "k_box_reduced": 66.25427668331534,
+          "se_box_reduced": 5.158389623540071,
+          "k_infinite_reduced": 43.183274345385456,
+          "se_infinite_reduced": 2.1913787545840457,
+          "effective_radius_over_Rg": 1.7182078927403817
+        }
+      ],
+      "hit_indices_sha256": "55019694d64318e370f77d7d1ef18ad7ab3f226901c51e022fdc20989cf68b2e"
+    },
+    {
+      "survival": [
+        1.0,
+        0.99853515625,
+        0.997802734375,
+        0.996337890625,
+        0.993896484375,
+        0.988525390625,
+        0.98046875,
+        0.9658203125,
+        0.931884765625,
+        0.917724609375,
+        0.885009765625,
+        0.85205078125
+      ],
+      "survival_se": [
+        0.0,
+        0.0005975817933171346,
+        0.0007316167697948277,
+        0.0009438196282682814,
+        0.0012169721329459587,
+        0.001664113314562412,
+        0.002162230173818158,
+        0.0028389140054039495,
+        0.003936617870589255,
+        0.004293497272473367,
+        0.004984533705677277,
+        0.005547650637259181
+      ],
+      "bins": [
+        {
+          "t1": 0.0,
+          "t2": 0.02,
+          "survivors_start": 4096,
+          "survivors_end": 4090,
+          "k_reduced": 201.1239060384773,
+          "se_reduced": 82.1084981634675
+        },
+        {
+          "t1": 0.02,
+          "t2": 0.05,
+          "survivors_start": 4090,
+          "survivors_end": 4087,
+          "k_reduced": 67.11508189107929,
+          "se_reduced": 38.7489114657853
+        },
+        {
+          "t1": 0.05,
+          "t2": 0.1,
+          "survivors_start": 4087,
+          "survivors_end": 4081,
+          "k_reduced": 80.62685093692419,
+          "se_reduced": 32.91577702070374
+        },
+        {
+          "t1": 0.1,
+          "t2": 0.2,
+          "survivors_start": 4081,
+          "survivors_end": 4071,
+          "k_reduced": 67.32093661356579,
+          "se_reduced": 21.288754730606524
+        },
+        {
+          "t1": 0.2,
+          "t2": 0.4,
+          "survivors_start": 4071,
+          "survivors_end": 4049,
+          "k_reduced": 74.3450094996181,
+          "se_reduced": 15.850428674882373
+        },
+        {
+          "t1": 0.4,
+          "t2": 0.8,
+          "survivors_start": 4049,
+          "survivors_end": 4016,
+          "k_reduced": 56.139184971688124,
+          "se_reduced": 9.772604996952305
+        },
+        {
+          "t1": 0.8,
+          "t2": 1.6,
+          "survivors_start": 4016,
+          "survivors_end": 3956,
+          "k_reduced": 51.63168239734064,
+          "se_reduced": 6.665684467881163
+        },
+        {
+          "t1": 1.6,
+          "t2": 3.2,
+          "survivors_start": 3956,
+          "survivors_end": 3817,
+          "k_reduced": 61.34321759549478,
+          "se_reduced": 5.203341177688096
+        },
+        {
+          "t1": 3.2,
+          "t2": 4.0,
+          "survivors_start": 3817,
+          "survivors_end": 3759,
+          "k_reduced": 52.51950549100771,
+          "se_reduced": 6.896216288964136
+        },
+        {
+          "t1": 4.0,
+          "t2": 6.0,
+          "survivors_start": 3759,
+          "survivors_end": 3625,
+          "k_reduced": 49.80178384985284,
+          "se_reduced": 4.302455055163466
+        },
+        {
+          "t1": 6.0,
+          "t2": 8.0,
+          "survivors_start": 3625,
+          "survivors_end": 3490,
+          "k_reduced": 52.0709014706388,
+          "se_reduced": 4.481818621090827
+        }
+      ],
+      "name": "box",
+      "pair_class": "mid/mid",
+      "seed": 103203,
+      "replicas": 4096,
+      "dt_reduced": 0.0001,
+      "box_over_Rg": 14.0,
+      "numerical_capture_reduced": 0.6628881686571022,
+      "concentration_mol_m3": 0.4572865064625853,
+      "long": {
+        "window": [
+          4.0,
+          8.0
+        ],
+        "events": 269,
+        "k_box_reduced": 50.93634266024567,
+        "se_box_reduced": 3.1063570969086185,
+        "k_infinite_reduced": 36.10617119645418,
+        "se_infinite_reduced": 1.560841258565705,
+        "effective_radius_over_Rg": 1.4366189055094738
+      },
+      "late_halves": [
+        {
+          "window": [
+            4.0,
+            6.0
+          ],
+          "events": 134,
+          "k_box_reduced": 49.80178384985284,
+          "se_box_reduced": 4.302455055163466,
+          "k_infinite_reduced": 35.532371926285485,
+          "se_infinite_reduced": 2.1901554606966958,
+          "effective_radius_over_Rg": 1.4137881579620064
+        },
+        {
+          "window": [
+            6.0,
+            8.0
+          ],
+          "events": 135,
+          "k_box_reduced": 52.0709014706388,
+          "se_box_reduced": 4.481818621090827,
+          "k_infinite_reduced": 36.672576111592164,
+          "se_infinite_reduced": 2.223038177085302,
+          "effective_radius_over_Rg": 1.4591554410184129
+        }
+      ],
+      "hit_indices_sha256": "3268d7f8700b5510a4193a579ad990f403bf86d701a56d780a6c1c691dee8b53"
+    },
+    {
+      "survival": [
+        1.0,
+        0.9632568359375,
+        0.932952880859375,
+        0.888885498046875,
+        0.819854736328125
+      ],
+      "survival_se": [
+        0.0,
+        0.0010392842802137304,
+        0.0013816401606627348,
+        0.0017361342904393985,
+        0.0021230240385764795
+      ],
+      "bins": [
+        {
+          "t1": 0.0,
+          "t2": 0.02,
+          "survivors_start": 32768,
+          "survivors_end": 31564,
+          "k_reduced": 404.300146589144,
+          "se_reduced": 11.652416891891711
+        },
+        {
+          "t1": 0.02,
+          "t2": 0.05,
+          "survivors_start": 31564,
+          "survivors_end": 30571,
+          "k_reduced": 230.15076107113435,
+          "se_reduced": 7.30392459268219
+        },
+        {
+          "t1": 0.05,
+          "t2": 0.1,
+          "survivors_start": 30571,
+          "survivors_end": 29127,
+          "k_reduced": 209.02867828085843,
+          "se_reduced": 5.50129131301789
+        },
+        {
+          "t1": 0.1,
+          "t2": 0.2,
+          "survivors_start": 29127,
+          "survivors_end": 26865,
+          "k_reduced": 174.61711053071875,
+          "se_reduced": 3.672474180027759
+        }
+      ],
+      "name": "transient",
+      "pair_class": "end/end",
+      "seed": 103301,
+      "replicas": 32768,
+      "dt_reduced": 2.5e-05,
+      "box_over_Rg": 6.0,
+      "numerical_capture_reduced": 0.6395842823395418,
+      "concentration_mol_m3": 5.809232285802472,
+      "hit_indices_sha256": "19ae9064a9fd5137abdb9e5392b265014c7324b398533a4ee59a7a1cbb1aa71e"
+    },
+    {
+      "survival": [
+        1.0,
+        0.9644775390625,
+        0.936767578125,
+        0.898834228515625,
+        0.84124755859375
+      ],
+      "survival_se": [
+        0.0,
+        0.0010225218904414714,
+        0.001344500184612859,
+        0.001665833657672632,
+        0.002018817902860138
+      ],
+      "bins": [
+        {
+          "t1": 0.0,
+          "t2": 0.02,
+          "survivors_start": 32768,
+          "survivors_end": 31604,
+          "k_reduced": 390.62233321080254,
+          "se_reduced": 11.449967437813259
+        },
+        {
+          "t1": 0.02,
+          "t2": 0.05,
+          "survivors_start": 31604,
+          "survivors_end": 30696,
+          "k_reduced": 209.8896617940162,
+          "se_reduced": 6.9656797070354255
+        },
+        {
+          "t1": 0.05,
+          "t2": 0.1,
+          "survivors_start": 30696,
+          "survivors_end": 29453,
+          "k_reduced": 178.57402760036803,
+          "se_reduced": 5.0653988722867584
+        },
+        {
+          "t1": 0.1,
+          "t2": 0.2,
+          "survivors_start": 29453,
+          "survivors_end": 27566,
+          "k_reduced": 143.01930933220885,
+          "se_reduced": 3.292972141697423
+        }
+      ],
+      "name": "transient",
+      "pair_class": "end/mid",
+      "seed": 103302,
+      "replicas": 32768,
+      "dt_reduced": 2.5e-05,
+      "box_over_Rg": 6.0,
+      "numerical_capture_reduced": 0.6395842823395418,
+      "concentration_mol_m3": 5.809232285802472,
+      "hit_indices_sha256": "ff75651d80434f61722bf3cbcc557cd822181f562cc2166e96ef0c8b7e78171b"
+    },
+    {
+      "survival": [
+        1.0,
+        0.9656982421875,
+        0.94158935546875,
+        0.90960693359375,
+        0.863983154296875
+      ],
+      "survival_se": [
+        0.0,
+        0.0010054348652669908,
+        0.0012955429098156191,
+        0.001584052142430648,
+        0.001893755989800253
+      ],
+      "bins": [
+        {
+          "t1": 0.0,
+          "t2": 0.02,
+          "survivors_start": 32768,
+          "survivors_end": 31644,
+          "k_reduced": 376.9618203852415,
+          "se_reduced": 11.244399203095137
+        },
+        {
+          "t1": 0.02,
+          "t2": 0.05,
+          "survivors_start": 31644,
+          "survivors_end": 30854,
+          "k_reduced": 182.031520099695,
+          "se_reduced": 6.476563330051953
+        },
+        {
+          "t1": 0.05,
+          "t2": 0.1,
+          "survivors_start": 30854,
+          "survivors_end": 29806,
+          "k_reduced": 149.284883792794,
+          "se_reduced": 4.611654914160701
+        },
+        {
+          "t1": 0.1,
+          "t2": 0.2,
+          "survivors_start": 29806,
+          "survivors_end": 28311,
+          "k_reduced": 111.15207464967806,
+          "se_reduced": 2.8750466378870976
+        }
+      ],
+      "name": "transient",
+      "pair_class": "mid/mid",
+      "seed": 103303,
+      "replicas": 32768,
+      "dt_reduced": 2.5e-05,
+      "box_over_Rg": 6.0,
+      "numerical_capture_reduced": 0.6395842823395418,
+      "concentration_mol_m3": 5.809232285802472,
+      "hit_indices_sha256": "3509363e50a4785322c41a22a478d2e00c94574a40373997d91d288d86143e93"
+    }
+  ],
+  "comparison": [
+    {
+      "pair_class": "end/end",
+      "numerical_checks": {
+        "step": {
+          "absolute_difference": 2.51539297638557,
+          "allowed_difference": 9.676339763238996,
+          "pass": true
+        },
+        "box": {
+          "absolute_difference": 3.751420636070087,
+          "allowed_difference": 13.329803006757375,
+          "pass": true
+        },
+        "plateau": {
+          "absolute_difference": 0.4147243460835739,
+          "allowed_difference": 10.690614880971875,
+          "pass": true
+        }
+      },
+      "reference_reduced": 45.90149216474341,
+      "reference_se_reduced": 1.0729761446098969,
+      "kernel_reduced": 50.26548245743669,
+      "kernel_over_reference": 1.0950729505051957,
+      "absolute_log_discrepancy": 0.09082098251528499,
+      "allowed_log_discrepancy": 0.7866496872548402,
+      "long_scale_pass": true,
+      "reference_valid": true,
+      "transient_reporting_only": [
+        {
+          "t1": 0.0,
+          "t2": 0.02,
+          "kernel_over_reference": 0.12432714378537499,
+          "diagnostic_agreement": false
+        },
+        {
+          "t1": 0.02,
+          "t2": 0.05,
+          "kernel_over_reference": 0.21840241684840997,
+          "diagnostic_agreement": false
+        },
+        {
+          "t1": 0.05,
+          "t2": 0.1,
+          "kernel_over_reference": 0.24047170403047846,
+          "diagnostic_agreement": false
+        },
+        {
+          "t1": 0.1,
+          "t2": 0.2,
+          "kernel_over_reference": 0.2878611512048469,
+          "diagnostic_agreement": false
+        }
+      ]
+    },
+    {
+      "pair_class": "end/mid",
+      "numerical_checks": {
+        "step": {
+          "absolute_difference": 0.06233096622501222,
+          "allowed_difference": 9.586507198328226,
+          "pass": true
+        },
+        "box": {
+          "absolute_difference": 2.801457307275861,
+          "allowed_difference": 12.924656998011594,
+          "pass": true
+        },
+        "plateau": {
+          "absolute_difference": 3.0837972940594085,
+          "allowed_difference": 10.466890809349042,
+          "pass": true
+        }
+      },
+      "reference_reduced": 39.95175593906378,
+      "reference_se_reduced": 1.1442467592760972,
+      "kernel_reduced": 50.26548245743669,
+      "kernel_over_reference": 1.2581545235234184,
+      "absolute_log_discrepancy": 0.22964598342445344,
+      "allowed_log_discrepancy": 0.807710030915895,
+      "long_scale_pass": true,
+      "reference_valid": true,
+      "transient_reporting_only": [
+        {
+          "t1": 0.0,
+          "t2": 0.02,
+          "kernel_over_reference": 0.12868051359037505,
+          "diagnostic_agreement": false
+        },
+        {
+          "t1": 0.02,
+          "t2": 0.05,
+          "kernel_over_reference": 0.23948527063122707,
+          "diagnostic_agreement": false
+        },
+        {
+          "t1": 0.05,
+          "t2": 0.1,
+          "kernel_over_reference": 0.2814826049056033,
+          "diagnostic_agreement": false
+        },
+        {
+          "t1": 0.1,
+          "t2": 0.2,
+          "kernel_over_reference": 0.351459412663494,
+          "diagnostic_agreement": false
+        }
+      ]
+    },
+    {
+      "pair_class": "mid/mid",
+      "numerical_checks": {
+        "step": {
+          "absolute_difference": 1.7079573786749407,
+          "allowed_difference": 9.258552124506839,
+          "pass": true
+        },
+        "box": {
+          "absolute_difference": 0.9933335088884974,
+          "allowed_difference": 12.318382505161932,
+          "pass": true
+        },
+        "plateau": {
+          "absolute_difference": 2.461582870271556,
+          "allowed_difference": 10.04904886520038,
+          "pass": true
+        }
+      },
+      "reference_reduced": 33.40488030889074,
+      "reference_se_reduced": 1.1802451219996721,
+      "kernel_reduced": 50.26548245743669,
+      "kernel_over_reference": 1.5047346972250186,
+      "absolute_log_discrepancy": 0.4086166017479237,
+      "allowed_log_discrepancy": 0.8344732516113718,
+      "long_scale_pass": true,
+      "reference_valid": true,
+      "transient_reporting_only": [
+        {
+          "t1": 0.0,
+          "t2": 0.02,
+          "kernel_over_reference": 0.13334369620262118,
+          "diagnostic_agreement": false
+        },
+        {
+          "t1": 0.02,
+          "t2": 0.05,
+          "kernel_over_reference": 0.2761361462559193,
+          "diagnostic_agreement": false
+        },
+        {
+          "t1": 0.05,
+          "t2": 0.1,
+          "kernel_over_reference": 0.336708454200927,
+          "diagnostic_agreement": false
+        },
+        {
+          "t1": 0.1,
+          "t2": 0.2,
+          "kernel_over_reference": 0.45222262036817756,
+          "diagnostic_agreement": false
+        }
+      ]
+    }
+  ],
+  "tube": {
+    "units": 2048,
+    "Ne_units": 142.10273643783003,
+    "D_CM_m2_s": 9.335153368875388e-13,
+    "Rg_m": 1.2421208529500393e-08,
+    "bond_rms_m": 6.723176332657057e-10,
+    "ta_s": 1.6404767621612693e-11,
+    "te_s": 3.3126455180928054e-07,
+    "tau_R_s": 6.88065824544006e-05,
+    "tau_d_s": 0.0009916479048822763,
+    "rows": [
+      {
+        "pair_class": "end/end",
+        "transient_regimes": [
+          {
+            "name": "pre-tube Rouse",
+            "window_s": [
+              1.6404767621612693e-11,
+              3.3126455180928054e-07
+            ],
+            "rms_exponent": 0.25,
+            "k_exponent": -0.25
+          },
+          {
+            "name": "tube breathing",
+            "window_s": [
+              3.3126455180928054e-07,
+              6.88065824544006e-05
+            ],
+            "rms_exponent": 0.125,
+            "k_exponent": -0.625
+          },
+          {
+            "name": "coherent curvilinear reptation",
+            "window_s": [
+              6.88065824544006e-05,
+              0.0009916479048822763
+            ],
+            "rms_exponent": 0.25,
+            "k_exponent": -0.25
+          },
+          {
+            "name": "relaxed COM",
+            "window_s": [
+              0.0009916479048822763,
+              null
+            ],
+            "rms_exponent": 0.5,
+            "k_exponent": 0.0
+          }
+        ],
+        "k_long_m3_s": "C_pair * D_CM * Rg; C_pair not identified",
+        "C_pair_from_candidate": 50.2654824574367,
+        "numeric_reference_error": null,
+        "comparison_policy": "report-only asymptotic scaling"
+      },
+      {
+        "pair_class": "end/mid",
+        "transient_regimes": [
+          {
+            "name": "pre-tube Rouse",
+            "window_s": [
+              1.6404767621612693e-11,
+              3.3126455180928054e-07
+            ],
+            "rms_exponent": 0.25,
+            "k_exponent": -0.25
+          },
+          {
+            "name": "tube breathing",
+            "window_s": [
+              3.3126455180928054e-07,
+              6.88065824544006e-05
+            ],
+            "rms_exponent": 0.125,
+            "k_exponent": -0.625
+          },
+          {
+            "name": "coherent curvilinear reptation",
+            "window_s": [
+              6.88065824544006e-05,
+              0.0009916479048822763
+            ],
+            "rms_exponent": 0.25,
+            "k_exponent": -0.25
+          },
+          {
+            "name": "relaxed COM",
+            "window_s": [
+              0.0009916479048822763,
+              null
+            ],
+            "rms_exponent": 0.5,
+            "k_exponent": 0.0
+          }
+        ],
+        "k_long_m3_s": "C_pair * D_CM * Rg; C_pair not identified",
+        "C_pair_from_candidate": 50.2654824574367,
+        "numeric_reference_error": null,
+        "comparison_policy": "report-only asymptotic scaling"
+      },
+      {
+        "pair_class": "mid/mid",
+        "transient_regimes": [
+          {
+            "name": "pre-tube Rouse",
+            "window_s": [
+              1.6404767621612693e-11,
+              3.3126455180928054e-07
+            ],
+            "rms_exponent": 0.25,
+            "k_exponent": -0.25
+          },
+          {
+            "name": "tube breathing",
+            "window_s": [
+              3.3126455180928054e-07,
+              6.88065824544006e-05
+            ],
+            "rms_exponent": 0.125,
+            "k_exponent": -0.625
+          },
+          {
+            "name": "coherent curvilinear reptation",
+            "window_s": [
+              6.88065824544006e-05,
+              0.0009916479048822763
+            ],
+            "rms_exponent": 0.25,
+            "k_exponent": -0.25
+          },
+          {
+            "name": "relaxed COM",
+            "window_s": [
+              0.0009916479048822763,
+              null
+            ],
+            "rms_exponent": 0.5,
+            "k_exponent": 0.0
+          }
+        ],
+        "k_long_m3_s": "C_pair * D_CM * Rg; C_pair not identified",
+        "C_pair_from_candidate": 50.2654824574367,
+        "numeric_reference_error": null,
+        "comparison_policy": "report-only asymptotic scaling"
+      }
+    ],
+    "assumption": "extend representative-monomer tube exponents to all three pairs; no site prefactor claim"
+  }
+}
