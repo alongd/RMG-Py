@@ -227,7 +227,7 @@ class ReactionModel:
         unique_reactions = []
         for rxn in other.reactions:
             for rxn0 in final_model.reactions:
-                if (rxn.is_isomorphic(rxn0, either_direction=True)
+                if (rxn.is_same_reaction(rxn0, either_direction=True)
                         and not _independent_irreversible_electron_channels(rxn, rxn0, common_species)):
                     common_reactions[rxn] = rxn0
                     if not rxn0.kinetics.is_identical_to(rxn.kinetics):
@@ -587,7 +587,8 @@ class CoreEdgeReactionModel:
                         return True, rxn0
                 else:
                     return True, rxn0
-            elif isinstance(family_obj, KineticsFamily) and rxn_id == rxn_id0[::-1] and are_identical_species_references(rxn, rxn0):
+            elif (isinstance(family_obj, KineticsFamily)
+                  and rxn_id == rxn_id0[::-1] and are_identical_species_references(rxn, rxn0)):
                 if not rxn.duplicate:
                     return True, rxn0
                 elif rxn.duplicate and rxn0.duplicate:
@@ -624,9 +625,12 @@ class CoreEdgeReactionModel:
                 shortlist = self.retrieve(library, r1_rev, r2_rev)
 
                 for rxn0 in shortlist:
-                    if (are_identical_species_references(rxn, rxn0)
-                            and not _independent_irreversible_electron_channels(rxn, rxn0)):
-                        return True, rxn0
+                    rxn_id0 = generate_reaction_id(rxn0)
+                    if ((rxn_id == rxn_id0) or
+                            (rxn_id == rxn_id0[::-1])):
+                        if (are_identical_species_references(rxn, rxn0)
+                                and not _independent_irreversible_electron_channels(rxn, rxn0)):
+                            return True, rxn0
 
         return False, None
 
@@ -687,6 +691,7 @@ class CoreEdgeReactionModel:
         """
 
         self._preflight_electron_routing([forward])
+        forward.check_resolved_species_reversibility()
 
         # Determine the proper species objects for all reactants and products
         if forward.family and forward.is_forward:
@@ -754,6 +759,8 @@ class CoreEdgeReactionModel:
             forward.reverse.reactants = list(products)
             forward.reverse.products = list(reactants)
 
+        forward.check_resolved_species_reversibility()
+
         if check_existing:
             found, rxn = self.check_for_existing_reaction(forward)
             if found:
@@ -786,6 +793,7 @@ class CoreEdgeReactionModel:
                 self.apply_kinetics_to_reaction(forward)
 
             if isinstance(forward.kinetics, KineticsData):
+                forward.check_resolved_species_reversibility(reversible=True)
                 forward.kinetics = forward.kinetics.to_arrhenius()
             #  correct barrier heights of estimated kinetics
             if isinstance(forward, (TemplateReaction, DepositoryReaction)): # i.e. not LibraryReaction
@@ -824,6 +832,8 @@ class CoreEdgeReactionModel:
                         f"coverage-dependent thermo on species {' and '.join(coverage_dep_species)}.")
                     logging.info("Flipped reaction to reverse direction due to thermo_coverage_dependence on product: %s",
                                 forward)
+
+        forward.check_resolved_species_reversibility()
 
         # Since the reaction is new, add it to the list of new reactions
         self.new_reaction_list.append(forward)
@@ -1243,6 +1253,7 @@ class CoreEdgeReactionModel:
                 # We're done with the "reverse" attribute, so delete it to save a bit of memory
                 reaction.reverse = None
         reaction.kinetics = kinetics
+        reaction.check_resolved_species_reversibility()
 
     def generate_kinetics(self, reaction):
         """
@@ -1370,7 +1381,9 @@ class CoreEdgeReactionModel:
             logging.info("Moved {0:d} reactions from edge to core".format(len(reactions_moved_from_edge)))
             for rxn in reactions_moved_from_edge:
                 for r in new_core_reactions:
-                    if (r.reactants == rxn.reactants and r.products == rxn.products) or (r.products == rxn.reactants and r.reactants == rxn.products):
+                    if ((r.reactants == rxn.reactants and r.products == rxn.products) or
+                            (r.allows_reverse_match(rxn) and r.products == rxn.reactants
+                             and r.reactants == rxn.products)):
                         logging.info("    {0}".format(r))
                         new_core_reactions.remove(r)
                         break
@@ -1771,6 +1784,7 @@ class CoreEdgeReactionModel:
         # and API callers that pass generate_kinetics=False. Cheap -- one None check for any
         # reaction whose family carries no quarantine manifest, which is all of ordinary
         # chemistry.
+        rxn.check_resolved_species_reversibility()
         check_quarantine(rxn, stage='admission to the model core')
         if rxn not in self.core.reactions:
             self.core.reactions.append(rxn)
@@ -1803,6 +1817,7 @@ class CoreEdgeReactionModel:
         # Same backstop as add_reaction_to_core, for the same paths. The edge is not a
         # holding pen: edge fluxes decide what gets promoted, so a quarantined rate here is
         # already steering the model.
+        rxn.check_resolved_species_reversibility()
         check_quarantine(rxn, stage='admission to the model edge')
         self.edge.reactions.append(rxn)
         if not requires_rms:
@@ -2165,6 +2180,9 @@ class CoreEdgeReactionModel:
         # provenance averaged away. A network is the last place a bad rate stays
         # recognisable.
         _check_electron_channel_routing(newReaction)
+        newReaction.check_resolved_species_reversibility()
+        if newReaction.network_kinetics is not None:
+            newReaction.check_resolved_species_reversibility(kinetics=newReaction.network_kinetics)
         check_quarantine(newReaction, stage='admission to a pressure-dependent network')
         assert isinstance(new_species, Species)
 
@@ -2243,6 +2261,10 @@ class CoreEdgeReactionModel:
         for network in self.network_list:
             PDepNetwork._check_reactions(network)
 
+        # Recheck mutable participants and rates on already admitted reactions.
+        for reaction in self.core.reactions + self.edge.reactions:
+            reaction.check_resolved_species_reversibility()
+
         # Merge networks if necessary
         # Two partial networks having the same source and containing one or
         # more explored isomers in common must be merged together to avoid
@@ -2294,8 +2316,23 @@ class CoreEdgeReactionModel:
         while index < core_reaction_count:
             reaction = self.core.reactions[index]
             if isinstance(reaction, PDepReaction):
+                # Validate the proposed reversible declaration before computing
+                # Keq or deleting either explicitly supplied direction.
+                reaction.check_resolved_species_reversibility(reversible=True)
+                # Explicit opposite resolved channels keep their independent
+                # rates and declarations, including gas-temperature-only pairs.
+                explicit_reverse = next((other for other in self.core.reactions
+                                         if other is not reaction and isinstance(other, PDepReaction)
+                                         and reaction.reactants == other.products
+                                         and reaction.products == other.reactants
+                                         and not reaction.allows_reverse_match(other)), None)
+                if explicit_reverse is not None:
+                    explicit_reverse.check_resolved_species_reversibility(reversible=True)
+                    index += 1
+                    continue
                 for reaction2 in self.core.reactions[index + 1 :]:
                     if isinstance(reaction2, PDepReaction) and reaction.reactants == reaction2.products and reaction.products == reaction2.reactants:
+                        reaction2.check_resolved_species_reversibility(reversible=True)
                         # We've found the PDepReaction for the reverse direction
                         dGrxn = reaction.get_free_energy_of_reaction(300.0)
                         kf = reaction.get_rate_coefficient(1000, 1e5)
@@ -2562,4 +2599,5 @@ def are_identical_species_references(rxn1, rxn2):
     identical_opposite_directions = (identical_opposite_directions
                                      and electrons1 == (electrons2[1], electrons2[0]))
 
-    return (identical_same_direction or identical_opposite_directions) and identical_collider
+    return (identical_same_direction or
+            (rxn1.allows_reverse_match(rxn2) and identical_opposite_directions)) and identical_collider

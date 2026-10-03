@@ -93,16 +93,7 @@ class CompareYaml:
     def compare_species_count_per_phase(self):
         count_per_phase1 = self.yaml1.get_species_count_per_phase()
         count_per_phase2 = self.yaml2.get_species_count_per_phase()
-        phase_names1 = [phase['name'] for phase in self.yaml1.load_yaml_file()['phases']]
-        phase_names2 = [phase['name'] for phase in self.yaml2.load_yaml_file()['phases']]
-        all_phase_names = set(phase_names1).union(set(phase_names2))
-        count_diff = {'gas': count_per_phase1[f"specie_count_{phase_names1[0]}"] - count_per_phase2[f"specie_count_{phase_names2[0]}"], 
-                      'surface': count_per_phase1[f"specie_count_{phase_names1[1]}"] - count_per_phase2[f"specie_count_{phase_names2[1]}"]
-                      }
-        if count_diff['gas'] == 0 and count_diff['surface'] == 0:
-            return True
-        else:
-            return False
+        return count_per_phase1 == count_per_phase2
     
     def normalize_equation(self, equation):
         def process_side(side):

@@ -87,3 +87,14 @@ Molecule and reaction drawings cannot represent resolved state identity and rais
 and Gaussian/Mopac inputs retain the augmented InChI in their title and use
 state-specific file keys. Ground-only kinetics library coverage keys retain
 their legacy indexed spelling, such as ``X(3)``.
+
+**Resolved nonthermal reactions.**
+
+    Electron-temperature- or density-dependent reactions involving resolved
+    species require independent irreversible forward and reverse declarations.
+    See :doc:`plasma_reversal` for import/export policy and its source census.
+
+.. toctree::
+    :hidden:
+
+    plasma_reversal

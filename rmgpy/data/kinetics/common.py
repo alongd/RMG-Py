@@ -272,7 +272,17 @@ def save_entry(f, entry, declarations=None):
     """
 
     if isinstance(entry.item, Reaction):
+        entry.item.check_resolved_species_reversibility(kinetics=entry.data)
         validate_participant_labels(entry.item.reactants + entry.item.products)
+
+    def sort_efficiencies(efficiencies0):
+        efficiencies = {}
+        for mol, eff in efficiencies0.items():
+            if isinstance(mol, str):
+                # already in SMILES string format
+                smiles = mol
+            else:
+                smiles = mol.to_smiles()
 
     collider = getattr(entry.item, 'specific_collider', None)
     if (collider is not None and collider.label.strip().upper() == 'M'
@@ -586,10 +596,10 @@ def find_degenerate_reactions(rxn_list, same_reactants=None, template=None, kine
                 identical = False
                 same_template = True
                 for rxn in sub_list:
-                    isomorphic = rxn0.is_isomorphic(rxn, check_identical=False, strict=False,
+                    isomorphic = rxn0.is_same_reaction(rxn, check_identical=False, strict=False,
                                                     check_template_rxn_products=True, save_order=save_order)
                     if isomorphic:
-                        identical = rxn0.is_isomorphic(rxn, check_identical=True, strict=False,
+                        identical = rxn0.is_same_reaction(rxn, check_identical=True, strict=False,
                                                        check_template_rxn_products=True, save_order=save_order)
                         if identical:
                             # An exact copy of rxn0 is already in our list, so we can move on

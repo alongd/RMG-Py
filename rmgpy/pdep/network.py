@@ -201,6 +201,18 @@ class Network(object):
                 species_list.append(spec)
         return species_list
 
+    def check_resolved_species_reversibility(self):
+        """Apply the Reaction policy before any thermal network reversal or fit.
+
+        Inspect original rates and ILT surrogates that are actually selected.
+        A cached surrogate is not executed when RRKM uses the transition state.
+        """
+        for reaction in self.path_reactions + self.net_reactions:
+            reaction.check_resolved_species_reversibility(reversible=True)
+            if reaction.network_kinetics is not None and not reaction.can_tst():
+                reaction.check_resolved_species_reversibility(
+                    kinetics=reaction.network_kinetics, reversible=True)
+
     def initialize(self, Tmin, Tmax, Pmin, Pmax, maximum_grain_size=0.0, minimum_grain_count=0, active_j_rotor=True,
                    active_k_rotor=True, rmgmode=False):
         """
@@ -211,6 +223,8 @@ class Network(object):
         maximum energy grain size `grain_size` in J/mol and/or the minimum
         number of grains `grain_count`.
         """
+        self.check_resolved_species_reversibility()
+
 
         logging.debug("initializing network")
         if maximum_grain_size == 0.0 and minimum_grain_count == 0:
@@ -248,6 +262,8 @@ class Network(object):
         logging.debug('The network now has values of {0}'.format(repr(self)))
 
     def calculate_rate_coefficients(self, Tlist, Plist, method, error_check=True, neglect_high_energy_collisions=False, high_energy_rate_tol=0.01):
+
+        self.check_resolved_species_reversibility()
 
         n_isom = len(self.isomers)
         n_reac = len(self.reactants)
@@ -348,6 +364,8 @@ class Network(object):
         depend only on temperature will not be recomputed if the temperature
         is the same.
         """
+        self.check_resolved_species_reversibility()
+
 
         temperature_changed = (self.T != T)
         pressure_changed = (self.P != P)
@@ -642,6 +660,8 @@ class Network(object):
         coefficients :math:`k(E)` for the isomerization, dissociation, and
         association path reactions in the network.
         """
+        self.check_resolved_species_reversibility()
+
 
         temperature = self.T
         e_list = self.e_list
@@ -919,6 +939,8 @@ class Network(object):
         Compute the phenomenological rate coefficients :math:`k(T,P)` at the
         current conditions using the modified strong collision method.
         """
+        self.check_resolved_species_reversibility()
+
         import rmgpy.pdep.msc as msc
         logging.debug('Applying modified strong collision method at {0:g} K, {1:g} Pa...'.format(self.T, self.P))
         self.K, self.p0 = msc.apply_modified_strong_collision_method(self, efficiency_model)
@@ -929,6 +951,8 @@ class Network(object):
         Compute the phenomenological rate coefficients :math:`k(T,P)` at the
         current conditions using the reservoir state method.
         """
+        self.check_resolved_species_reversibility()
+
         import rmgpy.pdep.rs as rs
         logging.debug('Applying reservoir state method at {0:g} K, {1:g} Pa...'.format(self.T, self.P))
         self.K, self.p0 = rs.apply_reservoir_state_method(self)
@@ -942,6 +966,8 @@ class Network(object):
         configurations (given by index) in the order provided, and return a
         reduced set of :math:`k(T,P)` values. 
         """
+        self.check_resolved_species_reversibility()
+
         import rmgpy.pdep.cse as cse
         logging.debug(
             'Applying chemically-significant eigenvalues method at {0:g} K, {1:g} Pa...'.format(self.T, self.P))
@@ -953,6 +979,8 @@ class Network(object):
             return self.K
 
     def apply_simulation_least_squares_method(self, method='mexp', neglect_high_energy_collisions=False, high_energy_rate_tol=0.01):
+        self.check_resolved_species_reversibility()
+
         import rmgpy.pdep.sls as sls
         logging.debug(
             'Applying simulation least squares method at {0:g} K, {1:g} Pa...'.format(self.T, self.P))
@@ -960,6 +988,8 @@ class Network(object):
         return self.K, self.U
 
     def generate_full_me_matrix(self, products=True, neglect_high_energy_collisions=False, high_energy_rate_tol=0.01):
+        self.check_resolved_species_reversibility()
+
         import rmgpy.pdep.me as me
         return me.generate_full_me_matrix(self, products=products, neglect_high_energy_collisions=neglect_high_energy_collisions, high_energy_rate_tol=high_energy_rate_tol)
 

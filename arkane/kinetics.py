@@ -44,7 +44,7 @@ from rmgpy.kinetics.tunneling import Wigner, Eckart
 from rmgpy.molecule.draw import MoleculeDrawer, create_new_surface
 
 from arkane.common import ArkaneSpecies
-from arkane.output import prettify
+from arkane.output import check_reaction_rate_serialization, prettify
 from arkane.sensitivity import KineticsSensitivity as SensAnalysis
 
 ################################################################################
@@ -159,6 +159,9 @@ class KineticsJob(object):
         Generate the kinetics data for the reaction and fit it to a modified Arrhenius model.
         """
 
+        # Arkane fits and writes equilibrium reverses; check the supplied rate
+        # before TST replaces it with a thermal Arrhenius declaration.
+        self.reaction.check_resolved_species_reversibility(reversible=True)
         if isinstance(self.reaction.kinetics, Arrhenius):
             return None
         self.usedTST = True
@@ -200,9 +203,11 @@ class KineticsJob(object):
         in `output_directory`.
         """
 
-        from rmgpy.export import refuse_resolved_species
-        refuse_resolved_species([], 'arkane/kinetics.py:KineticsJob.write_output', [self.reaction])
         reaction = self.reaction
+        check_reaction_rate_serialization(
+            reaction, reaction.kinetics, True if self.usedTST else reaction.reversible)
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species([], 'arkane/kinetics.py:KineticsJob.write_output', [reaction])
 
         ks, k0s, k0_revs, k_revs = [], [], [], []
 
@@ -298,9 +303,11 @@ class KineticsJob(object):
         Appends the kinetics rates to `chem.inp` in `outut_directory`
         """
 
+        check_reaction_rate_serialization(
+            self.reaction, self.reaction.kinetics, self.reaction.reversible)
+
         from rmgpy.export import refuse_resolved_species
         refuse_resolved_species([], 'arkane/kinetics.py:KineticsJob.write_chemkin', [self.reaction])
-
         # obtain a unit conversion factor
         order = len(self.reaction.reactants)
         factor = 1e6 ** (order - 1)

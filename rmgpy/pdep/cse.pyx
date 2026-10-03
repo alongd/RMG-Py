@@ -50,6 +50,7 @@ def apply_chemically_significant_eigenvalues_method(network, list lumping_order=
     """A method for applying the Chemically Significant Eigenvalues approach for solving the master equation."""
     from rmgpy.rmg.pdep import _check_network_reactions
     _check_network_reactions(network)
+    network.check_resolved_species_reversibility()
 
     cdef np.ndarray[np.int_t, ndim=1] j_list
     cdef np.ndarray[np.int_t, ndim=3] indices
@@ -234,6 +235,7 @@ def get_rate_coefficients_CSE_Advanced(network, T, P, neglect_high_energy_collis
     """
     from rmgpy.rmg.pdep import _check_network_reactions
     _check_network_reactions(network)
+    network.check_resolved_species_reversibility()
 
     if network.T != T or network.P != P:
         network.set_conditions(T,P)
@@ -389,5 +391,7 @@ def get_rate_coefficients_CSE_Advanced(network, T, P, neglect_high_energy_collis
 def apply_chemically_significant_eigenvalues_method_georgievskii(network, neglect_high_energy_collisions=False, high_energy_rate_tol=0.01):
     from rmgpy.rmg.pdep import _check_network_reactions
     _check_network_reactions(network)
+    network.check_resolved_species_reversibility()
+
     return get_rate_coefficients_CSE_Advanced(network, network.T, network.P, neglect_high_energy_collisions=neglect_high_energy_collisions,
                                               high_energy_rate_tol=high_energy_rate_tol)

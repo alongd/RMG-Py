@@ -175,6 +175,7 @@ class LibraryReaction(Reaction):
         Return a string representation that can be used to reconstruct the
         object.
         """
+        self.check_resolved_species_reversibility()
         string = 'LibraryReaction('
         if self.index != -1: string += 'index={0:d}, '.format(self.index)
         if self.reactants is not None: string += 'reactants={0!r}, '.format(self.reactants)
@@ -212,6 +213,10 @@ class LibraryReaction(Reaction):
         This high pressure limit Arrhenius kinetics is assigned to the reaction network_kinetics attribute.
         If this method successfully generated the high pressure limit kinetics, return ``True``, otherwise ``False``.
         """
+        # A gas-temperature surrogate would erase the declaration on the source
+        # rate. Refuse before selecting or fitting it, including for irreversible
+        # forward reactions whose network would reconstruct a reverse.
+        self.check_resolved_species_reversibility(reversible=True)
         logging.debug("Generating high pressure limit kinetics for {0}...".format(self))
         if not self.is_unimolecular():
             return False
@@ -514,7 +519,7 @@ class KineticsLibrary(Database):
                 # This means that if we find any duplicate reactions, it is an error
                 for entry in self.entries.values():
                     reaction = entry.item
-                    if reaction0 is not reaction and reaction0.is_isomorphic(reaction):
+                    if reaction0 is not reaction and reaction0.is_same_reaction(reaction):
                         # We found a duplicate reaction that wasn't marked!
                         # RMG requires all duplicate reactions to be marked, unlike CHEMKIN
                         if mark_duplicates:
@@ -546,7 +551,7 @@ class KineticsLibrary(Database):
                 reaction = entry.item
                 if reaction0 is reaction:
                     continue
-                if reaction0.is_isomorphic(reaction, either_direction=False):
+                if reaction0.is_same_reaction(reaction, either_direction=False):
                     if reaction0.reversible != reaction.reversible:
                         logging.debug("Reactions isomorphic but with different reversibilities.")
                         continue
@@ -585,6 +590,7 @@ class KineticsLibrary(Database):
             else:
                 logging.warning('Only Arrhenius and PDepArrhenius kinetics supported for duplicate reactions.')
                 continue
+            entry0.item.check_resolved_species_reversibility(kinetics=entry0.data)
             entry0.long_desc = long_desc
             entries_to_remove.extend(duplicates[1:])
         for entry in entries_to_remove:
@@ -731,6 +737,10 @@ class KineticsLibrary(Database):
             if not rxn.is_balanced():
                 raise DatabaseError('Reaction {0} in kinetics library {1} was not balanced! '
                                     'Please reformulate.'.format(rxn, self.label))
+
+            # Library rates live in entry.data. Use the same state/rate policy
+            # as model admission, preserving collider and electron metadata.
+            rxn.check_resolved_species_reversibility(kinetics=entry.data)
 
             if len(rxn.reactants) > 3:
                 raise DatabaseError('RMG does not accept reactions with more than 3 reactants in its solver. '
@@ -934,6 +944,9 @@ class KineticsLibrary(Database):
                 raise SpeciesIdentityError('Old-style kinetics libraries cannot retain resolved species references.')
             if entry.item.specific_collider is not None:
                 raise SpeciesIdentityError('Old-style kinetics libraries cannot retain named collider references.')
+
+        for entry in self.entries.values():
+            entry.item.check_resolved_species_reversibility(kinetics=entry.data, reversible=True)
 
         def write_arrhenius(f, arrhenius):
             f.write(' {0:<12.3E} {1:>7.3f} {2:>11.2f}    {3}{4:g} {5:g} {6:g}\n'.format(

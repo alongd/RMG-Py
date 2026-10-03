@@ -337,6 +337,24 @@ or hashed. The vibrational level is an integer from 0 through 2147483647
     1 N u0 p1 c0 {2,T}
     2 N u0 p1 c0 {1,T}
 
+Every reaction touching a species with either header must be irreversible if
+its rate law declares electron-temperature or electron-density dependence,
+including declarations on executable rates nested in sum, PLOG, and falloff
+containers. Library loading and admission to the model core, edge, or a
+pressure-dependent network raise ``NonEquilibriumReverseRateError`` for a
+reversible reaction, naming the full equation and resolved species. Imports,
+restored reactions, and later state or kinetics assignments are checked at
+these same boundaries. Reverse fitting and high-pressure conversion check the
+original rate and any selected network surrogate before a thermal fit can
+erase their electron dependence. Supply the reverse as a separate
+irreversible entry with its own kinetics: neither ``Keq(Tgas)`` nor
+``Keq(Te)`` supplies a superelastic rate for a general electron energy
+distribution. Heavy-particle reactions with gas-temperature-only kinetics may
+remain reversible and use ``Keq(Tgas)``. Entries without resolved species keep
+their existing behavior. Opposite irreversible reactions involving a resolved
+species retain both rates during model merging, duplicate checking and network
+path matching, including explicit gas-temperature-only pairs.
+
 These headers distinguish species with the same molecular graph. Omitting
 them preserves the existing unresolved identity; an explicit level zero is
 distinct from an omitted level. Resolved molecules require a family declaring

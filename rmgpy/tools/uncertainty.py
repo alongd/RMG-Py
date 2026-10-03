@@ -37,6 +37,7 @@ import rmgpy.data.thermo
 import rmgpy.util as util
 from rmgpy.data.base import saturate_for_estimation
 from rmgpy.species import Species
+from rmgpy.reaction import Reaction
 from rmgpy.tools.data import GenericData
 from rmgpy.tools.plot import parse_csv_data, plot_sensitivity, ReactionSensitivityPlot, ThermoSensitivityPlot
 
@@ -1826,6 +1827,7 @@ def get_i_thing(thing, thing_list):
     # get index of a species/molecule/group/reaction in a list of those things,
     # where the thing might not be exactly the same object as the one in the list but is isomorphic to it
     for i in range(len(thing_list)):
-        if thing.is_isomorphic(thing_list[i]):
+        if (thing.is_same_reaction(thing_list[i]) if isinstance(thing, Reaction)
+                else thing.is_isomorphic(thing_list[i])):
             return i
     return -1

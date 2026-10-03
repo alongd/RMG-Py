@@ -85,13 +85,25 @@ cdef class Reaction:
 
     cpdef bint is_surface_charge_transfer_reaction(self)
 
+    cpdef bint has_resolved_species(self)
+
+    cpdef list get_resolved_species(self)
+
+    cpdef bint allows_reverse_match(self, Reaction other=?)
+
     cpdef str get_reverse_from_equilibrium_refusal(self)
 
     cpdef check_reverse_from_equilibrium_supported(self)
 
+    cpdef check_resolved_species_reversibility(self, kinetics=?, reversible=?)
+
     cpdef bint has_template(self, list reactants, list products)
 
     cpdef bint matches_species(self, list reactants, list products=?)
+
+    cpdef bint is_same_reaction(self, Reaction other, bint either_direction=?, bint check_identical=?,
+                             bint check_only_label=?, bint check_template_rxn_products=?, bint generate_initial_map=?,
+                             bint strict=?, bint save_order=?) except -2
 
     cpdef bint is_isomorphic(self, Reaction other, bint either_direction=?, bint check_identical=?,
                              bint check_only_label=?, bint check_template_rxn_products=?, bint generate_initial_map=?,

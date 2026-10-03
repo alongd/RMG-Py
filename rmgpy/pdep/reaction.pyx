@@ -80,6 +80,10 @@ def calculate_microcanonical_rate_coefficient(reaction,
     expression to determine the reverse kinetics, and in certain cases in the
     inverse Laplace transform method.
     """        
+    reaction.check_resolved_species_reversibility(reversible=True)
+    if reaction.network_kinetics is not None and not reaction.can_tst():
+        reaction.check_resolved_species_reversibility(kinetics=reaction.network_kinetics, reversible=True)
+
     cdef int n_grains, n_j, r, s
     cdef np.ndarray[np.float64_t,ndim=2] kf, kr
     cdef double c0_inv
@@ -351,6 +355,8 @@ def fit_interpolation_model(reaction, Tlist, Plist, K, model, Tmin, Tmax, Pmin, 
     deviate too much from the data; as this is not necessarily a fast process,
     it is optional.
     """
+    reaction.check_resolved_species_reversibility(reversible=True)
+
 
     from rmgpy.quantity import Quantity
     from rmgpy.kinetics import PDepArrhenius, Chebyshev

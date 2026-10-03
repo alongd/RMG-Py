@@ -1,0 +1,124 @@
+{
+  "arkane/encorr/reference.py::ReferenceDatabase.save": {
+    "verdict": "excluded",
+    "reason": "Saves reference-species YAML; it contains no executable reaction declaration or rate law.",
+    "tests": ["test/rmgpy/data/kinetics/superelasticCensusTest.py::test_nonreaction_serialized_data_has_no_direction"]
+  },
+  "arkane/input.py::kinetics": {
+    "verdict": "excluded",
+    "reason": "Receives a job label and options; it emits no reaction or rate text.",
+    "tests": ["test/rmgpy/data/kinetics/superelasticCensusTest.py::test_arkane_reaction_emitters_use_serialization_chokepoint"]
+  },
+  "arkane/kinetics.py::KineticsJob.save_yaml": {
+    "verdict": "excluded",
+    "reason": "Saves transition-state structure and statistical-mechanics metadata, not executable reaction kinetics.",
+    "tests": ["test/rmgpy/data/kinetics/superelasticCensusTest.py::test_nonreaction_serialized_data_has_no_direction"]
+  },
+  "arkane/kinetics.py::KineticsJob.write_chemkin": {
+    "verdict": "checked",
+    "reason": "Serializes reaction sides and Arrhenius fields; the exact supplied rate is checked with the Reaction's declared direction before the file is opened.",
+    "checks": [
+      [
+        "self.reaction",
+        "self.reaction.kinetics",
+        "self.reaction.reversible"
+      ]
+    ],
+    "tests": ["test/rmgpy/data/kinetics/superelasticRework3Test.py::test_other_serializers_check_original_before_erasure"]
+  },
+  "arkane/kinetics.py::KineticsJob.write_output": {
+    "verdict": "checked",
+    "reason": "Serializes the exact fitted or supplied rate and may report equilibrium reverses; it checks that rate and the corresponding emitted direction semantics before opening output.py.",
+    "checks": [
+      [
+        "reaction",
+        "reaction.kinetics",
+        "True if self.usedTST else reaction.reversible"
+      ]
+    ],
+    "tests": ["test/rmgpy/data/kinetics/superelasticRework3Test.py::test_arkane_direct_output_checks_original_before_writing"]
+  },
+  "arkane/main.py::Arkane.execute": {
+    "verdict": "excluded",
+    "reason": "Writes species thermo directly and delegates every reaction/rate record to the inventoried kinetics, pdep, and library emitters.",
+    "tests": ["test/rmgpy/data/kinetics/superelasticCensusTest.py::test_arkane_reaction_emitters_use_serialization_chokepoint"]
+  },
+  "arkane/main.py::Arkane.get_libraries": {
+    "verdict": "checked",
+    "reason": "Checks every exact reaction rate with its declared direction before constructing any kinetics-library entry for ExplorerJob.",
+    "checks": [
+      [
+        "reaction",
+        "reaction.kinetics",
+        "reaction.reversible"
+      ]
+    ],
+    "tests": ["test/rmgpy/data/kinetics/superelasticRework3Test.py::test_arkane_get_libraries_checks_exact_rate_before_entry"]
+  },
+  "arkane/output.py::save_kinetics_lib": {
+    "verdict": "checked",
+    "reason": "Checks each exact entry rate with the Reaction's declared reversible flag before delegating to KineticsLibrary.save.",
+    "checks": [
+      [
+        "rxn",
+        "rxn.kinetics",
+        "rxn.reversible"
+      ]
+    ],
+    "tests": ["test/rmgpy/data/kinetics/superelasticRework3Test.py::test_arkane_kinetics_library_checks_exact_rate"]
+  },
+  "arkane/pdep.py::PressureDependenceJob.save": {
+    "verdict": "checked",
+    "reason": "Checks every original path rate and every exact fitted net rate under the directionless output's reversible semantics before either output file is opened.",
+    "checks": [
+      [
+        "reaction",
+        "reaction.kinetics",
+        "True"
+      ],
+      [
+        "reaction",
+        "reaction.kinetics",
+        "True"
+      ]
+    ],
+    "tests": ["test/rmgpy/data/kinetics/superelasticRework2Test.py::test_arkane_pdep_output_refuses_resolved_electron_rates_before_writing"]
+  },
+  "arkane/pdep.py::PressureDependenceJob.save_input_file": {
+    "verdict": "checked",
+    "reason": "Checks both the original rate and the exact network_kinetics surrogate selected for the directionless reaction() declaration before the destination file is opened.",
+    "checks": [
+      [
+        "reaction",
+        "reaction.kinetics",
+        "True"
+      ],
+      [
+        "reaction",
+        "serialized_kinetics",
+        "True"
+      ]
+    ],
+    "tests": ["test/rmgpy/data/kinetics/superelasticRework3Test.py::test_arkane_saved_pdep_input_checks_serialized_surrogate"]
+  },
+  "arkane/sensitivity.py::KineticsSensitivity.save": {
+    "verdict": "excluded",
+    "reason": "Writes labels and already-computed scalar sensitivity coefficients, not an executable reaction rate declaration.",
+    "tests": ["test/rmgpy/data/kinetics/superelasticCensusTest.py::test_nonreaction_serialized_data_has_no_direction"]
+  },
+  "arkane/sensitivity.py::PDepSensitivity.save": {
+    "verdict": "excluded",
+    "reason": "Writes labels and already-computed scalar sensitivity coefficients, not an executable reaction rate declaration.",
+    "tests": ["test/rmgpy/data/kinetics/superelasticCensusTest.py::test_nonreaction_serialized_data_has_no_direction"]
+  },
+  "arkane/statmech.py::StatMechJob.write_output": {
+    "verdict": "excluded",
+    "reason": "Writes conformer/statistical-mechanics records and prose about isodesmic reactions, not executable reaction kinetics.",
+    "tests": ["test/rmgpy/data/kinetics/superelasticCensusTest.py::test_nonreaction_serialized_data_has_no_direction"]
+  },
+  "arkane/thermo.py::ThermoJob.execute": {
+    "verdict": "excluded",
+    "reason": "Saves species thermo YAML and Chemkin thermo, not a reaction or rate record.",
+    "tests": ["test/rmgpy/data/kinetics/superelasticCensusTest.py::test_nonreaction_serialized_data_has_no_direction"]
+  }
+}

@@ -47,7 +47,7 @@ from rmgpy.kinetics import Chebyshev, PDepArrhenius
 from rmgpy.reaction import Reaction
 from rmgpy.kinetics.tunneling import Wigner, Eckart
 
-from arkane.output import prettify
+from arkane.output import check_reaction_rate_serialization, prettify
 from arkane.sensitivity import PDepSensitivity as SensAnalysis
 
 ################################################################################
@@ -459,6 +459,10 @@ class PressureDependenceJob(object):
 
     def save(self, output_file):
         """Save the output of a pressure dependent job"""
+        for reaction in self.network.path_reactions:
+            check_reaction_rate_serialization(reaction, reaction.kinetics, True)
+        for reaction in self.network.net_reactions:
+            check_reaction_rate_serialization(reaction, reaction.kinetics, True)
 
         from rmgpy.export import refuse_resolved_species
         refuse_resolved_species(
@@ -502,7 +506,7 @@ class PressureDependenceJob(object):
                 reaction = self.network.net_reactions[count]
                 count += 1
                 # make sure we aren't double counting any reactions
-                if not any([reaction.is_isomorphic(other_rxn, check_only_label=True)
+                if not any([reaction.is_same_reaction(other_rxn, check_only_label=True)
                             for other_rxn in printed_reactions]):
                     duplicate = False
                     # add reaction to printed reaction
@@ -673,6 +677,15 @@ class PressureDependenceJob(object):
         """
         Save an Arkane input file for the pressure dependence job to `path` on disk.
         """
+        # Arkane's reaction(...) input declaration has no reversibility field.
+        # Refuse an electron-dependent resolved channel before the writer can
+        # silently reload it as reversible or replace its declared rate with a
+        # thermal network surrogate.
+        for reaction in self.network.path_reactions:
+            check_reaction_rate_serialization(reaction, reaction.kinetics, True)
+            serialized_kinetics = (reaction.network_kinetics
+                                   if reaction.network_kinetics is not None else reaction.kinetics)
+            check_reaction_rate_serialization(reaction, serialized_kinetics, True)
 
         from rmgpy.export import refuse_resolved_species
         refuse_resolved_species(

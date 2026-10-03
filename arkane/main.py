@@ -61,7 +61,11 @@ from arkane.encorr.bac import BACJob
 from arkane.explorer import ExplorerJob
 from arkane.input import load_input_file
 from arkane.kinetics import KineticsJob
-from arkane.output import save_thermo_lib, save_kinetics_lib
+from arkane.output import (
+    check_reaction_rate_serialization,
+    save_kinetics_lib,
+    save_thermo_lib,
+)
 from arkane.pdep import PressureDependenceJob
 from arkane.statmech import StatMechJob
 from arkane.thermo import ThermoJob
@@ -329,6 +333,10 @@ class Arkane(object):
 
         species_list = list(self.species_dict.values())
         reaction_list = list(self.reaction_dict.values())
+
+        for reaction in reaction_list:
+            check_reaction_rate_serialization(
+                reaction, reaction.kinetics, reaction.reversible)
 
         # remove duplicate species
         for rxn in reaction_list:

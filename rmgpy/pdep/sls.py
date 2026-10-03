@@ -151,6 +151,7 @@ def get_rate_coefficients_SLS(network, T, P, method="mexp", neglect_high_energy_
     """
     from rmgpy.rmg.pdep import _check_network_reactions
     _check_network_reactions(network)
+    network.check_resolved_species_reversibility()
 
     if network.T != T or network.P != P:
         network.set_conditions(T, P)
@@ -452,6 +453,8 @@ def calcfluxes(kmat, xs):
 def apply_simulation_least_squares_method(network, method="mexp", neglect_high_energy_collisions=False, high_energy_rate_tol=0.01):
     from rmgpy.rmg.pdep import _check_network_reactions
     _check_network_reactions(network)
+    network.check_resolved_species_reversibility()
+
     return get_rate_coefficients_SLS(
         network,
         network.T,

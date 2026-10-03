@@ -682,7 +682,7 @@ and immediately used in input files without any additional changes.
             # These could be defined for either the forward or reverse direction
             # and could have a reaction-path degeneracy
 
-            reaction = Reaction(reactants=[], products=[])
+            reaction = Reaction(reactants=[], products=[], specific_collider=entry.item.specific_collider)
             for molecule in entry.item.reactants:
                 reactant = Species(molecule=[molecule])
                 reactant.generate_resonance_structures()
@@ -719,6 +719,8 @@ and immediately used in input files without any additional changes.
                 reaction.kinetics = entry.data
             elif len(reverse) == 1 and len(forward) == 0:
                 # The reaction is in the reverse direction
+                # Refuse before the training-entry fit erases its dependence.
+                reaction.check_resolved_species_reversibility(kinetics=entry.data, reversible=True)
                 # First fit Arrhenius kinetics in that direction
                 T_data = 1000.0 / np.arange(0.5, 3.301, 0.1, float)
                 k_data = np.zeros_like(T_data)

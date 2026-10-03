@@ -158,6 +158,8 @@ def reaction_state(source, not_carried, fields=None):
     Raises `ReactionStateNotCarried` rather than skipping: a field the source cannot
     produce is a field the caller was told it would get.
     """
+    if isinstance(source, Reaction):
+        source.check_resolved_species_reversibility()
     if fields is None:
         fields = REACTION_STATE_FIELDS
     state = {}
@@ -194,6 +196,8 @@ def apply_reaction_state(target, state):
             raise ReactionStateNotCarried(
                 '{0!r} is classified as carried state but {1} refuses it: {2}'.format(
                     name, type(target).__name__, error))
+    if isinstance(target, Reaction):
+        target.check_resolved_species_reversibility()
     return target
 
 
@@ -910,6 +914,7 @@ class TemplateReaction(Reaction):
         Return a string representation that can be used to reconstruct the
         object.
         """
+        self.check_resolved_species_reversibility()
         string = 'TemplateReaction('
         if self.index != -1: string += 'index={0:d}, '.format(self.index)
         if self.label != '': string += 'label={0!r}, '.format(self.label)
@@ -2224,6 +2229,8 @@ class KineticsFamily(Database):
         # Process the entries that are stored in the reverse direction of the
         # family definition
         for entry in reverse_entries:
+            # deepcopy of a declared Arrhenius subclass can erase its dependence.
+            entry.item.check_resolved_species_reversibility(kinetics=entry.data, reversible=True)
             tentries[entry.index].item.is_forward = False
 
             if not isinstance(entry.data, Arrhenius):
@@ -2968,7 +2975,7 @@ class KineticsFamily(Database):
                     self.forbidden = temp_object
                 if (len(reactions) == 1 or
                         (len(reactions) > 1 and
-                         all([reactions[0].is_isomorphic(other, check_template_rxn_products=True)
+                         all([reactions[0].is_same_reaction(other, check_template_rxn_products=True)
                               for other in reactions]))):
                     logging.error("Error was fixed, the product is a forbidden structure when used as a reactant "
                                   "in the reverse direction.")
@@ -2981,7 +2988,7 @@ class KineticsFamily(Database):
                     raise KineticsError("Did not find reverse reaction in reaction family {0} for reaction "
                                         "{1}.".format(self.label, str(rxn)))
             elif (len(reactions) > 1 and
-                    not all([reactions[0].is_isomorphic(other, strict=False, check_template_rxn_products=True)
+                    not all([reactions[0].is_same_reaction(other, strict=False, check_template_rxn_products=True)
                              for other in reactions])):
                 logging.error("Expecting one matching reverse reaction. Recieved {0} reactions with "
                               "multiple non-isomorphic ones in reaction family {1} for "
@@ -3660,9 +3667,9 @@ class KineticsFamily(Database):
         kinetics_list = []
         entries = depository.entries.values()
         for entry in entries:
-            if entry.item.is_isomorphic(reaction):
+            if entry.item.is_same_reaction(reaction):
                 kinetics_list.append(
-                    [deepcopy(entry.data), entry, entry.item.is_isomorphic(reaction, either_direction=False)])
+                    [deepcopy(entry.data), entry, entry.item.is_same_reaction(reaction, either_direction=False)])
         for kinetics, entry, is_forward in kinetics_list:
             if kinetics is not None:
                 kinetics.comment += "Matched reaction {0} {1} in {2}\nThis reaction matched rate rule {3}".format(
@@ -5195,8 +5202,13 @@ class KineticsFamily(Database):
             return
 
         self._check_training_states([e.item for e in dep.entries.values()])
-        rxns = deepcopy([i.item for i in dep.entries.values() if (not rxns_with_kinetics_only) or type(i.data) != KineticsModel])
-        entries = deepcopy([i for i in dep.entries.values() if (not rxns_with_kinetics_only) or type(i.data) != KineticsModel])
+        # Check the original entries before either deepcopy can erase a rate
+        # declaration. This extraction may orient entries or emit own reverses.
+        for entry in dep.entries.values():
+            if not rxns_with_kinetics_only or type(entry.data) is not KineticsModel:
+                entry.item.check_resolved_species_reversibility(kinetics=entry.data, reversible=True)
+        rxns = deepcopy([i.item for i in dep.entries.values() if (not rxns_with_kinetics_only) or type(i.data) is not KineticsModel])
+        entries = deepcopy([i for i in dep.entries.values() if (not rxns_with_kinetics_only) or type(i.data) is not KineticsModel])
 
         roots = [x.item for x in self.get_root_template()]
         root = None
@@ -5621,7 +5633,7 @@ class KineticsFamily(Database):
                                          f'{self.label} family.')
 
                 # Sometimes the matched kinetics could be in the reverse direction.....
-                if reaction.is_isomorphic(training_entry.item, either_direction=False, save_order=self.save_order):
+                if reaction.is_same_reaction(training_entry.item, either_direction=False, save_order=self.save_order):
                     reverse = False
                 else:
                     reverse = True

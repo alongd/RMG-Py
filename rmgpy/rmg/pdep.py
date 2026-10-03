@@ -639,6 +639,7 @@ class PDepNetwork(rmgpy.pdep.network.Network):
                     raise PressureDependenceError('Path reaction {0} with no high-pressure-limit kinetics encountered '
                                                   'in PDepNetwork #{1:d} while evaluating leak flux.'.format(rxn, self.index))
             if rxn.products is self.source:
+                rxn.check_resolved_species_reversibility(reversible=True)
                 k = rxn.get_rate_coefficient(T, P) / rxn.get_equilibrium_constant(T)
             else:
                 k = rxn.get_rate_coefficient(T, P)
@@ -759,13 +760,17 @@ class PDepNetwork(rmgpy.pdep.network.Network):
         no action is taken.
         """
         _check_electron_channel_routing(newReaction)
+        newReaction.check_resolved_species_reversibility()
+        if newReaction.network_kinetics is not None:
+            newReaction.check_resolved_species_reversibility(kinetics=newReaction.network_kinetics)
         # Add this reaction to that network if not already present
         found = False
         for rxn in self.path_reactions:
             if newReaction.reactants == rxn.reactants and newReaction.products == rxn.products:
                 found = True
                 break
-            elif newReaction.products == rxn.reactants and newReaction.reactants == rxn.products:
+            elif (newReaction.allows_reverse_match(rxn)
+                  and newReaction.products == rxn.reactants and newReaction.reactants == rxn.products):
                 found = True
                 break
         if not found:
@@ -825,6 +830,7 @@ class PDepNetwork(rmgpy.pdep.network.Network):
                     val = kf * c[ind]
                 if rxn.products[0] in isomer_spcs:
                     ind2 = isomer_spcs.index(rxn.products[0])
+                    rxn.check_resolved_species_reversibility(reversible=True)
                     kr = rxn.get_rate_coefficient(T, P) / rxn.get_equilibrium_constant(T)
                     val2 = kr * c[ind2]
 
@@ -863,6 +869,7 @@ class PDepNetwork(rmgpy.pdep.network.Network):
                 ind = None
             if rxn.products[0] in isomer_spcs:
                 ind2 = isomer_spcs.index(rxn.products[0])
+                rxn.check_resolved_species_reversibility(reversible=True)
                 kr = rxn.get_rate_coefficient(T, P) / rxn.get_equilibrium_constant(T)
                 A[ind2, ind2] -= kr
             else:
@@ -877,6 +884,7 @@ class PDepNetwork(rmgpy.pdep.network.Network):
                     kf = rxn.get_rate_coefficient(T, P)
                     b[ind2] += kf
                 elif rxn.products[0] == self.source:
+                    rxn.check_resolved_species_reversibility(reversible=True)
                     kr = rxn.get_rate_coefficient(T, P) / rxn.get_equilibrium_constant(T)
                     b[ind] += kr
 
@@ -1203,6 +1211,14 @@ class PDepNetwork(rmgpy.pdep.network.Network):
         """
         from rmgpy.kinetics import Arrhenius, KineticsData, MultiArrhenius
 
+        # Path rates can have been assigned or their participants resolved after
+        # admission. A pressure-dependent fit must not erase Te dependence.
+        for reaction in self.path_reactions:
+            reaction.check_resolved_species_reversibility(reversible=True)
+            if reaction.network_kinetics is not None:
+                reaction.check_resolved_species_reversibility(
+                    kinetics=reaction.network_kinetics, reversible=True)
+
         # Get the parameters for the pressure dependence calculation
         job = pdep_settings
         job.network = self
@@ -1375,7 +1391,7 @@ class PDepNetwork(rmgpy.pdep.network.Network):
                         # Check whether netReaction already exists in the core as a LibraryReaction
                         for rxn in reaction_model.core.reactions:
                             if isinstance(rxn, LibraryReaction) \
-                                    and rxn.is_isomorphic(net_reaction, either_direction=True) \
+                                    and rxn.is_same_reaction(net_reaction, either_direction=True) \
                                     and not rxn.allow_pdep_route \
                                     and (rxn.kinetics.is_pressure_dependent() or not rxn.elementary_high_p):
                                 logging.info(f'Network reaction {net_reaction} matched an existing core reaction {rxn} '
@@ -1387,7 +1403,7 @@ class PDepNetwork(rmgpy.pdep.network.Network):
                         # Check whether netReaction already exists in the edge as a LibraryReaction
                         for rxn in reaction_model.edge.reactions:
                             if isinstance(rxn, LibraryReaction) \
-                                    and rxn.is_isomorphic(net_reaction, either_direction=True) \
+                                    and rxn.is_same_reaction(net_reaction, either_direction=True) \
                                     and not rxn.allow_pdep_route \
                                     and (rxn.kinetics.is_pressure_dependent() or not rxn.elementary_high_p):
                                 logging.info(f'Network reaction {net_reaction} matched an existing edge reaction {rxn} '
@@ -1402,6 +1418,7 @@ class PDepNetwork(rmgpy.pdep.network.Network):
                 kdata *= 1e6 ** (order - 1)
                 kunits = {1: 's^-1', 2: 'cm^3/(mol*s)', 3: 'cm^6/(mol^2*s)'}[order]
                 net_reaction.kinetics = job.fit_interpolation_model(Tlist, Plist, kdata, kunits)
+                net_reaction.check_resolved_species_reversibility()
 
                 # Check: For each net reaction that has a path reaction, make
                 # sure the k(T,P) values for the net reaction do not exceed
@@ -1431,7 +1448,10 @@ class PDepNetwork(rmgpy.pdep.network.Network):
                             logging.info('    k(T,P) = {0:9.2e}    k(T) = {1:9.2e}'.format(K[t, p, i, j], kinf))
                         break
                     elif pathReaction.products == net_reaction.reactants and pathReaction.reactants == net_reaction.products:
+                        pathReaction.check_resolved_species_reversibility(reversible=True)
                         if pathReaction.network_kinetics is not None:
+                            pathReaction.check_resolved_species_reversibility(
+                                kinetics=pathReaction.network_kinetics, reversible=True)
                             kinf = pathReaction.network_kinetics.get_rate_coefficient(
                                 Tlist[t]) / pathReaction.get_equilibrium_constant(Tlist[t])
                         else:

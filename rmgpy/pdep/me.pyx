@@ -45,6 +45,7 @@ cpdef generate_full_me_matrix(network, bint products=True, bint exclude_associat
     """
     from rmgpy.rmg.pdep import _check_network_reactions
     _check_network_reactions(network)
+    network.check_resolved_species_reversibility()
 
 
     cdef np.ndarray[np.int_t,ndim=1] j_list

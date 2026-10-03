@@ -76,7 +76,10 @@ def compare_model_kinetics(model1, model2):
     common_reactions = {}
     for rxn1 in model1.reactions:
         for rxn2 in model2.reactions:
-            if rxn1.is_isomorphic(rxn2):
+            if rxn1.is_same_reaction(rxn2):
+                if not rxn1.is_isomorphic(rxn2, either_direction=False):
+                    rxn1.check_resolved_species_reversibility(reversible=True)
+                    rxn2.check_resolved_species_reversibility(reversible=True)
                 common_reactions[rxn1] = rxn2
                 model2.reactions.remove(rxn2)
                 break
@@ -195,7 +198,7 @@ def compare_model_reactions(model1, model2):
     unique_reactions2 = []
     for rxn1 in reaction_list1:
         for rxn2 in reaction_list2[:]:  # make a copy so you don't remove from the list you are iterating over
-            if rxn1.is_isomorphic(rxn2):
+            if rxn1.is_same_reaction(rxn2):
                 common_reactions.append([rxn1, rxn2])
                 # Remove reaction 2 from being chosen a second time.
                 # Let each reaction only appear only once in the diff comparison.

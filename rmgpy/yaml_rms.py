@@ -202,6 +202,9 @@ def obj_to_dict(obj, spcs, names=None, label="solvent"):
         result_dict["Tmax"] = obj.Tmax.value_si
         result_dict["Tmin"] = obj.Tmin.value_si
     elif isinstance(obj, Reaction):
+        # RMS only exports thermal rates. Refuse a resolved declaration before
+        # a subclass can be dispatched as its thermal base class.
+        obj.check_resolved_species_reversibility(reversible=True)
         validate_reaction_references([obj], spcs)
         for reference in (getattr(obj.kinetics, 'coverage_dependence', None) or {}):
             if any(mol.has_resolved_state() for mol in reference.molecule):
@@ -211,6 +214,8 @@ def obj_to_dict(obj, spcs, names=None, label="solvent"):
             raise SpeciesIdentityError(
                 'Cannot export resolved named collider "{0}" to RMS: '
                 'the format writer does not retain named collider references.'.format(obj.specific_collider.label))
+        if not obj.reversible:
+            result_dict["reversible"] = False
         result_dict["reactants"] = [resolve_species_reference(x, spcs) for x in obj.reactants]
         result_dict["products"] = [resolve_species_reference(x, spcs) for x in obj.products]
         result_dict["kinetics"] = obj_to_dict(obj.kinetics, spcs, names)

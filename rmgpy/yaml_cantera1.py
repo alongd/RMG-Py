@@ -475,6 +475,8 @@ def reaction_to_dicts(obj, spcs, duplicate=None):
     with "No duplicate found for declared duplicate reaction number 0".
     """
 
+    obj.check_resolved_species_reversibility()
+
     spcs = _cantera_declarations(spcs)
     validate_reaction_references([obj], spcs)
     if obj.specific_collider is not None and any(mol.has_resolved_state() for mol in obj.specific_collider.molecule):

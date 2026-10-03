@@ -166,6 +166,9 @@ cpdef recursive_make_object(obj, class_dictionary, make_final_object=True):
                     created_obj.make_object(args, class_dictionary)
                 else:
                     created_obj = class_to_make(**args)
+                reaction_check = getattr(created_obj, 'check_resolved_species_reversibility', None)
+                if reaction_check is not None:
+                    reaction_check()
                 return created_obj
             else:
                 return args
@@ -198,7 +201,11 @@ cpdef recursive_make_object(obj, class_dictionary, make_final_object=True):
                 for class_name in class_dictionary.keys():
                     if class_name in obj:
                         try:
-                            return eval(obj, {'__builtins__': None}, class_dictionary)
+                            created_obj = eval(obj, {'__builtins__': None}, class_dictionary)
+                            reaction_check = getattr(created_obj, 'check_resolved_species_reversibility', None)
+                            if reaction_check is not None:
+                                reaction_check()
+                            return created_obj
                         except NameError:  # Probably just included the class name as a comment
                             pass
                 return obj  # If we made it here then obj must be just a string

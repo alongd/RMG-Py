@@ -836,6 +836,7 @@ def to_rms(obj, species_names=None, rms_species_list=None, rmg_species=None):
                 comment=obj.thermo.comment,
             )
     elif isinstance(obj, Reaction):
+        obj.check_resolved_species_reversibility(reversible=True)
         reactantinds = to_julia([species_names.index(spc.label) for spc in obj.reactants])
         productinds = to_julia([species_names.index(spc.label) for spc in obj.products])
         reactants = to_julia([rms_species_list[i] for i in reactantinds])

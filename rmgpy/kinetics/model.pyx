@@ -107,6 +107,27 @@ cpdef int get_reaction_order_from_rate_coefficient_units(kunits) except -1:
 
 ################################################################################
 
+def is_electron_dependent(kinetics):
+    """Return whether an executable rate law depends on electron temperature or density.
+
+    Inspect declarations on the rate and recursively on its executable children:
+    ``arrhenius`` for sums and PLOG interpolation, and ``arrheniusLow`` /
+    ``arrheniusHigh`` for falloff. These are rate-law attributes, so subclasses
+    and nested containers inherit the check without a plasma-class allowlist.
+    A cached high-pressure surrogate is not an executable child of a PLOG or
+    Chebyshev rate; callers must check the original rate before conversion.
+    """
+    if kinetics is None:
+        return False
+    if (getattr(kinetics, 'uses_electron_temperature', False)
+            or getattr(kinetics, 'uses_electron_density', False)):
+        return True
+    if any(is_electron_dependent(rate) for rate in getattr(kinetics, 'arrhenius', ())):
+        return True
+    return any(is_electron_dependent(getattr(kinetics, name, None))
+               for name in ('arrheniusLow', 'arrheniusHigh'))
+
+
 cdef class KineticsModel:
     """
     A base class for chemical kinetics models, containing several attributes

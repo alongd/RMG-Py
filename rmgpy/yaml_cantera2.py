@@ -713,6 +713,7 @@ def reaction_to_dict_list(reaction, species_list=None, duplicate=None):
     that flag -- for a reaction that has been through model growth, that is the
     core+edge answer.
     """
+    reaction.check_resolved_species_reversibility()
     # Refuse an unrenderable collider HERE as well as in get_reaction_equation, so the
     # message names the kinetics type the caller actually wrote. A Multi* wrapper is
     # expanded into Arrhenius/PDepArrhenius leaves before any equation is built, so

@@ -324,7 +324,12 @@ def refusal_witness(key, tmp_path):
         assert source.read_bytes() == original and not destination.exists()
         return
     rxn = Reaction(reactants=[spc], products=[spc], kinetics=Arrhenius(A=(1, 's^-1'),Ea=(0,'J/mol')))
-    network = SimpleNamespace(get_all_species=lambda: [spc], path_reactions=[rxn], net_reactions=[])
+    network = SimpleNamespace(
+        get_all_species=lambda: [spc],
+        path_reactions=[rxn],
+        net_reactions=[],
+        check_resolved_species_reversibility=lambda: rxn.check_resolved_species_reversibility(),
+    )
     model = SimpleNamespace(species=[spc], reactions=[rxn])
     coreedge = SimpleNamespace(core=model, edge=model, output_species_list=[spc], species=[spc], reactions=[rxn])
     reference = SimpleNamespace(adjacency_list=spc.to_adjacency_list(), molecule=spc.molecule[0])
@@ -332,6 +337,7 @@ def refusal_witness(key, tmp_path):
         job=SimpleNamespace(reaction=rxn, network=network), entries={1: Entry(item=spc)},
         species_list=[spc], surface_species_list=[], sensitive_species=[spc], extra_species=[],
         initial_species=[spc], reaction_systems=[], reaction_model=coreedge,
+        usedTST=False,
         observables={'species': [spc]}, output_species_list=[spc], coverage_dependence={spc: {}},
         reactor_mod=SimpleNamespace(output_species_list=[spc], cantera=SimpleNamespace(species_list=[spc], reaction_list=[rxn])),
         spc=reference, bac=SimpleNamespace(dataset=[SimpleNamespace(spc=reference)]),
@@ -353,24 +359,33 @@ def refusal_witness(key, tmp_path):
         arg.annotation = None
     fn.args.defaults = []
     fn.args.kw_defaults = [None] * len(fn.args.kwonlyargs)
-    globals_ = {'Molecule': Molecule, 'Species': Species, 'Reaction': Reaction,
+    globals_ = {
+        'Molecule': Molecule, 'Species': Species, 'Reaction': Reaction, 'Entry': Entry,
         'os': __import__('os'), 'logging': __import__('logging'),
-        'kinetics_references': __import__('rmgpy.export',fromlist=['kinetics_references']).kinetics_references,
-        'describe_species': __import__('rmgpy.export',fromlist=['describe_species']).describe_species,
+        'kinetics_references': __import__('rmgpy.export', fromlist=['kinetics_references']).kinetics_references,
+        'describe_species': __import__('rmgpy.export', fromlist=['describe_species']).describe_species,
+        'check_reaction_rate_serialization': (
+            lambda reaction, kinetics, reversible:
+            reaction.check_resolved_species_reversibility(kinetics=kinetics, reversible=reversible)),
         'SpeciesIdentityError': SpeciesIdentityError,
         'initialize_log': lambda *a, **k: None, 'log_header': lambda *a, **k: None,
         'get_models_to_merge': lambda *a, **k: [coreedge],
-        'combine_models': lambda *a, **k: coreedge}
+        'combine_models': lambda *a, **k: coreedge,
+    }
     exec(compile(ast.fix_missing_locations(tree), str(ROOT / POLICY['sites'][key]['file']), 'exec'), globals_)
-    args = {'self': carrier, 'species': [spc], 'context': 'census refusal', 'reactions': [rxn], 'species_list': [spc], 'rxn_list': [rxn], 'sensitive_species': [spc],
+    args = {
+        'self': carrier, 'species': [spc], 'context': 'census refusal', 'reactions': [rxn],
+        'species_list': [spc], 'rxn_list': [rxn], 'sensitive_species': [spc],
         'reaction_model': coreedge, 'common_species_list': [(spc, spc)],
         'species_list1': [], 'species_list2': [], 'common_reactions': [(rxn, rxn)],
         'unique_reactions1': [], 'unique_reactions2': [], 'core_reactions': [rxn],
         'configuration': SimpleNamespace(species=[spc]), 'network': network,
         'channel': SimpleNamespace(species=[spc]), 'reaction': rxn, 'rmg': carrier,
-        'obj': spc, 'rmg_species': [spc], 'spcs': [spc], 'input_files': [], 'input_model_files': [],
+        'obj': spc, 'rmg_species': [spc], 'spcs': [spc], 'input_files': [],
+        'input_model_files': [],
         'wd': str(tmp_path), 'transport': False, 'path': str(tmp_path / 'output'),
-        'output_directory': str(tmp_path), 'f': io.StringIO(), 'entry': Entry(item=spc)}
+        'output_directory': str(tmp_path), 'f': io.StringIO(), 'entry': Entry(item=spc),
+    }
     actual = {arg.arg: args.get(arg.arg) for arg in fn.args.args + fn.args.kwonlyargs}
     if fn.args.kwarg:
         actual.update(wd=str(tmp_path), transport=False)

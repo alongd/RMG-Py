@@ -68,6 +68,8 @@ class DiffusionLimited(object):
         For 2<=>1 and 3<=>1 reactions, the forward rate is limited.
         For 2<=>2, 2<=>3, 3<=>2, and 3<=>3 reactions, the faster direction is limited.
         """
+        reaction.check_resolved_species_reversibility(reversible=True)
+
         intrinsic_kinetics = reaction.kinetics
         reactants = len(reaction.reactants)
         products = len(reaction.products)

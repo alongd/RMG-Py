@@ -486,7 +486,7 @@ def compare_isotopomers(obj1, obj2, either_direction=True):
     atomlist = remove_isotope(obj1, inplace=True) + remove_isotope(obj2, inplace=True)
     if isinstance(obj1, Reaction):
         # make sure isotomorphic
-        comparison_bool = obj1.is_isomorphic(obj2, either_direction)
+        comparison_bool = obj1.is_same_reaction(obj2, either_direction)
         if comparison_bool and isinstance(obj1, TemplateReaction):
             # ensure families are the same
             comparison_bool = obj1.family == obj2.family
@@ -725,6 +725,9 @@ def ensure_correct_degeneracies(reaction_isotopomer_list, print_data=False, r_to
     product_structures - a list of tuples, (index, isotopomer_structure), containing reactants and products
     product_list - a pandas.DataFrame that sotres the fluxes and symmetry values
     """
+    for reaction in reaction_isotopomer_list:
+        reaction.check_resolved_species_reversibility(reversible=True)
+
 
     def store_flux_info(species, flux, product_list, product_structures):
         """

@@ -45,6 +45,7 @@ cpdef apply_modified_strong_collision_method(network, str efficiency_model='defa
     """A method for applying the Modified Strong Collision approach for solving the master equation."""
     from rmgpy.rmg.pdep import _check_network_reactions
     _check_network_reactions(network)
+    network.check_resolved_species_reversibility()
 
     cdef np.ndarray[np.int_t,ndim=1] j_list
     cdef np.ndarray[np.float64_t,ndim=1] e_list, coll_freq, coll_eff, d_e_down, E0, e_reac

@@ -93,23 +93,23 @@
     "arkane/kinetics.py:KineticsJob.write_output": {
       "file": "arkane/kinetics.py",
       "function": "KineticsJob.write_output",
-      "line": 197,
-      "signature": "ef0af6db5f6c2bc3690844d5c7c15756e1f8b5e283a0800a123f0c5b845b6d20",
+      "line": 200,
+      "signature": "c13d003a628edd79609718450c7872363dffb429ba6002c232a2a43f9bbf867e",
       "verdict": "N",
       "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/kinetics.py:KineticsJob.write_output]"
     },
     "arkane/kinetics.py:KineticsJob.write_chemkin": {
       "file": "arkane/kinetics.py",
       "function": "KineticsJob.write_chemkin",
-      "line": 296,
-      "signature": "751d6213679cb7efea5b55fbd1f96b7f047f74b01cd929cc970d6c1c1700e14f",
+      "line": 301,
+      "signature": "9cdeba0d59cdc306c80da1a8e868486af2e024bbfea2ddb53cec88fa05abf989",
       "verdict": "N",
       "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/kinetics.py:KineticsJob.write_chemkin]"
     },
     "arkane/kinetics.py:KineticsJob.save_yaml": {
       "file": "arkane/kinetics.py",
       "function": "KineticsJob.save_yaml",
-      "line": 324,
+      "line": 331,
       "signature": "3c25de9029693a86db839002e0a8a133a104c2fd1868e5acfde2655153236a1c",
       "verdict": "N",
       "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/kinetics.py:KineticsJob.save_yaml]"
@@ -117,7 +117,7 @@
     "arkane/kinetics.py:KineticsJob.plot": {
       "file": "arkane/kinetics.py",
       "function": "KineticsJob.plot",
-      "line": 341,
+      "line": 348,
       "signature": "146328f4998013d7e8dc247e05d1aa64d2fb058a75586a2102c21d03fcaf4827",
       "verdict": "N",
       "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/kinetics.py:KineticsJob.plot]"
@@ -125,7 +125,7 @@
     "arkane/kinetics.py:KineticsJob.draw": {
       "file": "arkane/kinetics.py",
       "function": "KineticsJob.draw",
-      "line": 387,
+      "line": 394,
       "signature": "ef009ac6c80d59f290dff73066f6eb887e4f44e38eb64303f1e6de155067d877",
       "verdict": "N",
       "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/kinetics.py:KineticsJob.draw]"
@@ -133,7 +133,7 @@
     "arkane/kinetics.py:KineticsDrawer._get_label_size": {
       "file": "arkane/kinetics.py",
       "function": "KineticsDrawer._get_label_size",
-      "line": 514,
+      "line": 521,
       "signature": "5a285df55c3b7d9ac41ea071164242414d68cda8c40cf70e81ea825eedec0f13",
       "verdict": "N",
       "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/kinetics.py:KineticsDrawer._get_label_size]"
@@ -141,7 +141,7 @@
     "arkane/kinetics.py:KineticsDrawer._draw_label": {
       "file": "arkane/kinetics.py",
       "function": "KineticsDrawer._draw_label",
-      "line": 539,
+      "line": 546,
       "signature": "b51dbaae265a1f0ba2c39f3ba19cd2a92a20e1163accd3cfc14529f72d405ffb",
       "verdict": "N",
       "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/kinetics.py:KineticsDrawer._draw_label]"
@@ -149,7 +149,7 @@
     "arkane/kinetics.py:KineticsDrawer.draw": {
       "file": "arkane/kinetics.py",
       "function": "KineticsDrawer.draw",
-      "line": 574,
+      "line": 581,
       "signature": "196890fabb1491ecd77f1b7c9fec1d2d1d6b7f2a4c2b84ba71f2e9b9e6500086",
       "verdict": "N",
       "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/kinetics.py:KineticsDrawer.draw]"
@@ -157,7 +157,7 @@
     "arkane/main.py:Arkane.execute": {
       "file": "arkane/main.py",
       "function": "Arkane.execute",
-      "line": 166,
+      "line": 170,
       "signature": "e38f4e5806486c5ebe5a98100da8245d929edcfb1ad5c7f9ac79acdfecdce035",
       "verdict": "N",
       "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/main.py:Arkane.execute]"
@@ -165,15 +165,15 @@
     "arkane/main.py:Arkane.get_libraries": {
       "file": "arkane/main.py",
       "function": "Arkane.get_libraries",
-      "line": 326,
-      "signature": "73c24b343343e50d7705afe821cdf89524b890068f1c5fc0e611f71a47c54a18",
+      "line": 330,
+      "signature": "02c186d9b9de3e73485d8a478761ebe22d94d37f8c53ce2f2b5a101ec80fd04b",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[arkane/main.py:Arkane.get_libraries]"
     },
     "arkane/output.py:save_thermo_lib": {
       "file": "arkane/output.py",
       "function": "save_thermo_lib",
-      "line": 233,
+      "line": 239,
       "signature": "e8d79fa0117104e7c16ed14cd60840e5aaf19ac611fe4fab19773ec9611a9d74",
       "verdict": "N",
       "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/output.py:save_thermo_lib]"
@@ -181,8 +181,8 @@
     "arkane/output.py:save_kinetics_lib": {
       "file": "arkane/output.py",
       "function": "save_kinetics_lib",
-      "line": 269,
-      "signature": "506fe11aea3740743988428374ac9afee5206db6d7f8f4dd15aa6fd93c70bbcf",
+      "line": 275,
+      "signature": "fc221a40da704e976839872a7950ea0095b9fbe9e2fc8e3dccffc8752e065cf7",
       "verdict": "N",
       "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/output.py:save_kinetics_lib]"
     },
@@ -190,14 +190,14 @@
       "file": "arkane/pdep.py",
       "function": "PressureDependenceJob.save",
       "line": 460,
-      "signature": "7e22a4ba5ec3bdfb8404b8da658baf237249511002c18b25c4d0494a393ed216",
+      "signature": "141c68ca3ac9bc7546563b2774a3b769740a825c0f6f6b6f909782262eee2bea",
       "verdict": "N",
       "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/pdep.py:PressureDependenceJob.save]"
     },
     "arkane/pdep.py:PressureDependenceJob.plot": {
       "file": "arkane/pdep.py",
       "function": "PressureDependenceJob.plot",
-      "line": 558,
+      "line": 562,
       "signature": "7bbcf8f9cf0b6b74deda6c7ca7bdbf7c31fd2a7a39056d79eb80456d7502cd71",
       "verdict": "N",
       "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/pdep.py:PressureDependenceJob.plot]"
@@ -205,8 +205,8 @@
     "arkane/pdep.py:PressureDependenceJob.save_input_file": {
       "file": "arkane/pdep.py",
       "function": "PressureDependenceJob.save_input_file",
-      "line": 672,
-      "signature": "2d9db58965c550f05919672fda24f2113c1de5e893a91452e09cc1f484f22172",
+      "line": 676,
+      "signature": "1b199a34768b13da4dc6cdc2e3f5d9a3218e1e223e1769d811cbbf9e9c46ad0a",
       "verdict": "N",
       "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/pdep.py:PressureDependenceJob.save_input_file]"
     },
@@ -301,7 +301,7 @@
     "rmgpy/chemkin.pyx:load_species_dictionary": {
       "file": "rmgpy/chemkin.pyx",
       "function": "load_species_dictionary",
-      "line": 986,
+      "line": 988,
       "signature": "13c837e47a5c10162b154a0cd8bc5e71577c27c4d587384ed50b9cc2834cc86b",
       "verdict": "R",
       "reason": "Dictionary records parse full adjacency identity; duplicate Ground identifiers retain historical last-record behavior, while a duplicate involving a resolved identity refuses.",
@@ -311,15 +311,15 @@
     "rmgpy/chemkin.pyx:load_chemkin_file": {
       "file": "rmgpy/chemkin.pyx",
       "function": "load_chemkin_file",
-      "line": 1085,
-      "signature": "68355ace330d7ae473022fa73b87773ac117f201f21501eeeca7b1987f98960e",
+      "line": 1087,
+      "signature": "e7d43f9a0c29e9dc00ac6a1bff83208a18b8c05999a0558910340eccd150467d",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:load_chemkin_file]"
     },
     "rmgpy/chemkin.pyx:_chemkin_declarations": {
       "file": "rmgpy/chemkin.pyx",
       "function": "_chemkin_declarations",
-      "line": 1636,
+      "line": 1645,
       "signature": "1a4ffa81d56c45aabc7b523cc134fbda439807c66e708753b0d6ea5ab7eeb26d",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:_chemkin_declarations]"
@@ -327,7 +327,7 @@
     "rmgpy/chemkin.pyx:validate_species_identifiers": {
       "file": "rmgpy/chemkin.pyx",
       "function": "validate_species_identifiers",
-      "line": 1646,
+      "line": 1655,
       "signature": "58b73062190441aab1a46dad07bf2d87965ca6c74689da993057934528bacaa2",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:validate_species_identifiers]"
@@ -335,7 +335,7 @@
     "rmgpy/chemkin.pyx:get_species_identifier": {
       "file": "rmgpy/chemkin.pyx",
       "function": "get_species_identifier",
-      "line": 1680,
+      "line": 1689,
       "signature": "314aacae52009fbfca6e2977c13a7039a3b1315bdafd0ddb5c8f4a053ae1518b",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:get_species_identifier]"
@@ -343,7 +343,7 @@
     "rmgpy/chemkin.pyx:write_thermo_entry": {
       "file": "rmgpy/chemkin.pyx",
       "function": "write_thermo_entry",
-      "line": 1815,
+      "line": 1824,
       "signature": "f317706f870b466e58ebc2dec21a4549750501724b9bcaf1505fe155d1a26f77",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:write_thermo_entry]"
@@ -351,7 +351,7 @@
     "rmgpy/chemkin.pyx:write_reaction_string": {
       "file": "rmgpy/chemkin.pyx",
       "function": "write_reaction_string",
-      "line": 2116,
+      "line": 2125,
       "signature": "0268e4a57a64f070b8d1be065d9780a16908f3aa01223b18e312b057e2608c31",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:write_reaction_string]"
@@ -359,15 +359,15 @@
     "rmgpy/chemkin.pyx:write_kinetics_entry": {
       "file": "rmgpy/chemkin.pyx",
       "function": "write_kinetics_entry",
-      "line": 2199,
-      "signature": "87d214ed680eb02afc16c7dbd9ffdcb501acd2371f71b45af9ca05a16567eb14",
+      "line": 2208,
+      "signature": "6a51ca1672208eeaa9a06a78070a7b7365535f9eb5f4f53f0208fff8085dad6c",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:write_kinetics_entry]"
     },
     "rmgpy/chemkin.pyx:save_species_dictionary": {
       "file": "rmgpy/chemkin.pyx",
       "function": "save_species_dictionary",
-      "line": 2891,
+      "line": 2902,
       "signature": "a5c6ae5738d4bbfad0c1a83d68fae7ab86ab3e53b670319e3cd594d6336e83a1",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:save_species_dictionary]"
@@ -375,7 +375,7 @@
     "rmgpy/chemkin.pyx:render_species_dictionary": {
       "file": "rmgpy/chemkin.pyx",
       "function": "render_species_dictionary",
-      "line": 2901,
+      "line": 2912,
       "signature": "a8fb3af2e9358b97c82508adcbd8725df663f8161113529e1ca12ea094cc918a",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:render_species_dictionary]"
@@ -383,7 +383,7 @@
     "rmgpy/chemkin.pyx:render_transport_file": {
       "file": "rmgpy/chemkin.pyx",
       "function": "render_transport_file",
-      "line": 2964,
+      "line": 2975,
       "signature": "4d69663000b49b8fb9cbf3ba93883ac210acbbab0a25f0a11188ece900e8fb7e",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:render_transport_file]"
@@ -391,7 +391,7 @@
     "rmgpy/chemkin.pyx:_write_files_atomically": {
       "file": "rmgpy/chemkin.pyx",
       "function": "_write_files_atomically",
-      "line": 3002,
+      "line": 3013,
       "signature": "e5eda7f0083fb997283794195531aa4bbe03577d923d205ea3d6d569d0b0e6f7",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:_write_files_atomically]"
@@ -399,7 +399,7 @@
     "rmgpy/chemkin.pyx:render_chemkin_file": {
       "file": "rmgpy/chemkin.pyx",
       "function": "render_chemkin_file",
-      "line": 3034,
+      "line": 3045,
       "signature": "ef7944f883feb5194edf6291b0a45d67cc698f20abd9c8ac975ebdbabf97e7a2",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:render_chemkin_file]"
@@ -407,7 +407,7 @@
     "rmgpy/chemkin.pyx:render_chemkin_surface_file": {
       "file": "rmgpy/chemkin.pyx",
       "function": "render_chemkin_surface_file",
-      "line": 3141,
+      "line": 3152,
       "signature": "3babcbfffa7a299aef59c607a5a7b8302944ad1c990ea7eb4d5a47e29b357462",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:render_chemkin_surface_file]"
@@ -415,7 +415,7 @@
     "rmgpy/chemkin.pyx:save_chemkin": {
       "file": "rmgpy/chemkin.pyx",
       "function": "save_chemkin",
-      "line": 3215,
+      "line": 3226,
       "signature": "5a15e1bbcdbf8ec6cc33a2e31217430d21a3930e16cfc11ae7fc5bc076f30797",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:save_chemkin]"
@@ -423,7 +423,7 @@
     "rmgpy/chemkin.pyx:save_chemkin_files": {
       "file": "rmgpy/chemkin.pyx",
       "function": "save_chemkin_files",
-      "line": 3321,
+      "line": 3332,
       "signature": "02fb049c0e467e2aeea660d7ba62be5e38df9dee7964131b52615da079a74b7d",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:save_chemkin_files]"
@@ -524,7 +524,7 @@
       "file": "rmgpy/data/kinetics/common.py",
       "function": "save_entry",
       "line": 268,
-      "signature": "462793e208294a816ab37150d04ac0d29d71f34f2f39dc8db216af9eb5985c85",
+      "signature": "2a13fff9c57d3f4f4a843f8eba7d81c8267e8eb3736d247c32cf42f036ec6e6d",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/common.py:save_entry]",
       "reason": "Molecular equations route through library_reaction_equation with emitted declarations; resolved entries without context refuse before any bytes. Group/rule entries and pure-ground bytes retain compatibility."
@@ -564,15 +564,15 @@
     "rmgpy/data/kinetics/family.py:TemplateReaction.__repr__": {
       "file": "rmgpy/data/kinetics/family.py",
       "function": "TemplateReaction.__repr__",
-      "line": 908,
-      "signature": "8e3532027914d6ff3c388e61c9baa13a9b87e2cdac18729c2916f8f10f6b98c3",
+      "line": 912,
+      "signature": "45260293c6a6c37e05b0b0a199f862e12050d97617b6f209eddc3fe884d59b75",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/family.py:TemplateReaction.__repr__]"
     },
     "rmgpy/data/kinetics/family.py:KineticsFamily.save_training_reactions": {
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.save_training_reactions",
-      "line": 1780,
+      "line": 1785,
       "signature": "94bd869fdec176cb73f3e6b7d52c12affa7209e549fbdf85461dbf189165e87f",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/family.py:KineticsFamily.save_training_reactions]",
@@ -581,7 +581,7 @@
     "rmgpy/data/kinetics/family.py:KineticsFamily.save_depository": {
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.save_depository",
-      "line": 1910,
+      "line": 1915,
       "signature": "fca12ec4f14d27534265fb8f2f68e59ffae068319c14e8e3d1483e7a1fae3b46",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/family.py:KineticsFamily.save_depository]"
@@ -589,15 +589,15 @@
     "rmgpy/data/kinetics/library.py:KineticsLibrary.load": {
       "file": "rmgpy/data/kinetics/library.py",
       "function": "KineticsLibrary.load",
-      "line": 595,
-      "signature": "e82cb985375b0e118b9432b4be702051a690f853a02d996220c587ba5057382d",
+      "line": 601,
+      "signature": "45f783ce1121662a6f25a8a255cdc0c7f589b1797f2c4bdf3a186dd287f68f91",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/library.py:KineticsLibrary.load]"
     },
     "rmgpy/data/kinetics/library.py:KineticsLibrary.save": {
       "file": "rmgpy/data/kinetics/library.py",
       "function": "KineticsLibrary.save",
-      "line": 801,
+      "line": 811,
       "signature": "959aef8273e6fb06328e5c5e92115993572b8438f6ac29455e7b57c017f59a89",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/library.py:KineticsLibrary.save]"
@@ -605,7 +605,7 @@
     "rmgpy/data/kinetics/library.py:KineticsLibrary.load_old": {
       "file": "rmgpy/data/kinetics/library.py",
       "function": "KineticsLibrary.load_old",
-      "line": 845,
+      "line": 855,
       "signature": "74d14e289688249e906a0a12a3a789443b285daea8bb40c9cabd87482d4c2439",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/library.py:KineticsLibrary.load_old]"
@@ -613,8 +613,8 @@
     "rmgpy/data/kinetics/library.py:KineticsLibrary.save_old": {
       "file": "rmgpy/data/kinetics/library.py",
       "function": "KineticsLibrary.save_old",
-      "line": 905,
-      "signature": "b50446e5670f0a7e8c773b7b058168e2c5c5059e7f8e0bf8a8e7b10f81e4ce29",
+      "line": 915,
+      "signature": "6c2b60ef9657bd517f204346d893655ea4ee65a90e31d9aba8e012da1f18d93a",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/library.py:KineticsLibrary.save_old]"
     },
@@ -737,7 +737,7 @@
     "rmgpy/kinetics/model.pyx:PDepKineticsModel.get_cantera_efficiencies": {
       "file": "rmgpy/kinetics/model.pyx",
       "function": "PDepKineticsModel.get_cantera_efficiencies",
-      "line": 518,
+      "line": 539,
       "signature": "d921c048413819609976a16fd7f130a32ca2d0e8f92527ddfdd5b5925f068e3a",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/kinetics/model.pyx:PDepKineticsModel.get_cantera_efficiencies]"
@@ -857,7 +857,7 @@
     "rmgpy/pdep/sls.py:get_names": {
       "file": "rmgpy/pdep/sls.py",
       "function": "get_names",
-      "line": 425,
+      "line": 432,
       "signature": "5ceb828329db7bf8f27a5e7b93dfb026bb3da6b4471a19818a4fc816c80870ea",
       "verdict": "N",
       "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/pdep/sls.py:get_names]"
@@ -874,15 +874,15 @@
     "rmgpy/reaction.py:Reaction.__repr__": {
       "file": "rmgpy/reaction.py",
       "function": "Reaction.__repr__",
-      "line": 277,
-      "signature": "4c6a54b04b48bbcceff1b3a0159ce86776490508ef80eba7ee5932e8d2adb497",
+      "line": 281,
+      "signature": "13ed0976a3a0d3ccee1c984df7c517974f4c383a29024794fd9165fea4969802",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/reaction.py:Reaction.__repr__]"
     },
     "rmgpy/reaction.py:Reaction.to_chemkin": {
       "file": "rmgpy/reaction.py",
       "function": "Reaction.to_chemkin",
-      "line": 401,
+      "line": 407,
       "signature": "9d279e2e121a8b80e65640741ce119f6307c870c54f51377a6354724a1b0036e",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/reaction.py:Reaction.to_chemkin]"
@@ -890,8 +890,8 @@
     "rmgpy/reaction.py:Reaction.to_cantera": {
       "file": "rmgpy/reaction.py",
       "function": "Reaction.to_cantera",
-      "line": 418,
-      "signature": "a075e0172f263cedb28a690ff8fe9178c69c421bf357a1283b8fbfceb598057f",
+      "line": 424,
+      "signature": "12f9a643bfd75dfa6be8d89a26bdb069c675f479c6d0d598c2ee2f54d25a7702",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/reaction.py:Reaction.to_cantera]"
     },
@@ -973,7 +973,7 @@
       "file": "rmgpy/rmg/reactionmechanismsimulator_reactors.py",
       "function": "to_rms",
       "line": 635,
-      "signature": "4e8bd9a3a1c453cd2a5e5121a09a1f8875d6c14a66650b6691f6ae5cab1dea4c",
+      "signature": "2c18371c9edf79b8bb8cac303e52a00f1373fb08bde0f1efef5d9d76c05be6dd",
       "verdict": "N",
       "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/rmg/reactionmechanismsimulator_reactors.py:to_rms]"
     },
@@ -989,7 +989,7 @@
       "file": "rmgpy/rmgobject.pyx",
       "function": "recursive_make_object",
       "line": 127,
-      "signature": "47dd980feed0d2a7c4fbac03a3ac7eade632b9a0c0ae6d3a2a715aab1e405bd5",
+      "signature": "d3feee1d6436a7f63bd81a92a064222217bf4dc22c9c84e6eef4aebbbeea5761",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/rmgobject.pyx:recursive_make_object]"
     },
@@ -1206,7 +1206,7 @@
     "rmgpy/tools/uncertainty.py:Uncertainty.load_thermo_covariances_from_libraries": {
       "file": "rmgpy/tools/uncertainty.py",
       "function": "Uncertainty.load_thermo_covariances_from_libraries",
-      "line": 538,
+      "line": 539,
       "signature": "64dfd870083f4c297bd6906fec0fcd708b89f84ccb093a8e7d22c58d5701fd17",
       "verdict": "N",
       "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/tools/uncertainty.py:Uncertainty.load_thermo_covariances_from_libraries]"
@@ -1214,7 +1214,7 @@
     "rmgpy/tools/uncertainty.py:Uncertainty.load_thermo_covariances_from_groups": {
       "file": "rmgpy/tools/uncertainty.py",
       "function": "Uncertainty.load_thermo_covariances_from_groups",
-      "line": 636,
+      "line": 637,
       "signature": "6c2bfcc2b2506dda1f6797829edf3e239010de1545c29400079cf76f391de9a2",
       "verdict": "N",
       "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/tools/uncertainty.py:Uncertainty.load_thermo_covariances_from_groups]"
@@ -1222,7 +1222,7 @@
     "rmgpy/tools/uncertainty.py:Uncertainty.assign_parameter_uncertainties": {
       "file": "rmgpy/tools/uncertainty.py",
       "function": "Uncertainty.assign_parameter_uncertainties",
-      "line": 1013,
+      "line": 1014,
       "signature": "cccc6624d7f2254135ed1b0a22b317e54806da792f7fd9287fcda4452c91799c",
       "verdict": "N",
       "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/tools/uncertainty.py:Uncertainty.assign_parameter_uncertainties]"
@@ -1230,7 +1230,7 @@
     "rmgpy/tools/uncertainty.py:Uncertainty.assign_intermediate_uncertainties": {
       "file": "rmgpy/tools/uncertainty.py",
       "function": "Uncertainty.assign_intermediate_uncertainties",
-      "line": 1147,
+      "line": 1148,
       "signature": "7f0dd3357400444426684a4ecf963ee3a32ad136d65b4a01e3a1cb0ffc28c410",
       "verdict": "N",
       "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/tools/uncertainty.py:Uncertainty.assign_intermediate_uncertainties]"
@@ -1238,7 +1238,7 @@
     "rmgpy/tools/uncertainty.py:Uncertainty.local_analysis": {
       "file": "rmgpy/tools/uncertainty.py",
       "function": "Uncertainty.local_analysis",
-      "line": 1371,
+      "line": 1372,
       "signature": "f9748324ec039d305efc52f3f410bcb0ec658ea360c85a7f7097bde07923a019",
       "verdict": "N",
       "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/tools/uncertainty.py:Uncertainty.local_analysis]"
@@ -1246,7 +1246,7 @@
     "rmgpy/tools/uncertainty.py:Uncertainty.local_analysis_intermediate": {
       "file": "rmgpy/tools/uncertainty.py",
       "function": "Uncertainty.local_analysis_intermediate",
-      "line": 1466,
+      "line": 1467,
       "signature": "86d0ef6768c234ed853e08c245422665e07a1e0c8e5dad242cfcfc7b34711c0f",
       "verdict": "N",
       "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/tools/uncertainty.py:Uncertainty.local_analysis_intermediate]"
@@ -1254,7 +1254,7 @@
     "rmgpy/tools/uncertainty.py:process_local_results": {
       "file": "rmgpy/tools/uncertainty.py",
       "function": "process_local_results",
-      "line": 1783,
+      "line": 1784,
       "signature": "ec6b0f8a98db7dbee20b07f4a56431f103e6aebb336cc07863064d17ab034cd7",
       "verdict": "N",
       "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/tools/uncertainty.py:process_local_results]"
@@ -1335,14 +1335,14 @@
       "file": "rmgpy/yaml_cantera1.py",
       "function": "reaction_to_dicts",
       "line": 458,
-      "signature": "3e62ebc0fd9c7682a6e7c54d0e8afa34bf303a0d727ae31b8237f9f9d25dbddb",
+      "signature": "f79dc4af8db26bda6e074b1f09a42a5a59c692ce7f4446d8a36b50371fe938df",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_cantera1.py:reaction_to_dicts]"
     },
     "rmgpy/yaml_cantera1.py:species_to_dict": {
       "file": "rmgpy/yaml_cantera1.py",
       "function": "species_to_dict",
-      "line": 600,
+      "line": 602,
       "signature": "c6539c23c38fd9a28766db77a5ad433a4cebb85f39cc6b8a0990a930063e5fd3",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_cantera1.py:species_to_dict]"
@@ -1358,7 +1358,7 @@
     "rmgpy/yaml_cantera2.py:get_reaction_equation": {
       "file": "rmgpy/yaml_cantera2.py",
       "function": "get_reaction_equation",
-      "line": 1020,
+      "line": 1021,
       "signature": "c02097a6dc612009ce33135fd3c0216e4323cdc5b0f9731eb30a68782acb7e9b",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_cantera2.py:get_reaction_equation]"
@@ -1366,7 +1366,7 @@
     "rmgpy/yaml_cantera2.py:_cantera_declarations": {
       "file": "rmgpy/yaml_cantera2.py",
       "function": "_cantera_declarations",
-      "line": 1081,
+      "line": 1082,
       "signature": "806bfb899b742a16d10eec307e0ba940b0ae6c2268af097eb1a1541e984b5040",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_cantera2.py:_cantera_declarations]"
@@ -1374,7 +1374,7 @@
     "rmgpy/yaml_cantera2.py:get_label": {
       "file": "rmgpy/yaml_cantera2.py",
       "function": "get_label",
-      "line": 1088,
+      "line": 1089,
       "signature": "7e240a6be62db5e350dcd3f285da1b66fcdfcc33beda4fc806444cacd43fcf45",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_cantera2.py:get_label]"
@@ -1409,7 +1409,7 @@
       "file": "rmgpy/yaml_rms.py",
       "function": "obj_to_dict",
       "line": 158,
-      "signature": "3e1613fdbc8fe27f16e7aced0219347ad5947f27cd6e395e2f5b909930f3ecb9",
+      "signature": "e18b2a3ef1727273365a1a7a9b4500606fb2738b38a781d8b96e881ada732252",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_rms.py:obj_to_dict]"
     },
@@ -1437,7 +1437,7 @@
       "reason": "Direct named refusal before backend work or output; actual boundary witness exercises resolved input.",
       "file": "arkane/pdep.py",
       "function": "PressureDependenceJob.draw",
-      "line": 640,
+      "line": 644,
       "signature": "e401702ff7d4a9c2cb497c1a9699ccfd91a4a7486ddf7779f335822552a6c26e"
     },
     "rmgpy/data/base.py:Database.save": {
@@ -1464,7 +1464,7 @@
       "reason": "Complete reducers retain Molecule electronic/vibrational attributes; actual species round trip witness checks full isomorphism.",
       "file": "rmgpy/data/kinetics/family.py",
       "function": "complete_round_trip",
-      "line": 594,
+      "line": 598,
       "signature": "3ab336f31ee1d123a3758095a16919b5a64e8db427c8d7d343df4bf7e3b29955"
     },
     "rmgpy/molecule/draw.py:MoleculeDrawer.draw": {
@@ -1544,7 +1544,7 @@
       "reason": "Direct named refusal before backend work or output; actual boundary witness exercises resolved input.",
       "file": "rmgpy/reaction.py",
       "function": "Reaction.draw",
-      "line": 1948,
+      "line": 2080,
       "signature": "c3f41b159a35a5701f9b2d27be924fd11179714e6396f46985aacbd50ab09a64"
     },
     "rmgpy/reaction.py:Reaction._repr_png_": {
@@ -1553,7 +1553,7 @@
       "reason": "Direct named refusal before backend work or output; actual boundary witness exercises resolved input.",
       "file": "rmgpy/reaction.py",
       "function": "Reaction._repr_png_",
-      "line": 1964,
+      "line": 2096,
       "signature": "feb4f2a1c3ddc546fd7b39cdf5aa61dcd2f29369cabdf1b3ea3eb9a702d84e34"
     },
     "rmgpy/yaml_cantera1.py:write_cantera": {
@@ -1614,7 +1614,7 @@
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/library.py:KineticsLibrary.load_entry]",
       "file": "rmgpy/data/kinetics/library.py",
       "function": "KineticsLibrary.load_entry",
-      "line": 748,
+      "line": 758,
       "signature": "2ffb81967c7d67dfbcc9aa69b9afd88d1a85907b6e5ad48e48ec710972d0c160"
     },
     "rmgpy/data/solvation.py:SolventLibrary.load_entry": {
@@ -1644,7 +1644,7 @@
     "rmgpy/solver/plasma.pyx:PlasmaReactor._compute_reference_reaction_data": {
       "file": "rmgpy/solver/plasma.pyx",
       "function": "PlasmaReactor._compute_reference_reaction_data",
-      "line": 5944,
+      "line": 5951,
       "signature": "a76e01e017184ffb80c896c57340a51cef938d3fd7180941348872028ec76f1c",
       "verdict": "R",
       "reason": "Charged-reaction diagnostic equations use shared declarations when any participant is resolved and retain historical str(reaction) bytes for ground-only reactions.",
@@ -1705,7 +1705,7 @@
     "rmgpy/chemkin.pyx:_two_temperature_plasma_from_arrhenius": {
       "file": "rmgpy/chemkin.pyx",
       "function": "_two_temperature_plasma_from_arrhenius",
-      "line": 539,
+      "line": 540,
       "signature": "51a8305b558af8b2711bcdb8050b0aa2ec415d19831e67b00eab5a547ac8cdb7",
       "reason": "Diagnostic context describing an existing reaction; no emitted identifier.",
       "verdict": "E"
@@ -1746,7 +1746,7 @@
       "file": "rmgpy/data/kinetics/database.py",
       "function": "KineticsDatabase.get_forward_reaction_for_family_entry",
       "line": 639,
-      "signature": "bc7b7fdc85d29b5f5302403195a14465ecc98ea46b6697b76a34520e1c810126",
+      "signature": "813ac95b5e636230bbcc3a1871d0e9e677ee59efce4e901715291d943c013e56",
       "reason": "Internal family graph reconstruction from authoritative full adjacency entries.",
       "verdict": "E"
     },
@@ -1777,7 +1777,7 @@
     "rmgpy/data/kinetics/family.py:KineticsFamily.__repr__": {
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.__repr__",
-      "line": 1439,
+      "line": 1444,
       "signature": "f8bb84ba91f566a0fbc12b0be6833e2bcdbec18722a2f03c74bb6d9994a3e0e1",
       "reason": "Family diagnostic label.",
       "verdict": "E"
@@ -1785,7 +1785,7 @@
     "rmgpy/data/kinetics/family.py:KineticsFamily.save_groups": {
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.save_groups",
-      "line": 1917,
+      "line": 1922,
       "signature": "60eaecf0a05b7bd806906fa39c8327c602da6f149e8f661132636a72b50853f4",
       "reason": "Group-template labels and recipe output; not molecular species.",
       "verdict": "E"
@@ -1793,7 +1793,7 @@
     "rmgpy/data/kinetics/family.py:KineticsFamily.get_reaction_pairs": {
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.get_reaction_pairs",
-      "line": 3457,
+      "line": 3464,
       "signature": "9aec4638d252175008f97e873f4db7e85b0cdf4470fd1324172c348e676a53c7",
       "reason": "Internal pair matching, not exported names.",
       "verdict": "E"
@@ -1801,15 +1801,15 @@
     "rmgpy/data/kinetics/family.py:KineticsFamily.get_kinetics_from_depository": {
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.get_kinetics_from_depository",
-      "line": 3652,
-      "signature": "db5fbe47fadbb78157694021d1c2846017f3feb2608549285609e59fff650668",
+      "line": 3659,
+      "signature": "745816d57175cccc5293d80502ff78febdd8fd426977944535b3ad0d3f38b90b",
       "reason": "Internal rate lookup; dictionary loading is separately audited.",
       "verdict": "E"
     },
     "rmgpy/data/kinetics/family.py:KineticsFamily.get_reaction_template_labels": {
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.get_reaction_template_labels",
-      "line": 3772,
+      "line": 3779,
       "signature": "232b9ba4f3ab5ea85dfd649ad09a0e79494b0164d2f32db9f36c5438cc7493d6",
       "reason": "Group-template labels, not molecular species.",
       "verdict": "E"
@@ -1817,7 +1817,7 @@
     "rmgpy/data/kinetics/family.py:KineticsFamily.get_training_depository": {
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.get_training_depository",
-      "line": 3956,
+      "line": 3963,
       "signature": "fef6cf228bdb951da7c7d1926a46e869467e63fba97b140141ea1dbeffb0cb29",
       "reason": "Internal database object selection.",
       "verdict": "E"
@@ -1825,7 +1825,7 @@
     "rmgpy/data/kinetics/family.py:KineticsFamily.get_extension_edge": {
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.get_extension_edge",
-      "line": 4040,
+      "line": 4047,
       "signature": "0d252b079e086f29a679b4e51ac3314cf44b18a289ac01d597bbf7d87cbb7ebf",
       "reason": "Group pattern generation and diagnostic logs.",
       "verdict": "E"
@@ -1833,15 +1833,15 @@
     "rmgpy/data/kinetics/family.py:KineticsFamily.get_training_set": {
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.get_training_set",
-      "line": 5134,
-      "signature": "7729fcf0505e259206b660ef6d61079957a9c34dbf0ab2a1fb791b757bd96a6b",
+      "line": 5141,
+      "signature": "8d017b4ac7fef456bc197cc62d6d4cecaa7a0b7b51fcc9245b39cfc5f9085bc9",
       "reason": "Internal reaction object selection; dictionary reads occur in audited depository loader.",
       "verdict": "E"
     },
     "rmgpy/data/kinetics/family.py:KineticsFamily.get_label_fixed_mol": {
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.get_label_fixed_mol",
-      "line": 5144,
+      "line": 5151,
       "signature": "73c4309e081d52abd685271f3ecf6c5399c3fb81aa603ca7fabe91ad42563f82",
       "reason": "Internal labeled-atom remapping.",
       "verdict": "E"
@@ -1849,7 +1849,7 @@
     "rmgpy/data/kinetics/family.py:KineticsFamily.get_reactant_thermo": {
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.get_reactant_thermo",
-      "line": 5156,
+      "line": 5163,
       "signature": "176c46bcb563ed9db5af211e113519dbd3ecf21b47d779e4a0a48add80f5c8a9",
       "reason": "Internal thermo estimation.",
       "verdict": "E"
@@ -1857,7 +1857,7 @@
     "rmgpy/data/kinetics/family.py:KineticsFamily.get_reaction_matches": {
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.get_reaction_matches",
-      "line": 5360,
+      "line": 5372,
       "signature": "ce041761c9dbd733764ae974ea6d685ff55e13892149bb815036eaccb9801fea",
       "reason": "Internal family matching and diagnostics.",
       "verdict": "E"
@@ -1889,7 +1889,7 @@
     "rmgpy/data/kinetics/library.py:KineticsLibrary.__str__": {
       "file": "rmgpy/data/kinetics/library.py",
       "function": "KineticsLibrary.__str__",
-      "line": 406,
+      "line": 411,
       "signature": "217321735a2675715413adbeaf0a76359ced08fb3c305ccb07518cef90b15d1c",
       "reason": "Database diagnostic label.",
       "verdict": "E"
@@ -1897,7 +1897,7 @@
     "rmgpy/data/kinetics/library.py:KineticsLibrary.__repr__": {
       "file": "rmgpy/data/kinetics/library.py",
       "function": "KineticsLibrary.__repr__",
-      "line": 409,
+      "line": 414,
       "signature": "e4a12607d179c164dc60dfa09ab2be571ea921afd7d817154808ad4bc13994af",
       "reason": "Database diagnostic label.",
       "verdict": "E"
@@ -1905,7 +1905,7 @@
     "rmgpy/data/kinetics/library.py:KineticsLibrary.get_library_reactions": {
       "file": "rmgpy/data/kinetics/library.py",
       "function": "KineticsLibrary.get_library_reactions",
-      "line": 412,
+      "line": 417,
       "signature": "d732abe23834a20a4ac84bf8623f9fbede5f95ef37a26113935e3498fd73d58b",
       "reason": "Returns reaction objects internally; no identifier emission.",
       "verdict": "E"
@@ -2025,7 +2025,7 @@
     "rmgpy/kinetics/model.pyx:PDepKineticsModel.__init__": {
       "file": "rmgpy/kinetics/model.pyx",
       "function": "PDepKineticsModel.__init__",
-      "line": 315,
+      "line": 336,
       "signature": "402a67bbe7779dd46be99e78de67fb0a0eab3b2c9fa31a534e107bcbf7d4fd2e",
       "reason": "Explicit rate input SMILES keys, not a saved species; saved library output has a separate refusal.",
       "verdict": "E"
@@ -2193,7 +2193,7 @@
     "rmgpy/reaction.py:Reaction.to_labeled_str": {
       "file": "rmgpy/reaction.py",
       "function": "Reaction.to_labeled_str",
-      "line": 310,
+      "line": 315,
       "signature": "dfe2bef2a0221c004d3ea383f83a8feeb26ee97febb15b57ac86dadcd3ecae2a",
       "reason": "Human-readable diagnostic equation; file/graph/native-object callers are separately audited.",
       "verdict": "E"
@@ -2265,7 +2265,7 @@
     "rmgpy/rmg/model.py:CoreEdgeReactionModel.__init__": {
       "file": "rmgpy/rmg/model.py",
       "function": "CoreEdgeReactionModel.__init__",
-      "line": 279,
+      "line": 310,
       "signature": "1a945d9beaee402521d1b295d92abcfd963c20b361be844e0e66bb33c3a0e182",
       "reason": "Explicit ground electron input construction.",
       "verdict": "E"
@@ -2273,7 +2273,7 @@
     "rmgpy/rmg/model.py:CoreEdgeReactionModel.make_new_species": {
       "file": "rmgpy/rmg/model.py",
       "function": "CoreEdgeReactionModel.make_new_species",
-      "line": 403,
+      "line": 434,
       "signature": "eb7af6fee24e188a19560faaf5df233d3f63dceef1434c510b0346641627d43b",
       "reason": "Internal naming/allocation, not export; state metadata retained in graph.",
       "verdict": "E"
@@ -2281,7 +2281,7 @@
     "rmgpy/rmg/model.py:get_key": {
       "file": "rmgpy/rmg/model.py",
       "function": "get_key",
-      "line": 2431,
+      "line": 2551,
       "signature": "69dd9b09e5e66b9b195471529702d6e5a87c547d29c595f49a29b2f3bcb9d35c",
       "reason": "Internal reaction lookup key.",
       "verdict": "E"
@@ -2603,7 +2603,7 @@
       "reason": "Writes Element singleton names and isotope masses only, not molecular identifiers; baseline ground bytes preserved.",
       "file": "rmgpy/chemkin.pyx",
       "function": "write_elements_section",
-      "line": 3388,
+      "line": 3399,
       "signature": "71165b64271e41296c9002ee7a63db7f4ca7b5e8780b6bf7a9659199d98ba7e2"
     },
     "rmgpy/data/base.py:Database.save_old_tree": {
@@ -2627,7 +2627,7 @@
       "reason": "Nested formatter writes scalar Arrhenius parameters and uncertainties only; parent save_old refuses resolved molecular references before opening.",
       "file": "rmgpy/data/kinetics/library.py",
       "function": "KineticsLibrary.write_arrhenius",
-      "line": 938,
+      "line": 951,
       "signature": "1cf3591ae6abb9219ea62718650de3f613c953e7a13862fa42fa05ccef8bda91"
     },
     "rmgpy/molecule/draw.py:create_new_surface": {
@@ -2715,8 +2715,8 @@
       "reason": "Drawing delegates to audited PressureDependenceJob.draw/NetworkDrawer.draw, which refuse resolved state; kinetic network calculation is outside export naming.",
       "file": "rmgpy/rmg/pdep.py",
       "function": "PDepNetwork.update",
-      "line": 1199,
-      "signature": "a2ab3b45d23b36336588649660d7e2c9c4cf02346974555dd5ad54693fa54a46"
+      "line": 1207,
+      "signature": "da38833ecfd91e12ba09cabc65431642c662982c43244926ffcbd55156c4f639"
     },
     "rmgpy/statmech/ndTorsions.py:HinderedRotor2D.write_xyz": {
       "verdict": "E",
@@ -2819,7 +2819,7 @@
       "reason": "Family schema, group-pattern and rate-rule loading delegates molecular training records to the separately guarded KineticsDepository.load boundary.",
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.load",
-      "line": 1463,
+      "line": 1468,
       "signature": "51bdb148ae4a5e5057e6879a11a275131150f44b030e3d4efea4b7b9d4aeaef9"
     },
     "rmgpy/data/kinetics/family.py:KineticsFamily.generate_product_template": {
@@ -2827,7 +2827,7 @@
       "reason": "Generated group-template entries use the shared group database store without changing group or logic-node semantics.",
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.generate_product_template",
-      "line": 2004,
+      "line": 2009,
       "signature": "dadb0fc2b8d3993f1c0a5db48da70122b0f9e997e73aabdb283bd5aaddebddae"
     },
     "rmgpy/data/kinetics/family.py:KineticsFamily.add_rules_from_training": {
@@ -2835,15 +2835,15 @@
       "reason": "Training-derived rate-rule lists now use the shared rules database store; existing labels, append behavior and group-template identities are retained.",
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.add_rules_from_training",
-      "line": 2108,
-      "signature": "de0331502aca89e22b9b589b83c33257682a159afae8950d28ee94f846e42e5d"
+      "line": 2113,
+      "signature": "6458c86e239ef6ad3867ebf11c1a2e4cde3357ac63a8525df8c2eff1111e4e68"
     },
     "rmgpy/data/kinetics/family.py:KineticsFamily.add_entry": {
       "verdict": "E",
       "reason": "Generated group entries and initially empty rate-rule lists are registered through their owning database shared stores.",
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.add_entry",
-      "line": 3966,
+      "line": 3973,
       "signature": "b3abe674cdd44344f0a7ebd803ddfd66c31c0f0cc9989399146d4f4652f96c1e"
     },
     "rmgpy/data/kinetics/family.py:KineticsFamily.make_tree_nodes": {
@@ -2851,7 +2851,7 @@
       "reason": "Generated group tree entries and empty rule lists use their owning database shared stores, retaining existing graph/group semantics.",
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.make_tree_nodes",
-      "line": 4527,
+      "line": 4534,
       "signature": "60c7128c213b1fa3b8dea942ef47ea4e9e8f9f19f0070eabbdd7de688b2d5afd"
     },
     "rmgpy/data/kinetics/family.py:KineticsFamily.make_bm_rules_from_template_rxn_map": {
@@ -2859,7 +2859,7 @@
       "reason": "Generated empty rate-rule lists are stored through the shared rules database helper; no molecular identity is replaced in this stage.",
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.make_bm_rules_from_template_rxn_map",
-      "line": 4661,
+      "line": 4668,
       "signature": "706a09b0c2e2d1610ef71c3f7e7e7b42d965c2e4eee091a668d9dea4ae85747b"
     },
     "rmgpy/data/kinetics/family.py:KineticsFamily.clean_tree_rules": {
@@ -2867,7 +2867,7 @@
       "reason": "Reset of the Root rate-rule list now uses the shared rules database store; these are group-pattern rule records.",
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.clean_tree_rules",
-      "line": 5080,
+      "line": 5087,
       "signature": "39d933c3cc88146d58addac7c525c590079a414380cc69e6f6a9b63d258f65f9"
     },
     "rmgpy/data/kinetics/rules.py:KineticsRules.load_entry": {
@@ -2921,7 +2921,7 @@
     "rmgpy/data/kinetics/family.py:KineticsFamily.get_reaction_template": {
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.get_reaction_template",
-      "line": 3620,
+      "line": 3627,
       "signature": "34382f94ce32736f0ac54a48814a7e0950caba98576d8e885b47bea6895f7abc",
       "verdict": "E",
       "reason": "Internal family-template selection enforces the family excited-reactant opt-in and emits no molecular representation."

@@ -63,6 +63,7 @@ from rmgpy.kinetics import KineticsData, ArrheniusBM, ArrheniusEP, ThirdBody, Li
     SurfaceArrheniusBEP, StickingCoefficientBEP, ArrheniusChargeTransfer, ArrheniusChargeTransferBM, Marcus
 from rmgpy.kinetics.arrhenius import Arrhenius  # Separate because we cimport from rmgpy.kinetics.arrhenius
 from rmgpy.kinetics.surface import SurfaceArrhenius, StickingCoefficient, SurfaceChargeTransfer, SurfaceChargeTransferBEP  # Separate because we cimport from rmgpy.kinetics.surface
+from rmgpy.kinetics.model import is_electron_dependent
 from rmgpy.kinetics.diffusionLimited import diffusion_limiter
 from rmgpy.molecule.element import Element, element_list
 from rmgpy.molecule.atomtype import AtomType
@@ -282,6 +283,7 @@ class Reaction:
         Return a string representation that can be used to reconstruct the
         object.
         """
+        self.check_resolved_species_reversibility()
         string = 'Reaction('
         if self.index != -1: string += 'index={0:d}, '.format(self.index)
         if self.label != '': string += 'label={0!r}, '.format(self.label)
@@ -326,6 +328,7 @@ class Reaction:
         """
         A helper function used when pickling an object.
         """
+        self.check_resolved_species_reversibility()
         return (Reaction, (self.index,
                            self.label,
                            self.reactants,
@@ -426,6 +429,7 @@ class Reaction:
         If use_chemkin_identifier is set to False, the species label is used
         instead. Be sure that species' labels are unique when setting it False.
         """
+        self.check_resolved_species_reversibility()
         import cantera as ct
 
         from rmgpy.export import (
@@ -692,6 +696,44 @@ class Reaction:
             return True
         return False
 
+    def has_resolved_species(self):
+        """Return whether a Species or raw Molecule participant has a resolved state."""
+        for participant in self.reactants + self.products:
+            molecules = getattr(participant, 'molecule', None)
+            for molecule in (molecules if molecules is not None else (participant,)):
+                state_check = getattr(molecule, 'has_resolved_state', None)
+                if state_check is not None and state_check():
+                    return True
+        return False
+
+    def get_resolved_species(self):
+        """Describe resolved participants, accepting Species and raw Molecules alike."""
+        resolved = []
+        for participant in self.reactants + self.products:
+            molecules = getattr(participant, 'molecule', None)
+            for molecule in (molecules if molecules is not None else (participant,)):
+                state_check = getattr(molecule, 'has_resolved_state', None)
+                if state_check is not None and state_check():
+                    state = []
+                    if molecule.electronic_state:
+                        state.append('electronicstate ' + molecule.electronic_state)
+                    if molecule.vibrational_level >= 0:
+                        state.append('vibrationallevel {0}'.format(molecule.vibrational_level))
+                    resolved.append('{0} ({1})'.format(participant, ', '.join(state)))
+                    break
+        return resolved
+
+    def allows_reverse_match(self, other=None):
+        """Keep opposite irreversible resolved channels distinct during matching.
+
+        An unresolved reaction retains the historical direction-insensitive match.
+        ``other=None`` applies the same rule to a participant-list query.
+        """
+        if self.reversible or (other is not None and other.reversible):
+            return True
+        return not (self.has_resolved_species() or
+                    (other is not None and other.has_resolved_species()))
+
     def get_reverse_from_equilibrium_refusal(self):
         """
         Return ``None`` if this reaction's reverse rate may be reconstructed as
@@ -736,12 +778,20 @@ class Reaction:
         kinetics = self.kinetics
         kinetics_name = 'None' if kinetics is None else kinetics.__class__.__name__
 
-        if getattr(kinetics, 'uses_electron_temperature', False) \
-                or getattr(kinetics, 'uses_electron_density', False):
-            return ('its kinetics {0} is not a function of the gas temperature alone (it '
-                    'declares a dependence on the electron temperature or electron '
-                    'density), so kf and Keq(Tgas) are evaluated at different thermal '
-                    'closures'.format(kinetics_name))
+        resolved = self.get_resolved_species()
+        # Recursive leaf inspection extends the resolved-state policy. Without a
+        # resolved participant, retain the baseline direct-declaration predicate.
+        electron_dependent = (is_electron_dependent(kinetics) if resolved else
+                              (getattr(kinetics, 'uses_electron_temperature', False) or
+                               getattr(kinetics, 'uses_electron_density', False)))
+        if electron_dependent:
+            reason = ('its kinetics {0} is not a function of the gas temperature alone (it '
+                      'declares a dependence on the electron temperature or electron '
+                      'density), so kf and Keq(Tgas) are evaluated at different thermal '
+                      'closures'.format(kinetics_name))
+            if resolved:
+                reason += ' Resolved species: {0}.'.format(', '.join(resolved))
+            return reason
 
         n_explicit_electrons = 0
         for spec in self.reactants:
@@ -791,6 +841,33 @@ class Reaction:
                 'reconstructed from kf(Tgas)/Keq(Tgas): {1}. Declare the reaction '
                 'irreversible, or supply explicit reverse kinetics.'.format(self, reason))
 
+    def check_resolved_species_reversibility(self, kinetics=None, reversible=None):
+        """Refuse a reversible electron-dependent rate involving a resolved state.
+
+        Model and network admissions call this even when kinetics came from an
+        import, a restart, or an API caller. ``kinetics`` supports library entries,
+        whose rate is stored in entry.data. ``reversible=True`` checks a proposed
+        reversal or a conversion before it erases the original rate's dependence.
+        Unresolved chemistry and gas-temperature-only rates retain their behavior.
+        """
+        rate = self.kinetics if kinetics is None else kinetics
+        if not (self.reversible if reversible is None else reversible):
+            return
+        if not is_electron_dependent(rate):
+            return
+
+        resolved = self.get_resolved_species()
+        if resolved:
+            reverse_check = Reaction(reactants=self.reactants, products=self.products,
+                                     specific_collider=self.specific_collider,
+                                     reversible=True, kinetics=rate, electrons=self.electrons)
+            try:
+                reverse_check.check_reverse_from_equilibrium_supported()
+            except NonEquilibriumReverseRateError as error:
+                raise NonEquilibriumReverseRateError(
+                    '{0} Supply the reverse as its own irreversible '
+                    'reaction.'.format(error)) from error
+
     def has_template(self, reactants, products):
         """
         Return ``True`` if the reaction matches the template of `reactants`
@@ -799,7 +876,8 @@ class Reaction:
         """
         return ((all([spec in self.reactants for spec in reactants]) and
                  all([spec in self.products for spec in products])) or
-                (all([spec in self.products for spec in reactants]) and
+                (self.allows_reverse_match() and
+                 all([spec in self.products for spec in reactants]) and
                  all([spec in self.reactants for spec in products])))
 
     def matches_species(self, reactants, products=None):
@@ -817,13 +895,37 @@ class Reaction:
                 return True
             else:
                 return False
-        elif same_species_lists(self.products, reactants):
+        elif self.allows_reverse_match() and same_species_lists(self.products, reactants):
             if products is None or same_species_lists(self.reactants, products):
                 return True
             else:
                 return False
         else:
             return False
+
+    def is_same_reaction(self, other, either_direction=True, check_identical=False, check_only_label=False,
+                         check_template_rxn_products=False, generate_initial_map=False, strict=True, save_order=False):
+        """Compare channel identity, preserving independent resolved reverse rates.
+
+        Unlike the structural :meth:`is_isomorphic`, this match keeps two
+        irreversible resolved channels distinct. Unresolved channels retain
+        the baseline match, including template and atom-identity shortcuts.
+        """
+        reverse_allowed = self.allows_reverse_match(other)
+        if (check_template_rxn_products and not reverse_allowed and
+                hasattr(self, 'is_forward') and hasattr(other, 'is_forward') and
+                self.is_forward != other.is_forward):
+            return False
+        if (not reverse_allowed and check_only_label and not self.is_isomorphic(
+                other, either_direction=False, check_template_rxn_products=check_template_rxn_products,
+                strict=strict, save_order=save_order)):
+            # Labels alone must not erase the physical direction of a resolved channel.
+            return False
+        return self.is_isomorphic(
+            other, either_direction=either_direction and reverse_allowed,
+            check_identical=check_identical, check_only_label=check_only_label,
+            check_template_rxn_products=check_template_rxn_products,
+            generate_initial_map=generate_initial_map, strict=strict, save_order=save_order)
 
     def is_isomorphic(self, other, either_direction=True, check_identical=False, check_only_label=False,
                       check_template_rxn_products=False, generate_initial_map=False, strict=True, save_order=False):
@@ -1408,6 +1510,12 @@ class Reaction:
         if self.kinetics is None:
             raise KineticsError("Cannot fix barrier height for reactions with no kinetics attribute")
 
+        self.check_resolved_species_reversibility()
+        if isinstance(self.kinetics, (ArrheniusEP, ArrheniusBM, SurfaceArrheniusBEP,
+                                      StickingCoefficientBEP, ArrheniusChargeTransferBM,
+                                      SurfaceChargeTransferBEP)):
+            self.check_resolved_species_reversibility(reversible=True)
+
         if isinstance(self.kinetics, Marcus):
             if apply_solvation_correction and solvent:
                 self.apply_solvent_correction(solvent)
@@ -1492,6 +1600,9 @@ class Reaction:
         You must supply the correct units for the reverse rate.
         The equilibrium constant is evaluated from the current reaction instance (self).
         """
+        self.check_resolved_species_reversibility(reversible=True)
+        self.check_resolved_species_reversibility(kinetics=k_forward, reversible=True)
+
         cython.declare(kf=Arrhenius, kr=Arrhenius)
         cython.declare(Tlist=np.ndarray, klist=np.ndarray, i=cython.int)
         kf = k_forward
@@ -1515,6 +1626,9 @@ class Reaction:
         You must supply the correct units for the reverse rate.
         The equilibrium constant is evaluated from the current reaction instance (self).
         """
+        self.check_resolved_species_reversibility(reversible=True)
+        self.check_resolved_species_reversibility(kinetics=k_forward, reversible=True)
+
         cython.declare(kf=SurfaceArrhenius, kr=SurfaceArrhenius)
         cython.declare(Tlist=np.ndarray, klist=np.ndarray, i=cython.int)
         kf = k_forward
@@ -1540,6 +1654,9 @@ class Reaction:
         The equilibrium constant is evaluated from the current reaction instance (self).
         The surface_site_density in `mol/m^2` is used to evalaute the forward rate constant.
         """
+        self.check_resolved_species_reversibility(reversible=True)
+        self.check_resolved_species_reversibility(kinetics=k_forward, reversible=True)
+
         cython.declare(kf=StickingCoefficient, kr=SurfaceArrhenius)
         cython.declare(Tlist=np.ndarray, klist=np.ndarray, i=cython.int)
         if not isinstance(k_forward, StickingCoefficient): # Only reverse StickingCoefficient rates
@@ -1566,6 +1683,9 @@ class Reaction:
         You must supply the correct units for the reverse rate.
         The equilibrium constant is evaluated from the current reaction instance (self).
         """
+        self.check_resolved_species_reversibility(reversible=True)
+        self.check_resolved_species_reversibility(kinetics=k_forward, reversible=True)
+
         cython.declare(kf=SurfaceChargeTransfer, kr=SurfaceChargeTransfer)
         cython.declare(Tlist=np.ndarray, klist=np.ndarray, i=cython.int, V0=cython.double)
         kf = k_forward
@@ -1592,6 +1712,9 @@ class Reaction:
         You must supply the correct units for the reverse rate.
         The equilibrium constant is evaluated from the current reaction instance (self).
         """
+        self.check_resolved_species_reversibility(reversible=True)
+        self.check_resolved_species_reversibility(kinetics=k_forward, reversible=True)
+
         cython.declare(Tlist=np.ndarray, klist=np.ndarray, i=cython.int, V0=cython.double)
         kf = k_forward
         if not isinstance(kf, ArrheniusChargeTransfer): # Only reverse SurfaceChargeTransfer rates
@@ -1623,6 +1746,11 @@ class Reaction:
                        Tlist=np.ndarray, Plist=np.ndarray, K=np.ndarray,
                        rxn=Reaction, klist=np.ndarray, i=cython.size_t,
                        Tindex=cython.size_t, Pindex=cython.size_t)
+
+        # Check the original rate before a network surrogate or fit can hide its
+        # electron dependence. Explicitly requesting a reverse also needs this
+        # check when the forward reaction was declared irreversible.
+        self.check_resolved_species_reversibility(reversible=True)
 
         # Get the units for the reverse rate coefficient
         try:
@@ -1670,6 +1798,7 @@ class Reaction:
 
         elif network_kinetics and self.network_kinetics is not None:
             kf = self.network_kinetics
+            self.check_resolved_species_reversibility(kinetics=kf, reversible=True)
             return self.reverse_arrhenius_rate(kf, kunits)
 
         elif isinstance(kf, Chebyshev):
@@ -2048,6 +2177,7 @@ class Reaction:
         """
 
         cython.declare(other=Reaction)
+        self.check_resolved_species_reversibility()
 
         other = Reaction.__new__(Reaction)
         other.index = self.index

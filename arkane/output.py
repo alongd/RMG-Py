@@ -44,6 +44,12 @@ from rmgpy.species import Species
 ################################################################################
 
 
+def check_reaction_rate_serialization(reaction, kinetics, reversible):
+    """Validate the exact rate and direction an Arkane writer will serialize."""
+    reaction.check_resolved_species_reversibility(
+        kinetics=kinetics, reversible=reversible)
+
+
 class PrettifyVisitor(ast.NodeVisitor):
     """
     A class for traversing an abstract syntax tree to assemble a prettier
@@ -277,12 +283,12 @@ def save_kinetics_lib(rxn_list, path, name, lib_long_desc):
         lib_long_desc (str): A multiline string with relevant description.
     """
 
-    from rmgpy.export import refuse_resolved_species
-    refuse_resolved_species([], 'arkane/output.py:save_kinetics_lib', rxn_list)
     entries = dict()
     if rxn_list:
         for i, rxn in enumerate(rxn_list):
             if rxn.kinetics is not None:
+                check_reaction_rate_serialization(
+                    rxn, rxn.kinetics, rxn.reversible)
                 entry = Entry(
                     index=i,
                     item=rxn,
@@ -294,6 +300,8 @@ def save_kinetics_lib(rxn_list, path, name, lib_long_desc):
             else:
                 logging.warning(f'Reaction {rxn.label} did not contain any kinetic data and was omitted from the '
                                 f'kinetics library.')
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species([], 'arkane/output.py:save_kinetics_lib', rxn_list)
         kinetics_library = KineticsLibrary(name=name, long_desc=lib_long_desc, auto_generated=True)
         kinetics_library.entries = entries
         if os.path.exists(path):
