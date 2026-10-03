@@ -107,7 +107,8 @@ class Species(object):
         self.molecular_weight = molecular_weight
         self.energy_transfer_model = energy_transfer_model
         self.props = props or {}
-        self.aug_inchi = aug_inchi
+        self._aug_inchi = aug_inchi
+        self._state_cache_key = None
         self.symmetry_number = symmetry_number
         self.is_solvent = False
         self.creation_iteration = creation_iteration
@@ -133,13 +134,58 @@ class Species(object):
                 self.molecule = [Molecule(smiles=smiles)]
             self._smiles = smiles
 
-        # Check multiplicity of each molecule is the same
+        # Resonance structures must share multiplicity and resolved internal state.
         if molecule is not None and len(molecule) > 1:
             mult = molecule[0].multiplicity
             for m in molecule[1:]:
                 if mult != m.multiplicity:
                     raise SpeciesError('Multiplicities of molecules in species {species} '
                                        'do not match.'.format(species=label))
+                if (molecule[0].electronic_state != m.electronic_state
+                        or molecule[0].vibrational_level != m.vibrational_level):
+                    raise SpeciesError('Resolved states of molecules in species {species} '
+                                       'do not match.'.format(species=label))
+
+        self._state_cache_key = self._molecule_state_key()
+
+    def _molecule_state_key(self):
+        """State signature for the resonance structures backing identity caches."""
+        key = tuple((mol.electronic_state, mol.vibrational_level) for mol in (self.molecule or []))
+        if key and any(state != key[0] for state in key[1:]):
+            raise SpeciesError('Resolved states of molecules in species {0} do not match.'.format(self.label))
+        return key
+
+    def _invalidate_state_caches(self):
+        """Invalidate identity caches if public molecule-state assignments changed them."""
+        key = self._molecule_state_key()
+        if self._state_cache_key is not None and self._state_cache_key != key:
+            self._fingerprint = self._aug_inchi = None
+        # The complete copier carries aug_inchi through its public property, but not
+        # this private signature. Its identifier layers retain the cache's own state,
+        # including when the molecule was mutated before the first copied-cache read.
+        if key and self._aug_inchi is not None:
+            from rmgpy.molecule.translator import _parse_state_layers
+            try:
+                _, state = _parse_state_layers(self.molecule[0], self._aug_inchi)
+            except ValueError:
+                self._aug_inchi = None
+            else:
+                cached_state = (state.get('electronic_state', ''), state.get('vibrational_level', -1))
+                if cached_state != key[0]:
+                    self._aug_inchi = None
+        self._state_cache_key = key
+
+    @property
+    def aug_inchi(self):
+        """Cached augmented InChI, cleared when the molecules' state changes."""
+        self._invalidate_state_caches()
+        return self._aug_inchi
+
+    @aug_inchi.setter
+    def aug_inchi(self, value):
+        if self._state_cache_key is not None:
+            self._invalidate_state_caches()
+        self._aug_inchi = value
 
     def __repr__(self):
         """
@@ -234,6 +280,7 @@ class Species(object):
     @property
     def fingerprint(self):
         """Fingerprint of this species, taken from molecule attribute. Read-only."""
+        self._invalidate_state_caches()
         if self._fingerprint is None:
             if self.molecule:
                 self._fingerprint = self.molecule[0].fingerprint
@@ -242,6 +289,7 @@ class Species(object):
     @property
     def inchi(self):
         """InChI string representation of this species. Read-only."""
+        self._molecule_state_key()
         if self._inchi is None:
             if self.molecule:
                 self._inchi = self.molecule[0].inchi
@@ -254,6 +302,7 @@ class Species(object):
 
         Note that SMILES representations for different resonance structures of the same species may be different.
         """
+        self._molecule_state_key()
         if self._smiles is None:
             if self.molecule:
                 self._smiles = self.molecule[0].smiles
@@ -262,6 +311,7 @@ class Species(object):
     @property
     def multiplicity(self):
         """Fingerprint of this species, taken from molecule attribute. Read-only."""
+        self._molecule_state_key()
         if self.molecule:
             return self.molecule[0].multiplicity
         else:
@@ -294,6 +344,7 @@ class Species(object):
         resonance structures have already been generated.
         If ``save_order`` is ``True`` the atom order is reset after performing atom isomorphism.
         """
+        self._molecule_state_key()
         if len(self.molecule) == 1 or not self.molecule[0].atom_ids_valid():
             if not self.molecule[0].atom_ids_valid():
                 self.molecule[0].assign_atom_ids()
@@ -312,6 +363,9 @@ class Species(object):
             save_order (bool, optional):           if ``True``, reset atom order after performing atom isomorphism
             strict (bool, optional):               If ``False``, perform isomorphism ignoring electrons.
         """
+        self._molecule_state_key()
+        if isinstance(other, Species):
+            other._molecule_state_key()
         if isinstance(other, Molecule) or isinstance(other, Fragment):
             for molecule in self.molecule:
                 if molecule.is_isomorphic(other, generate_initial_map=generate_initial_map,
@@ -339,6 +393,9 @@ class Species(object):
 
         If ``strict=False``, performs the check ignoring electrons and resonance structures.
         """
+        self._molecule_state_key()
+        if isinstance(other, Species):
+            other._molecule_state_key()
         if isinstance(other, Molecule) or isinstance(other, Fragment):
             for molecule in self.molecule:
                 if molecule.is_identical(other, strict=strict):
@@ -398,7 +455,9 @@ class Species(object):
                 break
         else:
             label = ''
-        if len(label.split()) > 0 and not label.split()[0].isdigit() and 'multiplicity' not in label:
+        if (len(label.split()) > 0 and not label.split()[0].isdigit()
+                and 'multiplicity' not in label
+                and label.split()[0] not in ('electronicstate', 'vibrationallevel')):
             self.label = label.strip()
         # Return a reference to itself so we can use e.g. Species().from_adjacency_list()
         return self
@@ -418,6 +477,7 @@ class Species(object):
         """
         Return a string containing each of the molecules' adjacency lists.
         """
+        self._molecule_state_key()
         output = '\n\n'.join([m.to_adjacency_list(label=self.label, remove_h=False) for m in self.molecule])
         return output
 
@@ -732,6 +792,12 @@ class Species(object):
 
         # make original structure with no bonds
         new_mol = Molecule()
+        if molecules[0].has_resolved_state():
+            new_mol.electronic_state = molecules[0].electronic_state
+            new_mol.vibrational_level = molecules[0].vibrational_level
+            new_mol.multiplicity = molecules[0].multiplicity
+            new_mol.metal = molecules[0].metal
+            new_mol.facet = molecules[0].facet
         original_atoms = atoms_from_structures[0]
         for atom1 in original_atoms:
             atom = new_mol.add_atom(Atom(atom1.element))

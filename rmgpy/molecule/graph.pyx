@@ -649,7 +649,7 @@ cdef class Graph(object):
         cdef set set1, set2
 
         # Make a copy of the graph so we don't modify the original
-        graph = self.copy(deep=True)
+        graph = Graph(self.copy(deep=True).vertices)
         vertices = graph.vertices[:]
 
         # Step 1: Remove all terminal vertices

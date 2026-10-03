@@ -177,7 +177,7 @@ class MoleculeDrawer(object):
             return
 
         # Make a copy of the molecule so we don't modify the original
-        self.molecule = molecule.copy(deep=True)
+        self.molecule = molecule._copy_for_structure()
 
         # Remove all unlabeled hydrogen atoms from the copied atoms and bonds, as
         # they are not drawn
@@ -256,7 +256,7 @@ class MoleculeDrawer(object):
             self.molecule.remove_atom(self.molecule.atoms[-1])
             self.symbols = ['H2']
             self.coordinates = np.array([[0, 0]], float)
-        elif molecule.is_isomorphic(Molecule(smiles='[O][O]')):
+        elif self.molecule.is_isomorphic(Molecule(smiles='[O][O]')):
             # Render as O2 instead of O-O
             self.molecule.remove_atom(self.molecule.atoms[-1])
             self.molecule.atoms[0].radical_electrons = 0

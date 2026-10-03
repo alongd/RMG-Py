@@ -63,6 +63,9 @@ def filter_structures(mol_list, mark_unreactive=True, allow_expanded_octet=True,
             mol.update()
     if not all([(mol.multiplicity == mol_list[0].multiplicity) for mol in mol_list]):
         raise ValueError("Cannot filter structures with different multiplicities!")
+    if not all([(mol.electronic_state == mol_list[0].electronic_state
+                 and mol.vibrational_level == mol_list[0].vibrational_level) for mol in mol_list]):
+        raise ValueError("Cannot filter structures with different resolved states!")
 
     #Remove structures that try to put negative charges on metal ions
     filtered_list = ionic_bond_filteration(mol_list)

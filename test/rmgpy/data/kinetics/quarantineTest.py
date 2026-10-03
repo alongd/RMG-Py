@@ -5874,8 +5874,8 @@ class TestWhatAnUnlistedLossyClassCosts:
       is accepted, with the reason: a reducer that omits a field is indistinguishable from
       a class that does not have one. What keeps the table honest there is the census,
       which round-trips every class reachable in a reaction's state.
-    * **Private Cython memos are accepted as caches** -- see
-      `test_the_private_cython_state_is_exactly_the_three_memos`.
+    * **Private Cython state is classified as caches or public property storage** --
+      see `test_private_cython_state_is_cached_or_carried_by_public_properties`.
     """
 
     @staticmethod
@@ -6039,14 +6039,12 @@ class TestWhatAnUnlistedLossyClassCosts:
         for name, reason in _ACCEPTED_UNREGISTERED_SUBCLASSES.items():
             assert len(reason) > 40, "{0} is accepted without a reason".format(name)
 
-    def test_the_private_cython_state_is_exactly_the_three_memos(self):
+    def test_private_cython_state_is_cached_or_carried_by_public_properties(self):
         """
-        `writable_fields` cannot see a ``cdef`` attribute that is neither ``public`` nor
-        ``readonly``, so no transport carries one. Accepted, for a reason pinned here: the
-        only such state on the registered classes is ``_fingerprint``, ``_inchi`` and
-        ``_smiles`` on `Molecule` and `Species`, each a memo of a value derived from the
-        graph and recomputed when absent. Parsed from the ``.pxd`` so that a new private
-        field fails this test instead of vanishing from every copy.
+        Every private field is classified explicitly. The three graph memos and Species
+        state signature are derived caches. Validated molecule state and augmented InChI
+        storage travel through their writable public properties, which object_state reads
+        and the complete copier restores. Any other private field still fails the census.
         """
         import rmgpy
 
@@ -6067,8 +6065,20 @@ class TestWhatAnUnlistedLossyClassCosts:
                                  line)
                 if field and current:
                     private.setdefault(current, set()).add(field.group(1))
+        from rmgpy.data.kinetics.family import writable_fields
+
         memos = {"_fingerprint", "_inchi", "_smiles"}
-        assert private == {"Molecule": memos, "Species": memos}
+        property_storage = {
+            Molecule: {"_electronic_state": "electronic_state",
+                       "_vibrational_level": "vibrational_level"},
+            Species: {"_aug_inchi": "aug_inchi"},
+        }
+        assert private == {
+            "Molecule": memos | set(property_storage[Molecule]),
+            "Species": memos | set(property_storage[Species]) | {"_state_cache_key"},
+        }
+        for cls, fields in property_storage.items():
+            assert set(fields.values()) <= writable_fields(cls)
 
     def test_the_memos_are_recomputed_after_a_copy(self):
         """The half of the acceptance that is behaviour: a copy answers as the original."""

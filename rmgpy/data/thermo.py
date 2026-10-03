@@ -49,6 +49,7 @@ import rmgpy.quantity
 from rmgpy.data.base import Database, Entry, make_logic_node, saturate_for_estimation, DatabaseError
 from rmgpy.ml.estimator import MLEstimator
 from rmgpy.molecule import Molecule, Bond, Group
+from rmgpy.molecule.graph import Graph
 from rmgpy.species import Species
 from rmgpy.thermo import NASAPolynomial, NASA, ThermoData, Wilhoit
 from rmgpy.data.surface import MetalDatabase
@@ -1869,7 +1870,7 @@ class ThermoDatabase(object):
             return True
         else:
             if number_of_surface_sites == 1:
-                if len(molecule.split()) == 1:
+                if len(Graph(molecule.vertices).split()) == 1:
                     self.sidt_taggings_and_decompositions["Pt111_monodentate_adsorption_corrections"](molecule)
                     root = self.sidts["Pt111_monodentate_adsorption_corrections"].nodes["Root"]
                     data, unc, tr = self.sidts["Pt111_monodentate_adsorption_corrections"].evaluate(molecule,trace=True,estimate_uncertainty=True)

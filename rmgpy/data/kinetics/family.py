@@ -3769,6 +3769,9 @@ class KineticsFamily(Database):
         return new, comp, new_inds
 
     def reaction_matches(self, rxn, grp):
+        # Resolved reactants cannot enter unkeyed templates, including merged matches.
+        if any(mol.has_resolved_state() for reactant in rxn.reactants for mol in reactant.molecule):
+            return False
         rmol = rxn.reactants[0].molecule[0]
         for r in rxn.reactants[1:]:
             rmol = rmol.merge(r.molecule[0])

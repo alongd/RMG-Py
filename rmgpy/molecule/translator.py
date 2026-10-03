@@ -183,6 +183,23 @@ _BRACKET_ATOM = re.compile(r'\[([^\]]*)\]')
 _BRACKET_CHARGE = re.compile(r'([+-])(\1*)(\d*)$')
 
 
+def _state_suffix(mol):
+    """Return state layers for augmented InChI identity, empty when unresolved."""
+    return mol.state_suffix().replace('|', '/')
+
+
+def _state_key_suffix(mol):
+    """Return injective, filename-safe state layers for augmented InChI keys."""
+    suffix = ''
+    if mol.electronic_state:
+        # Hex preserves case and every allowed punctuation mark. Hyphen delimiters
+        # cannot occur in the encoding, so tokens cannot impersonate another layer.
+        suffix += '-es' + mol.electronic_state.encode('ascii').hex()
+    if mol.vibrational_level != -1:
+        suffix += '-v{0}'.format(mol.vibrational_level)
+    return suffix
+
+
 def to_inchi(mol, backend='rdkit-first', aug_level=0):
     """
     Convert a molecular structure to an InChI string.
@@ -206,14 +223,14 @@ def to_inchi(mol, backend='rdkit-first', aug_level=0):
 
         mlayer = '/mult{0}'.format(mol.multiplicity) if mol.multiplicity != 0 else ''
 
-        return inchi + mlayer
+        return inchi + mlayer + _state_suffix(mol)
 
     elif aug_level == 2:
         inchi = to_inchi(mol, backend=backend)
 
         ulayer, player = inchiutil.create_augmented_layers(mol)
 
-        return inchiutil.compose_aug_inchi(inchi, ulayer, player)
+        return inchiutil.compose_aug_inchi(inchi, ulayer, player) + _state_suffix(mol)
 
     else:
         raise ValueError("Implemented values for aug_level are 0, 1, or 2.")
@@ -225,6 +242,10 @@ def to_inchi_key(mol, backend='rdkit-first', aug_level=0):
     For aug_level=0, generates the canonical InChI.
     For aug_level=1, appends the molecule multiplicity.
     For aug_level=2, appends positions of unpaired and paired electrons.
+
+    Augmented keys append filename-safe state layers: an ASCII hex electronic
+    token after ``-es`` and a vibrational integer after ``-v``. Unresolved keys
+    retain their existing form.
 
     Uses RDKit or OpenBabel for conversion.
 
@@ -242,14 +263,14 @@ def to_inchi_key(mol, backend='rdkit-first', aug_level=0):
 
         mlayer = '-mult{0}'.format(mol.multiplicity) if mol.multiplicity != 0 else ''
 
-        return key + mlayer
+        return key + mlayer + _state_key_suffix(mol)
 
     elif aug_level == 2:
         key = to_inchi_key(mol, backend=backend)
 
         ulayer, player = inchiutil.create_augmented_layers(mol)
 
-        return inchiutil.compose_aug_inchi_key(key, ulayer, player)
+        return inchiutil.compose_aug_inchi_key(key, ulayer, player) + _state_key_suffix(mol)
 
     else:
         raise ValueError("Implemented values for aug_level are 0, 1, or 2.")
@@ -370,11 +391,38 @@ def from_inchi(mol, inchistr, backend='openbabel-first', raise_atomtype_exceptio
     a user-specified backend for conversion, currently supporting 'openbabel-first' (default), rdkit-first,
     rdkit, and openbabel.
     """
+    if '/es:' in inchistr or '/v:' in inchistr:
+        raise ValueError('Resolved-state layers require the augmented InChI reader')
     if inchiutil.INCHI_PREFIX in inchistr:
         return _read(mol, inchistr, 'inchi', backend, raise_atomtype_exception=raise_atomtype_exception)
     else:
         return _read(mol, inchiutil.INCHI_PREFIX + '/' + inchistr, 'inchi', backend,
                      raise_atomtype_exception=raise_atomtype_exception)
+
+
+def _parse_state_layers(mol, identifier):
+    """Separate validated optional state suffixes from an augmented InChI."""
+    layers, state = [], {}
+    for layer in str(identifier).split('/'):
+        if layer.startswith('es:'):
+            if 'electronic_state' in state:
+                raise ValueError('Duplicate electronic state layer')
+            token = layer[3:]
+            if not token:
+                raise ValueError('Empty electronic state layer')
+            state['electronic_state'] = mol._validate_electronic_state(token)
+        elif layer.startswith('v:'):
+            if 'vibrational_level' in state:
+                raise ValueError('Duplicate vibrational state layer')
+            token = layer[2:]
+            if not re.fullmatch(r'[0-9]+', token):
+                raise ValueError('Invalid vibrational state layer: {!r}'.format(layer))
+            state['vibrational_level'] = mol._validate_vibrational_level(int(token))
+        elif state:
+            raise ValueError('Invalid resolved-state suffix layer: {!r}'.format(layer))
+        else:
+            layers.append(layer)
+    return '/'.join(layers), state
 
 
 def from_augmented_inchi(mol, aug_inchi, raise_atomtype_exception=True):
@@ -392,6 +440,12 @@ def from_augmented_inchi(mol, aug_inchi, raise_atomtype_exception=True):
     Returns a Molecule object
     """
 
+    state = {}
+    if '/es:' in aug_inchi or '/v:' in aug_inchi:
+        identifier, state = _parse_state_layers(mol, aug_inchi)
+        # AugmentedInChI objects are strings with their InChI prefix removed.
+        aug_inchi = identifier if inchiutil.INCHI_PREFIX in identifier else inchiutil.INCHI_PREFIX + '/' + identifier
+
     if not isinstance(aug_inchi, inchiutil.AugmentedInChI):
         aug_inchi = inchiutil.AugmentedInChI(aug_inchi)
 
@@ -402,6 +456,8 @@ def from_augmented_inchi(mol, aug_inchi, raise_atomtype_exception=True):
     inchiutil.fix_molecule(mol, aug_inchi)
 
     mol.update_atomtypes(log_species=True, raise_exception=raise_atomtype_exception)
+    mol.electronic_state = state.get('electronic_state', '')
+    mol.vibrational_level = state.get('vibrational_level', -1)
 
     return mol
 
@@ -627,6 +683,11 @@ def _read(mol, identifier, identifier_type, backend, raise_atomtype_exception=Tr
         raise ValueError('InChIKey is a write-only format and cannot be parsed.')
     elif 'InChI' in identifier and identifier_type != 'inchi':
         raise ValueError('Improper identifier type "{0}". The provided identifier appears to be an InChI.'.format(identifier_type))
+
+    # Replacing the graph from a state-blind identifier also replaces cached identity.
+    mol.electronic_state = ''
+    mol.vibrational_level = -1
+    mol._fingerprint = mol._inchi = mol._smiles = None
 
     if _lookup(mol, identifier, identifier_type) is not None:
         if _check_output(mol, identifier):

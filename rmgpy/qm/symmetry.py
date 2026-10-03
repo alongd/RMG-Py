@@ -35,6 +35,8 @@ import logging
 import os
 from subprocess import Popen, PIPE
 
+from rmgpy.qm import _check_file_names
+
 
 class PointGroup(object):
     """
@@ -241,6 +243,8 @@ class SymmetryJob(object):
         """
         Write the input file for the SYMMETRY program.
         """
+        _check_file_names(self.unique_id,
+                          [(self.settings.scratchDirectory, self.unique_id + self.input_file_extension)])
         geom = str(self.qm_data.numberOfAtoms) + "\n"
         coords_in_angstrom = self.qm_data.atomCoords.value_si * 1e10
         for i in range(self.qm_data.numberOfAtoms):

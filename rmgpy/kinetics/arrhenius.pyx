@@ -3930,11 +3930,11 @@ def get_w0(actions, rxn):
     """
     mol = None
     for r in rxn.reactants:
-        m = r.molecule[0]
+        m = r.molecule[0]._copy_for_structure()
         if mol:
             mol = mol.merge(m)
         else:
-            mol = m.copy(deep=True)
+            mol = m
     a_dict = mol.get_all_labeled_atoms()
 
     recipe = actions
@@ -3964,11 +3964,11 @@ def get_w0(actions, rxn):
             if act[2] + bd1.order == 0.5:
                 mol2 = None
                 for r in rxn.products:
-                    m = r.molecule[0]
+                    m = r.molecule[0]._copy_for_structure()
                     if mol2:
                         mol2 = mol2.merge(m)
                     else:
-                        mol2 = m.copy(deep=True)
+                        mol2 = m
                 a_dict_mol2 = mol2.get_all_labeled_atoms()
                 if act[1] == act[3]: # the labels are the same
                     atom1_mol2 = a_dict_mol2[act[1]][0]

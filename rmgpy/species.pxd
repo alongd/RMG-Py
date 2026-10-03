@@ -49,7 +49,8 @@ cdef class Species:
     cdef public bint reactive
     cdef public object energy_transfer_model
     cdef public dict props
-    cdef public str aug_inchi
+    cdef str _aug_inchi
+    cdef tuple _state_cache_key
     cdef public float symmetry_number
     cdef public bint is_solvent
     cdef public int creation_iteration
