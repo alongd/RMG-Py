@@ -14,6 +14,7 @@ import hashlib
 import json
 import logging
 import math
+import os
 import subprocess
 from dataclasses import dataclass, field, replace
 from itertools import combinations
@@ -23,6 +24,9 @@ from types import SimpleNamespace
 
 from rmgpy.kmc.atom_map import extract_atom_map
 from rmgpy.kmc.event_record import EventRecord, ssa_multiplier_for
+from rmgpy.kmc.kinetics_library import (
+    load_plpsec_entry, matches_head_to_tail, plpsec_rate_table,
+)
 from rmgpy.kmc.reference_thermo import (
     GasPhaseRMGReferenceThermo,
     ReferenceThermoProvider,
@@ -114,6 +118,7 @@ _LOADED_SOURCE_HASH = hashlib.sha256(
             "reference_thermo.py",
             "event_record.py",
             "atom_map.py",
+            "kinetics_library.py",
         )
     )
 ).hexdigest()
@@ -1536,7 +1541,16 @@ class EventSetCompiler:
         reaction_cache: dict[str, Sequence[Any]] | None = None,
         family_candidates: Iterable[str] = PS_FAMILY_CANDIDATES,
         kinetics_depositories: Iterable[str] = ("training",),
+        use_plpsec_library: bool | None = None,
     ):
+        # Constructor selection takes precedence over the environment. Invalid
+        # values must fail rather than silently selecting a sensitivity arm.
+        if use_plpsec_library is None:
+            selection = os.environ.get("RMG_KMC_PLPSEC_LIBRARY", "1")
+            if selection not in {"0", "1"}:
+                raise ValueError("RMG_KMC_PLPSEC_LIBRARY must be 0 or 1")
+            use_plpsec_library = selection == "1"
+        self.use_plpsec_library = bool(use_plpsec_library)
         self.kinetics_database = kinetics_database
         self.proxies = tuple(proxies)
         self.families = tuple(sorted(set(families)))
@@ -1961,6 +1975,43 @@ class EventSetCompiler:
                 event_id="",
             )
             return [irreversible], irreversible
+        if self.use_plpsec_library and (
+            matches_head_to_tail(forward) or matches_head_to_tail(reverse)
+        ):
+            replaced_table = copy.deepcopy(forward_table)
+            replaced_source = copy.deepcopy(rate_source)
+            # RMG may estimate the unimolecular family direction. Normalize to
+            # physical propagation before installing the library coefficient.
+            if not matches_head_to_tail(forward):
+                forward, reverse = reverse, forward
+                constants = [1.0 / constant for constant in constants]
+                replaced_table["k"] = [
+                    rate * constant for rate, constant in zip(forward_table["k"], constants)
+                ]
+                initiated_forward = not initiated_forward
+            library_entry = load_plpsec_entry()
+            rate_source = {
+                "kind": "kMC kinetics library",
+                "available": True,
+                "units": library_entry["output_units"],
+                "library_entry": library_entry["entry_id"],
+                "citation": library_entry["citation"],
+                "entry": library_entry,
+                "replaced_rmg_estimate": {
+                    "template": forward.template,
+                    "source": replaced_source,
+                    "k_table": copy.deepcopy(forward_table),
+                    "units": replaced_source["units"],
+                    "propagation_k_table": replaced_table,
+                    "propagation_units": library_entry["output_units"],
+                },
+                "reference_thermo": self.reference_thermo_provider.provenance,
+            }
+            forward_table = plpsec_rate_table(self.temperature_grid)
+            forward = replace(
+                forward, k_table=forward_table, rate_source=rate_source,
+                rate_units=library_entry["output_units"], event_id="",
+            )
         reverse_table = {
             **forward_table,
             "k": [
@@ -1989,10 +2040,11 @@ class EventSetCompiler:
                 "available": True,
                 "units": reverse.rate_units
                 or get_rate_coefficient_units_from_reaction_order(reverse.arity),
-                "reference": "k_family / Kc",
+                "reference": ("k_library / Kc" if rate_source["kind"] == "kMC kinetics library"
+                              else "k_family / Kc"),
                 **self.reference_thermo_provider.provenance,
                 **({"forward_rate_source": rate_source}
-                   if "comment" in rate_source else {}),
+                   if "comment" in rate_source or rate_source["kind"] == "kMC kinetics library" else {}),
             },
             rate_units=get_rate_coefficient_units_from_reaction_order(reverse.arity),
             thermo_provenance=thermo,
@@ -2314,6 +2366,14 @@ class EventSetCompiler:
             "rmgpy_sha": self.rmgpy_sha or _git_sha(self.rmgpy_path),
             "rmg_database_sha": self.rmg_database_sha or _git_sha(self.database_path),
             "proxy_set_sha256": sha256_json(proxy_inputs),
+            "kinetics_libraries": {
+                "styrene_plpsec": {
+                    "enabled": self.use_plpsec_library,
+                    "entry": load_plpsec_entry(),
+                    "entry_sha256": sha256_json(load_plpsec_entry()),
+                    "precedence": "exact forward chemical rewrite replaces RMG family estimate; inverse remains k_forward/Kc",
+                },
+            },
             "rate_rule_preparation": {
                 **self.rate_rule_preparation,
                 "database_sha": self.rmg_database_sha or _git_sha(self.database_path),

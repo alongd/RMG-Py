@@ -339,6 +339,7 @@ def test_compiled_benzylic_declarations_and_anchors_require_phase2b(ps_artifact)
 
 
 def assert_compiled_benzylic_anchors(artifact):
+    from plpsecLibraryTest import assert_compiled_plpsec_library
     from fixtures.i049_probe.common import canonical_smiles, describe
 
     declared = {proxy["site_type"] for proxy in artifact["inputs"]["proxies"]}
@@ -367,6 +368,8 @@ def assert_compiled_benzylic_anchors(artifact):
         if prop["event_id"] == anchor:
             assert units == 3
             assert artifact["ps_ceiling_temperature_K"] == pair["temperature_K"]
+
+    assert assert_compiled_plpsec_library(artifact) == 2
 
 
 def test_compiled_anchor_verifier_accepts_a_small_inventory():

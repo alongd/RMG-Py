@@ -931,7 +931,7 @@ def test_all_pairs_have_exact_graphs_maps_degeneracies_and_detailed_balance(
         direct = [
             candidate
             for candidate in (record, reverse)
-            if candidate["rate_source"]["kind"] == "RMG family estimate"
+            if candidate["rate_source"]["kind"] in {"RMG family estimate", "kMC kinetics library"}
         ]
         assert len(direct) == 1
         forward = direct[0]
