@@ -50,4 +50,5 @@ Class                           Description
     surfacereactor
     mbsampledreactor
     termination
+    eedf
 
