@@ -717,6 +717,8 @@ def ps_proxy_set(units: int = PS_PROXY_UNITS) -> tuple[SiteProxy, ...]:
         "doubly_featured": linear_ps_smiles(units, radical_units=(0, 1)),
         "end_radical": linear_ps_smiles(units, radical_end=True),
         "end_radical_short": linear_ps_smiles(units - 1, radical_end=True),
+        "benzylic_end_radical": benzylic_ps_end_smiles(units),
+        "benzylic_end_radical_short": benzylic_ps_end_smiles(units - 1),
         "junction_radical": linear_ps_smiles(units).replace(
             "c1ccccc1", "c1cc[c]cc1", 1
         ),
@@ -784,6 +786,49 @@ def ps_proxy_set(units: int = PS_PROXY_UNITS) -> tuple[SiteProxy, ...]:
             ("end_radical_short" if units == 3 else "end_radical", "styrene"),
             ("end_radical", "styrene"),
             "end-proximal",
+            PS_FAMILY_CANDIDATES,
+        ),
+    ) + (
+        (
+            "benzylic_end_radical",
+            ("benzylic_end_radical",),
+            ("benzylic_end_radical",),
+            "end-proximal",
+            PS_FAMILY_CANDIDATES,
+        ),
+        (
+            "benzylic_end_radical+styrene",
+            ("benzylic_end_radical_short", "styrene"),
+            ("benzylic_end_radical", "styrene"),
+            "end-proximal",
+            PS_FAMILY_CANDIDATES,
+        ),
+        (
+            "benzylic_end_radical+pristine",
+            ("benzylic_end_radical", "pristine"),
+            ("benzylic_end_radical", "pristine"),
+            "end-proximal",
+            PS_FAMILY_CANDIDATES,
+        ),
+        (
+            "benzylic_end_radical+end_radical",
+            ("benzylic_end_radical", "end_radical"),
+            ("benzylic_end_radical", "end_radical"),
+            "end-proximal",
+            PS_FAMILY_CANDIDATES,
+        ),
+        (
+            "benzylic_end_radical+benzylic_end_radical",
+            ("benzylic_end_radical", "benzylic_end_radical"),
+            ("benzylic_end_radical", "benzylic_end_radical"),
+            "end-proximal",
+            PS_FAMILY_CANDIDATES,
+        ),
+        (
+            "junction_radical+benzylic_end_radical",
+            ("junction_radical", "benzylic_end_radical"),
+            ("junction_radical", "benzylic_end_radical"),
+            "junction",
             PS_FAMILY_CANDIDATES,
         ),
     ) + tuple(
@@ -1123,6 +1168,10 @@ def linear_ps_smiles(
     """Build an H-capped constitution-only linear PS oligomer."""
     if units < 1:
         raise ValueError("a PS oligomer must contain at least one repeat unit")
+    if radical_unit is not None and radical_units:
+        raise ValueError("use one multiple-feature specification at a time")
+    if radical_end and (radical_unit is not None or radical_units):
+        raise ValueError("primary end and unit radical choices are incompatible")
     radical_sites = set(radical_units)
     if radical_unit is not None:
         radical_sites.add(radical_unit)
@@ -1133,6 +1182,13 @@ def linear_ps_smiles(
         pieces.append("[CH2]" if radical_end and index == 0 else "C")
         pieces.append("[C](c1ccccc1)" if index in radical_sites else "C(c1ccccc1)")
     return "".join(pieces)
+
+
+def benzylic_ps_end_smiles(units: int) -> str:
+    """Build an H-capped head-to-tail PS chain with terminal CH•(Ph)."""
+    if units < 1:
+        raise ValueError("a PS oligomer must contain at least one repeat unit")
+    return "CC(c1ccccc1)" * (units - 1) + "C[CH](c1ccccc1)"
 
 
 def short_ps_molecule_catalogue(radius: int, feature_cap: int = 2) -> dict[str, Any]:
@@ -1159,13 +1215,8 @@ def short_ps_molecule_catalogue(radius: int, feature_cap: int = 2) -> dict[str, 
         for feature_count in range(min(feature_cap, backbone_sites) + 1):
             candidates = list(combinations(range(backbone_sites), feature_count))
             termination_bound += len(candidates)
-            seen = set()
+            seen: dict[str, list[Any]] = {}
             for sites in candidates:
-                reflected = tuple(sorted(backbone_sites - 1 - site for site in sites))
-                canonical_sites = min(sites, reflected)
-                if canonical_sites in seen:
-                    continue
-                seen.add(canonical_sites)
                 molecule = base.copy(deep=True)
                 molecule_backbone = [
                     atom
@@ -1173,7 +1224,7 @@ def short_ps_molecule_catalogue(radius: int, feature_cap: int = 2) -> dict[str, 
                     if atom.element.symbol == "C"
                     and not molecule.is_atom_in_cycle(atom)
                 ]
-                for site in canonical_sites:
+                for site in sites:
                     atom = molecule_backbone[site]
                     hydrogens = [
                         neighbor
@@ -1187,11 +1238,18 @@ def short_ps_molecule_catalogue(radius: int, feature_cap: int = 2) -> dict[str, 
                     molecule.remove_atom(hydrogens[0])
                     atom.radical_electrons += 1
                 molecule.update(sort_atoms=False)
+                # Index reflection swaps phenyl-bearing and plain backbone C.
+                # Quotient only actual featured graphs, never index tuples.
+                key = molecule.to_smiles()
+                equivalent = seen.setdefault(key, [])
+                if any(molecule.is_isomorphic(other) for other in equivalent):
+                    continue
+                equivalent.append(molecule)
                 molecules.append(
                     {
                         "repeat_units": units,
                         "formula": dict(sorted(molecule.get_element_count().items())),
-                        "radical_sites": list(canonical_sites),
+                        "radical_sites": list(sites),
                         "state": (
                             "closed_shell_linear"
                             if feature_count == 0
@@ -1762,17 +1820,22 @@ class EventSetCompiler:
                 and molecule.is_atom_in_cycle(radicals[0])
             ):
                 label = "junction_radical"
-            elif (
-                radical_count
-                and sum(
-                    neighbor.element.number == 6
-                    for neighbor in getattr(radicals[0], "edges", {})
-                )
-                >= 3
-            ):
-                label = "interior_radical"
             elif radical_count:
-                label = "end_radical"
+                carbons = [
+                    neighbor for neighbor in getattr(radicals[0], "edges", {})
+                    if neighbor.element.number == 6
+                ]
+                ring_neighbors = [
+                    neighbor for neighbor in carbons
+                    if hasattr(molecule, "is_atom_in_cycle")
+                    and molecule.is_atom_in_cycle(neighbor)
+                ]
+                backbone_degree = len(carbons) - len(ring_neighbors)
+                label = (
+                    "interior_radical" if backbone_degree >= 2
+                    else "benzylic_end_radical" if ring_neighbors
+                    else "end_radical"
+                )
             else:
                 label = (
                     "styrene"
@@ -2383,74 +2446,79 @@ class EventSetCompiler:
             "short_molecule_catalogue": short_ps_molecule_catalogue(self.span_radius),
             "ps_ceiling_temperature_K": None,
         }
-        propagation = [
-            record
-            for record in records
-            if record.family == "R_Addition_MultipleBond"
-            and record.arity == 2
-            and record.k_table
-            and "C=Cc1ccccc1" in _graph_list_key(record.reactant_graphs)
-            and any(
-                _graph_lists_isomorphic(
-                    record.product_graphs, _graph_adjacencies(proxy.reactants)
-                )
-                for proxy in self.proxies
-                if proxy.metadata.get("coverage_site_type", proxy.site_type)
-                == "end_radical"
-            )
-        ]
-        depropagation = [
-            record
-            for record in records
-            if record.family == "R_Addition_MultipleBond"
-            and record.arity == 1
-            and record.k_table
-        ]
-        depropagation_index: dict[
-            tuple[tuple[str, ...], tuple[str, ...]], list[EventRecord]
-        ] = {}
-        for record in depropagation:
-            key = (
-                _graph_list_key(record.product_graphs),
-                _graph_list_key(record.reactant_graphs),
-            )
-            depropagation_index.setdefault(key, []).append(record)
+        by_id = {record.event_id: record for record in records}
+        pair_fields = {
+            "benzylic_end_radical": "ps_ceiling_pairs",
+            "end_radical": "ps_primary_end_ceiling_pairs",
+        }
+        from rmgpy.molecule.molecule import Molecule
 
-        ceiling_pairs = []
-        for prop in propagation:
-            key = (
-                _graph_list_key(prop.reactant_graphs),
-                _graph_list_key(prop.product_graphs),
+        end_contexts = {label: [] for label in pair_fields}
+        for proxy in self.proxies:
+            label = proxy.metadata.get("coverage_site_type", proxy.site_type)
+            units = proxy.metadata.get("proxy_units")
+            if label not in end_contexts or units is None:
+                continue
+            products = _graph_adjacencies(proxy.reactants)
+            reactants = (
+                _graph_adjacencies([
+                    Molecule(smiles=benzylic_ps_end_smiles(units - 1)),
+                    Molecule(smiles="C=Cc1ccccc1"),
+                ]) if label == "benzylic_end_radical" else None
             )
-            for dep in depropagation_index.get(key, []):
-                if not _graph_lists_isomorphic(
-                    prop.reactant_graphs, dep.product_graphs
-                ) or not _graph_lists_isomorphic(
-                    prop.product_graphs, dep.reactant_graphs
-                ):
+            end_contexts[label].append((units, products, reactants, _graph_list_key(products)))
+        for end_label, field in pair_fields.items():
+            pairs = []
+            for prop in records:
+                if (prop.family != "R_Addition_MultipleBond" or prop.arity != 2
+                        or not prop.k_table or prop.status != "enabled"):
+                    continue
+                if "C=Cc1ccccc1" not in _graph_list_key(prop.reactant_graphs):
+                    continue
+                product_key = _graph_list_key(prop.product_graphs)
+                product_units = next((
+                    units for units, products, reactants, key in end_contexts[end_label]
+                    if product_key == key
+                    and _graph_lists_isomorphic(prop.product_graphs, products)
+                    and (reactants is None or _graph_lists_isomorphic(prop.reactant_graphs, reactants))
+                ), None)
+                if product_units is None:
+                    continue
+                dep = by_id.get(prop.reverse_of)
+                if (dep is None or dep.reverse_of != prop.event_id or dep.arity != 1
+                        or not dep.k_table or dep.status != "enabled"
+                        or not _graph_lists_isomorphic(prop.reactant_graphs, dep.product_graphs)
+                        or not _graph_lists_isomorphic(prop.product_graphs, dep.reactant_graphs)):
                     continue
                 temperature = ceiling_temperature(
-                    prop.to_dict(),
-                    dep.to_dict(),
+                    prop.to_dict(), dep.to_dict(),
                     self.ceiling_monomer_concentration_mol_m3,
                 )
-                if temperature is not None:
-                    ceiling_pairs.append(
-                        {
-                            "propagation_event_id": prop.event_id,
-                            "depropagation_event_id": dep.event_id,
-                            "monomer_concentration_mol_m3": (
-                                self.ceiling_monomer_concentration_mol_m3
-                            ),
-                            "temperature_K": temperature,
-                        }
-                    )
-        ceiling_pairs.sort(
-            key=lambda pair: (pair["temperature_K"], pair["propagation_event_id"])
+                if temperature is None and end_label == "end_radical":
+                    continue
+                pairs.append({
+                    "propagation_event_id": prop.event_id,
+                    "depropagation_event_id": dep.event_id,
+                    "monomer_concentration_mol_m3": self.ceiling_monomer_concentration_mol_m3,
+                    "temperature_K": temperature,
+                    **({"reactant_repeat_units": product_units - 1,
+                        "product_repeat_units": product_units}
+                       if end_label == "benzylic_end_radical" else {}),
+                })
+            pairs.sort(key=(
+                (lambda pair: (pair["product_repeat_units"], pair["propagation_event_id"]))
+                if end_label == "benzylic_end_radical" else
+                (lambda pair: (pair["temperature_K"], pair["propagation_event_id"]))
+            ))
+            artifact[field] = pairs
+        # Explicit chemical anchor: n=2→3 benzylic growth, never the minimum
+        # ceiling across chain lengths or unrelated primary-end channels.
+        anchor = next((pair for pair in artifact["ps_ceiling_pairs"]
+                       if pair["product_repeat_units"] == PS_PROXY_UNITS), None)
+        artifact["ps_ceiling_anchor_event_id"] = (
+            anchor["propagation_event_id"] if anchor else None
         )
-        artifact["ps_ceiling_pairs"] = ceiling_pairs
-        if ceiling_pairs:
-            artifact["ps_ceiling_temperature_K"] = ceiling_pairs[0]["temperature_K"]
+        artifact["ps_ceiling_temperature_K"] = anchor["temperature_K"] if anchor else None
         validate_artifact(artifact)
         self._compiled_artifact = copy.deepcopy(artifact)
         return copy.deepcopy(self._compiled_artifact)

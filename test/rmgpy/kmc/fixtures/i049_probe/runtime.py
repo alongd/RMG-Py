@@ -10,7 +10,10 @@ import json
 from pathlib import Path
 import sys
 
-from common import benzylic_tail, describe, molecule
+if __package__:
+    from .common import benzylic_tail, describe, molecule
+else:
+    from common import benzylic_tail, describe, molecule
 from rmgpy.kmc.ssa import SiteIndex, radical_site_class
 from rmgpy.kmc.state import AtomRef, KMCState, Strand, _parse_adjacency
 from rmgpy.molecule.molecule import Molecule

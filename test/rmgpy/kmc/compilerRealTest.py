@@ -312,39 +312,41 @@ def _record_key(record):
     )
 
 
+def _load_independent_oracle(kinetics_database):
+    """Load or generate the independent oracle without compiling an event set."""
+    cache = Path(os.environ.get("RMG_KMC_CACHE_ROOT", str(REPO_ROOT / ".kmc-cache"))) / "c3-oracle"
+    key = oracle_cache_key(REPO_ROOT, DB_PATH, 1)
+    destination = cache / (key + ".json")
+    current = key.split("-")[0]
+    if not destination.is_file():
+        suffix = key[len(current) :] + ".json"
+        for previous in sorted(cache.glob("*" + suffix)):
+            origin = previous.name.split("-")[0]
+            if generator_code_unchanged(REPO_ROOT, origin, current):
+                data = json.loads(previous.read_bytes())
+                data["cache_provenance"] = {
+                    "independent_generation_cache": str(previous),
+                    "generator_origin_commit": origin,
+                    "validated_current_commit": current,
+                    "database_commit": key.split("-")[1],
+                    "identical_oracle_and_input_source_hash": key.split("-")[2],
+                }
+                destination.write_text(json.dumps(data, sort_keys=True))
+                break
+    full = independent_c3_oracle(kinetics_database, REPO_ROOT, DB_PATH, 1, cache)
+    return {
+        "degeneracies": {
+            tuple(item["key"]): item["value"] for item in full["degeneracies"]
+        },
+        "keys": {tuple(key) for key in full["keys"]},
+        "counts": full["counts"],
+        "reactions": full["reactions"],
+    }
+
+
 def _generate_independent_oracle(connection, kinetics_database, proxies):
-    """Generate a fresh public-pipeline oracle in a forked process."""
     try:
-        cache = REPO_ROOT / ".kmc-cache/c3-oracle"
-        key = oracle_cache_key(REPO_ROOT, DB_PATH, 1)
-        destination = cache / (key + ".json")
-        current = key.split("-")[0]
-        if not destination.is_file():
-            suffix = key[len(current) :] + ".json"
-            for previous in sorted(cache.glob("*" + suffix)):
-                origin = previous.name.split("-")[0]
-                if generator_code_unchanged(REPO_ROOT, origin, current):
-                    data = json.loads(previous.read_bytes())
-                    data["cache_provenance"] = {
-                        "independent_generation_cache": str(previous),
-                        "generator_origin_commit": origin,
-                        "validated_current_commit": current,
-                        "database_commit": key.split("-")[1],
-                        "identical_oracle_and_input_source_hash": key.split("-")[2],
-                    }
-                    destination.write_text(json.dumps(data, sort_keys=True))
-                    break
-        full = independent_c3_oracle(kinetics_database, REPO_ROOT, DB_PATH, 1, cache)
-        connection.send(
-            {
-                "degeneracies": {
-                    tuple(item["key"]): item["value"] for item in full["degeneracies"]
-                },
-                "keys": {tuple(key) for key in full["keys"]},
-                "counts": full["counts"],
-                "reactions": full["reactions"],
-            }
-        )
+        connection.send(_load_independent_oracle(kinetics_database))
     finally:
         connection.close()
 
@@ -373,8 +375,12 @@ def compilation(rmg_database):
     supplied = supplied_artifact()
     if supplied:
         path, artifact = supplied
+        oracle = None
+        if os.environ.get("RMG_KMC_REAL_ORACLE") == "1":
+            # Explicit-artifact mode generates only the independent oracle.
+            oracle = _load_independent_oracle(rmg_database.kinetics)
         return (None, artifact, proxies, None, artifact["families"],
-                artifact["excluded_families"], path, None, (path,))
+                artifact["excluded_families"], path, oracle, (path,))
     context = multiprocessing.get_context("fork")
     receive_oracle, send_oracle = context.Pipe(duplex=False)
     oracle_process = context.Process(
@@ -666,11 +672,12 @@ def test_c1_every_rewrite_reproduces_rmg_product(compilation):
     assert not _record_reproduces_product(corrupted)
 
 
+@pytest.mark.phase2b
 def test_c2_per_site_degeneracy_matches_whole_molecule_pipeline(compilation):
     """C2: per-site sums equal the independent public whole-molecule oracle."""
     _, artifact, proxies, _, _, _, _, oracle, _ = compilation
     if oracle is None:
-        pytest.skip("a supplied artifact does not reproduce the independent generation oracle")
+        pytest.fail("phase-2b real comparison required: supplied artifact has no independent generation oracle")
     generated_j_para = {_record_key(entry) for entry in artifact["excluded_channels"]}
     expected = {
         key: value
@@ -743,11 +750,12 @@ def test_c2_per_site_degeneracy_matches_whole_molecule_pipeline(compilation):
         assert dict(observed_degeneracies(corrupted)) == pytest.approx(expected)
 
 
+@pytest.mark.phase2b
 def test_c3_full_2r_plus_3_generation_covers_all_keys_and_128_probe_misses(compilation):
     """C3: full five-unit molecules, all families, and closed-chain donors."""
     _, artifact, _, _, _, _, _, oracle, _ = compilation
     if oracle is None:
-        pytest.skip("a supplied artifact does not reproduce the independent generation oracle")
+        pytest.fail("phase-2b real comparison required: supplied artifact has no independent generation oracle")
     records = {record["event_id"] for record in artifact["records"]}
     compiled = {
         _record_key(entry)
@@ -1064,6 +1072,7 @@ def test_real_frontier_recombination_stays_refused_and_out_of_normal_total(
     assert _is_forward_met_record(mutated, "R0")
 
 
+@pytest.mark.phase2b
 def test_c7_c9_inventory_and_real_artifact(compilation):
     """Check C7/C9 inventory, real ceiling, and ring reverse records."""
     _, artifact, _, _, _, _, artifact_path, _, _ = compilation
@@ -1085,7 +1094,8 @@ def test_c7_c9_inventory_and_real_artifact(compilation):
         for entry in artifact["irreversible_pairs"]
     )
     assert artifact["ps_ceiling_pairs"]
-    pair = artifact["ps_ceiling_pairs"][0]
+    pair = next(pair for pair in artifact["ps_ceiling_pairs"]
+                if pair["propagation_event_id"] == artifact["ps_ceiling_anchor_event_id"])
     records_by_id = {record["event_id"]: record for record in artifact["records"]}
     propagation = records_by_id[pair["propagation_event_id"]]
     depropagation = records_by_id[pair["depropagation_event_id"]]
@@ -1096,18 +1106,12 @@ def test_c7_c9_inventory_and_real_artifact(compilation):
     )
     assert recomputed == pair["temperature_K"]
     assert artifact["ps_ceiling_temperature_K"] == recomputed
-    literature = {
-        "temperature_K": 668.15,
-        "range_K": [583.15, 668.15],
-        "reference": "Kinetic Phenomena in Mechanochemical Depolymerization of Poly(styrene), ACS Sustainable Chemistry & Engineering, DOI:10.1021/acssuschemeng.3c05296, section 4.1 reports 310-395 C",
-        "reference_state": "literature range (upper endpoint quoted); compiled value uses gas-phase Kc and the stated monomer concentration, not the same solvent/activity",
-    }
     linked_pairs = (
         sum(bool(record["reverse_of"]) for record in artifact["records"]) // 2
     )
     one_way_records = sum(not record["reverse_of"] for record in artifact["records"])
     print(
-        f"C9: PS gas-reference ceiling={recomputed:.6f} K at [styrene]={pair['monomer_concentration_mol_m3']} mol/m3; literature={literature['temperature_K']} K ({literature['reference']}); {literature['reference_state']}; irreversible={len(irreversible)}/{linked_pairs + one_way_records} reaction pairs"
+        f"C9: PS gas-reference ceiling={recomputed:.6f} K at [styrene]={pair['monomer_concentration_mol_m3']} mol/m3; irreversible={len(irreversible)}/{linked_pairs + one_way_records} reaction pairs"
     )
     ring_records = [
         record
