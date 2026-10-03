@@ -52,6 +52,18 @@ from rmgpy.statmech import Conformer
 
 ################################################################################
 
+def _check_electron_channel_routing(reaction, library=None):
+    """Refuse every explicit-electron reaction before network state changes."""
+    if any(participant.is_electron() for participant in reaction.reactants + reaction.products):
+        source = (library or getattr(reaction, 'library', None)
+                  or getattr(reaction, 'family', None) or 'Unclassified')
+        raise NetworkError(
+            'Electron reactions cannot enter pressure-dependent networks: '
+            '{0} (library: {1}). Keep the rate explicit; disable '
+            'elementary_high_p/allow_pdep_route and cached network kinetics, '
+            'or disable pressure dependence.'.format(reaction, source))
+
+
 class PDepReaction(rmgpy.reaction.Reaction):
 
     def __init__(self,
@@ -185,6 +197,8 @@ class PDepNetwork(rmgpy.pdep.network.Network):
         return (PDepNetwork, (self.index, self.source), self.__dict__)
 
     def __setstate__(self, dict):
+        for reaction in dict.get('path_reactions', []) + dict.get('net_reactions', []):
+            _check_electron_channel_routing(reaction)
         self.__dict__.update(dict)
 
     def cleanup(self):
@@ -327,9 +341,6 @@ class PDepNetwork(rmgpy.pdep.network.Network):
         for mol in isomer.molecule:
             mol.update()
 
-        self.explored.append(isomer)
-        self.isomers.append(product)
-        self.products.remove(product)
         # Find reactions involving the found species as unimolecular
         # reactant or product (e.g. A <---> products)
 
@@ -339,6 +350,11 @@ class PDepNetwork(rmgpy.pdep.network.Network):
         # reactants or products with other core species (e.g. A + B <---> products)
 
         new_reactions = react_species((isomer,))
+        for reaction in new_reactions:
+            _check_electron_channel_routing(reaction)
+        self.explored.append(isomer)
+        self.isomers.append(product)
+        self.products.remove(product)
 
         return new_reactions
 
@@ -347,6 +363,7 @@ class PDepNetwork(rmgpy.pdep.network.Network):
         Add a path reaction to the network. If the path reaction already exists,
         no action is taken.
         """
+        _check_electron_channel_routing(newReaction)
         # Add this reaction to that network if not already present
         found = False
         for rxn in self.path_reactions:
@@ -641,6 +658,11 @@ class PDepNetwork(rmgpy.pdep.network.Network):
         # Make sure the two partial networks have the same source configuration
         assert self.source == other.source
 
+        # Check both networks, including restored state, before changing any
+        # configuration or reaction list. Electron reactions stay explicit.
+        for reaction in self.path_reactions + other.path_reactions + self.net_reactions + other.net_reactions:
+            _check_electron_channel_routing(reaction)
+
         # Merge isomers
         for isomer in other.isomers:
             if isomer not in self.isomers:
@@ -703,6 +725,8 @@ class PDepNetwork(rmgpy.pdep.network.Network):
         the current `reaction_model` because some decisions on sorting are made
         based on which species are in the model core. 
         """
+        for reaction in self.path_reactions + self.net_reactions:
+            _check_electron_channel_routing(reaction)
         reactants = []
         products = []
 
@@ -785,6 +809,10 @@ class PDepNetwork(rmgpy.pdep.network.Network):
         network is marked as invalid.
         """
         from rmgpy.kinetics import Arrhenius, KineticsData, MultiArrhenius
+
+        # Reject legacy paths before binding a job or changing configurations.
+        for reaction in self.path_reactions + self.net_reactions:
+            _check_electron_channel_routing(reaction)
 
         # Get the parameters for the pressure dependence calculation
         job = pdep_settings

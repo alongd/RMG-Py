@@ -17,6 +17,18 @@ Overview of Features
 **Extensible libraries.**
 	Ability to include reaction models on top of the provided reaction families.
 
+**Independent electron channels from libraries.**
+    Opposite irreversible reactions from different libraries remain separate when
+    an explicit electron participates and the two directions differ. Each retains
+    its own rate law; other cross-library duplicates keep first-library priority.
+    Every reaction with an explicit electron participant is refused from
+    pressure-dependent networks, including reversible and single-library entries.
+    Electron rates remain explicit; electron-impact kinetics are not falloff chemistry.
+    Disable the elementary high-pressure and pressure-dependent routing flags and
+    cached network kinetics for these entries, or disable pressure dependence.
+    Admission checks the entire batch before registration, so a refused seed or
+    restart leaves the model unchanged and can be retried with corrected routing.
+
 **Pressure-dependent reaction networks.**
 	Dissociation, combination, and isomerization reactions have the potential to have rate coefficients that are dependent on both temperature and pressure, and RMG is able to estimate both for networks of arbitrary complexity with a bounded error.
 	

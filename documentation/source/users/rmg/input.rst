@@ -1622,6 +1622,14 @@ the line ::
 to turn off pressure dependence for all molecules larger than the given number
 of atoms (16 in the above example).
 
+With pressure dependence enabled, RMG refuses generated reactions with an electron
+on either side before registering species or reactions, even when ``maximumAtoms`` or a shape filter would exclude
+their initial direction. Kinetics estimation can reverse the direction later.
+Keep library electron rates explicit: do not declare ``elementary_high_p`` or
+``allow_pdep_route``, or supply cached network kinetics for them. Electron reactions
+cannot enter RMG pressure-dependent networks; disable pressure dependence to admit
+generated electron reactions.
+
 
 Completed Pressure-Dependent Networks
 --------------------------------------
