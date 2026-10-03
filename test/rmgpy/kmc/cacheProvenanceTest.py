@@ -1,6 +1,26 @@
 """Mutation controls for expensive-generation cache provenance."""
 
-from cache_provenance import generator_code_unchanged
+import hashlib
+import json
+
+import pytest
+
+from cache_provenance import generator_code_unchanged, supplied_artifact
+
+
+def test_explicit_stale_artifact_is_rejected_without_cache_fallback(tmp_path, monkeypatch):
+    payload = json.dumps({"provenance": {"compiler_sources_sha256": "stale"}}).encode()
+    path = tmp_path / (hashlib.sha256(payload).hexdigest() + ".json")
+    path.write_bytes(payload)
+    monkeypatch.setenv("RMG_KMC_ARTIFACT", str(path))
+    with pytest.raises(AssertionError):
+        supplied_artifact()
+
+
+def test_explicit_missing_artifact_is_rejected_without_cache_fallback(tmp_path, monkeypatch):
+    monkeypatch.setenv("RMG_KMC_ARTIFACT", str(tmp_path / "missing.json"))
+    with pytest.raises(FileNotFoundError):
+        supplied_artifact()
 
 
 def test_cache_reuse_accepts_only_kmc_changes(monkeypatch):

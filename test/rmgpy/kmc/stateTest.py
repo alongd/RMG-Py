@@ -44,6 +44,11 @@ _STRESS_ARTIFACT = None
 def ps_artifact():
     """Compile once per session, cached by both repository inputs."""
     from rmgpy.kmc.compiler import compiler_source_hash
+    from cache_provenance import supplied_artifact
+
+    supplied = supplied_artifact()
+    if supplied:
+        return supplied[1]
 
     source_hash = compiler_source_hash()
     head = subprocess.check_output(
