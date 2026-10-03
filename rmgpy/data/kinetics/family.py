@@ -67,6 +67,7 @@ from rmgpy.kinetics import Arrhenius, SurfaceArrhenius, SurfaceArrheniusBEP, Sti
 from rmgpy.kinetics.uncertainties import RateUncertainty, rank_accuracy_map
 from rmgpy.molecule import Bond, GroupBond, Group, Molecule
 from rmgpy.molecule.molecule import Atom
+from rmgpy.molecule.graph import Graph
 from rmgpy.molecule.atomtype import ATOMTYPES
 from rmgpy.reaction import Reaction, pair_occurrences, same_species_lists
 from rmgpy.species import Species
@@ -1054,8 +1055,7 @@ class TemplateReaction(Reaction):
 class ReactionRecipe(object):
     """
     Represent a list of actions that, when executed, result in the conversion
-    of a set of reactants to a set of products. There are currently five such
-    actions:
+    of a set of reactants to a set of products. The following actions are supported:
 
     ============= ============================= ================================
     Action Name   Arguments                     Description
@@ -1067,6 +1067,7 @@ class ReactionRecipe(object):
     LOSE_RADICAL  `center`, `radical`           decrease the number of free electrons on `center` by `radical`
     GAIN_PAIR     `center`, `pair`              increase the number of lone electron pairs on `center` by `pair`
     LOSE_PAIR     `center`, `pair`              decrease the number of lone electron pairs on `center` by `pair`
+    SET_STATE     `center`, `electronic_state`, `vibrational_level` set both state fields on the final product containing `center`
     ============= ============================= ================================
 
     The actions are stored as a list in the `actions` attribute. Each action is
@@ -1111,9 +1112,22 @@ class ReactionRecipe(object):
                 other.add_action(['GAIN_PAIR', action[1], action[2]])
             elif action[0] == 'GAIN_PAIR':
                 other.add_action(['LOSE_PAIR', action[1], action[2]])
+            elif action[0] == 'SET_STATE':
+                raise InvalidActionError('SET_STATE cannot be reversed without the original state; '
+                                         'declare the family reversible = False.')
         return other
 
-    def _apply(self, struct, forward, unique):
+    @staticmethod
+    def _set_state(struct, electronic_state, vibrational_level):
+        """Assign species state, using singleton constraints for a product Group."""
+        if isinstance(struct, Group):
+            struct.electronic_state = [electronic_state] if electronic_state else []
+            struct.vibrational_level = [vibrational_level] if vibrational_level >= 0 else []
+        else:
+            struct.electronic_state = electronic_state
+            struct.vibrational_level = vibrational_level
+
+    def _apply(self, struct, forward, unique, state_changes=None):
         """
         Apply the reaction recipe to the set of molecules contained in
         `structure`, a single Structure object that contains one or more
@@ -1122,6 +1136,9 @@ class ReactionRecipe(object):
         the structure should be labeled with the appropriate atom centers.
         """
 
+        if not forward and any(action[0] == 'SET_STATE' for action in self.actions):
+            raise InvalidActionError('SET_STATE cannot be automatically reversed.')
+        pending_states = []
         pattern = isinstance(struct, Group)
         struct.props['validAromatic'] = True
 
@@ -1273,15 +1290,38 @@ class ReactionRecipe(object):
                         elif (action[0] == 'LOSE_PAIR' and forward) or (action[0] == 'GAIN_PAIR' and not forward):
                             atom.apply_action(['LOSE_PAIR', label, 1])
 
+            elif action[0] == 'SET_STATE':
+                try:
+                    label, electronic_state, vibrational_level = action[1:]
+                    electronic_state = Molecule._validate_electronic_state(electronic_state)
+                    vibrational_level = Molecule._validate_vibrational_level(vibrational_level)
+                    atoms = struct.get_labeled_atoms(label)
+                except ValueError as exc:
+                    raise InvalidActionError('Invalid SET_STATE action: {}'.format(exc)) from exc
+                if len(atoms) != 1:
+                    raise InvalidActionError('SET_STATE requires one uniquely labeled atom.')
+                pending_states.append((atoms[0], electronic_state, vibrational_level))
             else:
                 raise InvalidActionError('Unknown action "' + action[0] + '" encountered.')
 
-    def apply_forward(self, struct, unique=True):
+        if state_changes is not None:
+            # Family recipes operate on a merged graph; retain atom references until
+            # topology changes, label reversal, splitting and updates have finished.
+            state_changes.extend(pending_states)
+        elif pending_states:
+            if len(Graph.split(Graph(struct.atoms))) != 1:
+                raise InvalidActionError('SET_STATE on multiple products requires KineticsFamily.apply_recipe.')
+            for _, electronic_state, vibrational_level in pending_states:
+                self._set_state(struct, electronic_state, vibrational_level)
+
+    def apply_forward(self, struct, unique=True, state_changes=None):
         """
         Apply the forward reaction recipe to `molecule`, a single
-        :class:`Molecule` object.
+        :class:`Molecule` object. An optional `state_changes` list collects
+        atom-anchored SET_STATE assignments for a family to apply after splitting;
+        without it, state is assigned directly to a connected structure.
         """
-        return self._apply(struct, True, unique)
+        return self._apply(struct, True, unique, state_changes=state_changes)
 
     def apply_reverse(self, struct, unique=True):
         """
@@ -1332,6 +1372,11 @@ class KineticsFamily(Database):
     a neutral molecule by definition. Left undeclared it inherits `allow_charged_species`, so a
     family that says nothing about it behaves exactly as it did before the attribute existed.
     See `is_charged_reactant_forbidden`.
+
+    ``allowExcitedReactants`` in ``groups.py`` sets `allow_excited_reactants`,
+    defaulting to False. Resolved molecules are excluded before template
+    subgraph matching unless both this flag and the group's independent state
+    constraints admit them. ``SET_STATE`` assigns product state after splitting.
     """
 
     def __init__(self,
@@ -1351,6 +1396,7 @@ class KineticsFamily(Database):
                  boundary_atoms=None,
                  tree_distances=None,
                  save_order=False,
+                 allow_excited_reactants=False,
                  ):
         Database.__init__(self, entries, top, label, name, short_desc, long_desc)
         self.reverse = reverse
@@ -1364,6 +1410,7 @@ class KineticsFamily(Database):
         self.boundary_atoms = boundary_atoms
         self.tree_distances = tree_distances
         self.save_order = save_order
+        self.allow_excited_reactants = allow_excited_reactants
 
         # Kinetics depositories of training and test data
         self.groups = None
@@ -1430,6 +1477,7 @@ class KineticsFamily(Database):
         local_context['autoGenerated'] = False
         local_context['allowChargedSpecies'] = False
         local_context['allowChargedReactants'] = None
+        local_context['allowExcitedReactants'] = False
         local_context['electrons'] = 0
         self.groups = KineticsGroups(label='{0}/groups'.format(self.label))
         logging.debug("Loading kinetics family groups from {0}".format(os.path.join(path, 'groups.py')))
@@ -1444,6 +1492,7 @@ class KineticsFamily(Database):
 
         self.auto_generated = local_context.get('autoGenerated', False)
         self.allow_charged_species = local_context.get('allowChargedSpecies', False)
+        self.allow_excited_reactants = local_context.get('allowExcitedReactants', False)
         # `allowChargedSpecies` is two-sided: it gates reactants and products together, so a
         # family that must make a charged product is forced to also accept a charged reactant.
         # `allowChargedReactants` is the one-sided override for the reactant side. Left
@@ -1567,7 +1616,7 @@ class KineticsFamily(Database):
             action[0] = action[0].upper()
             valid_actions = [
                 'CHANGE_BOND', 'FORM_BOND', 'BREAK_BOND', 'GAIN_RADICAL', 'LOSE_RADICAL',
-                'GAIN_CHARGE', 'LOSE_CHARGE', 'GAIN_PAIR', 'LOSE_PAIR'
+                'GAIN_CHARGE', 'LOSE_CHARGE', 'GAIN_PAIR', 'LOSE_PAIR', 'SET_STATE'
             ]
             if action[0] not in valid_actions:
                 raise InvalidActionError('Action {0} is not a recognized action. '
@@ -1758,6 +1807,9 @@ class KineticsFamily(Database):
 
         if self.auto_generated is not None:
             f.write('autoGenerated = {0}\n\n'.format(self.auto_generated))
+
+        if self.allow_excited_reactants:
+            f.write('allowExcitedReactants = True\n\n')
 
         if self.allow_charged_species:
             f.write('allowChargedSpecies = {0}\n\n'.format(self.allow_charged_species))
@@ -2155,13 +2207,20 @@ class KineticsFamily(Database):
         elif isinstance(reactant_structures[0], Molecule):
             reactant_structure = Molecule()
         for s in reactant_structures:
-            reactant_structure = reactant_structure.merge(s.copy(deep=True))
+            working_structure = s.copy(deep=True)
+            if isinstance(working_structure, Molecule) and working_structure.has_resolved_state():
+                # State belongs to a species, not the merged recipe graph. Products are
+                # unresolved unless SET_STATE deliberately assigns their final state.
+                working_structure.electronic_state = ''
+                working_structure.vibrational_level = -1
+            reactant_structure = reactant_structure.merge(working_structure)
 
+        state_changes = []
         if forward:
             # Generate the product structure by applying the recipe
-            self.forward_recipe.apply_forward(reactant_structure, unique)
+            self.forward_recipe.apply_forward(reactant_structure, unique, state_changes=state_changes)
         else:
-            self.reverse_recipe.apply_forward(reactant_structure, unique)
+            self.reverse_recipe.apply_forward(reactant_structure, unique, state_changes=state_changes)
 
         # Now that we have applied the recipe, let's start calling
         # this thing the product_structure (although it's the same object in memory)
@@ -2346,6 +2405,12 @@ class KineticsFamily(Database):
                 'The net charge of the reactants {0} differs from the net charge of the products {1} in reaction '
                 'family {2}. Not generating this reaction.'.format(reactant_net_charge, product_net_charge, self.label))
             return None
+
+        for atom, electronic_state, vibrational_level in state_changes:
+            targets = [struct for struct in product_structures if atom in struct.atoms]
+            if len(targets) != 1:
+                raise InvalidActionError('SET_STATE atom does not identify one product.')
+            ReactionRecipe._set_state(targets[0], electronic_state, vibrational_level)
 
         # If there are two product structures, place the one containing '*1' first
         if len(product_structures) == 2:
@@ -2605,6 +2670,9 @@ class KineticsFamily(Database):
         matches the provided template reactant, or an empty list if not.
         """
 
+        if (isinstance(reactant, Molecule) and reactant.has_resolved_state()
+                and not self.allow_excited_reactants):
+            return []
         if isinstance(template_reactant, list):
             template_reactant = template_reactant[0]
         if isinstance(template_reactant, Entry):

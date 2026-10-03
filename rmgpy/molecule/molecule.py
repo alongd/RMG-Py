@@ -1894,8 +1894,10 @@ class Molecule(Graph):
                 'Got a {0} object for parameter "other", when a Group object is required.'.format(other.__class__))
         group = other
 
-        # Group templates only represent unresolved molecules in this phase.
-        if self.has_resolved_state():
+        # State constraints are independent; an absent constraint is unresolved only.
+        if 'x' not in group.electronic_state and self.electronic_state not in (group.electronic_state or ['']):
+            return False
+        if 'x' not in group.vibrational_level and self.vibrational_level not in (group.vibrational_level or [-1]):
             return False
         # Check multiplicity
         if group.multiplicity:
@@ -1971,8 +1973,10 @@ class Molecule(Graph):
                 'Got a {0} object for parameter "other", when a Group object is required.'.format(other.__class__))
         group = other
 
-        # Group templates only represent unresolved molecules in this phase.
-        if self.has_resolved_state():
+        # State constraints are independent; an absent constraint is unresolved only.
+        if 'x' not in group.electronic_state and self.electronic_state not in (group.electronic_state or ['']):
+            return []
+        if 'x' not in group.vibrational_level and self.vibrational_level not in (group.vibrational_level or [-1]):
             return []
         # Check multiplicity
         if group.multiplicity:
@@ -2707,8 +2711,6 @@ class Molecule(Graph):
         """
 
         cython.declare(atom=Atom, bonded_atom=Atom, bond=Bond, group=gr.Group)
-        if self.has_resolved_state():
-            raise NotImplementedError('to_group would drop the resolved state of\n{0}'.format(self.to_adjacency_list()))
         # Create GroupAtom object for each atom in the molecule
         group_atoms = OrderedDict()  # preserver order of atoms in original container
         for atom in self.vertices:
@@ -2722,7 +2724,9 @@ class Molecule(Graph):
                                              )
 
         group = gr.Group(atoms=list(group_atoms.values()), multiplicity=[self.multiplicity], metal=[self.metal] if self.metal else [],
-                         facet=[self.facet] if self.facet else [])
+                         facet=[self.facet] if self.facet else [],
+                         electronic_state=[self.electronic_state] if self.electronic_state else [],
+                         vibrational_level=[self.vibrational_level] if self.vibrational_level >= 0 else [])
 
         # Create GroupBond for each bond between atoms in the molecule
         for atom in self.vertices:

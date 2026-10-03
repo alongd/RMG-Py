@@ -162,7 +162,7 @@ def test_low_level_parser_preserves_four_item_return_tuple():
 
 
 @pytest.mark.parametrize('state', STATES[1:])
-def test_resolved_molecules_do_not_match_templates_or_become_groups(state):
+def test_resolved_molecules_only_match_their_state_constrained_group(state):
     group = Group().from_adjacency_list('1 N ux {2,T}\n2 N ux {1,T}')
     ground = molecule()
     assert ground.is_subgraph_isomorphic(group)
@@ -170,8 +170,9 @@ def test_resolved_molecules_do_not_match_templates_or_become_groups(state):
     resolved = molecule(*state)
     assert not resolved.is_subgraph_isomorphic(group)
     assert resolved.find_subgraph_isomorphisms(group) == []
-    with pytest.raises(NotImplementedError, match='resolved state'):
-        resolved.to_group()
+    resolved_group = resolved.to_group()
+    assert resolved.is_subgraph_isomorphic(resolved_group)
+    assert not ground.is_subgraph_isomorphic(resolved_group)
 
 
 @pytest.mark.parametrize('state', STATES[1:])
