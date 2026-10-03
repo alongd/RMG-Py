@@ -1,5 +1,6 @@
 """Fast preparation and cached real-artifact regressions (never compile)."""
 
+import copy
 import importlib.util
 import json
 import os
@@ -62,26 +63,64 @@ def test_training_failure_restores_global_constraints(monkeypatch):
     assert not hasattr(family, "_kmc_rate_rule_preparation")
 
 
+def test_offline_preparation_restores_absent_global_input(monkeypatch):
+    monkeypatch.setattr(rmg_input, "rmg", None)
+    family = SimpleNamespace(
+        auto_generated=False, rules=SimpleNamespace(entries={}),
+        add_rules_from_training=lambda **kwargs: None,
+        fill_rules_by_averaging_up=lambda **kwargs: None,
+    )
+    prepare_rate_rules(SimpleNamespace(families={"ordinary": family}), "thermo")
+    assert rmg_input.rmg is None
+
+
+def load_probe():
+    path = Path(__file__).with_name("fixtures") / "i046_probe/compare_artifacts.py"
+    spec = importlib.util.spec_from_file_location("i046_compare", path)
+    probe = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(probe)
+    return probe
+
+
+def test_comparison_matches_chemistry_across_changed_nested_inverse_ids():
+    probe = load_probe()
+    old = {
+        "family": "R_Recombination", "event_id": "evt_" + "1" * 64,
+        "junction_ops": [{"action": "create", "junction_kind": "J_para",
+                          "reverse_event_handle": "evt_" + "2" * 64}],
+        "rate_source": {"source": "old"}, "k_table": {"k": [1.0]},
+    }
+    new = copy.deepcopy(old)
+    new["event_id"] = "evt_" + "3" * 64
+    new["junction_ops"][0]["reverse_event_handle"] = "evt_" + "4" * 64
+    new["rate_source"] = {"source": "new"}
+    new["k_table"] = {"k": [2.0]}
+    assert probe.structural_key(old) == probe.structural_key(new)
+    new["junction_ops"][0]["junction_kind"] = "J_ortho_S8"
+    assert probe.structural_key(old) != probe.structural_key(new)
+
+
 @pytest.fixture(scope="module")
 def cached_artifacts():
     supplied = os.environ.get("RMG_KMC_ARTIFACT")
     if not supplied:
         pytest.skip("set RMG_KMC_ARTIFACT to the single compiled artifact")
-    path = Path(__file__).with_name("fixtures") / "i046_probe/compare_artifacts.py"
-    spec = importlib.util.spec_from_file_location("i046_compare", path)
-    probe = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(probe)
+    probe = load_probe()
     return probe, json.loads(probe.OLD_ARTIFACT.read_text()), json.loads(Path(supplied).read_text())
 
 
-@pytest.mark.parametrize("family", ["R_Addition_MultipleBond", "H_Abstraction", "intra_H_migration"])
-def test_compiled_representative_selects_training_derived_rules(cached_artifacts, family):
+@pytest.mark.parametrize("family, root", [
+    ("R_Addition_MultipleBond", "R_R;YJ"),
+    ("H_Abstraction", "X_H_or_Xrad_H_Xbirad_H_Xtrirad_H;Y_rad_birad_trirad_quadrad"),
+    ("intra_H_migration", "RnH;Y_rad_out;XH_out"),
+])
+def test_compiled_representative_selects_training_derived_rules(cached_artifacts, family, root):
     probe, old, new = cached_artifacts
     record = probe.representative(old, new, family)
     source = record["rate_source"]
-    assert source.get("comment"), (family, "missing RMG estimation comment")
     assert probe.has_training(source), (family, source)
-    assert not probe.has_default(source), (family, source)
+    assert not probe.has_default_or_root(source, root), (family, source)
+    assert source.get("comment"), (family, "missing RMG estimation comment")
     assert source["template"] == record["template"]
 
 

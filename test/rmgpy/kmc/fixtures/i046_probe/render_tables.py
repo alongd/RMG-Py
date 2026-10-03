@@ -28,8 +28,11 @@ def blocks(result):
          for row in result["families"] for t, values in row["rate_changes"].items()],
     )
     output["preparation"] = table(
-        ["Family", "Rules loaded", "After training", "After averaging"],
-        [[family, values["rules_before"], values["rules_after_training"], values["rules_after_averaging"]]
+        ["Family", "Rules loaded", "Original Default entries", "After training", "After averaging"],
+        [[family, values["rules_before"],
+          sum(entry["short_desc"].strip().lower() == "default"
+              for entry in result["original_rule_entries"][family]),
+          values["rules_after_training"], values["rules_after_averaging"]]
          for family, values in result["rate_rule_preparation"]["families"].items()],
     )
     output["propagation"] = table(
@@ -43,6 +46,7 @@ def blocks(result):
         [["New artifact SHA-256", result["new_artifact_sha256"]],
          ["New record count", result["new_records"]],
          ["Tree records with identical rates/sources", sum(result["tree_records_bit_identical"].values())],
+         ["Old non-tree rate nodes reproduced", result["old_rate_nodes_reproduced"]],
          ["Old artifact-grid ceiling (K)", number(result["old_grid_ceiling_K"])],
          ["New artifact-grid ceiling (K)", number(result["new_grid_ceiling_K"])],
          *[[pair["site_type"] + " continuous thermo ceiling (K)", f'{pair["Tc_thermo_K"]:.6f}']

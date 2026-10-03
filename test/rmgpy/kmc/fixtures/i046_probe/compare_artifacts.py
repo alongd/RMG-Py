@@ -28,10 +28,14 @@ def digest(path):
 
 
 def structural_key(record):
+    from rmgpy.kmc.event_record import _canonical_link_handles
+
     # Provenance and rates change event IDs, not the chemical rewrite identity.
     omitted = {"event_id", "canonical_index", "provenance", "rate_source", "k_table",
                "reverse_of", "thermo_provenance", "status", "status_reason"}
-    return json.dumps({k: v for k, v in record.items() if k not in omitted}, sort_keys=True)
+    payload = json.dumps(_canonical_link_handles(
+        {k: v for k, v in record.items() if k not in omitted}), sort_keys=True)
+    return hashlib.sha256(payload.encode()).hexdigest()
 
 
 def index(artifact):
@@ -58,17 +62,28 @@ def has_default(source):
                for entry in source_entries(source))
 
 
+def has_default_or_root(source, root_label):
+    if (has_default(source) or source.get("entry") == root_label
+            or source.get("template") == root_label):
+        return True
+    # Count a newly averaged root too; source contributors alone may be leaves.
+    return any(
+        line.startswith(f"Estimated using template [{root_label}] for rate rule ")
+        or (line.startswith("Estimated using average of templates ")
+            and f"[{root_label}]" in line)
+        for line in source.get("comment", "").splitlines()
+    )
+
+
 def representative(old, new, family):
     if family == "R_Addition_MultipleBond":
         selected = old["ps_ceiling_pairs"][0]["propagation_event_id"]
         record = next(record for record in old["records"] if record["event_id"] == selected)
         return index(new)[structural_key(record)]
-    # First deterministic non-default training-derived estimate, no rate selection.
-    records = sorted((record for record in new["records"] if record["family"] == family
-                      and record["rate_source"].get("kind") == "RMG family estimate"),
-                     key=structural_key)
-    return next((record for record in records if has_training(record["rate_source"])
-                 and not has_default(record["rate_source"])), records[0])
+    # Freeze the representative against the old artifact, before seeing new rates.
+    record = next(record for record in old["records"] if record["family"] == family
+                  and record["rate_source"].get("kind") == "RMG family estimate")
+    return index(new)[structural_key(record)]
 
 
 def verify_tree_invariance(old, new):
@@ -87,7 +102,9 @@ def verify_tree_invariance(old, new):
 
 def run(new_path, database_path):
     from rmgpy.data.rmg import RMGDatabase
-    from rmgpy.kmc.compiler import _rate_rule_source, validate_artifact
+    from rmgpy.kmc.compiler import (
+        _rate_rule_source, compiler_source_hash, prepare_rate_rules, validate_artifact,
+    )
     from rmgpy.data.kinetics.family import TemplateReaction
     from rmgpy.kmc.ssa import record_rate
     from scipy.optimize import brentq
@@ -97,6 +114,7 @@ def run(new_path, database_path):
     assert digest(OLD_ARTIFACT) == OLD_ARTIFACT.stem
     assert digest(new_path) == new_path.stem
     assert new["provenance"]["rmg_database_sha"] == prior.DATABASE_SHA
+    assert new["provenance"]["compiler_sources_sha256"] == compiler_source_hash()
     assert new["provenance"]["compiler_sources_sha256"] != old["provenance"]["compiler_sources_sha256"]
     validate_artifact(new)
     tree_counts = verify_tree_invariance(old, new)
@@ -109,8 +127,17 @@ def run(new_path, database_path):
                      kinetics_depositories=["training"])
     db.load_thermo(str(database_path / "input/thermo"),
                    thermo_libraries=["primaryThermoLibrary"], depository=True)
+    original_rule_entries = {
+        name: [{"index": entry.index, "label": entry.label, "rank": entry.rank,
+                "short_desc": entry.short_desc}
+               for entry in sorted(
+                   (entry for entries in db.kinetics.families[name].rules.entries.values()
+                    for entry in entries), key=lambda entry: entry.index)]
+        for name in non_tree
+    }
     old_sources = {}
     source_cache = {}
+    old_rate_nodes_reproduced = 0
     for key, record in before.items():
         family_name = record["family"]
         if family_name in TREE_FAMILIES or record["rate_source"].get("kind") != "RMG family estimate":
@@ -125,6 +152,7 @@ def run(new_path, database_path):
         kinetics, source = source_cache[cache_key]
         for temperature, rate in zip(record["k_table"]["T"], record["k_table"]["k"]):
             prior.close(kinetics.get_rate_coefficient(temperature), rate)
+            old_rate_nodes_reproduced += 1
         old_sources[key] = source
     summary = []
     for family in families:
@@ -133,12 +161,14 @@ def run(new_path, database_path):
         matched = [key for key in before.keys() & after.keys() if before[key]["family"] == family]
         row = {"family": family, "old_records": len(old_records), "new_records": len(new_records),
                "old_default_or_root_forward": None, "new_default_or_root_forward": None,
-               "old_estimated_forward": sum(record["rate_source"].get("kind") == "RMG family estimate" for record in old_records),
-               "new_estimated_forward": sum(record["rate_source"].get("kind") == "RMG family estimate" for record in new_records),
+               "old_rmg_estimate_tagged_records": sum(record["rate_source"].get("kind") == "RMG family estimate" for record in old_records),
+               "new_rmg_estimate_tagged_records": sum(record["rate_source"].get("kind") == "RMG family estimate" for record in new_records),
                "matched_records": len(matched), "rate_changes": {}}
         if family not in TREE_FAMILIES:
-            row["old_default_or_root_forward"] = sum(has_default(old_sources[key]) for key in old_sources if before[key]["family"] == family)
-            row["new_default_or_root_forward"] = sum(has_default(record["rate_source"]) for record in new_records
+            root = ";".join(group.label for group in db.kinetics.families[family].get_root_template())
+            row["root_template"] = root
+            row["old_default_or_root_forward"] = sum(has_default_or_root(old_sources[key], root) for key in old_sources if before[key]["family"] == family)
+            row["new_default_or_root_forward"] = sum(has_default_or_root(record["rate_source"], root) for record in new_records
                                                      if record["rate_source"].get("kind") == "RMG family estimate")
         else:
             row["old_default_or_root_forward"] = sum(record["rate_source"].get("entry") == "Root" for record in old_records)
@@ -170,9 +200,40 @@ def run(new_path, database_path):
                                 "ratio": record_rate(prop, t) * 1000.0 / prior.benchmark(t)}
                                for t in TEMPERATURES]})
     discovery_counts = lambda artifact: dict(Counter(item["family"] for item in artifact["discovery"]))
+    # Fresh RMG preparation and public get_kinetics spot-checks; no event compile.
+    prepare_rate_rules(db.kinetics, db.thermo, verbose=True)
+    spot_checks = {}
+    for family_name in non_tree:
+        record = representative(old, new, family_name)
+        reaction = prior.prior.reaction_from_record(record)
+        estimate = TemplateReaction(
+            reactants=reaction.reactants, products=reaction.products,
+            family=family_name, template=record["template"].split(";"),
+            degeneracy=record["raw_path_degeneracy"],
+        )
+        family = db.kinetics.families[family_name]
+        kinetics, source, entry, forward = family.get_kinetics(
+            estimate, estimate.template, degeneracy=estimate.degeneracy,
+            return_all_kinetics=False,
+        )
+        assert forward
+        assert record["rate_source"]["source"] == str(source)
+        assert record["rate_source"]["entry"] == (str(entry) if entry else None)
+        assert record["rate_source"]["rank"] == getattr(entry, "rank", None)
+        estimate.kinetics = kinetics
+        fresh_source = _rate_rule_source(family, estimate)
+        for field, value in fresh_source.items():
+            assert record["rate_source"][field] == value, (family_name, field)
+        for temperature, rate in zip(record["k_table"]["T"], record["k_table"]["k"]):
+            prior.close(kinetics.get_rate_coefficient(temperature), rate)
+        spot_checks[family_name] = {"event_id": record["event_id"],
+                                   "grid_points": len(record["k_table"]["T"]),
+                                   "source": fresh_source}
     result = {"old_artifact": str(OLD_ARTIFACT), "new_artifact": str(new_path),
               "new_artifact_sha256": digest(new_path), "new_records": len(new["records"]),
+              "old_rate_nodes_reproduced": old_rate_nodes_reproduced,
               "tree_records_bit_identical": tree_counts, "families": summary, "propagation": pairs,
+              "original_rule_entries": original_rule_entries,
               "rate_rule_preparation": new["provenance"]["rate_rule_preparation"],
               "old_grid_ceiling_K": old["ps_ceiling_temperature_K"],
               "new_grid_ceiling_K": new["ps_ceiling_temperature_K"],
@@ -181,6 +242,7 @@ def run(new_path, database_path):
               "old_discovery_counts": discovery_counts(old), "new_discovery_counts": discovery_counts(new),
               "excluded_channels_old": len(old["excluded_channels"]), "excluded_channels_new": len(new["excluded_channels"]),
               "representatives": {family: representative(old, new, family)["rate_source"] for family in non_tree}}
+    result["fresh_rmg_spot_checks"] = spot_checks
     prior.close(result["old_grid_ceiling_K"], result["new_grid_ceiling_K"])
     for pair in pairs:
         prior.close(pair["Tc_thermo_K"], 710.020462, relative=1e-8)
@@ -203,6 +265,7 @@ def main():
     print("I046 tree-family rate tables and sources: 13274 bit-identical records")
     print("I046 old non-tree rule rates reproduced; family distributions and discovery compared")
     print("I046 both propagation pairs: dimensional Kc, detailed balance and 710.02 K thermo ceiling verified")
+    print("I046 three fresh public-RMG estimates: all 87 rate nodes and source comments verified")
     print("I046 results: " + str(args.output))
 
 
