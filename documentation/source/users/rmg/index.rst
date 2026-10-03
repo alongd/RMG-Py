@@ -31,6 +31,7 @@ rmg_dev@mit.edu.
     database/index
     thermo
     kinetics
+    eedf
     liquids
     surfaces
     faq
