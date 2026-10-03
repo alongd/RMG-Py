@@ -40,6 +40,7 @@ import cython
 
 import rmgpy.molecule.element as elements
 import rmgpy.molecule.molecule as mol
+from rmgpy.exceptions import StateConstraintMergeError
 from rmgpy.exceptions import ActionError, ImplicitBenzeneError, UnexpectedChargeError
 from rmgpy.molecule.atomtype import ATOMTYPES, allElements, nonSpecifics, get_features, AtomType
 from rmgpy.molecule.element import PeriodicSystem
@@ -1276,6 +1277,35 @@ class GroupBond(Edge):
         molecule.add_bond(new_bond)
 
 
+def _state_values(values, unresolved):
+    """State constraints as sets; x is a universal wildcard, [] is unresolved only."""
+    return {'x'} if 'x' in values else set(values or [unresolved])
+
+
+def _state_is_specific_case_of(values, other, unresolved):
+    if not values and not other:
+        return True
+    if 'x' in other:
+        return True
+    if 'x' in values:
+        return False
+    return _state_values(values, unresolved).issubset(_state_values(other, unresolved))
+
+
+def _intersect_state_constraints(left, right, unresolved):
+    """Conjoin whole-species constraints when joining Group structures."""
+    if 'x' in left:
+        return right[:]
+    if 'x' in right:
+        return left[:]
+    values = _state_values(left, unresolved) & _state_values(right, unresolved)
+    if not values:
+        raise StateConstraintMergeError('Cannot merge incompatible state constraints')
+    if values == {unresolved}:
+        return []
+    return [value for value in left if value in values]
+
+
 class Group(Graph):
     """
     A representation of a molecular substructure group using a graph data
@@ -1289,17 +1319,29 @@ class Group(Graph):
     `props`             ``dict``            Dictionary of arbitrary properties/flags classifying state of Group object
     `metal`             ``list``            List of metals accepted for the group
     `facet`             ``list``            List of facets accepted for the group
+    `electronic_state`  ``list``            Allowed tokens; [] unresolved only, ['x'] any
+    `vibrational_level` ``list``            Allowed levels; [] unresolved only, ['x'] any
     =================== =================== ====================================
 
     Corresponding alias methods to Molecule have also been provided.
     """
 
-    def __init__(self, atoms=None, props=None, multiplicity=None, metal=None, facet=None):
+    def __init__(self, atoms=None, props=None, multiplicity=None, metal=None, facet=None,
+                 electronic_state=None, vibrational_level=None):
         Graph.__init__(self, atoms)
         self.props = props or {}
         self.multiplicity = multiplicity or []
         self.metal = metal or []
         self.facet = facet or []
+        from rmgpy.molecule.adjlist import _validate_group_state
+        from rmgpy.exceptions import InvalidAdjacencyListError
+        try:
+            self.electronic_state = _validate_group_state(
+                [] if electronic_state is None else electronic_state, 'electronicstate')[:]
+            self.vibrational_level = _validate_group_state(
+                [] if vibrational_level is None else vibrational_level, 'vibrationallevel')[:]
+        except InvalidAdjacencyListError as exc:
+            raise ValueError(str(exc)) from exc
         self.elementCount = {}
         self.radicalCount = -1
         self.update()
@@ -1311,7 +1353,8 @@ class Group(Graph):
         """
         A helper function used when pickling an object.
         """
-        return (Group, (self.vertices, self.props, self.multiplicity, self.metal, self.facet))
+        return (Group, (self.vertices, self.props, self.multiplicity, self.metal, self.facet,
+                        self.electronic_state, self.vibrational_level))
 
     def _repr_png_(self):
         """
@@ -1504,6 +1547,8 @@ class Group(Graph):
         else:
             other = Group(g.vertices, props=self.props, multiplicity=self.multiplicity,
                           metal=self.metal, facet=self.facet)
+        other.electronic_state = self.electronic_state[:]
+        other.vibrational_level = self.vibrational_level[:]
         return other
 
     def update(self):
@@ -1561,7 +1606,8 @@ class Group(Graph):
         graphs = Graph.split(self)
         molecules = []
         for g in graphs:
-            molecule = Group(atoms=g.vertices)
+            molecule = Group(atoms=g.vertices, electronic_state=self.electronic_state,
+                             vibrational_level=self.vibrational_level)
             molecules.append(molecule)
         return molecules
 
@@ -2055,7 +2101,11 @@ class Group(Graph):
         ``False``.
         """
         from rmgpy.molecule.adjlist import from_adjacency_list
-        self.vertices, multiplicity, self.metal, self.facet = from_adjacency_list(adjlist, group=True, check_consistency=check_consistency)
+        state = {}
+        self.vertices, multiplicity, self.metal, self.facet = from_adjacency_list(
+            adjlist, group=True, check_consistency=check_consistency, state=state)
+        self.electronic_state = state.get('electronic_state', [])
+        self.vibrational_level = state.get('vibrational_level', [])
         if multiplicity is not None:
             self.multiplicity = multiplicity
         self.update()
@@ -2066,7 +2116,9 @@ class Group(Graph):
         Convert the molecular structure to a string adjacency list.
         """
         from rmgpy.molecule.adjlist import to_adjacency_list
-        return to_adjacency_list(self.vertices, multiplicity=self.multiplicity, metal=self.metal, facet=self.facet, label=label, group=True)
+        return to_adjacency_list(self.vertices, multiplicity=self.multiplicity, metal=self.metal,
+                                 facet=self.facet, label=label, group=True,
+                                 electronic_state=self.electronic_state, vibrational_level=self.vibrational_level)
 
     def update_fingerprint(self):
         """
@@ -2096,6 +2148,11 @@ class Group(Graph):
         if not isinstance(other, Group):
             raise TypeError(
                 'Got a {0} object for parameter "other", when a Group object is required.'.format(other.__class__))
+        if (self.electronic_state or other.electronic_state
+                or self.vibrational_level or other.vibrational_level):
+            if (_state_values(self.electronic_state, '') != _state_values(other.electronic_state, '')
+                    or _state_values(self.vibrational_level, -1) != _state_values(other.vibrational_level, -1)):
+                return False
         # Do the isomorphism comparison
         return Graph.is_isomorphic(self, other, initial_map, generate_initial_map, save_order=save_order)
 
@@ -2116,6 +2173,11 @@ class Group(Graph):
         if not isinstance(other, Group):
             raise TypeError(
                 'Got a {0} object for parameter "other", when a Group object is required.'.format(other.__class__))
+        if (self.electronic_state or other.electronic_state
+                or self.vibrational_level or other.vibrational_level):
+            if (_state_values(self.electronic_state, '') != _state_values(other.electronic_state, '')
+                    or _state_values(self.vibrational_level, -1) != _state_values(other.vibrational_level, -1)):
+                return []
         # Do the isomorphism comparison
         return Graph.find_isomorphism(self, other, initial_map, save_order=save_order)
 
@@ -2138,6 +2200,11 @@ class Group(Graph):
                 'Got a {0} object for parameter "other", when a Group object is required.'.format(other.__class__))
 
         group = other
+        if (self.electronic_state or group.electronic_state
+                or self.vibrational_level or group.vibrational_level):
+            if (not _state_is_specific_case_of(self.electronic_state, group.electronic_state, '')
+                    or not _state_is_specific_case_of(self.vibrational_level, group.vibrational_level, -1)):
+                return False
 
         if generate_initial_map:
             keys = []
@@ -2220,6 +2287,11 @@ class Group(Graph):
             raise TypeError(
                 'Got a {0} object for parameter "other", when a Group object is required.'.format(other.__class__))
         group = other
+        if (self.electronic_state or group.electronic_state
+                or self.vibrational_level or group.vibrational_level):
+            if (not _state_is_specific_case_of(self.electronic_state, group.electronic_state, '')
+                    or not _state_is_specific_case_of(self.vibrational_level, group.vibrational_level, -1)):
+                return []
 
         if self.multiplicity:
             for mult1 in self.multiplicity:
@@ -3086,7 +3158,10 @@ class Group(Graph):
             if originalAtom.label not in overlapping_labels:
                 merged_group_atoms.append(newAtom)
 
-        merged_group = Group(atoms=merged_group_atoms)
+        merged_group = Group(
+            atoms=merged_group_atoms,
+            electronic_state=_intersect_state_constraints(self.electronic_state, other.electronic_state, ''),
+            vibrational_level=_intersect_state_constraints(self.vibrational_level, other.vibrational_level, -1))
 
         """
         The following loop will move bonds that are exclusively in the new backbone so that

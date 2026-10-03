@@ -50,7 +50,7 @@ import cython
 import numpy as np
 
 import rmgpy.quantity as quantity
-from rmgpy.exceptions import SpeciesError, StatmechError
+from rmgpy.exceptions import SpeciesError, StatmechError, StateProvenanceError
 from rmgpy.molecule.graph import Graph
 from rmgpy.molecule.molecule import Atom, Bond, Molecule
 from rmgpy.molecule.fragment import CuttingLabel, Fragment
@@ -1009,6 +1009,8 @@ class Species(object):
         Generate the collisional energy transfer model parameters for the
         species. This "algorithm" is *very* much in need of improvement.
         """
+        if any(m.has_resolved_state() for m in self.molecule):
+            raise StateProvenanceError('Default energy transfer estimation has no resolved-state provenance')
         self.energy_transfer_model = SingleExponentialDown(
             alpha0=(300 * 0.011962, "kJ/mol"),
             T0=(300, "K"),

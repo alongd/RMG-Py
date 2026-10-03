@@ -36,6 +36,7 @@ import os.path
 from copy import deepcopy
 
 import rmgpy.constants as constants
+from rmgpy.exceptions import StateProvenanceError
 from rmgpy.data.base import Database, Entry, make_logic_node, saturate_for_estimation, DatabaseError
 from rmgpy.exceptions import SaturatedStructureError
 from rmgpy.molecule import Molecule, Group
@@ -477,6 +478,8 @@ class TransportDatabase(object):
         Industrial & Engineering Chemistry Research 1992 31 (8), 2042-2046
         DOI: 10.1021/ie00008a029
         """
+        if molecule.has_resolved_state() and molecule.is_radical():
+            raise StateProvenanceError('Transport radical saturation cannot derive resolved-state data')
         # For transport estimation we need the atoms to already be sorted because we
         # iterate over them; if the order changes during the iteration then we
         # will probably not visit the right atoms, and so will get the transport wrong
@@ -576,6 +579,8 @@ class TransportDatabase(object):
         node0 = database.descend_tree(molecule, atom, None)
 
         if node0 is None:
+            if molecule.has_resolved_state():
+                raise StateProvenanceError("No group node matches the resolved structure")
             raise KeyError('Node not found in database.')
 
         # It's possible (and allowed) that items in the tree may not be in the
@@ -586,9 +591,14 @@ class TransportDatabase(object):
         while node is not None and node.data is None:
             node = node.parent
         if node is None:
+            if molecule.has_resolved_state():
+                raise StateProvenanceError("No matched ancestor data for the resolved structure")
             raise KeyError('Node {!r} has no parent with data in the transport database.'.format(node0))
         data = node.data
         comment = node.label
+        if molecule.has_resolved_state():
+            data, source = database.get_matched_data(node, molecule, atom)
+            comment = source.label
         while isinstance(data, str) and data is not None:
             for entry in database.entries.values():
                 if entry.label == data:
@@ -611,6 +621,8 @@ class TransportDatabase(object):
         
         Generate the Lennard-Jones parameters for the species.
         """
+        if any(m.has_resolved_state() for m in species.molecule):
+            raise StateProvenanceError('Lennard-Jones fallback has no resolved-state provenance')
         count = sum([1 for atom in species.molecule[0].vertices if atom.is_non_hydrogen()])
 
         if count == 1:

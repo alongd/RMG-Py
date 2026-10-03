@@ -35,6 +35,7 @@ import numpy as np
 import rmgpy.constants as constants
 from rmgpy.data.base import Database, Entry, LogicOr, make_logic_node
 from rmgpy.data.statmechfit import fit_statmech_to_heat_capacity
+from rmgpy.exceptions import StateProvenanceError
 from rmgpy.molecule import Molecule, Group
 from rmgpy.statmech import Conformer, HarmonicOscillator, LinearRotor, NonlinearRotor, HinderedRotor, \
                            IdealGasTranslation
@@ -298,6 +299,9 @@ class StatmechGroups(Database):
         center and has characteristic frequencies associated with it.
         """
 
+        if molecule.has_resolved_state():
+            raise StateProvenanceError('statmech: resolved frequency estimation has no matched provenance')
+
         node0 = self.descend_tree(molecule, atom, None)
 
         if node0 is None:
@@ -322,6 +326,9 @@ class StatmechGroups(Database):
         certain functional groups for which characteristic frequencies are
         known, and using those frequencies.
         """
+
+        if molecule.has_resolved_state():
+            raise StateProvenanceError('statmech: resolved frequency estimation has no matched provenance')
 
         frequencies = []
         group_count = {}
@@ -368,6 +375,9 @@ class StatmechGroups(Database):
         `molecule`. The provided thermo data in `thermo_model` is used to fit
         some frequencies and all hindered rotors to heat capacity data.
         """
+        if molecule.has_resolved_state():
+            raise StateProvenanceError('statmech: resolved frequency estimation has no matched provenance')
+
         conformer = Conformer()
 
         # Compute spin multiplicity

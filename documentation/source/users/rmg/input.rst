@@ -328,7 +328,7 @@ case-sensitive, contains 1–32 ASCII characters, and may contain letters,
 digits, ``+``, ``-``, ``_``, ``.``, ``,``, and parentheses; use ``2P1_2``
 rather than ``2P1/2``. Longer tokens raise ``InvalidAdjacencyListError``
 when parsing an adjacency list and ``ValueError`` during Molecule construction,
-attribute assignment, or augmented InChI reading. Tokens are never truncated
+attribute assignment, or augmented InChI reading. The token ``x`` is reserved for Group wildcards and is refused here. Tokens are never truncated
 or hashed. The vibrational level is an integer from 0 through 2147483647
 (the signed 32-bit upper bound), and both headers may appear together::
 
@@ -339,9 +339,13 @@ or hashed. The vibrational level is an integer from 0 through 2147483647
 
 These headers distinguish species with the same molecular graph. Omitting
 them preserves the existing unresolved identity; an explicit level zero is
-distinct from an omitted level. Resolved molecules do not match reaction
-family templates in this phase. Groups, Fragments, conversion to a group,
-and old-style adjacency lists cannot represent a resolved state. SMILES and
+distinct from an omitted level. Resolved molecules require a family declaring
+``allowExcitedReactants = True`` in its ``groups.py`` and a group template whose
+state constraints admit them. Groups use list-valued state headers; missing or
+empty lists match unresolved values only, and ``x`` matches any value. See
+:ref:`group` for the syntax and ``SET_STATE`` product recipe action.
+``Molecule.to_group()`` carries resolved values as singleton constraints.
+Fragments and old-style adjacency lists cannot represent a resolved state. SMILES and
 standard InChI omit the state; augmented InChI strings append
 ``/es:<token>`` and/or ``/v:<n>``. Augmented InChI keys use filename-safe
 ``-es<ASCII hex token>`` and/or ``-v<n>`` suffixes instead; for example,

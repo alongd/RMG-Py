@@ -46,6 +46,7 @@ from pysidt.utils import find_shortest_paths
 import rmgpy.constants as constants
 import rmgpy.molecule
 import rmgpy.quantity
+from rmgpy.exceptions import StateProvenanceError
 from rmgpy.data.base import Database, Entry, make_logic_node, saturate_for_estimation, DatabaseError
 from rmgpy.ml.estimator import MLEstimator
 from rmgpy.molecule import Molecule, Bond, Group
@@ -807,6 +808,7 @@ class ThermoGroups(Database):
         """
         Write the given `entry` in the thermo database to the file object `f`.
         """
+        self._check_data_serialization(entry)
         return save_entry(f, entry)
 
     def generate_old_library_entry(self, data):
@@ -834,6 +836,7 @@ class ThermoGroups(Database):
 
         """
         destination.data = source.data
+        destination.data_sources = (source,)
         destination.reference = source.reference
         destination.short_desc = source.short_desc
         destination.long_desc = source.long_desc
@@ -864,6 +867,7 @@ class ThermoGroups(Database):
         for entry in self.entries.values():
             if isinstance(entry.data, str):
                 if entry.data == group_to_remove.label:
+                    entry.data_sources = (group_to_remove,)
                     # if the entryToRemove.data is also a pointer, then copy
                     if isinstance(group_to_remove.data, str):
                         entry.data = group_to_remove.data
@@ -1453,6 +1457,8 @@ class ThermoDatabase(object):
             ml_estimator, ml_settings = None, None
 
         if quantum_mechanics:
+            if any(m.has_resolved_state() for m in species.molecule):
+                raise StateProvenanceError('QM thermo estimation has no supported resolved-state provenance')
             try:
                 original_molecule = species.molecule[0]
                 if quantum_mechanics.settings.onlyCyclics and not original_molecule.is_cyclic():
@@ -1700,6 +1706,8 @@ class ThermoDatabase(object):
         
         Returns a :class:`ThermoData` object, with no Cp0 or CpInf
         """
+        if any(m.has_resolved_state() for m in species.molecule):
+            raise StateProvenanceError('Surface desorption cannot derive resolved-state thermo')
 
         # define the comparison function to find the lowest energy
         def species_enthalpy(species):
@@ -1823,6 +1831,8 @@ class ThermoDatabase(object):
             molecule ([Molecule]): the molecule to apply the thermo correction
             surface_sites ([list([Atom])]): a list of the surface site atoms in the molecule
         """
+        if molecule.has_resolved_state():
+            raise StateProvenanceError('Adsorption trees have no supported resolved-state data provenance')
         number_of_surface_sites = len(surface_sites)
         
         if "SIDT" not in self.adsorption_groups: 
@@ -1954,7 +1964,8 @@ class ThermoDatabase(object):
         """
         Return the thermodynamic parameters for a given :class:`Species`
         object `species`. This function first searches the loaded libraries
-        in order, returning the first match found, before failing and returning None.
+        in order, returning the first state-matched record. Resolved electrons
+        without a matching record raise StateProvenanceError; other misses return None.
         `training_set` is used to identify if function is called during training set or not.
         During training set calculation we want to use gas phase thermo to not affect reverse
         rate calculation.
@@ -1963,6 +1974,17 @@ class ThermoDatabase(object):
         """
         import rmgpy.rmg.main
         thermo_data = None
+        resolved_electron = species.is_electron() and any(m.has_resolved_state() for m in species.molecule)
+
+        def lookup_library(library):
+            try:
+                return self.get_thermo_data_from_library(species, library)
+            except StateProvenanceError:
+                if not resolved_electron:
+                    raise
+                # This library has no matching electron record. A later library
+                # can still supply data for the declared state.
+                return None
 
         # chatelak 11/15/14: modification to introduce liquid phase thermo libraries
         library_list = deepcopy(self.library_order)  # copy the value to not affect initial object
@@ -1978,7 +2000,7 @@ class ThermoDatabase(object):
             # Only if function not called by training_set
             if liq_libraries and training_set is None:
                 for label in liq_libraries:
-                    thermo_data = self.get_thermo_data_from_library(species, self.libraries[label])
+                    thermo_data = lookup_library(self.libraries[label])
                     if thermo_data is not None:
                         if len(thermo_data) != 3:
                             raise RuntimeError("thermo_data should be a tuple (thermo_data, library, entry), "
@@ -1999,7 +2021,7 @@ class ThermoDatabase(object):
         # all gas phase, already checked by checkLibrairies function in database.load()
         # Check the libraries in order; return the first successful match
         for label in library_list:
-            thermo_data = self.get_thermo_data_from_library(species, self.libraries[label])
+            thermo_data = lookup_library(self.libraries[label])
             if thermo_data is not None:
                 if len(thermo_data) != 3:
                     raise RuntimeError("thermo_data should be a tuple (thermo_data, library, entry), "
@@ -2010,6 +2032,8 @@ class ThermoDatabase(object):
                     thermo_data[0].comment += 'Thermo library: ' + label
                 return thermo_data
 
+        if resolved_electron:
+            raise StateProvenanceError('thermo: no electron library record matches the declared state')
         return None
 
     def get_all_thermo_data(self, species):
@@ -2091,7 +2115,9 @@ class ThermoDatabase(object):
         :class:`Species` object `species` from the specified thermodynamics
         `library`. If `library` is a string, the list of libraries is searched
         for a library with that name. If no match is found in that library,
-        ``None`` is returned. If no corresponding library is found, a
+        ``None`` is returned, except resolved electrons raise StateProvenanceError.
+        Nonmatching state records are skipped before consuming their data.
+        If no corresponding library is found, a
         :class:`DatabaseError` is raised.
         
         Returns a tuple: (ThermoData, library, entry)  or None.
@@ -2103,12 +2129,17 @@ class ThermoDatabase(object):
         # canonical library entry (u0), and the structural isomorphism test below
         # distinguishes u0 from u1, so a u1-declared electron would miss the entry, fall
         # through to group additivity, and crash in RDKit ('Element e not found'). Match
-        # the electron against any electron entry regardless of unpaired-electron count.
+        # the electron against an electron entry regardless of unpaired-electron count,
+        # while requiring both declared state fields to match.
         species_is_electron = species.is_electron()
         for entry in library.entries.values():
             entry_is_electron = species_is_electron and callable(getattr(entry.item, 'is_electron', None)) \
                 and entry.item.is_electron()
             for molecule in species.molecule:
+                if (entry_is_electron and entry.data is not None
+                        and (molecule.electronic_state != entry.item.electronic_state
+                             or molecule.vibrational_level != entry.item.vibrational_level)):
+                    continue
                 if (molecule.is_isomorphic(entry.item) or entry_is_electron) and entry.data is not None:
                     thermo_data = deepcopy(entry.data)
                     thermo_data.label = entry.label
@@ -2117,6 +2148,8 @@ class ThermoDatabase(object):
                     break
             if match is not None:
                 break
+        if match is None and species_is_electron and any(m.has_resolved_state() for m in species.molecule):
+            raise StateProvenanceError('thermo: no electron library record matches the declared state')
         if match is not None:
             # Move the matched molecule to the first position in the list
             species.molecule.remove(molecule)
@@ -2167,6 +2200,8 @@ class ThermoDatabase(object):
         The entropy is not corrected for the symmetry of the molecule.
         This should be done later by the calling function.
         """
+        if any(m.has_resolved_state() for m in species.molecule):
+            raise StateProvenanceError('ML thermo estimation has no supported resolved-state provenance')
         molecule = species.molecule[0]
 
         min_heavy = ml_settings['min_heavy_atoms'] or 1
@@ -2270,6 +2305,8 @@ class ThermoDatabase(object):
         No entropy is included in the returning term.
         This should be done later by the calling function.
         """
+        if molecule.has_resolved_state():
+            raise StateProvenanceError('estimate_radical_thermo_via_hbi: resolved-state structural derivation is unsupported')
         if not molecule.is_radical():
             raise ValueError("Method only valid for radicals.")
 
@@ -2519,6 +2556,8 @@ class ThermoDatabase(object):
         will be directly added to `thermo_data`; otherwise, a heuristic approach will
         be applied.
         """
+        if molecule.has_resolved_state():
+            raise StateProvenanceError('_add_polycyclic_correction_thermo_data: resolved-state structural derivation is unsupported')
         # look up polycylic tree directly
         matched_group_thermodata, matched_group, is_partial_match = self._add_ring_correction_thermo_data_from_tree(
             None, self.groups['polycyclic'], molecule, polyring)
@@ -2688,7 +2727,10 @@ class ThermoDatabase(object):
         for atom in ring:
             atoms = {'*': atom}
             entry = ring_database.descend_tree(molecule, atoms)
-            matched_ring_entries.append(entry)
+            if entry is not None:
+                matched_ring_entries.append(entry)
+            elif molecule.has_resolved_state():
+                raise StateProvenanceError("No matched resolved ring node")
 
         if not matched_ring_entries:
             raise KeyError('Node not found in database.')
@@ -2721,6 +2763,8 @@ class ThermoDatabase(object):
                                 'any of its ancestors.'.format(molecule, mostSpecificGroup))
 
         while node is not None and node.data is None:
+            if molecule.has_resolved_state():
+                raise StateProvenanceError('{}: ring averaging requires unmatched descendants'.format(ring_database.label))
             # do average of its children
             success, averaged_thermo_data = self._average_children_thermo(node, ring_database)
             if success:
@@ -2728,8 +2772,15 @@ class ThermoDatabase(object):
             else:
                 node = node.parent
 
+        if node is None:
+            raise DatabaseError('No ring correction data in {}'.format(ring_database.label))
         data = node.data
         comment = node.label
+        if molecule.has_resolved_state():
+            atoms = next(({'*': atom} for atom in ring
+                          if ring_database.match_node_to_structure(most_specific_matched_entry, molecule, {'*': atom})), None)
+            data, node = ring_database.get_matched_data(node, molecule, atoms or {})
+            comment = node.label
         while isinstance(data, str) and data is not None:
             for entry in ring_database.entries.values():
                 if entry.label == data:
@@ -2761,18 +2812,22 @@ class ThermoDatabase(object):
             else:
                 return True, node.data
         else:
+            sources = []
             children_thermo_data_list = []
             for child in node.children:
                 if child.data is None:
                     success, child_thermo_data_average = self._average_children_thermo(child, database)
                     if success:
                         children_thermo_data_list.append(child_thermo_data_average)
+                        sources.append(child)
                 else:
                     data = child.data
                     while isinstance(data, str):
                         data = database.entries[data].data
                     children_thermo_data_list.append(data)
+                    sources.append(child)
             if children_thermo_data_list:
+                node.data_sources = tuple(sources)
                 return True, average_thermo_data(children_thermo_data_list)
             else:
                 return False, None
@@ -2789,6 +2844,8 @@ class ThermoDatabase(object):
         """
         node0 = database.descend_tree(molecule, atom, None)
         if node0 is None:
+            if molecule.has_resolved_state():
+                raise StateProvenanceError("No group node matches the resolved structure")
             raise KeyError(f'Node not found for atom {atom} in molecule {molecule} in thermo database {database.label}.')
 
         # It's possible (and allowed) that items in the tree may not be in the
@@ -2798,12 +2855,17 @@ class ThermoDatabase(object):
         while node is not None and node.data is None:
             node = node.parent
         if node is None:
+            if molecule.has_resolved_state():
+                raise StateProvenanceError("No matched ancestor data for the resolved structure")
             raise DatabaseError(f'Unable to determine thermo parameters for atom {atom} in molecule {molecule}: '
                                 f'no data for node {node0} or any of its ancestors in database {database.label}.\n' +
                                 molecule.to_adjacency_list())
 
         data = node.data
         comment = node.label
+        if molecule.has_resolved_state():
+            data, source = database.get_matched_data(node, molecule, atom)
+            comment = source.label
         loop_count = 0
         while isinstance(data, str):
             loop_count += 1
@@ -2844,20 +2906,27 @@ class ThermoDatabase(object):
         """
         node0 = database.descend_tree(molecule, atom, None)
         if node0 is None:
+            if molecule.has_resolved_state():
+                raise StateProvenanceError("No group node matches the resolved structure")
             raise KeyError(f'Node not found for atom {atom} in molecule {molecule} in thermo database {database.label}.')
 
         # It's possible (and allowed) that items in the tree may not be in the
         # library, in which case we need to fall up the tree until we find an
         # ancestor that has an entry in the library
         node = node0
-        while node.data is None and node is not None:
+        while node is not None and node.data is None:
             node = node.parent
         if node is None:
+            if molecule.has_resolved_state():
+                raise StateProvenanceError("No matched ancestor data for the resolved structure")
             raise DatabaseError(f'Unable to determine thermo parameters for atom {atom} in molecule {molecule}: '
                                 f'no data for node {node0} or any of its ancestors in database {database.label}.')
 
         data = node.data
         comment = node.label
+        if molecule.has_resolved_state():
+            data, source = database.get_matched_data(node, molecule, atom)
+            comment = source.label
         loop_count = 0
         while isinstance(data, str):
             loop_count += 1

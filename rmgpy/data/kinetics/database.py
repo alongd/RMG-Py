@@ -42,7 +42,7 @@ from rmgpy.data.kinetics.common import ensure_species, generate_molecule_combos,
                                        check_for_same_reactants
 from rmgpy.data.kinetics.family import KineticsFamily
 from rmgpy.data.kinetics.library import LibraryReaction, KineticsLibrary
-from rmgpy.exceptions import DatabaseError
+from rmgpy.exceptions import DatabaseError, StateProvenanceError
 from rmgpy.kinetics import Arrhenius, ArrheniusEP, ThirdBody, Lindemann, Troe, \
                            PDepArrhenius, MultiArrhenius, MultiPDepArrhenius, \
                            Chebyshev, KineticsData, StickingCoefficient, \
@@ -807,6 +807,10 @@ and immediately used in input files without any additional changes.
         """
         from rmgpy.data.thermo import find_cp0_and_cpinf
         from rmgpy.thermo import Wilhoit
+        for species in reaction.reactants + reaction.products:
+            molecules = species.molecule if isinstance(species, Species) else [species]
+            if any(molecule.has_resolved_state() for molecule in molecules):
+                raise StateProvenanceError('kinetics: resolved source reconstruction has no matched provenance')
         if 'Library' in source:
             return reaction.kinetics
         elif 'PDep' in source:

@@ -41,8 +41,10 @@ from copy import deepcopy
 
 import numpy as np
 
+from rmgpy.molecule import Group
 from rmgpy.data.base import Database, Entry, get_all_combinations
 from rmgpy.data.kinetics.common import save_entry
+from rmgpy.exceptions import StateProvenanceError
 from rmgpy.exceptions import KineticsError, DatabaseError
 from rmgpy.kinetics import ArrheniusEP, Arrhenius, StickingCoefficientBEP, SurfaceArrheniusBEP, \
                             SurfaceChargeTransfer, SurfaceChargeTransferBEP, Marcus
@@ -263,6 +265,7 @@ class KineticsRules(Database):
                 data=kinetics,
                 rank=11,  # Indicates this is an averaged estimate
             )
+            entry.data_sources = tuple(self.get_rule(t) for k, t in kinetics_list)
             self.entries[entry.label] = [entry]
             already_done[root_label] = entry.data
             return entry.data
@@ -358,6 +361,30 @@ class KineticsRules(Database):
             )
         return averaged_kinetics
 
+    def _check_rule_provenance(self, entry, template, seen=None):
+        """Require every rate source to cover the matched template, or refuse.
+
+        The template API does not contain the original atom mapping. Coverage
+        of its Group constraints is a conservative proof; a more specific
+        child cannot supply data to a broader resolved template.
+        """
+        seen = set() if seen is None else seen
+        if entry is None or entry in seen:
+            raise StateProvenanceError('{}: missing or cyclic rate-rule provenance'.format(self.label))
+        source = entry.item
+        if not isinstance(source, (list, tuple)) or len(source) != len(template):
+            raise StateProvenanceError('{}: rate rule {} has no template provenance'.format(self.label, entry.label))
+        for matched, contributor in zip(template, source):
+            if not isinstance(matched.item, Group) or not isinstance(contributor.item, Group):
+                raise StateProvenanceError('{}: logical rate-rule provenance is not supported'.format(self.label))
+            if not matched.item.is_subgraph_isomorphic(contributor.item, generate_initial_map=True):
+                raise StateProvenanceError('{}: source {} does not cover matched template {}'.format(
+                    self.label, contributor.label, matched.label))
+        if entry.rank == 11 and entry.data_sources is None:
+            raise StateProvenanceError('{}: averaged rate {} has no source provenance'.format(self.label, entry.label))
+        for contributor in entry.data_sources or ():
+            self._check_rule_provenance(contributor, template, seen | {entry})
+
     def estimate_kinetics(self, template, degeneracy=1):
         """
         Determine the appropriate kinetics for a reaction with the given
@@ -367,7 +394,15 @@ class KineticsRules(Database):
         entry used to determine the kinetics only if it is an exact match,
         and is None if some averaging or use of a parent node took place.
         """
+        resolved = getattr(template, 'resolved', None)
+        if resolved is None:
+            resolved = any(isinstance(e.item, Group) and (e.item.electronic_state or e.item.vibrational_level)
+                           for e in template)
+        if resolved and self.auto_generated:
+            raise StateProvenanceError('{}: resolved automatic-tree estimates are unsupported'.format(self.label))
         entry = self.get_rule(template)
+        if resolved and entry is not None:
+            self._check_rule_provenance(entry, template)
 
         if self.auto_generated:
             entry0 = entry
@@ -412,6 +447,8 @@ class KineticsRules(Database):
                 entry = self.get_rule(t)
                 if entry is None:
                     continue
+                if resolved:
+                    self._check_rule_provenance(entry, template)
                 kinetics = deepcopy(entry.data)
                 kinetics_list.append([kinetics, t])
                 distances.append(distance_list[i])
@@ -462,6 +499,8 @@ class KineticsRules(Database):
         kinetics_list = remove_identical_kinetics(saved_kinetics)
 
         if len(kinetics_list) == 0:
+            if resolved:
+                raise StateProvenanceError('{}: no matched rate-rule data'.format(self.label))
             raise KineticsError("Unable to determine kinetics for reaction "
                                 f"with template {template!r} in family {self.label!s}.")
 

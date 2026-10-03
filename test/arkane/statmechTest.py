@@ -36,7 +36,7 @@ import os
 
 import numpy as np
 
-from rmgpy.species import Species
+from rmgpy.species import Species, TransitionState
 from rmgpy.exceptions import InputError
 
 from arkane import Arkane
@@ -604,3 +604,18 @@ rotors = [HinderedRotor(scanLog=ScanLog('{scan}'), pivots=[1, 2], top=[1, 3], sy
             assert np.allclose(statmech_job.raw_hindered_rotor_data[0][3], angles, atol=1e-6)
             assert np.allclose(statmech_job.raw_hindered_rotor_data[0][4], energies, atol=1e-6)
             os.remove(h2o2_path)
+
+
+def test_transition_state_file_loading_has_no_molecule_requirement():
+    """The resolved-species guard leaves ordinary transition-state loading usable."""
+    transition_state = TransitionState(label='TS')
+    path = os.path.join(os.path.dirname(__file__), '..', '..', 'examples', 'arkane',
+                        'reactions', 'H+C2H4=C2H5', 'TS.py')
+    job = StatMechJob(transition_state, path)
+    job.level_of_theory = LevelOfTheory(method='CBS-QB3')
+    job.applyAtomEnergyCorrections = False
+    job.applyBondEnergyCorrections = False
+    job.load()
+    assert np.isfinite(transition_state.conformer.E0.value_si)
+    assert transition_state.frequency.value_si < 0
+    assert transition_state.conformer.modes

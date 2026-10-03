@@ -40,6 +40,7 @@ from copy import deepcopy
 from CoolProp.CoolProp import PropsSI
 
 import rmgpy.constants as constants
+from rmgpy.exceptions import StateProvenanceError
 from rmgpy.data.base import Database, Entry, make_logic_node, saturate_for_estimation, DatabaseError
 from rmgpy.molecule import Molecule, Group, ATOMTYPES
 from rmgpy.species import Species
@@ -1096,6 +1097,7 @@ class SoluteGroups(Database):
         """
         Write the given `entry` in the thermo database to the file object `f`.
         """
+        self._check_data_serialization(entry)
         return save_entry(f, entry)
 
     def generate_old_library_entry(self, data):
@@ -1559,6 +1561,8 @@ class SolvationDatabase(object):
         solute_data: :class:`SoluteData` object
             Contains the Abraham solute parameters estimated from the group additivity and HBI correction.
         """
+        if molecule.has_resolved_state():
+            raise StateProvenanceError('estimate_radical_solute_data_via_hbi: resolved-state structural derivation is unsupported')
         if not molecule.is_radical():
             raise ValueError("Method only valid for radicals.")
 
@@ -1663,6 +1667,8 @@ class SolvationDatabase(object):
         solute_data: :class:`SoluteData` object
             Contains the Abraham solute parameters estimated from the group additivity and halogen correction.
         """
+        if molecule.has_resolved_state():
+            raise StateProvenanceError('estimate_halogen_solute_data: resolved-state structural derivation is unsupported')
         if not molecule.has_halogen():
             raise ValueError("Method only valid for halogenated molecule.")
 
@@ -1844,6 +1850,8 @@ class SolvationDatabase(object):
         will be directly added to `solute_data`; otherwise, a heuristic approach will
         be applied.
         """
+        if molecule.has_resolved_state():
+            raise StateProvenanceError('_add_polycyclic_correction_solute_data: resolved-state structural derivation is unsupported')
         # look up polycylic tree directly
         matched_group_solutedata, matched_group, is_partial_match = self._add_ring_correction_solute_data_from_tree(
             None, self.groups['polycyclic'], molecule, polyring)
@@ -2016,7 +2024,10 @@ class SolvationDatabase(object):
         for atom in ring:
             atoms = {'*': atom}
             entry = ring_database.descend_tree(molecule, atoms)
-            matched_ring_entries.append(entry)
+            if entry is not None:
+                matched_ring_entries.append(entry)
+            elif molecule.has_resolved_state():
+                raise StateProvenanceError("No matched resolved ring node")
 
         if matched_ring_entries == []:
             raise KeyError('Node not found in database.')
@@ -2049,6 +2060,8 @@ class SolvationDatabase(object):
                                 'any of its ancestors.'.format(molecule, most_specific_match_indices[0]))
 
         while node is not None and node.data is None:
+            if molecule.has_resolved_state():
+                raise StateProvenanceError('{}: ring averaging requires unmatched descendants'.format(ring_database.label))
             # do average of its children
             success, averaged_solute_data = self._average_children_solute(node, ring_database)
             if success:
@@ -2056,8 +2069,15 @@ class SolvationDatabase(object):
             else:
                 node = node.parent
 
+        if node is None:
+            raise DatabaseError('No ring correction data in {}'.format(ring_database.label))
         data = node.data
         comment = node.label
+        if molecule.has_resolved_state():
+            atoms = next(({'*': atom} for atom in ring
+                          if ring_database.match_node_to_structure(most_specific_matched_entry, molecule, {'*': atom})), None)
+            data, node = ring_database.get_matched_data(node, molecule, atoms or {})
+            comment = node.label
         while isinstance(data, str) and data is not None:
             for entry in ring_database.entries.values():
                 if entry.label == data:
@@ -2089,18 +2109,22 @@ class SolvationDatabase(object):
             else:
                 return True, node.data
         else:
+            sources = []
             children_solute_data_list = []
             for child in node.children:
                 if child.data is None:
                     success, child_solute_data_average = self._average_children_solute(child, database)
                     if success:
                         children_solute_data_list.append(child_solute_data_average)
+                        sources.append(child)
                 else:
                     data = child.data
                     while isinstance(data, str):
                         data = database.entries[data].data
                     children_solute_data_list.append(data)
+                    sources.append(child)
             if children_solute_data_list:
+                node.data_sources = tuple(sources)
                 return True, average_solute_data(children_solute_data_list)
             else:
                 return False, None
@@ -2115,6 +2139,8 @@ class SolvationDatabase(object):
         node0 = database.descend_tree(molecule, atom, None)
 
         if node0 is None:
+            if molecule.has_resolved_state():
+                raise StateProvenanceError("No group node matches the resolved structure")
             raise KeyError('Node not found in database.')
 
         # It's possible (and allowed) that items in the tree may not be in the
@@ -2125,9 +2151,14 @@ class SolvationDatabase(object):
         while node is not None and node.data is None:
             node = node.parent
         if node is None:
+            if molecule.has_resolved_state():
+                raise StateProvenanceError("No matched ancestor data for the resolved structure")
             raise KeyError('Node has no parent with data in database.')
         data = node.data
         comment = node.label
+        if molecule.has_resolved_state():
+            data, source = database.get_matched_data(node, molecule, atom)
+            comment = source.label
         while isinstance(data, str) and data is not None:
             for entry in database.entries.values():
                 if entry.label == data:
@@ -2157,6 +2188,8 @@ class SolvationDatabase(object):
         node0 = database.descend_tree(molecule, atom, None)
 
         if node0 is None:
+            if molecule.has_resolved_state():
+                raise StateProvenanceError("No group node matches the resolved structure")
             raise KeyError('Node not found in database.')
 
         # It's possible (and allowed) that items in the tree may not be in the
@@ -2167,9 +2200,14 @@ class SolvationDatabase(object):
         while node is not None and node.data is None:
             node = node.parent
         if node is None:
+            if molecule.has_resolved_state():
+                raise StateProvenanceError("No matched ancestor data for the resolved structure")
             raise KeyError('Node has no parent with data in database.')
         data = node.data
         comment = node.label
+        if molecule.has_resolved_state():
+            data, source = database.get_matched_data(node, molecule, atom)
+            comment = source.label
         while isinstance(data, str) and data is not None:
             for entry in database.entries.values():
                 if entry.label == data:

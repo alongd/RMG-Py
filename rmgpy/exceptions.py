@@ -475,3 +475,22 @@ class UndeterminableKineticsError(ReactionError):
     def __init__(self, reaction, message=''):
         new_message = 'Kinetics could not be determined. ' + message
         ReactionError.__init__(self, reaction, new_message)
+
+
+class StateProvenanceError(Exception):
+    """Resolved-state data cannot be traced to matching database nodes.
+
+    This is deliberately separate from ordinary missing-data errors, so an
+    estimator cannot catch it and substitute a ground-state fallback.
+    """
+    pass
+
+
+class ResolvedStateTrainingError(NotImplementedError):
+    """Training and automatic tree fitting do not support resolved species."""
+    pass
+
+
+class StateConstraintMergeError(ValueError):
+    """Merged groups have incompatible whole-species state constraints."""
+    pass

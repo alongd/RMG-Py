@@ -36,6 +36,7 @@ from subprocess import Popen, PIPE
 
 import cclib
 
+from rmgpy.exceptions import StateProvenanceError
 from rmgpy.exceptions import DependencyError, AtomTypeError
 from rmgpy.molecule.molecule import Molecule
 from rmgpy.qm.molecule import QMMolecule
@@ -271,6 +272,8 @@ class MopacMol(QMMolecule, Mopac):
         Using the :class:`Geometry` object, write the input file
         for the `attempt`.
         """
+        if self.molecule.has_resolved_state():
+            raise StateProvenanceError('QM thermo estimation has no supported resolved-state provenance')
 
         self.check_file_names()
         molfile = self.get_mol_file_path_for_calculation(attempt)
@@ -320,6 +323,8 @@ class MopacMol(QMMolecule, Mopac):
         """
         Calculate the QM data and return a QMData object, or None if it fails.
         """
+        if self.molecule.has_resolved_state():
+            raise StateProvenanceError('QM thermo estimation has no supported resolved-state provenance')
         for atom in self.molecule.vertices:
             if atom.charge != 0:
                 return None

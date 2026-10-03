@@ -31,6 +31,7 @@
 This module contains functionality for reading from and writing to the
 adjacency list format used by Reaction Mechanism Generator (RMG).
 """
+import ast
 import logging
 import re
 import warnings
@@ -50,9 +51,50 @@ def validate_electronic_state(value):
     """Validate the electronic-state header grammar for all molecule entry points."""
     if not isinstance(value, str) or (value and not re.fullmatch(r'[A-Za-z0-9+_.,()-]+', value)):
         raise ValueError("Invalid electronic state token: {!r}".format(value))
+    if value == 'x':
+        raise ValueError("Electronic state token 'x' is reserved for Group wildcards")
     if len(value) > MAX_ELECTRONIC_STATE_LENGTH:
         raise ValueError("Electronic state token must contain at most {} characters".format(MAX_ELECTRONIC_STATE_LENGTH))
     return value
+
+
+def _validate_group_state(values, keyword):
+    """Validate list-valued group constraints, including wildcard and unresolved values."""
+    if not isinstance(values, list):
+        raise InvalidAdjacencyListError('{} in a group must be a list or x'.format(keyword))
+    try:
+        for value in values:
+            if value == 'x':
+                continue
+            if keyword == 'electronicstate':
+                validate_electronic_state(value)
+            else:
+                # -1 is the unresolved value in an explicit group constraint.
+                from rmgpy.molecule.molecule import Molecule
+                Molecule._validate_vibrational_level(value)
+    except ValueError as exc:
+        raise InvalidAdjacencyListError(str(exc)) from exc
+    return values
+
+
+def _parse_group_state(line, keyword):
+    """Read x, an unquoted state list, or a Python list of quoted tokens."""
+    value = line[len(keyword):].strip()
+    if value == 'x':
+        return ['x']
+    if not (value.startswith('[') and value.endswith(']')):
+        raise InvalidAdjacencyListError('{} in a group must be a list or x'.format(keyword))
+    try:
+        if "'" in value or '"' in value:
+            values = ast.literal_eval(value)
+        else:
+            parts = [part.strip() for part in value[1:-1].split(',')] if value[1:-1].strip() else []
+            if any(not part for part in parts):
+                raise ValueError('Empty unquoted state token')
+            values = [part if keyword == 'electronicstate' or part == 'x' else int(part) for part in parts]
+    except (ValueError, SyntaxError) as exc:
+        raise InvalidAdjacencyListError('Invalid {} group constraint: {}'.format(keyword, value)) from exc
+    return _validate_group_state(values, keyword)
 
 
 class Saturator(object):
@@ -489,8 +531,8 @@ def from_adjacency_list(adjlist, group=False, saturate_h=False, check_consistenc
     """
     Convert a string adjacency list `adjlist` into a set of :class:`Atom` and
     :class:`Bond` objects. Optional molecule state headers populate the supplied
-    `state` dictionary; the four-item return tuple is unchanged. Groups and
-    callers without a state dictionary refuse those headers.
+    `state` dictionary; the four-item return tuple is unchanged. Group headers
+    populate list-valued constraints. Callers without a state dictionary refuse them.
     """
     state_keywords = set()
     atoms = []
@@ -609,14 +651,16 @@ def from_adjacency_list(adjlist, group=False, saturate_h=False, check_consistenc
                 
         if line.split()[0] in ('electronicstate', 'vibrationallevel'):
             # Carry molecule metadata without changing existing callers' return tuple.
-            if group:
-                raise InvalidAdjacencyListError("'{0}' is not supported in a group adjacency list".format(line.strip()))
             if state is None:
                 raise InvalidAdjacencyListError("'{0}' needs a caller that can carry a resolved state".format(line.strip()))
             keyword = line.split()[0]
             if keyword in state_keywords:
                 raise InvalidAdjacencyListError("Duplicate {0} header".format(keyword))
             state_keywords.add(keyword)
+            if group:
+                key = 'electronic_state' if keyword == 'electronicstate' else 'vibrational_level'
+                state[key] = _parse_group_state(line.strip(), keyword)
+                continue
             if keyword == 'electronicstate':
                 match = re.fullmatch(r'\s*electronicstate\s+([A-Za-z0-9+_.,()-]+)\s*', line)
                 if not match:
@@ -956,14 +1000,19 @@ def to_adjacency_list(atoms, multiplicity, metal='', facet='', label=None, group
     Convert a chemical graph defined by a list of `atoms` into a string
     adjacency list.
     """
-    if electronic_state or vibrational_level >= 0:
-        if group:
-            raise InvalidAdjacencyListError('A group adjacency list cannot represent a resolved state')
-        if old_style:
-            raise InvalidAdjacencyListError('Old-style adjacency lists cannot represent a resolved state')
+    if group:
+        electronic_state = [] if electronic_state == '' or electronic_state is None else electronic_state
+        vibrational_level = [] if vibrational_level == -1 or vibrational_level is None else vibrational_level
+        _validate_group_state(electronic_state, 'electronicstate')
+        _validate_group_state(vibrational_level, 'vibrationallevel')
+        has_state = bool(electronic_state or vibrational_level)
+    else:
+        has_state = bool(electronic_state or vibrational_level >= 0)
+    if has_state and old_style:
+        raise InvalidAdjacencyListError('Old-style adjacency lists cannot represent a resolved state')
     if old_style:
         warnings.warn("Support for writing old style adjacency lists has been removed in RMG-Py v3.", RuntimeWarning)
-    if not atoms:
+    if not atoms and not (group and (electronic_state or vibrational_level)):
         return ''
 
     adjlist = ''
@@ -986,6 +1035,15 @@ def to_adjacency_list(atoms, multiplicity, metal='', facet='', label=None, group
             adjlist += 'metal [{0!s}]\n'.format(','.join(i for i in metal))
         if facet:
             adjlist += 'facet [{0!s}]\n'.format(','.join(i for i in facet))
+        for keyword, values in [('electronicstate', electronic_state), ('vibrationallevel', vibrational_level)]:
+            if values:
+                if 'x' in values:
+                    value = 'x'
+                elif keyword == 'electronicstate' and any(not token or ',' in token for token in values):
+                    value = repr(values)
+                else:
+                    value = '[{}]'.format(','.join(str(item) for item in values))
+                adjlist += '{} {}\n'.format(keyword, value)
     else:
         assert isinstance(multiplicity, int), "Molecule should have an integer multiplicity"
         if multiplicity != 1 or any(atom.radical_electrons for atom in atoms):
@@ -998,6 +1056,9 @@ def to_adjacency_list(atoms, multiplicity, metal='', facet='', label=None, group
             adjlist += f"electronicstate {electronic_state}\n"
         if vibrational_level >= 0:
             adjlist += f"vibrationallevel {vibrational_level:d}\n"
+
+    if not atoms:
+        return adjlist
 
     # Determine the numbers to use for each atom
     atom_numbers = {}

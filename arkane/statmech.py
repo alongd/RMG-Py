@@ -45,6 +45,7 @@ import pandas as pd
 import yaml
 
 import rmgpy.constants as constants
+from rmgpy.exceptions import StateProvenanceError
 from rmgpy.exceptions import InputError, ElementError, StatmechError
 from rmgpy.molecule.molecule import Molecule
 from rmgpy.species import TransitionState, Species
@@ -315,6 +316,8 @@ class StatMechJob(object):
         each conformer and appends them to the list of conformers on the
         species object.
         """
+        if any(m.has_resolved_state() for m in getattr(self.species, 'molecule', ())):
+            raise StateProvenanceError('Arkane statmech file loading has no supported resolved-state provenance')
         path = self.path
         directory = os.path.abspath(os.path.dirname(path))
 

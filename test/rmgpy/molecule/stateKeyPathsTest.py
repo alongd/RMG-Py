@@ -40,7 +40,7 @@ import pytest
 from rdkit import Chem
 
 from rmgpy.molecule import Molecule
-from rmgpy.exceptions import InvalidAdjacencyListError
+from rmgpy.exceptions import InvalidAdjacencyListError, StateProvenanceError
 from rmgpy.molecule.adjlist import from_adjacency_list
 from rmgpy.molecule.translator import to_inchi_key
 from rmgpy.qm.main import QMSettings
@@ -190,7 +190,7 @@ def test_overlong_electronic_state_is_refused_before_file_writes(entry, length, 
 
 
 @pytest.mark.parametrize('state', RESOLVED_STATES)
-def test_qm_thermo_cache_saves_and_loads_resolved_identity(settings, state):
+def test_qm_thermo_cache_keeps_identity_but_refuses_resolved_loading(settings, state):
     molecule = Molecule(smiles='N#N', electronic_state=state[0], vibrational_level=state[1])
     qm = QMMolecule(molecule, settings)
     qm.check_paths()
@@ -203,7 +203,8 @@ def test_qm_thermo_cache_saves_and_loads_resolved_identity(settings, state):
     assert path.parent == Path(settings.fileStore)
     assert path.is_file()
     restored = QMMolecule(molecule.copy(deep=True), settings)
-    assert restored.load_thermo_data().H298.value_si == pytest.approx(1234)
+    with pytest.raises(StateProvenanceError, match='QM'):
+        restored.load_thermo_data()
     assert restored.unique_id_long in path.read_text()
     assert restored.get_augmented_inchi_key() == qm.unique_id
 
@@ -223,10 +224,17 @@ def test_symmetry_coordinate_file_uses_resolved_key(settings, state):
 
 @pytest.mark.parametrize('state', RESOLVED_STATES)
 @pytest.mark.parametrize('calculator', [GaussianMolPM3, MopacMolPM3])
-def test_program_input_and_output_files_use_resolved_key(settings, state, calculator):
+def test_resolved_program_requests_refuse_before_input_and_output_files(settings, state, calculator):
     molecule = Molecule(smiles='N#N', electronic_state=state[0], vibrational_level=state[1])
     qm = calculator(molecule, settings)
     qm.create_geometry()
+    if molecule.has_resolved_state():
+        with pytest.raises(StateProvenanceError, match='QM'):
+            qm.write_input_file(1)
+        assert not Path(qm.input_file_path).exists()
+        assert not Path(qm.output_file_path).exists()
+        assert (molecule.electronic_state, molecule.vibrational_level) == state
+        return
     qm.write_input_file(1)
     input_path, output_path = Path(qm.input_file_path), Path(qm.output_file_path)
     assert input_path.parent == output_path.parent == Path(settings.scratchDirectory)
@@ -293,6 +301,15 @@ def test_just_under_budget_key_writes_every_qm_file(settings, monkeypatch, resol
     rd_molecule, conformer = geometry.rd_embed(rd_molecule, 1)
     geometry.save_coordinates_from_rdmol(rd_molecule, conformer, mapping)
     qm.geometry = geometry
+    if resolved:
+        with pytest.raises(StateProvenanceError, match='QM'):
+            qm.write_input_file(1)
+        assert not Path(qm.input_file_path).exists()
+        assert not Path(qm.output_file_path).exists()
+        assert molecule.electronic_state == 'A' * 32
+        assert all(Path(name).exists() for name in
+                   (geometry.get_crude_mol_file_path(), geometry.get_refined_mol_file_path()))
+        return
     qm.write_input_file(1)
 
     # The external executable boundary writes real output/log files; no QM job is run.

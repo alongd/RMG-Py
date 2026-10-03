@@ -39,6 +39,7 @@ except ImportError as e:
     chemprop_exception = e
 import numpy as np
 
+from rmgpy.exceptions import StateProvenanceError
 from rmgpy.molecule import Molecule
 from rmgpy.species import Species
 from rmgpy.thermo import ThermoData
@@ -86,6 +87,9 @@ class MLEstimator:
         """
         molecule = Molecule(smiles=molecule) if isinstance(molecule, str) else molecule
 
+        if molecule.has_resolved_state():
+            raise StateProvenanceError('ML thermo estimation has no supported resolved-state provenance')
+
         hf298 = self.hf298_estimator(molecule.smiles)[0][0]
         s298_cp = self.s298_cp_estimator(molecule.smiles)[0]
         s298, cp = s298_cp[0], s298_cp[1:]
@@ -118,6 +122,8 @@ class MLEstimator:
 
         Returns: ThermoData
         """
+        if any(m.has_resolved_state() for m in species.molecule):
+            raise StateProvenanceError('ML thermo estimation has no supported resolved-state provenance')
         return self.get_thermo_data(species.molecule[0])
 
 

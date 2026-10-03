@@ -52,11 +52,12 @@ from sklearn.model_selection import KFold
 
 from rmgpy import settings
 from rmgpy.constraints import fails_species_constraints
+from rmgpy.exceptions import ResolvedStateTrainingError
 from rmgpy.data.base import Database, Entry, LogicNode, LogicOr, ForbiddenStructures, get_all_combinations
 from rmgpy.data.kinetics.common import save_entry, find_degenerate_reactions, generate_molecule_combos, \
                                        ensure_independent_atom_ids, check_for_same_reactants
 from rmgpy.data.kinetics.depository import KineticsDepository
-from rmgpy.data.kinetics.groups import KineticsGroups
+from rmgpy.data.kinetics.groups import KineticsGroups, ReactionTemplate
 from rmgpy.data.kinetics.quarantine import load_family_quarantine
 from rmgpy.data.kinetics.rules import KineticsRules
 from rmgpy.exceptions import ActionError, AtomTypeError, DatabaseError, InvalidActionError, KekulizationError, \
@@ -67,6 +68,7 @@ from rmgpy.kinetics import Arrhenius, SurfaceArrhenius, SurfaceArrheniusBEP, Sti
 from rmgpy.kinetics.uncertainties import RateUncertainty, rank_accuracy_map
 from rmgpy.molecule import Bond, GroupBond, Group, Molecule
 from rmgpy.molecule.molecule import Atom
+from rmgpy.molecule.graph import Graph
 from rmgpy.molecule.atomtype import ATOMTYPES
 from rmgpy.reaction import Reaction, pair_occurrences, same_species_lists
 from rmgpy.species import Species
@@ -109,6 +111,10 @@ REACTION_STATE_FIELDS = frozenset(
 _CARRIED_THROUGH_STORAGE = {
     'degeneracy': '_degeneracy',
 }
+
+
+class StateReversalError(InvalidActionError):
+    """A family's species states cannot be represented by its automatic inverse."""
 
 
 class ReactionStateNotCarried(Exception):
@@ -1054,8 +1060,7 @@ class TemplateReaction(Reaction):
 class ReactionRecipe(object):
     """
     Represent a list of actions that, when executed, result in the conversion
-    of a set of reactants to a set of products. There are currently five such
-    actions:
+    of a set of reactants to a set of products. The following actions are supported:
 
     ============= ============================= ================================
     Action Name   Arguments                     Description
@@ -1067,6 +1072,7 @@ class ReactionRecipe(object):
     LOSE_RADICAL  `center`, `radical`           decrease the number of free electrons on `center` by `radical`
     GAIN_PAIR     `center`, `pair`              increase the number of lone electron pairs on `center` by `pair`
     LOSE_PAIR     `center`, `pair`              decrease the number of lone electron pairs on `center` by `pair`
+    SET_STATE     `center`, `electronic_state`, `vibrational_level` set both state fields on the final product containing `center`
     ============= ============================= ================================
 
     The actions are stored as a list in the `actions` attribute. Each action is
@@ -1085,11 +1091,13 @@ class ReactionRecipe(object):
         """
         self.actions.append(action)
 
-    def get_reverse(self):
+    def get_reverse(self, original_states=None):
         """
         Generate a reaction recipe that, when applied, does the opposite of
         what the current recipe does, i.e., it is the recipe for the reverse
-        of the reaction that this is the recipe for.
+        of the reaction that this is the recipe for. ``original_states`` may map
+        atom labels to original (electronic state, vibrational level) pairs for
+        SET_STATE inverses; without that information such actions are refused.
         """
         other = ReactionRecipe()
         for action in reversed(self.actions):  # Play the reverse recipe in the reverse order
@@ -1111,9 +1119,24 @@ class ReactionRecipe(object):
                 other.add_action(['GAIN_PAIR', action[1], action[2]])
             elif action[0] == 'GAIN_PAIR':
                 other.add_action(['LOSE_PAIR', action[1], action[2]])
+            elif action[0] == 'SET_STATE':
+                if original_states is None or action[1] not in original_states:
+                    raise InvalidActionError('SET_STATE cannot be reversed without the original state; '
+                                             'declare the family reversible = False.')
+                other.add_action(['SET_STATE', action[1], *original_states[action[1]]])
         return other
 
-    def _apply(self, struct, forward, unique):
+    @staticmethod
+    def _set_state(struct, electronic_state, vibrational_level):
+        """Assign species state, using singleton constraints for a product Group."""
+        if isinstance(struct, Group):
+            struct.electronic_state = [electronic_state] if electronic_state else []
+            struct.vibrational_level = [vibrational_level] if vibrational_level >= 0 else []
+        else:
+            struct.electronic_state = electronic_state
+            struct.vibrational_level = vibrational_level
+
+    def _apply(self, struct, forward, unique, state_changes=None):
         """
         Apply the reaction recipe to the set of molecules contained in
         `structure`, a single Structure object that contains one or more
@@ -1122,6 +1145,9 @@ class ReactionRecipe(object):
         the structure should be labeled with the appropriate atom centers.
         """
 
+        if not forward and any(action[0] == 'SET_STATE' for action in self.actions):
+            raise InvalidActionError('SET_STATE cannot be automatically reversed.')
+        pending_states = []
         pattern = isinstance(struct, Group)
         struct.props['validAromatic'] = True
 
@@ -1273,15 +1299,38 @@ class ReactionRecipe(object):
                         elif (action[0] == 'LOSE_PAIR' and forward) or (action[0] == 'GAIN_PAIR' and not forward):
                             atom.apply_action(['LOSE_PAIR', label, 1])
 
+            elif action[0] == 'SET_STATE':
+                try:
+                    label, electronic_state, vibrational_level = action[1:]
+                    electronic_state = Molecule._validate_electronic_state(electronic_state)
+                    vibrational_level = Molecule._validate_vibrational_level(vibrational_level)
+                    atoms = struct.get_labeled_atoms(label)
+                except ValueError as exc:
+                    raise InvalidActionError('Invalid SET_STATE action: {}'.format(exc)) from exc
+                if len(atoms) != 1:
+                    raise InvalidActionError('SET_STATE requires one uniquely labeled atom.')
+                pending_states.append((atoms[0], electronic_state, vibrational_level))
             else:
                 raise InvalidActionError('Unknown action "' + action[0] + '" encountered.')
 
-    def apply_forward(self, struct, unique=True):
+        if state_changes is not None:
+            # Family recipes operate on a merged graph; retain atom references until
+            # topology changes, label reversal, splitting and updates have finished.
+            state_changes.extend(pending_states)
+        elif pending_states:
+            if len(Graph.split(Graph(struct.atoms))) != 1:
+                raise InvalidActionError('SET_STATE on multiple products requires KineticsFamily.apply_recipe.')
+            for _, electronic_state, vibrational_level in pending_states:
+                self._set_state(struct, electronic_state, vibrational_level)
+
+    def apply_forward(self, struct, unique=True, state_changes=None):
         """
         Apply the forward reaction recipe to `molecule`, a single
-        :class:`Molecule` object.
+        :class:`Molecule` object. An optional `state_changes` list collects
+        atom-anchored SET_STATE assignments for a family to apply after splitting;
+        without it, state is assigned directly to a connected structure.
         """
-        return self._apply(struct, True, unique)
+        return self._apply(struct, True, unique, state_changes=state_changes)
 
     def apply_reverse(self, struct, unique=True):
         """
@@ -1332,6 +1381,11 @@ class KineticsFamily(Database):
     a neutral molecule by definition. Left undeclared it inherits `allow_charged_species`, so a
     family that says nothing about it behaves exactly as it did before the attribute existed.
     See `is_charged_reactant_forbidden`.
+
+    ``allowExcitedReactants`` in ``groups.py`` sets `allow_excited_reactants`,
+    defaulting to False. Resolved molecules are excluded before template
+    subgraph matching unless both this flag and the group's independent state
+    constraints admit them. ``SET_STATE`` assigns product state after splitting.
     """
 
     def __init__(self,
@@ -1351,6 +1405,7 @@ class KineticsFamily(Database):
                  boundary_atoms=None,
                  tree_distances=None,
                  save_order=False,
+                 allow_excited_reactants=False,
                  ):
         Database.__init__(self, entries, top, label, name, short_desc, long_desc)
         self.reverse = reverse
@@ -1364,6 +1419,7 @@ class KineticsFamily(Database):
         self.boundary_atoms = boundary_atoms
         self.tree_distances = tree_distances
         self.save_order = save_order
+        self.allow_excited_reactants = allow_excited_reactants
 
         # Kinetics depositories of training and test data
         self.groups = None
@@ -1430,6 +1486,7 @@ class KineticsFamily(Database):
         local_context['autoGenerated'] = False
         local_context['allowChargedSpecies'] = False
         local_context['allowChargedReactants'] = None
+        local_context['allowExcitedReactants'] = False
         local_context['electrons'] = 0
         self.groups = KineticsGroups(label='{0}/groups'.format(self.label))
         logging.debug("Loading kinetics family groups from {0}".format(os.path.join(path, 'groups.py')))
@@ -1444,6 +1501,7 @@ class KineticsFamily(Database):
 
         self.auto_generated = local_context.get('autoGenerated', False)
         self.allow_charged_species = local_context.get('allowChargedSpecies', False)
+        self.allow_excited_reactants = local_context.get('allowExcitedReactants', False)
         # `allowChargedSpecies` is two-sided: it gates reactants and products together, so a
         # family that must make a charged product is forced to also accept a charged reactant.
         # `allowChargedReactants` is the one-sided override for the reactant side. Left
@@ -1469,7 +1527,8 @@ class KineticsFamily(Database):
         if self.own_reverse:
             self.forward_template.products = self.forward_template.reactants[:]
             self.reverse_template = None
-            self.reverse_recipe = self.forward_recipe.get_reverse()
+            self.reverse_recipe = self._get_reverse_recipe()
+            self._validate_reverse_state_constraints()
         else:
             self.reverse = local_context.get('reverse', None)
             self.reversible = True if local_context.get('reversible', None) is None else local_context.get('reversible', None)
@@ -1480,9 +1539,10 @@ class KineticsFamily(Database):
             if self.reversible:
                 self.reverse_template = Reaction(reactants=self.forward_template.products,
                                                  products=self.forward_template.reactants)
-                self.reverse_recipe = self.forward_recipe.get_reverse()
+                self.reverse_recipe = self._get_reverse_recipe()
                 if self.reverse is None:
                     self.reverse = '{0}_reverse'.format(self.label)
+                self._validate_reverse_state_constraints()
 
         self.rules = KineticsRules(label='{0}/rules'.format(self.label),auto_generated=self.auto_generated)
         logging.debug("Loading kinetics family rules from {0}".format(os.path.join(path, 'rules.py')))
@@ -1557,6 +1617,101 @@ class KineticsFamily(Database):
         self.forward_template = Reaction(reactants=reactants, products=products)
         self.own_reverse = ownReverse
 
+    def _get_reverse_recipe(self):
+        """Restore uniquely declared input states on every affected species."""
+        def structures(entry):
+            return (entry.item.get_possible_structures(self.groups.entries)
+                    if isinstance(entry.item, LogicNode) else [entry.item])
+
+        def original_state(group, label):
+            electronic = set(group.electronic_state or [''])
+            vibrational = set(group.vibrational_level or [-1])
+            if len(electronic) != 1 or len(vibrational) != 1 or 'x' in electronic or 'x' in vibrational:
+                raise StateReversalError('{}: SET_STATE at {} has ambiguous original state'.format(self.label, label))
+            return next(iter(electronic)), next(iter(vibrational))
+
+        original_states = {}
+        for action in self.forward_recipe.actions:
+            if action[0] != 'SET_STATE':
+                continue
+            label = action[1]
+            candidates = [original_state(group, label)
+                          for entry in self.forward_template.reactants
+                          for group in structures(entry) if group.contains_labeled_atom(label)]
+            if not candidates or len(set(candidates)) != 1:
+                raise StateReversalError('{}: SET_STATE at {} has no unique original state'.format(self.label, label))
+            original_states[label] = candidates[0]
+        inverse = self.forward_recipe.get_reverse(original_states)
+        if not original_states:
+            return inverse
+
+        # SET_STATE applies to a whole product species. When species merge or
+        # split, its inverse must restore every original component, including
+        # components whose labels did not appear in the forward SET_STATE.
+        product_choices = [structures(entry) for entry in self.forward_template.products]
+        product_labels = [[set(part.get_all_labeled_atoms())
+                           for group in choice for part in group.split()]
+                          for choice in itertools.product(*product_choices)]
+        affected = {}
+        for entry in self.forward_template.reactants:
+            for group in structures(entry):
+                for part in group.split():
+                    labels = frozenset(part.get_all_labeled_atoms())
+                    if not labels or all(labels in choice for choice in product_labels):
+                        continue
+                    state = original_state(part, min(labels))
+                    affected.setdefault(labels, set()).add(state)
+        for labels, states in affected.items():
+            if len(states) != 1:
+                raise StateReversalError('{}: SET_STATE inverse has ambiguous original state at {}'.format(
+                    self.label, min(labels)))
+            if not any(action[0] == 'SET_STATE' and action[1] in labels for action in inverse.actions):
+                inverse.add_action(['SET_STATE', min(labels), *next(iter(states))])
+        return inverse
+
+    def _validate_reverse_state_constraints(self):
+        """Refuse a state-bearing inverse that cannot restore every input species."""
+        if not any(isinstance(entry.item, Group) and (entry.item.electronic_state or entry.item.vibrational_level)
+                   for entry in self.groups.entries.values()):
+            return
+        original_choices = [(entry.item.get_possible_structures(self.groups.entries)
+                             if isinstance(entry.item, LogicNode) else [entry.item])
+                            for entry in self.forward_template.reactants]
+        if not any(group.electronic_state or group.vibrational_level
+                   for choices in original_choices for group in choices):
+            return
+        product_choices = [(entry.item.get_possible_structures(self.groups.entries)
+                            if isinstance(entry.item, LogicNode) else [entry.item])
+                           for entry in self.forward_template.products]
+        from rmgpy.molecule.group import _state_values
+
+        def matches(original, candidate):
+            labels = set(original.get_all_labeled_atoms())
+            return (labels.issubset(candidate.get_all_labeled_atoms())
+                    and _state_values(candidate.electronic_state, '') == _state_values(original.electronic_state, '')
+                    and _state_values(candidate.vibrational_level, -1) == _state_values(original.vibrational_level, -1))
+
+        for product_groups in itertools.product(*product_choices):
+            try:
+                rebuilt = self.apply_recipe(product_groups, forward=False, unique=False, relabel_atoms=False)
+            except StateReversalError:
+                raise
+            except InvalidActionError as exc:
+                raise StateReversalError('{}: inverse cannot rebuild its state-constrained reactants: {}'.format(
+                    self.label, exc)) from exc
+            if rebuilt is None:
+                raise StateReversalError('{}: inverse cannot rebuild its state-constrained reactants'.format(self.label))
+            restored = False
+            for choice in itertools.product(*original_choices):
+                originals = [part for group in choice for part in group.split()]
+                if len(originals) == len(rebuilt) and any(
+                        all(matches(original, candidate) for original, candidate in zip(originals, permutation))
+                        for permutation in itertools.permutations(rebuilt)):
+                    restored = True
+                    break
+            if not restored:
+                raise StateReversalError('{}: inverse loses declared reactant state'.format(self.label))
+
     def load_recipe(self, actions):
         """
         Load information about the reaction recipe.
@@ -1567,11 +1722,19 @@ class KineticsFamily(Database):
             action[0] = action[0].upper()
             valid_actions = [
                 'CHANGE_BOND', 'FORM_BOND', 'BREAK_BOND', 'GAIN_RADICAL', 'LOSE_RADICAL',
-                'GAIN_CHARGE', 'LOSE_CHARGE', 'GAIN_PAIR', 'LOSE_PAIR'
+                'GAIN_CHARGE', 'LOSE_CHARGE', 'GAIN_PAIR', 'LOSE_PAIR', 'SET_STATE'
             ]
             if action[0] not in valid_actions:
                 raise InvalidActionError('Action {0} is not a recognized action. '
                                          'Should be one of {1}'.format(actions[0], valid_actions))
+            if action[0] == 'SET_STATE':
+                try:
+                    if len(action) != 4:
+                        raise ValueError('SET_STATE requires a label and both state fields')
+                    Molecule._validate_electronic_state(action[2])
+                    Molecule._validate_vibrational_level(action[3])
+                except ValueError as exc:
+                    raise InvalidActionError('{}: Invalid SET_STATE action: {}'.format(self.label, exc)) from exc
             self.forward_recipe.add_action(action)
 
     def load_forbidden(self, label, group, shortDesc='', longDesc=''):
@@ -1590,6 +1753,28 @@ class KineticsFamily(Database):
         """
         return save_entry(f, entry)
 
+    def _check_training_states(self, rxns):
+        """Refuse resolved inputs before training mutates structures or tree data."""
+        if rxns is None:
+            return
+        for rxn in rxns:
+            for species in rxn.reactants + rxn.products:
+                molecules = species.molecule if isinstance(species, Species) else [species]
+                if any(m.has_resolved_state() for m in molecules):
+                    raise ResolvedStateTrainingError(
+                        '{}: training and tree fitting do not support resolved species'.format(self.label))
+
+    def _check_training_depository_states(self):
+        """Check training data before even requesting thermo or worker resources."""
+        for depository in self.depositories:
+            if depository.label.endswith('training'):
+                self._check_training_states([e.item for e in depository.entries.values()])
+
+    def _check_training_map_states(self, template_rxn_map):
+        if template_rxn_map is not None:
+            for rxns in template_rxn_map.values():
+                self._check_training_states(rxns)
+
     def save_training_reactions(self, reactions, reference=None, reference_type='', short_desc='', long_desc='',
                                 rank=3):
         """
@@ -1601,6 +1786,7 @@ class KineticsFamily(Database):
 
         For each entry, the long description is imported from the kinetics comment.
         """
+        self._check_training_states(reactions)
 
         if not isinstance(reference, list):
             reference = [reference] * len(reactions)
@@ -1759,6 +1945,9 @@ class KineticsFamily(Database):
         if self.auto_generated is not None:
             f.write('autoGenerated = {0}\n\n'.format(self.auto_generated))
 
+        if self.allow_excited_reactants:
+            f.write('allowExcitedReactants = True\n\n')
+
         if self.allow_charged_species:
             f.write('allowChargedSpecies = {0}\n\n'.format(self.allow_charged_species))
 
@@ -1910,6 +2099,7 @@ class KineticsFamily(Database):
         For each reaction involving real reactants and products in the training
         set, add a rate rule for that reaction.
         """
+        self._check_training_depository_states()
         if self.auto_generated:
             warnings.warn(f'add_rules_from_training should be only called for non-ATG families, '
                           f'but {self.label} is an ATG family. Skip this function call. '
@@ -1928,6 +2118,7 @@ class KineticsFamily(Database):
         from rmgpy.rmg.main import determine_procnum_from_ram
         procnum = determine_procnum_from_ram()
 
+        self._check_training_states([e.item for e in depository.entries.values()])
         tentries = depository.entries
 
         index = max([e.index for e in self.rules.get_entries()] or [0]) + 1
@@ -2154,14 +2345,27 @@ class KineticsFamily(Database):
             reactant_structure = Group()
         elif isinstance(reactant_structures[0], Molecule):
             reactant_structure = Molecule()
+        input_states = []
         for s in reactant_structures:
-            reactant_structure = reactant_structure.merge(s.copy(deep=True))
+            working_structure = s.copy(deep=True)
+            if isinstance(s, Molecule):
+                state = (s.electronic_state, s.vibrational_level)
+            else:
+                state = (s.electronic_state[:], s.vibrational_level[:])
+            input_states.append((set(working_structure.atoms), state))
+            if isinstance(working_structure, Molecule) and working_structure.has_resolved_state():
+                # The merged graph is structural only; restore state by atom provenance
+                # after splitting, then apply any deliberate SET_STATE assignments.
+                working_structure.electronic_state = ''
+                working_structure.vibrational_level = -1
+            reactant_structure = reactant_structure.merge(working_structure)
 
+        state_changes = []
         if forward:
             # Generate the product structure by applying the recipe
-            self.forward_recipe.apply_forward(reactant_structure, unique)
+            self.forward_recipe.apply_forward(reactant_structure, unique, state_changes=state_changes)
         else:
-            self.reverse_recipe.apply_forward(reactant_structure, unique)
+            self.reverse_recipe.apply_forward(reactant_structure, unique, state_changes=state_changes)
 
         # Now that we have applied the recipe, let's start calling
         # this thing the product_structure (although it's the same object in memory)
@@ -2347,6 +2551,22 @@ class KineticsFamily(Database):
                 'family {2}. Not generating this reaction.'.format(reactant_net_charge, product_net_charge, self.label))
             return None
 
+        for input_atoms, (electronic_state, vibrational_level) in input_states:
+            targets = [struct for struct in product_structures if set(struct.atoms) == input_atoms]
+            if targets:
+                targets[0].electronic_state = electronic_state
+                targets[0].vibrational_level = vibrational_level
+            elif (self.reversible and not state_changes and isinstance(reactant_structures[0], Group)
+                  and (electronic_state or vibrational_level)):
+                raise StateReversalError('{}: recipe changes species boundaries carrying state constraints; '
+                                         'declare reversible = False'.format(self.label))
+
+        for atom, electronic_state, vibrational_level in state_changes:
+            targets = [struct for struct in product_structures if atom in struct.atoms]
+            if len(targets) != 1:
+                raise InvalidActionError('SET_STATE atom does not identify one product.')
+            ReactionRecipe._set_state(targets[0], electronic_state, vibrational_level)
+
         # If there are two product structures, place the one containing '*1' first
         if len(product_structures) == 2:
             if not product_structures[0].contains_labeled_atom('*1') and \
@@ -2363,38 +2583,29 @@ class KineticsFamily(Database):
                 lowest_labels.append(min(labels))
             product_structures = [s for _, s in sorted(zip(lowest_labels, product_structures))]
 
-        # If the template restricts multiplicity, we need to make sure that
-        # a product matches the multiplicity-constrained template
-        # because the template does not ensure that the
-        # multiplicity restriction is obeyed
+        # Product states need distinct matching products for distinct templates.
+        # Ground families retain their existing multiplicity-only validation.
         if isinstance(reactant_structure, Molecule):
-            if forward:
-                template_groups = self.forward_template.products
-            else:
-                template_groups = self.forward_template.reactants
+            template_groups = (self.forward_template.products if forward
+                               else self.forward_template.reactants)
+            state_constrained = any(struct.has_resolved_state() for struct in product_structures)
             for template in template_groups:
-                # iterate through the template reactants and check to see if they have a multiplicity constraint
-                if isinstance(template.item, Group):
-                    if template.item.multiplicity != []:
-                        # this template restricts multiplicity and needs to be checked
-                        for struct in product_structures:
-                            # iterate through the product structures to make sure that
-                            # it matches a mulitplicity-constrained template reactant
-                            match = self._match_reactant_to_template(struct, template)
-                            if match:
-                                # A product structure matches the template!
-                                break
-                        if not match:
-                            # No product matched the template reactant
-                            # Therefore, this reaction is invalid
-                            if logging.getLogger().isEnabledFor(logging.DEBUG):
-                                logging.debug(
-                                    'No product structures matched %s which has a multiplicity of %r\n'
-                                    'Template:\n%s\n'
-                                    'Product structures:\n',
-                                    template, template.item.multiplicity, template.item.to_adjacency_list() )
-                                for struct in product_structures:
-                                    logging.debug(f'{struct}\n{struct.to_adjacency_list()}\n')
+                options = (template.item.get_possible_structures(self.groups.entries)
+                           if isinstance(template.item, LogicNode) else [template.item])
+                state_constrained = state_constrained or any(
+                    group.electronic_state or group.vibrational_level for group in options)
+            if template_groups and state_constrained:
+                if len(template_groups) != len(product_structures) or not any(
+                        all(self._match_structure_to_template(struct, template)
+                            for template, struct in zip(template_groups, permutation))
+                        for permutation in itertools.permutations(product_structures)):
+                    logging.debug('Products do not match their state-constrained templates')
+                    return None
+            else:
+                for template in template_groups:
+                    if isinstance(template.item, Group) and template.item.multiplicity:
+                        if not any(self._match_structure_to_template(struct, template)
+                                   for struct in product_structures):
                             return None
 
         # Return the product structures
@@ -2605,6 +2816,13 @@ class KineticsFamily(Database):
         matches the provided template reactant, or an empty list if not.
         """
 
+        if (isinstance(reactant, Molecule) and reactant.has_resolved_state()
+                and not self.allow_excited_reactants):
+            return []
+        return self._match_structure_to_template(reactant, template_reactant)
+
+    def _match_structure_to_template(self, reactant, template_reactant):
+        """Match template structure and state without the reactant admission policy."""
         if isinstance(template_reactant, list):
             template_reactant = template_reactant[0]
         if isinstance(template_reactant, Entry):
@@ -3394,6 +3612,12 @@ class KineticsFamily(Database):
         as the reactants, determine the most specific nodes in the tree that
         describe the reaction.
         """
+        if not self.allow_excited_reactants:
+            molecules = [reactant.molecule[0] if isinstance(reactant, Species) else reactant
+                         for reactant in reaction.reactants]
+            if any(molecule.has_resolved_state() for molecule in molecules):
+                raise UndeterminableKineticsError(
+                    reaction, '{} does not allow excited reactants'.format(self.label))
         return self.groups.get_reaction_template(reaction)
 
     def get_kinetics_for_template(self, template, degeneracy=1, method='rate rules'):
@@ -3478,6 +3702,8 @@ class KineticsFamily(Database):
         depositories = self.depositories[:]
 
         template = self.retrieve_template(template_labels)
+        molecules = [r.molecule[0] if isinstance(r, Species) else r for r in reaction.reactants]
+        template = ReactionTemplate(template, any(m.has_resolved_state() for m in molecules))
 
         # Check the various depositories for kinetics
         for depository in depositories:
@@ -3754,13 +3980,7 @@ class KineticsFamily(Database):
         new_inds = []
 
         for i, rxn in enumerate(rxns):
-            rmol = rxn.reactants[0].molecule[0]
-            for r in rxn.reactants[1:]:
-                rmol = rmol.merge(r.molecule[0])
-
-            rmol.identify_ring_membership()
-
-            if rmol.is_subgraph_isomorphic(newgrp, generate_initial_map=True, save_order=True):
+            if self.reaction_matches(rxn, newgrp):
                 new.append(rxn)
                 new_inds.append(i)
             else:
@@ -3770,8 +3990,17 @@ class KineticsFamily(Database):
 
     def reaction_matches(self, rxn, grp):
         # Resolved reactants cannot enter unkeyed templates, including merged matches.
-        if any(mol.has_resolved_state() for reactant in rxn.reactants for mol in reactant.molecule):
+        if (not self.allow_excited_reactants
+                and any(mol.has_resolved_state() for reactant in rxn.reactants for mol in reactant.molecule)):
             return False
+        molecules = [reactant.molecule[0] for reactant in rxn.reactants]
+        if any(molecule.has_resolved_state() for molecule in molecules):
+            from rmgpy.data.kinetics.groups import _merge_reactants_for_matching
+            rmol, structural_group = _merge_reactants_for_matching(molecules, grp)
+            if rmol is None:
+                return False
+            rmol.identify_ring_membership()
+            return rmol.is_subgraph_isomorphic(structural_group, generate_initial_map=True, save_order=True)
         rmol = rxn.reactants[0].molecule[0]
         for r in rxn.reactants[1:]:
             rmol = rmol.merge(r.molecule[0])
@@ -3783,6 +4012,7 @@ class KineticsFamily(Database):
         evaluates the objective function obj
         for the extension ext with name extname to the parent entry parent
         """
+        self._check_training_map_states(template_rxn_map)
         rxns = template_rxn_map[parent.label]
         new, old, new_inds = self._split_reactions(rxns, ext)
         if len(new) == 0:
@@ -3812,6 +4042,7 @@ class KineticsFamily(Database):
 
         Speed of this algorithm relies heavily on searching non bond creation dimensions once.
         """
+        self._check_training_map_states(template_rxn_map)
         out_exts = [[]]
         grps = [[parent.item]]
         names = [parent.label]
@@ -3973,6 +4204,7 @@ class KineticsFamily(Database):
         Constructs an extension to the group parent based on evaluation
         of the objective function obj
         """
+        self._check_training_map_states(template_rxn_map)
         exts, gave_up_split = self.get_extension_edge(parent, template_rxn_map, obj=obj, T=T, iter_max=iter_max, iter_item_cap=iter_item_cap)
 
         if exts == [] and not gave_up_split:  # should only occur when all reactions at this node are identical
@@ -4166,6 +4398,7 @@ class KineticsFamily(Database):
             stratum_num: Number of strata used in stratified sampling scheme
             max_rxns_to_reopt_node: Nodes with more matching reactions than this will not be pruned
         """
+        self._check_training_states(rxns)
         if rxns is None:
             rxns = self.get_training_set(thermo_database=thermo_database, remove_degeneracy=True, estimate_thermo=True,
                                          fix_labels=True, get_reverse=True, rxns_with_kinetics_only=True)
@@ -4213,6 +4446,7 @@ class KineticsFamily(Database):
         until they reach max_batch_size reactions
         A list of lists of reactions containing the batches is returned
         """
+        self._check_training_states(rxns)
         ks = np.array([rxn.kinetics.get_rate_coefficient(T=T) for rxn in rxns])
         inds = np.argsort(ks)
         outlier_num = int(outlier_fraction * len(ks) / 2)
@@ -4263,6 +4497,8 @@ class KineticsFamily(Database):
         This is used to remove smaller easier to optimize and more likely to change nodes
         before adding a new batch in cascade model generation
         """
+        self._check_training_states(rxns)
+        self._check_training_states(newrxns)
         template_rxn_map = self.get_reaction_matches(rxns=rxns, thermo_database=thermo_database, fix_labels=fix_labels,
                                                      exact_matches_only=False, get_reverse=get_reverse)
         for key, item in template_rxn_map.items():
@@ -4280,6 +4516,7 @@ class KineticsFamily(Database):
     def make_tree_nodes(self, template_rxn_map=None, obj=None, T=1000.0, nprocs=0, depth=0, min_splitable_entry_num=2,
                         min_rxns_to_spawn=20, extension_iter_max=np.inf, extension_iter_item_cap=np.inf):
 
+        self._check_training_map_states(template_rxn_map)
         if depth > 0:
             root = self.groups.entries[list(template_rxn_map.keys())[0]]
         else:
@@ -4412,6 +4649,7 @@ class KineticsFamily(Database):
 
     def make_bm_rules_from_template_rxn_map(self, template_rxn_map, nprocs=1, Tref=1000.0, fmax=1.0e5):
 
+        self._check_training_map_states(template_rxn_map)
         rule_keys = self.rules.entries.keys()
         for entry in self.groups.entries.values():
             if entry.label not in rule_keys:
@@ -4495,6 +4733,7 @@ class KineticsFamily(Database):
         iters times.
         Returns a dictionary mapping {rxn:Ln(k_Est/k_Train)}
         """
+        self._check_training_map_states(template_rxn_map)
 
         if template_rxn_map is None:
             template_rxn_map = self.get_reaction_matches(remove_degeneracy=True, get_reverse=True, fix_labels=True)
@@ -4592,6 +4831,7 @@ class KineticsFamily(Database):
         Perform K-fold cross validation on an automatically generated tree at temperature T
         Returns a dictionary mapping {rxn:Ln(k_Est/k_Train)}
         """
+        self._check_training_depository_states()
         errors = {}
         uncs = {}
 
@@ -4662,6 +4902,7 @@ class KineticsFamily(Database):
         to generate the tree and test=False is ok if the cascade algorithm
         wasn't used.
         """
+        self._check_training_map_states(template_rxn_map)
 
         for child in node.children:
             self.simple_regularization(child, template_rxn_map)
@@ -4774,6 +5015,9 @@ class KineticsFamily(Database):
         """
         Regularizes the tree according to the regularization function regularization
         """
+        self._check_training_depository_states()
+        self._check_training_map_states(template_rxn_map)
+        self._check_training_states(rxns)
         if template_rxn_map is None:
             if rxns is None:
                 template_rxn_map = self.get_reaction_matches(thermo_database=thermo_database, remove_degeneracy=True,
@@ -4814,6 +5058,7 @@ class KineticsFamily(Database):
         """
         generates tree structure and then generates rules for the tree
         """
+        self._check_training_depository_states()
         self.generate_tree(obj=obj, thermo_database=thermo_database, T=T)
         self.regularize(regularization=regularization)
         template_rxn_map = self.get_reaction_matches(thermo_database=thermo_database,
@@ -4883,6 +5128,7 @@ class KineticsFamily(Database):
         and returns the resulting list of reactions in the forward direction with thermo
         assigned
         """
+        self._check_training_depository_states()
 
         def get_label_fixed_mol(mol, root_labels):
             nmol = mol.copy(deep=True)
@@ -4937,6 +5183,7 @@ class KineticsFamily(Database):
             logging.info('Must be because you turned off the training depository.')
             return
 
+        self._check_training_states([e.item for e in dep.entries.values()])
         rxns = deepcopy([i.item for i in dep.entries.values() if (not rxns_with_kinetics_only) or type(i.data) != KineticsModel])
         entries = deepcopy([i for i in dep.entries.values() if (not rxns_with_kinetics_only) or type(i.data) != KineticsModel])
 
@@ -5105,6 +5352,7 @@ class KineticsFamily(Database):
         returns a dictionary mapping for each entry in the tree:
         (entry.label,entry.item) : list of all training reactions (or the list given) that match that entry
         """
+        self._check_training_states(rxns)
         if rxns is None:
             rxns = self.get_training_set(thermo_database=thermo_database, remove_degeneracy=remove_degeneracy,
                                          estimate_thermo=estimate_thermo, fix_labels=fix_labels,
@@ -5178,6 +5426,7 @@ class KineticsFamily(Database):
                         for c in entry.item.components])
 
     def rxns_match_node(self, node, rxns):
+        self._check_training_states(rxns)
         for rxn in rxns:
             mol = None
             for r in rxn.reactants:

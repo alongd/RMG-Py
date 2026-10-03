@@ -267,6 +267,8 @@ class Fragment(Molecule):
                 )
             )
         group = other
+        if not self.matches_state_constraints(group):
+            return False
 
         mapping = self.assign_representative_molecule()
 

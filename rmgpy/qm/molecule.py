@@ -47,6 +47,7 @@ import rmgpy.qm.symmetry as symmetry
 import rmgpy.quantity
 import rmgpy.statmech
 import rmgpy.thermo
+from rmgpy.exceptions import StateProvenanceError
 from rmgpy.qm.qmdata import parse_cclib_data
 from rmgpy.qm import _check_file_names
 from rmgpy.thermo import ThermoData
@@ -505,6 +506,8 @@ class QMMolecule(object):
 
         Returns None if it fails.
         """
+        if self.molecule.has_resolved_state():
+            raise StateProvenanceError('QM thermo estimation has no supported resolved-state provenance')
         self.initialize()
 
         # First, see if we already have it.
@@ -555,6 +558,8 @@ class QMMolecule(object):
         """
         Try loading a thermo data from a previous run.
         """
+        if self.molecule.has_resolved_state():
+            raise StateProvenanceError('QM thermo estimation has no supported resolved-state provenance')
         file_path = self.get_thermo_file_path()
         local_context = load_thermo_data_file(file_path)
         if local_context is None:
@@ -629,6 +634,8 @@ class QMMolecule(object):
         Stores and returns a ThermoData object as self.thermo.
         self.qm_data and self.point_group need to be generated before this method is called.
         """
+        if self.molecule.has_resolved_state():
+            raise StateProvenanceError('QM thermo estimation has no supported resolved-state provenance')
         assert self.qm_data, "Need QM Data first in order to calculate thermo."
         assert self.point_group, "Need Point Group first in order to calculate thermo."
 

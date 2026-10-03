@@ -41,6 +41,7 @@ import re
 from collections import OrderedDict
 
 from rmgpy.data.reference import Reference, Article, Book, Thesis
+from rmgpy.exceptions import StateProvenanceError
 from rmgpy.exceptions import AtomTypeError, DatabaseError, InvalidAdjacencyListError, SaturatedStructureError
 from rmgpy.kinetics.uncertainties import RateUncertainty
 from rmgpy.kinetics.arrhenius import ArrheniusChargeTransfer, ArrheniusChargeTransferBM
@@ -67,6 +68,7 @@ class Entry(object):
     `parent`               The parent of the entry in the hierarchy (or ``None`` if not used)
     `children`             A list of the children of the entry in the hierarchy (or ``None`` if not used)
     `data`                 The data to associate with the item
+    `data_sources`         Source entries for derived data; None for an original value
     `data_count`           The number of data used to fit the group values in the group additivity method
     `reference`            A :class:`Reference` object containing bibliographic reference information to the source of the data
     `reference_type`       The way the data was determined: ``'theoretical'``, ``'experimental'``, or ``'review'``
@@ -109,6 +111,7 @@ class Entry(object):
         self.parent = parent
         self.children = children or []
         self.data = data
+        self.data_sources = None
         self.data_count = data_count
         self.reference = reference
         self.reference_type = reference_type
@@ -373,6 +376,8 @@ class Database(object):
         """
         Save the current database to the file at location `path` on disk. 
         """
+        for entry in self.entries.values():
+            self._check_data_serialization(entry)
         try:
             os.makedirs(os.path.dirname(path))
         except OSError:
@@ -692,6 +697,8 @@ class Database(object):
         Save the current database to a set of text files using the old-style
         syntax.
         """
+        for entry in self.entries.values():
+            self._check_data_serialization(entry)
         self.save_old_dictionary(dictstr)
         if treestr != '':
             self.save_old_tree(treestr)
@@ -847,6 +854,8 @@ class Database(object):
         Save the current database library to a text file using the old-style
         syntax.
         """
+        for entry in self.entries.values():
+            self._check_data_serialization(entry)
         try:
             # Save the library in order by index
             entries = list(self.entries.values())
@@ -1046,6 +1055,78 @@ class Database(object):
 
             return result
 
+    def match_node_state_to_structure(self, node, structure):
+        """Check declared state constraints without requiring the atom pattern."""
+        if isinstance(node, str):
+            node = self.entries[node]
+        group = node.item
+        if isinstance(group, LogicNode):
+            return group.match_state_to_structure(self, structure)
+        if isinstance(group, Molecule):
+            electronic = [group.electronic_state] if group.electronic_state else []
+            vibrational = [group.vibrational_level] if group.vibrational_level >= 0 else []
+            if not isinstance(structure, Group):
+                return (structure.electronic_state == group.electronic_state
+                        and structure.vibrational_level == group.vibrational_level)
+        else:
+            electronic, vibrational = group.electronic_state, group.vibrational_level
+        if isinstance(structure, Group):
+            from rmgpy.molecule.group import _state_is_specific_case_of
+            return (_state_is_specific_case_of(structure.electronic_state, electronic, '')
+                    and _state_is_specific_case_of(structure.vibrational_level, vibrational, -1))
+        return structure.matches_state_constraints(group)
+
+    def _check_data_serialization(self, entry):
+        """Refuse text output that would erase resolved-state data provenance."""
+        if isinstance(entry, list):
+            for rule in entry:
+                self._check_data_serialization(rule)
+            return
+        if not entry.data_sources:
+            return
+
+        def state_bearing(item, seen):
+            if isinstance(item, Group):
+                return bool(item.electronic_state or item.vibrational_level)
+            if isinstance(item, LogicNode):
+                if id(item) in seen:
+                    return True  # Unknown/cyclic domains cannot prove unresolved-only use.
+                for component in item.components:
+                    target = self.entries.get(component) if isinstance(component, str) else component
+                    if target is None or state_bearing(target.item if isinstance(target, Entry) else target,
+                                                       seen | {id(item)}):
+                        return True
+            return False
+
+        if state_bearing(entry.item, set()):
+            raise StateProvenanceError('{}: cannot serialize derived data for state-bearing node {}'.format(
+                self.label, entry.label))
+
+    def get_matched_data(self, node, structure, atoms, seen=None):
+        """Resolve data aliases and provenance for a resolved structure.
+
+        Every contributing node, including cached averages and copied values,
+        must match the original structure with the same labeled atom mapping.
+        Unresolved estimators retain their existing lookup and caching paths.
+        """
+        seen = set() if seen is None else seen
+        if node is None or node in seen:
+            raise StateProvenanceError('{}: missing or cyclic data provenance'.format(self.label))
+        if not self.match_node_to_structure(node, structure, atoms):
+            raise StateProvenanceError('{}: data node {} does not match the resolved structure'.format(
+                self.label, node.label))
+        seen = seen | {node}
+        for source in node.data_sources or ():
+            self.get_matched_data(source, structure, atoms, seen)
+        if isinstance(node.data, str):
+            target = self.entries.get(node.data)
+            if target is None:
+                raise StateProvenanceError('{}: missing data alias {}'.format(self.label, node.data))
+            return self.get_matched_data(target, structure, atoms, seen)
+        if node.data is None:
+            raise StateProvenanceError('{}: no matched data for {}'.format(self.label, node.label))
+        return node.data, node
+
     def descend_tree(self, structure, atoms, root=None, strict=False):
         """
         Descend the tree in search of the functional group node that best
@@ -1078,9 +1159,15 @@ class Database(object):
             return self.descend_tree(structure, atoms, next_node[0], strict)
         elif len(next_node) == 0:
             if len(root.children) > 0 and root.children[-1].label.startswith('Others-'):
-                return root.children[-1]
-            else:
-                return root
+                fallback = root.children[-1]
+                if self.match_node_state_to_structure(fallback, structure):
+                    structures = structure if isinstance(structure, list) else [structure]
+                    if (any(isinstance(mol, Molecule) and mol.has_resolved_state() for mol in structures)
+                            and not self.match_node_to_structure(fallback, structure, atoms, strict)):
+                        raise StateProvenanceError('{}: fallback {} does not match the resolved structure'.format(
+                            self.label, fallback.label))
+                    return fallback
+            return root
         else:
             # logging.warning('For {0}, a node {1} with overlapping children {2} was encountered '
             #                 'in tree with top level nodes {3}. Assuming the first match is the '
@@ -1150,6 +1237,23 @@ class LogicNode(object):
             self.components.append(component)
         self.invert = bool(invert)
 
+    def match_state_to_structure(self, database, structure):
+        """Combine state constraints without negating their declared domains."""
+        if not self.components:
+            parts = structure if isinstance(structure, list) else getattr(structure, 'molecule', None)
+            if parts is not None:
+                return all(self.match_state_to_structure(database, part) for part in parts)
+            if isinstance(structure, Group):
+                from rmgpy.molecule.group import _state_is_specific_case_of
+                return (_state_is_specific_case_of(structure.electronic_state, [], '')
+                        and _state_is_specific_case_of(structure.vibrational_level, [], -1))
+            return (not getattr(structure, 'electronic_state', '')
+                    and getattr(structure, 'vibrational_level', -1) == -1)
+        matches = (node.match_state_to_structure(database, structure) if isinstance(node, LogicNode)
+                   else database.match_node_state_to_structure(node, structure)
+                   for node in self.components)
+        return all(matches) if isinstance(self, LogicAnd) else any(matches)
+
     def __str__(self):
         result = ''
         if self.invert: result += 'NOT '
@@ -1174,6 +1278,8 @@ class LogicOr(LogicNode):
         Setting `strict` to True makes enforces matching of atomLabels in the structure to every
         atomLabel in the node.
         """
+        if not self.match_state_to_structure(database, structure):
+            return False
         for node in self.components:
             if isinstance(node, LogicNode):
                 match = node.match_to_structure(database, structure, atoms, strict)
@@ -1225,6 +1331,8 @@ class LogicAnd(LogicNode):
         Setting `strict` to True makes enforces matching of atomLabels in the structure to every
         atomLabel in the node.
         """
+        if not self.match_state_to_structure(database, structure):
+            return False
         for node in self.components:
             if isinstance(node, LogicNode):
                 match = node.match_to_structure(database, structure, atoms, strict)

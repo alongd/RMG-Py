@@ -53,6 +53,33 @@ RCOND = -1 if int(np.__version__.split('.')[1]) < 14 else None
 
 ################################################################################
 
+def _merge_reactants_for_matching(reactants, group):
+    """Check every reactant's state before merging private structural working graphs."""
+    if not all(reactant.matches_state_constraints(group) for reactant in reactants):
+        return None, None
+    merged = None
+    for reactant in reactants:
+        working = reactant.copy(deep=True)
+        working.electronic_state, working.vibrational_level = '', -1
+        if merged is None:
+            merged = working
+        elif isinstance(working, Fragment) and not isinstance(merged, Fragment):
+            merged = working.merge(merged)
+        else:
+            merged = merged.merge(working)
+    structural_group = group.copy()
+    structural_group.electronic_state, structural_group.vibrational_level = [], []
+    return merged, structural_group
+
+
+class ReactionTemplate(list):
+    """Matched entries with the reactant state needed for data provenance checks."""
+
+    def __init__(self, entries, resolved):
+        super().__init__(entries)
+        self.resolved = resolved
+
+
 class KineticsGroups(Database):
     """
     A class for working with an RMG kinetics family group additivity values. 
@@ -73,6 +100,25 @@ class KineticsGroups(Database):
                  ):
         Database.__init__(self, entries, top, label, name, short_desc, long_desc)
         self.reactant_num = 0
+
+    def match_node_state_to_structure(self, node, structure):
+        if isinstance(structure, list):
+            return all(super(KineticsGroups, self).match_node_state_to_structure(node, reactant)
+                       for reactant in structure)
+        return super().match_node_state_to_structure(node, structure)
+
+    def match_node_to_structure(self, node, structure, atoms, strict=False):
+        if not isinstance(structure, list):
+            return super().match_node_to_structure(node, structure, atoms, strict)
+        if isinstance(node, str):
+            node = self.entries[node]
+        if isinstance(node.item, LogicNode):
+            return node.item.match_to_structure(self, structure, atoms, strict)
+        merged, group = _merge_reactants_for_matching(structure, node.item)
+        if merged is None:
+            return False
+        structural_node = Entry(label=node.label, item=group)
+        return super().match_node_to_structure(structural_node, merged, merged.get_all_labeled_atoms(), strict)
 
     def __repr__(self):
         return '<KineticsGroups "{0}">'.format(self.label)
@@ -138,19 +184,19 @@ class KineticsGroups(Database):
             entry = forward_template[0]
             group = entry.item
 
-            r = None
-            for react in reaction.reactants:
-                if isinstance(react, Species):
-                    react = react.molecule[0]
-                if r:
-                    if isinstance(r, Molecule) and isinstance(react,Fragment):
+            reactants = [react.molecule[0] if isinstance(react, Species) else react
+                         for react in reaction.reactants]
+            if any(reactant.has_resolved_state() for reactant in reactants):
+                r = reactants
+                atoms = {}
+            else:
+                r = deepcopy(reactants[0])
+                for react in reactants[1:]:
+                    if isinstance(r, Molecule) and isinstance(react, Fragment):
                         r = react.merge(r)
                     else:
                         r = r.merge(react)
-                else:
-                    r = deepcopy(react)
-
-            atoms = r.get_all_labeled_atoms()
+                atoms = r.get_all_labeled_atoms()
 
             matched_node = self.descend_tree(r, atoms, root=entry, strict=True)
 
@@ -198,7 +244,8 @@ class KineticsGroups(Database):
             msg += 'Trying to match {0} but matched {1}'.format(str(forward_template), str(template))
             raise UndeterminableKineticsError(reaction, message=msg)
 
-        return template
+        molecules = [r.molecule[0] if isinstance(r, Species) else r for r in reaction.reactants]
+        return ReactionTemplate(template, any(m.has_resolved_state() for m in molecules))
 
     def _multiply_kinetics_data(self, kinetics1, kinetics2):
         """

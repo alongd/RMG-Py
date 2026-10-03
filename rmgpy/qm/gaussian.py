@@ -36,6 +36,7 @@ import shutil
 
 import cclib
 
+from rmgpy.exceptions import StateProvenanceError
 from rmgpy.molecule.molecule import Molecule
 from rmgpy.qm.molecule import QMMolecule
 from rmgpy.qm.qmdata import parse_cclib_data
@@ -258,6 +259,8 @@ class GaussianMol(QMMolecule, Gaussian):
         Using the :class:`Geometry` object, write the input file
         for the `attempt`.
         """
+        if self.molecule.has_resolved_state():
+            raise StateProvenanceError('QM thermo estimation has no supported resolved-state provenance')
         self.check_file_names()
         molfile = self.get_mol_file_path_for_calculation(attempt)
         atomline = re.compile(
@@ -298,6 +301,8 @@ class GaussianMol(QMMolecule, Gaussian):
         """
         Calculate the QM data and return a QMData object.
         """
+        if self.molecule.has_resolved_state():
+            raise StateProvenanceError('QM thermo estimation has no supported resolved-state provenance')
         # still can't handle charged atoms for QMData
         for atom in self.molecule.vertices:
             if atom.charge != 0:
