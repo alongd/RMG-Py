@@ -70,12 +70,13 @@ def run_thermo_estimator(input_file, library_flag):
         submit(species)
 
     if library_flag:
+        from rmgpy.thermo.state import thermo_library_species
         library = ThermoLibrary(name='Thermo Estimation Library')
         for species in rmg.initial_species:
             library.load_entry(
                 index=len(library.entries) + 1,
                 label=species.label,
-                molecule=species.molecule[0].to_adjacency_list(),
+                molecule=thermo_library_species(species).molecule[0].to_adjacency_list(),
                 thermo=species.get_thermo_data().to_thermo_data(),
                 shortDesc=species.get_thermo_data().comment,
             )

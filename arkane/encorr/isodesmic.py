@@ -75,6 +75,8 @@ class ErrorCancelingSpecies:
             source (str): Literature source from which the high level data was taken
         """
         if isinstance(molecule, Molecule):
+            from rmgpy.thermo.state import require_thermo_estimation_allowed
+            require_thermo_estimation_allowed(molecule)
             self.molecule = molecule
         else:
             raise ValueError(
@@ -168,6 +170,9 @@ class ErrorCancelingReaction:
         Returns:
             rmgpy.quantity.ScalarQuantity: Hf298 in 'J/mol' estimated for the target species
         """
+        from rmgpy.thermo.state import require_thermo_estimation_allowed
+        for species in [self.target] + list(self.species):
+            require_thermo_estimation_allowed(species.molecule)
         low_level_h_rxn = (
             sum(
                 spec.low_level_hf298.value_si * coeff

@@ -29,18 +29,29 @@
 
 """Excited-state reverse-rate enforcement through library and reactor APIs."""
 
+from math import exp
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
+from rmgpy.exceptions import ExcitedSpeciesThermoError, PlasmaStateError
+
 from rmgpy.data.kinetics.database import KineticsDatabase
+from rmgpy.data.thermo import ThermoDatabase, ThermoLibrary
 from rmgpy.exceptions import NonEquilibriumReverseRateError
 from rmgpy.solver.plasma import PlasmaReactor
 from rmgpy.species import Species
 from rmgpy.thermo import ThermoData
 
 FIXTURE_ROOT = Path(__file__).resolve().parents[2] / 'test_data' / 'superelastic'
+
+
+def exact_state_fixture_equilibrium_constant(temperature):
+    """Return Kc for N2v1 -> N2 directly from the fixture NASA coefficients."""
+    # N2: (a1, a6, a7) = (4.5, -1000, 3); N2v1: (3.5, 2400, 3).
+    return temperature * exp(3400 / temperature - 1)
 
 
 def load_reactions(label):
@@ -67,6 +78,29 @@ def reactor_for(reactions):
                      0.1 if sp.label == 'N2v1' else 0.8998) for sp in species.values()}
     reactor = PlasmaReactor(300.0, 1.0e5, fractions, (11604.5, 'K'),
                             termination=[], thermo_source_assertions={'Ar+': 'ion'})
+    return reactor, list(species.values())
+
+
+def exact_state_reactor_for(monkeypatch, reactions):
+    import rmgpy.data.rmg as data_rmg
+    database = ThermoDatabase()
+    library = ThermoLibrary(label='ExactStateFixture')
+    library.load(str(Path(__file__).resolve().parents[2] / 'test_data' / 'excited_states' / 'thermo.py'),
+                 database.local_context, {})
+    database.libraries = {library.label: library}
+    database.library_order = [library.label]
+    monkeypatch.setattr(data_rmg, 'database', SimpleNamespace(thermo=database, solvation=None))
+
+    species = {sp.label: sp for rxn in reactions for sp in rxn.reactants + rxn.products}
+    if 'e-' not in species:
+        species['e-'] = Species(label='e-').from_adjacency_list('1 e u1 p0 c-1')
+    for sp in species.values():
+        if not sp.is_electron():
+            sp.thermo = database.get_thermo_data(sp)
+    fractions = {sp: (1e-4 if sp.is_electron() else
+                      0.1 if sp.label == 'N2v1' else 0.8999)
+                 for sp in species.values()}
+    reactor = PlasmaReactor(300.0, 1.0e5, fractions, (11604.5, 'K'), termination=[])
     return reactor, list(species.values())
 
 
@@ -99,38 +133,63 @@ def test_reversible_excited_collision_refused_at_library_load():
     assert 'irreversible' in message
 
 
-def test_explicit_irreversible_pair_loads_and_integrates():
+def test_explicit_irreversible_pair_loads_and_integrates(monkeypatch):
     reactions = load_reactions('explicit-pair')
     assert len(reactions) == 2
     assert all(not rxn.reversible for rxn in reactions)
     assert reactions[0].is_isomorphic(reactions[1], either_direction=True)
     assert not reactions[0].is_isomorphic(reactions[1], either_direction=False)
-    reactor, species = reactor_for(reactions)
+    reactor, species = exact_state_reactor_for(monkeypatch, reactions)
     reactor.initialize_model(species, reactions, [], [])
-    assert list(reactor.kb) == [0.0, 0.0]
-    assert list(reactor.kf) == pytest.approx([1.0e3, 1.0e2])
-    excited_index = next(i for i, sp in enumerate(species) if sp.label == 'N2v1')
-    before = reactor.y[excited_index]
-    reactor.advance(1.0e-6)
+    for index, reaction in enumerate(reactions):
+        excited_reactant = any(sp.label == 'N2v1' for sp in reaction.reactants)
+        excited_product = any(sp.label == 'N2v1' for sp in reaction.products)
+        assert excited_reactant != excited_product
+        assert reactor.kf[index] == pytest.approx(1000 if excited_reactant else 100)
+    assert reactor.kb == pytest.approx([0., 0.])
+    initial_state = reactor.y.copy()
+    excited_index = next(index for index, sp in enumerate(species) if sp.label == 'N2v1')
+    reactor.advance(1.0e-9)
+    assert reactor.t == pytest.approx(1.0e-9)
     assert np.all(np.isfinite(reactor.y))
-    assert 0.0 < reactor.y[excited_index] < before
+    assert 0.0 < reactor.y[excited_index] < initial_state[excited_index]
 
 
-def test_thermal_resolved_reaction_keeps_equilibrium_reverse():
+def test_explicit_irreversible_pair_refuses_unattested_thermo():
+    reactions = load_reactions('explicit-pair')
+    reactor, species = reactor_for(reactions)
+    with pytest.raises(PlasmaStateError, match='N2v1.*exact-state thermo library check'):
+        reactor.initialize_model(species, reactions, [], [])
+
+
+def test_thermal_resolved_reaction_keeps_equilibrium_reverse(monkeypatch):
     reactions = load_reactions('thermal')
     rxn = reactions[0]
     assert rxn.reversible
     assert rxn.get_reverse_from_equilibrium_refusal() is None
-    reactor, species = reactor_for(reactions)
+    reactor, species = exact_state_reactor_for(monkeypatch, reactions)
     reactor.initialize_model(species, reactions, [], [])
-    # Independently known level spacing: equal Cp/S, DeltaH=-27.87 kJ/mol,
-    # and no change in particle count. Kc=exp(27870/(R*300)).
-    # Allow the small difference between modern R and RMG's older CODATA value.
-    expected_keq = np.exp(27870.0 / (8.31446261815324 * 300.0))
-    assert float(reactor.Keq[0]) == pytest.approx(expected_keq, rel=2.0e-5)
-    assert float(reactor.kb[0]) == pytest.approx(1.0e3 / expected_keq, rel=2.0e-5)
-    reverse = rxn.generate_reverse_rate_coefficient(Tmin=rxn.kinetics.Tmin, Tmax=rxn.kinetics.Tmax)
-    assert reverse.get_rate_coefficient(300.0) == pytest.approx(1.0e3 / expected_keq, rel=2.0e-5)
+    expected_forward = 1000
+    expected_reverse = expected_forward / exact_state_fixture_equilibrium_constant(300)
+    assert reactor.kf[0] == pytest.approx(expected_forward)
+    assert reactor.kb[0] == pytest.approx(expected_reverse)
+    reverse = rxn.generate_reverse_rate_coefficient(
+        Tmin=rxn.kinetics.Tmin, Tmax=rxn.kinetics.Tmax)
+    assert reverse.get_rate_coefficient(1000) == pytest.approx(
+        1000 / exact_state_fixture_equilibrium_constant(1000), rel=1e-4)
+    reactor.advance(1.0e-9)
+    assert reactor.t == pytest.approx(1.0e-9)
+    assert np.all(np.isfinite(reactor.y))
+
+
+def test_thermal_resolved_reaction_refuses_unattested_thermo():
+    reactions = load_reactions('thermal')
+    rxn = reactions[0]
+    reactor, species = reactor_for(reactions)
+    with pytest.raises(PlasmaStateError, match='N2v1.*exact-state thermo library check'):
+        reactor.initialize_model(species, reactions, [], [])
+    with pytest.raises(ExcitedSpeciesThermoError, match='N2v1'):
+        rxn.generate_reverse_rate_coefficient(Tmin=rxn.kinetics.Tmin, Tmax=rxn.kinetics.Tmax)
 
 
 def test_unresolved_te_dependent_entry_keeps_baseline_behavior():
@@ -183,7 +242,7 @@ def test_resolved_collision_reactor_refusal_remains():
     rxn = load_reactions('explicit-pair')[0]
     rxn.reversible = True
     reactor, species = reactor_for([rxn])
-    with pytest.raises(NonEquilibriumReverseRateError, match='N2v1'):
+    with pytest.raises(PlasmaStateError, match='N2v1.*exact-state thermo library check'):
         reactor.initialize_model(species, [rxn], [], [])
 
 

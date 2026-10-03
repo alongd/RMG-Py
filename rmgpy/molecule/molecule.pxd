@@ -182,6 +182,7 @@ cdef class Molecule(Graph):
     cdef public tuple _sssr
     cdef public str metal
     cdef public str facet
+    cdef object __weakref__
     cdef str _electronic_state
     cdef int _vibrational_level
     cdef str _fingerprint

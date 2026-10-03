@@ -360,12 +360,14 @@ class Arkane(object):
             del species_list[j]
 
         thermo_library = ThermoLibrary(name=name)
+        from rmgpy.thermo.state import checked_thermo, thermo_library_species
         for i, species in enumerate(species_list):
+            checked_thermo(species)
             if species.thermo:
                 thermo_library.load_entry(index=i + 1,
                                           label=species.label,
-                                          molecule=species.molecule[0].to_adjacency_list(),
-                                          thermo=species.thermo,
+                                          molecule=thermo_library_species(species).molecule[0].to_adjacency_list(),
+                                          thermo=checked_thermo(species),
                                           shortDesc=species.thermo.comment)
             else:
                 logging.warning(

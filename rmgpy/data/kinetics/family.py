@@ -6000,6 +6000,8 @@ def get_site_solute_data(rxn):
     """
     apply kinetic solvent correction in this case the parameters are dGTSsite instead of GTS
     """
+    from rmgpy.thermo.state import require_species_thermo_allowed
+    require_species_thermo_allowed(rxn.reactants + rxn.products)
     from rmgpy.data.rmg import get_db
     solvation_database = get_db('solvation')
     ts_data = rxn.kinetics.solute

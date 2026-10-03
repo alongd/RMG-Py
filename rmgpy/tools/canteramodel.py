@@ -472,7 +472,7 @@ class Cantera(object):
             for each reactor condition
         """
 
-        from rmgpy.export import SpeciesReferences, resolve_species_reference
+        from rmgpy.export import SpeciesReferences, resolve_species_reference, has_export_state
         declarations = SpeciesReferences(self.species_list + (self.surface_species_list or []),
             get_species_identifier, context='Cantera simulation conditions')
         for reference in self.sensitive_species:
@@ -680,7 +680,7 @@ class Cantera(object):
                         thermo_sensitivity_generic_data = GenericData(
                             label='dln[{0}]/dH[{1}]'.format(
                                 resolve_species_reference(species, declarations)
-                                if any(mol.has_resolved_state() for mol in species.molecule) else str(species),
+                                if has_export_state(species) else str(species),
                                 self.model.species()[j].name),
                             species=species,
                             data=thermo_sensitivity_data[:, num_ct_species * index + j],

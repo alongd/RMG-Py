@@ -29,6 +29,11 @@
 
 """Shared export fixtures and flux witness, loaded by exact file path."""
 
+import copy
+from contextlib import contextmanager
+from types import SimpleNamespace
+from unittest.mock import patch
+
 import numpy as np
 
 from rmgpy.data.base import Entry
@@ -47,7 +52,45 @@ def nitrogen(label='N2', level=-1):
     return Species(label=label, molecule=[mol], conformer=Conformer(), thermo=NASA(polynomials=[
         NASAPolynomial(coeffs=[3.5, 0, 0, 0, 0, 0, 2], Tmin=(200, 'K'), Tmax=(1000, 'K')),
         NASAPolynomial(coeffs=[3.5, 0, 0, 0, 0, 0, 2], Tmin=(1000, 'K'), Tmax=(3000, 'K')),
-    ], Tmin=(200, 'K'), Tmax=(3000, 'K')))
+    ], Tmin=(200, 'K'), Tmax=(3000, 'K'), E0=(0, 'J/mol'),
+       Cp0=(29.100617, 'J/(mol*K)'), CpInf=(29.100617, 'J/(mol*K)')))
+
+
+def complete_identity_fixture_sources(species):
+    """Assign the declared constant NASA fixture after a test changes its graph.
+
+    These tests examine exported identity, not physical state thermochemistry.
+    Call this explicitly while constructing fixtures, before declaring their
+    independent library entries or invoking an exporter.
+    """
+    for spc in species:
+        if spc.thermo is None:
+            spc.thermo = copy.deepcopy(nitrogen().thermo)
+
+
+def add_unit_library_entries(library, species):
+    """Declare independent exact-state fixture entries before exercising consumers."""
+    for spc in species:
+        if spc.thermo is None:
+            continue
+        index = len(library.entries) + 1
+        library.entries[index] = Entry(index=index, label=spc.label,
+            item=spc.molecule[0].copy(deep=True), data=copy.deepcopy(spc.thermo))
+
+
+@contextmanager
+def unit_thermo_library(species):
+    """Use a real local library; neither getters nor provenance checks are mocked."""
+    import rmgpy.data.rmg as data_module
+    from rmgpy.data.thermo import ThermoDatabase, ThermoLibrary
+    db = ThermoDatabase()
+    library = ThermoLibrary(label='ExportUnitIon')
+    library.thermo_convention = 'ion'
+    add_unit_library_entries(library, species)
+    db.libraries = {library.label: library}
+    db.library_order = [library.label]
+    with patch.object(data_module, 'database', SimpleNamespace(thermo=db, solvation=None)):
+        yield library
 
 
 def database(cls, level, rate):

@@ -109,10 +109,16 @@ class KineticsSensitivity(object):
 
     def perturb(self, species):
         """Perturb a species' E0"""
+        from rmgpy.thermo.state import require_thermo_estimation_allowed
+        if hasattr(species, "molecule"):
+            require_thermo_estimation_allowed(species)
         species.conformer.E0.value_si += self.perturbation.value_si
 
     def unperturb(self, species):
         """Return the species' E0 to its original value"""
+        from rmgpy.thermo.state import require_thermo_estimation_allowed
+        if hasattr(species, "molecule"):
+            require_thermo_estimation_allowed(species)
         species.conformer.E0.value_si -= self.perturbation.value_si  # restore E0 to its original value
 
     def save(self):
@@ -387,6 +393,9 @@ class PDepSensitivity(object):
         If unperturb is `False`, the perturbation is addition of the energy amount in self.perturbation.
         If unperturb is `False`, this is done by subtracting.
         """
+        from rmgpy.thermo.state import require_species_thermo_allowed
+        if isinstance(entry, Configuration):
+            require_species_thermo_allowed(entry.species)
         perturbation = self.perturbation.value_si
         if unperturb:
             perturbation *= -1

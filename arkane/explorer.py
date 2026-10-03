@@ -90,6 +90,8 @@ class ExplorerJob(object):
     def execute(self, output_file, plot, file_format='pdf', print_summary=True, species_list=None,
                 thermo_library=None, kinetics_library=None):
         """Execute an ExplorerJob"""
+        from rmgpy.thermo.state import require_species_thermo_allowed
+        require_species_thermo_allowed(self.source)
         logging.info('Exploring network...')
 
         rmg = RMG()

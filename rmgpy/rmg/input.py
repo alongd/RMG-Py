@@ -263,6 +263,12 @@ def species(label, structure, reactive=True, cut=False, size_threshold=None):
     if '+' in label:
         raise InputError('species {0} label cannot include a + sign'.format(label))
 
+    if label in species_dict:
+        from rmgpy.exceptions import DuplicateSpeciesLabelError
+        raise DuplicateSpeciesLabelError(
+            "Duplicate species label {0!r} names both species:\n{1}\nand:\n{2}"
+            .format(label, species_dict[label].to_adjacency_list(), structure.to_adjacency_list()))
+
     if cut:
         mol_to_frag[label] = {} # key:original molecule label, value:created fragment label
         cut_frag_list = structure.cut_molecule(size_threshold=size_threshold)
@@ -277,7 +283,8 @@ def species(label, structure, reactive=True, cut=False, size_threshold=None):
             else:
                 mol_to_frag[label][frag_label] += 1
 
-            spec, is_new = rmg.reaction_model.make_new_species(initial_frag, label=frag_label, reactive=reactive)
+            spec, is_new = rmg.reaction_model.make_new_species(initial_frag, label=frag_label, reactive=reactive,
+                                                                 generate_thermo=not rmg.reaction_model.defer_vibrational_validation)
             # if duplicated fragment is created, combine and add to initialMoleFractions
             if not is_new:
                 continue
@@ -286,7 +293,8 @@ def species(label, structure, reactive=True, cut=False, size_threshold=None):
             species_dict[frag_label] = spec
     else:
         try:
-            spec, is_new = rmg.reaction_model.make_new_species(structure, label=label, reactive=reactive)
+            spec, is_new = rmg.reaction_model.make_new_species(structure, label=label, reactive=reactive,
+                                                                 generate_thermo=not rmg.reaction_model.defer_vibrational_validation)
         except:
             logging.error(f'Error when reading species "{label}" from input file.')
             raise
@@ -296,6 +304,23 @@ def species(label, structure, reactive=True, cut=False, size_threshold=None):
 
         rmg.initial_species.append(spec)
         species_dict[label] = spec
+
+
+def vibrational_manifold(species):
+    """Declare a vibrationally unresolved input species as its library-only v=0 member."""
+    from rmgpy.exceptions import VibrationalManifoldError
+    if not isinstance(species, str) or species not in species_dict:
+        raise VibrationalManifoldError(
+            "vibrationalManifold species {0!r} must name an existing input species; "
+            "declare it with species(...) first.".format(species))
+    # Validate now, although full partition validation waits until input EOF.
+    previous = rmg.reaction_model.defer_vibrational_validation
+    rmg.reaction_model.defer_vibrational_validation = False
+    try:
+        rmg.reaction_model.declare_vibrational_manifold(species_dict[species])
+    finally:
+        rmg.reaction_model.defer_vibrational_validation = previous
+
 
 def forbidden(label, structure):
 
@@ -2938,6 +2963,7 @@ def read_input_file(path, rmg0):
 
     set_global_rmg(rmg0)
     rmg.reaction_model = CoreEdgeReactionModel()
+    rmg.reaction_model.defer_vibrational_validation = True
     rmg.initial_species = []
     rmg.reaction_systems = []
     species_dict = {}
@@ -2952,6 +2978,7 @@ def read_input_file(path, rmg0):
         'catalystProperties': catalyst_properties,
         'coreSpeciesFile': core_species_file,
         'species': species,
+        'vibrationalManifold': vibrational_manifold,
         'forbidden': forbidden,
         'SMARTS': smarts,
         'fragment_adj': fragment_adj,
@@ -2996,6 +3023,9 @@ def read_input_file(path, rmg0):
         raise
     finally:
         f.close()
+
+    rmg.reaction_model.defer_vibrational_validation = False
+    rmg.reaction_model.validate_vibrational_manifolds(rmg.initial_species)
 
     if thermo_libraries is not None:
         rmg0.thermo_libraries.extend(thermo_libraries)
@@ -3181,14 +3211,14 @@ def save_input_file(path, rmg):
     """
 
     from rmgpy.export import refuse_resolved_species
-    refuse_resolved_species(rmg.initial_species, 'rmgpy/rmg/input.py:save_input_file', ())
+    refuse_resolved_species(rmg.initial_species, 'rmgpy/rmg/input.py:save_input_file', (), allow_manifold=True)
     for system in rmg.reaction_systems:
         references = []
         for attribute in ('initial_mole_fractions', 'initial_concentrations', 'initial_surface_coverages'):
             references.extend(getattr(system, attribute, None) or {})
         references.extend(getattr(term, 'species', None) for term in system.termination)
         references.extend(getattr(system, 'sensitive_species', None) or [])
-        refuse_resolved_species(references, 'RMG saved input references')
+        refuse_resolved_species(references, 'RMG saved input references', allow_manifold=True)
 
     f = open(path, 'w')
 
@@ -3228,9 +3258,14 @@ def save_input_file(path, rmg):
         f.write('    reactive = {0},\n'.format(spcs.reactive))
         f.write('    structure = adjacencyList(\n')
         f.write('"""\n')
-        f.write(spcs.molecule[0].to_adjacency_list())
+        molecule = spcs.molecule[0].copy(deep=True)
+        molecule.props.pop('vibrational_manifold', None)
+        f.write(molecule.to_adjacency_list())
         f.write('"""),\n')
         f.write(')\n\n')
+
+    for species in rmg.reaction_model.vibrational_manifolds:
+        f.write('vibrationalManifold(species={0!r})\n\n'.format(species.label))
 
     def format_temperature(system):
         """Get temperature string format for reaction system, whether single value or range"""

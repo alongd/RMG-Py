@@ -40,6 +40,14 @@ from rmgpy.species import Species
 from rmgpy.thermo import NASA, NASAPolynomial
 
 
+
+import importlib.util as _fixture_import
+from pathlib import Path as _FixturePath
+_unit_spec = _fixture_import.spec_from_file_location(
+    'unit_export_helpers', _FixturePath(__file__).with_name('excitedExportHelpers.py'))
+_unit_helpers = _fixture_import.module_from_spec(_unit_spec)
+_unit_spec.loader.exec_module(_unit_helpers)
+
 @pytest.fixture
 def state_species():
     species = []
@@ -55,9 +63,12 @@ def state_species():
         thermo = NASA(polynomials=[
             NASAPolynomial(coeffs=[3.5, 0, 0, 0, 0, index * 1000, 2], Tmin=(200, 'K'), Tmax=(1000, 'K')),
             NASAPolynomial(coeffs=[3.5, 0, 0, 0, 0, index * 1000, 2], Tmin=(1000, 'K'), Tmax=(3000, 'K')),
-        ], Tmin=(200, 'K'), Tmax=(3000, 'K'))
+        ], Tmin=(200, 'K'), Tmax=(3000, 'K'),
+           E0=(index * 1000 * 8.31446261815324, 'J/mol'),
+           Cp0=(29.100617, 'J/(mol*K)'), CpInf=(29.100617, 'J/(mol*K)'))
         species.append(Species(index=index, label=label, molecule=[mol], thermo=thermo))
-    return species
+    with _unit_helpers.unit_thermo_library(species):
+        yield species
 
 
 class TestExcitedExport:
@@ -290,6 +301,7 @@ class TestExcitedExport:
             from rmgpy.rmg.model import CoreEdgeReactionModel
             model = CoreEdgeReactionModel()
             species = []
+            model.declare_vibrational_manifold(Species(label='N2', molecule=[Molecule(smiles='N#N')]))
             for mol in molecules:
                 spc, is_new = model.make_new_species(mol, generate_thermo=False)
                 assert is_new

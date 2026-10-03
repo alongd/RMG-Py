@@ -88,6 +88,13 @@ and Gaussian/Mopac inputs retain the augmented InChI in their title and use
 state-specific file keys. Ground-only kinetics library coverage keys retain
 their legacy indexed spelling, such as ``X(3)``.
 
+**Resolved excited species.**
+    Electronic states and vibrational levels use exact-state library thermo.
+    The :ref:`vibrationalManifold declaration <vibrational_manifold>` assigns
+    an unkeyed input species the v = 0 thermo without counting its thermal
+    ensemble alongside explicit levels. State-dependent transport or annotated
+    ground-state borrowing is exported with the model.
+
 **Resolved nonthermal reactions.**
 
     Electron-temperature- or density-dependent reactions involving resolved

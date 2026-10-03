@@ -248,11 +248,13 @@ def save_thermo_lib(species_list, path, name, lib_long_desc):
     """
 
     from rmgpy.export import refuse_resolved_species
-    refuse_resolved_species(species_list, 'arkane/output.py:save_thermo_lib', ())
+    refuse_resolved_species(species_list, 'arkane/output.py:save_thermo_lib', (), allow_manifold=True)
     if species_list:
         lib_path = os.path.join(path, f'{name}.py')
         thermo_library = ThermoLibrary(name=name, long_desc=lib_long_desc)
+        from rmgpy.thermo.state import checked_thermo, thermo_library_species
         for i, spc in enumerate(species_list):
+            checked_thermo(spc)
             if spc.thermo is not None:
                 long_thermo_description = f'\nSpin multiplicity: {spc.conformer.spin_multiplicity}' \
                                           f'\nExternal symmetry: {spc.molecule[0].symmetry_number}' \
@@ -262,8 +264,8 @@ def save_thermo_lib(species_list, path, name, lib_long_desc):
                     long_thermo_description += f'\nGeometry:\n{xyz}'
                 thermo_library.load_entry(index=i,
                                           label=spc.label,
-                                          molecule=spc.molecule[0].to_adjacency_list(),
-                                          thermo=spc.thermo,
+                                          molecule=thermo_library_species(spc).molecule[0].to_adjacency_list(),
+                                          thermo=checked_thermo(spc),
                                           shortDesc=spc.thermo.comment,
                                           longDesc=long_thermo_description)
             else:

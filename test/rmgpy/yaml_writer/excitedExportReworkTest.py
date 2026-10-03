@@ -48,6 +48,14 @@ from rmgpy.species import Species
 from rmgpy.thermo import NASA, NASAPolynomial
 
 
+
+import importlib.util as _fixture_import
+from pathlib import Path as _FixturePath
+_unit_spec = _fixture_import.spec_from_file_location(
+    'unit_export_helpers', _FixturePath(__file__).with_name('excitedExportHelpers.py'))
+_unit_helpers = _fixture_import.module_from_spec(_unit_spec)
+_unit_spec.loader.exec_module(_unit_helpers)
+
 @pytest.fixture
 def state_species():
     species = []
@@ -63,9 +71,12 @@ def state_species():
         thermo = NASA(polynomials=[
             NASAPolynomial(coeffs=[3.5, 0, 0, 0, 0, index * 1000, 2], Tmin=(200, 'K'), Tmax=(1000, 'K')),
             NASAPolynomial(coeffs=[3.5, 0, 0, 0, 0, index * 1000, 2], Tmin=(1000, 'K'), Tmax=(3000, 'K')),
-        ], Tmin=(200, 'K'), Tmax=(3000, 'K'))
+        ], Tmin=(200, 'K'), Tmax=(3000, 'K'),
+           E0=(index * 1000 * 8.31446261815324, 'J/mol'),
+           Cp0=(29.100617, 'J/(mol*K)'), CpInf=(29.100617, 'J/(mol*K)'))
         species.append(Species(index=index, label=label, molecule=[mol], thermo=thermo))
-    return species
+    with _unit_helpers.unit_thermo_library(species):
+        yield species
 
 
 def falloff(kind=Lindemann, efficiencies=None):
@@ -152,6 +163,7 @@ class TestExcitedExportRework:
             spc.thermo.label = 'N2'
         monkeypatch.setattr(model_module, 'submit', submit)
         source = state_species[1]
+        model.declare_vibrational_manifold(Species(label='N2', molecule=[Molecule(smiles='N#N')]))
         if later_rename:
             spc, new = model.make_new_species(source.molecule[0].copy(deep=True), generate_thermo=False)
             assert new
@@ -262,16 +274,18 @@ class TestExcitedExportRework:
                                 kinetics=falloff())
         else:
             reaction = Reaction(reactants=[target], products=[argon], kinetics=Arrhenius(A=(1, 's^-1'), Ea=(0, 'J/mol')))
-        chemkin, dictionary = tmp_path / 'chem.inp', tmp_path / 'dictionary.txt'
-        save_chemkin_file(str(chemkin), [target, argon], [reaction])
-        save_species_dictionary(str(dictionary), [target, argon])
-        loaded, reactions = load_chemkin_file(str(chemkin), str(dictionary), use_chemkin_names=True)
-        restored = reactions[0].specific_collider if collider_position else reactions[0].reactants[0]
-        assert restored.is_isomorphic(target)
-        assert restored.index == index
-        if target.molecule[0].has_resolved_state():
-            assert get_species_identifier(restored) == get_species_identifier(target)
-        assert any(spc is restored for spc in loaded)
+        _unit_helpers.complete_identity_fixture_sources([target, argon])
+        with _unit_helpers.unit_thermo_library([target, argon]):
+            chemkin, dictionary = tmp_path / 'chem.inp', tmp_path / 'dictionary.txt'
+            save_chemkin_file(str(chemkin), [target, argon], [reaction])
+            save_species_dictionary(str(dictionary), [target, argon])
+            loaded, reactions = load_chemkin_file(str(chemkin), str(dictionary), use_chemkin_names=True)
+            restored = reactions[0].specific_collider if collider_position else reactions[0].reactants[0]
+            assert restored.is_isomorphic(target)
+            assert restored.index == index
+            if target.molecule[0].has_resolved_state():
+                assert get_species_identifier(restored) == get_species_identifier(target)
+            assert any(spc is restored for spc in loaded)
 
     @pytest.mark.parametrize('token', ['InChI', 'AInChI'])
     def test_electronic_inchi_token_dictionary_round_trip(self, state_species, tmp_path, token):
@@ -337,10 +351,12 @@ class TestExcitedExportRework:
         from rmgpy.yaml_rms import get_mech_dict
         nitrogen, _, _, argon = state_species
         argon.molecule[0].electronic_state = ''
+        _unit_helpers.complete_identity_fixture_sources([nitrogen, argon])
         nitrogen.label = argon.label = 'bath'
         reaction = Reaction(reactants=[nitrogen], products=[argon],
                             kinetics=falloff(kind, {nitrogen.molecule[0]: 4}))
-        data = get_mech_dict([nitrogen, argon], [reaction])
+        with _unit_helpers.unit_thermo_library([nitrogen, argon]):
+            data = get_mech_dict([nitrogen, argon], [reaction])
         records = data['Phases'][0]['Species']
         assert records[0]['name'] == 'bath-2'
         assert records[1]['name'] == 'bath'

@@ -177,6 +177,8 @@ class ReactorModPiece(muqm.PyModPiece):
              Condition2_output...,
              ConditionN_output...,]
         """
+        from rmgpy.thermo.state import require_species_thermo_allowed
+        require_species_thermo_allowed(self.cantera.species_list)
         assert len(inputs[0]) == self.inputSizes[0], "Number of inputs matches number of uncertain parameters"
 
         k_rv = inputs[0][0:len(self.k_params)]
@@ -289,6 +291,8 @@ class ReactorModPiece(muqm.PyModPiece):
         The thermo is permanently altered in the cantera model and must be 
         reset to its original value after the evaluation is finished.
         """
+        from rmgpy.thermo.state import require_thermo_estimation_allowed
+        require_thermo_estimation_allowed(self.cantera.species_list[species_index])
 
         species = self.cantera.species_list[species_index]
         delta_h = random_input * uncertainty_factor * 4184.0  # Convert kcal/mol to J/mol

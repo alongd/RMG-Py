@@ -1209,6 +1209,8 @@ class PDepNetwork(rmgpy.pdep.network.Network):
         Regenerate the :math:`k(T,P)` values for this partial network if the
         network is marked as invalid.
         """
+        from rmgpy.thermo.state import require_network_thermo_allowed
+        require_network_thermo_allowed(self)
         from rmgpy.kinetics import Arrhenius, KineticsData, MultiArrhenius
 
         # Path rates can have been assigned or their participants resolved after

@@ -5581,5 +5581,19 @@
       "test/rmgpy/data/kinetics/superelasticRework3Test.py::test_exporter_checks_original_declaration",
       "test/rmgpy/data/kinetics/superelasticRework3Test.py::test_rms_preserves_thermal_irreversible_declaration"
     ]
+  },
+  "rmgpy/rmg/model.py::CoreEdgeReactionModel._apply_vibrational_manifold::is_isomorphic#1": {
+    "verdict": "not-reachable-for-resolved",
+    "reason": "Compares original Molecule graph to the declared manifold members to select the reviewed v0 switch; it does not compare or reverse a Reaction or generate a reverse rate.",
+    "tests": [
+      "test/rmgpy/rmg/vibrationalManifoldTest.py::test_declared_unkeyed_species_gets_level_zero_thermo"
+    ]
+  },
+  "rmgpy/thermo/state.py::require_state_thermo::is_isomorphic#1": {
+    "verdict": "not-reachable-for-resolved",
+    "reason": "Matches the copied exact-state Molecule against a loaded thermo-library entry solely for structural source validation; there is no Reaction direction matching or reverse-rate generation.",
+    "tests": [
+      "test/rmgpy/data/excitedThermoSourceTest.py::test_attached_energy_and_limits_must_match_whole_library_source"
+    ]
   }
 }

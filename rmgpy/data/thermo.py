@@ -52,6 +52,8 @@ from rmgpy.ml.estimator import MLEstimator
 from rmgpy.molecule import Molecule, Bond, Group
 from rmgpy.molecule.graph import Graph
 from rmgpy.species import Species
+from rmgpy.thermo.state import require_thermo_estimation_allowed, thermo_library_species
+from rmgpy.exceptions import VibrationalManifoldError
 from rmgpy.thermo import NASAPolynomial, NASA, ThermoData, Wilhoit
 from rmgpy.data.surface import MetalDatabase
 from rmgpy import settings
@@ -75,6 +77,9 @@ def save_entry(f, entry):
     from rmgpy.species import Species
     refuse_resolved_species([Species(thermo=entry.data)], 'thermo.save_entry coverage')
 
+    if isinstance(entry.item, Molecule) and isinstance(entry.data, Wilhoit):
+        # This legacy serializer has no supported resolved Wilhoit representation.
+        require_thermo_estimation_allowed(entry.item)
     f.write('entry(\n')
     f.write('    index = {0:d},\n'.format(entry.index))
     f.write('    label = "{0}",\n'.format(entry.label))
@@ -98,6 +103,10 @@ def save_entry(f, entry):
         f.write('        Cpdata = {0!r},\n'.format(entry.data.Cpdata))
         f.write('        H298 = {0!r},\n'.format(entry.data.H298))
         f.write('        S298 = {0!r},\n'.format(entry.data.S298))
+        for field in ('Cp0', 'CpInf', 'E0'):
+            value = getattr(entry.data, field)
+            if value is not None:
+                f.write('        {0} = {1!r},\n'.format(field, value))
         if entry.data.Tmin is not None:
             f.write('        Tmin = {0!r},\n'.format(entry.data.Tmin))
         if entry.data.Tmax is not None:
@@ -741,6 +750,18 @@ class ThermoLibrary(Database):
         """
         return save_entry(f, entry)
 
+    def save_old(self, dictstr, treestr, libstr):
+        """Refuse legacy export that cannot preserve resolved energy and limits."""
+        for entry in self.entries.values():
+            require_thermo_estimation_allowed(entry.item)
+        return Database.save_old(self, dictstr, treestr, libstr)
+
+    def save_old_library(self, path):
+        """Check owned states before reducing thermo to the old numeric format."""
+        for entry in self.entries.values():
+            require_thermo_estimation_allowed(entry.item)
+        return Database.save_old_library(self, path)
+
     def generate_old_library_entry(self, data):
         """
         Return a list of values used to save entries to the old-style RMG
@@ -1300,6 +1321,10 @@ class ThermoDatabase(object):
         `path` points to the top-level folder of the old RMG database.
         """
 
+        for library in self.libraries.values():
+            for entry in library.entries.values():
+                require_thermo_estimation_allowed(entry.item)
+
         # Depository not used in old database, so it is not saved
 
         libraries_path = os.path.join(path, 'thermo_libraries')
@@ -1403,6 +1428,11 @@ class ThermoDatabase(object):
 
         thermo0 = self.get_thermo_data_from_libraries(species)
 
+        if any(molecule.has_resolved_state() for molecule in species.molecule):
+            if thermo0 is not None:
+                return thermo0[0]
+            require_thermo_estimation_allowed(species)
+
         if species.is_electron():
             # The electron is a structureless charge-carrier pseudo-species: it has no
             # group-additivity representation and must never be handed to RDKit, which
@@ -1435,6 +1465,8 @@ class ThermoDatabase(object):
                 else:  # assume the thermo came from pt 111
                     thermo0 = self.correct_binding_energy(thermo0, species, metal_to_scale_from=None, metal_to_scale_to=metal_to_scale_to)
             return thermo0
+
+        require_thermo_estimation_allowed(species)
 
         if species.contains_surface_site():
             try:
@@ -1618,6 +1650,7 @@ class ThermoDatabase(object):
         :param metal_to_scale_to: the metal you want to scale to (string e.g 'Pt111' or None)
         :return: corrected thermo
         """
+        require_thermo_estimation_allowed(species)
 
         if metal_to_scale_from == metal_to_scale_to:
             return thermo
@@ -1712,6 +1745,7 @@ class ThermoDatabase(object):
         """
         if any(m.has_resolved_state() for m in species.molecule):
             raise StateProvenanceError('Surface desorption cannot derive resolved-state thermo')
+        require_thermo_estimation_allowed(species)
 
         # define the comparison function to find the lowest energy
         def species_enthalpy(species):
@@ -1837,6 +1871,8 @@ class ThermoDatabase(object):
         """
         if molecule.has_resolved_state():
             raise StateProvenanceError('Adsorption trees have no supported resolved-state data provenance')
+        from rmgpy.thermo.state import require_thermo_estimation_allowed
+        require_thermo_estimation_allowed(molecule)
         number_of_surface_sites = len(surface_sites)
         
         if "SIDT" not in self.adsorption_groups: 
@@ -2038,6 +2074,11 @@ class ThermoDatabase(object):
 
         if resolved_electron:
             raise StateProvenanceError('thermo: no electron library record matches the declared state')
+        if species.props.get('vibrational_manifold'):
+            raise VibrationalManifoldError(
+                "No loaded thermo library entry for species {0!r} declared by "
+                "vibrationalManifold: the same graph with vibrationallevel 0 is "
+                "required; ensemble thermo and estimates are refused.".format(species.label))
         return None
 
     def get_all_thermo_data(self, species):
@@ -2050,6 +2091,18 @@ class ThermoDatabase(object):
         Returns: a list of tuples (ThermoData, source, entry) 
         (Source is a library or depository, or None)
         """
+        if (species.props.get('vibrational_manifold')
+                or any(molecule.has_resolved_state() for molecule in species.molecule)):
+            data = []
+            for label in self.library_order:
+                hit = self.get_thermo_data_from_library(species, self.libraries[label])
+                if hit is not None:
+                    hit[0].comment += 'Thermo library: ' + label
+                    data.append(hit)
+            if not data:
+                require_thermo_estimation_allowed(species)
+            return data
+
         thermo_data_list = []
         # Data from depository comes first
         thermo_data_list.extend(self.get_thermo_data_from_depository(species))
@@ -2100,6 +2153,7 @@ class ThermoDatabase(object):
         
         Returns: a list of tuples (thermo_data, depository, entry) without any Cp0 or CpInf data.
         """
+        require_thermo_estimation_allowed(species)
         items = []
         for entry in self.depository['stable'].entries.values():
             for molecule in species.molecule:
@@ -2126,6 +2180,9 @@ class ThermoDatabase(object):
         
         Returns a tuple: (ThermoData, library, entry)  or None.
         """
+        from rmgpy.thermo.state import require_electron_state_allowed
+        require_electron_state_allowed(species)
+        species = thermo_library_species(species)
         match = None
         # The electron is a charge-carrier pseudo-species, not a molecule, and RMG's
         # is_electron() predicate is deliberately multiplicity-agnostic: an electron is
@@ -2174,6 +2231,7 @@ class ThermoDatabase(object):
         
         Returns: ThermoData
         """
+        require_thermo_estimation_allowed(species)
         thermo = []
         for molecule in species.molecule:
             molecule.clear_labeled_atoms()
@@ -2206,6 +2264,7 @@ class ThermoDatabase(object):
         """
         if any(m.has_resolved_state() for m in species.molecule):
             raise StateProvenanceError('ML thermo estimation has no supported resolved-state provenance')
+        require_thermo_estimation_allowed(species)
         molecule = species.molecule[0]
 
         min_heavy = ml_settings['min_heavy_atoms'] or 1
@@ -2311,6 +2370,7 @@ class ThermoDatabase(object):
         """
         if molecule.has_resolved_state():
             raise StateProvenanceError('estimate_radical_thermo_via_hbi: resolved-state structural derivation is unsupported')
+        require_thermo_estimation_allowed(molecule)
         if not molecule.is_radical():
             raise ValueError("Method only valid for radicals.")
 
@@ -2415,6 +2475,7 @@ class ThermoDatabase(object):
         The entropy is not corrected for the symmetry of the molecule,
         this should be done later by the calling function.
         """
+        require_thermo_estimation_allowed(molecule)
         # For thermo estimation we need the atoms to already be sorted because we
         # iterate over them; if the order changes during the iteration then we
         # will probably not visit the right atoms, and so will get the thermo wrong.
@@ -2436,6 +2497,7 @@ class ThermoDatabase(object):
         The entropy is not corrected for the symmetry of the molecule,
         this should be done later by the calling function.
         """
+        require_thermo_estimation_allowed(molecule)
 
         assert not molecule.is_radical(), "This method is only for saturated non-radical species."
         # For thermo estimation we need the atoms to already be sorted because we
@@ -2562,6 +2624,8 @@ class ThermoDatabase(object):
         """
         if molecule.has_resolved_state():
             raise StateProvenanceError('_add_polycyclic_correction_thermo_data: resolved-state structural derivation is unsupported')
+        from rmgpy.thermo.state import require_thermo_estimation_allowed
+        require_thermo_estimation_allowed(molecule)
         # look up polycylic tree directly
         matched_group_thermodata, matched_group, is_partial_match = self._add_ring_correction_thermo_data_from_tree(
             None, self.groups['polycyclic'], molecule, polyring)
@@ -2596,6 +2660,8 @@ class ThermoDatabase(object):
         overlapped single-ring correction"; the calculated polyring thermo correction 
         will be finally added to input `thermo_data`.
         """
+        from rmgpy.thermo.state import require_atom_thermo_allowed
+        require_atom_thermo_allowed(polyring)
 
         # polyring decomposition
         bicyclics_merged_from_ring_pair, ring_occurrences_dict = bicyclic_decomposition_for_polyring(polyring)
@@ -2646,6 +2712,8 @@ class ThermoDatabase(object):
 
         # saturate if the bicyclic has unsaturated bonds
         # otherwise return None
+        from rmgpy.thermo.state import require_atom_thermo_allowed
+        require_atom_thermo_allowed(bicyclic)
         bicyclic_submol = convert_ring_to_sub_molecule(bicyclic)[0]
         saturated_bicyclic_submol, already_saturated = saturate_ring_bonds(bicyclic_submol)
 
@@ -2725,6 +2793,8 @@ class ThermoDatabase(object):
         `thermo_data`.
         Also returns the matched ring group from the database from which the data originated.
         """
+        from rmgpy.thermo.state import require_thermo_estimation_allowed
+        require_thermo_estimation_allowed(molecule)
         matched_ring_entries = []
         # label each atom in the ring individually to try to match the group
         # for each ring, save only the ring that is matches the most specific leaf in the tree.
@@ -2846,6 +2916,8 @@ class ThermoDatabase(object):
         Returns:
             tuple: The combined ThermoData object and a bool flag indicating whether new data was added to it.
         """
+        from rmgpy.thermo.state import require_thermo_estimation_allowed
+        require_thermo_estimation_allowed(molecule)
         node0 = database.descend_tree(molecule, atom, None)
         if node0 is None:
             if molecule.has_resolved_state():
@@ -2908,6 +2980,8 @@ class ThermoDatabase(object):
         Determine the group additivity thermodynamic data for the atom `atom` in the structure `structure`,
         and REMOVE it from the existing thermo data `thermo_data`.
         """
+        from rmgpy.thermo.state import require_thermo_estimation_allowed
+        require_thermo_estimation_allowed(molecule)
         node0 = database.descend_tree(molecule, atom, None)
         if node0 is None:
             if molecule.has_resolved_state():
@@ -3007,6 +3081,8 @@ class ThermoDatabase(object):
         The Dictionary_of_Groups_Used looks like 
         {'groupType':[List of tuples containing (Entry, Weight)]
         """
+        from rmgpy.thermo.state import checked_thermo
+        checked_thermo(species)
         comment = species.thermo.comment
         tokens = comment.split()
 
@@ -3217,6 +3293,13 @@ def find_cp0_and_cpinf(species, heat_capacity):
     """
     Calculate the Cp0 and CpInf values, and add them to the HeatCapacityModel object.
     """
+    from rmgpy.thermo.state import requires_state_library
+    if requires_state_library(species) and (heat_capacity.Cp0 is None or heat_capacity.CpInf is None):
+        from rmgpy.exceptions import ExcitedSpeciesThermoError
+        raise ExcitedSpeciesThermoError(
+            "Resolved species {0!r} requires explicit Cp0 and CpInf in its exact-state "
+            "thermo library entry; a state-blind molecular limit would restore frozen "
+            "vibrational heat capacity.\n{1}".format(species.label, species.to_adjacency_list()))
     if heat_capacity.Cp0 is None:
         cp_0 = species.calculate_cp0()
         heat_capacity.Cp0 = (cp_0, "J/(mol*K)")

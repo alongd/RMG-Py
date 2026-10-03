@@ -51,6 +51,7 @@ from rmgpy.exceptions import StateProvenanceError
 from rmgpy.qm.qmdata import parse_cclib_data
 from rmgpy.qm import _check_file_names
 from rmgpy.thermo import ThermoData
+from rmgpy.thermo.state import require_thermo_estimation_allowed
 
 
 class Geometry(object):
@@ -177,6 +178,9 @@ class Geometry(object):
         """
         Embed the RDKit molecule and create the crude molecule file.
         """
+        from rmgpy.export import refuse_resolved_species
+        if self.molecule is not None and self.molecule.props.get('vibrational_manifold'):
+            refuse_resolved_species([self.molecule], 'Geometry.rd_embed')
         self.check_file_names()
         # `good_embed` is a flag to indicate conformers are not from random coordinates or 2D coordinates
         # `good_opt` is a flag to indicate at least one conformer is successfully optimized using force field
@@ -514,6 +518,7 @@ class QMMolecule(object):
         """
         if self.molecule.has_resolved_state():
             raise StateProvenanceError('QM thermo estimation has no supported resolved-state provenance')
+        require_thermo_estimation_allowed(self.molecule)
         self.initialize()
 
         # First, see if we already have it.
@@ -545,6 +550,8 @@ class QMMolecule(object):
         """
         Save the generated thermo data.
         """
+        from rmgpy.thermo.state import require_thermo_estimation_allowed
+        require_thermo_estimation_allowed(self.molecule)
         self.check_file_names()
         self.thermo.H298.units = "kcal/mol"
         self.thermo.S298.units = "cal/mol/K"
@@ -566,6 +573,8 @@ class QMMolecule(object):
         """
         if self.molecule.has_resolved_state():
             raise StateProvenanceError('QM thermo estimation has no supported resolved-state provenance')
+        from rmgpy.thermo.state import require_thermo_estimation_allowed
+        require_thermo_estimation_allowed(self.molecule)
         file_path = self.get_thermo_file_path()
         local_context = load_thermo_data_file(file_path)
         if local_context is None:
@@ -642,6 +651,8 @@ class QMMolecule(object):
         """
         if self.molecule.has_resolved_state():
             raise StateProvenanceError('QM thermo estimation has no supported resolved-state provenance')
+        from rmgpy.thermo.state import require_thermo_estimation_allowed
+        require_thermo_estimation_allowed(self.molecule)
         assert self.qm_data, "Need QM Data first in order to calculate thermo."
         assert self.point_group, "Need Point Group first in order to calculate thermo."
 

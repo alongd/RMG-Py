@@ -34,6 +34,30 @@ from rmgpy.molecule import Molecule
 from rmgpy.species import Species
 
 
+def export_molecule(reference, molecule=None):
+    """Represent a declared manifold member as explicit v=0 without mutating it."""
+    if isinstance(reference, Species):
+        reference._molecule_state_key()
+    if molecule is None:
+        molecule = reference.molecule[0] if isinstance(reference, Species) else reference
+    declaration = (getattr(reference, 'props', {}).get('vibrational_manifold')
+                   or molecule.props.get('vibrational_manifold'))
+    if not declaration:
+        return molecule
+    if molecule.vibrational_level not in (-1, 0):
+        raise SpeciesIdentityError('A vibrationalManifold declaration cannot export a nonzero fixed level.')
+    molecule = molecule.copy(deep=True)
+    molecule.props.pop('vibrational_manifold', None)
+    molecule.vibrational_level = 0
+    return molecule
+
+
+def has_export_state(reference):
+    """Include the declared v=0 member at state-aware or refusing export boundaries."""
+    molecules = reference.molecule if isinstance(reference, Species) else [reference]
+    return any(export_molecule(reference, molecule).has_resolved_state() for molecule in molecules)
+
+
 class SpeciesReferences(list):
     """A writer's declared species and their emitted names.
 
@@ -59,10 +83,10 @@ class SpeciesReferences(list):
         for index, (spc, name) in enumerate(zip(self, self.names)):
             previous = self.by_name.get(name)
             if previous is not None and self[previous] is not spc:
-                resolved = any(mol.has_resolved_state()
-                               for species in (self[previous], spc) for mol in species.molecule)
+                resolved = any(has_export_state(species) for species in (self[previous], spc))
                 if not allow_ground_collisions or resolved:
-                    same = self[previous].copy(deep=True).is_isomorphic(spc.copy(deep=True))
+                    same = any(export_molecule(self[previous], first).is_isomorphic(export_molecule(spc, second))
+                               for first in self[previous].molecule for second in spc.molecule)
                     if not same:
                         raise (collision_type or error_type)(
                             '{0} identifier "{1}" collides under a shared label between {2} and {3}.'.format(
@@ -73,7 +97,7 @@ class SpeciesReferences(list):
 def describe_species(reference):
     """Describe identity-bearing metadata without using SMILES as an identity."""
     molecules = reference.molecule if isinstance(reference, Species) else [reference]
-    states = [mol.state_suffix() for mol in molecules]
+    states = [export_molecule(reference, mol).state_suffix() for mol in molecules]
     return '"{0}" (index={1}, state={2!r})'.format(
         getattr(reference, 'label', 'molecular reference'), getattr(reference, 'index', -1), states)
 
@@ -99,10 +123,12 @@ def resolve_species_reference(reference, declarations, identifiers=None, allow_m
         raise declarations.error_type('{0} reference has no molecular identity: {1!r}.'.format(
             declarations.context, reference))
     for index, spc in enumerate(declarations):
-        if spc.molecule and spc.is_isomorphic(reference):
+        if spc.molecule and any(export_molecule(spc, mol).is_isomorphic(export_molecule(reference, other))
+                                for mol in spc.molecule
+                                for other in (reference.molecule if isinstance(reference, Species) else [reference])):
             return declarations.names[index]
     molecules = reference.molecule if isinstance(reference, Species) else [reference]
-    if allow_missing_efficiency and not any(mol.has_resolved_state() for mol in molecules):
+    if allow_missing_efficiency and not has_export_state(reference):
         return None
     name = declarations.identifier(reference) if (
         isinstance(reference, Species) and declarations.identifier is not None) else getattr(reference, 'label', '')
@@ -139,7 +165,7 @@ def validate_reaction_references(reactions, declarations):
             resolve_species_reference(reference, declarations, allow_missing_efficiency=efficiency)
 
 
-def refuse_resolved_species(species, context, reactions=()):
+def refuse_resolved_species(species, context, reactions=(), allow_manifold=False):
     """Refuse resolved identity at a boundary that only carries ground labels."""
     references = list(species)
     for reaction in reactions:
@@ -154,7 +180,9 @@ def refuse_resolved_species(species, context, reactions=()):
             molecules = [reference] if isinstance(reference, Molecule) else []
         for adjacency in (getattr(getattr(reference, 'thermo', None), 'thermo_coverage_dependence', None) or {}):
             molecules = molecules + [Molecule().from_adjacency_list(adjacency)]
-        if any(mol.has_resolved_state() for mol in molecules):
+        if (any(mol.has_resolved_state() for mol in molecules)
+                or (not allow_manifold and (getattr(reference, 'props', {}).get('vibrational_manifold')
+                    or any(mol.props.get('vibrational_manifold') for mol in molecules)))):
             raise SpeciesIdentityError(
                 'Resolved electronic or vibrational states are not supported by {0}: {1}.'.format(
                     context, describe_species(reference)))

@@ -434,6 +434,7 @@ class Reaction:
 
         from rmgpy.export import (
             SpeciesReferences, resolve_species_reference, validate_reaction_references, refuse_resolved_species,
+            has_export_state,
         )
         if not use_chemkin_identifier:
             refuse_resolved_species(species_list or [], 'Reaction.to_cantera', [self])
@@ -445,7 +446,7 @@ class Reaction:
         kinetics_species = species_list
         species_list = list(species_list)
         for reference in self.reactants + self.products + ([self.specific_collider] if self.specific_collider else []):
-            if (not any(mol.has_resolved_state() for mol in reference.molecule)
+            if (not has_export_state(reference)
                     and not any(spc is reference for spc in species_list)):
                 species_list.append(reference)
         identifiers = (lambda spc: spc.to_chemkin()) if use_chemkin_identifier else None
@@ -1894,6 +1895,8 @@ class Reaction:
         is the Planck constant. :math:`\\kappa(T)` is an optional tunneling
         correction.
         """
+        from rmgpy.thermo.state import require_species_thermo_allowed
+        require_species_thermo_allowed(self.reactants + self.products)
         # Determine TST rate constant at each temperature
         Qreac = 1.0
         E0 = 0.0

@@ -38,7 +38,7 @@ from rmgpy.data.kinetics.groups import KineticsGroups
 from rmgpy.data.kinetics.rules import KineticsRules
 from rmgpy.data.statmech import StatmechDatabase, StatmechGroups, StatmechLibrary, GroupFrequencies
 from rmgpy.data.thermo import ThermoDatabase, ThermoLibrary
-from rmgpy.exceptions import StateProvenanceError
+from rmgpy.exceptions import ExcitedSpeciesThermoError, StateProvenanceError
 from rmgpy.kinetics import Arrhenius, ArrheniusEP
 from rmgpy.molecule import Group, Molecule
 from rmgpy.reaction import Reaction
@@ -117,8 +117,9 @@ def electron_database(state=('', -1)):
 
 def electron(state, radicals):
     molecule = Molecule().from_adjacency_list('1 e u{} p0 c-1'.format(radicals))
-    molecule.electronic_state, molecule.vibrational_level = state
-    return Species(molecule=[molecule])
+    species = Species(molecule=[molecule])
+    species.molecule[0].electronic_state, species.molecule[0].vibrational_level = state
+    return species
 
 
 @pytest.mark.parametrize('state', STATES)
@@ -127,7 +128,7 @@ def electron(state, radicals):
 def test_resolved_electron_refuses_unmatched_library(state, radicals, api):
     database, library = electron_database()
     species = electron(state, radicals)
-    with pytest.raises(StateProvenanceError, match='electron.*state'):
+    with pytest.raises(ExcitedSpeciesThermoError, match='electron'):
         if api == 'direct':
             database.get_thermo_data_from_library(species, library)
         else:
@@ -139,8 +140,14 @@ def test_resolved_electron_refuses_unmatched_library(state, radicals, api):
 def test_electron_matching_state_keeps_multiplicity_convention(state, radicals):
     database, library = electron_database(state)
     species = electron(state, radicals)
-    assert database.get_thermo_data_from_library(species, library)[0].H298.value_si == 12345
-    assert database.get_thermo_data(species).H298.value_si == 12345
+    if state != ('', -1):
+        with pytest.raises(ExcitedSpeciesThermoError, match='electron'):
+            database.get_thermo_data_from_library(species, library)
+        with pytest.raises(ExcitedSpeciesThermoError, match='electron'):
+            database.get_thermo_data(species)
+    else:
+        assert database.get_thermo_data_from_library(species, library)[0].H298.value_si == 12345
+        assert database.get_thermo_data(species).H298.value_si == 12345
 
 
 @pytest.mark.parametrize('state', STATES)
@@ -157,7 +164,9 @@ def test_resolved_statmech_estimation_refused(state, smiles, api):
     groups.entries = {e.label: e for e in (root, child)}
     database = StatmechDatabase()
     database.groups = {'groups': groups}
-    with pytest.raises(StateProvenanceError, match='statmech.*resolved'):
+    expected = ExcitedSpeciesThermoError if api in ('database_groups', 'full') else StateProvenanceError
+    message = 'Library-only' if expected is ExcitedSpeciesThermoError else 'statmech.*resolved'
+    with pytest.raises(expected, match=message):
         if api == 'node':
             groups._get_node(molecule, {'*': molecule.atoms[0]})
         elif api == 'frequency_groups':
@@ -189,10 +198,17 @@ def test_statmech_library_requires_matching_state(state):
     database = StatmechDatabase()
     database.libraries = {'ring': library}
     database.library_order = ['ring']
-    assert database.get_statmech_data_from_library(molecule, library) is None
+    with pytest.raises(ExcitedSpeciesThermoError):
+        database.get_statmech_data_from_library(molecule, library)
     entry.item = molecule.copy(deep=True)
-    assert database.get_statmech_data_from_library(molecule, library)[0] is entry.data
-    assert database.get_statmech_data(molecule, thermo()) is entry.data
+    with pytest.raises(ExcitedSpeciesThermoError):
+        database.get_statmech_data_from_library(molecule, library)
+    with pytest.raises(ExcitedSpeciesThermoError):
+        database.get_statmech_data(molecule, thermo())
+    ground = Molecule(smiles='C1CC1')
+    entry.item = ground.copy(deep=True)
+    assert database.get_statmech_data_from_library(ground, library)[0] is entry.data
+    assert database.get_statmech_data(ground, thermo()) is entry.data
 
 
 @pytest.mark.parametrize('state', STATES)
@@ -208,5 +224,5 @@ def test_resolved_source_reconstruction_refused(state, source_kind):
     sources = {'Training': ('probe', ground, False),
                'Rate Rules': ('probe', {'rules': [(rule, 1)], 'training': [], 'degeneracy': 1}),
                'Library': 'probe', 'PDep': 1}
-    with pytest.raises(StateProvenanceError, match='resolved.*reconstruction'):
+    with pytest.raises(ExcitedSpeciesThermoError, match='Library-only'):
         KineticsDatabase().reconstruct_kinetics_from_source(reaction, {source_kind: sources[source_kind]})

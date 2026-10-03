@@ -380,6 +380,8 @@ class StatmechGroups(Database):
         if molecule.has_resolved_state():
             raise StateProvenanceError('statmech: resolved frequency estimation has no matched provenance')
 
+        from rmgpy.thermo.state import require_thermo_estimation_allowed
+        require_thermo_estimation_allowed(molecule)
         conformer = Conformer()
 
         # Compute spin multiplicity
@@ -679,6 +681,8 @@ class StatmechDatabase(object):
         in order, returning the first match found, before falling back to
         estimation via group additivity.
         """
+        from rmgpy.thermo.state import require_thermo_estimation_allowed
+        require_thermo_estimation_allowed(molecule)
         logging.debug('Retrieving stat mech data for {}.'.format(molecule.to_smiles()))
         statmech_model = None
         # Check the libraries in order first; return the first successful match
@@ -697,6 +701,8 @@ class StatmechDatabase(object):
         by searching the entries in the depository.
         Returns a list of tuples  (statmechData, depository, entry).
         """
+        from rmgpy.thermo.state import require_thermo_estimation_allowed
+        require_thermo_estimation_allowed(molecule)
         items = []
         for name, depository in self.depository.items():
             for label, entry in depository.entries.items():
@@ -710,6 +716,8 @@ class StatmechDatabase(object):
         by searching the entries in the specified :class:`StatmechLibrary` object
         `library`. Returns ``None`` if no data was found.
         """
+        from rmgpy.thermo.state import require_thermo_estimation_allowed
+        require_thermo_estimation_allowed(molecule)
         for label, entry in library.entries.items():
             if molecule.is_isomorphic(entry.item):
                 return entry.data, library, entry
@@ -722,6 +730,8 @@ class StatmechDatabase(object):
         remaining internal modes to heat capacity data from the given thermo
         model `thermo_model`. This always returns valid degrees of freedom data.
         """
+        from rmgpy.thermo.state import require_thermo_estimation_allowed
+        require_thermo_estimation_allowed(molecule)
         return self.groups['groups'].get_statmech_data(molecule, thermo_model)
 
 

@@ -75,6 +75,8 @@ from rmgpy.rmg.reactionmechanismsimulator_reactors import (
 from rmgpy.rmg.reactionmechanismsimulator_reactors import Reactor as RMSReactor
 from rmgpy.species import Species
 from rmgpy.thermo.thermoengine import submit
+from rmgpy.thermo.state import require_state_thermo, require_electron_state_allowed, requires_state_library
+from rmgpy.exceptions import VibrationalManifoldError, DuplicateSpeciesLabelError
 
 ################################################################################
 
@@ -199,6 +201,10 @@ class ReactionModel:
         """
         if not isinstance(other, ReactionModel):
             raise ValueError("Expected type ReactionModel for other parameter, got {0}".format(other.__class__))
+
+        from rmgpy.thermo.state import checked_thermo
+        for species in self.species + other.species:
+            checked_thermo(species)
 
         # Initialize the merged model
         final_model = ReactionModel()
@@ -328,6 +334,8 @@ class CoreEdgeReactionModel:
         self.network_list = []
         self.network_count = 0
         self.species_dict = {}
+        self.vibrational_manifolds = []
+        self.defer_vibrational_validation = False
         self.reaction_dict = {}
         self.species_cache = [None for i in range(4)]
         self.species_counter = 0
@@ -431,6 +439,87 @@ class CoreEdgeReactionModel:
         # At this point we can conclude that the species is new
         return None
 
+    def declare_vibrational_manifold(self, species):
+        """Redeclare a vibrationally unresolved input species as its manifold's v=0 member."""
+        if not species.label:
+            raise VibrationalManifoldError(
+                "vibrationalManifold requires a non-empty input label; an unnamed declaration "
+                "cannot select its library-only v=0 source.")
+        if any(molecule.vibrational_level >= 0 for molecule in species.molecule):
+            raise VibrationalManifoldError(
+                "vibrationalManifold species {0!r} must be vibrationally unresolved.".format(species.label))
+        if species in self.vibrational_manifolds:
+            raise VibrationalManifoldError(
+                "vibrationalManifold species {0!r} was already declared.".format(species.label))
+        self.vibrational_manifolds.append(species)
+        self._apply_vibrational_manifold(species)
+        # Input reading can encounter thermo attached before the declaration was read.
+        # The declaration explicitly switches it; later attached thermo is value-checked.
+        species.thermo = None
+        logging.info("vibrationalManifold: species %r is re-declared as v = 0; "
+                     "its thermo will be taken from a vibrationallevel 0 library entry.", species.label)
+
+    def _apply_vibrational_manifold(self, species):
+        """Enforce the partition for input, library, and newly generated species."""
+        if self.defer_vibrational_validation:
+            return
+        if not self.vibrational_manifolds and not any(
+                molecule.vibrational_level >= 1 for molecule in species.molecule):
+            return
+        for molecule in species.molecule:
+            ground = molecule.copy(deep=True)
+            ground.vibrational_level = -1
+            declaration = next((entry for entry in self.vibrational_manifolds
+                                if any(ground.is_isomorphic(candidate)
+                                       for candidate in entry.molecule)), None)
+            if molecule.vibrational_level >= 1 and declaration is None:
+                raise VibrationalManifoldError(
+                    "Resolved vibrational species {0!r} requires a vibrationalManifold "
+                    "declaration naming its unresolved input species; counting a thermal "
+                    "ensemble alongside explicit levels is refused.\n{1}"
+                    .format(species.label or molecule.state_suffix(), molecule.to_adjacency_list()))
+            if declaration is not None and molecule.vibrational_level == -1:
+                species.props['vibrational_manifold'] = declaration.label
+                for structure in species.molecule:
+                    structure.props['vibrational_manifold'] = declaration.label
+                    from rmgpy.thermo.state import register_state_atoms
+                    register_state_atoms(structure)
+            if declaration is not None and molecule.vibrational_level == 0:
+                raise VibrationalManifoldError(
+                    "Species {0!r} explicitly duplicates v = 0 already represented by "
+                    "vibrationalManifold species {1!r}.".format(species.label, declaration.label))
+
+    def validate_vibrational_manifolds(self, species_list):
+        """Validate a complete input after all declarations have been read."""
+        for species in species_list:
+            self._apply_vibrational_manifold(species)
+
+    def _set_species_label(self, species, label, automatic=False):
+        """Reserve labels against every created species, including species outside phases."""
+        existing = [spc for entries in self.species_dict.values() for spc in entries if spc is not species]
+        occupied = {spc.label for spc in existing}
+        if self.edge.phase_system:
+            occupied.update(name for phase in self.edge.phase_system.phases.values() for name in phase.names
+                            if self.edge.phase_system.species_dict.get(name) is not species)
+        collision = next((spc for spc in existing if spc.label == label), None)
+        if collision is not None and not automatic:
+            admitted = any(model.phase_system and collision in model.phase_system.species_dict.values()
+                           for model in (self.core, self.edge))
+            if collision.props.get('automatic_state_label') and not admitted:
+                # An explicit input label wins over a generated resolved label.
+                self._set_species_label(collision, label + '-2', automatic=True)
+                occupied = {spc.label for spc in existing}
+            else:
+                raise DuplicateSpeciesLabelError(
+                    "Duplicate species label {0!r} names both species:\n{1}\nand:\n{2}"
+                    .format(label, collision.to_adjacency_list(), species.to_adjacency_list()))
+        candidate = label
+        suffix = 2
+        while candidate in occupied:
+            candidate = label + '-' + str(suffix)
+            suffix += 1
+        species.label = candidate
+
     def make_new_species(self, object, label="", reactive=True, check_existing=True, generate_thermo=True, check_decay=False, check_cut=False):
         """
         Formally create a new species from the specified `object`, which can be
@@ -446,6 +535,8 @@ class CoreEdgeReactionModel:
         else:
             molecule = object
 
+        explicit_label = bool(label)
+        require_electron_state_allowed(molecule)
         molecule.clear_labeled_atoms()
 
         # If desired, check to ensure that the species is new; return the
@@ -473,7 +564,12 @@ class CoreEdgeReactionModel:
         except AttributeError:
             spec = Species(label=label, molecule=[molecule], reactive=reactive)
 
+        if explicit_label:
+            self._set_species_label(spec, label)
         spec.generate_resonance_structures()
+        if not spec.label and spec.molecule[0].has_resolved_state():
+            spec.props['automatic_state_label'] = True
+        self._apply_vibrational_manifold(spec)
 
         if check_decay:
             spcs = decay_species(spec)
@@ -500,15 +596,7 @@ class CoreEdgeReactionModel:
         if not spec.label:
             spec.label = spec.smiles + spec.molecule[0].state_suffix()
 
-        # ensure species labels are unique
-        orilabel = spec.label
-        label = orilabel
-        i = 2
-        if self.edge.phase_system:  # !!! Not maintained when operating with require_rms=False?
-            while any([label in phase.names for phase in self.edge.phase_system.phases.values()]):
-                label = orilabel + "-" + str(i)
-                i += 1
-        spec.label = label
+        self._set_species_label(spec, spec.label, automatic=not explicit_label)
 
         logging.debug("Creating new species %s", spec.label)
 
@@ -783,6 +871,9 @@ class CoreEdgeReactionModel:
         else:
             raise Exception("Unrecognized reaction type {0!s}".format(forward.__class__))
 
+        from rmgpy.thermo.state import checked_thermo
+        for species in forward.reactants + forward.products:
+            checked_thermo(species)
         self.register_reaction(forward)
 
         forward.index = self.reaction_counter + 1
@@ -1174,8 +1265,15 @@ class CoreEdgeReactionModel:
 
         quantum_mechanics = get_input("quantum_mechanics")
 
+        for species in self.new_species_list:
+            self._apply_vibrational_manifold(species)
+
         if quantum_mechanics:
-            quantum_mechanics.run_jobs(self.new_species_list, procnum=procnum)
+            qm_species = [species for species in self.new_species_list
+                          if not species.props.get('vibrational_manifold')
+                          and not any(molecule.has_resolved_state()
+                                      for molecule in species.molecule)]
+            quantum_mechanics.run_jobs(qm_species, procnum=procnum)
 
         # Serial thermo calculation for other methods
         for spc in self.new_species_list:
@@ -1185,16 +1283,36 @@ class CoreEdgeReactionModel:
         """
         Generate thermo for species.
         """
+        self._apply_vibrational_manifold(spc)
+        spc._invalidate_thermo_state_cache(self.solvent_name)
+        if requires_state_library(spc) and spc.thermo is not None:
+            from rmgpy.data.rmg import get_db
+            try:
+                thermo_database = get_db('thermo')
+            except DatabaseError:
+                thermo_database = None
+            require_state_thermo(spc, thermo_database, self.solvent_name)
+
         if not spc.thermo:
             submit(spc, self.solvent_name)
+            if spc.props.get('vibrational_manifold'):
+                if spc.thermo is None:
+                    raise VibrationalManifoldError(
+                        "Species {0!r} declared by vibrationalManifold requires a "
+                        "loaded vibrationallevel 0 thermo library entry.".format(spc.label))
+                logging.info("vibrationalManifold: species %r thermo switched to v = 0 "
+                             "library entry %r.", spc.label, spc.thermo.label)
 
-            if rename and spc.thermo and spc.thermo.label != "":  # check if thermo libraries have a name for it
+            if (rename and spc.thermo and spc.thermo.label != ""
+                    and not spc.props.get('vibrational_manifold')
+                    and (not spc.molecule[0].has_resolved_state()
+                         or not spc.label or spc.props.get('automatic_state_label'))):
                 if isinstance(spc.molecule[0], Fragment):
                     logging.info("Species {0} NOT renamed {1} but get thermo based on thermo library".format(spc.label, spc.thermo.label))
                     spc.label = spc.smiles
                 else:
                     logging.info("Species {0} renamed {1} based on thermo library name".format(spc.label, spc.thermo.label))
-                    spc.label = spc.thermo.label + spc.molecule[0].state_suffix()
+                    self._set_species_label(spc, spc.thermo.label + spc.molecule[0].state_suffix(), automatic=True)
 
         if vapor_liquid_mass_transfer.enabled:
             spc.get_liquid_volumetric_mass_transfer_coefficient_data()
@@ -1487,8 +1605,9 @@ class CoreEdgeReactionModel:
         maximum_edge_species is the maximum allowed number of edge species
         reaction_systems is a list of reaction_system objects
         """
+        from rmgpy.thermo.state import checked_thermo
         self.Tmax = Tmax
-        Gs = [spc.thermo.get_free_energy(Tmax) for spc in self.core.species]
+        Gs = [checked_thermo(spc).get_free_energy(Tmax) for spc in self.core.species]
         self.Gmax = max(Gs)
         self.Gmin = min(Gs)
 
@@ -1503,9 +1622,10 @@ class CoreEdgeReactionModel:
         checks Gibbs energy of the species in species against the
         maximum allowed Gibbs energy
         """
+        from rmgpy.thermo.state import checked_thermo
         Tmax = self.Tmax
         for spc in spcs:
-            G = spc.thermo.get_free_energy(Tmax)
+            G = checked_thermo(spc).get_free_energy(Tmax)
             if G > self.Gfmax:
                 Gn = (G - self.Gmax) / (self.Gmax - self.Gmin)
                 logging.info(
@@ -1528,6 +1648,7 @@ class CoreEdgeReactionModel:
         min_species_exist_iterations_for_prune is the number of iterations a species must be in the edge
         before it is eligible for thermo filtering
         """
+        from rmgpy.thermo.state import checked_thermo
         Tmax = self.Tmax
         num_to_remove = len(self.edge.species) - maximum_edge_species
         logging.debug("Planning to remove %d species", num_to_remove)
@@ -1537,7 +1658,7 @@ class CoreEdgeReactionModel:
             logging.info("Reached maximum number of edge species")
             logging.info("Attempting to remove excess edge species with Thermodynamic filtering")
             spcs = self.edge.species
-            Gfs = np.array([spc.thermo.get_free_energy(Tmax) for spc in spcs])
+            Gfs = np.array([checked_thermo(spc).get_free_energy(Tmax) for spc in spcs])
             Gns = (Gfs - self.Gmax) / (self.Gmax - self.Gmin)
             inds = np.argsort(Gns)  # could actually do this with the Gfs, but want to print the Gn value later
             inds = inds[::-1]  # get in order of increasing Gf

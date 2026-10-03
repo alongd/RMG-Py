@@ -158,6 +158,8 @@ class KineticsJob(object):
         """
         Generate the kinetics data for the reaction and fit it to a modified Arrhenius model.
         """
+        from rmgpy.thermo.state import require_species_thermo_allowed
+        require_species_thermo_allowed(self.reaction.reactants + self.reaction.products)
 
         # Arkane fits and writes equilibrium reverses; check the supplied rate
         # before TST replaces it with a thermal Arrhenius declaration.
@@ -836,5 +838,21 @@ class Well(object):
     """
 
     def __init__(self, species_list):
+        from rmgpy.thermo.state import require_species_thermo_allowed
+        require_species_thermo_allowed(species_list)
         self.species_list = species_list
-        self.E0 = sum([species.conformer.E0.value_si for species in species_list])
+        self._E0 = sum([species.conformer.E0.value_si for species in species_list])
+
+    @property
+    def E0(self):
+        """A cached well cannot supply energy after its species acquires a resolved state."""
+        from rmgpy.thermo.state import require_species_thermo_allowed
+        require_species_thermo_allowed(self.species_list)
+        return self._E0
+
+
+    @E0.setter
+    def E0(self, value):
+        from rmgpy.thermo.state import require_species_thermo_allowed
+        require_species_thermo_allowed(self.species_list)
+        self._E0 = value

@@ -767,6 +767,10 @@ def to_rms(obj, species_names=None, rms_species_list=None, rmg_species=None):
     elif isinstance(obj, NASA):
         return Main.NASA([to_rms(poly) for poly in obj.polynomials], Main.EmptyThermoUncertainty())
     elif isinstance(obj, Species):
+        from rmgpy.thermo.state import checked_thermo
+        checked_thermo(obj)
+        if obj.transport_data is not None:
+            obj.get_transport_data()
 
         if isinstance(obj.molecule[0], Fragment):
             obj.molecule[0].assign_representative_molecule()

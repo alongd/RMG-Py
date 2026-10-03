@@ -6,6 +6,7 @@ import ast
 import importlib.util
 import inspect
 import json
+from contextlib import contextmanager
 from pathlib import Path
 
 from rmgpy.chemkin import get_species_identifier
@@ -19,6 +20,13 @@ _wall = importlib.util.module_from_spec(_wall_spec)
 _wall_spec.loader.exec_module(_wall)
 
 
+_helpers_spec = importlib.util.spec_from_file_location(
+    'wall_export_helpers', Path(__file__).with_name('excitedExportHelpers.py'))
+_helpers = importlib.util.module_from_spec(_helpers_spec)
+_helpers_spec.loader.exec_module(_helpers)
+
+
+@contextmanager
 def resolved_wall_model():
     """Construct the review's resolved Cl- before reactor initialization."""
     namespace = dict(_wall.model.__globals__)
@@ -26,42 +34,61 @@ def resolved_wall_model():
     for node in ast.walk(tree):
         if isinstance(node, ast.Constant) and node.value == '1 Cl u0 p4 c-1':
             node.value = 'electronicstate 1S0\n1 Cl u0 p4 c-1'
-    exec(compile(ast.fix_missing_locations(tree), 'resolved_wall_model', 'exec'), namespace)
-    return namespace['model']()
+    with _helpers.unit_thermo_library([]) as library:
+        def declare_sources(species):
+            for spc in species:
+                if spc.thermo is not None:
+                    spc.thermo.Cp0 = (20.8, 'J/(mol*K)')
+                    spc.thermo.CpInf = (20.8, 'J/(mol*K)')
+                    spc.thermo.E0 = (spc.thermo.H298.value_si - 6201.52, 'J/mol')
+                    spc.thermo.Tmin = (200, 'K')
+                    spc.thermo.Tmax = (1500, 'K')
+            _helpers.add_unit_library_entries(library, species)
+        namespace['declare_sources'] = declare_sources
+        function = tree.body[0]
+        for i, statement in enumerate(function.body):
+            if isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Call) and \
+                    getattr(statement.value.func, 'attr', '') == 'initialize_model':
+                function.body.insert(i, ast.parse('declare_sources(species)').body[0])
+                break
+        else:
+            raise AssertionError('wall fixture initialization was not found')
+        exec(compile(ast.fix_missing_locations(tree), 'resolved_wall_model', 'exec'), namespace)
+        yield namespace['model']()
 
 
 def test_resolved_wall_manifest_uses_state_qualified_species_names():
-    reactor, species, _ = resolved_wall_model()
-    reactor.monitor_electronegative_wall(reactor.y.copy(), 7.0)
-    manifest = reactor.electronegative_wall_manifest()
-    anion = next(spc for spc in species if spc.label == 'Cl-')
-    identity = get_species_identifier(anion)
+    with resolved_wall_model() as (reactor, species, _):
+        reactor.monitor_electronegative_wall(reactor.y.copy(), 7.0)
+        manifest = reactor.electronegative_wall_manifest()
+        anion = next(spc for spc in species if spc.label == 'Cl-')
+        identity = get_species_identifier(anion)
 
-    assert list(manifest['gates']['A']) == [identity]
-    assert manifest['extrema']['min_conf']['anion'] == identity
-    assert all(identity in equation for equation, _ in
-               manifest['gates']['A'][identity]['destruction_channels'])
-    json.dumps(manifest, allow_nan=False)
+        assert list(manifest['gates']['A']) == [identity]
+        assert manifest['extrema']['min_conf']['anion'] == identity
+        assert all(identity in equation for equation, _ in
+                   manifest['gates']['A'][identity]['destruction_channels'])
+        json.dumps(manifest, allow_nan=False)
 
 
 def test_resolved_wall_profile_writes_state_in_json_and_csv(tmp_path):
-    reactor, species, _ = resolved_wall_model()
-    reactor.monitor_electronegative_wall(reactor.y.copy(), 7.0)
-    manifest = reactor.electronegative_wall_manifest()
-    reactor.snapshots = [[7.0, reactor.compute_volume(reactor.y)] + list(reactor.y[:len(species)])]
-    reactor.electronegative_wall_history = {7.0: manifest}
-    solver = tmp_path / 'solver'
-    solver.mkdir()
+    with resolved_wall_model() as (reactor, species, _):
+        reactor.monitor_electronegative_wall(reactor.y.copy(), 7.0)
+        manifest = reactor.electronegative_wall_manifest()
+        reactor.snapshots = [[7.0, reactor.compute_volume(reactor.y)] + list(reactor.y[:len(species)])]
+        reactor.electronegative_wall_history = {7.0: manifest}
+        solver = tmp_path / 'solver'
+        solver.mkdir()
 
-    SimulationProfileWriter(str(tmp_path), 0, species).update(reactor)
+        SimulationProfileWriter(str(tmp_path), 0, species).update(reactor)
 
-    anion = next(spc for spc in species if spc.label == 'Cl-')
-    identity = get_species_identifier(anion)
-    profile = next(solver.glob('*.csv')).read_text()
-    written = json.loads(next(solver.glob('*.json')).read_text())
-    assert identity in profile.splitlines()[0]
-    assert identity in written['gates']['A']
-    assert written['extrema']['min_conf']['anion'] == identity
+        anion = next(spc for spc in species if spc.label == 'Cl-')
+        identity = get_species_identifier(anion)
+        profile = next(solver.glob('*.csv')).read_text()
+        written = json.loads(next(solver.glob('*.json')).read_text())
+        assert identity in profile.splitlines()[0]
+        assert identity in written['gates']['A']
+        assert written['extrema']['min_conf']['anion'] == identity
 
 
 def test_ground_wall_manifest_keeps_historical_bytes(tmp_path):

@@ -1057,6 +1057,7 @@ class Molecule(Graph):
         self.metal = metal
         self.facet = facet
         # Empty electronic state and vibrational level -1 retain unresolved identity.
+        self._vibrational_level = -1
         self.electronic_state = self._validate_electronic_state(electronic_state)
         self.vibrational_level = self._validate_vibrational_level(vibrational_level)
         self._sssr = None
@@ -1125,8 +1126,8 @@ class Molecule(Graph):
         """
         cython.declare(multiplicity=cython.int)
         multiplicity = self.multiplicity
-        if self.has_resolved_state():
-            # SMILES cannot carry the state, so a SMILES repr would silently reconstruct the ground state
+        if self.has_resolved_state() or self.props.get('vibrational_manifold'):
+            # SMILES cannot carry explicit states or the declared v=0 member.
             return 'Molecule().from_adjacency_list("""{}""")'.format(self.to_adjacency_list())
         try:
             if multiplicity != self.get_radical_count() + 1:
@@ -1181,11 +1182,17 @@ class Molecule(Graph):
 
         Renames the inherited vertices attribute of :class:`Graph`.
         """
+        if self.has_resolved_state() or self.props.get('vibrational_manifold'):
+            from rmgpy.thermo.state import register_state_atoms
+            register_state_atoms(self)
         return self.vertices
 
     @atoms.setter
     def atoms(self, atoms):
         self.vertices = atoms
+        if self.has_resolved_state() or self.props.get('vibrational_manifold'):
+            from rmgpy.thermo.state import register_state_atoms
+            register_state_atoms(self)
 
     @property
     def fingerprint(self):
@@ -1220,6 +1227,9 @@ class Molecule(Graph):
             if isinstance(self, Fragment):
                 raise ValueError('Fragment cannot represent a resolved state')
         self._electronic_state = value
+        if self.has_resolved_state() or self.props.get('vibrational_manifold'):
+            from rmgpy.thermo.state import register_state_atoms
+            register_state_atoms(self)
 
     @property
     def vibrational_level(self):
@@ -1234,6 +1244,9 @@ class Molecule(Graph):
             if isinstance(self, Fragment):
                 raise ValueError('Fragment cannot represent a resolved state')
         self._vibrational_level = value
+        if self.has_resolved_state() or self.props.get('vibrational_manifold'):
+            from rmgpy.thermo.state import register_state_atoms
+            register_state_atoms(self)
 
     def has_resolved_state(self):
         """Return ``True`` if this molecule carries a resolved electronic state or vibrational level."""
@@ -1289,7 +1302,11 @@ class Molecule(Graph):
         Add an `atom` to the graph. The atom is initialized with no bonds.
         """
         self._fingerprint = self._inchi = self._smiles = None
-        return self.add_vertex(atom)
+        result = self.add_vertex(atom)
+        if self.has_resolved_state() or self.props.get('vibrational_manifold'):
+            from rmgpy.thermo.state import register_state_atoms
+            register_state_atoms(self)
+        return result
 
     def add_bond(self, bond):
         """
@@ -1586,6 +1603,10 @@ class Molecule(Graph):
         other.facet = self.facet
         other.electronic_state = self.electronic_state
         other.vibrational_level = self.vibrational_level
+        if self.props.get('vibrational_manifold'):
+            other.props['vibrational_manifold'] = self.props['vibrational_manifold']
+            from rmgpy.thermo.state import register_state_atoms
+            register_state_atoms(other)
         return other
 
     def _copy_for_structure(self):
@@ -1593,6 +1614,7 @@ class Molecule(Graph):
         molecule = self.copy(deep=True)
         molecule.electronic_state = ''
         molecule.vibrational_level = -1
+        molecule.props.pop('vibrational_manifold', None)
         return molecule
 
     def merge(self, other):
@@ -2119,6 +2141,8 @@ class Molecule(Graph):
                                                                check_consistency=check_consistency, state=state)
         self.electronic_state = self._validate_electronic_state(state.get('electronic_state', ''))
         self.vibrational_level = self._validate_vibrational_level(state.get('vibrational_level', -1))
+        from rmgpy.thermo.state import require_electron_state_allowed
+        require_electron_state_allowed(self)
         self.update_atomtypes(raise_exception=raise_atomtype_exception)
 
         # identify ring membership iff it's not a suspicious molecule
@@ -2291,8 +2315,10 @@ class Molecule(Graph):
         Convert the molecular structure to a string adjacency list.
         """
         from rmgpy.molecule.adjlist import to_adjacency_list
-        result = to_adjacency_list(self.vertices, self.multiplicity, metal=self.metal, facet=self.facet,
-                                   electronic_state=self.electronic_state, vibrational_level=self.vibrational_level,
+        from rmgpy.export import export_molecule
+        molecule = export_molecule(self)
+        result = to_adjacency_list(molecule.vertices, molecule.multiplicity, metal=molecule.metal, facet=molecule.facet,
+                                   electronic_state=molecule.electronic_state, vibrational_level=molecule.vibrational_level,
                                    label=label, group=False, remove_h=remove_h,
                                    remove_lone_pairs=remove_lone_pairs, old_style=old_style)
         return result
@@ -2475,6 +2501,8 @@ class Molecule(Graph):
         """
         Return the value of the heat capacity at zero temperature in J/mol*K.
         """
+        from rmgpy.thermo.state import require_thermo_estimation_allowed
+        require_thermo_estimation_allowed(self)
         if self.contains_surface_site():
             return 0.01
         if len(self.vertices) == 1:
@@ -2486,6 +2514,8 @@ class Molecule(Graph):
         """
         Return the value of the heat capacity at infinite temperature in J/mol*K.
         """
+        from rmgpy.thermo.state import require_thermo_estimation_allowed
+        require_thermo_estimation_allowed(self)
         cython.declare(n_atoms=cython.int, n_vib=cython.int, n_rotors=cython.int)
 
         if self.contains_surface_site():
@@ -2916,6 +2946,9 @@ class Molecule(Graph):
         It is usually more chemically meaningful, and is less random/arbitrary than the SSSR,
         though RMG uses SSSR for historical reasons.
         """
+        if self.has_resolved_state() or self.props.get('vibrational_manifold'):
+            from rmgpy.thermo.state import register_state_atoms
+            register_state_atoms(self)
         if symmetrized:
             if self._symm_sssr is not None:
                 return list(self._symm_sssr)

@@ -38,7 +38,7 @@ from pysidt import MultiTargetSingleEvalSubgraphIsomorphicDecisionTree
 from pysidt.sidt import Node, Datum, write_nodes
 
 from rmgpy.data.thermo import ThermoDatabase
-from rmgpy.exceptions import StateProvenanceError
+from rmgpy.exceptions import ExcitedSpeciesThermoError, StateProvenanceError
 from rmgpy.ml.estimator import MLEstimator
 from rmgpy.molecule import Molecule
 from rmgpy.qm.main import QMCalculator
@@ -107,7 +107,7 @@ def test_qm_full_thermo_refuses_ground_result(state, tmp_path):
     ground_job.check_file_names()
     Path(ground_job.output_file_path).write_text(fixture.read_text() + '\n' + ground_job.unique_id_long + '\n')
     with patch.object(input_module, 'rmg', SimpleNamespace(quantum_mechanics=calculator, ml_estimator=None, ml_settings=None)), patch.object(GaussianMolPM3, 'determine_point_group', lambda job: setattr(job, 'point_group', POINT_GROUP_DICTIONARY['D2h'])):
-        with pytest.raises(StateProvenanceError, match='QM'):
+        with pytest.raises(ExcitedSpeciesThermoError, match='Library-only'):
             ThermoDatabase().get_thermo_data(Species(molecule=[mol]))
 
 @pytest.mark.parametrize('state', STATES)
@@ -141,5 +141,5 @@ def test_energy_transfer_estimation_refuses_without_overwriting(state):
 def test_arkane_statmech_refuses_before_file_read(state, tmp_path):
     from arkane.statmech import StatMechJob
     species = Species(molecule=[Molecule(smiles='CC', electronic_state=state[0], vibrational_level=state[1])])
-    with pytest.raises(StateProvenanceError, match='Arkane statmech'):
+    with pytest.raises(ExcitedSpeciesThermoError, match='Library-only'):
         StatMechJob(species, str(tmp_path / 'missing.py')).load()

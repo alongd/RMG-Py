@@ -94,8 +94,9 @@ def parse_external_library_provenance(description):
 
 def check_smiles_keyed_efficiencies(efficiencies):
     """Refuse resolved colliders before a library writer reduces keys to SMILES."""
+    from rmgpy.export import has_export_state
     for collider in efficiencies:
-        if isinstance(collider, Molecule) and collider.has_resolved_state():
+        if isinstance(collider, Molecule) and has_export_state(collider):
             raise SpeciesIdentityError(
                 'Cannot serialize resolved collider as a SMILES-keyed kinetics-library '
                 'efficiency. Use a state-aware Chemkin or RMS export instead:\n{0}'.format(
@@ -250,7 +251,8 @@ def library_serializable_kinetics(kinetics, declarations):
         result.efficiencies = dict(sorted(efficiencies.items()))
     coverage = getattr(result, 'coverage_dependence', None) or {}
     if coverage:
-        resolved = any(mol.has_resolved_state() for species in declarations for mol in species.molecule)
+        from rmgpy.export import has_export_state
+        resolved = any(has_export_state(species) for species in declarations)
         # Ground-only repr uses its legacy indexed declaration names. References
         # still validate against the reaction inventory and use the same resolver.
         coverage_names = declarations if resolved else SpeciesReferences(

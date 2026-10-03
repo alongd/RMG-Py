@@ -271,6 +271,8 @@ class PressureDependenceJob(object):
         from rmgpy.export import refuse_resolved_species
         refuse_resolved_species(self.network.get_all_species(), "PressureDependenceJob.execute", reactions=self.network.path_reactions + self.network.net_reactions)
 
+        from rmgpy.thermo.state import require_network_thermo_allowed
+        require_network_thermo_allowed(self.network)
         for config in self.network.isomers + self.network.reactants + self.network.products:
             for spec in config.species:
                 if spec.conformer.E0 is None:
@@ -338,6 +340,8 @@ class PressureDependenceJob(object):
 
     def initialize(self):
         """Initialize a PressureDependenceJob"""
+        from rmgpy.thermo.state import require_network_thermo_allowed
+        require_network_thermo_allowed(self.network)
         for reaction in self.network.path_reactions:
             tunneling = reaction.transition_state.tunneling
             # throw descriptive error if tunneling not allowed
@@ -469,6 +473,8 @@ class PressureDependenceJob(object):
             self.network.get_all_species(),
             'arkane/pdep.py:PressureDependenceJob.save',
             self.network.path_reactions + self.network.net_reactions)
+        from rmgpy.thermo.state import require_network_thermo_allowed
+        require_network_thermo_allowed(self.network)
         logging.info('Saving pressure dependence results for network {0}...'.format(self.network.label))
         f = open(output_file, 'a')
         f_chemkin = open(os.path.join(os.path.dirname(output_file), 'chem.inp'), 'a')
@@ -692,6 +698,8 @@ class PressureDependenceJob(object):
             self.network.get_all_species(),
             'arkane/pdep.py:PressureDependenceJob.save_input_file',
             self.network.path_reactions + self.network.net_reactions)
+        from rmgpy.thermo.state import require_network_thermo_allowed
+        require_network_thermo_allowed(self.network)
         species_list = self.network.get_all_species()
 
         # Add labels for species, reactions, transition states that don't have them

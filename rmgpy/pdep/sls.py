@@ -454,7 +454,8 @@ def apply_simulation_least_squares_method(network, method="mexp", neglect_high_e
     from rmgpy.rmg.pdep import _check_network_reactions
     _check_network_reactions(network)
     network.check_resolved_species_reversibility()
-
+    from rmgpy.thermo.state import require_network_thermo_allowed
+    require_network_thermo_allowed(network)
     return get_rate_coefficients_SLS(
         network,
         network.T,

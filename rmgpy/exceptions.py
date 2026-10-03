@@ -89,6 +89,14 @@ class DatabaseError(Exception):
     pass
 
 
+class ExcitedSpeciesThermoError(DatabaseError):
+    """An exact resolved-state thermo library entry is required."""
+
+
+class VibrationalManifoldError(DatabaseError):
+    """A vibrational manifold declaration or its v=0 library thermo is invalid."""
+
+
 class DependencyError(Exception):
     """
     An exception that occurs when an error is encountered with a dependency.
@@ -512,3 +520,5 @@ class GenerationMismatchError(SpeciesIdentityError):
 
 class ChemkinReferenceError(ChemkinError, SpeciesIdentityError):
     """An emitted Chemkin reference has no matching declared full identity."""
+class DuplicateSpeciesLabelError(InputError):
+    """Two different species were assigned the same explicit model label."""

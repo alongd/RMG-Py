@@ -129,6 +129,9 @@ def write_cantera(
     elements_in_use is a set of :class:`Element` singletons. Only those elements
     are listed in the YAML 'elements' block and 'phases.elements' lines.
     """
+    from rmgpy.thermo.state import checked_thermo
+    for species in spcs:
+        checked_thermo(species)
 
     # CanteraWriter1 has no electron-aware equation path: reaction_to_dicts overwrites Cantera's
     # equation with _build_equation_string, built from raw obj.reactants/products, which omits any
@@ -479,7 +482,8 @@ def reaction_to_dicts(obj, spcs, duplicate=None):
 
     spcs = _cantera_declarations(spcs)
     validate_reaction_references([obj], spcs)
-    if obj.specific_collider is not None and any(mol.has_resolved_state() for mol in obj.specific_collider.molecule):
+    from rmgpy.export import has_export_state
+    if obj.specific_collider is not None and has_export_state(obj.specific_collider):
         from rmgpy.exceptions import SpeciesIdentityError
         raise SpeciesIdentityError('CanteraWriter1 cannot retain resolved named collider references through native conversion.')
     reaction_list = []
@@ -611,6 +615,8 @@ def species_to_dict(species, all_species=None):
     """
     if not isinstance(species, Species):
         raise TypeError("species object must be an RMG Species")
+    from rmgpy.thermo.state import checked_thermo
+    checked_thermo(species)
 
     all_species = _cantera_declarations([species] if all_species is None else all_species)
     name = resolve_species_reference(species, all_species)
@@ -649,8 +655,10 @@ def species_to_dict(species, all_species=None):
             species_data["note"] = smiles
     except Exception:
         pass
-    if species.molecule[0].has_resolved_state():
-        state_note = species.molecule[0].to_adjacency_list().rstrip()
+    from rmgpy.export import export_molecule
+    molecule = export_molecule(species)
+    if molecule.has_resolved_state():
+        state_note = molecule.to_adjacency_list().rstrip()
         existing_note = species_data.get('note', '')
         if state_note not in existing_note:
             species_data['note'] = existing_note + '\n' + state_note if existing_note else state_note

@@ -195,6 +195,95 @@ def discover(root, overrides=None):
                                'body': body}
     return result
 
+def audited_function(root, key, overrides=None):
+    """Read a Python function by qualified owner, without importing backends."""
+    filename, scope = key.split(':')
+    source = (overrides or {}).get(filename, (root / filename).read_text())
+    tree = ast.parse(source)
+    nodes = tree.body
+    for part in scope.split('.'):
+        node = next(n for n in nodes if isinstance(n, (ast.ClassDef, ast.FunctionDef)) and n.name == part)
+        nodes = node.body
+    body = '\n'.join(source.splitlines()[node.lineno - 1:node.end_lineno])
+    return node, hashlib.sha256(body.encode()).hexdigest()
+
+
+def lexical_nodes(node):
+    """Visit lexical bindings and executable bodies without nested definitions."""
+    children = list(ast.iter_child_nodes(node))
+    if isinstance(node, ast.If) and isinstance(node.test, ast.Constant):
+        children = [node.test, *(node.body if node.test.value else node.orelse)]
+    for child in children:
+        yield child
+        if not isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            yield from lexical_nodes(child)
+        if isinstance(child, (ast.Return, ast.Raise)):
+            break
+
+
+def valid_refusal_chain(root, key, decision, overrides=None):
+    """Verify every explicitly audited call hop and the named terminal guard."""
+    chain = decision.get('refusal_chain', [])
+    if not chain:
+        return False
+    caller = key
+    try:
+        for hop in chain:
+            node, _ = audited_function(root, caller, overrides)
+            executed = list(lexical_nodes(node))
+            calls = {ast.unparse(n) for n in executed if isinstance(n, ast.Call)}
+            if not hop.get('invocations') or not set(hop['invocations']) <= calls:
+                return False
+            guard_name = hop['call'].split('.')[0]
+            stores = [n for n in executed if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Store)
+                      and n.id == guard_name]
+            if stores and not hop.get('receiver_binding'):
+                return False
+            if any(isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+                   and n.name == guard_name for n in executed):
+                return False
+            if any(isinstance(n, (ast.Import, ast.ImportFrom))
+                   and any((a.asname or a.name.split('.')[0]) == guard_name for a in n.names)
+                   and not isinstance(n, ast.ImportFrom) for n in executed):
+                return False
+            if any(arg.arg == guard_name for arg in node.args.args + node.args.kwonlyargs):
+                return False
+            if hop.get('receiver_binding'):
+                bindings = {ast.unparse(n) for n in executed if isinstance(n, ast.Assign)}
+                if hop['receiver_binding'] not in bindings or len(stores) != 1:
+                    return False
+            target, signature = audited_function(root, hop['callee'], overrides)
+            if signature != hop['signature']:
+                return False
+            # Imported guard names must resolve to the exact audited module/function.
+            if '.' not in hop['call']:
+                filename = caller.split(':')[0]
+                source = (overrides or {}).get(filename, (root / filename).read_text())
+                module = ast.parse(source)
+                module_nodes = [n for statement in module.body
+                                if not isinstance(statement, (ast.FunctionDef, ast.ClassDef))
+                                for n in [statement, *lexical_nodes(statement)]]
+                imports = {alias.asname or alias.name: (n.module or '') + '.' + alias.name
+                           for n in module_nodes + executed if isinstance(n, ast.ImportFrom)
+                           for alias in n.names}
+                for definition in module.body:
+                    if isinstance(definition, ast.FunctionDef):
+                        imports[definition.name] = filename[:-3].replace('/', '.') + '.' + definition.name
+                if any(isinstance(n, ast.Name) and isinstance(n.ctx, ast.Store) and n.id == guard_name
+                       for n in module_nodes):
+                    return False
+                target_file, target_scope = hop['callee'].split(':')
+                expected = target_file[:-3].replace('/', '.') + '.' + target_scope
+                if imports.get(hop['call']) != expected:
+                    return False
+            caller = hop['callee']
+        return any(isinstance(n, ast.Raise) and isinstance(n.exc, ast.Call)
+                   and isinstance(n.exc.func, ast.Name) and n.exc.func.id == 'ExcitedSpeciesThermoError'
+                   for n in ast.walk(target))
+    except (KeyError, StopIteration, SyntaxError):
+        return False
+
+
 def violations(root, policy, overrides=None):
     """Require explicit R/N site verdicts, tests and immutable audited exclusions."""
     found = discover(root, overrides)
@@ -206,11 +295,17 @@ def violations(root, policy, overrides=None):
             failures.append('unrouted or changed candidate: ' + key)
             continue
         if key in policy['sites']:
+            manifold = decision.get('manifold', {})
+            if (manifold.get('verdict') not in ('carried', 'refused', 'not-applicable')
+                    or not manifold.get('reason') or not manifold.get('test')
+                    or not manifold.get('evidence')):
+                failures.append('missing manifold export classification: ' + key)
             if decision['verdict'] not in ('R', 'N') or not decision.get('test'):
                 failures.append('missing R/N verdict or test: ' + key)
             if (decision['verdict'] == 'N' and 'refuse_resolved_' not in candidate['body']
                     and 'StateProvenanceError' not in candidate['body']
-                    and 'ResolvedStateTrainingError' not in candidate['body']):
+                    and 'ResolvedStateTrainingError' not in candidate['body']
+                    and not valid_refusal_chain(root, key, decision, overrides)):
                 failures.append('missing named refusal: ' + key)
         elif decision.get('verdict') != 'E' or not decision.get('reason'):
             failures.append('unexplained search exclusion: ' + key)
@@ -227,7 +322,7 @@ from unittest.mock import patch
 
 import pytest
 
-from rmgpy.exceptions import SpeciesIdentityError, StateProvenanceError
+from rmgpy.exceptions import ExcitedSpeciesThermoError, SpeciesIdentityError, StateProvenanceError, VibrationalManifoldError
 from rmgpy.molecule import Molecule
 from rmgpy.species import Species
 from rmgpy.reaction import Reaction
@@ -250,19 +345,64 @@ N_SITES = [key for key, site in POLICY['sites'].items() if site['verdict'] == 'N
 R_SITES = [key for key, site in POLICY['sites'].items() if site['verdict'] == 'R']
 
 
-def refusal_witness(key, tmp_path):
+def refusal_witness(key, tmp_path, spc=None):
     """Run the actual boundary body, isolating optional native plotting/QM backends.
 
     The unchanged function body and signature are compiled from the audited
     source. Only decorators/defaults and optional-backend globals are replaced.
     A refusal must precede all backend work and filesystem changes.
     """
-    spc = nitrogen(level=1)
+    if spc is None:
+        spc = nitrogen(level=1)
+    if key in {
+        'arkane/common.py:ArkaneSpecies.save_yaml',
+        'arkane/common.py:ArkaneSpecies.load_yaml',
+        'arkane/encorr/reference.py:ReferenceSpecies.__init__',
+        'arkane/encorr/reference.py:ReferenceSpecies.load_yaml',
+        'arkane/encorr/reference.py:ReferenceSpecies.to_error_canceling_spcs',
+        'arkane/encorr/reference.py:ReferenceDatabase.load',
+        'rmgpy/qm/molecule.py:QMMolecule.save_thermo_data',
+        'arkane/statmech.py:StatMechJob.load',
+    }:
+        import yaml
+        from arkane.common import ArkaneSpecies
+        from arkane.encorr.reference import ReferenceSpecies, ReferenceDatabase
+        from arkane.statmech import StatMechJob
+        from rmgpy.qm.molecule import QMMolecule
+        path = tmp_path / '0.yml'
+        payload = {'class': 'ReferenceSpecies', 'label': 'A', 'adjacency_list': spc.to_adjacency_list()}
+        if key == 'arkane/common.py:ArkaneSpecies.load_yaml':
+            payload.update({'class': 'ArkaneSpecies', 'is_ts': False})
+        if key.endswith('.load_yaml') or key.endswith(':ReferenceDatabase.load'):
+            path.write_text(yaml.safe_dump(payload))
+        before = {p.relative_to(tmp_path): p.read_bytes() if p.is_file() else None
+                  for p in tmp_path.rglob('*')}
+        carrier = SimpleNamespace(adjacency_list=spc.to_adjacency_list(), molecule=spc.molecule[0])
+        calls = {
+            'arkane/common.py:ArkaneSpecies.save_yaml': lambda: ArkaneSpecies.save_yaml(carrier, str(tmp_path)),
+            'arkane/common.py:ArkaneSpecies.load_yaml': lambda: ArkaneSpecies.__new__(ArkaneSpecies).load_yaml(str(path)),
+            'arkane/encorr/reference.py:ReferenceSpecies.__init__': lambda: ReferenceSpecies(adjacency_list=spc.to_adjacency_list()),
+            'arkane/encorr/reference.py:ReferenceSpecies.load_yaml': lambda: ReferenceSpecies.__new__(ReferenceSpecies).load_yaml(str(path)),
+            'arkane/encorr/reference.py:ReferenceSpecies.to_error_canceling_spcs': lambda: ReferenceSpecies.to_error_canceling_spcs(carrier, None),
+            'arkane/encorr/reference.py:ReferenceDatabase.load': lambda: ReferenceDatabase().load(paths=[str(tmp_path)], ignore_incomplete=False),
+            'rmgpy/qm/molecule.py:QMMolecule.save_thermo_data': lambda: QMMolecule.save_thermo_data(carrier),
+            'arkane/statmech.py:StatMechJob.load': lambda: StatMechJob.load(SimpleNamespace(species=spc)),
+        }
+        error = (VibrationalManifoldError if spc.props.get('vibrational_manifold') and key in {
+            'arkane/statmech.py:StatMechJob.load', 'rmgpy/qm/molecule.py:QMMolecule.save_thermo_data'}
+            else StateProvenanceError if key == 'arkane/statmech.py:StatMechJob.load'
+            else ExcitedSpeciesThermoError)
+        with pytest.raises(error):
+            calls[key]()
+        assert {p.relative_to(tmp_path): p.read_bytes() if p.is_file() else None
+                for p in tmp_path.rglob('*')} == before
+        return
     if key == 'rmgpy/qm/molecule.py:QMMolecule.load_thermo_data':
         from rmgpy.qm.molecule import QMMolecule
         job = object.__new__(QMMolecule)
         job.molecule = spc.molecule[0]
-        with pytest.raises(StateProvenanceError, match='resolved-state provenance'):
+        error = VibrationalManifoldError if spc.props.get('vibrational_manifold') else StateProvenanceError
+        with pytest.raises(error):
             job.load_thermo_data()
         assert not list(tmp_path.iterdir())
         return
@@ -274,7 +414,8 @@ def refusal_witness(key, tmp_path):
         job = object.__new__(cls)
         job.molecule = spc.molecule[0]
         before = list(tmp_path.iterdir())
-        with pytest.raises(StateProvenanceError, match='resolved-state provenance'):
+        error = SpeciesIdentityError if spc.props.get('vibrational_manifold') else StateProvenanceError
+        with pytest.raises(error):
             job.write_input_file(1)
         assert list(tmp_path.iterdir()) == before
         return
@@ -302,9 +443,9 @@ def refusal_witness(key, tmp_path):
         return
     if key in {'arkane/kinetics.py:KineticsDrawer._get_label_size',
                'arkane/kinetics.py:KineticsDrawer._draw_label'}:
-        from arkane.kinetics import KineticsDrawer, Well
+        from arkane.kinetics import KineticsDrawer
         spc.conformer.E0 = (0, 'kJ/mol')
-        well = Well([spc])
+        well = SimpleNamespace(species_list=[spc])
         drawer = KineticsDrawer()
         method = key.rsplit('.', 1)[1]
         args = (well,) if method == '_get_label_size' else (well, None, 0, 0)
@@ -381,6 +522,7 @@ def refusal_witness(key, tmp_path):
         'unique_reactions1': [], 'unique_reactions2': [], 'core_reactions': [rxn],
         'configuration': SimpleNamespace(species=[spc]), 'network': network,
         'channel': SimpleNamespace(species=[spc]), 'reaction': rxn, 'rmg': carrier,
+        'part_core_edge': 'core',
         'obj': spc, 'rmg_species': [spc], 'spcs': [spc], 'input_files': [],
         'input_model_files': [],
         'wd': str(tmp_path), 'transport': False, 'path': str(tmp_path / 'output'),
@@ -389,13 +531,23 @@ def refusal_witness(key, tmp_path):
     actual = {arg.arg: args.get(arg.arg) for arg in fn.args.args + fn.args.kwonlyargs}
     if fn.args.kwarg:
         actual.update(wd=str(tmp_path), transport=False)
-    with pytest.raises(SpeciesIdentityError, match='(?i)resolved.*(?:supported|serialize|retain|export)') as error:
+    expected = ((VibrationalManifoldError if spc.props.get('vibrational_manifold') else ExcitedSpeciesThermoError)
+                if key == 'arkane/statmech.py:StatMechJob.write_output' else SpeciesIdentityError)
+    message = 'vibrationalManifold' if expected is VibrationalManifoldError else '(?i)resolved.*(?:supported|serialize|retain|export|library)'
+    with pytest.raises(expected, match=message) as error:
         globals_[fn.name](**actual)
-    assert fn.name in str(error.value) or 'census refusal' in str(error.value) or 'Arkane ThermoJob Chemkin' in str(error.value)
+    if expected is SpeciesIdentityError:
+        assert fn.name in str(error.value) or 'census refusal' in str(error.value) or 'Arkane ThermoJob Chemkin' in str(error.value)
     assert not list(tmp_path.iterdir())
 
 
 def resolved_witness(key, tmp_path):
+    spc, other = nitrogen('A', 1), nitrogen('B')
+    with _helpers.unit_thermo_library([spc, other]):
+        _resolved_witness(key, tmp_path, spc, other)
+
+
+def _resolved_witness(key, tmp_path, spc, other):
     """Exercise the site's shared output/reload family with real resolved species.
 
     The manifest records the concrete site and the associated family witness.
@@ -405,8 +557,6 @@ def resolved_witness(key, tmp_path):
     from rmgpy.data.kinetics.library import KineticsLibrary
     from rmgpy.data.kinetics.depository import KineticsDepository
     from rmgpy.rmg.model import CoreEdgeReactionModel
-    spc = nitrogen('A', 1)
-    other = nitrogen('B')
     rxn = Reaction(reactants=[spc], products=[other], kinetics=Arrhenius(A=(1, 's^-1'),Ea=(0,'J/mol')))
     file, function = key.split(':')
     if key in {
@@ -614,37 +764,20 @@ def resolved_witness(key, tmp_path):
             assert any(data.species is spc for data in results[0][1])
         assert '(v1)' in simulation.model.species_names[0]
         return
-    if file.startswith('arkane/encorr/reference') or file.startswith('arkane/encorr/data'):
-        import yaml
-        from arkane.encorr.reference import ReferenceSpecies,ReferenceDatabase,CalculatedDataEntry,ReferenceDataEntry
+    if key == 'arkane/encorr/data.py:BACDatapoint._mol_from_adjlist':
         from arkane.encorr.data import BACDatapoint
-        from arkane.modelchem import LevelOfTheory
-        from rmgpy.thermo import ThermoData
-        lot=LevelOfTheory(method='test')
-        ref=ReferenceSpecies(label='A',adjacency_list=spc.to_adjacency_list(),smiles='N#N',
-            preferred_reference='probe',reference_data={'probe':ReferenceDataEntry(thermo_data=ThermoData(H298=(0,'J/mol')))},
-            calculated_data={lot:CalculatedDataEntry(thermo_data=ThermoData(H298=(0,'J/mol')))})
+        carrier = SimpleNamespace(spc=SimpleNamespace(adjacency_list=spc.to_adjacency_list()))
+        BACDatapoint._mol_from_adjlist(carrier)
+        assert carrier._mol.has_resolved_state()
+        return
+    if key == 'arkane/encorr/reference.py:ReferenceDatabase.get_species_from_label':
+        from arkane.encorr.reference import ReferenceSpecies, ReferenceDatabase
+        ref = ReferenceSpecies(label='A', smiles='N#N')
+        ref.adjacency_list = spc.to_adjacency_list()
+        db = ReferenceDatabase()
+        db.reference_sets = {'probe': [ref]}
+        assert db.get_species_from_label(['A'], set_name='probe')[0] is ref
         assert Molecule().from_adjacency_list(ref.adjacency_list).has_resolved_state()
-        if function=='ReferenceSpecies.__init__':return
-        if function=='BACDatapoint._mol_from_adjlist':
-            carrier=SimpleNamespace(spc=ref)
-            BACDatapoint._mol_from_adjlist(carrier)
-            assert carrier._mol.has_resolved_state()
-            return
-        if function=='ReferenceSpecies.to_error_canceling_spcs':
-            assert ref.to_error_canceling_spcs(lot).molecule.has_resolved_state()
-            return
-        path=tmp_path/'0.yml';path.write_text(yaml.safe_dump(ref.as_dict()))
-        if function=='ReferenceSpecies.load_yaml':
-            loaded=ReferenceSpecies.__new__(ReferenceSpecies)
-            loaded.load_yaml(str(path))
-            assert Molecule().from_adjacency_list(loaded.adjacency_list).has_resolved_state()
-        else:
-            db=ReferenceDatabase();db.load(paths=[str(tmp_path)],ignore_incomplete=False)
-            loaded=db.reference_sets[tmp_path.name][0]
-            assert Molecule().from_adjacency_list(loaded.adjacency_list).has_resolved_state()
-            if function=='ReferenceDatabase.get_species_from_label':
-                assert db.get_species_from_label(['A'],set_name=tmp_path.name)[0] is loaded
         return
     if function == 'RMG.generate_end_of_run_cantera_files':
         from rmgpy.rmg.main import RMG
@@ -850,6 +983,39 @@ class TestExcitedExportSiteCensus:
         assert any(target in failure for failure in failures)
         print('INJECTED UNROUTED SITE REJECTED:',failures)
 
+    def test_refusal_dependency_changes_fail_closed(self):
+        filename = 'rmgpy/thermo/state.py'
+        source = (ROOT / filename).read_text().replace('raise ExcitedSpeciesThermoError(', 'raise ValueError(')
+        key = 'arkane/common.py:ArkaneSpecies.save_yaml'
+        assert not valid_refusal_chain(ROOT, key, POLICY['sites'][key], {filename: source})
+        assert any(key in failure for failure in violations(ROOT, POLICY, {filename: source}))
+
+    def test_deleted_guard_call_fails_even_with_a_refreshed_boundary_signature(self):
+        policy = copy.deepcopy(POLICY)
+        key = 'arkane/common.py:ArkaneSpecies.save_yaml'
+        filename = key.split(':')[0]
+        source = (ROOT / filename).read_text().replace('        require_reference_thermo_allowed(self)', '        pass', 1)
+        overrides = {filename: source}
+        policy['sites'][key]['signature'] = discover(ROOT, overrides)[key]['signature']
+        assert any(key in failure for failure in violations(ROOT, policy, overrides))
+
+    @pytest.mark.parametrize('replacement', [
+        '        require_reference_thermo_allowed(None)',
+        '        def unused():\n            require_reference_thermo_allowed(self)',
+        '        require_reference_thermo_allowed = lambda owner: None\n        require_reference_thermo_allowed(self)',
+        '        def require_reference_thermo_allowed(owner):\n            pass\n        require_reference_thermo_allowed(self)',
+        '        if False:\n            require_reference_thermo_allowed(self)',
+        '        return\n        require_reference_thermo_allowed(self)',
+    ])
+    def test_wrong_owner_or_unexecuted_guard_fails_with_refreshed_signature(self, replacement):
+        key = 'arkane/common.py:ArkaneSpecies.save_yaml'
+        filename = key.split(':')[0]
+        source = (ROOT / filename).read_text().replace('        require_reference_thermo_allowed(self)', replacement, 1)
+        overrides = {filename: source}
+        policy = copy.deepcopy(POLICY)
+        policy['sites'][key]['signature'] = discover(ROOT, overrides)[key]['signature']
+        assert any(key in failure for failure in violations(ROOT, policy, overrides))
+
     @pytest.mark.parametrize('key',N_SITES,ids=N_SITES)
     def test_named_refusal(self,key,tmp_path):
         refusal_witness(key,tmp_path)
@@ -857,3 +1023,14 @@ class TestExcitedExportSiteCensus:
     @pytest.mark.parametrize('key',R_SITES,ids=R_SITES)
     def test_resolved_route(self,key,tmp_path):
         resolved_witness(key,tmp_path)
+
+
+@pytest.mark.parametrize('field', ['manifold', 'verdict', 'reason', 'evidence', 'test'])
+def test_manifold_census_rejects_missing_classification(field):
+    policy = copy.deepcopy(POLICY)
+    key = 'rmgpy/chemkin.pyx:render_species_dictionary'
+    if field == 'manifold':
+        del policy['sites'][key][field]
+    else:
+        del policy['sites'][key]['manifold'][field]
+    assert 'missing manifold export classification: ' + key in violations(ROOT, policy)

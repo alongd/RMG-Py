@@ -46,7 +46,8 @@ cpdef apply_modified_strong_collision_method(network, str efficiency_model='defa
     from rmgpy.rmg.pdep import _check_network_reactions
     _check_network_reactions(network)
     network.check_resolved_species_reversibility()
-
+    from rmgpy.thermo.state import require_network_thermo_allowed
+    require_network_thermo_allowed(network)
     cdef np.ndarray[np.int_t,ndim=1] j_list
     cdef np.ndarray[np.float64_t,ndim=1] e_list, coll_freq, coll_eff, d_e_down, E0, e_reac
     cdef np.ndarray[np.float64_t,ndim=2] a_mat, b, k, x

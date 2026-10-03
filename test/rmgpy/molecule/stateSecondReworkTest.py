@@ -40,7 +40,7 @@ import numpy as np
 from rmgpy.data.kinetics.family import complete_round_trip
 from rmgpy.data.thermo import ThermoDatabase, bicyclic_decomposition_for_polyring
 from rmgpy.thermo import ThermoData
-from rmgpy.exceptions import SpeciesError, StateProvenanceError, SpeciesIdentityError
+from rmgpy.exceptions import ExcitedSpeciesThermoError, SpeciesError, StateProvenanceError, SpeciesIdentityError
 from rmgpy.kinetics.arrhenius import get_w0
 from rmgpy.molecule import Molecule
 from rmgpy.molecule.draw import MoleculeDrawer
@@ -131,10 +131,13 @@ class TestR89Finding2:
         assert sorted(occurrences.values()) == sorted(expected_occurrences.values())
         assert excited.to_adjacency_list() == before
 
+    @pytest.mark.parametrize('resolved', [False, True])
     @pytest.mark.parametrize('smiles,expected_energy', [('[CH2]=*', 1000.0), ('CC.*', 2000.0)])
-    def test_thermo_surface_connectivity_keeps_identity_and_refuses_resolved_values(self, smiles, expected_energy):
+    def test_thermo_surface_connectivity_checks_source_policy(self, smiles, expected_energy, resolved):
         # Replace the external trained estimator with known data; exercise the real
         # decomposition/routing API without loading a machine-specific SIDT model.
+        evaluations = []
+
         class Estimator:
             nodes = {'Root': None}
 
@@ -142,6 +145,7 @@ class TestR89Finding2:
                 self.energy = energy
 
             def evaluate(self, molecule, **kwargs):
+                evaluations.append(molecule)
                 return np.array([self.energy, 0.0] + [0.0] * 7), np.zeros(9), 'test estimator'
 
         database = ThermoDatabase()
@@ -149,18 +153,25 @@ class TestR89Finding2:
         names = ['Pt111_monodentate_adsorption_corrections', 'Pt111_vdw_adsorption_corrections']
         database.sidts = {name: Estimator(index + 1) for index, name in enumerate(names)}
         database.sidt_taggings_and_decompositions = {name: lambda molecule: None for name in names}
-        molecule = Molecule(smiles=smiles, vibrational_level=1)
+        molecule = Molecule(smiles=smiles, vibrational_level=1 if resolved else -1)
         before = molecule.to_adjacency_list()
         thermo = ThermoData(Tdata=([300, 400, 500, 600, 800, 1000, 1500], 'K'),
                             Cpdata=([0.0] * 7, 'J/(mol*K)'), H298=(0.0, 'J/mol'), S298=(0.0, 'J/(mol*K)'))
-        with pytest.raises(StateProvenanceError, match='Adsorption'):
-            database._add_adsorption_correction(thermo, None, molecule, molecule.get_surface_sites())
-        assert thermo.H298.value_si == 0.0
+        if resolved:
+            with pytest.raises(StateProvenanceError, match='Adsorption'):
+                database._add_adsorption_correction(thermo, None, molecule, molecule.get_surface_sites())
+            assert not evaluations
+            assert thermo.H298.value_si == 0.0
+        else:
+            assert database._add_adsorption_correction(thermo, None, molecule, molecule.get_surface_sites())
+            assert thermo.H298.value_si == expected_energy
+            assert evaluations
         assert molecule.to_adjacency_list() == before
         # The unchanged unresolved routing still distinguishes connected and vdw adsorbates.
-        ground = Molecule(smiles=smiles)
-        assert database._add_adsorption_correction(thermo, None, ground, ground.get_surface_sites())
-        assert thermo.H298.value_si == expected_energy
+        if resolved:
+            ground = Molecule(smiles=smiles)
+            assert database._add_adsorption_correction(thermo, None, ground, ground.get_surface_sites())
+            assert thermo.H298.value_si == expected_energy
 
     @pytest.mark.parametrize('actions', [[], [['CHANGE_BOND', '*1', -1, '*2']]])
     def test_bond_energy_structural_calculation_can_merge_resolved_reactants(self, actions):

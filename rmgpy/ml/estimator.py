@@ -42,6 +42,7 @@ import numpy as np
 from rmgpy.exceptions import StateProvenanceError
 from rmgpy.molecule import Molecule
 from rmgpy.species import Species
+from rmgpy.thermo.state import require_thermo_estimation_allowed
 from rmgpy.thermo import ThermoData
 
 ADMONITION = """
@@ -89,6 +90,7 @@ class MLEstimator:
 
         if molecule.has_resolved_state():
             raise StateProvenanceError('ML thermo estimation has no supported resolved-state provenance')
+        require_thermo_estimation_allowed(molecule)
 
         hf298 = self.hf298_estimator(molecule.smiles)[0][0]
         s298_cp = self.s298_cp_estimator(molecule.smiles)[0]
@@ -124,6 +126,7 @@ class MLEstimator:
         """
         if any(m.has_resolved_state() for m in species.molecule):
             raise StateProvenanceError('ML thermo estimation has no supported resolved-state provenance')
+        require_thermo_estimation_allowed(species)
         return self.get_thermo_data(species.molecule[0])
 
 

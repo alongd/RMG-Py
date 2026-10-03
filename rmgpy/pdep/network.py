@@ -224,7 +224,8 @@ class Network(object):
         number of grains `grain_count`.
         """
         self.check_resolved_species_reversibility()
-
+        from rmgpy.thermo.state import require_network_thermo_allowed
+        require_network_thermo_allowed(self)
 
         logging.debug("initializing network")
         if maximum_grain_size == 0.0 and minimum_grain_count == 0:
@@ -264,7 +265,8 @@ class Network(object):
     def calculate_rate_coefficients(self, Tlist, Plist, method, error_check=True, neglect_high_energy_collisions=False, high_energy_rate_tol=0.01):
 
         self.check_resolved_species_reversibility()
-
+        from rmgpy.thermo.state import require_network_thermo_allowed
+        require_network_thermo_allowed(self)
         n_isom = len(self.isomers)
         n_reac = len(self.reactants)
         n_prod = len(self.products)
@@ -365,7 +367,8 @@ class Network(object):
         is the same.
         """
         self.check_resolved_species_reversibility()
-
+        from rmgpy.thermo.state import require_network_thermo_allowed
+        require_network_thermo_allowed(self)
 
         temperature_changed = (self.T != T)
         pressure_changed = (self.P != P)
@@ -516,6 +519,8 @@ class Network(object):
         and a minimum number of grains). An array containing the energy grains
         in J/mol is returned.
         """
+        from rmgpy.thermo.state import require_network_thermo_allowed
+        require_network_thermo_allowed(self)
 
         if grain_size == 0.0 and grain_count == 0:
             raise NetworkError('Must provide either grain_size or n_grains parameter to Network.determineEnergyGrains().')
@@ -547,6 +552,8 @@ class Network(object):
         data. The densities of states are computed such that they can be
         applied to each temperature in the range of interest by interpolation.
         """
+        from rmgpy.thermo.state import require_network_thermo_allowed
+        require_network_thermo_allowed(self)
 
         Tmin = self.Tmin
         Tmax = self.Tmax
@@ -661,7 +668,8 @@ class Network(object):
         association path reactions in the network.
         """
         self.check_resolved_species_reversibility()
-
+        from rmgpy.thermo.state import require_network_thermo_allowed
+        require_network_thermo_allowed(self)
 
         temperature = self.T
         e_list = self.e_list
@@ -940,7 +948,8 @@ class Network(object):
         current conditions using the modified strong collision method.
         """
         self.check_resolved_species_reversibility()
-
+        from rmgpy.thermo.state import require_network_thermo_allowed
+        require_network_thermo_allowed(self)
         import rmgpy.pdep.msc as msc
         logging.debug('Applying modified strong collision method at {0:g} K, {1:g} Pa...'.format(self.T, self.P))
         self.K, self.p0 = msc.apply_modified_strong_collision_method(self, efficiency_model)
@@ -952,7 +961,8 @@ class Network(object):
         current conditions using the reservoir state method.
         """
         self.check_resolved_species_reversibility()
-
+        from rmgpy.thermo.state import require_network_thermo_allowed
+        require_network_thermo_allowed(self)
         import rmgpy.pdep.rs as rs
         logging.debug('Applying reservoir state method at {0:g} K, {1:g} Pa...'.format(self.T, self.P))
         self.K, self.p0 = rs.apply_reservoir_state_method(self)
@@ -967,7 +977,8 @@ class Network(object):
         reduced set of :math:`k(T,P)` values. 
         """
         self.check_resolved_species_reversibility()
-
+        from rmgpy.thermo.state import require_network_thermo_allowed
+        require_network_thermo_allowed(self)
         import rmgpy.pdep.cse as cse
         logging.debug(
             'Applying chemically-significant eigenvalues method at {0:g} K, {1:g} Pa...'.format(self.T, self.P))
@@ -980,7 +991,8 @@ class Network(object):
 
     def apply_simulation_least_squares_method(self, method='mexp', neglect_high_energy_collisions=False, high_energy_rate_tol=0.01):
         self.check_resolved_species_reversibility()
-
+        from rmgpy.thermo.state import require_network_thermo_allowed
+        require_network_thermo_allowed(self)
         import rmgpy.pdep.sls as sls
         logging.debug(
             'Applying simulation least squares method at {0:g} K, {1:g} Pa...'.format(self.T, self.P))
@@ -989,7 +1001,8 @@ class Network(object):
 
     def generate_full_me_matrix(self, products=True, neglect_high_energy_collisions=False, high_energy_rate_tol=0.01):
         self.check_resolved_species_reversibility()
-
+        from rmgpy.thermo.state import require_network_thermo_allowed
+        require_network_thermo_allowed(self)
         import rmgpy.pdep.me as me
         return me.generate_full_me_matrix(self, products=products, neglect_high_energy_collisions=neglect_high_energy_collisions, high_energy_rate_tol=high_energy_rate_tol)
 
@@ -1005,6 +1018,8 @@ class Network(object):
         Returns the times in s, population distributions for each isomer, and total
         population profiles for each configuration.
         """
+        from rmgpy.thermo.state import require_network_thermo_allowed
+        require_network_thermo_allowed(self)
         import scipy.integrate
 
         e_list = self.e_list
@@ -1156,6 +1171,8 @@ class Network(object):
         the level of logging to which the summary is written, and is DEBUG by
         default.
         """
+        from rmgpy.thermo.state import require_network_thermo_allowed
+        require_network_thermo_allowed(self)
         logging.log(level, '========================================================================')
         logging.log(level, '{0} network information'.format(self.label))
         logging.log(level, '-' * (len(self.label) + 20))

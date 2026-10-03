@@ -391,6 +391,90 @@ merging resolved molecules or splitting a disconnected resolved molecule raises
 graphs; symmetry, ring perception, resonance and drawing remain available. Updating a
 resolved molecule preserves its declared spin.
 
+Resolved-state thermo and transport
+-----------------------------------
+
+A molecule with either state header requires thermo from an exact-state entry in
+one of the loaded ``thermoLibraries``. A miss raises
+``ExcitedSpeciesThermoError`` naming the species and its adjacency list. QM, HBI,
+ML, group additivity, and surface estimation refuse resolved states with
+``ExcitedSpeciesThermoError`` or ``StateProvenanceError``, including the lower-level
+ring and atom-list helpers. Default energy-transfer estimation also raises
+``StateProvenanceError`` for resolved species; obtaining library thermo does not
+authorize that estimation. Training and automatic tree generation raise
+``ResolvedStateTrainingError`` when resolved structures are encountered. Every resolved
+entry must supply both ``Cp0`` and ``CpInf``. Missing limits raise
+``ExcitedSpeciesThermoError``; molecular formulas cannot supply them. Attached
+and cached thermo are compared with the complete library source, including
+``E0`` and both limits. Changing a state or partition invalidates the cache.
+Unsupported resolved-solvation requests refuse before changing the gas cache. Conformer energy readers refresh resolved energy through the checked
+thermo getter, and writers validate before exporting it.
+
+Arkane thermo/statmech jobs, isotope generation, sensitivity perturbations and
+derived solvation or coverage corrections refuse resolved species. An exact
+solute entry does not authorize deriving liquid thermo. Electrons cannot carry
+either state keyword or a vibrational manifold declaration. Duplicate explicit
+species labels raise ``DuplicateSpeciesLabelError`` and show both structures;
+automatic resolved labels are unique against all created species. An admitted
+species retains its own phase name. A duplicate that would displace an admitted
+automatic label is refused before either species or phase indexes change.
+
+Thermo-library exports and paired Chemkin identifiers/dictionaries preserve
+``vibrationallevel 0`` for a declared manifold member. Chemkin reload retains that
+identity and reacquires complete thermo from the exact-state library. Cantera
+notes and RMS adjacency records also retain v=0; formats that cannot carry the
+declaration refuse with ``SpeciesIdentityError``. Existing estimation refusals
+still pre-empt unsupported numerical routes. ``ThermoData`` library serialization preserves ``Cp0``, ``CpInf`` and
+``E0`` as well as its tabulated curves. Legacy numeric exports and resolved
+Wilhoit library serialization refuse formats that do not preserve those fields;
+use a NASA or ThermoData entry for library export.
+
+PlasmaReactor also checks that attached thermo value-matches a loaded
+gas-phase library entry for that exact state; changing its numbers is refused.
+
+Vibrational-only species borrow the transport of the same graph with both state
+headers removed. Their transport comment contains
+``Transport borrowed from the ground state for vibrationally resolved species``.
+Electronic states use an exact-state transport library entry when available;
+otherwise they borrow ground-state transport, emit a warning, and carry the comment
+``Transport fallback to the ground state for electronically resolved species``.
+Both comments include the species and state, and are retained in annotated Chemkin
+files, the transport file, and the Cantera YAML transport ``note``. Ground-state
+library data are copied before adding a comment.
+
+.. _vibrational_manifold:
+
+Vibrational manifolds
+---------------------
+
+Unkeyed species normally retain their thermal-ensemble meaning. In a model that
+contains explicit vibrational levels, declare its unresolved input species as
+v = 0 after its ``species(...)`` directive::
+
+    species(label='N2', structure=SMILES('N#N'))
+    species(label='N2v1', structure=adjacencyList("""
+    vibrationallevel 1
+    1 N u0 p1 c0 {2,T}
+    2 N u0 p1 c0 {1,T}
+    """))
+    vibrationalManifold(species='N2')
+
+``vibrationalManifold`` takes one argument, ``species``: the label of an existing,
+vibrationally unresolved input species. Electronic resolution is allowed: declaring
+``N2(A)`` selects ``N2(A, v=0)`` and preserves its electronic state. It retains
+that species' identity for matching
+kinetics, but selects thermo only from the same graph with ``vibrationallevel 0``
+in a loaded thermo library. The switch is logged. Missing v = 0 library thermo,
+other attached thermo, invalid declarations, and duplicate declarations raise
+``VibrationalManifoldError``. A species with ``vibrationallevel >= 1`` requires a
+declaration for its underlying graph in the same electronic state; a ground
+manifold declaration cannot cover an excited electronic manifold. This is checked
+after reading input and when species enter the model later. An explicit v = 0
+species in the same electronic manifold alongside the declaration is refused
+because it would count v = 0 twice.
+The declaration is preserved when saving the input file. It does not generate
+levels or supply level thermo data.
+
 For long lists of initial core species, you can specify a coreSpeciesList, shown below::
 
     coreSpeciesList(
@@ -743,9 +827,18 @@ NASAPolynomial constructors are seeded before execution; the library's own wrapp
 top-level definitions are then visible to its helpers. Global convention declarations are
 preserved, and definitions do not leak into later libraries. Library files are trusted Python;
 defense against deliberate introspection into engine internals is outside this guard's scope.
-For every piece of the common validity interval bounded by either model's NASA-polynomial
-breakpoints, the comparison evaluates H and S at the centre and Cp at five distinct interior
-points. Before finding that common interval, each NASA
+For resolved states and declared manifolds, attached thermo must have the same
+inspectable model class, validity bounds, E0, Cp0, CpInf and coverage fields as the
+exact library source. NASA models must have the same polynomial count, ranges and
+coefficients (relative tolerance ``1e-9``, with zero coefficients compared exactly).
+ThermoData tables and Wilhoit parameters are inspected structurally as well;
+unknown model classes refuse by name. This single comparison is used by the
+getter and the plasma provenance check. Sampling cannot authorize resolved thermo.
+
+For ordinary charged owners without a state header or manifold declaration, the
+existing numerical comparison remains. For every piece of its common validity
+interval bounded by either model's NASA-polynomial breakpoints, that comparison
+evaluates H and S at the centre and Cp at five distinct interior points. Before finding that common interval, each NASA
 model's complete declared range is checked for polynomial coverage.  No overlap means no match; a
 coverage gap anywhere in either declared range is refused with the species, library entry, and gap
 named.  ThermoData comparisons evaluate Cp at the union of every ``Tdata`` point in the overlap,
@@ -759,8 +852,9 @@ that a **sampled Wilhoit comparison**; it is not an exact functional identity.
 
 For a library entry stored as ThermoData or Wilhoit, the matcher compares both the stored form and
 the result of passing that entry through RMG's own ``process_thermo_data`` function.  This is the
-same fitted NASA representation the thermo engine attaches to a species, so the value comparison
-is like-for-like even though a NASA fit need not reproduce its source form at ``rtol=1e-7``.
+same fitted NASA representation the thermo engine attaches to a species, so the
+structural comparison for resolved owners is like-for-like. Ordinary charged
+owners retain their existing numerical tolerance of ``rtol=1e-7``.
 No comment is trusted as evidence: the candidate is selected first by the loaded library's entry
 and molecular structure, then its copied data is processed.
 

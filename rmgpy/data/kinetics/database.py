@@ -806,6 +806,8 @@ and immediately used in input files without any additional changes.
         fix_barrier_height and force_positive_barrier will change the kinetics based on the Reaction.fix_barrier_height function.
         Return Arrhenius form kinetics if the source is from training reaction or rate rules.
         """
+        from rmgpy.thermo.state import require_species_thermo_allowed
+        require_species_thermo_allowed(reaction.reactants + reaction.products)
         from rmgpy.data.thermo import find_cp0_and_cpinf
         from rmgpy.thermo import Wilhoit
         for species in reaction.reactants + reaction.products:

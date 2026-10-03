@@ -1219,3 +1219,18 @@ For calculations using internal hindered rotors:
   This is likely because the initial scan energy is not at a minimum. One solution is to simply shift the potential with
   respect to angle so that it starts at zero and, instead of having Arkane read a Qchem or Gaussian output file, have
   Arkane point to a 'ScanLog' file. Another problem can arise when the potential at 2*pi is also not [close] to zero.
+
+
+Resolved electronic and vibrational states
+------------------------------------------
+
+Species carrying ``electronicstate``, ``vibrationallevel`` or an active
+``vibrationalManifold`` declaration require exact-state thermo-library data.
+Arkane thermo and statmech jobs, mode fitting, pressure-dependence calculations,
+isotope corrections and error-canceling reference calculations refuse these
+species with ``ExcitedSpeciesThermoError``, ``StateProvenanceError`` or
+``VibrationalManifoldError``
+before deriving or changing thermo.
+Thermo-only library writers validate the loaded library source and retain the
+declared v=0 lookup identity and its explicit energy and heat-capacity limits.
+See the RMG input guide for the declaration and library requirements.

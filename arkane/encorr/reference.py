@@ -53,6 +53,16 @@ REFERENCE_DB_PATH = os.path.join(settings['database.directory'], 'reference_sets
 MAIN_REFERENCE_PATH = os.path.join(REFERENCE_DB_PATH, 'main')
 
 
+def require_reference_thermo_allowed(reference):
+    """Check the current stored state before using reference enthalpies or caches."""
+    adjacency = getattr(reference, 'adjacency_list', '') or ''
+    if any(line.split() and line.split()[0] in ('electronicstate', 'vibrationallevel')
+           for line in adjacency.splitlines()):
+        from rmgpy.thermo.state import require_thermo_estimation_allowed
+        require_thermo_estimation_allowed(Molecule().from_adjacency_list(
+            adjacency, raise_atomtype_exception=False, raise_charge_exception=False))
+
+
 class ReferenceSpecies(ArkaneSpecies):
     """
     A class for storing high level reference data and quantum chemistry calculations for a variety of model chemistry
@@ -98,6 +108,11 @@ class ReferenceSpecies(ArkaneSpecies):
                 raise ValueError('Either an rmgpy species object, smiles string, InChI string, or an adjacency list '
                                  'must be given to create a ReferenceSpecies object')
 
+        from rmgpy.thermo.state import require_thermo_estimation_allowed
+        require_thermo_estimation_allowed(species)
+        if adjacency_list:
+            require_thermo_estimation_allowed(Molecule().from_adjacency_list(
+                adjacency_list, raise_atomtype_exception=False, raise_charge_exception=False))
         super().__init__(species=species, label=label, **kwargs)
 
         self.reference_data = reference_data
@@ -170,6 +185,8 @@ class ReferenceSpecies(ArkaneSpecies):
             refuse_resolved_species(
                 [Molecule().from_adjacency_list(self.adjacency_list)],
                 'ReferenceSpecies.save_yaml')
+        from arkane.encorr.reference import require_reference_thermo_allowed
+        require_reference_thermo_allowed(self)
         if not os.path.exists(os.path.join(os.path.abspath(path), '')):
             os.mkdir(os.path.join(os.path.abspath(path), ''))
         valid_chars = "-_.()<=>+ %s%s" % (string.ascii_letters, string.digits)
@@ -195,6 +212,10 @@ class ReferenceSpecies(ArkaneSpecies):
             raise ValueError(f'Cannot create ReferenceSpecies object from yaml file {path}: object defined by this '
                              f'file is not a ReferenceSpecies object')
 
+        from rmgpy.thermo.state import require_thermo_estimation_allowed
+        if data.get('adjacency_list'):
+            require_thermo_estimation_allowed(Molecule().from_adjacency_list(
+                data['adjacency_list'], raise_atomtype_exception=False, raise_charge_exception=False))
         data = {key: data[key] for key in data.keys() if key != 'class'}
         class_dict = ARKANE_CLASS_DICT
         class_dict['ReferenceDataEntry'] = ReferenceDataEntry
@@ -213,6 +234,12 @@ class ReferenceSpecies(ArkaneSpecies):
         Args:
             arkane_species (ArkaneSpecies):  Matching Arkane species that was run at the desired model chemistry
         """
+        from arkane.encorr.reference import require_reference_thermo_allowed
+        require_reference_thermo_allowed(self)
+        require_reference_thermo_allowed(arkane_species)
+        from rmgpy.thermo.state import require_thermo_estimation_allowed
+        require_thermo_estimation_allowed(self.species)
+        require_thermo_estimation_allowed(arkane_species.species)
         # First, check that the species matches
         if not self.species.is_isomorphic(arkane_species.species):
             raise ValueError(f'Cannot update reference species {self} from arkane species {arkane_species}, as these '
@@ -250,6 +277,7 @@ class ReferenceSpecies(ArkaneSpecies):
         Returns:
             ErrorCancelingSpecies
         """
+        require_reference_thermo_allowed(self)
         if level_of_theory not in self.calculated_data:
             raise KeyError(f'Level of theory `{level_of_theory}` not available for species {self}')
 
@@ -282,6 +310,7 @@ class ReferenceSpecies(ArkaneSpecies):
         Returns:
             NamedTuple of ScalarQuantity containing enthalpy and preferred source
         """
+        require_reference_thermo_allowed(self)
         if not self.reference_data:
             raise ValueError(f'No reference data is included for species {self}')
 

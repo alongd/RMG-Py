@@ -33,7 +33,7 @@ import pytest
 
 from rmgpy.data.base import Entry
 from rmgpy.data.thermo import ThermoDatabase, ThermoLibrary
-from rmgpy.exceptions import StateProvenanceError
+from rmgpy.exceptions import ExcitedSpeciesThermoError, StateProvenanceError
 from rmgpy.molecule import Molecule
 from rmgpy.species import Species
 from rmgpy.thermo import ThermoData
@@ -44,8 +44,9 @@ STATES = [('A', -1), ('', 1), ('A', 1)]
 
 def electron(state, radicals=0):
     molecule = Molecule().from_adjacency_list('1 e u{} p0 c-1'.format(radicals))
-    molecule.electronic_state, molecule.vibrational_level = state
-    return Species(molecule=[molecule])
+    species = Species(molecule=[molecule])
+    species.molecule[0].electronic_state, species.molecule[0].vibrational_level = state
+    return species
 
 
 def record(label, state, enthalpy):
@@ -77,8 +78,8 @@ def test_mixed_electron_entries_match_the_query_in_either_order(record_state, qu
     database.library_order = [library.label]
     database.libraries = {library.label: library}
     species = electron(query_state, radicals)
-    if query_state not in (GROUND, record_state):
-        with pytest.raises(StateProvenanceError, match='electron.*state'):
+    if query_state != GROUND:
+        with pytest.raises(ExcitedSpeciesThermoError, match='electron'):
             lookup(database, species, api, library)
     else:
         result = lookup(database, species, api, library)
@@ -106,8 +107,8 @@ def test_electron_search_continues_to_a_matching_later_library(record_state, que
     database.libraries = libraries
     database.library_order = list(order)
     species = electron(query_state, 1)
-    if query_state not in (GROUND, record_state):
-        with pytest.raises(StateProvenanceError, match='electron.*state'):
+    if query_state != GROUND:
+        with pytest.raises(ExcitedSpeciesThermoError, match='electron'):
             lookup(database, species, api)
     else:
         result = lookup(database, species, api)
@@ -122,24 +123,30 @@ def test_missing_resolved_electron_record_refuses_even_an_empty_library(state, a
     database = ThermoDatabase()
     database.libraries = {library.label: library}
     database.library_order = [library.label]
-    with pytest.raises(StateProvenanceError, match='electron.*state'):
+    with pytest.raises(ExcitedSpeciesThermoError, match='electron'):
         lookup(database, electron(state), api, library)
 
 
 @pytest.mark.parametrize('state', STATES)
-def test_matched_resolved_thermo_reaches_cp_and_symmetry_arithmetic(state):
+def test_matched_resolved_thermo_preserves_library_limits_and_symmetry(state, monkeypatch):
     molecule = Molecule(smiles='C', electronic_state=state[0], vibrational_level=state[1])
     species = Species(molecule=[molecule])
     library = ThermoLibrary(label='ResolvedMethane')
     entry = record('matched', GROUND, 12345)
     entry.item = molecule.copy(deep=True)
+    entry.data.Cp0 = (12, 'J/(mol*K)')
+    entry.data.CpInf = (34, 'J/(mol*K)')
     library.entries = {entry.label: entry}
     database = ThermoDatabase()
     database.libraries = {library.label: library}
     database.library_order = [library.label]
     result = database.get_thermo_data(species)
     assert result.H298.value_si == 12345
-    assert result.Cp0.value_si == molecule.calculate_cp0() == species.calculate_cp0()
-    assert result.CpInf.value_si == molecule.calculate_cpinf() == species.calculate_cpinf()
+    from types import SimpleNamespace
+    import rmgpy.data.rmg as data_module
+    monkeypatch.setattr(data_module, 'database', SimpleNamespace(thermo=database, solvation=None))
+    species.thermo = result
+    assert result.Cp0.value_si == species.calculate_cp0() == 12
+    assert result.CpInf.value_si == species.calculate_cpinf() == 34
     assert species.get_symmetry_number() == molecule.calculate_symmetry_number() == 12
     assert (molecule.electronic_state, molecule.vibrational_level) == state

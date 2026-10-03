@@ -28,3 +28,9 @@ Class                   Description
     wilhoit
     nasa
     nasapolynomial
+
+Library-only state policy
+==========================
+
+.. automodule:: rmgpy.thermo.state
+    :members:

@@ -113,10 +113,10 @@ class TestLibrary:
             finally:
                 shutil.rmtree(copy_path)
 
-    def test_loading_external_kinetic_library(self):
+    def test_loading_external_kinetic_library(self, tmp_path):
         """This tests loading a kinetic library which is not in the RMG-database repo"""
         kinetic_lib_in_db_path = os.path.join(settings["database.directory"], "kinetics", "libraries", "NOx2018")
-        kinetic_lib_in_test_dir_path = os.path.join(os.path.dirname(__file__), "..", "..", "test_data", "copied_kinetic_lib")
+        kinetic_lib_in_test_dir_path = str(tmp_path / "copied_kinetic_lib")
         os.makedirs(kinetic_lib_in_test_dir_path)
         for file_name in ["reactions.py", "dictionary.txt"]:
             shutil.copyfile(

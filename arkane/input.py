@@ -189,6 +189,8 @@ def species(label, *args, **kwargs):
             if spin_multiplicity:
                 structure.multiplicity = spin_multiplicity
             spec.molecule = [structure]
+        from rmgpy.thermo.state import require_thermo_estimation_allowed
+        require_thermo_estimation_allowed(spec)
         spec.conformer = Conformer(E0=E0, modes=modes, spin_multiplicity=spin_multiplicity,
                                    optical_isomers=optical_isomers)
         if molecular_weight is not None:

@@ -37,6 +37,7 @@ from rmgpy.exceptions import StateProvenanceError
 from rmgpy.data.base import saturate_for_estimation
 from rmgpy.data.kinetics.family import install_complete_reducers
 from rmgpy.data.thermo import ThermoLibrary
+from rmgpy.thermo.state import require_thermo_estimation_allowed
 
 # `run_jobs` hands `(QMCalculator, Molecule)` pairs to a `Pool`, which pickles them with
 # `multiprocessing`'s own pickler. Nothing on this module's import path loaded `family.py`,
@@ -216,6 +217,7 @@ class QMCalculator(object):
         """
         if molecule.has_resolved_state():
             raise StateProvenanceError('QM thermo estimation has no supported resolved-state provenance')
+        require_thermo_estimation_allowed(molecule)
         self.initialize()
         if self.settings.software == 'mopac':
             if self.settings.method == 'pm3':
@@ -243,9 +245,12 @@ class QMCalculator(object):
         """
         Run QM jobs for the provided species list (in parallel if requested).
         """
+        spc_list = list(spc_list)
         if any(m.has_resolved_state() for spc in spc_list for m in spc.molecule):
             raise StateProvenanceError('QM thermo estimation has no supported resolved-state provenance')
         mol_list = []
+        for spc in spc_list:
+            require_thermo_estimation_allowed(spc)
         for spc in spc_list:
             if spc.molecule[0].get_radical_count() > self.settings.maxRadicalNumber:
                 for molecule in spc.molecule:

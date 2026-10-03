@@ -61,6 +61,8 @@ def initialize_isotope_model(rmg, isotopes):
     Initialize the RMG object by using the parameter species list
     as initial species instead of the species from the RMG input file.
     """
+    from rmgpy.thermo.state import require_species_thermo_allowed
+    require_species_thermo_allowed([spc for group in isotopes for spc in group])
     # Read input file
     rmg.load_input(rmg.input_file)
 
@@ -256,6 +258,8 @@ def generate_isotopomers(spc, N=1):
     Generate all isotopomers of the parameter species by adding max. N carbon isotopes to the
     atoms of the species.
     """
+    from rmgpy.thermo.state import require_thermo_estimation_allowed
+    require_thermo_estimation_allowed(spc)
 
     mol = spc.molecule[0]
     isotope = get_element(6, 13)
@@ -524,6 +528,9 @@ def correct_entropy(isotopomer, isotopeless):
 
     This method also copies the Enthalpy, Cp and other thermo parameters from isotopeless
     """
+    from rmgpy.thermo.state import require_thermo_estimation_allowed
+    require_thermo_estimation_allowed(isotopomer)
+    require_thermo_estimation_allowed(isotopeless)
 
     # calculate -R ln (sigma) in SI units (J/K/mol)
     s_isotopeless = - constants.R * math.log(isotopeless.get_symmetry_number())

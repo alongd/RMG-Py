@@ -100,9 +100,9 @@ def generate_flux_diagram(reaction_model, times, concentrations, reaction_rates,
     # Get the species and reactions corresponding to the provided concentrations and reaction rates
     species_list = reaction_model.core.species[:]
     from rmgpy.chemkin import get_species_identifier
-    from rmgpy.export import SpeciesReferences, resolve_species_reference
+    from rmgpy.export import SpeciesReferences, resolve_species_reference, has_export_state
     declarations = SpeciesReferences(species_list, lambda spc: get_species_identifier(spc)
-        if any(mol.has_resolved_state() for mol in spc.molecule) else str(spc), context='flux diagram')
+        if has_export_state(spc) else str(spc), context='flux diagram')
 
     def species_name(spc):
         return resolve_species_reference(spc, declarations)

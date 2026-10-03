@@ -334,9 +334,35 @@ class TransportDatabase(object):
         in order, returning the first match found, before falling back to
         estimation via group additivity.
         """
+        from rmgpy.thermo.state import require_electron_state_allowed
+        require_electron_state_allowed(species)
         transport = (None, None, None)
 
         if species.contains_surface_site():
+            return transport
+
+        if species.molecule[0].has_resolved_state():
+            molecule = species.molecule[0]
+            if molecule.electronic_state:
+                for label in self.library_order:
+                    transport = self.get_transport_properties_from_library(species, self.libraries[label])
+                    if transport is not None:
+                        transport[0].comment = label
+                        return transport
+            ground = species.copy(deep=True)
+            for ground_molecule in ground.molecule:
+                ground_molecule.electronic_state = ''
+                ground_molecule.vibrational_level = -1
+            transport = self.get_transport_properties(ground)
+            if molecule.electronic_state:
+                note = 'Transport fallback to the ground state for electronically resolved species'
+                logging.warning('%s %r (%s): no exact-state transport library entry.',
+                                note, species.label, molecule.state_suffix())
+            else:
+                note = 'Transport borrowed from the ground state for vibrationally resolved species'
+            state = ' '.join(line for line in molecule.to_adjacency_list().splitlines()
+                             if line.startswith(('electronicstate ', 'vibrationallevel ')))
+            transport[0].comment += ' ' + note + ' ({0}; {1}).'.format(species.label, state)
             return transport
 
         for label in self.library_order:
@@ -361,6 +387,11 @@ class TransportDatabase(object):
         :class:`Species` object `species`. The hits from the libraries (in order) come first, and then the group additivity
         estimate. This method is useful for a generic search job.
         """
+        from rmgpy.thermo.state import require_electron_state_allowed
+        require_electron_state_allowed(species)
+        if species.molecule[0].has_resolved_state():
+            return [self.get_transport_properties(species)]
+
         transport = []
 
         # Data from libraries comes first
@@ -409,6 +440,8 @@ class TransportDatabase(object):
         ``None`` is returned. If no corresponding library is found, a
         :class:`DatabaseError` is raised.
         """
+        from rmgpy.thermo.state import require_electron_state_allowed
+        require_electron_state_allowed(species)
         for entry in library.entries.values():
             if species.is_isomorphic(entry.item) and entry.data is not None:
                 return deepcopy(entry.data), library, entry
@@ -424,6 +457,8 @@ class TransportDatabase(object):
 
         # assume that the stablest resonance isomer has already been put as the first
         # and that we want the transport properties of this isomer
+        from rmgpy.thermo.state import require_electron_state_allowed
+        require_electron_state_allowed(species)
         molecule = species.molecule[0]
         if molecule.is_aromatic(): #don't use aromatic resonance structures as there are no groups for them currently
             molecule = molecule.copy(deep=True)
@@ -480,6 +515,8 @@ class TransportDatabase(object):
         """
         if molecule.has_resolved_state() and molecule.is_radical():
             raise StateProvenanceError('Transport radical saturation cannot derive resolved-state data')
+        from rmgpy.thermo.state import require_electron_state_allowed
+        require_electron_state_allowed(molecule)
         # For transport estimation we need the atoms to already be sorted because we
         # iterate over them; if the order changes during the iteration then we
         # will probably not visit the right atoms, and so will get the transport wrong
@@ -621,6 +658,8 @@ class TransportDatabase(object):
         
         Generate the Lennard-Jones parameters for the species.
         """
+        from rmgpy.thermo.state import require_electron_state_allowed
+        require_electron_state_allowed(species)
         if any(m.has_resolved_state() for m in species.molecule):
             raise StateProvenanceError('Lennard-Jones fallback has no resolved-state provenance')
         count = sum([1 for atom in species.molecule[0].vertices if atom.is_non_hydrogen()])

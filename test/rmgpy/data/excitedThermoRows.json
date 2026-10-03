@@ -1,0 +1,194 @@
+{
+  "A1": {
+    "title": "Attached values and state cache",
+    "verdict": "One structural library-source comparison; unknown model classes refuse by name",
+    "test": "test/rmgpy/data/excitedThermoSourceTest.py:test_nasa9_attachment_cannot_hide_between_five_cp_samples",
+    "sites": 21
+  },
+  "A2": {
+    "title": "Database library acquisition",
+    "verdict": "Exact state and explicit limits only",
+    "test": "test/rmgpy/data/excitedThermoTest.py:test_resolved_thermo_is_from_exact_library_entry",
+    "sites": 23
+  },
+  "A3": {
+    "title": "GA, HBI, ML and surface estimation",
+    "verdict": "Named refusal",
+    "test": "test/rmgpy/data/excitedThermoTest.py:test_resolved_thermo_estimators_refuse_with_named_error",
+    "sites": 35
+  },
+  "A4": {
+    "title": "Lower thermo ring/group/adsorption helpers",
+    "verdict": "Named refusal, including atom-only ownership",
+    "test": "test/rmgpy/data/excitedThermoSourceTest.py:test_lower_acquisition_census_refuses",
+    "sites": 14
+  },
+  "A5": {
+    "title": "Cp0 and CpInf acquisition",
+    "verdict": "Library limits or named refusal",
+    "test": "test/rmgpy/data/excitedThermoSourceTest.py:test_missing_library_limits_refuse_without_formula",
+    "sites": 20
+  },
+  "A6": {
+    "title": "Thermo representation processing and E0",
+    "verdict": "Validate library representation before processing",
+    "test": "test/rmgpy/data/excitedThermoSourceTest.py:test_attached_energy_and_limits_must_match_whole_library_source",
+    "sites": 36
+  },
+  "A7": {
+    "title": "Solvation and lower solute heuristics",
+    "verdict": "Named refusal for derived thermo",
+    "test": "test/rmgpy/data/excitedThermoSourceTest.py:test_exact_solute_does_not_authorize_derived_solvation",
+    "sites": 14
+  },
+  "A8": {
+    "title": "Arkane input and thermo/statmech jobs",
+    "verdict": "Named refusal",
+    "test": "test/rmgpy/data/excitedThermoSourceTest.py:test_jobs_and_mutators_census_refuses_before_use",
+    "sites": 73
+  },
+  "A9": {
+    "title": "Statmech database and mode fitting",
+    "verdict": "Named refusal",
+    "test": "test/rmgpy/data/excitedThermoSourceTest.py:test_lower_acquisition_census_refuses",
+    "sites": 7
+  },
+  "A10": {
+    "title": "QM/QMTP dispatch and cache",
+    "verdict": "Named refusal",
+    "test": "test/rmgpy/data/excitedThermoSourceTest.py:test_jobs_and_mutators_census_refuses_before_use",
+    "sites": 30
+  },
+  "A11": {
+    "title": "Isotope copying and entropy correction",
+    "verdict": "Named refusal",
+    "test": "test/rmgpy/data/excitedThermoSourceTest.py:test_isotope_generation_and_direct_entropy_correction_refuse",
+    "sites": 17
+  },
+  "A12": {
+    "title": "Pressure-dependence mode/energy derivation",
+    "verdict": "Named refusal",
+    "test": "test/rmgpy/data/excitedThermoSourceTest.py:test_network_census_refuses_even_with_cached_energy",
+    "sites": 36
+  },
+  "A13": {
+    "title": "Kinetics training/reconstruction and solute TS",
+    "verdict": "Exact library acquisition; derived reconstruction/solute TS refuse",
+    "test": "test/rmgpy/data/excitedThermoSourceTest.py:test_kinetics_derivation_census_refuses",
+    "sites": 66
+  },
+  "A14": {
+    "title": "Sensitivity and uncertainty mutations",
+    "verdict": "Named refusal",
+    "test": "test/rmgpy/data/excitedThermoSourceTest.py:test_jobs_and_mutators_census_refuses_before_use",
+    "sites": 28
+  },
+  "A15": {
+    "title": "Model admission and v=0 declaration",
+    "verdict": "Getter validation, atomic declaration and label reservation",
+    "test": "test/rmgpy/data/excitedThermoSourceTest.py:test_admitted_automatic_label_preemption_is_atomic",
+    "sites": 21
+  },
+  "C1": {
+    "title": "Species scalar thermo readers",
+    "verdict": "Checked getter",
+    "test": "test/rmgpy/data/excitedThermoReworkTest.py:test_statmech_cannot_supply_resolved_thermo_without_library",
+    "sites": 12
+  },
+  "C2": {
+    "title": "Species and Configuration conformer E0",
+    "verdict": "Refresh from checked getter on each read",
+    "test": "test/rmgpy/data/excitedThermoSourceTest.py:test_configuration_refreshes_energy_after_state_mutation",
+    "sites": 40
+  },
+  "C3": {
+    "title": "Species and configuration partition/density/mode readers",
+    "verdict": "Named refusal",
+    "test": "test/rmgpy/data/excitedThermoSourceTest.py:test_statmech_consumers_census_refuses",
+    "sites": 37
+  },
+  "C4": {
+    "title": "Species to Cantera and Cantera model mutation",
+    "verdict": "Checked getter before export",
+    "test": "test/rmgpy/data/excitedThermoSourceTest.py:test_cantera_refuses_unmatched_attached_state",
+    "sites": 11
+  },
+  "C5": {
+    "title": "Both Cantera YAML writers and bulk coverage reads",
+    "verdict": "Checked getter before raw reads",
+    "test": "test/rmgpy/data/excitedThermoSourceTest.py:test_export_and_filter_census_rejects_altered_source",
+    "sites": 20
+  },
+  "C6": {
+    "title": "RMS YAML and RMS object conversion",
+    "verdict": "Checked getter for RMS dictionaries; native Julia export of resolved owners refuses",
+    "test": "test/rmgpy/data/excitedThermoSourceTest.py:test_export_and_filter_census_rejects_altered_source",
+    "sites": 10
+  },
+  "C7": {
+    "title": "Chemkin thermo writer",
+    "verdict": "Checked getter",
+    "test": "test/rmgpy/data/excitedThermoSourceTest.py:test_export_and_filter_census_rejects_altered_source",
+    "sites": 3
+  },
+  "C8": {
+    "title": "Thermo library export and reload",
+    "verdict": "Checked library source for permitted exports; preserve v=0 and energy/limits; upstream Arkane explicit-state export refusal retained",
+    "test": "test/rmgpy/data/excitedThermoSourceTest.py:test_manifold_library_export_preserves_v0_identity",
+    "sites": 30
+  },
+  "C9": {
+    "title": "Arkane records, conformer output and plots",
+    "verdict": "Named refusal; thermo-only writers use getter",
+    "test": "test/rmgpy/data/excitedThermoSourceTest.py:test_jobs_and_mutators_census_refuses_before_use",
+    "sites": 48
+  },
+  "C10": {
+    "title": "HTML thermo tables",
+    "verdict": "Named upstream identity refusal before HTML rendering; permitted owners use checked thermo",
+    "test": "test/rmgpy/data/excitedThermoSourceTest.py:test_export_and_filter_census_rejects_altered_source",
+    "sites": 58
+  },
+  "C11": {
+    "title": "Filtering, merging, comparison and source extraction",
+    "verdict": "Checked getter before numerical/raw attached reads",
+    "test": "test/rmgpy/data/excitedThermoSourceTest.py:test_export_and_filter_census_rejects_altered_source",
+    "sites": 63
+  },
+  "C12": {
+    "title": "Kinetics/TST energy consumers",
+    "verdict": "Named refusal for state-blind statmech",
+    "test": "test/rmgpy/data/excitedThermoSourceTest.py:test_kinetics_derivation_census_refuses",
+    "sites": 37
+  },
+  "C13": {
+    "title": "Plasma thermo provenance",
+    "verdict": "Checked whole library source before charge provenance",
+    "test": "test/rmgpy/solver/excitedThermoProvenanceTest.py:test_plasma_refuses_altered_resolved_thermo",
+    "sites": 7
+  },
+  "C14": {
+    "title": "Surface coverage thermo",
+    "verdict": "Checked getter; derived coverage corrections refuse",
+    "test": "test/rmgpy/data/excitedThermoSourceTest.py:test_surface_census_refuses_derived_coverage",
+    "sites": 11
+  },
+  "C15": {
+    "title": "Network cached energies and pressure-dependence output",
+    "verdict": "Named refusal; configuration-energy drawing uses checked E0",
+    "test": "test/rmgpy/data/excitedThermoSourceTest.py:test_network_census_refuses_even_with_cached_energy",
+    "sites": 99
+  },
+  "N1": {
+    "title": "Owner-free thermo/statmech/kinetics models and ESS parsers",
+    "verdict": "Mathematical values without a Species owner; owned acquisition/consumption is guarded",
+    "test": "test/rmgpy/data/excitedThermoSourceTest.py:test_owner_free_thermo_models_preserve_fields_in_round_trip",
+    "sites": 231
+  },
+  "N2": {
+    "title": "Deferred storage, copying, readiness and database services",
+    "verdict": "Carries data/identity without authorizing it; all numerical consumers validate",
+    "test": "test/rmgpy/data/excitedThermoReworkTest.py:test_state_mutation_reloads_exact_state_thermo",
+    "sites": 80
+  }
+}

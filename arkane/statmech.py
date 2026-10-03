@@ -318,6 +318,8 @@ class StatMechJob(object):
         """
         if any(m.has_resolved_state() for m in getattr(self.species, 'molecule', ())):
             raise StateProvenanceError('Arkane statmech file loading has no supported resolved-state provenance')
+        from rmgpy.thermo.state import require_thermo_estimation_allowed
+        require_thermo_estimation_allowed(self.species)
         path = self.path
         directory = os.path.abspath(os.path.dirname(path))
 
@@ -348,6 +350,7 @@ class StatMechJob(object):
                     self.species.molecule = [Molecule().from_inchi(inchistr=self.arkane_species.inchi)]
                 elif self.arkane_species.smiles is not None:
                     self.species.molecule = [Molecule().from_smiles(smilesstr=self.arkane_species.smiles)]
+                require_thermo_estimation_allowed(self.species)
             return
 
         logging.info('Loading statistical mechanics parameters for {0}...'.format(self.species.label))
@@ -749,6 +752,8 @@ class StatMechJob(object):
         self.species.conformer = conformer
 
     def _fit_rotors(self, rotors, conformer, hessian, is_ts, linear, directory, plot):
+        from rmgpy.thermo.state import require_thermo_estimation_allowed
+        require_thermo_estimation_allowed(self.species)
         logging.debug('    Fitting {0} hindered rotors...'.format(len(rotors)))
         rotor_count = 0
         for j, q in enumerate(rotors):
@@ -890,6 +895,8 @@ class StatMechJob(object):
         Save the results of the statmech job to the `output.py` file located
         in `output_directory`.
         """
+        from rmgpy.thermo.state import require_thermo_estimation_allowed
+        require_thermo_estimation_allowed(self.species)
 
         from rmgpy.export import refuse_resolved_species
         refuse_resolved_species([self.species], 'arkane/statmech.py:StatMechJob.write_output', ())

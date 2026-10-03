@@ -49,6 +49,14 @@ from rmgpy.thermo import NASA, NASAPolynomial
 from rmgpy import yaml_cantera1, yaml_cantera2, yaml_rms
 
 
+
+import importlib.util as _fixture_import
+from pathlib import Path as _FixturePath
+_unit_spec = _fixture_import.spec_from_file_location(
+    'unit_export_helpers', _FixturePath(__file__).with_name('excitedExportHelpers.py'))
+_unit_helpers = _fixture_import.module_from_spec(_unit_spec)
+_unit_spec.loader.exec_module(_unit_helpers)
+
 @pytest.fixture
 def state_species():
     species = []
@@ -64,9 +72,15 @@ def state_species():
         thermo = NASA(polynomials=[
             NASAPolynomial(coeffs=[3.5, 0, 0, 0, 0, index * 1000, 2], Tmin=(200, 'K'), Tmax=(1000, 'K')),
             NASAPolynomial(coeffs=[3.5, 0, 0, 0, 0, index * 1000, 2], Tmin=(1000, 'K'), Tmax=(3000, 'K')),
-        ], Tmin=(200, 'K'), Tmax=(3000, 'K'))
+        ], Tmin=(200, 'K'), Tmax=(3000, 'K'),
+           E0=(index * 1000 * 8.31446261815324, 'J/mol'),
+           Cp0=(29.100617, 'J/(mol*K)'), CpInf=(29.100617, 'J/(mol*K)'))
         species.append(Species(index=index, label=label, molecule=[mol], thermo=thermo))
-    return species
+    later = copy.deepcopy(species[1])
+    later.molecule[0].vibrational_level = 2
+    _unit_helpers.complete_identity_fixture_sources([later])
+    with _unit_helpers.unit_thermo_library(species + [later]):
+        yield species
 
 
 def falloff(kind=Lindemann, efficiencies=None):
@@ -343,6 +357,7 @@ def census_fixture(state_species, position, scenario):
         companion.label = 'Ar'
         companion.molecule[0].electronic_state = ''
         declarations.append(companion)
+    _unit_helpers.complete_identity_fixture_sources(declarations + [resolved])
     return declarations, reaction, resolved
 
 
@@ -458,7 +473,8 @@ class TestExcitedExportReferenceCensus:
     def test_every_reference(self, state_species, tmp_path, writer, position, scenario, record_property):
         declarations, reaction, resolved = census_fixture(state_species, position, scenario)
         try:
-            exercise_census(writer, declarations, reaction, resolved, position, tmp_path)
+            with _unit_helpers.unit_thermo_library(declarations + [resolved]):
+                exercise_census(writer, declarations, reaction, resolved, position, tmp_path)
         except SpeciesIdentityError as error:
             assert str(error)
             record_property('outcome', 'named refusal: ' + type(error).__name__)

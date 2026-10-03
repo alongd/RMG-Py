@@ -261,6 +261,8 @@ class GaussianMol(QMMolecule, Gaussian):
         """
         if self.molecule.has_resolved_state():
             raise StateProvenanceError('QM thermo estimation has no supported resolved-state provenance')
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species([self.molecule], type(self).__name__ + '.write_input_file')
         self.check_file_names()
         molfile = self.get_mol_file_path_for_calculation(attempt)
         atomline = re.compile(

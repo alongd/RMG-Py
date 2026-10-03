@@ -51,7 +51,8 @@ def apply_chemically_significant_eigenvalues_method(network, list lumping_order=
     from rmgpy.rmg.pdep import _check_network_reactions
     _check_network_reactions(network)
     network.check_resolved_species_reversibility()
-
+    from rmgpy.thermo.state import require_network_thermo_allowed
+    require_network_thermo_allowed(network)
     cdef np.ndarray[np.int_t, ndim=1] j_list
     cdef np.ndarray[np.int_t, ndim=3] indices
     cdef np.ndarray[np.float64_t, ndim=1] e_list, s_mat, s_mat_inv, omega0, omega, eq_ratios
@@ -236,7 +237,8 @@ def get_rate_coefficients_CSE_Advanced(network, T, P, neglect_high_energy_collis
     from rmgpy.rmg.pdep import _check_network_reactions
     _check_network_reactions(network)
     network.check_resolved_species_reversibility()
-
+    from rmgpy.thermo.state import require_network_thermo_allowed
+    require_network_thermo_allowed(network)
     if network.T != T or network.P != P:
         network.set_conditions(T,P)
         network.calculate_equilibrium_ratios()
@@ -392,6 +394,7 @@ def apply_chemically_significant_eigenvalues_method_georgievskii(network, neglec
     from rmgpy.rmg.pdep import _check_network_reactions
     _check_network_reactions(network)
     network.check_resolved_species_reversibility()
-
+    from rmgpy.thermo.state import require_network_thermo_allowed
+    require_network_thermo_allowed(network)
     return get_rate_coefficients_CSE_Advanced(network, network.T, network.P, neglect_high_energy_collisions=neglect_high_energy_collisions,
                                               high_energy_rate_tol=high_energy_rate_tol)

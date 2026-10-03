@@ -246,6 +246,9 @@ def save_compare_html(outputDir, chemkin_path1, species_dict_path1, chemkin_path
             chemkin_path2, species_dict_path2, read_comments=read_comments2)
     
     common_reactions, unique_reactions1, unique_reactions2 = compare_model_reactions(model1, model2)
+    from rmgpy.thermo.state import checked_thermo
+    for species in model1.species + model2.species:
+        checked_thermo(species)
     common_species, unique_species1, unique_species2 = compare_model_species(model1, model2)
 
     output_path = outputDir + 'diff.html'
@@ -257,6 +260,9 @@ def enthalpy_diff(species):
     """
     Returns the enthalpy discrepancy between the same species in the two models
     """
+    from rmgpy.thermo.state import checked_thermo
+    for spc in species:
+        checked_thermo(spc)
     thermo0 = species[0].thermo
     thermo1 = species[1].thermo
     if thermo0 and thermo1:
@@ -280,6 +286,9 @@ def kinetics_diff(reaction):
 
 
 def identical_thermo(species_pair):
+    from rmgpy.thermo.state import checked_thermo
+    for spc in species_pair:
+        checked_thermo(spc)
     return species_pair[0].thermo.is_identical_to(species_pair[1].thermo)
 
 
@@ -377,6 +386,9 @@ def execute(chemkin1, species_dict1, thermo1, chemkin2, species_dict2, thermo2, 
         model1.species, model1.reactions = load_chemkin_file(chemkin1, species_dict1, thermo_path=thermo1)
         model2.species, model2.reactions = load_chemkin_file(chemkin2, species_dict2, thermo_path=thermo2)
 
+    from rmgpy.thermo.state import checked_thermo
+    for species in model1.species + model2.species:
+        checked_thermo(species)
     common_species, unique_species1, unique_species2 = compare_model_species(model1, model2)
     common_reactions, unique_reactions1, unique_reactions2 = compare_model_reactions(model1, model2)
 

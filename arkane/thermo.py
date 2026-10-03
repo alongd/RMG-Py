@@ -105,6 +105,8 @@ class ThermoJob(object):
         desired heat capacity model (as specified in the `thermo_class`
         attribute).
         """
+        from rmgpy.thermo.state import require_thermo_estimation_allowed
+        require_thermo_estimation_allowed(self.species)
         if self.thermo_class.lower() not in ['wilhoit', 'nasa']:
             raise InputError('Unknown thermodynamic model "{0}".'.format(self.thermo_class))
 
@@ -261,6 +263,8 @@ class ThermoJob(object):
 
         from rmgpy.export import refuse_resolved_species
         refuse_resolved_species([self.species], 'arkane/thermo.py:ThermoJob.plot', ())
+        from rmgpy.thermo.state import require_thermo_estimation_allowed
+        require_thermo_estimation_allowed(self.species)
         # Skip this step if matplotlib is not installed
         try:
             import matplotlib.pyplot as plt

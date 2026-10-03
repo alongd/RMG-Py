@@ -91,8 +91,9 @@ def collect_sites(repository):
 def collect_cython_sites(path, relative):
     """Use Cython's parser for def/cdef/cpdef, properties and nested callbacks.
 
-    Source-block hashes include the companion pxd and included pxi contents so
-    Cython declarations cannot change silently. Parsing performs no compilation
+    For .pyx sources, hashes include the companion pxd and included pxi contents.
+    Cythonized .py sources use the Python AST collector; their declarations and
+    build parity require separate review. Parsing performs no compilation
     and imports no application modules. Failures propagate, rather than omit a
     supplier. All sources in this repository use local pxi includes.
     """

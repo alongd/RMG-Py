@@ -146,7 +146,15 @@ class Species(object):
                     raise SpeciesError('Resolved states of molecules in species {species} '
                                        'do not match.'.format(species=label))
 
+        from rmgpy.thermo.state import require_electron_state_allowed
+        require_electron_state_allowed(self)
         self._state_cache_key = self._molecule_state_key()
+        if transport_data is not None:
+            self.props.setdefault('_transport_state_key', self._state_cache_key[:1] or (('', -1),))
+        if thermo is not None:
+            self.props.setdefault('_thermo_state_key',
+                                  (self._state_cache_key[:1] or (('', -1),),
+                                   self.props.get('vibrational_manifold'), ''))
 
     def _molecule_state_key(self):
         """State signature for the resonance structures backing identity caches."""
@@ -478,7 +486,9 @@ class Species(object):
         Return a string containing each of the molecules' adjacency lists.
         """
         self._molecule_state_key()
-        output = '\n\n'.join([m.to_adjacency_list(label=self.label, remove_h=False) for m in self.molecule])
+        from rmgpy.export import export_molecule
+        output = '\n\n'.join([export_molecule(self, m).to_adjacency_list(label=self.label, remove_h=False)
+                                for m in self.molecule])
         return output
 
     def to_chemkin(self):
@@ -501,6 +511,8 @@ class Species(object):
         the Cantera Species object via update_user_data() so that they appear
         in input_data and in Solution.write_yaml() output.
         """
+        from rmgpy.thermo.state import checked_thermo
+        checked_thermo(self)
         import cantera as ct
 
         from rmgpy.export import SpeciesReferences, resolve_species_reference, refuse_resolved_species
@@ -557,10 +569,12 @@ class Species(object):
                 raise
 
         if self.transport_data:
-            ct_species.transport = self.transport_data.to_cantera()
+            ct_species.transport = self.get_transport_data().to_cantera()
 
-        if self.molecule[0].has_resolved_state():
-            ct_species.update_user_data({'note': self.molecule[0].to_adjacency_list()})
+        from rmgpy.export import export_molecule
+        molecule = export_molecule(self)
+        if molecule.has_resolved_state():
+            ct_species.update_user_data({'note': molecule.to_adjacency_list()})
 
         # Attach coverage-dependent thermo if present.
         # thermo_coverage_dependence keys are adjacency-list strings; we resolve
@@ -647,6 +661,8 @@ class Species(object):
         Return the partition function for the species at the specified
         temperature `T` in K.
         """
+        from rmgpy.thermo.state import require_thermo_estimation_allowed
+        require_thermo_estimation_allowed(self)
         cython.declare(Q=cython.double)
         if self.has_statmech():
             Q = self.conformer.get_partition_function(T)
@@ -662,7 +678,8 @@ class Species(object):
         """
         cython.declare(Cp=cython.double)
         Cp = 0.0
-        if self.has_thermo():
+        from rmgpy.thermo.state import requires_state_library
+        if self.has_thermo() or requires_state_library(self):
             Cp = self.get_thermo_data().get_heat_capacity(T)
         elif self.has_statmech():
             Cp = self.conformer.get_heat_capacity(T)
@@ -678,7 +695,8 @@ class Species(object):
         """
         cython.declare(H=cython.double)
         H = 0.0
-        if self.has_thermo():
+        from rmgpy.thermo.state import requires_state_library
+        if self.has_thermo() or requires_state_library(self):
             H = self.get_thermo_data().get_enthalpy(T)
         elif self.has_statmech():
             H = self.conformer.get_enthalpy(T) + self.conformer.E0.value_si
@@ -694,7 +712,8 @@ class Species(object):
         """
         cython.declare(S=cython.double)
         S = 0.0
-        if self.has_thermo():
+        from rmgpy.thermo.state import requires_state_library
+        if self.has_thermo() or requires_state_library(self):
             S = self.get_thermo_data().get_entropy(T)
         elif self.has_statmech():
             S = self.conformer.get_entropy(T)
@@ -710,7 +729,8 @@ class Species(object):
         """
         cython.declare(G=cython.double)
         G = 0.0
-        if self.has_thermo():
+        from rmgpy.thermo.state import requires_state_library
+        if self.has_thermo() or requires_state_library(self):
             G = self.get_thermo_data().get_free_energy(T)
         elif self.has_statmech():
             G = self.conformer.get_free_energy(T) + self.conformer.E0.value_si
@@ -724,6 +744,8 @@ class Species(object):
         Return the sum of states :math:`N(E)` at the specified energies `e_list`
         in J/mol.
         """
+        from rmgpy.thermo.state import require_thermo_estimation_allowed
+        require_thermo_estimation_allowed(self)
         if self.has_statmech():
             return self.conformer.get_sum_of_states(e_list)
         else:
@@ -735,6 +757,8 @@ class Species(object):
         Return the density of states :math:`\\rho(E) \\ dE` at the specified
         energies `e_list` in J/mol above the ground state.
         """
+        from rmgpy.thermo.state import require_thermo_estimation_allowed
+        require_thermo_estimation_allowed(self)
         if self.has_statmech():
             try:
                 return self.conformer.get_density_of_states(e_list)
@@ -845,12 +869,18 @@ class Species(object):
         """
         Return the value of the heat capacity at zero temperature in J/mol*K.
         """
+        from rmgpy.thermo.state import requires_state_library
+        if requires_state_library(self):
+            return self.get_thermo_data().Cp0.value_si
         return self.molecule[0].calculate_cp0()
 
     def calculate_cpinf(self):
         """
         Return the value of the heat capacity at infinite temperature in J/mol*K.
         """
+        from rmgpy.thermo.state import requires_state_library
+        if requires_state_library(self):
+            return self.get_thermo_data().CpInf.value_si
         return self.molecule[0].calculate_cpinf()
 
     def has_reactive_molecule(self):
@@ -914,6 +944,19 @@ class Species(object):
                 return cand[0]
         return candidates[0][0]
 
+    def _invalidate_thermo_state_cache(self, solvent_name=''):
+        """Invalidate cached thermo and E0 when its state, partition, or solvent changes."""
+        # Resonance count and an absent unresolved structure do not change thermo state.
+        state = self._molecule_state_key()[:1] or (('', -1),)
+        declared = self.props.get('vibrational_manifold')
+        state_solvent = solvent_name if declared or any(es or v >= 0 for es, v in state) else ''
+        key = (state, declared, state_solvent)
+        previous = self.props.get('_thermo_state_key')
+        if previous is not None and previous != key:
+            self.thermo = None
+            self.conformer = None
+        self.props['_thermo_state_key'] = key
+
     def get_thermo_data(self, solvent_name=''):
         """
         Returns a `thermoData` object of the current Species object.
@@ -929,21 +972,53 @@ class Species(object):
         """
 
         from rmgpy.thermo.thermoengine import submit
+        from rmgpy.thermo.state import (
+            _needs_state_thermo_check, requires_state_library, require_thermo_estimation_allowed)
+        needs_checked_source = _needs_state_thermo_check(self)
+        if requires_state_library(self) and solvent_name:
+            require_thermo_estimation_allowed(self)
+        previous = self.props.get('_thermo_state_key')
+        if not solvent_name and previous is not None:
+            solvent_name = previous[2]
+        self._invalidate_thermo_state_cache(solvent_name)
 
-        if self.thermo:
+        try:
+            if not self.thermo:
+                submit(self, solvent_name)
             if not isinstance(self.thermo, (NASA, Wilhoit, ThermoData)):
-                self.thermo = self.thermo.result()
-        else:
-            submit(self, solvent_name)
-            if not isinstance(self.thermo, (NASA, Wilhoit, ThermoData)):
-                self.thermo = self.thermo.result()
+                from concurrent.futures import Future
+                if (not needs_checked_source or isinstance(self.thermo, Future)):
+                    self.thermo = self.thermo.result()
+                # Other attached classes reach the one structural comparison,
+                # which either inspects their model or gives a named refusal.
+            if needs_checked_source and self.thermo is None:
+                raise StateProvenanceError(
+                    "Species {!r} cannot refresh thermo without an available checked source".format(self.label))
+        except Exception:
+            if needs_checked_source:
+                self.thermo = None
+                self.conformer = None
+                if previous is not None:
+                    self.props['_thermo_state_key'] = previous
+            raise
 
+        from rmgpy.thermo.state import require_state_thermo, requires_state_library
+        if requires_state_library(self):
+            from rmgpy.data.rmg import get_db
+            from rmgpy.exceptions import DatabaseError
+            try:
+                database = get_db('thermo')
+            except DatabaseError:
+                database = None
+            require_state_thermo(self, database, solvent_name)
         return self.thermo
 
     def generate_transport_data(self):
         """
         Generate the transport_data parameters for the species.
         """
+        from rmgpy.thermo.state import require_electron_state_allowed
+        require_electron_state_allowed(self)
         from rmgpy.data.rmg import get_db
         try:
             transport_db = get_db('transport')
@@ -959,6 +1034,7 @@ class Species(object):
             # assume it's a species for Fragment
             self.molecule[0].assign_representative_species()
             self.transport_data = transport_db.get_transport_properties(self.molecule[0].species_repr)[0]
+        self.props['_transport_state_key'] = self._molecule_state_key()[:1] or (('', -1),)
 
     def get_transport_data(self):
         """
@@ -966,8 +1042,15 @@ class Species(object):
         calculates it if it is not yet available.
         """
 
+        from rmgpy.thermo.state import require_electron_state_allowed
+        require_electron_state_allowed(self)
+        state = self._molecule_state_key()[:1] or (('', -1),)
+        previous = self.props.get('_transport_state_key')
+        if previous is not None and previous != state:
+            self.transport_data = None
         if not self.transport_data:
             self.generate_transport_data()
+        self.props['_transport_state_key'] = state
 
         return self.transport_data
 
@@ -977,6 +1060,8 @@ class Species(object):
         have already provided a thermodynamics model using e.g.
         :meth:`generate_thermo_data()`.
         """
+        from rmgpy.thermo.state import require_thermo_estimation_allowed
+        require_thermo_estimation_allowed(self)
         logging.debug("Generating statmech for species {}".format(self.label))
         from rmgpy.data.rmg import get_db
         try:
@@ -1005,8 +1090,11 @@ class Species(object):
         """
         Helper method that sets species' E0 using the species' thermo data
         """
-        if self.get_thermo_data().E0 is not None:
-            self.conformer.E0 = self.get_thermo_data().E0
+        thermo = self.get_thermo_data()
+        if self.conformer is None:
+            self.conformer = Conformer()
+        if thermo.E0 is not None:
+            self.conformer.E0 = thermo.E0
         else:
             if not self.thermo.Cp0 or not self.thermo.CpInf:
                 # set Cp0 and CpInf

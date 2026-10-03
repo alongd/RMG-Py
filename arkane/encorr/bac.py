@@ -374,6 +374,11 @@ class BAC:
         Returns:
             The bond correction to the electronic energy.
         """
+        from arkane.encorr.reference import require_reference_thermo_allowed
+        if spc is not None:
+            require_reference_thermo_allowed(spc)
+        if datapoint is not None:
+            require_reference_thermo_allowed(datapoint.spc)
         if self.bacs is None:
             bac_type_str = 'Melius' if self.bac_type == 'm' else 'Petersson'
             raise BondAdditivityCorrectionError(
@@ -406,6 +411,9 @@ class BAC:
         Returns:
             Petersson-type bond additivity correction.
         """
+        if datapoint is not None:
+            from arkane.encorr.reference import require_reference_thermo_allowed
+            require_reference_thermo_allowed(datapoint.spc)
         if datapoint is not None:
             if bonds is None:
                 bonds = datapoint.bonds
@@ -455,6 +463,9 @@ class BAC:
         Returns:
             Melius-type bond additivity correction.
         """
+        if datapoint is not None:
+            from arkane.encorr.reference import require_reference_thermo_allowed
+            require_reference_thermo_allowed(datapoint.spc)
         if params is None:
             params = self.bacs
         atom_corr = params['atom_corr']

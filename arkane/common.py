@@ -175,6 +175,9 @@ class ArkaneSpecies(RMGObject):
         """
         Update the object with a new species/TS (while keeping non-species-dependent attributes unchanged)
         """
+        from rmgpy.thermo.state import require_thermo_estimation_allowed
+        if species is not None:
+            require_thermo_estimation_allowed(species)
         if species is None:
             raise ValueError('No species was passed to ArkaneSpecies')
         # Don't overwrite the label if it already exists
@@ -249,6 +252,8 @@ class ArkaneSpecies(RMGObject):
         """
         Save the species with all statMech data to a .yml file
         """
+        from arkane.encorr.reference import require_reference_thermo_allowed
+        require_reference_thermo_allowed(self)
         if not os.path.exists(os.path.join(os.path.abspath(path), 'species', '')):
             os.mkdir(os.path.join(os.path.abspath(path), 'species', ''))
         valid_chars = "-_.()<=>+ %s%s" % (string.ascii_letters, string.digits)
@@ -321,6 +326,11 @@ class ArkaneSpecies(RMGObject):
             freq_data = data['imaginary_frequency']
             del data['imaginary_frequency']
         if not data['is_ts']:
+            adjacency = data.get('adjacency_list', '') or ''
+            if any(line.strip().startswith(('electronicstate ', 'vibrationallevel '))
+                   for line in adjacency.splitlines()):
+                from rmgpy.thermo.state import require_thermo_estimation_allowed
+                require_thermo_estimation_allowed(Species(label=data['label']).from_adjacency_list(adjacency))
             if data.get('adjacency_list'):
                 data['species'] = Species().from_adjacency_list(data['adjacency_list'])
             elif 'smiles' in data:

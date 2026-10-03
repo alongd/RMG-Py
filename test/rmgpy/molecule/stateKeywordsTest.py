@@ -239,6 +239,9 @@ def test_augmented_exports_include_state_and_standard_exports_do_not(state, suff
 
 def test_model_deduplicates_a_species_list_by_state_in_cache_and_formula_bucket():
     model = CoreEdgeReactionModel()
+    # Exercise identity indexing during input construction. Full-model manifold
+    # partition validation is covered separately by vibrationalManifoldTest.
+    model.defer_vibrational_validation = True
     specs = []
     for state in STATES:
         spec, is_new = model.make_new_species(molecule(*state), generate_thermo=False)

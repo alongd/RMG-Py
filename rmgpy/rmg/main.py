@@ -1449,6 +1449,9 @@ class RMG(util.Subject):
         to stand in for the translation was lost whenever the translation failed,
         which is exactly when it was needed. That is not plasma-specific.
         """
+        from rmgpy.thermo.state import checked_thermo
+        for species in self.reaction_model.core.species + self.reaction_model.edge.species:
+            checked_thermo(species)
         # generate Cantera files in designated Cantera output folders. The direct
         # writers (cantera1/, cantera2/) already wrote chem_annotated{NNNN}.yaml +
         # chem_annotated.yaml each iteration. End-of-run we also produce the

@@ -288,6 +288,9 @@ def generate_cantera_data(species_list,
     'elements' block and the per-phase elements lists. Defaults to an empty
     set if None.
     """
+    from rmgpy.thermo.state import checked_thermo
+    for species in species_list:
+        checked_thermo(species)
 
     # --- 1. Header & Units ---
     # We output everything in SI units.
@@ -472,6 +475,9 @@ def species_to_dict(species, species_list):
     """Convert an RMG Species object to a Cantera YAML dictionary.
     Species notes (SMILES, thermo/transport comments) are always included.
     """
+    from rmgpy.thermo.state import checked_thermo
+    if species is not None:
+        checked_thermo(species)
 
     notes = list()
     try:
@@ -480,7 +486,8 @@ def species_to_dict(species, species_list):
         pass
 
     # Composition
-    mol = species.molecule[0]
+    from rmgpy.export import export_molecule
+    mol = export_molecule(species)
     if mol.has_resolved_state():
         notes.append(mol.to_adjacency_list().rstrip())
     atom_dict = {}

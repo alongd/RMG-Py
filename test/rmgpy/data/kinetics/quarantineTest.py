@@ -6074,7 +6074,10 @@ class TestWhatAnUnlistedLossyClassCosts:
             Species: {"_aug_inchi": "aug_inchi"},
         }
         assert private == {
-            "Molecule": memos | set(property_storage[Molecule]),
+            # Native weak-reference infrastructure is process-local ownership
+            # metadata. object_state and Molecule's explicit reducer exclude it;
+            # excitedThermoSourceTest proves copies carry state without carrying refs.
+            "Molecule": memos | set(property_storage[Molecule]) | {"__weakref__"},
             "Species": memos | set(property_storage[Species]) | {"_state_cache_key"},
         }
         for cls, fields in property_storage.items():

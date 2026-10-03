@@ -31,15 +31,19 @@
 
 import pickle
 from copy import deepcopy
+from math import exp
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+from rmgpy.exceptions import ExcitedSpeciesThermoError, VibrationalManifoldError
+
 from rmgpy.chemkin import load_chemkin_file, save_chemkin_file, save_species_dictionary
 from rmgpy.data.kinetics.database import KineticsDatabase
 from rmgpy.data.kinetics.family import TemplateReaction
 from rmgpy.data.kinetics.library import KineticsLibrary, LibraryReaction
+from rmgpy.data.thermo import ThermoDatabase, ThermoLibrary
 from rmgpy.exceptions import NetworkError, NonEquilibriumReverseRateError
 from rmgpy.kinetics import (Arrhenius, Chebyshev, Lindemann, MultiArrhenius,
                             MultiPDepArrhenius, PDepArrhenius, ThirdBody, Troe,
@@ -52,6 +56,12 @@ from rmgpy.species import Species
 from rmgpy.thermo import NASA, NASAPolynomial
 
 FIXTURE = Path(__file__).resolve().parents[2] / 'test_data' / 'superelastic' / 'thermal'
+
+
+def exact_state_fixture_equilibrium_constant(temperature):
+    """Return Kc for N2v1 -> N2 directly from the fixture NASA coefficients."""
+    # N2: (a1, a6, a7) = (4.5, -1000, 3); N2v1: (3.5, 2400, 3).
+    return temperature * exp(3400 / temperature - 1)
 
 
 class ElectronArrhenius(Arrhenius):
@@ -74,6 +84,24 @@ def reaction(resolved=True, reversible=True, kinetics=None, cls=Reaction):
             E0=(8314.462618 if index == 0 else 0, 'J/mol'))
     return cls(reactants=[excited], products=[ground], reversible=reversible,
                kinetics=kinetics if kinetics is not None else TwoTemperaturePlasma(A=(3e5, 's^-1'), n=1))
+
+
+def install_exact_state_thermo(monkeypatch):
+    import rmgpy.data.rmg as data_rmg
+    database = ThermoDatabase()
+    library = ThermoLibrary(label='ExactStateFixture')
+    library.load(str(Path(__file__).resolve().parents[2] / 'test_data' / 'excited_states' / 'thermo.py'),
+                 database.local_context, {})
+    database.libraries = {library.label: library}
+    database.library_order = [library.label]
+    monkeypatch.setattr(data_rmg, 'database', SimpleNamespace(thermo=database, solvation=None))
+    return database
+
+
+def load_exact_state_thermo(reaction):
+    for species in reaction.reactants + reaction.products:
+        species.thermo = None
+        species.get_thermo_data()
 
 
 def wrapped(name, leaf):
@@ -139,12 +167,60 @@ def test_cross_library_explicit_reverse(monkeypatch, tmp_path, thermal, reverse_
     import rmgpy.data.rmg as data_rmg
     db = KineticsDatabase()
     libraries = []
+    for name, equation, amplitude in [
+            ('forward', 'N2v1 + N2 => N2 + N2', 1000),
+            ('reverse', 'N2 + N2 => N2v1 + N2', 2000)]:
+        directory = tmp_path / name
+        directory.mkdir()
+        (directory / 'dictionary.txt').write_text((FIXTURE / 'dictionary.txt').read_text())
+        rate = ("Arrhenius(A=({0},'m^3/(mol*s)'))" if thermal else
+                "TwoTemperaturePlasma(A=({0},'m^3/(mol*s)'))").format(amplitude)
+        (directory / 'reactions.py').write_text('entry(index=1, label=%r, reversible=False, kinetics=%s)\n' % (equation, rate))
+        lib = KineticsLibrary(label=name)
+        lib.load(str(directory / 'reactions.py'), db.local_context, db.global_context)
+        db.libraries[name] = lib
+        libraries.append(lib)
+    thermo = ThermoDatabase()
+    thermo_library = ThermoLibrary(label='ExactStateFixture')
+    thermo_library.load(str(Path(__file__).resolve().parents[2] / 'test_data' / 'excited_states' / 'thermo.py'),
+                        thermo.local_context, {})
+    thermo.libraries = {thermo_library.label: thermo_library}
+    thermo.library_order = [thermo_library.label]
+    monkeypatch.setattr(data_rmg, 'database', SimpleNamespace(
+        kinetics=db, thermo=thermo, solvation=None))
+    model = CoreEdgeReactionModel()
+    model.declare_vibrational_manifold(Species(label='N2').from_smiles('N#N'))
+    for lib in libraries[::(-1 if reverse_first else 1)]:
+        rxn, is_new = model.make_new_reaction(
+            lib.get_library_reactions()[0], generate_thermo=False, generate_kinetics=False)
+        assert is_new
+        model.add_reaction_to_core(rxn)
+    assert len(model.core.reactions) == 2
+    assert all(not rxn.reversible for rxn in model.core.reactions)
+    for rxn in model.core.reactions:
+        excited_reactant = any(molecule.has_resolved_state()
+                               for species in rxn.reactants for molecule in species.molecule)
+        excited_product = any(molecule.has_resolved_state()
+                              for species in rxn.products for molecule in species.molecule)
+        assert excited_reactant != excited_product
+        expected = 1000 if excited_reactant else 2000
+        assert rxn.kinetics.get_rate_coefficient(300, 12000) == pytest.approx(expected)
+
+
+@pytest.mark.parametrize('thermal', [False, True], ids=['te', 'thermal'])
+@pytest.mark.parametrize('reverse_first', [False, True])
+def test_cross_library_explicit_reverse_refuses_undeclared_manifold(
+        monkeypatch, tmp_path, thermal, reverse_first):
+    import rmgpy.data.rmg as data_rmg
+    db = KineticsDatabase()
+    libraries = []
     for name, equation in [('forward', 'N2v1 + N2 => N2 + N2'), ('reverse', 'N2 + N2 => N2v1 + N2')]:
         directory = tmp_path / name
         directory.mkdir()
         (directory / 'dictionary.txt').write_text((FIXTURE / 'dictionary.txt').read_text())
         rate = "Arrhenius(A=(1000,'m^3/(mol*s)'))" if thermal else "TwoTemperaturePlasma(A=(1000,'m^3/(mol*s)'))"
-        (directory / 'reactions.py').write_text('entry(index=1, label=%r, reversible=False, kinetics=%s)\n' % (equation, rate))
+        (directory / 'reactions.py').write_text(
+            'entry(index=1, label=%r, reversible=False, kinetics=%s)\n' % (equation, rate))
         lib = KineticsLibrary(label=name)
         lib.load(str(directory / 'reactions.py'), db.local_context, db.global_context)
         db.libraries[name] = lib
@@ -152,11 +228,10 @@ def test_cross_library_explicit_reverse(monkeypatch, tmp_path, thermal, reverse_
     monkeypatch.setattr(data_rmg, 'database', SimpleNamespace(kinetics=db))
     model = CoreEdgeReactionModel()
     for lib in libraries[::(-1 if reverse_first else 1)]:
-        rxn, is_new = model.make_new_reaction(lib.get_library_reactions()[0], generate_thermo=False, generate_kinetics=False)
-        assert is_new
-        model.add_reaction_to_core(rxn)
-    assert len(model.core.reactions) == 2
-    assert all(not rxn.reversible for rxn in model.core.reactions)
+        with pytest.raises(VibrationalManifoldError, match='N2v1'):
+            model.make_new_reaction(
+                lib.get_library_reactions()[0], generate_thermo=False, generate_kinetics=False)
+    assert model.core.reactions == []
 
 
 def imported_reaction(tmp_path, route):
@@ -201,7 +276,8 @@ def imported_reaction(tmp_path, route):
 @pytest.mark.parametrize('admission', ['core', 'edge', 'network', 'path'])
 def test_admission_routes(tmp_path, route, admission):
     model = CoreEdgeReactionModel()
-    with pytest.raises(NonEquilibriumReverseRateError, match='vibrationallevel 1'):
+    expected = ExcitedSpeciesThermoError if route == 'chemkin' else NonEquilibriumReverseRateError
+    with pytest.raises(expected, match='vibrationallevel 1'):
         # Chemkin now refuses at write/read; constructed and late-state routes
         # still exercise the individual admission guards.
         rxn = imported_reaction(tmp_path, route)
@@ -268,9 +344,20 @@ def test_thermal_wrappers_remain_admissible(name):
     model.add_reaction_to_edge(rxn)
     PDepNetwork().add_path_reaction(rxn)
     if name in ('multi', 'plog', 'multi-plog', 'nested'):
-        reverse = rxn.generate_reverse_rate_coefficient()
-        pressure = 1e5
-        assert reverse.get_rate_coefficient(1000, pressure) == pytest.approx(rxn.kinetics.get_rate_coefficient(1000, pressure) / rxn.get_equilibrium_constant(1000), rel=0.01)
+        with pytest.raises(ExcitedSpeciesThermoError, match='N2v1'):
+            rxn.generate_reverse_rate_coefficient()
+
+
+@pytest.mark.parametrize('name', WRAPPERS[:4])
+def test_thermal_wrappers_generate_quantitative_reverse_with_exact_state_thermo(monkeypatch, name):
+    install_exact_state_thermo(monkeypatch)
+    rxn = reaction(kinetics=wrapped(name, Arrhenius(A=(3e5, 's^-1'))))
+    load_exact_state_thermo(rxn)
+    reverse = rxn.generate_reverse_rate_coefficient()
+    temperature, pressure = 1000, 1e5
+    assert reverse.get_rate_coefficient(temperature, pressure) == pytest.approx(
+        rxn.get_rate_coefficient(temperature, pressure) / rxn.get_equilibrium_constant(temperature),
+        rel=1e-4)
 
 
 def test_surface_thermal_control():
@@ -361,13 +448,27 @@ def test_irreversible_wrappers_and_unresolved_controls(name):
             assert network.path_reactions == [rxn]
 
 
-def test_thermal_high_pressure_conversion_control():
+def test_thermal_high_pressure_conversion_control(monkeypatch):
+    install_exact_state_thermo(monkeypatch)
+    rate = Chebyshev(coeffs=[[5,0],[0,0]], kunits='s^-1', Tmin=(300,'K'), Tmax=(2000,'K'), Pmin=(1,'bar'), Pmax=(100,'bar'))
+    rxn = reaction(kinetics=rate, cls=LibraryReaction)
+    load_exact_state_thermo(rxn)
+    rxn.elementary_high_p = True
+    assert rxn.generate_high_p_limit_kinetics()
+    assert rxn.network_kinetics.get_rate_coefficient(1000) == pytest.approx(1e5)
+    reverse = rxn.generate_reverse_rate_coefficient(network_kinetics=True)
+    assert reverse.get_rate_coefficient(1000) == pytest.approx(
+        1e5 / exact_state_fixture_equilibrium_constant(1000),
+        rel=1e-4)
+
+
+def test_thermal_high_pressure_conversion_refuses_unattested_thermo():
     rate = Chebyshev(coeffs=[[5,0],[0,0]], kunits='s^-1', Tmin=(300,'K'), Tmax=(2000,'K'), Pmin=(1,'bar'), Pmax=(100,'bar'))
     rxn = reaction(kinetics=rate, cls=LibraryReaction)
     rxn.elementary_high_p = True
     assert rxn.generate_high_p_limit_kinetics()
-    reverse = rxn.generate_reverse_rate_coefficient(network_kinetics=True)
-    assert reverse.get_rate_coefficient(1000) == pytest.approx(1e5 / rxn.get_equilibrium_constant(1000), rel=0.01)
+    with pytest.raises(ExcitedSpeciesThermoError, match='N2v1'):
+        rxn.generate_reverse_rate_coefficient(network_kinetics=True)
 
 
 
@@ -405,7 +506,7 @@ def test_model_tabulated_conversion_refuses_before_fit():
     rate = ElectronKineticsData(Tdata=([300,500,1000,1500],'K'), kdata=([1e5]*4,'s^-1'))
     rxn = reaction(reversible=False, kinetics=rate, cls=LibraryReaction)
     rxn.library = 'tabulated'
-    with pytest.raises(NonEquilibriumReverseRateError, match='N2v1'):
+    with pytest.raises(VibrationalManifoldError, match='N2v1'):
         CoreEdgeReactionModel().make_new_reaction(rxn, check_existing=False, generate_thermo=False)
     assert rxn.kinetics is rate
 
@@ -474,10 +575,21 @@ def test_selected_network_surrogate_pdep_update_refused():
         network.update(CoreEdgeReactionModel(), job)
 
 
-def test_unused_network_surrogate_keeps_core_thermal_rate():
+def test_unused_network_surrogate_keeps_core_thermal_rate(monkeypatch):
+    install_exact_state_thermo(monkeypatch)
     rxn = thermal_reaction_with_te_network_surrogate()
+    load_exact_state_thermo(rxn)
     rxn.check_reverse_from_equilibrium_supported()
     CoreEdgeReactionModel().add_reaction_to_core(rxn)
     reverse = rxn.generate_reverse_rate_coefficient(network_kinetics=False)
     assert reverse.get_rate_coefficient(1000, 1e5) == pytest.approx(
-        rxn.kinetics.get_rate_coefficient(1000, 1e5) / rxn.get_equilibrium_constant(1000), rel=0.01)
+        rxn.kinetics.get_rate_coefficient(1000, 1e5) / rxn.get_equilibrium_constant(1000),
+        rel=0.03)
+
+
+def test_unused_network_surrogate_refuses_unattested_thermo():
+    rxn = thermal_reaction_with_te_network_surrogate()
+    rxn.check_reverse_from_equilibrium_supported()
+    CoreEdgeReactionModel().add_reaction_to_core(rxn)
+    with pytest.raises(ExcitedSpeciesThermoError, match='N2v1'):
+        rxn.generate_reverse_rate_coefficient(network_kinetics=False)

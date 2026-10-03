@@ -524,6 +524,12 @@ def _declared_object_slots(cls):
     return slots
 
 
+_NATIVE_SLOT_EXCLUSIONS = {
+    ('rmgpy.molecule.molecule', 'Molecule', '__weakref__'):
+        'Weak-reference support is interpreter bookkeeping, not a material record slot.',
+}
+
+
 def _assert_native_slot_inventory():
     from rmgpy.quantity import ScalarQuantity, ArrayQuantity
     from rmgpy.molecule import Molecule
@@ -540,7 +546,12 @@ def _assert_native_slot_inventory():
     aliases = getattr(pdep, '_NUMERIC_SLOT_ALIASES', {})
     for cls, fields in schemas.items():
         declared = {aliases.get(name, name) for name in _declared_object_slots(cls)}
-        missing = declared - set(fields)
+        excluded = {slot for (module, name, slot), reason in _NATIVE_SLOT_EXCLUSIONS.items()
+                    if (module, name) == (cls.__module__, cls.__name__)}
+        assert excluded <= declared
+        assert all(len(reason) > 30 for key, reason in _NATIVE_SLOT_EXCLUSIONS.items()
+                   if key[:2] == (cls.__module__, cls.__name__))
+        missing = declared - set(fields) - excluded
         assert not missing, f'Missing native record slots for {cls.__name__}: {sorted(missing)}'
     for cls, fields in schemas.items():
         if (cls not in pdep._NUMERIC_RECORD_FIELDS and cls not in pdep._PYTHON_RECORD_FIELDS
@@ -711,6 +722,8 @@ def _module_network_entries():
 _MODULE_NETWORK_EXCLUSIONS = {
     ('rmgpy.rmg.pdep', '_check_network_reactions'):
         'The validation boundary itself checks the original current channels; it performs no numerical computation or registration.',
+    ('rmgpy.thermo.state', 'require_network_thermo_allowed'):
+        'This thermo validation boundary performs no electron-routing numerical computation or registration.',
 }
 
 

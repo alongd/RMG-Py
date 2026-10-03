@@ -30,10 +30,13 @@
 """Regression witnesses for declaration preservation before conversion."""
 from copy import deepcopy
 import importlib.util
+from math import exp
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+
+from rmgpy.exceptions import ExcitedSpeciesThermoError
 
 from rmgpy.rmg.model import ReactionModel
 from rmgpy.kinetics import Arrhenius, TwoTemperaturePlasma, PDepArrhenius
@@ -42,6 +45,7 @@ from rmgpy.exceptions import (NonEquilibriumReverseRateError, KineticsError,
 from rmgpy.data.base import Entry
 from rmgpy.data.kinetics.family import KineticsFamily, TemplateReaction
 from rmgpy.data.kinetics.library import LibraryReaction
+from rmgpy.data.thermo import ThermoDatabase, ThermoLibrary
 from rmgpy.chemkin import (write_kinetics_entry, read_kinetics_entry, get_species_identifier,
                            render_chemkin_file, save_species_dictionary, load_chemkin_file,
                            _process_duplicate_reactions)
@@ -54,8 +58,16 @@ helpers = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(helpers)
 
 
-def test_chemkin_duplicate_roundtrip_retains_independent_reverse(tmp_path):
+def exact_state_fixture_equilibrium_constant(temperature):
+    """Return Kc for N2v1 -> N2 directly from the fixture NASA coefficients."""
+    # N2: (a1, a6, a7) = (4.5, -1000, 3); N2v1: (3.5, 2400, 3).
+    return temperature * exp(3400 / temperature - 1)
+
+
+def test_chemkin_duplicate_roundtrip_retains_independent_reverse(monkeypatch, tmp_path):
+    helpers._install_exact_state_thermo(monkeypatch)
     forward, reverse = helpers.explicit_pair(cls=LibraryReaction)
+    helpers._load_exact_state_thermo(forward)
     second = deepcopy(forward)
     second.reactants, second.products = forward.reactants, forward.products
     for rxn, a in zip((forward, second, reverse), (1e5, 2e5, 7e5)):
@@ -65,13 +77,34 @@ def test_chemkin_duplicate_roundtrip_retains_independent_reverse(tmp_path):
     path, dictionary = tmp_path / 'chem.inp', tmp_path / 'dictionary.txt'
     path.write_text(render_chemkin_file(species, [forward, second, reverse]))
     save_species_dictionary(str(dictionary), species)
-    loaded_species, loaded = load_chemkin_file(str(path), str(dictionary))
+    _, loaded = load_chemkin_file(str(path), str(dictionary))
     assert len(loaded) == 2
-    assert all(not rxn.reversible for rxn in loaded)
-    assert sorted(rxn.kinetics.get_rate_coefficient(1000) for rxn in loaded) == [3e5, 7e5]
-    merged = ReactionModel(species=loaded_species, reactions=[loaded[0]]).merge(
-        ReactionModel(species=loaded_species, reactions=[loaded[1]]))
-    assert len(merged.reactions) == 2
+    by_direction = {}
+    for reaction in loaded:
+        excited_reactant = reaction.reactants[0].molecule[0].has_resolved_state()
+        excited_product = reaction.products[0].molecule[0].has_resolved_state()
+        direction = excited_reactant, excited_product
+        assert excited_reactant != excited_product
+        assert direction not in by_direction
+        assert reaction.reversible is False
+        by_direction[direction] = reaction.kinetics.get_rate_coefficient(1000)
+    assert set(by_direction) == {(True, False), (False, True)}
+    assert by_direction[True, False] == pytest.approx(3e5)
+    assert by_direction[False, True] == pytest.approx(7e5)
+
+
+def test_chemkin_duplicate_roundtrip_refuses_unattested_thermo(tmp_path):
+    forward, reverse = helpers.explicit_pair(cls=LibraryReaction)
+    second = deepcopy(forward)
+    second.reactants, second.products = forward.reactants, forward.products
+    for rxn, a in zip((forward, second, reverse), (1e5, 2e5, 7e5)):
+        rxn.library = 'test'
+        rxn.kinetics = Arrhenius(A=(a, 's^-1'), n=0, Ea=(0, 'J/mol'), T0=(1, 'K'))
+    species = forward.reactants + forward.products
+    path, dictionary = tmp_path / 'chem.inp', tmp_path / 'dictionary.txt'
+    with pytest.raises(ExcitedSpeciesThermoError, match='N2v1'):
+        render_chemkin_file(species, [forward, second, reverse])
+    assert not path.exists() and not dictionary.exists()
 
 
 def test_unresolved_irreversible_duplicates_remain_irreversible(tmp_path):
@@ -176,7 +209,7 @@ def test_arkane_refuses_before_generation(reversible):
     rxn.transition_state = TransitionState(conformer=conformer((20000, 'J/mol')))
     original = rxn.kinetics
     job = KineticsJob(rxn)
-    with pytest.raises(NonEquilibriumReverseRateError, match='N2v1.*vibrationallevel 1'):
+    with pytest.raises(ExcitedSpeciesThermoError, match='N2v1'):
         job.generate_kinetics()
     assert rxn.kinetics is original
     assert not job.usedTST
@@ -326,13 +359,29 @@ def test_arkane_chemkin_checks_and_writes_declared_irreversible_direction(tmp_pa
     assert ' => ' in (tmp_path / 'chem.inp').read_text()
 
 
-def test_policy_thermodynamic_property_remains_available():
-    # Equilibrium constants are thermo properties, not an automatic reverse.
-    # Keep them available even for a resolved Te reaction whose reversal refuses.
+def test_policy_thermodynamic_property_remains_available(monkeypatch):
+    # Thermodynamic properties require an exact-state library source; the
+    # independent Te reversal policy still refuses the original declaration.
+    helpers._install_exact_state_thermo(monkeypatch)
     rxn = helpers.make_reaction()
-    assert rxn.get_equilibrium_constant(300) == pytest.approx(28.03162489452615)
-    assert rxn.get_equilibrium_constants(helpers.np.array([300., 1000.]))[
-        0] == pytest.approx(28.03162489452615)
+    helpers._load_exact_state_thermo(rxn)
+    scalar = rxn.get_equilibrium_constant(300)
+    temperatures = helpers.np.array([300., 1000.])
+    vector = rxn.get_equilibrium_constants(temperatures)
+    expected = [exact_state_fixture_equilibrium_constant(temperature)
+                for temperature in temperatures]
+    assert scalar == pytest.approx(expected[0])
+    assert vector == pytest.approx(expected)
+    with pytest.raises(NonEquilibriumReverseRateError, match='vibrationallevel 1'):
+        rxn.generate_reverse_rate_coefficient()
+
+
+def test_policy_thermodynamic_property_refuses_unattested_thermo():
+    rxn = helpers.make_reaction()
+    with pytest.raises(ExcitedSpeciesThermoError, match='N2v1'):
+        rxn.get_equilibrium_constant(300)
+    with pytest.raises(ExcitedSpeciesThermoError, match='N2v1'):
+        rxn.get_equilibrium_constants(helpers.np.array([300., 1000.]))
     with pytest.raises(NonEquilibriumReverseRateError, match='vibrationallevel 1'):
         rxn.generate_reverse_rate_coefficient()
 
@@ -385,7 +434,7 @@ def test_reconstruct_source_reaches_reverse_helper():
     training = Entry(index=1, item=rxn, data=rxn.kinetics)
     # Source reconstruction has no state-matched provenance, and therefore
     # refuses before it could attempt an equilibrium reverse.
-    with pytest.raises(StateProvenanceError, match='resolved source reconstruction'):
+    with pytest.raises(ExcitedSpeciesThermoError, match='N2v1'):
         KineticsDatabase().reconstruct_kinetics_from_source(
             rxn, {'Training': ['test', training, True]})
 
@@ -457,12 +506,21 @@ def test_direct_rms_export_checks_original_before_julia(monkeypatch):
     assert touched == []
 
 
-def test_explicit_cantera_pair_reload_preserves_directions():
+def test_explicit_cantera_pair_reload_preserves_directions(monkeypatch):
     import cantera as ct
     import yaml
+    import rmgpy.data.rmg as data_rmg
     from rmgpy.yaml_cantera2 import generate_cantera_data
-    from rmgpy.reaction import Reaction
+    thermo = ThermoDatabase()
+    library = ThermoLibrary(label='ExactStateFixture')
+    library.load(str(ROOT / 'test/rmgpy/test_data/excited_states/thermo.py'), thermo.local_context, {})
+    thermo.libraries = {library.label: library}
+    thermo.library_order = [library.label]
+    monkeypatch.setattr(data_rmg, 'database', SimpleNamespace(thermo=thermo, solvation=None))
     forward, reverse = helpers.explicit_pair()
+    for species in forward.reactants + forward.products:
+        species.thermo = None
+        species.get_thermo_data()
     electron = helpers.Species(label='e').from_adjacency_list('1 e u1 p0 c-1')
     electron.thermo = forward.products[0].thermo
     for reaction, a in ((forward, 1e5), (reverse, 2e5)):
@@ -477,7 +535,25 @@ def test_explicit_cantera_pair_reload_preserves_directions():
     assert len(gas.reactions()) == 2
     assert all(not reaction.reversible for reaction in gas.reactions())
     assert list(gas.reverse_rate_constants) == [0., 0.]
-    assert list(gas.forward_rate_constants) == pytest.approx([1.2e12, 2.4e12])
+    for reaction, rate in zip(gas.reactions(), gas.forward_rate_constants):
+        excited_reactant = any(label.startswith('N2v1') for label in reaction.reactants)
+        excited_product = any(label.startswith('N2v1') for label in reaction.products)
+        assert excited_reactant != excited_product
+        assert rate == pytest.approx(1.2e12 if excited_reactant else 2.4e12)
+
+
+def test_explicit_cantera_pair_reload_refuses_unattested_thermo():
+    from rmgpy.yaml_cantera2 import generate_cantera_data
+    forward, reverse = helpers.explicit_pair()
+    electron = helpers.Species(label='e').from_adjacency_list('1 e u1 p0 c-1')
+    electron.thermo = forward.products[0].thermo
+    for reaction, a in ((forward, 1e5), (reverse, 2e5)):
+        reaction.reactants.insert(0, electron)
+        reaction.products.insert(0, electron)
+        reaction.kinetics = TwoTemperaturePlasma(A=(a, 'm^3/(mol*s)'), n=1)
+    species = [electron, forward.reactants[1], forward.products[1]]
+    with pytest.raises(ExcitedSpeciesThermoError, match='N2v1'):
+        generate_cantera_data(species, [forward, reverse], is_plasma=True)
 
 
 @pytest.mark.parametrize('read_comments', [False, True])
@@ -514,6 +590,31 @@ def test_arkane_kinetics_library_checks_exact_rate(tmp_path):
 def test_arkane_get_libraries_checks_exact_rate_before_entry(monkeypatch):
     import arkane.main
 
+    helpers._install_exact_state_thermo(monkeypatch)
+    irreversible, _ = helpers.explicit_pair()
+    helpers._load_exact_state_thermo(irreversible)
+    expected_rate = irreversible.kinetics.get_rate_coefficient(300, 12000)
+    assert irreversible.reversible is False
+    app = arkane.main.Arkane()
+    app.species_dict = {
+        species.label: species
+        for species in irreversible.reactants + irreversible.products
+    }
+    app.reaction_dict = {'channel': irreversible}
+
+    _, kinetics_library, _ = app.get_libraries()
+    entry = kinetics_library.entries[1]
+    assert entry.item is irreversible
+    assert entry.data is irreversible.kinetics
+    assert entry.item.reactants[0].molecule[0].has_resolved_state()
+    assert not entry.item.products[0].molecule[0].has_resolved_state()
+    assert entry.item.reversible is False
+    assert entry.data.get_rate_coefficient(300, 12000) == pytest.approx(expected_rate)
+
+
+def test_arkane_get_libraries_refuses_unattested_thermo(monkeypatch):
+    import arkane.main
+
     irreversible = helpers.make_reaction(reversible=False)
     app = arkane.main.Arkane()
     app.species_dict = {
@@ -522,12 +623,10 @@ def test_arkane_get_libraries_checks_exact_rate_before_entry(monkeypatch):
     }
     app.reaction_dict = {'channel': irreversible}
 
-    _, library, _ = app.get_libraries()
-
-    entry = library.entries[1]
-    assert entry.item is irreversible
-    assert entry.data is irreversible.kinetics
-    assert entry.item.reversible is False
+    with pytest.raises(ExcitedSpeciesThermoError, match='N2v1'):
+        app.get_libraries()
+    assert app.reaction_dict['channel'] is irreversible
+    assert irreversible.reversible is False
 
     reversible = helpers.make_reaction(reversible=True)
     app.species_dict = {

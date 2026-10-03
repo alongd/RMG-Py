@@ -98,7 +98,8 @@ def load_rms_species(path):
 
 def get_mech_dict(spcs, rxns, solvent='solvent', solvent_data=None):
     names = [x.label for x in spcs]
-    if any(spc.molecule[0].has_resolved_state() for spc in spcs):
+    from rmgpy.export import has_export_state
+    if any(has_export_state(spc) for spc in spcs):
         reserved = set(names)
         used = set()
         for i, name in enumerate(names):
@@ -158,7 +159,7 @@ def get_radicals(spc):
 def obj_to_dict(obj, spcs, names=None, label="solvent"):
     if not isinstance(spcs, SpeciesReferences):
         spcs = SpeciesReferences(spcs, names, context='RMS')
-    from rmgpy.export import kinetics_references
+    from rmgpy.export import kinetics_references, has_export_state
     for reference, efficiency in kinetics_references(obj, with_kind=True):
         resolve_species_reference(reference, spcs, allow_missing_efficiency=efficiency)
     from rmgpy.export import refuse_resolved_species
@@ -167,20 +168,24 @@ def obj_to_dict(obj, spcs, names=None, label="solvent"):
     refuse_resolved_species(coverage, 'RMS kinetics coverage')
     result_dict = dict()
     if isinstance(obj, Species):
+        from rmgpy.thermo.state import checked_thermo
+        thermo = checked_thermo(obj)
         result_dict["name"] = resolve_species_reference(obj, spcs)
         result_dict["type"] = "Species"
-        resolved = obj.molecule[0].has_resolved_state()
+        from rmgpy.export import export_molecule
+        molecule = export_molecule(obj)
+        resolved = molecule.has_resolved_state()
         if obj.contains_surface_site() or resolved:
-            result_dict["adjlist"] = obj.molecule[0].to_adjacency_list()
+            result_dict["adjlist"] = molecule.to_adjacency_list()
         if not resolved:
             result_dict["smiles"] = obj.molecule[0].to_smiles()
-        for adjacency in (getattr(obj.thermo, 'thermo_coverage_dependence', None) or {}):
+        for adjacency in (getattr(thermo, 'thermo_coverage_dependence', None) or {}):
             from rmgpy.molecule import Molecule
             reference = Molecule().from_adjacency_list(adjacency)
             resolve_species_reference(reference, spcs)
             if reference.has_resolved_state():
                 raise SpeciesIdentityError('RMS cannot retain resolved thermodynamic coverage references.')
-        result_dict["thermo"] = obj_to_dict(obj.thermo, spcs)
+        result_dict["thermo"] = obj_to_dict(thermo, spcs)
         result_dict["radicalelectrons"] = get_radicals(obj)
         if obj.liquid_volumetric_mass_transfer_coefficient_data:
             result_dict["liquidvolumetricmasstransfercoefficient"] = dict()
@@ -192,7 +197,7 @@ def obj_to_dict(obj, spcs, names=None, label="solvent"):
             result_dict["henrylawconstant"]["type"] = "TemperatureDependentHenryLawConstant"
             result_dict["henrylawconstant"]["Ts"] = obj.henry_law_constant_data.Ts
             result_dict["henrylawconstant"]["kHs"] = obj.henry_law_constant_data.kHs
-        result_dict["comment"] =  obj.thermo.comment
+        result_dict["comment"] = thermo.comment
     elif isinstance(obj, NASA):
         result_dict["polys"] = [obj_to_dict(k, spcs) for k in obj.polynomials]
         result_dict["type"] = "NASA"
@@ -207,10 +212,11 @@ def obj_to_dict(obj, spcs, names=None, label="solvent"):
         obj.check_resolved_species_reversibility(reversible=True)
         validate_reaction_references([obj], spcs)
         for reference in (getattr(obj.kinetics, 'coverage_dependence', None) or {}):
-            if any(mol.has_resolved_state() for mol in reference.molecule):
+            from rmgpy.export import has_export_state
+            if has_export_state(reference):
                 raise SpeciesIdentityError('RMS cannot retain resolved coverage references.')
         if (obj.specific_collider is not None
-                and any(mol.has_resolved_state() for mol in obj.specific_collider.molecule)):
+                and has_export_state(obj.specific_collider)):
             raise SpeciesIdentityError(
                 'Cannot export resolved named collider "{0}" to RMS: '
                 'the format writer does not retain named collider references.'.format(obj.specific_collider.label))

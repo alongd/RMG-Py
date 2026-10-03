@@ -174,6 +174,8 @@ class BACDatapoint:
     @property
     def ref_data(self) -> float:
         """Get reference enthalpy in kcal/mol"""
+        from arkane.encorr.reference import require_reference_thermo_allowed
+        require_reference_thermo_allowed(self.spc)
         if self._ref_data is None:
             self._ref_data = self.spc.get_reference_enthalpy().h298.value_si / 4184
         return self._ref_data
@@ -182,18 +184,24 @@ class BACDatapoint:
     @_Decorators.assert_level_of_theory
     def calc_data(self) -> float:
         """Get calculated enthalpy in kcal/mol"""
+        from arkane.encorr.reference import require_reference_thermo_allowed
+        require_reference_thermo_allowed(self.spc)
         if self._calc_data is None:
             self._calc_data = self.spc.calculated_data[self.level_of_theory].thermo_data.H298.value_si / 4184
         return self._calc_data
 
     @property
     def bac_data(self) -> float:
+        from arkane.encorr.reference import require_reference_thermo_allowed
+        require_reference_thermo_allowed(self.spc)
         if self._bac_data is None:
             raise ValueError('No BAC data available')
         return self._bac_data
 
     @bac_data.setter
     def bac_data(self, val: float):
+        from arkane.encorr.reference import require_reference_thermo_allowed
+        require_reference_thermo_allowed(self.spc)
         self._bac_data = val
 
     @property
@@ -253,6 +261,10 @@ class DatasetProperty:
         self.settable = settable  # Whether the BACDatapoint attributes can be set
 
     def __get__(self, obj, objtype=None):
+        if self.pub_attr in ('ref_data', 'calc_data', 'bac_data'):
+            from arkane.encorr.reference import require_reference_thermo_allowed
+            for datapoint in obj.data:
+                require_reference_thermo_allowed(datapoint.spc)
         if hasattr(obj, self.priv_attr):  # Return cached value if available
             return getattr(obj, self.priv_attr)
         val = [getattr(d, self.pub_attr) for d in obj.data]  # Retrieve the attributes from the items in data

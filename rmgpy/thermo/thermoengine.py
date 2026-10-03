@@ -41,6 +41,21 @@ from rmgpy.molecule.fragment import Fragment
 
 
 def process_thermo_data(spc, thermo0, thermo_class=NASA, solvent_name=''):
+    """Validate resolved library data before representation conversion or E0 updates."""
+    from rmgpy.thermo.state import require_state_thermo, requires_state_library, require_thermo_estimation_allowed
+    if requires_state_library(spc):
+        if solvent_name:
+            require_thermo_estimation_allowed(spc)
+        from rmgpy.exceptions import DatabaseError
+        try:
+            database = get_db('thermo')
+        except DatabaseError:
+            database = None
+        thermo0 = require_state_thermo(spc, database, thermo=thermo0)
+    return _process_thermo_data(spc, thermo0, thermo_class, solvent_name)
+
+
+def _process_thermo_data(spc, thermo0, thermo_class=NASA, solvent_name=''):
     """
     Converts via Wilhoit into required `thermo_class` and sets `E0`.
     
@@ -57,7 +72,13 @@ def process_thermo_data(spc, thermo0, thermo_class=NASA, solvent_name=''):
         wilhoit = thermo0.to_wilhoit()
 
     # Add on solvation correction
-    solvation_database = get_db('solvation')
+    from rmgpy.thermo.state import require_thermo_estimation_allowed, requires_state_library
+    from rmgpy.exceptions import DatabaseError
+    try:
+        solvation_database = get_db('solvation')
+    except DatabaseError:
+        require_thermo_estimation_allowed(spc)
+        raise
     if not solvent_name or solvation_database is None:
         logging.debug('Solvent database or solvent_name not found. Solvent effect was not utilized')
         solvent_data = None
@@ -71,6 +92,12 @@ def process_thermo_data(spc, thermo0, thermo_class=NASA, solvent_name=''):
         wilhoit.S0.value_si = (wilhoit.S0.value_si + solvation_correction.entropy)
         wilhoit.H0.value_si = (wilhoit.H0.value_si + solvation_correction.enthalpy)
         wilhoit.comment += f' + Solvation correction (H={solvation_correction.enthalpy/1e3:+.0f}kJ/mol;S={solvation_correction.entropy:+.0f}J/mol/K) with {solvent_name} as solvent and solute estimated using {solute_data.comment}'
+
+    if requires_state_library(spc) and thermo_class is Wilhoit and thermo0.E0 is not None:
+        if not math.isclose(wilhoit.E0.value_si, thermo0.E0.value_si, rel_tol=1e-7, abs_tol=1e-4):
+            from rmgpy.exceptions import ExcitedSpeciesThermoError
+            raise ExcitedSpeciesThermoError(
+                "Species {0!r}: a Wilhoit conversion cannot preserve the explicit library E0.".format(spc.label))
 
     # Compute E0 by extrapolation to 0 K
     if spc.conformer is None:
@@ -101,6 +128,11 @@ def process_thermo_data(spc, thermo0, thermo_class=NASA, solvent_name=''):
     else:
         raise Exception('thermo_class neither NASA nor Wilhoit.  Cannot process thermo data.')
 
+    if requires_state_library(spc) and thermo0.E0 is not None:
+        if not isinstance(thermo, Wilhoit):
+            thermo.E0 = thermo0.E0
+        spc.conformer.E0 = thermo0.E0
+
     return thermo
 
 
@@ -121,6 +153,8 @@ def generate_thermo_data(spc, thermo_class=NASA, solvent_name=''):
         thermodb = get_db('thermo')
         if not thermodb: raise Exception
     except Exception:
+        from rmgpy.thermo.state import require_thermo_estimation_allowed
+        require_thermo_estimation_allowed(spc)
         logging.debug('Could not obtain the thermo database. Not generating thermo...')
         return None
 

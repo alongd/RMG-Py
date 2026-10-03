@@ -77,6 +77,7 @@ from rmgpy.kinetics.arrhenius cimport Arrhenius, TwoTemperaturePlasma
 from rmgpy.solver.base cimport ReactionSystem
 from rmgpy.thermo import NASA, ThermoData, Wilhoit
 from rmgpy.thermo.thermoengine import process_thermo_data
+from rmgpy.thermo.state import thermo_library_species
 
 
 # Tolerance for every net-charge / quasineutrality check in this module. A state is
@@ -251,7 +252,7 @@ def _is_finite_normal_positive(double v):
 
 def _charged_species_identity(species):
     """Use a species' stable label when available, otherwise its SMILES."""
-    return species.label if species.label else species.smiles
+    return species.label if species.label else species.smiles + species.molecule[0].state_suffix()
 
 
 def _thermo_comparison_segments(thermo, reference):
@@ -528,8 +529,9 @@ def _library_entry_thermo_forms(data, species, entry_label):
 
 
 def _charged_thermo_formula_charge_key(molecule):
-    """Return the formula/charge bucket used before exact isomorphism."""
-    return molecule.get_formula(), molecule.get_net_charge()
+    """Return the formula/charge/state bucket used before exact isomorphism."""
+    return (molecule.get_formula(), molecule.get_net_charge(),
+            molecule.electronic_state, molecule.vibrational_level)
 
 
 def _build_charged_thermo_library_index(thermo_database):
@@ -542,7 +544,9 @@ def _build_charged_thermo_library_index(thermo_database):
             continue
         convention = getattr(library, 'thermo_convention', None)
         for entry in library.entries.values():
-            if entry.data is None or entry.item.get_net_charge() == 0:
+            if (entry.data is None
+                    or (entry.item.get_net_charge() == 0
+                        and not getattr(entry.item, 'has_resolved_state', lambda: False)())):
                 continue
             key = _charged_thermo_formula_charge_key(entry.item)
             index.setdefault(key, []).append(
@@ -555,6 +559,9 @@ def _build_charged_thermo_library_index(thermo_database):
 def _charged_species_library_thermo_match(species, library_index,
                                            reference_cache):
     """Return the first match and reasons for rejected candidates."""
+    from rmgpy.thermo.state import checked_thermo, requires_state_library
+    checked_thermo(species)
+    species = thermo_library_species(species)
     outcome = {'match': None, 'comparison': None, 'mismatches': []}
     structure_keys = tuple(sorted({_charged_thermo_formula_charge_key(molecule)
                                    for molecule in species.molecule}))
@@ -568,7 +575,7 @@ def _charged_species_library_thermo_match(species, library_index,
         if not any(molecule.is_isomorphic(entry_item)
                    for molecule in species.molecule):
             continue
-        if convention != 'ion':
+        if species.get_net_charge() != 0 and convention != 'ion':
             outcome['mismatches'].append({
                 'kind': 'ineligible thermo convention',
                 'convention': convention or 'undeclared',
@@ -591,8 +598,14 @@ def _charged_species_library_thermo_match(species, library_index,
                 continue
         candidate_mismatches = []
         for reference in reference_cache[ordinal]:
-            matched, comparison, mismatch = _thermo_values_match(
-                species.thermo, reference)
+            if requires_state_library(species):
+                from rmgpy.thermo.state import thermo_fields_match
+                matched = thermo_fields_match(species.thermo, reference)
+                comparison = 'exact thermo structural comparison'
+                mismatch = None if matched else {'kind': 'thermo structures differ'}
+            else:
+                matched, comparison, mismatch = _thermo_values_match(
+                    species.thermo, reference)
             if matched:
                 outcome['match'] = (library_label, entry_label)
                 outcome['comparison'] = comparison
@@ -1110,9 +1123,9 @@ cdef class PlasmaReactor(ReactionSystem):
         if self.electronegative_wall_model is not None and self.electronegative_wall_last_valid_state is not None:
             self._check_accepted_plasma_domain(self.electronegative_wall_last_valid_state[1])
         from rmgpy.chemkin import get_species_identifier
-        from rmgpy.export import SpeciesReferences
+        from rmgpy.export import SpeciesReferences, has_export_state
         species = list(self._en_core_species or [])
-        identifiers = [get_species_identifier(spc) if any(mol.has_resolved_state() for mol in spc.molecule)
+        identifiers = [get_species_identifier(spc) if has_export_state(spc)
                        else spc.label for spc in species]
         SpeciesReferences(species, identifiers, context='electronegative wall manifest',
                           allow_ground_collisions=True)
@@ -3876,7 +3889,7 @@ cdef class PlasmaReactor(ReactionSystem):
         self._record_electronegative_wall_output(0.0)
 
     def _check_charged_species_thermo_provenance(self, core_species, edge_species):
-        """Require the same positive ion-convention match in the core and edge."""
+        """Check resolved library thermo and core/edge ion-convention provenance."""
         database = rmg_data_module.database
         thermo_database = None if database is None else getattr(database, 'thermo', None)
         library_index = (None if thermo_database is None else
@@ -3887,7 +3900,11 @@ cdef class PlasmaReactor(ReactionSystem):
                 (('core', species) for species in core_species),
                 (('edge', species) for species in edge_species)):
             charge = species.get_net_charge()
-            if charge == 0 or species.is_electron():
+            resolved = (species.props.get('vibrational_manifold')
+                        or any(molecule.has_resolved_state() for molecule in species.molecule))
+            from rmgpy.thermo.state import require_electron_state_allowed
+            require_electron_state_allowed(species)
+            if (charge == 0 and not resolved) or species.is_electron():
                 continue
             identity = _charged_species_identity(species)
             kind = 'edge species' if location == 'edge' else 'charged species'
@@ -3896,8 +3913,19 @@ cdef class PlasmaReactor(ReactionSystem):
                 raise PlasmaStateError(
                     prefix + " has no thermo data; non-electron charged core and edge "
                     "species require a matching ion-convention thermo library entry.")
+            from rmgpy.thermo.state import checked_thermo
+            from rmgpy.exceptions import (ExcitedSpeciesThermoError,
+                                          StateProvenanceError,
+                                          VibrationalManifoldError)
+            try:
+                checked_thermo(species)
+            except (ExcitedSpeciesThermoError, StateProvenanceError,
+                    VibrationalManifoldError) as error:
+                raise PlasmaStateError(
+                    "PlasmaReactor species {0!r} failed its exact-state thermo library check: {1}"
+                    .format(identity, error)) from error
             if thermo_database is None:
-                if self.thermo_source_assertions.get(identity) == 'ion':
+                if self.thermo_source_assertions.get(identity) == 'ion' and not resolved:
                     self.thermo_provenance_diagnostics[identity] = PLASMA_THERMO_CALLER_ASSERTION
                     continue
                 raise PlasmaStateError(
@@ -5958,9 +5986,9 @@ cdef class PlasmaReactor(ReactionSystem):
         Unsupported classes are explicit for the external reference to refuse.
         """
         from rmgpy.chemkin import get_species_identifier
-        from rmgpy.export import SpeciesReferences, resolve_species_reference
+        from rmgpy.export import SpeciesReferences, resolve_species_reference, has_export_state
         from rmgpy.solver.electronegative import classify_charged_reaction
-        identifiers = [get_species_identifier(spc) if any(mol.has_resolved_state() for mol in spc.molecule)
+        identifiers = [get_species_identifier(spc) if has_export_state(spc)
                        else spc.label for spc in self._en_core_species]
         declarations = SpeciesReferences(self._en_core_species, identifiers,
                                          context='electronegative wall manifest',
@@ -5981,7 +6009,7 @@ cdef class PlasmaReactor(ReactionSystem):
             references = rxn.reactants + rxn.products
             if rxn.specific_collider is not None:
                 references += [rxn.specific_collider]
-            if any(mol.has_resolved_state() for spc in references for mol in spc.molecule):
+            if any(has_export_state(spc) for spc in references):
                 reactants = ' + '.join(resolve_species_reference(spc, declarations) for spc in rxn.reactants)
                 products = ' + '.join(resolve_species_reference(spc, declarations) for spc in rxn.products)
                 suffix = (' (+{0})'.format(resolve_species_reference(rxn.specific_collider, declarations))
@@ -6112,8 +6140,8 @@ cdef class PlasmaReactor(ReactionSystem):
         V = self.compute_volume(y)
         conc = np.asarray(y[:self.num_core_species]) / V
         from rmgpy.chemkin import get_species_identifier
-        from rmgpy.export import SpeciesReferences, resolve_species_reference
-        identifiers = [get_species_identifier(spc) if any(mol.has_resolved_state() for mol in spc.molecule)
+        from rmgpy.export import SpeciesReferences, resolve_species_reference, has_export_state
+        identifiers = [get_species_identifier(spc) if has_export_state(spc)
                        else spc.label for spc in self._en_core_species]
         declarations = SpeciesReferences(self._en_core_species, identifiers,
                                          context='electronegative wall manifest',
@@ -6126,7 +6154,7 @@ cdef class PlasmaReactor(ReactionSystem):
             references = rxn.reactants + rxn.products
             if rxn.specific_collider is not None:
                 references += [rxn.specific_collider]
-            if any(mol.has_resolved_state() for spc in references for mol in spc.molecule):
+            if any(has_export_state(spc) for spc in references):
                 reactants = ' + '.join(resolve_species_reference(spc, declarations) for spc in rxn.reactants)
                 products = ' + '.join(resolve_species_reference(spc, declarations) for spc in rxn.products)
                 suffix = (' (+{0})'.format(resolve_species_reference(rxn.specific_collider, declarations))

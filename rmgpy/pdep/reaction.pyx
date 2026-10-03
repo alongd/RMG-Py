@@ -90,6 +90,8 @@ def calculate_microcanonical_rate_coefficient(reaction,
     cdef list modes
     cdef bint reactant_states_known, product_states_known, forward
 
+    from rmgpy.thermo.state import require_species_thermo_allowed
+    require_species_thermo_allowed(reaction.reactants + reaction.products)
     n_grains = e_list.shape[0]
     n_j = j_list.shape[0]
     kf = np.zeros((n_grains,n_j))

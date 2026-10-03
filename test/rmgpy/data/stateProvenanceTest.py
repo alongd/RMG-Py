@@ -104,7 +104,7 @@ def test_alias_checks_target(kind, remove, state):
     mol = molecule(state)
     assert db.descend_tree(mol, {'*': mol.atoms[0]}) is root
     assert not db.match_node_to_structure(child, mol, {'*': mol.atoms[0]})
-    refusal(lambda: group_lookup(kind, db, mol, remove))
+    refusal(lambda: group_lookup(kind, db, mol, remove), name='ExcitedSpeciesThermoError' if kind in ('thermo', 'solute') else 'StateProvenanceError')
 
 
 @pytest.mark.parametrize('kind', ['thermo','solute','transport'])
@@ -113,9 +113,15 @@ def test_matched_alias_and_ancestor_data_allowed(kind, state):
     db, root, child = tree(kind, root_data='Ground', child_data=datum(kind))
     child.item.electronic_state = ['x']; child.item.vibrational_level = ['x']
     mol = molecule(state)
-    group_lookup(kind, db, mol)
+    if kind == 'transport':
+        group_lookup(kind, db, mol)
+    else:
+        refusal(lambda: group_lookup(kind, db, mol), 'ExcitedSpeciesThermoError')
     root.data = datum(kind); child.data = None
-    group_lookup(kind, db, mol)
+    if kind == 'transport':
+        group_lookup(kind, db, mol)
+    else:
+        refusal(lambda: group_lookup(kind, db, mol), 'ExcitedSpeciesThermoError')
 
 
 @pytest.mark.parametrize('kind', ['thermo','solute','transport'])
@@ -126,7 +132,7 @@ def test_unmatched_ancestor_refused(kind, state):
     root.item.electronic_state = []; root.item.vibrational_level = []
     child.item.electronic_state = ['x']; child.item.vibrational_level = ['x']
     db.top = [child]
-    refusal(lambda: group_lookup(kind, db, molecule(state)))
+    refusal(lambda: group_lookup(kind, db, molecule(state)), name='ExcitedSpeciesThermoError' if kind in ('thermo', 'solute') else 'StateProvenanceError')
 
 
 @pytest.mark.parametrize('kind', ['thermo','solute'])
@@ -144,7 +150,7 @@ def test_ring_average_provenance(kind, state, warm):
         # Ensure averaging is cached on the wildcard node, not its data-bearing child.
         child.item = Group().from_adjacency_list('1 * C u0 {2,S}\n2 O u0 {1,S}')
         lookup(None, db, ordinary, ordinary.get_smallest_set_of_smallest_rings()[0])
-    refusal(lambda: lookup(None, db, mol, ring))
+    refusal(lambda: lookup(None, db, mol, ring), name='ExcitedSpeciesThermoError')
 
 
 @pytest.mark.parametrize('state', STATES)
@@ -155,7 +161,7 @@ def test_ring_alias_target_checks(kind, state):
     db, _, _ = tree(kind, structure, root_data='Ground', child_data=datum(kind))
     owner = ThermoDatabase() if kind == 'thermo' else SolvationDatabase()
     lookup = getattr(owner, '_add_ring_correction_' + ('thermo' if kind == 'thermo' else 'solute') + '_data_from_tree')
-    refusal(lambda: lookup(None, db, mol, mol.get_smallest_set_of_smallest_rings()[0]))
+    refusal(lambda: lookup(None, db, mol, mol.get_smallest_set_of_smallest_rings()[0]), name='ExcitedSpeciesThermoError')
 
 
 @pytest.mark.parametrize('state', STATES)
@@ -172,7 +178,7 @@ def test_polycyclic_decomposition_refused(kind, state):
         groups[label] = cls(label=label)
     owner.groups = groups
     mol = molecule(state, 'c1ccc2ccccc2c1')
-    refusal(lambda: getattr(owner, 'compute_group_additivity_' + kind)(mol))
+    refusal(lambda: getattr(owner, 'compute_group_additivity_' + kind)(mol), name='ExcitedSpeciesThermoError')
 
 
 def kinetic_fixture(state, exact=False):
@@ -246,9 +252,9 @@ def test_derived_molecule_routes_refuse(route,state):
 def test_thermo_copy_and_removal_provenance(state):
     db, root, child=tree('thermo', child_data=datum('thermo'))
     db.copy_data(child,root)
-    refusal(lambda:group_lookup('thermo',db,molecule(state)))
+    refusal(lambda:group_lookup('thermo',db,molecule(state)), name='ExcitedSpeciesThermoError')
     root.data='Ground';db.remove_group(child)
-    refusal(lambda:group_lookup('thermo',db,molecule(state)))
+    refusal(lambda:group_lookup('thermo',db,molecule(state)), name='ExcitedSpeciesThermoError')
 
 
 def training_fixture(state):
@@ -321,9 +327,9 @@ def test_multistep_alias_and_cycle_refusal(state):
     db, root, child = tree('thermo', root_data='Bridge', child_data=datum('thermo'))
     bridge = Entry(label='Bridge',item=root.item.copy(deep=True),data='Ground')
     db.entries['Bridge'] = bridge
-    refusal(lambda: group_lookup('thermo',db,molecule(state)))
+    refusal(lambda: group_lookup('thermo',db,molecule(state)), name='ExcitedSpeciesThermoError')
     bridge.data = 'Any'
-    refusal(lambda: group_lookup('thermo',db,molecule(state)))
+    refusal(lambda: group_lookup('thermo',db,molecule(state)), name='ExcitedSpeciesThermoError')
 
 
 @pytest.mark.parametrize('field,left,right', [('electronic_state',['A'],['B']),('vibrational_level',[1],[2])])
@@ -400,7 +406,7 @@ def test_logical_text_save_preserves_provenance(kind, state, logic, writer, tmp_
     owner = ThermoDatabase() if kind == 'thermo' else SolvationDatabase()
     success, root.data = getattr(owner, '_average_children_' + kind)(root, db)
     assert success
-    refusal(lambda: group_lookup(kind, db, molecule(state)))
+    refusal(lambda: group_lookup(kind, db, molecule(state)), name='ExcitedSpeciesThermoError')
     def save():
         target = StringIO() if writer == 'save_entry' else str(tmp_path / 'derived.py')
         getattr(db, writer)(target, root) if writer == 'save_entry' else getattr(db, writer)(target)

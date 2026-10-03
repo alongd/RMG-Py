@@ -40,11 +40,11 @@ import pytest
 from rdkit import Chem
 
 from rmgpy.molecule import Molecule
-from rmgpy.exceptions import InvalidAdjacencyListError, StateProvenanceError
+from rmgpy.exceptions import ExcitedSpeciesThermoError, InvalidAdjacencyListError, StateProvenanceError
 from rmgpy.molecule.adjlist import from_adjacency_list
 from rmgpy.molecule.translator import to_inchi_key
 from rmgpy.qm.main import QMSettings
-from rmgpy.qm.molecule import QMMolecule, Geometry
+from rmgpy.qm.molecule import QMMolecule, Geometry, load_thermo_data_file
 from rmgpy.qm.gaussian import GaussianMolPM3
 from rmgpy.qm.mopac import MopacMolPM3
 from rmgpy.qm.qmdata import QMData
@@ -189,8 +189,8 @@ def test_overlong_electronic_state_is_refused_before_file_writes(entry, length, 
     assert not list(tmp_path.rglob('*'))
 
 
-@pytest.mark.parametrize('state', RESOLVED_STATES)
-def test_qm_thermo_cache_keeps_identity_but_refuses_resolved_loading(settings, state):
+@pytest.mark.parametrize('state', [('', -1), *RESOLVED_STATES])
+def test_qm_thermo_cache_round_trip_is_ground_only(settings, state):
     molecule = Molecule(smiles='N#N', electronic_state=state[0], vibrational_level=state[1])
     qm = QMMolecule(molecule, settings)
     qm.check_paths()
@@ -198,14 +198,26 @@ def test_qm_thermo_cache_keeps_identity_but_refuses_resolved_loading(settings, s
                           Cpdata=([29] * 7, 'J/(mol*K)'), H298=(1234, 'J/mol'), S298=(200, 'J/(mol*K)'))
     qm.point_group = POINT_GROUP_DICTIONARY['Dinfh']
     qm.qm_data = nitrogen_qm_data()
-    qm.save_thermo_data()
     path = Path(qm.get_thermo_file_path())
     assert path.parent == Path(settings.fileStore)
-    assert path.is_file()
     restored = QMMolecule(molecule.copy(deep=True), settings)
-    with pytest.raises(StateProvenanceError, match='QM'):
-        restored.load_thermo_data()
-    assert restored.unique_id_long in path.read_text()
+    if molecule.has_resolved_state():
+        with pytest.raises(ExcitedSpeciesThermoError):
+            qm.save_thermo_data()
+        assert not path.exists()
+        # A pre-existing cache cannot bypass the policy or reach its parser.
+        path.write_text('forbidden stale QM cache; refuse before parsing\n')
+        with pytest.raises(StateProvenanceError, match='QM'):
+            restored.load_thermo_data()
+        assert getattr(restored, 'thermo', None) is None
+    else:
+        qm.save_thermo_data()
+        assert path.is_file()
+        cached = load_thermo_data_file(str(path))
+        assert cached['thermoData'].H298.value_si == pytest.approx(1234)
+        assert Molecule().from_adjacency_list(cached['adjacencyList']).is_isomorphic(molecule)
+        assert restored.load_thermo_data().H298.value_si == pytest.approx(1234)
+        assert restored.unique_id_long in path.read_text()
     assert restored.get_augmented_inchi_key() == qm.unique_id
 
 
@@ -292,7 +304,8 @@ def test_full_qm_filename_budget_refuses_before_any_file(settings, tmp_path, res
 @pytest.mark.parametrize('resolved,count,longest_bytes', [(True, 48, 254), (False, 74, 253)])
 @pytest.mark.parametrize('calculator', [GaussianMolPM3, MopacMolPM3])
 def test_just_under_budget_key_writes_every_qm_file(settings, monkeypatch, resolved, count, longest_bytes, calculator):
-    # Only file plumbing is under test; use the supported singlet MOPAC input keywords.
+    # Geometry/input file plumbing remains supported; resolved thermo caches refuse.
+    # Use the supported singlet MOPAC input keywords.
     molecule = radical_chain(count, resolved, multiplicity=1)
     qm = calculator(molecule, settings)
     qm.check_paths()
@@ -337,10 +350,16 @@ def test_just_under_budget_key_writes_every_qm_file(settings, monkeypatch, resol
     qm.thermo = ThermoData(Tdata=([300, 400, 500, 600, 800, 1000, 1500], 'K'),
                           Cpdata=([29] * 7, 'J/(mol*K)'), H298=(1234, 'J/mol'), S298=(200, 'J/(mol*K)'))
     qm.point_group = POINT_GROUP_DICTIONARY['C1']
-    qm.save_thermo_data()
+    if resolved:
+        with pytest.raises(ExcitedSpeciesThermoError):
+            qm.save_thermo_data()
+        assert not Path(qm.get_thermo_file_path()).exists()
+    else:
+        qm.save_thermo_data()
     scratch_suffixes = ('.crude.mol', '.refined.mol', '.symm', qm.input_file_extension, qm.output_file_extension)
     expected = {Path(settings.scratchDirectory) / (qm.unique_id + suffix) for suffix in scratch_suffixes}
-    expected.add(Path(settings.fileStore) / (qm.unique_id + '.thermo'))
+    if not resolved:
+        expected.add(Path(settings.fileStore) / (qm.unique_id + '.thermo'))
     actual = set(Path(settings.scratchDirectory).iterdir()) | set(Path(settings.fileStore).iterdir())
     assert actual == expected
     assert max(len(os.fsencode(path.name)) for path in actual) == longest_bytes

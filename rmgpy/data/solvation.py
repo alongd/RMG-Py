@@ -45,6 +45,9 @@ from rmgpy.data.base import Database, Entry, make_logic_node, saturate_for_estim
 from rmgpy.molecule import Molecule, Group, ATOMTYPES
 from rmgpy.species import Species
 from rmgpy.exceptions import InputError
+from rmgpy.thermo.state import (
+    require_thermo_estimation_allowed, requires_state_library, thermo_library_species,
+)
 from rmgpy.data.thermo import is_aromatic_ring, is_bicyclic, find_aromatic_bonds_from_sub_molecule, \
     convert_ring_to_sub_molecule, is_ring_partial_matched, bicyclic_decomposition_for_polyring, \
     split_bicyclic_into_single_rings, saturate_ring_bonds
@@ -57,6 +60,7 @@ def save_entry(f, entry):
     Write a Pythonic string representation of the given `entry` in the solvation
     database to the file object `f`.
     """
+    from rmgpy.export import export_molecule, has_export_state
     f.write('entry(\n')
     f.write('    index = {0:d},\n'.format(entry.index))
     f.write('    label = "{0}",\n'.format(entry.label))
@@ -65,7 +69,7 @@ def save_entry(f, entry):
         if len(entry.item) == 1:
             item = entry.item[0]
             if isinstance(item, Species):
-                if Molecule(smiles=item.molecule[0].to_smiles()).is_isomorphic(item.molecule[0]):
+                if not has_export_state(item) and Molecule(smiles=item.molecule[0].to_smiles()).is_isomorphic(item.molecule[0]):
                     # The SMILES representation accurately describes the molecule, so we can save it that way.
                     f.write('    molecule = "{0}",\n'.format(item.molecule[0].to_smiles()))
                 else:
@@ -82,17 +86,17 @@ def save_entry(f, entry):
                 if i > 0:
                     f.write(', ')
                 if isinstance(item, Species):
-                    if Molecule(smiles=item.molecule[0].to_smiles()).is_isomorphic(item.molecule[0]):
+                    if not has_export_state(item) and Molecule(smiles=item.molecule[0].to_smiles()).is_isomorphic(item.molecule[0]):
                         f.write('"{0}"'.format(item.molecule[0].to_smiles()))
                     else:
                         f.write('\n"""\n')
-                        f.write(item.molecule[0].to_adjacency_list())
+                        f.write(export_molecule(item).to_adjacency_list())
                         f.write('"""')
                 else:
                     raise DatabaseError("Not sure how to save {0!r}".format(entry.item))
             f.write('],\n')
     elif isinstance(entry.item, Species):
-        if Molecule(smiles=entry.item.molecule[0].to_smiles()).is_isomorphic(entry.item.molecule[0]):
+        if not has_export_state(entry.item) and Molecule(smiles=entry.item.molecule[0].to_smiles()).is_isomorphic(entry.item.molecule[0]):
             # The SMILES representation accurately describes the molecule, so we can save it that way.
             f.write('    molecule = "{0}",\n'.format(entry.item.molecule[0].to_smiles()))
         else:
@@ -1406,6 +1410,18 @@ class SolvationDatabase(object):
 
         """
 
+        if requires_state_library(species):
+            library = self.libraries.get('solute')
+            match = (None if skip_library or library is None else
+                     self.get_solute_data_from_library(species, library))
+            if match is None:
+                require_thermo_estimation_allowed(species)
+            solute, _, entry = match
+            solute.comment += "Solute library: " + entry.label
+            if solute.V is None:
+                solute.set_mcgowan_volume(thermo_library_species(species))
+            return solute
+
         # Check the library first
         if species.molecule[0].contains_surface_site(): #desorb and saturate s
             molecule = species.molecule[0].get_desorbed_molecules()[0]
@@ -1464,6 +1480,10 @@ class SolvationDatabase(object):
             assert len(data) == 3, "solute_data should be a tuple (solute_data, library, entry)"
             data[0].comment += "Solute library: " + data[2].label
             solute_data_list.append(data)
+        if requires_state_library(species):
+            if data is None:
+                require_thermo_estimation_allowed(species)
+            return solute_data_list
         # Estimate from group additivity
         # Make it a tuple
         data = (self.get_solute_data(species, skip_library=True), None, None)
@@ -1479,6 +1499,7 @@ class SolvationDatabase(object):
         ``None`` is returned. If no corresponding library is found, a
         :class:`DatabaseError` is raised.
         """
+        species = thermo_library_species(species)
         for label, entry in library.entries.items():
             if species.is_isomorphic(entry.item) and entry.data is not None:
                 return deepcopy(entry.data), library, entry
@@ -1495,6 +1516,7 @@ class SolvationDatabase(object):
         molecule list because it is the most stable resonance structure found
         by gas-phase thermo estimate.
         """
+        require_thermo_estimation_allowed(species)
         molecule = species.molecule[0]
         if molecule.contains_surface_site():
             molecule = molecule.get_desorbed_molecules()[0]
@@ -1523,6 +1545,7 @@ class SolvationDatabase(object):
         # For solute data estimation we need the atoms to already be sorted because we
         # iterate over them; if the order changes during the iteration then we
         # will probably not visit the right atoms, and so will get the solute data wrong
+        require_thermo_estimation_allowed(molecule)
         molecule.sort_atoms()
 
         if molecule.is_radical():
@@ -1563,6 +1586,7 @@ class SolvationDatabase(object):
         """
         if molecule.has_resolved_state():
             raise StateProvenanceError('estimate_radical_solute_data_via_hbi: resolved-state structural derivation is unsupported')
+        require_thermo_estimation_allowed(molecule)
         if not molecule.is_radical():
             raise ValueError("Method only valid for radicals.")
 
@@ -1669,6 +1693,7 @@ class SolvationDatabase(object):
         """
         if molecule.has_resolved_state():
             raise StateProvenanceError('estimate_halogen_solute_data: resolved-state structural derivation is unsupported')
+        require_thermo_estimation_allowed(molecule)
         if not molecule.has_halogen():
             raise ValueError("Method only valid for halogenated molecule.")
 
@@ -1744,6 +1769,7 @@ class SolvationDatabase(object):
         :class:`DatabaseError` is raised.
         """
 
+        require_thermo_estimation_allowed(molecule)
         assert not molecule.is_radical(), "This method is only for saturated non-radical species."
         assert not molecule.has_halogen(), "This method is only for non-halogenated species."
         # For solute data estimation we need the atoms to already be sorted because we
@@ -1852,6 +1878,8 @@ class SolvationDatabase(object):
         """
         if molecule.has_resolved_state():
             raise StateProvenanceError('_add_polycyclic_correction_solute_data: resolved-state structural derivation is unsupported')
+        from rmgpy.thermo.state import require_thermo_estimation_allowed
+        require_thermo_estimation_allowed(molecule)
         # look up polycylic tree directly
         matched_group_solutedata, matched_group, is_partial_match = self._add_ring_correction_solute_data_from_tree(
             None, self.groups['polycyclic'], molecule, polyring)
@@ -1887,6 +1915,8 @@ class SolvationDatabase(object):
         overlapped single-ring correction"; the calculated polyring solute correction
         will be finally added to input `solute_data`.
         """
+        from rmgpy.thermo.state import require_atom_thermo_allowed
+        require_atom_thermo_allowed(polyring)
 
         # polyring decomposition
         bicyclics_merged_from_ring_pair, ring_occurrences_dict = bicyclic_decomposition_for_polyring(polyring)
@@ -1937,6 +1967,8 @@ class SolvationDatabase(object):
     def get_bicyclic_correction_solute_data_from_heuristic(self, bicyclic):
         # saturate if the bicyclic has unsaturated bonds
         # otherwise return None
+        from rmgpy.thermo.state import require_atom_thermo_allowed
+        require_atom_thermo_allowed(bicyclic)
         bicyclic_submol = convert_ring_to_sub_molecule(bicyclic)[0]
         saturated_bicyclic_submol, already_saturated = saturate_ring_bonds(bicyclic_submol)
 
@@ -2018,6 +2050,8 @@ class SolvationDatabase(object):
         `solute_data`.
         Also returns the matched ring group from the database from which the data originated.
         """
+        from rmgpy.thermo.state import require_thermo_estimation_allowed
+        require_thermo_estimation_allowed(molecule)
         matched_ring_entries = []
         # label each atom in the ring individually to try to match the group
         # for each ring, save only the ring that matches the most specific leaf in the tree.
@@ -2135,6 +2169,8 @@ class SolvationDatabase(object):
         in the structure `structure`, and add it to the existing solute data
         `solute_data`.
         """
+        from rmgpy.thermo.state import require_thermo_estimation_allowed
+        require_thermo_estimation_allowed(molecule)
 
         node0 = database.descend_tree(molecule, atom, None)
 
@@ -2184,6 +2220,8 @@ class SolvationDatabase(object):
         Determine the group additivity solute data for the atom `atom` in the structure `structure`,
         and REMOVE it from the existing solute data `solute_data`.
         """
+        from rmgpy.thermo.state import require_thermo_estimation_allowed
+        require_thermo_estimation_allowed(molecule)
 
         node0 = database.descend_tree(molecule, atom, None)
 

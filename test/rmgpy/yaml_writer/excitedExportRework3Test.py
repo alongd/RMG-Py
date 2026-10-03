@@ -48,7 +48,10 @@ from rmgpy.molecule import Molecule
 from rmgpy.reaction import Reaction
 from rmgpy.rmg.model import CoreEdgeReactionModel
 from rmgpy.species import Species
+from types import SimpleNamespace
+
 from rmgpy.statmech import Conformer
+from rmgpy.exceptions import ExcitedSpeciesThermoError, StateProvenanceError
 
 
 # This helper is outside the installed packages; load its sibling file directly.
@@ -61,6 +64,15 @@ nitrogen = _helpers.nitrogen
 database = _helpers.database
 
 
+@pytest.fixture
+def export_library():
+    """Declare the complete nitrogen sources used by these export witnesses."""
+    species = [nitrogen('source', level) for level in (-1, 1)]
+    with _helpers.unit_thermo_library(species):
+        yield
+
+
+@pytest.mark.usefixtures('export_library')
 class TestExcitedExportRework3Review(_helpers.FluxDiagramWitness):
     def test_review_1_depository_rejects_mixed_generation(self, tmp_path):
         old = tmp_path / 'old'
@@ -86,25 +98,26 @@ class TestExcitedExportRework3Review(_helpers.FluxDiagramWitness):
         assert entry.data.A.value_si == 1
         assert entry.item.products[0].molecule[0].vibrational_level == 1
 
-    def test_review_3_arkane_yaml_prefers_adjacency(self, tmp_path):
+    def test_review_3_arkane_yaml_refuses_resolved_adjacency(self, tmp_path):
+        import yaml
         from arkane.common import ArkaneSpecies
         from arkane.statmech import StatMechJob
         spc = nitrogen('excited_N2', 1)
         spc.molecule[0].electronic_state = 'A'
-        ArkaneSpecies(species=spc).save_yaml(str(tmp_path))
-        path = next((tmp_path / 'species').glob('*.yml'))
-        loaded = ArkaneSpecies(conformer=Conformer())
-        loaded.load_yaml(str(path))
-        mol = Molecule().from_adjacency_list(loaded.adjacency_list)
-        assert mol.state_suffix() == spc.molecule[0].state_suffix()
-        consumer = nitrogen('excited_N2')
-        StatMechJob(consumer, str(path)).load()
-        assert consumer.molecule[0].state_suffix() == spc.molecule[0].state_suffix()
+        path = tmp_path / 'resolved.yml'
+        path.write_text(yaml.safe_dump({'class': 'ArkaneSpecies', 'is_ts': False,
+            'label': spc.label, 'smiles': 'N#N', 'adjacency_list': spc.to_adjacency_list()}))
+        original = path.read_bytes()
+        with pytest.raises(ExcitedSpeciesThermoError):
+            ArkaneSpecies(conformer=Conformer()).load_yaml(str(path))
+        with pytest.raises(StateProvenanceError):
+            StatMechJob.load(SimpleNamespace(species=spc))
+        assert path.read_bytes() == original
 
     def test_review_4_arkane_chemkin_refuses_resolved(self, tmp_path):
         from arkane.thermo import ThermoJob
         with pytest.raises(SpeciesIdentityError, match='Arkane.*Chemkin'):
-            ThermoJob(nitrogen(level=1), 'NASA').write_chemkin(str(tmp_path))
+            ThermoJob.write_chemkin(SimpleNamespace(species=nitrogen(level=1)), str(tmp_path))
         assert not (tmp_path / 'chem.inp').exists()
 
     @pytest.mark.parametrize('case', ['participants', 'efficiency', 'thermo-coverage', 'kinetic-coverage'])
@@ -169,6 +182,7 @@ class TestExcitedExportRework3Review(_helpers.FluxDiagramWitness):
         assert fixture['payloads'][str(indexed)] == output.getvalue()
 
 
+@pytest.mark.usefixtures('export_library')
 class TestExcitedExportCensusRegressions:
     @pytest.mark.parametrize('reference', ['condition', 'sensitivity'])
     def test_cantera_rejects_undeclared_state_alias(self, tmp_path, reference):
@@ -194,8 +208,10 @@ class TestExcitedExportCensusRegressions:
             del data['adjacency_list']
             path.write_text(yaml.safe_dump(data))
         original = path.read_bytes()
-        with pytest.raises(SpeciesIdentityError, match='Arkane YAML archive'):
-            ArkaneSpecies(species=new).save_yaml(str(tmp_path))
+        record = ArkaneSpecies(species=nitrogen())
+        record.adjacency_list = new.to_adjacency_list()
+        with pytest.raises(ExcitedSpeciesThermoError):
+            record.save_yaml(str(tmp_path))
         assert path.read_bytes() == original
 
     def test_profile_csv_refuses_duplicate_identity_name(self, tmp_path):

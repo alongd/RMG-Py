@@ -37,12 +37,15 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from rmgpy.exceptions import ExcitedSpeciesThermoError, VibrationalManifoldError
+
 from rmgpy.chemkin import chemkin_duplicate_flags, mark_duplicate_reaction, mark_duplicate_reactions
 from rmgpy.data.base import Entry
 from rmgpy.data.kinetics.common import find_degenerate_reactions
 from rmgpy.data.kinetics.database import KineticsDatabase
 from rmgpy.data.kinetics.family import KineticsFamily, TemplateReaction
 from rmgpy.data.kinetics.library import KineticsLibrary
+from rmgpy.data.thermo import ThermoDatabase, ThermoLibrary
 from rmgpy.exceptions import NetworkError, NonEquilibriumReverseRateError, SpeciesIdentityError
 from rmgpy.kinetics import (Arrhenius, MultiArrhenius, MultiPDepArrhenius,
                             PDepArrhenius, TwoTemperaturePlasma)
@@ -94,9 +97,28 @@ def assert_merged_direction_and_rate(reactions, expected):
     assert actual.kinetics.get_rate_coefficient(300, 12000) == expected.kinetics.get_rate_coefficient(300, 12000)
 
 
+def _install_exact_state_thermo(monkeypatch):
+    import rmgpy.data.rmg as data_rmg
+    database = ThermoDatabase()
+    library = ThermoLibrary(label='ExactStateFixture')
+    fixture = Path(__file__).resolve().parents[2] / 'test_data' / 'excited_states' / 'thermo.py'
+    library.load(str(fixture), database.local_context, {})
+    database.libraries = {library.label: library}
+    database.library_order = [library.label]
+    monkeypatch.setattr(data_rmg, 'database', SimpleNamespace(thermo=database, solvation=None))
+
+
+def _load_exact_state_thermo(reaction):
+    for species in reaction.reactants + reaction.products:
+        species.thermo = None
+        species.get_thermo_data()
+
+
 @pytest.mark.parametrize('reverse_first', [False, True])
-def test_witness_model_merge_retains_both_directions(reverse_first):
+def test_witness_model_merge_retains_both_directions(monkeypatch, reverse_first):
+    _install_exact_state_thermo(monkeypatch)
     forward, reverse = explicit_pair()
+    _load_exact_state_thermo(forward)
     first, second = (reverse, forward) if reverse_first else (forward, reverse)
     species = forward.reactants + forward.products
     merged = ReactionModel(species=species, reactions=[first]).merge(
@@ -104,6 +126,16 @@ def test_witness_model_merge_retains_both_directions(reverse_first):
     assert len(merged.reactions) == 2
     assert_merged_direction_and_rate(merged.reactions, first)
     assert_merged_direction_and_rate(merged.reactions, second)
+
+
+@pytest.mark.parametrize('reverse_first', [False, True])
+def test_witness_model_merge_refuses_unattested_thermo(reverse_first):
+    forward, reverse = explicit_pair()
+    first, second = (reverse, forward) if reverse_first else (forward, reverse)
+    species = forward.reactants + forward.products
+    with pytest.raises(ExcitedSpeciesThermoError, match='N2v1'):
+        ReactionModel(species=species, reactions=[first]).merge(
+            ReactionModel(species=species, reactions=[second]))
 
 
 def test_witness_direct_arrhenius_reverse_refuses_original():
@@ -172,14 +204,24 @@ def test_direction_census_queries(site):
         assert are_identical_species_references(forward, forward)
 
 
-def test_direction_census_merge_models_tool():
+def test_direction_census_merge_models_tool(monkeypatch):
+    _install_exact_state_thermo(monkeypatch)
     forward, reverse = explicit_pair()
+    _load_exact_state_thermo(forward)
     species = forward.reactants + forward.products
     merged = combine_models([ReactionModel(species=species, reactions=[forward]),
-                              ReactionModel(species=species, reactions=[reverse])])
+                             ReactionModel(species=species, reactions=[reverse])])
     assert len(merged.reactions) == 2
     assert_merged_direction_and_rate(merged.reactions, forward)
     assert_merged_direction_and_rate(merged.reactions, reverse)
+
+
+def test_direction_census_merge_models_tool_refuses_unattested_thermo():
+    forward, reverse = explicit_pair()
+    species = forward.reactants + forward.products
+    with pytest.raises(ExcitedSpeciesThermoError, match='N2v1'):
+        combine_models([ReactionModel(species=species, reactions=[forward]),
+                        ReactionModel(species=species, reactions=[reverse])])
 
 
 def test_direction_census_diff_models():
@@ -267,11 +309,21 @@ def test_direction_census_network_identity(site):
 
 
 @pytest.mark.parametrize('resolved', [False, True])
-def test_thermal_reverse_fitting_control(resolved):
+def test_thermal_reverse_fitting_control(monkeypatch, resolved):
     rate = Arrhenius(A=(3e5, 's^-1'))
     rxn = make_reaction(resolved=resolved, reversible=False, kinetics=rate)
+    if resolved:
+        _install_exact_state_thermo(monkeypatch)
+        _load_exact_state_thermo(rxn)
     reverse = rxn.reverse_arrhenius_rate(rate, 's^-1')
     assert reverse.get_rate_coefficient(1000) == pytest.approx(rate.get_rate_coefficient(1000) / rxn.get_equilibrium_constant(1000))
+
+
+def test_thermal_reverse_fitting_refuses_unattested_thermo():
+    rate = Arrhenius(A=(3e5, 's^-1'))
+    rxn = make_reaction(reversible=False, kinetics=rate)
+    with pytest.raises(ExcitedSpeciesThermoError, match='N2v1'):
+        rxn.reverse_arrhenius_rate(rate, 's^-1')
 
 
 def test_reverse_census_diffusion_limiter():
@@ -394,14 +446,30 @@ def test_reverse_census_direct_helpers_selected_rate(name):
 
 
 @pytest.mark.parametrize('name', HELPERS)
-def test_reverse_census_direct_helpers_thermal_control(name):
+def test_reverse_census_direct_helpers_admit_exact_state_thermo(monkeypatch, name):
+    _install_exact_state_thermo(monkeypatch)
     rxn, helper, args = helper_input(name, False)
+    if name in ('sticking', 'surface-arrhenius'):
+        exact = make_reaction(reversible=False)
+        _load_exact_state_thermo(exact)
+        site = rxn.reactants[1]
+        rxn.reactants = [exact.reactants[0], site]
+        rxn.products = [exact.products[0], site]
+    else:
+        _load_exact_state_thermo(rxn)
     result = helper(*args)
     if hasattr(result, 'V0'):
         value = result.get_rate_coefficient(350, result.V0.value_si)
     else:
         value = result.get_rate_coefficient(350)
     assert np.isfinite(value) and value > 0
+
+
+@pytest.mark.parametrize('name', HELPERS)
+def test_reverse_census_direct_helpers_thermal_control(name):
+    rxn, helper, args = helper_input(name, False)
+    with pytest.raises(ExcitedSpeciesThermoError, match='vibrationallevel 1'):
+        helper(*args)
 
 
 @pytest.mark.parametrize('selected_surrogate', [False, True])
@@ -548,8 +616,8 @@ def test_reverse_census_rrkm_ignores_unused_network_surrogate(thermal_network):
     reaction.network_kinetics = ElectronArrhenius(A=(3e5, 's^-1'))
     assert reaction.can_tst()
     with pytest.raises(
-            NetworkError,
-            match=r'Electron reactions cannot enter pressure-dependent networks: n-C4H10O.*n-C4H8.*H2O'):
+            ExcitedSpeciesThermoError,
+            match='n-C4H10O'):
         network.generate_full_me_matrix()
 
 
@@ -617,7 +685,8 @@ def test_reverse_census_arkane_output(tmp_path):
         sp.conformer = Conformer(E0=sp.thermo.E0, modes=[])
     rxn.transition_state = TransitionState(conformer=Conformer(E0=(20000, 'J/mol'), modes=[]))
     job = KineticsJob(rxn)
-    job.generate_kinetics()
+    with pytest.raises(ExcitedSpeciesThermoError, match='N2v1'):
+        job.generate_kinetics()
     rxn.kinetics = ElectronArrhenius(A=(3e5, 's^-1'))
     job.usedTST = True
     with pytest.raises(NonEquilibriumReverseRateError, match='vibrationallevel 1'):
@@ -759,16 +828,13 @@ def test_direction_census_network_update(site, monkeypatch):
     # Isolate the real update's identity branches from its separately tested numerical solver.
     monkeypatch.setattr(network, 'initialize', lambda *args: None)
     monkeypatch.setattr(network, 'calculate_rate_coefficients', lambda *args: np.full((4, 2, 2, 2), 1e5))
-    network.update(model, job)
-    if site == 'net-reuse':
-        assert len(network.net_reactions) == 2
-    else:
+    with pytest.raises(ExcitedSpeciesThermoError, match='N2v1'):
+        network.update(model, job)
+    assert network.net_reactions == ([reverse] if site == 'net-reuse' else [])
+    if site != 'net-reuse':
         target = model.core if site == 'core-overlap' else model.edge
-        assert len(target.reactions) == 2
-        assert reverse in target.reactions
-    added = network.net_reactions[-1]
-    assert added.reactants == forward.reactants and added.products == forward.products
-    assert not added.reversible and not reverse.reversible
+        assert target.reactions == [reverse]
+    assert not forward.reversible and not reverse.reversible
 
 
 @pytest.mark.parametrize('site', ['simple', 'liquid', 'mb-sampled', 'surface'])
@@ -792,13 +858,38 @@ def test_reverse_census_reactors(site):
         reactor = SurfaceReactor(T=(300, 'K'), P_initial=(1, 'bar'), initial_gas_mole_fractions=fractions,
                                  initial_surface_coverages={vacancy: 1.0}, surface_volume_ratio=(100, 'm^-1'),
                                  surface_site_density=(2.5e-5, 'mol/m^2'), n_sims=1, termination=[])
-    with pytest.raises(NonEquilibriumReverseRateError, match='vibrationallevel 1'):
+    expected = ExcitedSpeciesThermoError if site == 'surface' else NonEquilibriumReverseRateError
+    with pytest.raises(expected, match='vibrationallevel 1'):
         reactor.initialize_model(species, [reaction], [], [])
 
 
 @pytest.mark.parametrize('reverse_first', [False, True])
 @pytest.mark.parametrize('duplicate', [False, True])
 def test_direction_census_same_family_admission(monkeypatch, reverse_first, duplicate):
+    from rmgpy.rmg import model as model_module
+    _install_exact_state_thermo(monkeypatch)
+    forward, reverse = explicit_pair(cls=TemplateReaction)
+    _load_exact_state_thermo(forward)
+    family = KineticsFamily(label='test')
+    family.own_reverse = True
+    monkeypatch.setattr(model_module, 'get_family_library_object', lambda label: family)
+    model = CoreEdgeReactionModel()
+    model.declare_vibrational_manifold(Species(label='N2').from_smiles('N#N'))
+    for reaction in ((reverse, forward) if reverse_first else (forward, reverse)):
+        reaction.family = 'test'
+        reaction.duplicate = duplicate
+        reaction.template = ['test']
+        added, new = model.make_new_reaction(reaction, generate_thermo=False, generate_kinetics=False)
+        assert new
+        model.add_reaction_to_core(added)
+    assert len(model.core.reactions) == 2
+    assert all(not r.reversible for r in model.core.reactions)
+
+
+@pytest.mark.parametrize('reverse_first', [False, True])
+@pytest.mark.parametrize('duplicate', [False, True])
+def test_direction_census_same_family_admission_refuses_undeclared_manifold(
+        monkeypatch, reverse_first, duplicate):
     from rmgpy.rmg import model as model_module
     forward, reverse = explicit_pair(cls=TemplateReaction)
     family = KineticsFamily(label='test')
@@ -809,8 +900,6 @@ def test_direction_census_same_family_admission(monkeypatch, reverse_first, dupl
         reaction.family = 'test'
         reaction.duplicate = duplicate
         reaction.template = ['test']
-        added, new = model.make_new_reaction(reaction, generate_thermo=False, generate_kinetics=False)
-        assert new
-        model.add_reaction_to_core(added)
-    assert len(model.core.reactions) == 2
-    assert all(not r.reversible for r in model.core.reactions)
+        with pytest.raises(VibrationalManifoldError, match='N2v1'):
+            model.make_new_reaction(reaction, generate_thermo=False, generate_kinetics=False)
+    assert model.core.reactions == []

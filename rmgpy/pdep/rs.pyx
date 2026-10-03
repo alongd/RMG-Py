@@ -46,7 +46,8 @@ cpdef apply_reservoir_state_method(network):
     from rmgpy.rmg.pdep import _check_network_reactions
     _check_network_reactions(network)
     network.check_resolved_species_reversibility()
-
+    from rmgpy.thermo.state import require_network_thermo_allowed
+    require_network_thermo_allowed(network)
     cdef np.ndarray[np.int_t,ndim=1] j_list
     cdef np.ndarray[np.int_t,ndim=2] n_res, n_act
     cdef np.ndarray[np.int_t,ndim=3] indices

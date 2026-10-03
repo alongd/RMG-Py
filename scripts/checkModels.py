@@ -127,6 +127,9 @@ def checkModel(commonSpecies, uniqueSpeciesTest, uniqueSpeciesOrig, commonReacti
 
 
 def checkSpecies(commonSpecies, uniqueSpeciesTest, uniqueSpeciesOrig):
+    from rmgpy.thermo.state import checked_thermo
+    for species in [sp for pair in commonSpecies for sp in pair] + uniqueSpeciesTest + uniqueSpeciesOrig:
+        checked_thermo(species)
     error = False
 
     # check for unique species in one of the models:
@@ -248,6 +251,8 @@ def printThermo(spec):
     """
     Print the thermo of a species at various temperatures, in a markdown table.
     """
+    from rmgpy.thermo.state import checked_thermo
+    checked_thermo(spec)
     logger.error("|{0:10.2f}|{1:10.2f}|{2:10.2f}|{3:10.2f}|{4:10.2f}|{5:10.2f}|{6:10.2f}|{7:10.2f}|{8:10.2f}|"
         .format(
         spec.thermo.get_enthalpy(300) / 4184.,
@@ -271,6 +276,8 @@ def printReactionComments(rxn):
 
 
 def printSpeciesComments(spc):
+    from rmgpy.thermo.state import checked_thermo
+    checked_thermo(spc)
     logger.error('thermo: {}'.format(spc.thermo.comment.replace('\n',' ')))
 
 

@@ -80,7 +80,8 @@ cdef class Configuration(object):
     property E0:
         """The ground-state energy of the configuration in J/mol. Applies the energy_correction."""
         def __get__(self):
-            return sum([float(spec.conformer.E0.value_si) for spec in self.species]) + self.energy_correction 
+            from rmgpy.thermo.state import checked_energy
+            return sum(checked_energy(spec) for spec in self.species) + self.energy_correction
 
     cpdef cleanup(self):
         """
@@ -234,6 +235,8 @@ cdef class Configuration(object):
         density and sum of states). The computed density and sum of states
         arrays are stored on the object for future use.
         """
+        from rmgpy.thermo.state import require_species_thermo_allowed
+        require_species_thermo_allowed(self.species)
         cdef list modes
         cdef int i
 
@@ -361,6 +364,8 @@ cdef class Configuration(object):
         given energies `e_list` in J/mol and, if the J-rotor is not active, the
         total angular momentum quantum numbers `j_list`.
         """
+        from rmgpy.thermo.state import require_species_thermo_allowed
+        require_species_thermo_allowed(self.species)
         cdef np.ndarray[np.float64_t,ndim=2] dens_states
         cdef double E0, de0, b1, b2, e, d_j
         cdef int r0, r, s, t, n_grains, n_j, j, j1, j2
@@ -430,6 +435,8 @@ cdef class Configuration(object):
         given energies `e_list` in J/mol and, if the J-rotor is not active, the
         total angular momentum quantum numbers `j_list`.
         """
+        from rmgpy.thermo.state import require_species_thermo_allowed
+        require_species_thermo_allowed(self.species)
         cdef np.ndarray[np.float64_t,ndim=2] sum_states
         cdef double E0, b1, b2, d_j
         cdef int r0, r, s, n_grains, n_j, j1, j2

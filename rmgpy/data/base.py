@@ -425,6 +425,7 @@ class Database(object):
         """Render declared full identities, refusing conflicting emitted labels."""
         from rmgpy.export import resolve_species_reference
         from rmgpy.exceptions import SpeciesIdentityError
+        from rmgpy.export import export_molecule
         declarations = self.dictionary_references()
         chunks, written = [], set()
         for spc in declarations:
@@ -435,7 +436,7 @@ class Database(object):
                     raise SpeciesIdentityError('Kinetics dictionaries cannot retain resolved thermodynamic coverage references.')
             name = resolve_species_reference(spc, declarations)
             if name not in written:
-                chunks.append(spc.molecule[0].to_adjacency_list(label=name, remove_h=False))
+                chunks.append(export_molecule(spc).to_adjacency_list(label=name, remove_h=False))
                 chunks.append('\n')
                 written.add(name)
         return ''.join(chunks)
@@ -1729,6 +1730,7 @@ class ForbiddenStructures(Database):
 
         from rmgpy.species import Species
 
+        from rmgpy.export import has_export_state
         f.write('{0}(\n'.format(name))
         f.write('    label = "{0}",\n'.format(entry.label))
         if isinstance(entry.item, Molecule):
@@ -1736,7 +1738,7 @@ class ForbiddenStructures(Database):
             f.write('"""\n')
             f.write(entry.item.to_adjacency_list(remove_h=False))
             f.write('""",\n')
-        elif isinstance(entry.item, Species) and any(mol.has_resolved_state() for mol in entry.item.molecule):
+        elif isinstance(entry.item, Species) and has_export_state(entry.item):
             f.write('    species = \n')
             f.write('"""\n')
             f.write(entry.item.to_adjacency_list())

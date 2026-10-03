@@ -237,6 +237,9 @@ def test_input_deck_io_does_not_serialize_reaction_rates(tmp_path, monkeypatch):
     species = (
         "species(label='N2v1', reactive=True, structure=adjacencyList("
         "'vibrationallevel 1\\n1 N u0 p1 c0 {2,T}\\n2 N u0 p1 c0 {1,T}'))\n"
+        "species(label='N2', reactive=True, structure=adjacencyList("
+        "'1 N u0 p1 c0 {2,T}\\n2 N u0 p1 c0 {1,T}'))\n"
+        "vibrationalManifold(species='N2')\n"
     )
     database = "database(thermoLibraries=[], reactionLibraries=[], kineticsFamilies=[])\n"
     path = tmp_path / 'input.py'
@@ -257,5 +260,6 @@ def test_input_deck_io_does_not_serialize_reaction_rates(tmp_path, monkeypatch):
     thermo_path = tmp_path / 'thermo.py'
     thermo_path.write_text(database + species)
     thermo_job = RMG()
-    read_thermo_input_file(str(thermo_path), thermo_job)
-    assert thermo_job.initial_species[0].molecule[0].has_resolved_state()
+    from rmgpy.exceptions import VibrationalManifoldError
+    with pytest.raises(VibrationalManifoldError, match='N2v1'):
+        read_thermo_input_file(str(thermo_path), thermo_job)

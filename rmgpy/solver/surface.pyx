@@ -158,6 +158,12 @@ cdef class SurfaceReactor(ReactionSystem):
         model.
         """
 
+        from rmgpy.thermo.state import checked_thermo, require_thermo_estimation_allowed
+        for species in core_species + edge_species:
+            checked_thermo(species)
+            if self.thermo_coverage_dependence:
+                require_thermo_estimation_allowed(species)
+
         # First call the base class version of the method
         # This initializes the attributes declared in the base class
         ReactionSystem.initialize_model(self,
@@ -211,7 +217,11 @@ cdef class SurfaceReactor(ReactionSystem):
                 means that Species with index 2 in the current simulation is used in
                 Reaction 3 with parameters a=0.1, m=-1, E=12 kJ/mol
                 """
+        from rmgpy.thermo.state import checked_thermo, require_thermo_estimation_allowed
         for sp, sp_index in self.species_index.items():
+            checked_thermo(sp)
+            if self.thermo_coverage_dependence:
+                require_thermo_estimation_allowed(sp)
             if sp.contains_surface_site():
                 if self.thermo_coverage_dependence and sp.thermo.thermo_coverage_dependence:
                     for spec, parameters in sp.thermo.thermo_coverage_dependence.items():

@@ -1466,6 +1466,9 @@ def read_thermo_block(f, species_dict):
                     species_dict[label].thermo.comment += '\n{0}'.format(comments)
                 # Make sure to strip whitespace
                 species_dict[label].thermo.comment = species_dict[label].thermo.comment.strip()
+                from rmgpy.thermo.state import requires_state_library
+                if requires_state_library(species_dict[label]):
+                    species_dict[label].thermo = None
                 comments = ''
             except KeyError:
                 if label.upper() in ['AR', 'N2', 'HE', 'NE']:
@@ -1668,7 +1671,7 @@ def validate_chemkin_references(species, reactions, allow_external_gas=False):
     supplied by its legacy companion-gas convention. Resolved identities always
     require an explicit supplied declaration. Combined saves supply both phases.
     """
-    from rmgpy.export import validate_reaction_references
+    from rmgpy.export import validate_reaction_references, has_export_state
     declarations = list(species)
     if allow_external_gas:
         seen = {id(spc) for spc in declarations}
@@ -1678,7 +1681,7 @@ def validate_chemkin_references(species, reactions, allow_external_gas=False):
                 references += [reaction.specific_collider]
             for spc in references:
                 if (id(spc) not in seen and spc.molecule and not spc.contains_surface_site()
-                        and not any(mol.has_resolved_state() for mol in spc.molecule)):
+                        and not has_export_state(spc)):
                     declarations.append(spc)
                     seen.add(id(spc))
     declarations = _chemkin_declarations(declarations)
@@ -1695,8 +1698,9 @@ def get_species_identifier(species):
     limit; the final numeric parenthesis, if present, remains the RMG index.
     """
     # Resolved states must never fall back to a state-blind label or formula.
-    if species.molecule and species.molecule[0].has_resolved_state():
-        mol = species.molecule[0]
+    from rmgpy.export import export_molecule
+    mol = export_molecule(species) if species.molecule else None
+    if mol is not None and mol.has_resolved_state():
         tags = []
         if mol.electronic_state:
             escapes = {'_': '__', '+': '_p', '-': '_m', ',': '_c', '(': '_l', ')': '_r'}
@@ -2914,13 +2918,14 @@ def render_species_dictionary(species, old_style=False):
     Return the text of a species dictionary for the given list of `species`.
     See :func:`render_chemkin_file`.
     """
-    from rmgpy.export import resolve_species_reference
+    from rmgpy.export import resolve_species_reference, export_molecule
     species = _chemkin_declarations(species)
     validate_species_identifiers(species)
     f = io.StringIO()
     for spec in species:
         if old_style:
-            if any(mol.has_resolved_state() for mol in spec.molecule):
+            from rmgpy.export import has_export_state
+            if has_export_state(spec):
                 from rmgpy.exceptions import SpeciesIdentityError
                 raise SpeciesIdentityError('Old-style adjacency lists cannot represent resolved species states.')
             try:
@@ -2935,7 +2940,7 @@ def render_species_dictionary(species, old_style=False):
             try:
                 for mol in spec.molecule:
                     if mol.reactive:
-                        f.write(mol.to_adjacency_list(label=resolve_species_reference(spec, species), remove_h=False))
+                        f.write(export_molecule(spec, mol).to_adjacency_list(label=resolve_species_reference(spec, species), remove_h=False))
                         break
                 else:
                     raise ValueError('No reactive structures were found for species '
@@ -3095,6 +3100,10 @@ def render_chemkin_file(species, reactions, verbose=True, check_for_duplicates=T
         label = resolve_species_reference(spec, species)
         if verbose:
             f.write('    {0!s:<16}    ! {1}\n'.format(label, str(spec)))
+            if (spec.molecule[0].has_resolved_state() and spec.transport_data
+                    and spec.transport_data.comment):
+                f.write('    ! Transport: {0}\n'.format(
+                    spec.transport_data.comment.replace('\n', ' ')))
         else:
             f.write('    {0!s:<16}\n'.format(label))
     f.write('END\n\n\n\n')
