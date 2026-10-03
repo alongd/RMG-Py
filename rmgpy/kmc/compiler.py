@@ -84,7 +84,7 @@ ARCHIVED_J_PARA_RATE_PROVENANCE = {
         "Ea_J_mol": 0.0,
         "T0_K": 1.0,
     },
-    "database_sha": "4a12d36fcdc193ede82c8d1ab5c1653495d445bc",
+    "database_sha": "cd86d4e1c187a132109e16cd86f624ed9fb217df",
     "extraction_script": "polymer-pm/reports/R-009_sources/R-009_v8_rmg_archive.py",
     "archive_record": "polymer-pm/reports/R-009_sources/R-009_v8_rmg_archive.txt",
 }

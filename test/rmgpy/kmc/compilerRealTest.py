@@ -918,7 +918,7 @@ def test_all_pairs_have_exact_graphs_maps_degeneracies_and_detailed_balance(
         assert forward["thermo_provenance"]["reference_thermo"] == "RMG gas-phase Kc"
         assert (
             forward["thermo_provenance"]["rmg_database_sha"]
-            == "4a12d36fcdc193ede82c8d1ab5c1653495d445bc"
+            == "cd86d4e1c187a132109e16cd86f624ed9fb217df"
         )
         reaction = Reaction(
             reactants=[
