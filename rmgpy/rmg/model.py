@@ -1907,8 +1907,10 @@ class CoreEdgeReactionModel:
 
     def add_reaction_library_to_edge(self, reaction_library, requires_rms=False):
         """
-        Add all species and reactions from `reaction_library`, a
-        :class:`KineticsPrimaryDatabase` object, to the model edge.
+        Add species and reactions from `reaction_library` to the model edge.
+
+        All-plasma jobs exclude entries containing elements absent from their
+        input and seed species, before species creation or thermo estimation.
         """
 
         database = rmgpy.data.rmg.database
@@ -1925,8 +1927,29 @@ class CoreEdgeReactionModel:
         logging.info("Adding reaction library {0} to model edge...".format(reaction_library))
         reaction_library = database.kinetics.resolve_library(reaction_library)
 
+        # A closed plasma model cannot create an element absent from its input
+        # and seed inventory. Do not eagerly introduce impossible library ions
+        # (and their thermo) into its edge. Declared zero-abundance species count,
+        # and mixed reactor jobs retain the ordinary library-loading behavior.
+        allowed_elements = None
+        if rmg is not None and rmg.job_is_all_plasma():
+            allowed_elements = set()
+            for spec in itertools.chain(rmg.initial_species, self.core.species):
+                allowed_elements.update(spec.molecule[0].get_element_count())
+
         rxns = reaction_library.get_library_reactions()
         for rxn in rxns:
+            if allowed_elements is not None:
+                reaction_elements = set()
+                for spec in itertools.chain(rxn.reactants, rxn.products):
+                    reaction_elements.update(spec.molecule[0].get_element_count())
+                absent_elements = reaction_elements - allowed_elements
+                if absent_elements:
+                    logging.info(
+                        "Excluding reaction %s from library %s before edge species creation: "
+                        "elements %s are absent from the input and seed inventory of this plasma job.",
+                        rxn, reaction_library.name, ', '.join(sorted(absent_elements)))
+                    continue
             if isinstance(rxn, LibraryReaction) and rxn.library != 'kineticsjobs':
                 database.kinetics.resolve_library(rxn.library, source=getattr(rxn, 'library_source', None),
                                                   library_type='Internal')

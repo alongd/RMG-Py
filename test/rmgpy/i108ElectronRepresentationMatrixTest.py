@@ -431,7 +431,7 @@ def gate_reactor(row):
         imf[s] = (1.0 - Y_E0) / len(others)
     # This matrix tests electron representation, not thermo provenance. Give
     # its synthetic ions explicit standalone thermo declarations.
-    assertions = []
+    assertions = {}
     for species in core_species:
         if species.is_electron() or species.get_net_charge() == 0:
             continue
@@ -443,7 +443,7 @@ def gate_reactor(row):
             Cp0=(30.0, 'J/(mol*K)'),
             CpInf=(30.0, 'J/(mol*K)'),
         )
-        assertions.append(species.label or species.smiles)
+        assertions[species.label or species.smiles] = 'ion'
     reactor = PlasmaReactor(
         T_GAS,
         P0,

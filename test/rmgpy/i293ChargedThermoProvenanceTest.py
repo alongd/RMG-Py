@@ -277,6 +277,20 @@ def _library_argon_ion(thermo_database):
     return ion
 
 
+def _proton():
+    return Species(label="H+").from_adjacency_list("1 H u0 p0 c+1")
+
+
+def _add_library(thermo_database, library):
+    thermo_database.libraries[library.label] = library
+    thermo_database.library_order.insert(0, library.label)
+
+
+def _remove_library(thermo_database, library):
+    thermo_database.library_order.remove(library.label)
+    del thermo_database.libraries[library.label]
+
+
 def _hbi_estimated_ammonia_ion(thermo_database):
     """Build a genuine library-seeded HBI estimate for NH3+ in memory."""
     ammonium = Molecule().from_adjacency_list(
@@ -286,7 +300,7 @@ def _hbi_estimated_ammonia_ion(thermo_database):
         "4 H u0 p0 c0 {1,S}\n"
         "5 H u0 p0 c0 {1,S}"
     )
-    library = ThermoLibrary(label="ChargedHBITest")
+    library = ThermoLibrary(label="ChargedHBITest", thermo_convention="ion")
     library.entries["NH4+"] = Entry(
         index=1,
         label="NH4+",
@@ -344,6 +358,63 @@ def test_library_ion_is_accepted_after_pickle_restart(thermo_database):
     _initialize(restored)
 
 
+def test_electrochemical_convention_proton_is_refused_by_name(thermo_database):
+    proton = _proton()
+    library = ThermoLibrary(label="ElectrochemicalFixture", thermo_convention="ion")
+    library.thermo_convention = "electrochemical"
+    library.entries["proton"] = Entry(
+        index=1, label="proton", item=proton.molecule[0], data=_thermo_data(0.0)
+    )
+    _add_library(thermo_database, library)
+    proton.thermo = process_thermo_data(proton, copy.deepcopy(library.entries["proton"].data))
+    try:
+        with pytest.raises(PlasmaStateError) as error:
+            _initialize(proton)
+        message = str(error.value)
+        assert "H+" in message
+        assert "ElectrochemicalFixture/proton" in message
+        assert "electrochemical" in message
+    finally:
+        _remove_library(thermo_database, library)
+
+
+def test_ion_convention_proton_is_accepted(thermo_database):
+    proton = _proton()
+    library = ThermoLibrary(label="IonConventionFixture", thermo_convention="ion")
+    library.thermo_convention = "ion"
+    library.entries["proton"] = Entry(
+        index=1, label="proton", item=proton.molecule[0], data=_thermo_data(1530.0)
+    )
+    _add_library(thermo_database, library)
+    proton.thermo = process_thermo_data(proton, copy.deepcopy(library.entries["proton"].data))
+    try:
+        _initialize(proton)
+    finally:
+        _remove_library(thermo_database, library)
+
+
+def test_electron_from_electrocat_thermo_is_accepted(thermo_database):
+    electron = _electron()
+    library = ThermoLibrary(label="electrocatThermo", thermo_convention="ion")
+    library.thermo_convention = "electrochemical"
+    library.entries["electron"] = Entry(
+        index=1, label="electron", item=electron.molecule[0], data=_thermo_data()
+    )
+    _add_library(thermo_database, library)
+    electron.thermo = process_thermo_data(
+        electron, copy.deepcopy(library.entries["electron"].data)
+    )
+    neutral = Species(label="N2", smiles="N#N")
+    neutral.thermo = thermo_database.get_thermo_data(neutral)
+    reactor = PlasmaReactor(
+        (300, "K"), (1, "bar"), {neutral: 1.0, electron: 1.0e-12}, (300, "K")
+    )
+    try:
+        reactor.initialize_model([neutral, electron], [], [], [])
+    finally:
+        _remove_library(thermo_database, library)
+
+
 def test_library_ion_is_accepted_after_nonverbose_chemkin_reload(thermo_database, tmp_path):
     ion = _library_argon_ion(thermo_database)
     chemkin = tmp_path / "chem.inp"
@@ -398,7 +469,7 @@ def test_library_thermodata_without_cp_limits_is_accepted(thermo_database):
     data = _thermo_data(1500.0)
     data.Cp0 = None
     data.CpInf = None
-    library = ThermoLibrary(label="MissingCpLimits")
+    library = ThermoLibrary(label="MissingCpLimits", thermo_convention="ion")
     library.entries["Ar+"] = Entry(
         index=1, label="Ar+", item=ion.molecule[0], data=data
     )
@@ -431,7 +502,7 @@ def test_real_library_thermodata_processed_by_normal_engine_is_accepted(
 def test_thermodata_cp_error_at_breakpoint_is_refused(thermo_database):
     ion = Species(label="Ar+").from_adjacency_list(ARGON_ION_ADJACENCY)
     reference, perturbed = _thermo_data_with_hidden_cp_error()
-    library = ThermoLibrary(label="ThermoDataBreakpointIon")
+    library = ThermoLibrary(label="ThermoDataBreakpointIon", thermo_convention="ion")
     library.entries["Ar+-thermodata"] = Entry(
         index=1,
         label="Ar+-thermodata",
@@ -467,7 +538,7 @@ def test_mixed_nasa_thermodata_cp_error_between_nodes_is_refused(
 ):
     ion = Species(label="Ar+").from_adjacency_list(ARGON_ION_ADJACENCY)
     reference, actual = _mixed_form_thermo_with_hidden_cp_error()
-    library = ThermoLibrary(label="MixedFormIon")
+    library = ThermoLibrary(label="MixedFormIon", thermo_convention="ion")
     library.entries["Ar+-thermodata"] = Entry(
         index=1,
         label="Ar+-thermodata",
@@ -507,7 +578,7 @@ def test_wilhoit_match_diagnostic_states_that_comparison_is_sampled(
 ):
     ion = Species(label="Ar+").from_adjacency_list(ARGON_ION_ADJACENCY)
     reference = _thermo_data().to_wilhoit(B=1000.0)
-    library = ThermoLibrary(label="WilhoitIon")
+    library = ThermoLibrary(label="WilhoitIon", thermo_convention="ion")
     library.entries["Ar+-wilhoit"] = Entry(
         index=1,
         label="Ar+-wilhoit",
@@ -530,7 +601,7 @@ def test_wilhoit_match_diagnostic_states_that_comparison_is_sampled(
 
 def test_exact_library_nasa_valid_only_above_2000_k_is_accepted(thermo_database):
     ion = Species(label="Ar+").from_adjacency_list(ARGON_ION_ADJACENCY)
-    library = ThermoLibrary(label="HighTemperatureIon")
+    library = ThermoLibrary(label="HighTemperatureIon", thermo_convention="ion")
     library.entries["Ar+-hot"] = Entry(
         index=1,
         label="Ar+-hot",
@@ -549,7 +620,7 @@ def test_exact_library_nasa_valid_only_above_2000_k_is_accepted(thermo_database)
 
 def test_models_with_no_overlapping_valid_temperature_are_not_matched(thermo_database):
     ion = Species(label="Ar+").from_adjacency_list(ARGON_ION_ADJACENCY)
-    library = ThermoLibrary(label="DisjointTemperatureIon")
+    library = ThermoLibrary(label="DisjointTemperatureIon", thermo_convention="ion")
     library.entries["Ar+-cold"] = Entry(
         index=1,
         label="Ar+-cold",
@@ -569,7 +640,7 @@ def test_models_with_no_overlapping_valid_temperature_are_not_matched(thermo_dat
 
 def test_narrow_nasa_segment_mismatch_is_refused(thermo_database):
     ion = Species(label="Ar+").from_adjacency_list(ARGON_ION_ADJACENCY)
-    library = ThermoLibrary(label="NarrowSegmentIon")
+    library = ThermoLibrary(label="NarrowSegmentIon", thermo_convention="ion")
     library.entries["Ar+-segmented"] = Entry(
         index=1,
         label="Ar+-segmented",
@@ -589,7 +660,7 @@ def test_narrow_nasa_segment_mismatch_is_refused(thermo_database):
 
 def test_degree_four_cp_nullspace_mismatch_is_refused(thermo_database):
     ion = Species(label="Ar+").from_adjacency_list(ARGON_ION_ADJACENCY)
-    library = ThermoLibrary(label="CpNullspaceIon")
+    library = ThermoLibrary(label="CpNullspaceIon", thermo_convention="ion")
     reference = _cp_nullspace_nasa()
     library.entries["Ar+-counterexample"] = Entry(
         index=1,
@@ -625,7 +696,7 @@ def test_degree_four_cp_nullspace_mismatch_is_refused(thermo_database):
 
 def test_nasa_coverage_gap_is_a_contextual_plasma_refusal(thermo_database):
     ion = Species(label="Ar+").from_adjacency_list(ARGON_ION_ADJACENCY)
-    library = ThermoLibrary(label="GappedIon")
+    library = ThermoLibrary(label="GappedIon", thermo_convention="ion")
     library.entries["Ar+-gap"] = Entry(
         index=1,
         label="Ar+-gap",
@@ -650,7 +721,7 @@ def test_nasa_coverage_gap_is_a_contextual_plasma_refusal(thermo_database):
 
 def test_nasa_gap_outside_candidate_overlap_is_a_contextual_refusal(thermo_database):
     ion = Species(label="Ar+").from_adjacency_list(ARGON_ION_ADJACENCY)
-    library = ThermoLibrary(label="ShortRangeIon")
+    library = ThermoLibrary(label="ShortRangeIon", thermo_convention="ion")
     short_polynomial = NASAPolynomial(
         coeffs=[3.5, 0.0, 0.0, 0.0, 0.0, 1200.0, 4.0],
         Tmin=(300.0, "K"),
@@ -683,11 +754,9 @@ def test_nasa_gap_outside_candidate_overlap_is_a_contextual_refusal(thermo_datab
         del thermo_database.libraries[library.label]
 
 
-def test_gapped_charged_edge_warns_and_only_refuses_after_promotion(
-    thermo_database, caplog
-):
+def test_gapped_charged_edge_is_refused_before_and_after_promotion(thermo_database):
     ion = Species(label="Ar+").from_adjacency_list(ARGON_ION_ADJACENCY)
-    library = ThermoLibrary(label="EdgeGapIon")
+    library = ThermoLibrary(label="EdgeGapIon", thermo_convention="ion")
     library.entries["Ar+-short"] = Entry(
         index=1,
         label="Ar+-short",
@@ -715,14 +784,13 @@ def test_gapped_charged_edge_warns_and_only_refuses_after_promotion(
         (300, "K"),
     )
     try:
-        reactor.initialize_model([neutral, electron], [], [ion], [])
-        warning = next(
-            record.message for record in caplog.records
-            if record.levelname == "WARNING" and "Ar+" in record.message
-        )
-        assert "EdgeGapIon/Ar+-short" in warning
-        assert "coverage gap" in warning
-        assert "1000" in warning and "1010" in warning
+        with pytest.raises(PlasmaStateError) as edge_error:
+            reactor.initialize_model([neutral, electron], [], [ion], [])
+        message = str(edge_error.value)
+        assert "edge species" in message and "Ar+" in message
+        assert "EdgeGapIon/Ar+-short" in message
+        assert "coverage gap" in message
+        assert "1000" in message and "1010" in message
 
         with pytest.raises(PlasmaStateError) as error:
             reactor.initialize_model([neutral, electron, ion], [], [], [])
@@ -739,14 +807,14 @@ def test_gapped_earlier_candidate_is_recorded_and_later_match_is_used(
     thermo_database,
 ):
     ion = Species(label="Ar+").from_adjacency_list(ARGON_ION_ADJACENCY)
-    earlier = ThermoLibrary(label="GappedEarlier")
+    earlier = ThermoLibrary(label="GappedEarlier", thermo_convention="ion")
     earlier.entries["Ar+-gap"] = Entry(
         index=1,
         label="Ar+-gap",
         item=ion.molecule[0],
         data=_segmented_nasa(include_narrow=False),
     )
-    later = ThermoLibrary(label="ValidLater")
+    later = ThermoLibrary(label="ValidLater", thermo_convention="ion")
     later.entries["Ar+-valid"] = Entry(
         index=2,
         label="Ar+-valid",
@@ -774,14 +842,14 @@ def test_malformed_earlier_candidate_is_recorded_and_later_match_is_used(
     thermo_database,
 ):
     ion = Species(label="Ar+").from_adjacency_list(ARGON_ION_ADJACENCY)
-    earlier = ThermoLibrary(label="MalformedEarlier")
+    earlier = ThermoLibrary(label="MalformedEarlier", thermo_convention="ion")
     earlier.entries["Ar+-broken"] = Entry(
         index=1,
         label="Ar+-broken",
         item=ion.molecule[0],
         data=_MalformedThermo(),
     )
-    later = ThermoLibrary(label="ValidAfterMalformed")
+    later = ThermoLibrary(label="ValidAfterMalformed", thermo_convention="ion")
     later.entries["Ar+-valid"] = Entry(
         index=2,
         label="Ar+-valid",
@@ -812,9 +880,9 @@ def test_liquid_libraries_are_excluded_and_first_gas_match_is_reported(thermo_da
     ion = Species(label="Ar+").from_adjacency_list(ARGON_ION_ADJACENCY)
     data = _thermo_data(1500.0)
     libraries = [
-        ThermoLibrary(label="LiquidMatch"),
-        ThermoLibrary(label="GasFirst"),
-        ThermoLibrary(label="GasSecond"),
+        ThermoLibrary(label="LiquidMatch", thermo_convention="ion"),
+        ThermoLibrary(label="GasFirst", thermo_convention="ion"),
+        ThermoLibrary(label="GasSecond", thermo_convention="ion"),
     ]
     libraries[0].solvent = "water"
     for index, library in enumerate(libraries, start=1):
@@ -842,7 +910,7 @@ def test_liquid_libraries_are_excluded_and_first_gas_match_is_reported(thermo_da
 def test_library_index_is_built_once_per_initialize_model_call(thermo_database):
     ion = Species(label="Ar+").from_adjacency_list(ARGON_ION_ADJACENCY)
     data = _thermo_data(1500.0)
-    library = ThermoLibrary(label="CountedLibrary")
+    library = ThermoLibrary(label="CountedLibrary", thermo_convention="ion")
     library.entries = _CountingEntries({
         "Ar+": Entry(index=1, label="Ar+", item=ion.molecule[0], data=data),
     })
@@ -867,7 +935,7 @@ def test_library_index_is_built_once_per_initialize_model_call(thermo_database):
 def test_library_index_skips_neutral_entries_before_formula_bucketing(thermo_database):
     ion = Species(label="Ar+").from_adjacency_list(ARGON_ION_ADJACENCY)
     data = _thermo_data(1500.0)
-    library = ThermoLibrary(label="ChargedEntriesOnly")
+    library = ThermoLibrary(label="ChargedEntriesOnly", thermo_convention="ion")
     library.entries["neutral"] = Entry(
         index=1,
         label="neutral",
@@ -893,7 +961,7 @@ def test_library_index_skips_neutral_entries_before_formula_bucketing(thermo_dat
 def test_in_place_species_thermo_mutation_changes_next_verdict(thermo_database):
     ion = Species(label="Ar+").from_adjacency_list(ARGON_ION_ADJACENCY)
     data = _thermo_data(1500.0)
-    library = ThermoLibrary(label="MutableSpeciesThermo")
+    library = ThermoLibrary(label="MutableSpeciesThermo", thermo_convention="ion")
     library.entries["Ar+"] = Entry(
         index=1, label="Ar+", item=ion.molecule[0], data=data
     )
@@ -921,7 +989,7 @@ def test_in_place_species_thermo_mutation_changes_next_verdict(thermo_database):
 def test_same_length_library_entry_replacement_changes_next_verdict(thermo_database):
     ion = Species(label="Ar+").from_adjacency_list(ARGON_ION_ADJACENCY)
     data = _thermo_data(1500.0)
-    library = ThermoLibrary(label="ReplaceableLibraryEntry")
+    library = ThermoLibrary(label="ReplaceableLibraryEntry", thermo_convention="ion")
     library.entries["Ar+"] = Entry(
         index=1, label="Ar+", item=ion.molecule[0], data=data
     )
@@ -978,7 +1046,7 @@ def test_gav_neutral_is_accepted(thermo_database):
     reactor.initialize_model([neutral, electron], [], [], [])
 
 
-def test_edge_ion_warns_once_and_is_refused_on_promotion(thermo_database, caplog):
+def test_unmatched_edge_ion_is_refused_before_and_after_promotion(thermo_database):
     ion = Species(label="N2+", smiles="[N+]#N")
     ion.thermo = thermo_database.get_thermo_data(ion)
     neutral = Species(label="N2", smiles="N#N")
@@ -986,10 +1054,10 @@ def test_edge_ion_warns_once_and_is_refused_on_promotion(thermo_database, caplog
     electron = _electron()
     reactor = PlasmaReactor((300, "K"), (1, "bar"), {neutral: 1.0, electron: 1.0e-12}, (300, "K"))
 
-    reactor.initialize_model([neutral, electron], [], [ion], [])
-    reactor.initialize_model([neutral, electron], [], [ion], [])
-    warnings = [record.message for record in caplog.records if record.levelname == "WARNING"]
-    assert len([message for message in warnings if "N2+" in message and "thermo" in message]) == 1
+    for _ in range(2):
+        with pytest.raises(PlasmaStateError, match=r"edge species.*N2\+"):
+            reactor.initialize_model([neutral, electron], [], [ion], [])
+        assert not reactor._plasma_validated
     with pytest.raises(PlasmaStateError, match=r"N2\+"):
         reactor.initialize_model([neutral, electron, ion], [], [], [])
 
@@ -1031,7 +1099,7 @@ def test_no_database_accepts_explicit_caller_assertion_and_records_diagnostic(th
     saved = rmg_data_module.database
     rmg_data_module.database = None
     try:
-        reactor = _initialize(ion, assertions=["Ar+"])
+        reactor = _initialize(ion, assertions={"Ar+": "ion"})
     finally:
         rmg_data_module.database = saved
     assert reactor.thermo_provenance_diagnostics["Ar+"] == THERMO_SOURCE_ASSERTION
@@ -1052,12 +1120,12 @@ def test_deck_declaration_can_name_a_promoted_species_and_survives_writing(monke
         electronTemperature=(300, "K"),
         initialMoleFractions={"Ar": 1.0 - 1.0e-12, "e-": 1.0e-12},
         terminationTime=(1, "s"),
-        thermoSourceAssertions=["promoted-ion"],
+        thermoSourceAssertions={"promoted-ion": "ion"},
     )
 
     reactor = job.reaction_systems[0]
-    assert reactor.thermo_source_assertions == {"promoted-ion"}
-    assert "thermoSourceAssertions = ['promoted-ion']" in input_module._format_plasma_wall(reactor)
+    assert reactor.thermo_source_assertions == {"promoted-ion": "ion"}
+    assert "thermoSourceAssertions = {'promoted-ion': 'ion'}" in input_module._format_plasma_wall(reactor)
 
 
 def test_none_thermo_fails_closed(thermo_database):

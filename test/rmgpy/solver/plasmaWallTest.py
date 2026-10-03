@@ -110,7 +110,7 @@ def _fixture_plasma_reactor(*args, **kwargs):
                 and species.thermo is None):
             species.thermo = _argon_thermo(15.76)
     kwargs.setdefault('thermo_source_assertions',
-                      list(_FIXTURE_THERMO_SOURCE_ASSERTIONS))
+                      dict.fromkeys(_FIXTURE_THERMO_SOURCE_ASSERTIONS, 'ion'))
     return PlasmaReactor(*args, **kwargs)
 
 
@@ -164,7 +164,7 @@ def _build_reactor(te_ev=TE_NOMINAL_EV, pressure=P_NOMINAL, tgas=TGAS,
             kwargs['ionisation_source'] = (source, 'm^-3/s')
         if max_alpha is not None:
             kwargs['max_ionisation_degree'] = max_alpha
-    kwargs['thermo_source_assertions'] = list(_FIXTURE_THERMO_SOURCE_ASSERTIONS)
+    kwargs['thermo_source_assertions'] = dict.fromkeys(_FIXTURE_THERMO_SOURCE_ASSERTIONS, 'ion')
     reactor = (reactor_cls or PlasmaReactor)(
         (tgas, 'K'), (pressure, 'Pa'), imf, (te_ev * EV_TO_K, 'K'),
         n_sims=1, termination=termination or [],

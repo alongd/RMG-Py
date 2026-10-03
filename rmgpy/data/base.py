@@ -34,6 +34,7 @@ components of the RMG database.
 """
 
 import codecs
+import hashlib
 import logging
 import os
 import re
@@ -189,6 +190,7 @@ class Database(object):
                  metal=None,
                  site=None,
                  facet=None,
+                 thermo_convention=None,
                  ):
         self.entries = OrderedDict(entries or {})
         self.top = top or []
@@ -200,6 +202,7 @@ class Database(object):
         self.metal = metal
         self.site = site
         self.facet = facet
+        self.thermo_convention = thermo_convention
 
     def load(self, path, local_context=None, global_context=None):
         """
@@ -214,6 +217,8 @@ class Database(object):
         # Clear any previously-loaded data
         self.entries = OrderedDict()
         self.top = []
+        self.thermo_convention = None
+        self._loaded_file_sha256 = None
 
         # Set up global and local context
         if global_context is None: global_context = {}
@@ -234,13 +239,17 @@ class Database(object):
         local_context['metal'] = self.metal
         local_context['site'] = self.site
         local_context['facet'] = self.facet
+        local_context['thermoConvention'] = self.thermo_convention
         # add in anything from the Class level dictionary.
         for key, value in Database.local_context.items():
             local_context[key] = value
 
         # Process the file
-        with open(path, 'r') as f:
-            content = f.read()
+        with open(path, 'rb') as f:
+            raw_content = f.read()
+        # The convention bridge pins exact bytes, including line endings.
+        self._loaded_file_sha256 = hashlib.sha256(raw_content).hexdigest()
+        content = raw_content.decode('utf-8')
         try:
             exec(content, global_context, local_context)
         except Exception as e:
@@ -259,6 +268,7 @@ class Database(object):
         self.metal = local_context['metal']
         self.site = local_context['site']
         self.facet = local_context['facet']
+        self.thermo_convention = local_context['thermoConvention']
 
         # Return the loaded database (to allow for Database().load() syntax)
         return self
@@ -377,6 +387,8 @@ class Database(object):
         f.write('#!/usr/bin/env python\n')
         f.write('# encoding: utf-8\n\n')
         f.write('name = "{0}"\n'.format(self.name))
+        if self.thermo_convention is not None:
+            f.write('thermoConvention = {0!r}\n'.format(self.thermo_convention))
         f.write('shortDesc = "{0}"\n'.format(self.short_desc))
         f.write('longDesc = """\n')
         f.write(self.long_desc.strip() + '\n')
@@ -402,6 +414,10 @@ class Database(object):
         the tree, and `libstr` to the library. The tree is optional, and should
         be set to '' if not desired.
         """
+
+        # The old file format cannot declare a thermo convention.
+        self.thermo_convention = None
+        self._loaded_file_sha256 = None
 
         # Load dictionary, library, and (optionally) tree
         try:
