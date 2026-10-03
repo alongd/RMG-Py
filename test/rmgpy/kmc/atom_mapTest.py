@@ -71,7 +71,8 @@ def test_fixture_sha_matches(kinetics_db, fixture_data_fixture):
     """Skip if database SHA differs from fixture (not a failure)."""
     import subprocess
 
-    db_sha = subprocess.check_output(
+    # Materialized pinned snapshots have no Git metadata.
+    db_sha = os.environ.get("RMG_DATABASE_SHA") or subprocess.check_output(
         ["git", "-C", DB_PATH, "rev-parse", "HEAD"], text=True
     ).strip()
     if db_sha != fixture_data_fixture["rmg_database_sha"]:
@@ -399,7 +400,7 @@ def test_fixture_regeneration(fixture_data_fixture, tmp_path):
     import subprocess
     import sys
 
-    db_sha = subprocess.check_output(
+    db_sha = os.environ.get("RMG_DATABASE_SHA") or subprocess.check_output(
         ["git", "-C", DB_PATH, "rev-parse", "HEAD"], text=True
     ).strip()
     if db_sha != fixture_data_fixture["rmg_database_sha"]:

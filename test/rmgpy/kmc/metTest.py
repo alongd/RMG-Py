@@ -208,6 +208,21 @@ def real_slow(test_function):
 def real_ps_inputs():
     """Compile/cache one validated real PS artifact and its real kinetics DB."""
     from rmgpy.kmc.compiler import compiler_source_hash
+    from cache_provenance import supplied_artifact
+
+    supplied = supplied_artifact()
+    if supplied:
+        artifact_path, artifact = supplied
+        database = RMGDatabase()
+        database.load_kinetics(
+            str(REAL_DATABASE_PATH / "input/kinetics"), reaction_libraries=None,
+            seed_mechanisms=None, kinetics_families=["all"], kinetics_depositories=[],
+        )
+        return SimpleNamespace(
+            artifact=artifact, records=tuple(artifact["records"]), database=database,
+            artifact_path=artifact_path,
+            cache_key=artifact["provenance"]["compiler_sources_sha256"],
+        )
 
     cache_key = f"{_git_head(REPO_ROOT)}-{_git_head(REAL_DATABASE_PATH)}-{compiler_source_hash()}"
     cache_dir = REAL_CACHE_ROOT / cache_key

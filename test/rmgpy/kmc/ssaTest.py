@@ -99,6 +99,11 @@ def _git_head(path):
 
 @pytest.fixture(scope="session")
 def real_ps_artifact():
+    from cache_provenance import supplied_artifact
+
+    supplied = supplied_artifact()
+    if supplied:
+        return supplied[1]
     cache_key = f"{_git_head(REPO_ROOT)}-{_git_head(REAL_DATABASE_PATH)}-{compiler_source_hash()}"
     cache_dir = REAL_CACHE_ROOT / cache_key
     cache_dir.mkdir(parents=True, exist_ok=True)

@@ -240,6 +240,11 @@ def _database_sha():
 @pytest.fixture(scope="module")
 def compiled_artifact():
     """Load one real content-addressed artifact, compiling it when absent."""
+    from cache_provenance import supplied_artifact
+
+    supplied = supplied_artifact()
+    if supplied:
+        return supplied
     CACHE.mkdir(parents=True, exist_ok=True)
     compiler_sha = hashlib.sha256(
         (ROOT / "rmgpy/kmc/compiler.py").read_bytes()
