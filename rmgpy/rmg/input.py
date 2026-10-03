@@ -1046,7 +1046,12 @@ def plasma_reactor(temperature,
                    ionReducedMobilities=None,
                    wallBathThreshold=None,
                    wallBathLumping=None,
-                   thermoSourceAssertions=None):
+                   thermoSourceAssertions=None,
+                   electronegativeWallModel=None,
+                   electronegativeWallGeometry='fullFrequency',
+                   anionReducedMobilities=None,
+                   wallDiffusionComponents=None,
+                   electronegativeWallQualification=None):
     """
     Define a two-temperature plasma batch reactor (:class:`PlasmaReactor`) from an
     input file.
@@ -1610,6 +1615,37 @@ def plasma_reactor(temperature,
         ionReducedMobilities=ionReducedMobilities,
         wallBathThreshold=wallBathThreshold,
         wallBathLumping=wallBathLumping)
+
+    if electronegativeWallModel is not None or anionReducedMobilities is not None or electronegativeWallQualification is not None or electronegativeWallGeometry != 'fullFrequency':
+        wall_kwargs.update(electronegative_wall_model=electronegativeWallModel,
+            electronegative_wall_geometry=electronegativeWallGeometry,
+            anion_reduced_mobilities=anionReducedMobilities,
+            electronegative_wall_qualification=electronegativeWallQualification)
+    if anionReducedMobilities is not None:
+        if not isinstance(anionReducedMobilities, dict):
+            raise InputError('anionReducedMobilities must be a map of declared anion labels')
+        for label in anionReducedMobilities:
+            if _plasma_species_charge(label,species_dict,'anionReducedMobilities') != -1:
+                raise InputError('anionReducedMobilities requires singly charged anions: ' + label)
+    if wallDiffusionComponents is not None:
+        if not isinstance(wallDiffusionComponents, dict) or set(wallDiffusionComponents) != {'radial','axial'}:
+            raise InputError('wallDiffusionComponents requires radial and axial inverse-square lengths')
+        parts = []
+        for name in ('radial','axial'):
+            q = Quantity(wallDiffusionComponents[name])
+            if pq.Quantity(1.,q.units).simplified.dimensionality != pq.Quantity(1.,'m^-2').simplified.dimensionality:
+                raise InputError('wallDiffusionComponents must have dimensions m^-2')
+            parts.append(q.value_si)
+        wall_kwargs['wall_diffusion_components'] = tuple(parts)
+    elif isinstance(chamberGeometry,dict) and chamberGeometry.get('shape') == 'cylinder' and ionReducedMobilities is not None:
+        radius = Quantity(chamberGeometry['radius']).value_si
+        length = Quantity(chamberGeometry['length']).value_si
+        wall_kwargs['wall_diffusion_components'] = ((2.405/radius)**2,(np.pi/length)**2)
+    if isinstance(chamberGeometry, dict) and chamberGeometry.get('shape') == 'cylinder' and ionReducedMobilities is not None:
+        wall_kwargs['wall_chamber_geometry'] = dict(shape='cylinder',
+            radius=Quantity(chamberGeometry['radius']).value_si,
+            length=Quantity(chamberGeometry['length']).value_si)
+
 
     # Per-bath (Blanc's-law) values name their bath gas by a species label: it must be a
     # declared species, or the value would silently carry no weight.
@@ -3047,8 +3083,9 @@ def _format_plasma_wall(system):
     """
     Serialise a :class:`PlasmaReactor`'s charged-particle wall keywords back to
     ``plasmaReactor(...)`` syntax. The reactor stores the characteristic diffusion
-    length, not the chamber shape it was computed from, so the round trip emits
-    ``diffusionLength`` directly -- exact in physics, lossy only in description, the
+    length and, for map-mode cylinder inputs, the declared radius and length.
+    Older/direct length-only inputs emit ``diffusionLength`` -- exact in physics,
+    lossy only in description, the
     same principle by which ``electronDensity`` is not reconstructed and the mole
     fractions are the ground truth. Extracted from :func:`save_input_file` so the
     round trip is unit-testable without a whole RMG object.
@@ -3060,8 +3097,24 @@ def _format_plasma_wall(system):
     if system.quasineutral_electron:
         lines.append('    quasineutralElectron = True,\n')
     if system.has_wall:
-        lines.append('    chamberGeometry = {{"diffusionLength": ({0!r},"m")}},\n'
-                     ''.format(system.diffusion_length.value_si))
+        if system.wall_chamber_geometry is not None:
+            chamber = system.wall_chamber_geometry
+            lines.append('    chamberGeometry = {{"shape": "cylinder", "radius": ({0!r}, "m"), "length": ({1!r}, "m")}},\n'.format(chamber['radius'], chamber['length']))
+        else:
+            lines.append('    chamberGeometry = {{"diffusionLength": ({0!r},"m")}},\n'
+                         ''.format(system.diffusion_length.value_si))
+        if system.electronegative_wall_model is not None:
+            lines.append('    electronegativeWallModel = {0!r},\n'.format(system.electronegative_wall_model))
+            lines.append('    electronegativeWallGeometry = {0!r},\n'.format(system.electronegative_wall_geometry))
+            if system.anion_reduced_mobilities is not None:
+                lines.append('    anionReducedMobilities = {0!r},\n'.format(system.anion_reduced_mobilities))
+            if system.electronegative_wall_qualification is not None:
+                from rmgpy.solver.electronegative import serializable_qualification
+                lines.append('    electronegativeWallQualification = {0!r},\n'.format(
+                    serializable_qualification(system.electronegative_wall_qualification)))
+        if system.wall_diffusion_components is not None:
+            radial, axial = system.wall_diffusion_components
+            lines.append("    wallDiffusionComponents = {{'radial': ({0!r}, 'm^-2'), 'axial': ({1!r}, 'm^-2')}},\n".format(radial,axial))
         if system.ion_reduced_mobilities is None:
             # Keep the established scalar spelling byte-for-byte for legacy decks.
             lines.append('    ionReducedMobility = ({0!r},"m^2/(V*s)"),\n'
