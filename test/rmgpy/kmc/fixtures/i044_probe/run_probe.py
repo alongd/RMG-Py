@@ -148,7 +148,7 @@ def main():
     default = rule_list[0]
     training = family.get_training_depository()
     pairs = []
-    for pair in artifact['ps_ceiling_pairs']:
+    for pair in artifact.get('ps_primary_end_ceiling_pairs', artifact['ps_ceiling_pairs']):
         prop = next(r for r in artifact['records'] if r['event_id'] == pair['propagation_event_id'])
         dep = next(r for r in artifact['records'] if r['event_id'] == pair['depropagation_event_id'])
         reaction = prior.reaction_from_record(prop)

@@ -81,7 +81,7 @@ def main():
     assert set(selected) == {"R_Recombination", "intra_H_migration",
                              "R_Addition_MultipleBond:addition", "R_Addition_MultipleBond:scission"}
     ceiling = []
-    for pair in data["ps_ceiling_pairs"]:
+    for pair in data.get("ps_primary_end_ceiling_pairs", data["ps_ceiling_pairs"]):
         prop = by_id[pair["propagation_event_id"]]
         dep = by_id[pair["depropagation_event_id"]]
         radical_reactant = next(describe(g)["radicals"] for g in prop["reactant_graphs"] if describe(g)["radicals"])

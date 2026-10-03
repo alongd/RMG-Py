@@ -100,6 +100,25 @@ def test_comparison_matches_chemistry_across_changed_nested_inverse_ids():
     assert probe.structural_key(old) != probe.structural_key(new)
 
 
+def test_tree_invariance_allows_added_channels_and_corrected_site_labels():
+    probe = load_probe()
+    old = {"records": [
+        {"family": family, "site_type": "old", "participant_site_types": ["end_radical"],
+         "k_table": {"k": [1]}, "rate_source": {"source": "pinned"}}
+        for family in probe.TREE_FAMILIES
+    ]}
+    new = copy.deepcopy(old)
+    for record in new["records"]:
+        record["site_type"] = "benzylic_context"
+        record["participant_site_types"] = ["interior_radical"]
+    new["records"].append({"family": "R_Recombination", "bond_ops": [{"action": "new"}],
+                           "k_table": {"k": [2]}, "rate_source": {"source": "new"}})
+    assert probe.verify_tree_invariance(old, new) == {family: 1 for family in probe.TREE_FAMILIES}
+    new["records"][0]["k_table"]["k"] = [3]
+    with pytest.raises(AssertionError):
+        probe.verify_tree_invariance(old, new)
+
+
 @pytest.fixture(scope="module")
 def cached_artifacts():
     supplied = os.environ.get("RMG_KMC_ARTIFACT")

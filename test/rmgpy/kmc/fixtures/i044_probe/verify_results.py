@@ -118,11 +118,11 @@ def main():
     benchmark = lambda t: LITERATURE['iupac']['A_L_mol_s'] * math.exp(-LITERATURE['iupac']['Ea_J_mol']/(gas_constant*t))
     db = RMGDatabase()
     db.load_thermo(str(snapshot / 'input/thermo'), thermo_libraries=['primaryThermoLibrary'], depository=True)
-    assert len(data['pairs']) == len(artifact['ps_ceiling_pairs']) == 2
+    assert len(data['pairs']) == len(artifact.get('ps_primary_end_ceiling_pairs', artifact['ps_ceiling_pairs'])) == 2
     checked = 0
     for pair_data in data['pairs']:
         pair = pair_data['pair']
-        assert pair in artifact['ps_ceiling_pairs']
+        assert pair in artifact.get('ps_primary_end_ceiling_pairs', artifact['ps_ceiling_pairs'])
         prop, dep = pair_data['propagation'], pair_data['depropagation']
         for record in (prop, dep):
             assert record == next(r for r in artifact['records'] if r['event_id'] == record['event_id'])

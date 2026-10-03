@@ -1,6 +1,6 @@
 """Run: PYTHONPATH=$PWD python test/rmgpy/kmc/fixtures/i049_probe/direct.py
 
-Assert the baseline catalogue/discovery defect using independent graph checks.
+Verify the corrected catalogue/discovery coverage using independent graph checks.
 """
 
 import json
@@ -46,25 +46,27 @@ def main():
             reflection_preserves.append(attached_ring(atom) == attached_ring(reflected))
         assert not any(reflection_preserves)
         tail = Molecule(smiles=benzylic_tail(units))
-        assert not any(tail.is_isomorphic(m) for m in stored)
+        assert any(tail.is_isomorphic(m) for m in stored)
         rows.append({"units": units, "stored_count": len(stored),
-                     "correct_count": len(exhaustive), "tail_missing": tail.to_smiles(),
+                     "correct_count": len(exhaustive), "tail_present": tail.to_smiles(),
                      "missing": missing,
                      "stored": [{"sites": m["radical_sites"],
                                  **describe(m["adjacency_list"])} for m in actual]})
-    assert [r["stored_count"] for r in rows] == [3, 7, 13]
+    assert [r["stored_count"] for r in rows] == [4, 11, 22]
+    assert all(not r["missing"] for r in rows)
     assert [r["correct_count"] for r in rows] == [4, 11, 22]
     proxies = []
     for proxy in ps_proxy_set():
         participants = [describe(s.molecule[0].to_adjacency_list(remove_h=False))
                         for s in proxy.reactants]
-        assert not any(r["terminal_benzylic"] for p in participants for r in p["radicals"])
+        if "benzylic_end_radical" in proxy.site_type:
+            assert any(r["terminal_benzylic"] for p in participants for r in p["radicals"])
         proxies.append({"site_type": proxy.site_type,
                         "participant_site_types": proxy.participant_site_types,
                         "smiles": [p["smiles"] for p in participants]})
-    assert len(proxies) == 22
+    assert len(proxies) == 34
     print(json.dumps({"catalogue": rows, "proxies": proxies}, indent=2))
-    print("PASS: n=1–3 catalogue 23/37, 14 distinct graphs omitted; 22 proxies omit benzylic tail")
+    print("PASS: n=1–3 catalogue 37/37; 34 declarations include both end orientations")
 
 
 if __name__ == "__main__":
