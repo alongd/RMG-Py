@@ -41,6 +41,7 @@ import numpy as np
 
 from rmgpy.molecule import Molecule
 from rmgpy.species import Species
+from rmgpy.thermo.state import require_thermo_estimation_allowed
 from rmgpy.thermo import ThermoData
 
 ADMONITION = """
@@ -86,6 +87,8 @@ class MLEstimator:
         """
         molecule = Molecule(smiles=molecule) if isinstance(molecule, str) else molecule
 
+        require_thermo_estimation_allowed(molecule)
+
         hf298 = self.hf298_estimator(molecule.smiles)[0][0]
         s298_cp = self.s298_cp_estimator(molecule.smiles)[0]
         s298, cp = s298_cp[0], s298_cp[1:]
@@ -118,6 +121,7 @@ class MLEstimator:
 
         Returns: ThermoData
         """
+        require_thermo_estimation_allowed(species)
         return self.get_thermo_data(species.molecule[0])
 
 

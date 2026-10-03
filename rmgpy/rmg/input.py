@@ -297,6 +297,23 @@ def species(label, structure, reactive=True, cut=False, size_threshold=None):
         rmg.initial_species.append(spec)
         species_dict[label] = spec
 
+
+def vibrational_manifold(species):
+    """Declare the unresolved input species as the library-only v=0 member."""
+    from rmgpy.exceptions import VibrationalManifoldError
+    if not isinstance(species, str) or species not in species_dict:
+        raise VibrationalManifoldError(
+            "vibrationalManifold species {0!r} must name an existing input species; "
+            "declare it with species(...) first.".format(species))
+    # Validate now, although full partition validation waits until input EOF.
+    previous = rmg.reaction_model.defer_vibrational_validation
+    rmg.reaction_model.defer_vibrational_validation = False
+    try:
+        rmg.reaction_model.declare_vibrational_manifold(species_dict[species])
+    finally:
+        rmg.reaction_model.defer_vibrational_validation = previous
+
+
 def forbidden(label, structure):
 
     if '+' in label:
@@ -2900,6 +2917,7 @@ def read_input_file(path, rmg0):
 
     set_global_rmg(rmg0)
     rmg.reaction_model = CoreEdgeReactionModel()
+    rmg.reaction_model.defer_vibrational_validation = True
     rmg.initial_species = []
     rmg.reaction_systems = []
     species_dict = {}
@@ -2914,6 +2932,7 @@ def read_input_file(path, rmg0):
         'catalystProperties': catalyst_properties,
         'coreSpeciesFile': core_species_file,
         'species': species,
+        'vibrationalManifold': vibrational_manifold,
         'forbidden': forbidden,
         'SMARTS': smarts,
         'fragment_adj': fragment_adj,
@@ -2958,6 +2977,9 @@ def read_input_file(path, rmg0):
         raise
     finally:
         f.close()
+
+    rmg.reaction_model.defer_vibrational_validation = False
+    rmg.reaction_model.validate_vibrational_manifolds(rmg.initial_species)
 
     if thermo_libraries is not None:
         rmg0.thermo_libraries.extend(thermo_libraries)
@@ -3166,6 +3188,9 @@ def save_input_file(path, rmg):
         f.write(spcs.molecule[0].to_adjacency_list())
         f.write('"""),\n')
         f.write(')\n\n')
+
+    for species in rmg.reaction_model.vibrational_manifolds:
+        f.write('vibrationalManifold(species={0!r})\n\n'.format(species.label))
 
     def format_temperature(system):
         """Get temperature string format for reaction system, whether single value or range"""

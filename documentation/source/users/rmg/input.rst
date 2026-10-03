@@ -369,6 +369,55 @@ merging resolved molecules or splitting a disconnected resolved molecule raises
 graphs; symmetry, ring perception, resonance and drawing remain available. Updating a
 resolved molecule preserves its declared spin.
 
+Resolved-state thermo and transport
+-----------------------------------
+
+A molecule with either state header requires thermo from an exact-state entry in
+one of the loaded ``thermoLibraries``. A miss raises
+``ExcitedSpeciesThermoError`` naming the species and its adjacency list. QM, HBI,
+ML, group additivity, and surface estimation refuse resolved states through the
+same error. PlasmaReactor also checks that attached thermo value-matches a loaded
+gas-phase library entry for that exact state; changing its numbers is refused.
+
+Vibrational-only species borrow the transport of the same graph with both state
+headers removed. Their transport comment contains
+``Transport borrowed from the ground state for vibrationally resolved species``.
+Electronic states use an exact-state transport library entry when available;
+otherwise they borrow ground-state transport, emit a warning, and carry the comment
+``Transport fallback to the ground state for electronically resolved species``.
+Both comments include the species and state, and are retained in annotated Chemkin
+files, the transport file, and the Cantera YAML transport ``note``. Ground-state
+library data are copied before adding a comment.
+
+.. _vibrational_manifold:
+
+Vibrational manifolds
+---------------------
+
+Unkeyed species normally retain their thermal-ensemble meaning. In a model that
+contains explicit vibrational levels, declare its unresolved input species as
+v = 0 after its ``species(...)`` directive::
+
+    species(label='N2', structure=SMILES('N#N'))
+    species(label='N2v1', structure=adjacencyList("""
+    vibrationallevel 1
+    1 N u0 p1 c0 {2,T}
+    2 N u0 p1 c0 {1,T}
+    """))
+    vibrationalManifold(species='N2')
+
+``vibrationalManifold`` takes one argument, ``species``: the label of an existing,
+unresolved input species. It retains that species' unkeyed identity for matching
+kinetics, but selects thermo only from the same graph with ``vibrationallevel 0``
+in a loaded thermo library. The switch is logged. Missing v = 0 library thermo,
+other attached thermo, invalid declarations, and duplicate declarations raise
+``VibrationalManifoldError``. A species with ``vibrationallevel >= 1`` requires a
+declaration for its underlying unresolved graph; this is checked after reading
+input and when species enter the model later. An explicit ground-electronic v = 0
+species alongside the declaration is refused because it would count v = 0 twice.
+The declaration is preserved when saving the input file. It does not generate
+levels or supply level thermo data.
+
 For long lists of initial core species, you can specify a coreSpeciesList, shown below::
 
     coreSpeciesList(

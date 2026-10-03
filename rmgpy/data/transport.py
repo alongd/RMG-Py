@@ -338,6 +338,30 @@ class TransportDatabase(object):
         if species.contains_surface_site():
             return transport
 
+        if species.molecule[0].has_resolved_state():
+            molecule = species.molecule[0]
+            if molecule.electronic_state:
+                for label in self.library_order:
+                    transport = self.get_transport_properties_from_library(species, self.libraries[label])
+                    if transport is not None:
+                        transport[0].comment = label
+                        return transport
+            ground = species.copy(deep=True)
+            for ground_molecule in ground.molecule:
+                ground_molecule.electronic_state = ''
+                ground_molecule.vibrational_level = -1
+            transport = self.get_transport_properties(ground)
+            if molecule.electronic_state:
+                note = 'Transport fallback to the ground state for electronically resolved species'
+                logging.warning('%s %r (%s): no exact-state transport library entry.',
+                                note, species.label, molecule.state_suffix())
+            else:
+                note = 'Transport borrowed from the ground state for vibrationally resolved species'
+            state = ' '.join(line for line in molecule.to_adjacency_list().splitlines()
+                             if line.startswith(('electronicstate ', 'vibrationallevel ')))
+            transport[0].comment += ' ' + note + ' ({0}; {1}).'.format(species.label, state)
+            return transport
+
         for label in self.library_order:
             transport = self.get_transport_properties_from_library(species, self.libraries[label])
             if transport is not None:
@@ -360,6 +384,9 @@ class TransportDatabase(object):
         :class:`Species` object `species`. The hits from the libraries (in order) come first, and then the group additivity
         estimate. This method is useful for a generic search job.
         """
+        if species.molecule[0].has_resolved_state():
+            return [self.get_transport_properties(species)]
+
         transport = []
 
         # Data from libraries comes first

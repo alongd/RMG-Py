@@ -51,6 +51,8 @@ from rmgpy.ml.estimator import MLEstimator
 from rmgpy.molecule import Molecule, Bond, Group
 from rmgpy.molecule.graph import Graph
 from rmgpy.species import Species
+from rmgpy.thermo.state import require_thermo_estimation_allowed, thermo_library_species
+from rmgpy.exceptions import VibrationalManifoldError
 from rmgpy.thermo import NASAPolynomial, NASA, ThermoData, Wilhoit
 from rmgpy.data.surface import MetalDatabase
 from rmgpy import settings
@@ -1366,6 +1368,11 @@ class ThermoDatabase(object):
 
         thermo0 = self.get_thermo_data_from_libraries(species)
 
+        if any(molecule.has_resolved_state() for molecule in species.molecule):
+            if thermo0 is not None:
+                return thermo0[0]
+            require_thermo_estimation_allowed(species)
+
         if species.is_electron():
             # The electron is a structureless charge-carrier pseudo-species: it has no
             # group-additivity representation and must never be handed to RDKit, which
@@ -1398,6 +1405,8 @@ class ThermoDatabase(object):
                 else:  # assume the thermo came from pt 111
                     thermo0 = self.correct_binding_energy(thermo0, species, metal_to_scale_from=None, metal_to_scale_to=metal_to_scale_to)
             return thermo0
+
+        require_thermo_estimation_allowed(species)
 
         if species.contains_surface_site():
             try:
@@ -1579,6 +1588,7 @@ class ThermoDatabase(object):
         :param metal_to_scale_to: the metal you want to scale to (string e.g 'Pt111' or None)
         :return: corrected thermo
         """
+        require_thermo_estimation_allowed(species)
 
         if metal_to_scale_from == metal_to_scale_to:
             return thermo
@@ -1671,6 +1681,7 @@ class ThermoDatabase(object):
         
         Returns a :class:`ThermoData` object, with no Cp0 or CpInf
         """
+        require_thermo_estimation_allowed(species)
 
         # define the comparison function to find the lowest energy
         def species_enthalpy(species):
@@ -1981,6 +1992,11 @@ class ThermoDatabase(object):
                     thermo_data[0].comment += 'Thermo library: ' + label
                 return thermo_data
 
+        if species.props.get('vibrational_manifold'):
+            raise VibrationalManifoldError(
+                "No loaded thermo library entry for species {0!r} declared by "
+                "vibrationalManifold: the same graph with vibrationallevel 0 is "
+                "required; ensemble thermo and estimates are refused.".format(species.label))
         return None
 
     def get_all_thermo_data(self, species):
@@ -1993,6 +2009,18 @@ class ThermoDatabase(object):
         Returns: a list of tuples (ThermoData, source, entry) 
         (Source is a library or depository, or None)
         """
+        if (species.props.get('vibrational_manifold')
+                or any(molecule.has_resolved_state() for molecule in species.molecule)):
+            data = []
+            for label in self.library_order:
+                hit = self.get_thermo_data_from_library(species, self.libraries[label])
+                if hit is not None:
+                    hit[0].comment += 'Thermo library: ' + label
+                    data.append(hit)
+            if not data:
+                require_thermo_estimation_allowed(species)
+            return data
+
         thermo_data_list = []
         # Data from depository comes first
         thermo_data_list.extend(self.get_thermo_data_from_depository(species))
@@ -2043,6 +2071,7 @@ class ThermoDatabase(object):
         
         Returns: a list of tuples (thermo_data, depository, entry) without any Cp0 or CpInf data.
         """
+        require_thermo_estimation_allowed(species)
         items = []
         for entry in self.depository['stable'].entries.values():
             for molecule in species.molecule:
@@ -2067,6 +2096,7 @@ class ThermoDatabase(object):
         
         Returns a tuple: (ThermoData, library, entry)  or None.
         """
+        species = thermo_library_species(species)
         match = None
         # The electron is a charge-carrier pseudo-species, not a molecule, and RMG's
         # is_electron() predicate is deliberately multiplicity-agnostic: an electron is
@@ -2108,6 +2138,7 @@ class ThermoDatabase(object):
         
         Returns: ThermoData
         """
+        require_thermo_estimation_allowed(species)
         thermo = []
         for molecule in species.molecule:
             molecule.clear_labeled_atoms()
@@ -2138,6 +2169,7 @@ class ThermoDatabase(object):
         The entropy is not corrected for the symmetry of the molecule.
         This should be done later by the calling function.
         """
+        require_thermo_estimation_allowed(species)
         molecule = species.molecule[0]
 
         min_heavy = ml_settings['min_heavy_atoms'] or 1
@@ -2241,6 +2273,7 @@ class ThermoDatabase(object):
         No entropy is included in the returning term.
         This should be done later by the calling function.
         """
+        require_thermo_estimation_allowed(molecule)
         if not molecule.is_radical():
             raise ValueError("Method only valid for radicals.")
 
@@ -2345,6 +2378,7 @@ class ThermoDatabase(object):
         The entropy is not corrected for the symmetry of the molecule,
         this should be done later by the calling function.
         """
+        require_thermo_estimation_allowed(molecule)
         # For thermo estimation we need the atoms to already be sorted because we
         # iterate over them; if the order changes during the iteration then we
         # will probably not visit the right atoms, and so will get the thermo wrong.
@@ -2366,6 +2400,7 @@ class ThermoDatabase(object):
         The entropy is not corrected for the symmetry of the molecule,
         this should be done later by the calling function.
         """
+        require_thermo_estimation_allowed(molecule)
 
         assert not molecule.is_radical(), "This method is only for saturated non-radical species."
         # For thermo estimation we need the atoms to already be sorted because we

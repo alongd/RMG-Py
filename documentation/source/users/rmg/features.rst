@@ -31,3 +31,11 @@ Overview of Features
 	The Lennard-Jones sigma and epsilon parameters are estimated using empirical correlations (based on a species' critical properties and acentric factor).
 	The critical properties are estimated using a group-additivity approach; the acentric factor is also estimated using empirical correlations.
 	A standalone application for estimating these parameters is provided, and the output is stored in CHEMKIN-readable format.
+
+
+**Resolved excited species.**
+    Electronic states and vibrational levels use exact-state library thermo.
+    The :ref:`vibrationalManifold declaration <vibrational_manifold>` assigns
+    an unkeyed input species the v = 0 thermo without counting its thermal
+    ensemble alongside explicit levels. State-dependent transport or annotated
+    ground-state borrowing is exported with the model.

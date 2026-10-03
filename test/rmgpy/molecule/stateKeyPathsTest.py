@@ -40,11 +40,11 @@ import pytest
 from rdkit import Chem
 
 from rmgpy.molecule import Molecule
-from rmgpy.exceptions import InvalidAdjacencyListError
+from rmgpy.exceptions import ExcitedSpeciesThermoError, InvalidAdjacencyListError
 from rmgpy.molecule.adjlist import from_adjacency_list
 from rmgpy.molecule.translator import to_inchi_key
 from rmgpy.qm.main import QMSettings
-from rmgpy.qm.molecule import QMMolecule, Geometry
+from rmgpy.qm.molecule import QMMolecule, Geometry, load_thermo_data_file
 from rmgpy.qm.gaussian import GaussianMolPM3
 from rmgpy.qm.mopac import MopacMolPM3
 from rmgpy.qm.qmdata import QMData
@@ -203,7 +203,14 @@ def test_qm_thermo_cache_saves_and_loads_resolved_identity(settings, state):
     assert path.parent == Path(settings.fileStore)
     assert path.is_file()
     restored = QMMolecule(molecule.copy(deep=True), settings)
-    assert restored.load_thermo_data().H298.value_si == pytest.approx(1234)
+    # State-bearing cache files still round-trip identity, but phase 3 admits
+    # resolved thermo only from libraries, never from a QM cache.
+    cached = load_thermo_data_file(str(path))
+    assert cached['thermoData'].H298.value_si == pytest.approx(1234)
+    assert Molecule().from_adjacency_list(cached['adjacencyList']).is_isomorphic(molecule)
+    with pytest.raises(ExcitedSpeciesThermoError):
+        restored.load_thermo_data()
+    assert getattr(restored, 'thermo', None) is None
     assert restored.unique_id_long in path.read_text()
     assert restored.get_augmented_inchi_key() == qm.unique_id
 

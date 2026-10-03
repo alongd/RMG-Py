@@ -75,6 +75,7 @@ from rmgpy.quantity cimport ScalarQuantity
 from rmgpy.solver.base cimport ReactionSystem
 from rmgpy.thermo import NASA, ThermoData, Wilhoit
 from rmgpy.thermo.thermoengine import process_thermo_data
+from rmgpy.thermo.state import thermo_library_species
 
 
 # Tolerance for every net-charge / quasineutrality check in this module. A state is
@@ -242,7 +243,7 @@ def _is_finite_normal_positive(double v):
 
 def _charged_species_identity(species):
     """Use a species' stable label when available, otherwise its SMILES."""
-    return species.label if species.label else species.smiles
+    return species.label if species.label else species.smiles + species.molecule[0].state_suffix()
 
 
 def _thermo_comparison_segments(thermo, reference):
@@ -515,8 +516,9 @@ def _library_entry_thermo_forms(data, species, entry_label):
 
 
 def _charged_thermo_formula_charge_key(molecule):
-    """Return the formula/charge bucket used before exact isomorphism."""
-    return molecule.get_formula(), molecule.get_net_charge()
+    """Return the formula/charge/state bucket used before exact isomorphism."""
+    return (molecule.get_formula(), molecule.get_net_charge(),
+            molecule.electronic_state, molecule.vibrational_level)
 
 
 def _build_charged_thermo_library_index(thermo_database):
@@ -528,7 +530,9 @@ def _build_charged_thermo_library_index(thermo_database):
         if library.solvent:
             continue
         for entry in library.entries.values():
-            if entry.data is None or entry.item.get_net_charge() == 0:
+            if (entry.data is None
+                    or (entry.item.get_net_charge() == 0
+                        and not getattr(entry.item, 'has_resolved_state', lambda: False)())):
                 continue
             key = _charged_thermo_formula_charge_key(entry.item)
             index.setdefault(key, []).append(
@@ -540,6 +544,7 @@ def _build_charged_thermo_library_index(thermo_database):
 def _charged_species_library_thermo_match(species, library_index,
                                            reference_cache):
     """Return the first match and reasons for rejected candidates."""
+    species = thermo_library_species(species)
     outcome = {'match': None, 'comparison': None, 'mismatches': []}
     structure_keys = tuple(sorted({_charged_thermo_formula_charge_key(molecule)
                                    for molecule in species.molecule}))
@@ -2775,7 +2780,7 @@ cdef class PlasmaReactor(ReactionSystem):
             self._latch_energy_budget(self.y0, 0.0)
 
     def _check_charged_species_thermo_provenance(self, core_species, edge_species):
-        """Refuse core ions without a library value match and warn once for edge ions."""
+        """Require a library value match for charged, resolved, and declared v=0 core species."""
         database = rmg_data_module.database
         thermo_database = None if database is None else getattr(database, 'thermo', None)
         library_index = (None if thermo_database is None else
@@ -2784,33 +2789,40 @@ cdef class PlasmaReactor(ReactionSystem):
 
         for species in core_species:
             charge = species.get_net_charge()
-            if charge == 0 or species.is_electron():
+            resolved = (species.props.get('vibrational_manifold')
+                        or any(molecule.has_resolved_state() for molecule in species.molecule))
+            if (charge == 0 and not resolved) or species.is_electron():
                 continue
             identity = _charged_species_identity(species)
             if species.thermo is None:
                 raise PlasmaStateError(
-                    "PlasmaReactor charged species {0!r} (net charge {1:+d}) has no "
-                    "thermo data; charged core species require a matching loaded thermo "
+                    "PlasmaReactor charged or resolved species {0!r} (net charge {1:+d}) has no "
+                    "thermo data; charged or resolved core species require a matching loaded thermo "
                     "library entry.".format(identity, charge))
             if thermo_database is None:
-                if identity in self.thermo_source_assertions:
+                if identity in self.thermo_source_assertions and not resolved:
                     self.thermo_provenance_diagnostics[identity] = PLASMA_THERMO_CALLER_ASSERTION
                     continue
-                raise PlasmaStateError(
-                    "PlasmaReactor cannot value-match thermo for charged species "
-                    "{0!r} (net charge {1:+d}) because no thermo database is loaded. "
+                guidance = (
+                    "Load an exact-state thermo library; resolved and declared v=0 "
+                    "species cannot use thermo_source_assertions."
+                    if resolved else
                     "Load the job's thermo libraries, or for a standalone reload explicitly "
                     "pass thermo_source_assertions=[{0!r}]; that declaration is recorded as "
-                    "'{2}'.".format(identity, charge, PLASMA_THERMO_CALLER_ASSERTION))
+                    "'{1}'.".format(identity, PLASMA_THERMO_CALLER_ASSERTION))
+                raise PlasmaStateError(
+                    "PlasmaReactor cannot value-match thermo for charged or resolved species "
+                    "{0!r} (net charge {1:+d}) because no thermo database is loaded. "
+                    "{2}".format(identity, charge, guidance))
             outcome = _charged_species_library_thermo_match(
                 species, library_index, reference_cache)
             if outcome['match'] is None:
                 raise PlasmaStateError(
-                    "PlasmaReactor charged species {0!r} (net charge {1:+d}) has thermo "
+                    "PlasmaReactor charged or resolved species {0!r} (net charge {1:+d}) has thermo "
                     "that could not be value-matched to an isomorphic entry in any loaded "
                     "gas-phase thermo library "
                     "at rtol={2:g}, atol={3:g} SI. Group additivity, HBI, QM, ML, and "
-                    "other estimates do not establish a charged-species library value match."
+                    "other estimates do not establish a charged/resolved-species library value match."
                     "{4}"
                     .format(identity, charge, PLASMA_THERMO_PROVENANCE_RTOL,
                             PLASMA_THERMO_PROVENANCE_ATOL,
@@ -2820,13 +2832,15 @@ cdef class PlasmaReactor(ReactionSystem):
 
         for species in edge_species:
             charge = species.get_net_charge()
-            if charge == 0 or species.is_electron():
+            resolved = (species.props.get('vibrational_manifold')
+                        or any(molecule.has_resolved_state() for molecule in species.molecule))
+            if (charge == 0 and not resolved) or species.is_electron():
                 continue
             identity = _charged_species_identity(species)
             value_matched = False
             if species.thermo is not None:
                 if thermo_database is None:
-                    value_matched = identity in self.thermo_source_assertions
+                    value_matched = identity in self.thermo_source_assertions and not resolved
                     if value_matched:
                         self.thermo_provenance_diagnostics[identity] = \
                             PLASMA_THERMO_CALLER_ASSERTION

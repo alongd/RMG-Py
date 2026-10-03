@@ -2983,6 +2983,10 @@ def render_chemkin_file(species, reactions, verbose=True, check_for_duplicates=T
         label = get_species_identifier(spec)
         if verbose:
             f.write('    {0!s:<16}    ! {1}\n'.format(label, str(spec)))
+            if (spec.molecule[0].has_resolved_state() and spec.transport_data
+                    and spec.transport_data.comment):
+                f.write('    ! Transport: {0}\n'.format(
+                    spec.transport_data.comment.replace('\n', ' ')))
         else:
             f.write('    {0!s:<16}\n'.format(label))
     f.write('END\n\n\n\n')

@@ -69,6 +69,8 @@ from rmgpy.rmg.reactionmechanismsimulator_reactors import (
 from rmgpy.rmg.reactionmechanismsimulator_reactors import Reactor as RMSReactor
 from rmgpy.species import Species
 from rmgpy.thermo.thermoengine import submit
+from rmgpy.thermo.state import require_vibrational_manifold_thermo
+from rmgpy.exceptions import VibrationalManifoldError
 
 ################################################################################
 
@@ -297,6 +299,8 @@ class CoreEdgeReactionModel:
         self.network_list = []
         self.network_count = 0
         self.species_dict = {}
+        self.vibrational_manifolds = []
+        self.defer_vibrational_validation = False
         self.reaction_dict = {}
         self.species_cache = [None for i in range(4)]
         self.species_counter = 0
@@ -400,6 +404,57 @@ class CoreEdgeReactionModel:
         # At this point we can conclude that the species is new
         return None
 
+    def declare_vibrational_manifold(self, species):
+        """Redeclare an unresolved input species as the v=0 member of its manifold."""
+        if any(molecule.has_resolved_state() for molecule in species.molecule):
+            raise VibrationalManifoldError(
+                "vibrationalManifold species {0!r} must be unresolved.".format(species.label))
+        if species in self.vibrational_manifolds:
+            raise VibrationalManifoldError(
+                "vibrationalManifold species {0!r} was already declared.".format(species.label))
+        self.vibrational_manifolds.append(species)
+        self._apply_vibrational_manifold(species)
+        # Input reading can encounter thermo attached before the declaration was read.
+        # The declaration explicitly switches it; later attached thermo is value-checked.
+        species.thermo = None
+        logging.info("vibrationalManifold: species %r is re-declared as v = 0; "
+                     "its thermo will be taken from a vibrationallevel 0 library entry.", species.label)
+
+    def _apply_vibrational_manifold(self, species):
+        """Enforce the partition for input, library, and newly generated species."""
+        if self.defer_vibrational_validation:
+            return
+        if not self.vibrational_manifolds and not any(
+                molecule.vibrational_level >= 1 for molecule in species.molecule):
+            return
+        for molecule in species.molecule:
+            ground = molecule.copy(deep=True)
+            ground.electronic_state = ''
+            ground.vibrational_level = -1
+            declaration = next((entry for entry in self.vibrational_manifolds
+                                if any(ground.is_isomorphic(candidate)
+                                       for candidate in entry.molecule)), None)
+            if molecule.vibrational_level >= 1 and declaration is None:
+                raise VibrationalManifoldError(
+                    "Resolved vibrational species {0!r} requires a vibrationalManifold "
+                    "declaration naming its unresolved input species; counting a thermal "
+                    "ensemble alongside explicit levels is refused.\n{1}"
+                    .format(species.label or molecule.state_suffix(), molecule.to_adjacency_list()))
+            if declaration is not None and not molecule.has_resolved_state():
+                species.props['vibrational_manifold'] = declaration.label
+                for structure in species.molecule:
+                    structure.props['vibrational_manifold'] = declaration.label
+            if (declaration is not None and molecule.vibrational_level == 0
+                    and not molecule.electronic_state):
+                raise VibrationalManifoldError(
+                    "Species {0!r} explicitly duplicates v = 0 already represented by "
+                    "vibrationalManifold species {1!r}.".format(species.label, declaration.label))
+
+    def validate_vibrational_manifolds(self, species_list):
+        """Validate a complete input after all declarations have been read."""
+        for species in species_list:
+            self._apply_vibrational_manifold(species)
+
     def make_new_species(self, object, label="", reactive=True, check_existing=True, generate_thermo=True, check_decay=False, check_cut=False):
         """
         Formally create a new species from the specified `object`, which can be
@@ -443,6 +498,9 @@ class CoreEdgeReactionModel:
             spec = Species(label=label, molecule=[molecule], reactive=reactive)
 
         spec.generate_resonance_structures()
+        if not spec.label and spec.molecule[0].has_resolved_state():
+            spec.props['automatic_state_label'] = True
+        self._apply_vibrational_manifold(spec)
 
         if check_decay:
             spcs = decay_species(spec)
@@ -467,7 +525,7 @@ class CoreEdgeReactionModel:
         # If the species still does not have a label, set initial label as the SMILES
         # (applies when generate_thermo is False, or when no library match was found)
         if not spec.label:
-            spec.label = spec.smiles
+            spec.label = spec.smiles + spec.molecule[0].state_suffix()
 
         # ensure species labels are unique
         orilabel = spec.label
@@ -1084,8 +1142,15 @@ class CoreEdgeReactionModel:
 
         quantum_mechanics = get_input("quantum_mechanics")
 
+        for species in self.new_species_list:
+            self._apply_vibrational_manifold(species)
+
         if quantum_mechanics:
-            quantum_mechanics.run_jobs(self.new_species_list, procnum=procnum)
+            qm_species = [species for species in self.new_species_list
+                          if not species.props.get('vibrational_manifold')
+                          and not any(molecule.has_resolved_state()
+                                      for molecule in species.molecule)]
+            quantum_mechanics.run_jobs(qm_species, procnum=procnum)
 
         # Serial thermo calculation for other methods
         for spc in self.new_species_list:
@@ -1095,16 +1160,35 @@ class CoreEdgeReactionModel:
         """
         Generate thermo for species.
         """
+        self._apply_vibrational_manifold(spc)
+        if spc.props.get('vibrational_manifold') and spc.thermo is not None:
+            from rmgpy.data.rmg import get_db
+            try:
+                thermo_database = get_db('thermo')
+            except DatabaseError:
+                thermo_database = None
+            require_vibrational_manifold_thermo(spc, thermo_database)
+
         if not spc.thermo:
             submit(spc, self.solvent_name)
+            if spc.props.get('vibrational_manifold'):
+                if spc.thermo is None:
+                    raise VibrationalManifoldError(
+                        "Species {0!r} declared by vibrationalManifold requires a "
+                        "loaded vibrationallevel 0 thermo library entry.".format(spc.label))
+                logging.info("vibrationalManifold: species %r thermo switched to v = 0 "
+                             "library entry %r.", spc.label, spc.thermo.label)
 
-            if rename and spc.thermo and spc.thermo.label != "":  # check if thermo libraries have a name for it
+            if (rename and spc.thermo and spc.thermo.label != ""
+                    and not spc.props.get('vibrational_manifold')
+                    and (not spc.molecule[0].has_resolved_state()
+                         or not spc.label or spc.props.get('automatic_state_label'))):
                 if isinstance(spc.molecule[0], Fragment):
                     logging.info("Species {0} NOT renamed {1} but get thermo based on thermo library".format(spc.label, spc.thermo.label))
                     spc.label = spc.smiles
                 else:
                     logging.info("Species {0} renamed {1} based on thermo library name".format(spc.label, spc.thermo.label))
-                    spc.label = spc.thermo.label
+                    spc.label = spc.thermo.label + spc.molecule[0].state_suffix()
 
         if vapor_liquid_mass_transfer.enabled:
             spc.get_liquid_volumetric_mass_transfer_coefficient_data()

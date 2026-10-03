@@ -50,6 +50,7 @@ import rmgpy.thermo
 from rmgpy.qm.qmdata import parse_cclib_data
 from rmgpy.qm import _check_file_names
 from rmgpy.thermo import ThermoData
+from rmgpy.thermo.state import require_thermo_estimation_allowed
 
 
 class Geometry(object):
@@ -505,6 +506,7 @@ class QMMolecule(object):
 
         Returns None if it fails.
         """
+        require_thermo_estimation_allowed(self.molecule)
         self.initialize()
 
         # First, see if we already have it.
@@ -555,6 +557,7 @@ class QMMolecule(object):
         """
         Try loading a thermo data from a previous run.
         """
+        require_thermo_estimation_allowed(self.molecule)
         file_path = self.get_thermo_file_path()
         local_context = load_thermo_data_file(file_path)
         if local_context is None:
@@ -629,6 +632,7 @@ class QMMolecule(object):
         Stores and returns a ThermoData object as self.thermo.
         self.qm_data and self.point_group need to be generated before this method is called.
         """
+        require_thermo_estimation_allowed(self.molecule)
         assert self.qm_data, "Need QM Data first in order to calculate thermo."
         assert self.point_group, "Need Point Group first in order to calculate thermo."
 
