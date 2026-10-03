@@ -337,6 +337,16 @@ or hashed. The vibrational level is an integer from 0 through 2147483647
     1 N u0 p1 c0 {2,T}
     2 N u0 p1 c0 {1,T}
 
+A kinetics-library reaction touching a species with either header must be
+irreversible if its rate law declares electron-temperature or electron-density
+dependence. Library loading raises ``NonEquilibriumReverseRateError`` for a
+reversible entry, naming the reaction and resolved species. Supply the reverse
+as a separate irreversible entry with its own kinetics: neither ``Keq(Tgas)``
+nor ``Keq(Te)`` supplies a superelastic rate for a general electron energy
+distribution. Heavy-particle reactions with gas-temperature-only kinetics may
+remain reversible and use ``Keq(Tgas)``. Entries without resolved species keep
+their existing behavior.
+
 These headers distinguish species with the same molecular graph. Omitting
 them preserves the existing unresolved identity; an explicit level zero is
 distinct from an omitted level. Resolved molecules do not match reaction

@@ -58,6 +58,7 @@ from rmgpy.data.kinetics.family import (TemplateReaction, REACTION_STATE_FIELDS,
                                         complete_round_trip, copy_reaction,
                                         fields_the_reducer_drops, object_state,
                                         reaction_state, state_fields, writable_fields)
+from rmgpy.exceptions import NonEquilibriumReverseRateError
 from rmgpy.kinetics import Arrhenius, ThirdBody, Lindemann, Troe, \
                            PDepArrhenius, MultiArrhenius, MultiPDepArrhenius, Chebyshev, KineticsModel, Marcus
 from rmgpy.kinetics.surface import StickingCoefficient
@@ -731,6 +732,36 @@ class KineticsLibrary(Database):
             if not rxn.is_balanced():
                 raise DatabaseError('Reaction {0} in kinetics library {1} was not balanced! '
                                     'Please reformulate.'.format(rxn, self.label))
+
+            # Refuse excited-state electron collisions before a model can reach
+            # its solver. Unresolved entries retain their existing load behavior;
+            # thermal heavy-particle reactions may still use Keq(Tgas).
+            if rxn.reversible and (getattr(entry.data, 'uses_electron_temperature', False)
+                                   or getattr(entry.data, 'uses_electron_density', False)):
+                resolved = []
+                for species in rxn.reactants + rxn.products:
+                    for molecule in species.molecule:
+                        if molecule.has_resolved_state():
+                            state = []
+                            if molecule.electronic_state:
+                                state.append('electronicstate ' + molecule.electronic_state)
+                            if molecule.vibrational_level >= 0:
+                                state.append('vibrationallevel {0}'.format(molecule.vibrational_level))
+                            resolved.append('{0} ({1})'.format(species, ', '.join(state)))
+                            break
+                if resolved:
+                    # Library items carry their rate law in entry.data, not in
+                    # item.kinetics. Check a complete Reaction without changing
+                    # that storage convention or duplicating the refusal policy.
+                    reverse_check = Reaction(reactants=rxn.reactants, products=rxn.products,
+                                             reversible=rxn.reversible, kinetics=entry.data,
+                                             electrons=rxn.electrons)
+                    try:
+                        reverse_check.check_reverse_from_equilibrium_supported()
+                    except NonEquilibriumReverseRateError as error:
+                        raise NonEquilibriumReverseRateError(
+                            '{0} Resolved species: {1}. Supply the reverse as its own '
+                            'irreversible reaction.'.format(error, ', '.join(resolved))) from error
 
             if len(rxn.reactants) > 3:
                 raise DatabaseError('RMG does not accept reactions with more than 3 reactants in its solver. '

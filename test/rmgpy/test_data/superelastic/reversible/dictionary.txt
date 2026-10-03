@@ -1,0 +1,11 @@
+e-
+1 e u1 p0 c-1
+
+N2
+1 N u0 p1 c0 {2,T}
+2 N u0 p1 c0 {1,T}
+
+N2v1
+vibrationallevel 1
+1 N u0 p1 c0 {2,T}
+2 N u0 p1 c0 {1,T}
