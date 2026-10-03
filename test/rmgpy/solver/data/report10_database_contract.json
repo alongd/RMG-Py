@@ -1,0 +1,2233 @@
+{
+  "initialized_entries": {
+    "PlasmaArgon": [
+      86,
+      87,
+      88,
+      89,
+      90,
+      91,
+      92,
+      93
+    ],
+    "PlasmaRadiativeRecombination": [
+      1
+    ]
+  },
+  "libraries": {
+    "PlasmaArgon": {
+      "86": {
+        "entry": {
+          "authored_families": [],
+          "binding_energies": null,
+          "children": [],
+          "class": "rmgpy.data.base.Entry",
+          "data_count": null,
+          "electron_placement": null,
+          "facet": null,
+          "index": 86,
+          "kinetics": {
+            "Pmax": null,
+            "Pmin": null,
+            "Tmax": null,
+            "Tmin": null,
+            "class": "rmgpy.kinetics.arrhenius.ElectronCollisionPlasma",
+            "energies": {
+              "class": "ArrayQuantity",
+              "uncertainty_si": [
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "uncertainty_type": "+|-",
+              "units": "kg*m**2/(s**2*mol)",
+              "value_si": [
+                1520608.995636182,
+                1530257.529872452,
+                1568851.6668175329,
+                1617094.3379988838,
+                1713579.6803615857,
+                2003035.7074496914,
+                2485462.419263201,
+                3450315.8428902193,
+                4415169.266517239,
+                5380022.690144258,
+                6344876.113771277,
+                7309729.5373982955,
+                8274582.961025314,
+                9239436.384652333,
+                10204289.808279352,
+                15028556.926414445,
+                19852824.04454954,
+                24677091.162684634,
+                29501358.28081973,
+                34325625.39895482,
+                39149892.51708992,
+                43974159.63522501,
+                48798426.75336011,
+                53622693.8714952,
+                58446960.9896303,
+                63271228.10776539,
+                68095495.22590049,
+                72919762.34403558,
+                77744029.46217068,
+                82568296.58030577,
+                87392563.69844086,
+                92216830.81657596,
+                97041097.93471105,
+                145283769.11606202,
+                193526440.29741296,
+                241769111.4787639,
+                290011782.6601149,
+                338254453.84146583,
+                386497125.0228168,
+                434739796.2041677,
+                482982467.38551867,
+                531225138.5668696,
+                579467809.7482206,
+                627710480.9295715,
+                675953152.1109225,
+                724195823.2922734,
+                772438494.4736243,
+                820681165.6549753,
+                868923836.8363262,
+                917166508.0176772,
+                964853423.6270189
+              ]
+            },
+            "sigma": {
+              "class": "ArrayQuantity",
+              "uncertainty_si": [
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "uncertainty_type": "+|-",
+              "units": "m**2",
+              "value_si": [
+                0.0,
+                1.16e-22,
+                5.74e-22,
+                1.13e-21,
+                2.21e-21,
+                5.12e-21,
+                9.1e-21,
+                1.47e-20,
+                1.81e-20,
+                2.03e-20,
+                2.16e-20,
+                2.23e-20,
+                2.27e-20,
+                2.29e-20,
+                2.28e-20,
+                2.15e-20,
+                1.96e-20,
+                1.79e-20,
+                1.64e-20,
+                1.51e-20,
+                1.4e-20,
+                1.3e-20,
+                1.22e-20,
+                1.15e-20,
+                1.08e-20,
+                1.03e-20,
+                9.74e-21,
+                9.28e-21,
+                8.87e-21,
+                8.49e-21,
+                8.14e-21,
+                7.83e-21,
+                7.53e-21,
+                5.53e-21,
+                4.4e-21,
+                3.68e-21,
+                3.17e-21,
+                2.79e-21,
+                2.5e-21,
+                2.27e-21,
+                2.08e-21,
+                1.92e-21,
+                1.78e-21,
+                1.67e-21,
+                1.57e-21,
+                1.48e-21,
+                1.4e-21,
+                1.33e-21,
+                1.27e-21,
+                1.21e-21,
+                1.16e-21
+              ]
+            },
+            "solute": null,
+            "uncertainty": null,
+            "uses_electron_temperature": true
+          },
+          "label": {
+            "products": [
+              {
+                "adjacency": [
+                  "multiplicity 2\n1 Ar u1 p3 c+1\n"
+                ],
+                "props": {},
+                "reactive": true
+              },
+              {
+                "adjacency": [
+                  "multiplicity 2\n1 e u1 p0 c-1\n"
+                ],
+                "props": {},
+                "reactive": true
+              },
+              {
+                "adjacency": [
+                  "multiplicity 2\n1 e u1 p0 c-1\n"
+                ],
+                "props": {},
+                "reactive": true
+              }
+            ],
+            "reactants": [
+              {
+                "adjacency": [
+                  "1 Ar u0 p4 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              },
+              {
+                "adjacency": [
+                  "multiplicity 2\n1 e u1 p0 c-1\n"
+                ],
+                "props": {},
+                "reactive": true
+              }
+            ],
+            "reversible": false
+          },
+          "loader_provenance": {
+            "SurfaceArrhenius": null,
+            "SurfaceChargeTransfer": null,
+            "allow_max_rate_violation": false,
+            "allow_pdep_route": false,
+            "class": "rmgpy.data.kinetics.library.LibraryReaction",
+            "degeneracy": 1.0,
+            "duplicate": false,
+            "electrons": 0,
+            "elementary_high_p": false,
+            "family": "PlasmaArgon",
+            "index": -1,
+            "is_forward": false,
+            "k_effective_cache": {},
+            "library": "PlasmaArgon",
+            "network_kinetics": null,
+            "pairs": null,
+            "protons": 0,
+            "rank": null,
+            "reversible": false,
+            "specific_collider": null,
+            "transition_state": null
+          },
+          "metal": null,
+          "nodal_distance": null,
+          "parent": null,
+          "rank": null,
+          "reaction": {
+            "SurfaceArrhenius": null,
+            "SurfaceChargeTransfer": null,
+            "allow_max_rate_violation": false,
+            "allow_pdep_route": false,
+            "class": "rmgpy.reaction.Reaction",
+            "degeneracy": 1.0,
+            "duplicate": false,
+            "electrons": 0,
+            "elementary_high_p": false,
+            "index": -1,
+            "is_forward": false,
+            "k_effective_cache": {},
+            "kinetics": null,
+            "network_kinetics": null,
+            "pairs": null,
+            "products": [
+              {
+                "adjacency": [
+                  "multiplicity 2\n1 Ar u1 p3 c+1\n"
+                ],
+                "props": {},
+                "reactive": true
+              },
+              {
+                "adjacency": [
+                  "multiplicity 2\n1 e u1 p0 c-1\n"
+                ],
+                "props": {},
+                "reactive": true
+              },
+              {
+                "adjacency": [
+                  "multiplicity 2\n1 e u1 p0 c-1\n"
+                ],
+                "props": {},
+                "reactive": true
+              }
+            ],
+            "protons": 0,
+            "rank": null,
+            "reactants": [
+              {
+                "adjacency": [
+                  "1 Ar u0 p4 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              },
+              {
+                "adjacency": [
+                  "multiplicity 2\n1 e u1 p0 c-1\n"
+                ],
+                "props": {},
+                "reactive": true
+              }
+            ],
+            "reversible": false,
+            "specific_collider": null,
+            "transition_state": null
+          },
+          "site": null,
+          "surface_site_density": null
+        },
+        "rates": [
+          2.053639780262146e-28,
+          3.4401035597120897e-22,
+          2.083070018881136e-21,
+          7.892401827886388e-18,
+          2.804338050462362e-15,
+          2.053639780262146e-28,
+          3.4401035597120897e-22,
+          2.083070018881136e-21,
+          7.892401827886388e-18,
+          2.804338050462362e-15,
+          2.053639780262146e-28,
+          3.4401035597120897e-22,
+          2.083070018881136e-21,
+          7.892401827886388e-18,
+          2.804338050462362e-15
+        ]
+      },
+      "87": {
+        "entry": {
+          "authored_families": [],
+          "binding_energies": null,
+          "children": [],
+          "class": "rmgpy.data.base.Entry",
+          "data_count": null,
+          "electron_placement": null,
+          "facet": null,
+          "index": 87,
+          "kinetics": {
+            "A": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "m**3/(s*mol)",
+              "value_si": 3011070895.0
+            },
+            "Ea_e": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "kg*m**2/(s**2*mol)",
+              "value_si": 1115370.5577128339
+            },
+            "Ea_g": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "kg*m**2/(s**2*mol)",
+              "value_si": 1115370.5577128339
+            },
+            "Pmax": null,
+            "Pmin": null,
+            "T0": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "K",
+              "value_si": 11604.51812
+            },
+            "Tmax": null,
+            "Tmin": null,
+            "class": "rmgpy.kinetics.arrhenius.TwoTemperaturePlasma",
+            "electrons": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "dimensionless",
+              "value_si": 0.0
+            },
+            "n": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "dimensionless",
+              "value_si": 0.74
+            },
+            "solute": null,
+            "uncertainty": null,
+            "uses_electron_temperature": true
+          },
+          "label": {
+            "products": [
+              {
+                "adjacency": [
+                  "multiplicity 2\n1 e u1 p0 c-1\n"
+                ],
+                "props": {},
+                "reactive": true
+              },
+              {
+                "adjacency": [
+                  "multiplicity 3\n1 Ar u2 p3 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              }
+            ],
+            "reactants": [
+              {
+                "adjacency": [
+                  "1 Ar u0 p4 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              },
+              {
+                "adjacency": [
+                  "multiplicity 2\n1 e u1 p0 c-1\n"
+                ],
+                "props": {},
+                "reactive": true
+              }
+            ],
+            "reversible": false
+          },
+          "loader_provenance": {
+            "SurfaceArrhenius": null,
+            "SurfaceChargeTransfer": null,
+            "allow_max_rate_violation": false,
+            "allow_pdep_route": false,
+            "class": "rmgpy.data.kinetics.library.LibraryReaction",
+            "degeneracy": 1.0,
+            "duplicate": true,
+            "electrons": 0,
+            "elementary_high_p": false,
+            "family": "PlasmaArgon",
+            "index": -1,
+            "is_forward": false,
+            "k_effective_cache": {},
+            "library": "PlasmaArgon",
+            "network_kinetics": null,
+            "pairs": null,
+            "protons": 0,
+            "rank": null,
+            "reversible": false,
+            "specific_collider": null,
+            "transition_state": null
+          },
+          "metal": null,
+          "nodal_distance": null,
+          "parent": null,
+          "rank": null,
+          "reaction": {
+            "SurfaceArrhenius": null,
+            "SurfaceChargeTransfer": null,
+            "allow_max_rate_violation": false,
+            "allow_pdep_route": false,
+            "class": "rmgpy.reaction.Reaction",
+            "degeneracy": 1.0,
+            "duplicate": true,
+            "electrons": 0,
+            "elementary_high_p": false,
+            "index": -1,
+            "is_forward": false,
+            "k_effective_cache": {},
+            "kinetics": null,
+            "network_kinetics": null,
+            "pairs": null,
+            "products": [
+              {
+                "adjacency": [
+                  "multiplicity 2\n1 e u1 p0 c-1\n"
+                ],
+                "props": {},
+                "reactive": true
+              },
+              {
+                "adjacency": [
+                  "multiplicity 3\n1 Ar u2 p3 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              }
+            ],
+            "protons": 0,
+            "rank": null,
+            "reactants": [
+              {
+                "adjacency": [
+                  "1 Ar u0 p4 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              },
+              {
+                "adjacency": [
+                  "multiplicity 2\n1 e u1 p0 c-1\n"
+                ],
+                "props": {},
+                "reactive": true
+              }
+            ],
+            "reversible": false,
+            "specific_collider": null,
+            "transition_state": null
+          },
+          "site": null,
+          "surface_site_density": null
+        },
+        "rates": [
+          2.724700030110279e-25,
+          1.2213428154640016e-20,
+          4.770075785094884e-20,
+          2.5793463872966483e-17,
+          2.7419583839116958e-15,
+          2.724700030110279e-25,
+          1.2213428154640016e-20,
+          4.770075785094884e-20,
+          2.5793463872966483e-17,
+          2.7419583839116958e-15,
+          2.724700030110279e-25,
+          1.2213428154640016e-20,
+          4.770075785094884e-20,
+          2.5793463872966483e-17,
+          2.7419583839116958e-15
+        ]
+      },
+      "88": {
+        "entry": {
+          "authored_families": [],
+          "binding_energies": null,
+          "children": [],
+          "class": "rmgpy.data.base.Entry",
+          "data_count": null,
+          "electron_placement": null,
+          "facet": null,
+          "index": 88,
+          "kinetics": {
+            "A": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "m**3/(s*mol)",
+              "value_si": 71530633372.96356
+            },
+            "Ea_e": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "kg*m**2/(s**2*mol)",
+              "value_si": 424683.70151372487
+            },
+            "Ea_g": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "kg*m**2/(s**2*mol)",
+              "value_si": 424683.70151372487
+            },
+            "Pmax": null,
+            "Pmin": null,
+            "T0": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "K",
+              "value_si": 11604.51812
+            },
+            "Tmax": null,
+            "Tmin": null,
+            "class": "rmgpy.kinetics.arrhenius.TwoTemperaturePlasma",
+            "electrons": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "dimensionless",
+              "value_si": 0.0
+            },
+            "n": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "dimensionless",
+              "value_si": 0.3278287422
+            },
+            "solute": null,
+            "uncertainty": null,
+            "uses_electron_temperature": true
+          },
+          "label": {
+            "products": [
+              {
+                "adjacency": [
+                  "multiplicity 2\n1 Ar u1 p3 c+1\n"
+                ],
+                "props": {},
+                "reactive": true
+              },
+              {
+                "adjacency": [
+                  "multiplicity 2\n1 e u1 p0 c-1\n"
+                ],
+                "props": {},
+                "reactive": true
+              },
+              {
+                "adjacency": [
+                  "multiplicity 2\n1 e u1 p0 c-1\n"
+                ],
+                "props": {},
+                "reactive": true
+              }
+            ],
+            "reactants": [
+              {
+                "adjacency": [
+                  "multiplicity 2\n1 e u1 p0 c-1\n"
+                ],
+                "props": {},
+                "reactive": true
+              },
+              {
+                "adjacency": [
+                  "multiplicity 3\n1 Ar u2 p3 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              }
+            ],
+            "reversible": false
+          },
+          "loader_provenance": {
+            "SurfaceArrhenius": null,
+            "SurfaceChargeTransfer": null,
+            "allow_max_rate_violation": false,
+            "allow_pdep_route": false,
+            "class": "rmgpy.data.kinetics.library.LibraryReaction",
+            "degeneracy": 1.0,
+            "duplicate": false,
+            "electrons": 0,
+            "elementary_high_p": false,
+            "family": "PlasmaArgon",
+            "index": -1,
+            "is_forward": false,
+            "k_effective_cache": {},
+            "library": "PlasmaArgon",
+            "network_kinetics": null,
+            "pairs": null,
+            "protons": 0,
+            "rank": null,
+            "reversible": false,
+            "specific_collider": null,
+            "transition_state": null
+          },
+          "metal": null,
+          "nodal_distance": null,
+          "parent": null,
+          "rank": null,
+          "reaction": {
+            "SurfaceArrhenius": null,
+            "SurfaceChargeTransfer": null,
+            "allow_max_rate_violation": false,
+            "allow_pdep_route": false,
+            "class": "rmgpy.reaction.Reaction",
+            "degeneracy": 1.0,
+            "duplicate": false,
+            "electrons": 0,
+            "elementary_high_p": false,
+            "index": -1,
+            "is_forward": false,
+            "k_effective_cache": {},
+            "kinetics": null,
+            "network_kinetics": null,
+            "pairs": null,
+            "products": [
+              {
+                "adjacency": [
+                  "multiplicity 2\n1 Ar u1 p3 c+1\n"
+                ],
+                "props": {},
+                "reactive": true
+              },
+              {
+                "adjacency": [
+                  "multiplicity 2\n1 e u1 p0 c-1\n"
+                ],
+                "props": {},
+                "reactive": true
+              },
+              {
+                "adjacency": [
+                  "multiplicity 2\n1 e u1 p0 c-1\n"
+                ],
+                "props": {},
+                "reactive": true
+              }
+            ],
+            "protons": 0,
+            "rank": null,
+            "reactants": [
+              {
+                "adjacency": [
+                  "multiplicity 2\n1 e u1 p0 c-1\n"
+                ],
+                "props": {},
+                "reactive": true
+              },
+              {
+                "adjacency": [
+                  "multiplicity 3\n1 Ar u2 p3 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              }
+            ],
+            "reversible": false,
+            "specific_collider": null,
+            "transition_state": null
+          },
+          "site": null,
+          "surface_site_density": null
+        },
+        "rates": [
+          1.422096243857973e-17,
+          8.62544713418631e-16,
+          1.4560561022626497e-15,
+          1.6506150892754394e-14,
+          1.0262365619337671e-13,
+          1.422096243857973e-17,
+          8.62544713418631e-16,
+          1.4560561022626497e-15,
+          1.6506150892754394e-14,
+          1.0262365619337671e-13,
+          1.422096243857973e-17,
+          8.62544713418631e-16,
+          1.4560561022626497e-15,
+          1.6506150892754394e-14,
+          1.0262365619337671e-13
+        ]
+      },
+      "89": {
+        "entry": {
+          "authored_families": [],
+          "binding_energies": null,
+          "children": [],
+          "class": "rmgpy.data.base.Entry",
+          "data_count": null,
+          "electron_placement": null,
+          "facet": null,
+          "index": 89,
+          "kinetics": {
+            "A": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "m**3/(s*mol)",
+              "value_si": 258952096.97
+            },
+            "Ea_e": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "kg*m**2/(s**2*mol)",
+              "value_si": 0.0
+            },
+            "Ea_g": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "kg*m**2/(s**2*mol)",
+              "value_si": 0.0
+            },
+            "Pmax": null,
+            "Pmin": null,
+            "T0": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "K",
+              "value_si": 11604.51812
+            },
+            "Tmax": null,
+            "Tmin": null,
+            "class": "rmgpy.kinetics.arrhenius.TwoTemperaturePlasma",
+            "electrons": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "dimensionless",
+              "value_si": 0.0
+            },
+            "n": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "dimensionless",
+              "value_si": 0.74
+            },
+            "solute": null,
+            "uncertainty": null,
+            "uses_electron_temperature": true
+          },
+          "label": {
+            "products": [
+              {
+                "adjacency": [
+                  "1 Ar u0 p4 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              },
+              {
+                "adjacency": [
+                  "multiplicity 2\n1 e u1 p0 c-1\n"
+                ],
+                "props": {},
+                "reactive": true
+              }
+            ],
+            "reactants": [
+              {
+                "adjacency": [
+                  "multiplicity 2\n1 e u1 p0 c-1\n"
+                ],
+                "props": {},
+                "reactive": true
+              },
+              {
+                "adjacency": [
+                  "multiplicity 3\n1 Ar u2 p3 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              }
+            ],
+            "reversible": false
+          },
+          "loader_provenance": {
+            "SurfaceArrhenius": null,
+            "SurfaceChargeTransfer": null,
+            "allow_max_rate_violation": false,
+            "allow_pdep_route": false,
+            "class": "rmgpy.data.kinetics.library.LibraryReaction",
+            "degeneracy": 1.0,
+            "duplicate": true,
+            "electrons": 0,
+            "elementary_high_p": false,
+            "family": "PlasmaArgon",
+            "index": -1,
+            "is_forward": false,
+            "k_effective_cache": {},
+            "library": "PlasmaArgon",
+            "network_kinetics": null,
+            "pairs": null,
+            "protons": 0,
+            "rank": null,
+            "reversible": false,
+            "specific_collider": null,
+            "transition_state": null
+          },
+          "metal": null,
+          "nodal_distance": null,
+          "parent": null,
+          "rank": null,
+          "reaction": {
+            "SurfaceArrhenius": null,
+            "SurfaceChargeTransfer": null,
+            "allow_max_rate_violation": false,
+            "allow_pdep_route": false,
+            "class": "rmgpy.reaction.Reaction",
+            "degeneracy": 1.0,
+            "duplicate": true,
+            "electrons": 0,
+            "elementary_high_p": false,
+            "index": -1,
+            "is_forward": false,
+            "k_effective_cache": {},
+            "kinetics": null,
+            "network_kinetics": null,
+            "pairs": null,
+            "products": [
+              {
+                "adjacency": [
+                  "1 Ar u0 p4 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              },
+              {
+                "adjacency": [
+                  "multiplicity 2\n1 e u1 p0 c-1\n"
+                ],
+                "props": {},
+                "reactive": true
+              }
+            ],
+            "protons": 0,
+            "rank": null,
+            "reactants": [
+              {
+                "adjacency": [
+                  "multiplicity 2\n1 e u1 p0 c-1\n"
+                ],
+                "props": {},
+                "reactive": true
+              },
+              {
+                "adjacency": [
+                  "multiplicity 3\n1 Ar u2 p3 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              }
+            ],
+            "reversible": false,
+            "specific_collider": null,
+            "transition_state": null
+          },
+          "site": null,
+          "surface_site_density": null
+        },
+        "rates": [
+          2.5745772012458067e-16,
+          3.9774760465379655e-16,
+          4.299996636792151e-16,
+          7.181750489935488e-16,
+          1.6191983074212639e-15,
+          2.5745772012458067e-16,
+          3.9774760465379655e-16,
+          4.299996636792151e-16,
+          7.181750489935488e-16,
+          1.6191983074212639e-15,
+          2.5745772012458067e-16,
+          3.9774760465379655e-16,
+          4.299996636792151e-16,
+          7.181750489935488e-16,
+          1.6191983074212639e-15
+        ]
+      },
+      "90": {
+        "entry": {
+          "authored_families": [],
+          "binding_energies": null,
+          "children": [],
+          "class": "rmgpy.data.base.Entry",
+          "data_count": null,
+          "electron_placement": null,
+          "facet": null,
+          "index": 90,
+          "kinetics": {
+            "A": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "m**3/(s*mol)",
+              "value_si": 373372790.98
+            },
+            "Ea": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "kg*m**2/(s**2*mol)",
+              "value_si": 0.0
+            },
+            "Pmax": null,
+            "Pmin": null,
+            "T0": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "K",
+              "value_si": 1.0
+            },
+            "Tmax": null,
+            "Tmin": null,
+            "class": "rmgpy.kinetics.arrhenius.Arrhenius",
+            "n": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "dimensionless",
+              "value_si": 0.0
+            },
+            "solute": null,
+            "uncertainty": null
+          },
+          "label": {
+            "products": [
+              {
+                "adjacency": [
+                  "1 Ar u0 p4 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              },
+              {
+                "adjacency": [
+                  "multiplicity 2\n1 Ar u1 p3 c+1\n"
+                ],
+                "props": {},
+                "reactive": true
+              },
+              {
+                "adjacency": [
+                  "multiplicity 2\n1 e u1 p0 c-1\n"
+                ],
+                "props": {},
+                "reactive": true
+              }
+            ],
+            "reactants": [
+              {
+                "adjacency": [
+                  "multiplicity 3\n1 Ar u2 p3 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              },
+              {
+                "adjacency": [
+                  "multiplicity 3\n1 Ar u2 p3 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              }
+            ],
+            "reversible": false
+          },
+          "loader_provenance": {
+            "SurfaceArrhenius": null,
+            "SurfaceChargeTransfer": null,
+            "allow_max_rate_violation": false,
+            "allow_pdep_route": false,
+            "class": "rmgpy.data.kinetics.library.LibraryReaction",
+            "degeneracy": 1.0,
+            "duplicate": false,
+            "electrons": 0,
+            "elementary_high_p": false,
+            "family": "PlasmaArgon",
+            "index": -1,
+            "is_forward": false,
+            "k_effective_cache": {},
+            "library": "PlasmaArgon",
+            "network_kinetics": null,
+            "pairs": null,
+            "protons": 0,
+            "rank": null,
+            "reversible": false,
+            "specific_collider": null,
+            "transition_state": null
+          },
+          "metal": null,
+          "nodal_distance": null,
+          "parent": null,
+          "rank": null,
+          "reaction": {
+            "SurfaceArrhenius": null,
+            "SurfaceChargeTransfer": null,
+            "allow_max_rate_violation": false,
+            "allow_pdep_route": false,
+            "class": "rmgpy.reaction.Reaction",
+            "degeneracy": 1.0,
+            "duplicate": false,
+            "electrons": 0,
+            "elementary_high_p": false,
+            "index": -1,
+            "is_forward": false,
+            "k_effective_cache": {},
+            "kinetics": null,
+            "network_kinetics": null,
+            "pairs": null,
+            "products": [
+              {
+                "adjacency": [
+                  "1 Ar u0 p4 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              },
+              {
+                "adjacency": [
+                  "multiplicity 2\n1 Ar u1 p3 c+1\n"
+                ],
+                "props": {},
+                "reactive": true
+              },
+              {
+                "adjacency": [
+                  "multiplicity 2\n1 e u1 p0 c-1\n"
+                ],
+                "props": {},
+                "reactive": true
+              }
+            ],
+            "protons": 0,
+            "rank": null,
+            "reactants": [
+              {
+                "adjacency": [
+                  "multiplicity 3\n1 Ar u2 p3 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              },
+              {
+                "adjacency": [
+                  "multiplicity 3\n1 Ar u2 p3 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              }
+            ],
+            "reversible": false,
+            "specific_collider": null,
+            "transition_state": null
+          },
+          "site": null,
+          "surface_site_density": null
+        },
+        "rates": [
+          6.2e-16,
+          6.2e-16,
+          6.2e-16,
+          6.2e-16,
+          6.2e-16,
+          6.2e-16,
+          6.2e-16,
+          6.2e-16,
+          6.2e-16,
+          6.2e-16,
+          6.2e-16,
+          6.2e-16,
+          6.2e-16,
+          6.2e-16,
+          6.2e-16
+        ]
+      },
+      "91": {
+        "entry": {
+          "authored_families": [],
+          "binding_energies": null,
+          "children": [],
+          "class": "rmgpy.data.base.Entry",
+          "data_count": null,
+          "electron_placement": null,
+          "facet": null,
+          "index": 91,
+          "kinetics": {
+            "A": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "m**3/(s*mol)",
+              "value_si": 120442835800.0
+            },
+            "Ea_e": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "kg*m**2/(s**2*mol)",
+              "value_si": 0.0
+            },
+            "Ea_g": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "kg*m**2/(s**2*mol)",
+              "value_si": 0.0
+            },
+            "Pmax": null,
+            "Pmin": null,
+            "T0": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "K",
+              "value_si": 1.0
+            },
+            "Tmax": null,
+            "Tmin": null,
+            "class": "rmgpy.kinetics.arrhenius.TwoTemperaturePlasma",
+            "electrons": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "dimensionless",
+              "value_si": 0.0
+            },
+            "n": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "dimensionless",
+              "value_si": 0.0
+            },
+            "solute": null,
+            "uncertainty": null,
+            "uses_electron_temperature": true
+          },
+          "label": {
+            "products": [
+              {
+                "adjacency": [
+                  "1 Ar u0 p4 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              },
+              {
+                "adjacency": [
+                  "multiplicity 2\n1 e u1 p0 c-1\n"
+                ],
+                "props": {},
+                "reactive": true
+              }
+            ],
+            "reactants": [
+              {
+                "adjacency": [
+                  "multiplicity 2\n1 e u1 p0 c-1\n"
+                ],
+                "props": {},
+                "reactive": true
+              },
+              {
+                "adjacency": [
+                  "multiplicity 3\n1 Ar u2 p3 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              }
+            ],
+            "reversible": false
+          },
+          "loader_provenance": {
+            "SurfaceArrhenius": null,
+            "SurfaceChargeTransfer": null,
+            "allow_max_rate_violation": false,
+            "allow_pdep_route": false,
+            "class": "rmgpy.data.kinetics.library.LibraryReaction",
+            "degeneracy": 1.0,
+            "duplicate": true,
+            "electrons": 0,
+            "elementary_high_p": false,
+            "family": "PlasmaArgon",
+            "index": -1,
+            "is_forward": false,
+            "k_effective_cache": {},
+            "library": "PlasmaArgon",
+            "network_kinetics": null,
+            "pairs": null,
+            "protons": 0,
+            "rank": null,
+            "reversible": false,
+            "specific_collider": null,
+            "transition_state": null
+          },
+          "metal": null,
+          "nodal_distance": null,
+          "parent": null,
+          "rank": null,
+          "reaction": {
+            "SurfaceArrhenius": null,
+            "SurfaceChargeTransfer": null,
+            "allow_max_rate_violation": false,
+            "allow_pdep_route": false,
+            "class": "rmgpy.reaction.Reaction",
+            "degeneracy": 1.0,
+            "duplicate": true,
+            "electrons": 0,
+            "elementary_high_p": false,
+            "index": -1,
+            "is_forward": false,
+            "k_effective_cache": {},
+            "kinetics": null,
+            "network_kinetics": null,
+            "pairs": null,
+            "products": [
+              {
+                "adjacency": [
+                  "1 Ar u0 p4 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              },
+              {
+                "adjacency": [
+                  "multiplicity 2\n1 e u1 p0 c-1\n"
+                ],
+                "props": {},
+                "reactive": true
+              }
+            ],
+            "protons": 0,
+            "rank": null,
+            "reactants": [
+              {
+                "adjacency": [
+                  "multiplicity 2\n1 e u1 p0 c-1\n"
+                ],
+                "props": {},
+                "reactive": true
+              },
+              {
+                "adjacency": [
+                  "multiplicity 3\n1 Ar u2 p3 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              }
+            ],
+            "reversible": false,
+            "specific_collider": null,
+            "transition_state": null
+          },
+          "site": null,
+          "surface_site_density": null
+        },
+        "rates": [
+          1.9999999999999978e-13,
+          1.9999999999999978e-13,
+          1.9999999999999978e-13,
+          1.9999999999999978e-13,
+          1.9999999999999978e-13,
+          1.9999999999999978e-13,
+          1.9999999999999978e-13,
+          1.9999999999999978e-13,
+          1.9999999999999978e-13,
+          1.9999999999999978e-13,
+          1.9999999999999978e-13,
+          1.9999999999999978e-13,
+          1.9999999999999978e-13,
+          1.9999999999999978e-13,
+          1.9999999999999978e-13
+        ]
+      },
+      "92": {
+        "entry": {
+          "authored_families": [],
+          "binding_energies": null,
+          "children": [],
+          "class": "rmgpy.data.base.Entry",
+          "data_count": null,
+          "electron_placement": null,
+          "facet": null,
+          "index": 92,
+          "kinetics": {
+            "A": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "m**3/(s*mol)",
+              "value_si": 1806.6425370000002
+            },
+            "Ea": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "kg*m**2/(s**2*mol)",
+              "value_si": 0.0
+            },
+            "Pmax": null,
+            "Pmin": null,
+            "T0": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "K",
+              "value_si": 1.0
+            },
+            "Tmax": null,
+            "Tmin": null,
+            "class": "rmgpy.kinetics.arrhenius.Arrhenius",
+            "n": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "dimensionless",
+              "value_si": 0.0
+            },
+            "solute": null,
+            "uncertainty": null
+          },
+          "label": {
+            "products": [
+              {
+                "adjacency": [
+                  "1 Ar u0 p4 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              },
+              {
+                "adjacency": [
+                  "1 Ar u0 p4 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              }
+            ],
+            "reactants": [
+              {
+                "adjacency": [
+                  "1 Ar u0 p4 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              },
+              {
+                "adjacency": [
+                  "multiplicity 3\n1 Ar u2 p3 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              }
+            ],
+            "reversible": false
+          },
+          "loader_provenance": {
+            "SurfaceArrhenius": null,
+            "SurfaceChargeTransfer": null,
+            "allow_max_rate_violation": false,
+            "allow_pdep_route": false,
+            "class": "rmgpy.data.kinetics.library.LibraryReaction",
+            "degeneracy": 1.0,
+            "duplicate": false,
+            "electrons": 0,
+            "elementary_high_p": false,
+            "family": "PlasmaArgon",
+            "index": -1,
+            "is_forward": false,
+            "k_effective_cache": {},
+            "library": "PlasmaArgon",
+            "network_kinetics": null,
+            "pairs": null,
+            "protons": 0,
+            "rank": null,
+            "reversible": false,
+            "specific_collider": null,
+            "transition_state": null
+          },
+          "metal": null,
+          "nodal_distance": null,
+          "parent": null,
+          "rank": null,
+          "reaction": {
+            "SurfaceArrhenius": null,
+            "SurfaceChargeTransfer": null,
+            "allow_max_rate_violation": false,
+            "allow_pdep_route": false,
+            "class": "rmgpy.reaction.Reaction",
+            "degeneracy": 1.0,
+            "duplicate": false,
+            "electrons": 0,
+            "elementary_high_p": false,
+            "index": -1,
+            "is_forward": false,
+            "k_effective_cache": {},
+            "kinetics": null,
+            "network_kinetics": null,
+            "pairs": null,
+            "products": [
+              {
+                "adjacency": [
+                  "1 Ar u0 p4 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              },
+              {
+                "adjacency": [
+                  "1 Ar u0 p4 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              }
+            ],
+            "protons": 0,
+            "rank": null,
+            "reactants": [
+              {
+                "adjacency": [
+                  "1 Ar u0 p4 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              },
+              {
+                "adjacency": [
+                  "multiplicity 3\n1 Ar u2 p3 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              }
+            ],
+            "reversible": false,
+            "specific_collider": null,
+            "transition_state": null
+          },
+          "site": null,
+          "surface_site_density": null
+        },
+        "rates": [
+          3.0000000000000003e-21,
+          3.0000000000000003e-21,
+          3.0000000000000003e-21,
+          3.0000000000000003e-21,
+          3.0000000000000003e-21,
+          3.0000000000000003e-21,
+          3.0000000000000003e-21,
+          3.0000000000000003e-21,
+          3.0000000000000003e-21,
+          3.0000000000000003e-21,
+          3.0000000000000003e-21,
+          3.0000000000000003e-21,
+          3.0000000000000003e-21,
+          3.0000000000000003e-21,
+          3.0000000000000003e-21
+        ]
+      },
+      "93": {
+        "entry": {
+          "authored_families": [],
+          "binding_energies": null,
+          "children": [],
+          "class": "rmgpy.data.base.Entry",
+          "data_count": null,
+          "electron_placement": null,
+          "facet": null,
+          "index": 93,
+          "kinetics": {
+            "A": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "m**6/(s*mol**2)",
+              "value_si": 39892.81091275085
+            },
+            "Ea": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "kg*m**2/(s**2*mol)",
+              "value_si": 0.0
+            },
+            "Pmax": null,
+            "Pmin": null,
+            "T0": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "K",
+              "value_si": 1.0
+            },
+            "Tmax": null,
+            "Tmin": null,
+            "class": "rmgpy.kinetics.arrhenius.Arrhenius",
+            "n": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "dimensionless",
+              "value_si": 0.0
+            },
+            "solute": null,
+            "uncertainty": null
+          },
+          "label": {
+            "products": [
+              {
+                "adjacency": [
+                  "1 Ar u0 p4 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              },
+              {
+                "adjacency": [
+                  "1 Ar u0 p4 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              },
+              {
+                "adjacency": [
+                  "1 Ar u0 p4 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              }
+            ],
+            "reactants": [
+              {
+                "adjacency": [
+                  "1 Ar u0 p4 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              },
+              {
+                "adjacency": [
+                  "1 Ar u0 p4 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              },
+              {
+                "adjacency": [
+                  "multiplicity 3\n1 Ar u2 p3 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              }
+            ],
+            "reversible": false
+          },
+          "loader_provenance": {
+            "SurfaceArrhenius": null,
+            "SurfaceChargeTransfer": null,
+            "allow_max_rate_violation": false,
+            "allow_pdep_route": false,
+            "class": "rmgpy.data.kinetics.library.LibraryReaction",
+            "degeneracy": 1.0,
+            "duplicate": false,
+            "electrons": 0,
+            "elementary_high_p": false,
+            "family": "PlasmaArgon",
+            "index": -1,
+            "is_forward": false,
+            "k_effective_cache": {},
+            "library": "PlasmaArgon",
+            "network_kinetics": null,
+            "pairs": null,
+            "protons": 0,
+            "rank": null,
+            "reversible": false,
+            "specific_collider": null,
+            "transition_state": null
+          },
+          "metal": null,
+          "nodal_distance": null,
+          "parent": null,
+          "rank": null,
+          "reaction": {
+            "SurfaceArrhenius": null,
+            "SurfaceChargeTransfer": null,
+            "allow_max_rate_violation": false,
+            "allow_pdep_route": false,
+            "class": "rmgpy.reaction.Reaction",
+            "degeneracy": 1.0,
+            "duplicate": false,
+            "electrons": 0,
+            "elementary_high_p": false,
+            "index": -1,
+            "is_forward": false,
+            "k_effective_cache": {},
+            "kinetics": null,
+            "network_kinetics": null,
+            "pairs": null,
+            "products": [
+              {
+                "adjacency": [
+                  "1 Ar u0 p4 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              },
+              {
+                "adjacency": [
+                  "1 Ar u0 p4 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              },
+              {
+                "adjacency": [
+                  "1 Ar u0 p4 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              }
+            ],
+            "protons": 0,
+            "rank": null,
+            "reactants": [
+              {
+                "adjacency": [
+                  "1 Ar u0 p4 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              },
+              {
+                "adjacency": [
+                  "1 Ar u0 p4 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              },
+              {
+                "adjacency": [
+                  "multiplicity 3\n1 Ar u2 p3 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              }
+            ],
+            "reversible": false,
+            "specific_collider": null,
+            "transition_state": null
+          },
+          "site": null,
+          "surface_site_density": null
+        },
+        "rates": [
+          1.1000000000000002e-43,
+          1.1000000000000002e-43,
+          1.1000000000000002e-43,
+          1.1000000000000002e-43,
+          1.1000000000000002e-43,
+          1.1000000000000002e-43,
+          1.1000000000000002e-43,
+          1.1000000000000002e-43,
+          1.1000000000000002e-43,
+          1.1000000000000002e-43,
+          1.1000000000000002e-43,
+          1.1000000000000002e-43,
+          1.1000000000000002e-43,
+          1.1000000000000002e-43,
+          1.1000000000000002e-43
+        ]
+      }
+    },
+    "PlasmaRadiativeRecombination": {
+      "0": {
+        "entry": {
+          "authored_families": [],
+          "binding_energies": null,
+          "children": [],
+          "class": "rmgpy.data.base.Entry",
+          "data_count": null,
+          "electron_placement": [
+            1,
+            0
+          ],
+          "facet": null,
+          "index": 0,
+          "kinetics": {
+            "A": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "m**3/(s*mol)",
+              "value_si": 5239263.357300001
+            },
+            "B": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "dimensionless",
+              "value_si": 0.364
+            },
+            "C": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "dimensionless",
+              "value_si": 0.1508
+            },
+            "Ea": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "kg*m**2/(s**2*mol)",
+              "value_si": 43.422579166118275
+            },
+            "Pmax": null,
+            "Pmin": null,
+            "T0": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "K",
+              "value_si": 147.0
+            },
+            "T1": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "K",
+              "value_si": 7153000.0
+            },
+            "T2": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "K",
+              "value_si": 715400.0
+            },
+            "Tmax": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "K",
+              "value_si": 10000000.0
+            },
+            "Tmin": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "K",
+              "value_si": 10.0
+            },
+            "class": "rmgpy.kinetics.arrhenius.BadnellRRArrhenius",
+            "electrons": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "dimensionless",
+              "value_si": -1.0
+            },
+            "solute": null,
+            "uncertainty": null,
+            "uses_electron_density": true,
+            "uses_electron_temperature": true
+          },
+          "label": {
+            "products": [
+              {
+                "adjacency": [
+                  "multiplicity 2\n1 Li u1 p0 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              }
+            ],
+            "reactants": [
+              {
+                "adjacency": [
+                  "1 Li u0 p0 c+1\n"
+                ],
+                "props": {},
+                "reactive": true
+              }
+            ],
+            "reversible": false
+          },
+          "loader_provenance": {
+            "SurfaceArrhenius": null,
+            "SurfaceChargeTransfer": null,
+            "allow_max_rate_violation": false,
+            "allow_pdep_route": false,
+            "class": "rmgpy.data.kinetics.library.LibraryReaction",
+            "degeneracy": 1.0,
+            "duplicate": false,
+            "electrons": -1,
+            "elementary_high_p": false,
+            "family": "PlasmaRadiativeRecombination",
+            "index": -1,
+            "is_forward": false,
+            "k_effective_cache": {},
+            "library": "PlasmaRadiativeRecombination",
+            "network_kinetics": null,
+            "pairs": null,
+            "protons": 0,
+            "rank": null,
+            "reversible": false,
+            "specific_collider": null,
+            "transition_state": null
+          },
+          "metal": null,
+          "nodal_distance": null,
+          "parent": null,
+          "rank": null,
+          "reaction": {
+            "SurfaceArrhenius": null,
+            "SurfaceChargeTransfer": null,
+            "allow_max_rate_violation": false,
+            "allow_pdep_route": false,
+            "class": "rmgpy.reaction.Reaction",
+            "degeneracy": 1.0,
+            "duplicate": false,
+            "electrons": -1,
+            "elementary_high_p": false,
+            "index": -1,
+            "is_forward": false,
+            "k_effective_cache": {},
+            "kinetics": null,
+            "network_kinetics": null,
+            "pairs": null,
+            "products": [
+              {
+                "adjacency": [
+                  "multiplicity 2\n1 Li u1 p0 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              }
+            ],
+            "protons": 0,
+            "rank": null,
+            "reactants": [
+              {
+                "adjacency": [
+                  "1 Li u0 p0 c+1\n"
+                ],
+                "props": {},
+                "reactive": true
+              }
+            ],
+            "reversible": false,
+            "specific_collider": null,
+            "transition_state": null
+          },
+          "site": null,
+          "surface_site_density": null
+        },
+        "rates": [
+          3.769897912066269e-19,
+          2.3538001021133156e-19,
+          2.1610715442310036e-19,
+          1.2226706113666837e-19,
+          4.817845109949513e-20,
+          3.769897912066269e-19,
+          2.3538001021133156e-19,
+          2.1610715442310036e-19,
+          1.2226706113666837e-19,
+          4.817845109949513e-20,
+          3.769897912066269e-19,
+          2.3538001021133156e-19,
+          2.1610715442310036e-19,
+          1.2226706113666837e-19,
+          4.817845109949513e-20
+        ]
+      },
+      "1": {
+        "entry": {
+          "authored_families": [],
+          "binding_energies": null,
+          "children": [],
+          "class": "rmgpy.data.base.Entry",
+          "data_count": null,
+          "electron_placement": [
+            1,
+            0
+          ],
+          "facet": null,
+          "index": 1,
+          "kinetics": {
+            "A": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "m**3/(s*mol)",
+              "value_si": 227034.74548300006
+            },
+            "Ea_e": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "kg*m**2/(s**2*mol)",
+              "value_si": 0.0
+            },
+            "Ea_g": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "kg*m**2/(s**2*mol)",
+              "value_si": 0.0
+            },
+            "Pmax": null,
+            "Pmin": null,
+            "T0": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "K",
+              "value_si": 10000.0
+            },
+            "Tmax": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "K",
+              "value_si": 100000000.0
+            },
+            "Tmin": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "K",
+              "value_si": 10000.0
+            },
+            "class": "rmgpy.kinetics.arrhenius.TwoTemperaturePlasma",
+            "electrons": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "dimensionless",
+              "value_si": -1.0
+            },
+            "n": {
+              "class": "ScalarQuantity",
+              "uncertainty_si": 0.0,
+              "uncertainty_type": "+|-",
+              "units": "dimensionless",
+              "value_si": -0.651
+            },
+            "solute": null,
+            "uncertainty": null,
+            "uses_electron_temperature": true
+          },
+          "label": {
+            "products": [
+              {
+                "adjacency": [
+                  "1 Ar u0 p4 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              }
+            ],
+            "reactants": [
+              {
+                "adjacency": [
+                  "multiplicity 2\n1 Ar u1 p3 c+1\n"
+                ],
+                "props": {},
+                "reactive": true
+              }
+            ],
+            "reversible": false
+          },
+          "loader_provenance": {
+            "SurfaceArrhenius": null,
+            "SurfaceChargeTransfer": null,
+            "allow_max_rate_violation": false,
+            "allow_pdep_route": false,
+            "class": "rmgpy.data.kinetics.library.LibraryReaction",
+            "degeneracy": 1.0,
+            "duplicate": false,
+            "electrons": -1,
+            "elementary_high_p": false,
+            "family": "PlasmaRadiativeRecombination",
+            "index": -1,
+            "is_forward": false,
+            "k_effective_cache": {},
+            "library": "PlasmaRadiativeRecombination",
+            "network_kinetics": null,
+            "pairs": null,
+            "protons": 0,
+            "rank": null,
+            "reversible": false,
+            "specific_collider": null,
+            "transition_state": null
+          },
+          "metal": null,
+          "nodal_distance": null,
+          "parent": null,
+          "rank": null,
+          "reaction": {
+            "SurfaceArrhenius": null,
+            "SurfaceChargeTransfer": null,
+            "allow_max_rate_violation": false,
+            "allow_pdep_route": false,
+            "class": "rmgpy.reaction.Reaction",
+            "degeneracy": 1.0,
+            "duplicate": false,
+            "electrons": -1,
+            "elementary_high_p": false,
+            "index": -1,
+            "is_forward": false,
+            "k_effective_cache": {},
+            "kinetics": null,
+            "network_kinetics": null,
+            "pairs": null,
+            "products": [
+              {
+                "adjacency": [
+                  "1 Ar u0 p4 c0\n"
+                ],
+                "props": {},
+                "reactive": true
+              }
+            ],
+            "protons": 0,
+            "rank": null,
+            "reactants": [
+              {
+                "adjacency": [
+                  "multiplicity 2\n1 Ar u1 p3 c+1\n"
+                ],
+                "props": {},
+                "reactive": true
+              }
+            ],
+            "reversible": false,
+            "specific_collider": null,
+            "transition_state": null
+          },
+          "site": null,
+          "surface_site_density": null
+        },
+        "rates": [
+          5.373285627437466e-19,
+          3.664861157449673e-19,
+          3.421916436081359e-19,
+          2.1792089435431787e-19,
+          1.0658422600315847e-19,
+          5.373285627437466e-19,
+          3.664861157449673e-19,
+          3.421916436081359e-19,
+          2.1792089435431787e-19,
+          1.0658422600315847e-19,
+          5.373285627437466e-19,
+          3.664861157449673e-19,
+          3.421916436081359e-19,
+          2.1792089435431787e-19,
+          1.0658422600315847e-19
+        ]
+      }
+    }
+  },
+  "library_metadata": {
+    "PlasmaArgon": {
+      "auto_generated": false,
+      "class": "rmgpy.data.kinetics.library.KineticsLibrary",
+      "facet": null,
+      "label": "PlasmaArgon",
+      "metal": null,
+      "name": "PlasmaArgon",
+      "site": null,
+      "solvent": null,
+      "thermo_convention": null,
+      "top": []
+    },
+    "PlasmaRadiativeRecombination": {
+      "auto_generated": false,
+      "class": "rmgpy.data.kinetics.library.KineticsLibrary",
+      "facet": null,
+      "label": "PlasmaRadiativeRecombination",
+      "metal": null,
+      "name": "PlasmaRadiativeRecombination",
+      "site": null,
+      "solvent": null,
+      "thermo_convention": null,
+      "top": []
+    }
+  }
+}

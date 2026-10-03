@@ -1,0 +1,29 @@
+{
+  "source": "/home/alon/runs/i317-loki-provider-design/corroboration/work/output/op_Ar__boltzmann__sdcs_usingSDCS/reducedField_16",
+  "reduced_field_td": 16.0,
+  "channels": {
+    "Ar(1s4)": 22.5,
+    "Ar(1s2)": 17.3
+  },
+  "combined_power_percent": 39.8,
+  "per_channel_source": "/home/alon/runs/i317-loki-provider-design/classify_channels.stdout.log",
+  "per_channel_sha256": "cc3f9bee06da81ee12049c214e79f795c4d8a84a929d0d70f838c52f2df4d9e4",
+  "threshold_source": "/home/alon/runs/i317-loki-provider-design/corroboration/work/Argon/Ar_LXCat.txt",
+  "threshold_sha256": "4bcb328eff01c147a1ebb9cb31e01253344ae10fc9fa4bff508d76bce0f9d444",
+  "resonance_channels": [
+    {
+      "channel": "e + Ar(1S0) -> e + Ar(3P1), Excitation",
+      "rate_m3_s": 5.08553788585442e-18,
+      "threshold_eV": 11.623,
+      "power_eVm3_s": 5.910920684728592e-17,
+      "resonance_state": "Ar(1s4)"
+    },
+    {
+      "channel": "e + Ar(1S0) -> e + Ar(1P1), Excitation",
+      "rate_m3_s": 3.84004639868709e-18,
+      "threshold_eV": 11.828,
+      "power_eVm3_s": 4.54200688036709e-17,
+      "resonance_state": "Ar(1s2)"
+    }
+  ]
+}
