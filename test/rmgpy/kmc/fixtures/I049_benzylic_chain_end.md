@@ -1,5 +1,8 @@
 # Benzylic PS chain end: Phase 1 diagnosis and fix design
 
+The Phase 1 findings and measurements below are historical. Phase 2a implementation,
+reproduced verification, and the manager-only Phase 2b runbook are at the end.
+
 Branch: `i049-benzylic-chain-end`, starting commit `2e94caa6f`.
 Database pin: `4a12d36fcdc193ede82c8d1ab5c1653495d445bc`.
 Artifact: `/home/alon/runs/i046-rules-from-training/cache/artifact/7491ed418f3ce2f0633688a9487cd12da278704b8f57e4f595176ddf80fb0296.json`.
@@ -480,3 +483,238 @@ featured migration products are present. The runtime's formal “grammar”
 is an unimplemented recognizer, although the actual atom state can represent
 the end. Compile wall time and peak RAM are projections, not reproduced
 measurements. Phase 2 implementation and recompilation remain manager-gated.
+
+## Phase 2a: implementation and fast verification
+
+Core implementation commit: `17629f312`.
+
+Implemented items 1–6 without a real event-set compile, slow suite, database
+write, rate-model change, thermo-selection change, or benchmark-based choice.
+The original primary proxies remain. The new fragment is the H-capped
+CH3–CH(Ph)–…–CH2–CH•(Ph) series, with incompatible end/unit feature choices
+rejected. All six benzylic declarations are present at three and five units,
+with all five candidate families. The benzylic styrene inputs are the shorter
+n=2 and n=4 fragments. A separate mapped n=3→4 regression covers direct growth.
+Reverse labels distinguish a terminal primary carbon, a terminal benzylic
+carbon, and an interior non-ring radical using non-ring carbon connectivity.
+
+The catalogue now deduplicates canonical featured graph keys with RMG
+isomorphism confirmation. Radius one has 37 entries (4, 11, 22 for n=1,2,3),
+including every independently enumerated zero-, one-, and two-H deletion graph.
+Formula, radical counts, ordering and the 37-combination bound are retained.
+
+`ps_ceiling_pairs` requires exact ordinary benzylic reactant and product graphs
+and reciprocal `reverse_of` links. It excludes the opposite styrene regioisomer.
+Pairs carry reactant/product repeat counts and are ordered by product size.
+The designated scalar anchor is n=2→3, explicitly recorded in
+`ps_ceiling_anchor_event_id`; it is not the minimum crossing. A benzylic pair
+remains recorded with `temperature_K: null` if the grid does not bracket a
+crossing. The primary pairs retain their original shape and crossing order in
+`ps_primary_end_ceiling_pairs`. The existing one-direction rate estimate and
+reference-Kc inverse calculation are unchanged.
+
+Historical primary-end consumers in i032/i034/i039/i041/i044/i046/i049 probes
+now select the primary field, with a fallback for the immutable pre-change
+artifact. Their older rate/thermo measurements are not new benzylic results.
+The i049 direct probe now verifies the corrected source catalogue/declarations;
+the artifact probe remains explicitly a diagnosis of its pinned old artifact.
+The i046 tree-rate comparison permits additional channels and changed site
+labels while still requiring every baseline chemical rewrite and identical
+baseline tree rate tables/sources. Its fast mutation control rejects a changed
+baseline rate. No historical benchmark table has been used for selection.
+
+The independent completeness oracle contains its own benzylic fragment strings
+and all six new declarations. `RMG_DATABASE_SHA` supports the materialized pin;
+`RMG_KMC_CACHE_ROOT` owns its cache. In explicit-artifact mode,
+`RMG_KMC_REAL_ORACLE=1` generates only the independent oracle, never another
+compiler artifact. C2/C3 fail with an explicit phase-2b-required message if the
+real comparison is requested without that oracle.
+
+The test-first log reproduced missing helper, 23-versus-37 catalogue,
+missing declarations, wrong benzylic/interior reverse labels, primary-only
+ceiling selection, missing independent inputs, and overly strict tree-inventory
+comparison failures before their corresponding changes. Fast runtime tests use
+known mapped atom edits and mock reference thermochemistry; they establish
+UUID, graph, ledger, radical, alternating-backbone and linked-inverse behavior,
+not newly generated family rates or real thermo for the new inventory.
+
+Implementation map for the manager's item-by-item diff review:
+
+| Phase-1 item | Implemented locations |
+| --- | --- |
+| 1 — fragment/feature validation | `rmgpy/kmc/compiler.py:1161`, `:1187`; `benzylicEndTest.py:27` |
+| 2 — declarations/reverse labels | `rmgpy/kmc/compiler.py:702`, `:1807`; `benzylicEndTest.py:79`, `:104`, `:128` |
+| 3 — growth graphs/maps | `rmgpy/kmc/compiler.py:799`; `benzylicEndTest.py:174` (n=2,3,4) |
+| 4 — catalogue graph coverage | `rmgpy/kmc/compiler.py:1194`; `benzylicEndTest.py:52`; `fixtures/i049_probe/direct.py:14` |
+| 5 — pairs/anchor/primary consumers | `rmgpy/kmc/compiler.py:2450`; `benzylicEndTest.py:223`; the historical probe updates listed above |
+| 6 — independent oracle/runtime | `completeness_oracle.py:24`; `benzylicEndTest.py:246`, `:264`, `:302`; `compilerRealTest.py:315` |
+
+### Reproduction commands and results
+
+Set the following environment in the named worktree. All test processes are
+serial, with BLAS/OpenMP/MKL limited to one thread and an 8 GiB virtual-memory
+limit. The explicit artifact is mandatory: an invalid path/content fails and
+cannot fall back to a compile.
+
+```bash
+cd /home/alon/Code/RMG-Py-kmc-i049-benzylic-chain-end
+export PYTHONPATH=$PWD
+export OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONHASHSEED=0
+export RMG_DATABASE_PATH=/home/alon/runs/i046-rules-from-training/database
+export RMG_DATABASE_SHA=4a12d36fcdc193ede82c8d1ab5c1653495d445bc
+export RMG_KMC_ARTIFACT=/home/alon/runs/i046-rules-from-training/cache/artifact/7491ed418f3ce2f0633688a9487cd12da278704b8f57e4f595176ddf80fb0296.json
+export RMG_KMC_SLOW=0 RMG_KMC_ALLOW_STALE_ARTIFACT=1
+export MPLCONFIGDIR=/tmp/i049-mpl COVERAGE_FILE=/tmp/i049.coverage
+P=/home/alon/anaconda3/envs/rmg_env/bin/python
+S=/home/alon/runs/i049-benzylic-chain-end/phase2
+ulimit -v 8388608
+$P -m pytest test/rmgpy/kmc -q -o addopts='' -o cache_dir=/tmp/i049-pytest-cache \
+  --junitxml="$S/default.xml" > >(tee -a "$S/stdout.log") 2> >(tee -a "$S/stderr.log" >&2)
+$P -m pytest test/rmgpy/kmc/benzylicEndTest.py test/rmgpy/kmc/compilerTest.py \
+  test/rmgpy/kmc/cacheProvenanceTest.py test/rmgpy/kmc/rulesFromTrainingTest.py \
+  -m 'not phase2b' -q -o addopts='' -o cache_dir=/tmp/i049-pytest-cache \
+  --junitxml="$S/focused.xml" > >(tee -a "$S/stdout.log") 2> >(tee -a "$S/stderr.log" >&2)
+$P test/rmgpy/kmc/fixtures/i049_probe/direct.py \
+  > >(tee -a "$S/stdout.log") 2> >(tee -a "$S/stderr.log" >&2)
+```
+
+Final focused verification reproduced:
+
+```text
+62 passed, 1 deselected in 119.63s (0:01:59)
+PASS: n=1–3 catalogue 37/37; 34 declarations include both end orientations
+```
+
+The one deselected test is the explicit `phase2b` real-artifact acceptance check.
+The focused command includes all 30 benzylic fast cases, compiler mock tests,
+cache controls, and the i046 consumer tests. `git diff --check`, Python AST
+parsing, and `bash -n` on the extracted runbook blocks also passed. No native
+rebuild was needed. The full default run exited 1, reproducing:
+
+```text
+1 failed, 205 passed, 48 skipped, 3 warnings in 1484.88s (0:24:44)
+FAILED test/rmgpy/kmc/benzylicEndTest.py::test_compiled_benzylic_declarations_and_anchors_require_phase2b
+AssertionError: phase-2b compile required: benzylic declarations absent
+```
+
+This is the only failure. The old artifact has none of the twelve new benzylic
+inputs; this is the expected phase-2b acceptance failure, not a silently skipped
+coverage check. The 48 skips are the suite's existing optional/slow selections
+under `RMG_KMC_SLOW=0`; no slow selection or independent real generation was
+run. The 10,000-draw default ledger check completed. Five extra fast
+controls were added after that run began (public-family scheduling, the oracle
+fixture path, the materialized cache pin, baseline tree-inventory expansion,
+and the small-inventory anchor verifier); all are included in the final focused
+result above. The production compiler was unchanged during the full run.
+Logs were captured under `/tmp/i049-phase2.*` during execution and copied into
+the named scratch directory (`stdout.log`, `stderr.log`, `default.xml`, and
+`focused.xml`).
+
+Contract correction: `supplied_artifact()` formerly required an identical
+compiler source hash, so the required old-artifact run could only raise fixture
+setup errors after this implementation. Diagnostic use now requires the
+additional explicit `RMG_KMC_ALLOW_STALE_ARTIFACT=1` option and emits a warning.
+Without that option stale sources still fail. Content hashes and structural
+validation remain mandatory in both modes; no invalid artifact triggers a compile.
+
+### Checks awaiting the Phase 2b compile
+
+These are explicitly identified, not claims of reproduced acceptance:
+
+- `benzylicEndTest.py::test_compiled_benzylic_declarations_and_anchors_require_phase2b`
+  (default, `phase2b` marker): all 12 new inputs, catalogue 37, both exact
+  benzylic anchors, primary pair preservation, reverse labels, units and
+  tabulated kf/kr=Kc. It must fail on the old artifact.
+- `compilerRealTest.py::test_c2_per_site_degeneracy_matches_whole_molecule_pipeline`
+  (`slow`, `phase2b`): independently generated five-unit degeneracy sums.
+- `compilerRealTest.py::test_c3_full_2r_plus_3_generation_covers_all_keys_and_128_probe_misses`
+  (`slow`, `phase2b`): independent full graph/key coverage including the new
+  benzylic declarations.
+- `compilerRealTest.py::test_c7_c9_inventory_and_real_artifact`
+  (`slow`, `phase2b`): real catalogue and designated benzylic ceiling anchor.
+- `compilerRealTest.py::test_all_pairs_have_exact_graphs_maps_degeneracies_and_detailed_balance`
+  (`slow`): all new chemical pairs against independently reconstructed RMG
+  thermo over the grid. This includes dimensional Kc and exact inverse maps.
+- The full default suite must be repeated with the new explicit artifact to
+  cover the expanded real runtime inventory and the i046 baseline rate checks.
+  Existing hash-seed determinism requires a second independent compile and is
+  outside this single-compile gate; no determinism claim is made here.
+
+## Phase 2b runbook (manager only; not executed in Phase 2a)
+
+Run only after the machine is free. The materialized database remains read-only
+at the stated pin; never regenerate rate trees. The sole compiler command below
+uses the existing fixture driver, cache root
+`/home/alon/runs/i049-benzylic-chain-end/phase2/cache`, and at most four allowed
+cores. It captures compiler stdout/stderr continuously, GNU time peak RSS, and
+five-second process-group RSS samples. Stop the whole compile group at or above
+8 GiB RSS (8,388,608 KiB), on `MemoryError`, or on a nonzero exit; preserve logs
+and ask the manager to replan. Do not launch a retry or second compile.
+
+```bash
+cd /home/alon/Code/RMG-Py-kmc-i049-benzylic-chain-end
+P=/home/alon/anaconda3/envs/rmg_env/bin/python
+S=/home/alon/runs/i049-benzylic-chain-end/phase2
+export PYTHONPATH=$PWD PYTHONHASHSEED=0
+export OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1
+export RMG_DATABASE_PATH=/home/alon/runs/i046-rules-from-training/database
+export RMG_DATABASE_SHA=4a12d36fcdc193ede82c8d1ab5c1653495d445bc
+export RMG_KMC_CACHE_ROOT="$S/cache"
+export MPLCONFIGDIR="$S/matplotlib" COVERAGE_FILE="$S/coverage"
+unset RMG_KMC_ARTIFACT RMG_KMC_ALLOW_STALE_ARTIFACT RMG_KMC_REAL_ORACLE
+mkdir -p "$S/cache/artifact"
+ulimit -v 8388608
+I049_CPUS=$("$P" -c 'import os; print(",".join(map(str, sorted(os.sched_getaffinity(0))[:4])))')
+
+# The exact single event-set compile command; run once only.
+setsid taskset -c "$I049_CPUS" /usr/bin/time -v -o "$S/compile.time.log" \
+  "$P" test/rmgpy/kmc/compile_event_set_fixture.py \
+  "$RMG_DATABASE_PATH" "$S/cache/artifact" --database-sha "$RMG_DATABASE_SHA" \
+  > >(tee -a "$S/compile.stdout.log") 2> >(tee -a "$S/compile.stderr.log" >&2) &
+I049_COMPILE_PID=$!
+I049_STOPPED=0
+while kill -0 "$I049_COMPILE_PID" 2>/dev/null; do
+  I049_RSS=$(ps -eo pgid=,rss= | awk -v g="$I049_COMPILE_PID" '$1==g {r+=$2} END {print r+0}')
+  printf '%s %s KiB\n' "$(date -u +%FT%TZ)" "$I049_RSS" >> "$S/compile.rss.log"
+  if [ "$I049_RSS" -ge 8388608 ]; then
+    kill -KILL -- "-$I049_COMPILE_PID"
+    I049_STOPPED=1
+    break
+  fi
+  sleep 5
+done
+wait "$I049_COMPILE_PID"
+I049_COMPILE_STATUS=$?
+[ "$I049_STOPPED" -eq 0 ] && [ "$I049_COMPILE_STATUS" -eq 0 ] || exit 1
+```
+
+Select exactly one new artifact. An empty/multiple artifact directory is a
+blocker to investigate, never permission to compile again. Run defaults first;
+then the focused slow selection generates the independent oracle serially
+under the same cache root and uses the explicit artifact. It cannot enter the
+fixture's two-compile branch. Keep the same memory/thread limits.
+
+```bash
+mapfile -t I049_ARTIFACTS < <(rg --files "$S/cache/artifact" -g '*.json')
+[ "${#I049_ARTIFACTS[@]}" -eq 1 ] || exit 1
+export RMG_KMC_ARTIFACT="${I049_ARTIFACTS[0]}"
+unset RMG_KMC_ALLOW_STALE_ARTIFACT
+export RMG_KMC_SLOW=0
+"$P" -m pytest test/rmgpy/kmc -q -o addopts='' -o cache_dir="$S/pytest-cache" \
+  --junitxml="$S/postcompile-default.xml" \
+  > >(tee -a "$S/postcompile.stdout.log") 2> >(tee -a "$S/postcompile.stderr.log" >&2)
+
+# Independent oracle generation + real comparison, never an event-set compile.
+export RMG_KMC_SLOW=1 RMG_KMC_REAL_ORACLE=1
+"$P" -m pytest test/rmgpy/kmc/compilerRealTest.py \
+  -k 'c2_per_site or c3_full or all_pairs_have_exact or c7_c9_inventory' \
+  -q -o addopts='' -o cache_dir="$S/pytest-cache" \
+  --junitxml="$S/postcompile-focused-slow.xml" \
+  > >(tee -a "$S/postcompile-slow.stdout.log") 2> >(tee -a "$S/postcompile-slow.stderr.log" >&2)
+```
+
+Acceptance requires both n=2→3 and n=4→5 exact head-to-tail anchors, all new
+linked pairs satisfying kf/kr=Kc at every grid node with the correct bimolecular
+and unimolecular units, the real oracle comparison, and green default/focused
+slow results. Record the artifact hash, counts, elapsed time and measured peak
+RSS. None of these new real-inventory measurements has been reproduced here.
