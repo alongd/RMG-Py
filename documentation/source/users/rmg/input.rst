@@ -1952,6 +1952,29 @@ the line ::
 to turn off pressure dependence for all molecules larger than the given number
 of atoms (16 in the above example).
 
+With pressure dependence enabled, RMG refuses generated reactions with an electron
+on either side, as a specific collider, or in kinetics efficiency or coverage keys
+before registering species or reactions. A census follows nested and cached
+kinetics, including third-body and falloff expressions. Only exact known RMG
+reaction, species and kinetics classes and standard containers are inspected.
+User subclasses and foreign carriers are refused even if no electron is visible.
+Restored networks are checked at routing and computation entries, including
+circular reaction graphs, before registration or numerical state changes.
+This includes electrons stored as nonzero ``Reaction.electrons`` metadata and
+electrons required by the
+reaction owner's placement declaration, including zero-net electron processes.
+Seed and reaction-library ownership is reconstructed for the whole batch before
+this check, including reactions attributed to a family that is not loaded.
+If reconstruction or preflight raises any exception, the original entry comments
+are restored and that exception propagates unchanged.
+The refusal applies even when ``maximumAtoms`` or a shape filter would exclude
+their initial direction. Kinetics estimation can reverse the direction later.
+Keep library electron rates explicit: do not declare ``elementary_high_p`` or
+``allow_pdep_route``, or supply cached network kinetics for them. Electron reactions
+cannot enter RMG pressure-dependent networks; disable pressure dependence to admit
+generated electron reactions. Explicit rates recovered from generated seed
+libraries remain explicit unless they declare network routing.
+
 
 Completed Pressure-Dependent Networks
 --------------------------------------

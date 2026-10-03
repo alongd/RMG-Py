@@ -17,6 +17,32 @@ Overview of Features
 **Extensible libraries.**
 	Ability to include reaction models on top of the provided reaction families.
 
+**Independent electron channels from libraries.**
+    Opposite irreversible reactions from different libraries remain separate when
+    an explicit electron participates and the two directions differ. Each retains
+    its own rate law; other cross-library duplicates keep first-library priority.
+    Every reaction with an electron participant is refused from pressure-dependent
+    networks, whether the electron is explicit, a specific collider, a kinetics efficiency or
+    coverage key, stored as signed reaction metadata, or required by an owner
+    placement declaration. Nested and cached kinetics and every declared species
+    physical record are checked too, including conformers, modes, thermo and
+    transport. Object-dtype arrays anywhere in these records refuse. An
+    unsupported exact type is refused. Only known RMG records and standard
+    containers are inspected; user subclasses and
+    foreign carriers cannot establish electron absence. Restored networks are
+    checked at routing and computation entries after circular state is installed.
+    This includes reversible and single-library entries and direct module-level
+    network computations. Network admission validates the incoming channel;
+    computation entries freshly validate current channels and inspect each
+    shared physical record once within that call. No verdict survives a call.
+    Electron rates remain explicit; electron-impact kinetics are not falloff chemistry.
+    Disable the elementary high-pressure and pressure-dependent routing flags and
+    cached network kinetics for these entries, or disable pressure dependence.
+    Admission checks the entire batch before registration, so a refused seed or
+    restart leaves the model unchanged and can be retried with corrected routing.
+    If reconstruction or preflight raises, original entry comments are restored
+    and the original exception propagates.
+
 **Pressure-dependent reaction networks.**
 	Dissociation, combination, and isomerization reactions have the potential to have rate coefficients that are dependent on both temperature and pressure, and RMG is able to estimate both for networks of arbitrary complexity with a bounded error.
 	

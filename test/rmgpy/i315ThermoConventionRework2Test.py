@@ -216,7 +216,10 @@ def test_impossible_library_element_excluded_before_edge_thermo(monkeypatch, cap
     lithium_ion = Species(label='Lip').from_adjacency_list('1 Li u0 p0 c+1')
     argon_reaction = Reaction(reactants=[argon_ion, electron], products=[argon], reversible=False)
     lithium_reaction = Reaction(reactants=[lithium_ion, electron], products=[lithium], reversible=False)
-    library = SimpleNamespace(name='mixed-elements', get_library_reactions=lambda: [lithium_reaction, argon_reaction])
+    library = SimpleNamespace(
+        name='mixed-elements', label='mixed-elements', entries={},
+        get_library_reactions=lambda: [lithium_reaction, argon_reaction],
+    )
     kinetics = SimpleNamespace(families={}, resolve_library=lambda _: library)
     monkeypatch.setattr(rmg_data_module, 'database', SimpleNamespace(kinetics=kinetics))
     initial_species = [argon, electron]

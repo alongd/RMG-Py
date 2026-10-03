@@ -27,6 +27,8 @@
 
 cimport rmgpy.constants as constants
 from rmgpy.species cimport Species, TransitionState
+from rmgpy.statmech.conformer cimport Conformer
+from rmgpy.quantity cimport ScalarQuantity, ArrayQuantity
 from rmgpy.molecule.molecule cimport Atom, Molecule
 from rmgpy.molecule.graph cimport Vertex, Graph
 from rmgpy.molecule.element cimport Element
@@ -35,6 +37,10 @@ from rmgpy.kinetics.arrhenius cimport Arrhenius
 from rmgpy.kinetics.surface cimport SurfaceArrhenius, StickingCoefficient, SurfaceChargeTransfer
 
 cimport numpy as np
+
+cdef extern from "numpy/ndarraytypes.h":
+    enum:
+        NPY_ITEM_HASOBJECT
 
 ################################################################################
 
@@ -164,3 +170,24 @@ cdef class Reaction:
 
 cpdef bint same_species_lists(list list1, list list2, bint check_identical=?, bint only_check_label=?,
                               bint generate_initial_map=?, bint strict=?, bint save_order=?) except -2
+
+cpdef int _simple_native_channel_verdict(Reaction reaction, object reference_fields,
+                                       object data_fields, object numbers, object record_fields,
+                                       object readers, object python_fields, object seen=?, object atomtype_seen=?) except -2
+
+cpdef tuple _native_species_record_values(Species species)
+
+cpdef tuple _native_molecule_record_values(Molecule molecule)
+
+from rmgpy.molecule.atomtype cimport AtomType
+from rmgpy.molecule.element cimport Element
+
+cpdef tuple _native_atom_record_values(Atom atom)
+
+cpdef tuple _native_atomtype_record_values(AtomType atomtype)
+
+cpdef tuple _native_element_record_values(Element element)
+
+cpdef int _native_material_record_verdict(object value, bint material, object numbers,
+                                        object record_fields, object readers, object python_fields,
+                                        object seen=?, object atomtype_seen=?) except -2

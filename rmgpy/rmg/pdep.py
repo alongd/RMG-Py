@@ -33,6 +33,11 @@ functionality to RMG.
 """
 
 import logging
+from functools import lru_cache, wraps
+from types import GetSetDescriptorType, MemberDescriptorType
+import rmgpy.kinetics as kinetics
+from rmgpy.kinetics.uncertainties import RateUncertainty
+from rmgpy.data.solvation import SoluteData, SoluteTSData
 import os.path
 import shutil
 
@@ -44,13 +49,331 @@ import rmgpy.pdep.network
 import rmgpy.reaction
 from rmgpy.constants import R
 from rmgpy.data.kinetics.library import LibraryReaction
+from rmgpy.data.base import Database, Entry
+from rmgpy.electron_balance import get_placement_owner
 from rmgpy.exceptions import PressureDependenceError, NetworkError, InvalidMicrocanonicalRateError
 from rmgpy.pdep import Configuration
 from rmgpy.rmg.react import react_species
-from rmgpy.statmech import Conformer
+from rmgpy.statmech import (Conformer, Rotation, LinearRotor, NonlinearRotor, KRotor,
+    SphericalTopRotor, Translation, IdealGasTranslation, Torsion, HinderedRotor,
+    Vibration, HarmonicOscillator)
+from rmgpy.statmech.mode import Mode
+from rmgpy.statmech.torsion import FreeRotor
+from rmgpy.species import Species, TransitionState
+from rmgpy.molecule import Molecule, Group, Atom
+from rmgpy.quantity import ScalarQuantity, ArrayQuantity
+from rmgpy.thermo import ThermoData, Wilhoit, NASA, NASAPolynomial
+from rmgpy.thermo.model import HeatCapacityModel
+from rmgpy.transport import TransportData
+from rmgpy.pdep.collision import SingleExponentialDown
+from rmgpy.molecule.molecule import Bond
+from rmgpy.molecule.graph import Graph, Vertex, Edge
+from rmgpy.molecule.element import Element
+from rmgpy.molecule.atomtype import AtomType
+from rmgpy.data.vaporLiquidMassTransfer import (HenryLawConstantData,
+    LiquidVolumetricMassTransferCoefficientData)
 
 
 ################################################################################
+
+class _UnclassifiedSpeciesReference(ValueError):
+    """An unsupported type or material position cannot prove electron absence."""
+
+
+# Membership is deliberate: adding a shipped kinetics class requires reviewing
+# its species-bearing fields. The completeness regression audits this list.
+_KINETICS_TYPES = frozenset((
+    kinetics.KineticsModel, kinetics.PDepKineticsModel, kinetics.TunnelingModel,
+    kinetics.Arrhenius, kinetics.ArrheniusEP, kinetics.ArrheniusBM,
+    kinetics.ArrheniusChargeTransfer, kinetics.ArrheniusChargeTransferBM,
+    kinetics.Marcus, kinetics.TwoTemperaturePlasma, kinetics.ElectronCollisionPlasma,
+    kinetics.BadnellRRArrhenius, kinetics.VoronovEIArrhenius,
+    kinetics.PDepArrhenius, kinetics.MultiArrhenius, kinetics.MultiPDepArrhenius,
+    kinetics.Chebyshev, kinetics.ThirdBody, kinetics.Lindemann, kinetics.Troe,
+    kinetics.KineticsData, kinetics.PDepKineticsData, kinetics.Wigner, kinetics.Eckart,
+    kinetics.SurfaceArrhenius, kinetics.SurfaceArrheniusBEP,
+    kinetics.StickingCoefficient, kinetics.StickingCoefficientBEP,
+    kinetics.SurfaceChargeTransfer, kinetics.SurfaceChargeTransferBEP,
+    RateUncertainty,
+))
+_KINETICS_REFERENCE_FIELDS = {
+    cls: tuple(name for name in (
+        'efficiencies', '_coverage_dependence', 'coverage_dependence', 'highPlimit', 'arrhenius',
+        'arrheniusLow', 'arrheniusHigh', 'solute', 'uncertainty',
+    ) if hasattr(cls, name) and not (name == 'coverage_dependence'
+        and hasattr(cls, '_coverage_dependence')))
+    for cls in _KINETICS_TYPES
+}
+# These descriptors belong only to the explicitly listed native classes. Their
+# non-material values still require an exact supported numeric/record type.
+def _native_data_fields(cls, reference_fields=()):
+    fields = {
+        name for base in cls.__mro__ for name, descriptor in vars(base).items()
+        if type(descriptor) in (GetSetDescriptorType, MemberDescriptorType)
+        and not name.startswith('__') and name.lstrip('_') not in {field.lstrip('_') for field in reference_fields}
+    }
+    # A public quantity accessor and its native backing descriptor expose
+    # the same value; check the backing field once.
+    return tuple(name for name in sorted(fields) if '_' + name not in fields)
+
+
+_KINETICS_DATA_FIELDS = {
+    cls: _native_data_fields(cls, _KINETICS_REFERENCE_FIELDS[cls])
+    for cls in _KINETICS_TYPES
+}
+# Only declared object-valued physical slots can carry an unknown type.
+# Native int/bint/double slots and derived rotational constants cannot.
+_NATIVE_RECORD_FIELDS = {
+    TransitionState: ('label', '_frequency', 'conformer', 'tunneling'),
+    Conformer: ('_E0', 'modes', '_number', '_mass', '_coordinates'),
+    Mode: (), Rotation: (), Translation: (), Torsion: (), Vibration: (),
+    LinearRotor: ('_inertia',), NonlinearRotor: ('_inertia',),
+    KRotor: ('_inertia',), SphericalTopRotor: ('_inertia',),
+    IdealGasTranslation: ('_mass',),
+    HinderedRotor: ('_inertia', '_fourier', '_barrier', 'energies'),
+    FreeRotor: ('_inertia',), HarmonicOscillator: ('_frequencies',),
+}
+# Channel-owned records share one complete slot schema in both checkers.
+_NATIVE_RECORD_FIELDS.update({
+    Species: ('label', 'thermo', 'conformer', 'transport_data', 'molecule',
+        '_molecular_weight', 'energy_transfer_model', 'props', '_aug_inchi',
+        '_state_cache_key', 'liquid_volumetric_mass_transfer_coefficient_data',
+        'henry_law_constant_data', '_fingerprint', '_inchi', '_smiles'),
+    Molecule: ('vertices', 'ordered_vertices', 'props', '_symm_sssr', '_sssr',
+        'metal', 'facet', '_electronic_state', '_fingerprint', '_inchi', '_smiles'),
+    Graph: ('vertices', 'ordered_vertices'),
+    Atom: ('edges', 'mapping', 'element', 'label', 'atomtype', 'coords',
+        'site', 'morphology', 'props'),
+    Vertex: ('edges', 'mapping'), Bond: ('vertex1', 'vertex2'),
+    Edge: ('vertex1', 'vertex2'),
+    Element: ('name', 'symbol', 'chemkin_name'),
+    AtomType: ('label', 'generic', 'specific', 'increment_bond', 'decrement_bond',
+        'form_bond', 'break_bond', 'increment_radical', 'decrement_radical',
+        'increment_lone_pair', 'decrement_lone_pair', 'increment_charge',
+        'decrement_charge', 'single', 'all_double', 'r_double', 'o_double',
+        's_double', 'triple', 'quadruple', 'benzene', 'lone_pairs', 'charge'),
+    HeatCapacityModel: ('_Tmin', '_Tmax', '_E0', '_Cp0', '_CpInf', 'comment', 'label'),
+    NASAPolynomial: ('_Tmin', '_Tmax', '_E0', '_Cp0', '_CpInf', 'comment', 'label'),
+    NASA: ('_Tmin', '_Tmax', '_E0', '_Cp0', '_CpInf', 'comment', 'label',
+        'poly1', 'poly2', 'poly3', '_thermo_coverage_dependence'),
+    ThermoData: ('_Tmin', '_Tmax', '_E0', '_Cp0', '_CpInf', 'comment', 'label',
+        '_H298', '_S298', '_Tdata', '_Cpdata', '_thermo_coverage_dependence'),
+    Wilhoit: ('_Tmin', '_Tmax', '_E0', '_Cp0', '_CpInf', 'comment', 'label',
+        '_B', '_H0', '_S0', '_thermo_coverage_dependence'),
+    SingleExponentialDown: ('_alpha0', '_t0'),
+})
+_NATIVE_RECORD_READERS = {
+    Species: rmgpy.reaction._native_species_record_values,
+    Molecule: rmgpy.reaction._native_molecule_record_values,
+    Atom: rmgpy.reaction._native_atom_record_values,
+    AtomType: rmgpy.reaction._native_atomtype_record_values,
+    Element: rmgpy.reaction._native_element_record_values,
+}
+_FAST_TYPED_RECORD_CHECKERS = {AtomType: '_native_atomtype_lists_valid'}
+_PYTHON_RECORD_FIELDS = {
+    TransportData: ('shapeIndex', 'epsilon', 'sigma', 'dipoleMoment',
+        'polarizability', 'rotrelaxcollnum', 'comment'),
+    HenryLawConstantData: ('Ts', 'kHs'),
+    LiquidVolumetricMassTransferCoefficientData: ('Ts', 'kLAs'),
+    SoluteData: ('S', 'B', 'E', 'L', 'A', 'V', 'comment'),
+    SoluteTSData: ('Sg_g', 'Bg_g', 'Eg_g', 'Lg_g', 'Ag_g', 'Cg_g', 'Sh_g',
+        'Bh_g', 'Eh_g', 'Lh_g', 'Ah_g', 'Ch_g', 'K_g', 'Sg_h', 'Bg_h',
+        'Eg_h', 'Lg_h', 'Ag_h', 'Cg_h', 'Sh_h', 'Bh_h', 'Eh_h', 'Lh_h',
+        'Ah_h', 'Ch_h', 'K_h', 'comment'),
+}
+_NUMERIC_RECORD_FIELDS = {
+    ScalarQuantity: ('units', 'uncertainty_type'),
+    ArrayQuantity: ('units', 'uncertainty_type', 'value_si', 'uncertainty_si'),
+}
+_NUMERIC_SLOT_ALIASES = {'_uncertainty_type': 'uncertainty_type'}
+_SIMPLE_RECORD_FIELDS = dict(_NATIVE_RECORD_FIELDS)
+_SIMPLE_RECORD_FIELDS.update(_PYTHON_RECORD_FIELDS)
+_SIMPLE_RECORD_FIELDS.update({
+    cls: _KINETICS_DATA_FIELDS[cls]
+    for cls in (kinetics.TunnelingModel, kinetics.Wigner, kinetics.Eckart)
+})
+_CONTAINERS = frozenset((list, tuple, dict, set, frozenset, np.ndarray))
+_NUMBERS = frozenset((str, bytes, bool, int, float, complex, type(None),
+                     ScalarQuantity, ArrayQuantity)) | frozenset(
+    cls for cls in np.sctypeDict.values() if isinstance(cls, type)
+    and issubclass(cls, np.number)
+)
+def _is_numeric_data(value):
+    cls = type(value)
+    if type(cls) is not type or cls not in _NUMBERS:
+        return False
+    if cls in (ScalarQuantity, ArrayQuantity):
+        if type(value.units) is not str or type(value.uncertainty_type) is not str:
+            return False
+    if cls is ArrayQuantity:
+        for array in (value.value_si, value.uncertainty_si):
+            if array is not None and (type(array) is not np.ndarray or array.dtype.hasobject):
+                return False
+    return True
+
+
+_REACTION_MATERIAL_FIELDS = ('reactants', 'products', 'specific_collider', 'pairs')
+_REACTION_RATE_FIELDS = ('kinetics', 'network_kinetics', 'SurfaceArrhenius',
+                         'SurfaceChargeTransfer', 'reverse')
+_REACTION_PROVENANCE_FIELDS = ('entry', 'depository', 'template', 'network',
+                              'library', 'family')
+_SOLUTE_DATA_FIELDS = frozenset(('S', 'B', 'E', 'L', 'A', 'V', 'comment',
+    'Sg_g', 'Bg_g', 'Eg_g', 'Lg_g', 'Ag_g', 'Cg_g', 'Sh_g', 'Bh_g', 'Eh_g',
+    'Lh_g', 'Ah_g', 'Ch_g', 'K_g', 'Sg_h', 'Bg_h', 'Eg_h', 'Lg_h', 'Ag_h',
+    'Cg_h', 'Sh_h', 'Bh_h', 'Eh_h', 'Lh_h', 'Ah_h', 'Ch_h', 'K_h'))
+_REACTION_DATA_FIELDS = frozenset((
+    'index', 'label', 'reversible', 'transition_state', 'duplicate', 'degeneracy',
+    '_degeneracy', 'electrons', 'protons', '_protons', 'allow_pdep_route',
+    'elementary_high_p', 'comment', 'k_effective_cache', 'is_forward',
+    'allow_max_rate_violation', 'rank', 'estimator',
+))
+
+_REACTION_FIELDS = (_REACTION_DATA_FIELDS | frozenset(_REACTION_MATERIAL_FIELDS)
+                    | frozenset(_REACTION_RATE_FIELDS) | frozenset(_REACTION_PROVENANCE_FIELDS)
+                    | frozenset(('labeled_atoms',)))
+
+
+@lru_cache(maxsize=1)
+def _reaction_types():
+    # Keep family/depository imports out of this module's initialization cycle.
+    from rmgpy.data.kinetics.family import TemplateReaction
+    from rmgpy.data.kinetics.depository import DepositoryReaction
+    return (rmgpy.reaction.Reaction, LibraryReaction, TemplateReaction,
+            DepositoryReaction, PDepReaction)
+
+
+@lru_cache(maxsize=1)
+def _provenance_types():
+    from rmgpy.data.kinetics.depository import KineticsDepository
+    from rmgpy.data.kinetics.library import KineticsLibrary
+    from rmgpy.data.kinetics.family import KineticsFamily
+    from rmgpy.data.base import LogicOr, LogicAnd
+    return (Database, Entry, KineticsLibrary, KineticsDepository, KineticsFamily,
+            Group, LogicOr, LogicAnd, rmgpy.pdep.network.Network, PDepNetwork)
+
+
+def _check_template_atom_labels(reaction, labels, position):
+    """Labels may only alias native atoms in this reaction's checked molecules."""
+    def refuse():
+        raise _UnclassifiedSpeciesReference('Unclassified atom labels at ' + position)
+
+    if type(labels) is not dict:
+        refuse()
+    for side, mapping in labels.items():
+        if type(side) is not str or side not in ('reactants', 'products') or type(mapping) is not dict:
+            refuse()
+        if not mapping:
+            continue
+        participants = getattr(reaction, side)
+        if type(participants) is not list:
+            refuse()
+        owned = set()
+        for participant in participants:
+            if type(participant) is Species and type(participant.molecule) is list:
+                molecules = participant.molecule
+            elif type(participant) is Molecule:
+                molecules = [participant]
+            else:
+                refuse()
+            for molecule in molecules:
+                if type(molecule) is not Molecule or type(molecule.atoms) is not list:
+                    refuse()
+                if any(type(atom) is not Atom for atom in molecule.atoms):
+                    refuse()
+                owned.update(id(atom) for atom in molecule.atoms)
+        for label, reference in mapping.items():
+            if type(label) is not str:
+                refuse()
+            atoms = reference if type(reference) is list else [reference]
+            if any(type(atom) is not Atom or id(atom) not in owned for atom in atoms):
+                refuse()
+
+
+def _reaction_species_references(reaction, seen=None, atomtype_seen=None):
+    """Traverse current declared schemas in the compiled general walker."""
+    yield from rmgpy.reaction._native_reaction_species_references(
+        reaction, seen, atomtype_seen)
+
+
+def _has_electron_participant(reaction, seen=None, atomtype_seen=None):
+    """Recognize known material/metadata electrons; unknown schemas refuse."""
+    if type(type(reaction)) is not type or type(reaction) not in _reaction_types():
+        return True
+    if reaction.electrons:
+        return True
+    if type(reaction) is rmgpy.reaction.Reaction:
+        simple = rmgpy.reaction._simple_native_channel_verdict(
+            reaction, _KINETICS_REFERENCE_FIELDS[kinetics.Arrhenius],
+            _KINETICS_DATA_FIELDS[kinetics.Arrhenius], _NUMBERS, _SIMPLE_RECORD_FIELDS,
+            _NATIVE_RECORD_READERS, _PYTHON_RECORD_FIELDS, seen, atomtype_seen)
+        if simple >= 0:
+            return bool(simple)
+    try:
+        if any(type(reference) is Molecule and reference.is_electron()
+               for reference in _reaction_species_references(reaction, seen, atomtype_seen)):
+            return True
+    except _UnclassifiedSpeciesReference:
+        return True
+    return (type(reaction) is not rmgpy.reaction.Reaction
+            and get_placement_owner(reaction) is not None)
+
+
+def _check_electron_channel_routing(reaction, library=None, seen=None, atomtype_seen=None):
+    """Refuse every electron reaction before network state changes."""
+    if _has_electron_participant(reaction, seen, atomtype_seen):
+        if type(type(reaction)) is not type or type(reaction) not in _reaction_types():
+            source = library if type(library) is str and library else 'Unclassified'
+            raise NetworkError('Electron reactions cannot enter pressure-dependent networks: '
+                               '<unclassified reaction> (library: {0}). Unsupported exact reaction type.'.format(source))
+        census_error = ''
+        try:
+            for reference in _reaction_species_references(reaction):
+                pass
+        except _UnclassifiedSpeciesReference as error:
+            census_error = str(error) + '. '
+        candidates = (library, getattr(reaction, 'library', None),
+                      getattr(reaction, 'family', None))
+        names = []
+        for candidate in candidates:
+            if type(candidate) is str:
+                names.append(candidate)
+            elif type(type(candidate)) is type and type(candidate) in _provenance_types()[:5]:
+                names.append(candidate.label)
+        source = next((name for name in names if type(name) is str and name), 'Unclassified')
+        # The diagnostic must not execute a refused participant's properties
+        # or __str__, and must not initialize any labels on the candidate.
+        def describe(participant):
+            if type(participant) is Species:
+                label = participant.label
+                if type(label) is not str or not label:
+                    molecules = participant.molecule
+                    label = (molecules[0].to_smiles()
+                             if type(molecules) is list and molecules
+                             and type(molecules[0]) is Molecule else '<species>')
+                if type(participant.index) is int and participant.index != -1:
+                    return '{0}({1:d})'.format(label, participant.index)
+                return label
+            if type(participant) is Molecule:
+                return str(participant)
+            return '<unsupported participant type>'
+
+        def side(participants):
+            if type(participants) not in (list, tuple):
+                return '<unsupported participant-list type>'
+            return ' + '.join(describe(participant) for participant in participants)
+
+        reactants = side(reaction.reactants)
+        products = side(reaction.products)
+        collider = (' (+{0})'.format(describe(reaction.specific_collider))
+                    if reaction.specific_collider is not None else '')
+        arrow = ' <=> ' if reaction.reversible else ' => '
+        equation = reactants + collider + arrow + products + collider
+        raise NetworkError(
+            'Electron reactions cannot enter pressure-dependent networks: '
+            '{0} (library: {1}). {2}Keep the rate explicit; disable '
+            'elementary_high_p/allow_pdep_route and cached network kinetics, '
+            'or disable pressure dependence.'.format(equation, source, census_error))
+
 
 class PDepReaction(rmgpy.reaction.Reaction):
 
@@ -150,6 +473,61 @@ class PDepReaction(rmgpy.reaction.Reaction):
 
 ################################################################################
 
+def _check_network_reactions(network):
+    """Validate each current channel and shared physical record once per call.
+
+    The visited sets are local to this operation. Admission never lends a
+    verdict to a later computation, so subsequent mutations are inspected.
+    Plain Network is supported for direct numerical and Arkane callers.
+    """
+    if type(network) not in (PDepNetwork, rmgpy.pdep.network.Network):
+        raise NetworkError('Electron reactions cannot enter pressure-dependent networks: '
+                           '<unsupported network type> (library: Unclassified).')
+    seen, atomtype_seen, channels = set(), set(), set()
+    for reactions in (network.path_reactions, network.net_reactions):
+        if type(reactions) not in (list, tuple):
+            raise NetworkError('Electron reactions cannot enter pressure-dependent networks: '
+                               '<unsupported reaction-list type> (library: Unclassified).')
+        for reaction in reactions:
+            if id(reaction) not in channels:
+                channels.add(id(reaction))
+                _check_electron_channel_routing(reaction, seen=seen, atomtype_seen=atomtype_seen)
+
+
+def _checked_network_entry(function):
+    """Check current channels once at an explicit computation/routing entry."""
+    @wraps(function)
+    def checked(self, *args, **kwargs):
+        if function.__name__ in ('add_path_reaction', 'add_net_reaction'):
+            if type(self) is not PDepNetwork:
+                raise NetworkError('Electron reactions cannot enter pressure-dependent networks: '
+                                   '<unsupported network type> (library: Unclassified).')
+        else:
+            PDepNetwork._check_reactions(self)
+        return function(self, *args, **kwargs)
+    checked._electron_channel_entry = True
+    return checked
+
+
+_NETWORK_ACCESSOR_EXCLUSIONS = {
+    'invalidate': 'Only clears the validity flag; it neither reads nor routes any channel.',
+    'get_all_species': 'Enumerates existing configurations and bath gas without evaluating or registering reactions.',
+    'log_summary': 'Formats diagnostic state for logging; no rate, grid, routing or network computation is performed.',
+    'cleanup': 'Releases existing numerical arrays and configuration caches; it does not compute or route channels.',
+}
+
+
+def _guard_network_entries(cls):
+    """Cover the whole public network API; only named pure accessors are exempt."""
+    import inspect
+    for name, function in inspect.getmembers(cls, inspect.isroutine):
+        if (not name.startswith('_') and name not in _NETWORK_ACCESSOR_EXCLUSIONS
+                and not getattr(function, '_electron_channel_entry', False)):
+            setattr(cls, name, _checked_network_entry(function))
+    return cls
+
+
+@_guard_network_entries
 class PDepNetwork(rmgpy.pdep.network.Network):
     """
     A representation of a *partial* unimolecular reaction network. Each partial
@@ -184,8 +562,35 @@ class PDepNetwork(rmgpy.pdep.network.Network):
         """
         return (PDepNetwork, (self.index, self.source), self.__dict__)
 
-    def __setstate__(self, dict):
-        self.__dict__.update(dict)
+    def __setstate__(self, state):
+        if type(state) is not dict:
+            raise NetworkError('Electron reactions cannot enter pressure-dependent networks: '
+                               '<unsupported network state> (library: Unclassified).')
+        for name in ('path_reactions', 'net_reactions'):
+            reactions = state.get(name, [])
+            if type(reactions) not in (list, tuple):
+                raise NetworkError('Electron reactions cannot enter pressure-dependent networks: '
+                                   '<unsupported reaction-list type> (library: Unclassified).')
+            for reaction in reactions:
+                _check_electron_channel_routing(reaction)
+        self.__dict__.update(state)
+
+    def _check_reactions(self):
+        """Validate current path/net channels at routing/computation boundaries.
+
+        A reaction in a cyclic pickle may still be a placeholder in __setstate__.
+        Entry checks run on the complete graph, and never cache a verdict.
+        Attribute access, printing and inspection do not compute or route it.
+        """
+        if type(self) is not PDepNetwork:
+            raise NetworkError('Electron reactions cannot enter pressure-dependent networks: '
+                               '<unsupported network type> (library: Unclassified).')
+        _check_network_reactions(self)
+
+    def add_net_reaction(self, reaction):
+        """Validate only the incoming channel before registration."""
+        _check_electron_channel_routing(reaction)
+        self.net_reactions.append(reaction)
 
     def cleanup(self):
         """
@@ -213,6 +618,7 @@ class PDepNetwork(rmgpy.pdep.network.Network):
         self.K = None
         self.p0 = None
 
+    @_checked_network_entry
     def get_leak_coefficient(self, T, P):
         """
         Return the pressure-dependent rate coefficient :math:`k(T,P)` describing
@@ -244,6 +650,7 @@ class PDepNetwork(rmgpy.pdep.network.Network):
                     k += rxn.get_rate_coefficient(T, P)
         return k
 
+    @_checked_network_entry
     def get_maximum_leak_species(self, T, P):
         """
         Get the unexplored (unimolecular) isomer with the maximum leak flux.
@@ -276,6 +683,7 @@ class PDepNetwork(rmgpy.pdep.network.Network):
         # Return the species
         return max_species
 
+    @_checked_network_entry
     def get_leak_branching_ratios(self, T, P):
         """
         Return a dict with the unexplored isomers in the partial network as the
@@ -302,6 +710,7 @@ class PDepNetwork(rmgpy.pdep.network.Network):
 
         return ratios
 
+    @_checked_network_entry
     def explore_isomer(self, isomer):
         """
         Explore a previously-unexplored unimolecular `isomer` in this partial
@@ -327,9 +736,6 @@ class PDepNetwork(rmgpy.pdep.network.Network):
         for mol in isomer.molecule:
             mol.update()
 
-        self.explored.append(isomer)
-        self.isomers.append(product)
-        self.products.remove(product)
         # Find reactions involving the found species as unimolecular
         # reactant or product (e.g. A <---> products)
 
@@ -339,6 +745,11 @@ class PDepNetwork(rmgpy.pdep.network.Network):
         # reactants or products with other core species (e.g. A + B <---> products)
 
         new_reactions = react_species((isomer,))
+        for reaction in new_reactions:
+            _check_electron_channel_routing(reaction)
+        self.explored.append(isomer)
+        self.isomers.append(product)
+        self.products.remove(product)
 
         return new_reactions
 
@@ -347,6 +758,7 @@ class PDepNetwork(rmgpy.pdep.network.Network):
         Add a path reaction to the network. If the path reaction already exists,
         no action is taken.
         """
+        _check_electron_channel_routing(newReaction)
         # Add this reaction to that network if not already present
         found = False
         for rxn in self.path_reactions:
@@ -360,6 +772,7 @@ class PDepNetwork(rmgpy.pdep.network.Network):
             self.path_reactions.append(newReaction)
             self.invalidate()
 
+    @_checked_network_entry
     def get_energy_filtered_reactions(self, T, tol):
         """
         Returns a list of products and isomers that are greater in Free Energy
@@ -392,6 +805,7 @@ class PDepNetwork(rmgpy.pdep.network.Network):
 
         return filtered_rxns
 
+    @_checked_network_entry
     def get_rate_filtered_products(self, T, P, tol):
         """
         determines the set of path_reactions that have fluxes less than
@@ -427,6 +841,7 @@ class PDepNetwork(rmgpy.pdep.network.Network):
             filtered_prod = [self.net_reactions[i].products for i in inds]
             return filtered_prod
 
+    @_checked_network_entry
     def solve_ss_network(self, T, P):
         """
         calculates the steady state concentrations if all A => B + C
@@ -638,6 +1053,7 @@ class PDepNetwork(rmgpy.pdep.network.Network):
         """
         Merge the partial network `other` into this network.
         """
+        PDepNetwork._check_reactions(other)
         # Make sure the two partial networks have the same source configuration
         assert self.source == other.source
 
@@ -691,11 +1107,12 @@ class PDepNetwork(rmgpy.pdep.network.Network):
                     found = True
                     break
             if not found:
-                self.net_reactions.append(reaction)
+                self.add_net_reaction(reaction)
 
         # Mark this network as invalid
         self.valid = False
 
+    @_checked_network_entry
     def update_configurations(self, reaction_model):
         """
         Sort the reactants and products of each of the network's path reactions
@@ -949,7 +1366,7 @@ class PDepNetwork(rmgpy.pdep.network.Network):
                         kinetics=None,
                     )
                     net_reaction = reaction_model.make_new_pdep_reaction(net_reaction)
-                    self.net_reactions.append(net_reaction)
+                    self.add_net_reaction(net_reaction)
 
                     # Place the net reaction in the core or edge if necessary
                     # Note that leak reactions are not placed in the edge

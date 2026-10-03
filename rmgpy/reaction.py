@@ -65,9 +65,12 @@ from rmgpy.kinetics.arrhenius import Arrhenius  # Separate because we cimport fr
 from rmgpy.kinetics.surface import SurfaceArrhenius, StickingCoefficient, SurfaceChargeTransfer, SurfaceChargeTransferBEP  # Separate because we cimport from rmgpy.kinetics.surface
 from rmgpy.kinetics.diffusionLimited import diffusion_limiter
 from rmgpy.molecule.element import Element, element_list
+from rmgpy.molecule.atomtype import AtomType
 from rmgpy.molecule.molecule import Molecule, Atom
 from rmgpy.pdep.reaction import calculate_microcanonical_rate_coefficient
-from rmgpy.species import Species
+from rmgpy.species import Species, TransitionState
+from rmgpy.statmech.conformer import Conformer
+from rmgpy.quantity import ScalarQuantity, ArrayQuantity
 from rmgpy.thermo import ThermoData
 
 ################################################################################
@@ -2516,3 +2519,430 @@ def same_species_lists(list1, list2, check_identical=False, only_check_label=Fal
         raise NotImplementedError("Can't check isomorphism of lists with {0} species/molecules".format(len(list1)))
     # nothing found
     return False
+
+
+@cython.cfunc
+@cython.inline
+@cython.returns(cython.bint)
+def _is_native_channel_number(value, numbers):
+    scalar = cython.declare(ScalarQuantity)
+    quantity = cython.declare(ArrayQuantity)
+    native_array = cython.declare(np.ndarray)
+    descriptor = cython.declare(np.dtype)
+    cls = type(value)
+    if type(cls) is not type or cls not in numbers:
+        return False
+    if cls is ScalarQuantity:
+        scalar = value
+        if type(scalar.units) is not str or type(scalar._uncertainty_type) is not str:
+            return False
+    if cls is ArrayQuantity:
+        quantity = value
+        if type(quantity.units) is not str or type(quantity._uncertainty_type) is not str:
+            return False
+        for array in (quantity.value_si, quantity.uncertainty_si):
+            if array is None:
+                continue
+            if type(array) is not np.ndarray:
+                return False
+            native_array = array
+            descriptor = native_array.dtype
+            if descriptor.flags & NPY_ITEM_HASOBJECT:
+                return False
+    return True
+
+
+def _native_species_record_values(species):
+    """Read declared native slots, including private chemical-state caches."""
+    return (species.label, species.thermo, species.conformer, species.transport_data,
+        species.molecule, species._molecular_weight, species.energy_transfer_model,
+        species.props, species._aug_inchi, species._state_cache_key,
+        species.liquid_volumetric_mass_transfer_coefficient_data,
+        species.henry_law_constant_data, species._fingerprint, species._inchi, species._smiles)
+
+
+def _native_molecule_record_values(molecule):
+    """Read declared native graph slots without reflecting over foreign types."""
+    return (molecule.vertices, molecule.ordered_vertices, molecule.props,
+        molecule._symm_sssr, molecule._sssr, molecule.metal, molecule.facet,
+        molecule._electronic_state, molecule._fingerprint, molecule._inchi, molecule._smiles)
+
+
+def _native_atom_record_values(atom):
+    """Read every object-valued native atom and inherited vertex slot."""
+    return (atom.edges, atom.mapping, atom.element, atom.label, atom.atomtype,
+        atom.coords, atom.site, atom.morphology, atom.props)
+
+
+def _native_atomtype_record_values(atomtype):
+    """Read every mutable native atom-type descriptor and action list."""
+    return (atomtype.label, atomtype.generic, atomtype.specific,
+        atomtype.increment_bond, atomtype.decrement_bond, atomtype.form_bond,
+        atomtype.break_bond, atomtype.increment_radical, atomtype.decrement_radical,
+        atomtype.increment_lone_pair, atomtype.decrement_lone_pair,
+        atomtype.increment_charge, atomtype.decrement_charge, atomtype.single,
+        atomtype.all_double, atomtype.r_double, atomtype.o_double, atomtype.s_double,
+        atomtype.triple, atomtype.quadruple, atomtype.benzene, atomtype.lone_pairs,
+        atomtype.charge)
+
+
+def _native_element_record_values(element):
+    """Read every object-valued native element slot."""
+    return (element.name, element.symbol, element.chemkin_name)
+
+
+@cython.cfunc
+@cython.inline
+@cython.returns(cython.bint)
+def _queue_native_record(pending, seen, shared_seen, value, material, numbers):
+    """Validate leaves immediately and schedule each current record once."""
+    if value is None:
+        return True
+    cls = type(value)
+    if type(cls) is not type:
+        return False
+    if cls is list or cls is tuple or cls is dict or cls is set or cls is frozenset:
+        if not value:
+            return True
+    elif cls is np.ndarray:
+        native_array = cython.declare(np.ndarray, value)
+        descriptor = cython.declare(np.dtype, native_array.dtype)
+        return not material and not (descriptor.flags & NPY_ITEM_HASOBJECT)
+    elif cls is int or cls is float or cls is str or cls is bool or cls is bytes or cls is complex:
+        return not material
+    elif cls in numbers:
+        return not material and _is_native_channel_number(value, numbers)
+    token = (id(value), material, False)
+    if token not in seen and token not in shared_seen:
+        seen.add(token)
+        pending.append((value, material))
+    return True
+
+
+@cython.cfunc
+@cython.returns(cython.bint)
+def _native_atomtype_lists_valid(initial, seen, shared_seen, numbers):
+    """Walk all native descriptor links and numeric lists without generic nodes."""
+    atomtype = cython.declare(AtomType)
+    # Exact native AtomType uses identity hashing; this set lives for one check.
+    if initial in seen or initial in shared_seen:
+        return True
+    seen.add(initial)
+    pending = [initial]
+    while pending:
+        atomtype = pending.pop()
+        if atomtype.label is not None and type(atomtype.label) is not str:
+            return False
+        for references in (atomtype.generic, atomtype.specific, atomtype.increment_bond,
+                atomtype.decrement_bond, atomtype.form_bond, atomtype.break_bond,
+                atomtype.increment_radical, atomtype.decrement_radical,
+                atomtype.increment_lone_pair, atomtype.decrement_lone_pair,
+                atomtype.increment_charge, atomtype.decrement_charge):
+            if type(references) is not list:
+                return False
+            for child in references:
+                if type(child) is not AtomType:
+                    return False
+                if child not in seen and child not in shared_seen:
+                    seen.add(child)
+                    pending.append(child)
+        for values in (atomtype.single, atomtype.all_double, atomtype.r_double,
+                atomtype.o_double, atomtype.s_double, atomtype.triple,
+                atomtype.quadruple, atomtype.benzene, atomtype.lone_pairs, atomtype.charge):
+            if type(values) is not list:
+                return False
+            for child in values:
+                if type(child) is not int and not _is_native_channel_number(child, numbers):
+                    return False
+    return True
+
+
+@cython.cfunc
+@cython.returns(cython.int)
+def _native_record_graph_verdict(pending, numbers, record_fields, readers, python_fields, shared_seen, shared_atomtypes):
+    """Inspect current native record graphs using the shared slot inventory."""
+    seen = set()
+    atomtype_seen = set()
+    if shared_seen is None:
+        shared_seen = set()
+    if shared_atomtypes is None:
+        shared_atomtypes = set()
+    initial = pending
+    pending = []
+    molecule = cython.declare(Molecule)
+    atom = cython.declare(Atom)
+    for value, material in initial:
+        if not _queue_native_record(pending, seen, shared_seen, value, material, numbers):
+            return -1
+    while pending:
+        value, material = pending.pop()
+        cls = type(value)
+        if cls in (list, tuple, dict, set, frozenset):
+            if cls is dict:
+                for key, child in value.items():
+                    if (not _queue_native_record(pending, seen, shared_seen, key, material, numbers)
+                            or not _queue_native_record(pending, seen, shared_seen, child, False, numbers)):
+                        return -1
+            else:
+                for child in value:
+                    if not _queue_native_record(pending, seen, shared_seen, child, material, numbers):
+                        return -1
+            continue
+        if cls is AtomType:
+            if not _native_atomtype_lists_valid(value, atomtype_seen, shared_atomtypes, numbers):
+                return -1
+            continue
+        if cls is Species:
+            if not material or type(value.molecule) is not list:
+                return -1
+            for child in value.molecule:
+                if type(child) is not Molecule:
+                    return -1
+        elif cls is Molecule:
+            if not material:
+                return -1
+            molecule = value
+            if type(molecule.vertices) is not list:
+                return -1
+            for child in molecule.vertices:
+                if type(child) is not Atom:
+                    return -1
+                atom = child
+                if type(atom.element) is not Element:
+                    return -1
+            if molecule.is_electron():
+                return 1
+        if cls not in record_fields:
+            return -1
+        fields = record_fields[cls]
+        if cls in python_fields:
+            for name in vars(value):
+                if type(name) is not str or name not in fields:
+                    return -1
+        if cls in readers:
+            children = readers[cls](value)
+            for name, child in zip(fields, children):
+                if not _queue_native_record(pending, seen, shared_seen, child,
+                        cls is Species and name == 'molecule', numbers):
+                    return -1
+        else:
+            for name in fields:
+                if not _queue_native_record(pending, seen, shared_seen, getattr(value, name), False, numbers):
+                    return -1
+    shared_seen.update(seen)
+    shared_atomtypes.update(atomtype_seen)
+    return 0
+
+
+def _native_material_record_verdict(value, material, numbers, record_fields, readers, python_fields, seen=None, atomtype_seen=None):
+    """Inspect one current material graph with the full native slot inventory.
+
+    Successful additions are shared only by the caller's current operation.
+    Failed native attempts leave its visited sets intact for full diagnostics.
+    """
+    return _native_record_graph_verdict([(value, material)], numbers, record_fields,
+                                       readers, python_fields, seen, atomtype_seen)
+
+
+def _simple_native_channel_verdict(reaction, reference_fields, data_fields, numbers, record_fields, readers, python_fields, seen=None, atomtype_seen=None):
+    """Fast current-state schema check for the common plain Arrhenius channel.
+
+    Complex known schemas fall through to the general walker. No verdict or
+    graph state is cached; unsupported types still go through exact rejection.
+    """
+    if type(reaction) is not Reaction:
+        return -1
+    pairs = reaction.pairs
+    if pairs is not None and (type(pairs) is not list or pairs):
+        return -1
+    rate = reaction.kinetics
+    if type(rate) is not Arrhenius or reaction.network_kinetics is not None:
+        return -1
+    if reaction.SurfaceArrhenius is not None or reaction.SurfaceChargeTransfer is not None:
+        return -1
+    for name in reference_fields:
+        if getattr(rate, name) is not None:
+            return -1
+    for name in data_fields:
+        child = getattr(rate, name)
+        if not _is_native_channel_number(child, numbers):
+            return -1
+    # Validate participant and transition-state physical records with the same
+    # complete slot schema; unusual arrangements use the general walker.
+    for value in (reaction.label, reaction.comment, reaction.rank):
+        if value is not None and (not _is_native_channel_number(value, numbers)):
+            return -1
+    cache = reaction.k_effective_cache
+    if type(cache) is not dict:
+        return -1
+    for key, value in cache.items():
+        keys = key if type(key) is tuple else (key,)
+        for item in keys:
+            if not _is_native_channel_number(item, numbers):
+                return -1
+        if not _is_native_channel_number(value, numbers):
+            return -1
+    pending = [(reaction.transition_state, False)]
+    for participants in (reaction.reactants, reaction.products):
+        if type(participants) is not list:
+            return -1
+        for participant in participants:
+            if type(participant) is not Species:
+                return -1
+            pending.append((participant, True))
+    if reaction.specific_collider is not None:
+        return -1
+    return _native_record_graph_verdict(pending, numbers, record_fields, readers, python_fields, seen, atomtype_seen)
+
+
+def _native_reaction_species_references(reaction, seen=None, atomtype_seen=None):
+    """Traverse declared schemas of exact known types; unknown types refuse."""
+    from rmgpy.rmg import pdep
+    _CONTAINERS = pdep._CONTAINERS
+    _KINETICS_DATA_FIELDS = pdep._KINETICS_DATA_FIELDS
+    _KINETICS_REFERENCE_FIELDS = pdep._KINETICS_REFERENCE_FIELDS
+    _NATIVE_RECORD_FIELDS = pdep._NATIVE_RECORD_FIELDS
+    _NATIVE_RECORD_READERS = pdep._NATIVE_RECORD_READERS
+    _NUMBERS = pdep._NUMBERS
+    _PYTHON_RECORD_FIELDS = pdep._PYTHON_RECORD_FIELDS
+    _REACTION_DATA_FIELDS = pdep._REACTION_DATA_FIELDS
+    _REACTION_FIELDS = pdep._REACTION_FIELDS
+    _REACTION_MATERIAL_FIELDS = pdep._REACTION_MATERIAL_FIELDS
+    _REACTION_PROVENANCE_FIELDS = pdep._REACTION_PROVENANCE_FIELDS
+    _REACTION_RATE_FIELDS = pdep._REACTION_RATE_FIELDS
+    _SIMPLE_RECORD_FIELDS = pdep._SIMPLE_RECORD_FIELDS
+    _UnclassifiedSpeciesReference = pdep._UnclassifiedSpeciesReference
+    _check_template_atom_labels = pdep._check_template_atom_labels
+    _provenance_types = pdep._provenance_types
+    _reaction_types = pdep._reaction_types
+    if seen is None:
+        seen = set()
+    if atomtype_seen is None:
+        atomtype_seen = set()
+    reaction_types = _reaction_types()
+    provenance_types = _provenance_types()
+    pending = [(reaction, 'reaction', False, False)]
+    while pending:
+        value, position, material, metadata = pending.pop()
+        cls = type(value)
+        if type(cls) is not type:
+            raise _UnclassifiedSpeciesReference('Unclassified species reference at ' + position)
+        if cls in _NUMBERS:
+            if not _is_native_channel_number(value, _NUMBERS):
+                raise _UnclassifiedSpeciesReference('Unclassified numeric data at ' + position)
+            if material and value is not None:
+                raise _UnclassifiedSpeciesReference('Unclassified material reference at ' + position)
+            continue
+        token = (id(value), material, metadata)
+        if token in seen:
+            continue
+        if cls in (Species, Molecule) and material and not metadata:
+            # Only successfully inspected native graphs enter the shared set.
+            # Preserve the generator's material references and LIFO order;
+            # unknown graphs and electron graphs use the diagnostic walker.
+            molecules = (value.molecule if cls is Species and type(value.molecule) is list else [])
+            new_molecules = [mol for mol in reversed(molecules)
+                             if (id(mol), True, False) not in seen]
+            verdict = _native_material_record_verdict(
+                value, material, _NUMBERS, _SIMPLE_RECORD_FIELDS,
+                _NATIVE_RECORD_READERS, _PYTHON_RECORD_FIELDS, seen, atomtype_seen)
+            if verdict == 0:
+                yield value
+                yield from new_molecules
+                continue
+        seen.add(token)
+        if cls in (Species, Molecule):
+            if not material:
+                raise _UnclassifiedSpeciesReference('Unclassified species reference at ' + position)
+            if cls is Species:
+                if type(value.molecule) is not list or any(type(mol) is not Molecule for mol in value.molecule):
+                    raise _UnclassifiedSpeciesReference('Unclassified species reference at ' + position + '.molecule')
+            elif (type(value.vertices) is not list or any(
+                    type(atom) is not Atom or type(atom.element) is not Element
+                    for atom in value.vertices)):
+                raise _UnclassifiedSpeciesReference('Unclassified molecular graph at ' + position)
+            yield value
+            fields = _NATIVE_RECORD_FIELDS[cls]
+            for name, child in zip(fields, _NATIVE_RECORD_READERS[cls](value)):
+                pending.append((child, position + '.' + name,
+                                cls is Species and name == 'molecule', False))
+            continue
+        if cls in _CONTAINERS:
+            if cls is dict:
+                for key, item in value.items():
+                    pending.append((key, position + '.key', material, metadata))
+                    pending.append((item, position + '.value', False, metadata))
+            elif cls is np.ndarray:
+                if value.dtype.hasobject:
+                    raise _UnclassifiedSpeciesReference('Object-dtype array at ' + position)
+            else:
+                pending.extend((item, position + '[]', material, metadata) for item in value)
+            continue
+        if metadata and cls in provenance_types:
+            # Provenance describes this channel; a library graph also holds
+            # unrelated reactions and is not this channel's material schema.
+            continue
+        if cls in _KINETICS_REFERENCE_FIELDS:
+            for name in _KINETICS_DATA_FIELDS[cls]:
+                child = getattr(value, name)
+                if not _is_native_channel_number(child, _NUMBERS):
+                    pending.append((child, position + '.' + name, False, False))
+            for name in _KINETICS_REFERENCE_FIELDS[cls]:
+                child = getattr(value, name)
+                if name in ('efficiencies', '_coverage_dependence', 'coverage_dependence'):
+                    if child is None:
+                        continue
+                    if type(child) is not dict:
+                        raise _UnclassifiedSpeciesReference('Unclassified species map at ' + position + '.' + name)
+                    for key, item in child.items():
+                        if type(key) is not Species and type(key) is not Molecule:
+                            raise _UnclassifiedSpeciesReference('Unclassified species key at ' + position + '.' + name)
+                        pending.append((key, position + '.' + name + '.key', True, False))
+                        pending.append((item, position + '.' + name + '.value', False, False))
+                elif not _is_native_channel_number(child, _NUMBERS):
+                    pending.append((child, position + '.' + name, False, False))
+            continue
+        if cls in _NATIVE_RECORD_FIELDS:
+            for name in _NATIVE_RECORD_FIELDS[cls]:
+                child = getattr(value, name)
+                if not _is_native_channel_number(child, _NUMBERS):
+                    pending.append((child, position + '.' + name, False, False))
+            continue
+        if cls in _PYTHON_RECORD_FIELDS:
+            fields = _PYTHON_RECORD_FIELDS[cls]
+            if any(type(name) is not str or name not in fields for name in vars(value)):
+                raise _UnclassifiedSpeciesReference('Unclassified record field at ' + position)
+            for name in fields:
+                pending.append((getattr(value, name), position + '.' + name, False, False))
+            continue
+        if cls in reaction_types:
+            fields = {} if cls is Reaction else vars(value)
+            if any(type(name) is not str or name not in _REACTION_FIELDS for name in fields):
+                raise _UnclassifiedSpeciesReference('Unclassified species reference at ' + position)
+            if 'labeled_atoms' in fields:
+                if cls is not reaction_types[2]:
+                    raise _UnclassifiedSpeciesReference('Unclassified atom labels at ' + position)
+                _check_template_atom_labels(value, fields['labeled_atoms'], position + '.labeled_atoms')
+            for name in _REACTION_MATERIAL_FIELDS:
+                child = getattr(value, name)
+                if child is not None and (type(child) is not list or child):
+                    pending.append((child, position + '.' + name, True, False))
+            for name in _REACTION_DATA_FIELDS:
+                child = fields[name] if name in fields else getattr(value, name, None)
+                if not _is_native_channel_number(child, _NUMBERS):
+                    pending.append((child, position + '.' + name, False, False))
+            for name in _REACTION_PROVENANCE_FIELDS:
+                child = fields.get(name)
+                if not _is_native_channel_number(child, _NUMBERS):
+                    pending.append((child, position + '.' + name, False, True))
+            for name in _REACTION_RATE_FIELDS:
+                child = fields.get(name) if name == 'reverse' else getattr(value, name)
+                if not _is_native_channel_number(child, _NUMBERS):
+                    pending.append((child, position + '.' + name, False, False))
+            continue
+        name = cls.__name__
+        if type(name) is not str:
+            name = '<unsupported type name>'
+        raise _UnclassifiedSpeciesReference(
+            'Unclassified species reference at {0}: exact type {1} is not allowed'.format(
+                position, name))

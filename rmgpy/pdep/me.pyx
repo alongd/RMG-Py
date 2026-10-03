@@ -43,6 +43,9 @@ cpdef generate_full_me_matrix(network, bint products=True, bint exclude_associat
     """
     Generate the full master equation matrix for the network.
     """
+    from rmgpy.rmg.pdep import _check_network_reactions
+    _check_network_reactions(network)
+
 
     cdef np.ndarray[np.int_t,ndim=1] j_list
     cdef np.ndarray[np.int_t,ndim=3] indices
@@ -167,6 +170,9 @@ def states_to_configurations(network, indices, state, exclude_association=False)
     """
     sum full master equation state into total species concentrations
     """
+    from rmgpy.rmg.pdep import _check_network_reactions
+    _check_network_reactions(network)
+
     if exclude_association:
         xs = np.zeros(network.n_isom)
     else:

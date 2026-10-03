@@ -43,6 +43,9 @@ from rmgpy.exceptions import ReservoirStateError
 
 cpdef apply_reservoir_state_method(network):
     """A method for applying the Reservoir State approach for solving the master equation."""
+    from rmgpy.rmg.pdep import _check_network_reactions
+    _check_network_reactions(network)
+
     cdef np.ndarray[np.int_t,ndim=1] j_list
     cdef np.ndarray[np.int_t,ndim=2] n_res, n_act
     cdef np.ndarray[np.int_t,ndim=3] indices

@@ -74,6 +74,9 @@ def get_initial_condition(network, x0, indices):
     from total species concentrations x0
     distributes population boltzmann within each well
     """
+    from rmgpy.rmg.pdep import _check_network_reactions
+    _check_network_reactions(network)
+
     e_list = network.e_list
     j_list = network.j_list
     dens_states = network.dens_states
@@ -146,6 +149,9 @@ def get_rate_coefficients_SLS(network, T, P, method="mexp", neglect_high_energy_
                    "ode" (ordinary differential equation solve)
                    "eigen" (eigendecomposition)
     """
+    from rmgpy.rmg.pdep import _check_network_reactions
+    _check_network_reactions(network)
+
     if network.T != T or network.P != P:
         network.set_conditions(T, P)
         network.calculate_equilibrium_ratios()
@@ -444,6 +450,8 @@ def calcfluxes(kmat, xs):
 
 
 def apply_simulation_least_squares_method(network, method="mexp", neglect_high_energy_collisions=False, high_energy_rate_tol=0.01):
+    from rmgpy.rmg.pdep import _check_network_reactions
+    _check_network_reactions(network)
     return get_rate_coefficients_SLS(
         network,
         network.T,

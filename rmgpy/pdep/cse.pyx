@@ -48,6 +48,9 @@ from rmgpy.pdep.me import generate_full_me_matrix, states_to_configurations
 
 def apply_chemically_significant_eigenvalues_method(network, list lumping_order=None, bint neglect_high_energy_collisions=False, double high_energy_rate_tol=0.01):
     """A method for applying the Chemically Significant Eigenvalues approach for solving the master equation."""
+    from rmgpy.rmg.pdep import _check_network_reactions
+    _check_network_reactions(network)
+
     cdef np.ndarray[np.int_t, ndim=1] j_list
     cdef np.ndarray[np.int_t, ndim=3] indices
     cdef np.ndarray[np.float64_t, ndim=1] e_list, s_mat, s_mat_inv, omega0, omega, eq_ratios
@@ -229,6 +232,9 @@ def get_rate_coefficients_CSE_Advanced(network, T, P, neglect_high_energy_collis
     """
     CSE using the Georgievskii et al. 2013 method https://doi.org/10.1021/jp4060704
     """
+    from rmgpy.rmg.pdep import _check_network_reactions
+    _check_network_reactions(network)
+
     if network.T != T or network.P != P:
         network.set_conditions(T,P)
         network.calculate_equilibrium_ratios()
@@ -381,5 +387,7 @@ def get_rate_coefficients_CSE_Advanced(network, T, P, neglect_high_energy_collis
     return kmat
 
 def apply_chemically_significant_eigenvalues_method_georgievskii(network, neglect_high_energy_collisions=False, high_energy_rate_tol=0.01):
+    from rmgpy.rmg.pdep import _check_network_reactions
+    _check_network_reactions(network)
     return get_rate_coefficients_CSE_Advanced(network, network.T, network.P, neglect_high_energy_collisions=neglect_high_energy_collisions,
                                               high_energy_rate_tol=high_energy_rate_tol)

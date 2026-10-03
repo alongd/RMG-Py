@@ -43,6 +43,9 @@ from rmgpy.exceptions import ModifiedStrongCollisionError
 
 cpdef apply_modified_strong_collision_method(network, str efficiency_model='default'):
     """A method for applying the Modified Strong Collision approach for solving the master equation."""
+    from rmgpy.rmg.pdep import _check_network_reactions
+    _check_network_reactions(network)
+
     cdef np.ndarray[np.int_t,ndim=1] j_list
     cdef np.ndarray[np.float64_t,ndim=1] e_list, coll_freq, coll_eff, d_e_down, E0, e_reac
     cdef np.ndarray[np.float64_t,ndim=2] a_mat, b, k, x

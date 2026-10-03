@@ -3563,6 +3563,22 @@
       ],
       "source_sha256": "2e8a14c7ffd315ae016cb2d149c4621be91b4dc6d058cbcf565f61ffdd0c1e57"
     },
+    "rmgpy/chemkin.pyx:_chemkin_declarations": {
+      "verdict": "carried",
+      "reason": "Builds the state-aware declaration table used by Chemkin writers; it preserves full identities and detects emitted-name collisions.",
+      "evidence": [
+        "test/rmgpy/chemkinTest.py"
+      ],
+      "source_sha256": "1fc741f9a0e6ccec7828df2f8173df4dc873a3015f3a985e35718e4516471a38"
+    },
+    "rmgpy/chemkin.pyx:_dictionary_identities_conflict": {
+      "verdict": "carried",
+      "reason": "Checks duplicate dictionary records only when a resolved identity is present, on deep copies; ground duplicates keep their historical atom order.",
+      "evidence": [
+        "test/rmgpy/yaml_writer/excitedExportReworkTest.py"
+      ],
+      "source_sha256": "65790290f3209b5280cffe6928f6f2c28137826b77bad2ac1dc340b069548785"
+    },
     "rmgpy/chemkin.pyx:_plasma_arrhenius_for_chemkin": {
       "verdict": "carried",
       "reason": "Reads/writes explicit mechanism species and kinetic/thermo/transport records. Molecular dictionary identity is kept; this import/export boundary is not an estimator matching ground groups.",
@@ -3907,6 +3923,22 @@
       ],
       "source_sha256": "45395fd6cf597a7e536c45c0812df3a468d7624ab23e991b77997c5053452c9f"
     },
+    "rmgpy/chemkin.pyx:validate_chemkin_references": {
+      "verdict": "carried",
+      "reason": "Validates every Chemkin reaction participant, collider, efficiency and coverage reference against the emitted species declarations.",
+      "evidence": [
+        "test/rmgpy/chemkinTest.py"
+      ],
+      "source_sha256": "c61fea96f4e05b77c559dd8d58c275f78c472be12d7364d1bb67a148ff185d28"
+    },
+    "rmgpy/chemkin.pyx:validate_species_identifiers": {
+      "verdict": "carried",
+      "reason": "Validates caller-provided Chemkin identifiers with the shared full-identity declaration map before serialization.",
+      "evidence": [
+        "test/rmgpy/chemkinTest.py"
+      ],
+      "source_sha256": "d566ae3773a97bf670ce468dcb95b007ecf06b977962af177cea4f8146cc684b"
+    },
     "rmgpy/chemkin.pyx:write_elements_section": {
       "verdict": "carried",
       "reason": "Reads/writes explicit mechanism species and kinetic/thermo/transport records. Molecular dictionary identity is kept; this import/export boundary is not an estimator matching ground groups.",
@@ -4109,6 +4141,14 @@
       ],
       "source_sha256": "fdd4334516987d5aad68e6fb0f5cbbefadbdfc218a65a095881c4f60c49e49d4"
     },
+    "rmgpy/data/base.py:Database._store_entry": {
+      "verdict": "carried",
+      "reason": "Stores database entries through a full molecular-identity collision check, retaining distinct resolved records and rejecting conflicting reuse.",
+      "evidence": [
+        "test/rmgpy/data/baseTest.py"
+      ],
+      "source_sha256": "c7a31900dfbacb183cf624a9ca5928cfa2503f65707a1741291b775d4cc374cd"
+    },
     "rmgpy/data/base.py:Database.ancestors": {
       "verdict": "carried",
       "reason": "Keeps Entry/item/tree identity or performs topology/text administration; species data is acquired only through matching and get_matched_data, not this operation.",
@@ -4140,6 +4180,14 @@
         "test/rmgpy/data/baseTest.py"
       ],
       "source_sha256": "90dfb6268ffad8dd04a59d404dcd8373d5748aa0030ebe25e0533f5e63e53596"
+    },
+    "rmgpy/data/base.py:Database.dictionary_references": {
+      "verdict": "carried",
+      "reason": "Collects participant, named-collider and coverage species into one state-aware kinetics-dictionary declaration set.",
+      "evidence": [
+        "test/rmgpy/data/kinetics/kineticsTest.py"
+      ],
+      "source_sha256": "659cdaf3664698dbaf90002c030390527017956876b2319eab7e2622315eee5d"
     },
     "rmgpy/data/base.py:Database.generate_old_tree": {
       "verdict": "carried",
@@ -4280,6 +4328,22 @@
         "test/rmgpy/data/baseTest.py"
       ],
       "source_sha256": "f4d26f71bd76306b30138871e36d71d149eff82fd888fb9747a0ab94dc51cac6"
+    },
+    "rmgpy/data/base.py:Database.render_dictionary": {
+      "verdict": "carried",
+      "reason": "Renders full declared molecular identities and refuses coverage references that this dictionary format cannot retain.",
+      "evidence": [
+        "test/rmgpy/data/kinetics/kineticsTest.py"
+      ],
+      "source_sha256": "e7e058fc942d326955d90fb9030ca95deb13858b437ef9c865d41d6818bd0198"
+    },
+    "rmgpy/data/base.py:Database.render_save": {
+      "verdict": "carried",
+      "reason": "Preflights every entry then renders the database through its audited serializers without independently estimating scientific data.",
+      "evidence": [
+        "test/rmgpy/data/baseTest.py"
+      ],
+      "source_sha256": "cad7ebde539a9cff3e17c86d2fa174ced36972e032a54d55d07aef42d9194fc5"
     },
     "rmgpy/data/base.py:Database.save": {
       "verdict": "carried",
@@ -4499,6 +4563,22 @@
       ],
       "source_sha256": "7e485bb1bb7843df360f02792d21d2841caf992527a297863c44e2612a9c343e"
     },
+    "rmgpy/data/base.py:_entry_molecules": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Recursively extracts existing Molecule objects from entry containers for identity validation; it performs no scientific-data acquisition.",
+      "evidence": [
+        "test/rmgpy/data/baseTest.py"
+      ],
+      "source_sha256": "bdd4ad3f8c3aaa60451a62441ddacca4c717d2d9ca3359df8bcc2050b8247135"
+    },
+    "rmgpy/data/base.py:_same_entry_identity": {
+      "verdict": "carried",
+      "reason": "Compares complete existing entry identities, including state and every component of compound records, before key reuse.",
+      "evidence": [
+        "test/rmgpy/data/baseTest.py"
+      ],
+      "source_sha256": "b039cd7c934a756637e026c833ac5af0da9836b468ed72d1baaf0ce693961818"
+    },
     "rmgpy/data/base.py:get_all_combinations": {
       "verdict": "carried",
       "reason": "Keeps Entry/item/tree identity or performs topology/text administration; species data is acquired only through matching and get_matched_data, not this operation.",
@@ -4539,6 +4619,30 @@
       ],
       "source_sha256": "7d86a85b449cd1aa833be87ade08240bb273ff60e5579ba90e4c65c0fb07874f"
     },
+    "rmgpy/data/kinetics/common.py:_SerializedCoverageReference.__init__": {
+      "verdict": "carried",
+      "reason": "Stores an already resolved coverage identifier for the kinetics repr protocol; no structure or data is reacquired.",
+      "evidence": [
+        "test/rmgpy/data/kinetics/kineticsTest.py"
+      ],
+      "source_sha256": "2f635eab1fa5689d182fad84886e155ebe7733f389d4beb263c1fac1f2eeaa8a"
+    },
+    "rmgpy/data/kinetics/common.py:_SerializedCoverageReference.to_chemkin": {
+      "verdict": "carried",
+      "reason": "Returns the previously resolved coverage identifier verbatim to the kinetics serializer.",
+      "evidence": [
+        "test/rmgpy/data/kinetics/kineticsTest.py"
+      ],
+      "source_sha256": "0a0dc75423a475f99981bc415795fd36902c57d8464ca830eca05ea7891afb9d"
+    },
+    "rmgpy/data/kinetics/common.py:add_dictionary_index_aliases": {
+      "verdict": "carried",
+      "reason": "Adds only aliases whose indexed equation tokens resolve to the same declared full molecular identity.",
+      "evidence": [
+        "test/rmgpy/data/kinetics/kineticsTest.py"
+      ],
+      "source_sha256": "42d348d05d80542bb272325afff3763d34d96ff16f7e55a516bbd4d41d546a38"
+    },
     "rmgpy/data/kinetics/common.py:check_for_same_reactants": {
       "verdict": "carried",
       "reason": "Reaction/species bookkeeping or Entry serialization retains molecular identity; numeric degeneracy helpers operate on already matched reactions.",
@@ -4546,6 +4650,14 @@
         "test/rmgpy/data/kinetics/kineticsTest.py"
       ],
       "source_sha256": "f57502c9abc55fba221848a4c487f9747bcfee29e756ed61a6517eb5be77faca"
+    },
+    "rmgpy/data/kinetics/common.py:check_smiles_keyed_efficiencies": {
+      "verdict": "refused",
+      "reason": "Raises SpeciesIdentityError before a resolved collider can be reduced to a state-blind SMILES-keyed library efficiency.",
+      "evidence": [
+        "test/rmgpy/yaml_writer/excitedExportCensusTest.py"
+      ],
+      "source_sha256": "dd7626cdfdde27a2a917aeb1ad2c9920cc16ff3ac1768507c9a31272f5e981ed"
     },
     "rmgpy/data/kinetics/common.py:ensure_independent_atom_ids": {
       "verdict": "carried",
@@ -4595,6 +4707,38 @@
       ],
       "source_sha256": "3147395d27329f9e117988e16205837f6efbf1db209e770fa5004323183a288f"
     },
+    "rmgpy/data/kinetics/common.py:library_reaction_equation": {
+      "verdict": "carried",
+      "reason": "Builds and reload-validates reaction equations against the complete emitted dictionary, preserving each resolved participant and collider.",
+      "evidence": [
+        "test/rmgpy/data/kinetics/kineticsTest.py"
+      ],
+      "source_sha256": "984c30f00fc5e8e1e525a61b25850e2a270e58f6f9e2c792040730c6d3152b03"
+    },
+    "rmgpy/data/kinetics/common.py:library_serializable_kinetics": {
+      "verdict": "carried",
+      "reason": "Copies kinetics and resolves coverage and efficiency keys for serialization without mutating the live scientific model.",
+      "evidence": [
+        "test/rmgpy/data/kinetics/kineticsTest.py"
+      ],
+      "source_sha256": "df41ab4acbeabc36684ceafa09db1eca68c91b6f7a58c314d9d02f0cad1ca77b"
+    },
+    "rmgpy/data/kinetics/common.py:library_serializable_kinetics.<lambda1>": {
+      "verdict": "carried",
+      "reason": "Supplies the explicit molecule SMILES identifier only inside the guarded ground-only efficiency declaration path.",
+      "evidence": [
+        "test/rmgpy/data/kinetics/kineticsTest.py"
+      ],
+      "source_sha256": "f630787312f43775fa588a2ba0a5d78a8bb0fec737910c3a1776d035d784cee9"
+    },
+    "rmgpy/data/kinetics/common.py:library_serializable_kinetics.<lambda2>": {
+      "verdict": "carried",
+      "reason": "Supplies legacy Chemkin names for ground-only coverage after the surrounding function has separated resolved serialization.",
+      "evidence": [
+        "test/rmgpy/data/kinetics/kineticsTest.py"
+      ],
+      "source_sha256": "bdf4a503eceeb66a399bc8792dab0fb16181789fd44180c2b054c4828a8835f4"
+    },
     "rmgpy/data/kinetics/common.py:parse_external_library_provenance": {
       "verdict": "carried",
       "reason": "Reaction/species bookkeeping or Entry serialization retains molecular identity; numeric degeneracy helpers operate on already matched reactions.",
@@ -4626,6 +4770,30 @@
         "test/rmgpy/data/kinetics/kineticsTest.py"
       ],
       "source_sha256": "5401d3d5b4ccc4eac3694356da8893bc30b56790b7f31182c26323c01a60a559"
+    },
+    "rmgpy/data/kinetics/common.py:validate_dictionary_participant_labels": {
+      "verdict": "refused",
+      "reason": "Finds resolved dictionary labels that the library plus-token grammar would split and delegates to the named refusal before parsing.",
+      "evidence": [
+        "test/rmgpy/yaml_writer/excitedExportCensusTest.py"
+      ],
+      "source_sha256": "37f41340e08772a52fa34aae2598c1ec87a69f3073cf235f22dee1385b7d2171"
+    },
+    "rmgpy/data/kinetics/common.py:validate_generic_collider_dictionary": {
+      "verdict": "refused",
+      "reason": "Raises SpeciesIdentityError when generic (+M) syntax would select a resolved dictionary species named M or m.",
+      "evidence": [
+        "test/rmgpy/yaml_writer/excitedExportCensusTest.py"
+      ],
+      "source_sha256": "99cf5566d6a62eac705c657ca492715d102f97148594bf8e4f0b4c934bfe5ea7"
+    },
+    "rmgpy/data/kinetics/common.py:validate_participant_labels": {
+      "verdict": "refused",
+      "reason": "Raises SpeciesIdentityError before a resolved participant label containing plus can be ambiguously tokenized.",
+      "evidence": [
+        "test/rmgpy/yaml_writer/excitedExportCensusTest.py"
+      ],
+      "source_sha256": "08fc1ae2ef2aa9980d953ed7552a027c3aeb5d488de3a10b7a1a37425d2e012c"
     },
     "rmgpy/data/kinetics/database.py:KineticsDatabase.__init__": {
       "verdict": "carried",
@@ -4914,6 +5082,14 @@
         "test/rmgpy/data/kinetics/kineticsTest.py"
       ],
       "source_sha256": "3c89600ecb2831cd29313fbd4d7f449bde1d1e11f97567f89249a3f193e5eef7"
+    },
+    "rmgpy/data/kinetics/depository.py:KineticsDepository.save": {
+      "verdict": "carried",
+      "reason": "Saves the stamped reactions/dictionary pair using the same complete declaration context and atomic generation boundary.",
+      "evidence": [
+        "test/rmgpy/data/kinetics/kineticsTest.py"
+      ],
+      "source_sha256": "08e4c1aae01191bd1f346a9663c7c86bac42e627085086be84b5574b44e1dad1"
     },
     "rmgpy/data/kinetics/depository.py:KineticsDepository.save_entry": {
       "verdict": "carried",
@@ -9625,6 +9801,62 @@
       ],
       "source_sha256": "77edb0b1b42a9d6397ac4146c63efa937d7a9e52ec741a0b120cea72fc530c37"
     },
+    "rmgpy/export.py:SpeciesReferences.__init__": {
+      "verdict": "carried",
+      "reason": "Creates the shared emitted-name-to-full-identity map, accepting historical ground collisions and rejecting true resolved collisions without mutating inputs.",
+      "evidence": [
+        "test/rmgpy/yaml_writer/excitedExportReworkTest.py"
+      ],
+      "source_sha256": "383f753c8df25f534d5465602defd44ee05cbae6c524c023bb5bfd81a9dafe4b"
+    },
+    "rmgpy/export.py:describe_species": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Formats an already supplied species identity for diagnostics; it neither selects nor assigns scientific data.",
+      "evidence": [
+        "test/rmgpy/yaml_writer/excitedExportCensusTest.py"
+      ],
+      "source_sha256": "d60cc1ca5cf1ca9017bf140ddafb0f9809c2c970bb7208338a28c3ca7066e23e"
+    },
+    "rmgpy/export.py:kinetics_references": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Enumerates existing collider, efficiency and coverage references so callers can validate them; no data is acquired.",
+      "evidence": [
+        "test/rmgpy/yaml_writer/excitedExportCensusTest.py"
+      ],
+      "source_sha256": "f461f410cdbb9a88108b56c2888e386cd5b32496036a577e5fe5dc6482b4fe48"
+    },
+    "rmgpy/export.py:refuse_resolved_job": {
+      "verdict": "refused",
+      "reason": "Raises the route-specific named error before unsupported Arkane jobs can consume a resolved species or reaction.",
+      "evidence": [
+        "test/rmgpy/yaml_writer/excitedExportCensusTest.py"
+      ],
+      "source_sha256": "2535003185161b8b5d125344601fdd153b218d5d24147bfa7a0be9bd88dc693c"
+    },
+    "rmgpy/export.py:refuse_resolved_species": {
+      "verdict": "refused",
+      "reason": "Raises SpeciesIdentityError before an explicitly unsupported serializer can lose any supplied resolved molecular identity.",
+      "evidence": [
+        "test/rmgpy/yaml_writer/excitedExportCensusTest.py"
+      ],
+      "source_sha256": "b0988b717b960987bfcef93cfdfc6d76a73c81b758b5fd0d401865a479e83117"
+    },
+    "rmgpy/export.py:resolve_species_reference": {
+      "verdict": "carried",
+      "reason": "Resolves only references present in the full-identity declaration map and rejects undeclared or mismatched resolved identities.",
+      "evidence": [
+        "test/rmgpy/yaml_writer/excitedExportCensusTest.py"
+      ],
+      "source_sha256": "e364842611b94b3cf841bb695964614aa0e9a921babf62415581a99acd7212ec"
+    },
+    "rmgpy/export.py:validate_reaction_references": {
+      "verdict": "carried",
+      "reason": "Validates all explicit reaction participants, colliders, efficiencies and coverage references against a state-aware inventory.",
+      "evidence": [
+        "test/rmgpy/yaml_writer/excitedExportCensusTest.py"
+      ],
+      "source_sha256": "5e12cc91796dbcd2ab239ccef5d8920ed2f360769a85d7874a6a27a6942fcbfc"
+    },
     "rmgpy/kinetics/arrhenius.pyx:Arrhenius.A.__get__": {
       "verdict": "carried",
       "reason": "Evaluates, fits, converts or stores a caller-supplied kinetic model and coefficients. No independent species-to-ground-template lookup; molecular rate acquisition stays in guarded family/library consumers.",
@@ -12472,6 +12704,14 @@
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
       "source_sha256": "b038375f7ed29125f77a6480e9d6d54297af2c5ac1ac49d27cf593a13e95a020"
+    },
+    "rmgpy/kinetics/model.pyx:PDepKineticsModel.get_cantera_efficiencies.<lambda2>": {
+      "verdict": "carried",
+      "reason": "Maps an existing ground-only efficiency molecule to its emitted Cantera declaration inside the surrounding guarded conversion.",
+      "evidence": [
+        "test/rmgpy/chemkinTest.py"
+      ],
+      "source_sha256": "83faec6b80df9294ef03087b9b76199dd89848b4e9bccec63310b9bfeea93dae"
     },
     "rmgpy/kinetics/model.pyx:PDepKineticsModel.get_effective_collider_efficiencies": {
       "verdict": "carried",
@@ -19441,27 +19681,30 @@
     },
     "rmgpy/pdep/cse.pyx:apply_chemically_significant_eigenvalues_method": {
       "verdict": "carried",
-      "reason": "Transforms explicitly supplied species thermo, conformers, transport and energy-transfer models into densities/collision matrices or rates. Numeric operators choose no database template; default transfer acquisition refuses at Species.generate_energy_transfer_model.",
+      "reason": "Preflights original network channels before eigenvalue reduction and uses their supplied state-bearing densities and microcanonical arrays without fetching substitute models.",
       "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
+        "test/rmgpy/rmg/electronAllowlistTest.py",
+        "test/rmgpy/rmg/pdepTest.py"
       ],
-      "source_sha256": "3a81bfdb47ee8b80e9b83c5a798c10d3ca8ab1036b6645842c68240d332358c5"
+      "source_sha256": "9dd761830980ae6b24565a4e13fc0aaa746a1136cf44fd6550ce42cefd837031"
     },
     "rmgpy/pdep/cse.pyx:apply_chemically_significant_eigenvalues_method_georgievskii": {
       "verdict": "carried",
-      "reason": "Transforms explicitly supplied species thermo, conformers, transport and energy-transfer models into densities/collision matrices or rates. Numeric operators choose no database template; default transfer acquisition refuses at Species.generate_energy_transfer_model.",
+      "reason": "Validates the given network before reading its T/P and forwarding the same network to advanced CSE, preserving original subjects and upstream state refusals.",
       "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
+        "test/rmgpy/rmg/electronAllowlistTest.py",
+        "test/rmgpy/rmg/pdepTest.py"
       ],
-      "source_sha256": "ec43a565d1e67702107a224619f2feb7f58c20b13ef550590d2337a0fc2f7277"
+      "source_sha256": "f16fecac27a6cdc267c9e415d7135814f9a9642ef66a4a2e00d840f5264b2856"
     },
     "rmgpy/pdep/cse.pyx:get_rate_coefficients_CSE_Advanced": {
       "verdict": "carried",
-      "reason": "Transforms explicitly supplied species thermo, conformers, transport and energy-transfer models into densities/collision matrices or rates. Numeric operators choose no database template; default transfer acquisition refuses at Species.generate_energy_transfer_model.",
+      "reason": "Checks the current supplied network before advanced CSE rates; temperature and pressure are unchanged and matrices derive from its original carried species and records.",
       "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
+        "test/rmgpy/rmg/electronAllowlistTest.py",
+        "test/rmgpy/rmg/pdepTest.py"
       ],
-      "source_sha256": "6ece05ddf3f5155c4aa1b7260c711fdf932b4ca14340e2890b1403795dc63ec6"
+      "source_sha256": "478404471b68277761b276d482077e3ddfb52e072762c0a2695b12ca70e7346d"
     },
     "rmgpy/pdep/draw.py:NetworkDrawer.__init__": {
       "verdict": "carried",
@@ -19537,27 +19780,30 @@
     },
     "rmgpy/pdep/me.pyx:generate_full_me_matrix": {
       "verdict": "carried",
-      "reason": "Transforms explicitly supplied species thermo, conformers, transport and energy-transfer models into densities/collision matrices or rates. Numeric operators choose no database template; default transfer acquisition refuses at Species.generate_energy_transfer_model.",
+      "reason": "Validates original path/net records before assembling the master equation from their carried arrays; the guard performs no ground-state reconstruction or supplier lookup.",
       "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
+        "test/rmgpy/rmg/electronAllowlistTest.py",
+        "test/rmgpy/rmg/pdepTest.py"
       ],
-      "source_sha256": "a7a0990038f80df6dc606a797c886e9b1a6c512118e59a985ed5c17aeafddb8c"
+      "source_sha256": "f772b81ef1d83b7add649e2bdd82bc0744533778644188520a6b0446f45df0fe"
     },
     "rmgpy/pdep/me.pyx:states_to_configurations": {
       "verdict": "carried",
-      "reason": "Transforms explicitly supplied species thermo, conformers, transport and energy-transfer models into densities/collision matrices or rates. Numeric operators choose no database template; default transfer acquisition refuses at Species.generate_energy_transfer_model.",
+      "reason": "Guards current network channels before mapping its supplied state populations to the same configurations; it does not acquire alternate species or physical models.",
       "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
+        "test/rmgpy/rmg/electronAllowlistTest.py",
+        "test/rmgpy/rmg/pdepTest.py"
       ],
-      "source_sha256": "a4734efa0c527a70b21e4fa738dd487f2254bf34e1d8e76c3fba742bddd74df8"
+      "source_sha256": "8e2aa42ee7ba85ea61918558ef3816d844acd3083f78882b2ab84cd41a515671"
     },
     "rmgpy/pdep/msc.pyx:apply_modified_strong_collision_method": {
       "verdict": "carried",
-      "reason": "Transforms explicitly supplied species thermo, conformers, transport and energy-transfer models into densities/collision matrices or rates. Numeric operators choose no database template; default transfer acquisition refuses at Species.generate_energy_transfer_model.",
+      "reason": "Refuses unsupported current channels before MSC reduction; accepted calculations retain the network original collision, density and microcanonical models.",
       "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
+        "test/rmgpy/rmg/electronAllowlistTest.py",
+        "test/rmgpy/rmg/pdepTest.py"
       ],
-      "source_sha256": "c7f43b0e294a76f3cbbd323d0c0bf9eb24c0f9c0f23bf905f26d9c7ab2333ab9"
+      "source_sha256": "099a747270ace86f7e3cf6252e0d701d6f720e865e8e6ffa3e6923f1dbe6813c"
     },
     "rmgpy/pdep/network.py:Network.__init__": {
       "verdict": "carried",
@@ -19809,11 +20055,12 @@
     },
     "rmgpy/pdep/rs.pyx:apply_reservoir_state_method": {
       "verdict": "carried",
-      "reason": "Transforms explicitly supplied species thermo, conformers, transport and energy-transfer models into densities/collision matrices or rates. Numeric operators choose no database template; default transfer acquisition refuses at Species.generate_energy_transfer_model.",
+      "reason": "Preflights supplied reaction records before reservoir reduction and operates on the same carried network arrays without a scientific supplier fallback.",
       "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
+        "test/rmgpy/rmg/electronAllowlistTest.py",
+        "test/rmgpy/rmg/pdepTest.py"
       ],
-      "source_sha256": "17bdcb7fe0a1a43945107bf5bc1503c762f8db3865c57caea647b40e3ffc2734"
+      "source_sha256": "60efd266d645e5f1675f36a63e8d095d1b0ece846dcf3fd3780f8979e9b490e3"
     },
     "rmgpy/pdep/sls.py:LazyMain.__getattr__": {
       "verdict": "carried",
@@ -19825,11 +20072,12 @@
     },
     "rmgpy/pdep/sls.py:apply_simulation_least_squares_method": {
       "verdict": "carried",
-      "reason": "Transforms explicitly supplied species thermo, conformers, transport and energy-transfer models into densities/collision matrices or rates. Numeric operators choose no database template; default transfer acquisition refuses at Species.generate_energy_transfer_model.",
+      "reason": "Guards the network before reading its conditions and dispatching least-squares computation with that identical network and original scientific data.",
       "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
+        "test/rmgpy/rmg/electronAllowlistTest.py",
+        "test/rmgpy/rmg/pdepTest.py"
       ],
-      "source_sha256": "b255bad858085337060eb21078b6d17753dee14a3d808e025a6047b4fa243178"
+      "source_sha256": "18bf54f6c0cbf70d88f4f4cf8c3c12f803e885f68299a5822c691ecf3f237de3"
     },
     "rmgpy/pdep/sls.py:calcfluxes": {
       "verdict": "carried",
@@ -19841,11 +20089,12 @@
     },
     "rmgpy/pdep/sls.py:get_initial_condition": {
       "verdict": "carried",
-      "reason": "Transforms explicitly supplied species thermo, conformers, transport and energy-transfer models into densities/collision matrices or rates. Numeric operators choose no database template; default transfer acquisition refuses at Species.generate_energy_transfer_model.",
+      "reason": "Checks current channels before distributing supplied concentrations over the original network densities; no state-erasing species replacement is introduced.",
       "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
+        "test/rmgpy/rmg/electronAllowlistTest.py",
+        "test/rmgpy/rmg/pdepTest.py"
       ],
-      "source_sha256": "3daed30a79d988868523813f6b8a191173692680d06a5d413ca89af73a469b5a"
+      "source_sha256": "33c9ebaa4fc3f77d11373b19dafcc36a77c4313a7582e97e89164ffb268a5e1c"
     },
     "rmgpy/pdep/sls.py:get_names": {
       "verdict": "carried",
@@ -19857,11 +20106,12 @@
     },
     "rmgpy/pdep/sls.py:get_rate_coefficients_SLS": {
       "verdict": "carried",
-      "reason": "Transforms explicitly supplied species thermo, conformers, transport and energy-transfer models into densities/collision matrices or rates. Numeric operators choose no database template; default transfer acquisition refuses at Species.generate_energy_transfer_model.",
+      "reason": "Validates the original network before least-squares rate fitting and retains its original density, collision and reaction models at the requested T/P.",
       "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
+        "test/rmgpy/rmg/electronAllowlistTest.py",
+        "test/rmgpy/rmg/pdepTest.py"
       ],
-      "source_sha256": "d163c6883b8c7315cb690e1d35d039f898ea72b467613ba92365648a61451302"
+      "source_sha256": "a64398963b1762f92cc551fce5f7a8ea4ecfad559c7fe700ddc2567414db4686"
     },
     "rmgpy/pdep/sls.py:get_rate_coefficients_SLS.fcn": {
       "verdict": "carried",
@@ -21521,6 +21771,14 @@
       ],
       "source_sha256": "9950517740250f2da59312db1e7b392bd565deaacf81c2588e35501f82f0311b"
     },
+    "rmgpy/reaction.py:Reaction.to_cantera.<lambda1>": {
+      "verdict": "carried",
+      "reason": "Provides the emitted Cantera identifier from the surrounding state-aware reaction declaration map.",
+      "evidence": [
+        "test/rmgpy/reactionTest.py"
+      ],
+      "source_sha256": "7b5c4480cdbb7daf92811712a4fc2bf1457eec737aa3cecf895ac1181d412972"
+    },
     "rmgpy/reaction.py:Reaction.to_cantera._ct_equation": {
       "verdict": "carried",
       "reason": "Reaction operations retain reactant/product Species and evaluate assigned kinetics or thermo. No independent ground-template rule lookup; degeneracy/reverse-rate arithmetic uses original reaction data.",
@@ -21553,6 +21811,91 @@
       ],
       "source_sha256": "b9edcbdaeaddaa3e9196b890d19fedb1cec7d0385bcc0081d9abb6c0b6805fcd"
     },
+    "rmgpy/reaction.py:_is_native_channel_number": {
+      "verdict": "carried",
+      "reason": "Checks the exact numeric or quantity payload already supplied by its enclosing record, including units and object-array flags; it neither selects thermo nor reconstructs molecular state.",
+      "evidence": [
+        "test/rmgpy/rmg/electronAllowlistTest.py"
+      ],
+      "source_sha256": "d81ba172b761b3cec5da6fae49e18a29a2eb89ad29cd6c6f4a9bc724b16b6131"
+    },
+    "rmgpy/reaction.py:_native_atom_record_values": {
+      "verdict": "carried",
+      "reason": "Reads existing native atom/vertex objects and their descriptor, coordinate and property slots; no atom perception or state-blind scientific data lookup is performed.",
+      "evidence": [
+        "test/rmgpy/rmg/electronAllowlistTest.py"
+      ],
+      "source_sha256": "56848c0ec4f0e936c0e245ab2e76b053d53fad628843f9099812b481dc8b1a06"
+    },
+    "rmgpy/reaction.py:_native_atomtype_lists_valid": {
+      "verdict": "carried",
+      "reason": "Reads every current native descriptor and numeric list while sharing only fully validated atom types inside the current operation; original molecular descriptors remain intact.",
+      "evidence": [
+        "test/rmgpy/rmg/electronAllowlistTest.py"
+      ],
+      "source_sha256": "7045be58813a4238f8a0665510464ed3a5d30a20e517a0b1a2d9ea33006db832"
+    },
+    "rmgpy/reaction.py:_native_atomtype_record_values": {
+      "verdict": "carried",
+      "reason": "Exposes the current native atom-type descriptor and action/numeric lists solely for channel inspection; it does not choose a descriptor for a resolved species.",
+      "evidence": [
+        "test/rmgpy/rmg/electronAllowlistTest.py"
+      ],
+      "source_sha256": "ce8319413484a6d27f2056989d8a01adfe70e1a66e152edb068912cd947ed7b4"
+    },
+    "rmgpy/reaction.py:_native_element_record_values": {
+      "verdict": "carried",
+      "reason": "Reads name/symbol labels on the Element already attached to a checked atom; no independent element selection or thermo/default acquisition occurs.",
+      "evidence": [
+        "test/rmgpy/rmg/electronAllowlistTest.py"
+      ],
+      "source_sha256": "a19019d002b481feff143de8a4be573b2a239488720c25dedbe666414ab66fca"
+    },
+    "rmgpy/reaction.py:_native_material_record_verdict": {
+      "verdict": "carried",
+      "reason": "Checks the supplied original material object through the complete slot schema without reconstructing species or fitting data; per-call identities retain its electronic-state records.",
+      "evidence": [
+        "test/rmgpy/rmg/electronAllowlistTest.py",
+        "test/rmgpy/data/stateProvenanceTest.py"
+      ],
+      "source_sha256": "254401e08af4cb0de1e4143ff4aff0a93c4847332581b44abb2c578fabfb0bb3"
+    },
+    "rmgpy/reaction.py:_native_molecule_record_values": {
+      "verdict": "carried",
+      "reason": "Reads the supplied Molecule graph and its electronic-state/cache slots directly, preserving the original annotated molecule through validation without database lookup.",
+      "evidence": [
+        "test/rmgpy/rmg/electronAllowlistTest.py",
+        "test/rmgpy/data/stateRouteReworkTest.py"
+      ],
+      "source_sha256": "ae7997dc16738466d34022ebbf3766c718e9a2cdec1574a42334788c416ade54"
+    },
+    "rmgpy/reaction.py:_native_reaction_species_references": {
+      "verdict": "carried",
+      "reason": "Walks the original supplied reaction and each declared kinetics, provenance and physical record in compiled code using the existing complete schemas, preserving material order and operation-local identities without projecting electronic state or acquiring substitutes.",
+      "evidence": [
+        "test/rmgpy/rmg/electronAllowlistTest.py",
+        "test/rmgpy/data/stateProvenanceTest.py"
+      ],
+      "source_sha256": "2b2082a6e7737453bb6c1cb9aa81cd88e85dc9bb8befde2e91f4cd7b78aa5efe"
+    },
+    "rmgpy/reaction.py:_native_record_graph_verdict": {
+      "verdict": "carried",
+      "reason": "Inspects all declared current native physical slots and commits local identity additions only after complete success, preserving original subjects and rollback to full diagnostics.",
+      "evidence": [
+        "test/rmgpy/rmg/electronAllowlistTest.py",
+        "test/rmgpy/data/stateProvenanceTest.py"
+      ],
+      "source_sha256": "a15abd619e732dd3705fe35ae229351559ccba4d5f4e89c96860fbda01c2750e"
+    },
+    "rmgpy/reaction.py:_native_species_record_values": {
+      "verdict": "carried",
+      "reason": "Returns the original Species thermo, conformer, transport, molecule and private state-cache slots for inspection; it never substitutes a ground-state species or acquires missing data.",
+      "evidence": [
+        "test/rmgpy/rmg/electronAllowlistTest.py",
+        "test/rmgpy/data/stateProvenanceTest.py"
+      ],
+      "source_sha256": "bff354e3f742dab2ea41bebd2b4a9580761d2d7d6d3e9a19b7d1b9a128111a5b"
+    },
     "rmgpy/reaction.py:_next_occurrence": {
       "verdict": "carried",
       "reason": "Reaction operations retain reactant/product Species and evaluate assigned kinetics or thermo. No independent ground-template rule lookup; degeneracy/reverse-rate arithmetic uses original reaction data.",
@@ -21569,6 +21912,15 @@
       ],
       "source_sha256": "ecc3ea329a9730e7a8a819e4125397a4a17bb2720be0052d80bb9109f054d72d"
     },
+    "rmgpy/reaction.py:_queue_native_record": {
+      "verdict": "carried",
+      "reason": "Checks exact current record leaves and schedules new identities within local/shared sets for one validation; it neither projects electronic state nor selects scientific suppliers.",
+      "evidence": [
+        "test/rmgpy/rmg/electronAllowlistTest.py",
+        "test/rmgpy/data/stateProvenanceTest.py"
+      ],
+      "source_sha256": "68d509e295a7d8c70381b684d5df509ad82a3e4c6d38022eaecd6a0a5c0aa3fb"
+    },
     "rmgpy/reaction.py:_reverse_rate_at_reference_potential": {
       "verdict": "carried",
       "reason": "Reaction operations retain reactant/product Species and evaluate assigned kinetics or thermo. No independent ground-template rule lookup; degeneracy/reverse-rate arithmetic uses original reaction data.",
@@ -21584,6 +21936,15 @@
         "test/rmgpy/reactionTest.py"
       ],
       "source_sha256": "6b6d3244ce4469a77ecb1508ca92f4c263889630fee14c534526611bf1000d4d"
+    },
+    "rmgpy/reaction.py:_simple_native_channel_verdict": {
+      "verdict": "carried",
+      "reason": "Checks the exact original plain Arrhenius reaction and physical participants with shared per-call identities; unsupported arrangements still use the full original-object walker.",
+      "evidence": [
+        "test/rmgpy/rmg/electronAllowlistTest.py",
+        "test/rmgpy/rmg/pdepTest.py"
+      ],
+      "source_sha256": "dd21668dad8be25e3287bcaaa3bac640085437343b3cf89a4906262769ba205c"
     },
     "rmgpy/reaction.py:get_sorting_key": {
       "verdict": "carried",
@@ -22550,6 +22911,25 @@
       ],
       "source_sha256": "48f6305d3520d61072e33e2248055ec45dfa373d7cc63543ef94dfb43053c362"
     },
+    "rmgpy/rmg/model.py:CoreEdgeReactionModel._get_preflighted_library_reactions": {
+      "verdict": "carried",
+      "reason": "Calls the upstream guarded library reconstruction API, then checks the resulting original-state channels; any StateProvenanceError propagates and shared kinetics comments are restored on refusal.",
+      "evidence": [
+        "test/rmgpy/rmg/electronChannelTest.py",
+        "test/rmgpy/rmg/electronReferenceTest.py",
+        "test/rmgpy/data/stateProvenanceTest.py"
+      ],
+      "source_sha256": "dd3972057b5c22c311df07be6424708e2a70b63b34fc07dc418c6ccabbb63a8c"
+    },
+    "rmgpy/rmg/model.py:CoreEdgeReactionModel._preflight_electron_routing": {
+      "verdict": "carried",
+      "reason": "Inspects each supplied reaction and routing declaration before registration or estimation, refusing electron/unknown pdep channels while leaving original resolved species and data untouched.",
+      "evidence": [
+        "test/rmgpy/rmg/electronChannelTest.py",
+        "test/rmgpy/rmg/electronReferenceTest.py"
+      ],
+      "source_sha256": "ac6aa2602bff7831d3ca5c3184ddab4069250a9ee10f14c346c51f83e5f3d70c"
+    },
     "rmgpy/rmg/model.py:CoreEdgeReactionModel.add_completed_pdep_network": {
       "verdict": "carried",
       "reason": "Model/configuration administration retains explicit species/reaction objects. Scientific acquisition delegates to original-species thermo/transport/statmech, opted-in family/exact library and refusing QM/ML/default-transfer boundaries.",
@@ -22568,11 +22948,13 @@
     },
     "rmgpy/rmg/model.py:CoreEdgeReactionModel.add_reaction_library_to_edge": {
       "verdict": "carried",
-      "reason": "Model/configuration administration retains explicit species/reaction objects. Scientific acquisition delegates to original-species thermo/transport/statmech, opted-in family/exact library and refusing QM/ML/default-transfer boundaries.",
+      "reason": "Reconstructs the explicitly selected library through the guarded API before edge mutation or element filtering; library state constraints and provenance refusals remain upstream requirements.",
       "evidence": [
-        "test/rmgpy/rmg/modelTest.py"
+        "test/rmgpy/rmg/electronChannelTest.py",
+        "test/rmgpy/rmg/electronReferenceTest.py",
+        "test/rmgpy/data/stateProvenanceTest.py"
       ],
-      "source_sha256": "98cedcf4db3af49b329b8cbf459d99a275667c78b37c2c4e77128f0e13c4f1a1"
+      "source_sha256": "bbea4d8fb80b8a8abf7f5d3496d182e15db115e4bba062e8e00dd0aace98b7f1"
     },
     "rmgpy/rmg/model.py:CoreEdgeReactionModel.add_reaction_library_to_output": {
       "verdict": "carried",
@@ -22600,19 +22982,23 @@
     },
     "rmgpy/rmg/model.py:CoreEdgeReactionModel.add_reaction_to_unimolecular_networks": {
       "verdict": "carried",
-      "reason": "Model/configuration administration retains explicit species/reaction objects. Scientific acquisition delegates to original-species thermo/transport/statmech, opted-in family/exact library and refusing QM/ML/default-transfer boundaries.",
+      "reason": "Checks only the supplied incoming reaction before orientation and admission; original participants, quarantine provenance and carried kinetics remain attached, while full current-network validation stays at computation boundaries.",
       "evidence": [
-        "test/rmgpy/rmg/modelTest.py"
+        "test/rmgpy/rmg/electronAllowlistTest.py",
+        "test/rmgpy/rmg/electronChannelTest.py",
+        "test/rmgpy/rmg/electronReferenceTest.py"
       ],
-      "source_sha256": "95439b275e618e88ad05a4c45ac1da4733744c5b6a9be80d8c5ab7d9fabef647"
+      "source_sha256": "f7cbf30a7ffb5de345574e1f56ab6ccdd4862c7099c4b41f0a96b02f126f3d72"
     },
     "rmgpy/rmg/model.py:CoreEdgeReactionModel.add_seed_mechanism_to_core": {
       "verdict": "carried",
-      "reason": "Model/configuration administration retains explicit species/reaction objects. Scientific acquisition delegates to original-species thermo/transport/statmech, opted-in family/exact library and refusing QM/ML/default-transfer boundaries.",
+      "reason": "Resolves the chosen library and runs guarded reconstruction/preflight before clearing model staging lists; seed thermo acquisition remains governed by upstream provenance checks on original species.",
       "evidence": [
-        "test/rmgpy/rmg/modelTest.py"
+        "test/rmgpy/rmg/electronChannelTest.py",
+        "test/rmgpy/rmg/electronReferenceTest.py",
+        "test/rmgpy/data/stateProvenanceTest.py"
       ],
-      "source_sha256": "53d015c576524fcc3583d8565fba596800088c216ec72a05750b2e6f76d4b3e4"
+      "source_sha256": "a72cabef5d930221a4b9e09297ebb4cf38c28defd7cd2d13fd828bd955776e08"
     },
     "rmgpy/rmg/model.py:CoreEdgeReactionModel.add_species_to_core": {
       "verdict": "carried",
@@ -22656,11 +23042,11 @@
     },
     "rmgpy/rmg/model.py:CoreEdgeReactionModel.check_for_existing_reaction": {
       "verdict": "carried",
-      "reason": "Model/configuration administration retains explicit species/reaction objects. Scientific acquisition delegates to original-species thermo/transport/statmech, opted-in family/exact library and refusing QM/ML/default-transfer boundaries.",
+      "reason": "Uses the existing supplied-species reaction identity check, with a narrow exception for opposite irreversible electron channels from different libraries; it does not collapse species state or query rates.",
       "evidence": [
-        "test/rmgpy/rmg/modelTest.py"
+        "test/rmgpy/rmg/electronChannelTest.py"
       ],
-      "source_sha256": "89dfcee3ceaea2ba481f93f51410e4db8833ade81f5e8fa3547b0a3500eb3d91"
+      "source_sha256": "dc339998cb9cc519bbfd58305000dbe20c0beb932aa727f9c814e47b9239d3be"
     },
     "rmgpy/rmg/model.py:CoreEdgeReactionModel.check_for_existing_species": {
       "verdict": "carried",
@@ -22744,19 +23130,21 @@
     },
     "rmgpy/rmg/model.py:CoreEdgeReactionModel.make_new_pdep_reaction": {
       "verdict": "carried",
-      "reason": "Model/configuration administration retains explicit species/reaction objects. Scientific acquisition delegates to original-species thermo/transport/statmech, opted-in family/exact library and refusing QM/ML/default-transfer boundaries.",
+      "reason": "Rejects an inadmissible supplied channel before converting it to a net reaction; accepted conversion retains participant state and explicitly carried rate data, without an untyped lookup.",
       "evidence": [
-        "test/rmgpy/rmg/modelTest.py"
+        "test/rmgpy/rmg/electronReferenceTest.py"
       ],
-      "source_sha256": "a9bdbe88ec6eb8a082778a34a068f68a3120692f08eaf7f8c7c0da505532d22f"
+      "source_sha256": "a4730568540bcee58950db0ff1d236c76a179e79fa8044cc3e37dbdfa2bcbc35"
     },
     "rmgpy/rmg/model.py:CoreEdgeReactionModel.make_new_reaction": {
       "verdict": "carried",
-      "reason": "Model/configuration administration retains explicit species/reaction objects. Scientific acquisition delegates to original-species thermo/transport/statmech, opted-in family/exact library and refusing QM/ML/default-transfer boundaries.",
+      "reason": "Adds a non-mutating electron-routing preflight before existing species normalization; subsequent thermo/kinetics acquisition still uses upstream original-species APIs and their named resolved-state refusals.",
       "evidence": [
-        "test/rmgpy/rmg/modelTest.py"
+        "test/rmgpy/rmg/electronChannelTest.py",
+        "test/rmgpy/rmg/electronReferenceTest.py",
+        "test/rmgpy/data/stateRouteReworkTest.py"
       ],
-      "source_sha256": "ecafbaddb848245cfecd0315a0be852f07ad5362de5e2b6701e7fadfadb41114"
+      "source_sha256": "b461a28d7e23b23be28bcc7fcbde259b058a28904ea9351d13fc994528a570a6"
     },
     "rmgpy/rmg/model.py:CoreEdgeReactionModel.make_new_species": {
       "verdict": "carried",
@@ -22784,11 +23172,14 @@
     },
     "rmgpy/rmg/model.py:CoreEdgeReactionModel.process_new_reactions": {
       "verdict": "carried",
-      "reason": "Model/configuration administration retains explicit species/reaction objects. Scientific acquisition delegates to original-species thermo/transport/statmech, opted-in family/exact library and refusing QM/ML/default-transfer boundaries.",
+      "reason": "Preflights every supplied incoming reaction before model mutation and uses the unchanged guarded species/kinetics acquisition paths; existing target channels are checked at computation boundaries instead of being repeatedly rescanned during admission.",
       "evidence": [
-        "test/rmgpy/rmg/modelTest.py"
+        "test/rmgpy/rmg/electronAllowlistTest.py",
+        "test/rmgpy/rmg/electronChannelTest.py",
+        "test/rmgpy/rmg/electronReferenceTest.py",
+        "test/rmgpy/data/stateRouteReworkTest.py"
       ],
-      "source_sha256": "ae88093fdee05cf16e2abf39bde4c7b231d1bb2763172d0f6699b286c2f00625"
+      "source_sha256": "523e37357d0a551dbec07553b0fcfdba16e229bc8bc434a684b8b079e1a82aab"
     },
     "rmgpy/rmg/model.py:CoreEdgeReactionModel.prune": {
       "verdict": "carried",
@@ -22800,11 +23191,12 @@
     },
     "rmgpy/rmg/model.py:CoreEdgeReactionModel.register_reaction": {
       "verdict": "carried",
-      "reason": "Model/configuration administration retains explicit species/reaction objects. Scientific acquisition delegates to original-species thermo/transport/statmech, opted-in family/exact library and refusing QM/ML/default-transfer boundaries.",
+      "reason": "Adds preflight ahead of registry-key creation without replacing participants or selecting data; explicit resolved channels remain supplied objects and electron pdep declarations refuse before registration.",
       "evidence": [
-        "test/rmgpy/rmg/modelTest.py"
+        "test/rmgpy/rmg/electronChannelTest.py",
+        "test/rmgpy/rmg/electronReferenceTest.py"
       ],
-      "source_sha256": "47aa8dcc3e209b994920d4d4c79258b0afaabf1c975dba377a8a2607950745d5"
+      "source_sha256": "9218b581cc94391299871348119820088f8e68240f953c66437f0d0495576e72"
     },
     "rmgpy/rmg/model.py:CoreEdgeReactionModel.remove_empty_pdep_networks": {
       "verdict": "carried",
@@ -22864,11 +23256,12 @@
     },
     "rmgpy/rmg/model.py:CoreEdgeReactionModel.update_unimolecular_reaction_networks": {
       "verdict": "carried",
-      "reason": "Model/configuration administration retains explicit species/reaction objects. Scientific acquisition delegates to original-species thermo/transport/statmech, opted-in family/exact library and refusing QM/ML/default-transfer boundaries.",
+      "reason": "Validates every current network before merging/updating and converting net reactions; calculations still use those original species and their already guarded scientific data.",
       "evidence": [
-        "test/rmgpy/rmg/modelTest.py"
+        "test/rmgpy/rmg/electronReferenceTest.py",
+        "test/rmgpy/rmg/pdepTest.py"
       ],
-      "source_sha256": "a63d306eacf3512099312f3996bf37d996a9f3e1444b1160f9d341ef8dfd36e1"
+      "source_sha256": "9dab22d767d294524280f83bb206443971483e467ac07cb866d2a7448def1f3a"
     },
     "rmgpy/rmg/model.py:ReactionModel.__init__": {
       "verdict": "carried",
@@ -22896,11 +23289,20 @@
     },
     "rmgpy/rmg/model.py:ReactionModel.merge": {
       "verdict": "carried",
-      "reason": "Model/configuration administration retains explicit species/reaction objects. Scientific acquisition delegates to original-species thermo/transport/statmech, opted-in family/exact library and refusing QM/ML/default-transfer boundaries.",
+      "reason": "Merges explicitly supplied models by preserving reaction state with carry_reaction_state and remapping fresh participant/collider/pair lists; it retains source rates and makes no independent thermo acquisition.",
       "evidence": [
-        "test/rmgpy/rmg/modelTest.py"
+        "test/rmgpy/rmg/electronChannelTest.py",
+        "test/rmgpy/rmg/electronReferenceTest.py"
       ],
-      "source_sha256": "6f8d422df298e5ac34eed51ef7b311a61cdda945e43b7791982005662239e46b"
+      "source_sha256": "a852e5d0ed8fe30d4df4b25e83dafa35cbb96c3e4eec1c55f15390f0502f0c75"
+    },
+    "rmgpy/rmg/model.py:_independent_irreversible_electron_channels": {
+      "verdict": "carried",
+      "reason": "Compares mapped participant identities and explicit electron presence on the two supplied library reactions; independent irreversible channels retain their own rates and state-bearing species.",
+      "evidence": [
+        "test/rmgpy/rmg/electronChannelTest.py"
+      ],
+      "source_sha256": "d33f64220c4a0af2b3db2f9e4ec6ce67f09c4480be6a126cee453bca84606f9d"
     },
     "rmgpy/rmg/model.py:are_identical_species_references": {
       "verdict": "carried",
@@ -23024,11 +23426,12 @@
     },
     "rmgpy/rmg/pdep.py:PDepNetwork.__setstate__": {
       "verdict": "carried",
-      "reason": "Model/configuration administration retains explicit species/reaction objects. Scientific acquisition delegates to original-species thermo/transport/statmech, opted-in family/exact library and refusing QM/ML/default-transfer boundaries.",
+      "reason": "Validates available restored channels before installing the original state dictionary; later entry preflight rechecks the complete circular graph without reconstructing untyped species or fitting data.",
       "evidence": [
+        "test/rmgpy/rmg/electronReferenceTest.py",
         "test/rmgpy/rmg/pdepTest.py"
       ],
-      "source_sha256": "eaeda0db0aaf7deb2646c19eecb0aae6622f1b2c7dc8f52081af2a470979fbfd"
+      "source_sha256": "68b0ad05e628576fb35d5960d48c0847058ac41f8c5f1aacac4968f518269980"
     },
     "rmgpy/rmg/pdep.py:PDepNetwork.__str__": {
       "verdict": "carried",
@@ -23038,13 +23441,33 @@
       ],
       "source_sha256": "6ce6b63a8afb19649a0a525263998e2fac71439076e6468c9bd6f7c1199449b0"
     },
-    "rmgpy/rmg/pdep.py:PDepNetwork.add_path_reaction": {
+    "rmgpy/rmg/pdep.py:PDepNetwork._check_reactions": {
       "verdict": "carried",
-      "reason": "Model/configuration administration retains explicit species/reaction objects. Scientific acquisition delegates to original-species thermo/transport/statmech, opted-in family/exact library and refusing QM/ML/default-transfer boundaries.",
+      "reason": "Delegates exact current PDepNetwork validation to a fresh linear channel/record census, retaining original carried models and named upstream state constraints.",
       "evidence": [
+        "test/rmgpy/rmg/electronAllowlistTest.py",
+        "test/rmgpy/rmg/pdepTest.py",
+        "test/rmgpy/data/stateProvenanceTest.py"
+      ],
+      "source_sha256": "c2ce9d25964319e5ace6cd52b6885ce9a84059a2b2f4ec92ac3d176116f13984"
+    },
+    "rmgpy/rmg/pdep.py:PDepNetwork.add_net_reaction": {
+      "verdict": "carried",
+      "reason": "Validates only the incoming original net reaction before appending it; existing reactions are freshly checked at computation boundaries and no scientific subject is recreated.",
+      "evidence": [
+        "test/rmgpy/rmg/electronAllowlistTest.py",
         "test/rmgpy/rmg/pdepTest.py"
       ],
-      "source_sha256": "0f099654d083bf7f4c9ee4dc1bd163a7e1f1b78204d5ba208f77bb6cd7c8f187"
+      "source_sha256": "279d767b13cce02de9f085ec606cef5f9a6c7ad80ffe4a26f8c3744d72c858d4"
+    },
+    "rmgpy/rmg/pdep.py:PDepNetwork.add_path_reaction": {
+      "verdict": "carried",
+      "reason": "Validates only the incoming original path before duplicate detection and registration, preserving the supplied participants, state-bearing physical records and rate model.",
+      "evidence": [
+        "test/rmgpy/rmg/electronAllowlistTest.py",
+        "test/rmgpy/rmg/pdepTest.py"
+      ],
+      "source_sha256": "63ea66d0de0a2cd33c00b8535a16ba89a9e9636fb9abacea7b91cbae32f90cc7"
     },
     "rmgpy/rmg/pdep.py:PDepNetwork.add_products_to_reactants": {
       "verdict": "carried",
@@ -23064,59 +23487,67 @@
     },
     "rmgpy/rmg/pdep.py:PDepNetwork.explore_isomer": {
       "verdict": "carried",
-      "reason": "Model/configuration administration retains explicit species/reaction objects. Scientific acquisition delegates to original-species thermo/transport/statmech, opted-in family/exact library and refusing QM/ML/default-transfer boundaries.",
+      "reason": "Validates current channels before exploring the given original isomer; ensuing model generation retains upstream original-species data acquisition and named state refusals.",
       "evidence": [
-        "test/rmgpy/rmg/pdepTest.py"
+        "test/rmgpy/rmg/pdepTest.py",
+        "test/rmgpy/rmg/electronReferenceTest.py",
+        "test/rmgpy/data/stateRouteReworkTest.py"
       ],
-      "source_sha256": "923fe4f96f588c33948b396e45f6e25ea8c92b318e90eadd7234feabedf1e39a"
+      "source_sha256": "fd6355de1843ed422d723191cc0fb8e8d09a3890ed19f5a3e692c2e20a3c6a6d"
     },
     "rmgpy/rmg/pdep.py:PDepNetwork.get_energy_filtered_reactions": {
       "verdict": "carried",
-      "reason": "Model/configuration administration retains explicit species/reaction objects. Scientific acquisition delegates to original-species thermo/transport/statmech, opted-in family/exact library and refusing QM/ML/default-transfer boundaries.",
+      "reason": "Guards the original reaction graph before filtering with its explicitly carried energies/conformers; it does not source new ground-state thermo or substitute participants.",
       "evidence": [
-        "test/rmgpy/rmg/pdepTest.py"
+        "test/rmgpy/rmg/pdepTest.py",
+        "test/rmgpy/rmg/electronAllowlistTest.py"
       ],
-      "source_sha256": "ff9316490170feb603a74df7c6197cdd7764043bfb999d65bb64c4e16d441963"
+      "source_sha256": "07a109b3424188e9479b2517ee4233f4790c9438b1f654a13edb6212eb09fdfa"
     },
     "rmgpy/rmg/pdep.py:PDepNetwork.get_leak_branching_ratios": {
       "verdict": "carried",
-      "reason": "Model/configuration administration retains explicit species/reaction objects. Scientific acquisition delegates to original-species thermo/transport/statmech, opted-in family/exact library and refusing QM/ML/default-transfer boundaries.",
+      "reason": "Preflights current path/net records before normalizing rates from the already supplied models; returned branch keys retain the original state-bearing species.",
       "evidence": [
-        "test/rmgpy/rmg/pdepTest.py"
+        "test/rmgpy/rmg/pdepTest.py",
+        "test/rmgpy/rmg/electronAllowlistTest.py"
       ],
-      "source_sha256": "99cd23df625ba73be06fc5d8acda2284811fa966dc42f2ddac3b9af758020f95"
+      "source_sha256": "0017ca4ebd1422bc8d6b8560f0b01a9a24cd23c4b6a87b229bed655e334c4941"
     },
     "rmgpy/rmg/pdep.py:PDepNetwork.get_leak_coefficient": {
       "verdict": "carried",
-      "reason": "Model/configuration administration retains explicit species/reaction objects. Scientific acquisition delegates to original-species thermo/transport/statmech, opted-in family/exact library and refusing QM/ML/default-transfer boundaries.",
+      "reason": "Guards the current network before evaluating leak rates from its explicitly supplied reaction kinetics and state-matched thermo, using the same scientific models as ordinary pdep.",
       "evidence": [
-        "test/rmgpy/rmg/pdepTest.py"
+        "test/rmgpy/rmg/pdepTest.py",
+        "test/rmgpy/rmg/electronAllowlistTest.py"
       ],
-      "source_sha256": "c6e7e64e4d932817e86973cfb6b447d30c30e2d3a41d48efa0acc0b793caa92d"
+      "source_sha256": "758ae7bf8f80f659791256c33bfed628b1fd444a1050abe81be01f08c40308b0"
     },
     "rmgpy/rmg/pdep.py:PDepNetwork.get_maximum_leak_species": {
       "verdict": "carried",
-      "reason": "Model/configuration administration retains explicit species/reaction objects. Scientific acquisition delegates to original-species thermo/transport/statmech, opted-in family/exact library and refusing QM/ML/default-transfer boundaries.",
+      "reason": "Checks current channels before choosing an original network species by its carried leak kinetics; no new species or untyped data is synthesized.",
       "evidence": [
-        "test/rmgpy/rmg/pdepTest.py"
+        "test/rmgpy/rmg/pdepTest.py",
+        "test/rmgpy/rmg/electronAllowlistTest.py"
       ],
-      "source_sha256": "7ef67cb28085f187c009aad83c04bf7ef5dd886907bc4c65a3062048076b4e3e"
+      "source_sha256": "3fc7c530364da101a52fccc56b8c5f082054aacebda298b8fca8acd49921f2a0"
     },
     "rmgpy/rmg/pdep.py:PDepNetwork.get_rate_filtered_products": {
       "verdict": "carried",
-      "reason": "Model/configuration administration retains explicit species/reaction objects. Scientific acquisition delegates to original-species thermo/transport/statmech, opted-in family/exact library and refusing QM/ML/default-transfer boundaries.",
+      "reason": "Checks current channels before rate filtering and returns original network products using carried kinetics, preserving state annotations and avoiding independent data selection.",
       "evidence": [
-        "test/rmgpy/rmg/pdepTest.py"
+        "test/rmgpy/rmg/pdepTest.py",
+        "test/rmgpy/rmg/electronAllowlistTest.py"
       ],
-      "source_sha256": "7d18416a4af59203582f39988e731b94d8ce7818141c9ece4a4048644b43c6c6"
+      "source_sha256": "1d8d623bb7554736e0491d3e0a6007fe13318c86e9b19b8c8941286e849de8f3"
     },
     "rmgpy/rmg/pdep.py:PDepNetwork.merge": {
       "verdict": "carried",
-      "reason": "Model/configuration administration retains explicit species/reaction objects. Scientific acquisition delegates to original-species thermo/transport/statmech, opted-in family/exact library and refusing QM/ML/default-transfer boundaries.",
+      "reason": "The guarded entry validates its original network and the body validates the other original network once before merging their supplied configurations and channels without state projection.",
       "evidence": [
+        "test/rmgpy/rmg/electronAllowlistTest.py",
         "test/rmgpy/rmg/pdepTest.py"
       ],
-      "source_sha256": "c19adc60099351b2e8140079eff28eefbf4f2a48bf9d6bd35e638f48aaaaa48f"
+      "source_sha256": "4aafbaaddf2e22e7bcf0969a0497fc89c8b7c6c1fa31ed9625fb09e02a1c90a5"
     },
     "rmgpy/rmg/pdep.py:PDepNetwork.remove_disconnected_reactions": {
       "verdict": "carried",
@@ -23144,27 +23575,31 @@
     },
     "rmgpy/rmg/pdep.py:PDepNetwork.solve_ss_network": {
       "verdict": "carried",
-      "reason": "Model/configuration administration retains explicit species/reaction objects. Scientific acquisition delegates to original-species thermo/transport/statmech, opted-in family/exact library and refusing QM/ML/default-transfer boundaries.",
+      "reason": "Checks the supplied network before solving its steady-state rates from carried channel models; numerical algebra consumes those records without an untyped acquisition path.",
       "evidence": [
-        "test/rmgpy/rmg/pdepTest.py"
+        "test/rmgpy/rmg/pdepTest.py",
+        "test/rmgpy/rmg/electronAllowlistTest.py"
       ],
-      "source_sha256": "68d71bb2a4009e04c24672f820314e72dc3bd79a6ed49e5f6a8429900a2f288e"
+      "source_sha256": "9cac4c9e640ef7d64e5f69f302bb5a38c633b992b1a86e4f019f6180a9a0fb65"
     },
     "rmgpy/rmg/pdep.py:PDepNetwork.update": {
       "verdict": "carried",
-      "reason": "Model/configuration administration retains explicit species/reaction objects. Scientific acquisition delegates to original-species thermo/transport/statmech, opted-in family/exact library and refusing QM/ML/default-transfer boundaries.",
+      "reason": "Uses the entry preflight once before binding the original network to the existing pdep job; regeneration retains upstream original-species suppliers and their named state refusals.",
       "evidence": [
-        "test/rmgpy/rmg/pdepTest.py"
+        "test/rmgpy/rmg/electronAllowlistTest.py",
+        "test/rmgpy/rmg/pdepTest.py",
+        "test/rmgpy/data/stateProvenanceTest.py"
       ],
-      "source_sha256": "141bb18a00bb755528bd4147a358697c4ea9c5d6d37a056c2a55cec6880eaeae"
+      "source_sha256": "e76330a1ba5bb63287c3369435c626c80f2ca4f28abd3c6bc8e4b2aed91c662d"
     },
     "rmgpy/rmg/pdep.py:PDepNetwork.update_configurations": {
       "verdict": "carried",
-      "reason": "Model/configuration administration retains explicit species/reaction objects. Scientific acquisition delegates to original-species thermo/transport/statmech, opted-in family/exact library and refusing QM/ML/default-transfer boundaries.",
+      "reason": "Checks current channels before deriving configurations from their original participants; it rearranges supplied species references rather than acquiring or defaulting scientific models.",
       "evidence": [
-        "test/rmgpy/rmg/pdepTest.py"
+        "test/rmgpy/rmg/pdepTest.py",
+        "test/rmgpy/rmg/electronAllowlistTest.py"
       ],
-      "source_sha256": "f5433c7b12bf9a7bf1543eeda3f0ba2d57f62d734e5f576e9bd40b9ca0fd5324"
+      "source_sha256": "a88468d8a5223d5293e9e3615e5592bd329c95083d6ba38a94aa1ebfc1568901"
     },
     "rmgpy/rmg/pdep.py:PDepReaction.__deepcopy__": {
       "verdict": "carried",
@@ -23213,6 +23648,133 @@
         "test/rmgpy/rmg/pdepTest.py"
       ],
       "source_sha256": "419524485bd50a047130748d32046b3653356c80893655c9212b145e28e4d1cc"
+    },
+    "rmgpy/rmg/pdep.py:_check_electron_channel_routing": {
+      "verdict": "carried",
+      "reason": "Validates the supplied incoming/current channel with shared current-operation identities and reports its own reaction/library; accepted state-bearing scientific objects remain unchanged.",
+      "evidence": [
+        "test/rmgpy/rmg/electronAllowlistTest.py",
+        "test/rmgpy/data/stateProvenanceTest.py"
+      ],
+      "source_sha256": "f984484d4593b0bba317d01745a0dbc551ef4bd59139bcf9ddd427ea2b95bdb5"
+    },
+    "rmgpy/rmg/pdep.py:_check_electron_channel_routing.describe": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Formats safe labels of already supplied native participants only for an error message; diagnostic SMILES does not become input to any scientific supplier.",
+      "evidence": [
+        "test/rmgpy/rmg/electronAllowlistTest.py"
+      ],
+      "source_sha256": "6050296f8eedca4ba71c6c9c73f9f9f711302dfb6a91554f081bb118717f719e"
+    },
+    "rmgpy/rmg/pdep.py:_check_electron_channel_routing.side": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Joins safe participant descriptions for a refusal diagnostic; it performs no species matching, data selection or numerical calculation.",
+      "evidence": [
+        "test/rmgpy/rmg/electronAllowlistTest.py"
+      ],
+      "source_sha256": "092e1f8df2a1489bec682fe9df4b7b51e0703529829fc92e7c2def3115c46d20"
+    },
+    "rmgpy/rmg/pdep.py:_check_network_reactions": {
+      "verdict": "carried",
+      "reason": "Checks each original path/net channel once and each shared physical identity once for this call, supporting exact Network/PDepNetwork without replacing state-specific data or preserving later verdicts.",
+      "evidence": [
+        "test/rmgpy/rmg/electronAllowlistTest.py",
+        "test/rmgpy/rmg/pdepTest.py",
+        "test/rmgpy/data/stateProvenanceTest.py"
+      ],
+      "source_sha256": "a2cff8ffb6a0c6393937635aee4db35f2eade44c792fd3ef845a16124a6b87c2"
+    },
+    "rmgpy/rmg/pdep.py:_check_template_atom_labels": {
+      "verdict": "carried",
+      "reason": "Requires every template label to alias an atom of the original checked participant molecules, preserving their state rather than accepting an independently reconstructed atom graph.",
+      "evidence": [
+        "test/rmgpy/rmg/electronAllowlistTest.py",
+        "test/rmgpy/rmg/electronReferenceTest.py"
+      ],
+      "source_sha256": "0ff15b309de83d9dd593c2eb1b8a5e5c1592b7a89c9302e257838fa4e643ac2c"
+    },
+    "rmgpy/rmg/pdep.py:_check_template_atom_labels.refuse": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Raises a fixed diagnostic for an invalid atom-label alias and performs no scientific acquisition or fallback for resolved input.",
+      "evidence": [
+        "test/rmgpy/rmg/electronAllowlistTest.py"
+      ],
+      "source_sha256": "5f0e71ee69c713115c5b8756a147cbe257b5f837c190f0fe842b035c82f58668"
+    },
+    "rmgpy/rmg/pdep.py:_checked_network_entry": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Constructs an entry wrapper from callable metadata only; it performs no scientific acquisition. The separately classified checked callback receives original state-bearing inputs when invoked.",
+      "evidence": [
+        "test/rmgpy/rmg/electronAllowlistTest.py"
+      ],
+      "source_sha256": "d4dbf3dc95676659867f5d81ed539215a9b8c013ece27e3cf901d2fdece4ac81"
+    },
+    "rmgpy/rmg/pdep.py:_checked_network_entry.checked": {
+      "verdict": "carried",
+      "reason": "Runs incoming-only admission or fresh computation preflight on the original network and unchanged arguments; it preserves current species/state records and no verdict survives the call.",
+      "evidence": [
+        "test/rmgpy/rmg/electronAllowlistTest.py",
+        "test/rmgpy/rmg/pdepTest.py"
+      ],
+      "source_sha256": "893f9b6ba9d5ca9908d133f5be0756f5a1ff8a580d6513196144f02339487cc6"
+    },
+    "rmgpy/rmg/pdep.py:_guard_network_entries": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Discovers the public network API and installs checked wrappers at class definition time; the reasoned accessor exclusions introduce no scientific supplier or resolved-state fallback.",
+      "evidence": [
+        "test/rmgpy/rmg/electronAllowlistTest.py"
+      ],
+      "source_sha256": "8698a4a5f56067b11565de6c17463fc1b987b730b5deb1df67cecc0f488dc494"
+    },
+    "rmgpy/rmg/pdep.py:_has_electron_participant": {
+      "verdict": "carried",
+      "reason": "Classifies the current original reaction graph using operation-local deduplication and existing placement ownership, without substituting an untyped species or caching a verdict across calls.",
+      "evidence": [
+        "test/rmgpy/rmg/electronAllowlistTest.py",
+        "test/rmgpy/data/stateProvenanceTest.py"
+      ],
+      "source_sha256": "4a86958b5382503102738d3e2f451bd765c166e2a81af654fd374ff8ae604bff"
+    },
+    "rmgpy/rmg/pdep.py:_is_numeric_data": {
+      "verdict": "carried",
+      "reason": "Checks only the provided exact numeric leaf and quantity metadata/arrays; enclosing state-bearing records are retained by the walker and no supplier or default is consulted.",
+      "evidence": [
+        "test/rmgpy/rmg/electronAllowlistTest.py"
+      ],
+      "source_sha256": "2540ac2fddb7e044b821e8a04dbc9de20644b76e9464c53bd812cab4e0975a15"
+    },
+    "rmgpy/rmg/pdep.py:_native_data_fields": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Builds the exact class-slot schema from trusted native descriptors at import time; this administrative inventory performs no scientific acquisition for any species.",
+      "evidence": [
+        "test/rmgpy/rmg/electronAllowlistTest.py"
+      ],
+      "source_sha256": "841a44b1ef37eacfd4ac3a2783a8102e1fe87e5b54c21d1f37a688ad359beb72"
+    },
+    "rmgpy/rmg/pdep.py:_provenance_types": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Returns trusted provenance/catalog classes for channel-local traversal ownership; this type registry does not look up a resolved species or provide kinetics/thermo.",
+      "evidence": [
+        "test/rmgpy/rmg/electronAllowlistTest.py"
+      ],
+      "source_sha256": "42d8de46b5166caa6c3102609db2439996277c86b7868f9ce34d5d7b52643953"
+    },
+    "rmgpy/rmg/pdep.py:_reaction_species_references": {
+      "verdict": "carried",
+      "reason": "Yields references from compiled traversal of the identical original reaction and supplied per-call visited sets; delegation changes execution cost without replacing state-bearing subjects or retaining a verdict for a later computation.",
+      "evidence": [
+        "test/rmgpy/rmg/electronAllowlistTest.py",
+        "test/rmgpy/data/stateProvenanceTest.py"
+      ],
+      "source_sha256": "b7e1e17c7bc6bd4c2d724da504aac0bbe2af051de18a5cac7b464bba984f9b85"
+    },
+    "rmgpy/rmg/pdep.py:_reaction_types": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Returns the finite shipped reaction-class allowlist used by admission checks; it does not inspect a species, assign state or acquire scientific data.",
+      "evidence": [
+        "test/rmgpy/rmg/electronAllowlistTest.py"
+      ],
+      "source_sha256": "fbcb26c1dd67e4ddc5b43dc27079cde5df95a83f699570a57e0fbea14d97589c"
     },
     "rmgpy/rmg/react.py:_react_species_star": {
       "verdict": "carried",
@@ -26079,6 +26641,14 @@
         "test/rmgpy/speciesTest.py"
       ],
       "source_sha256": "391974747bd32fb37d1ec27e2c3351f08694e4734d1871a60eceecb711e3eba3"
+    },
+    "rmgpy/species.py:Species.to_cantera.<lambda1>": {
+      "verdict": "carried",
+      "reason": "Provides the explicit species identifier to the surrounding state-aware native Cantera conversion.",
+      "evidence": [
+        "test/rmgpy/speciesTest.py"
+      ],
+      "source_sha256": "7b5c4480cdbb7daf92811712a4fc2bf1457eec737aa3cecf895ac1181d412972"
     },
     "rmgpy/species.py:Species.to_chemkin": {
       "verdict": "carried",
@@ -29796,6 +30366,22 @@
       ],
       "source_sha256": "54338f174ba9a2636ef1e093a5ec2c9b6f0e9b9d722b6984b4f3ea16dda2e052"
     },
+    "rmgpy/tools/fluxdiagram.py:generate_flux_diagram.<lambda1>": {
+      "verdict": "carried",
+      "reason": "Maps supplied reaction participants through the flux diagram declaration set without estimating or replacing molecular data.",
+      "evidence": [
+        "test/rmgpy/tools/fluxdiagramTest.py"
+      ],
+      "source_sha256": "2c8d624cbf7eab3addbcf86f791d85c96b38674cb6c06195c0a44494a506d977"
+    },
+    "rmgpy/tools/fluxdiagram.py:generate_flux_diagram.species_name": {
+      "verdict": "carried",
+      "reason": "Returns the full declared identifier for a supplied flux-diagram species and refuses undeclared resolved references.",
+      "evidence": [
+        "test/rmgpy/tools/fluxdiagramTest.py"
+      ],
+      "source_sha256": "36fd2f645f81780e74ba7d4cc59649223779f77c44daa46f214cc233835c766f"
+    },
     "rmgpy/tools/fluxdiagram.py:load_chemkin_output": {
       "verdict": "carried",
       "reason": "Analysis, model import/export, simulation, isotope or uncertainty operation on explicit species/reaction data. Independent acquisition delegates to original-species database APIs; external file values are explicit input, not ground-tree matching.",
@@ -30853,6 +31439,22 @@
       ],
       "source_sha256": "20c84d36d68ffb42522bc82954932e591fd1e233714205c865e18f1348050671"
     },
+    "rmgpy/util.py:generation_token": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Parses a file-pair generation checksum string; it has no molecular or scientific-data path.",
+      "evidence": [
+        "test/rmgpy/data/stateDataCensusTest.py"
+      ],
+      "source_sha256": "e5f986d62925ced4724108aaf40450346ed31d4a091fb1795fa423af07cd7c91"
+    },
+    "rmgpy/util.py:get_reaction_collider": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Parses a balanced collider token from an already serialized equation and performs no scientific-data acquisition.",
+      "evidence": [
+        "test/rmgpy/data/kinetics/kineticsTest.py"
+      ],
+      "source_sha256": "2b950664e3153618df3cf4072c15bacfd9d4fd596063b3e52e3500f6cb4ead7b"
+    },
     "rmgpy/util.py:make_output_subdirectory": {
       "verdict": "not-reachable-for-resolved",
       "reason": "Filesystem, timing, log and multiprocessing utilities; no species scientific acquisition.",
@@ -30868,6 +31470,46 @@
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
       "source_sha256": "8e756cf1041484743498cc1d559933c846b4b3ef72d146018912d4ec423536a4"
+    },
+    "rmgpy/util.py:parse_reaction_equation": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Splits an existing equation while respecting nested identifier parentheses; it does not interpret molecular data.",
+      "evidence": [
+        "test/rmgpy/data/kinetics/kineticsTest.py"
+      ],
+      "source_sha256": "129d7a2f2df2e78adb845fb26d3208a0a76d0fd9628e5d045b1bd1497fa9a6b7"
+    },
+    "rmgpy/util.py:read_generation_files": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Reads and generation-validates exact paired file snapshots before a separate molecular parser runs.",
+      "evidence": [
+        "test/rmgpy/data/kinetics/kineticsTest.py"
+      ],
+      "source_sha256": "02adbc2436d8dd4c3ccb6d76ca74bed09f3fa3682af94399aad0ecd504474b70"
+    },
+    "rmgpy/util.py:read_generation_pair": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Returns one already generation-validated kinetics/dictionary byte pair without acquiring scientific values.",
+      "evidence": [
+        "test/rmgpy/data/kinetics/kineticsTest.py"
+      ],
+      "source_sha256": "7b7ffdb4121bc9496cd866f98a39a42dd4017435fdc71a55d3035d370e4d4c23"
+    },
+    "rmgpy/util.py:stamp_file_generation": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Adds a deterministic content checksum to paired serialized bytes and never inspects species or scientific data.",
+      "evidence": [
+        "test/rmgpy/data/kinetics/kineticsTest.py"
+      ],
+      "source_sha256": "f5e8b7449c209f36c6976be108b378e4bbdc0384e0396040bd9acd68f234eb27"
+    },
+    "rmgpy/util.py:strip_generation_marker": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Removes only the generation header from serialized text; molecular content remains byte-for-byte untouched.",
+      "evidence": [
+        "test/rmgpy/data/kinetics/kineticsTest.py"
+      ],
+      "source_sha256": "382e8e6daae20d705ec52d1dd8a5c52192e2d7292f62eccf00b3a36788d6e1ad"
     },
     "rmgpy/util.py:strip_yaml_notes": {
       "verdict": "not-reachable-for-resolved",
@@ -30893,6 +31535,14 @@
       ],
       "source_sha256": "3c03e99961543cbee9fcb41639c478cc7a72ac34785ec07913a36e8000ee5227"
     },
+    "rmgpy/util.py:write_files_atomically": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Stages and replaces caller-rendered file contents atomically; all molecular validation occurs before this filesystem boundary.",
+      "evidence": [
+        "test/rmgpy/data/kinetics/kineticsTest.py"
+      ],
+      "source_sha256": "457eb8bf075ea925bb17d9d16356b2ab25848277dbb5dd4402e445da6bf55a01"
+    },
     "rmgpy/yaml_cantera1.py:CanteraWriter1.__init__": {
       "verdict": "carried",
       "reason": "Serializes explicit Species thermo and Reaction kinetics into Cantera records, without performing molecular ground-data acquisition.",
@@ -30916,6 +31566,14 @@
         "test/rmgpy/yaml_cantera1Test.py"
       ],
       "source_sha256": "21f4d8a17cc32bbbb496d53da726337c64d6247bd37b793b1c60c73c30211989"
+    },
+    "rmgpy/yaml_cantera1.py:_cantera_declarations": {
+      "verdict": "carried",
+      "reason": "Builds the Cantera-1 state-aware species declaration map used by phase and reaction serializers.",
+      "evidence": [
+        "test/rmgpy/yaml_cantera1Test.py"
+      ],
+      "source_sha256": "d2259caa7de98600b276d84b06d195ad034fe21a69dcddefd12360f0ee28e611"
     },
     "rmgpy/yaml_cantera1.py:_collect_reactions": {
       "verdict": "carried",
@@ -31044,6 +31702,22 @@
         "test/rmgpy/yaml_cantera2Test.py"
       ],
       "source_sha256": "962ea5c5868cd3a82a5daafa31a45bf294496013f953be4adcac0e2abda18468"
+    },
+    "rmgpy/yaml_cantera2.py:_cantera_declarations": {
+      "verdict": "carried",
+      "reason": "Builds the Cantera-2 state-aware species declaration map used by phase and reaction serializers.",
+      "evidence": [
+        "test/rmgpy/yaml_cantera2Test.py"
+      ],
+      "source_sha256": "bdb1e013050d82ff6e50b4750c91ba82635d00e3c44fb7c49ae4228a82d1a5fe"
+    },
+    "rmgpy/yaml_cantera2.py:_cantera_identifier": {
+      "verdict": "carried",
+      "reason": "Returns a state-qualified identifier for resolved species and the historical Chemkin identifier for ground species.",
+      "evidence": [
+        "test/rmgpy/yaml_cantera2Test.py"
+      ],
+      "source_sha256": "28eda1146d824f1eaaf45f3e01804024db94acd0ab5f2083f4aac011450638ef"
     },
     "rmgpy/yaml_cantera2.py:_collect_reaction_entries": {
       "verdict": "carried",
@@ -31213,382 +31887,6 @@
       ],
       "source_sha256": "057e6200bfaf825a87f1f03995f8520953f9fd8f862cb60cbb4d497d68d8926c"
     },
-    "rmgpy/yaml_rms.py:obj_to_dict": {
-      "verdict": "carried",
-      "reason": "Serializes explicit species/reaction/phase data to RMS, without an independent ground-template estimate.",
-      "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
-      ],
-      "source_sha256": "27967247012015b9ea04acd4797a2c94ef6bb25d881831fa217a4c7a66775a0b"
-    },
-    "rmgpy/yaml_rms.py:write_rms": {
-      "verdict": "carried",
-      "reason": "Serializes explicit species/reaction/phase data to RMS, without an independent ground-template estimate.",
-      "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
-      ],
-      "source_sha256": "240460e492363ce3cd9ae0293c40813e13482f309c65ab40c2aa9ad245647e5e"
-    },
-    "rmgpy/chemkin.pyx:_chemkin_declarations": {
-      "verdict": "carried",
-      "reason": "Builds the state-aware declaration table used by Chemkin writers; it preserves full identities and detects emitted-name collisions.",
-      "evidence": [
-        "test/rmgpy/chemkinTest.py"
-      ],
-      "source_sha256": "1fc741f9a0e6ccec7828df2f8173df4dc873a3015f3a985e35718e4516471a38"
-    },
-    "rmgpy/chemkin.pyx:_dictionary_identities_conflict": {
-      "verdict": "carried",
-      "reason": "Checks duplicate dictionary records only when a resolved identity is present, on deep copies; ground duplicates keep their historical atom order.",
-      "evidence": [
-        "test/rmgpy/yaml_writer/excitedExportReworkTest.py"
-      ],
-      "source_sha256": "65790290f3209b5280cffe6928f6f2c28137826b77bad2ac1dc340b069548785"
-    },
-    "rmgpy/chemkin.pyx:validate_chemkin_references": {
-      "verdict": "carried",
-      "reason": "Validates every Chemkin reaction participant, collider, efficiency and coverage reference against the emitted species declarations.",
-      "evidence": [
-        "test/rmgpy/chemkinTest.py"
-      ],
-      "source_sha256": "c61fea96f4e05b77c559dd8d58c275f78c472be12d7364d1bb67a148ff185d28"
-    },
-    "rmgpy/chemkin.pyx:validate_species_identifiers": {
-      "verdict": "carried",
-      "reason": "Validates caller-provided Chemkin identifiers with the shared full-identity declaration map before serialization.",
-      "evidence": [
-        "test/rmgpy/chemkinTest.py"
-      ],
-      "source_sha256": "d566ae3773a97bf670ce468dcb95b007ecf06b977962af177cea4f8146cc684b"
-    },
-    "rmgpy/data/base.py:Database._store_entry": {
-      "verdict": "carried",
-      "reason": "Stores database entries through a full molecular-identity collision check, retaining distinct resolved records and rejecting conflicting reuse.",
-      "evidence": [
-        "test/rmgpy/data/baseTest.py"
-      ],
-      "source_sha256": "c7a31900dfbacb183cf624a9ca5928cfa2503f65707a1741291b775d4cc374cd"
-    },
-    "rmgpy/data/base.py:Database.dictionary_references": {
-      "verdict": "carried",
-      "reason": "Collects participant, named-collider and coverage species into one state-aware kinetics-dictionary declaration set.",
-      "evidence": [
-        "test/rmgpy/data/kinetics/kineticsTest.py"
-      ],
-      "source_sha256": "659cdaf3664698dbaf90002c030390527017956876b2319eab7e2622315eee5d"
-    },
-    "rmgpy/data/base.py:Database.render_dictionary": {
-      "verdict": "carried",
-      "reason": "Renders full declared molecular identities and refuses coverage references that this dictionary format cannot retain.",
-      "evidence": [
-        "test/rmgpy/data/kinetics/kineticsTest.py"
-      ],
-      "source_sha256": "e7e058fc942d326955d90fb9030ca95deb13858b437ef9c865d41d6818bd0198"
-    },
-    "rmgpy/data/base.py:Database.render_save": {
-      "verdict": "carried",
-      "reason": "Preflights every entry then renders the database through its audited serializers without independently estimating scientific data.",
-      "evidence": [
-        "test/rmgpy/data/baseTest.py"
-      ],
-      "source_sha256": "cad7ebde539a9cff3e17c86d2fa174ced36972e032a54d55d07aef42d9194fc5"
-    },
-    "rmgpy/data/base.py:_entry_molecules": {
-      "verdict": "not-reachable-for-resolved",
-      "reason": "Recursively extracts existing Molecule objects from entry containers for identity validation; it performs no scientific-data acquisition.",
-      "evidence": [
-        "test/rmgpy/data/baseTest.py"
-      ],
-      "source_sha256": "bdd4ad3f8c3aaa60451a62441ddacca4c717d2d9ca3359df8bcc2050b8247135"
-    },
-    "rmgpy/data/base.py:_same_entry_identity": {
-      "verdict": "carried",
-      "reason": "Compares complete existing entry identities, including state and every component of compound records, before key reuse.",
-      "evidence": [
-        "test/rmgpy/data/baseTest.py"
-      ],
-      "source_sha256": "b039cd7c934a756637e026c833ac5af0da9836b468ed72d1baaf0ce693961818"
-    },
-    "rmgpy/data/kinetics/common.py:_SerializedCoverageReference.__init__": {
-      "verdict": "carried",
-      "reason": "Stores an already resolved coverage identifier for the kinetics repr protocol; no structure or data is reacquired.",
-      "evidence": [
-        "test/rmgpy/data/kinetics/kineticsTest.py"
-      ],
-      "source_sha256": "2f635eab1fa5689d182fad84886e155ebe7733f389d4beb263c1fac1f2eeaa8a"
-    },
-    "rmgpy/data/kinetics/common.py:_SerializedCoverageReference.to_chemkin": {
-      "verdict": "carried",
-      "reason": "Returns the previously resolved coverage identifier verbatim to the kinetics serializer.",
-      "evidence": [
-        "test/rmgpy/data/kinetics/kineticsTest.py"
-      ],
-      "source_sha256": "0a0dc75423a475f99981bc415795fd36902c57d8464ca830eca05ea7891afb9d"
-    },
-    "rmgpy/data/kinetics/common.py:add_dictionary_index_aliases": {
-      "verdict": "carried",
-      "reason": "Adds only aliases whose indexed equation tokens resolve to the same declared full molecular identity.",
-      "evidence": [
-        "test/rmgpy/data/kinetics/kineticsTest.py"
-      ],
-      "source_sha256": "42d348d05d80542bb272325afff3763d34d96ff16f7e55a516bbd4d41d546a38"
-    },
-    "rmgpy/data/kinetics/common.py:check_smiles_keyed_efficiencies": {
-      "verdict": "refused",
-      "reason": "Raises SpeciesIdentityError before a resolved collider can be reduced to a state-blind SMILES-keyed library efficiency.",
-      "evidence": [
-        "test/rmgpy/yaml_writer/excitedExportCensusTest.py"
-      ],
-      "source_sha256": "dd7626cdfdde27a2a917aeb1ad2c9920cc16ff3ac1768507c9a31272f5e981ed"
-    },
-    "rmgpy/data/kinetics/common.py:library_reaction_equation": {
-      "verdict": "carried",
-      "reason": "Builds and reload-validates reaction equations against the complete emitted dictionary, preserving each resolved participant and collider.",
-      "evidence": [
-        "test/rmgpy/data/kinetics/kineticsTest.py"
-      ],
-      "source_sha256": "984c30f00fc5e8e1e525a61b25850e2a270e58f6f9e2c792040730c6d3152b03"
-    },
-    "rmgpy/data/kinetics/common.py:library_serializable_kinetics": {
-      "verdict": "carried",
-      "reason": "Copies kinetics and resolves coverage and efficiency keys for serialization without mutating the live scientific model.",
-      "evidence": [
-        "test/rmgpy/data/kinetics/kineticsTest.py"
-      ],
-      "source_sha256": "df41ab4acbeabc36684ceafa09db1eca68c91b6f7a58c314d9d02f0cad1ca77b"
-    },
-    "rmgpy/data/kinetics/common.py:library_serializable_kinetics.<lambda1>": {
-      "verdict": "carried",
-      "reason": "Supplies the explicit molecule SMILES identifier only inside the guarded ground-only efficiency declaration path.",
-      "evidence": [
-        "test/rmgpy/data/kinetics/kineticsTest.py"
-      ],
-      "source_sha256": "f630787312f43775fa588a2ba0a5d78a8bb0fec737910c3a1776d035d784cee9"
-    },
-    "rmgpy/data/kinetics/common.py:library_serializable_kinetics.<lambda2>": {
-      "verdict": "carried",
-      "reason": "Supplies legacy Chemkin names for ground-only coverage after the surrounding function has separated resolved serialization.",
-      "evidence": [
-        "test/rmgpy/data/kinetics/kineticsTest.py"
-      ],
-      "source_sha256": "bdf4a503eceeb66a399bc8792dab0fb16181789fd44180c2b054c4828a8835f4"
-    },
-    "rmgpy/data/kinetics/common.py:validate_dictionary_participant_labels": {
-      "verdict": "refused",
-      "reason": "Finds resolved dictionary labels that the library plus-token grammar would split and delegates to the named refusal before parsing.",
-      "evidence": [
-        "test/rmgpy/yaml_writer/excitedExportCensusTest.py"
-      ],
-      "source_sha256": "37f41340e08772a52fa34aae2598c1ec87a69f3073cf235f22dee1385b7d2171"
-    },
-    "rmgpy/data/kinetics/common.py:validate_generic_collider_dictionary": {
-      "verdict": "refused",
-      "reason": "Raises SpeciesIdentityError when generic (+M) syntax would select a resolved dictionary species named M or m.",
-      "evidence": [
-        "test/rmgpy/yaml_writer/excitedExportCensusTest.py"
-      ],
-      "source_sha256": "99cf5566d6a62eac705c657ca492715d102f97148594bf8e4f0b4c934bfe5ea7"
-    },
-    "rmgpy/data/kinetics/common.py:validate_participant_labels": {
-      "verdict": "refused",
-      "reason": "Raises SpeciesIdentityError before a resolved participant label containing plus can be ambiguously tokenized.",
-      "evidence": [
-        "test/rmgpy/yaml_writer/excitedExportCensusTest.py"
-      ],
-      "source_sha256": "08fc1ae2ef2aa9980d953ed7552a027c3aeb5d488de3a10b7a1a37425d2e012c"
-    },
-    "rmgpy/data/kinetics/depository.py:KineticsDepository.save": {
-      "verdict": "carried",
-      "reason": "Saves the stamped reactions/dictionary pair using the same complete declaration context and atomic generation boundary.",
-      "evidence": [
-        "test/rmgpy/data/kinetics/kineticsTest.py"
-      ],
-      "source_sha256": "08e4c1aae01191bd1f346a9663c7c86bac42e627085086be84b5574b44e1dad1"
-    },
-    "rmgpy/export.py:SpeciesReferences.__init__": {
-      "verdict": "carried",
-      "reason": "Creates the shared emitted-name-to-full-identity map, accepting historical ground collisions and rejecting true resolved collisions without mutating inputs.",
-      "evidence": [
-        "test/rmgpy/yaml_writer/excitedExportReworkTest.py"
-      ],
-      "source_sha256": "383f753c8df25f534d5465602defd44ee05cbae6c524c023bb5bfd81a9dafe4b"
-    },
-    "rmgpy/export.py:describe_species": {
-      "verdict": "not-reachable-for-resolved",
-      "reason": "Formats an already supplied species identity for diagnostics; it neither selects nor assigns scientific data.",
-      "evidence": [
-        "test/rmgpy/yaml_writer/excitedExportCensusTest.py"
-      ],
-      "source_sha256": "d60cc1ca5cf1ca9017bf140ddafb0f9809c2c970bb7208338a28c3ca7066e23e"
-    },
-    "rmgpy/export.py:kinetics_references": {
-      "verdict": "not-reachable-for-resolved",
-      "reason": "Enumerates existing collider, efficiency and coverage references so callers can validate them; no data is acquired.",
-      "evidence": [
-        "test/rmgpy/yaml_writer/excitedExportCensusTest.py"
-      ],
-      "source_sha256": "f461f410cdbb9a88108b56c2888e386cd5b32496036a577e5fe5dc6482b4fe48"
-    },
-    "rmgpy/export.py:refuse_resolved_job": {
-      "verdict": "refused",
-      "reason": "Raises the route-specific named error before unsupported Arkane jobs can consume a resolved species or reaction.",
-      "evidence": [
-        "test/rmgpy/yaml_writer/excitedExportCensusTest.py"
-      ],
-      "source_sha256": "2535003185161b8b5d125344601fdd153b218d5d24147bfa7a0be9bd88dc693c"
-    },
-    "rmgpy/export.py:refuse_resolved_species": {
-      "verdict": "refused",
-      "reason": "Raises SpeciesIdentityError before an explicitly unsupported serializer can lose any supplied resolved molecular identity.",
-      "evidence": [
-        "test/rmgpy/yaml_writer/excitedExportCensusTest.py"
-      ],
-      "source_sha256": "b0988b717b960987bfcef93cfdfc6d76a73c81b758b5fd0d401865a479e83117"
-    },
-    "rmgpy/export.py:resolve_species_reference": {
-      "verdict": "carried",
-      "reason": "Resolves only references present in the full-identity declaration map and rejects undeclared or mismatched resolved identities.",
-      "evidence": [
-        "test/rmgpy/yaml_writer/excitedExportCensusTest.py"
-      ],
-      "source_sha256": "e364842611b94b3cf841bb695964614aa0e9a921babf62415581a99acd7212ec"
-    },
-    "rmgpy/export.py:validate_reaction_references": {
-      "verdict": "carried",
-      "reason": "Validates all explicit reaction participants, colliders, efficiencies and coverage references against a state-aware inventory.",
-      "evidence": [
-        "test/rmgpy/yaml_writer/excitedExportCensusTest.py"
-      ],
-      "source_sha256": "5e12cc91796dbcd2ab239ccef5d8920ed2f360769a85d7874a6a27a6942fcbfc"
-    },
-    "rmgpy/kinetics/model.pyx:PDepKineticsModel.get_cantera_efficiencies.<lambda2>": {
-      "verdict": "carried",
-      "reason": "Maps an existing ground-only efficiency molecule to its emitted Cantera declaration inside the surrounding guarded conversion.",
-      "evidence": [
-        "test/rmgpy/chemkinTest.py"
-      ],
-      "source_sha256": "83faec6b80df9294ef03087b9b76199dd89848b4e9bccec63310b9bfeea93dae"
-    },
-    "rmgpy/reaction.py:Reaction.to_cantera.<lambda1>": {
-      "verdict": "carried",
-      "reason": "Provides the emitted Cantera identifier from the surrounding state-aware reaction declaration map.",
-      "evidence": [
-        "test/rmgpy/reactionTest.py"
-      ],
-      "source_sha256": "7b5c4480cdbb7daf92811712a4fc2bf1457eec737aa3cecf895ac1181d412972"
-    },
-    "rmgpy/species.py:Species.to_cantera.<lambda1>": {
-      "verdict": "carried",
-      "reason": "Provides the explicit species identifier to the surrounding state-aware native Cantera conversion.",
-      "evidence": [
-        "test/rmgpy/speciesTest.py"
-      ],
-      "source_sha256": "7b5c4480cdbb7daf92811712a4fc2bf1457eec737aa3cecf895ac1181d412972"
-    },
-    "rmgpy/tools/fluxdiagram.py:generate_flux_diagram.<lambda1>": {
-      "verdict": "carried",
-      "reason": "Maps supplied reaction participants through the flux diagram declaration set without estimating or replacing molecular data.",
-      "evidence": [
-        "test/rmgpy/tools/fluxdiagramTest.py"
-      ],
-      "source_sha256": "2c8d624cbf7eab3addbcf86f791d85c96b38674cb6c06195c0a44494a506d977"
-    },
-    "rmgpy/tools/fluxdiagram.py:generate_flux_diagram.species_name": {
-      "verdict": "carried",
-      "reason": "Returns the full declared identifier for a supplied flux-diagram species and refuses undeclared resolved references.",
-      "evidence": [
-        "test/rmgpy/tools/fluxdiagramTest.py"
-      ],
-      "source_sha256": "36fd2f645f81780e74ba7d4cc59649223779f77c44daa46f214cc233835c766f"
-    },
-    "rmgpy/util.py:generation_token": {
-      "verdict": "not-reachable-for-resolved",
-      "reason": "Parses a file-pair generation checksum string; it has no molecular or scientific-data path.",
-      "evidence": [
-        "test/rmgpy/data/stateDataCensusTest.py"
-      ],
-      "source_sha256": "e5f986d62925ced4724108aaf40450346ed31d4a091fb1795fa423af07cd7c91"
-    },
-    "rmgpy/util.py:get_reaction_collider": {
-      "verdict": "not-reachable-for-resolved",
-      "reason": "Parses a balanced collider token from an already serialized equation and performs no scientific-data acquisition.",
-      "evidence": [
-        "test/rmgpy/data/kinetics/kineticsTest.py"
-      ],
-      "source_sha256": "2b950664e3153618df3cf4072c15bacfd9d4fd596063b3e52e3500f6cb4ead7b"
-    },
-    "rmgpy/util.py:parse_reaction_equation": {
-      "verdict": "not-reachable-for-resolved",
-      "reason": "Splits an existing equation while respecting nested identifier parentheses; it does not interpret molecular data.",
-      "evidence": [
-        "test/rmgpy/data/kinetics/kineticsTest.py"
-      ],
-      "source_sha256": "129d7a2f2df2e78adb845fb26d3208a0a76d0fd9628e5d045b1bd1497fa9a6b7"
-    },
-    "rmgpy/util.py:read_generation_files": {
-      "verdict": "not-reachable-for-resolved",
-      "reason": "Reads and generation-validates exact paired file snapshots before a separate molecular parser runs.",
-      "evidence": [
-        "test/rmgpy/data/kinetics/kineticsTest.py"
-      ],
-      "source_sha256": "02adbc2436d8dd4c3ccb6d76ca74bed09f3fa3682af94399aad0ecd504474b70"
-    },
-    "rmgpy/util.py:read_generation_pair": {
-      "verdict": "not-reachable-for-resolved",
-      "reason": "Returns one already generation-validated kinetics/dictionary byte pair without acquiring scientific values.",
-      "evidence": [
-        "test/rmgpy/data/kinetics/kineticsTest.py"
-      ],
-      "source_sha256": "7b7ffdb4121bc9496cd866f98a39a42dd4017435fdc71a55d3035d370e4d4c23"
-    },
-    "rmgpy/util.py:stamp_file_generation": {
-      "verdict": "not-reachable-for-resolved",
-      "reason": "Adds a deterministic content checksum to paired serialized bytes and never inspects species or scientific data.",
-      "evidence": [
-        "test/rmgpy/data/kinetics/kineticsTest.py"
-      ],
-      "source_sha256": "f5e8b7449c209f36c6976be108b378e4bbdc0384e0396040bd9acd68f234eb27"
-    },
-    "rmgpy/util.py:strip_generation_marker": {
-      "verdict": "not-reachable-for-resolved",
-      "reason": "Removes only the generation header from serialized text; molecular content remains byte-for-byte untouched.",
-      "evidence": [
-        "test/rmgpy/data/kinetics/kineticsTest.py"
-      ],
-      "source_sha256": "382e8e6daae20d705ec52d1dd8a5c52192e2d7292f62eccf00b3a36788d6e1ad"
-    },
-    "rmgpy/util.py:write_files_atomically": {
-      "verdict": "not-reachable-for-resolved",
-      "reason": "Stages and replaces caller-rendered file contents atomically; all molecular validation occurs before this filesystem boundary.",
-      "evidence": [
-        "test/rmgpy/data/kinetics/kineticsTest.py"
-      ],
-      "source_sha256": "457eb8bf075ea925bb17d9d16356b2ab25848277dbb5dd4402e445da6bf55a01"
-    },
-    "rmgpy/yaml_cantera1.py:_cantera_declarations": {
-      "verdict": "carried",
-      "reason": "Builds the Cantera-1 state-aware species declaration map used by phase and reaction serializers.",
-      "evidence": [
-        "test/rmgpy/yaml_cantera1Test.py"
-      ],
-      "source_sha256": "d2259caa7de98600b276d84b06d195ad034fe21a69dcddefd12360f0ee28e611"
-    },
-    "rmgpy/yaml_cantera2.py:_cantera_declarations": {
-      "verdict": "carried",
-      "reason": "Builds the Cantera-2 state-aware species declaration map used by phase and reaction serializers.",
-      "evidence": [
-        "test/rmgpy/yaml_cantera2Test.py"
-      ],
-      "source_sha256": "bdb1e013050d82ff6e50b4750c91ba82635d00e3c44fb7c49ae4228a82d1a5fe"
-    },
-    "rmgpy/yaml_cantera2.py:_cantera_identifier": {
-      "verdict": "carried",
-      "reason": "Returns a state-qualified identifier for resolved species and the historical Chemkin identifier for ground species.",
-      "evidence": [
-        "test/rmgpy/yaml_cantera2Test.py"
-      ],
-      "source_sha256": "28eda1146d824f1eaaf45f3e01804024db94acd0ab5f2083f4aac011450638ef"
-    },
     "rmgpy/yaml_rms.py:load_rms_species": {
       "verdict": "carried",
       "reason": "Reloads RMS species from adjacency lists before SMILES and validates emitted-name collisions with full identities.",
@@ -31604,6 +31902,22 @@
         "test/rmgpy/yaml_writer/excitedExportCensusTest.py"
       ],
       "source_sha256": "822f284c8733707c8d0ad355ff82ca54e11186c5cbae034066f756ff5de7dbcc"
+    },
+    "rmgpy/yaml_rms.py:obj_to_dict": {
+      "verdict": "carried",
+      "reason": "Serializes explicit species/reaction/phase data to RMS, without an independent ground-template estimate.",
+      "evidence": [
+        "test/rmgpy/data/stateDataCensusTest.py"
+      ],
+      "source_sha256": "27967247012015b9ea04acd4797a2c94ef6bb25d881831fa217a4c7a66775a0b"
+    },
+    "rmgpy/yaml_rms.py:write_rms": {
+      "verdict": "carried",
+      "reason": "Serializes explicit species/reaction/phase data to RMS, without an independent ground-template estimate.",
+      "evidence": [
+        "test/rmgpy/data/stateDataCensusTest.py"
+      ],
+      "source_sha256": "240460e492363ce3cd9ae0293c40813e13482f309c65ab40c2aa9ad245647e5e"
     }
   }
 }
