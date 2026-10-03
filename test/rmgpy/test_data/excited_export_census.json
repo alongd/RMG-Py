@@ -1,0 +1,2930 @@
+{
+  "schema": 1,
+  "scope": "Every emitted molecular identifier, kinetics/dictionary pair and saved molecular representation in rmgpy/ and arkane/. Diagnostic, group and explicit-input candidates are signature-guarded exclusions, not additional site verdicts.",
+  "sites": {
+    "arkane/common.py:ArkaneSpecies.save_yaml": {
+      "file": "arkane/common.py",
+      "function": "ArkaneSpecies.save_yaml",
+      "line": 248,
+      "signature": "26f1d7c52fa05bef0cca6d0d5f376d4c250b2231a777df19c46b8ad4f570540f",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[arkane/common.py:ArkaneSpecies.save_yaml]"
+    },
+    "arkane/common.py:ArkaneSpecies.load_yaml": {
+      "file": "arkane/common.py",
+      "function": "ArkaneSpecies.load_yaml",
+      "line": 286,
+      "signature": "79c15435a5cda0bec3dcee2cd4b455440b6d6b1948457b82315efb89365ee093",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[arkane/common.py:ArkaneSpecies.load_yaml]"
+    },
+    "arkane/encorr/bac.py:BACJob.write_output": {
+      "file": "arkane/encorr/bac.py",
+      "function": "BACJob.write_output",
+      "line": 136,
+      "signature": "a30cc9932b425516a0c971e45228cebefcdac77ff975124a84b2fc689672aa77",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/encorr/bac.py:BACJob.write_output]"
+    },
+    "arkane/encorr/data.py:BACDatapoint._mol_from_geo": {
+      "file": "arkane/encorr/data.py",
+      "function": "BACDatapoint._mol_from_geo",
+      "line": 144,
+      "signature": "4058dc3956b9e6836ad8fa95d380dcacd5c48a1172ab67916fd738247123e762",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/encorr/data.py:BACDatapoint._mol_from_geo]"
+    },
+    "arkane/encorr/data.py:BACDatapoint._mol_from_adjlist": {
+      "file": "arkane/encorr/data.py",
+      "function": "BACDatapoint._mol_from_adjlist",
+      "line": 154,
+      "signature": "4b13625dcce118913efc73836588f793a03928b5752e51795ab524758f5a7f7f",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[arkane/encorr/data.py:BACDatapoint._mol_from_adjlist]"
+    },
+    "arkane/encorr/reference.py:ReferenceSpecies.__init__": {
+      "file": "arkane/encorr/reference.py",
+      "function": "ReferenceSpecies.__init__",
+      "line": 62,
+      "signature": "b589c9ad8e167e1ca15a2a9a21fb7e92740e473cd1ce80e27dfc190c57dd46c0",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[arkane/encorr/reference.py:ReferenceSpecies.__init__]"
+    },
+    "arkane/encorr/reference.py:ReferenceSpecies.save_yaml": {
+      "file": "arkane/encorr/reference.py",
+      "function": "ReferenceSpecies.save_yaml",
+      "line": 163,
+      "signature": "dace471619fcf7c61c101c15ddc799f287aa1f97ed495b4c1499bab82e325b9d",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/encorr/reference.py:ReferenceSpecies.save_yaml]"
+    },
+    "arkane/encorr/reference.py:ReferenceSpecies.load_yaml": {
+      "file": "arkane/encorr/reference.py",
+      "function": "ReferenceSpecies.load_yaml",
+      "line": 182,
+      "signature": "4545a4f0d09f14d1d9af9b8d852923c00f9faef52513aba75f9e6ff6062fd91d",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[arkane/encorr/reference.py:ReferenceSpecies.load_yaml]"
+    },
+    "arkane/encorr/reference.py:ReferenceSpecies.to_error_canceling_spcs": {
+      "file": "arkane/encorr/reference.py",
+      "function": "ReferenceSpecies.to_error_canceling_spcs",
+      "line": 238,
+      "signature": "e4774f653436299e9c5cc746d40845aba0bfb753b46839a3f8f14dba7ac62796",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[arkane/encorr/reference.py:ReferenceSpecies.to_error_canceling_spcs]"
+    },
+    "arkane/encorr/reference.py:ReferenceDatabase.load": {
+      "file": "arkane/encorr/reference.py",
+      "function": "ReferenceDatabase.load",
+      "line": 462,
+      "signature": "8c9122b079fa47e203812b57d2962ebf5d1b11b42406c6d08f14e82b70733d28",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[arkane/encorr/reference.py:ReferenceDatabase.load]"
+    },
+    "arkane/encorr/reference.py:ReferenceDatabase.get_species_from_label": {
+      "file": "arkane/encorr/reference.py",
+      "function": "ReferenceDatabase.get_species_from_label",
+      "line": 604,
+      "signature": "6affb77a3b183133f8b7dd989d3ee3223f846947a79bc806290f8c7f5f21c6a5",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[arkane/encorr/reference.py:ReferenceDatabase.get_species_from_label]"
+    },
+    "arkane/kinetics.py:KineticsJob.write_output": {
+      "file": "arkane/kinetics.py",
+      "function": "KineticsJob.write_output",
+      "line": 197,
+      "signature": "ef0af6db5f6c2bc3690844d5c7c15756e1f8b5e283a0800a123f0c5b845b6d20",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/kinetics.py:KineticsJob.write_output]"
+    },
+    "arkane/kinetics.py:KineticsJob.write_chemkin": {
+      "file": "arkane/kinetics.py",
+      "function": "KineticsJob.write_chemkin",
+      "line": 296,
+      "signature": "751d6213679cb7efea5b55fbd1f96b7f047f74b01cd929cc970d6c1c1700e14f",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/kinetics.py:KineticsJob.write_chemkin]"
+    },
+    "arkane/kinetics.py:KineticsJob.save_yaml": {
+      "file": "arkane/kinetics.py",
+      "function": "KineticsJob.save_yaml",
+      "line": 324,
+      "signature": "3c25de9029693a86db839002e0a8a133a104c2fd1868e5acfde2655153236a1c",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/kinetics.py:KineticsJob.save_yaml]"
+    },
+    "arkane/kinetics.py:KineticsJob.plot": {
+      "file": "arkane/kinetics.py",
+      "function": "KineticsJob.plot",
+      "line": 341,
+      "signature": "146328f4998013d7e8dc247e05d1aa64d2fb058a75586a2102c21d03fcaf4827",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/kinetics.py:KineticsJob.plot]"
+    },
+    "arkane/kinetics.py:KineticsJob.draw": {
+      "file": "arkane/kinetics.py",
+      "function": "KineticsJob.draw",
+      "line": 387,
+      "signature": "ef009ac6c80d59f290dff73066f6eb887e4f44e38eb64303f1e6de155067d877",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/kinetics.py:KineticsJob.draw]"
+    },
+    "arkane/kinetics.py:KineticsDrawer._get_label_size": {
+      "file": "arkane/kinetics.py",
+      "function": "KineticsDrawer._get_label_size",
+      "line": 514,
+      "signature": "5a285df55c3b7d9ac41ea071164242414d68cda8c40cf70e81ea825eedec0f13",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/kinetics.py:KineticsDrawer._get_label_size]"
+    },
+    "arkane/kinetics.py:KineticsDrawer._draw_label": {
+      "file": "arkane/kinetics.py",
+      "function": "KineticsDrawer._draw_label",
+      "line": 539,
+      "signature": "b51dbaae265a1f0ba2c39f3ba19cd2a92a20e1163accd3cfc14529f72d405ffb",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/kinetics.py:KineticsDrawer._draw_label]"
+    },
+    "arkane/kinetics.py:KineticsDrawer.draw": {
+      "file": "arkane/kinetics.py",
+      "function": "KineticsDrawer.draw",
+      "line": 574,
+      "signature": "196890fabb1491ecd77f1b7c9fec1d2d1d6b7f2a4c2b84ba71f2e9b9e6500086",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/kinetics.py:KineticsDrawer.draw]"
+    },
+    "arkane/main.py:Arkane.execute": {
+      "file": "arkane/main.py",
+      "function": "Arkane.execute",
+      "line": 166,
+      "signature": "e38f4e5806486c5ebe5a98100da8245d929edcfb1ad5c7f9ac79acdfecdce035",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/main.py:Arkane.execute]"
+    },
+    "arkane/main.py:Arkane.get_libraries": {
+      "file": "arkane/main.py",
+      "function": "Arkane.get_libraries",
+      "line": 326,
+      "signature": "73c24b343343e50d7705afe821cdf89524b890068f1c5fc0e611f71a47c54a18",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[arkane/main.py:Arkane.get_libraries]"
+    },
+    "arkane/output.py:save_thermo_lib": {
+      "file": "arkane/output.py",
+      "function": "save_thermo_lib",
+      "line": 233,
+      "signature": "e8d79fa0117104e7c16ed14cd60840e5aaf19ac611fe4fab19773ec9611a9d74",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/output.py:save_thermo_lib]"
+    },
+    "arkane/output.py:save_kinetics_lib": {
+      "file": "arkane/output.py",
+      "function": "save_kinetics_lib",
+      "line": 269,
+      "signature": "506fe11aea3740743988428374ac9afee5206db6d7f8f4dd15aa6fd93c70bbcf",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/output.py:save_kinetics_lib]"
+    },
+    "arkane/pdep.py:PressureDependenceJob.save": {
+      "file": "arkane/pdep.py",
+      "function": "PressureDependenceJob.save",
+      "line": 460,
+      "signature": "7e22a4ba5ec3bdfb8404b8da658baf237249511002c18b25c4d0494a393ed216",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/pdep.py:PressureDependenceJob.save]"
+    },
+    "arkane/pdep.py:PressureDependenceJob.plot": {
+      "file": "arkane/pdep.py",
+      "function": "PressureDependenceJob.plot",
+      "line": 558,
+      "signature": "7bbcf8f9cf0b6b74deda6c7ca7bdbf7c31fd2a7a39056d79eb80456d7502cd71",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/pdep.py:PressureDependenceJob.plot]"
+    },
+    "arkane/pdep.py:PressureDependenceJob.save_input_file": {
+      "file": "arkane/pdep.py",
+      "function": "PressureDependenceJob.save_input_file",
+      "line": 672,
+      "signature": "2d9db58965c550f05919672fda24f2113c1de5e893a91452e09cc1f484f22172",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/pdep.py:PressureDependenceJob.save_input_file]"
+    },
+    "arkane/sensitivity.py:KineticsSensitivity.save": {
+      "file": "arkane/sensitivity.py",
+      "function": "KineticsSensitivity.save",
+      "line": 118,
+      "signature": "2dc1658e5fbed6ca6879e401138fb2eeaa209b331711a5cd6ccfe684c04e7d2d",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/sensitivity.py:KineticsSensitivity.save]"
+    },
+    "arkane/sensitivity.py:KineticsSensitivity.plot": {
+      "file": "arkane/sensitivity.py",
+      "function": "KineticsSensitivity.plot",
+      "line": 194,
+      "signature": "cfa01946f8bcb64e0a8474e0ae1d5f61f15c06ba283d0e11478ce87f0999ac0a",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/sensitivity.py:KineticsSensitivity.plot]"
+    },
+    "arkane/sensitivity.py:PDepSensitivity.save": {
+      "file": "arkane/sensitivity.py",
+      "function": "PDepSensitivity.save",
+      "line": 403,
+      "signature": "bb4aee92695379f68f0d1f2437968709b2188f0e14194429ea473398eb100aac",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/sensitivity.py:PDepSensitivity.save]"
+    },
+    "arkane/sensitivity.py:PDepSensitivity.plot": {
+      "file": "arkane/sensitivity.py",
+      "function": "PDepSensitivity.plot",
+      "line": 458,
+      "signature": "d96c636b76039bb60de9d250ffc37b86f3f0eb6aa617cc2ad37d2f1558d0ade7",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/sensitivity.py:PDepSensitivity.plot]"
+    },
+    "arkane/statmech.py:StatMechJob.load": {
+      "file": "arkane/statmech.py",
+      "function": "StatMechJob.load",
+      "line": 312,
+      "signature": "fee4656291c25b5ad186e7b4904c222526a2731e19ccbdb692b7163837ce2303",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[arkane/statmech.py:StatMechJob.load]"
+    },
+    "arkane/statmech.py:StatMechJob.write_output": {
+      "file": "arkane/statmech.py",
+      "function": "StatMechJob.write_output",
+      "line": 888,
+      "signature": "648c30559fb1d91e59f2842c18e07ebb12d928fa57c7b1fde5376407258079bc",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/statmech.py:StatMechJob.write_output]"
+    },
+    "arkane/statmech.py:StatMechJob.create_hindered_rotor_figure": {
+      "file": "arkane/statmech.py",
+      "function": "StatMechJob.create_hindered_rotor_figure",
+      "line": 947,
+      "signature": "0c2fdc9b2cef191fa5524b5b7cdeadaaad37ede2dba250465078b1d2f7bfe1bc",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/statmech.py:StatMechJob.create_hindered_rotor_figure]"
+    },
+    "arkane/statmech.py:StatMechJob.save_hindered_rotor_figures": {
+      "file": "arkane/statmech.py",
+      "function": "StatMechJob.save_hindered_rotor_figures",
+      "line": 983,
+      "signature": "d34c4f124ec70ff82312bce9cc553ad3ab864e2514e27b5e7a941ca41ae27871",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/statmech.py:StatMechJob.save_hindered_rotor_figures]"
+    },
+    "arkane/thermo.py:ThermoJob.write_output": {
+      "file": "arkane/thermo.py",
+      "function": "ThermoJob.write_output",
+      "line": 160,
+      "signature": "4e497b9ec88339a3fbcd364d2c385b1d2b888dcd2b121b1fdebfbfb3ffaca68a",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/thermo.py:ThermoJob.write_output]"
+    },
+    "arkane/thermo.py:ThermoJob.write_chemkin": {
+      "file": "arkane/thermo.py",
+      "function": "ThermoJob.write_chemkin",
+      "line": 196,
+      "signature": "72ec2a2552b4e1bbf6a1557e8ae43eb67278f661f04f59ea46a6bad92c1f4f4a",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/thermo.py:ThermoJob.write_chemkin]"
+    },
+    "arkane/thermo.py:ThermoJob.plot": {
+      "file": "arkane/thermo.py",
+      "function": "ThermoJob.plot",
+      "line": 253,
+      "signature": "ae1955532edd76426080f44bb2e18f4f1070f37a9b44c1c8fc00a2b88243b9dd",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/thermo.py:ThermoJob.plot]"
+    },
+    "rmgpy/chemkin.pyx:load_species_dictionary": {
+      "file": "rmgpy/chemkin.pyx",
+      "function": "load_species_dictionary",
+      "line": 986,
+      "signature": "13c837e47a5c10162b154a0cd8bc5e71577c27c4d587384ed50b9cc2834cc86b",
+      "verdict": "R",
+      "reason": "Dictionary records parse full adjacency identity; duplicate Ground identifiers retain historical last-record behavior, while a duplicate involving a resolved identity refuses.",
+      "evidence": "TestExcitedExportRework.test_dictionary_ground_duplicate_keeps_historical_last_record and test_dictionary_duplicate_identity_refused",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:load_species_dictionary]"
+    },
+    "rmgpy/chemkin.pyx:load_chemkin_file": {
+      "file": "rmgpy/chemkin.pyx",
+      "function": "load_chemkin_file",
+      "line": 1085,
+      "signature": "68355ace330d7ae473022fa73b87773ac117f201f21501eeeca7b1987f98960e",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:load_chemkin_file]"
+    },
+    "rmgpy/chemkin.pyx:_chemkin_declarations": {
+      "file": "rmgpy/chemkin.pyx",
+      "function": "_chemkin_declarations",
+      "line": 1636,
+      "signature": "1a4ffa81d56c45aabc7b523cc134fbda439807c66e708753b0d6ea5ab7eeb26d",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:_chemkin_declarations]"
+    },
+    "rmgpy/chemkin.pyx:validate_species_identifiers": {
+      "file": "rmgpy/chemkin.pyx",
+      "function": "validate_species_identifiers",
+      "line": 1646,
+      "signature": "58b73062190441aab1a46dad07bf2d87965ca6c74689da993057934528bacaa2",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:validate_species_identifiers]"
+    },
+    "rmgpy/chemkin.pyx:get_species_identifier": {
+      "file": "rmgpy/chemkin.pyx",
+      "function": "get_species_identifier",
+      "line": 1680,
+      "signature": "314aacae52009fbfca6e2977c13a7039a3b1315bdafd0ddb5c8f4a053ae1518b",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:get_species_identifier]"
+    },
+    "rmgpy/chemkin.pyx:write_thermo_entry": {
+      "file": "rmgpy/chemkin.pyx",
+      "function": "write_thermo_entry",
+      "line": 1815,
+      "signature": "f317706f870b466e58ebc2dec21a4549750501724b9bcaf1505fe155d1a26f77",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:write_thermo_entry]"
+    },
+    "rmgpy/chemkin.pyx:write_reaction_string": {
+      "file": "rmgpy/chemkin.pyx",
+      "function": "write_reaction_string",
+      "line": 2116,
+      "signature": "0268e4a57a64f070b8d1be065d9780a16908f3aa01223b18e312b057e2608c31",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:write_reaction_string]"
+    },
+    "rmgpy/chemkin.pyx:write_kinetics_entry": {
+      "file": "rmgpy/chemkin.pyx",
+      "function": "write_kinetics_entry",
+      "line": 2199,
+      "signature": "87d214ed680eb02afc16c7dbd9ffdcb501acd2371f71b45af9ca05a16567eb14",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:write_kinetics_entry]"
+    },
+    "rmgpy/chemkin.pyx:save_species_dictionary": {
+      "file": "rmgpy/chemkin.pyx",
+      "function": "save_species_dictionary",
+      "line": 2891,
+      "signature": "a5c6ae5738d4bbfad0c1a83d68fae7ab86ab3e53b670319e3cd594d6336e83a1",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:save_species_dictionary]"
+    },
+    "rmgpy/chemkin.pyx:render_species_dictionary": {
+      "file": "rmgpy/chemkin.pyx",
+      "function": "render_species_dictionary",
+      "line": 2901,
+      "signature": "a8fb3af2e9358b97c82508adcbd8725df663f8161113529e1ca12ea094cc918a",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:render_species_dictionary]"
+    },
+    "rmgpy/chemkin.pyx:render_transport_file": {
+      "file": "rmgpy/chemkin.pyx",
+      "function": "render_transport_file",
+      "line": 2964,
+      "signature": "4d69663000b49b8fb9cbf3ba93883ac210acbbab0a25f0a11188ece900e8fb7e",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:render_transport_file]"
+    },
+    "rmgpy/chemkin.pyx:_write_files_atomically": {
+      "file": "rmgpy/chemkin.pyx",
+      "function": "_write_files_atomically",
+      "line": 3002,
+      "signature": "e5eda7f0083fb997283794195531aa4bbe03577d923d205ea3d6d569d0b0e6f7",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:_write_files_atomically]"
+    },
+    "rmgpy/chemkin.pyx:render_chemkin_file": {
+      "file": "rmgpy/chemkin.pyx",
+      "function": "render_chemkin_file",
+      "line": 3034,
+      "signature": "ef7944f883feb5194edf6291b0a45d67cc698f20abd9c8ac975ebdbabf97e7a2",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:render_chemkin_file]"
+    },
+    "rmgpy/chemkin.pyx:render_chemkin_surface_file": {
+      "file": "rmgpy/chemkin.pyx",
+      "function": "render_chemkin_surface_file",
+      "line": 3141,
+      "signature": "3babcbfffa7a299aef59c607a5a7b8302944ad1c990ea7eb4d5a47e29b357462",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:render_chemkin_surface_file]"
+    },
+    "rmgpy/chemkin.pyx:save_chemkin": {
+      "file": "rmgpy/chemkin.pyx",
+      "function": "save_chemkin",
+      "line": 3215,
+      "signature": "5a15e1bbcdbf8ec6cc33a2e31217430d21a3930e16cfc11ae7fc5bc076f30797",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:save_chemkin]"
+    },
+    "rmgpy/chemkin.pyx:save_chemkin_files": {
+      "file": "rmgpy/chemkin.pyx",
+      "function": "save_chemkin_files",
+      "line": 3321,
+      "signature": "02fb049c0e467e2aeea660d7ba62be5e38df9dee7964131b52615da079a74b7d",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/chemkin.pyx:save_chemkin_files]"
+    },
+    "rmgpy/data/base.py:Database.get_species": {
+      "file": "rmgpy/data/base.py",
+      "function": "Database.get_species",
+      "line": 355,
+      "signature": "938a9b2bc6adb1c9c7edc5b20b656b83524974cd55f9a8f23d32532d1d01da86",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/base.py:Database.get_species]"
+    },
+    "rmgpy/data/base.py:Database.save_dictionary": {
+      "file": "rmgpy/data/base.py",
+      "function": "Database.save_dictionary",
+      "line": 396,
+      "signature": "c32faadb87ec81675fedd36036f6faaecea89e045cc54014ef6e0c85e6a4280c",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/base.py:Database.save_dictionary]"
+    },
+    "rmgpy/data/base.py:Database.dictionary_references": {
+      "file": "rmgpy/data/base.py",
+      "function": "Database.dictionary_references",
+      "line": 406,
+      "signature": "b38abf7b166b3ad3476300a3d4e86742f658e976bd7f55207013f79a94ec9b45",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/base.py:Database.dictionary_references]",
+      "reason": "Complete participant/collider/coverage declarations match render_dictionary. Ground-only name conflicts retain historical first-record output; any conflicting resolved identity refuses."
+    },
+    "rmgpy/data/base.py:Database.render_dictionary": {
+      "file": "rmgpy/data/base.py",
+      "function": "Database.render_dictionary",
+      "line": 424,
+      "signature": "d2365f026af32351b85f0077b6ea08ffa27012e11426feab1f1f7895c113084d",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/base.py:Database.render_dictionary]"
+    },
+    "rmgpy/data/base.py:Database.load_old_dictionary": {
+      "file": "rmgpy/data/base.py",
+      "function": "Database.load_old_dictionary",
+      "line": 560,
+      "signature": "51ed0c326444d8ac474f5dae972bcf7e811bf9a9be09ca49e8fafb3423e546c7",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/base.py:Database.load_old_dictionary]",
+      "reason": "Both raw-record insertion sites route the helper: molecular dictionaries preserve resolved state or refuse collisions, and raw pattern state headers refuse before any overwrite. Ground-only raw duplicate parsing remains unchanged."
+    },
+    "rmgpy/data/base.py:Database.save_old_dictionary": {
+      "file": "rmgpy/data/base.py",
+      "function": "Database.save_old_dictionary",
+      "line": 830,
+      "signature": "8a14c9277e777541285dbe44b01ea5fdc66984db88169c283dfa6dd6397b0eb5",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/data/base.py:Database.save_old_dictionary]"
+    },
+    "rmgpy/data/base.py:Database.save_old_library": {
+      "file": "rmgpy/data/base.py",
+      "function": "Database.save_old_library",
+      "line": 973,
+      "signature": "fc154444bb89dc2e48d6c7e7a842585940978b41d00b98710a4d2186f032a41b",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/data/base.py:Database.save_old_library]"
+    },
+    "rmgpy/data/base.py:ForbiddenStructures.load_entry": {
+      "file": "rmgpy/data/base.py",
+      "function": "ForbiddenStructures.load_entry",
+      "line": 1688,
+      "signature": "453fe2948ef79f5430560f42515e219c10ec05b3ccc21693dd7fc12dd3877cf7",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/base.py:ForbiddenStructures.load_entry]"
+    },
+    "rmgpy/data/base.py:ForbiddenStructures.save_entry": {
+      "file": "rmgpy/data/base.py",
+      "function": "ForbiddenStructures.save_entry",
+      "line": 1723,
+      "signature": "6c84e3fe77c389ed1b74235d68fc14b43fb5ed5a71630b0d7365ad221cfbd0b8",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/base.py:ForbiddenStructures.save_entry]"
+    },
+    "rmgpy/data/kinetics/common.py:library_reaction_equation": {
+      "file": "rmgpy/data/kinetics/common.py",
+      "function": "library_reaction_equation",
+      "line": 137,
+      "signature": "90933cff1337e07a06ed9015410aefd39fce62e2b5b6fca82c48cfba53508fa1",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/common.py:library_reaction_equation]",
+      "reason": "Every resolved equation token is checked against supplied emitted declarations and reader exact-first aliases. Missing context refuses resolved entries; pure-ground entry-local compatibility remains. Check dictionary uses first emitted record per name."
+    },
+    "rmgpy/data/kinetics/common.py:library_serializable_kinetics": {
+      "file": "rmgpy/data/kinetics/common.py",
+      "function": "library_serializable_kinetics",
+      "line": 232,
+      "signature": "c692895dace7e4d73f9f9ed204dc842c5a466f164f7f4cbd8ee4cd2bfc7ce35c",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/common.py:library_serializable_kinetics]",
+      "reason": "Ground-only coverage names are allocated once from legacy to_chemkin spelling in SpeciesReferences. Every key validates against the full reaction inventory, then resolves through that ground declaration table; resolved exports keep the existing shared inventory and state-aware names."
+    },
+    "rmgpy/data/kinetics/common.py:save_entry": {
+      "file": "rmgpy/data/kinetics/common.py",
+      "function": "save_entry",
+      "line": 268,
+      "signature": "462793e208294a816ab37150d04ac0d29d71f34f2f39dc8db216af9eb5985c85",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/common.py:save_entry]",
+      "reason": "Molecular equations route through library_reaction_equation with emitted declarations; resolved entries without context refuse before any bytes. Group/rule entries and pure-ground bytes retain compatibility."
+    },
+    "rmgpy/data/kinetics/database.py:KineticsDatabase.save_libraries": {
+      "file": "rmgpy/data/kinetics/database.py",
+      "function": "KineticsDatabase.save_libraries",
+      "line": 428,
+      "signature": "a0665fab9bc3ae5bba84dcaba5f7094c84e32d894a63e1f67370a77c7b5f0a7e",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/database.py:KineticsDatabase.save_libraries]"
+    },
+    "rmgpy/data/kinetics/database.py:KineticsDatabase.save_old": {
+      "file": "rmgpy/data/kinetics/database.py",
+      "function": "KineticsDatabase.save_old",
+      "line": 471,
+      "signature": "dc76e5cce49fb0f233c67bfac1ac01761c8ab548c52fdf6215e339675fa41db0",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/database.py:KineticsDatabase.save_old]"
+    },
+    "rmgpy/data/kinetics/depository.py:KineticsDepository.load": {
+      "file": "rmgpy/data/kinetics/depository.py",
+      "function": "KineticsDepository.load",
+      "line": 195,
+      "signature": "672b6d77f60542764b0d0ea417e3ca6e951e618954dcf8309d6e2e12c0954e47",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/depository.py:KineticsDepository.load]"
+    },
+    "rmgpy/data/kinetics/depository.py:KineticsDepository.save": {
+      "file": "rmgpy/data/kinetics/depository.py",
+      "function": "KineticsDepository.save",
+      "line": 336,
+      "signature": "c6c93d731797b14e61b3abb2e9a7dce9f9265117a11dae95f8ea9a4f3baffc99",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/depository.py:KineticsDepository.save]"
+    },
+    "rmgpy/data/kinetics/family.py:TemplateReaction.__repr__": {
+      "file": "rmgpy/data/kinetics/family.py",
+      "function": "TemplateReaction.__repr__",
+      "line": 908,
+      "signature": "8e3532027914d6ff3c388e61c9baa13a9b87e2cdac18729c2916f8f10f6b98c3",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/family.py:TemplateReaction.__repr__]"
+    },
+    "rmgpy/data/kinetics/family.py:KineticsFamily.save_training_reactions": {
+      "file": "rmgpy/data/kinetics/family.py",
+      "function": "KineticsFamily.save_training_reactions",
+      "line": 1780,
+      "signature": "94bd869fdec176cb73f3e6b7d52c12affa7209e549fbdf85461dbf189165e87f",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/family.py:KineticsFamily.save_training_reactions]",
+      "reason": "Creates declarations from complete retained on-disk plus new dictionary before equation emission and passes the identical inventory to each appended entry writer."
+    },
+    "rmgpy/data/kinetics/family.py:KineticsFamily.save_depository": {
+      "file": "rmgpy/data/kinetics/family.py",
+      "function": "KineticsFamily.save_depository",
+      "line": 1910,
+      "signature": "fca12ec4f14d27534265fb8f2f68e59ffae068319c14e8e3d1483e7a1fae3b46",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/family.py:KineticsFamily.save_depository]"
+    },
+    "rmgpy/data/kinetics/library.py:KineticsLibrary.load": {
+      "file": "rmgpy/data/kinetics/library.py",
+      "function": "KineticsLibrary.load",
+      "line": 595,
+      "signature": "e82cb985375b0e118b9432b4be702051a690f853a02d996220c587ba5057382d",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/library.py:KineticsLibrary.load]"
+    },
+    "rmgpy/data/kinetics/library.py:KineticsLibrary.save": {
+      "file": "rmgpy/data/kinetics/library.py",
+      "function": "KineticsLibrary.save",
+      "line": 801,
+      "signature": "959aef8273e6fb06328e5c5e92115993572b8438f6ac29455e7b57c017f59a89",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/library.py:KineticsLibrary.save]"
+    },
+    "rmgpy/data/kinetics/library.py:KineticsLibrary.load_old": {
+      "file": "rmgpy/data/kinetics/library.py",
+      "function": "KineticsLibrary.load_old",
+      "line": 845,
+      "signature": "74d14e289688249e906a0a12a3a789443b285daea8bb40c9cabd87482d4c2439",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/library.py:KineticsLibrary.load_old]"
+    },
+    "rmgpy/data/kinetics/library.py:KineticsLibrary.save_old": {
+      "file": "rmgpy/data/kinetics/library.py",
+      "function": "KineticsLibrary.save_old",
+      "line": 905,
+      "signature": "b50446e5670f0a7e8c773b7b058168e2c5c5059e7f8e0bf8a8e7b10f81e4ce29",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/library.py:KineticsLibrary.save_old]"
+    },
+    "rmgpy/data/solvation.py:save_entry": {
+      "file": "rmgpy/data/solvation.py",
+      "function": "save_entry",
+      "line": 55,
+      "signature": "4a61eae0a2a5b00f777007e4ae9c5441c67f8dcb770a522a5832555c425c317a",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/solvation.py:save_entry]"
+    },
+    "rmgpy/data/solvation.py:SoluteLibrary.load_entry": {
+      "file": "rmgpy/data/solvation.py",
+      "function": "SoluteLibrary.load_entry",
+      "line": 990,
+      "signature": "38ec02f651fa9993cb1c2185856ee617f1fd81934f90866fe5d32ae6c54ba39d",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/solvation.py:SoluteLibrary.load_entry]"
+    },
+    "rmgpy/data/statmech.py:save_entry": {
+      "file": "rmgpy/data/statmech.py",
+      "function": "save_entry",
+      "line": 46,
+      "signature": "62ae47a3d3b22476e868588febd140c503e6e94aba79b7f5d177adbb7d12df29",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/statmech.py:save_entry]"
+    },
+    "rmgpy/data/statmech.py:StatmechDepository.load_entry": {
+      "file": "rmgpy/data/statmech.py",
+      "function": "StatmechDepository.load_entry",
+      "line": 127,
+      "signature": "cbad037d7cc2a15c532861f2ee89c82f6387ca311ef738c20fa3dbf8a08446d5",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/statmech.py:StatmechDepository.load_entry]",
+      "reason": "Checks parsed full identity before replacing entries; exact repeats retain prior last-record behavior."
+    },
+    "rmgpy/data/statmech.py:StatmechLibrary.load_entry": {
+      "file": "rmgpy/data/statmech.py",
+      "function": "StatmechLibrary.load_entry",
+      "line": 171,
+      "signature": "8f796988b5db8a669d66a3123bc3ba7ef4966d70318032a2087cef5dcadd80f4",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/statmech.py:StatmechLibrary.load_entry]",
+      "reason": "Parses incoming Molecule once, checks full isomorphism before replacing entries; no metadata/ground serialization change."
+    },
+    "rmgpy/data/thermo.py:save_entry": {
+      "file": "rmgpy/data/thermo.py",
+      "function": "save_entry",
+      "line": 68,
+      "signature": "8007f97276e1d998ef6140d0c48bd9fa88aeb54bceecc0deb064711828b35c0f",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/thermo.py:save_entry]"
+    },
+    "rmgpy/data/thermo.py:ThermoDepository.load_entry": {
+      "file": "rmgpy/data/thermo.py",
+      "function": "ThermoDepository.load_entry",
+      "line": 614,
+      "signature": "210f50e911b56597e1f70761ab7bae7b9974e1003939bab92e1f1db1174a06ce",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/thermo.py:ThermoDepository.load_entry]",
+      "reason": "Keeps parser and return convention; checks existing full Molecule identity before assigning, refuses state/graph collisions."
+    },
+    "rmgpy/data/thermo.py:ThermoLibrary.load_entry": {
+      "file": "rmgpy/data/thermo.py",
+      "function": "ThermoLibrary.load_entry",
+      "line": 686,
+      "signature": "69941124829ed01b240a0202d1eb9e440eeb31d10d5f828fccaa522a06abb61f",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/thermo.py:ThermoLibrary.load_entry]"
+    },
+    "rmgpy/data/transport.py:save_entry": {
+      "file": "rmgpy/data/transport.py",
+      "function": "save_entry",
+      "line": 46,
+      "signature": "1a54e7f2e51873ed409f53ee53453845ddfc33a7141e879d2809e82f8b493ef3",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/transport.py:save_entry]"
+    },
+    "rmgpy/data/transport.py:TransportLibrary.load_entry": {
+      "file": "rmgpy/data/transport.py",
+      "function": "TransportLibrary.load_entry",
+      "line": 120,
+      "signature": "af1ae09841da626b53d41e6fc8e0e32b9b19242ad5e12f18ad5d075e3b380fe4",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/transport.py:TransportLibrary.load_entry]",
+      "reason": "Existing transport parser and charged policy unchanged; guard before replacement refuses distinct full molecular identities."
+    },
+    "rmgpy/export.py:resolve_species_reference": {
+      "file": "rmgpy/export.py",
+      "function": "resolve_species_reference",
+      "line": 81,
+      "signature": "4676bf24490c504ffe28108b44ebf0bc4cb4dac2214ac590e50a925148857ccb",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/export.py:resolve_species_reference]"
+    },
+    "rmgpy/export.py:validate_reaction_references": {
+      "file": "rmgpy/export.py",
+      "function": "validate_reaction_references",
+      "line": 131,
+      "signature": "efbea8468a94dda87f480cfc5791060b8aed007c86cbe5d8b6127a308b21a9e5",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/export.py:validate_reaction_references]"
+    },
+    "rmgpy/export.py:refuse_resolved_species": {
+      "file": "rmgpy/export.py",
+      "function": "refuse_resolved_species",
+      "line": 142,
+      "signature": "96deb7c27e45ad150bad2bac2aa9aa3151dd8f61f53fd82f12083193f14d7ff9",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/export.py:refuse_resolved_species]"
+    },
+    "rmgpy/export.py:refuse_resolved_job": {
+      "file": "rmgpy/export.py",
+      "function": "refuse_resolved_job",
+      "line": 163,
+      "signature": "b1bff908700e63fa22c9fb51abdfb1ff5193d086b180a53ea5bd6093c1631d95",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/export.py:refuse_resolved_job]"
+    },
+    "rmgpy/kinetics/model.pyx:PDepKineticsModel.get_cantera_efficiencies": {
+      "file": "rmgpy/kinetics/model.pyx",
+      "function": "PDepKineticsModel.get_cantera_efficiencies",
+      "line": 518,
+      "signature": "d921c048413819609976a16fd7f130a32ca2d0e8f92527ddfdd5b5925f068e3a",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/kinetics/model.pyx:PDepKineticsModel.get_cantera_efficiencies]"
+    },
+    "rmgpy/kinetics/surface.pyx:StickingCoefficient.__repr__": {
+      "file": "rmgpy/kinetics/surface.pyx",
+      "function": "StickingCoefficient.__repr__",
+      "line": 79,
+      "signature": "f983d255d97586b3afab7c77ef04c8c86bce6b85234a8a3043c173496555c879",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/kinetics/surface.pyx:StickingCoefficient.__repr__]"
+    },
+    "rmgpy/kinetics/surface.pyx:StickingCoefficientBEP.__repr__": {
+      "file": "rmgpy/kinetics/surface.pyx",
+      "function": "StickingCoefficientBEP.__repr__",
+      "line": 361,
+      "signature": "c8eef5d00f347802b96ed7ea93eac2551d32a5ad0ae915ba0a6f26d8fa2ec922",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/kinetics/surface.pyx:StickingCoefficientBEP.__repr__]"
+    },
+    "rmgpy/kinetics/surface.pyx:SurfaceArrhenius.__repr__": {
+      "file": "rmgpy/kinetics/surface.pyx",
+      "function": "SurfaceArrhenius.__repr__",
+      "line": 584,
+      "signature": "0c0f086c4e4872ec00d19947927c8d67c1eba904ee79ec8ad561bd5eac57da49",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/kinetics/surface.pyx:SurfaceArrhenius.__repr__]"
+    },
+    "rmgpy/kinetics/surface.pyx:SurfaceArrheniusBEP.__repr__": {
+      "file": "rmgpy/kinetics/surface.pyx",
+      "function": "SurfaceArrheniusBEP.__repr__",
+      "line": 752,
+      "signature": "deb32c29a0517dd7d03fb6be7a369ea08ea56831b76fc51cbc1398eeb25d0bf2",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/kinetics/surface.pyx:SurfaceArrheniusBEP.__repr__]"
+    },
+    "rmgpy/molecule/adjlist.py:from_adjacency_list": {
+      "file": "rmgpy/molecule/adjlist.py",
+      "function": "from_adjacency_list",
+      "line": 530,
+      "signature": "88ee314b7cb2ddc03d4d0a7209f5788cf595a883e49a1401cb49ba28f101f0ce",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/molecule/adjlist.py:from_adjacency_list]"
+    },
+    "rmgpy/molecule/adjlist.py:to_adjacency_list": {
+      "file": "rmgpy/molecule/adjlist.py",
+      "function": "to_adjacency_list",
+      "line": 997,
+      "signature": "e4a6e0110b290d0dec3a017e3c8e2349d8ba138af6f0c0992f84d83696a51fa9",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/molecule/adjlist.py:to_adjacency_list]"
+    },
+    "rmgpy/molecule/fragment.py:Fragment.from_adjacency_list": {
+      "file": "rmgpy/molecule/fragment.py",
+      "function": "Fragment.from_adjacency_list",
+      "line": 542,
+      "signature": "3ffcbfc73d83a37b6171b2c6ad2f0681a7ac16d7d740d0049f30b0a532182b77",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/molecule/fragment.py:Fragment.from_adjacency_list]"
+    },
+    "rmgpy/molecule/molecule.py:Molecule.__init__": {
+      "file": "rmgpy/molecule/molecule.py",
+      "function": "Molecule.__init__",
+      "line": 1047,
+      "signature": "f24a13b6d841c5b6bd5e4cbbc39d8f77661f111620576ef6427e9351c8f469a9",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/molecule/molecule.py:Molecule.__init__]"
+    },
+    "rmgpy/molecule/molecule.py:Molecule.__repr__": {
+      "file": "rmgpy/molecule/molecule.py",
+      "function": "Molecule.__repr__",
+      "line": 1122,
+      "signature": "b8c7fe7d101c02a4028a11ffd39b3a353aae7cbfaee7da11a8c4cc5eb8b13acf",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/molecule/molecule.py:Molecule.__repr__]"
+    },
+    "rmgpy/molecule/molecule.py:Molecule.from_adjacency_list": {
+      "file": "rmgpy/molecule/molecule.py",
+      "function": "Molecule.from_adjacency_list",
+      "line": 2108,
+      "signature": "004e36efa42d642ab01d2ba82a2533d59ca6389d1204f899692f54b8ace1dfff",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/molecule/molecule.py:Molecule.from_adjacency_list]"
+    },
+    "rmgpy/pdep/draw.py:NetworkDrawer._get_label_size": {
+      "file": "rmgpy/pdep/draw.py",
+      "function": "NetworkDrawer._get_label_size",
+      "line": 181,
+      "signature": "c7ce934a34d28a24a0b76342e32ec2db9248fa703b4fb6dc4b003bc33224cf9b",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/pdep/draw.py:NetworkDrawer._get_label_size]"
+    },
+    "rmgpy/pdep/draw.py:NetworkDrawer._draw_label": {
+      "file": "rmgpy/pdep/draw.py",
+      "function": "NetworkDrawer._draw_label",
+      "line": 209,
+      "signature": "544519283eabbdbbda911ca0da5f3ebb088cc0c742554a4842efb8d8712e0ba5",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/pdep/draw.py:NetworkDrawer._draw_label]"
+    },
+    "rmgpy/pdep/draw.py:NetworkDrawer.draw": {
+      "file": "rmgpy/pdep/draw.py",
+      "function": "NetworkDrawer.draw",
+      "line": 244,
+      "signature": "c2ac355a10d7dc2fd42695769726cc94f51835c791303e25a853bcea8ae9c509",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/pdep/draw.py:NetworkDrawer.draw]"
+    },
+    "rmgpy/pdep/network.py:Network.__repr__": {
+      "file": "rmgpy/pdep/network.py",
+      "function": "Network.__repr__",
+      "line": 138,
+      "signature": "1c8cd2abd7a9b909a36a6c0a54b052a7d9a096140fdc8f74e245e45bf057d1ee",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/pdep/network.py:Network.__repr__]"
+    },
+    "rmgpy/pdep/sls.py:get_names": {
+      "file": "rmgpy/pdep/sls.py",
+      "function": "get_names",
+      "line": 425,
+      "signature": "5ceb828329db7bf8f27a5e7b93dfb026bb3da6b4471a19818a4fc816c80870ea",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/pdep/sls.py:get_names]"
+    },
+    "rmgpy/qm/molecule.py:QMMolecule.load_thermo_data": {
+      "file": "rmgpy/qm/molecule.py",
+      "function": "QMMolecule.load_thermo_data",
+      "line": 563,
+      "signature": "50b1803a89d7ec2c2be9d85f8ada32f29d06fec14ac3b385febf849076572c58",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/qm/molecule.py:QMMolecule.load_thermo_data]",
+      "reason": "QM thermo estimation refuses resolved-state inputs with StateProvenanceError before reading or writing files."
+    },
+    "rmgpy/reaction.py:Reaction.__repr__": {
+      "file": "rmgpy/reaction.py",
+      "function": "Reaction.__repr__",
+      "line": 277,
+      "signature": "4c6a54b04b48bbcceff1b3a0159ce86776490508ef80eba7ee5932e8d2adb497",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/reaction.py:Reaction.__repr__]"
+    },
+    "rmgpy/reaction.py:Reaction.to_chemkin": {
+      "file": "rmgpy/reaction.py",
+      "function": "Reaction.to_chemkin",
+      "line": 401,
+      "signature": "9d279e2e121a8b80e65640741ce119f6307c870c54f51377a6354724a1b0036e",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/reaction.py:Reaction.to_chemkin]"
+    },
+    "rmgpy/reaction.py:Reaction.to_cantera": {
+      "file": "rmgpy/reaction.py",
+      "function": "Reaction.to_cantera",
+      "line": 418,
+      "signature": "a075e0172f263cedb28a690ff8fe9178c69c421bf357a1283b8fbfceb598057f",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/reaction.py:Reaction.to_cantera]"
+    },
+    "rmgpy/rmg/input.py:core_species_file": {
+      "file": "rmgpy/rmg/input.py",
+      "function": "core_species_file",
+      "line": 249,
+      "signature": "8b39f80b2ad8f322e58bbfae64251c4b7708070158670ae69835dc5dd3ee5a2d",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/rmg/input.py:core_species_file]"
+    },
+    "rmgpy/rmg/input.py:save_input_file": {
+      "file": "rmgpy/rmg/input.py",
+      "function": "save_input_file",
+      "line": 3177,
+      "signature": "43540ecd4bb71d150d7e63b317c9e22877b6fabf2fff1c6a96d80b2baeee44ca",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/rmg/input.py:save_input_file]"
+    },
+    "rmgpy/rmg/listener.py:SimulationProfileWriter.update": {
+      "file": "rmgpy/rmg/listener.py",
+      "function": "SimulationProfileWriter.update",
+      "line": 74,
+      "signature": "2a6e1d570534a416d2c6280868e198245761eeadf8f71190bee3601c4ecf23a0",
+      "verdict": "R",
+      "reason": "Profile CSV names and electronegative-wall JSON use state-qualified declarations for resolved species while retaining historical ground labels and refusing true collisions.",
+      "evidence": "TestExcitedExportSiteCensus.test_resolved_route, test_wall_manifest_with_resolved_species_is_written_after_identity_resolution, and excitedExportRework10Test.",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/rmg/listener.py:SimulationProfileWriter.update]"
+    },
+    "rmgpy/rmg/main.py:RMG.load_database": {
+      "file": "rmgpy/rmg/main.py",
+      "function": "RMG.load_database",
+      "line": 513,
+      "signature": "9fc6c052b56287083d3ba5c1c76abc619f6bbf2bbd136feb392d99e2f489cad0",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/rmg/main.py:RMG.load_database]"
+    },
+    "rmgpy/rmg/main.py:RMG.generate_end_of_run_cantera_files": {
+      "file": "rmgpy/rmg/main.py",
+      "function": "RMG.generate_end_of_run_cantera_files",
+      "line": 1435,
+      "signature": "747c1047814def6781cca75d41f486aa2200b17fe3e85a3c050d7f64fb638c0e",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/rmg/main.py:RMG.generate_end_of_run_cantera_files]"
+    },
+    "rmgpy/rmg/main.py:RMG.make_seed_mech": {
+      "file": "rmgpy/rmg/main.py",
+      "function": "RMG.make_seed_mech",
+      "line": 1996,
+      "signature": "18cf62cbdf6b876eeaa51c34aa1a5fec95bcbb867991c89d6633ffee98e061ce",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/rmg/main.py:RMG.make_seed_mech]"
+    },
+    "rmgpy/rmg/main.py:RMG.generate_cantera_files_from_chemkin": {
+      "file": "rmgpy/rmg/main.py",
+      "function": "RMG.generate_cantera_files_from_chemkin",
+      "line": 2252,
+      "signature": "bcbd9918de62fd816a64a504002e25e2826fe99767c3db6622724db2bbceffb2",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/rmg/main.py:RMG.generate_cantera_files_from_chemkin]"
+    },
+    "rmgpy/rmg/output.py:save_output_html": {
+      "file": "rmgpy/rmg/output.py",
+      "function": "save_output_html",
+      "line": 47,
+      "signature": "29542dc14d4559e7aaa6fa8413b2b89c4035dab341a18f68b49c4f6932780c64",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/rmg/output.py:save_output_html]"
+    },
+    "rmgpy/rmg/output.py:save_diff_html": {
+      "file": "rmgpy/rmg/output.py",
+      "function": "save_diff_html",
+      "line": 533,
+      "signature": "682b0551fc93a06b71b278e2a3ac12555bdef78b64c8b54b33bf2cfb931c97f1",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/rmg/output.py:save_diff_html]"
+    },
+    "rmgpy/rmg/reactionmechanismsimulator_reactors.py:to_rms": {
+      "file": "rmgpy/rmg/reactionmechanismsimulator_reactors.py",
+      "function": "to_rms",
+      "line": 635,
+      "signature": "4e8bd9a3a1c453cd2a5e5121a09a1f8875d6c14a66650b6691f6ae5cab1dea4c",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/rmg/reactionmechanismsimulator_reactors.py:to_rms]"
+    },
+    "rmgpy/rmgobject.pyx:RMGObject.make_object": {
+      "file": "rmgpy/rmgobject.pyx",
+      "function": "RMGObject.make_object",
+      "line": 66,
+      "signature": "dba4a4a3421f3fc337bd3c2cea0a0c8a82fc66d9e029dca377249f0162cb2e65",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/rmgobject.pyx:RMGObject.make_object]"
+    },
+    "rmgpy/rmgobject.pyx:recursive_make_object": {
+      "file": "rmgpy/rmgobject.pyx",
+      "function": "recursive_make_object",
+      "line": 127,
+      "signature": "47dd980feed0d2a7c4fbac03a3ac7eade632b9a0c0ae6d3a2a715aab1e405bd5",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/rmgobject.pyx:recursive_make_object]"
+    },
+    "rmgpy/solver/base.pyx:ReactionSystem.simulate": {
+      "file": "rmgpy/solver/base.pyx",
+      "function": "ReactionSystem.simulate",
+      "line": 634,
+      "signature": "ca10b558aadb039e1ecfc3f1bb028a786520749471cdde7e464b926e46037cc0",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/solver/base.pyx:ReactionSystem.simulate]"
+    },
+    "rmgpy/species.py:Species.__repr__": {
+      "file": "rmgpy/species.py",
+      "function": "Species.__repr__",
+      "line": 190,
+      "signature": "114b29fbab2ff943c50c963e191b70e21bd61685a09d158f6162096fb3e20768",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/species.py:Species.__repr__]"
+    },
+    "rmgpy/species.py:Species.from_adjacency_list": {
+      "file": "rmgpy/species.py",
+      "function": "Species.from_adjacency_list",
+      "line": 426,
+      "signature": "4fd6faed1d28704b04956e4e86d7d666f62bdc2d8b2a25ec734a9e85a51060aa",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/species.py:Species.from_adjacency_list]"
+    },
+    "rmgpy/species.py:Species.to_adjacency_list": {
+      "file": "rmgpy/species.py",
+      "function": "Species.to_adjacency_list",
+      "line": 476,
+      "signature": "3b1b1b811c9943a306d468e93ca67f47ddb78d1f1882f00d70420c150485c6ee",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/species.py:Species.to_adjacency_list]"
+    },
+    "rmgpy/species.py:Species.to_chemkin": {
+      "file": "rmgpy/species.py",
+      "function": "Species.to_chemkin",
+      "line": 484,
+      "signature": "80678cef3e9280b5b20a334b21007008f46ad3e2f9c6e1e02b396125fb26d392",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/species.py:Species.to_chemkin]"
+    },
+    "rmgpy/species.py:Species.to_cantera": {
+      "file": "rmgpy/species.py",
+      "function": "Species.to_cantera",
+      "line": 491,
+      "signature": "88815c5a5ed4503f2c8a24527d9a96b17ce61e8f0fa1267122aaf70e0cdea388",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/species.py:Species.to_cantera]"
+    },
+    "rmgpy/thermo/nasa.pyx:NASA.__repr__": {
+      "file": "rmgpy/thermo/nasa.pyx",
+      "function": "NASA.__repr__",
+      "line": 230,
+      "signature": "d45847a850d81b2fe6bc28f21fd5a79242ed10134626e556c1f110af899a2a68",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/thermo/nasa.pyx:NASA.__repr__]"
+    },
+    "rmgpy/thermo/thermodata.pyx:ThermoData.__repr__": {
+      "file": "rmgpy/thermo/thermodata.pyx",
+      "function": "ThermoData.__repr__",
+      "line": 70,
+      "signature": "ffa82f23d627d1aefedbe4bc8ab32e1bd6747f51769580fdf4dc51b8eb45757f",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/thermo/thermodata.pyx:ThermoData.__repr__]"
+    },
+    "rmgpy/thermo/wilhoit.pyx:Wilhoit.__repr__": {
+      "file": "rmgpy/thermo/wilhoit.pyx",
+      "function": "Wilhoit.__repr__",
+      "line": 77,
+      "signature": "c7590876dce7182215f41fac25e8f84d84ab143fefd69424e0124117a0cb6373",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/thermo/wilhoit.pyx:Wilhoit.__repr__]"
+    },
+    "rmgpy/tools/canteramodel.py:Cantera.load_model": {
+      "file": "rmgpy/tools/canteramodel.py",
+      "function": "Cantera.load_model",
+      "line": 312,
+      "signature": "d306715dd074bb4741af434044be9dc56d6bb2cadb0fe23781b194efbec0ec85",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/tools/canteramodel.py:Cantera.load_model]"
+    },
+    "rmgpy/tools/canteramodel.py:Cantera.modify_reaction_kinetics": {
+      "file": "rmgpy/tools/canteramodel.py",
+      "function": "Cantera.modify_reaction_kinetics",
+      "line": 387,
+      "signature": "8123777fd79e28b707dbe61e434490787ef71178746f2d1b99104dc279cd5978",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/tools/canteramodel.py:Cantera.modify_reaction_kinetics]"
+    },
+    "rmgpy/tools/canteramodel.py:Cantera.modify_species_thermo": {
+      "file": "rmgpy/tools/canteramodel.py",
+      "function": "Cantera.modify_species_thermo",
+      "line": 403,
+      "signature": "d9c597171d4c02ba663b60f992db8b60ab21e1d1bcab9b5c1e66533fe28ffb1a",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/tools/canteramodel.py:Cantera.modify_species_thermo]"
+    },
+    "rmgpy/tools/canteramodel.py:Cantera.plot": {
+      "file": "rmgpy/tools/canteramodel.py",
+      "function": "Cantera.plot",
+      "line": 415,
+      "signature": "1c82d31d650fc21f42e890a5ae09cdacbc2dc0b83a4d1abc029219962c82a7a5",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/tools/canteramodel.py:Cantera.plot]"
+    },
+    "rmgpy/tools/canteramodel.py:Cantera.simulate": {
+      "file": "rmgpy/tools/canteramodel.py",
+      "function": "Cantera.simulate",
+      "line": 468,
+      "signature": "eb1229cd5ae7592e9e05ea7f9a8ce086ca09cf27e35c932b6da0fca4c4225a11",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/tools/canteramodel.py:Cantera.simulate]"
+    },
+    "rmgpy/tools/ckcsvparser.py:get_flux_graph_edges_dict": {
+      "file": "rmgpy/tools/ckcsvparser.py",
+      "function": "get_flux_graph_edges_dict",
+      "line": 197,
+      "signature": "4e5be4e2a83b3f476953d55bace5c62b8dc8e17ad8f897c35b4edb15df2cba2b",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/tools/ckcsvparser.py:get_flux_graph_edges_dict]"
+    },
+    "rmgpy/tools/fluxdiagram.py:generate_flux_diagram": {
+      "file": "rmgpy/tools/fluxdiagram.py",
+      "function": "generate_flux_diagram",
+      "line": 79,
+      "signature": "83aafe78a00c726ec2888543c295c02125ad8b98a85c62273d86f5190c8dfd0f",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/tools/fluxdiagram.py:generate_flux_diagram]"
+    },
+    "rmgpy/tools/fluxdiagram.py:species_name": {
+      "file": "rmgpy/tools/fluxdiagram.py",
+      "function": "species_name",
+      "line": 107,
+      "signature": "f278c971c02f19dcf27d00da4a0f8e646a0425ca844cb0294aec57763c46eb0c",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/tools/fluxdiagram.py:species_name]"
+    },
+    "rmgpy/tools/globaluncertainty.py:ReactorPCEFactory.compare_output": {
+      "file": "rmgpy/tools/globaluncertainty.py",
+      "function": "ReactorPCEFactory.compare_output",
+      "line": 378,
+      "signature": "b555b2fa93ad808fb8becf1fbfabc9600adf5d0936bc2606c73770e56590d8de",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/tools/globaluncertainty.py:ReactorPCEFactory.compare_output]"
+    },
+    "rmgpy/tools/globaluncertainty.py:ReactorPCEFactory.analyze_results": {
+      "file": "rmgpy/tools/globaluncertainty.py",
+      "function": "ReactorPCEFactory.analyze_results",
+      "line": 423,
+      "signature": "c15389b3bfe821f3e07e09a96c2c43aac3754c5815331656895d4ba539d52e8d",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/tools/globaluncertainty.py:ReactorPCEFactory.analyze_results]"
+    },
+    "rmgpy/tools/mergemodels.py:execute": {
+      "file": "rmgpy/tools/mergemodels.py",
+      "function": "execute",
+      "line": 97,
+      "signature": "d564f5739dbe40c0f7781aaaa5167cb9c8ae8765a5bad9eda210e79a5de6bb71",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/tools/mergemodels.py:execute]"
+    },
+    "rmgpy/tools/observablesregression.py:ObservablesTestCase.compare": {
+      "file": "rmgpy/tools/observablesregression.py",
+      "function": "ObservablesTestCase.compare",
+      "line": 275,
+      "signature": "612c8e0f66253e8507b9fc536294b5e2f092e730fa9c08e4621912ee24b96422",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/tools/observablesregression.py:ObservablesTestCase.compare]"
+    },
+    "rmgpy/tools/plot.py:GenericPlot.plot": {
+      "file": "rmgpy/tools/plot.py",
+      "function": "GenericPlot.plot",
+      "line": 190,
+      "signature": "1a65d49a9028650d7cdf1a3590f54368e636dfa20721c0551875ff0db01e2ca4",
+      "verdict": "N",
+      "reason": "Resolved GenericData species are refused before legend labels, title rendering, or PNG title metadata; the wall title itself contains only closure, geometry, time, potential, and gate diagnostics.",
+      "evidence": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/tools/plot.py:GenericPlot.plot]",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/tools/plot.py:GenericPlot.plot]"
+    },
+    "rmgpy/tools/plot.py:GenericPlot.barplot": {
+      "file": "rmgpy/tools/plot.py",
+      "function": "GenericPlot.barplot",
+      "line": 250,
+      "signature": "f5fa02ff6de8918aa72f2a2252284bd4973653659e730b50815055d5aa792361",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/tools/plot.py:GenericPlot.barplot]"
+    },
+    "rmgpy/tools/plot.py:GenericPlot.compare_plot": {
+      "file": "rmgpy/tools/plot.py",
+      "function": "GenericPlot.compare_plot",
+      "line": 287,
+      "signature": "3f1e5418a8f6f32a1d0c720ac9035c8fc0f81a3593882f7d8da76912f8624065",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/tools/plot.py:GenericPlot.compare_plot]"
+    },
+    "rmgpy/tools/plot.py:ReactionSensitivityPlot.uncertainty_plot": {
+      "file": "rmgpy/tools/plot.py",
+      "function": "ReactionSensitivityPlot.uncertainty_plot",
+      "line": 514,
+      "signature": "7b525107c2e150835dc01a2d1f4584cdbc21fb58fcbb64199b0a2da4190e8807",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/tools/plot.py:ReactionSensitivityPlot.uncertainty_plot]"
+    },
+    "rmgpy/tools/plot.py:ThermoSensitivityPlot.uncertainty_plot": {
+      "file": "rmgpy/tools/plot.py",
+      "function": "ThermoSensitivityPlot.uncertainty_plot",
+      "line": 630,
+      "signature": "9dec7a5180fdcede7366c3a6daddff70b68e7a8e686c6157a351f93d73781f87",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/tools/plot.py:ThermoSensitivityPlot.uncertainty_plot]"
+    },
+    "rmgpy/tools/uncertainty.py:Uncertainty.load_thermo_covariances_from_libraries": {
+      "file": "rmgpy/tools/uncertainty.py",
+      "function": "Uncertainty.load_thermo_covariances_from_libraries",
+      "line": 538,
+      "signature": "64dfd870083f4c297bd6906fec0fcd708b89f84ccb093a8e7d22c58d5701fd17",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/tools/uncertainty.py:Uncertainty.load_thermo_covariances_from_libraries]"
+    },
+    "rmgpy/tools/uncertainty.py:Uncertainty.load_thermo_covariances_from_groups": {
+      "file": "rmgpy/tools/uncertainty.py",
+      "function": "Uncertainty.load_thermo_covariances_from_groups",
+      "line": 636,
+      "signature": "6c2bfcc2b2506dda1f6797829edf3e239010de1545c29400079cf76f391de9a2",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/tools/uncertainty.py:Uncertainty.load_thermo_covariances_from_groups]"
+    },
+    "rmgpy/tools/uncertainty.py:Uncertainty.assign_parameter_uncertainties": {
+      "file": "rmgpy/tools/uncertainty.py",
+      "function": "Uncertainty.assign_parameter_uncertainties",
+      "line": 1013,
+      "signature": "cccc6624d7f2254135ed1b0a22b317e54806da792f7fd9287fcda4452c91799c",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/tools/uncertainty.py:Uncertainty.assign_parameter_uncertainties]"
+    },
+    "rmgpy/tools/uncertainty.py:Uncertainty.assign_intermediate_uncertainties": {
+      "file": "rmgpy/tools/uncertainty.py",
+      "function": "Uncertainty.assign_intermediate_uncertainties",
+      "line": 1147,
+      "signature": "7f0dd3357400444426684a4ecf963ee3a32ad136d65b4a01e3a1cb0ffc28c410",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/tools/uncertainty.py:Uncertainty.assign_intermediate_uncertainties]"
+    },
+    "rmgpy/tools/uncertainty.py:Uncertainty.local_analysis": {
+      "file": "rmgpy/tools/uncertainty.py",
+      "function": "Uncertainty.local_analysis",
+      "line": 1371,
+      "signature": "f9748324ec039d305efc52f3f410bcb0ec658ea360c85a7f7097bde07923a019",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/tools/uncertainty.py:Uncertainty.local_analysis]"
+    },
+    "rmgpy/tools/uncertainty.py:Uncertainty.local_analysis_intermediate": {
+      "file": "rmgpy/tools/uncertainty.py",
+      "function": "Uncertainty.local_analysis_intermediate",
+      "line": 1466,
+      "signature": "86d0ef6768c234ed853e08c245422665e07a1e0c8e5dad242cfcfc7b34711c0f",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/tools/uncertainty.py:Uncertainty.local_analysis_intermediate]"
+    },
+    "rmgpy/tools/uncertainty.py:process_local_results": {
+      "file": "rmgpy/tools/uncertainty.py",
+      "function": "process_local_results",
+      "line": 1783,
+      "signature": "ec6b0f8a98db7dbee20b07f4a56431f103e6aebb336cc07863064d17ab034cd7",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/tools/uncertainty.py:process_local_results]"
+    },
+    "rmgpy/util.py:strip_yaml_notes": {
+      "file": "rmgpy/util.py",
+      "function": "strip_yaml_notes",
+      "line": 219,
+      "signature": "84017bb79bb11b7014260f5eb821120e1af1fbb71436047e7b9d1822398f879a",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/util.py:strip_yaml_notes]"
+    },
+    "rmgpy/util.py:write_files_atomically": {
+      "file": "rmgpy/util.py",
+      "function": "write_files_atomically",
+      "line": 396,
+      "signature": "517692eaa2d145dce6db621ac63acb9de8a53bc23af0e0b514b67865e32bb647",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/util.py:write_files_atomically]"
+    },
+    "rmgpy/util.py:stamp_file_generation": {
+      "file": "rmgpy/util.py",
+      "function": "stamp_file_generation",
+      "line": 459,
+      "signature": "d1cc6f8cff15f285b275e202806750e25de8fae11ddd9e30145a09a28c3b9fda",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/util.py:stamp_file_generation]"
+    },
+    "rmgpy/util.py:read_generation_files": {
+      "file": "rmgpy/util.py",
+      "function": "read_generation_files",
+      "line": 495,
+      "signature": "310fee616e94eec1aeafbdc2ea79b655d29dc806827d5ea24dd6e00f583f351c",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/util.py:read_generation_files]"
+    },
+    "rmgpy/util.py:read_generation_pair": {
+      "file": "rmgpy/util.py",
+      "function": "read_generation_pair",
+      "line": 514,
+      "signature": "f3fead04975f4d254c8268daa446dec0d1a412ed2243a8f1e8e3ccd70763a646",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/util.py:read_generation_pair]"
+    },
+    "rmgpy/yaml_cantera1.py:get_phases_gas_only": {
+      "file": "rmgpy/yaml_cantera1.py",
+      "function": "get_phases_gas_only",
+      "line": 232,
+      "signature": "d00f95a61de58ccfeefd7f8f747b5372d5e3875b1a0abeeca03d938d8eb15fb5",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_cantera1.py:get_phases_gas_only]"
+    },
+    "rmgpy/yaml_cantera1.py:get_phases_with_surface": {
+      "file": "rmgpy/yaml_cantera1.py",
+      "function": "get_phases_with_surface",
+      "line": 261,
+      "signature": "65116451108723ffda285a38481ad868706ea156b2a5bdcd87e283dfee1a1214",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_cantera1.py:get_phases_with_surface]"
+    },
+    "rmgpy/yaml_cantera1.py:_cantera_declarations": {
+      "file": "rmgpy/yaml_cantera1.py",
+      "function": "_cantera_declarations",
+      "line": 409,
+      "signature": "2bdfb963636d7608dac016fd07523d0097ad19f72d19415cf0a3ea87fb89bf92",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_cantera1.py:_cantera_declarations]"
+    },
+    "rmgpy/yaml_cantera1.py:_build_equation_string": {
+      "file": "rmgpy/yaml_cantera1.py",
+      "function": "_build_equation_string",
+      "line": 415,
+      "signature": "0000f2e26762d2d945cd9402266d20a8b34dc65817faa6e75b55e2e0ca85e9ba",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_cantera1.py:_build_equation_string]"
+    },
+    "rmgpy/yaml_cantera1.py:reaction_to_dicts": {
+      "file": "rmgpy/yaml_cantera1.py",
+      "function": "reaction_to_dicts",
+      "line": 458,
+      "signature": "3e62ebc0fd9c7682a6e7c54d0e8afa34bf303a0d727ae31b8237f9f9d25dbddb",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_cantera1.py:reaction_to_dicts]"
+    },
+    "rmgpy/yaml_cantera1.py:species_to_dict": {
+      "file": "rmgpy/yaml_cantera1.py",
+      "function": "species_to_dict",
+      "line": 600,
+      "signature": "c6539c23c38fd9a28766db77a5ad433a4cebb85f39cc6b8a0990a930063e5fd3",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_cantera1.py:species_to_dict]"
+    },
+    "rmgpy/yaml_cantera2.py:species_to_dict": {
+      "file": "rmgpy/yaml_cantera2.py",
+      "function": "species_to_dict",
+      "line": 471,
+      "signature": "1c9341db4bda006888664900123f7c3dafc820d0433256402fdd5196df1f8ceb",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_cantera2.py:species_to_dict]"
+    },
+    "rmgpy/yaml_cantera2.py:get_reaction_equation": {
+      "file": "rmgpy/yaml_cantera2.py",
+      "function": "get_reaction_equation",
+      "line": 1020,
+      "signature": "c02097a6dc612009ce33135fd3c0216e4323cdc5b0f9731eb30a68782acb7e9b",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_cantera2.py:get_reaction_equation]"
+    },
+    "rmgpy/yaml_cantera2.py:_cantera_declarations": {
+      "file": "rmgpy/yaml_cantera2.py",
+      "function": "_cantera_declarations",
+      "line": 1081,
+      "signature": "806bfb899b742a16d10eec307e0ba940b0ae6c2268af097eb1a1541e984b5040",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_cantera2.py:_cantera_declarations]"
+    },
+    "rmgpy/yaml_cantera2.py:get_label": {
+      "file": "rmgpy/yaml_cantera2.py",
+      "function": "get_label",
+      "line": 1088,
+      "signature": "7e240a6be62db5e350dcd3f285da1b66fcdfcc33beda4fc806444cacd43fcf45",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_cantera2.py:get_label]"
+    },
+    "rmgpy/yaml_rms.py:convert_chemkin_to_rms": {
+      "file": "rmgpy/yaml_rms.py",
+      "function": "convert_chemkin_to_rms",
+      "line": 59,
+      "signature": "7eeedd978984d537b8766cb3b1e3dad510e706d88ca238b72ed579d2b63ae767",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_rms.py:convert_chemkin_to_rms]"
+    },
+    "rmgpy/yaml_rms.py:load_rms_species": {
+      "file": "rmgpy/yaml_rms.py",
+      "function": "load_rms_species",
+      "line": 73,
+      "signature": "5071acfed68027957ea106771d5d52383e4cf8c86100cb0ec8c47c7b03a0c091",
+      "verdict": "R",
+      "reason": "RMS species records retain adjacency-backed identities; shared Ground names keep every legacy record while collisions involving a resolved identity refuse through SpeciesReferences.",
+      "evidence": "TestExcitedExport.test_rms_reader_keeps_ground_species_with_duplicate_names and test_rms_reader_refuses_duplicate_name_involving_resolved_state",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_rms.py:load_rms_species]"
+    },
+    "rmgpy/yaml_rms.py:get_mech_dict": {
+      "file": "rmgpy/yaml_rms.py",
+      "function": "get_mech_dict",
+      "line": 99,
+      "signature": "923fccdf82791ef722faef04470577f0a6267a467b254d2f2de060a7b2bd83af",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_rms.py:get_mech_dict]"
+    },
+    "rmgpy/yaml_rms.py:obj_to_dict": {
+      "file": "rmgpy/yaml_rms.py",
+      "function": "obj_to_dict",
+      "line": 158,
+      "signature": "3e1613fdbc8fe27f16e7aced0219347ad5947f27cd6e395e2f5b909930f3ecb9",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_rms.py:obj_to_dict]"
+    },
+    "arkane/kinetics.py:KineticsJob.execute": {
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/kinetics.py:KineticsJob.execute]",
+      "reason": "Direct named refusal before backend work or output; actual boundary witness exercises resolved input.",
+      "file": "arkane/kinetics.py",
+      "function": "KineticsJob.execute",
+      "line": 118,
+      "signature": "2514f6f6d1f41ee9ff33ec98293a1cb2050f5b128098d07cdc7c543f24a182f1"
+    },
+    "arkane/pdep.py:PressureDependenceJob.execute": {
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/pdep.py:PressureDependenceJob.execute]",
+      "reason": "Direct named refusal before backend work or output; actual boundary witness exercises resolved input.",
+      "file": "arkane/pdep.py",
+      "function": "PressureDependenceJob.execute",
+      "line": 269,
+      "signature": "8128463f49d4b4e68169e8744ff3760f5b26a8ad194eaf12dcb269ddc28aa6ee"
+    },
+    "arkane/pdep.py:PressureDependenceJob.draw": {
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[arkane/pdep.py:PressureDependenceJob.draw]",
+      "reason": "Direct named refusal before backend work or output; actual boundary witness exercises resolved input.",
+      "file": "arkane/pdep.py",
+      "function": "PressureDependenceJob.draw",
+      "line": 640,
+      "signature": "e401702ff7d4a9c2cb497c1a9699ccfd91a4a7486ddf7779f335822552a6c26e"
+    },
+    "rmgpy/data/base.py:Database.save": {
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/base.py:Database.save]",
+      "reason": "Renders through per-type save_entry before writing; actual ThermoDepository save/reload witness retains adjacency state.",
+      "file": "rmgpy/data/base.py",
+      "function": "Database.save",
+      "line": 443,
+      "signature": "40a87c10327103cd0b872add407b27cfe1057d8a748f2b2ec1795f76738f0364"
+    },
+    "rmgpy/data/base.py:Database.render_save": {
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/base.py:Database.render_save]",
+      "reason": "Dispatches each item to its audited serializer; actual ThermoDepository render and reload retain state.",
+      "file": "rmgpy/data/base.py",
+      "function": "Database.render_save",
+      "line": 450,
+      "signature": "a196927c4908b1df5cab3ad0b2eb10d2322d00e525333f5604d15219adb9da14"
+    },
+    "rmgpy/data/kinetics/family.py:complete_round_trip": {
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/family.py:complete_round_trip]",
+      "reason": "Complete reducers retain Molecule electronic/vibrational attributes; actual species round trip witness checks full isomorphism.",
+      "file": "rmgpy/data/kinetics/family.py",
+      "function": "complete_round_trip",
+      "line": 594,
+      "signature": "3ab336f31ee1d123a3758095a16919b5a64e8db427c8d7d343df4bf7e3b29955"
+    },
+    "rmgpy/molecule/draw.py:MoleculeDrawer.draw": {
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/molecule/draw.py:MoleculeDrawer.draw]",
+      "reason": "Direct named refusal before backend work or output; actual boundary witness exercises resolved input.",
+      "file": "rmgpy/molecule/draw.py",
+      "function": "MoleculeDrawer.draw",
+      "line": 158,
+      "signature": "25fc5ad6083e5e071ecace7076d5a3509c5f1de6b8212ba95e3af360f3c92475"
+    },
+    "rmgpy/molecule/draw.py:ReactionDrawer.draw": {
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/molecule/draw.py:ReactionDrawer.draw]",
+      "reason": "Direct named refusal before backend work or output; actual boundary witness exercises resolved input.",
+      "file": "rmgpy/molecule/draw.py",
+      "function": "ReactionDrawer.draw",
+      "line": 1735,
+      "signature": "156bdeecbc8d97885c8179b3d7d3140ed51a3672203edb4fd593d78582e7ca5e"
+    },
+    "rmgpy/molecule/molecule.py:Molecule.draw": {
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/molecule/molecule.py:Molecule.draw]",
+      "reason": "Direct named refusal before backend work or output; actual boundary witness exercises resolved input.",
+      "file": "rmgpy/molecule/molecule.py",
+      "function": "Molecule.draw",
+      "line": 2040,
+      "signature": "85b6c8537a4eddc85a9a2e5f98fec25d8e56226e6e4472fb839913732a8b445f"
+    },
+    "rmgpy/molecule/molecule.py:Molecule._repr_png_": {
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/molecule/molecule.py:Molecule._repr_png_]",
+      "reason": "Direct named refusal before backend work or output; actual boundary witness exercises resolved input.",
+      "file": "rmgpy/molecule/molecule.py",
+      "function": "Molecule._repr_png_",
+      "line": 2056,
+      "signature": "cd30bbf5f8290f6965934953fdc12a6c19afd8c83f145746b2492f3445fe798b"
+    },
+    "rmgpy/qm/gaussian.py:GaussianMol.write_input_file": {
+      "file": "rmgpy/qm/gaussian.py",
+      "function": "GaussianMol.write_input_file",
+      "line": 257,
+      "signature": "ac47d13791f52839fe52a329fff45fb28eae6a43dfb61eb4161af4b82a1e9dc1",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/qm/gaussian.py:GaussianMol.write_input_file]",
+      "reason": "QM thermo estimation refuses resolved-state inputs with StateProvenanceError before reading or writing files."
+    },
+    "rmgpy/qm/molecule.py:Geometry.rd_embed": {
+      "file": "rmgpy/qm/molecule.py",
+      "function": "Geometry.rd_embed",
+      "line": 176,
+      "signature": "c1490eb3ae8a4567c81f30a2872a78ca6c4fc43b060acdc6499b3a8de56ad20b",
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/qm/molecule.py:Geometry.rd_embed]"
+    },
+    "rmgpy/qm/molecule.py:QMMolecule.save_thermo_data": {
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/qm/molecule.py:QMMolecule.save_thermo_data]",
+      "reason": "Writes augmented InChI and complete adjacency list; actual saver witness re-parses saved state.",
+      "file": "rmgpy/qm/molecule.py",
+      "function": "QMMolecule.save_thermo_data",
+      "line": 544,
+      "signature": "9221ae3ddac83addd975f18e528a7c00461d1d84af23cdaf8c3392cf1b0239da"
+    },
+    "rmgpy/qm/mopac.py:MopacMol.write_input_file": {
+      "file": "rmgpy/qm/mopac.py",
+      "function": "MopacMol.write_input_file",
+      "line": 270,
+      "signature": "58309af93b2fd08bd217ef984d5271fb396e134a744076d7af1b128a41dd6bce",
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/qm/mopac.py:MopacMol.write_input_file]",
+      "reason": "QM thermo estimation refuses resolved-state inputs with StateProvenanceError before reading or writing files."
+    },
+    "rmgpy/reaction.py:Reaction.draw": {
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/reaction.py:Reaction.draw]",
+      "reason": "Direct named refusal before backend work or output; actual boundary witness exercises resolved input.",
+      "file": "rmgpy/reaction.py",
+      "function": "Reaction.draw",
+      "line": 1948,
+      "signature": "c3f41b159a35a5701f9b2d27be924fd11179714e6396f46985aacbd50ab09a64"
+    },
+    "rmgpy/reaction.py:Reaction._repr_png_": {
+      "verdict": "N",
+      "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/reaction.py:Reaction._repr_png_]",
+      "reason": "Direct named refusal before backend work or output; actual boundary witness exercises resolved input.",
+      "file": "rmgpy/reaction.py",
+      "function": "Reaction._repr_png_",
+      "line": 1964,
+      "signature": "feb4f2a1c3ddc546fd7b39cdf5aa61dcd2f29369cabdf1b3ea3eb9a702d84e34"
+    },
+    "rmgpy/yaml_cantera1.py:write_cantera": {
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_cantera1.py:write_cantera]",
+      "reason": "Validates declarations and every reaction reference before writing; species_to_dict emits resolved adjacency metadata.",
+      "file": "rmgpy/yaml_cantera1.py",
+      "function": "write_cantera",
+      "line": 114,
+      "signature": "16b4c35d9f2894fa424a447947a02144f56ae51540f75168e1a170dea4d95fe1"
+    },
+    "rmgpy/yaml_cantera2.py:save_cantera_model": {
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_cantera2.py:save_cantera_model]",
+      "reason": "generate_cantera_data validates full identities and emits adjacency metadata before yaml.dump or file replacement.",
+      "file": "rmgpy/yaml_cantera2.py",
+      "function": "save_cantera_model",
+      "line": 193,
+      "signature": "25b0cf227ce766e1c675c30cb7a343cdcba81d758ba56a8c0448b775e1e9d4aa"
+    },
+    "rmgpy/yaml_cantera2.py:_write_file_atomically": {
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_cantera2.py:_write_file_atomically]",
+      "reason": "Transports already-serialized content without alteration; actual adjacency content witness retains full identity.",
+      "file": "rmgpy/yaml_cantera2.py",
+      "function": "_write_file_atomically",
+      "line": 226,
+      "signature": "4c1eed92cb5fc4eaf365fae17e40c46beae739149c127b2f8a927047d2b72ff1"
+    },
+    "rmgpy/yaml_rms.py:write_rms": {
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/yaml_rms.py:write_rms]",
+      "reason": "get_mech_dict resolves every reference and serializes resolved adjacency; actual file writer and RMS reload witness retain identities.",
+      "file": "rmgpy/yaml_rms.py",
+      "function": "write_rms",
+      "line": 67,
+      "signature": "58bce971632790b2d83741a3d38024eabbb88702c725f1d02accefea25812ee0"
+    },
+    "rmgpy/data/base.py:Database._store_entry": {
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/base.py:Database._store_entry]",
+      "file": "rmgpy/data/base.py",
+      "function": "Database._store_entry",
+      "line": 517,
+      "signature": "8796ccfc4ec521f16d593fb77e3b4b00a3be36519a5c3b5ca6ba57ea6db02ea5",
+      "reason": "Central entry store preserves full resolved identities or refuses collisions; raw patterns refuse state headers before insertion, and molecular raw collisions parse only when state-bearing. Ground-only overwrite behavior is unchanged."
+    },
+    "rmgpy/data/kinetics/depository.py:KineticsDepository.load_entry": {
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/depository.py:KineticsDepository.load_entry]",
+      "file": "rmgpy/data/kinetics/depository.py",
+      "function": "KineticsDepository.load_entry",
+      "line": 287,
+      "signature": "2d8f2e299a62a8975f49c2d3341848211449c2667fd56f19e6172bc4e12c016a"
+    },
+    "rmgpy/data/kinetics/library.py:KineticsLibrary.load_entry": {
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/kinetics/library.py:KineticsLibrary.load_entry]",
+      "file": "rmgpy/data/kinetics/library.py",
+      "function": "KineticsLibrary.load_entry",
+      "line": 748,
+      "signature": "2ffb81967c7d67dfbcc9aa69b9afd88d1a85907b6e5ad48e48ec710972d0c160"
+    },
+    "rmgpy/data/solvation.py:SolventLibrary.load_entry": {
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/solvation.py:SolventLibrary.load_entry]",
+      "file": "rmgpy/data/solvation.py",
+      "function": "SolventLibrary.load_entry",
+      "line": 913,
+      "signature": "46a416f08e1db6719d11589abd4f8f5fe12e64be586c856cc168f7b59b6ef8ad"
+    },
+    "rmgpy/data/solvation.py:SolventLibrary.load": {
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/solvation.py:SolventLibrary.load]",
+      "file": "rmgpy/data/solvation.py",
+      "function": "SolventLibrary.load",
+      "line": 951,
+      "signature": "78d3880a75e34714b000ef578a391ca2b1dc724bf2b7e596100074e3626d4a73"
+    },
+    "rmgpy/data/solvation.py:SoluteLibrary.load": {
+      "verdict": "R",
+      "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/solvation.py:SoluteLibrary.load]",
+      "file": "rmgpy/data/solvation.py",
+      "function": "SoluteLibrary.load",
+      "line": 1025,
+      "signature": "183643de5f36dc191bea978c552b92be02d6401555f5103f69e51cd41de0095f"
+    },
+    "rmgpy/solver/plasma.pyx:PlasmaReactor._compute_reference_reaction_data": {
+      "file": "rmgpy/solver/plasma.pyx",
+      "function": "PlasmaReactor._compute_reference_reaction_data",
+      "line": 5944,
+      "signature": "a76e01e017184ffb80c896c57340a51cef938d3fd7180941348872028ec76f1c",
+      "verdict": "R",
+      "reason": "Charged-reaction diagnostic equations use shared declarations when any participant is resolved and retain historical str(reaction) bytes for ground-only reactions.",
+      "test": "excitedExportRework10Test.test_resolved_wall_manifest_uses_state_qualified_species_names"
+    },
+    "rmgpy/solver/plasma.pyx:PlasmaReactor._evaluate_electronegative_wall_regime": {
+      "file": "rmgpy/solver/plasma.pyx",
+      "function": "PlasmaReactor._evaluate_electronegative_wall_regime",
+      "line": 6074,
+      "signature": "1665fcfb004cfbd1b3bd43660c0e66f01b47bc125b4fbe7a67a09d3430510e54",
+      "verdict": "R",
+      "reason": "Gate keys, extrema, context labels, and destruction equations resolve every molecular reference through the wall declaration map.",
+      "test": "excitedExportRework10Test.test_resolved_wall_manifest_uses_state_qualified_species_names"
+    },
+    "rmgpy/solver/plasma.pyx:PlasmaReactor.electronegative_wall_manifest": {
+      "file": "rmgpy/solver/plasma.pyx",
+      "function": "PlasmaReactor.electronegative_wall_manifest",
+      "line": 1100,
+      "signature": "8f249f1026afd738c09333f480da0659e7785c5e6aba54e6c2297d7f4186393e",
+      "verdict": "R",
+      "reason": "The serializable wall API validates the complete species declaration and returns diagnostics whose molecular names were state-qualified at evaluation time.",
+      "test": "excitedExportRework10Test.test_resolved_wall_manifest_uses_state_qualified_species_names"
+    }
+  },
+  "search_exclusions": {
+    "arkane/encorr/ae.py:AE.fit": {
+      "file": "arkane/encorr/ae.py",
+      "function": "AE.fit",
+      "line": 228,
+      "signature": "7ceb2cbcc767b5108cd590b0b6f7960dbd9e6e70999bcd7ce44322a3c41416bf",
+      "reason": "Element labels and atom-energy coefficients; no saved molecular identity.",
+      "verdict": "E"
+    },
+    "arkane/encorr/isodesmic.py:AtomConstraint.__repr__": {
+      "file": "arkane/encorr/isodesmic.py",
+      "function": "AtomConstraint.__repr__",
+      "line": 222,
+      "signature": "2b7641f04e4a1dfbeae5a4d7433a66b83b832383c0a33cf5cab0de733d01b9c9",
+      "reason": "Atom-count constraint labels; no species name or reconstruction.",
+      "verdict": "E"
+    },
+    "arkane/input.py:SMILES": {
+      "file": "arkane/input.py",
+      "function": "SMILES",
+      "line": 554,
+      "signature": "3642fe12b2e3d6f6a843be5ef5995305400de6a4ebe99de002bb4b11be276a63",
+      "reason": "Explicit SMILES input constructor, not reloading a saved species.",
+      "verdict": "E"
+    },
+    "arkane/input.py:adjacencyList": {
+      "file": "arkane/input.py",
+      "function": "adjacencyList",
+      "line": 559,
+      "signature": "c6d6d0a69929c2bef39d522761278807b0e4508dfc55b83b229e4198a4aca81b",
+      "reason": "Explicit user input constructor; adjacency state parser is covered separately.",
+      "verdict": "E"
+    },
+    "rmgpy/chemkin.pyx:_two_temperature_plasma_from_arrhenius": {
+      "file": "rmgpy/chemkin.pyx",
+      "function": "_two_temperature_plasma_from_arrhenius",
+      "line": 539,
+      "signature": "51a8305b558af8b2711bcdb8050b0aa2ec415d19831e67b00eab5a547ac8cdb7",
+      "reason": "Diagnostic context describing an existing reaction; no emitted identifier.",
+      "verdict": "E"
+    },
+    "rmgpy/data/base.py:Entry.__str__": {
+      "file": "rmgpy/data/base.py",
+      "function": "Entry.__str__",
+      "line": 129,
+      "signature": "bb6389dd69008a1b5855cf86822b1bc3c1566e9707afe9c43c7d9c3ebaa28cdd",
+      "reason": "Database entry diagnostic label, not a species identifier.",
+      "verdict": "E"
+    },
+    "rmgpy/data/base.py:Entry.__repr__": {
+      "file": "rmgpy/data/base.py",
+      "function": "Entry.__repr__",
+      "line": 132,
+      "signature": "58461bc0e6db614f77eec244a9c11d69491488d6854ebab307cf6be671ffc93a",
+      "reason": "Entry diagnostic record; species reconstruction belongs to item repr.",
+      "verdict": "E"
+    },
+    "rmgpy/data/base.py:saturate_for_estimation": {
+      "file": "rmgpy/data/base.py",
+      "function": "saturate_for_estimation",
+      "line": 1582,
+      "signature": "fb5665300cb77939b876a5f92d7c31ee5eb099eea6d77eae7ef61fc32bff90df",
+      "reason": "Internal estimation graph operation, no export or saved-species reload.",
+      "verdict": "E"
+    },
+    "rmgpy/data/kinetics/common.py:_SerializedCoverageReference.to_chemkin": {
+      "file": "rmgpy/data/kinetics/common.py",
+      "function": "_SerializedCoverageReference.to_chemkin",
+      "line": 228,
+      "signature": "532c9d88e48b2e480c579f55301be20a7dd255e0c255442f8dfffa3b1273fc0c",
+      "reason": "Internal placeholder carrying an already resolved and validated identifier; cannot contain a species.",
+      "verdict": "E"
+    },
+    "rmgpy/data/kinetics/database.py:KineticsDatabase.get_forward_reaction_for_family_entry": {
+      "file": "rmgpy/data/kinetics/database.py",
+      "function": "KineticsDatabase.get_forward_reaction_for_family_entry",
+      "line": 639,
+      "signature": "bc7b7fdc85d29b5f5302403195a14465ecc98ea46b6697b76a34520e1c810126",
+      "reason": "Internal family graph reconstruction from authoritative full adjacency entries.",
+      "verdict": "E"
+    },
+    "rmgpy/data/kinetics/depository.py:DepositoryReaction.get_source": {
+      "file": "rmgpy/data/kinetics/depository.py",
+      "function": "DepositoryReaction.get_source",
+      "line": 137,
+      "signature": "b399cce51f7abf4e673e9d0e31a6d47a2eb50764b7c455f4fd6b9bced5c2b522",
+      "reason": "Returns database provenance, not species identity.",
+      "verdict": "E"
+    },
+    "rmgpy/data/kinetics/depository.py:KineticsDepository.__str__": {
+      "file": "rmgpy/data/kinetics/depository.py",
+      "function": "KineticsDepository.__str__",
+      "line": 189,
+      "signature": "153eb13bfe7f0b287203363fdf9e51d2f438bdd007f9033b72566e904ab9076d",
+      "reason": "Database diagnostic label.",
+      "verdict": "E"
+    },
+    "rmgpy/data/kinetics/depository.py:KineticsDepository.__repr__": {
+      "file": "rmgpy/data/kinetics/depository.py",
+      "function": "KineticsDepository.__repr__",
+      "line": 192,
+      "signature": "8e5adcfe4c43150fadb1eeb069b8bfbab7f4d39cd56555a77c72d0547d200d0a",
+      "reason": "Database diagnostic label.",
+      "verdict": "E"
+    },
+    "rmgpy/data/kinetics/family.py:KineticsFamily.__repr__": {
+      "file": "rmgpy/data/kinetics/family.py",
+      "function": "KineticsFamily.__repr__",
+      "line": 1439,
+      "signature": "f8bb84ba91f566a0fbc12b0be6833e2bcdbec18722a2f03c74bb6d9994a3e0e1",
+      "reason": "Family diagnostic label.",
+      "verdict": "E"
+    },
+    "rmgpy/data/kinetics/family.py:KineticsFamily.save_groups": {
+      "file": "rmgpy/data/kinetics/family.py",
+      "function": "KineticsFamily.save_groups",
+      "line": 1917,
+      "signature": "60eaecf0a05b7bd806906fa39c8327c602da6f149e8f661132636a72b50853f4",
+      "reason": "Group-template labels and recipe output; not molecular species.",
+      "verdict": "E"
+    },
+    "rmgpy/data/kinetics/family.py:KineticsFamily.get_reaction_pairs": {
+      "file": "rmgpy/data/kinetics/family.py",
+      "function": "KineticsFamily.get_reaction_pairs",
+      "line": 3457,
+      "signature": "9aec4638d252175008f97e873f4db7e85b0cdf4470fd1324172c348e676a53c7",
+      "reason": "Internal pair matching, not exported names.",
+      "verdict": "E"
+    },
+    "rmgpy/data/kinetics/family.py:KineticsFamily.get_kinetics_from_depository": {
+      "file": "rmgpy/data/kinetics/family.py",
+      "function": "KineticsFamily.get_kinetics_from_depository",
+      "line": 3652,
+      "signature": "db5fbe47fadbb78157694021d1c2846017f3feb2608549285609e59fff650668",
+      "reason": "Internal rate lookup; dictionary loading is separately audited.",
+      "verdict": "E"
+    },
+    "rmgpy/data/kinetics/family.py:KineticsFamily.get_reaction_template_labels": {
+      "file": "rmgpy/data/kinetics/family.py",
+      "function": "KineticsFamily.get_reaction_template_labels",
+      "line": 3772,
+      "signature": "232b9ba4f3ab5ea85dfd649ad09a0e79494b0164d2f32db9f36c5438cc7493d6",
+      "reason": "Group-template labels, not molecular species.",
+      "verdict": "E"
+    },
+    "rmgpy/data/kinetics/family.py:KineticsFamily.get_training_depository": {
+      "file": "rmgpy/data/kinetics/family.py",
+      "function": "KineticsFamily.get_training_depository",
+      "line": 3956,
+      "signature": "fef6cf228bdb951da7c7d1926a46e869467e63fba97b140141ea1dbeffb0cb29",
+      "reason": "Internal database object selection.",
+      "verdict": "E"
+    },
+    "rmgpy/data/kinetics/family.py:KineticsFamily.get_extension_edge": {
+      "file": "rmgpy/data/kinetics/family.py",
+      "function": "KineticsFamily.get_extension_edge",
+      "line": 4040,
+      "signature": "0d252b079e086f29a679b4e51ac3314cf44b18a289ac01d597bbf7d87cbb7ebf",
+      "reason": "Group pattern generation and diagnostic logs.",
+      "verdict": "E"
+    },
+    "rmgpy/data/kinetics/family.py:KineticsFamily.get_training_set": {
+      "file": "rmgpy/data/kinetics/family.py",
+      "function": "KineticsFamily.get_training_set",
+      "line": 5134,
+      "signature": "7729fcf0505e259206b660ef6d61079957a9c34dbf0ab2a1fb791b757bd96a6b",
+      "reason": "Internal reaction object selection; dictionary reads occur in audited depository loader.",
+      "verdict": "E"
+    },
+    "rmgpy/data/kinetics/family.py:KineticsFamily.get_label_fixed_mol": {
+      "file": "rmgpy/data/kinetics/family.py",
+      "function": "KineticsFamily.get_label_fixed_mol",
+      "line": 5144,
+      "signature": "73c4309e081d52abd685271f3ecf6c5399c3fb81aa603ca7fabe91ad42563f82",
+      "reason": "Internal labeled-atom remapping.",
+      "verdict": "E"
+    },
+    "rmgpy/data/kinetics/family.py:KineticsFamily.get_reactant_thermo": {
+      "file": "rmgpy/data/kinetics/family.py",
+      "function": "KineticsFamily.get_reactant_thermo",
+      "line": 5156,
+      "signature": "176c46bcb563ed9db5af211e113519dbd3ecf21b47d779e4a0a48add80f5c8a9",
+      "reason": "Internal thermo estimation.",
+      "verdict": "E"
+    },
+    "rmgpy/data/kinetics/family.py:KineticsFamily.get_reaction_matches": {
+      "file": "rmgpy/data/kinetics/family.py",
+      "function": "KineticsFamily.get_reaction_matches",
+      "line": 5360,
+      "signature": "ce041761c9dbd733764ae974ea6d685ff55e13892149bb815036eaccb9801fea",
+      "reason": "Internal family matching and diagnostics.",
+      "verdict": "E"
+    },
+    "rmgpy/data/kinetics/groups.py:KineticsGroups.__repr__": {
+      "file": "rmgpy/data/kinetics/groups.py",
+      "function": "KineticsGroups.__repr__",
+      "line": 123,
+      "signature": "08bda73c346db0c1a57d9b8e30e1c3742c02f89e040621814d715029e551bc4a",
+      "reason": "Group database diagnostic label.",
+      "verdict": "E"
+    },
+    "rmgpy/data/kinetics/groups.py:KineticsGroups.load_entry": {
+      "file": "rmgpy/data/kinetics/groups.py",
+      "function": "KineticsGroups.load_entry",
+      "line": 126,
+      "signature": "297efcccc622a1bcc66a3dae8239457db79ffab0886dd9e4eea5e2add560fb82",
+      "reason": "Group-pattern input, not saved molecular species.",
+      "verdict": "E"
+    },
+    "rmgpy/data/kinetics/groups.py:KineticsGroups.get_reaction_template": {
+      "file": "rmgpy/data/kinetics/groups.py",
+      "function": "KineticsGroups.get_reaction_template",
+      "line": 157,
+      "signature": "e663de23f92a1be4b2e15a79be9725772a79274ca1321423cb4bd015e71f06c9",
+      "reason": "Group-template matching, not export.",
+      "verdict": "E"
+    },
+    "rmgpy/data/kinetics/library.py:KineticsLibrary.__str__": {
+      "file": "rmgpy/data/kinetics/library.py",
+      "function": "KineticsLibrary.__str__",
+      "line": 406,
+      "signature": "217321735a2675715413adbeaf0a76359ced08fb3c305ccb07518cef90b15d1c",
+      "reason": "Database diagnostic label.",
+      "verdict": "E"
+    },
+    "rmgpy/data/kinetics/library.py:KineticsLibrary.__repr__": {
+      "file": "rmgpy/data/kinetics/library.py",
+      "function": "KineticsLibrary.__repr__",
+      "line": 409,
+      "signature": "e4a12607d179c164dc60dfa09ab2be571ea921afd7d817154808ad4bc13994af",
+      "reason": "Database diagnostic label.",
+      "verdict": "E"
+    },
+    "rmgpy/data/kinetics/library.py:KineticsLibrary.get_library_reactions": {
+      "file": "rmgpy/data/kinetics/library.py",
+      "function": "KineticsLibrary.get_library_reactions",
+      "line": 412,
+      "signature": "d732abe23834a20a4ac84bf8623f9fbede5f95ef37a26113935e3498fd73d58b",
+      "reason": "Returns reaction objects internally; no identifier emission.",
+      "verdict": "E"
+    },
+    "rmgpy/data/kinetics/rules.py:KineticsRules.__repr__": {
+      "file": "rmgpy/data/kinetics/rules.py",
+      "function": "KineticsRules.__repr__",
+      "line": 66,
+      "signature": "79973dea75af79789d639c4d85f38df072c19c2e236541c893bbd68199b28a2e",
+      "reason": "Rate-rule database diagnostic label.",
+      "verdict": "E"
+    },
+    "rmgpy/data/kinetics/rules.py:KineticsRules.get_all_rules": {
+      "file": "rmgpy/data/kinetics/rules.py",
+      "function": "KineticsRules.get_all_rules",
+      "line": 160,
+      "signature": "6671f372483157c5fee2db75713d6b9151e9e43d608458fb75048ff4f3bd957d",
+      "reason": "Group-template internal lookup.",
+      "verdict": "E"
+    },
+    "rmgpy/data/kinetics/rules.py:get_template_label": {
+      "file": "rmgpy/data/kinetics/rules.py",
+      "function": "get_template_label",
+      "line": 572,
+      "signature": "4b181855d9f03d3ef86b16818897ac28601498a1c76a90c21514b08ad1e3217e",
+      "reason": "Group-template label, not species name.",
+      "verdict": "E"
+    },
+    "rmgpy/data/solvation.py:SoluteGroups.load_entry": {
+      "file": "rmgpy/data/solvation.py",
+      "function": "SoluteGroups.load_entry",
+      "line": 1062,
+      "signature": "39beb20e2a40e412161317511ead2383c3565034a1e2b9dd632032472fbf94f1",
+      "reason": "Group-pattern input.",
+      "verdict": "E"
+    },
+    "rmgpy/data/solvation.py:SolvationDatabase.find_solvent_from_smiles": {
+      "file": "rmgpy/data/solvation.py",
+      "function": "SolvationDatabase.find_solvent_from_smiles",
+      "line": 1197,
+      "signature": "ce4b3a4d9d2a9c17188a4a025d8a2ac3a8747f868ac9fad64d418f278b4ad49c",
+      "reason": "Explicit SMILES query, not saved-species reconstruction.",
+      "verdict": "E"
+    },
+    "rmgpy/data/solvation.py:SolvationDatabase.get_solute_data": {
+      "file": "rmgpy/data/solvation.py",
+      "function": "SolvationDatabase.get_solute_data",
+      "line": 1394,
+      "signature": "41e3b11554772df338b1096bfcf64d342eced458fee0c728f76554bfea82e123",
+      "reason": "Internal solvation estimate.",
+      "verdict": "E"
+    },
+    "rmgpy/data/solvation.py:SolvationDatabase.get_all_solute_data": {
+      "file": "rmgpy/data/solvation.py",
+      "function": "SolvationDatabase.get_all_solute_data",
+      "line": 1450,
+      "signature": "d5e62ed366dbdce22910bb0a56d69c2cb1538865141ff1f4b36ac59cd9fe619c",
+      "reason": "Internal solvation estimate.",
+      "verdict": "E"
+    },
+    "rmgpy/data/statmech.py:StatmechGroups.load_entry": {
+      "file": "rmgpy/data/statmech.py",
+      "function": "StatmechGroups.load_entry",
+      "line": 230,
+      "signature": "083e2692cf402161e084ce539bd23c48108ef9d01836d001372a5d2693eee84b",
+      "reason": "Group-pattern input.",
+      "verdict": "E"
+    },
+    "rmgpy/data/surface.py:save_entry": {
+      "file": "rmgpy/data/surface.py",
+      "function": "save_entry",
+      "line": 43,
+      "signature": "9f772871a439189d1c983bfe56e387c401f5a1b6d56e281c05a18fc09706236c",
+      "reason": "Metal, facet and site metadata; not a molecular species.",
+      "verdict": "E"
+    },
+    "rmgpy/data/thermo.py:ThermoGroups.load_entry": {
+      "file": "rmgpy/data/thermo.py",
+      "function": "ThermoGroups.load_entry",
+      "line": 770,
+      "signature": "aac616752357c620b2d2e04061e26743e94be46d8797c5c3c1751142bee7ef43",
+      "reason": "Group-pattern input.",
+      "verdict": "E"
+    },
+    "rmgpy/data/thermo.py:ThermoDatabase.get_thermo_data": {
+      "file": "rmgpy/data/thermo.py",
+      "function": "ThermoDatabase.get_thermo_data",
+      "line": 1387,
+      "signature": "02ded276aeabfb216c66f18d2be47d396b8b8ecd9bb0aa76c0ff3033aef3da3d",
+      "reason": "Internal thermo estimate; labels here are diagnostics or passed to audited writers.",
+      "verdict": "E"
+    },
+    "rmgpy/data/thermo.py:ThermoDatabase.get_thermo_data_for_surface_species": {
+      "file": "rmgpy/data/thermo.py",
+      "function": "ThermoDatabase.get_thermo_data_for_surface_species",
+      "line": 1703,
+      "signature": "778cf35e8a6587424e90cf25adf3b1b8eb705948a6200d22e071622882b8be3a",
+      "reason": "Internal thermo estimate.",
+      "verdict": "E"
+    },
+    "rmgpy/data/thermo.py:ThermoDatabase.get_thermo_data_from_library": {
+      "file": "rmgpy/data/thermo.py",
+      "function": "ThermoDatabase.get_thermo_data_from_library",
+      "line": 2116,
+      "signature": "e5eacc501facc8c6b6faabd4efbea504d434a694b9bbdc679fe03e216185992e",
+      "reason": "Internal thermo lookup and name allocation already tested by thermo library regression.",
+      "verdict": "E"
+    },
+    "rmgpy/data/transport.py:TransportGroups.load_entry": {
+      "file": "rmgpy/data/transport.py",
+      "function": "TransportGroups.load_entry",
+      "line": 176,
+      "signature": "0f42ffb271936e6f0badec267e9d58207c179e3e97585ebfb70873acc7bb5209",
+      "reason": "Group-pattern input.",
+      "verdict": "E"
+    },
+    "rmgpy/kinetics/model.pyx:PDepKineticsModel.__init__": {
+      "file": "rmgpy/kinetics/model.pyx",
+      "function": "PDepKineticsModel.__init__",
+      "line": 315,
+      "signature": "402a67bbe7779dd46be99e78de67fb0a0eab3b2c9fa31a534e107bcbf7d4fd2e",
+      "reason": "Explicit rate input SMILES keys, not a saved species; saved library output has a separate refusal.",
+      "verdict": "E"
+    },
+    "rmgpy/molecule/atomtype.py:AtomType.__repr__": {
+      "file": "rmgpy/molecule/atomtype.py",
+      "function": "AtomType.__repr__",
+      "line": 126,
+      "signature": "c61e07a798886f925d3445fa8049c979317955bb1255c0b5a4413cb80e64211d",
+      "reason": "Atom-type label.",
+      "verdict": "E"
+    },
+    "rmgpy/molecule/converter.py:to_rdkit_mol": {
+      "file": "rmgpy/molecule/converter.py",
+      "function": "to_rdkit_mol",
+      "line": 53,
+      "signature": "888cda41cda2e5c078c4a2e6d3f10ff7498ee1d7ad2734a124891e1587aeaf1b",
+      "reason": "Explicit chemical graph conversion, not a species export; state-bearing native drawing/QM wrappers have their own contracts.",
+      "verdict": "E"
+    },
+    "rmgpy/molecule/fragment.py:Fragment.__str__": {
+      "file": "rmgpy/molecule/fragment.py",
+      "function": "Fragment.__str__",
+      "line": 162,
+      "signature": "c67719e926ac58a396ad9b47b61672f1233fcdf5d24e7f48a6a4e90b8b8b6d29",
+      "reason": "Explicit fragment diagnostic; no emitted species identifier.",
+      "verdict": "E"
+    },
+    "rmgpy/molecule/fragment.py:Fragment.calculate_symmetry_number": {
+      "file": "rmgpy/molecule/fragment.py",
+      "function": "Fragment.calculate_symmetry_number",
+      "line": 352,
+      "signature": "4fbee10eb05d2c4768e31afbb6fa1fade8008e237c9dd32e0a22229e45749217",
+      "reason": "Internal symmetry computation.",
+      "verdict": "E"
+    },
+    "rmgpy/molecule/fragment.py:Fragment.to_smiles": {
+      "file": "rmgpy/molecule/fragment.py",
+      "function": "Fragment.to_smiles",
+      "line": 652,
+      "signature": "44e25bc1b238746232acaa6d328a0f4976f6f2da4f1386275d6f99ce0fe75b93",
+      "reason": "Explicit fragment chemical graph conversion, not species export.",
+      "verdict": "E"
+    },
+    "rmgpy/molecule/group.py:GroupAtom.__str__": {
+      "file": "rmgpy/molecule/group.py",
+      "function": "GroupAtom.__str__",
+      "line": 220,
+      "signature": "154dac35e47d90d473c9d098350dc58d937833dd44e360c3537d3c0959256cb6",
+      "reason": "Group atom diagnostic, not species.",
+      "verdict": "E"
+    },
+    "rmgpy/molecule/group.py:Group.draw": {
+      "file": "rmgpy/molecule/group.py",
+      "function": "Group.draw",
+      "line": 1365,
+      "signature": "7f93238b87abd631b37ee8884342f486f5272223ed789ea54f41668e2cf84516",
+      "reason": "Group-pattern graph, not molecular species.",
+      "verdict": "E"
+    },
+    "rmgpy/molecule/group.py:Group.get_extensions": {
+      "file": "rmgpy/molecule/group.py",
+      "function": "Group.get_extensions",
+      "line": 1630,
+      "signature": "89ae631bace62722462f4edbd2d4a3bd76ad1bde0619288b43a84bb14b3933ea",
+      "reason": "Group-pattern construction.",
+      "verdict": "E"
+    },
+    "rmgpy/molecule/group.py:Group.get_labeled_atoms": {
+      "file": "rmgpy/molecule/group.py",
+      "function": "Group.get_labeled_atoms",
+      "line": 2033,
+      "signature": "f11be073acc590d4ddfbcad0038697f6e130f8b7671679117f6fe81fa368b7a2",
+      "reason": "Internal atom labels.",
+      "verdict": "E"
+    },
+    "rmgpy/molecule/group.py:Group.get_all_labeled_atoms": {
+      "file": "rmgpy/molecule/group.py",
+      "function": "Group.get_all_labeled_atoms",
+      "line": 2045,
+      "signature": "25f638ab9012562a06a44c14a1bd78045c8ef88f7f49ed1e409a9b1af263c398",
+      "reason": "Internal atom labels.",
+      "verdict": "E"
+    },
+    "rmgpy/molecule/group.py:Group.from_adjacency_list": {
+      "file": "rmgpy/molecule/group.py",
+      "function": "Group.from_adjacency_list",
+      "line": 2097,
+      "signature": "50704dfbebcb1ad45f29c333593f5503456278208c14acd83476c592d2888d1d",
+      "reason": "Group-pattern parser; resolved molecular species use Molecule parser.",
+      "verdict": "E"
+    },
+    "rmgpy/molecule/molecule.py:Molecule.get_labeled_atoms": {
+      "file": "rmgpy/molecule/molecule.py",
+      "function": "Molecule.get_labeled_atoms",
+      "line": 1746,
+      "signature": "dd54f10794c635f974530e848f1ca5d2a7bd27a42676e752e41f5fb86568dce6",
+      "reason": "Internal atom labels.",
+      "verdict": "E"
+    },
+    "rmgpy/molecule/molecule.py:Molecule.get_all_labeled_atoms": {
+      "file": "rmgpy/molecule/molecule.py",
+      "function": "Molecule.get_all_labeled_atoms",
+      "line": 1757,
+      "signature": "a8c4d15a14467d937be6c14f032d694ff319c2dae6be8884c742c4cce093d226",
+      "reason": "Internal atom labels.",
+      "verdict": "E"
+    },
+    "rmgpy/molecule/molecule.py:Molecule.from_smiles": {
+      "file": "rmgpy/molecule/molecule.py",
+      "function": "Molecule.from_smiles",
+      "line": 2088,
+      "signature": "2630f519c7a6b8f28c8c2b4fba805c8497aec137455fb4bdea371eb55b9a16b2",
+      "reason": "Explicit SMILES constructor, not saved-species reload.",
+      "verdict": "E"
+    },
+    "rmgpy/molecule/molecule.py:Molecule.to_group": {
+      "file": "rmgpy/molecule/molecule.py",
+      "function": "Molecule.to_group",
+      "line": 2734,
+      "signature": "1df5289fcceefe3716064ad3e671303e4fd97d0056d68203b20ed90e82c14bf7",
+      "reason": "Internal pattern conversion.",
+      "verdict": "E"
+    },
+    "rmgpy/molecule/molecule.py:Molecule.get_desorbed_molecules": {
+      "file": "rmgpy/molecule/molecule.py",
+      "function": "Molecule.get_desorbed_molecules",
+      "line": 3289,
+      "signature": "8a7faec5d005a727c72cee09f7a8bdf22081002d6a02e6f42e139db8550cd008",
+      "reason": "Internal graph transformation.",
+      "verdict": "E"
+    },
+    "rmgpy/molecule/translator.py:from_smiles": {
+      "file": "rmgpy/molecule/translator.py",
+      "function": "from_smiles",
+      "line": 474,
+      "signature": "eb55b3ed77067834763984d3a7dc8345396f027bb9962056d7434503c3c2ef7b",
+      "reason": "Explicit SMILES constructor.",
+      "verdict": "E"
+    },
+    "rmgpy/molecule/translator.py:_lookup": {
+      "file": "rmgpy/molecule/translator.py",
+      "function": "_lookup",
+      "line": 596,
+      "signature": "8961c6f701d08a806a0a4a9ce16b2e5c31622ea6c00d32980030d46abc42f3d4",
+      "reason": "Internal identifier cache lookup, not saved species.",
+      "verdict": "E"
+    },
+    "rmgpy/pdep/configuration.pyx:Configuration.__str__": {
+      "file": "rmgpy/pdep/configuration.pyx",
+      "function": "Configuration.__str__",
+      "line": 65,
+      "signature": "3339f71b996a7e026900aa33b12ddacf0545f25a9cbfa5340ea342870614304d",
+      "reason": "Human-readable configuration diagnostic; graph and file writers have explicit guards.",
+      "verdict": "E"
+    },
+    "rmgpy/pdep/network.py:Network.__str__": {
+      "file": "rmgpy/pdep/network.py",
+      "function": "Network.__str__",
+      "line": 161,
+      "signature": "b61f91327a20218a8f3831894eb7eba9349bbd9ab0bd39ae7d222cd1e61be667",
+      "reason": "Network diagnostic label; output writers have explicit guards.",
+      "verdict": "E"
+    },
+    "rmgpy/reaction.py:Reaction.to_labeled_str": {
+      "file": "rmgpy/reaction.py",
+      "function": "Reaction.to_labeled_str",
+      "line": 310,
+      "signature": "dfe2bef2a0221c004d3ea383f83a8feeb26ee97febb15b57ac86dadcd3ecae2a",
+      "reason": "Human-readable diagnostic equation; file/graph/native-object callers are separately audited.",
+      "verdict": "E"
+    },
+    "rmgpy/rmg/input.py:smiles": {
+      "file": "rmgpy/rmg/input.py",
+      "function": "smiles",
+      "line": 310,
+      "signature": "f7ce0477f676d7848807edffbb9a14a512221fd73945117d49f5bf979f1abdf4",
+      "reason": "Explicit input constructor.",
+      "verdict": "E"
+    },
+    "rmgpy/rmg/input.py:adjacency_list": {
+      "file": "rmgpy/rmg/input.py",
+      "function": "adjacency_list",
+      "line": 318,
+      "signature": "8efa38d5076d4b6dd4c52c399103b3f92b44f0b73110c693565d38dc04868ef0",
+      "reason": "Explicit input constructor.",
+      "verdict": "E"
+    },
+    "rmgpy/rmg/input.py:adjacency_list_group": {
+      "file": "rmgpy/rmg/input.py",
+      "function": "adjacency_list_group",
+      "line": 321,
+      "signature": "229146b832312c98f92e0f5fc263b4ef1b6911babf2a839b571ad3e630198446",
+      "reason": "Explicit group input constructor.",
+      "verdict": "E"
+    },
+    "rmgpy/rmg/input.py:fragment_adj": {
+      "file": "rmgpy/rmg/input.py",
+      "function": "fragment_adj",
+      "line": 335,
+      "signature": "f45791cb3274a7e49a0674bf10b10d07f1f132f2d2061a591503c091f60d3132",
+      "reason": "Explicit fragment input constructor.",
+      "verdict": "E"
+    },
+    "rmgpy/rmg/main.py:RMG.add_default_bath_gases": {
+      "file": "rmgpy/rmg/main.py",
+      "function": "RMG.add_default_bath_gases",
+      "line": 454,
+      "signature": "b3155b0b0f9666ac8bb3058d3c62964fe47c0fc697369a164c7073015961397b",
+      "reason": "Explicit default ground bath gas construction.",
+      "verdict": "E"
+    },
+    "rmgpy/rmg/main.py:RMG.initialize": {
+      "file": "rmgpy/rmg/main.py",
+      "function": "RMG.initialize",
+      "line": 615,
+      "signature": "d74ec92866092c64b477be09bdcb208c4e837fe2a99a09cab1436d0bdc492429",
+      "reason": "Orchestrates internal model setup; saved species are reconstructed by the audited library/depository/adjacency readers.",
+      "verdict": "E"
+    },
+    "rmgpy/rmg/main.py:RMG.check_model": {
+      "file": "rmgpy/rmg/main.py",
+      "function": "RMG.check_model",
+      "line": 1863,
+      "signature": "9fc16df4e4cdb8e9a1897e3f60dec298579eccc9872ac31e91937ccde5938b87",
+      "reason": "Diagnostics and logging; no exported species identifiers.",
+      "verdict": "E"
+    },
+    "rmgpy/rmg/main.py:RMG.initialize_reaction_threshold_and_react_flags": {
+      "file": "rmgpy/rmg/main.py",
+      "function": "RMG.initialize_reaction_threshold_and_react_flags",
+      "line": 2323,
+      "signature": "625f8174dbe5f7892adc6024d426176a8bf01381a809e89572ea453ee098c80e",
+      "reason": "Internal restart state bookkeeping; dictionary reload has a separate audited path.",
+      "verdict": "E"
+    },
+    "rmgpy/rmg/model.py:CoreEdgeReactionModel.__init__": {
+      "file": "rmgpy/rmg/model.py",
+      "function": "CoreEdgeReactionModel.__init__",
+      "line": 279,
+      "signature": "1a945d9beaee402521d1b295d92abcfd963c20b361be844e0e66bb33c3a0e182",
+      "reason": "Explicit ground electron input construction.",
+      "verdict": "E"
+    },
+    "rmgpy/rmg/model.py:CoreEdgeReactionModel.make_new_species": {
+      "file": "rmgpy/rmg/model.py",
+      "function": "CoreEdgeReactionModel.make_new_species",
+      "line": 403,
+      "signature": "eb7af6fee24e188a19560faaf5df233d3f63dceef1434c510b0346641627d43b",
+      "reason": "Internal naming/allocation, not export; state metadata retained in graph.",
+      "verdict": "E"
+    },
+    "rmgpy/rmg/model.py:get_key": {
+      "file": "rmgpy/rmg/model.py",
+      "function": "get_key",
+      "line": 2431,
+      "signature": "69dd9b09e5e66b9b195471529702d6e5a87c547d29c595f49a29b2f3bcb9d35c",
+      "reason": "Internal reaction lookup key.",
+      "verdict": "E"
+    },
+    "rmgpy/solver/liquid.pyx:LiquidReactor.get_const_spc_indices": {
+      "file": "rmgpy/solver/liquid.pyx",
+      "function": "LiquidReactor.get_const_spc_indices",
+      "line": 108,
+      "signature": "4018fcfef5141564eb46b7e61c02b25e85f6646fa3209020c7ef490150ab4560",
+      "reason": "Internal label lookup for user-specified constant species, not output.",
+      "verdict": "E"
+    },
+    "rmgpy/solver/simple.pyx:SimpleReactor.get_const_spc_indices": {
+      "file": "rmgpy/solver/simple.pyx",
+      "function": "SimpleReactor.get_const_spc_indices",
+      "line": 172,
+      "signature": "40fa3ffd30ee339d1da5711236ab45318daa06af5bb4d5b9a8deefbd92d37ef1",
+      "reason": "Internal label lookup for user-specified constant species, not output.",
+      "verdict": "E"
+    },
+    "rmgpy/solver/surface.pyx:SurfaceReactor.initialize_model": {
+      "file": "rmgpy/solver/surface.pyx",
+      "function": "SurfaceReactor.initialize_model",
+      "line": 140,
+      "signature": "f367e5132af852986a8fe377e7c09972dcb2bcd780fba866ade5dc7b01bb920c",
+      "reason": "Internal reactor initialization and diagnostics; no exported name.",
+      "verdict": "E"
+    },
+    "rmgpy/species.py:Species.__str__": {
+      "file": "rmgpy/species.py",
+      "function": "Species.__str__",
+      "line": 227,
+      "signature": "2747fbbdccfe133b14bb6e1a665c429c0c5426fed335d8a1f3020b9f31707288",
+      "reason": "Diagnostic species label; exported identities use resolver or a guarded consumer.",
+      "verdict": "E"
+    },
+    "rmgpy/species.py:Species.from_smiles": {
+      "file": "rmgpy/species.py",
+      "function": "Species.from_smiles",
+      "line": 465,
+      "signature": "d0025c8c47136a816eb0e2e5420412c4fd9bbf7d224a7be7e05c0e3d797ddc9c",
+      "reason": "Explicit SMILES input constructor; archive reload chooses adjacency first.",
+      "verdict": "E"
+    },
+    "rmgpy/species.py:Species.get_partition_function": {
+      "file": "rmgpy/species.py",
+      "function": "Species.get_partition_function",
+      "line": 645,
+      "signature": "a406b1a77e4f7b796eff7bd7a42a996ad3a49887e4a6bf9e1d0e3a03b8392ab4",
+      "reason": "Thermodynamic/statistical calculation; species label occurs only in an exception diagnostic.",
+      "verdict": "E"
+    },
+    "rmgpy/species.py:Species.get_heat_capacity": {
+      "file": "rmgpy/species.py",
+      "function": "Species.get_heat_capacity",
+      "line": 658,
+      "signature": "6c6963327be7530f185cad831e38d62cd76a8ee39f83877fb62184cb94e79180",
+      "reason": "Thermodynamic/statistical calculation; species label occurs only in an exception diagnostic.",
+      "verdict": "E"
+    },
+    "rmgpy/species.py:Species.get_enthalpy": {
+      "file": "rmgpy/species.py",
+      "function": "Species.get_enthalpy",
+      "line": 674,
+      "signature": "1abdc423ccbf4188ed1dc25a611e15bb845a198718048742f650cc6969011462",
+      "reason": "Thermodynamic/statistical calculation; species label occurs only in an exception diagnostic.",
+      "verdict": "E"
+    },
+    "rmgpy/species.py:Species.get_entropy": {
+      "file": "rmgpy/species.py",
+      "function": "Species.get_entropy",
+      "line": 690,
+      "signature": "e9d8947cbee4cc2fd8bbe508e2c059dad20df802aaa15a3f0623ffe147d701c5",
+      "reason": "Thermodynamic/statistical calculation; species label occurs only in an exception diagnostic.",
+      "verdict": "E"
+    },
+    "rmgpy/species.py:Species.get_free_energy": {
+      "file": "rmgpy/species.py",
+      "function": "Species.get_free_energy",
+      "line": 706,
+      "signature": "dcb30922579345757ac43370215df4edea8efd6eb0bf1d16774ff6966507dd2c",
+      "reason": "Thermodynamic/statistical calculation; species label occurs only in an exception diagnostic.",
+      "verdict": "E"
+    },
+    "rmgpy/species.py:Species.get_sum_of_states": {
+      "file": "rmgpy/species.py",
+      "function": "Species.get_sum_of_states",
+      "line": 722,
+      "signature": "093bac59d50a52349bddd210191528fb147be0830912006fb006f21db062f790",
+      "reason": "Thermodynamic/statistical calculation; species label occurs only in an exception diagnostic.",
+      "verdict": "E"
+    },
+    "rmgpy/species.py:Species.get_density_of_states": {
+      "file": "rmgpy/species.py",
+      "function": "Species.get_density_of_states",
+      "line": 733,
+      "signature": "0d038fa52af0474a2484b4c9e29c45a12ba46fd45da1af00bbee0aab39d5cc20",
+      "reason": "Thermodynamic/statistical calculation; species label occurs only in an exception diagnostic.",
+      "verdict": "E"
+    },
+    "rmgpy/species.py:Species.set_structure": {
+      "file": "rmgpy/species.py",
+      "function": "Species.set_structure",
+      "line": 1030,
+      "signature": "756f216b5b756b0d466a8b65fd293176b5f45cd866f107016e1ade75d4070009",
+      "reason": "Explicit SMILES input setter, not saved-representation reload.",
+      "verdict": "E"
+    },
+    "rmgpy/species.py:TransitionState.__repr__": {
+      "file": "rmgpy/species.py",
+      "function": "TransitionState.__repr__",
+      "line": 1098,
+      "signature": "fa6c9c521f79db550d68397846c1c74b4d8e5f40f5e27adf8727389814b8f3c3",
+      "reason": "Transition-state diagnostic reconstruction without molecular species.",
+      "verdict": "E"
+    },
+    "rmgpy/species.py:TransitionState.get_partition_function": {
+      "file": "rmgpy/species.py",
+      "function": "TransitionState.get_partition_function",
+      "line": 1127,
+      "signature": "ffdce7c1fce86a52250b848273d703636ccfe866c36474df5018aeea9564f768",
+      "reason": "Thermodynamic/statistical calculation; species label occurs only in an exception diagnostic.",
+      "verdict": "E"
+    },
+    "rmgpy/species.py:TransitionState.get_heat_capacity": {
+      "file": "rmgpy/species.py",
+      "function": "TransitionState.get_heat_capacity",
+      "line": 1140,
+      "signature": "a328b82c6a8b829b22bb2c0a61ce431a8e4a74645ac33ab8f48152f6c72124eb",
+      "reason": "Thermodynamic/statistical calculation; species label occurs only in an exception diagnostic.",
+      "verdict": "E"
+    },
+    "rmgpy/species.py:TransitionState.get_enthalpy": {
+      "file": "rmgpy/species.py",
+      "function": "TransitionState.get_enthalpy",
+      "line": 1157,
+      "signature": "89a450565769c4c52c8baa311ebf3a0cd5526fafbe20defea475b01bf94881b5",
+      "reason": "Thermodynamic/statistical calculation; species label occurs only in an exception diagnostic.",
+      "verdict": "E"
+    },
+    "rmgpy/species.py:TransitionState.get_entropy": {
+      "file": "rmgpy/species.py",
+      "function": "TransitionState.get_entropy",
+      "line": 1174,
+      "signature": "25f934ef2f93cdb172511ab5f69974c8e34aee87ae69ac5f2b8b45ba2f9f9eb6",
+      "reason": "Thermodynamic/statistical calculation; species label occurs only in an exception diagnostic.",
+      "verdict": "E"
+    },
+    "rmgpy/species.py:TransitionState.get_free_energy": {
+      "file": "rmgpy/species.py",
+      "function": "TransitionState.get_free_energy",
+      "line": 1191,
+      "signature": "9a5fd2d6c75eaa21feaaaa12b7f2f34486a4c0cc1b519fed4a54460754058bd2",
+      "reason": "Thermodynamic/statistical calculation; species label occurs only in an exception diagnostic.",
+      "verdict": "E"
+    },
+    "rmgpy/species.py:TransitionState.get_sum_of_states": {
+      "file": "rmgpy/species.py",
+      "function": "TransitionState.get_sum_of_states",
+      "line": 1208,
+      "signature": "ccb134a5025c92da9d235524c12306b66ec9b685a55ab8e49813ef649c7ee651",
+      "reason": "Thermodynamic/statistical calculation; species label occurs only in an exception diagnostic.",
+      "verdict": "E"
+    },
+    "rmgpy/species.py:TransitionState.get_density_of_states": {
+      "file": "rmgpy/species.py",
+      "function": "TransitionState.get_density_of_states",
+      "line": 1219,
+      "signature": "6f221623115f8467b58c60fa1bfb572038cac06593719988eb0acd496a3f464c",
+      "reason": "Thermodynamic/statistical calculation; species label occurs only in an exception diagnostic.",
+      "verdict": "E"
+    },
+    "rmgpy/statmech/rotation.pyx:Rotation.make_object": {
+      "file": "rmgpy/statmech/rotation.pyx",
+      "function": "Rotation.make_object",
+      "line": 87,
+      "signature": "99dcbf2a419aa40938eef955c4eae79601b01835c7e6e93db9357cf00707bb8a",
+      "reason": "Statistical-mechanics scalar mode reconstruction, not molecular species.",
+      "verdict": "E"
+    },
+    "rmgpy/statmech/torsion.pyx:Torsion.make_object": {
+      "file": "rmgpy/statmech/torsion.pyx",
+      "function": "Torsion.make_object",
+      "line": 93,
+      "signature": "99dcbf2a419aa40938eef955c4eae79601b01835c7e6e93db9357cf00707bb8a",
+      "reason": "Statistical-mechanics scalar mode reconstruction, not molecular species.",
+      "verdict": "E"
+    },
+    "rmgpy/thermo/model.pyx:HeatCapacityModel.__repr__": {
+      "file": "rmgpy/thermo/model.pyx",
+      "function": "HeatCapacityModel.__repr__",
+      "line": 68,
+      "signature": "0afa847973ab066b20ab06177c2bf6ddc4e66e0e9e6ae2f904c9c92a77f4d86f",
+      "reason": "Thermodynamic scalar representation; coverage-bearing models are separately tested.",
+      "verdict": "E"
+    },
+    "rmgpy/thermo/nasa.pyx:NASAPolynomial.__repr__": {
+      "file": "rmgpy/thermo/nasa.pyx",
+      "function": "NASAPolynomial.__repr__",
+      "line": 65,
+      "signature": "a4dac797a69077a277c9057f7bd5cd136b8479f8dce6e82ea1bbb6d0992bbd52",
+      "reason": "Thermodynamic scalar representation.",
+      "verdict": "E"
+    },
+    "rmgpy/thermo/nasa.pyx:NASA.to_wilhoit": {
+      "file": "rmgpy/thermo/nasa.pyx",
+      "function": "NASA.to_wilhoit",
+      "line": 378,
+      "signature": "9078c8db800be0b323552a35d48a5dc881143a88ef5a844bc0a935a6430b4cb7",
+      "reason": "Internal thermo model conversion, not export.",
+      "verdict": "E"
+    },
+    "rmgpy/thermo/nasa.pyx:NASA.to_cantera": {
+      "file": "rmgpy/thermo/nasa.pyx",
+      "function": "NASA.to_cantera",
+      "line": 426,
+      "signature": "ff7316028541ca50598ae9c6e7301563cbf6e0feeb8ec9678c62a46d6a7030b4",
+      "reason": "Thermodynamic scalar conversion; Species.to_cantera resolves coverage identifiers.",
+      "verdict": "E"
+    },
+    "rmgpy/thermo/thermodata.pyx:ThermoData.to_wilhoit": {
+      "file": "rmgpy/thermo/thermodata.pyx",
+      "function": "ThermoData.to_wilhoit",
+      "line": 366,
+      "signature": "7a117b2b1f7b8f4288280d8d504470a3e2f2ac6041f5d5f71df14922471ed8fe",
+      "reason": "Internal thermo conversion.",
+      "verdict": "E"
+    },
+    "rmgpy/thermo/wilhoit.pyx:Wilhoit.to_nasa": {
+      "file": "rmgpy/thermo/wilhoit.pyx",
+      "function": "Wilhoit.to_nasa",
+      "line": 506,
+      "signature": "92aca17a2530bf908b76447b4cc2148d6dd07f7d4152cab54f92eab4e4e6c250",
+      "reason": "Internal thermo conversion.",
+      "verdict": "E"
+    },
+    "rmgpy/tools/isotopes.py:get_reduced_mass": {
+      "file": "rmgpy/tools/isotopes.py",
+      "function": "get_reduced_mass",
+      "line": 624,
+      "signature": "6dc2d4cb1db48db7e66dbde3aeabf63e6d5c344cd72230f23b5c0542aadeeb9e",
+      "reason": "Internal isotope mass calculation.",
+      "verdict": "E"
+    },
+    "rmgpy/tools/plot.py:parse_csv_data": {
+      "file": "rmgpy/tools/plot.py",
+      "function": "parse_csv_data",
+      "line": 66,
+      "signature": "abf7f82ba49ed1a7a2ba4932fc7ceeb3bceb69a200aa10fc1a68c468410485b6",
+      "reason": "Reads names already emitted by the audited CSV writer; does not rebuild molecular species.",
+      "verdict": "E"
+    },
+    "rmgpy/transport.py:TransportData.to_cantera": {
+      "file": "rmgpy/transport.py",
+      "function": "TransportData.to_cantera",
+      "line": 122,
+      "signature": "b0683418d8e8321029f2cfd7d127273ea7cc43e3bf4b9906d10f36f67bdf33a4",
+      "reason": "Transport scalar object with no species names or structures.",
+      "verdict": "E"
+    },
+    "arkane/encorr/ae.py:AEJob.execute": {
+      "verdict": "E",
+      "reason": "Fits and writes element-indexed atom energies and method identifiers, not molecular species identities.",
+      "file": "arkane/encorr/ae.py",
+      "function": "AEJob.execute",
+      "line": 117,
+      "signature": "0e90fb4b5495e201d082ea6fc9ba19548725645ecea19cb8d532f7574378ba7f"
+    },
+    "arkane/encorr/ae.py:AEJob.save_correlation_mat": {
+      "verdict": "E",
+      "reason": "Plots correlations of fitted atomic-energy parameters; labels are element names or caller-supplied plot labels.",
+      "file": "arkane/encorr/ae.py",
+      "function": "AEJob.save_correlation_mat",
+      "line": 156,
+      "signature": "d00cca3eab816b770065089710eb0d5eaa759597e0b2a8e8293a33c342531cf5"
+    },
+    "arkane/encorr/ae.py:AE.write_to_database": {
+      "verdict": "E",
+      "reason": "Writes scalar atom-energy tables keyed by model chemistry; no molecular record is exported.",
+      "file": "arkane/encorr/ae.py",
+      "function": "AE.write_to_database",
+      "line": 275,
+      "signature": "b7a4b6e791dae9f23be742b2bb0b3fb94d1534fece2af2372d7b1228769c0406"
+    },
+    "arkane/encorr/bac.py:BACJob.plot": {
+      "verdict": "E",
+      "reason": "Plots aggregate numerical error histograms and parameter correlations; no molecular identity labels or serialized structures.",
+      "file": "arkane/encorr/bac.py",
+      "function": "BACJob.plot",
+      "line": 195,
+      "signature": "5032277e9b6c9327dae9901a01ec6ce25505b7fda54ae360dbaae41d4b780159"
+    },
+    "arkane/encorr/bac.py:BAC.write_to_database": {
+      "verdict": "E",
+      "reason": "Writes correction parameters keyed by model chemistry and element/bond type, not species records.",
+      "file": "arkane/encorr/bac.py",
+      "function": "BAC.write_to_database",
+      "line": 832,
+      "signature": "e0ff4f73a0edcc048fa3fd10a71bbc1cdf6f7400df86b4cdcdecd93ddb494bc8"
+    },
+    "arkane/encorr/bac.py:BAC.save_correlation_mat": {
+      "verdict": "E",
+      "reason": "Plots numerical parameter correlations labelled by element/bond parameter, not molecular state.",
+      "file": "arkane/encorr/bac.py",
+      "function": "BAC.save_correlation_mat",
+      "line": 933,
+      "signature": "81f2218b197f42ace01de5d4d35b834159addd614c03a39a7509c9b204863e77"
+    },
+    "arkane/statmech.py:ScanLog.save": {
+      "verdict": "E",
+      "reason": "Writes two numeric angle/energy columns and units; no Species or Molecule input or identity reconstruction.",
+      "file": "arkane/statmech.py",
+      "function": "ScanLog.save",
+      "line": 210,
+      "signature": "c735f0fa04a432a5f9ab661a94c786ad2b2db23eb90c6d941b8c3a17adc1befe"
+    },
+    "rmgpy/chemkin.pyx:write_elements_section": {
+      "verdict": "E",
+      "reason": "Writes Element singleton names and isotope masses only, not molecular identifiers; baseline ground bytes preserved.",
+      "file": "rmgpy/chemkin.pyx",
+      "function": "write_elements_section",
+      "line": 3388,
+      "signature": "71165b64271e41296c9002ee7a63db7f4ca7b5e8780b6bf7a9659199d98ba7e2"
+    },
+    "rmgpy/data/base.py:Database.save_old_tree": {
+      "verdict": "E",
+      "reason": "Writes hierarchical group/entry labels via generate_old_tree; not a molecular dictionary, which is separately refused by save_old_dictionary.",
+      "file": "rmgpy/data/base.py",
+      "function": "Database.save_old_tree",
+      "line": 954,
+      "signature": "595006135e853b0b9157956bbb85edb38256755a9950a5fb6fb80d332b5194f1"
+    },
+    "rmgpy/data/kinetics/database.py:KineticsDatabase.save_recommended_families": {
+      "verdict": "E",
+      "reason": "Writes names of recommended reaction families and booleans/sets, not species identities.",
+      "file": "rmgpy/data/kinetics/database.py",
+      "function": "KineticsDatabase.save_recommended_families",
+      "line": 373,
+      "signature": "0a3c6fbd5afb5e566ecfdafbbf7f0dad593c83834fcd2672a1d85dbc13c62c4a"
+    },
+    "rmgpy/data/kinetics/library.py:KineticsLibrary.write_arrhenius": {
+      "verdict": "E",
+      "reason": "Nested formatter writes scalar Arrhenius parameters and uncertainties only; parent save_old refuses resolved molecular references before opening.",
+      "file": "rmgpy/data/kinetics/library.py",
+      "function": "KineticsLibrary.write_arrhenius",
+      "line": 938,
+      "signature": "1cf3591ae6abb9219ea62718650de3f613c953e7a13862fa42fa05ccef8bda91"
+    },
+    "rmgpy/molecule/draw.py:create_new_surface": {
+      "verdict": "E",
+      "reason": "Allocates an empty Cairo surface from dimensions/format/path only; molecular and reaction draw callers refuse resolved inputs before reaching it.",
+      "file": "rmgpy/molecule/draw.py",
+      "function": "create_new_surface",
+      "line": 71,
+      "signature": "b6ae6cab0a8107b90219cc351f4a713c91e025f31bfc3dd6e9fab2900426c4c6"
+    },
+    "rmgpy/molecule/group.py:Group._repr_png_": {
+      "verdict": "E",
+      "reason": "Group-pattern drawing has no resolved Molecule state schema; molecular drawing boundary is independently refused.",
+      "file": "rmgpy/molecule/group.py",
+      "function": "Group._repr_png_",
+      "line": 1359,
+      "signature": "8e7f37926e9cc8bff1d9b0c2025740c760bf5754039af82e44c4953e89bf4df5"
+    },
+    "rmgpy/qm/symmetry.py:SymmetryJob.write_input_file": {
+      "verdict": "E",
+      "reason": "Writes atomic-number/coordinate arrays for geometrical symmetry analysis; no molecular identity record or electronic-state API.",
+      "file": "rmgpy/qm/symmetry.py",
+      "function": "SymmetryJob.write_input_file",
+      "line": 242,
+      "signature": "18b1dbcca00cddc311dbaa25f453b37835d0f91ae58b419ad43e7d844e5a9a9a"
+    },
+    "rmgpy/rmg/main.py:RMG.execute": {
+      "verdict": "E",
+      "reason": "Conservative finish() sink match: invokes RMG.finish, not Cairo surface.finish; concrete exports are audited in their writers.",
+      "file": "rmgpy/rmg/main.py",
+      "function": "RMG.execute",
+      "line": 941,
+      "signature": "6a87c05622422382db0e92fa07a22a4e8b383ae6b0874db2871ad062c98be12b"
+    },
+    "rmgpy/rmg/main.py:RMG.initialize_seed_mech": {
+      "verdict": "E",
+      "reason": "Copies the full explicit input deck verbatim with a restart directive; seed molecular records use separately audited paired save.",
+      "file": "rmgpy/rmg/main.py",
+      "function": "RMG.initialize_seed_mech",
+      "line": 1955,
+      "signature": "1991cc566de235a765285c8a68bc7198bb44d3ed8d45af98060b705850145571"
+    },
+    "rmgpy/rmg/main.py:RMG.save_profiler_info": {
+      "verdict": "E",
+      "reason": "marshal.dump persists profiler timing statistics only, not a molecular mechanism.",
+      "file": "rmgpy/rmg/main.py",
+      "function": "RMG.save_profiler_info",
+      "line": 2557,
+      "signature": "178fd0183d2b302c0e7654490c2e210db62df834cdbb13a6c0a887292bfca2f2"
+    },
+    "rmgpy/rmg/main.py:_add_coverage_dependence_to_cantera_yaml": {
+      "verdict": "E",
+      "reason": "Inserts already-rendered thermo coverage blocks into an existing YAML by exact Chemkin names; does not rebuild or rename molecular records.",
+      "file": "rmgpy/rmg/main.py",
+      "function": "_add_coverage_dependence_to_cantera_yaml",
+      "line": 2933,
+      "signature": "97ad55a8fa2cf8b2f74b491a1b025dc808081bb8f30d06295d15a71ac1af9658"
+    },
+    "rmgpy/rmg/main.py:Tee.write": {
+      "verdict": "E",
+      "reason": "Generic byte-preserving diagnostic stream fan-out; takes only strings, performs no molecular naming or reconstruction.",
+      "file": "rmgpy/rmg/main.py",
+      "function": "Tee.write",
+      "line": 3000,
+      "signature": "81c59c0e5b7611675612830436b7fb2e9832edb38f703c7307f50fc18c18d15a"
+    },
+    "rmgpy/rmg/main.py:process_profile_stats": {
+      "verdict": "E",
+      "reason": "print(file=...) writes function timing/call-count diagnostics, not species identities.",
+      "file": "rmgpy/rmg/main.py",
+      "function": "process_profile_stats",
+      "line": 3027,
+      "signature": "78cddbe838b7b68b127406544946151c1ce494ee24bb126e7263b7b481636834"
+    },
+    "rmgpy/rmg/main.py:make_profile_graph": {
+      "verdict": "E",
+      "reason": "Writes a function-call profiler graph and timing metrics, not molecular drawings.",
+      "file": "rmgpy/rmg/main.py",
+      "function": "make_profile_graph",
+      "line": 3047,
+      "signature": "d1089cbb7e60fed4691c36fbb827a521adbc3e552c56c45971717e4d8aca58b7"
+    },
+    "rmgpy/rmg/pdep.py:PDepNetwork.update": {
+      "verdict": "E",
+      "reason": "Drawing delegates to audited PressureDependenceJob.draw/NetworkDrawer.draw, which refuse resolved state; kinetic network calculation is outside export naming.",
+      "file": "rmgpy/rmg/pdep.py",
+      "function": "PDepNetwork.update",
+      "line": 782,
+      "signature": "d591e8afc0f038556f25ad24c5d8cf940ec969a568956291a934b50ad0e9f813"
+    },
+    "rmgpy/statmech/ndTorsions.py:HinderedRotor2D.write_xyz": {
+      "verdict": "E",
+      "reason": "Writes geometric atom-coordinate arrays for a torsional mode, not a Species/Molecule identity record; no resolved molecular state input.",
+      "file": "rmgpy/statmech/ndTorsions.py",
+      "function": "HinderedRotor2D.write_xyz",
+      "line": 221,
+      "signature": "e41bc9891e3a8f8a2dec9bb05f581f8e9d204aba0306137104a88a291bf7dbc9"
+    },
+    "rmgpy/statmech/ndTorsions.py:HinderedRotor2D.write_pes": {
+      "verdict": "E",
+      "reason": "Writes geometric atom-coordinate/angle/energy arrays for torsional scans, not molecular identity records.",
+      "file": "rmgpy/statmech/ndTorsions.py",
+      "function": "HinderedRotor2D.write_pes",
+      "line": 236,
+      "signature": "c66350d73ff2abd3789e89dff923c866db7540e4d2e0603296621d5f210dcb8d"
+    },
+    "rmgpy/statmech/ndTorsions.py:HinderedRotor2D.write_inp": {
+      "verdict": "E",
+      "reason": "Writes torsion atom-index and calculation controls from rotor data; no Species/Molecule state API or identity serialization.",
+      "file": "rmgpy/statmech/ndTorsions.py",
+      "function": "HinderedRotor2D.write_inp",
+      "line": 253,
+      "signature": "ff7157f085b108beb1b437feefe24e5da97a45915580158fe7aac2c2d1a92e42"
+    },
+    "rmgpy/stats.py:ExecutionStatsWriter.save_execution_statistics": {
+      "verdict": "E",
+      "reason": "Writes numerical execution-time/memory/model-size statistics, not molecular identity records.",
+      "file": "rmgpy/stats.py",
+      "function": "ExecutionStatsWriter.save_execution_statistics",
+      "line": 117,
+      "signature": "55954730ed7fb7a494f2932f1706b76f45d45023963771804fac80e7f3d4f723"
+    },
+    "rmgpy/stats.py:ExecutionStatsWriter.generate_execution_plots": {
+      "verdict": "E",
+      "reason": "Plots numerical execution statistics by elapsed time/iteration, not species labels or structures.",
+      "file": "rmgpy/stats.py",
+      "function": "ExecutionStatsWriter.generate_execution_plots",
+      "line": 169,
+      "signature": "6c3f934b3340329a195f991a4b587a3a793c57356c97aea790ce63998a891aa1"
+    },
+    "rmgpy/tools/eedf/artifact.py:write_artifact": {
+      "verdict": "E",
+      "reason": "Copies normalized explicit EEDF spec/manifest and numerical tables; no Species/Molecule identity or inferred molecular name.",
+      "file": "rmgpy/tools/eedf/artifact.py",
+      "function": "write_artifact",
+      "line": 136,
+      "signature": "8853a50caade1881bd4774f17b83d6a2fad8d629461db3a12c36a5ab942d32c6"
+    },
+    "rmgpy/tools/eedf/loki.py:LoKIDriver.run": {
+      "verdict": "E",
+      "reason": "Writes explicit LoKI solver setup text and numeric electron-energy parameters; no Species/Molecule identity export.",
+      "file": "rmgpy/tools/eedf/loki.py",
+      "function": "LoKIDriver.run",
+      "line": 239,
+      "signature": "133f71ffbe1c2972be4ceef0db68edecd018d65beccabd7d7cad702c3c1de0b1"
+    },
+    "rmgpy/tools/fluxdiagram.py:create_flux_diagram": {
+      "verdict": "E",
+      "reason": "savez_compressed writes numerical trajectory arrays in the loaded model order; diagram names go through audited generate_flux_diagram declarations, optional images refuse via Molecule.draw.",
+      "file": "rmgpy/tools/fluxdiagram.py",
+      "function": "create_flux_diagram",
+      "line": 544,
+      "signature": "b40614ab8b9ba5df849d697c9aacc442e3e43364248617767808f8c5967b0d4b"
+    },
+    "rmgpy/tools/generatereactions.py:execute": {
+      "verdict": "E",
+      "reason": "finish() denotes RMG.finish, not surface output; concrete save_everything writers are individually audited for identities.",
+      "file": "rmgpy/tools/generatereactions.py",
+      "function": "execute",
+      "line": 82,
+      "signature": "af4348fe52d8897470f9e1c523accf9f0647a0c74192e40a6459f300c059448f"
+    },
+    "rmgpy/tools/isotopes.py:generate_isotope_model": {
+      "verdict": "E",
+      "reason": "finish() denotes RMG.finish, not Cairo; species/reaction exports delegate to audited Chemkin save.",
+      "file": "rmgpy/tools/isotopes.py",
+      "function": "generate_isotope_model",
+      "line": 94,
+      "signature": "00b1a1954611df2645559fcdfa6d2c808e219b0591cad81e82b0389a4b75804c"
+    },
+    "rmgpy/tools/loader.py:load_rmg_py_job": {
+      "verdict": "E",
+      "reason": "Chemkin loading retains state via the audited dictionary; optional images delegate to Molecule.draw, whose named refusal propagates.",
+      "file": "rmgpy/tools/loader.py",
+      "function": "load_rmg_py_job",
+      "line": 69,
+      "signature": "087f50690b808254a263b1793f2244f5c004b28ff9bdab931950f19ac60a0b69"
+    },
+    "rmgpy/tools/eedf/artifact.py:write_rows": {
+      "file": "rmgpy/tools/eedf/artifact.py",
+      "function": "write_rows",
+      "line": 68,
+      "signature": "3b15a6011550ecbb8207e4cd0bf601ae08204e4c5652624cf93af10188b5d1f3",
+      "verdict": "E",
+      "reason": "Stores numerical solver tensors and explicit symbolic spec assumptions; identifiers are encoded reversibly with storage_key. No Species/Molecule graph or inferred molecular name is exported."
+    },
+    "rmgpy/data/kinetics/family.py:KineticsFamily.load": {
+      "verdict": "E",
+      "reason": "Family schema, group-pattern and rate-rule loading delegates molecular training records to the separately guarded KineticsDepository.load boundary.",
+      "file": "rmgpy/data/kinetics/family.py",
+      "function": "KineticsFamily.load",
+      "line": 1463,
+      "signature": "51bdb148ae4a5e5057e6879a11a275131150f44b030e3d4efea4b7b9d4aeaef9"
+    },
+    "rmgpy/data/kinetics/family.py:KineticsFamily.generate_product_template": {
+      "verdict": "E",
+      "reason": "Generated group-template entries use the shared group database store without changing group or logic-node semantics.",
+      "file": "rmgpy/data/kinetics/family.py",
+      "function": "KineticsFamily.generate_product_template",
+      "line": 2004,
+      "signature": "dadb0fc2b8d3993f1c0a5db48da70122b0f9e997e73aabdb283bd5aaddebddae"
+    },
+    "rmgpy/data/kinetics/family.py:KineticsFamily.add_rules_from_training": {
+      "verdict": "E",
+      "reason": "Training-derived rate-rule lists now use the shared rules database store; existing labels, append behavior and group-template identities are retained.",
+      "file": "rmgpy/data/kinetics/family.py",
+      "function": "KineticsFamily.add_rules_from_training",
+      "line": 2108,
+      "signature": "de0331502aca89e22b9b589b83c33257682a159afae8950d28ee94f846e42e5d"
+    },
+    "rmgpy/data/kinetics/family.py:KineticsFamily.add_entry": {
+      "verdict": "E",
+      "reason": "Generated group entries and initially empty rate-rule lists are registered through their owning database shared stores.",
+      "file": "rmgpy/data/kinetics/family.py",
+      "function": "KineticsFamily.add_entry",
+      "line": 3966,
+      "signature": "b3abe674cdd44344f0a7ebd803ddfd66c31c0f0cc9989399146d4f4652f96c1e"
+    },
+    "rmgpy/data/kinetics/family.py:KineticsFamily.make_tree_nodes": {
+      "verdict": "E",
+      "reason": "Generated group tree entries and empty rule lists use their owning database shared stores, retaining existing graph/group semantics.",
+      "file": "rmgpy/data/kinetics/family.py",
+      "function": "KineticsFamily.make_tree_nodes",
+      "line": 4527,
+      "signature": "60c7128c213b1fa3b8dea942ef47ea4e9e8f9f19f0070eabbdd7de688b2d5afd"
+    },
+    "rmgpy/data/kinetics/family.py:KineticsFamily.make_bm_rules_from_template_rxn_map": {
+      "verdict": "E",
+      "reason": "Generated empty rate-rule lists are stored through the shared rules database helper; no molecular identity is replaced in this stage.",
+      "file": "rmgpy/data/kinetics/family.py",
+      "function": "KineticsFamily.make_bm_rules_from_template_rxn_map",
+      "line": 4661,
+      "signature": "706a09b0c2e2d1610ef71c3f7e7e7b42d965c2e4eee091a668d9dea4ae85747b"
+    },
+    "rmgpy/data/kinetics/family.py:KineticsFamily.clean_tree_rules": {
+      "verdict": "E",
+      "reason": "Reset of the Root rate-rule list now uses the shared rules database store; these are group-pattern rule records.",
+      "file": "rmgpy/data/kinetics/family.py",
+      "function": "KineticsFamily.clean_tree_rules",
+      "line": 5080,
+      "signature": "39d933c3cc88146d58addac7c525c590079a414380cc69e6f6a9b63d258f65f9"
+    },
+    "rmgpy/data/kinetics/rules.py:KineticsRules.load_entry": {
+      "verdict": "E",
+      "reason": "Rate-rule entries carry no molecular identities here; repeated labels append records as before and first record creation uses the shared store.",
+      "file": "rmgpy/data/kinetics/rules.py",
+      "function": "KineticsRules.load_entry",
+      "line": 69,
+      "signature": "eb47b63fae5a6d0c3b4b83b79bfe6771df2527dfaac64c8756362105308ec6fa"
+    },
+    "rmgpy/data/kinetics/rules.py:KineticsRules.fill_rules_by_averaging_up": {
+      "verdict": "E",
+      "reason": "Internal averaged group-template rate rule creation, with existing group semantics; shared store protects any molecular identity present.",
+      "file": "rmgpy/data/kinetics/rules.py",
+      "function": "KineticsRules.fill_rules_by_averaging_up",
+      "line": 174,
+      "signature": "bc76358eb5525ff887d8de6f3b4c9926b1cd5faf0c9bd88bf5664835f47557e0"
+    },
+    "rmgpy/data/surface.py:MetalLibrary.load_entry": {
+      "verdict": "E",
+      "reason": "Metal binding-energy metadata contains no molecular species identity; shared store preserves legacy label behavior.",
+      "file": "rmgpy/data/surface.py",
+      "function": "MetalLibrary.load_entry",
+      "line": 81,
+      "signature": "82010b894a05080cf2017d751d86703b4b1e8e5d384548cb714c22ad7d20f476"
+    },
+    "rmgpy/data/surface.py:MetalLibrary.load": {
+      "verdict": "E",
+      "reason": "Delegates metadata loading to Database.load and guarded MetalLibrary.load_entry; no species representation is accepted here.",
+      "file": "rmgpy/data/surface.py",
+      "function": "MetalLibrary.load",
+      "line": 118,
+      "signature": "4a95f9d3ff3b64458187915472f4e9f0f528933008028b3faa06b7a16f32d10b"
+    },
+    "rmgpy/data/surface.py:MetalDatabase.add_entry": {
+      "verdict": "E",
+      "reason": "Binding-energy metadata registration delegates to the owning MetalLibrary shared store; these entries have no molecular species item.",
+      "file": "rmgpy/data/surface.py",
+      "function": "MetalDatabase.add_entry",
+      "line": 271,
+      "signature": "a06bdaf81393b7ab339ae36cd470ea71e49fb59228aa61ebb6a6e64a09e3ec70"
+    },
+    "rmgpy/data/base.py:Database.get_matched_data": {
+      "file": "rmgpy/data/base.py",
+      "function": "Database.get_matched_data",
+      "line": 1238,
+      "signature": "e6a02277d9ab1bb579c80a3b178aaebc7c580a8c4f954d30ca2d518780a21029",
+      "verdict": "E",
+      "reason": "Internal provenance traversal returns in-memory database data; it performs no save, export, reload, or emitted naming."
+    },
+    "rmgpy/data/kinetics/family.py:KineticsFamily.get_reaction_template": {
+      "file": "rmgpy/data/kinetics/family.py",
+      "function": "KineticsFamily.get_reaction_template",
+      "line": 3620,
+      "signature": "34382f94ce32736f0ac54a48814a7e0950caba98576d8e885b47bea6895f7abc",
+      "verdict": "E",
+      "reason": "Internal family-template selection enforces the family excited-reactant opt-in and emits no molecular representation."
+    }
+  }
+}

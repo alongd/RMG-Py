@@ -182,6 +182,9 @@ class NetworkDrawer(object):
         """
         
         """
+
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species(configuration.species, 'rmgpy/pdep/draw.py:NetworkDrawer._get_label_size', ())
         width = 0
         height = 0
         bounding_rects = []
@@ -205,6 +208,9 @@ class NetworkDrawer(object):
 
     def _draw_label(self, configuration, cr, x0, y0, file_format='pdf'):
 
+
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species(configuration.species, 'rmgpy/pdep/draw.py:NetworkDrawer._draw_label', ())
         bounding_rect = self._get_label_size(configuration, file_format=file_format)
         padding = 2
 
@@ -241,6 +247,12 @@ class NetworkDrawer(object):
         surface of the given `file_format`. If `path` is given, the surface is
         saved to that location on disk.
         """
+
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species(
+            network.get_all_species(),
+            'rmgpy/pdep/draw.py:NetworkDrawer.draw',
+            network.path_reactions + network.net_reactions)
         try:
             import cairocffi as cairo
         except ImportError:

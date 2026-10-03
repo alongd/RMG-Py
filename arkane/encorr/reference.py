@@ -164,6 +164,12 @@ class ReferenceSpecies(ArkaneSpecies):
         """
         Save the reference species to a .yml file
         """
+
+        from rmgpy.export import refuse_resolved_species
+        if self.adjacency_list:
+            refuse_resolved_species(
+                [Molecule().from_adjacency_list(self.adjacency_list)],
+                'ReferenceSpecies.save_yaml')
         if not os.path.exists(os.path.join(os.path.abspath(path), '')):
             os.mkdir(os.path.join(os.path.abspath(path), ''))
         valid_chars = "-_.()<=>+ %s%s" % (string.ascii_letters, string.digits)

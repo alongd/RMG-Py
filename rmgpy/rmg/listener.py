@@ -90,12 +90,16 @@ class SimulationProfileWriter(object):
             )
         )
 
+        from rmgpy.export import SpeciesReferences, resolve_species_reference
+        wall_model = getattr(reaction_system, 'electronegative_wall_model', None)
+        declarations = SpeciesReferences(self.core_species, get_species_identifier, context='simulation profile',
+                                         allow_ground_collisions=True)
         header = ['Time (s)', 'Volume (m^3)']
         for spc in self.core_species:
-            header.append(get_species_identifier(spc))
+            header.append(resolve_species_reference(spc, declarations))
 
         records = None
-        if getattr(reaction_system, 'electronegative_wall_model', None) is not None:
+        if wall_model is not None:
             # Each profile row uses its own accepted record, never the final
             # gate values repeated over the trajectory.
             records = [reaction_system.electronegative_wall_history[row[0]]

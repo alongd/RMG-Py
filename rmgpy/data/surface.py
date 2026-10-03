@@ -104,7 +104,7 @@ class MetalLibrary(Database):
         else:
             surface_site_density = None
 
-        self.entries[label] = Entry(
+        self._store_entry(label, Entry(
             index=index,
             label=label,
             metal=metal,
@@ -113,7 +113,7 @@ class MetalLibrary(Database):
             binding_energies=binding_energies,
             short_desc=shortDesc,
             long_desc=longDesc.strip(),
-        )
+        ), "MetalLibrary.load_entry")
 
     def load(self, path):
         """
@@ -272,7 +272,7 @@ class MetalDatabase(object):
         """
         Add an entry to a metal library
         """
-        self.libraries['surface'].entries[f'{entry.label}'] = entry
+        self.libraries['surface']._store_entry(f'{entry.label}', entry, "MetalDatabase.add_entry")
 
     def remove_entry(self, entry):
         """

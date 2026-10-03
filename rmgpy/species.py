@@ -229,7 +229,7 @@ class Species(object):
         Return a string representation of the species, in the form 'label(id)'.
         """
         if not self.label:
-            self.label = self.molecule[0].to_smiles()
+            self.label = self.molecule[0].to_smiles() + self.molecule[0].state_suffix()
         if self.index == -1:
             return self.label
         else:
@@ -503,6 +503,18 @@ class Species(object):
         """
         import cantera as ct
 
+        from rmgpy.export import SpeciesReferences, resolve_species_reference, refuse_resolved_species
+        if not use_chemkin_identifier:
+            refuse_resolved_species([self] + list(all_species or []), 'Species.to_cantera')
+        identifiers = (lambda spc: spc.to_chemkin()) if use_chemkin_identifier else None
+        declarations = SpeciesReferences(
+            all_species if all_species is not None else [self],
+            identifiers,
+            context='Species.to_cantera')
+        label = resolve_species_reference(self, declarations)
+        for adjacency in (getattr(self.thermo, 'thermo_coverage_dependence', None) or {}):
+            resolve_species_reference(Molecule().from_adjacency_list(adjacency), declarations)
+
         # Determine the number of each type of element in the molecule
         element_dict = {}  # element_counts = [0,0,0,0]
         for vertex in self.molecule[0].vertices:
@@ -526,10 +538,6 @@ class Species(object):
                                 f"Reporting {-charge} electrons in the Cantera composition.")
         if charge != 0:
             element_dict['E'] = -charge
-        if use_chemkin_identifier:
-            label = self.to_chemkin()
-        else:
-            label = self.label
 
         if self.contains_surface_site() and element_dict["X"] > 1:
             # for multidentate adsorbates, 'size' is the same as 'sites'?
@@ -551,6 +559,9 @@ class Species(object):
         if self.transport_data:
             ct_species.transport = self.transport_data.to_cantera()
 
+        if self.molecule[0].has_resolved_state():
+            ct_species.update_user_data({'note': self.molecule[0].to_adjacency_list()})
+
         # Attach coverage-dependent thermo if present.
         # thermo_coverage_dependence keys are adjacency-list strings; we resolve
         # them to species names here using all_species.  The data is stored via
@@ -561,14 +572,13 @@ class Species(object):
                 and self.thermo
                 and hasattr(self.thermo, 'thermo_coverage_dependence')
                 and self.thermo.thermo_coverage_dependence):
-            from rmgpy.molecule.molecule import Molecule
             from rmgpy.electron_balance import is_isomorphic_same_charge
             cov_deps = {}
             for adj_list, parameters in self.thermo.thermo_coverage_dependence.items():
                 mol = Molecule().from_adjacency_list(adj_list)
                 for sp in all_species:
                     if is_isomorphic_same_charge(sp, mol, strict=False):
-                        dep_name = sp.to_chemkin() if use_chemkin_identifier else sp.label
+                        dep_name = resolve_species_reference(mol, declarations)
                         cov_deps[dep_name] = {
                             'units': {'energy': 'J', 'quantity': 'mol'},
                             'enthalpy-coefficients': [v.value_si for v in parameters['enthalpy-coefficients']],

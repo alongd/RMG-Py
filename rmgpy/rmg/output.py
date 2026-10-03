@@ -54,6 +54,12 @@ def save_output_html(path, reaction_model, part_core_edge='core'):
     HTML will be generated (but the program will carry on).
     """
 
+    from rmgpy.export import refuse_resolved_species
+    refuse_resolved_species(
+        reaction_model.core.species + reaction_model.edge.species + reaction_model.output_species_list,
+        'rmgpy/rmg/output.py:save_output_html',
+        reaction_model.core.reactions + reaction_model.edge.reactions)
+
     from rmgpy.rmg.model import PDepReaction
 
     from rmgpy.molecule.draw import MoleculeDrawer
@@ -530,6 +536,12 @@ def save_diff_html(path, common_species_list, species_list1, species_list2, comm
     This function outputs the species and reactions on an HTML page
     for the comparison of two RMG models.
     """
+
+    from rmgpy.export import refuse_resolved_species
+    refuse_resolved_species(
+        [spc for pair in common_species_list for spc in pair] + species_list1 + species_list2,
+        'rmgpy/rmg/output.py:save_diff_html',
+        [rxn for pair in common_reactions for rxn in pair] + unique_reactions1 + unique_reactions2)
     from rmgpy.rmg.model import PDepReaction
     from rmgpy.kinetics import MultiArrhenius, MultiPDepArrhenius
 

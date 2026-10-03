@@ -2105,24 +2105,20 @@ class RMG(util.Subject):
                 except:
                     pass
                 kinetics_library.save(os.path.join(database_directory, "kinetics", "libraries", name, "reactions.py"))
-                kinetics_library.save_dictionary(os.path.join(database_directory, "kinetics", "libraries", name, "dictionary.txt"))
 
                 try:
                     os.makedirs(os.path.join(database_directory, "kinetics", "libraries", name + "_edge"))
                 except:
                     pass
                 edge_kinetics_library.save(os.path.join(database_directory, "kinetics", "libraries", name + "_edge", "reactions.py"))
-                edge_kinetics_library.save_dictionary(os.path.join(database_directory, "kinetics", "libraries", name + "_edge", "dictionary.txt"))
 
             # save in output directory
             # Rename for the output directory, as these names should not be dynamic
             kinetics_library.name = "seed"
             kinetics_library.save(os.path.join(seed_dir, "seed", "reactions.py"))
-            kinetics_library.save_dictionary(os.path.join(seed_dir, "seed", "dictionary.txt"))
 
             edge_kinetics_library.name = "seed_edge"
             edge_kinetics_library.save(os.path.join(seed_dir, "seed_edge", "reactions.py"))
-            edge_kinetics_library.save_dictionary(os.path.join(seed_dir, "seed_edge", "dictionary.txt"))
 
             # Save the filter tensors
             if not os.path.exists(filter_dir):
@@ -2259,6 +2255,36 @@ class RMG(util.Subject):
         and save it in the cantera directory. 
         Returns the path to the generated cantera file.
         """
+
+        from rmgpy.export import refuse_resolved_species
+        context = 'rmgpy/rmg/main.py:RMG.generate_cantera_files_from_chemkin'
+        model = self.reaction_model
+        if model is not None:
+            refuse_resolved_species(
+                model.core.species + model.edge.species, context,
+                model.core.reactions + model.edge.reactions)
+        kinetics_files = [chemkin_file]
+        if kwargs.get('surface_file'):
+            kinetics_files.append(kwargs['surface_file'])
+        dictionary_file = os.path.join(os.path.dirname(chemkin_file), 'species_dictionary.txt')
+        if os.path.isfile(dictionary_file):
+            from rmgpy.chemkin import load_species_dictionary
+            snapshots, dictionary_content = util.read_generation_files(
+                kinetics_files, dictionary_file, strip_markers=False)
+            dictionary = load_species_dictionary(
+                dictionary_file, content=util.strip_generation_marker(dictionary_content))
+            refuse_resolved_species(dictionary.values(), context)
+        else:
+            from rmgpy.exceptions import GenerationMismatchError
+            snapshots = {}
+            for kinetics_file in kinetics_files:
+                with open(kinetics_file, encoding='utf-8') as stream:
+                    snapshots[kinetics_file] = stream.read()
+                token = util.generation_token(snapshots[kinetics_file])
+                if token is not None:
+                    raise GenerationMismatchError(
+                        '{0}: stamped kinetics "{1}" token={2!r} requires its paired species '
+                        'dictionary "{3}".'.format(context, kinetics_file, token, dictionary_file))
         transport_file = os.path.join(os.path.dirname(chemkin_file), "tran.dat")
         file_name = os.path.splitext(os.path.basename(chemkin_file))[0] + ".yaml"
         out_name = os.path.join(self.output_directory, "cantera_from_ck", file_name)
@@ -2272,13 +2298,26 @@ class RMG(util.Subject):
                 raise
         if os.path.exists(out_name):
             os.remove(out_name)
-        parser = ck2yaml.Parser()
-        try:
-            parser.convert_mech(chemkin_file, transport_file=transport_file, out_name=out_name, quiet=True, permissive=True, **kwargs)
-        except ck2yaml.InputError:
-            logging.exception("Error converting to Cantera format.")
-            logging.info("Trying again without transport data file.")
-            parser.convert_mech(chemkin_file, out_name=out_name, quiet=True, permissive=True, **kwargs)
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory(prefix='rmg-cantera-') as scratch:
+            staged_files = {}
+            for index, (path, content) in enumerate(snapshots.items()):
+                directory = os.path.join(scratch, str(index))
+                os.mkdir(directory)
+                staged_files[path] = os.path.join(directory, os.path.basename(path))
+                with open(staged_files[path], 'w', encoding='utf-8') as stream:
+                    stream.write(content)
+            if kwargs.get('surface_file'):
+                kwargs['surface_file'] = staged_files[kwargs['surface_file']]
+            parser = ck2yaml.Parser()
+            try:
+                parser.convert_mech(staged_files[chemkin_file], transport_file=transport_file,
+                                    out_name=out_name, quiet=True, permissive=True, **kwargs)
+            except ck2yaml.InputError:
+                logging.exception("Error converting to Cantera format.")
+                logging.info("Trying again without transport data file.")
+                parser.convert_mech(staged_files[chemkin_file], out_name=out_name,
+                                    quiet=True, permissive=True, **kwargs)
         return out_name
 
     def initialize_reaction_threshold_and_react_flags(self):

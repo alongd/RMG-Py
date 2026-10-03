@@ -99,6 +99,14 @@ def generate_flux_diagram(reaction_model, times, concentrations, reaction_rates,
 
     # Get the species and reactions corresponding to the provided concentrations and reaction rates
     species_list = reaction_model.core.species[:]
+    from rmgpy.chemkin import get_species_identifier
+    from rmgpy.export import SpeciesReferences, resolve_species_reference
+    declarations = SpeciesReferences(species_list, lambda spc: get_species_identifier(spc)
+        if any(mol.has_resolved_state() for mol in spc.molecule) else str(spc), context='flux diagram')
+
+    def species_name(spc):
+        return resolve_species_reference(spc, declarations)
+
     num_species = len(species_list)
     reaction_list = reaction_model.core.reactions[:]
 
@@ -197,11 +205,11 @@ def generate_flux_diagram(reaction_model, times, concentrations, reaction_rates,
     # Add a node for each species
     for index in nodes:
         species = species_list[index]
-        node = pydot.Node(name=str(species))
+        node = pydot.Node(name=species_name(species))
         node.set_penwidth(max_node_pen_width)
         graph.add_node(node)
         # Try to use an image instead of the label
-        species_index = str(species) + '.png'
+        species_index = species_name(species) + '.png'
         image_path = ''
         if not species_directory or not os.path.exists(species_directory):
             continue
@@ -218,7 +226,7 @@ def generate_flux_diagram(reaction_model, times, concentrations, reaction_rates,
         if reactant_index in nodes and product_index in nodes:
             reactant = species_list[reactant_index]
             product = species_list[product_index]
-            edge = pydot.Edge(str(reactant), str(product))
+            edge = pydot.Edge(species_name(reactant), species_name(product))
             edge.set_penwidth(max_edge_pen_width)
             graph.add_edge(edge)
 
@@ -233,11 +241,11 @@ def generate_flux_diagram(reaction_model, times, concentrations, reaction_rates,
         slope = -max_node_pen_width / math.log10(concentration_tol)
         for index in nodes:
             species = species_list[index]
-            if re.search(r'^[a-zA-Z0-9_]*$', str(species)) is not None:
-                species_string = str(species)
+            if re.search(r'^[a-zA-Z0-9_]*$', species_name(species)) is not None:
+                species_string = species_name(species)
             else:
                 # species name contains special characters                
-                species_string = '"{0}"'.format(str(species))
+                species_string = '"{0}"'.format(species_name(species))
 
             node = graph.get_node(species_string)[0]
             concentration = concentrations[t, index] / max_concentration
@@ -254,15 +262,15 @@ def generate_flux_diagram(reaction_model, times, concentrations, reaction_rates,
                 reactant = species_list[reactant_index]
                 product = species_list[product_index]
 
-                if re.search(r'^[a-zA-Z0-9_]*$', str(reactant)) is not None:
-                    reactant_string = str(reactant)
+                if re.search(r'^[a-zA-Z0-9_]*$', species_name(reactant)) is not None:
+                    reactant_string = species_name(reactant)
                 else:
-                    reactant_string = '"{0}"'.format(str(reactant))
+                    reactant_string = '"{0}"'.format(species_name(reactant))
 
-                if re.search(r'^[a-zA-Z0-9_]*$', str(product)) is not None:
-                    product_string = str(product)
+                if re.search(r'^[a-zA-Z0-9_]*$', species_name(product)) is not None:
+                    product_string = species_name(product)
                 else:
-                    product_string = '"{0}"'.format(str(product))
+                    product_string = '"{0}"'.format(species_name(product))
 
                 edge = graph.get_edge(reactant_string, product_string)[0]
                 # Determine direction of arrow based on sign of rate

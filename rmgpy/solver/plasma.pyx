@@ -1101,11 +1101,19 @@ cdef class PlasmaReactor(ReactionSystem):
         """Serializable accepted-state closure/geometry/gate record for run manifests.
 
         Figure producers should use closure and geometry_arm as series labels.
-        References are retained by provenance in the gate records, not serialized
-        as Python objects. Unavailable gates are explicitly named.
+        Molecular names use the shared export resolver: ground labels retain
+        their historical bytes, while resolved species carry state-qualified
+        identifiers. Unavailable gates are explicitly named.
         """
         if self.electronegative_wall_model is not None and self.electronegative_wall_last_valid_state is not None:
             self._check_accepted_plasma_domain(self.electronegative_wall_last_valid_state[1])
+        from rmgpy.chemkin import get_species_identifier
+        from rmgpy.export import SpeciesReferences
+        species = list(self._en_core_species or [])
+        identifiers = [get_species_identifier(spc) if any(mol.has_resolved_state() for mol in spc.molecule)
+                       else spc.label for spc in species]
+        SpeciesReferences(species, identifiers, context='electronegative wall manifest',
+                          allow_ground_collisions=True)
         record = copy.deepcopy(self.electronegative_wall_diagnostics)
         record.update(closure=self.electronegative_wall_model,
                       geometry_arm=self.electronegative_wall_geometry,
@@ -5942,7 +5950,14 @@ cdef class PlasmaReactor(ReactionSystem):
         SI order-n coefficients use (m^3/mol)^(n-1)/s; rates are mol/m^3/s.
         Unsupported classes are explicit for the external reference to refuse.
         """
+        from rmgpy.chemkin import get_species_identifier
+        from rmgpy.export import SpeciesReferences, resolve_species_reference
         from rmgpy.solver.electronegative import classify_charged_reaction
+        identifiers = [get_species_identifier(spc) if any(mol.has_resolved_state() for mol in spc.molecule)
+                       else spc.label for spc in self._en_core_species]
+        declarations = SpeciesReferences(self._en_core_species, identifiers,
+                                         context='electronegative wall manifest',
+                                         allow_ground_collisions=True)
         if self.energy_balance:
             self._check_energy_state(y)
             self._sync_electron_temperature(y)
@@ -5956,6 +5971,17 @@ cdef class PlasmaReactor(ReactionSystem):
             charged_collider = collider is not None and collider.molecule[0].get_net_charge() != 0
             efficiencies = getattr(rxn.kinetics, 'efficiencies', {})
             charged_collider = charged_collider or any(mol.get_net_charge() != 0 for mol in efficiencies)
+            references = rxn.reactants + rxn.products
+            if rxn.specific_collider is not None:
+                references += [rxn.specific_collider]
+            if any(mol.has_resolved_state() for spc in references for mol in spc.molecule):
+                reactants = ' + '.join(resolve_species_reference(spc, declarations) for spc in rxn.reactants)
+                products = ' + '.join(resolve_species_reference(spc, declarations) for spc in rxn.products)
+                suffix = (' (+{0})'.format(resolve_species_reference(rxn.specific_collider, declarations))
+                          if rxn.specific_collider is not None else '')
+                equation = reactants + suffix + (' <=> ' if rxn.reversible else ' => ') + products + suffix
+            else:
+                equation = str(rxn)
             directions = [('forward', ri, pi, float(self.kf[k]))]
             if rxn.reversible or self.kb[k] != 0.:
                 directions.append(('reverse', pi, ri, float(self.kb[k])))
@@ -5966,7 +5992,7 @@ cdef class PlasmaReactor(ReactionSystem):
                 if not np.isfinite(propensity) or propensity < 0.:
                     raise ElectronegativeWallRegimeError('C-reference-domain: invalid accepted reaction propensity')
                 records.append(dict(reaction_index=k, direction=direction,
-                    equation=str(rxn), reactants=left, products=right,
+                    equation=equation, reactants=left, products=right,
                     stoichiometry=[right.count(j) - left.count(j) for j in range(self.num_core_species)],
                     classification=classification, reference_domain_reason=reason,
                     coefficient_si=coefficient, reaction_order=len(left),
@@ -6078,11 +6104,29 @@ cdef class PlasmaReactor(ReactionSystem):
             raise ElectronegativeWallRegimeError('regime: missing I-311/finite-cylinder qualification')
         V = self.compute_volume(y)
         conc = np.asarray(y[:self.num_core_species]) / V
+        from rmgpy.chemkin import get_species_identifier
+        from rmgpy.export import SpeciesReferences, resolve_species_reference
+        identifiers = [get_species_identifier(spc) if any(mol.has_resolved_state() for mol in spc.molecule)
+                       else spc.label for spc in self._en_core_species]
+        declarations = SpeciesReferences(self._en_core_species, identifiers,
+                                         context='electronegative wall manifest',
+                                         allow_ground_collisions=True)
         destroy = {j: [] for j in self._en_anions}
         attachment = 0.
         for k, rxn in enumerate(self._en_core_reactions):
             ri = [self.species_index[sp] for sp in rxn.reactants]
             pi = [self.species_index[sp] for sp in rxn.products]
+            references = rxn.reactants + rxn.products
+            if rxn.specific_collider is not None:
+                references += [rxn.specific_collider]
+            if any(mol.has_resolved_state() for spc in references for mol in spc.molecule):
+                reactants = ' + '.join(resolve_species_reference(spc, declarations) for spc in rxn.reactants)
+                products = ' + '.join(resolve_species_reference(spc, declarations) for spc in rxn.products)
+                suffix = (' (+{0})'.format(resolve_species_reference(rxn.specific_collider, declarations))
+                          if rxn.specific_collider is not None else '')
+                equation = reactants + suffix + (' <=> ' if rxn.reversible else ' => ') + products + suffix
+            else:
+                equation = str(rxn)
             for left, right, coefficient in ((ri,pi,float(self.kf[k])), (pi,ri,float(self.kb[k]))):
                 for j in self._en_anions:
                     stoich = left.count(j) - right.count(j)
@@ -6093,7 +6137,7 @@ cdef class PlasmaReactor(ReactionSystem):
                         others = list(left)
                         others.remove(j)
                         frequency = coefficient * np.prod([conc[index] for index in others])
-                        destroy[j].append((str(rxn), stoich * frequency))
+                        destroy[j].append((equation, stoich * frequency))
                 electron_stoich = left.count(self.electron_index) - right.count(self.electron_index)
                 if electron_stoich > 0 and any(right.count(j) > left.count(j) for j in self._en_anions):
                     others = list(left)
@@ -6117,7 +6161,7 @@ cdef class PlasmaReactor(ReactionSystem):
                 conf = chem / trans
                 if not np.isfinite(conf):
                     raise ElectronegativeWallRegimeError('A: nonfinite confinement ratio')
-            label = self._en_core_species[j].label
+            label = resolve_species_reference(self._en_core_species[j], declarations)
             confinement[label] = dict(conf=conf, chemical_destruction=chem, transport=trans,
                                       destruction_channels=sorted(destroy[j],key=lambda row:row[1],reverse=True))
             if conf <= 1.:
@@ -6147,7 +6191,8 @@ cdef class PlasmaReactor(ReactionSystem):
         if radial_error > RADIAL_MAPPING_TOLERANCE:
             raise ElectronegativeWallRegimeError('C-radial: error={} exceeds numerical mapping tolerance={}'.format(radial_error,RADIAL_MAPPING_TOLERANCE))
         context = dict(time=t, state=np.array(y,copy=True), cation_indices=tuple(cations),
-            cation_labels=tuple(self._en_core_species[j].label for j in cations), cation_charges=charges.copy(),
+            cation_labels=tuple(resolve_species_reference(self._en_core_species[j], declarations)
+                                for j in cations), cation_charges=charges.copy(),
             simple_cation_flux=simple.copy(), radial_ep=components['radial_ep'].copy(),
             axial_ep=components['axial_ep'].copy(), volume=V, alpha=minus/ne, h=h,
             electron_temperature=self.Te.value_si, gas_temperature=self.T.value_si,
@@ -6168,7 +6213,8 @@ cdef class PlasmaReactor(ReactionSystem):
             cylinder_equivalent_radius=radius,
             cylinder_equivalent_length=(np.pi / np.sqrt(kz) if kz > 0. else float('inf')),
             electron_index=self.electron_index, anion_indices=tuple(self._en_anions),
-            species_labels=tuple(sp.label for sp in self._en_core_species),
+            species_labels=tuple(resolve_species_reference(sp, declarations)
+                                 for sp in self._en_core_species),
             species_charges=self.species_charges.copy(),
             species_masses=np.array([sp.molecular_weight.value_si for sp in self._en_core_species]),
             concentrations_mol_per_volume=conc.copy(), number_densities=conc * constants.Na,

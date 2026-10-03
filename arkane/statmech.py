@@ -891,6 +891,12 @@ class StatMechJob(object):
         in `output_directory`.
         """
 
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species([self.species], 'arkane/statmech.py:StatMechJob.write_output', ())
+        for reaction in getattr(self, 'isodesmicReactionList', None) or []:
+            refuse_resolved_species([reaction.target.molecule] + [ref.molecule for ref in reaction.species],
+                'StatMechJob.write_output isodesmic references')
+
         output_file = os.path.join(output_directory, 'output.py')
         logging.info('Saving statistical mechanics parameters for {0}...'.format(self.species.label))
         f = open(output_file, 'a')
@@ -943,6 +949,9 @@ class StatMechJob(object):
         Plot the potential for the rotor, along with its cosine and Fourier
         series potential fits, and save it in the `hindered_rotor_plots` attribute.
         """
+
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species([self.species], 'arkane/statmech.py:StatMechJob.create_hindered_rotor_figure', ())
         phi = np.arange(0, 6.3, 0.02, float)
         Vlist_cosine = np.zeros_like(phi)
         Vlist_fourier = np.zeros_like(phi)
@@ -976,6 +985,9 @@ class StatMechJob(object):
         Save hindered rotor plots as set of files of the form
         ``rotor_[species_label]_0.pdf`` in the specified directory
         """
+
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species([self.species], 'arkane/statmech.py:StatMechJob.save_hindered_rotor_figures', ())
         if hasattr(self, 'hindered_rotor_plots'):
             for fig, rotor_index in self.hindered_rotor_plots:
                 fig.savefig(os.path.join(directory, 'rotor_{0}_{1:d}.pdf'.format(self.species.label, rotor_index)))

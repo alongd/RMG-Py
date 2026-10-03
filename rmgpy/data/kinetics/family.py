@@ -1747,11 +1747,13 @@ class KineticsFamily(Database):
             self.forbidden = ForbiddenStructures()
         self.forbidden.load_entry(label=label, group=group, shortDesc=shortDesc, longDesc=longDesc)
 
-    def save_entry(self, f, entry):
+    def save_entry(self, f, entry, declarations=None):
+        """Write an entry, requiring its emitted dictionary for resolved species.
+
+        Group entries need no molecular dictionary. Molecular entries with
+        resolved states refuse when the caller does not supply declarations.
         """
-        Write the given `entry` in the thermo database to the file object `f`.
-        """
-        return save_entry(f, entry)
+        return save_entry(f, entry, declarations=declarations)
 
     def _check_training_states(self, rxns):
         """Refuse resolved inputs before training mutates structures or tree data."""
@@ -1805,7 +1807,11 @@ class KineticsFamily(Database):
         dictionary_path = os.path.join(training_path, 'dictionary.txt')
 
         # Load the old set of the species of the training reactions
-        species_dict = Database().get_species(dictionary_path)
+        import io
+        from rmgpy.util import read_generation_pair, stamp_file_generation, write_files_atomically
+        reactions_path = os.path.join(training_path, 'reactions.py')
+        reactions_content, dictionary_content = read_generation_pair(reactions_path, dictionary_path)
+        species_dict = Database().get_species(dictionary_path, content=dictionary_content)
 
         # Add new unique species with labeled atoms into species_dict
         for rxn in reactions:
@@ -1842,7 +1848,7 @@ class KineticsFamily(Database):
                         spec.label = spec_formula + '-{}'.format(index)
                     species_dict[spec.label] = spec
 
-        training_file = open(os.path.join(training_path, 'reactions.py'), 'a')
+        training_file = io.StringIO()
 
         # get max reaction entry index from the existing training data
         try:
@@ -1857,6 +1863,10 @@ class KineticsFamily(Database):
             max_index = max(depository.entries.keys())
         else:
             max_index = 0
+
+        from rmgpy.export import SpeciesReferences, resolve_species_reference
+        declarations = SpeciesReferences(list(species_dict.values()), context='training dictionary',
+                                         allow_ground_collisions=True)
 
         # Add new reactions to training depository
         for i, reaction in enumerate(reactions):
@@ -1874,17 +1884,19 @@ class KineticsFamily(Database):
             )
 
             # Add this entry to the loaded depository so it is immediately usable
-            depository.entries[index] = entry
+            depository._store_entry(index, entry, "KineticsFamily.save_training_reactions")
             # Write the entry to the reactions.py file
-            self.save_entry(training_file, entry)
+            self.save_entry(training_file, entry, declarations=declarations)
 
-        training_file.close()
-
-        # save species to dictionary
-        with open(dictionary_path, 'w') as f:
-            for label in species_dict.keys():
-                f.write(species_dict[label].molecule[0].to_adjacency_list(label=label, remove_h=False))
-                f.write('\n')
+        dictionary = io.StringIO()
+        for spec in declarations:
+            name = resolve_species_reference(spec, declarations)
+            dictionary.write(spec.molecule[0].to_adjacency_list(label=name, remove_h=False))
+            dictionary.write('\n')
+        write_files_atomically(stamp_file_generation([
+            (reactions_path, reactions_content + training_file.getvalue(), '#'),
+            (dictionary_path, dictionary.getvalue(), '//'),
+        ]))
 
     def save(self, path):
         """
@@ -1900,7 +1912,6 @@ class KineticsFamily(Database):
         Save the given kinetics family `depository` to the location `path` on
         disk.
         """
-        depository.save_dictionary(os.path.join(path, 'dictionary.txt'))
         depository.save(os.path.join(path, 'reactions.py'))
 
     def save_groups(self, path):
@@ -2048,7 +2059,7 @@ class KineticsFamily(Database):
                     label=label,
                     item=products[0],
                 )
-                self.groups.entries[entry.label] = entry
+                self.groups._store_entry(entry.label, entry, "KineticsFamily.generate_product_template")
                 product_set.append(entry)
             else:
                 children = []
@@ -2059,7 +2070,7 @@ class KineticsFamily(Database):
                         item=product,
                     )
                     children.append(entry)
-                    self.groups.entries[entry.label] = entry
+                    self.groups._store_entry(entry.label, entry, "KineticsFamily.generate_product_template")
                     counter += 1
 
                 # Enter the parent of the groups as a logicOr of all the products
@@ -2068,7 +2079,7 @@ class KineticsFamily(Database):
                     item=LogicOr([child.label for child in children], invert=False),
                     children=children,
                 )
-                self.groups.entries[entry.label] = entry
+                self.groups._store_entry(entry.label, entry, "KineticsFamily.generate_product_template")
                 # Make this entry the parent of all its children
                 for child in children:
                     child.parent = entry
@@ -2207,7 +2218,7 @@ class KineticsFamily(Database):
             try:
                 self.rules.entries[new_entry.label].append(new_entry)
             except KeyError:
-                self.rules.entries[new_entry.label] = [new_entry]
+                self.rules._store_entry(new_entry.label, [new_entry], "KineticsFamily.add_rules_from_training")
             index += 1
 
         # Process the entries that are stored in the reverse direction of the
@@ -2292,7 +2303,7 @@ class KineticsFamily(Database):
             try:
                 self.rules.entries[new_entry.label].append(new_entry)
             except KeyError:
-                self.rules.entries[new_entry.label] = [new_entry]
+                self.rules._store_entry(new_entry.label, [new_entry], "KineticsFamily.add_rules_from_training")
             index += 1
 
     def get_root_template(self):
@@ -3960,8 +3971,8 @@ class KineticsFamily(Database):
         """
         ind = len(self.groups.entries) - 1
         entry = Entry(index=ind, label=name, item=grp, parent=parent)
-        self.groups.entries[name] = entry
-        self.rules.entries[name] = []
+        self.groups._store_entry(name, entry, "KineticsFamily.add_entry")
+        self.rules._store_entry(name, [], "KineticsFamily.add_entry")
         if entry.parent:
             entry.parent.children.append(entry)
 
@@ -4626,7 +4637,7 @@ class KineticsFamily(Database):
                 continue
             item.index = index
             index += 1
-            self.groups.entries[item.label] = item
+            self.groups._store_entry(item.label, item, "KineticsFamily.make_tree_nodes")
 
         for label, entry in self.groups.entries.items():
             if entry.index != -1 and entry.parent is None and entry.label != root.label:
@@ -4653,7 +4664,7 @@ class KineticsFamily(Database):
         rule_keys = self.rules.entries.keys()
         for entry in self.groups.entries.values():
             if entry.label not in rule_keys:
-                self.rules.entries[entry.label] = []
+                self.rules._store_entry(entry.label, [], "KineticsFamily.make_bm_rules_from_template_rxn_map")
 
         index = max([e.index for e in self.rules.get_entries()] or [0]) + 1
 
@@ -5068,7 +5079,7 @@ class KineticsFamily(Database):
 
     def clean_tree_rules(self):
         self.rules.entries = OrderedDict()
-        self.rules.entries['Root'] = []
+        self.rules._store_entry('Root', [], "KineticsFamily.clean_tree_rules")
 
     def clean_tree_groups(self):
         """

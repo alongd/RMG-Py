@@ -15,6 +15,7 @@ Module                  Description
 :mod:`rmgpy.chemkin`    Reading and writing models in Chemkin format
 :mod:`rmgpy.constants`  Physical constants
 :mod:`rmgpy.data`       Working with the RMG database
+:mod:`rmgpy.export`     Resolving state-aware mechanism species references
 :mod:`rmgpy.kinetics`   Kinetics models of chemical reaction rates
 :mod:`rmgpy.molecule`   Molecular representations using chemical graph theory
 :mod:`rmgpy.pdep`       Pressure-dependent kinetics from master equation models
@@ -48,3 +49,4 @@ Module                  Description
     statmech/index
     thermo/index
     exceptions
+    export

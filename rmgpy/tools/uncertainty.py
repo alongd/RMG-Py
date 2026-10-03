@@ -550,6 +550,12 @@ class Uncertainty(object):
 
         Note: the covariance.csv matrix is in units of (kJ/mol)^2, but gets converted to (kcal/mol)^2 in this function to match the rest of the analysis
         """
+
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species(
+            self.species_list + self.extra_species,
+            'rmgpy/tools/uncertainty.py:Uncertainty.load_thermo_covariances_from_libraries',
+            ())
         from rmgpy.chemkin import load_species_dictionary
         if self.database is None:
             raise RuntimeError('Must load database before loading covariance libraries, since we need the path to the covariance libraries from the database')
@@ -644,6 +650,12 @@ class Uncertainty(object):
 
         Note: the covariance.csv matrix is in units of (kJ/mol)^2, but gets converted to (kcal/mol)^2 in this function to match the rest of the analysis
         """
+
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species(
+            self.species_list + self.extra_species,
+            'rmgpy/tools/uncertainty.py:Uncertainty.load_thermo_covariances_from_groups',
+            ())
         from rmgpy.chemkin import load_species_dictionary
         # assumes there might also be covariances associated with library entries
 
@@ -1002,6 +1014,12 @@ class Uncertainty(object):
         """
         Assign uncertainties based on the sources of the species thermo and reaction kinetics.
         """
+
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species(
+            self.species_list + self.extra_species,
+            'rmgpy/tools/uncertainty.py:Uncertainty.assign_parameter_uncertainties',
+            ())
         if g_param_engine is None:
             g_param_engine = ThermoParameterUncertainty(other_covariances=self.thermo_covariances_dict)
         if k_param_engine is None:
@@ -1145,6 +1163,12 @@ class Uncertainty(object):
         This function is the new formulation's equivalent to assign_parameter_uncertainties and similarly handles both correlated and uncorrelated cases.
         But instead of assuming all underlying parameters are independent, here we can allow for dependence as long as we have the covariance
         """
+
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species(
+            self.species_list + self.extra_species,
+            'rmgpy/tools/uncertainty.py:Uncertainty.assign_intermediate_uncertainties',
+            ())
         if g_param_engine is None:
             g_param_engine = ThermoParameterUncertainty(other_covariances=self.thermo_covariances_dict)
         if k_param_engine is None:
@@ -1352,6 +1376,12 @@ class Uncertainty(object):
         number is the number of highest contributing uncertain parameters desired to be plotted
         fileformat can be either .png, .pdf, or .svg
         """
+
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species(
+            self.species_list + self.extra_species,
+            'rmgpy/tools/uncertainty.py:Uncertainty.local_analysis',
+            ())
         output = {}
         for sens_species in sensitive_species:
             csvfile_path = os.path.join(self.output_directory, 'solver',
@@ -1450,6 +1480,12 @@ class Uncertainty(object):
         - the kinetic contributions to variance of that species's concentration
         - the thermo contributions to variance of that species's concentration
         """
+
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species(
+            self.species_list + self.extra_species,
+            'rmgpy/tools/uncertainty.py:Uncertainty.local_analysis_intermediate',
+            ())
 
         output = {}
         for sens_species in sensitive_species:
@@ -1749,6 +1785,9 @@ def process_local_results(results, sensitive_species, number=10):
     Return a dictionary of processed results along with a formatted string
     given results from local uncertainty analysis.
     """
+
+    from rmgpy.export import refuse_resolved_species
+    refuse_resolved_species(sensitive_species, 'rmgpy/tools/uncertainty.py:process_local_results', ())
     processed_results = {}
     for spc in sensitive_species:
         total_var, reaction_u, thermo_u = results[spc]

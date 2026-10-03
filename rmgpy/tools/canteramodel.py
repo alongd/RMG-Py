@@ -140,10 +140,12 @@ class CanteraCondition(object):
         if self.T0: string += 'T0: {}\n'.format(self.T0)
         if self.P0: string += 'P0: {}\n'.format(self.P0)
         if self.V0: string += 'V0: {}\n'.format(self.V0)
-        # ConvertMolFrac to SMILES for keys for display
+        # Use state-aware keys where SMILES would overwrite another state.
         pretty_mol_frac = {}
         for key, value in self.mol_frac.items():
-            pretty_mol_frac[key.molecule[0].to_smiles()] = value
+            mol = key.molecule[0]
+            identifier = mol.to_augmented_inchi() if mol.has_resolved_state() else mol.to_smiles()
+            pretty_mol_frac[identifier] = value
         string += 'Initial Mole Fractions: {0}'.format(pretty_mol_frac.__repr__())
         return string
 
@@ -311,7 +313,7 @@ class Cantera(object):
         """
         Load a cantera Solution model from the job's own species_list and reaction_list attributes
         """
-        ct_species = [spec.to_cantera(use_chemkin_identifier=True) for spec in self.species_list]
+        ct_species = [spec.to_cantera(use_chemkin_identifier=True, all_species=self.species_list) for spec in self.species_list]
 
         self.reaction_map = {}
         ct_reactions = []
@@ -404,7 +406,9 @@ class Cantera(object):
         `rmg_species` object, given the `rmg_species_index` which indicates the
         index at which this species appears in the `species_list`
         """
-        modified_ct_species = rmg_species.to_cantera(use_chemkin_identifier=use_chemkin_identifier)
+        modified_ct_species = rmg_species.to_cantera(
+            use_chemkin_identifier=use_chemkin_identifier,
+            all_species=self.species_list)
         ct_species = self.model.species(rmg_species_index)
         ct_species.thermo = modified_ct_species.thermo
 
@@ -422,6 +426,12 @@ class Cantera(object):
         The number of reactions to be plotted is defined by the `top_sensitive_reactions` argument.
         
         """
+
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species(
+            self.species_list + (self.surface_species_list or []) + self.sensitive_species,
+            'rmgpy/tools/canteramodel.py:Cantera.plot',
+            ())
         num_ct_reactions = len(self.model.reactions())
         num_ct_species = len(self.model.species())
         for i, condition_data in enumerate(data):
@@ -461,12 +471,18 @@ class Cantera(object):
         Returns the data as a list of tuples containing: (time, [list of temperature, pressure, and species data]) 
             for each reactor condition
         """
+
+        from rmgpy.export import SpeciesReferences, resolve_species_reference
+        declarations = SpeciesReferences(self.species_list + (self.surface_species_list or []),
+            get_species_identifier, context='Cantera simulation conditions')
+        for reference in self.sensitive_species:
+            resolve_species_reference(reference, declarations)
         # Get all the cantera names for the species
-        species_names_list = [get_species_identifier(species) for species in self.species_list]
+        species_names_list = [resolve_species_reference(species, declarations) for species in self.species_list]
         inert_index_list = [self.species_list.index(species) for species in self.species_list if species.index == -1]
 
         if self.surface:
-            surface_species_names_list = [get_species_identifier(species) for species in self.surface_species_list]
+            surface_species_names_list = [resolve_species_reference(species, declarations) for species in self.surface_species_list]
 
         all_data = []
         for condition in self.conditions:
@@ -474,13 +490,13 @@ class Cantera(object):
             # First translate the mol_frac from species objects to species names
             new_mol_frac = {}
             for rmg_species, mol_frac in condition.mol_frac.items():
-                species_name = get_species_identifier(rmg_species)
+                species_name = resolve_species_reference(rmg_species, declarations)
                 new_mol_frac[species_name] = mol_frac
 
             if self.surface:
                 new_surface_mol_frac = {}
                 for rmg_species, mol_frac in condition.surface_mol_frac.items():
-                    species_name = get_species_identifier(rmg_species)
+                    species_name = resolve_species_reference(rmg_species, declarations)
                     new_surface_mol_frac[species_name] = mol_frac
 
             # Set Cantera simulation conditions
@@ -579,7 +595,7 @@ class Cantera(object):
                     for index, species in enumerate(self.sensitive_species):
                         for j in range(num_ct_reactions):
                             sensitivity_array[num_ct_reactions * index + j] = cantera_simulation.sensitivity(
-                                species.to_chemkin(), j)
+                                resolve_species_reference(species, declarations), j)
 
                             for i in range(len(kinetics_mass_frac_sa)):
                                 if i not in inert_index_list:
@@ -595,7 +611,7 @@ class Cantera(object):
                         for index, species in enumerate(self.sensitive_species):
                             for j in range(num_ct_species):
                                 sensitivity_array[num_ct_species * index + j] = cantera_simulation.sensitivity(
-                                    species.to_chemkin(), j + num_ct_reactions)
+                                    resolve_species_reference(species, declarations), j + num_ct_reactions)
 
                                 for i in range(len(mass_frac_sensitivity_array)):
                                     if i not in inert_index_list:
@@ -645,7 +661,10 @@ class Cantera(object):
             for index, species in enumerate(self.sensitive_species):
                 for j in range(num_ct_reactions):
                     reaction_sensitivity_generic_data = GenericData(
-                        label='dln[{0}]/dln[k{1}]: {2}'.format(species.to_chemkin(), j + 1, self.model.reactions()[j]),
+                        label='dln[{0}]/dln[k{1}]: {2}'.format(
+                            resolve_species_reference(species, declarations),
+                            j + 1,
+                            self.model.reactions()[j]),
                         species=species,
                         reaction=self.model.reactions()[j],
                         data=kinetic_sensitivity_data[:, num_ct_reactions * index + j],
@@ -659,7 +678,10 @@ class Cantera(object):
                 for index, species in enumerate(self.sensitive_species):
                     for j in range(num_ct_species):
                         thermo_sensitivity_generic_data = GenericData(
-                            label='dln[{0}]/dH[{1}]'.format(species, self.model.species()[j].name),
+                            label='dln[{0}]/dH[{1}]'.format(
+                                resolve_species_reference(species, declarations)
+                                if any(mol.has_resolved_state() for mol in species.molecule) else str(species),
+                                self.model.species()[j].name),
                             species=species,
                             data=thermo_sensitivity_data[:, num_ct_species * index + j],
                             index=j + 1,

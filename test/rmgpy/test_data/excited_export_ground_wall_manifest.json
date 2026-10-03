@@ -1,0 +1,157 @@
+{
+  "gates": {
+    "A": {
+      "Cl-": {
+        "conf": 5526.5676492209195,
+        "chemical_destruction": 1000000.0,
+        "transport": 180.94413449204228,
+        "destruction_channels": [
+          [
+            "Cl- => Cl + e-",
+            1000000.0
+          ],
+          [
+            "e- + Cl => Cl-",
+            0.0
+          ]
+        ]
+      }
+    },
+    "B": {
+      "nu_attachment": 268876.75764505786,
+      "metrics": [
+        1452.0836388552996
+      ],
+      "diffusion_frequencies": [
+        185.16616429685666
+      ]
+    },
+    "C_radial": {
+      "error": 0.00014532237712579013,
+      "threshold": 0.0002
+    },
+    "C_geometry": {
+      "error": 0.0,
+      "threshold": 0.01,
+      "provenance": "TEST ONLY",
+      "reference_diagnostics": {}
+    },
+    "C_full_profile": {
+      "error": 0.0,
+      "threshold": 0.01,
+      "provenance": "TEST ONLY",
+      "reference_diagnostics": {}
+    }
+  },
+  "extrema": {
+    "min_conf": {
+      "value": 5526.5676492209195,
+      "time": 0.0,
+      "state": [
+        1e-06,
+        0.998997,
+        1.5e-06,
+        0.001,
+        5e-07
+      ],
+      "anion": "Cl-"
+    },
+    "min_attachment_metric": {
+      "value": 1452.0836388552996,
+      "time": 0.0,
+      "state": [
+        1e-06,
+        0.998997,
+        1.5e-06,
+        0.001,
+        5e-07
+      ]
+    },
+    "max_full_profile_error": {
+      "value": 0.0,
+      "time": 0.0,
+      "state": [
+        1e-06,
+        0.998997,
+        1.5e-06,
+        0.001,
+        5e-07
+      ]
+    },
+    "max_geometry_error": {
+      "value": 0.0,
+      "time": 0.0,
+      "state": [
+        1e-06,
+        0.998997,
+        1.5e-06,
+        0.001,
+        5e-07
+      ]
+    }
+  },
+  "geometry_endpoint_wall_difference": 0.0223737738814294,
+  "closure": "confinedAnion",
+  "geometry_arm": "fullFrequency",
+  "scientific_status": "FINITE-CYLINDER GEOMETRIC EXTENSION",
+  "alpha": 0.5,
+  "h": 0.6666666666666666,
+  "geometry_factor": 0.6666666666666666,
+  "f_z": 0.04525379687210524,
+  "time": 7.0,
+  "positive_ion_density": 2.428820937861007e+17,
+  "negative_ion_density": 8.096069792870024e+16,
+  "electron_density": 1.6192139585740048e+17,
+  "electron_temperature": 34813.554365236756,
+  "wall_flux": [
+    -0.00018516616429685667,
+    0.00018516616429685667,
+    -0.00018516616429685667,
+    0.0,
+    0.0
+  ],
+  "total_cation_wall_loss": 0.00018516616429685667,
+  "electron_wall_loss": 0.00018516616429685667,
+  "wall_charge_flux": 0.0,
+  "radial_frequency_ep": [
+    0.0,
+    0.0,
+    176.78669231017983,
+    0.0,
+    0.0
+  ],
+  "axial_frequency_ep": [
+    0.0,
+    0.0,
+    8.379471986676817,
+    0.0,
+    0.0
+  ],
+  "radial_frequency": [
+    0.0,
+    0.0,
+    117.85779487345322,
+    0.0,
+    0.0
+  ],
+  "axial_frequency": [
+    0.0,
+    0.0,
+    5.586314657784545,
+    0.0,
+    0.0
+  ],
+  "closure_difference_relative_ep": 0.015084598957368415,
+  "floating_potential_e_over_kTe": 4.67805639992293,
+  "state": [
+    1e-06,
+    0.998997,
+    1.5e-06,
+    0.001,
+    5e-07
+  ],
+  "energy_budget": null,
+  "wall_electron_energy_flux": 107.19503411914913,
+  "wall_neutralization_energy_flux": 2.918218749318461,
+  "wall_ion_energy_flux": null
+}

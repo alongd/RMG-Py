@@ -252,8 +252,32 @@ class ArkaneSpecies(RMGObject):
         if not os.path.exists(os.path.join(os.path.abspath(path), 'species', '')):
             os.mkdir(os.path.join(os.path.abspath(path), 'species', ''))
         valid_chars = "-_.()<=>+ %s%s" % (string.ascii_letters, string.digits)
-        filename = os.path.join('species',
-                                ''.join(c for c in self.label if c in valid_chars) + '.yml')
+        from rmgpy.chemkin import get_species_identifier
+        from rmgpy.export import SpeciesReferences, resolve_species_reference
+        name = self.label
+        if self.adjacency_list:
+            species = Species().from_adjacency_list(self.adjacency_list)
+            species.label = self.label
+            if any(mol.has_resolved_state() for mol in species.molecule):
+                declarations = SpeciesReferences([species], get_species_identifier, context='Arkane YAML archive')
+                name = resolve_species_reference(species, declarations)
+        filename = os.path.join('species', ''.join(c for c in name if c in valid_chars) + '.yml')
+        destination = os.path.join(path, filename)
+        if self.adjacency_list and os.path.isfile(destination):
+            with open(destination) as stream:
+                previous_data = yaml.safe_load(stream)
+            current = Species().from_adjacency_list(self.adjacency_list)
+            if previous_data.get('adjacency_list'):
+                previous = Species().from_adjacency_list(previous_data['adjacency_list'])
+            elif previous_data.get('smiles'):
+                previous = Species(smiles=previous_data['smiles'])
+            elif previous_data.get('inchi'):
+                previous = Species(inchi=previous_data['inchi'])
+            else:
+                from rmgpy.exceptions import SpeciesIdentityError
+                raise SpeciesIdentityError('Arkane YAML archive cannot identify existing file: ' + destination)
+            if any(mol.has_resolved_state() for spc in (previous, current) for mol in spc.molecule):
+                SpeciesReferences([previous, current], [name, name], context='Arkane YAML archive')
         full_path = os.path.join(path, filename)
         with open(full_path, 'w') as f:
             yaml.dump(data=self.as_dict(), stream=f)
@@ -297,10 +321,10 @@ class ArkaneSpecies(RMGObject):
             freq_data = data['imaginary_frequency']
             del data['imaginary_frequency']
         if not data['is_ts']:
-            if 'smiles' in data:
-                data['species'] = Species(smiles=data['smiles'])
-            elif 'adjacency_list' in data:
+            if data.get('adjacency_list'):
                 data['species'] = Species().from_adjacency_list(data['adjacency_list'])
+            elif 'smiles' in data:
+                data['species'] = Species(smiles=data['smiles'])
             elif 'inchi' in data:
                 data['species'] = Species(inchi=data['inchi'])
             else:

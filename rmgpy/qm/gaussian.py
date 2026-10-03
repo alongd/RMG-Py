@@ -267,7 +267,8 @@ class GaussianMol(QMMolecule, Gaussian):
             r"\s*([\- ][0-9.]+\s+[\-0-9.]+\s+[\-0-9.]+)\s+([A-Za-z]+)"
         )
 
-        output = ["", self.geometry.unique_id_long, ""]
+        output = ["", self.molecule.to_augmented_inchi() if self.molecule.has_resolved_state()
+                  else self.geometry.unique_id_long, ""]
         output.append(
             "{charge}   {mult}".format(
                 charge=0, mult=(self.molecule.get_radical_count() + 1)

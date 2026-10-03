@@ -178,6 +178,9 @@ class Arkane(object):
 
         # Load the input file for the job
         self.job_list = self.load_input_file(self.input_file)
+        from rmgpy.export import refuse_resolved_job
+        for job in self.job_list:
+            refuse_resolved_job(job, 'Arkane.execute')
         logging.info('')
 
         # Initialize (and clear!) the output files for the job

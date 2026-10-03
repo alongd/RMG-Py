@@ -142,7 +142,7 @@ class KineticsGroups(Database):
         if label in self.entries:
             raise DatabaseError("Duplicate group name {label} found in kinetics groups for {family} "
                                 "family.".format(label=label, family=self.label))
-        self.entries[label] = Entry(
+        self._store_entry(label, Entry(
             index=index,
             label=label,
             item=item,
@@ -152,7 +152,7 @@ class KineticsGroups(Database):
             short_desc=shortDesc,
             long_desc=longDesc.strip(),
             nodal_distance=nodalDistance
-        )
+        ), "KineticsGroups.load_entry")
 
     def get_reaction_template(self, reaction):
         """

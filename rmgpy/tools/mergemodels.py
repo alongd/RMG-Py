@@ -109,6 +109,8 @@ def execute(input_model_files, **kwargs):
     models = get_models_to_merge(input_model_files)
 
     final_model = combine_models(models)
+    from rmgpy.export import refuse_resolved_species
+    refuse_resolved_species(final_model.species, 'mergemodels.execute', final_model.reactions)
 
     # Save the merged model to disk
     save_chemkin_file(output_chemkin_file, final_model.species, final_model.reactions)

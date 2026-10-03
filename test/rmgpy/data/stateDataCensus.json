@@ -32,7 +32,7 @@
       "evidence": [
         "test/arkane/commonTest.py"
       ],
-      "source_sha256": "3bdbcd19cd3dd33133a23e3348717a2215579c563d363a71b6ab752e503b02c4"
+      "source_sha256": "e36fe6b278bc31a53c641d0d7e5eadc3e65221f83d8a19d86c2ec8e9838fb308"
     },
     "arkane/common.py:ArkaneSpecies.save_yaml": {
       "verdict": "carried",
@@ -40,7 +40,7 @@
       "evidence": [
         "test/arkane/commonTest.py"
       ],
-      "source_sha256": "cc2140afe5d1b30c4e0d849882575e7e9a1b2a6f8c64add2afccfa8e5d04a46e"
+      "source_sha256": "3344d9c21578782828ff81589db578133a5e29981ff9912973f57775594ddcd4"
     },
     "arkane/common.py:ArkaneSpecies.update_species_attributes": {
       "verdict": "carried",
@@ -464,7 +464,7 @@
       "evidence": [
         "test/arkane/encorr/bacTest.py"
       ],
-      "source_sha256": "663cd75feaa71530febaf1104f369cd794c5471d9e3184c54c846a946736f7af"
+      "source_sha256": "2c74cafeebeae784b56b6145bcbd00f7b0a7897191fa953c263ba7fda707f089"
     },
     "arkane/encorr/bac.py:CrossVal.__init__": {
       "verdict": "carried",
@@ -576,7 +576,7 @@
       "evidence": [
         "test/arkane/encorr/dataTest.py"
       ],
-      "source_sha256": "3e4b373cee05ad66a23ac1c7fc012f4baca4c58a5b938f609c9b80e6fc157a59"
+      "source_sha256": "a5b5f35d997d8643d55fb921cbc1a76aa65bcb2182f3dd7de45b075a6aa35846"
     },
     "arkane/encorr/data.py:BACDatapoint.bac_data": {
       "verdict": "carried",
@@ -1376,7 +1376,7 @@
       "evidence": [
         "test/arkane/encorr/referenceTest.py"
       ],
-      "source_sha256": "75140ec950dd4c88af1d5cf90e03e6487aae3e62b33080c51ed46ad0ada8ec5b"
+      "source_sha256": "4a86ae85f80cd5ec99d2ba1d3635f3fe37290a35d27aed0cd74ec202582e6953"
     },
     "arkane/encorr/reference.py:ReferenceSpecies.to_error_canceling_spcs": {
       "verdict": "carried",
@@ -2464,7 +2464,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "881afc1a26898704111b393a36c4e5b07190af254da83d74ee37dccbe21a86b0"
+      "source_sha256": "ef69d8f03dd6e54066e28cc90c00027ddc6d40e4ecd4a44e630eb92675577e04"
     },
     "arkane/kinetics.py:KineticsDrawer._draw_text": {
       "verdict": "carried",
@@ -2488,7 +2488,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "df49b12d62f23891c26f7adeae46798faaae9d7524fbf7e1b1e06ef4d5a277b3"
+      "source_sha256": "002f0866652315a9940c745c947d1b190efa1e6996629bda16e201d16b7a9503"
     },
     "arkane/kinetics.py:KineticsDrawer._get_text_size": {
       "verdict": "carried",
@@ -2520,7 +2520,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "41f2d1396d9976c7f7dc286097c8a9744d0db2c09db96127d8d73dfbf4a243c9"
+      "source_sha256": "4b3dcea3623d9ccfc3187a85469ff3442395d2d54f3ac6030c4c2df8fff12368"
     },
     "arkane/kinetics.py:KineticsJob.Tlist": {
       "verdict": "carried",
@@ -2584,7 +2584,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "f0529fd5aff5375af66f499334e667d6eacd5d004ccba72819eb6f5e2f2738a8"
+      "source_sha256": "d4eb4e3b3f1275e5f5f9744e9a96bf782221326a4956698fcb37ef34e8556af1"
     },
     "arkane/kinetics.py:KineticsJob.execute": {
       "verdict": "carried",
@@ -2592,7 +2592,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "48d1c565c84407259b192030e51d77b33672bdcbdc4ec3e1e465a09214f7b393"
+      "source_sha256": "6139db85f45b518bc2fd7920e7b4896f63b1afa028794f4a8c77918f3fba5329"
     },
     "arkane/kinetics.py:KineticsJob.generate_kinetics": {
       "verdict": "carried",
@@ -2608,7 +2608,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "40f7db4c8c4137e373f7e3a8a9c0c649dfa955b770e76e76c06e363c0818d8c4"
+      "source_sha256": "8ab8f4adb49b31948032b7b6677dd2f4c4ec9ce9301a9b3bc7dd9eed86dcef9f"
     },
     "arkane/kinetics.py:KineticsJob.save_yaml": {
       "verdict": "carried",
@@ -2616,7 +2616,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "80f14738caf730b2092c8b23145e3f07d8cbabfc6a9d09302e29ee83e1e63774"
+      "source_sha256": "6a7cad8feaf2a73e44929f5d2343e527d5418b4ccfe5d0ae879bb74484eaa980"
     },
     "arkane/kinetics.py:KineticsJob.write_chemkin": {
       "verdict": "carried",
@@ -2624,7 +2624,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "8e2b6d8ba1f28211548b48df1da448bb572ccfd0f69ef8a9d90cbcc2c42b09c3"
+      "source_sha256": "308e712c613333b0cec8646bc3446c2452019857e96dfaf88fa4569f04fb0e1d"
     },
     "arkane/kinetics.py:KineticsJob.write_output": {
       "verdict": "carried",
@@ -2632,7 +2632,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "3c18abd60d5273728d604815303d0aed4abce486fa732d227f5bc4a497e281c2"
+      "source_sha256": "3aecd61db37422a477a54fb9c1ff90d98960c7fecf2657c060c1cc7650acdf88"
     },
     "arkane/kinetics.py:Well.__init__": {
       "verdict": "carried",
@@ -2656,7 +2656,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "4c0f0696479d615911d3305619f5d023e8967dbbdd46f6822025624d48bb2d9a"
+      "source_sha256": "e210a59b8e816d1750f6278a7d2a1c97ce922205deec7a341ba57d08adc246e5"
     },
     "arkane/main.py:Arkane.get_libraries": {
       "verdict": "carried",
@@ -2936,7 +2936,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "88aec5c7561e4074eaf2ca92ff75a83415c68614223df6744f750306c47ebdc3"
+      "source_sha256": "c550ffcc5bb3737c6468a0256c7034d32d3a8b1dfe7ee5aba5fd0e165bf1ae7f"
     },
     "arkane/output.py:save_thermo_lib": {
       "verdict": "carried",
@@ -2944,7 +2944,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "ec32ec1e7ab892275b7ff149022a755cac02f0a23f3c54f84db5492318c5ee18"
+      "source_sha256": "690e2a48b23cf896b63360e2a526a894cd6b239091e40f96cc7c62c2379162dd"
     },
     "arkane/pdep.py:PressureDependenceJob.Plist": {
       "verdict": "carried",
@@ -3064,7 +3064,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "56f369d25814f25c4b283b0f71348a0844bf099ed01b9802e1372ed1b98cf5fb"
+      "source_sha256": "63c0874c162869a478670b3c32caa6d0f090cd3675672786fa45dcaea6e28973"
     },
     "arkane/pdep.py:PressureDependenceJob.execute": {
       "verdict": "carried",
@@ -3072,7 +3072,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "9eee5b8e793118145b769d330d331556cc2a40d0705c52de87eab9ef1690b463"
+      "source_sha256": "dc09b3b21d52bd7d32535f15c15b6443ee3ac9cf4b60cd1524cfe3f67a3f2501"
     },
     "arkane/pdep.py:PressureDependenceJob.fit_interpolation_model": {
       "verdict": "carried",
@@ -3136,7 +3136,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "629e04719bcb6e5b832943d3a63fd105d5e1aad1cd58046071cd6292be0fe91d"
+      "source_sha256": "5d3a3c1f7af8ca206866da3e7ef2c7a2566d05aa423136856b5f976f5a70933c"
     },
     "arkane/pdep.py:PressureDependenceJob.save": {
       "verdict": "carried",
@@ -3144,7 +3144,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "088786c5fe04bfddc0b41f360cb03047d76519b1b9249ebd1f18d2c0db4d9b69"
+      "source_sha256": "67c533a298d0f6d3870ae59f38e9422055177c720544c28c7b36852e569cbabb"
     },
     "arkane/pdep.py:PressureDependenceJob.save_input_file": {
       "verdict": "carried",
@@ -3152,7 +3152,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "ffd8a40b9ae18d9d7df1c4d19782221f972f176bff85d4ee648244ffccee00d8"
+      "source_sha256": "1401351bd98c8bbc9c17641bf0e2ee5c9ef20ebf0c67d0af59b443b97ff23db4"
     },
     "arkane/sensitivity.py:KineticsSensitivity.__init__": {
       "verdict": "carried",
@@ -3184,7 +3184,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "929474ec7274a1cee873b6745d18b4831ab0f27e0ea29bbb7e6438cdf1522749"
+      "source_sha256": "e8880f38d44ab6f9a9d03fddf9f8357a2994d72d16ed55e3acfd08dac6af926d"
     },
     "arkane/sensitivity.py:KineticsSensitivity.save": {
       "verdict": "carried",
@@ -3192,7 +3192,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "7d467c78674506cc41a9b34a3c31ae4064c3d0ff91d7b50bdb179530f2c195b1"
+      "source_sha256": "770a0dd8aba240442a597c3bb291551b730b3891a238259702e71c39cf55edf2"
     },
     "arkane/sensitivity.py:KineticsSensitivity.unperturb": {
       "verdict": "carried",
@@ -3232,7 +3232,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "afdb74f02becf45421833ea1e9e2f7b07db4260f394d63fa76ad1a640469a129"
+      "source_sha256": "2ac539c958e22ebf5a6988d986d13ce2177f666c36f72b3371bbc1b9500d46f2"
     },
     "arkane/sensitivity.py:PDepSensitivity.save": {
       "verdict": "carried",
@@ -3240,7 +3240,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "f63fa10d018c5f8fab29d899c16987a2eb91322d63d62867785baa9ba000ffa8"
+      "source_sha256": "a5f9576bbad4b829e4b77e81437e61f645bdc14db893dbc3f86a1bffdee057e1"
     },
     "arkane/sensitivity.py:PDepSensitivity.unperturb": {
       "verdict": "carried",
@@ -3320,7 +3320,7 @@
       "evidence": [
         "test/arkane/statmechTest.py"
       ],
-      "source_sha256": "230d2b57c28c7f7728226f00e8f77631ed1857123f7370eeced0c2a5628643be"
+      "source_sha256": "a0f5e1ce6352b76401d7285818a355002e00987ff23620fa2957f16fe2d2ecf3"
     },
     "arkane/statmech.py:StatMechJob.execute": {
       "verdict": "carried",
@@ -3353,7 +3353,7 @@
       "evidence": [
         "test/arkane/statmechTest.py"
       ],
-      "source_sha256": "6f554685608ad7424ebff84afbda33b5f1ecf0065a1cc27d00fddbbed167d45e"
+      "source_sha256": "75cbf516a478a3efecd3b54c976a309eb4ed9717c321aebb463ff479d2be57ca"
     },
     "arkane/statmech.py:StatMechJob.write_output": {
       "verdict": "carried",
@@ -3361,7 +3361,7 @@
       "evidence": [
         "test/arkane/statmechTest.py"
       ],
-      "source_sha256": "285a2a028ae8772c294a355a8ff0b1137217917cd1d9b8545fb7e6c2a0946b69"
+      "source_sha256": "02d0dc12ccb7eb0b47e490dbd298d2360d21acab5aa6fac77a4b6d30cda2e6b6"
     },
     "arkane/statmech.py:determine_rotor_symmetry": {
       "verdict": "carried",
@@ -3465,7 +3465,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "cbd98409ae04586efb85e5ab88ae1874f7c46013d9ac24d4cea02544d0574aef"
+      "source_sha256": "bede0d78bdfcda59e6ba287c9f09cc2f37b3a6c4752f314f0663e426e89e1cf9"
     },
     "arkane/thermo.py:ThermoJob.write_chemkin": {
       "verdict": "carried",
@@ -3473,7 +3473,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "91bb7865bba1e62354beea9297fb4147c910ca6e66ade56f644ac2edd1c496c9"
+      "source_sha256": "e80632be7cc755ee6f6db7588d8a28c550de4298d10b2420bd966bc1dabe6aaf"
     },
     "arkane/thermo.py:ThermoJob.write_output": {
       "verdict": "carried",
@@ -3481,7 +3481,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "0087d805d4ac404203d0e2739248e7931f6bbad7e52fb09d33182bfabcd2240d"
+      "source_sha256": "0af7a622ad7501144f527e8186c15ee10784304c83005d9b76ddb3aaf39ea13d"
     },
     "rmgpy/__init__.py:Settings.__init__": {
       "verdict": "not-reachable-for-resolved",
@@ -3593,7 +3593,7 @@
       "evidence": [
         "test/rmgpy/chemkinTest.py"
       ],
-      "source_sha256": "45bc6dff16b71632458667f7707c4333448f056911970bcf477111722ba7249f"
+      "source_sha256": "09437835fd217a41d40191c0a909258cf21e1e1805d040819cc53886765946a9"
     },
     "rmgpy/chemkin.pyx:_read_tdep_species": {
       "verdict": "carried",
@@ -3641,7 +3641,7 @@
       "evidence": [
         "test/rmgpy/chemkinTest.py"
       ],
-      "source_sha256": "3f3f5f1eae3f5c22623a042a42f7250b107fa01c82c12ceaac78c291176aeb9f"
+      "source_sha256": "49e217c6097ddda610fbd1533a01554fbaf77c7d58b4ff57eed372eb4a2e1a2c"
     },
     "rmgpy/chemkin.pyx:chemkin_duplicate_flags": {
       "verdict": "carried",
@@ -3681,7 +3681,7 @@
       "evidence": [
         "test/rmgpy/chemkinTest.py"
       ],
-      "source_sha256": "312283c6025548615f9700c7365520c3b3ab0cbdc8770a4324ee0f0fdbcaa916"
+      "source_sha256": "9a69ff5a902a273051721da80277871b51d6e596c6ebee8c2d942b267b233001"
     },
     "rmgpy/chemkin.pyx:kinetics_has_plasma_rate": {
       "verdict": "carried",
@@ -3697,7 +3697,7 @@
       "evidence": [
         "test/rmgpy/chemkinTest.py"
       ],
-      "source_sha256": "87029dd59482d03e06f088129b91d07123972ba9e193e41a0e2f3d609951954c"
+      "source_sha256": "91e4588c73256b0c102fb1979a9c6d096e660d3a794c52a7d82a0c381b8fdaf8"
     },
     "rmgpy/chemkin.pyx:load_chemkin_file.<lambda1>": {
       "verdict": "carried",
@@ -3713,7 +3713,7 @@
       "evidence": [
         "test/rmgpy/chemkinTest.py"
       ],
-      "source_sha256": "a971c160385593b8d065a0ee9ef4fc79e6f0892f2f635323df374a22cadb9ec1"
+      "source_sha256": "a47a261469749cd968ad742d9638d6ced5751364bdf1fe132bd9d2c2737c0133"
     },
     "rmgpy/chemkin.pyx:load_species_dictionary": {
       "verdict": "carried",
@@ -3721,7 +3721,7 @@
       "evidence": [
         "test/rmgpy/chemkinTest.py"
       ],
-      "source_sha256": "3af4dae4a9463885a7aa4017a7db346e6ac07c09c43b92198d2445775b7ba71c"
+      "source_sha256": "ec4d2a152f8d4ec6fc069c7b6f0aa3246b33ae8c9e881f0433bcbdc2a32ea7d1"
     },
     "rmgpy/chemkin.pyx:load_transport_file": {
       "verdict": "carried",
@@ -3817,7 +3817,7 @@
       "evidence": [
         "test/rmgpy/chemkinTest.py"
       ],
-      "source_sha256": "5f4635b052584543c69ed65155e23aeecc90b0206ad9376e0b50d0ca96331c2f"
+      "source_sha256": "c355c968d04dc0c0a5fe9684bb3f88489f5db4af0bc4e814af2aebfaa8c93503"
     },
     "rmgpy/chemkin.pyx:render_chemkin_file.<lambda1>": {
       "verdict": "carried",
@@ -3833,7 +3833,7 @@
       "evidence": [
         "test/rmgpy/chemkinTest.py"
       ],
-      "source_sha256": "9c2d6655dd2b0162925a4dfa538e77d48c60f3a5090195a2da7c738a3e2782bb"
+      "source_sha256": "47d846c6ca64e5999d5dc1b47c3e0e680223eae54a84d4d3bce2df59cb89261e"
     },
     "rmgpy/chemkin.pyx:render_chemkin_surface_file.<lambda1>": {
       "verdict": "carried",
@@ -3849,7 +3849,7 @@
       "evidence": [
         "test/rmgpy/chemkinTest.py"
       ],
-      "source_sha256": "c229d4a41e8ea886a346a436c9bd6a8c821aefd42d731a23572955b15d8af0cd"
+      "source_sha256": "30ed02948f5308d4e7653728fb91b54b6e9190e5fa0bae01777b68839e50d997"
     },
     "rmgpy/chemkin.pyx:render_transport_file": {
       "verdict": "carried",
@@ -3857,7 +3857,7 @@
       "evidence": [
         "test/rmgpy/chemkinTest.py"
       ],
-      "source_sha256": "6b24acb6590d831d881786d78d39dbf3386a7eea68649542e1aefef83246219a"
+      "source_sha256": "ce70df67a36b91a28e9112359c8f481c22248ca5f8bfb6de4075a9dba0c77935"
     },
     "rmgpy/chemkin.pyx:save_chemkin": {
       "verdict": "carried",
@@ -3865,7 +3865,7 @@
       "evidence": [
         "test/rmgpy/chemkinTest.py"
       ],
-      "source_sha256": "61f9ff9d049ec7917b3afabe62765330433dc1e2a735706039d4d5ad323b8dd0"
+      "source_sha256": "bb0323f76f63bec2286e4bfe0e2c25ec4dae60f87a27c9e01ebc55fa1b714d2d"
     },
     "rmgpy/chemkin.pyx:save_chemkin_file": {
       "verdict": "carried",
@@ -3921,7 +3921,7 @@
       "evidence": [
         "test/rmgpy/chemkinTest.py"
       ],
-      "source_sha256": "f892535c2a3d30cab5537c4d59d26fcfdba5bd5f5769e3312b04e78f7d190f2d"
+      "source_sha256": "103aafffd31a2f65fee68bd7e17d5f79a884c0b63af2ce608014dd34e66e6a3b"
     },
     "rmgpy/chemkin.pyx:write_kinetics_entry.<lambda1>": {
       "verdict": "carried",
@@ -3929,7 +3929,7 @@
       "evidence": [
         "test/rmgpy/chemkinTest.py"
       ],
-      "source_sha256": "0eddabdc8debe96b6ff68fd25277f0a76b278a89e9d041dd4ba4bdcf82747a72"
+      "source_sha256": "4cd5585357b8e5a1e362995419976c089219b4b88a79180c1fb1ab9df8e0a380"
     },
     "rmgpy/chemkin.pyx:write_reaction_string": {
       "verdict": "carried",
@@ -3937,7 +3937,7 @@
       "evidence": [
         "test/rmgpy/chemkinTest.py"
       ],
-      "source_sha256": "535c0f4d9c78be3ac45cfc0c44723352542c39fcdda899ae3ec0ca2af0d0c86f"
+      "source_sha256": "3ecb780b529abb8f6b4f525f2f2f57c3ce4a23181e03eb04da08943ac824118c"
     },
     "rmgpy/chemkin.pyx:write_thermo_entry": {
       "verdict": "carried",
@@ -3945,7 +3945,7 @@
       "evidence": [
         "test/rmgpy/chemkinTest.py"
       ],
-      "source_sha256": "ede0d32190732444e688ce79e13afbf67fbdb96642843d3296b767b8ca347125"
+      "source_sha256": "d9cdf86d3342c8ffd988c8aa99139bb16a352f5f9e0241ed8e879625025009fb"
     },
     "rmgpy/chemkin.pyx:write_thermo_entry.<lambda1>": {
       "verdict": "carried",
@@ -4179,7 +4179,7 @@
       "evidence": [
         "test/rmgpy/data/baseTest.py"
       ],
-      "source_sha256": "af82f2ccddc0d67d37691fb24512e2d6c2f7bbeb2065be77691a8f9187ea48ac"
+      "source_sha256": "3b11867556090bed676fe0d8e8b1a0b6f2ad62cc997fa9f007c0105c44213ddb"
     },
     "rmgpy/data/base.py:Database.load": {
       "verdict": "carried",
@@ -4189,7 +4189,7 @@
         "test/rmgpy/i293ChargedThermoProvenanceTest.py",
         "test/rmgpy/data/stateRouteReworkTest.py"
       ],
-      "source_sha256": "bf56c8147a3f2259b7cc9fc5f36daab967c44fabea97d46371c73ac8a2d6ada9"
+      "source_sha256": "c926ff1854c9f49a984359db057e97313bb5ecfbca6b77aa002c96fccdfb6471"
     },
     "rmgpy/data/base.py:Database.load_old": {
       "verdict": "carried",
@@ -4207,7 +4207,7 @@
       "evidence": [
         "test/rmgpy/data/baseTest.py"
       ],
-      "source_sha256": "c085cf562f8616fe8b1af3c5eee6567a1a825cc18de08e147823326bbedd8871"
+      "source_sha256": "95dc2c5b09528a86383eef0e9b20998fb954e3f1e75ff8af2a3381fa141bb45f"
     },
     "rmgpy/data/base.py:Database.load_old_library": {
       "verdict": "carried",
@@ -4289,7 +4289,7 @@
         "test/rmgpy/i293ChargedThermoProvenanceTest.py",
         "test/rmgpy/data/stateRouteReworkTest.py"
       ],
-      "source_sha256": "6ead7ae763dcee3cf510c9c83733576c41a1cca3cb31e6d7d018726e6fea6ef6"
+      "source_sha256": "33344e806cf86cac649f4a14ae12180944ea63637c6cd688ece464f4f226a88c"
     },
     "rmgpy/data/base.py:Database.save_dictionary": {
       "verdict": "carried",
@@ -4297,7 +4297,7 @@
       "evidence": [
         "test/rmgpy/data/baseTest.py"
       ],
-      "source_sha256": "99102161b271a15b22a6dacaa818414fb23251c2cb67aebad9627d1a96fa49c2"
+      "source_sha256": "0d3ccdd91b61d0f73adfddfc642ab5dd1e142d0b75eb0d65ccca58fa96ba02cc"
     },
     "rmgpy/data/base.py:Database.save_old": {
       "verdict": "carried",
@@ -4313,7 +4313,7 @@
       "evidence": [
         "test/rmgpy/data/baseTest.py"
       ],
-      "source_sha256": "9d185cfc9b7e374df5288b0495251e364bcbc9b4124802eceec07c5246ab8af7"
+      "source_sha256": "78de8285488321c1021f363a4207f660254e39c4719843a111a0db5f4eb3e470"
     },
     "rmgpy/data/base.py:Database.save_old_dictionary.<lambda1>": {
       "verdict": "carried",
@@ -4353,7 +4353,7 @@
       "evidence": [
         "test/rmgpy/data/baseTest.py"
       ],
-      "source_sha256": "3f45f0cb4cd2dfa96445b521db156f80dfa70e20ac216592b1cceb6d35e3a117"
+      "source_sha256": "c1e05be6180a4251694bf4147b1e17fddb1c6248035a7b4b5123246a06ef046b"
     },
     "rmgpy/data/base.py:Database.save_old_library.<lambda1>": {
       "verdict": "carried",
@@ -4417,7 +4417,7 @@
       "evidence": [
         "test/rmgpy/data/baseTest.py"
       ],
-      "source_sha256": "db3ad16f7ad26b3369b865362d2ebc1303640387b23943b2aae7dbb515ff5f13"
+      "source_sha256": "d9f408825994722770b0282450bdf6e4304969284de3d2ae59cfb9752fc74dab"
     },
     "rmgpy/data/base.py:ForbiddenStructures.load_old": {
       "verdict": "carried",
@@ -4433,7 +4433,7 @@
       "evidence": [
         "test/rmgpy/data/baseTest.py"
       ],
-      "source_sha256": "b2b31e90d5dc582f52436fabcec4cfd948afbc375bbbcc0ca5225db5f43eb65d"
+      "source_sha256": "50a4ba423278ba4dbd57c57df700ef5d2d1c29386e90eb00c65f47afce61193a"
     },
     "rmgpy/data/base.py:ForbiddenStructures.save_old": {
       "verdict": "carried",
@@ -4625,15 +4625,7 @@
       "evidence": [
         "test/rmgpy/data/kinetics/kineticsTest.py"
       ],
-      "source_sha256": "9bff4a12fdb72cff6459b428effbb1a25f5206fd7d9b10a88a604426c801abc1"
-    },
-    "rmgpy/data/kinetics/common.py:save_entry.sort_efficiencies": {
-      "verdict": "carried",
-      "reason": "Reaction/species bookkeeping or Entry serialization retains molecular identity; numeric degeneracy helpers operate on already matched reactions.",
-      "evidence": [
-        "test/rmgpy/data/kinetics/kineticsTest.py"
-      ],
-      "source_sha256": "3064a37bdde5b2fc3da6aa4252c20f96bc1cf8c20a79a5f51ec747bfe5f0a01d"
+      "source_sha256": "5401d3d5b4ccc4eac3694356da8893bc30b56790b7f31182c26323c01a60a559"
     },
     "rmgpy/data/kinetics/database.py:KineticsDatabase.__init__": {
       "verdict": "carried",
@@ -4809,7 +4801,7 @@
       "evidence": [
         "test/rmgpy/data/kinetics/kineticsTest.py"
       ],
-      "source_sha256": "2968ee7ea403ff06947c043d7e1f1d512c11df02387f5674510ce05f9b3e2a4a"
+      "source_sha256": "11b294302c924c5daa3fe961bd992af364345105dd545ef6efc99ce21e0e4925"
     },
     "rmgpy/data/kinetics/database.py:KineticsDatabase.save_old": {
       "verdict": "carried",
@@ -4913,7 +4905,7 @@
       "evidence": [
         "test/rmgpy/data/kinetics/kineticsTest.py"
       ],
-      "source_sha256": "758cbb5f08c4202dc890e5fca45c3e10c6d53f61c06a5174c62be28f47ba7004"
+      "source_sha256": "aa09d183809de76ce4b0cab89ca79b256fe4787728fda81341910a2068f528f9"
     },
     "rmgpy/data/kinetics/depository.py:KineticsDepository.load_entry": {
       "verdict": "carried",
@@ -4921,7 +4913,7 @@
       "evidence": [
         "test/rmgpy/data/kinetics/kineticsTest.py"
       ],
-      "source_sha256": "7d19e9fe140d6da3eff125b18eb7087e8b2e31bb0474c481ddcfb0987e724aeb"
+      "source_sha256": "3c89600ecb2831cd29313fbd4d7f449bde1d1e11f97567f89249a3f193e5eef7"
     },
     "rmgpy/data/kinetics/depository.py:KineticsDepository.save_entry": {
       "verdict": "carried",
@@ -4929,7 +4921,7 @@
       "evidence": [
         "test/rmgpy/data/kinetics/kineticsTest.py"
       ],
-      "source_sha256": "e762c1546388a3d5b85144db52dab0020a536128743d4554cf8b08beb8332b88"
+      "source_sha256": "dc28fe427bc166b634116336c867573325e05e895d43401a98f549fc66135689"
     },
     "rmgpy/data/kinetics/family.py:KineticsFamily.__init__": {
       "verdict": "carried",
@@ -5105,7 +5097,7 @@
       "evidence": [
         "test/rmgpy/data/kinetics/groupStateReworkTest.py"
       ],
-      "source_sha256": "eb1017863aaf2f3b01901f355653d3d11d1f8740bc633892f48494f8510f7c1c"
+      "source_sha256": "9ba9a047f5813b03c937335d102098f249e071fabb99ce2f249774d5714a7523"
     },
     "rmgpy/data/kinetics/family.py:KineticsFamily.add_reverse_attribute": {
       "verdict": "carried",
@@ -5121,7 +5113,7 @@
       "evidence": [
         "test/rmgpy/data/stateProvenanceTest.py"
       ],
-      "source_sha256": "aade2e9486c0b908ab4c84ff213d138e6c260501373000bf2915d46e34f47f13"
+      "source_sha256": "c1ec12b691eda1b27e6161e3164c8db6b37888915fea1f333ff19ae68e931911"
     },
     "rmgpy/data/kinetics/family.py:KineticsFamily.add_rules_from_training.<lambda1>": {
       "verdict": "not-reachable-for-resolved",
@@ -5177,7 +5169,7 @@
       "evidence": [
         "test/rmgpy/data/kinetics/groupStateReworkTest.py"
       ],
-      "source_sha256": "a962acb801c74734049f2fa5a29845d50cc5e5c163d101b36585845e1758db9b"
+      "source_sha256": "153f70b1b5021bdd6755a8efe575c1a06e8c7330a2f38900ddb0c34c81065013"
     },
     "rmgpy/data/kinetics/family.py:KineticsFamily.cross_validate": {
       "verdict": "refused",
@@ -5249,7 +5241,7 @@
       "evidence": [
         "test/rmgpy/data/kinetics/groupStateReworkTest.py"
       ],
-      "source_sha256": "5f9da688752e6bc2f057848ba54274ce90e6c87c7425146c1e336ebdae8e7f63"
+      "source_sha256": "0e4e5151b5ab8bf86f10643e5969a77ffb264fc9c185d9ce3057e67e353bc876"
     },
     "rmgpy/data/kinetics/family.py:KineticsFamily.generate_reactions": {
       "verdict": "excluded",
@@ -5521,7 +5513,7 @@
       "evidence": [
         "test/rmgpy/data/stateProvenanceTest.py"
       ],
-      "source_sha256": "3fc2690ad835685f3ce00e9f757981a3dc649ca87ded2e29a24dcf13b5c7de22"
+      "source_sha256": "3cee8092163d03d2a745f2881964af1a278bd666142465ba3abf5b89ef19fd86"
     },
     "rmgpy/data/kinetics/family.py:KineticsFamily.make_tree": {
       "verdict": "refused",
@@ -5537,7 +5529,7 @@
       "evidence": [
         "test/rmgpy/data/stateProvenanceTest.py"
       ],
-      "source_sha256": "eae7ba90c7b8478fed3d3701c6f01984e4633e8ebe5cbfc7b73fe211886b0504"
+      "source_sha256": "c80fc215d0eb6fde7b808e8572c7b9fa4e9df95747f40f598ff8b043be77fd9b"
     },
     "rmgpy/data/kinetics/family.py:KineticsFamily.prune_tree": {
       "verdict": "refused",
@@ -5601,7 +5593,7 @@
       "evidence": [
         "test/rmgpy/data/kinetics/groupStateReworkTest.py"
       ],
-      "source_sha256": "917a654a22b362b36a52b013831caa17ed8c1168ba22223198a2eda865e38cbc"
+      "source_sha256": "f07da5797cc46881b4745bd198ba1d206a72fe65a7cb9f9cefd688b5da53045c"
     },
     "rmgpy/data/kinetics/family.py:KineticsFamily.save_entry": {
       "verdict": "carried",
@@ -5609,7 +5601,7 @@
       "evidence": [
         "test/rmgpy/data/kinetics/groupStateReworkTest.py"
       ],
-      "source_sha256": "130afe289c18aaad8d90e4d76fc242df46294505ba3f0f516f67d26ee2137d9a"
+      "source_sha256": "e4a13ad3d0803f09579fc2087e0b70225f9266126cc69e418003252d90b11576"
     },
     "rmgpy/data/kinetics/family.py:KineticsFamily.save_generated_tree": {
       "verdict": "carried",
@@ -5641,7 +5633,7 @@
       "evidence": [
         "test/rmgpy/data/stateProvenanceTest.py"
       ],
-      "source_sha256": "f7ba97e2dafce86ad5de1a916525a08a72d1812bc9fcf7a3b16af7d053110c0e"
+      "source_sha256": "997b7fc07001c52a201882d6a89dea91a6cfc794365997fc2e4e0757fd90f442"
     },
     "rmgpy/data/kinetics/family.py:KineticsFamily.simple_regularization": {
       "verdict": "refused",
@@ -6049,7 +6041,7 @@
       "evidence": [
         "test/rmgpy/data/kinetics/groupStateReworkTest.py"
       ],
-      "source_sha256": "a2fadfab0c6be4b0e3345e2349a5cb38e0687cd4aa21fc108de1931e5fb05653"
+      "source_sha256": "302761b09c5672db886c697ff42666311a037bdb23c1ed3fe904e99eb0f8ffbb"
     },
     "rmgpy/data/kinetics/groups.py:KineticsGroups.match_node_state_to_structure": {
       "verdict": "excluded",
@@ -6113,7 +6105,7 @@
       "evidence": [
         "test/rmgpy/data/kinetics/libraryTest.py"
       ],
-      "source_sha256": "58c5e7641e1ff5b30fc5bba6ed99a07d095e361880d1321973190f21e252fcc9"
+      "source_sha256": "4a66e7d673ebb92897680bdd4c2530de69a8293cd0a30d453355efd926019fec"
     },
     "rmgpy/data/kinetics/library.py:KineticsLibrary.check_for_duplicates": {
       "verdict": "carried",
@@ -6145,7 +6137,7 @@
       "evidence": [
         "test/rmgpy/data/kinetics/libraryTest.py"
       ],
-      "source_sha256": "439fb673ebad9a0fc41baed7aa40495ef2e00793913a3cf81a8afc0ee3a6d817"
+      "source_sha256": "553a4f64f2ec540915f4f0a953d6055840aee260a3deb251be62073e4447c8a6"
     },
     "rmgpy/data/kinetics/library.py:KineticsLibrary.load_entry": {
       "verdict": "carried",
@@ -6153,7 +6145,7 @@
       "evidence": [
         "test/rmgpy/data/kinetics/libraryTest.py"
       ],
-      "source_sha256": "b3f6db2f2405bef9741d4faa62e49a2af4297ea2675562bfb6d730c90523491a"
+      "source_sha256": "d618c3bc89cb8d15666a9d652c83294193c908fb8e8a7673f3b55b09053d0e1f"
     },
     "rmgpy/data/kinetics/library.py:KineticsLibrary.load_old": {
       "verdict": "carried",
@@ -6161,7 +6153,7 @@
       "evidence": [
         "test/rmgpy/data/kinetics/libraryTest.py"
       ],
-      "source_sha256": "b30ddb2d5b69e46bbd7c3c1f81c64dcc4bd41e1500b45642ed4886e90d530c3b"
+      "source_sha256": "f4ae646a9913a23d4c3a4c05c993aa6593adce1bd462abc3769a1b1435d2c926"
     },
     "rmgpy/data/kinetics/library.py:KineticsLibrary.mark_valid_duplicates": {
       "verdict": "carried",
@@ -6177,7 +6169,7 @@
       "evidence": [
         "test/rmgpy/data/kinetics/libraryTest.py"
       ],
-      "source_sha256": "a3ead3b97c46499fd835f64ffcfb384f0d5c391a11945347e89998de857e5e7c"
+      "source_sha256": "53f2580093de7256b53213b5b28f7e8fdb6b5d01b66682cf392ecb44f09955a7"
     },
     "rmgpy/data/kinetics/library.py:KineticsLibrary.save_entry": {
       "verdict": "carried",
@@ -6185,7 +6177,7 @@
       "evidence": [
         "test/rmgpy/data/kinetics/libraryTest.py"
       ],
-      "source_sha256": "e90c25a8f1435464667bad517a31790a778b5c5766cca1ca481ecc9b9e3e0671"
+      "source_sha256": "f8b93b10ee5cd86aa70d8ccba9f197a184f8570ee3a705d55a123727c8166ad0"
     },
     "rmgpy/data/kinetics/library.py:KineticsLibrary.save_old": {
       "verdict": "carried",
@@ -6193,7 +6185,7 @@
       "evidence": [
         "test/rmgpy/data/kinetics/libraryTest.py"
       ],
-      "source_sha256": "cc66d396cda17690826f2f0b4859e5ab0e96a0967c888c6f37ef39b8c17cee0e"
+      "source_sha256": "b8b12dce685fe0f6d1c80d70e4ada4bbd7fc0d54de883422f6c93ac6c4d4c92b"
     },
     "rmgpy/data/kinetics/library.py:KineticsLibrary.save_old.<lambda1>": {
       "verdict": "carried",
@@ -6649,7 +6641,7 @@
       "evidence": [
         "test/rmgpy/data/stateProvenanceTest.py"
       ],
-      "source_sha256": "a9f9e3272710ad6c212314a4e628624e69b7af828c994e7ffbcac2f0dc303543"
+      "source_sha256": "2d147606361451ead79e216bc4ad7a550fb03f2c3d56067fd95a6eabb619dfc4"
     },
     "rmgpy/data/kinetics/rules.py:KineticsRules.get_all_rules": {
       "verdict": "carried",
@@ -6713,7 +6705,7 @@
       "evidence": [
         "test/rmgpy/data/stateProvenanceTest.py"
       ],
-      "source_sha256": "8f199104efa7110fc0d8238bf918701a8720677b8c3846e107381f24411897a5"
+      "source_sha256": "f8b471cd2c05ec7306e6130bd68ac150057f6f70dfe786e318ea95bb70b5b7f2"
     },
     "rmgpy/data/kinetics/rules.py:KineticsRules.save_entry": {
       "verdict": "carried",
@@ -7049,7 +7041,7 @@
       "evidence": [
         "test/rmgpy/data/solvationTest.py"
       ],
-      "source_sha256": "912b00d7e6fece21c4c2def5681c31daf56477969173669dc7498c603b69c615"
+      "source_sha256": "74e8e707aedecc9dabc5dc73bea24f41e2fe066d9f49c75862b58d2a9b633e89"
     },
     "rmgpy/data/solvation.py:SoluteGroups.process_old_library_entry": {
       "verdict": "carried",
@@ -7097,7 +7089,7 @@
       "evidence": [
         "test/rmgpy/data/solvationTest.py"
       ],
-      "source_sha256": "0687f84697fd586429c9fc4845c7c94346f26ebe58dfde78ca6f81080f5ae4df"
+      "source_sha256": "fc058b6c0fbd3ebfeddc0a43092be83215ab47b7552942c659c29112d3497f5d"
     },
     "rmgpy/data/solvation.py:SoluteLibrary.process_old_library_entry": {
       "verdict": "carried",
@@ -7617,7 +7609,7 @@
       "evidence": [
         "test/rmgpy/data/solvationTest.py"
       ],
-      "source_sha256": "194a141ecd639d4f27f3e0fdc7f07efed77e57f6b2345cc597326d971a9bf336"
+      "source_sha256": "55e8462c1d586621756adc2dd118abe8a716f6b9b4c0eaebba5294df513b5da1"
     },
     "rmgpy/data/solvation.py:SolventLibrary.save_entry": {
       "verdict": "carried",
@@ -7705,7 +7697,7 @@
       "evidence": [
         "test/rmgpy/data/solvationTest.py"
       ],
-      "source_sha256": "ed4b7a98d70b05c3d0a0efa1b8b42ee00ba744a3859ebe7ea47bb3623b373284"
+      "source_sha256": "075ef369f5bb79a32b08e17be2d6208501cbb20f1f08ae813b87cb345c8a5c29"
     },
     "rmgpy/data/solvation.py:to_soluteTSdata": {
       "verdict": "carried",
@@ -7881,7 +7873,7 @@
       "evidence": [
         "test/rmgpy/data/baseTest.py"
       ],
-      "source_sha256": "9054138a7fcd74a24e48b6ae9433911f19de9941847adc5605fdc72b7e81b660"
+      "source_sha256": "24e069f0e4dceecfbd1d24ed7010250b744665472439ced188ab0170e198874b"
     },
     "rmgpy/data/statmech.py:StatmechDepository.save_entry": {
       "verdict": "carried",
@@ -7953,7 +7945,7 @@
       "evidence": [
         "test/rmgpy/data/baseTest.py"
       ],
-      "source_sha256": "aa34c45cd0f43f531fb6498560913019c36c8ad8d6e5461883adc86c67088f16"
+      "source_sha256": "cf89c7e10088bdf980da382150cd0cdf3257a0b582da697b0715b79fe080c6ff"
     },
     "rmgpy/data/statmech.py:StatmechGroups.process_old_library_entry": {
       "verdict": "carried",
@@ -7993,7 +7985,7 @@
       "evidence": [
         "test/rmgpy/data/baseTest.py"
       ],
-      "source_sha256": "68242a3c13e858663de92d813e099e1c4264e4821aa2d988394ba5e55d114c21"
+      "source_sha256": "86027fabcd881112a192618d137e9394bf5e26b5c358999a258a44679ca16cd7"
     },
     "rmgpy/data/statmech.py:StatmechLibrary.process_old_library_entry": {
       "verdict": "carried",
@@ -8185,7 +8177,7 @@
       "evidence": [
         "test/rmgpy/data/surfaceTest.py"
       ],
-      "source_sha256": "c302e7955b4e8e8e0d787dc36dd757447d3a4d217b3c8a829793e9fe7ef3caf3"
+      "source_sha256": "c910730bb6af4714e0d42985c3741767e933855f216b8b91c815d7e3470f703c"
     },
     "rmgpy/data/surface.py:MetalDatabase.find_binding_energies": {
       "verdict": "carried",
@@ -8297,7 +8289,7 @@
       "evidence": [
         "test/rmgpy/data/surfaceTest.py"
       ],
-      "source_sha256": "0a2760395438c3b03377ff124465db1ba9cde938f28ec2874e0485b5cf04cf45"
+      "source_sha256": "d9cc2462c19a716fb5867f52b9a1d7b4ff106a6a59f8e77a7bb38c7b5afdc157"
     },
     "rmgpy/data/surface.py:MetalLibrary.save_entry": {
       "verdict": "carried",
@@ -8833,7 +8825,7 @@
       "evidence": [
         "test/rmgpy/data/thermoTest.py"
       ],
-      "source_sha256": "0eec57c875ff4e408e1037417ae12007db79cde6312f1d0bb195d7f8aa44438a"
+      "source_sha256": "e048bca8aed446100bb4f0494b8b945ed2507fc1016744aa4a1132a6973c51bf"
     },
     "rmgpy/data/thermo.py:ThermoDepository.save_entry": {
       "verdict": "carried",
@@ -8873,7 +8865,7 @@
       "evidence": [
         "test/rmgpy/data/thermoTest.py"
       ],
-      "source_sha256": "adffc7b27fff755d1bd6351ea17cd2ed9586edc93ecfdf203e4bc5fcb0081f8f"
+      "source_sha256": "14498df8e01a777cc8c6c2ec4e675cb9233e374f79c79f0ec73647a02a732742"
     },
     "rmgpy/data/thermo.py:ThermoGroups.process_old_library_entry": {
       "verdict": "carried",
@@ -8933,7 +8925,7 @@
       "evidence": [
         "test/rmgpy/data/thermoTest.py"
       ],
-      "source_sha256": "18b0401bb59a2d361773b000d19dbc0ad62ad2d8845da2ac7cf9308d3184e192"
+      "source_sha256": "876c12e9bc53c627e552caa0d7f2a5b78f4710eb55ffadb536912ae41e29c2b2"
     },
     "rmgpy/data/thermo.py:ThermoLibrary.process_old_library_entry": {
       "verdict": "carried",
@@ -9102,7 +9094,7 @@
       "evidence": [
         "test/rmgpy/data/thermoTest.py"
       ],
-      "source_sha256": "b87ef5a4977a32917becbc83ee1a2e608c6c320e7933ce53cdd8c98d7d93f375"
+      "source_sha256": "3f6009824f922b9a84deffbd9112795c788fa4b9fadfd79929ad7f83a6395e18"
     },
     "rmgpy/data/thermo.py:split_bicyclic_into_single_rings": {
       "verdict": "not-reachable-for-resolved",
@@ -9302,7 +9294,7 @@
       "evidence": [
         "test/rmgpy/data/transportTest.py"
       ],
-      "source_sha256": "62d8e81b740396d18fcfc6443ab90a2e5fd0237b588287b9556b33842c1c5dfb"
+      "source_sha256": "7a43309b377b14397c5e5efd69d1543edf2fa8d037fc70b62b9a6d8f60c1adb7"
     },
     "rmgpy/data/transport.py:TransportGroups.process_old_library_entry": {
       "verdict": "carried",
@@ -9342,7 +9334,7 @@
       "evidence": [
         "test/rmgpy/data/transportTest.py"
       ],
-      "source_sha256": "c4c4493ac70e25f11c967db83b5217ece7b2857a6b00f2ddc5c203ec4b02058c"
+      "source_sha256": "698685e10ef4bf570446238df539d65ec79af7b4fac916e56e45ced05b13470c"
     },
     "rmgpy/data/transport.py:TransportLibrary.process_old_library_entry": {
       "verdict": "carried",
@@ -12471,7 +12463,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "5a75f458c202fac3f181c49f1303bb5b3fa1e66123ecc5ff032e6d836258efd4"
+      "source_sha256": "ff196abd88f3c350d5a299f8810b80266d66a2261c26cf133e908682a797c2dd"
     },
     "rmgpy/kinetics/model.pyx:PDepKineticsModel.get_cantera_efficiencies.<lambda1>": {
       "verdict": "carried",
@@ -12479,7 +12471,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "f61052b113776f612023997bde22f3ec232ed03627002c33218f0ccd6aa8b82f"
+      "source_sha256": "b038375f7ed29125f77a6480e9d6d54297af2c5ac1ac49d27cf593a13e95a020"
     },
     "rmgpy/kinetics/model.pyx:PDepKineticsModel.get_effective_collider_efficiencies": {
       "verdict": "carried",
@@ -12679,7 +12671,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "0a0024ab3eecd41cf97df00c6a5b1f8281eaa5521d103808ab5ebbfa2e39da12"
+      "source_sha256": "86bba51177cc9d6b7aa4df602e6c5bb16a2ef5a1b7acd6809b4fd9744ddf7294"
     },
     "rmgpy/kinetics/surface.pyx:StickingCoefficient.change_rate": {
       "verdict": "carried",
@@ -12839,7 +12831,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "4fb7e8ae5e069ccb36d259ac4fb86deb657c39dbf52cb67366bc007a99bed147"
+      "source_sha256": "e1b3afe59d3e88dc0342c4543a8a169bc2f020b8291e3be698da4d8f3cfc955e"
     },
     "rmgpy/kinetics/surface.pyx:StickingCoefficientBEP.alpha.__get__": {
       "verdict": "carried",
@@ -12983,7 +12975,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "0acc7fd12667531ab3597d37332e9bfd6bdb34ab0549a2e976a244b7d93523b7"
+      "source_sha256": "c4dece110ec13dd5e3959e757f7fd966ecb6fb857151ffe0744c807c1b448676"
     },
     "rmgpy/kinetics/surface.pyx:SurfaceArrhenius.coverage_dependence.__get__": {
       "verdict": "carried",
@@ -13063,7 +13055,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "a5a20f0d89b3ccc43e4d6ea316662a89814a3d16b5761d5f2f091512df6bc199"
+      "source_sha256": "f992b7eac8ed23ac57666a44c4fc5b6d1d1578d3998474fec6d142882decedfc"
     },
     "rmgpy/kinetics/surface.pyx:SurfaceArrheniusBEP.coverage_dependence.__get__": {
       "verdict": "carried",
@@ -14151,7 +14143,7 @@
       "evidence": [
         "test/rmgpy/molecule/drawTest.py"
       ],
-      "source_sha256": "8452e69acc40191d1160bd84280cee46982c8c5ca38d19a5233c79dd473616a1"
+      "source_sha256": "4e2a4e3aedb808b66a98683af36ee939aef46e19dd929af9a9b3e44d2daf9abb"
     },
     "rmgpy/molecule/draw.py:MoleculeDrawer.render": {
       "verdict": "not-reachable-for-resolved",
@@ -14175,7 +14167,7 @@
       "evidence": [
         "test/rmgpy/molecule/drawTest.py"
       ],
-      "source_sha256": "5e3898be3f1299395b3fa348068898f862fb608436c4f8bf8ee2a975d33465ee"
+      "source_sha256": "0ddd5644b29310481694108dcacc8aa333df6d8500ea567702976310b5f34118"
     },
     "rmgpy/molecule/draw.py:create_new_surface": {
       "verdict": "not-reachable-for-resolved",
@@ -17466,7 +17458,7 @@
       "evidence": [
         "test/rmgpy/molecule/moleculeTest.py"
       ],
-      "source_sha256": "b09a2f7a92ea2597698c6cbd3691a429c450279905c19ec17b8fc995385b0a6b"
+      "source_sha256": "63984fcb0a315c10c54830846417b63bfe27281f723cb021397086a27fa34b41"
     },
     "rmgpy/molecule/molecule.py:Molecule._validate_electronic_state": {
       "verdict": "not-reachable-for-resolved",
@@ -17638,7 +17630,7 @@
       "evidence": [
         "test/rmgpy/molecule/moleculeTest.py"
       ],
-      "source_sha256": "478432a1d5634da315a2339a5a920cb5b1abadf184a8fba98f61e05ea4332a3e"
+      "source_sha256": "189fa847cd31fd95051d2f26a023f026cec28e7adc79dd9bd26e051bf5fdc916"
     },
     "rmgpy/molecule/molecule.py:Molecule.electronic_state": {
       "verdict": "not-reachable-for-resolved",
@@ -19485,7 +19477,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "97544d4f73ea1c700be750dcf10ce8b7dfee41ad286124e1d68f6f64bfe54d30"
+      "source_sha256": "3a0ad11a472a16ba3b5e35e11de801f681e2a3b89a9e81f6aba2f7d8879be324"
     },
     "rmgpy/pdep/draw.py:NetworkDrawer._draw_text": {
       "verdict": "carried",
@@ -19509,7 +19501,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "504b1cdc3d7416ef788bc5cfb96f17363d8447e318e0f9543ef5bf45cf296abb"
+      "source_sha256": "b5a630cecc5cdfb0f8b175feda22bd909a3e6d227b3a03b92dddf49a0c24e52a"
     },
     "rmgpy/pdep/draw.py:NetworkDrawer._get_text_size": {
       "verdict": "carried",
@@ -19541,7 +19533,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "964c21725600cb58ad44e4fc02b6ae36854262d4c4491b27b33e97bbc154f0c2"
+      "source_sha256": "5c71b6d662432b9d537968e9c59d0526695bd7a068623df8207648bcf6c732fa"
     },
     "rmgpy/pdep/me.pyx:generate_full_me_matrix": {
       "verdict": "carried",
@@ -19861,7 +19853,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "25eb45fd3d0d0e7048847c27a83988b56c745a068115cf36d7659f70e40447d7"
+      "source_sha256": "8c3ca28021778fc89a155dfc4c5e68b2ce1c8a8f8a020ae308191af6f0764210"
     },
     "rmgpy/pdep/sls.py:get_rate_coefficients_SLS": {
       "verdict": "carried",
@@ -20052,7 +20044,7 @@
       "evidence": [
         "test/rmgpy/data/stateSupplierReworkTest.py"
       ],
-      "source_sha256": "bd8fc692209d97483a5ce3dcace2a441286a987a417d9461f2f5b4053d2dd575"
+      "source_sha256": "68143cfd062c977c866a8b96945ba1c28bef5f55228a6166b1906a6c0fda84db"
     },
     "rmgpy/qm/main.py:QMCalculator.__init__": {
       "verdict": "carried",
@@ -20266,7 +20258,7 @@
         "test/rmgpy/molecule/stateKeyPathsTest.py",
         "test/rmgpy/data/stateSupplierReworkTest.py"
       ],
-      "source_sha256": "f89cd24113eb4c2bea83528da5e7ff7bca0e387c3c792f8eece57b2576d561e7"
+      "source_sha256": "ac50305af04921eaf615b231ba146417403c0b9b0bd4098d181920b8fd07bbf2"
     },
     "rmgpy/qm/molecule.py:Geometry.save_coordinates_from_qm_data": {
       "verdict": "carried",
@@ -20540,7 +20532,7 @@
       "evidence": [
         "test/rmgpy/data/stateSupplierReworkTest.py"
       ],
-      "source_sha256": "e36887b5a3d55fe3daa5a98e2121123d160bc452983e39934e34f122dd768a6b"
+      "source_sha256": "1670f9b6ffed78cd8b9b7f775abf85e461e4b655ace2e494cd9a89d279015714"
     },
     "rmgpy/qm/mopac.py:MopacMolPMn.input_file_keywords": {
       "verdict": "carried",
@@ -21095,7 +21087,7 @@
       "evidence": [
         "test/rmgpy/reactionTest.py"
       ],
-      "source_sha256": "16452168e0cab52152b13451718dfbbf81ec89bb6228ce46554c576b7e05749f"
+      "source_sha256": "f1b3717c03de11a864f53a4ef536733d581152ae36bc3e7364503823c4934b71"
     },
     "rmgpy/reaction.py:Reaction.apply_solvent_correction": {
       "verdict": "carried",
@@ -21191,7 +21183,7 @@
       "evidence": [
         "test/rmgpy/reactionTest.py"
       ],
-      "source_sha256": "85fe5d3e99a8be72cd0e116fc005e894200bdf35913b1a6e11e51bf973ac7c02"
+      "source_sha256": "36942ad20e0fb451ee7a03e2fd96511a879cb3d1c4b991fecdf89c987db21e5c"
     },
     "rmgpy/reaction.py:Reaction.ensure_species": {
       "verdict": "carried",
@@ -21527,7 +21519,7 @@
       "evidence": [
         "test/rmgpy/reactionTest.py"
       ],
-      "source_sha256": "111e2335ecb97208dd027038500617ea035902f28e338f5e87218462f6949e5a"
+      "source_sha256": "9950517740250f2da59312db1e7b392bd565deaacf81c2588e35501f82f0311b"
     },
     "rmgpy/reaction.py:Reaction.to_cantera._ct_equation": {
       "verdict": "carried",
@@ -21961,7 +21953,7 @@
       "evidence": [
         "test/rmgpy/rmg/inputTest.py"
       ],
-      "source_sha256": "0ef35bf0b6a8c4704fbf56b7f4bbf3fd37271d636a2e8430d5bd2348158c938a"
+      "source_sha256": "4970fe5f7427729f69e99bcdfdfdaa4df7dfe61cee2d8efdd12ce89c678c7b1c"
     },
     "rmgpy/rmg/input.py:save_input_file.<lambda1>": {
       "verdict": "carried",
@@ -22115,7 +22107,7 @@
         "rmgpy/rmg/listener.py",
         "test/rmgpy/solver/plasmaElectronegativeRework2Test.py"
       ],
-      "source_sha256": "6c47b7207c76def1eac54f9de3313cf8c76db12fe2133050b4a38d1ddc49b739"
+      "source_sha256": "13dd4dc0df5b0cbb084c473f0eafb20537f800878ebab84e6755641fe4dd286f"
     },
     "rmgpy/rmg/listener.py:_minimum_confinement": {
       "verdict": "carried",
@@ -22204,7 +22196,7 @@
       "evidence": [
         "test/rmgpy/rmg/mainTest.py"
       ],
-      "source_sha256": "fcb2acaec818828def09b693aade18b02e44778dd9685aab4669424758a21f71"
+      "source_sha256": "7d8cbe45a457a82e2496d70777559ad193a448b82cd1472dccdd41fb5dcc6c12"
     },
     "rmgpy/rmg/main.py:RMG.generate_end_of_run_cantera_files": {
       "verdict": "carried",
@@ -22292,7 +22284,7 @@
       "evidence": [
         "test/rmgpy/rmg/mainTest.py"
       ],
-      "source_sha256": "653c7b47a561b20ebcc15efa88c903f48a7636c38a0483da9d707d90e3a50d53"
+      "source_sha256": "8610a155298195458edaa79624f8b8882aba772869a38cbea6e19b67e170c56c"
     },
     "rmgpy/rmg/main.py:RMG.make_species_labels_independent": {
       "verdict": "carried",
@@ -22708,7 +22700,7 @@
       "evidence": [
         "test/rmgpy/rmg/modelTest.py"
       ],
-      "source_sha256": "cc568d1b99e82c9a76095211b54eeb100a927e2eff5c43989a02d2fa796d3c2a"
+      "source_sha256": "39b400257b737017f3eae8a6b9a570c778cb0443aa9f56b904a8574a60dcdd05"
     },
     "rmgpy/rmg/model.py:CoreEdgeReactionModel.get_model_size": {
       "verdict": "carried",
@@ -22772,7 +22764,7 @@
       "evidence": [
         "test/rmgpy/rmg/modelTest.py"
       ],
-      "source_sha256": "b2489a134221d334d6406e817ae0d2cd33f75fce1affd4e3809c64a2bbc03c29"
+      "source_sha256": "78b1727b0441ca679858f710eac1afbf383af57fa00516284635153332a6d553"
     },
     "rmgpy/rmg/model.py:CoreEdgeReactionModel.mark_chemkin_duplicates": {
       "verdict": "carried",
@@ -22980,7 +22972,7 @@
       "evidence": [
         "test/rmgpy/rmg/outputTest.py"
       ],
-      "source_sha256": "e223ec29484e57ce347a31ac24cd88038d9cc692096fbf8bf2b1a3669524ca26"
+      "source_sha256": "8813a22e6fc2799d7ce9fd0f532acceef1ccf381d68c4df7e59c58fd7474d711"
     },
     "rmgpy/rmg/output.py:save_diff_html.csssafe": {
       "verdict": "carried",
@@ -23004,7 +22996,7 @@
       "evidence": [
         "test/rmgpy/rmg/outputTest.py"
       ],
-      "source_sha256": "786c12852fc64b602651687a50a0b7f8c9b8f8efc4945af21760b706d4d462d4"
+      "source_sha256": "2dfe72550495ac3bd9630465fa00ec1acd7f2a52b350402ea5c08f6089389ab0"
     },
     "rmgpy/rmg/output.py:save_output_html.csssafe": {
       "verdict": "carried",
@@ -23372,7 +23364,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "adff5b4032d389f41c12e58636826ef7ffbdb5f83b95e66bb54ff07573a02b6b"
+      "source_sha256": "44e304321e76e49c7ff62de3d48842fbd1f5946121ee527dba256bf92681e7d4"
     },
     "rmgpy/rmg/reactionmechanismsimulator_reactors.py:Phase.get_species": {
       "verdict": "carried",
@@ -23516,7 +23508,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "f9a3975e3765bbd220dda11e61d5993e10f07ccb5ddd717921e7b514ebf22d0d"
+      "source_sha256": "447b533140330352cf7a24326e569537ca4a6ca1ac8a549301b2f310585ddec0"
     },
     "rmgpy/rmg/settings.py:ModelSettings.__init__": {
       "verdict": "carried",
@@ -24408,7 +24400,7 @@
         "rmgpy/solver/plasma.pyx",
         "test/rmgpy/solver/plasmaElectronegativeWallTest.py"
       ],
-      "source_sha256": "d00ca302fc1c1b25ab350bea835b867b458fbefcc39110f14d0e31ab8c9847b5"
+      "source_sha256": "dac271d5097eac3084c2a306317dc9c37b7e549e1dcc8efaa49b085dc0c90973"
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._configure_bath_transport": {
       "verdict": "carried",
@@ -24584,7 +24576,7 @@
         "rmgpy/solver/plasma.pyx",
         "test/rmgpy/solver/plasmaElectronegativeWallTest.py"
       ],
-      "source_sha256": "82a53ce1e2c6480c960df61201b779c55835b5425f50cc8139ed5c7a752866f7"
+      "source_sha256": "555b78c646ac64c4b16e690eab806bcfd00c808a5f5c5fef998469b9f2d504a2"
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._evaluate_electronegative_wall_regime.<lambda1>": {
       "verdict": "carried",
@@ -25014,7 +25006,7 @@
         "rmgpy/solver/plasma.pyx",
         "test/rmgpy/solver/plasmaElectronegativeWallTest.py"
       ],
-      "source_sha256": "93342753f1851f7661a7e9db9ba450d50386bcc8c161af93a8e2877df71a1323"
+      "source_sha256": "fe3592836dc295531914da51356bde13f9c6ffc6b2f1b42eb52134e2eeddf208"
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.electronegative_wall_qualification": {
       "verdict": "carried",
@@ -25648,7 +25640,7 @@
       "evidence": [
         "test/rmgpy/speciesTest.py"
       ],
-      "source_sha256": "57347c22ff57836f960170149ccd295e53252c3aad82034a8fa6b420f579157e"
+      "source_sha256": "7668d1e5a2ef2db9bf9b4803670fcb4ca7b90e6ceb774d448ec4b1168a5a50e3"
     },
     "rmgpy/species.py:Species._invalidate_state_caches": {
       "verdict": "carried",
@@ -26075,7 +26067,7 @@
       "evidence": [
         "test/rmgpy/speciesTest.py"
       ],
-      "source_sha256": "7f80da29d64a8e412ca4d80ce85636efbfe1d2c221d62e6b735c2f9940cc6890"
+      "source_sha256": "391974747bd32fb37d1ec27e2c3351f08694e4734d1871a60eceecb711e3eba3"
     },
     "rmgpy/species.py:Species.to_chemkin": {
       "verdict": "carried",
@@ -28911,7 +28903,7 @@
       "evidence": [
         "test/rmgpy/tools/canteramodelTest.py"
       ],
-      "source_sha256": "0bbaec6d873afc98bffd13051d5a8a6e949d09b809bae73c99f87d054d10d926"
+      "source_sha256": "91087f6499fd3c4893160f7a3cfededcb62affda700921b140f5cd18f8ef13ea"
     },
     "rmgpy/tools/canteramodel.py:Cantera.modify_reaction_kinetics": {
       "verdict": "carried",
@@ -28927,7 +28919,7 @@
       "evidence": [
         "test/rmgpy/tools/canteramodelTest.py"
       ],
-      "source_sha256": "e60ad9fb97e03df8a74783b5492cd06ce61405dd49cceb5a829fe2f0932dc447"
+      "source_sha256": "297bc2450b305c8f16e3de5fafd274dc01489d84134d888fd34d117716232b55"
     },
     "rmgpy/tools/canteramodel.py:Cantera.plot": {
       "verdict": "carried",
@@ -28935,7 +28927,7 @@
       "evidence": [
         "test/rmgpy/tools/canteramodelTest.py"
       ],
-      "source_sha256": "fc0639d491eb55a2e5e494c316a90b0a7029db7c7d35bfacf627af45967cc731"
+      "source_sha256": "8052563d751df0922427efe4f9dc2521dd8235f838d79aa20e40181db2850eb2"
     },
     "rmgpy/tools/canteramodel.py:Cantera.refresh_model": {
       "verdict": "carried",
@@ -28951,7 +28943,7 @@
       "evidence": [
         "test/rmgpy/tools/canteramodelTest.py"
       ],
-      "source_sha256": "9830a806018cbe54b898b0eb347feb072f38083fc41b64c857e6242c2b209fac"
+      "source_sha256": "eaef6bcee7f5096c54b3a8a048fe44b5b395f0124ad1034087b67d1c4d8d3d6e"
     },
     "rmgpy/tools/canteramodel.py:CanteraCondition.__init__": {
       "verdict": "carried",
@@ -28975,7 +28967,7 @@
       "evidence": [
         "test/rmgpy/tools/canteramodelTest.py"
       ],
-      "source_sha256": "81af64e050681110e2c16dfc648925cc329737123aa4cc860b961efb29dd332c"
+      "source_sha256": "480ac3a57a4c5897ac01c3f8741316f2c957519deeadcfef5117363a0d041f21"
     },
     "rmgpy/tools/canteramodel.py:check_equivalent_cantera_reaction": {
       "verdict": "carried",
@@ -29063,7 +29055,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "0d491a7495acf613039605f1b503676412b541808803ff32bdfb3d57f408edda"
+      "source_sha256": "594034ff0a1cba6016dc4d74c9382422e53ce8261c618611c65f890cd6ed595e"
     },
     "rmgpy/tools/ckcsvparser.py:get_rop_flux": {
       "verdict": "carried",
@@ -29791,7 +29783,7 @@
       "evidence": [
         "test/rmgpy/tools/fluxdiagramTest.py"
       ],
-      "source_sha256": "4113940fbdd7cbeb5f426cef5c228d55830f266e192cf032780db396314b6f4b"
+      "source_sha256": "54338f174ba9a2636ef1e093a5ec2c9b6f0e9b9d722b6984b4f3ea16dda2e052"
     },
     "rmgpy/tools/fluxdiagram.py:load_chemkin_output": {
       "verdict": "carried",
@@ -29871,7 +29863,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "8eda67dde1d284832511ffac4791e78f3d2a4e6862f7a12af225ebe64a56ca39"
+      "source_sha256": "2e1a4848cd7eb374788c9ba38ca479f99538ded2fa1c5b3b9886a98979321f9e"
     },
     "rmgpy/tools/globaluncertainty.py:ReactorPCEFactory.compare_output": {
       "verdict": "carried",
@@ -29879,7 +29871,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "3f8882aa6332e1dd0c16d1c3ccca71128f7e52956fab179f2a2a31151cfb0f39"
+      "source_sha256": "880e7709b5f5e311de733a3371e79f137e34d8517bad80261fb8db2f3a267c58"
     },
     "rmgpy/tools/globaluncertainty.py:ReactorPCEFactory.generate_pce": {
       "verdict": "carried",
@@ -30079,7 +30071,7 @@
       "evidence": [
         "test/rmgpy/tools/mergemodelsTest.py"
       ],
-      "source_sha256": "123f13dfb76e741fab3d28920dfb5351d3459b54437d2f1ada6694ba53cf5b6b"
+      "source_sha256": "540473028bdd29473cf955da23f68b961b81f01d9c909094d444ec801602aa5b"
     },
     "rmgpy/tools/mergemodels.py:get_models_to_merge": {
       "verdict": "carried",
@@ -30127,7 +30119,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "8a8420ea21c2c04814a110ed01731ce64e8dbf7f9bd86e0a3ee0b8eef961debd"
+      "source_sha256": "9c21558dff94014f85cf7986d363ce0aefb8e56cf6ef7a6928699b8ba8df4e3b"
     },
     "rmgpy/tools/observablesregression.py:ObservablesTestCase.generate_conditions": {
       "verdict": "carried",
@@ -30167,7 +30159,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "e9fa2b2748aba19b99e42741c5b808473dccaad0aad4eaffa12ea4515bc4ce1e"
+      "source_sha256": "94e6f70dd2f22dfd5e44c677c80a516c38d506ca91d653364912b450f7580e61"
     },
     "rmgpy/tools/plot.py:GenericPlot.compare_plot": {
       "verdict": "carried",
@@ -30175,7 +30167,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "50cd2ab0b174b317c57c5c7bfc23527f6c56846b82b285286d39addd2c703e67"
+      "source_sha256": "afbea1606a5a24fe12d91ef1ac196be33e146f9ac3249ada3a9d338fc68c7a72"
     },
     "rmgpy/tools/plot.py:GenericPlot.plot": {
       "verdict": "carried",
@@ -30184,7 +30176,7 @@
         "rmgpy/tools/plot.py",
         "test/rmgpy/solver/plasmaElectronegativeRework2Test.py"
       ],
-      "source_sha256": "ec3d317050591894e26c31b89c2de2fca1519b050a57838b1409f5f9e28a2c22"
+      "source_sha256": "8d481357c0024ff313a6e2f37094ae842a6bf246fe08d4b4625cf59ae5eb930b"
     },
     "rmgpy/tools/plot.py:ReactionSensitivityPlot.__init__": {
       "verdict": "carried",
@@ -30240,7 +30232,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "e57abfe80565577453afe0a83194a6cca57538c87ebd5683014cf1ba6762e27e"
+      "source_sha256": "ec38d9f7e8185b2554920ae0f21a41f222ee86bd6821fb2e36212c6c79755221"
     },
     "rmgpy/tools/plot.py:ReactionSensitivityPlot.uncertainty_plot.<lambda1>": {
       "verdict": "carried",
@@ -30344,7 +30336,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "f86841c7e349a189a71017192d1f0cce7f692060856172a995cc0fbed459cd5c"
+      "source_sha256": "f69dd9af9f760ddf881a7cb15368bb700fec1d5b37e679d8e01b26616c8d67c6"
     },
     "rmgpy/tools/plot.py:ThermoSensitivityPlot.uncertainty_plot.<lambda1>": {
       "verdict": "carried",
@@ -30608,7 +30600,7 @@
       "evidence": [
         "test/rmgpy/tools/uncertaintyTest.py"
       ],
-      "source_sha256": "7508e74fbabcdcf5471262dc9ab65d0753da513b21ce4438797f0579d8c06192"
+      "source_sha256": "892be08ac8da9956b3ebb5222a77a3b50c80afd32ad7b09c772fb92d7c9a9b4b"
     },
     "rmgpy/tools/uncertainty.py:Uncertainty.assign_parameter_uncertainties": {
       "verdict": "carried",
@@ -30616,7 +30608,7 @@
       "evidence": [
         "test/rmgpy/tools/uncertaintyTest.py"
       ],
-      "source_sha256": "2d0f155e8a3f76328198993dd616cb9eb82d328f11ef70b638d647c130d47611"
+      "source_sha256": "ee50a909bbff4a728cb1f862aba8e7284b33f61e7abbcf1081e2c100ac728fb6"
     },
     "rmgpy/tools/uncertainty.py:Uncertainty.compile_all_sources": {
       "verdict": "carried",
@@ -30672,7 +30664,7 @@
       "evidence": [
         "test/rmgpy/tools/uncertaintyTest.py"
       ],
-      "source_sha256": "bead09536ffa3dc28ba2e0a4d307b67822ebe621c41bc40dd2b56eda698341db"
+      "source_sha256": "093c5ed11ad208b01f40dd5f93556a7b59bbbcd2b202508833772c49e24c4253"
     },
     "rmgpy/tools/uncertainty.py:Uncertainty.load_thermo_covariances_from_libraries": {
       "verdict": "carried",
@@ -30680,7 +30672,7 @@
       "evidence": [
         "test/rmgpy/tools/uncertaintyTest.py"
       ],
-      "source_sha256": "c1cde8c948255bc33871ea4220174c2e6c05a4dfdf5ba2072fec8f020583d3df"
+      "source_sha256": "3a6be0b69c65150622935d79a72cf8494683e570c3b0ffc463dd00d719f9b595"
     },
     "rmgpy/tools/uncertainty.py:Uncertainty.local_analysis": {
       "verdict": "carried",
@@ -30688,7 +30680,7 @@
       "evidence": [
         "test/rmgpy/tools/uncertaintyTest.py"
       ],
-      "source_sha256": "f378a8562c9f6b7aba7d5d71449f0d113137ccbb5916bdb8ba866bc620e98ba6"
+      "source_sha256": "cda79b152e2bf760954a774e215082564040eda0d0fdcecbefb148aee3651bd3"
     },
     "rmgpy/tools/uncertainty.py:Uncertainty.local_analysis_intermediate": {
       "verdict": "carried",
@@ -30696,7 +30688,7 @@
       "evidence": [
         "test/rmgpy/tools/uncertaintyTest.py"
       ],
-      "source_sha256": "4e6397209f686374c13a9e3d0f22f73a6423d83279a5e286a430271d6e436d42"
+      "source_sha256": "8c21c8e2513e5d354676da9a9b30d315be1ba68970a8d465474b066ce889d95c"
     },
     "rmgpy/tools/uncertainty.py:Uncertainty.retrieve_saturated_species_from_list": {
       "verdict": "carried",
@@ -30728,7 +30720,7 @@
       "evidence": [
         "test/rmgpy/tools/uncertaintyTest.py"
       ],
-      "source_sha256": "157bbf51305f8a4e9e8ca9911843c6ea90058c6786d080f8355fb065c0b45ee9"
+      "source_sha256": "ae3375e224f8659ec66a1ba766055f721184e534a5e0272346df87de6bf2732e"
     },
     "rmgpy/tools/uncertainty.py:process_local_results.<lambda1>": {
       "verdict": "carried",
@@ -30872,7 +30864,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "82aa5b86f3d34137d71a5eb39d910dc7f23213141c63422588e3983b11f995cc"
+      "source_sha256": "fc5d8173649cd2f0ea7b338ea2dd78dc7647e35b6b4bf3977d3d721f581abf60"
     },
     "rmgpy/util.py:timefn": {
       "verdict": "not-reachable-for-resolved",
@@ -30912,7 +30904,7 @@
       "evidence": [
         "test/rmgpy/yaml_cantera1Test.py"
       ],
-      "source_sha256": "fabdf2a5b3ee237b78cdcd9263043e83c64acf671db904639e067a1e86319a50"
+      "source_sha256": "21f4d8a17cc32bbbb496d53da726337c64d6247bd37b793b1c60c73c30211989"
     },
     "rmgpy/yaml_cantera1.py:_collect_reactions": {
       "verdict": "carried",
@@ -30952,7 +30944,7 @@
       "evidence": [
         "test/rmgpy/yaml_cantera1Test.py"
       ],
-      "source_sha256": "1b7e3d83016ab09496f8f830e745dd3b2a64b6ba24f5ff31573892bac4306bf8"
+      "source_sha256": "c475be37689718f430c466740e691d71ce3eb0ed801e937b93ee3d7ebd022f3b"
     },
     "rmgpy/yaml_cantera1.py:get_mech_dict_surface": {
       "verdict": "carried",
@@ -30960,7 +30952,7 @@
       "evidence": [
         "test/rmgpy/yaml_cantera1Test.py"
       ],
-      "source_sha256": "7ea725d97225a892d0f1d366627f43d1bcff563692a171528d91204d67f7d18d"
+      "source_sha256": "923dfedad263b0c133d8582ba1bb2f0856926894b0c7ab34a670daf147a09441"
     },
     "rmgpy/yaml_cantera1.py:get_phases_gas_only": {
       "verdict": "carried",
@@ -30968,7 +30960,7 @@
       "evidence": [
         "test/rmgpy/yaml_cantera1Test.py"
       ],
-      "source_sha256": "4af2b7646aca7a5f388c98c36957b19721c98be0975f5943dfabb11565820c94"
+      "source_sha256": "b57705a640cc47ac631bd064360e1e149fb0b86cc70d661a94bf2e996758187b"
     },
     "rmgpy/yaml_cantera1.py:get_phases_gas_only.<lambda1>": {
       "verdict": "carried",
@@ -30984,7 +30976,7 @@
       "evidence": [
         "test/rmgpy/yaml_cantera1Test.py"
       ],
-      "source_sha256": "5eaa5afedfba1cd5956a4dff7c77401a92a8eb2e90d0c565c4f4ca797cd11787"
+      "source_sha256": "23cc27c5474b28803192b8a5849f0115c8f924bdec027abdebffb9c27b07b448"
     },
     "rmgpy/yaml_cantera1.py:get_phases_with_surface.<lambda1>": {
       "verdict": "carried",
@@ -31008,7 +31000,7 @@
       "evidence": [
         "test/rmgpy/yaml_cantera1Test.py"
       ],
-      "source_sha256": "f8417580fe07c5c8e0c9534653d8bd186741a073db07ae9fb0c806bfbe5eadc4"
+      "source_sha256": "eda3455491eb10bcbd6f24fd22110aa73eeab9afacfe35b9d0e2fa4b1a261295"
     },
     "rmgpy/yaml_cantera1.py:species_to_dict": {
       "verdict": "carried",
@@ -31016,7 +31008,7 @@
       "evidence": [
         "test/rmgpy/yaml_cantera1Test.py"
       ],
-      "source_sha256": "d9a3ea3facf9ea9b0cd7fd387056fc2cfc6bb71d98d34388bf5ee650c72f96ee"
+      "source_sha256": "1e68e0cb14f5840005c92a550669c2f151aacef398a519d33204cf93ce3fc05a"
     },
     "rmgpy/yaml_cantera1.py:write_cantera": {
       "verdict": "carried",
@@ -31024,7 +31016,7 @@
       "evidence": [
         "test/rmgpy/yaml_cantera1Test.py"
       ],
-      "source_sha256": "14ab865a7a964f32a005dcadb8467a2e9008af09a3e068615693e97d91ebae25"
+      "source_sha256": "6fcdcd9c0ea928b5febb602fb3628ace534e447de55fa25a679b33f78b7e246d"
     },
     "rmgpy/yaml_cantera2.py:CanteraWriter2.__init__": {
       "verdict": "carried",
@@ -31088,7 +31080,7 @@
       "evidence": [
         "test/rmgpy/yaml_cantera2Test.py"
       ],
-      "source_sha256": "43d1a719fc420048a386b958bec8b6a881993648ad1eb25b9b52cd72fecfd2a4"
+      "source_sha256": "5e800b6443c3f766688758d33ae537d84676c8df95e7c3347ba170082992e809"
     },
     "rmgpy/yaml_cantera2.py:generate_cantera_data.<lambda1>": {
       "verdict": "carried",
@@ -31112,7 +31104,7 @@
       "evidence": [
         "test/rmgpy/yaml_cantera2Test.py"
       ],
-      "source_sha256": "c00386e5d446a6909a6f486a7f29e80afa9d3e3623f51f6d06a506a780431186"
+      "source_sha256": "50d62d807362b23746b01e775a65ad28b226c0de54f4ce8cc62574ff8497ddf9"
     },
     "rmgpy/yaml_cantera2.py:get_reaction_equation": {
       "verdict": "carried",
@@ -31128,7 +31120,7 @@
       "evidence": [
         "test/rmgpy/yaml_cantera2Test.py"
       ],
-      "source_sha256": "8fbe8c10f094005d872f948f7846a98fd6752c594b5d40505d769637a2d74554"
+      "source_sha256": "875fed590d9f53da768282b2d0ac936c64374f93047b49b29177e383c470c6a0"
     },
     "rmgpy/yaml_cantera2.py:save_cantera_files": {
       "verdict": "carried",
@@ -31152,7 +31144,7 @@
       "evidence": [
         "test/rmgpy/yaml_cantera2Test.py"
       ],
-      "source_sha256": "f394a59614a79e0e13270042f50f18a505d9a6d96d96245e500fbfafca0037a1"
+      "source_sha256": "f3094a27f1b369a268616d33b5b691c28325a51b40cde9fe258330046c89d839"
     },
     "rmgpy/yaml_cantera2.py:species_to_dict.<lambda1>": {
       "verdict": "carried",
@@ -31200,7 +31192,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "dfc8d6dfd40b00008e5d34a321adf0db383f5ad1fec98909846a8a94ae1d3f26"
+      "source_sha256": "cd043813409a5e0f612029e0719a4d9703589906681cdb3f2f1827bdef83601b"
     },
     "rmgpy/yaml_rms.py:get_radicals": {
       "verdict": "carried",
@@ -31216,7 +31208,7 @@
       "evidence": [
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
-      "source_sha256": "d16a2917e788c5e6633d34f2eb078228f8a8d768bbf3e341b048cac1e77a56d7"
+      "source_sha256": "27967247012015b9ea04acd4797a2c94ef6bb25d881831fa217a4c7a66775a0b"
     },
     "rmgpy/yaml_rms.py:write_rms": {
       "verdict": "carried",
@@ -31225,6 +31217,382 @@
         "test/rmgpy/data/stateDataCensusTest.py"
       ],
       "source_sha256": "240460e492363ce3cd9ae0293c40813e13482f309c65ab40c2aa9ad245647e5e"
+    },
+    "rmgpy/chemkin.pyx:_chemkin_declarations": {
+      "verdict": "carried",
+      "reason": "Builds the state-aware declaration table used by Chemkin writers; it preserves full identities and detects emitted-name collisions.",
+      "evidence": [
+        "test/rmgpy/chemkinTest.py"
+      ],
+      "source_sha256": "1fc741f9a0e6ccec7828df2f8173df4dc873a3015f3a985e35718e4516471a38"
+    },
+    "rmgpy/chemkin.pyx:_dictionary_identities_conflict": {
+      "verdict": "carried",
+      "reason": "Checks duplicate dictionary records only when a resolved identity is present, on deep copies; ground duplicates keep their historical atom order.",
+      "evidence": [
+        "test/rmgpy/yaml_writer/excitedExportReworkTest.py"
+      ],
+      "source_sha256": "65790290f3209b5280cffe6928f6f2c28137826b77bad2ac1dc340b069548785"
+    },
+    "rmgpy/chemkin.pyx:validate_chemkin_references": {
+      "verdict": "carried",
+      "reason": "Validates every Chemkin reaction participant, collider, efficiency and coverage reference against the emitted species declarations.",
+      "evidence": [
+        "test/rmgpy/chemkinTest.py"
+      ],
+      "source_sha256": "c61fea96f4e05b77c559dd8d58c275f78c472be12d7364d1bb67a148ff185d28"
+    },
+    "rmgpy/chemkin.pyx:validate_species_identifiers": {
+      "verdict": "carried",
+      "reason": "Validates caller-provided Chemkin identifiers with the shared full-identity declaration map before serialization.",
+      "evidence": [
+        "test/rmgpy/chemkinTest.py"
+      ],
+      "source_sha256": "d566ae3773a97bf670ce468dcb95b007ecf06b977962af177cea4f8146cc684b"
+    },
+    "rmgpy/data/base.py:Database._store_entry": {
+      "verdict": "carried",
+      "reason": "Stores database entries through a full molecular-identity collision check, retaining distinct resolved records and rejecting conflicting reuse.",
+      "evidence": [
+        "test/rmgpy/data/baseTest.py"
+      ],
+      "source_sha256": "c7a31900dfbacb183cf624a9ca5928cfa2503f65707a1741291b775d4cc374cd"
+    },
+    "rmgpy/data/base.py:Database.dictionary_references": {
+      "verdict": "carried",
+      "reason": "Collects participant, named-collider and coverage species into one state-aware kinetics-dictionary declaration set.",
+      "evidence": [
+        "test/rmgpy/data/kinetics/kineticsTest.py"
+      ],
+      "source_sha256": "659cdaf3664698dbaf90002c030390527017956876b2319eab7e2622315eee5d"
+    },
+    "rmgpy/data/base.py:Database.render_dictionary": {
+      "verdict": "carried",
+      "reason": "Renders full declared molecular identities and refuses coverage references that this dictionary format cannot retain.",
+      "evidence": [
+        "test/rmgpy/data/kinetics/kineticsTest.py"
+      ],
+      "source_sha256": "e7e058fc942d326955d90fb9030ca95deb13858b437ef9c865d41d6818bd0198"
+    },
+    "rmgpy/data/base.py:Database.render_save": {
+      "verdict": "carried",
+      "reason": "Preflights every entry then renders the database through its audited serializers without independently estimating scientific data.",
+      "evidence": [
+        "test/rmgpy/data/baseTest.py"
+      ],
+      "source_sha256": "cad7ebde539a9cff3e17c86d2fa174ced36972e032a54d55d07aef42d9194fc5"
+    },
+    "rmgpy/data/base.py:_entry_molecules": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Recursively extracts existing Molecule objects from entry containers for identity validation; it performs no scientific-data acquisition.",
+      "evidence": [
+        "test/rmgpy/data/baseTest.py"
+      ],
+      "source_sha256": "bdd4ad3f8c3aaa60451a62441ddacca4c717d2d9ca3359df8bcc2050b8247135"
+    },
+    "rmgpy/data/base.py:_same_entry_identity": {
+      "verdict": "carried",
+      "reason": "Compares complete existing entry identities, including state and every component of compound records, before key reuse.",
+      "evidence": [
+        "test/rmgpy/data/baseTest.py"
+      ],
+      "source_sha256": "b039cd7c934a756637e026c833ac5af0da9836b468ed72d1baaf0ce693961818"
+    },
+    "rmgpy/data/kinetics/common.py:_SerializedCoverageReference.__init__": {
+      "verdict": "carried",
+      "reason": "Stores an already resolved coverage identifier for the kinetics repr protocol; no structure or data is reacquired.",
+      "evidence": [
+        "test/rmgpy/data/kinetics/kineticsTest.py"
+      ],
+      "source_sha256": "2f635eab1fa5689d182fad84886e155ebe7733f389d4beb263c1fac1f2eeaa8a"
+    },
+    "rmgpy/data/kinetics/common.py:_SerializedCoverageReference.to_chemkin": {
+      "verdict": "carried",
+      "reason": "Returns the previously resolved coverage identifier verbatim to the kinetics serializer.",
+      "evidence": [
+        "test/rmgpy/data/kinetics/kineticsTest.py"
+      ],
+      "source_sha256": "0a0dc75423a475f99981bc415795fd36902c57d8464ca830eca05ea7891afb9d"
+    },
+    "rmgpy/data/kinetics/common.py:add_dictionary_index_aliases": {
+      "verdict": "carried",
+      "reason": "Adds only aliases whose indexed equation tokens resolve to the same declared full molecular identity.",
+      "evidence": [
+        "test/rmgpy/data/kinetics/kineticsTest.py"
+      ],
+      "source_sha256": "42d348d05d80542bb272325afff3763d34d96ff16f7e55a516bbd4d41d546a38"
+    },
+    "rmgpy/data/kinetics/common.py:check_smiles_keyed_efficiencies": {
+      "verdict": "refused",
+      "reason": "Raises SpeciesIdentityError before a resolved collider can be reduced to a state-blind SMILES-keyed library efficiency.",
+      "evidence": [
+        "test/rmgpy/yaml_writer/excitedExportCensusTest.py"
+      ],
+      "source_sha256": "dd7626cdfdde27a2a917aeb1ad2c9920cc16ff3ac1768507c9a31272f5e981ed"
+    },
+    "rmgpy/data/kinetics/common.py:library_reaction_equation": {
+      "verdict": "carried",
+      "reason": "Builds and reload-validates reaction equations against the complete emitted dictionary, preserving each resolved participant and collider.",
+      "evidence": [
+        "test/rmgpy/data/kinetics/kineticsTest.py"
+      ],
+      "source_sha256": "984c30f00fc5e8e1e525a61b25850e2a270e58f6f9e2c792040730c6d3152b03"
+    },
+    "rmgpy/data/kinetics/common.py:library_serializable_kinetics": {
+      "verdict": "carried",
+      "reason": "Copies kinetics and resolves coverage and efficiency keys for serialization without mutating the live scientific model.",
+      "evidence": [
+        "test/rmgpy/data/kinetics/kineticsTest.py"
+      ],
+      "source_sha256": "df41ab4acbeabc36684ceafa09db1eca68c91b6f7a58c314d9d02f0cad1ca77b"
+    },
+    "rmgpy/data/kinetics/common.py:library_serializable_kinetics.<lambda1>": {
+      "verdict": "carried",
+      "reason": "Supplies the explicit molecule SMILES identifier only inside the guarded ground-only efficiency declaration path.",
+      "evidence": [
+        "test/rmgpy/data/kinetics/kineticsTest.py"
+      ],
+      "source_sha256": "f630787312f43775fa588a2ba0a5d78a8bb0fec737910c3a1776d035d784cee9"
+    },
+    "rmgpy/data/kinetics/common.py:library_serializable_kinetics.<lambda2>": {
+      "verdict": "carried",
+      "reason": "Supplies legacy Chemkin names for ground-only coverage after the surrounding function has separated resolved serialization.",
+      "evidence": [
+        "test/rmgpy/data/kinetics/kineticsTest.py"
+      ],
+      "source_sha256": "bdf4a503eceeb66a399bc8792dab0fb16181789fd44180c2b054c4828a8835f4"
+    },
+    "rmgpy/data/kinetics/common.py:validate_dictionary_participant_labels": {
+      "verdict": "refused",
+      "reason": "Finds resolved dictionary labels that the library plus-token grammar would split and delegates to the named refusal before parsing.",
+      "evidence": [
+        "test/rmgpy/yaml_writer/excitedExportCensusTest.py"
+      ],
+      "source_sha256": "37f41340e08772a52fa34aae2598c1ec87a69f3073cf235f22dee1385b7d2171"
+    },
+    "rmgpy/data/kinetics/common.py:validate_generic_collider_dictionary": {
+      "verdict": "refused",
+      "reason": "Raises SpeciesIdentityError when generic (+M) syntax would select a resolved dictionary species named M or m.",
+      "evidence": [
+        "test/rmgpy/yaml_writer/excitedExportCensusTest.py"
+      ],
+      "source_sha256": "99cf5566d6a62eac705c657ca492715d102f97148594bf8e4f0b4c934bfe5ea7"
+    },
+    "rmgpy/data/kinetics/common.py:validate_participant_labels": {
+      "verdict": "refused",
+      "reason": "Raises SpeciesIdentityError before a resolved participant label containing plus can be ambiguously tokenized.",
+      "evidence": [
+        "test/rmgpy/yaml_writer/excitedExportCensusTest.py"
+      ],
+      "source_sha256": "08fc1ae2ef2aa9980d953ed7552a027c3aeb5d488de3a10b7a1a37425d2e012c"
+    },
+    "rmgpy/data/kinetics/depository.py:KineticsDepository.save": {
+      "verdict": "carried",
+      "reason": "Saves the stamped reactions/dictionary pair using the same complete declaration context and atomic generation boundary.",
+      "evidence": [
+        "test/rmgpy/data/kinetics/kineticsTest.py"
+      ],
+      "source_sha256": "08e4c1aae01191bd1f346a9663c7c86bac42e627085086be84b5574b44e1dad1"
+    },
+    "rmgpy/export.py:SpeciesReferences.__init__": {
+      "verdict": "carried",
+      "reason": "Creates the shared emitted-name-to-full-identity map, accepting historical ground collisions and rejecting true resolved collisions without mutating inputs.",
+      "evidence": [
+        "test/rmgpy/yaml_writer/excitedExportReworkTest.py"
+      ],
+      "source_sha256": "383f753c8df25f534d5465602defd44ee05cbae6c524c023bb5bfd81a9dafe4b"
+    },
+    "rmgpy/export.py:describe_species": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Formats an already supplied species identity for diagnostics; it neither selects nor assigns scientific data.",
+      "evidence": [
+        "test/rmgpy/yaml_writer/excitedExportCensusTest.py"
+      ],
+      "source_sha256": "d60cc1ca5cf1ca9017bf140ddafb0f9809c2c970bb7208338a28c3ca7066e23e"
+    },
+    "rmgpy/export.py:kinetics_references": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Enumerates existing collider, efficiency and coverage references so callers can validate them; no data is acquired.",
+      "evidence": [
+        "test/rmgpy/yaml_writer/excitedExportCensusTest.py"
+      ],
+      "source_sha256": "f461f410cdbb9a88108b56c2888e386cd5b32496036a577e5fe5dc6482b4fe48"
+    },
+    "rmgpy/export.py:refuse_resolved_job": {
+      "verdict": "refused",
+      "reason": "Raises the route-specific named error before unsupported Arkane jobs can consume a resolved species or reaction.",
+      "evidence": [
+        "test/rmgpy/yaml_writer/excitedExportCensusTest.py"
+      ],
+      "source_sha256": "2535003185161b8b5d125344601fdd153b218d5d24147bfa7a0be9bd88dc693c"
+    },
+    "rmgpy/export.py:refuse_resolved_species": {
+      "verdict": "refused",
+      "reason": "Raises SpeciesIdentityError before an explicitly unsupported serializer can lose any supplied resolved molecular identity.",
+      "evidence": [
+        "test/rmgpy/yaml_writer/excitedExportCensusTest.py"
+      ],
+      "source_sha256": "b0988b717b960987bfcef93cfdfc6d76a73c81b758b5fd0d401865a479e83117"
+    },
+    "rmgpy/export.py:resolve_species_reference": {
+      "verdict": "carried",
+      "reason": "Resolves only references present in the full-identity declaration map and rejects undeclared or mismatched resolved identities.",
+      "evidence": [
+        "test/rmgpy/yaml_writer/excitedExportCensusTest.py"
+      ],
+      "source_sha256": "e364842611b94b3cf841bb695964614aa0e9a921babf62415581a99acd7212ec"
+    },
+    "rmgpy/export.py:validate_reaction_references": {
+      "verdict": "carried",
+      "reason": "Validates all explicit reaction participants, colliders, efficiencies and coverage references against a state-aware inventory.",
+      "evidence": [
+        "test/rmgpy/yaml_writer/excitedExportCensusTest.py"
+      ],
+      "source_sha256": "5e12cc91796dbcd2ab239ccef5d8920ed2f360769a85d7874a6a27a6942fcbfc"
+    },
+    "rmgpy/kinetics/model.pyx:PDepKineticsModel.get_cantera_efficiencies.<lambda2>": {
+      "verdict": "carried",
+      "reason": "Maps an existing ground-only efficiency molecule to its emitted Cantera declaration inside the surrounding guarded conversion.",
+      "evidence": [
+        "test/rmgpy/chemkinTest.py"
+      ],
+      "source_sha256": "83faec6b80df9294ef03087b9b76199dd89848b4e9bccec63310b9bfeea93dae"
+    },
+    "rmgpy/reaction.py:Reaction.to_cantera.<lambda1>": {
+      "verdict": "carried",
+      "reason": "Provides the emitted Cantera identifier from the surrounding state-aware reaction declaration map.",
+      "evidence": [
+        "test/rmgpy/reactionTest.py"
+      ],
+      "source_sha256": "7b5c4480cdbb7daf92811712a4fc2bf1457eec737aa3cecf895ac1181d412972"
+    },
+    "rmgpy/species.py:Species.to_cantera.<lambda1>": {
+      "verdict": "carried",
+      "reason": "Provides the explicit species identifier to the surrounding state-aware native Cantera conversion.",
+      "evidence": [
+        "test/rmgpy/speciesTest.py"
+      ],
+      "source_sha256": "7b5c4480cdbb7daf92811712a4fc2bf1457eec737aa3cecf895ac1181d412972"
+    },
+    "rmgpy/tools/fluxdiagram.py:generate_flux_diagram.<lambda1>": {
+      "verdict": "carried",
+      "reason": "Maps supplied reaction participants through the flux diagram declaration set without estimating or replacing molecular data.",
+      "evidence": [
+        "test/rmgpy/tools/fluxdiagramTest.py"
+      ],
+      "source_sha256": "2c8d624cbf7eab3addbcf86f791d85c96b38674cb6c06195c0a44494a506d977"
+    },
+    "rmgpy/tools/fluxdiagram.py:generate_flux_diagram.species_name": {
+      "verdict": "carried",
+      "reason": "Returns the full declared identifier for a supplied flux-diagram species and refuses undeclared resolved references.",
+      "evidence": [
+        "test/rmgpy/tools/fluxdiagramTest.py"
+      ],
+      "source_sha256": "36fd2f645f81780e74ba7d4cc59649223779f77c44daa46f214cc233835c766f"
+    },
+    "rmgpy/util.py:generation_token": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Parses a file-pair generation checksum string; it has no molecular or scientific-data path.",
+      "evidence": [
+        "test/rmgpy/data/stateDataCensusTest.py"
+      ],
+      "source_sha256": "e5f986d62925ced4724108aaf40450346ed31d4a091fb1795fa423af07cd7c91"
+    },
+    "rmgpy/util.py:get_reaction_collider": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Parses a balanced collider token from an already serialized equation and performs no scientific-data acquisition.",
+      "evidence": [
+        "test/rmgpy/data/kinetics/kineticsTest.py"
+      ],
+      "source_sha256": "2b950664e3153618df3cf4072c15bacfd9d4fd596063b3e52e3500f6cb4ead7b"
+    },
+    "rmgpy/util.py:parse_reaction_equation": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Splits an existing equation while respecting nested identifier parentheses; it does not interpret molecular data.",
+      "evidence": [
+        "test/rmgpy/data/kinetics/kineticsTest.py"
+      ],
+      "source_sha256": "129d7a2f2df2e78adb845fb26d3208a0a76d0fd9628e5d045b1bd1497fa9a6b7"
+    },
+    "rmgpy/util.py:read_generation_files": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Reads and generation-validates exact paired file snapshots before a separate molecular parser runs.",
+      "evidence": [
+        "test/rmgpy/data/kinetics/kineticsTest.py"
+      ],
+      "source_sha256": "02adbc2436d8dd4c3ccb6d76ca74bed09f3fa3682af94399aad0ecd504474b70"
+    },
+    "rmgpy/util.py:read_generation_pair": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Returns one already generation-validated kinetics/dictionary byte pair without acquiring scientific values.",
+      "evidence": [
+        "test/rmgpy/data/kinetics/kineticsTest.py"
+      ],
+      "source_sha256": "7b7ffdb4121bc9496cd866f98a39a42dd4017435fdc71a55d3035d370e4d4c23"
+    },
+    "rmgpy/util.py:stamp_file_generation": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Adds a deterministic content checksum to paired serialized bytes and never inspects species or scientific data.",
+      "evidence": [
+        "test/rmgpy/data/kinetics/kineticsTest.py"
+      ],
+      "source_sha256": "f5e8b7449c209f36c6976be108b378e4bbdc0384e0396040bd9acd68f234eb27"
+    },
+    "rmgpy/util.py:strip_generation_marker": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Removes only the generation header from serialized text; molecular content remains byte-for-byte untouched.",
+      "evidence": [
+        "test/rmgpy/data/kinetics/kineticsTest.py"
+      ],
+      "source_sha256": "382e8e6daae20d705ec52d1dd8a5c52192e2d7292f62eccf00b3a36788d6e1ad"
+    },
+    "rmgpy/util.py:write_files_atomically": {
+      "verdict": "not-reachable-for-resolved",
+      "reason": "Stages and replaces caller-rendered file contents atomically; all molecular validation occurs before this filesystem boundary.",
+      "evidence": [
+        "test/rmgpy/data/kinetics/kineticsTest.py"
+      ],
+      "source_sha256": "457eb8bf075ea925bb17d9d16356b2ab25848277dbb5dd4402e445da6bf55a01"
+    },
+    "rmgpy/yaml_cantera1.py:_cantera_declarations": {
+      "verdict": "carried",
+      "reason": "Builds the Cantera-1 state-aware species declaration map used by phase and reaction serializers.",
+      "evidence": [
+        "test/rmgpy/yaml_cantera1Test.py"
+      ],
+      "source_sha256": "d2259caa7de98600b276d84b06d195ad034fe21a69dcddefd12360f0ee28e611"
+    },
+    "rmgpy/yaml_cantera2.py:_cantera_declarations": {
+      "verdict": "carried",
+      "reason": "Builds the Cantera-2 state-aware species declaration map used by phase and reaction serializers.",
+      "evidence": [
+        "test/rmgpy/yaml_cantera2Test.py"
+      ],
+      "source_sha256": "bdb1e013050d82ff6e50b4750c91ba82635d00e3c44fb7c49ae4228a82d1a5fe"
+    },
+    "rmgpy/yaml_cantera2.py:_cantera_identifier": {
+      "verdict": "carried",
+      "reason": "Returns a state-qualified identifier for resolved species and the historical Chemkin identifier for ground species.",
+      "evidence": [
+        "test/rmgpy/yaml_cantera2Test.py"
+      ],
+      "source_sha256": "28eda1146d824f1eaaf45f3e01804024db94acd0ab5f2083f4aac011450638ef"
+    },
+    "rmgpy/yaml_rms.py:load_rms_species": {
+      "verdict": "carried",
+      "reason": "Reloads RMS species from adjacency lists before SMILES and validates emitted-name collisions with full identities.",
+      "evidence": [
+        "test/rmgpy/yaml_writer/excitedExportCensusTest.py"
+      ],
+      "source_sha256": "d2701f268b1d846142a1be4afebd576b605bda220495d2e4f367b13e6b3940ac"
+    },
+    "rmgpy/yaml_rms.py:load_rms_species.<lambda1>": {
+      "verdict": "carried",
+      "reason": "Uses the emitted RMS name as the key while the surrounding loader validates the associated full adjacency identity.",
+      "evidence": [
+        "test/rmgpy/yaml_writer/excitedExportCensusTest.py"
+      ],
+      "source_sha256": "822f284c8733707c8d0ad355ff82ca54e11186c5cbae034066f756ff5de7dbcc"
     }
   }
 }

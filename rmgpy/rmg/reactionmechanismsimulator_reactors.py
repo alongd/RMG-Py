@@ -327,6 +327,12 @@ class Phase:
         that of self
         """
         if spc.label in self.names:  # already exists
+            previous = self.rmg_species[self.names.index(spc.label)]
+            if (any(mol.has_resolved_state() for mol in previous.molecule + spc.molecule)
+                    and not previous.is_isomorphic(spc)):
+                from rmgpy.exceptions import SpeciesIdentityError
+                raise SpeciesIdentityError(
+                    'Cannot admit distinct resolved species under shared RMS label "{0}".'.format(spc.label))
             label = spc.label
             logging.debug(f"species {label} was already in phase skipping...")
             return
@@ -630,6 +636,14 @@ def to_rms(obj, species_names=None, rms_species_list=None, rmg_species=None):
     """
     Generate corresponding rms object
     """
+
+    from rmgpy.export import refuse_resolved_species, kinetics_references
+    if isinstance(obj, Species):
+        refuse_resolved_species([obj], 'to_rms native Julia')
+    elif isinstance(obj, Reaction):
+        refuse_resolved_species(rmg_species or [], 'to_rms native Julia', [obj])
+    else:
+        refuse_resolved_species(list(kinetics_references(obj)), 'to_rms native Julia')
     if isinstance(obj, ThermoData):
         obj = obj.to_nasa(Tmin=298, Tmax=2500, Tint=1000)
     if isinstance(obj, Arrhenius):

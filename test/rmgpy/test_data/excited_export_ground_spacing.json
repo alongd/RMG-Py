@@ -1,0 +1,7 @@
+{
+  "baseline": "0640eee62ab4afdeb236056aee62baef02bed4f2",
+  "payloads": {
+    "False": "entry(\n    index = 1,\n    label = \"A  <=>  B\",\n    degeneracy = 1.0,\n    kinetics = Arrhenius(A=(1,'s^-1'), n=0, Ea=(0,'J/mol'), T0=(1,'K')),\n)\n\n",
+    "True": "entry(\n    index = 1,\n    label = \"A(1)  <=>  B(2)\",\n    degeneracy = 1.0,\n    kinetics = Arrhenius(A=(1,'s^-1'), n=0, Ea=(0,'J/mol'), T0=(1,'K')),\n)\n\n"
+  }
+}

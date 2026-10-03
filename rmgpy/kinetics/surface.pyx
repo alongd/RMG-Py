@@ -81,6 +81,9 @@ cdef class StickingCoefficient(KineticsModel):
         Return a string representation that can be used to reconstruct the
         StickingCoefficient object.
         """
+
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species(list(self.coverage_dependence or {}), 'StickingCoefficient.__repr__ coverage')
         string = 'StickingCoefficient(A={0!r}, n={1!r}, Ea={2!r}, T0={3!r}'.format(self.A, self.n, self.Ea, self.T0)
         if self.Tmin is not None: string += ', Tmin={0!r}'.format(self.Tmin)
         if self.Tmax is not None: string += ', Tmax={0!r}'.format(self.Tmax)
@@ -360,6 +363,9 @@ cdef class StickingCoefficientBEP(KineticsModel):
         Return a string representation that can be used to reconstruct the
         StickingCoefficientBEP object.
         """
+
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species(list(self.coverage_dependence or {}), 'StickingCoefficientBEP.__repr__ coverage')
         string = 'StickingCoefficientBEP(A={0!r}, n={1!r}, alpha={2!r}, E0={3!r}'.format(self.A, self.n, self.alpha,
                                                                                          self.E0)
         if self.Tmin is not None: string += ', Tmin={0!r}'.format(self.Tmin)
@@ -580,6 +586,9 @@ cdef class SurfaceArrhenius(Arrhenius):
         Return a string representation that can be used to reconstruct the
         SurfaceArrhenius object.
         """
+
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species(list(self.coverage_dependence or {}), 'SurfaceArrhenius.__repr__ coverage')
         string = 'SurfaceArrhenius(A={0!r}, n={1!r}, Ea={2!r}, T0={3!r}'.format(self.A, self.n, self.Ea, self.T0)
         if self.Tmin is not None: string += ', Tmin={0!r}'.format(self.Tmin)
         if self.Tmax is not None: string += ', Tmax={0!r}'.format(self.Tmax)
@@ -745,6 +754,9 @@ cdef class SurfaceArrheniusBEP(ArrheniusEP):
         Return a string representation that can be used to reconstruct the
         SurfaceArrheniusBEP object.
         """
+
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species(list(self.coverage_dependence or {}), 'SurfaceArrheniusBEP.__repr__ coverage')
         string = 'SurfaceArrheniusBEP(A={0!r}, n={1!r}, alpha={2!r}, E0={3!r}'.format(self.A, self.n, self.alpha,
                                                                                       self.E0)
         if self.Tmin is not None: string += ', Tmin={0!r}'.format(self.Tmin)

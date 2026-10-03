@@ -71,6 +71,10 @@ def save_entry(f, entry):
     database to the file object `f`.
     """
 
+    from rmgpy.export import refuse_resolved_species
+    from rmgpy.species import Species
+    refuse_resolved_species([Species(thermo=entry.data)], 'thermo.save_entry coverage')
+
     f.write('entry(\n')
     f.write('    index = {0:d},\n'.format(entry.index))
     f.write('    label = "{0}",\n'.format(entry.label))
@@ -629,7 +633,7 @@ class ThermoDepository(Database):
             site=site,
             facet=facet,
         )
-        self.entries[label] = entry
+        self._store_entry(label, entry, "ThermoDepository.load_entry")
         return entry
 
     def save_entry(self, f, entry):
@@ -716,7 +720,7 @@ class ThermoLibrary(Database):
                                         'existing molecule {1} in thermo library {2}. Please '
                                         'correct your library.'.format(label, entry.label, self.name))
 
-        self.entries[label] = Entry(
+        self._store_entry(label, Entry(
             index=index,
             label=label,
             item=molecule,
@@ -729,7 +733,7 @@ class ThermoLibrary(Database):
             metal=metal,
             facet=facet,
             site=site,
-        )
+        ), "ThermoLibrary.load_entry")
 
     def save_entry(self, f, entry):
         """
@@ -789,7 +793,7 @@ class ThermoGroups(Database):
             item = make_logic_node(group)
         else:
             item = Group().from_adjacency_list(group)
-        self.entries[label] = Entry(
+        self._store_entry(label, Entry(
             index=index,
             label=label,
             item=item,
@@ -802,7 +806,7 @@ class ThermoGroups(Database):
             metal=metal,
             facet=facet,
             site=site,
-        )
+        ), "ThermoGroups.load_entry")
 
     def save_entry(self, f, entry):
         """

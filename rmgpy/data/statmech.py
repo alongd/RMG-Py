@@ -140,7 +140,7 @@ class StatmechDepository(Database):
         """
         item = Molecule().from_adjacency_list(molecule)
 
-        self.entries[label] = Entry(
+        self._store_entry(label, Entry(
             index=index,
             label=label,
             item=item,
@@ -149,7 +149,7 @@ class StatmechDepository(Database):
             reference_type=referenceType,
             short_desc=shortDesc,
             long_desc=longDesc.strip(),
-        )
+        ), "StatmechDepository.load_entry")
 
     def save_entry(self, f, entry):
         """
@@ -182,16 +182,18 @@ class StatmechLibrary(Database):
         Method for parsing entries in database files.
         Note that these argument names are retained for backward compatibility.
         """
-        self.entries[label] = Entry(
+        item = Molecule().from_adjacency_list(molecule)
+
+        self._store_entry(label, Entry(
             index=index,
             label=label,
-            item=Molecule().from_adjacency_list(molecule),
+            item=item,
             data=statmech,
             reference=reference,
             reference_type=referenceType,
             short_desc=shortDesc,
             long_desc=longDesc.strip(),
-        )
+        ), "StatmechLibrary.load_entry")
 
     def save_entry(self, f, entry):
         """
@@ -247,7 +249,7 @@ class StatmechGroups(Database):
             item = make_logic_node(group)
         else:
             item = Group().from_adjacency_list(group)
-        self.entries[label] = Entry(
+        self._store_entry(label, Entry(
             index=index,
             label=label,
             item=item,
@@ -256,7 +258,7 @@ class StatmechGroups(Database):
             reference_type=referenceType,
             short_desc=shortDesc,
             long_desc=longDesc.strip(),
-        )
+        ), "StatmechGroups.load_entry")
 
     def save_entry(self, f, entry):
         """

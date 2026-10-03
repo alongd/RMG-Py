@@ -281,7 +281,8 @@ class MopacMol(QMMolecule, Mopac):
             r"\s*([\- ][0-9.]+)\s+([\- ][0-9.]+)+\s+([\- ][0-9.]+)\s+([A-Za-z]+)"
         )
 
-        output = [self.geometry.unique_id_long, ""]
+        output = [self.molecule.to_augmented_inchi() if self.molecule.has_resolved_state()
+                  else self.geometry.unique_id_long, ""]
 
         atom_count = 0
         with open(molfile) as molinput:

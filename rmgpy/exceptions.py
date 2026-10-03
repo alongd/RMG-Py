@@ -67,6 +67,11 @@ class ChemkinError(Exception):
     pass
 
 
+class ChemkinIdentifierCollisionError(ChemkinError):
+    """Two species would share one identifier in a Chemkin export."""
+    pass
+
+
 class CollisionError(Exception):
     """
     An exception class for when RMG is unable to calculate collision efficiencies
@@ -494,3 +499,16 @@ class ResolvedStateTrainingError(NotImplementedError):
 class StateConstraintMergeError(ValueError):
     """Merged groups have incompatible whole-species state constraints."""
     pass
+
+
+class SpeciesIdentityError(ValueError):
+    """A species identity cannot be represented safely by the requested format."""
+    pass
+
+
+class GenerationMismatchError(SpeciesIdentityError):
+    """Kinetics and dictionary files belong to different saved generations."""
+
+
+class ChemkinReferenceError(ChemkinError, SpeciesIdentityError):
+    """An emitted Chemkin reference has no matching declared full identity."""

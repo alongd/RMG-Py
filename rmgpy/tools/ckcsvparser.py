@@ -195,6 +195,9 @@ def get_concentration_dict_from_ckcsv(ckcsv_file):
 
 
 def get_flux_graph_edges_dict(spc_rop_dict, core_reactions):
+
+    from rmgpy.export import refuse_resolved_species
+    refuse_resolved_species([], 'rmgpy/tools/ckcsvparser.py:get_flux_graph_edges_dict', core_reactions)
     graph_edges_dict = {}
     for rxn in core_reactions:
         for pair in rxn.pairs:

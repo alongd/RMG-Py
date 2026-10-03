@@ -71,6 +71,7 @@ from rmgpy.kinetics.model import PDepKineticsModel
 from rmgpy.util import make_output_subdirectory
 from datetime import datetime
 from rmgpy.chemkin import chemkin_duplicate_flags, get_species_identifier
+from rmgpy.export import SpeciesReferences, resolve_species_reference, validate_reaction_references
 from rmgpy.data.kinetics.family import TemplateReaction
 from rmgpy.data.kinetics.library import LibraryReaction
 from rmgpy.rmg.pdep import PDepReaction
@@ -135,6 +136,8 @@ def write_cantera(
     # than crash mid-write or emit a mechanism unbalanced in the E pseudo-element, refuse the whole
     # mechanism up front and point at the maintained writer, which folds the electron in via
     # expand_electrons.
+    spcs = _cantera_declarations(spcs)
+    validate_reaction_references(rxns, spcs)
     charged = next((rxn for rxn in rxns if getattr(rxn, 'electrons', 0)), None)
     if charged is not None:
         raise MechanismWriterError(
@@ -234,8 +237,9 @@ def get_phases_gas_only(spcs, elements_line):
     elements_line is the pre-formatted ``elements: [...]`` string from
     :func:`get_elements_block`.
     """
+    spcs = _cantera_declarations(spcs)
     sorted_species = sorted(spcs, key=lambda spcs: spcs.index)
-    species_to_write = [get_species_identifier(spec) for spec in sorted_species]
+    species_to_write = [resolve_species_reference(spec, spcs) for spec in sorted_species]
     # make sure species with "[" or "]" is in quotes
     species_to_write = [
         f"'{s}'" if "[" in s or "{" in s or "]" in s or "}" in s else s
@@ -260,6 +264,7 @@ def get_phases_with_surface(spcs, surface_site_density, elements_line, has_cover
     which includes TWO phases instead of just one.
     Returns 'phases' sections.
     """
+    spcs = _cantera_declarations(spcs)
     surface_species = []
     gas_species = []
     for spc in spcs:
@@ -274,7 +279,7 @@ def get_phases_with_surface(spcs, surface_site_density, elements_line, has_cover
     )
 
     surface_species_to_write = [
-        get_species_identifier(s) for s in sorted_surface_species
+        resolve_species_reference(s, spcs) for s in sorted_surface_species
     ]
 
     # make sure species with "[" or "]" is in quotes
@@ -284,7 +289,7 @@ def get_phases_with_surface(spcs, surface_site_density, elements_line, has_cover
     ]
 
     sorted_gas_species = sorted(gas_species, key=lambda gas_species: gas_species.index)
-    gas_species_to_write = [get_species_identifier(s) for s in sorted_gas_species]
+    gas_species_to_write = [resolve_species_reference(s, spcs) for s in sorted_gas_species]
 
     # make sure species with "[" or "]" is in quotes
     gas_species_to_write = [
@@ -372,11 +377,8 @@ def get_mech_dict_surface(spcs, rxns, solvent="solvent", solvent_data=None):
         else:
             gas_rxns.append(rxn)
 
-    names = [x.label for x in spcs]
-    for i, name in enumerate(names):  # fix duplicate names
-        if names.count(name) > 1:
-            names[i] += "-" + str(names.count(name))
-
+    spcs = _cantera_declarations(spcs)
+    validate_reaction_references(rxns, spcs)
     result_dict = dict()
     result_dict["species"] = [species_to_dict(x, all_species=spcs) for x in spcs]
 
@@ -393,13 +395,10 @@ def get_mech_dict_nonsurface(spcs, rxns, solvent="solvent", solvent_data=None):
     For gas-phase systems.
     Adds 'species' and 'reactions' to result_dict.
     """
-    names = [x.label for x in spcs]
-    for i, name in enumerate(names):  # fix duplicate names
-        if names.count(name) > 1:
-            names[i] += "-" + str(names.count(name))
-
+    spcs = _cantera_declarations(spcs)
+    validate_reaction_references(rxns, spcs)
     result_dict = dict()
-    result_dict["species"] = [species_to_dict(x) for x in spcs]
+    result_dict["species"] = [species_to_dict(x, all_species=spcs) for x in spcs]
 
     chemkin_counter = [0]
     result_dict["reactions"] = _collect_reactions(rxns, spcs, chemkin_counter)
@@ -407,7 +406,13 @@ def get_mech_dict_nonsurface(spcs, rxns, solvent="solvent", solvent_data=None):
     return result_dict
 
 
-def _build_equation_string(obj):
+def _cantera_declarations(species):
+    if isinstance(species, SpeciesReferences):
+        return species
+    return SpeciesReferences(species, get_species_identifier, context='CanteraWriter1')
+
+
+def _build_equation_string(obj, spcs=None):
     """
     Build the reaction equation string preserving the order of reactants and
     products as stored on the RMG Reaction object. Cantera's input_data sorts
@@ -422,8 +427,12 @@ def _build_equation_string(obj):
     :func:`rmgpy.yaml_cantera2.get_reaction_equation` for why this is a refusal rather
     than a silent drop.
     """
-    reactants = " + ".join(r.to_chemkin() for r in obj.reactants)
-    products = " + ".join(p.to_chemkin() for p in obj.products)
+    if spcs is None:
+        references = obj.reactants + obj.products + ([obj.specific_collider] if obj.specific_collider else [])
+        spcs = list(dict.fromkeys(references))
+    spcs = _cantera_declarations(spcs)
+    reactants = " + ".join(resolve_species_reference(r, spcs) for r in obj.reactants)
+    products = " + ".join(resolve_species_reference(p, spcs) for p in obj.products)
 
     suffix = ""
     kin = obj.kinetics
@@ -436,10 +445,10 @@ def _build_equation_string(obj):
             "collider would then serialize to the same equation and be rejected by "
             "Kinetics::checkDuplicates.".format(obj, collider.label, type(kin).__name__))
     if isinstance(kin, ThirdBody) and not isinstance(kin, (Lindemann, Troe)):
-        m_label = collider.to_chemkin() if collider else "M"
+        m_label = resolve_species_reference(collider, spcs) if collider else "M"
         suffix = " + " + m_label
     elif isinstance(kin, (Lindemann, Troe)):
-        m_label = collider.to_chemkin() if collider else "M"
+        m_label = resolve_species_reference(collider, spcs) if collider else "M"
         suffix = " (+" + m_label + ")"
 
     arrow = " <=> " if obj.reversible else " => "
@@ -466,16 +475,21 @@ def reaction_to_dicts(obj, spcs, duplicate=None):
     with "No duplicate found for declared duplicate reaction number 0".
     """
 
+    spcs = _cantera_declarations(spcs)
+    validate_reaction_references([obj], spcs)
+    if obj.specific_collider is not None and any(mol.has_resolved_state() for mol in obj.specific_collider.molecule):
+        from rmgpy.exceptions import SpeciesIdentityError
+        raise SpeciesIdentityError('CanteraWriter1 cannot retain resolved named collider references through native conversion.')
     reaction_list = []
     if isinstance(obj.kinetics, MultiArrhenius) or isinstance(
         obj.kinetics, MultiPDepArrhenius
     ):
-        list_of_cantera_reactions = obj.to_cantera(use_chemkin_identifier=True)
+        list_of_cantera_reactions = obj.to_cantera(species_list=spcs, use_chemkin_identifier=True)
     else:
-        list_of_cantera_reactions = [obj.to_cantera(use_chemkin_identifier=True)]
+        list_of_cantera_reactions = [obj.to_cantera(species_list=spcs, use_chemkin_identifier=True)]
 
 
-    rmg_equation = _build_equation_string(obj)
+    rmg_equation = _build_equation_string(obj, spcs)
 
     if duplicate is None:
         duplicate = obj.duplicate
@@ -498,13 +512,20 @@ def reaction_to_dicts(obj, spcs, duplicate=None):
                 if k != "equation":
                     new_data[k] = v
             reaction_data = new_data
+        coverage = getattr(obj.kinetics, 'coverage_dependence', None) or {}
+        if coverage:
+            native_coverage = reaction_data['coverage-dependencies']
+            reaction_data['coverage-dependencies'] = {
+                resolve_species_reference(spc, spcs): native_coverage[
+                    resolve_species_reference(spc, _cantera_declarations([spc]))]
+                for spc in coverage}
         efficiencies = getattr(obj.kinetics, "efficiencies", {})
         if efficiencies:
             # RMG oject has efficiencies, so add them to Cantera.
             reaction_data["efficiencies"] = {
-                spcs[i].to_chemkin(): float(val)
+                resolve_species_reference(spcs[i], spcs): float(val)
                 for i, val in enumerate(
-                    obj.kinetics.get_effective_collider_efficiencies(spcs)
+                    obj.kinetics.get_effective_collider_efficiencies(list(spcs))
                 )
                 if val != 1
             }
@@ -561,7 +582,7 @@ def reaction_to_dicts(obj, spcs, duplicate=None):
             note_lines.append(f"Specific third body collider: {obj.specific_collider.label}")
         if getattr(obj, "pairs", None):
             pair_str = "Flux pairs: " + "; ".join(
-                f"{get_species_identifier(p[0])}, {get_species_identifier(p[1])}"
+                f"{resolve_species_reference(p[0], spcs)}, {resolve_species_reference(p[1], spcs)}"
                 for p in obj.pairs
             )
             note_lines.append(pair_str)
@@ -589,8 +610,21 @@ def species_to_dict(species, all_species=None):
     if not isinstance(species, Species):
         raise TypeError("species object must be an RMG Species")
 
+    all_species = _cantera_declarations([species] if all_species is None else all_species)
+    name = resolve_species_reference(species, all_species)
+    from rmgpy.molecule import Molecule
+    for adjacency in (getattr(species.thermo, 'thermo_coverage_dependence', None) or {}):
+        resolve_species_reference(Molecule().from_adjacency_list(adjacency), all_species)
     cantera_species = species.to_cantera(use_chemkin_identifier=True, all_species=all_species)
     species_data = cantera_species.input_data
+    species_data["name"] = name
+    thermo_coverage = getattr(species.thermo, 'thermo_coverage_dependence', None) or {}
+    if thermo_coverage:
+        native_coverage = species_data['coverage-dependencies']
+        species_data['coverage-dependencies'] = {
+            resolve_species_reference(Molecule().from_adjacency_list(adjacency), all_species):
+                native_coverage[resolve_species_reference(Molecule().from_adjacency_list(adjacency), all_species)]
+            for adjacency in thermo_coverage}
 
     try:
         transport_comment = species.transport_data.comment
@@ -613,6 +647,11 @@ def species_to_dict(species, all_species=None):
             species_data["note"] = smiles
     except Exception:
         pass
+    if species.molecule[0].has_resolved_state():
+        state_note = species.molecule[0].to_adjacency_list().rstrip()
+        existing_note = species_data.get('note', '')
+        if state_note not in existing_note:
+            species_data['note'] = existing_note + '\n' + state_note if existing_note else state_note
     if species.thermo and species.thermo.comment:
         clean_comment = species.thermo.comment.replace('\n', '; ').strip()
         if clean_comment:

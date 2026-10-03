@@ -34,7 +34,8 @@ This module contains functionality for working with kinetics depositories.
 import re
 
 from rmgpy.data.base import Database, Entry, DatabaseError
-from rmgpy.data.kinetics.common import save_entry
+from rmgpy.data.kinetics.common import (save_entry, validate_generic_collider_dictionary,
+                                        validate_dictionary_participant_labels)
 from rmgpy.reaction import Reaction
 
 
@@ -193,26 +194,25 @@ class KineticsDepository(Database):
 
     def load(self, path, local_context=None, global_context=None):
         import os
-        Database.load(self, path, local_context, global_context)
+        from rmgpy.util import read_generation_pair
+        dictionary_path = os.path.join(os.path.dirname(path), 'dictionary.txt')
+        content, dictionary_content = read_generation_pair(path, dictionary_path)
+        Database.load(self, path, local_context, global_context, content=content)
 
         # Load the species in the kinetics library
         # Do not generate resonance structures, since training reactions may be written for a specific resonance form
-        species_dict = self.get_species(os.path.join(os.path.dirname(path), 'dictionary.txt'), resonance=False)
+        species_dict = self.get_species(dictionary_path, resonance=False, content=dictionary_content)
         # Make sure all of the reactions draw from only this set
         entries = self.entries.values()
         for entry in entries:
             # Create a new reaction per entry
             rxn = entry.item
             rxn_string = entry.label
+            from rmgpy.data.kinetics.common import add_dictionary_index_aliases
+            add_dictionary_index_aliases(rxn_string, species_dict)
             # Convert the reactants and products to Species objects using the species_dict
-            reactants, products = rxn_string.split('=')
-            reversible = True
-            if '<=>' in rxn_string:
-                reactants = reactants[:-1]
-                products = products[1:]
-            elif '=>' in rxn_string:
-                products = products[1:]
-                reversible = False
+            from rmgpy.util import parse_reaction_equation
+            reactants, products, reversible = parse_reaction_equation(rxn_string)
             if reversible != rxn.reversible:
                 raise DatabaseError('Reaction string reversibility ({0}) and entry attribute `reversible` ({1}) '
                                     'must agree if reaction is irreversible.'.format(rxn.reversible, reversible))
@@ -229,6 +229,7 @@ class KineticsDepository(Database):
                     # allow for species like N2(5) or CH2(T)(15) to be read as specific colliders,
                     # although currently not implemented in Chemkin. See RMG-Py #1070
                     collider += ')'
+                validate_generic_collider_dictionary(collider, species_dict)
                 reactants = reactants.replace(collider, '')
                 products = products.replace(collider, '')
                 if collider.upper().strip() != "(+M)":  # the collider is a specific species, not (+M) or (+m)
@@ -236,6 +237,13 @@ class KineticsDepository(Database):
                         raise DatabaseError('Collider species {0} in kinetics library {1} is missing from its '
                                             'dictionary.'.format(collider.strip()[2:-1], self.label))
                     specific_collider = species_dict[collider.strip()[2:-1]]
+                    if any(mol.has_resolved_state() for mol in specific_collider.molecule):
+                        from rmgpy.exceptions import SpeciesIdentityError
+                        raise SpeciesIdentityError(
+                            'Cannot reload resolved named collider "{0}" in a kinetics depository; '
+                            'this loader does not retain collider references.'.format(specific_collider.label))
+
+            validate_dictionary_participant_labels(reactants, products, species_dict)
 
             for reactant in reactants.split('+'):
                 reactant = reactant.strip()
@@ -322,11 +330,22 @@ class KineticsDepository(Database):
             facet=facet
         )
         assert index not in self.entries
-        self.entries[index] = entry
+        self._store_entry(index, entry, "KineticsDepository.load_entry")
         return entry
+
+    def save(self, path, reindex=True):
+        """Save training reactions and their dictionary as one validated pair."""
+        import os
+        from rmgpy.util import stamp_file_generation, write_files_atomically
+        dictionary = self.render_dictionary()
+        reactions = self.render_save(reindex)
+        write_files_atomically(stamp_file_generation([
+            (path, reactions, '#'),
+            (os.path.join(os.path.dirname(path), 'dictionary.txt'), dictionary, '//'),
+        ]))
 
     def save_entry(self, f, entry):
         """
         Write the given `entry` in the kinetics database to the file object `f`.
         """
-        return save_entry(f, entry)
+        return save_entry(f, entry, declarations=self.dictionary_references())

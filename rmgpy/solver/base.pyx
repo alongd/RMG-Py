@@ -1577,10 +1577,12 @@ cdef class ReactionSystem(DASx):
                             if abs(norm_sens_array[i][k][j]) > self.sensitivity_threshold:
                                 reactions_above_threshold.append(j)
                                 break
-                    species_name = get_species_identifier(self.sensitive_species[i])
+                    from rmgpy.export import SpeciesReferences, resolve_species_reference
+                    declarations = SpeciesReferences(core_species, get_species_identifier, context='sensitivity CSV')
+                    species_name = resolve_species_reference(self.sensitive_species[i], declarations)
                     headers = ['Time (s)']
                     headers.extend(['dln[{0}]/dln[k{1}]: {2}'.format(species_name, j + 1, core_reactions[j].to_chemkin(species_list=core_species, kinetics=False)) if j < num_core_reactions
-                                    else 'dln[{0}]/dG[{1}]'.format(species_name, get_species_identifier(core_species[j - num_core_reactions])) for j in reactions_above_threshold])
+                                    else 'dln[{0}]/dG[{1}]'.format(species_name, resolve_species_reference(core_species[j - num_core_reactions], declarations)) for j in reactions_above_threshold])
                     worksheet.writerow(headers)
 
                     for k in range(len(time_array)):

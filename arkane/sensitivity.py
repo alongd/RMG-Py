@@ -117,6 +117,9 @@ class KineticsSensitivity(object):
 
     def save(self):
         """Save the SA results as tabulated data as well as in YAML format"""
+
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species([], 'arkane/sensitivity.py:KineticsSensitivity.save', [self.job.reaction])
         if not os.path.exists(self.sensitivity_path):
             os.mkdir(self.sensitivity_path)
         valid_chars = "-_.()<=> %s%s" % (string.ascii_letters, string.digits)
@@ -190,6 +193,9 @@ class KineticsSensitivity(object):
 
     def plot(self):
         """Plot the SA results as horizontal bars"""
+
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species([], 'arkane/sensitivity.py:KineticsSensitivity.plot', [self.job.reaction])
         try:
             import matplotlib.pyplot as plt
         except ImportError:
@@ -396,6 +402,12 @@ class PDepSensitivity(object):
 
     def save(self, wells, transition_states):
         """Save the SA output as tabulated data as well as in YAML format"""
+
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species(
+            self.job.network.get_all_species(),
+            'arkane/sensitivity.py:PDepSensitivity.save',
+            self.job.network.path_reactions + self.job.network.net_reactions)
         if not os.path.exists(os.path.join(self.output_directory, 'sensitivity')):
             os.mkdir(os.path.join(self.output_directory, 'sensitivity'))
         valid_chars = "-_.()<=>+ %s%s" % (string.ascii_letters, string.digits)
@@ -445,6 +457,12 @@ class PDepSensitivity(object):
 
     def plot(self, wells, transition_states):
         """Draw the SA results as horizontal bars"""
+
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species(
+            self.job.network.get_all_species(),
+            'arkane/sensitivity.py:PDepSensitivity.plot',
+            self.job.network.path_reactions + self.job.network.net_reactions)
         try:
             import matplotlib.pyplot as plt
         except ImportError:

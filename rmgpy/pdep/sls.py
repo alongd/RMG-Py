@@ -423,6 +423,9 @@ def unravel_ks(ks, keqs, n_isomreac):
 
 
 def get_names(channel):
+
+    from rmgpy.export import refuse_resolved_species
+    refuse_resolved_species(channel.species, 'rmgpy/pdep/sls.py:get_names', ())
     return [x.label for x in channel.species]
 
 

@@ -268,6 +268,9 @@ class PressureDependenceJob(object):
 
     def execute(self, output_file, plot, file_format='pdf', print_summary=True):
         """Execute a PressureDependenceJob"""
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species(self.network.get_all_species(), "PressureDependenceJob.execute", reactions=self.network.path_reactions + self.network.net_reactions)
+
         for config in self.network.isomers + self.network.reactants + self.network.products:
             for spec in config.species:
                 if spec.conformer.E0 is None:
@@ -456,6 +459,12 @@ class PressureDependenceJob(object):
 
     def save(self, output_file):
         """Save the output of a pressure dependent job"""
+
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species(
+            self.network.get_all_species(),
+            'arkane/pdep.py:PressureDependenceJob.save',
+            self.network.path_reactions + self.network.net_reactions)
         logging.info('Saving pressure dependence results for network {0}...'.format(self.network.label))
         f = open(output_file, 'a')
         f_chemkin = open(os.path.join(os.path.dirname(output_file), 'chem.inp'), 'a')
@@ -548,6 +557,12 @@ class PressureDependenceJob(object):
 
     def plot(self, output_directory):
         """Plot pressure dependent rates"""
+
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species(
+            self.network.get_all_species(),
+            'arkane/pdep.py:PressureDependenceJob.plot',
+            self.network.path_reactions + self.network.net_reactions)
         # Skip this step if matplotlib is not installed
         try:
             import matplotlib.pyplot as plt
@@ -635,6 +650,9 @@ class PressureDependenceJob(object):
         named 'network.pdf' in the specified output directory. You can change
         this by passing a different `filename_stem` argument.
         """
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species(self.network.get_all_species(), "PressureDependenceJob.draw", reactions=self.network.path_reactions + self.network.net_reactions)
+
 
         # Skip this step if cairo is not installed
         try:
@@ -655,6 +673,12 @@ class PressureDependenceJob(object):
         """
         Save an Arkane input file for the pressure dependence job to `path` on disk.
         """
+
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species(
+            self.network.get_all_species(),
+            'arkane/pdep.py:PressureDependenceJob.save_input_file',
+            self.network.path_reactions + self.network.net_reactions)
         species_list = self.network.get_all_species()
 
         # Add labels for species, reactions, transition states that don't have them

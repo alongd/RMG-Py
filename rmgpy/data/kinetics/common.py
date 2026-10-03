@@ -34,10 +34,11 @@ in this subpackage.
 import itertools
 import logging
 import json
+import re
 import os
 
 from rmgpy.data.base import LogicNode
-from rmgpy.exceptions import DatabaseError
+from rmgpy.exceptions import DatabaseError, SpeciesIdentityError
 from rmgpy.molecule import Group, Molecule
 from rmgpy.molecule.fragment import Fragment
 from rmgpy.reaction import Reaction
@@ -91,30 +92,213 @@ def parse_external_library_provenance(description):
     return provenance
 
 
-def save_entry(f, entry):
+def check_smiles_keyed_efficiencies(efficiencies):
+    """Refuse resolved colliders before a library writer reduces keys to SMILES."""
+    for collider in efficiencies:
+        if isinstance(collider, Molecule) and collider.has_resolved_state():
+            raise SpeciesIdentityError(
+                'Cannot serialize resolved collider as a SMILES-keyed kinetics-library '
+                'efficiency. Use a state-aware Chemkin or RMS export instead:\n{0}'.format(
+                    collider.to_adjacency_list()))
+
+
+def validate_generic_collider_dictionary(collider, species_dict):
+    """Refuse generic M syntax when it could hide a resolved dictionary collider."""
+    if collider.upper().strip() != "(+M)":
+        return
+    for label in ('M', 'm'):
+        species = species_dict.get(label)
+        if species is not None and any(mol.has_resolved_state() for mol in species.molecule):
+            raise SpeciesIdentityError(
+                'Cannot reload resolved collider "{0}" through generic third-body syntax; '
+                'M and m are reserved generic collider labels.'.format(label))
+
+
+def validate_participant_labels(species):
+    """Refuse resolved labels that the library reaction grammar splits at plus."""
+    for spc in species:
+        if (isinstance(spc, Species) and '+' in spc.label
+                and any(mol.has_resolved_state() for mol in spc.molecule)):
+            raise SpeciesIdentityError(
+                'Cannot serialize or reload resolved participant "{0}"; '
+                '+ is an ambiguous reaction separator in library labels.'.format(spc.label))
+
+
+def validate_dictionary_participant_labels(reactants, products, species_dict):
+    """Check whole dictionary labels before tokenization can discard a state."""
+    import re
+    referenced = [spc for label, spc in species_dict.items() if '+' in label
+                  and any(mol.has_resolved_state() for mol in spc.molecule)
+                  and any(re.search(r'(?:^|\+)\s*' + re.escape(label) + r'\s*(?:\+|$)', side)
+                          for side in (reactants, products))]
+    validate_participant_labels(referenced)
+
+
+def library_reaction_equation(entry, declarations=None):
+    """Validate an equation against its emitted dictionary, or refuse missing context."""
+    from collections import Counter
+    from rmgpy.export import SpeciesReferences, describe_species, refuse_resolved_species, resolve_species_reference
+    from rmgpy.util import get_reaction_collider, parse_reaction_equation
+    reaction = entry.item
+    references = reaction.reactants + reaction.products
+    if reaction.specific_collider is not None:
+        references = references + [reaction.specific_collider]
+    references += list(getattr(entry.data, 'coverage_dependence', None) or {})
+    if declarations is None:
+        refuse_resolved_species(references, 'kinetics equation without emitted dictionary declarations')
+        declarations = SpeciesReferences(list(dict.fromkeys(references)), context='kinetics library',
+                                         allow_ground_collisions=True)
+    elif not isinstance(declarations, SpeciesReferences):
+        declarations = SpeciesReferences(declarations, context='kinetics library', allow_ground_collisions=True)
+    reactants = [resolve_species_reference(spc, declarations) for spc in reaction.reactants]
+    products = [resolve_species_reference(spc, declarations) for spc in reaction.products]
+    for spc in (getattr(entry.data, 'coverage_dependence', None) or {}):
+        resolve_species_reference(spc, declarations)
+    collider = resolve_species_reference(reaction.specific_collider, declarations) if reaction.specific_collider else None
+    suffix = ' (+{0})'.format(collider) if collider is not None else ''
+    exact_tokens = list(zip(reactants, reaction.reactants)) + list(zip(products, reaction.products))
+    if collider is not None:
+        exact_tokens.append((collider, reaction.specific_collider))
+    tokens = exact_tokens
+    if entry.label:
+        left, right, reversible = parse_reaction_equation(entry.label)
+        left_collider, right_collider = get_reaction_collider(left), get_reaction_collider(right)
+        generic = left_collider is not None and left_collider.upper() == '(+M)'
+        if generic and collider is None and hasattr(entry.data, 'efficiencies'):
+            suffix = ' (+M)'
+        expected_collider = suffix.strip() or None
+        if left_collider:
+            left = left.replace(left_collider, '', 1)
+        if right_collider:
+            right = right.replace(right_collider, '', 1)
+        # Reaction.__str__ includes assigned RMG indices. They are display
+        # annotations, not different library species; only the object's actual
+        # index may annotate a resolved declaration name during validation.
+        indexed_reactants = [name + ('({0})'.format(spc.index) if spc.index >= 0 else '')
+                             for name, spc in zip(reactants, reaction.reactants)]
+        indexed_products = [name + ('({0})'.format(spc.index) if spc.index >= 0 else '')
+                            for name, spc in zip(products, reaction.products)]
+        left_names = Counter(token.strip() for token in left.split('+'))
+        right_names = Counter(token.strip() for token in right.split('+'))
+        if (reversible != reaction.reversible or left_collider != expected_collider
+                or right_collider != expected_collider
+                or left_names not in (Counter(reactants), Counter(indexed_reactants))
+                or right_names not in (Counter(products), Counter(indexed_products))):
+            raise SpeciesIdentityError('Entry label equation {0!r} disagrees with its reaction identities.'.format(entry.label))
+        # Counters permit reordered terms; bind tokens to the corresponding
+        # spelling of the typed participants, rather than their written order.
+        tokens = []
+        for species, exact, indexed, names in (
+                (reaction.reactants, reactants, indexed_reactants, left_names),
+                (reaction.products, products, indexed_products, right_names)):
+            tokens.extend(zip(exact if names == Counter(exact) else indexed, species))
+        if collider is not None:
+            tokens.append((collider, reaction.specific_collider))
+
+    canonical = (' + '.join(reactants) + suffix + (' <=> ' if reaction.reversible else ' => ')
+                 + ' + '.join(products) + suffix)
+    if not any(mol.has_resolved_state() for spc in declarations for mol in spc.molecule):
+        return entry.label or canonical
+
+    # Use the reader's exact-key-first rule against the dictionary we emit.
+    # A display annotation is safe only when it reloads as the intended full
+    # identity; canonical names are checked by the same rule before writing.
+    for equation, bindings in ((entry.label or canonical, tokens), (canonical, exact_tokens)):
+        dictionary = {}
+        for name, species in zip(declarations.names, declarations):
+            dictionary.setdefault(name, species)  # render_dictionary writes the first record for each name.
+        add_dictionary_index_aliases(equation, dictionary)
+        mismatches = [(token, intended, dictionary.get(token)) for token, intended in bindings
+                      if token not in dictionary or not dictionary[token].is_isomorphic(intended)]
+        if not mismatches:
+            return equation
+    token, intended, selected = mismatches[0]
+    raise SpeciesIdentityError(
+        'Kinetics equation token "{0}" cannot unambiguously reload {1}; dictionary selects {2}.'.format(
+            token, describe_species(intended),
+            describe_species(selected) if selected is not None else 'no identity'))
+
+
+class _SerializedCoverageReference:
+    """An already-resolved key for the kinetics classes' repr protocol."""
+
+    def __init__(self, identifier):
+        self.identifier = identifier
+
+    def to_chemkin(self):
+        return self.identifier
+
+
+def library_serializable_kinetics(kinetics, declarations):
+    """Resolve repr keys on a copy, leaving live kinetics untouched."""
+    import copy
+    from rmgpy.export import SpeciesReferences, resolve_species_reference
+    result = copy.copy(kinetics)
+    if hasattr(result, 'arrhenius'):
+        result.arrhenius = [library_serializable_kinetics(rate, declarations) for rate in result.arrhenius]
+    if hasattr(result, 'efficiencies'):
+        check_smiles_keyed_efficiencies(result.efficiencies)
+        efficiencies = {}
+        for molecule, value in result.efficiencies.items():
+            molecule = Molecule(smiles=molecule) if isinstance(molecule, str) else molecule
+            # The SMILES field explicitly declares this unresolved molecular
+            # identity inline; it need not be a reaction dictionary participant.
+            inline = Species(molecule=[molecule])
+            inline_declarations = SpeciesReferences([inline], lambda spc: spc.molecule[0].to_smiles(),
+                                                   context='library efficiency')
+            efficiencies[resolve_species_reference(molecule, inline_declarations)] = value
+        result.efficiencies = dict(sorted(efficiencies.items()))
+    coverage = getattr(result, 'coverage_dependence', None) or {}
+    if coverage:
+        resolved = any(mol.has_resolved_state() for species in declarations for mol in species.molecule)
+        # Ground-only repr uses its legacy indexed declaration names. References
+        # still validate against the reaction inventory and use the same resolver.
+        coverage_names = declarations if resolved else SpeciesReferences(
+            coverage, lambda species: species.to_chemkin(), context='ground library coverage')
+        serialized = {}
+        for spc, parameters in coverage.items():
+            identifier = resolve_species_reference(spc, declarations)
+            if not resolved:
+                identifier = resolve_species_reference(spc, coverage_names)
+            serialized[_SerializedCoverageReference(identifier)] = parameters
+        result.coverage_dependence = serialized
+    return result
+
+
+def save_entry(f, entry, declarations=None):
     """
     Save an `entry` in the kinetics database by writing a string to
     the given file object `f`.
     """
 
-    def sort_efficiencies(efficiencies0):
-        efficiencies = {}
-        for mol, eff in efficiencies0.items():
-            if isinstance(mol, str):
-                # already in SMILES string format
-                smiles = mol
-            else:
-                smiles = mol.to_smiles()
+    if isinstance(entry.item, Reaction):
+        validate_participant_labels(entry.item.reactants + entry.item.products)
 
-            efficiencies[smiles] = eff
-        keys = list(efficiencies.keys())
-        keys.sort()
-        return [(key, efficiencies[key]) for key in keys]
+    collider = getattr(entry.item, 'specific_collider', None)
+    if (collider is not None and collider.label.strip().upper() == 'M'
+            and any(mol.has_resolved_state() for mol in collider.molecule)):
+        raise SpeciesIdentityError(
+            'Cannot serialize resolved named collider "{0}"; '
+            'M and m are reserved generic collider labels.'.format(collider.label))
+
+    if hasattr(entry.data, 'efficiencies'):
+        check_smiles_keyed_efficiencies(entry.data.efficiencies)
+
+    if declarations is None:
+        from rmgpy.export import kinetics_references, refuse_resolved_species
+        refuse_resolved_species(kinetics_references(entry.data),
+                                'kinetics entry writer without emitted dictionary declarations',
+                                reactions=[entry.item] if isinstance(entry.item, Reaction) else [])
+
+    label = entry.label
+    if (isinstance(entry.item, Reaction) and entry.item.reactants
+            and all(isinstance(spc, Species) for spc in entry.item.reactants + entry.item.products)):
+        label = library_reaction_equation(entry, declarations)
 
     f.write('entry(\n')
     f.write('    index = {0:d},\n'.format(entry.index))
-    if entry.label != '':
-        f.write('    label = "{0}",\n'.format(entry.label))
+    if label != '':
+        f.write('    label = "{0}",\n'.format(label))
 
     # Entries for kinetic rules, libraries, training reactions
     # and depositories will have a Reaction object for its item
@@ -150,15 +334,15 @@ def save_entry(f, entry):
     if isinstance(entry.data, str):
         f.write('    kinetics = "{0}",\n'.format(entry.data))
     elif entry.data is not None:
-        efficiencies = None
-        if hasattr(entry.data, 'efficiencies'):
-            efficiencies = entry.data.efficiencies
-            entry.data.efficiencies = dict(sort_efficiencies(entry.data.efficiencies))
-        kinetics = repr(entry.data)  # todo prettify currently does not support uncertainty attribute
+        if declarations is None:
+            from rmgpy.export import SpeciesReferences
+            declarations = SpeciesReferences(
+                [spc for spc in getattr(entry.item, 'reactants', []) + getattr(entry.item, 'products', [])
+                 if isinstance(spc, Species)], context='kinetics library', allow_ground_collisions=True)
+        serialized = library_serializable_kinetics(entry.data, declarations)
+        kinetics = repr(serialized)
         kinetics = '    kinetics = {0},\n'.format(kinetics.replace('\n', '\n    '))
         f.write(kinetics)
-        if hasattr(entry.data, 'efficiencies'):
-            entry.data.efficiencies = efficiencies
     else:
         f.write('    kinetics = None,\n')
 
@@ -519,3 +703,25 @@ def reduce_same_reactant_degeneracy(reaction, same_reactants=None):
                         'Degeneracy of reaction {} was decreased by 50% to {} since two of the reactants '
                         'are identical'.format(reaction, reaction.degeneracy)
                     )
+
+
+def add_dictionary_index_aliases(equation, species_dict):
+    """Add missing display-index aliases only for resolved dictionary species."""
+    from rmgpy.util import get_reaction_collider, parse_reaction_equation
+    left, right, _ = parse_reaction_equation(equation)
+    names = []
+    for side in (left, right):
+        collider = get_reaction_collider(side)
+        if collider:
+            if collider.upper() != '(+M)':
+                names.append(collider[2:-1])
+            side = side.replace(collider, '', 1)
+        names.extend(token.strip() for token in side.split('+'))
+    for name in names:
+        if name in species_dict:
+            continue
+        match = re.fullmatch(r'(.+)\(\d+\)', name)
+        if match and match.group(1) in species_dict:
+            species = species_dict[match.group(1)]
+            if any(mol.has_resolved_state() for mol in species.molecule):
+                species_dict[name] = species

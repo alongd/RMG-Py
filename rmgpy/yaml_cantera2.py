@@ -311,6 +311,9 @@ def generate_cantera_data(species_list,
     }
 
     # Sort species list by index
+    species_list = _cantera_declarations(species_list)
+    from rmgpy.export import validate_reaction_references
+    validate_reaction_references(reaction_list, species_list)
     sorted_species = sorted(species_list, key=lambda species: species.index)
 
     # --- 2. Phase Segregation (Gas vs Surface) ---
@@ -478,6 +481,8 @@ def species_to_dict(species, species_list):
 
     # Composition
     mol = species.molecule[0]
+    if mol.has_resolved_state():
+        notes.append(mol.to_adjacency_list().rstrip())
     atom_dict = {}
     for atom in mol.atoms:
         symbol = atom.element.chemkin_name
@@ -620,16 +625,12 @@ def species_to_dict(species, species_list):
         cov_deps = {}
         for adj_list, parameters in thermo_data.thermo_coverage_dependence.items():
             mol = Molecule().from_adjacency_list(adj_list)
-            for sp in species_list:
-                if is_isomorphic_same_charge(sp, mol, strict=False):
-                    dep_label = get_label(sp, species_list)
-                    if dep_label:
-                        cov_deps[dep_label] = {
-                            'units': {'energy': 'J', 'quantity': 'mol'},
-                            'enthalpy-coefficients': [v.value_si for v in parameters['enthalpy-coefficients']],
-                            'entropy-coefficients': [v.value_si for v in parameters['entropy-coefficients']],
-                        }
-                    break
+            dep_label = get_label(mol, species_list)
+            cov_deps[dep_label] = {
+                'units': {'energy': 'J', 'quantity': 'mol'},
+                'enthalpy-coefficients': [v.value_si for v in parameters['enthalpy-coefficients']],
+                'entropy-coefficients': [v.value_si for v in parameters['entropy-coefficients']],
+            }
         if cov_deps:
             species_entry['coverage-dependencies'] = cov_deps
 
@@ -868,8 +869,8 @@ def reaction_to_dict_list(reaction, species_list=None, duplicate=None):
     elif isinstance(kin, ThirdBody):
         entry['type'] = 'three-body'
         entry['rate-constant'] = _rate_constant_entry(kin.arrheniusLow)
-        entry['efficiencies'] = {lbl: v for m, v in kin.efficiencies.items() if
-                                 (lbl := get_label(m, species_list)) is not None}
+        entry['efficiencies'] = {label: v for m, v in kin.efficiencies.items()
+                                 if (label := get_label(m, species_list, efficiency=True)) is not None}
 
     elif isinstance(kin, Troe):
         entry['type'] = 'falloff'
@@ -879,15 +880,15 @@ def reaction_to_dict_list(reaction, species_list=None, duplicate=None):
         if kin.T2:
             troe_p['T2'] = kin.T2.value_si
         entry['Troe'] = troe_p
-        entry['efficiencies'] = {lbl: v for m, v in kin.efficiencies.items() if
-                                 (lbl := get_label(m, species_list)) is not None}
+        entry['efficiencies'] = {label: v for m, v in kin.efficiencies.items()
+                                 if (label := get_label(m, species_list, efficiency=True)) is not None}
 
     elif isinstance(kin, Lindemann):
         entry['type'] = 'falloff'
         entry['high-P-rate-constant'] = _rate_constant_entry(kin.arrheniusHigh)
         entry['low-P-rate-constant'] = _rate_constant_entry(kin.arrheniusLow)
-        entry['efficiencies'] = {lbl: v for m, v in kin.efficiencies.items() if
-                                 (lbl := get_label(m, species_list)) is not None}
+        entry['efficiencies'] = {label: v for m, v in kin.efficiencies.items()
+                                 if (label := get_label(m, species_list, efficiency=True)) is not None}
 
     # 3. Plasma Kinetics
     elif isinstance(kin, TwoTemperaturePlasma):
@@ -1072,12 +1073,20 @@ def get_reaction_equation(reaction, species_list):
     return equation
 
 
-def get_label(obj: Union['Species', 'Molecule'], species_list: list['Species']):
-    if isinstance(obj, Species):
-        return f'{obj.label}({obj.index})' if obj.index > 0 else obj.label
+def _cantera_identifier(species):
+    """Allocate the existing CanteraWriter2 declaration name."""
+    return f'{species.label}({species.index})' if species.index > 0 else species.label
 
-    if species_list:
-        for sp in species_list:
-            if sp.is_isomorphic(obj):
-                return f'{sp.label}({sp.index})' if sp.index > 0 else sp.label
-    return None
+
+def _cantera_declarations(species):
+    from rmgpy.export import SpeciesReferences
+    if isinstance(species, SpeciesReferences):
+        return species
+    return SpeciesReferences(species, _cantera_identifier, context='CanteraWriter2')
+
+
+def get_label(obj: Union['Species', 'Molecule'], species_list: list['Species'], efficiency=False):
+    """Resolve a declared full identity; never fall back to an object's label."""
+    from rmgpy.export import resolve_species_reference
+    return resolve_species_reference(obj, _cantera_declarations(species_list),
+                                     allow_missing_efficiency=efficiency)

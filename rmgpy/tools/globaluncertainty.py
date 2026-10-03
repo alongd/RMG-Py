@@ -384,6 +384,12 @@ class ReactorPCEFactory(object):
         (true output mole fractions, pce output mole fractions) evaluated at the test point.
         """
 
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species(
+            self.reactor_mod.output_species_list + self.reactor_mod.cantera.species_list,
+            'rmgpy/tools/globaluncertainty.py:ReactorPCEFactory.compare_output',
+            self.reactor_mod.cantera.reaction_list)
+
         true_output = self.reactor_mod.Evaluate([test_point])[0]
         pce_output = self.pce.Evaluate([test_point])[0]
 
@@ -421,6 +427,12 @@ Species                      True Output          PCE Output
         
         (mean species mole fractions, variance, covariance, main sensitivity indices, total sensitivity indices)
         """
+
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species(
+            self.reactor_mod.output_species_list + self.reactor_mod.cantera.species_list,
+            'rmgpy/tools/globaluncertainty.py:ReactorPCEFactory.analyze_results',
+            self.reactor_mod.cantera.reaction_list)
         # Compute the mean and variance for each of the uncertain parameters
         mean = np.array(self.pce.Mean())
 

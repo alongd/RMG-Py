@@ -142,6 +142,11 @@ class BACDatapoint:
 
     @_Decorators.assert_level_of_theory
     def _mol_from_geo(self):
+
+        from rmgpy.export import refuse_resolved_species
+        if self.spc.adjacency_list:
+            refuse_resolved_species([Molecule().from_adjacency_list(self.spc.adjacency_list)],
+                'BACDatapoint._mol_from_geo')
         xyz = self.spc.calculated_data[self.level_of_theory].xyz_dict
         self._mol = geo_to_mol(xyz['coords'], symbols=xyz['symbols'])
         self._mol_type = 'geo'

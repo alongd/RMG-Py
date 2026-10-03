@@ -103,7 +103,7 @@ class KineticsRules(Database):
         try:
             self.entries[label].append(entry)
         except KeyError:
-            self.entries[label] = [entry]
+            self._store_entry(label, [entry], "KineticsRules.load_entry")
         return entry
 
     def save_entry(self, f, entry):
@@ -266,7 +266,7 @@ class KineticsRules(Database):
                 rank=11,  # Indicates this is an averaged estimate
             )
             entry.data_sources = tuple(self.get_rule(t) for k, t in kinetics_list)
-            self.entries[entry.label] = [entry]
+            self._store_entry(entry.label, [entry], "KineticsRules.fill_rules_by_averaging_up")
             already_done[root_label] = entry.data
             return entry.data
 

@@ -40,7 +40,7 @@ import numpy as np
 from rmgpy.data.kinetics.family import complete_round_trip
 from rmgpy.data.thermo import ThermoDatabase, bicyclic_decomposition_for_polyring
 from rmgpy.thermo import ThermoData
-from rmgpy.exceptions import SpeciesError, StateProvenanceError
+from rmgpy.exceptions import SpeciesError, StateProvenanceError, SpeciesIdentityError
 from rmgpy.kinetics.arrhenius import get_w0
 from rmgpy.molecule import Molecule
 from rmgpy.molecule.draw import MoleculeDrawer
@@ -111,13 +111,14 @@ class TestR89Finding2:
         assert all(len(mol.get_all_cycles_of_size(6)) == 2 for mol in forms)
 
     @pytest.mark.parametrize('smiles', ['N#N', '[O][O]', 'c1ccccc1Cc1ccccc1'])
-    def test_drawing_uses_the_resolved_molecules_structure(self, tmp_path, smiles):
+    def test_drawing_refuses_resolved_identity(self, tmp_path, smiles):
         excited = Molecule(smiles=smiles, vibrational_level=1)
         before = excited.to_adjacency_list()
         ground = MoleculeDrawer().draw(Molecule(smiles=smiles), 'svg', str(tmp_path / 'ground.svg'))
-        drawn = MoleculeDrawer().draw(excited, 'svg', str(tmp_path / 'excited.svg'))
-        assert drawn[0] is not None
-        assert drawn[2] == ground[2]
+        assert ground[0] is not None
+        with pytest.raises(SpeciesIdentityError, match='MoleculeDrawer.draw'):
+            MoleculeDrawer().draw(excited, 'svg', str(tmp_path / 'excited.svg'))
+        assert not (tmp_path / 'excited.svg').exists()
         assert excited.to_adjacency_list() == before
 
     def test_thermo_ring_decomposition_uses_atoms_without_changing_resolved_identity(self):

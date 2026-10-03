@@ -35,14 +35,15 @@ components of the RMG database.
 
 import codecs
 import hashlib
+import io
 import logging
 import os
 import re
 from collections import OrderedDict
 
 from rmgpy.data.reference import Reference, Article, Book, Thesis
-from rmgpy.exceptions import StateProvenanceError
-from rmgpy.exceptions import AtomTypeError, DatabaseError, InvalidAdjacencyListError, SaturatedStructureError
+from rmgpy.exceptions import (StateProvenanceError, AtomTypeError, DatabaseError,
+                              InvalidAdjacencyListError, SaturatedStructureError, SpeciesIdentityError)
 from rmgpy.kinetics.uncertainties import RateUncertainty
 from rmgpy.kinetics.arrhenius import ArrheniusChargeTransfer, ArrheniusChargeTransferBM
 from rmgpy.molecule import Molecule, Group
@@ -151,6 +152,44 @@ class Entry(object):
 
 ################################################################################
 
+def _entry_molecules(value):
+    """Collect molecules from the entry shapes accepted by database loaders."""
+    from rmgpy.species import Species
+    from rmgpy.reaction import Reaction
+    if isinstance(value, Entry):
+        return _entry_molecules(value.item)
+    if isinstance(value, (list, tuple)):
+        return [mol for item in value for mol in _entry_molecules(item)]
+    if isinstance(value, Species):
+        return list(value.molecule)
+    if isinstance(value, Molecule):
+        return [value]
+    if isinstance(value, Reaction):
+        return _entry_molecules(value.reactants + value.products +
+                                ([value.specific_collider] if value.specific_collider is not None else []))
+    return []
+
+
+def _same_entry_identity(left, right):
+    """Compare full identities, including every component of a solvent record."""
+    from rmgpy.species import Species
+    if isinstance(left, Entry):
+        left = left.item
+    if isinstance(right, Entry):
+        right = right.item
+    if isinstance(left, (list, tuple)) or isinstance(right, (list, tuple)):
+        return (isinstance(left, (list, tuple)) and isinstance(right, (list, tuple))
+                and len(left) == len(right)
+                and all(_same_entry_identity(a, b) for a, b in zip(left, right)))
+    if isinstance(left, (Species, Molecule)) and isinstance(right, (Species, Molecule)):
+        left = Species(molecule=[left]) if isinstance(left, Molecule) else left
+        right = Species(molecule=[right]) if isinstance(right, Molecule) else right
+        return left.is_isomorphic(right)
+    if type(left) is type(right) and hasattr(left, 'is_isomorphic'):
+        return left.is_isomorphic(right)
+    return left is right
+
+
 class Database(object):
     """
     An RMG-style database, consisting of a dictionary of entries (associating
@@ -207,7 +246,7 @@ class Database(object):
         self.facet = facet
         self.thermo_convention = thermo_convention
 
-    def load(self, path, local_context=None, global_context=None):
+    def load(self, path, local_context=None, global_context=None, content=None):
         """
         Load an RMG-style database from the file at location `path` on disk.
         The parameters `local_context` and `global_context` are used to
@@ -248,11 +287,14 @@ class Database(object):
             local_context[key] = value
 
         # Process the file
-        with open(path, 'rb') as f:
-            raw_content = f.read()
-        # The convention bridge pins exact bytes, including line endings.
+        if content is None:
+            with open(path, 'rb') as f:
+                raw_content = f.read()
+            content = raw_content.decode('utf-8')
+        else:
+            raw_content = content.encode('utf-8')
+        # Hash precisely the snapshot that will be executed.
         self._loaded_file_sha256 = hashlib.sha256(raw_content).hexdigest()
-        content = raw_content.decode('utf-8')
         try:
             exec(content, global_context, local_context)
         except Exception as e:
@@ -310,15 +352,20 @@ class Database(object):
 
         return entries
 
-    def get_species(self, path, resonance=True):
+    def get_species(self, path, resonance=True, content=None):
         """
         Load the dictionary containing all of the species in a kinetics library or depository.
         """
         from rmgpy.species import Species
         species_dict = OrderedDict()
-        with open(path, 'r') as f:
+        import io
+        from rmgpy.util import strip_generation_marker
+        stream = io.StringIO(strip_generation_marker(content)) if content is not None else open(path, 'r')
+        with stream as f:
             adjlist = ''
             for line in f:
+                if line.startswith('// RMG-PAIR-GENERATION '):
+                    continue
                 if line.strip() == '' and adjlist.strip() != '':
                     # Finish this adjacency list
                     species = Species().from_adjacency_list(adjlist)
@@ -351,44 +398,66 @@ class Database(object):
         Extract species from all entries associated with a kinetics library or depository and save them 
         to the path given.
         """
-        try:
-            os.makedirs(os.path.dirname(path))
-        except OSError:
-            pass
-        # Extract species from all the entries
-        species_dict = {}
-        entries = self.entries.values()
-        for entry in entries:
-            for reactant in entry.item.reactants:
-                if reactant.label not in species_dict:
-                    species_dict[reactant.label] = reactant
+        content = self.render_dictionary()
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+        with open(path, 'w') as stream:
+            stream.write(content)
 
-            for product in entry.item.products:
-                if product.label not in species_dict:
-                    species_dict[product.label] = product
+    def dictionary_references(self):
+        """Declare participant, named-collider and coverage identities for saving."""
+        from rmgpy.export import SpeciesReferences, kinetics_references
+        from rmgpy.species import Species
+        species = []
+        seen = set()
+        for entry in self.entries.values():
+            references = entry.item.reactants + entry.item.products
+            if entry.item.specific_collider is not None:
+                references = references + [entry.item.specific_collider]
+            references += [reference for reference in kinetics_references(entry.data)
+                           if isinstance(reference, Species)]
+            for spc in references:
+                if id(spc) not in seen:
+                    species.append(spc)
+                    seen.add(id(spc))
+        return SpeciesReferences(species, context='kinetics dictionary', allow_ground_collisions=True)
 
-        with open(path, 'w') as f:
-            for label in species_dict.keys():
-                f.write(species_dict[label].molecule[0].to_adjacency_list(label=label, remove_h=False))
-                f.write('\n')
+    def render_dictionary(self):
+        """Render declared full identities, refusing conflicting emitted labels."""
+        from rmgpy.export import resolve_species_reference
+        from rmgpy.exceptions import SpeciesIdentityError
+        declarations = self.dictionary_references()
+        chunks, written = [], set()
+        for spc in declarations:
+            for adjacency in (getattr(spc.thermo, 'thermo_coverage_dependence', None) or {}):
+                reference = Molecule().from_adjacency_list(adjacency)
+                resolve_species_reference(reference, declarations)
+                if reference.has_resolved_state():
+                    raise SpeciesIdentityError('Kinetics dictionaries cannot retain resolved thermodynamic coverage references.')
+            name = resolve_species_reference(spc, declarations)
+            if name not in written:
+                chunks.append(spc.molecule[0].to_adjacency_list(label=name, remove_h=False))
+                chunks.append('\n')
+                written.add(name)
+        return ''.join(chunks)
 
     def save(self, path, reindex=True):
-        """
-        Save the current database to the file at location `path` on disk. 
-        """
+        """Save this database, retaining the legacy token-free file layout."""
+        content = self.render_save(reindex)
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+        with codecs.open(path, 'w', 'utf-8') as stream:
+            stream.write(content)
+
+    def render_save(self, reindex=True):
+        """Render database content before replacing any output files."""
         for entry in self.entries.values():
             self._check_data_serialization(entry)
-        try:
-            os.makedirs(os.path.dirname(path))
-        except OSError:
-            pass
-        
         if reindex:
             entries = self.get_entries_to_save()
         else: 
             entries = self.entries.values()
 
-        f = codecs.open(path, 'w', 'utf-8')
+        import io
+        f = io.StringIO()
         f.write('#!/usr/bin/env python\n')
         f.write('# encoding: utf-8\n\n')
         f.write('name = "{0}"\n'.format(self.name))
@@ -410,7 +479,7 @@ class Database(object):
             f.write('"""\n')
             f.write(')\n\n')
 
-        f.close()
+        return f.getvalue()
 
     def load_old(self, dictstr, treestr, libstr, num_parameters, num_labels=1, pattern=True):
         """
@@ -445,7 +514,50 @@ class Database(object):
 
         return self
 
-    def load_old_dictionary(self, path, pattern):
+    def _store_entry(self, key, entry, context, molecular_dictionary=False, pattern_dictionary=False):
+        """Store an entry without overwriting a different resolved identity.
+
+        Ground-only duplicates retain each loader's existing behavior. Lists
+        (solvent components or rate-rule records) are compared as full records.
+        Old molecular dictionaries keep raw records until their normal parsing
+        stage; only duplicate records need parsing before the replacement.
+        Raw pattern dictionaries refuse state headers before storing a record.
+        """
+        from rmgpy.export import describe_species
+
+        if pattern_dictionary:
+            headers = [line.strip() for line in entry.item.splitlines()[1:]
+                       if re.match(r'^(?:electronicstate|vibrationallevel)(?:\s|$)', line.strip())]
+            if headers:
+                raise SpeciesIdentityError(
+                    '{0} label "{1}" has resolved state headers unsupported in raw pattern records: {2}.'.format(
+                        context, key, headers))
+
+        previous = self.entries.get(key)
+        if previous is not None:
+            old_item = previous
+            new_item = entry
+            if molecular_dictionary and not any(
+                    re.search(r'(?m)^\s*(?:electronicstate|vibrationallevel)\s+', record.item)
+                    for record in (previous, entry)):
+                # Historically a discarded ground record was never parsed.
+                # Keep that behavior, including malformed discarded records.
+                self.entries[key] = entry
+                return
+            if molecular_dictionary:
+                old_item = Molecule().from_adjacency_list(previous.item, saturate_h=True)
+                new_item = Molecule().from_adjacency_list(entry.item, saturate_h=True)
+            old_molecules = _entry_molecules(old_item)
+            new_molecules = _entry_molecules(new_item)
+            if (any(mol.has_resolved_state() for mol in old_molecules + new_molecules)
+                    and not _same_entry_identity(old_item, new_item)):
+                raise SpeciesIdentityError(
+                    '{0} label "{1}" collides between {2} and {3}.'.format(
+                        context, key, [describe_species(mol) for mol in old_molecules],
+                        [describe_species(mol) for mol in new_molecules]))
+        self.entries[key] = entry
+
+    def load_old_dictionary(self, path, pattern, content=None):
         """
         Parse an old-style RMG database dictionary located at `path`. An RMG
         dictionary is a list of key-value pairs of a one-line string key and a
@@ -463,7 +575,7 @@ class Database(object):
         f_dict = None
         # Process the dictionary file
         try:
-            f_dict = open(path, 'r')
+            f_dict = open(path, 'r') if content is None else io.StringIO(content)
             for line in f_dict:
                 line = line.strip()
                 # If at blank line, end of record has been found
@@ -472,7 +584,10 @@ class Database(object):
                     lines = record.splitlines()
                     label = lines[0]
                     # Add record to dictionary
-                    self.entries[label] = Entry(label=label, item=record)
+                    self._store_entry(
+                        label, Entry(label=label, item=record), "Database.load_old_dictionary",
+                        molecular_dictionary=not pattern, pattern_dictionary=pattern,
+                    )
                     # Clear record in preparation for next iteration
                     record = ''
                 # Otherwise append line to record (if not empty and not a comment line)
@@ -485,7 +600,10 @@ class Database(object):
             if record:
                 label = record.splitlines()[0]
                 # Add record to dictionary
-                self.entries[label] = Entry(label=label, item=record)
+                self._store_entry(
+                    label, Entry(label=label, item=record), "Database.load_old_dictionary",
+                    molecular_dictionary=not pattern, pattern_dictionary=pattern,
+                )
         except DatabaseError as e:
             logging.exception(str(e))
             raise
@@ -715,6 +833,9 @@ class Database(object):
         syntax.
         """
 
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species([entry.item for entry in self.entries.values()], 'Database.save_old_dictionary')
+
         entries = []
         entries_not_in_tree = []
 
@@ -856,6 +977,18 @@ class Database(object):
         """
         for entry in self.entries.values():
             self._check_data_serialization(entry)
+
+        from rmgpy.export import refuse_resolved_species, kinetics_references
+        from rmgpy.species import Species
+        for entry in self.entries.values():
+            refuse_resolved_species([Species(thermo=entry.data)] + list(kinetics_references(entry.data)),
+                'Database.save_old_library entry data')
+
+        from rmgpy.export import refuse_resolved_species
+        from rmgpy.reaction import Reaction
+        items = [entry.item for entry in self.entries.values()]
+        refuse_resolved_species(items, 'Database.save_old_library',
+            [item for item in items if isinstance(item, Reaction)])
         try:
             # Save the library in order by index
             entries = list(self.entries.values())
@@ -1577,7 +1710,7 @@ class ForbiddenStructures(Database):
                 item = make_logic_node(group)
             else:
                 item = Group().from_adjacency_list(group)
-        self.entries[label] = Entry(
+        self._store_entry(label, Entry(
             label=label,
             item=item,
             short_desc=shortDesc,
@@ -1585,7 +1718,7 @@ class ForbiddenStructures(Database):
             metal=metal,
             facet=facet,
             site=site,
-        )
+        ), "ForbiddenStructures.load_entry")
 
     def save_entry(self, f, entry, name='entry'):
         """
@@ -1594,12 +1727,19 @@ class ForbiddenStructures(Database):
         database.
         """
 
+        from rmgpy.species import Species
+
         f.write('{0}(\n'.format(name))
         f.write('    label = "{0}",\n'.format(entry.label))
         if isinstance(entry.item, Molecule):
             f.write('    molecule = \n')
             f.write('"""\n')
             f.write(entry.item.to_adjacency_list(remove_h=False))
+            f.write('""",\n')
+        elif isinstance(entry.item, Species) and any(mol.has_resolved_state() for mol in entry.item.molecule):
+            f.write('    species = \n')
+            f.write('"""\n')
+            f.write(entry.item.to_adjacency_list())
             f.write('""",\n')
         elif isinstance(entry.item, Group):
             f.write('    group = \n')

@@ -425,8 +425,25 @@ class Reaction:
         """
         import cantera as ct
 
+        from rmgpy.export import (
+            SpeciesReferences, resolve_species_reference, validate_reaction_references, refuse_resolved_species,
+        )
+        if not use_chemkin_identifier:
+            refuse_resolved_species(species_list or [], 'Reaction.to_cantera', [self])
         if species_list is None:
-            species_list = []
+            species_list = list(dict.fromkeys(self.reactants + self.products + ([self.specific_collider] if self.specific_collider else [])))
+        # Native surface callers traditionally supply only the surface phase.
+        # Keep missing ground gas participants addressable by their legacy names;
+        # a missing resolved identity must still be explicitly declared.
+        kinetics_species = species_list
+        species_list = list(species_list)
+        for reference in self.reactants + self.products + ([self.specific_collider] if self.specific_collider else []):
+            if (not any(mol.has_resolved_state() for mol in reference.molecule)
+                    and not any(spc is reference for spc in species_list)):
+                species_list.append(reference)
+        identifiers = (lambda spc: spc.to_chemkin()) if use_chemkin_identifier else None
+        declarations = SpeciesReferences(species_list, identifiers, context='Reaction.to_cantera')
+        validate_reaction_references([self], declarations)
 
         # Fold metadata electrons into the participant lists before building the equation, so the
         # in-memory Cantera reaction is balanced in charge and carries the correct reaction order.
@@ -442,27 +459,21 @@ class Reaction:
         ct_reactants = {}
         ct_collider = {}
         for reactant in reactants:
-            if use_chemkin_identifier:
-                reactant_name = reactant.to_chemkin()
-            else:
-                reactant_name = reactant.label
+            reactant_name = resolve_species_reference(reactant, declarations)
             if reactant_name in ct_reactants:
                 ct_reactants[reactant_name] += 1
             else:
                 ct_reactants[reactant_name] = 1
         ct_products = {}
         for product in products:
-            if use_chemkin_identifier:
-                product_name = product.to_chemkin()
-            else:
-                product_name = product.label
+            product_name = resolve_species_reference(product, declarations)
             if product_name in ct_products:
                 ct_products[product_name] += 1
             else:
                 ct_products[product_name] = 1
 
         if self.specific_collider:  # add a specific collider if exists
-            ct_collider[self.specific_collider.to_chemkin() if use_chemkin_identifier else self.specific_collider.label] = 1
+            ct_collider[resolve_species_reference(self.specific_collider, declarations)] = 1
 
         if not self.kinetics:
             raise Exception('Cantera reaction cannot be created because there was no kinetics.')
@@ -585,14 +596,14 @@ class Reaction:
             ct_reaction.ID = str(self.index)
 
         # Now we set the kinetics.
-        self.kinetics.set_cantera_kinetics(ct_reaction, species_list)
+        self.kinetics.set_cantera_kinetics(ct_reaction, kinetics_species)
 
         # Coverage dependencies are not handled by set_cantera_kinetics; set them here.
         # Cantera's coverage_dependencies E is in J/kmol; RMG's value_si is J/mol.
         if hasattr(self.kinetics, 'coverage_dependence') and self.kinetics.coverage_dependence:
             cov_deps = {}
             for sp, params in self.kinetics.coverage_dependence.items():
-                sp_label = sp.to_chemkin() if use_chemkin_identifier else sp.label
+                sp_label = resolve_species_reference(sp, declarations)
                 cov_deps[sp_label] = {
                     'a': params['a'].value_si,
                     'm': params['m'].value_si,
@@ -1943,6 +1954,9 @@ class Reaction:
         ``.ps``; of these, the first is a raster format and the remainder are
         vector formats.
         """
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species([], "Reaction.draw", reactions=[self])
+
         from rmgpy.molecule.draw import ReactionDrawer
         img_format = os.path.splitext(path)[1].lower()[1:]
         ReactionDrawer().draw(self, img_format, path)
@@ -1951,6 +1965,9 @@ class Reaction:
         """
         Return a png picture of the reaction, useful for ipython-qtconsole.
         """
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species([], "Reaction._repr_png_", reactions=[self])
+
         from rmgpy.molecule.draw import ReactionDrawer
         temp_file_name = 'temp_reaction.png'
         ReactionDrawer().draw(self, 'png', temp_file_name)

@@ -71,7 +71,7 @@ def save_entry(f, entry):
                 else:
                     f.write('    molecule = \n')
                     f.write('"""\n')
-                    f.write(item.to_adjacency_list(remove_h=False))
+                    f.write(item.to_adjacency_list())
                     f.write('""",\n')
             else:
                 raise DatabaseError("Not sure how to save {0!r}".format(entry.item))
@@ -98,7 +98,7 @@ def save_entry(f, entry):
         else:
             f.write('    molecule = \n')
             f.write('"""\n')
-            f.write(entry.item.to_adjacency_list(remove_h=False))
+            f.write(entry.item.to_adjacency_list())
             f.write('""",\n')
     elif isinstance(entry.item, Group):
         f.write('    group = \n')
@@ -936,7 +936,7 @@ class SolventLibrary(Database):
         else:
             spc_list = None
 
-        self.entries[label] = Entry(
+        self._store_entry(label, Entry(
             index=index,
             label=label,
             item=spc_list,
@@ -946,7 +946,7 @@ class SolventLibrary(Database):
             reference_type=referenceType,
             short_desc=shortDesc,
             long_desc=longDesc.strip(),
-        )
+        ), "SolventLibrary.load_entry")
 
     def load(self, path):
         """
@@ -1011,7 +1011,7 @@ class SoluteLibrary(Database):
                 logging.error("Can't understand '{0}' in solute library '{1}'".format(molecule, self.name))
                 raise
 
-        self.entries[label] = Entry(
+        self._store_entry(label, Entry(
             index=index,
             label=label,
             item=spc,
@@ -1020,7 +1020,7 @@ class SoluteLibrary(Database):
             reference_type=referenceType,
             short_desc=shortDesc,
             long_desc=longDesc.strip(),
-        )
+        ), "SoluteLibrary.load_entry")
 
     def load(self, path):
         """
@@ -1081,7 +1081,7 @@ class SoluteGroups(Database):
             item = make_logic_node(group)
         else:
             item = Group().from_adjacency_list(group)
-        self.entries[label] = Entry(
+        self._store_entry(label, Entry(
             index=index,
             label=label,
             item=item,
@@ -1091,7 +1091,7 @@ class SoluteGroups(Database):
             reference_type=referenceType,
             short_desc=shortDesc,
             long_desc=longDesc.strip(),
-        )
+        ), "SoluteGroups.load_entry")
 
     def save_entry(self, f, entry):
         """

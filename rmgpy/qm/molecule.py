@@ -243,6 +243,12 @@ class Geometry(object):
                 f" and optimized correctly."
             )
 
+        if self.molecule is not None and self.molecule.has_resolved_state():
+            # MOL bond/coordinate records omit state; retain full identity in the title.
+            identity = self.molecule.to_augmented_inchi()
+            crude.SetProp("_Name", identity)
+            rdmol.SetProp("_Name", identity)
+
         with open(self.get_crude_mol_file_path(), "w") as out_3d_crude:
             out_3d_crude.write(Chem.MolToMolBlock(crude, confId=min_e_id))
 

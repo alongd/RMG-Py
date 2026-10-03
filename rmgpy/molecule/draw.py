@@ -169,6 +169,9 @@ class MoleculeDrawer(object):
         If `use_rdkit` is True, then the RDKit 2D coordinate generation is used to generate the coordinates.
         If `use_rdkit` is False, then the molecule is drawn using our (deprecated) original algorithm.
         """
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species([molecule], "MoleculeDrawer.draw")
+
 
         # The Cairo 2D graphics library (and its Python wrapper) is required for
         # the molecule drawing algorithm
@@ -1739,6 +1742,9 @@ class ReactionDrawer(object):
         drawing, as well as a bounding box for the molecule being drawn as the
         tuple (`left`, `top`, `width`, `height`).
         """
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species([], "ReactionDrawer.draw", reactions=[reaction])
+
         # The Cairo 2D graphics library (and its Python wrapper) is required for
         # the reaction drawing algorithm
         if cairo is None:

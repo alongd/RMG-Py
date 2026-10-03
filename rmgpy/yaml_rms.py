@@ -41,6 +41,7 @@ import yaml
 import logging
 
 from rmgpy.chemkin import load_chemkin_file
+from rmgpy.exceptions import SpeciesIdentityError
 from rmgpy.species import Species
 from rmgpy.reaction import Reaction
 from rmgpy.thermo.nasa import NASAPolynomial, NASA
@@ -52,6 +53,7 @@ from rmgpy.kinetics.chebyshev import Chebyshev
 from rmgpy.data.solvation import SolventData
 from rmgpy.kinetics.surface import StickingCoefficient, SurfaceChargeTransfer
 from rmgpy.util import make_output_subdirectory
+from rmgpy.export import SpeciesReferences, resolve_species_reference, validate_reaction_references
 
 
 def convert_chemkin_to_rms(chemkin_path, dictionary_path=None, output="chem.rms"):
@@ -68,12 +70,54 @@ def write_rms(spcs, rxns, solvent=None, solvent_data=None, path="chem.rms"):
         yaml.dump(result_dict, stream=f, Dumper=Dumper, sort_keys=False)
 
 
+def load_rms_species(path):
+    """Read species structures from every phase of an RMS YAML file.
+
+    Adjacency lists take precedence over the state-blind SMILES representation.
+    Returns Species with the emitted names and molecular identities; this is a
+    structure reader, not an importer of RMS thermo or reaction kinetics.
+    """
+    with open(path) as stream:
+        data = yaml.safe_load(stream)
+    species = []
+    for phase in data['Phases']:
+        for record in phase['Species']:
+            name = record['name']
+            spc = Species(label=name)
+            if record.get('adjlist'):
+                spc.from_adjacency_list(record['adjlist'])
+            elif record.get('smiles'):
+                spc.from_smiles(record['smiles'])
+            else:
+                raise SpeciesIdentityError('RMS species "{0}" has no molecular structure.'.format(name))
+            spc.label = name
+            species.append(spc)
+    SpeciesReferences(species, lambda spc: spc.label, context='RMS reader')
+    return species
+
+
 def get_mech_dict(spcs, rxns, solvent='solvent', solvent_data=None):
     names = [x.label for x in spcs]
-    for i,name in enumerate(names): #fix duplicate names
-        if names.count(name) > 1:
-            names[i] += "-"+str(names.count(name))
+    if any(spc.molecule[0].has_resolved_state() for spc in spcs):
+        reserved = set(names)
+        used = set()
+        for i, name in enumerate(names):
+            candidate = name
+            if candidate in used:
+                suffix = 2
+                candidate = '{0}-{1}'.format(name, suffix)
+                while candidate in used or candidate in reserved:
+                    suffix += 1
+                    candidate = '{0}-{1}'.format(name, suffix)
+            names[i] = candidate
+            used.add(candidate)
+    else:
+        for i,name in enumerate(names): #fix duplicate names
+            if names.count(name) > 1:
+                names[i] += "-"+str(names.count(name))
 
+    spcs = SpeciesReferences(spcs, names, context='RMS')
+    validate_reaction_references(rxns, spcs)
     is_surface = False
     for spc in spcs:
         if spc.contains_surface_site():
@@ -112,13 +156,30 @@ def get_radicals(spc):
 
 
 def obj_to_dict(obj, spcs, names=None, label="solvent"):
+    if not isinstance(spcs, SpeciesReferences):
+        spcs = SpeciesReferences(spcs, names, context='RMS')
+    from rmgpy.export import kinetics_references
+    for reference, efficiency in kinetics_references(obj, with_kind=True):
+        resolve_species_reference(reference, spcs, allow_missing_efficiency=efficiency)
+    from rmgpy.export import refuse_resolved_species
+    coverage = [reference for reference, efficiency in kinetics_references(obj, with_kind=True)
+                if not efficiency]
+    refuse_resolved_species(coverage, 'RMS kinetics coverage')
     result_dict = dict()
     if isinstance(obj, Species):
-        result_dict["name"] = names[spcs.index(obj)]
+        result_dict["name"] = resolve_species_reference(obj, spcs)
         result_dict["type"] = "Species"
-        if obj.contains_surface_site():
+        resolved = obj.molecule[0].has_resolved_state()
+        if obj.contains_surface_site() or resolved:
             result_dict["adjlist"] = obj.molecule[0].to_adjacency_list()
-        result_dict["smiles"] = obj.molecule[0].to_smiles()
+        if not resolved:
+            result_dict["smiles"] = obj.molecule[0].to_smiles()
+        for adjacency in (getattr(obj.thermo, 'thermo_coverage_dependence', None) or {}):
+            from rmgpy.molecule import Molecule
+            reference = Molecule().from_adjacency_list(adjacency)
+            resolve_species_reference(reference, spcs)
+            if reference.has_resolved_state():
+                raise SpeciesIdentityError('RMS cannot retain resolved thermodynamic coverage references.')
         result_dict["thermo"] = obj_to_dict(obj.thermo, spcs)
         result_dict["radicalelectrons"] = get_radicals(obj)
         if obj.liquid_volumetric_mass_transfer_coefficient_data:
@@ -141,8 +202,17 @@ def obj_to_dict(obj, spcs, names=None, label="solvent"):
         result_dict["Tmax"] = obj.Tmax.value_si
         result_dict["Tmin"] = obj.Tmin.value_si
     elif isinstance(obj, Reaction):
-        result_dict["reactants"] = [names[spcs.index(x)] for x in obj.reactants]
-        result_dict["products"] = [names[spcs.index(x)] for x in obj.products]
+        validate_reaction_references([obj], spcs)
+        for reference in (getattr(obj.kinetics, 'coverage_dependence', None) or {}):
+            if any(mol.has_resolved_state() for mol in reference.molecule):
+                raise SpeciesIdentityError('RMS cannot retain resolved coverage references.')
+        if (obj.specific_collider is not None
+                and any(mol.has_resolved_state() for mol in obj.specific_collider.molecule)):
+            raise SpeciesIdentityError(
+                'Cannot export resolved named collider "{0}" to RMS: '
+                'the format writer does not retain named collider references.'.format(obj.specific_collider.label))
+        result_dict["reactants"] = [resolve_species_reference(x, spcs) for x in obj.reactants]
+        result_dict["products"] = [resolve_species_reference(x, spcs) for x in obj.products]
         result_dict["kinetics"] = obj_to_dict(obj.kinetics, spcs, names)
         result_dict["type"] = "ElementaryReaction"
         result_dict["radicalchange"] = sum([get_radicals(x) for x in obj.products]) - \
@@ -199,20 +269,26 @@ def obj_to_dict(obj, spcs, names=None, label="solvent"):
     elif isinstance(obj, ThirdBody):
         result_dict["type"] = "ThirdBody"
         result_dict["arr"] = obj_to_dict(obj.arrheniusLow, spcs)
-        result_dict["efficiencies"] = {spcs[i].label: float(val)
-                                       for i, val in enumerate(obj.get_effective_collider_efficiencies(spcs)) if val != 1}
+        result_dict["efficiencies"] = {
+            resolve_species_reference(spcs[i], spcs): float(val)
+            for i, val in enumerate(obj.get_effective_collider_efficiencies(list(spcs))) if val != 1
+        }
     elif isinstance(obj, Lindemann):
         result_dict["type"] = "Lindemann"
         result_dict["arrhigh"] = obj_to_dict(obj.arrheniusHigh, spcs)
         result_dict["arrlow"] = obj_to_dict(obj.arrheniusLow, spcs)
-        result_dict["efficiencies"] = {spcs[i].label: float(val)
-                                       for i, val in enumerate(obj.get_effective_collider_efficiencies(spcs)) if val != 1}
+        result_dict["efficiencies"] = {
+            resolve_species_reference(spcs[i], spcs): float(val)
+            for i, val in enumerate(obj.get_effective_collider_efficiencies(list(spcs))) if val != 1
+        }
     elif isinstance(obj, Troe):
         result_dict["type"] = "Troe"
         result_dict["arrhigh"] = obj_to_dict(obj.arrheniusHigh, spcs)
         result_dict["arrlow"] = obj_to_dict(obj.arrheniusLow, spcs)
-        result_dict["efficiencies"] = {spcs[i].label: float(val)
-                                       for i, val in enumerate(obj.get_effective_collider_efficiencies(spcs)) if val != 1}
+        result_dict["efficiencies"] = {
+            resolve_species_reference(spcs[i], spcs): float(val)
+            for i, val in enumerate(obj.get_effective_collider_efficiencies(list(spcs))) if val != 1
+        }
         result_dict["a"] = obj.alpha
         result_dict["T1"] = obj.T1.value_si
         if obj.T2:

@@ -240,6 +240,9 @@ def save_thermo_lib(species_list, path, name, lib_long_desc):
         name (str): The library name.
         lib_long_desc (str): A multiline string with relevant description.
     """
+
+    from rmgpy.export import refuse_resolved_species
+    refuse_resolved_species(species_list, 'arkane/output.py:save_thermo_lib', ())
     if species_list:
         lib_path = os.path.join(path, f'{name}.py')
         thermo_library = ThermoLibrary(name=name, long_desc=lib_long_desc)
@@ -273,6 +276,9 @@ def save_kinetics_lib(rxn_list, path, name, lib_long_desc):
         name (str): The library name.
         lib_long_desc (str): A multiline string with relevant description.
     """
+
+    from rmgpy.export import refuse_resolved_species
+    refuse_resolved_species([], 'arkane/output.py:save_kinetics_lib', rxn_list)
     entries = dict()
     if rxn_list:
         for i, rxn in enumerate(rxn_list):
@@ -297,4 +303,3 @@ def save_kinetics_lib(rxn_list, path, name, lib_long_desc):
         except OSError:
             pass
         kinetics_library.save(os.path.join(path, 'reactions.py'))
-        kinetics_library.save_dictionary(os.path.join(path, 'dictionary.txt'))

@@ -283,6 +283,12 @@ class ObservablesTestCase(object):
         (CanteraCondition, variable label, variable_old, variable_new)
 
         """
+
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species(
+            self.observables.get('species', []),
+            'rmgpy/tools/observablesregression.py:ObservablesTestCase.compare',
+            ())
         # Ignore Inerts
         inert_list = ['[Ar]', '[He]', '[N#N]', '[Ne]']
 

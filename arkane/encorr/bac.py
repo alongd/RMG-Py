@@ -142,6 +142,11 @@ class BACJob:
             output_directory: Save the results in this directory.
             jobnum: Job number.
         """
+
+        from rmgpy.export import refuse_resolved_species
+        from rmgpy.molecule import Molecule
+        refuse_resolved_species([Molecule().from_adjacency_list(d.spc.adjacency_list)
+            for d in self.bac.dataset if d.spc.adjacency_list], 'BACJob.write_output')
         model_chemistry_formatted = self.level_of_theory.to_model_chem().replace('//', '__').replace('/', '_')
         output_file1 = os.path.join(output_directory, 'output.py')
         output_file2 = os.path.join(output_directory, f'{jobnum}_{model_chemistry_formatted}.csv')

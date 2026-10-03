@@ -437,7 +437,6 @@ and immediately used in input files without any additional changes.
             except OSError:
                 pass
             library.save(os.path.join(path, label, 'reactions.py'))
-            library.save_dictionary(os.path.join(path, label, 'dictionary.txt'))
 
     def load_old(self, path):
         """

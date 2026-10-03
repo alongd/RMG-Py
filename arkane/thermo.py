@@ -162,6 +162,9 @@ class ThermoJob(object):
         Save the results of the thermodynamics job to the `output.py` file located
         in `output_directory`.
         """
+
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species([self.species], 'arkane/thermo.py:ThermoJob.write_output', ())
         species = self.species
         output_file = os.path.join(output_directory, 'output.py')
         logging.info('Saving thermo for {0}...'.format(species.label))
@@ -196,6 +199,8 @@ class ThermoJob(object):
         `species_dictionary.txt` within the `outut_directory` specified
         """
         species = self.species
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species([species], 'Arkane ThermoJob Chemkin')
         with open(os.path.join(output_directory, 'chem.inp'), 'a') as f:
             if isinstance(species, Species):
                 if species.molecule and isinstance(species.molecule[0], Molecule):
@@ -253,6 +258,9 @@ class ThermoJob(object):
         to. The plot is saved to the file ``thermo.pdf`` in the output
         directory. The plot is not generated if ``matplotlib`` is not installed.
         """
+
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species([self.species], 'arkane/thermo.py:ThermoJob.plot', ())
         # Skip this step if matplotlib is not installed
         try:
             import matplotlib.pyplot as plt

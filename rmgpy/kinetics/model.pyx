@@ -521,12 +521,14 @@ cdef class PDepKineticsModel(KineticsModel):
         suitable for setting the efficiencies in the following cantera reaction objects:
         `ThreeBodyReaction`, `FalloffReaction`,`ChemicallyActivatedReaction`
         """
+        from rmgpy.export import SpeciesReferences, resolve_species_reference
+        declarations = species_list if isinstance(species_list, SpeciesReferences) else SpeciesReferences(
+            species_list, lambda spc: spc.to_chemkin(), context='Cantera efficiencies')
         efficiencies = {}
         for collider, efficiency in sorted(self.efficiencies.items(), key=lambda item: id(item[0])):
-            for species in species_list:
-                if any([collider.is_isomorphic(molecule) for molecule in species.molecule]):
-                    efficiencies[species.to_chemkin()] = efficiency
-                    break
+            name = resolve_species_reference(collider, declarations, allow_missing_efficiency=True)
+            if name is not None:
+                efficiencies[name] = efficiency
         return efficiencies
 
     def set_cantera_kinetics(self, ct_reaction, species_list):

@@ -2046,6 +2046,9 @@ class Molecule(Graph):
         ``.ps``; of these, the first is a raster format and the remainder are
         vector formats.
         """
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species([self], "Molecule.draw")
+
         from .draw import MoleculeDrawer
         img_format = os.path.splitext(path)[-1][1:].lower()
         MoleculeDrawer().draw(self, img_format, target=path)
@@ -2054,6 +2057,9 @@ class Molecule(Graph):
         """
         Return a png picture of the molecule, useful for ipython-qtconsole.
         """
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species([self], "Molecule._repr_png_")
+
         from .draw import MoleculeDrawer
         temp_file_name = 'temp_molecule.png'
         MoleculeDrawer().draw(self, 'png', temp_file_name)

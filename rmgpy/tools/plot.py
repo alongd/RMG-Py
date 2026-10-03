@@ -191,6 +191,12 @@ class GenericPlot(object):
         """
         Execute the actual plotting
         """
+
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species(
+            [getattr(data, 'species', None) for data in (self.y_var or [])],
+            'rmgpy/tools/plot.py:GenericPlot.plot',
+            ())
         mpl.rc("font", family="sans-serif")
         fig = plt.figure()
 
@@ -246,6 +252,12 @@ class GenericPlot(object):
         Plot a generic barplot using just the yVars.
         idx is the index of the each y-variable to be plotted. if not given, the last value will be used
         """
+
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species(
+            [getattr(data, 'species', None) for data in (self.y_var or [])],
+            'rmgpy/tools/plot.py:GenericPlot.barplot',
+            ())
         mpl.rc("font", family="sans-serif")
 
         fig = plt.figure()
@@ -276,6 +288,12 @@ class GenericPlot(object):
         """
         Plot a comparison data plot of this data vs a second GenericPlot class
         """
+
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species(
+            [getattr(data, 'species', None) for data in (self.y_var or [])],
+            'rmgpy/tools/plot.py:GenericPlot.compare_plot',
+            ())
 
         mpl.rc("font", family="sans-serif")
         # mpl.rc('text', usetex=True)
@@ -501,6 +519,12 @@ class ReactionSensitivityPlot(GenericPlot):
         The number of reaction uncertainties to plot is determined by self.num_reactions
         """
 
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species(
+            [getattr(data, 'species', None) for data in (self.y_var or [])],
+            'rmgpy/tools/plot.py:ReactionSensitivityPlot.uncertainty_plot',
+            ())
+
         filename = filename if filename else "kinetics_uncertainty.png"
         self.load()
         if t:
@@ -610,6 +634,12 @@ class ThermoSensitivityPlot(GenericPlot):
         the reaction time `t` in seconds can be specified for plotting the uncertainties.
         The number of thermo uncertainties to plot is determined by self.num_species
         """
+
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species(
+            [getattr(data, 'species', None) for data in (self.y_var or [])],
+            'rmgpy/tools/plot.py:ThermoSensitivityPlot.uncertainty_plot',
+            ())
 
         filename = filename if filename else "thermo_uncertainty.png"
         self.load()

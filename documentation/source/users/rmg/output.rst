@@ -31,6 +31,120 @@ The ``/chemkin`` folder will likely have a large number of chemkin formatted fil
 
 If you check the last box, chemkin strings, you can then search for strings corresponding to seemingly nonsensical named species (e.g. S(1234)) that may show up in any analyses/simulations you perform (e.g., with Cantera or Chemkin). Further, under `Reaction Families`, you can selectively view the reactions that been generated based on a particular RMG reaction family or library. 
 
+Resolved species identifiers
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Chemkin identifiers for resolved electronic or vibrational states use the formula
+followed by state tags: ``N2(v1)``, ``N2(eA3Su_p)``, or ``N2(eA3Su_p,v1)``.
+An assigned RMG index is appended as a final ``(index)``, for example
+``N2(v1)(2)``. Only that final numeric parenthesis is an index on reload;
+``v0`` denotes an explicitly resolved level zero. The dictionary carries the
+original state headers and is required to reconstruct the state.
+
+Electronic tags start with ``e``. Tokens are encoded without losing information:
+``_`` becomes ``__``, ``+`` becomes ``_p``, ``-`` becomes ``_m``, ``,`` becomes
+``_c``, ``(`` becomes ``_l``, and ``)`` becomes ``_r``. Letters, digits and
+periods are unchanged. These names use Chemkin's legal character set. If the
+complete identifier, including the index, exceeds 16 characters, export raises
+``ChemkinError`` rather than dropping or truncating the state. Unresolved species
+retain their existing identifiers. Before writing Chemkin gas, surface, transport,
+or dictionary files, ``validate_species_identifiers`` rejects distinct species
+that share one identifier with ``ChemkinIdentifierCollisionError``. The error
+names both species; existing output files remain intact. Reaction participants,
+named colliders, coverage references, and resolved efficiency keys must refer to
+declared species. The surface file of a combined export may also refer to the
+gas species declared in its companion file. Standalone surface exports retain
+the legacy allowance for unresolved gas references to a companion mechanism;
+resolved references require explicit declarations. The collider reader accepts the full
+state-tag and index convention, including ``(+N2(eA,v1)(2))``.
+
+Dictionary loading rejects conflicting identities under a duplicate identifier.
+An appended ``InChI=...`` annotation is removed; electronic tokens containing
+``InChI`` remain intact.
+
+Resolved species in YAML and libraries
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Both direct Cantera YAML writers and ``Species.to_cantera()`` include the
+resolved adjacency list in each resolved species' note. Native Cantera
+``Solution.write_yaml()`` therefore also carries this metadata. Unresolved notes
+retain their previous contents.
+
+RMS YAML uses ``adjlist`` for resolved species, omitting the state-blind ``smiles``
+field for those records. Unresolved records keep their existing format. Species
+names and collider efficiency references use the same allocated names.
+``rmgpy.yaml_rms.load_rms_species(path)`` reads molecular identities from all
+phases, preferring ``adjlist`` to ``smiles``; it loads structures and names, not
+thermo or reaction kinetics.
+
+Collider efficiency keys held as Molecules remain state-aware in memory and in
+Chemkin and RMS exports. Kinetics-library serialization that reduces those keys
+to SMILES refuses resolved colliders with ``SpeciesIdentityError``. Library
+dictionaries likewise refuse distinct identities sharing a label when either
+is resolved. Default Species and reaction-model names append the molecular
+state suffix (for example ``N#N|v:1``), so an omitted label cannot hide a state.
+Explicit labels and unresolved default names retain their previous behavior.
+
+``M`` and ``m`` are reserved for generic third-body syntax. Resolved named
+library or depository colliders using these labels refuse with
+``SpeciesIdentityError`` on save or ambiguous dictionary reload.
+
+Resolved participant labels containing ``+`` refuse on library/depository save
+or reload with ``SpeciesIdentityError`` because the reaction grammar uses that
+character as a separator. Named collider labels use their separate grammar.
+
+Named library colliders are included in the dictionary, together with reaction
+participants and coverage references. The depository loader and RMS writer
+refuse resolved named colliders with ``SpeciesIdentityError`` because those
+paths do not retain named collider references. Distinct resolved identities sharing a
+library label are refused. ``KineticsLibrary.save()`` validates and renders both
+files before writing temporary files and replacing the destinations. Recoverable
+I/O failures restore previous files and remove this save's temporary files.
+Existing permission bits are retained; new files follow the process umask.
+Aliased kinetics/dictionary destinations refuse before replacement.
+
+All Chemkin, RMS, Cantera and kinetics-library writers route species records and
+references through ``rmgpy.export.resolve_species_reference``. References match
+the declarations by full molecular identity, including electronic and vibrational
+state, never by a label alone. Missing identities and conflicting emitted names
+raise a named error. Library equations are derived from reaction objects;
+stale entry labels refuse. Compact ``<=>``, ``=>`` and ``=`` equations load with
+or without spaces. Old-style Chemkin dictionaries refuse resolved states before
+writing. Legacy kinetics-library saves also refuse resolved references. Formats
+that cannot retain a resolved coverage or named-collider reference refuse it.
+
+Paired-file generations
+^^^^^^^^^^^^^^^^^^^^^^^
+
+``KineticsLibrary.save()``, ``save_old()`` and combined ``save_chemkin()`` with a
+dictionary stamp the kinetics file(s) and dictionary with one shared header:
+``RMG-PAIR-GENERATION v1-sha256:<64 lowercase hexadecimal digits>``. The comment
+prefix is ``#`` for Python libraries, ``!`` for Chemkin kinetics and ``//`` for
+dictionaries. The SHA-256 digest covers the ordered UTF-8 output payloads, each
+preceded by its eight-byte big-endian length, excluding paths and the header.
+Combined-save transport payloads contribute to the digest but carry no header.
+Single-file saves retain their existing token-free format.
+
+Loaders validate the exact file snapshots they parse. Differing tokens, a token
+on only one side, or malformed headers raise ``GenerationMismatchError`` naming
+both paths and both tokens. Pairs with no headers retain legacy loading behavior.
+Individual renames are atomic, but the pair is not a crash-safe transaction:
+a crash or interleaved saves can leave a split generation, which refuses on load
+instead of silently changing a state. There is no file locking. A hard process
+termination can also leave temporary files; exception cleanup covers files owned
+by the failing save and does not remove another save's files.
+
+Names obtained from thermo libraries also carry the resolved state suffix, so
+later renaming cannot combine states under one thermo label. RMS phase admission
+refuses distinct resolved identities under a shared label instead of skipping
+the second species.
+
+For ground-only RMS mechanisms with duplicate labels, efficiencies use the
+allocated emitted name. For example, N2 and Ar both labelled ``bath`` are emitted
+as ``bath-2`` and ``bath`` respectively; a nitrogen efficiency refers to
+``bath-2``. This intentionally corrects the inherited mapping to argon, for
+ThirdBody, Lindemann, and Troe kinetics.
+
 ------------------
 The Species Folder
 ------------------ 
@@ -291,3 +405,38 @@ The ``/rms`` folder contains the mechanism in
 `ReactionMechanismSimulator (RMS) <https://github.com/ReactionMechanismGenerator/ReactionMechanismSimulator.jl>`_
 YAML format.  This writer is enabled by default (``generateRMSYAML=True``) and writes at
 every iteration, unless configured otherwise by ``saveInterval``.
+
+Database entry collisions
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Database loaders share one entry collision guard. Reusing a label for a different
+full identity raises ``SpeciesIdentityError`` when either record has a resolved
+electronic state or vibrational level. This includes solute and solvent libraries,
+forbidden structures, and old molecular dictionaries. Exact repeats remain
+accepted by loaders that previously accepted them. Ground-only duplicate handling,
+including existing library-specific refusals, is unchanged. A forbidden structure
+entered as a resolved ``Species`` is saved with its complete adjacency list and
+reloads as the same resolved species.
+
+
+Old pattern dictionaries refuse any raw record carrying an electronic state or
+vibrational level with ``SpeciesIdentityError`` before it can overwrite another
+record. Ground-only raw duplicates retain their previous behavior. Kinetics
+library reload adds missing display-index aliases only for resolved dictionary
+species; ground dictionary labels must match exactly as before.
+Before saving a resolved library, every participant and named collider token is
+checked against the dictionary using the reader's exact-key-first resolution
+rule. Display indices remain only when they resolve to the intended full
+identity. Unsafe tokens are replaced with exact dictionary names; conflicting
+names raise ``SpeciesIdentityError`` naming the token and both identities.
+In-memory entry labels stay unchanged. Entry writers for libraries containing
+resolved species use the whole library dictionary. Standalone pure-ground
+library entries retain their historical behavior and bytes. Training appenders
+check the complete retained-plus-new
+dictionary, including retained species absent from the loaded depository.
+``KineticsFamily.save_entry()`` and the common entry writer require explicit
+``declarations`` for resolved molecular entries; without the emitted dictionary
+context they raise ``SpeciesIdentityError`` before writing an entry.
+Pure-ground equations retain their historical bytes and lookup behavior,
+including conflicting exact names selecting the first saved dictionary record.
+Dictionary name conflicts refuse when either colliding identity is resolved.

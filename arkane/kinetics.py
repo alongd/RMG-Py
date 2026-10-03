@@ -123,6 +123,9 @@ class KineticsJob(object):
         If `plot` is True, then plots of the raw and fitted values for the kinetics
         will be saved.
         """
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species([], "KineticsJob.execute", reactions=[self.reaction])
+
         self.generate_kinetics()
         if output_directory is not None:
             try:
@@ -196,6 +199,9 @@ class KineticsJob(object):
         Save the results of the kinetics job to the `output.py` file located
         in `output_directory`.
         """
+
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species([], 'arkane/kinetics.py:KineticsJob.write_output', [self.reaction])
         reaction = self.reaction
 
         ks, k0s, k0_revs, k_revs = [], [], [], []
@@ -292,6 +298,9 @@ class KineticsJob(object):
         Appends the kinetics rates to `chem.inp` in `outut_directory`
         """
 
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species([], 'arkane/kinetics.py:KineticsJob.write_chemkin', [self.reaction])
+
         # obtain a unit conversion factor
         order = len(self.reaction.reactants)
         factor = 1e6 ** (order - 1)
@@ -316,6 +325,9 @@ class KineticsJob(object):
         """
         Save a YAML file for TSs if structures of the respective reactant/s and product/s are known
         """
+
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species([], 'arkane/kinetics.py:KineticsJob.save_yaml', [self.reaction])
         if all([spc.molecule is not None and len(spc.molecule)
                 for spc in self.reaction.reactants + self.reaction.products]):
             self.arkane_species.update_species_attributes(self.reaction.transition_state)
@@ -333,6 +345,9 @@ class KineticsJob(object):
         output directory. The plot is not generated if ``matplotlib`` is not
         installed.
         """
+
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species([], 'arkane/kinetics.py:KineticsJob.plot', [self.reaction])
         import matplotlib.pyplot as plt
 
         f, ax = plt.subplots()
@@ -378,6 +393,9 @@ class KineticsJob(object):
         You may also generate different formats of drawings, by changing format to
         one of the following: `pdf`, `svg`, `png`.
         """
+
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species([], 'arkane/kinetics.py:KineticsJob.draw', [self.reaction])
 
         drawing_path = os.path.join(output_directory, 'paths')
 
@@ -494,6 +512,9 @@ class KineticsDrawer(object):
         return [0, 0, width, height]
 
     def _get_label_size(self, configuration, file_format='pdf'):
+
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species(configuration.species_list, 'arkane/kinetics.py:KineticsDrawer._get_label_size', ())
         width = 0
         height = 0
         bounding_rects = []
@@ -517,6 +538,9 @@ class KineticsDrawer(object):
 
     def _draw_label(self, configuration, cr, x0, y0, file_format='pdf'):
 
+
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species(configuration.species_list, 'arkane/kinetics.py:KineticsDrawer._draw_label', ())
         bounding_rect = self._get_label_size(configuration, file_format=file_format)
         padding = 2
 
@@ -553,6 +577,9 @@ class KineticsDrawer(object):
         surface of the given `file_format`. If `path` is given, the surface is
         saved to that location on disk.
         """
+
+        from rmgpy.export import refuse_resolved_species
+        refuse_resolved_species([], 'arkane/kinetics.py:KineticsDrawer.draw', [reaction])
         try:
             import cairocffi as cairo
         except ImportError:

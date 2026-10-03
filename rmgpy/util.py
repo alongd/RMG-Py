@@ -33,6 +33,7 @@ import os.path
 import re
 import shutil
 import time
+import tempfile
 from functools import wraps
 
 
@@ -234,6 +235,18 @@ def strip_yaml_notes(src, dst):
         return
     with open(src) as f:
         text = f.read()
+    # State-bearing adjacency notes are identity, not removable commentary.
+    from rmgpy.export import refuse_resolved_species
+    if re.search(r'(?im)\b(?:electronicstate|vibrationallevel)\s+', text):
+        import yaml
+        from rmgpy.molecule import Molecule
+        data = yaml.safe_load(text)
+        references = []
+        for record in data.get('species', []):
+            note = record.get('note', '')
+            if re.search(r'(?im)^(?:electronicstate|vibrationallevel)\s+', note):
+                references.append(Molecule().from_adjacency_list(note))
+        refuse_resolved_species(references, 'strip_yaml_notes ' + src + ' -> ' + dst)
     # Wrapped flow style: a flow mapping that wraps after a trailing comma,
     # with ``note: value`` on the next line.
     text = _strip_wrapped_flow_yaml_notes(text)
@@ -358,3 +371,167 @@ def as_list(item, default=None):
         return default
     else:
         return [item]
+
+
+def get_reaction_collider(side):
+    """Return the complete ``(+identifier)`` group, including nested parentheses.
+
+    State tags and indices may both use parentheses inside an identifier.
+    An unclosed group is rejected rather than interpreted as a shorter name.
+    """
+    start = side.find('(+')
+    if start < 0:
+        return None
+    depth = 0
+    for index in range(start, len(side)):
+        if side[index] == '(':
+            depth += 1
+        elif side[index] == ')':
+            depth -= 1
+            if depth == 0:
+                return side[start:index + 1]
+    raise ValueError('Unclosed third body collider in reaction side "{0}".'.format(side))
+
+
+def write_files_atomically(entries):
+    """Stage complete files, preserve modes and roll back recoverable failures.
+
+    Individual renames are atomic. Generation stamps make a crash or concurrent
+    split detectable by readers; this function does not lock other writers.
+    Only this invocation's temporary files and backups are removed on failure.
+    """
+    entries = list(entries)
+    destinations = [os.path.realpath(os.path.abspath(path)) for path, _ in entries]
+    from rmgpy.exceptions import SpeciesIdentityError
+    if len(set(destinations)) != len(destinations):
+        raise SpeciesIdentityError('Output destinations alias the same file: {0}.'.format(destinations))
+    for index, path in enumerate(destinations):
+        for other in destinations[:index]:
+            if os.path.exists(path) and os.path.exists(other) and os.path.samefile(path, other):
+                raise SpeciesIdentityError('Output destinations alias the same file: {0}, {1}.'.format(path, other))
+    staged, backups, replaced = [], {}, []
+    try:
+        for path, content in entries:
+            path = os.path.abspath(path)
+            directory = os.path.dirname(path)
+            os.makedirs(directory, exist_ok=True)
+            fd, temporary = tempfile.mkstemp(prefix='.' + os.path.basename(path) + '.', suffix='.tmp', dir=directory)
+            # Recreate our reserved random path using the kernel's normal umask.
+            # O_EXCL prevents overwriting anything created in the intervening window.
+            os.close(fd)
+            os.unlink(temporary)
+            fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
+            staged.append((temporary, path, content))
+            with os.fdopen(fd, 'w', encoding='utf-8') as stream:
+                stream.write(content)
+            if os.path.exists(path):
+                fd, backup = tempfile.mkstemp(prefix='.' + os.path.basename(path) + '.', suffix='.bak', dir=directory)
+                os.close(fd)
+                backups[path] = backup
+                shutil.copy2(path, backup)
+                shutil.copymode(path, temporary)
+        for temporary, path, content in staged:
+            os.replace(temporary, path)
+            replaced.append((path, content))
+    except BaseException:
+        for path, content in reversed(replaced):
+            # Do not overwrite another writer's completed generation during rollback.
+            with open(path, encoding='utf-8') as stream:
+                still_ours = stream.read() == content
+            if not still_ours:
+                continue
+            if path in backups:
+                os.replace(backups[path], path)
+                del backups[path]
+            else:
+                os.unlink(path)
+        raise
+    finally:
+        for temporary in [item[0] for item in staged] + list(backups.values()):
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+
+
+_GENERATION_MARKER = 'RMG-PAIR-GENERATION'
+_GENERATION_PATTERN = re.compile(r'^(?:#|!|//) RMG-PAIR-GENERATION (v1-sha256:[0-9a-f]{64})$')
+
+
+def stamp_file_generation(entries):
+    """Stamp (path, content, comment-prefix) entries with one content digest.
+
+    The digest covers ordered UTF-8 contents with length boundaries, excluding
+    paths and the stamp itself, so identical output has identical generations.
+    """
+    import hashlib
+    entries = list(entries)
+    digest = hashlib.sha256()
+    for _, content, _ in entries:
+        data = content.encode('utf-8')
+        digest.update(len(data).to_bytes(8, 'big'))
+        digest.update(data)
+    token = 'v1-sha256:' + digest.hexdigest()
+    return [(path, ('{0} {1} {2}\n'.format(prefix, _GENERATION_MARKER, token) if prefix else '') + content)
+            for path, content, prefix in entries]
+
+
+def generation_token(content):
+    """Read a generation marker, preserving evidence of malformed markers."""
+    lines = [line for line in content.splitlines()
+             if re.match(r'^(?:#|!|//) RMG-PAIR-GENERATION(?:\s|$)', line)]
+    if not lines:
+        return None
+    if len(lines) != 1:
+        return 'invalid:multiple:' + repr(lines)
+    match = _GENERATION_PATTERN.fullmatch(lines[0])
+    return match.group(1) if match else 'invalid:' + lines[0]
+
+
+def strip_generation_marker(content):
+    """Remove only the save-generation header, retaining other legacy bytes."""
+    return ''.join(line for line in content.splitlines(keepends=True)
+                   if not _GENERATION_PATTERN.fullmatch(line.rstrip('\r\n')))
+
+
+def read_generation_files(kinetics_paths, dictionary_path, *, strip_markers=True):
+    """Read matching snapshots; retain exact marker text for external parsers if requested."""
+    from rmgpy.exceptions import GenerationMismatchError
+    with open(dictionary_path, encoding='utf-8') as stream:
+        dictionary = stream.read()
+    second = generation_token(dictionary)
+    snapshots = {}
+    for path in kinetics_paths:
+        with open(path, encoding='utf-8') as stream:
+            kinetics = stream.read()
+        first = generation_token(kinetics)
+        if first != second or (first is not None and first.startswith('invalid:')):
+            raise GenerationMismatchError(
+                'Generation mismatch: kinetics "{0}" token={1!r}; dictionary "{2}" token={3!r}.'.format(
+                    path, first, dictionary_path, second))
+        snapshots[path] = strip_generation_marker(kinetics) if strip_markers else kinetics
+    return snapshots, strip_generation_marker(dictionary) if strip_markers else dictionary
+
+
+def read_generation_pair(kinetics_path, dictionary_path):
+    """Validate the exact snapshots that will be parsed, without reopening paths.
+
+    Token-free pairs retain legacy semantics. Partial, malformed or mismatched
+    stamps refuse with both paths and both tokens in GenerationMismatchError.
+    """
+    snapshots, dictionary = read_generation_files([kinetics_path], dictionary_path)
+    return snapshots[kinetics_path], dictionary
+
+
+def parse_reaction_equation(equation):
+    """Split <=>, => or = without consuming a participant's first character."""
+    from rmgpy.exceptions import DatabaseError
+    pieces = re.split(r'(<=>|=>)', equation)
+    if len(pieces) == 1:
+        depth = 0
+        for index, character in enumerate(equation):
+            depth += (character == '(') - (character == ')')
+            if character == '=' and depth == 0:
+                pieces = [equation[:index], '=', equation[index + 1:]]
+                break
+    if len(pieces) != 3 or not pieces[0].strip() or not pieces[2].strip():
+        raise DatabaseError('Invalid reaction equation: {0!r}.'.format(equation))
+    return pieces[0].strip(), pieces[2].strip(), pieces[1] != '=>'

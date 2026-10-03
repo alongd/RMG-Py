@@ -3180,6 +3180,16 @@ def save_input_file(path, rmg):
     `rmg`.
     """
 
+    from rmgpy.export import refuse_resolved_species
+    refuse_resolved_species(rmg.initial_species, 'rmgpy/rmg/input.py:save_input_file', ())
+    for system in rmg.reaction_systems:
+        references = []
+        for attribute in ('initial_mole_fractions', 'initial_concentrations', 'initial_surface_coverages'):
+            references.extend(getattr(system, attribute, None) or {})
+        references.extend(getattr(term, 'species', None) for term in system.termination)
+        references.extend(getattr(system, 'sensitive_species', None) or [])
+        refuse_resolved_species(references, 'RMG saved input references')
+
     f = open(path, 'w')
 
     # Databases

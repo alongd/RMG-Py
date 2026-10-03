@@ -133,7 +133,7 @@ class TransportLibrary(Database):
         """
         item = Molecule().from_adjacency_list(molecule)
 
-        self.entries[label] = Entry(
+        self._store_entry(label, Entry(
             index=index,
             label=label,
             item=item,
@@ -142,7 +142,7 @@ class TransportLibrary(Database):
             reference_type=referenceType,
             short_desc=shortDesc,
             long_desc=longDesc.strip(),
-        )
+        ), "TransportLibrary.load_entry")
 
     def save_entry(self, f, entry):
         """
@@ -194,7 +194,7 @@ class TransportGroups(Database):
             item = make_logic_node(group)
         else:
             item = Group().from_adjacency_list(group)
-        self.entries[label] = Entry(
+        self._store_entry(label, Entry(
             index=index,
             label=label,
             item=item,
@@ -203,7 +203,7 @@ class TransportGroups(Database):
             reference_type=referenceType,
             short_desc=shortDesc,
             long_desc=longDesc.strip(),
-        )
+        ), "TransportGroups.load_entry")
 
     def save_entry(self, f, entry):
         """

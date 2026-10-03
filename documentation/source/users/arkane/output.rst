@@ -65,3 +65,14 @@ Any species that had the ``thermo()`` method called and had the structure define
 input file will also have an RMG style adjacency list representation in ``species_dictionary.txt``.
 This allows the user to input the corresponding thermo and kinetics into RMG in various ways
 described in the RMG user guide.
+Resolved electronic and vibrational states
+-----------------------------------------
+
+Arkane YAML reload prefers the saved adjacency list over SMILES or InChI, retaining
+resolved state metadata. Species archives allocate state-aware filenames and refuse
+an existing filename belonging to a different resolved identity. Standalone YAML
+reload and archive creation can preserve resolved species. Arkane job execution,
+Chemkin and library output, text reports, sensitivity output and potential-energy
+plots refuse resolved species with a named identity error before writing results.
+Reference-species archives also refuse resolved states. Ground-species output
+formats and labels retain their existing layout.
