@@ -1086,9 +1086,9 @@ def plasma_reactor(temperature,
     pseudo-species, the ``species(...)`` directive declaring the electron must appear
     **before** this ``plasmaReactor(...)`` block in the input file.
 
-    ``thermoSourceAssertions`` is the explicit escape hatch for standalone reload
-    tools that have no thermo database loaded. It is a collection of charged-species
-    labels whose thermo the caller asserts came from a library; the
+    ``thermoSourceAssertions`` maps species labels to 'ion' for standalone reload
+    tools that have no thermo database loaded. The caller asserts that each named
+    species has library thermo in the ion convention; the
     reactor records these as ``caller-asserted, not verified``. It is ignored as
     authority when a thermo database is available, where an actual gas-phase
     library-value match is required instead.
@@ -1253,11 +1253,13 @@ def plasma_reactor(temperature,
     if thermoSourceAssertions is None:
         thermoSourceAssertions = []
     if isinstance(thermoSourceAssertions, str) or not isinstance(
-            thermoSourceAssertions, (list, tuple, set)):
+            thermoSourceAssertions, (list, tuple, set, dict)):
         raise InputError(
-            "thermoSourceAssertions must be a collection of species labels; "
+            "thermoSourceAssertions must be a collection of species labels or convention mapping; "
             "got {0!r}.".format(thermoSourceAssertions))
-    thermoSourceAssertions = list(thermoSourceAssertions)
+    thermoSourceAssertions = (dict(thermoSourceAssertions)
+                              if isinstance(thermoSourceAssertions, dict)
+                              else list(thermoSourceAssertions))
     invalid_assertions = [label for label in thermoSourceAssertions
                           if not isinstance(label, str) or not label]
     if invalid_assertions:
@@ -3054,7 +3056,7 @@ def _format_plasma_wall(system):
     lines = []
     if system.thermo_source_assertions:
         lines.append('    thermoSourceAssertions = {0!r},\n'
-                     ''.format(sorted(system.thermo_source_assertions)))
+                     ''.format(dict(sorted(system.thermo_source_assertions.items()))))
     if system.quasineutral_electron:
         lines.append('    quasineutralElectron = True,\n')
     if system.has_wall:

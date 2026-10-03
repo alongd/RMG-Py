@@ -1,0 +1,2 @@
+proton
+1 H u0 p0 c+1

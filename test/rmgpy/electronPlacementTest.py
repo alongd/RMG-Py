@@ -86,7 +86,7 @@ def _electron():
 
 def _charged_thermo_assertions(species):
     """Declare synthetic charged fixtures whose tests are not about thermo."""
-    assertions = []
+    assertions = {}
     for spc in species:
         if spc.is_electron() or spc.get_net_charge() == 0:
             continue
@@ -98,7 +98,7 @@ def _charged_thermo_assertions(species):
             Cp0=(30.0, "J/(mol*K)"),
             CpInf=(30.0, "J/(mol*K)"),
         )
-        assertions.append(spc.label or spc.smiles)
+        assertions[spc.label or spc.smiles] = 'ion'
     return assertions
 
 

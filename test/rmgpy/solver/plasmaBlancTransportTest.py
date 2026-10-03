@@ -164,8 +164,8 @@ def _reactor(labels=('e-', 'Ar', 'He', 'Ar+'), x=None, mobilities=None, pressure
         kwargs['ion_reduced_mobilities'] = mobilities
     kwargs.setdefault(
         'thermo_source_assertions',
-        [spc[label].label for label in labels
-         if not spc[label].is_electron() and spc[label].get_net_charge() != 0],
+        {spc[label].label: 'ion' for label in labels
+         if not spc[label].is_electron() and spc[label].get_net_charge() != 0},
     )
     p = (P_AR_TORR + P_HE_TORR) if pressure_torr is None else pressure_torr
     reactor = cls((TGAS, 'K'), (p * TORR_TO_PA, 'Pa'), imf, (te_ev * EV_TO_K, 'K'),
@@ -770,7 +770,7 @@ def test_unlabelled_or_duplicate_label_neutrals_do_not_merge(ambiguous_label):
         ion_reduced_mobilities={
             'Ar+': {'perBath': {'Ar': (K0_ARP_AR, MU)}}},
         wall_neutralization_products={'Ar+': 'Ar'}, wall_bath_threshold=0.01,
-        thermo_source_assertions=['Ar+'])
+        thermo_source_assertions={'Ar+': 'ion'})
     core = [spc['e-'], spc['Ar'], first, second, spc['Ar+']]
     reactor.initialize_model(core, [], [], [])
     assert reactor.wall_bath_group[2] != reactor.wall_bath_group[3]

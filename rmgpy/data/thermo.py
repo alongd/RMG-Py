@@ -645,9 +645,38 @@ class ThermoLibrary(Database):
     A class for working with a RMG thermodynamics library.
     """
 
-    def __init__(self, label='', name='', solvent=None, short_desc='', long_desc='', metal=None, site=None, facet=None):
+    def __init__(self, label='', name='', solvent=None, short_desc='', long_desc='', metal=None, site=None, facet=None,
+                 thermo_convention=None):
         Database.__init__(self, label=label, name=name, short_desc=short_desc, long_desc=long_desc,
-                          metal=metal, site=site, facet=facet)
+                          metal=metal, site=site, facet=facet,
+                          thermo_convention=thermo_convention)
+
+    def load(self, path, local_context=None, global_context=None):
+        """Load a convention declaration, with a temporary content-pinned bridge.
+
+        The pinned legacy gas-phase ion library has been reviewed against the
+        ion convention. Any declaration in the file takes precedence; any byte
+        edit of the undeclared file invalidates the pin, irrespective of its name.
+        Remove this bridge after the database declares thermoConvention = 'ion'.
+        """
+        # Seed canonical constructors in one fresh module-like namespace.
+        # Helpers must see the library's own top-level bindings, while neither
+        # caller dictionaries nor subsequent libraries inherit those bindings.
+        constructors = {
+            'ThermoData': ThermoData,
+            'Wilhoit': Wilhoit,
+            'NASAPolynomial': NASAPolynomial,
+            'NASA': NASA,
+        }
+        namespace = {} if global_context is None else dict(global_context)
+        if local_context is not None:
+            namespace.update(local_context)
+        namespace.update(constructors)
+        super().load(path, namespace, namespace)
+        if (self.thermo_convention is None
+                and self._loaded_file_sha256 == '22b6e0ae109c42cb25d88f7521447788f6afcfc18d7d8150fb7289e966e33e33'):
+            self.thermo_convention = 'ion'
+        return self
 
     def load_entry(self,
                    index,
@@ -3121,4 +3150,3 @@ def find_cp0_and_cpinf(species, heat_capacity):
     if heat_capacity.CpInf is None:
         cp_inf = species.calculate_cpinf()
         heat_capacity.CpInf = (cp_inf, "J/(mol*K)")
-

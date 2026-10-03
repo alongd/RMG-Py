@@ -1537,7 +1537,7 @@ class TestInputPlasmaChargeBalance:
             Cp0=(30.0, 'J/(mol*K)'),
             CpInf=(30.0, 'J/(mol*K)'),
         )
-        reactor.thermo_source_assertions.add(cation.label)
+        reactor.thermo_source_assertions[cation.label] = 'ion'
         reactor.initialize_model(core, [], [], [])
         volume = reactor.compute_volume(reactor.y0)
         n_e_recovered = reactor.y0[reactor.electron_index] * constants.Na / volume

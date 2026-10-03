@@ -471,6 +471,10 @@ def _thermo_mismatch_reason_text(reason):
     if reason['kind'] == 'malformed thermo':
         return '{0}: {1} is malformed ({2})'.format(
             candidate, reason['side'], reason['error'])
+    if reason['kind'] == 'ineligible thermo convention':
+        return ('{0}: {1} thermo convention is not ion convention; charged plasma '
+                'species require an ion-convention library entry').format(
+                    candidate, reason['convention'])
     return '{0}: {1}'.format(candidate, reason['kind'])
 
 
@@ -527,12 +531,14 @@ def _build_charged_thermo_library_index(thermo_database):
         library = thermo_database.libraries[library_label]
         if library.solvent:
             continue
+        convention = getattr(library, 'thermo_convention', None)
         for entry in library.entries.values():
             if entry.data is None or entry.item.get_net_charge() == 0:
                 continue
             key = _charged_thermo_formula_charge_key(entry.item)
             index.setdefault(key, []).append(
-                (ordinal, library_label, entry.label, entry.item, entry.data))
+                (ordinal, library_label, entry.label, entry.item, entry.data,
+                 convention))
             ordinal += 1
     return index
 
@@ -549,9 +555,17 @@ def _charged_species_library_thermo_match(species, library_index,
             candidates[candidate[0]] = candidate
     for ordinal in sorted(candidates):
         (_, library_label, entry_label,
-         entry_item, entry_data) = candidates[ordinal]
+         entry_item, entry_data, convention) = candidates[ordinal]
         if not any(molecule.is_isomorphic(entry_item)
                    for molecule in species.molecule):
+            continue
+        if convention != 'ion':
+            outcome['mismatches'].append({
+                'kind': 'ineligible thermo convention',
+                'convention': convention or 'undeclared',
+                'library': library_label,
+                'entry': entry_label,
+            })
             continue
         if ordinal not in reference_cache:
             try:
@@ -719,9 +733,8 @@ cdef class PlasmaReactor(ReactionSystem):
     # rate coefficients through a base-class initialization that skipped the
     # plasma validation.
     cdef public bint _plasma_validated
-    cdef public set thermo_source_assertions
+    cdef public dict thermo_source_assertions
     cdef public dict thermo_provenance_diagnostics
-    cdef public set _unsourced_charged_edge_warnings
 
     # The LABEL of the chargeBalanceSpecies the deck named (or None). The directive
     # in rmgpy/rmg/input.py assigns this ion a mole fraction so the initial
@@ -1004,18 +1017,21 @@ cdef class PlasmaReactor(ReactionSystem):
                 "thermo_source_assertions must be a collection of species labels, not "
                 "one string; got {0!r}. ({1})".format(
                     thermo_source_assertions, self._identity()))
-        if not isinstance(thermo_source_assertions, (list, tuple, set)):
+        if not isinstance(thermo_source_assertions, (list, tuple, set, dict)):
             raise PlasmaStateError(
-                "thermo_source_assertions must be a list, tuple, or set of species "
+                "thermo_source_assertions must be a list, tuple, set, or convention mapping of species "
                 "labels; got {0!r}. ({1})".format(
                     thermo_source_assertions, self._identity()))
         if any(not isinstance(label, str) or not label for label in thermo_source_assertions):
             raise PlasmaStateError(
                 "every thermo_source_assertions entry must be a non-empty species label; "
                 "got {0!r}. ({1})".format(thermo_source_assertions, self._identity()))
-        self.thermo_source_assertions = set(thermo_source_assertions)
+        # Legacy label collections retain their undeclared status, so they
+        # cannot assert an ion convention implicitly.
+        self.thermo_source_assertions = (
+            dict(thermo_source_assertions) if isinstance(thermo_source_assertions, dict)
+            else dict.fromkeys(thermo_source_assertions))
         self.thermo_provenance_diagnostics = {}
-        self._unsourced_charged_edge_warnings = set()
 
         self.sens_conditions = sens_conditions
         self.n_sims = n_sims
@@ -2598,7 +2614,7 @@ cdef class PlasmaReactor(ReactionSystem):
                  (self.wall_bath_threshold if self.has_wall else None),
                  (self.wall_bath_lumping
                   if self.has_wall and self.wall_bath_lumping else None),
-                 sorted(self.thermo_source_assertions)))
+                 dict(self.thermo_source_assertions)))
 
     cpdef initialize_model(self, list core_species, list core_reactions, list edge_species, list edge_reactions,
                           list surface_species=None, list surface_reactions=None, list pdep_networks=None,
@@ -2609,6 +2625,22 @@ cdef class PlasmaReactor(ReactionSystem):
         kinetic model. All electron-state and reverse-rate-policy validation
         happens here, before the first residual or Jacobian evaluation.
         """
+        self._plasma_validated = False
+        try:
+            self._initialize_model(
+                core_species, core_reactions, edge_species, edge_reactions,
+                surface_species, surface_reactions, pdep_networks,
+                atol, rtol, sensitivity, sens_atol, sens_rtol,
+                filter_reactions, conditions)
+        except BaseException:
+            self._plasma_validated = False
+            raise
+
+    def _initialize_model(self, core_species, core_reactions, edge_species, edge_reactions,
+                          surface_species, surface_reactions, pdep_networks,
+                          atol, rtol, sensitivity, sens_atol, sens_rtol,
+                          filter_reactions, conditions):
+        """Initialize while the public entry point owns validation-latch cleanup."""
         self.thermo_provenance_diagnostics = {}
 
         # Unsupported features fail loudly instead of being silently ignored.
@@ -2775,80 +2807,50 @@ cdef class PlasmaReactor(ReactionSystem):
             self._latch_energy_budget(self.y0, 0.0)
 
     def _check_charged_species_thermo_provenance(self, core_species, edge_species):
-        """Refuse core ions without a library value match and warn once for edge ions."""
+        """Require the same positive ion-convention match in the core and edge."""
         database = rmg_data_module.database
         thermo_database = None if database is None else getattr(database, 'thermo', None)
         library_index = (None if thermo_database is None else
                          _build_charged_thermo_library_index(thermo_database))
         reference_cache = {}
 
-        for species in core_species:
+        for location, species in itertools.chain(
+                (('core', species) for species in core_species),
+                (('edge', species) for species in edge_species)):
             charge = species.get_net_charge()
             if charge == 0 or species.is_electron():
                 continue
             identity = _charged_species_identity(species)
+            kind = 'edge species' if location == 'edge' else 'charged species'
+            prefix = "PlasmaReactor {0} {1!r} (net charge {2:+d})".format(kind, identity, charge)
             if species.thermo is None:
                 raise PlasmaStateError(
-                    "PlasmaReactor charged species {0!r} (net charge {1:+d}) has no "
-                    "thermo data; charged core species require a matching loaded thermo "
-                    "library entry.".format(identity, charge))
+                    prefix + " has no thermo data; non-electron charged core and edge "
+                    "species require a matching ion-convention thermo library entry.")
             if thermo_database is None:
-                if identity in self.thermo_source_assertions:
+                if self.thermo_source_assertions.get(identity) == 'ion':
                     self.thermo_provenance_diagnostics[identity] = PLASMA_THERMO_CALLER_ASSERTION
                     continue
                 raise PlasmaStateError(
-                    "PlasmaReactor cannot value-match thermo for charged species "
-                    "{0!r} (net charge {1:+d}) because no thermo database is loaded. "
+                    prefix + " cannot value-match thermo because no thermo database is loaded. "
                     "Load the job's thermo libraries, or for a standalone reload explicitly "
-                    "pass thermo_source_assertions=[{0!r}]; that declaration is recorded as "
-                    "'{2}'.".format(identity, charge, PLASMA_THERMO_CALLER_ASSERTION))
+                    "pass thermo_source_assertions={{{0!r}: 'ion'}}; each non-electron ion "
+                    "must explicitly assert the ion thermo convention. That declaration is recorded as "
+                    "'{1}'.".format(identity, PLASMA_THERMO_CALLER_ASSERTION))
             outcome = _charged_species_library_thermo_match(
                 species, library_index, reference_cache)
             if outcome['match'] is None:
                 raise PlasmaStateError(
-                    "PlasmaReactor charged species {0!r} (net charge {1:+d}) has thermo "
-                    "that could not be value-matched to an isomorphic entry in any loaded "
-                    "gas-phase thermo library "
-                    "at rtol={2:g}, atol={3:g} SI. Group additivity, HBI, QM, ML, and "
-                    "other estimates do not establish a charged-species library value match."
-                    "{4}"
-                    .format(identity, charge, PLASMA_THERMO_PROVENANCE_RTOL,
+                    prefix + " has thermo that could not be value-matched to an isomorphic "
+                    "entry in any loaded gas-phase ion-convention thermo library "
+                    "at rtol={0:g}, atol={1:g} SI. Group additivity, HBI, QM, ML, and "
+                    "other estimates do not establish a charged-species library value match. "
+                    "Refusing before model-growth rates are evaluated.{2}"
+                    .format(PLASMA_THERMO_PROVENANCE_RTOL,
                             PLASMA_THERMO_PROVENANCE_ATOL,
                             _thermo_mismatch_summary(outcome['mismatches'])))
             self.thermo_provenance_diagnostics[identity] = \
                 _thermo_match_diagnostic(outcome)
-
-        for species in edge_species:
-            charge = species.get_net_charge()
-            if charge == 0 or species.is_electron():
-                continue
-            identity = _charged_species_identity(species)
-            value_matched = False
-            if species.thermo is not None:
-                if thermo_database is None:
-                    value_matched = identity in self.thermo_source_assertions
-                    if value_matched:
-                        self.thermo_provenance_diagnostics[identity] = \
-                            PLASMA_THERMO_CALLER_ASSERTION
-                else:
-                    outcome = _charged_species_library_thermo_match(
-                        species, library_index, reference_cache)
-                    value_matched = outcome['match'] is not None
-                    if value_matched:
-                        self.thermo_provenance_diagnostics[identity] = \
-                            _thermo_match_diagnostic(outcome)
-            if (not value_matched
-                    and identity not in self._unsourced_charged_edge_warnings):
-                self._unsourced_charged_edge_warnings.add(identity)
-                logging.warning(
-                    "PlasmaReactor edge species %r (net charge %+d) has thermo that is "
-                    "not value-matched to an eligible gas-phase library; it may "
-                    "remain in the edge, but "
-                    "will be refused if promoted to the core.%s",
-                    identity, charge,
-                    (_thermo_mismatch_summary(outcome['mismatches'])
-                     if thermo_database is not None
-                     and species.thermo is not None else ''))
 
     def _rekey_reaction_index_to_model(self, core_reactions, edge_reactions):
         """

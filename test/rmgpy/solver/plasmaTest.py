@@ -130,12 +130,12 @@ def _mole_fractions(electron, ar, ar_ion, spc_a=None, spc_b=None, y_e=Y_E0):
 
 def _reactor(imf, T=T_GAS, Te=T_E, P=P0, **kwargs):
     """Build a reactor for tests of solver behavior, not thermo provenance."""
-    assertions = []
+    assertions = {}
     for species in imf:
         if species.is_electron() or species.get_net_charge() == 0:
             continue
         species.thermo = _thermo(0.0, 150.0)
-        assertions.append(species.label or species.smiles)
+        assertions[species.label or species.smiles] = "ion"
     return PlasmaReactor(
         T,
         P,

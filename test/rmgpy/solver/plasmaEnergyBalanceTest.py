@@ -186,7 +186,7 @@ def _build(te_ev=1.0, x_ion=1.0e-6, power_w=0.5, energy=True, metastable=False,
     lam = 1.0 / np.sqrt((2.405 / radius) ** 2 + (np.pi / LENGTH) ** 2)
     kwargs = dict(diffusion_length=(lam, 'm'), ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'))
     # This isolated solver fixture uses synthetic charged thermo deliberately.
-    kwargs['thermo_source_assertions'] = ['Ar+']
+    kwargs['thermo_source_assertions'] = {'Ar+': 'ion'}
     if metastable:
         kwargs['wall_neutralization_products'] = {'Ar+': 'Ar'}
     if source is not None:
@@ -468,7 +468,7 @@ def test_undeclared_elastic_partner_is_refused_at_initialisation():
     r = PlasmaReactor((TGAS, 'K'), (P_NOMINAL, 'Pa'), {electron: 1e-6, arp: 1e-6, ar: 1 - 2e-6},
                       (EV_TO_K, 'K'), diffusion_length=(LAMBDA, 'm'),
                       ion_reduced_mobility=(MU0_AR_IN_AR, 'm^2/(V*s)'),
-                      electron_energy_balance=decl, thermo_source_assertions=['Ar+'])
+                      electron_energy_balance=decl, thermo_source_assertions={'Ar+': 'ion'})
     with pytest.raises(PlasmaStateError, match="'He'"):
         r.initialize_model([electron, ar, arp], [], [], [])
 

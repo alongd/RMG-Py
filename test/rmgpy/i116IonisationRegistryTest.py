@@ -437,7 +437,7 @@ class TestStage6ReactorAccepts:
         core_species = [electron, canonical.reactants[0], canonical.products[0]]
         # This stage tests ionisation placement and rate packing, so its
         # synthetic Li+ thermo is an explicit standalone caller assertion.
-        assertions = []
+        assertions = {}
         for species in core_species:
             if species.is_electron() or species.get_net_charge() == 0:
                 continue
@@ -449,7 +449,7 @@ class TestStage6ReactorAccepts:
                 Cp0=(30.0, 'J/(mol*K)'),
                 CpInf=(30.0, 'J/(mol*K)'),
             )
-            assertions.append(species.label or species.smiles)
+            assertions[species.label or species.smiles] = 'ion'
         return PlasmaReactor(
             T_GAS,
             P0,

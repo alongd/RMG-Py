@@ -707,11 +707,23 @@ composition is not neutral, whether or not this keyword was used.
 Charged-species thermo provenance
 ---------------------------------
 
-A plasma reactor accepts a charged core species other than the electron only when its evaluated
+A plasma reactor accepts a charged core or edge species other than the electron only when its
 thermo values match an isomorphic entry in one of the loaded **gas-phase** thermo libraries.
-Liquid/solvent-specific libraries are excluded.  For every piece of the common validity interval
-bounded by either model's NASA-polynomial breakpoints, the comparison evaluates H and S at the
-centre and Cp at five distinct interior points.  Before finding that common interval, each NASA
+Liquid/solvent-specific libraries are excluded. Non-electron ions also require the library
+file to declare ``thermoConvention = 'ion'``; electrochemical and undeclared conventions are
+ineligible. Direct construction and every file loader fail closed, and loading a new file resets
+any previous declaration. Saving and reloading a library preserves its declaration. A temporary
+SHA-256 pin of the raw file bytes accepts the reviewed legacy PlasmaThermo contents without
+relying on its name, path, or comments; any byte edit, including a line-ending change, invalidates
+the pin, and a file declaration always takes precedence. Each thermo library executes in one
+fresh parser namespace used for both globals and locals. Canonical ThermoData, Wilhoit, NASA and
+NASAPolynomial constructors are seeded before execution; the library's own wrappers and other
+top-level definitions are then visible to its helpers. Global convention declarations are
+preserved, and definitions do not leak into later libraries. Library files are trusted Python;
+defense against deliberate introspection into engine internals is outside this guard's scope.
+For every piece of the common validity interval bounded by either model's NASA-polynomial
+breakpoints, the comparison evaluates H and S at the centre and Cp at five distinct interior
+points. Before finding that common interval, each NASA
 model's complete declared range is checked for polynomial coverage.  No overlap means no match; a
 coverage gap anywhere in either declared range is refused with the species, library entry, and gap
 named.  ThermoData comparisons evaluate Cp at the union of every ``Tdata`` point in the overlap,
@@ -731,12 +743,21 @@ No comment is trusted as evidence: the candidate is selected first by the loaded
 and molecular structure, then its copied data is processed.
 
 Comments do not establish a match: group-additivity, HBI, QM, and ML estimates are refused even
-when their comments name a seed library.  Unmatched charged edge species produce one warning and
-are refused if later promoted to the core.  Coverage gaps and malformed library candidates are
-recorded as mismatch reasons rather than aborting the search: a later eligible entry may match,
-and the diagnostic records which earlier candidates were skipped and why.  Edge species remain
-fail-soft for every mismatch reason; the warning carries the reason, while core membership or
-later promotion turns it into a refusal.
+when their comments name a seed library. Charged edge species follow the same positive-match
+rule as the core: missing thermo, no candidate, mismatched values, invalid coverage, malformed
+candidates and ineligible conventions all refuse initialization unless a later eligible entry
+matches. This happens before any reverse rate or model-growth rate is evaluated. The diagnostic
+names the edge species and any rejected library entries and reasons. Neutral species retain
+normal estimated thermo. A refused initialization clears the reactor's validation flag, so
+rate regeneration cannot proceed with an unvalidated composition or reaction set.
+
+For jobs containing only plasma reactors, reaction-library entries containing elements
+absent from the declared input and seed species are excluded before their species enter
+the edge. Each exclusion names the reaction, library and absent elements in the log.
+Declared species count even at zero initial abundance. This prevents an unrelated lithium
+entry in a recombination library from entering an argon-only model; it does not exempt any
+charged species in the resulting edge from the convention guard. Mixed reactor jobs keep
+the ordinary reaction-library loading behavior.
 
 If several gas-phase libraries contain the same matching values, the diagnostic reports
 ``value-matched to library <library>/<entry> (first match in library_order)``.  This is a value
@@ -749,17 +770,19 @@ rebuilt on every initialization.
 
 Standalone reload tools sometimes construct a reactor without loading a thermo database.  In that
 case only, the deck may make the missing provenance check explicit by listing the relevant model
-species labels, including labels that appear only after core promotion::
+species labels and explicitly asserting the ion convention, including labels that appear only
+after core promotion::
 
 	plasmaReactor(
 	    # ...
-	    thermoSourceAssertions=['Arp', 'Ar2p'],
+	    thermoSourceAssertions={'Arp': 'ion', 'Ar2p': 'ion'},
 	)
 
 The reactor records each such declaration as ``caller-asserted, not verified``.  It never infers
 this declaration from a thermo comment, and ``thermoSourceAssertions`` cannot override a failed
 value match when a thermo database is loaded.  A charged species with no thermo data is always
-refused.
+refused. A bare list of labels or any convention other than ``'ion'`` cannot admit a
+non-electron ion, in the core or edge. Electrons remain exempt from the convention check.
 
 .. _plasmawall:
 

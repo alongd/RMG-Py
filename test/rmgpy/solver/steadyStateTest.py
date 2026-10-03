@@ -676,7 +676,7 @@ def _relaxing_system(termination):
     ]
     imf = {electron: 1.0e-4, ar: 1.0, ar_ion: 1.0e-4, spc_a: 0.1, spc_b: 0.05}
     reactor = PlasmaReactor(T_GAS, P0, imf, (T_E, 'K'), n_sims=1, termination=termination,
-                            thermo_source_assertions=['Ar+'])
+                            thermo_source_assertions={'Ar+': 'ion'})
     return reactor, core_species, core_reactions
 
 
@@ -689,7 +689,7 @@ def _inert_system(termination):
     core_species = [ar, electron, ar_ion]
     imf = {electron: 1.0e-4, ar: 1.0, ar_ion: 1.0e-4}
     reactor = PlasmaReactor(T_GAS, P0, imf, (T_E, 'K'), n_sims=1, termination=termination,
-                            thermo_source_assertions=['Ar+'])
+                            thermo_source_assertions={'Ar+': 'ion'})
     return reactor, core_species, []
 
 
