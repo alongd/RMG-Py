@@ -1037,6 +1037,192 @@ The remaining keywords are all optional:
 	diffusion length.  It does **not** determine an absolute steady-state electron density.  That
 	requires closing the discharge power balance, which is a separate matter from transport.
 
+Electronegative wall closures
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``electronegativeWallModel`` explicitly selects ``'confinedAnion'`` or
+``'electropositiveBracket'`` on a map wall (``ionReducedMobilities``).
+Undeclared, the existing refusal of core anions remains. Scalar walls,
+undeclared anion mobilities and multiply charged anions are refused.
+No model is inferred from the presence of anions, and no arbitrary wall
+multiplier is an input.
+
+For the qualified oxygen regime, negative ions are treated as confined from
+the wall. Positive-ion wall fluxes use the electronegative profile
+normalisation ``h = 1/(1+alpha)``, with ``alpha = n_minus/n_e`` evaluated from
+the instantaneous state. The bounded implementation is ``n_e/(n_e+n_minus)``.
+This is the collisional confined-anion asymptote qualified by I-311, not a
+universal wall law for every electronegative plasma. The electropositive
+value ``h = 1`` is retained as the named model-form sensitivity
+``electropositiveBracket``. Negative ions have zero wall flux in both modes,
+and electron wall loss is set by the total positive-ion charge flux.
+
+The sourced electronegative edge-to-centre correction is radial and was
+derived with axial loss neglected. The production finite-cylinder reactor
+extends the same factor to the complete ambipolar-diffusion eigenvalue,
+because its radial and axial terms are modeled as separable components of
+one isotropic transport operator. This is a declared geometric extension,
+not a direct result of the radial source. A radial-only endpoint is retained
+as a mandatory sensitivity; the extension is accepted only while that
+difference remains within the frozen Report-10 materiality budget.
+
+``electronegativeWallGeometry='fullFrequency'`` is the default:
+``nu_EN = h*(nu_r,EP + nu_z,EP)``. The distinct ``'radialOnly'`` sensitivity
+uses ``h*nu_r,EP + nu_z,EP`` in the equations themselves, including electron
+loss, energy sources, the current-balanced floating potential and derivatives.
+The axial share ``f_z = nu_z,EP/nu_EP`` is approximately 4.5254 percent for a
+5 cm radius, 30 cm long cylinder. The actual difference between closures
+relative to ``nu_EP`` is ``(1-h)*f_z``, not ``f_z``.
+
+``anionReducedMobilities`` maps each core singly charged anion label to its
+reduced mobility, with the same quantity and optional gas-temperature-law
+syntax as ``ionReducedMobilities``. ``{'perBath': {...}}`` is also supported;
+every neutral bath must be covered. Anion mobilities are used in the
+confinement monitor only and never produce an anion wall flux.
+
+Cylinder ``chamberGeometry`` automatically retains its radial and axial
+eigenvalues. The restart writer emits ``wallDiffusionComponents`` with
+``'radial': (k_r_squared, 'm^-2')`` and ``'axial': (k_z_squared, 'm^-2')``
+beside the diffusion length. Their sum must match its inverse square. This
+makes decomposition inspectable and preserves it through input/pickle
+round trips; it does not change the legacy frequency arithmetic at alpha zero.
+A directly supplied diffusion length has no implicit radial/axial split.
+
+The numerical accuracy domain is defined once in
+``rmgpy.solver.electronegative.EN_WALL_DOMAIN``. Each species concentration
+must be zero or between 1e-30 and 1e6 mol/m³; charged concentrations have
+an upper bound of 1e3 mol/m³. The axial/radial diffusion eigenvalue ratio
+``kz/kr`` must lie between 1e-8 and 1e8, and Te between 0.05 and 50 eV.
+Each cation's uncorrected electropositive wall frequency must lie between
+1e-12 and 1e12 s⁻¹ for finite-anion states. Bounding only kz/kr leaves the
+absolute timescale unconstrained: a frequency near 1e-302 s⁻¹ loses
+representable derivatives in intermediate products. The frequency bounds
+span picosecond to roughly 30,000-year loss times and provide ample numerical
+headroom without extending the claim to unusable transport scales.
+
+The EOS inventory volume must lie between 1e-12 and 1e3 m³. This covers
+nanolitre through industrial vessel inventories and bounds intermediate
+products independently of concentration. Limits are inclusive, allowing
+four binary64 rounding units at an endpoint. The public wall Jacobian
+and accepted-state monitor refuse out-of-domain states with the variable
+name before publishing results. Internal Newton trials retain clipped
+constitutive evaluations; they do not publish accepted-state diagnostics.
+These numerical bounds do not replace the transport and qualification
+gates below. A nonfinite complete energy Jacobian is refused at every
+accepted state, including chemical electron dilution and external sources.
+Blanc mobility gradients sum per-bath differences, retaining trace bath
+terms when the effective mobility rounds to the dominant bath value.
+EN energy-mode mass-action derivatives are analytic, including the EOS,
+repeated reactants and Te rate laws; trace concentrations use no numerical
+perturbation floor. Zero-anion electropositive solver arithmetic is retained.
+
+``electronegativeWallQualification`` supplies frozen qualification evidence.
+It has these internal Python keys:
+
+* ``regime``: explicit ``True`` declarations for ``collisional``,
+  ``unmagnetised``, ``confined_anions``, ``homogeneous_profile``,
+  ``no_boundary_ionisation``, ``isotropic_diffusion`` and
+  ``compatible_boundaries``. These declarations must be supported by the
+  external study; detachment dominance alone does not establish them.
+* ``full_profile_reference``: an independent full-profile reference callable
+  spanning the flat-profile to Boltzmann transition, and ``wall_threshold``:
+  its frozen symmetric wall-source error limit.
+* ``geometry_reference``: a separately qualified finite-cylinder/2-D reference
+  callable, and ``geometry_threshold``: its frozen error limit. The radial-only
+  endpoint is a sensitivity, not an independent 2-D reference.
+
+Reference callables receive a state/context dictionary with transport,
+geometry, temperatures, alpha, cation labels/charges, positive mol/s wall
+sources, and both geometry endpoint fluxes. They return ``cation_flux``
+(positive mol/s in the supplied cation order), ``in_domain=True``,
+``independent=True`` and a nonempty ``provenance``; the full-profile callable
+also declares ``spans_transition=True``. Callables may be supplied by an
+importable ``'module:qualified_name'`` string. The writer persists top-level
+callables in that form and refuses unimportable closures or lambdas.
+There is no production reference or default error budget installed.
+Without either reference or its frozen threshold, finite-anion
+``confinedAnion`` refuses. The qualification declaration is defensively
+copied so its thresholds cannot be adjusted during a run.
+
+Gate A requires each populated anion's gross chemical destruction frequency
+(not its net source) divided by hypothetical unconfined ambipolar transport
+to exceed one. Zero destruction fails; zero transport with positive
+destruction is infinite confinement; both zero are unresolved and fail.
+Gate B independently requires electron attachment frequency times each
+cation's electropositive ambipolar diffusion time to exceed one. Neither
+check uses an epsilon floor. Gate C-radial checks the complete radial source
+converted from centre to volume-average density. Its fixed ``2e-4`` numerical
+allowance accounts for the engine's rounded ``2.405`` Bessel root; it is not a
+Report-10 materiality threshold. Gate C-geometry and full-profile Gate C
+compare actual cation-source vectors with the non-cancelling charge-weighted
+symmetric discrepancy required by the owner ruling.
+
+Monitoring runs at initialisation, restart and every accepted integration
+state, including states returned by ``advance``. It does not run on internal
+Newton iterates, and references never enter the residual or Jacobian.
+``ElectronegativeWallRegimeError`` terminates a violating run without a
+fallback. ``electronegative_wall_last_valid_state`` retains its last valid
+``(time, state)`` snapshot; latched outputs stay at that valid state. A
+zero-anion state bypasses all EN qualification and takes the exact legacy
+path. Finite-anion states also refuse an electron wall frequency outside
+floating-point range. Energy-mode monitoring checks full-Jacobian
+representability on the first acceptance, every 32nd subsequent acceptance,
+and every state near the numerical range boundary. Residual and power
+representability checks and all physical gates still run at every acceptance.
+These numerical checks introduce no physical inventory floor.
+
+``electropositiveBracket`` retains the confinement and attachment/Bohm
+physical gates because it also assumes zero negative-ion wall flux. Its unit
+factor is a declared model-form sensitivity and makes no central
+simplified-vs-reference validity claim.
+
+The reference callable receives a versioned SI context (``schema_version=1``).
+Map-mode cylinder inputs retain their declared ``chamber_radius`` and
+``chamber_length`` through input-file and pickle restarts. Direct eigenvalue-only
+inputs report those fields as ``None`` and expose separate
+``cylinder_equivalent_radius`` / ``cylinder_equivalent_length``; these are not
+claims about the actual chamber. A reference requiring a declared radius must
+refuse the latter domain.
+
+The context includes species indices, charges, per-particle masses (kg), accepted
+molar concentrations (mol/m³), number densities (m⁻³), and per-cation and
+per-anion evaluated reduced and actual mobilities (m²/V/s). Anion transport also
+includes thermal/ambipolar diffusivities (m²/s) and unconfined frequencies (s⁻¹).
+Directed reaction records carry repeated reactant/product indices, stoichiometry,
+charged-reactant classification, order, SI coefficient and accepted positive
+propensity (mol/m³/s and mol/s). Order-n coefficients have units
+``(m³/mol)^(n-1)/s``. Propensities are recomputed from the supplied accepted state;
+the monitor never reads the last Newton trial's ``core_reaction_rates``. Solved
+Te and its dependent coefficient cache are synchronized first. Unsupported
+classes (charged third bodies, multiply charged ions, charged multibody reactions)
+are marked for the external reference to refuse. They do not alter engine chemistry.
+The external zero-order ionisation source, its target indices and transport
+approximation flags are also exposed, so a reference cannot silently omit them.
+
+Additional reference outputs (for example per-cation reference frequencies,
+``alpha_ref``, ionisation/attachment eigenvalues, edge thickness and convergence
+records) are retained under each gate's ``reference_diagnostics`` in the manifest.
+The I-314 radial reference can use this adapter interface; it does not qualify the
+axial extension or supply a frozen threshold. Its reported disagreement with the
+ruled closure requires owner review. The engine keeps the ruled formula and
+refuses when the supplied independent reference exceeds the frozen threshold.
+
+``electronegative_wall_manifest()`` returns a serializable accepted-state
+record naming the closure, geometry arm, scientific status, ``f_z``, every
+gate value, channel contributions, extrema with their locations, radial/axial
+frequencies and charge-balanced wall sources. Use closure and geometry arm
+as figure series labels. Real envelope qualification and Report-10
+observables/materiality runs require the separately supplied reference
+study and frozen budget; test-only reference fixtures do not qualify them.
+
+
+The public ``rmgpy.solver.electronegative.qualify_envelope`` helper checks
+explicitly supplied ``(reactor, state, time)`` samples and returns gate extrema,
+locations and margins. The caller supplies coverage of the whole declared
+pressure, power, composition, initial-condition, chemistry and geometry
+range. It does not replace a qualified reference adapter and owner-frozen
+budget, or generate an implicit reduced envelope.
+
 .. warning::
 	**When this wall model applies.**  The wall here is a single bulk *ambipolar diffusion* sink:
 	one eigenvalue ``D_a/Lambda**2`` applied to every charged species, with zero net wall current
@@ -1047,8 +1233,8 @@ The remaining keywords are all optional:
 	discharge in a noble gas at roughly a few torr, where charged particles reach the wall by
 	ambipolar diffusion through the neutral gas.  It is **not** reliable where sheath-adjacent
 	ionisation, not diffusion, sets the wall loss: a high-pressure **capacitively-coupled** discharge,
-	a strongly electronegative gas (negative ions are confined by the ambipolar field, not lost at
-	the wall -- the model refuses a core that carries an anion), a magnetised plasma, or any regime
+	an unqualified electronegative gas (the explicit confined-anion extension above requires
+	separate regime and reference qualification), a magnetised plasma, or any regime
 	where the sheath is a large fraction of the gap.  The model also assumes a single dominant
 	singly-charged cation and refuses a second ion species or a multiply-charged one, whose mobility
 	the single ``ionReducedMobility`` cannot represent.  It likewise assumes a **single bath gas**:
@@ -1961,3 +2147,23 @@ file is treated in the exact way as a normal input file.
 
 Finally, **note that it is advised to turn on generating the seed each iteration so that you can restart an RMG job right where it left off**.
 This can be done by setting ``generateSeedEachIteration=True`` in the options block of the input file.
+
+Electronegative wall run records
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+With an explicit electronegative wall closure, the standard solver profile CSV
+adds named wall-factor, floating-potential, and gate-value columns. The wall-factor
+header identifies the closure and geometry arm. Gate values belong to the same
+accepted state as each species row; ``nan`` denotes a gate not evaluated, rather
+than a pass. Alongside ``simulation_<reactor>_<species>.csv`` the profile writer
+writes ``simulation_<reactor>_<species>.electronegative-wall.json``, with the final
+accepted state, closure, geometry arm, gate results and provenance, extrema with
+separate locations, and the floating potential in units of kTe/e. The profile
+figure title records that final state and its gate results. Fixed-Te runs record
+the same current-balanced floating potential as energy-balance runs.
+
+The chemistry-confined limit alone does not qualify ``1/(1+alpha)``. This remains
+the owner's declared finite-cylinder extension; production validity requires the
+independent qualification and frozen thresholds described above. The default
+reference fixture in the tests echoes the production flux and checks the interface
+only; it does not establish scientific validity.

@@ -229,14 +229,15 @@ class GenericPlot(object):
 
         ax.grid(True)
         handles, labels = ax.get_legend_handles_labels()
+        metadata = {'Title': self.title} if str(filename).lower().endswith('.png') and self.title else None
         if labels:
             # Create a legend outside the plot and adjust width based off of longest legend label
             max_string_length = max([len(label) for label in labels])
             width = 1.05 + 0.011 * max_string_length
             legend = ax.legend(handles, labels, loc="upper center", numpoints=1, bbox_to_anchor=(width, 1))  # bbox_to_anchor=(1.01,.9)
-            fig.savefig(filename, bbox_extra_artists=(legend,), bbox_inches="tight")
+            fig.savefig(filename, bbox_extra_artists=(legend,), bbox_inches="tight", metadata=metadata)
         else:
-            fig.savefig(filename, bbox_inches="tight")
+            fig.savefig(filename, bbox_inches="tight", metadata=metadata)
 
         plt.close()
 

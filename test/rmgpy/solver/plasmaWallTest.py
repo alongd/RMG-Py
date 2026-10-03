@@ -4245,7 +4245,13 @@ def test_undeclared_tgas_laws_reconstruct_as_none():
                            (TE_NOMINAL_EV * EV_TO_K, 'K'), n_sims=1, termination=[])
     for r in (r_wall, r_bare):
         args = r.__reduce__()[1]
-        assert args[-4:-1] == (None, None, None), args[-4:-1]
+        init = re.search(r'\n    def __init__\(self,(.*?)\):\n', _plasma_pyx_source(), re.S)
+        assert init
+        params = re.findall(r'([A-Za-z_][A-Za-z_0-9]*)\s*(?:=[^,]*)?(?:,|$)',
+                            re.sub(r'#.*', '', init.group(1)))
+        for field in ('mobility_reference_temperature',
+                      'mobility_temperature_exponent', 'ambipolar_ion_temperature'):
+            assert args[params.index(field)] is None, field
         clone = copy.deepcopy(r)
         assert clone.mobility_reference_temperature is None
         assert clone.mobility_temperature_exponent is None

@@ -101,6 +101,11 @@ from rmgpy.thermo.thermoengine import process_thermo_data
 PLASMA_NET_CHARGE_RTOL = 1.0e-6
 
 
+from rmgpy.exceptions import ElectronegativeWallRegimeError
+from rmgpy.solver.electronegative import (REGIME_REQUIREMENTS, RADIAL_MAPPING_TOLERANCE,
+    check_reference, closure_factor_gradient, radial_source_frequency, wall_discrepancy,
+    check_wall_domain, check_wall_frequencies, electron_rate_derivative)
+
 # --- charged-particle wall transport ---------------------------------------
 #
 # Reduced (zero-field) ion mobilities in the literature are quoted at the
@@ -742,6 +747,22 @@ cdef class PlasmaReactor(ReactionSystem):
     # wall existed: `has_wall` gates every added term, so a wall-less reactor
     # reproduces the volume-only equations bit for bit, not approximately.
     cdef public bint has_wall
+    cdef public object electronegative_wall_model
+    cdef public object electronegative_wall_geometry
+    cdef public object anion_reduced_mobilities
+    cdef public object wall_diffusion_components
+    cdef public object wall_chamber_geometry
+    cdef object _en_wall_qualification
+    cdef public dict electronegative_wall_diagnostics
+    cdef public object electronegative_wall_last_valid_state
+    cdef public dict electronegative_wall_history
+    cdef list _en_anions
+    cdef list _en_core_species
+    cdef list _en_core_reactions
+    cdef dict _en_anion_mobility
+    cdef bint _en_monitor_ready
+    cdef bint _en_jacobian_excludes_charged_wall
+    cdef Py_ssize_t _en_energy_acceptances
     # Lambda, the characteristic diffusion length (m). Geometry enters here and
     # ONLY here: nu_wall = D_a / Lambda**2. The plasmaReactor(...) directive
     # computes it from a named chamber shape; the reactor takes the length itself,
@@ -957,7 +978,13 @@ cdef class PlasmaReactor(ReactionSystem):
                  ion_reduced_mobilities=None,
                  wall_bath_threshold=None,
                  wall_bath_lumping=None,
-                 thermo_source_assertions=None):
+                 thermo_source_assertions=None,
+                 electronegative_wall_model=None,
+                 electronegative_wall_geometry='fullFrequency',
+                 anion_reduced_mobilities=None,
+                 wall_diffusion_components=None,
+                 electronegative_wall_qualification=None,
+                 wall_chamber_geometry=None):
         ReactionSystem.__init__(self, termination, sensitive_species, sensitivity_threshold)
 
         if isinstance(T, list) or isinstance(P, list) or isinstance(Te, list):
@@ -1036,7 +1063,136 @@ cdef class PlasmaReactor(ReactionSystem):
                              ion_reduced_mobilities,
                              wall_bath_threshold,
                              wall_bath_lumping)
+        self._configure_electronegative_wall(
+            electronegative_wall_model, electronegative_wall_geometry,
+            anion_reduced_mobilities, wall_diffusion_components,
+            electronegative_wall_qualification, wall_chamber_geometry)
         self._configure_energy_balance(electron_energy_balance)
+
+    @property
+    def electronegative_wall_qualification(self):
+        """Frozen declaration, defensively copied; no after-the-run threshold tuning."""
+        return copy.deepcopy(self._en_wall_qualification)
+
+    def electronegative_wall_manifest(self):
+        """Serializable accepted-state closure/geometry/gate record for run manifests.
+
+        Figure producers should use closure and geometry_arm as series labels.
+        References are retained by provenance in the gate records, not serialized
+        as Python objects. Unavailable gates are explicitly named.
+        """
+        record = copy.deepcopy(self.electronegative_wall_diagnostics)
+        record.update(closure=self.electronegative_wall_model,
+                      geometry_arm=self.electronegative_wall_geometry,
+                      scientific_status='FINITE-CYLINDER GEOMETRIC EXTENSION')
+        from rmgpy.solver.electronegative import manifest_values
+        return manifest_values(record)
+
+    def _record_electronegative_wall_output(self, double t):
+        """Keep output records aligned with accepted simulation profile samples."""
+        if self.electronegative_wall_model is None:
+            return
+        self.electronegative_wall_diagnostics.update(
+            wall_electron_energy_flux=self.wall_electron_energy_flux,
+            wall_neutralization_energy_flux=self.wall_neutralization_energy_flux,
+            wall_ion_energy_flux=self.wall_ion_energy_flux,
+            energy_budget=(copy.deepcopy(self.energy_budget) if self.energy_balance else None))
+        self.electronegative_wall_history[t] = self.electronegative_wall_manifest()
+
+    def _configure_electronegative_wall(self, model, geometry, mobilities, components, qualification, chamber):
+        """Store an explicit closure; anion presence never selects a model."""
+        if model not in (None, 'confinedAnion', 'electropositiveBracket'):
+            raise PlasmaStateError('electronegative_wall_model must be confinedAnion or electropositiveBracket')
+        if geometry not in ('fullFrequency', 'radialOnly'):
+            raise PlasmaStateError('electronegative_wall_geometry must be fullFrequency or radialOnly')
+        if model is None and (mobilities is not None or qualification is not None or geometry != 'fullFrequency'):
+            raise PlasmaStateError('electronegative wall inputs require an explicitly selected closure')
+        if model is not None and (not self.has_wall or self._ion_mobility_derived is None):
+            raise PlasmaStateError('electronegative wall closures require map-mode wall transport')
+        if components is not None:
+            if not self.has_wall:
+                raise PlasmaStateError('wall_diffusion_components requires a wall')
+            components = tuple(float(v) for v in components)
+            if (len(components) != 2 or not all(np.isfinite(v) and v >= 0.0 for v in components)
+                    or sum(components) <= 0.0):
+                raise PlasmaStateError('wall_diffusion_components must be nonnegative radial/axial eigenvalues')
+            if not np.isclose(sum(components), 1.0 / self.diffusion_length.value_si**2, rtol=1.e-14, atol=0.):
+                raise PlasmaStateError('wall_diffusion_components must sum to the declared inverse diffusion length squared')
+        if mobilities is not None and (not isinstance(mobilities, dict) or not mobilities):
+            raise PlasmaStateError('anion_reduced_mobilities must be a nonempty map')
+        if mobilities is not None:
+            for label, entry in mobilities.items():
+                if not isinstance(label, str) or not label:
+                    raise PlasmaStateError('anion mobility labels must be nonempty strings')
+                if _is_per_bath_mobility(entry):
+                    if not isinstance(entry['perBath'], dict) or not entry['perBath']:
+                        raise PlasmaStateError('anion perBath mobility must be a nonempty map')
+                    for bath, value in entry['perBath'].items():
+                        if not isinstance(bath, str) or not bath:
+                            raise PlasmaStateError('anion bath labels must be nonempty strings')
+                        self._derive_mobility_entry('anion ' + label + ' in ' + bath, value)
+                else:
+                    self._derive_mobility_entry('anion ' + label, entry)
+        if qualification is not None and not isinstance(qualification, dict):
+            raise PlasmaStateError('electronegative_wall_qualification must be a dict')
+        if chamber is not None:
+            if (not isinstance(chamber, dict) or set(chamber) != {'shape', 'radius', 'length'}
+                    or chamber['shape'] != 'cylinder'):
+                raise PlasmaStateError('wall_chamber_geometry requires a declared cylinder radius and length in SI metres')
+            chamber = dict(shape='cylinder', radius=float(chamber['radius']), length=float(chamber['length']))
+            if not all(np.isfinite(chamber[key]) and chamber[key] > 0. for key in ('radius', 'length')):
+                raise PlasmaStateError('wall_chamber_geometry dimensions must be finite and positive')
+            expected = ((2.405 / chamber['radius'])**2, (np.pi / chamber['length'])**2)
+            if components is None or not np.allclose(expected, components, rtol=1.e-14, atol=0.):
+                raise PlasmaStateError('declared cylinder dimensions must match wall_diffusion_components')
+        self.wall_chamber_geometry = copy.deepcopy(chamber)
+        self.electronegative_wall_model = model
+        self.electronegative_wall_geometry = geometry
+        self.anion_reduced_mobilities = copy.deepcopy(mobilities)
+        self.wall_diffusion_components = components
+        self._en_wall_qualification = copy.deepcopy(qualification)
+        self.electronegative_wall_diagnostics = {}
+        self.electronegative_wall_last_valid_state = None
+        self.electronegative_wall_history = {}
+        self._en_anions = []
+        self._en_anion_mobility = {}
+        self._en_core_species = []
+        self._en_core_reactions = []
+        self._en_monitor_ready = False
+        self._en_energy_acceptances = 0
+        self._en_jacobian_excludes_charged_wall = False
+
+    def electronegative_wall_factor(self, np.ndarray y):
+        """Bounded instantaneous profile factor, and geometry factor, for this state.
+
+        The zero-anion branch performs no multiplication on the legacy frequency.
+        Negative Newton trials are clipped; accepted states are separately checked.
+        """
+        h, factor, derivative = closure_factor_gradient(
+            y, self.electron_index, self._en_anions,
+            self.electronegative_wall_model, self.electronegative_wall_geometry,
+            self.wall_diffusion_components)
+        return h, factor
+
+    def compute_ion_wall_components(self, np.ndarray y, double V):
+        """Inspectable radial/axial EP and active frequencies, in s^-1.
+
+        Returns None components when the historical diffusion-length input has
+        no separately declared eigenvalues; it never invents a geometry.
+        """
+        ep = np.zeros(self.num_core_species, float)
+        if not self.has_wall or self._ion_mobility_derived is None:
+            raise PlasmaStateError('wall components require map-mode transport')
+        self._compute_nu_wall_per_ion(y, V, ep, True)
+        if self.wall_diffusion_components is None:
+            return dict(total_ep=ep, radial_ep=None, axial_ep=None)
+        radial, axial = self.wall_diffusion_components
+        r = ep * (radial / (radial + axial))
+        z = ep * (axial / (radial + axial))
+        h, factor = self.electronegative_wall_factor(y)
+        return dict(total_ep=ep, radial_ep=r, axial_ep=z,
+                    radial=h * r, axial=(h * z if self.electronegative_wall_geometry == 'fullFrequency' else z),
+                    axial_share=axial / (radial + axial))
 
     def _configure_wall(self, diffusion_length, ion_reduced_mobility,
                         mobility_reference_density, wall_recycling,
@@ -2299,6 +2455,8 @@ cdef class PlasmaReactor(ReactionSystem):
                             mass_sum += np.exp(self.energy_ion_sheath_factor[i] - 0.5)
             if gamma_sum > 0.0 and np.isfinite(gamma_sum) and np.isfinite(mass_sum) and mass_sum > 0.0:
                 phi = log(mass_sum / gamma_sum)
+                if self.electronegative_wall_model is not None and self._finite_en_state(y):
+                    phi += self._en_floating_shift(y)
                 for i in range(self.num_core_species):
                     if i != self.electron_index and self.species_charges[i] > 0:
                         k = -self.wall_loss_rates[i]
@@ -2324,34 +2482,383 @@ cdef class PlasmaReactor(ReactionSystem):
         # electron causes -- and nothing is added for them.
         return (p_abs - q_inel - q_el - q_we - q_wi - 1.5 * R * te * dne) / (1.5 * R * ne)
 
+    def _finite_en_state(self, np.ndarray y):
+        return self.electronegative_wall_model is not None and any(y[j] > 0. for j in self._en_anions)
+
+    def _en_floating_shift(self, np.ndarray y):
+        """Current-balance shift relative to the legacy Maxwellian/Bohm normalisation.
+
+        Electron supply scales with n_e; the reference cation supply scales
+        with n_plus. Active cation collection scales by the geometry factor.
+        Phi is dimensionless e*V_f/(k_B*Te). This reduces to the legacy
+        normalisation at zero electronegativity and does not apply h twice.
+        """
+        plus = sum(max(float(y[j]), 0.) * self.species_charges[j]
+                   for j in range(self.num_core_species)
+                   if j != self.electron_index and self.species_charges[j] > 0)
+        h, factor = self.electronegative_wall_factor(y)
+        ne = max(float(y[self.electron_index]), 0.)
+        if plus > 0. and ne > 0. and factor > 0.:
+            if self.electronegative_wall_model == 'confinedAnion':
+                total = ne + sum(max(float(y[j]), 0.) for j in self._en_anions)
+                if self.electronegative_wall_geometry == 'fullFrequency':
+                    # ne cancels exactly: log(ne/plus)-log(ne/total).
+                    return log(total) - log(plus)
+                weight = self.wall_diffusion_components[0]/sum(self.wall_diffusion_components)
+                log_ratio = np.logaddexp(log(weight)-log(total),
+                    log(self.wall_diffusion_components[1]/sum(self.wall_diffusion_components))-log(ne))
+                return -log(plus)-log_ratio
+            return log(ne)-log(plus)
+        return 0.     # finite Newton trial; accepted-state guard refuses
+
+    def _en_wall_linearization(self, np.ndarray y, double V):
+        """Wall residual and its analytic Jacobian, including Te and floating current.
+
+        Chemistry, external pair sources and neutral diffusion are
+        differentiated separately. This matrix differentiates the exact
+        cation/electron wall closure, including D_a, Blanc weights and h.
+        """
+        n = len(y)
+        finite_anions = self._finite_en_state(y)
+        inventory_scale = 1.
+        if finite_anions:
+            inventory_scale = max(abs(float(v)) for v in y[:self.num_core_species])
+            y = np.array(y, copy=True)
+            y[:self.num_core_species] /= inventory_scale
+            V /= inventory_scale
+        flux = np.zeros(n)
+        pd = np.zeros((n,n))
+        ep = np.zeros(self.num_core_species)
+        self._compute_nu_wall_per_ion(y, V, ep, True)
+        h, factor, dfactor = closure_factor_gradient(y, self.electron_index,
+            self._en_anions, self.electronegative_wall_model,
+            self.electronegative_wall_geometry,self.wall_diffusion_components)
+        ne = float(y[self.electron_index])
+        te = self.Te.value_si
+        neutral = sum(y[j] for j in range(self.num_core_species) if self.neutral_heavy_mask[j])
+        density_floored = not (neutral * constants.Na / V > self.wall_neutral_density_floor)
+        dV = np.zeros(n)
+        dV[:self.num_core_species] = constants.R * self.T.value_si / self.P.value_si
+        dV[self.electron_index] = constants.R * te / self.P.value_si
+        if self.energy_balance and y[self.te_index] >= 0.5 * self.T.value_si:
+            dV[self.te_index] = constants.R * ne / self.P.value_si
+        bath_y = self._bath_amounts(y) if self.wall_blanc else None
+        gamma_ep = 0.; mass_ep = 0.; plus = 0.
+        dgamma_ep = np.zeros(n); dmass_ep = np.zeros(n); dplus = np.zeros(n)
+        gamma = 0.; dgamma = np.zeros(n)
+        current_terms = []
+        heavy_pressure = constants.R*self.T.value_si/self.P.value_si * sum(
+            y[k] for k in range(self.num_core_species) if k != self.electron_index)
+        charged_pressure = constants.R/self.P.value_si * (
+            self.T.value_si*sum(y[k] for k in range(self.num_core_species)
+                if k != self.electron_index and not self.neutral_heavy_mask[k]) + te*ne)
+        for j in range(self.num_core_species):
+            if j == self.electron_index or self.species_charges[j] <= 0 or y[j] < 0.:
+                continue
+            relative = np.zeros(n) if density_floored else dV/V
+            if not density_floored:
+                for k in range(self.num_core_species):
+                    if self.neutral_heavy_mask[k]:
+                        # dV/V-1/N = -charged_pressure/(V*N); retaining the
+                        # pressure numerator resolves trace charged inventories.
+                        if finite_anions:
+                            relative[k] = -(charged_pressure/V)/neutral
+                        else:
+                            relative[k] -= 1./neutral
+            if self.energy_balance and y[self.te_index] >= 0.5*self.T.value_si:
+                relative[self.te_index] += 1./(te + (self.T.value_si if self.ambipolar_ion_temperature is not None else 0.))
+            composition = np.zeros(n)
+            if self.wall_blanc:
+                row = self.wall_ion_bath_k0[j]
+                declared = [g for g in range(len(row)) if row[g] > 0.]
+                total = sum(bath_y[g] for g in declared)
+                if total > 0.:
+                    weighted = sum(bath_y[g]/row[g] for g in declared)
+                    k_eff = total / weighted
+                    for k in range(self.num_core_species):
+                        g = self.wall_bath_group[k]
+                        if g >= 0 and row[g] > 0. and y[k] >= 0.:
+                            if finite_anions:
+                                # Retain a trace bath's contribution when K_eff
+                                # rounds to the dominant bath's mobility. Form
+                                # pair differences before weighted summation.
+                                composition[k] += sum((bath_y[g2]/row[g2])*
+                                    ((row[g]-row[g2])/row[g]) for g2 in declared)/weighted/total
+                            else:
+                                composition[k] += (1.-k_eff/row[g])/total
+            relative += composition
+            depflux = ep[j] * y[j] * relative
+            depflux[j] += ep[j]
+            dloss = factor * depflux + ep[j]*y[j]*dfactor
+            loss = factor*ep[j]*y[j]
+            z = self.species_charges[j]
+            pd[j] -= dloss; flux[j] -= loss
+            pd[self.electron_index] -= z*dloss; flux[self.electron_index] -= z*loss
+            target = self.wall_recycle_target[j]
+            if target >= 0 and self.wall_recycling > 0.:
+                recycle = self.wall_recycling*self.wall_recycle_multiplicity[j]
+                pd[target] += recycle*dloss; flux[target] += recycle*loss
+            gamma += z*loss; dgamma += z*dloss
+            plus += z*y[j]; dplus[j] += z
+            mass_weight = (np.exp(self.energy_ion_sheath_factor[j]-.5) if self.energy_balance
+                           else np.sqrt(self._en_core_species[j].molecular_weight.value_si
+                                        / (2.*np.pi*constants.m_e)))
+            gamma_ep += z*ep[j]*y[j]; dgamma_ep += z*depflux
+            mass_ep += mass_weight*ep[j]*y[j]; dmass_ep += mass_weight*depflux
+            dcurrent_composition = z*ep[j]*y[j]*composition
+            dcurrent_composition[j] += z*ep[j]
+            current_terms.append((mass_weight/z, z*ep[j]*y[j], dcurrent_composition))
+        phi = None
+        if finite_anions:
+            if gamma_ep > 0. and ne > 0.:
+                # Centre mass weights before differentiating. Common EOS and
+                # Te dependence cancels analytically, including the single-ion
+                # case; no subtraction of two O(1/N_ion) gradients remains.
+                mean_mass = sum(weight*(current/gamma_ep) for weight,current,_ in current_terms)
+                dphi_ep = np.zeros(n)
+                for weight,current,dcomposition in current_terms:
+                    dphi_ep += ((weight-mean_mass)/mean_mass)*(dcomposition/gamma_ep)
+                phi = log(mean_mass) + self._en_floating_shift(y)
+                if self.energy_balance:
+                    minus = sum(max(float(y[k]), 0.) for k in self._en_anions)
+                    total = ne + minus
+                    dtotal = np.zeros(n)
+                    dtotal[self.electron_index] = 1.
+                    for k in self._en_anions:
+                        if y[k] >= 0.:
+                            dtotal[k] = 1.
+                    radial_weight = (1. if self.electronegative_wall_geometry == 'fullFrequency'
+                                     else self.wall_diffusion_components[0]/sum(self.wall_diffusion_components))
+                    if self.electronegative_wall_model == 'electropositiveBracket':
+                        radial_weight = 0.
+                    axial_weight = (0. if self.electronegative_wall_geometry == 'fullFrequency'
+                                    else self.wall_diffusion_components[1]/sum(self.wall_diffusion_components))
+                    if self.electronegative_wall_model == 'electropositiveBracket':
+                        axial_weight = 1.
+                    # factor/ne = radial_weight/(ne+minus)+axial_weight/ne.
+                    # Full-frequency has no 1/ne term anywhere in this block.
+                    rr = radial_weight/total
+                    rz = axial_weight/ne
+                    qr = rr*gamma_ep
+                    qz = rz*gamma_ep
+                    q = qr+qz
+                    dq = rr*dgamma_ep - (qr/total)*dtotal + rz*dgamma_ep
+                    if not density_floored:
+                        dq[self.electron_index] = (qr/total)*(
+                            (dV[self.electron_index]*minus-heavy_pressure)/V)
+                        if axial_weight > 0.:
+                            dq[self.electron_index] -= (qz*(heavy_pressure/V))/ne
+                    elif axial_weight > 0.:
+                        dq[self.electron_index] -= qz/ne
+                    dlog_ratio = -(rr/(rr+rz))*dtotal/total
+                    if axial_weight > 0.:
+                        dlog_ratio[self.electron_index] -= (rz/(rr+rz))/ne
+                    dphi = dphi_ep - dplus/plus - dlog_ratio
+                    flux[self.te_index] = -(te/1.5)*(1.+phi)*q
+                    pd[self.te_index] = -(te/1.5)*((1.+phi)*dq+q*dphi)
+                    if y[self.te_index] >= 0.5*self.T.value_si:
+                        pd[self.te_index,self.te_index] -= (1.+phi)*q/1.5
+        else:
+            # Preserve the exact zero-anion floating-current branch.
+            dphi = np.zeros(n)
+            if gamma > 0. and ne > 0.:
+                phi = log(mass_ep/gamma_ep)
+                dphi = dmass_ep/mass_ep - dgamma_ep/gamma_ep
+            if self.energy_balance and phi is not None:
+                # Cancel the inventory scale before multiplying or squaring it.
+                # ne**2 underflows for normal, accepted small mole inventories,
+                # even though gamma/ne and the resulting derivatives are finite.
+                gamma_per_electron = gamma/ne
+                flux[self.te_index] = -te*(1.+phi)*gamma_per_electron/1.5
+                pd[self.te_index] = -(te/1.5)*((1.+phi)*(dgamma/ne) + gamma_per_electron*dphi)
+                if y[self.te_index] >= 0.5 * self.T.value_si:
+                    pd[self.te_index,self.te_index] -= (1.+phi)*gamma_per_electron/1.5
+                pd[self.te_index,self.electron_index] -= flux[self.te_index]/ne
+        if self.quasineutral_electron:
+            flux[self.electron_index] = 0.
+            pd[self.electron_index] = 0.
+        if finite_anions:
+            flux[:self.num_core_species] *= inventory_scale
+            if self.energy_balance:
+                pd[:self.num_core_species,self.te_index] *= inventory_scale
+                pd[self.te_index,:self.num_core_species] /= inventory_scale
+        return flux,pd,phi
+
+    def _check_en_wall_domain(self, np.ndarray y):
+        if self.electronegative_wall_model is not None:
+            te = y[self.te_index] if self.energy_balance else self.Te.value_si
+            check_wall_domain(y[:self.num_core_species], self.compute_volume(y),
+                self.species_charges, [sp.label for sp in self._en_core_species],
+                te*constants.R/(constants.Na*constants.e), self.wall_diffusion_components)
+            if self._finite_en_state(y):
+                ep = np.zeros(self.num_core_species)
+                self._compute_nu_wall_per_ion(y, self.compute_volume(y), ep, True)
+                check_wall_frequencies(ep, self.species_charges,
+                    [sp.label for sp in self._en_core_species])
+
+    def compute_electronegative_wall_jacobian(self, np.ndarray y):
+        """Analytic charged-wall Jacobian, including floating-potential/Te coupling."""
+        if self.energy_balance:
+            self._sync_electron_temperature(y)
+        self._check_en_wall_domain(y)
+        return self._en_wall_linearization(y,self.compute_volume(y))[1]
+
+    def _en_energy_jacobian(self, double t, np.ndarray y, double cj):
+        """Exact mass-action species/energy derivatives plus analytic transport.
+
+        Product derivatives remove one reactant occurrence before multiplying:
+        no propensity/trace concentration division and no perturbation floor.
+        The zero-anion EP solver retains its historical numerical policy.
+        """
+        self.residual(t,y,np.zeros(len(y)))
+        ns = self.num_core_species
+        n = len(y)
+        ie, it = self.electron_index, self.te_index
+        V = self.compute_volume(y)
+        te, ne = self.Te.value_si, float(y[ie])
+        C = y[:ns]/V
+        dv = np.zeros(n)
+        dv[:ns] = constants.R*self.T.value_si/self.P.value_si
+        dv[ie] = constants.R*te/self.P.value_si
+        active_te = y[it] >= .5*self.T.value_si
+        if active_te:
+            dv[it] = constants.R*ne/self.P.value_si
+        pd = np.zeros((n,n))
+        rates = np.zeros(self.num_core_reactions)
+        drates = np.zeros((self.num_core_reactions,n))
+        dk = np.zeros(self.num_core_reactions)
+        if active_te:
+            for j,kin in self.energy_te_rate_refresh:
+                if j < self.num_core_reactions:
+                    dk[j] = electron_rate_derivative(kin,te,self.kf[j])
+        for j in range(self.num_core_reactions):
+            for left,right,k,signed,slope in (
+                (self.reactant_indices[j],self.product_indices[j],self.kf[j],1.,dk[j]),
+                (self.product_indices[j],self.reactant_indices[j],self.kb[j],-1.,0.)):
+                reactants = [int(v) for v in left if v >= 0]
+                products = [int(v) for v in right if v >= 0]
+                order = len(reactants)
+                propensity = float(k)
+                for z in reactants:
+                    propensity *= C[z]
+                rate = propensity*V
+                gradient = (1.-order)*propensity*dv
+                for m,z in enumerate(reactants):
+                    partial = float(k)
+                    for m2,z2 in enumerate(reactants):
+                        if m2 != m:
+                            partial *= C[z2]
+                    gradient[z] += partial
+                if slope != 0.:
+                    partial = slope*V
+                    for z in reactants:
+                        partial *= C[z]
+                    gradient[it] += partial
+                rates[j] += signed*rate
+                drates[j] += signed*gradient
+                for z in reactants:
+                    pd[z] -= gradient
+                for z in products:
+                    pd[z] += gradient
+        # The existing source/neutral-diffusion derivatives, excluding charged
+        # transport which is differentiated once by the EN wall operator.
+        self._en_jacobian_excludes_charged_wall = True
+        try:
+            self._apply_wall_jacobian(y,V,dv[:ns],pd[:ns,:ns])
+        finally:
+            self._en_jacobian_excludes_charged_wall = False
+        source = self._source_total_at_volume(V)
+        if active_te:
+            if source > 0.:
+                ionisable = sum(y[j] for j in range(ns)
+                    if self.neutral_heavy_mask[j] and self.source_cation_target[j] >= 0)
+                if ionisable > 0.:
+                    for j in range(ns):
+                        target = self.source_cation_target[j]
+                        if self.neutral_heavy_mask[j] and target >= 0:
+                            derivative = source*y[j]/ionisable*dv[it]/V
+                            pd[j,it] -= derivative
+                            pd[target,it] += derivative
+                            pd[ie,it] += derivative
+            if self.wall_neutral_target is not None:
+                density = sum(y[j] for j in range(ns) if self.neutral_heavy_mask[j])*constants.Na/V
+                if density > self.wall_neutral_density_floor:
+                    frequencies = self.compute_neutral_wall_frequencies(y,V)
+                    for j in range(ns):
+                        target = self.wall_neutral_target[j]
+                        if target >= 0:
+                            derivative = frequencies[j]*y[j]*dv[it]/V
+                            pd[j,it] -= derivative
+                            pd[target,it] += derivative
+        # Chemical energy and zero-energy electron dilution. Divide by ne
+        # only after combining each rate/derivative; never form ne**2.
+        dne = float(self.core_species_rates[ie])*V+source
+        energy = self.absorbed_power_reactor/(1.5*constants.R*ne)-te*(dne/ne)
+        gradient = -te*(pd[ie]/ne)
+        gradient[ie] -= energy/ne
+        if active_te:
+            gradient[it] -= dne/ne
+        for j in range(self.num_core_reactions):
+            if self.energy_participates[j]:
+                cost = self.energy_threshold[j]+self.energy_electrons_consumed[j]*1.5*constants.R*te
+                per_electron = (rates[j]/ne)*cost/(1.5*constants.R)
+                gradient -= (drates[j]/ne)*cost/(1.5*constants.R)
+                gradient[ie] += per_electron/ne
+                if active_te:
+                    gradient[it] -= (rates[j]/ne)*self.energy_electrons_consumed[j]
+        # Analytic Maxwellian elastic loss, linear in partner concentration.
+        tev = te*constants.R/(constants.Na*constants.e)
+        lt = log(tev)
+        for p in range(self.energy_elastic_index.shape[0]):
+            partner = self.energy_elastic_index[p]
+            a,b,c,d = self.energy_elastic_params[p]
+            k = a*tev**b*np.exp(c*lt*lt+d*lt*lt*lt)
+            prefactor = -2.*self.energy_elastic_mass_ratio[p]*k*constants.Na
+            loss = prefactor*C[partner]*(te-self.T.value_si)
+            gradient -= loss*dv/V
+            gradient[partner] += prefactor*(te-self.T.value_si)/V
+            if active_te:
+                gradient[it] += prefactor*C[partner]*(1.+(te-self.T.value_si)*(b+2.*c*lt+3.*d*lt*lt)/te)
+        pd[it] = gradient
+        pd += self._en_wall_linearization(y,V)[1]
+        if self.quasineutral_electron:
+            pd[ie] = 0.
+            pd[ie,:ns] = self.charge_row_scale*self.species_charges
+        self.jacobian_matrix = pd.copy()
+        for j in range(n):
+            if not (self.quasineutral_electron and j == ie):
+                pd[j,j] -= cj
+        return pd
+
     def _energy_jacobian(self, double t, np.ndarray y, np.ndarray dydt, double cj):
-        """Central-difference Jacobian of the full residual (species + Te) for the
-        energy-balance mode, in the same convention as :meth:`jacobian`: dG/dy - cj I,
+        """Energy Jacobian: analytic for finite EN states; historical central
+        differences on the electropositive branch, in the same convention as :meth:`jacobian`: dG/dy - cj I,
         with no -cj on the algebraic charge row. The fixed-Te analytic Jacobian has no Te
         column and assumes constant kf, so it is not used in this mode."""
         cdef Py_ssize_t n = self.neq, k, i
         cdef double h
+        if self._finite_en_state(y):
+            return self._en_energy_jacobian(t,y,cj)
         y = np.array(y, float)
         pd = np.zeros((n, n), float)
         base = None
         for k in range(n):
-            # Relative step, floored at the component's own atol (DASPK's convention): a
-            # floor shared across components would exceed a small N_e outright and step
-            # the electrons negative.
-            h = 6.0e-6 * max(abs(y[k]), self.atol_array[k])
+            h = 6.0e-6*max(abs(y[k]),self.atol_array[k])
             yp = y.copy()
             yp[k] += h
             if k < self.num_core_species and y[k] - h <= 0.0:
                 # A mole amount within one step of zero: one-sided, so no residual is ever
                 # evaluated at a zero or negative amount (for N_e, the Te row is undefined there).
                 if base is None:
-                    base = np.asarray(self.residual(t, y, dydt)[0]).copy()
-                pd[:, k] = (np.asarray(self.residual(t, yp, dydt)[0]) - base) / (yp[k] - y[k])
+                    base = np.asarray(self.residual(t,y,dydt)[0]).copy()
+                rp = np.asarray(self.residual(t,yp,dydt)[0]).copy()
+                pd[:, k] = (rp - base) / (yp[k] - y[k])
                 continue
             ym = y.copy()
             ym[k] -= h
-            pd[:, k] = (np.asarray(self.residual(t, yp, dydt)[0])
-                        - np.asarray(self.residual(t, ym, dydt)[0])) / (yp[k] - ym[k])
+            rp = np.asarray(self.residual(t,yp,dydt)[0]).copy()
+            rm = np.asarray(self.residual(t,ym,dydt)[0]).copy()
+            pd[:, k] = (rp-rm)/(yp[k]-ym[k])
         self.residual(t, y, dydt)          # leave the scratch at y
         self.jacobian_matrix = pd.copy()
         for i in range(n):
@@ -2598,7 +3105,13 @@ cdef class PlasmaReactor(ReactionSystem):
                  (self.wall_bath_threshold if self.has_wall else None),
                  (self.wall_bath_lumping
                   if self.has_wall and self.wall_bath_lumping else None),
-                 sorted(self.thermo_source_assertions)))
+                 sorted(self.thermo_source_assertions),
+                 self.electronegative_wall_model,
+                 self.electronegative_wall_geometry,
+                 self.anion_reduced_mobilities,
+                 self.wall_diffusion_components,
+                 self.electronegative_wall_qualification,
+                 self.wall_chamber_geometry))
 
     cpdef initialize_model(self, list core_species, list core_reactions, list edge_species, list edge_reactions,
                           list surface_species=None, list surface_reactions=None, list pdep_networks=None,
@@ -2610,6 +3123,10 @@ cdef class PlasmaReactor(ReactionSystem):
         happens here, before the first residual or Jacobian evaluation.
         """
         self.thermo_provenance_diagnostics = {}
+        self._en_monitor_ready = False
+        self._en_energy_acceptances = 0
+        self._en_core_species = list(core_species)
+        self._en_core_reactions = list(core_reactions)
 
         # Unsupported features fail loudly instead of being silently ignored.
         if surface_species or surface_reactions:
@@ -2742,6 +3259,11 @@ cdef class PlasmaReactor(ReactionSystem):
         if self.quasineutral_electron:
             self._set_charge_row_scale()
 
+        if self.electronegative_wall_model is not None:
+            self._en_core_reactions = list(core_reactions)
+            self._en_monitor_ready = True
+            self.electronegative_wall_history = {}
+            self.monitor_electronegative_wall(self.y0, 0.0)
         ReactionSystem.set_initial_derivative(self)
         # Initialize the model
         ReactionSystem.initialize_solver(self)
@@ -2773,6 +3295,7 @@ cdef class PlasmaReactor(ReactionSystem):
         if self.energy_balance:
             self.energy_history = []
             self._latch_energy_budget(self.y0, 0.0)
+        self._record_electronegative_wall_output(0.0)
 
     def _check_charged_species_thermo_provenance(self, core_species, edge_species):
         """Refuse core ions without a library value match and warn once for edge ions."""
@@ -3565,6 +4088,8 @@ cdef class PlasmaReactor(ReactionSystem):
                 continue
             if charges[i] == 0:
                 neutral_mask[i] = 1
+            if charges[i] < 0:
+                continue
             # Heavy-atom skeleton (see _skeleton_key), NOT element count: the
             # skeleton keeps constitutional isomers apart so a molecular ion cannot
             # be transmuted into an isomeric neutral, while still uniting an
@@ -3640,7 +4165,7 @@ cdef class PlasmaReactor(ReactionSystem):
         # energy here. The declaration names the product energy cannot infer.
         neutralization = self.wall_neutralization_products or {}
         for i in range(n):
-            if i == self.electron_index or charges[i] == 0:
+            if i == self.electron_index or charges[i] <= 0:
                 continue
             ion_label = getattr(core_species[i], 'label', None)
             # Tuple products establish atom conservation directly and must be
@@ -3765,7 +4290,24 @@ cdef class PlasmaReactor(ReactionSystem):
             anions = [i for i in range(n) if i != self.electron_index and charges[i] < 0]
             cations = [i for i in range(n) if i != self.electron_index and charges[i] > 0]
             multiply_charged = [i for i in cations if charges[i] != 1]
-            if anions:
+            self._en_anions = anions
+            if anions and self.electronegative_wall_model is not None:
+                for i in anions:
+                    label = core_species[i].label
+                    if charges[i] != -1:
+                        raise PlasmaStateError('electronegative wall refuses multiply charged anions: ' + label)
+                    if not self.anion_reduced_mobilities or label not in self.anion_reduced_mobilities:
+                        raise PlasmaStateError('anion has no declared mobility: ' + label)
+                    if sum(sp.label == label for sp in core_species) != 1:
+                        raise PlasmaStateError('anion mobility label is ambiguous: ' + label)
+                    entry = self.anion_reduced_mobilities[label]
+                    if _is_per_bath_mobility(entry):
+                        self._en_anion_mobility[i] = {
+                            bath: self._derive_mobility_entry('anion ' + label + ' in ' + bath, value)
+                            for bath, value in entry['perBath'].items()}
+                    else:
+                        self._en_anion_mobility[i] = self._derive_mobility_entry('anion ' + label, entry)
+            if anions and self.electronegative_wall_model is None:
                 raise PlasmaStateError(
                     "this charged-particle wall supports a single positive-ion species, "
                     "but the core carries {0} anion(s): {1}. An anion is confined by the "
@@ -3816,7 +4358,7 @@ cdef class PlasmaReactor(ReactionSystem):
 
             if self.wall_recycling > 0.0:
                 orphans = [core_species[i] for i in range(n)
-                           if charges[i] != 0 and i != self.electron_index and recycle[i] < 0]
+                           if charges[i] > 0 and i != self.electron_index and recycle[i] < 0]
                 if orphans:
                     raise PlasmaStateError(
                         "wall_recycling={0!r} asks the wall to return the heavy core of "
@@ -4485,7 +5027,7 @@ cdef class PlasmaReactor(ReactionSystem):
         lam = self.diffusion_length.value_si
         return d_a / (lam * lam)
 
-    cdef _compute_nu_wall_per_ion(self, np.ndarray y, double V, np.ndarray out):
+    cdef _compute_nu_wall_per_ion(self, np.ndarray y, double V, np.ndarray out, bint electropositive=False):
         """Per-cation version of :meth:`compute_nu_wall`; the legacy helper is untouched.
         With per-bath values the cation's reduced mobility is the Blanc's-law combination
         over the state's composition (:meth:`_blanc_combine`); N is still the total
@@ -4514,6 +5056,10 @@ cdef class PlasmaReactor(ReactionSystem):
             if self.ambipolar_ion_temperature is not None:
                 d_a *= 1.0 + self.T.value_si / self.Te.value_si
             out[i] = d_a / (lam * lam)
+        if not electropositive and self.electronegative_wall_model is not None:
+            h, factor = self.electronegative_wall_factor(y)
+            if factor != 1.0:
+                out *= factor
 
     cdef double _neutral_wall_scale(self, np.ndarray y, double V):
         """
@@ -4692,6 +5238,7 @@ cdef class PlasmaReactor(ReactionSystem):
                 "length) is a sheath-regime concern outside this model. Refusing to "
                 "extrapolate. ({2})".format(
                     n_neutral, self.wall_neutral_density_floor, self._identity()))
+        self._check_en_wall_domain(y)
         # The ionisation degree is set by the CHARGED inventory, not n_e alone. In a
         # badly non-neutral accepted state n_e can sit far below the ion density -- 1%
         # ions with 1 ppm electrons reads as alpha = 1e-6 on n_e while the ions already
@@ -4727,6 +5274,16 @@ cdef class PlasmaReactor(ReactionSystem):
         # neutral; the ratio refuses it whatever its absolute size.
         net = n_ion - n_e
         magnitude = n_ion + n_e
+        if self.electronegative_wall_model is not None:
+            for j in self._en_anions:
+                if not np.isfinite(y[j]) or y[j] < 0.0:
+                    raise ElectronegativeWallRegimeError('A: invalid anion population at index {0}'.format(j))
+                net -= y[j]
+                magnitude += y[j]
+        if self.electronegative_wall_model is not None and 0. < magnitude < np.finfo(float).tiny:
+            raise ElectronegativeWallRegimeError(
+                'state: charged inventory below normal floating-point resolution; '
+                'the wall Jacobian cannot be represented safely')
         # With the electron carried on the ALGEBRAIC charge row, the row is driven to the
         # solver's ABSOLUTE accuracy, not a relative one; while the WHOLE charged inventory
         # sits below the integrator's absolute resolution (atol) the row's residual is the
@@ -4777,6 +5334,331 @@ cdef class PlasmaReactor(ReactionSystem):
         # out only while it stays at or below the threshold.
         self._check_bath_threshold(y)
 
+        if self._en_monitor_ready:
+            self.monitor_electronegative_wall(y, self.t if accepted else 0.0)
+
+    def compute_anion_transport_data(self, np.ndarray y, double V):
+        """Accepted-composition anion transport in SI for reference adapters.
+
+        Reduced mobility includes its declared gas-temperature law and Blanc
+        mixture. Actual mobility includes the reference/neutral density ratio.
+        """
+        out = {}
+        neutral = sum(float(y[j]) for j in range(self.num_core_species)
+                      if self.neutral_heavy_mask[j])
+        density = neutral * constants.Na / V
+        if not np.isfinite(density) or density <= 0.:
+            raise ElectronegativeWallRegimeError('A: invalid neutral transport density')
+        for j in self._en_anions:
+            entry = self._en_anion_mobility[j]
+            if isinstance(entry, dict):
+                amounts = {}
+                for k, sp in enumerate(self._en_core_species):
+                    if self.neutral_heavy_mask[k]:
+                        bath = self.wall_bath_lumping.get(sp.label, sp.label)
+                        if bath not in entry:
+                            raise ElectronegativeWallRegimeError('A: undeclared anion mobility in bath ' + bath)
+                        amounts[bath] = amounts.get(bath, 0.) + y[k]
+                total = sum(amounts.values())
+                inv = sum((amount / total) / (entry[bath][0].value_si * entry[bath][1])
+                          for bath, amount in amounts.items() if amount > 0.)
+                k0 = 1. / inv
+            else:
+                k0 = entry[0].value_si * entry[1]
+            mobility = k0 * self.mobility_reference_density / density
+            da = mobility * constants.R / constants.Na * self.Te.value_si / constants.e
+            if self.ambipolar_ion_temperature is not None:
+                da *= 1. + self.T.value_si / self.Te.value_si
+            out[j] = dict(reduced_mobility=k0, mobility=mobility,
+                          thermal_diffusivity=mobility * constants.R / constants.Na * self.T.value_si / constants.e,
+                          ambipolar_diffusivity=da,
+                          transport_frequency=da / self.diffusion_length.value_si**2)
+        return out
+
+    def compute_anion_transport_frequencies(self, np.ndarray y, double V):
+        """Hypothetical unconfined ambipolar transport, used only by Gate A."""
+        return {j: row['transport_frequency']
+                for j, row in self.compute_anion_transport_data(y, V).items()}
+
+    def compute_reference_reaction_data(self, np.ndarray y):
+        """Directed charged-reactant classifications and accepted-state rates.
+
+        Propensities are recomputed from accepted concentrations, never read
+        from core_reaction_rates, which may contain a Newton trial. Coefficients
+        follow the engine's ordinary fixed-T/P cache and accepted-Te refresh.
+        SI order-n coefficients use (m^3/mol)^(n-1)/s; rates are mol/m^3/s.
+        Unsupported classes are explicit for the external reference to refuse.
+        """
+        from rmgpy.solver.electronegative import classify_charged_reaction
+        if self.energy_balance:
+            self._check_energy_state(y)
+            self._sync_electron_temperature(y)
+        V = self.compute_volume(y)
+        conc = np.asarray(y[:self.num_core_species]) / V
+        records = []
+        for k, rxn in enumerate(self._en_core_reactions):
+            ri = tuple(self.species_index[sp] for sp in rxn.reactants)
+            pi = tuple(self.species_index[sp] for sp in rxn.products)
+            collider = getattr(rxn, 'specific_collider', None)
+            charged_collider = collider is not None and collider.molecule[0].get_net_charge() != 0
+            efficiencies = getattr(rxn.kinetics, 'efficiencies', {})
+            charged_collider = charged_collider or any(mol.get_net_charge() != 0 for mol in efficiencies)
+            directions = [('forward', ri, pi, float(self.kf[k]))]
+            if rxn.reversible or self.kb[k] != 0.:
+                directions.append(('reverse', pi, ri, float(self.kb[k])))
+            for direction, left, right, coefficient in directions:
+                classification, reason = classify_charged_reaction(
+                    left, right, self.species_charges, self.electron_index, charged_collider)
+                propensity = float(coefficient * np.prod([conc[j] for j in left]))
+                if not np.isfinite(propensity) or propensity < 0.:
+                    raise ElectronegativeWallRegimeError('C-reference-domain: invalid accepted reaction propensity')
+                records.append(dict(reaction_index=k, direction=direction,
+                    equation=str(rxn), reactants=left, products=right,
+                    stoichiometry=[right.count(j) - left.count(j) for j in range(self.num_core_species)],
+                    classification=classification, reference_domain_reason=reason,
+                    coefficient_si=coefficient, reaction_order=len(left),
+                    rate_mol_per_volume_s=propensity, rate_mol_per_s=V * propensity))
+        return records
+
+    def monitor_electronegative_wall(self, np.ndarray y, double t):
+        """Check a physical state and attach its location to a named refusal."""
+        try:
+            if self.energy_balance:
+                self._sync_electron_temperature(y)
+            self._check_en_wall_domain(y)
+            if self.energy_balance:
+                self._check_energy_state(y)
+                self._sync_electron_temperature(y)
+            ready = self._en_monitor_ready
+            self._en_monitor_ready = False
+            try:
+                self.check_wall_support(y)
+            finally:
+                self._en_monitor_ready = ready
+            finite_anions = self._finite_en_state(y)
+            if finite_anions:
+                if not y[self.electron_index] > 0.:
+                    raise ElectronegativeWallRegimeError(
+                        'A: electron density undefined for finite anions')
+                # A finite species loss can still imply an infinite per-electron
+                # loss frequency, especially on the unsuppressed axial arm.
+                nu = self.compute_ion_wall_frequencies(y,self.compute_volume(y))
+                electron_loss = sum(self.species_charges[j]*nu[j]*y[j]
+                    for j in range(self.num_core_species)
+                    if j != self.electron_index and self.species_charges[j] > 0)
+                with np.errstate(over='ignore', invalid='ignore', divide='ignore'):
+                    electron_frequency = np.divide(electron_loss,y[self.electron_index])
+                if not np.isfinite(electron_frequency):
+                    raise ElectronegativeWallRegimeError(
+                        'state: electron wall loss frequency exceeds floating-point range')
+                if self.electronegative_wall_factor(y)[1] <= 0.:
+                    raise ElectronegativeWallRegimeError(
+                        'state: electron wall loss frequency unresolved after closure-factor underflow')
+            budget = None
+            if self.energy_balance:
+                result = self.residual(t,y,np.zeros(len(y)))[0]
+                budget = copy.deepcopy(self.electron_energy_terms)
+                budget.update(t=t,Te=self.Te.value_si,V=self.compute_volume(y))
+                if finite_anions:
+                    if not np.isfinite(result).all():
+                        raise ElectronegativeWallRegimeError('state: nonfinite electron energy residual')
+                    with np.errstate(over='ignore',invalid='ignore',divide='ignore'):
+                        operator = self._energy_jacobian(t,y,np.zeros(len(y)),0.)
+                    if not np.isfinite(operator).all():
+                        raise ElectronegativeWallRegimeError(
+                            'state: energy Jacobian exceeds floating-point range; '
+                            'no finite local operator is available')
+            self._evaluate_electronegative_wall_regime(y,t)
+            if self.electronegative_wall_model is not None:
+                self._latch_wall_diagnostics(y, self.compute_volume(y), t)
+                # Instantaneous terms belong to this sample. The solver's stored
+                # derivative may belong to a different state in an envelope probe.
+                self.electronegative_wall_diagnostics.update(
+                    state=np.asarray(y).tolist(), energy_budget=budget,
+                    wall_electron_energy_flux=self.wall_electron_energy_flux,
+                    wall_neutralization_energy_flux=self.wall_neutralization_energy_flux,
+                    wall_ion_energy_flux=(budget['Q_wall_ion'] if budget is not None else None))
+                if self.energy_balance and finite_anions:
+                    self._en_energy_acceptances += 1
+        except ElectronegativeWallRegimeError as exc:
+            exc.state = np.array(y,copy=True)
+            exc.time = t
+            raise
+
+    def _evaluate_electronegative_wall_regime(self, np.ndarray y, double t):
+        """Qualify an accepted physical state; never runs in a Newton residual.
+
+        Gate A uses gross destruction channel sums, B uses electron attachment
+        frequency times the EP ambipolar diffusion time, C-radial uses the
+        sourced complete radial expression, and C-geometry/full-profile C use
+        independent external references and frozen thresholds. No fallback.
+        """
+        if self.electronegative_wall_model is None:
+            return
+        if any(not np.isfinite(y[j]) or y[j] < 0. for j in self._en_anions):
+            raise ElectronegativeWallRegimeError('A: invalid anion population')
+        minus = sum(float(y[j]) for j in self._en_anions)
+        if minus == 0.:
+            self.electronegative_wall_last_valid_state = (t, np.array(y, copy=True))
+            self.electronegative_wall_diagnostics.update(
+                gates='not-evaluated-zero-anion', alpha=0., h=1.,
+                geometry_endpoint_wall_difference=0.)
+            return
+        if not np.isfinite(minus):
+            raise ElectronegativeWallRegimeError('A: invalid anion population')
+        ne = float(y[self.electron_index])
+        if not np.isfinite(ne) or not ne > 0.:
+            raise ElectronegativeWallRegimeError('A: electron density undefined for finite anions')
+        q = self._en_wall_qualification or {}
+        if self.wall_diffusion_components is None:
+            raise ElectronegativeWallRegimeError('C-radial: radial/axial geometry undeclared')
+        if any(q.get('regime', {}).get(key) is not True for key in REGIME_REQUIREMENTS):
+            raise ElectronegativeWallRegimeError('regime: missing I-311/finite-cylinder qualification')
+        V = self.compute_volume(y)
+        conc = np.asarray(y[:self.num_core_species]) / V
+        destroy = {j: [] for j in self._en_anions}
+        attachment = 0.
+        for k, rxn in enumerate(self._en_core_reactions):
+            ri = [self.species_index[sp] for sp in rxn.reactants]
+            pi = [self.species_index[sp] for sp in rxn.products]
+            for left, right, coefficient in ((ri,pi,float(self.kf[k])), (pi,ri,float(self.kb[k]))):
+                for j in self._en_anions:
+                    stoich = left.count(j) - right.count(j)
+                    if stoich > 0:
+                        # Cancel one anion concentration before multiplying.
+                        # A first-order destruction frequency is exactly k,
+                        # even at tiny population; no density floor is used.
+                        others = list(left)
+                        others.remove(j)
+                        frequency = coefficient * np.prod([conc[index] for index in others])
+                        destroy[j].append((str(rxn), stoich * frequency))
+                electron_stoich = left.count(self.electron_index) - right.count(self.electron_index)
+                if electron_stoich > 0 and any(right.count(j) > left.count(j) for j in self._en_anions):
+                    others = list(left)
+                    others.remove(self.electron_index)
+                    attachment += electron_stoich * coefficient * np.prod([conc[index] for index in others])
+        transport = self.compute_anion_transport_frequencies(y, V)
+        confinement = {}
+        for j in self._en_anions:
+            if y[j] == 0.:
+                continue
+            chem = float(sum(rate for label, rate in destroy[j]))
+            trans = float(transport[j])
+            if not np.isfinite(chem) or not np.isfinite(trans) or chem < 0. or trans < 0.:
+                raise ElectronegativeWallRegimeError('A: nonfinite/negative destruction or transport')
+            if trans == 0.:
+                if chem == 0.:
+                    raise ElectronegativeWallRegimeError('A: both destruction and transport zero (unresolved)')
+                conf = float('inf')
+            else:
+                conf = chem / trans
+                if not np.isfinite(conf):
+                    raise ElectronegativeWallRegimeError('A: nonfinite confinement ratio')
+            label = self._en_core_species[j].label
+            confinement[label] = dict(conf=conf, chemical_destruction=chem, transport=trans,
+                                      destruction_channels=sorted(destroy[j],key=lambda row:row[1],reverse=True))
+            if conf <= 1.:
+                raise ElectronegativeWallRegimeError('A: {} conf={} <= 1; destruction={}, transport={}'.format(label,conf,chem,trans))
+        components = self.compute_ion_wall_components(y, V)
+        cations = [j for j in range(self.num_core_species) if j != self.electron_index and self.species_charges[j] > 0]
+        ep = components['total_ep'][cations]
+        # The source defines tau_an as the ambipolar diffusion timescale and
+        # K_a as electron attachment frequency, independently of anion destruction.
+        # Each cation must pass; a slower species cannot hide a faster diffusion channel.
+        nu_att = float(attachment)
+        metrics = nu_att / ep
+        if not np.all(np.isfinite(metrics)) or np.any(metrics <= 1.):
+            raise ElectronegativeWallRegimeError('B: nu_att*tau_an={} <= 1 or nonfinite'.format(metrics.tolist()))
+        h, factor = self.electronegative_wall_factor(y)
+        kr, kz = self.wall_diffusion_components
+        if kr <= 0.:
+            raise ElectronegativeWallRegimeError('C-radial: synthetic no-radial model is not source-qualified')
+        radius = 2.405 / np.sqrt(kr)
+        radial = components['radial_ep'][cations]
+        source = np.array([radial_source_frequency(radial[k] / kr, self.Te.value_si,
+            self._en_core_species[j].molecular_weight.value_si, radius, h)
+            for k, j in enumerate(cations)])
+        charges = self.species_charges[cations]
+        simple = self.compute_ion_wall_frequencies(y, V)[cations] * y[cations]
+        radial_error = wall_discrepancy(h * radial * y[cations], source * y[cations], charges)
+        if radial_error > RADIAL_MAPPING_TOLERANCE:
+            raise ElectronegativeWallRegimeError('C-radial: error={} exceeds numerical mapping tolerance={}'.format(radial_error,RADIAL_MAPPING_TOLERANCE))
+        context = dict(time=t, state=np.array(y,copy=True), cation_indices=tuple(cations),
+            cation_labels=tuple(self._en_core_species[j].label for j in cations), cation_charges=charges.copy(),
+            simple_cation_flux=simple.copy(), radial_ep=components['radial_ep'].copy(),
+            axial_ep=components['axial_ep'].copy(), volume=V, alpha=minus/ne, h=h,
+            electron_temperature=self.Te.value_si, gas_temperature=self.T.value_si,
+            geometry_arm=self.electronegative_wall_geometry,
+            geometry_components=self.wall_diffusion_components,
+            reduced_mobilities=self.compute_mixture_reduced_mobilities(y),
+            species=tuple(self._en_core_species),
+            full_frequency_flux=h * ep * y[cations],
+            radial_only_flux=(h * radial + components['axial_ep'][cations]) * y[cations])
+        neutral_density = sum(y[j] for j in range(self.num_core_species)
+                              if self.neutral_heavy_mask[j]) * constants.Na / V
+        reduced = self.compute_mixture_reduced_mobilities(y)
+        chamber = copy.deepcopy(self.wall_chamber_geometry)
+        context.update(schema_version=1, chamber_geometry=chamber,
+            chamber_radius=(chamber['radius'] if chamber is not None else None),
+            chamber_length=(chamber['length'] if chamber is not None else None),
+            geometry_provenance=('declared-cylinder' if chamber is not None else 'eigenvalues-only'),
+            cylinder_equivalent_radius=radius,
+            cylinder_equivalent_length=(np.pi / np.sqrt(kz) if kz > 0. else float('inf')),
+            electron_index=self.electron_index, anion_indices=tuple(self._en_anions),
+            species_labels=tuple(sp.label for sp in self._en_core_species),
+            species_charges=self.species_charges.copy(),
+            species_masses=np.array([sp.molecular_weight.value_si for sp in self._en_core_species]),
+            concentrations_mol_per_volume=conc.copy(), number_densities=conc * constants.Na,
+            neutral_number_density=neutral_density,
+            mobility_reference_density=self.mobility_reference_density,
+            cation_transport={j: dict(reduced_mobility=float(reduced[j]),
+                mobility=float(reduced[j]) * self.mobility_reference_density / neutral_density)
+                for j in cations},
+            anion_transport=self.compute_anion_transport_data(y, V),
+            reactions=self.compute_reference_reaction_data(y),
+            external_ionisation_source=dict(number_rate_per_volume_s=self.ionisation_source.value_si,
+                total_mol_per_s=self._source_total_at_volume(V),
+                cation_target_indices=self.source_cation_target.copy(),
+                reference_domain_reason=('zero-order pair source needs explicit reference support'
+                                         if self.ionisation_source.value_si > 0. else None)),
+            transport_approximations=dict(single_bath=self.wall_single_bath_approximation,
+                bath_threshold=self.wall_bath_threshold,
+                density_floored=neutral_density <= self.wall_neutral_density_floor),
+            ambipolar_ion_temperature=self.ambipolar_ion_temperature)
+
+        if self.electronegative_wall_model == 'electropositiveBracket':
+            # Its zero-anion-flux physics still requires confinement and the
+            # attachment/Bohm branch. The EP endpoint itself is a sensitivity,
+            # so it makes no simplified-vs-reference validity claim.
+            self.electronegative_wall_diagnostics.update(
+                gates=dict(A=confinement,B=dict(nu_attachment=nu_att,metrics=metrics.tolist(),
+                           diffusion_frequencies=ep.tolist()),
+                           C_radial=dict(error=radial_error,threshold=RADIAL_MAPPING_TOLERANCE),
+                           C_geometry=dict(status='unit-factor-comparator'),
+                           C_full_profile=dict(status='model-form-sensitivity-not-validity')),
+                geometry_endpoint_wall_difference=wall_discrepancy(
+                    context['full_frequency_flux'], context['radial_only_flux'], charges))
+            self.electronegative_wall_last_valid_state = (t,np.array(y,copy=True))
+            return
+        geometry = check_reference('C-geometry', q.get('geometry_reference'), q.get('geometry_threshold'), copy.deepcopy(context))
+        full = check_reference('C-full-profile', q.get('full_profile_reference'), q.get('wall_threshold'), copy.deepcopy(context), transition=True)
+        extrema = copy.deepcopy(self.electronegative_wall_diagnostics.get('extrema', {}))
+        minimum = min((value['conf'], label) for label,value in confinement.items())
+        for key, value in [('min_conf',minimum[0]), ('min_attachment_metric',float(np.min(metrics))),
+                           ('max_full_profile_error',full['error']), ('max_geometry_error',geometry['error'])]:
+            old = extrema.get(key)
+            if old is None or (value < old['value'] if key.startswith('min') else value > old['value']):
+                extrema[key] = dict(value=value, time=t, state=np.array(y,copy=True).tolist())
+                if key == 'min_conf':
+                    extrema[key]['anion'] = minimum[1]
+        self.electronegative_wall_diagnostics.update(
+            gates=dict(A=confinement, B=dict(nu_attachment=nu_att, metrics=metrics.tolist(),
+                                          diffusion_frequencies=ep.tolist()),
+                       C_radial=dict(error=radial_error, threshold=RADIAL_MAPPING_TOLERANCE),
+                       C_geometry=geometry, C_full_profile=full), extrema=extrema,
+            geometry_endpoint_wall_difference=wall_discrepancy(context['full_frequency_flux'], context['radial_only_flux'],charges))
+        self.electronegative_wall_last_valid_state = (t,np.array(y,copy=True))
+
     def _latch_wall_diagnostics(self, np.ndarray y, double V, double t):
         """
         Recompute the wall flux and energy fluxes cleanly at an ACCEPTED state ``y``
@@ -4808,7 +5690,7 @@ cdef class PlasmaReactor(ReactionSystem):
             nu_all = np.zeros(self.num_core_species, float)
             self._compute_nu_wall_per_ion(y, V, nu_all)
         for j in range(self.num_core_species):
-            if self.species_charges[j] == 0:
+            if self.species_charges[j] == 0 or (j != self.electron_index and self.species_charges[j] < 0):
                 continue
             if self._ion_mobility_derived is not None:
                 if j == self.electron_index:
@@ -4861,6 +5743,61 @@ cdef class PlasmaReactor(ReactionSystem):
                 flux[j] -= loss
                 flux[tgt] += loss
         self.wall_flux = flux
+        if self.electronegative_wall_model is not None:
+            h, factor = self.electronegative_wall_factor(y)
+            minus = sum(max(float(y[j]), 0.0) for j in self._en_anions)
+            self.electronegative_wall_diagnostics.update(
+                closure=self.electronegative_wall_model,
+                geometry_arm=self.electronegative_wall_geometry,
+                scientific_status='FINITE-CYLINDER GEOMETRIC EXTENSION',
+                alpha=(minus / y[self.electron_index] if y[self.electron_index] > 0.0 else float('inf')),
+                h=h, geometry_factor=factor,
+                f_z=(self.wall_diffusion_components[1] / sum(self.wall_diffusion_components)
+                     if self.wall_diffusion_components is not None else None), time=t,
+                positive_ion_density=sum(y[j] for j in range(self.num_core_species)
+                    if j != self.electron_index and self.species_charges[j] > 0)*constants.Na/V,
+                negative_ion_density=minus*constants.Na/V,
+                electron_density=y[self.electron_index]*constants.Na/V,
+                electron_temperature=self.Te.value_si, wall_flux=flux.tolist(),
+                total_cation_wall_loss=float(electron_loss),
+                electron_wall_loss=float(e_loss_rate),
+                wall_charge_flux=float(np.dot(self.species_charges,flux)))
+            components = self.compute_ion_wall_components(y,V)
+            if components['radial_ep'] is not None:
+                self.electronegative_wall_diagnostics.update(
+                    radial_frequency_ep=components['radial_ep'].tolist(),
+                    axial_frequency_ep=components['axial_ep'].tolist(),
+                    radial_frequency=components['radial'].tolist(),
+                    axial_frequency=components['axial'].tolist(),
+                    closure_difference_relative_ep=(1.-h)*components['axial_share'])
+            if self.energy_balance:
+                mass_loss = 0.
+                finite_anions = self._finite_en_state(y)
+                for j in range(self.num_core_species):
+                    if j != self.electron_index and self.species_charges[j] > 0:
+                        weight = np.exp(self.energy_ion_sheath_factor[j]-.5)
+                        if finite_anions:
+                            mass_loss -= flux[j]*weight
+                        else:
+                            # Keep the historical EP multiplication order while
+                            # evaluating its scalar current directly.
+                            mass_loss += weight*nu_all[j]*y[j]
+                potential = log(mass_loss/electron_loss) if electron_loss > 0. else None
+                if potential is not None and finite_anions:
+                    potential += self._en_floating_shift(y)
+            else:
+                # Current-weighted mass normalization needs only cation losses,
+                # not a dense species-by-species derivative matrix.
+                mass_loss = 0.
+                for j in range(self.num_core_species):
+                    if j != self.electron_index and self.species_charges[j] > 0:
+                        mass_loss -= flux[j]*self.species_charges[j]*np.sqrt(
+                            self._en_core_species[j].molecular_weight.value_si/(2.*np.pi*constants.m_e))
+                potential = (log(mass_loss/electron_loss) if electron_loss > 0.
+                             and y[self.electron_index] > 0. else None)
+                if potential is not None and self._finite_en_state(y):
+                    potential += self._en_floating_shift(y)
+            self.electronegative_wall_diagnostics['floating_potential_e_over_kTe'] = potential
         self.nu_wall_latched = nu
         self.wall_diagnostics_time = t
         # 2 k_B T_e per lost electron; 2 R T_e * (mol/s) = W. Available from T_e, but
@@ -5111,6 +6048,15 @@ cdef class PlasmaReactor(ReactionSystem):
             return float('nan')
         return 1.0 / nu
 
+    def _requires_en_steps(self):
+        if self.electronegative_wall_model is None:
+            return False
+        if any(self.y[j] > 0. for j in self._en_anions):
+            return True
+        anions = [self._en_core_species[j] for j in self._en_anions]
+        return any(any(sp in rxn.products or (rxn.reversible and sp in rxn.reactants)
+                       for sp in anions) for rxn in self._en_core_reactions)
+
     cpdef advance(self, double tout):
         """Advance, then refuse the accepted state if it left the wall model's domain.
 
@@ -5119,7 +6065,7 @@ cdef class PlasmaReactor(ReactionSystem):
         a ``cpdef`` method is bypassed entirely by C-level callers, which would leave
         :meth:`ReactionSystem.simulate` running unguarded.
         """
-        if self.wall_bath_threshold is None:
+        if self.wall_bath_threshold is None and not self._requires_en_steps():
             # Legacy decks must execute the legacy method byte-for-byte. In
             # particular, do not replace DASx.advance's endpoint/interpolation
             # semantics with a loop over step() unless a declared threshold
@@ -5135,6 +6081,7 @@ cdef class PlasmaReactor(ReactionSystem):
             if self.energy_balance:
                 self._latch_energy_budget(self.y, self.t)
                 self._update_terminal_state(self.y, self.t)
+            self._record_electronegative_wall_output(self.t)
             return result
 
         # DASx.advance may accept several internal states before returning. A
@@ -5185,6 +6132,7 @@ cdef class PlasmaReactor(ReactionSystem):
         if self.energy_balance:
             self._latch_energy_budget(self.y, self.t)
             self._update_terminal_state(self.y, self.t)
+        self._record_electronegative_wall_output(self.t)
         return result
 
     cpdef double compute_volume(self, np.ndarray y) except -1:
@@ -5648,7 +6596,9 @@ cdef class PlasmaReactor(ReactionSystem):
         # The net charge therefore decays at rate nu*(net charge), which is zero in
         # a neutral gas, so no charge is created or destroyed at the wall.
         for j in range(self.num_core_species):
-            if self.species_charges[j] == 0:
+            if self._en_jacobian_excludes_charged_wall:
+                continue
+            if self.species_charges[j] == 0 or (j != self.electron_index and self.species_charges[j] < 0):
                 continue
             if self._ion_mobility_derived is not None:
                 if j == self.electron_index:
@@ -5827,7 +6777,15 @@ cdef class PlasmaReactor(ReactionSystem):
         # exactly; it is real through the MOBILITY, and only for a
         # composition-dependent one.
         if self.has_wall:
-            self._apply_wall_jacobian(y, V, dVdy, pd)
+            if self._finite_en_state(y):
+                self._en_jacobian_excludes_charged_wall = True
+                try:
+                    self._apply_wall_jacobian(y, V, dVdy, pd)
+                finally:
+                    self._en_jacobian_excludes_charged_wall = False
+                pd += self._en_wall_linearization(y,V)[1]
+            else:
+                self._apply_wall_jacobian(y, V, dVdy, pd)
 
         self.jacobian_matrix = pd + cj * np.identity(num_core_species, float)
 
@@ -5847,7 +6805,7 @@ cdef class PlasmaReactor(ReactionSystem):
                               np.ndarray[np.float64_t, ndim=2] pd):
         """Partial derivatives of exactly the terms :meth:`_apply_wall_terms` adds."""
         cdef double nu, y_neutral = 0.0, loss, dnu_rel, dloss, source_total, term, dterm, y_ionisable = 0.0
-        cdef double scale, nu_m, recycle, k_eff = 0.0, y_decl = 0.0
+        cdef double scale, nu_m, recycle, k_eff = 0.0, y_decl = 0.0, charged_pressure = 0.0
         cdef int n_weighted = 0
         cdef Py_ssize_t i, k, target, g
         cdef double gamma = self.wall_recycling
@@ -5871,7 +6829,7 @@ cdef class PlasmaReactor(ReactionSystem):
 
         if self.wall_blanc:
             bath_y = self._bath_amounts(y)
-        if self._ion_mobility_derived is not None:
+        if self._ion_mobility_derived is not None and not self._en_jacobian_excludes_charged_wall:
             # The map path removes each cation at its own transport frequency, and
             # removes the corresponding number of electrons as the charge-neutral
             # pair reaches the wall.  It deliberately differentiates the *same*
@@ -5879,6 +6837,16 @@ cdef class PlasmaReactor(ReactionSystem):
             # (nu_i), while negative Newton trial states contribute no derivative.
             nu_all = np.zeros(self.num_core_species, float)
             self._compute_nu_wall_per_ion(y, V, nu_all)
+            ep_all = None
+            if self._finite_en_state(y):
+                ep_all = np.zeros(self.num_core_species, float)
+                self._compute_nu_wall_per_ion(y, V, ep_all, True)
+                for k in range(self.num_core_species):
+                    if not self.neutral_heavy_mask[k]:
+                        charged_pressure += y[k]*dVdy[k]
+            h_en, factor_en, dfactor = closure_factor_gradient(
+                y,self.electron_index,self._en_anions,self.electronegative_wall_model,
+                self.electronegative_wall_geometry,self.wall_diffusion_components)
             for i in range(self.num_core_species):
                 if i == self.electron_index or self.species_charges[i] <= 0:
                     continue
@@ -5898,7 +6866,12 @@ cdef class PlasmaReactor(ReactionSystem):
                     else:
                         dnu_rel = dVdy[k] / V
                         if self.neutral_heavy_mask[k]:
-                            dnu_rel -= 1.0 / y_neutral
+                            if ep_all is not None:
+                                # Preserve the charged-pressure numerator when
+                                # dV/V and 1/N agree to machine precision.
+                                dnu_rel = -(charged_pressure/V)/y_neutral
+                            else:
+                                dnu_rel -= 1.0 / y_neutral
                     if self.wall_blanc and y_decl > 0.0 and y[k] >= 0.0:
                         # Blanc weights: d ln K_eff / d y_k = (1 - K_eff/K_{i,b}) / Y_decl for
                         # a species k of declared bath b (independent of the density floor,
@@ -5907,6 +6880,10 @@ cdef class PlasmaReactor(ReactionSystem):
                         if g >= 0 and k_row[g] > 0.0:
                             dnu_rel += (1.0 - k_eff / k_row[g]) / y_decl
                     dloss = loss * dnu_rel
+                    if ep_all is not None:
+                        # Differentiate the product directly: g=0 at a clipped
+                        # zero-electron Newton trial still has a right derivative.
+                        dloss += ep_all[i] * y[i] * dfactor[k]
                     if k == i:
                         dloss += nu_all[i]
                     pd[i, k] -= dloss
@@ -5915,7 +6892,7 @@ cdef class PlasmaReactor(ReactionSystem):
                     pd[self.electron_index, k] -= self.species_charges[i] * dloss
                     if target >= 0 and gamma > 0.0:
                         pd[target, k] += recycle * dloss
-        else:
+        elif self._ion_mobility_derived is None:
             for i in range(self.num_core_species):
                 if self.species_charges[i] == 0:
                     continue

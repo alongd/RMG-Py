@@ -28,10 +28,17 @@
 ###############################################################################
 
 import csv
+import json
 import os
 
 from rmgpy.chemkin import get_species_identifier
 from rmgpy.tools.plot import SimulationPlot
+
+
+def _minimum_confinement(entries):
+    """Decode the manifest's positive-infinity sentinel before numeric use."""
+    return min(float('inf') if item['conf'] == 'infinite' else item['conf']
+               for item in entries.values())
 
 
 class SimulationProfileWriter(object):
@@ -87,6 +94,23 @@ class SimulationProfileWriter(object):
         for spc in self.core_species:
             header.append(get_species_identifier(spc))
 
+        records = None
+        if getattr(reaction_system, 'electronegative_wall_model', None) is not None:
+            # Each profile row uses its own accepted record, never the final
+            # gate values repeated over the trajectory.
+            records = [reaction_system.electronegative_wall_history[row[0]]
+                       for row in reaction_system.snapshots]
+            manifest = reaction_system.electronegative_wall_manifest()
+            identity = '{0}; {1}'.format(manifest['closure'], manifest['geometry_arm'])
+            header.extend(['Wall h [{0}]'.format(identity),
+                           'Wall floating potential e/(kTe)',
+                           'Wall gate A minimum conf', 'Wall gate B minimum metric',
+                           'Wall gate C radial error', 'Wall gate C geometry error',
+                           'Wall gate C full-profile error'])
+            with open(filename[:-4] + '.electronegative-wall.json', 'w') as stream:
+                json.dump(manifest, stream, indent=2, allow_nan=False)
+                stream.write('\n')
+
         with open(filename, 'w') as csvfile:
             worksheet = csv.writer(csvfile)
 
@@ -94,7 +118,21 @@ class SimulationProfileWriter(object):
             worksheet.writerow(header)
 
             # add mole fractions:
-            worksheet.writerows(reaction_system.snapshots)
+            if records is None:
+                worksheet.writerows(reaction_system.snapshots)
+            else:
+                for row, record in zip(reaction_system.snapshots, records):
+                    gates = record['gates']
+                    potential = record['floating_potential_e_over_kTe']
+                    values = [record['h'], potential if potential is not None else float('nan')]
+                    if isinstance(gates, dict):
+                        values.extend([_minimum_confinement(gates['A']),
+                                       min(gates['B']['metrics']), gates['C_radial']['error'],
+                                       gates['C_geometry'].get('error', float('nan')),
+                                       gates['C_full_profile'].get('error', float('nan'))])
+                    else:
+                        values.extend([float('nan')] * 5)
+                    worksheet.writerow(list(row) + values)
 
 
 class SimulationProfilePlotter(object):
@@ -147,4 +185,27 @@ class SimulationProfilePlotter(object):
             )
         )
 
-        SimulationPlot(csv_file=csv_file, num_species=10, ylabel='Moles').plot(png_file)
+        title = ''
+        if getattr(reaction_system, 'electronegative_wall_model', None) is not None:
+            manifest = reaction_system.electronegative_wall_manifest()
+            gates = manifest['gates']
+            if isinstance(gates, dict):
+                gate_labels = []
+                for name, result in gates.items():
+                    if name == 'A':
+                        value = 'min conf={0:.4g}'.format(_minimum_confinement(result))
+                    elif name == 'B':
+                        value = 'min metric={0:.4g}'.format(min(result['metrics']))
+                    elif 'error' in result:
+                        value = '{0:.4g}/{1:.4g}'.format(result['error'], result['threshold'])
+                    else:
+                        value = result['status']
+                    gate_labels.append(name + ': ' + value)
+                gate_text = '\n'.join(gate_labels)
+            else:
+                gate_text = gates
+            phi = manifest['floating_potential_e_over_kTe']
+            title = '{0}; {1}\nt={2:.4g} s; phi={3}\n{4}'.format(
+                manifest['closure'], manifest['geometry_arm'], manifest['time'],
+                '{0:.4g}'.format(phi) if phi is not None else 'unavailable', gate_text)
+        SimulationPlot(csv_file=csv_file, num_species=10, ylabel='Moles', title=title).plot(png_file)
