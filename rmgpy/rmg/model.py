@@ -467,7 +467,7 @@ class CoreEdgeReactionModel:
         # If the species still does not have a label, set initial label as the SMILES
         # (applies when generate_thermo is False, or when no library match was found)
         if not spec.label:
-            spec.label = spec.smiles
+            spec.label = spec.smiles + spec.molecule[0].state_suffix()
 
         # ensure species labels are unique
         orilabel = spec.label

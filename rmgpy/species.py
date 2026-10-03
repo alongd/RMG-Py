@@ -229,7 +229,7 @@ class Species(object):
         Return a string representation of the species, in the form 'label(id)'.
         """
         if not self.label:
-            self.label = self.molecule[0].to_smiles()
+            self.label = self.molecule[0].to_smiles() + self.molecule[0].state_suffix()
         if self.index == -1:
             return self.label
         else:

@@ -140,10 +140,12 @@ class CanteraCondition(object):
         if self.T0: string += 'T0: {}\n'.format(self.T0)
         if self.P0: string += 'P0: {}\n'.format(self.P0)
         if self.V0: string += 'V0: {}\n'.format(self.V0)
-        # ConvertMolFrac to SMILES for keys for display
+        # Use state-aware keys where SMILES would overwrite another state.
         pretty_mol_frac = {}
         for key, value in self.mol_frac.items():
-            pretty_mol_frac[key.molecule[0].to_smiles()] = value
+            mol = key.molecule[0]
+            identifier = mol.to_augmented_inchi() if mol.has_resolved_state() else mol.to_smiles()
+            pretty_mol_frac[identifier] = value
         string += 'Initial Mole Fractions: {0}'.format(pretty_mol_frac.__repr__())
         return string
 

@@ -41,6 +41,7 @@ import yaml
 import logging
 
 from rmgpy.chemkin import load_chemkin_file
+from rmgpy.exceptions import SpeciesIdentityError
 from rmgpy.species import Species
 from rmgpy.reaction import Reaction
 from rmgpy.thermo.nasa import NASAPolynomial, NASA
@@ -68,11 +69,54 @@ def write_rms(spcs, rxns, solvent=None, solvent_data=None, path="chem.rms"):
         yaml.dump(result_dict, stream=f, Dumper=Dumper, sort_keys=False)
 
 
+def load_rms_species(path):
+    """Read species structures from every phase of an RMS YAML file.
+
+    Adjacency lists take precedence over the state-blind SMILES representation.
+    Returns Species with the emitted names and molecular identities; this is a
+    structure reader, not an importer of RMS thermo or reaction kinetics.
+    """
+    with open(path) as stream:
+        data = yaml.safe_load(stream)
+    species = []
+    names = set()
+    for phase in data['Phases']:
+        for record in phase['Species']:
+            name = record['name']
+            if name in names:
+                raise SpeciesIdentityError('Duplicate RMS species name "{0}".'.format(name))
+            spc = Species(label=name)
+            if record.get('adjlist'):
+                spc.from_adjacency_list(record['adjlist'])
+            elif record.get('smiles'):
+                spc.from_smiles(record['smiles'])
+            else:
+                raise SpeciesIdentityError('RMS species "{0}" has no molecular structure.'.format(name))
+            spc.label = name
+            names.add(name)
+            species.append(spc)
+    return species
+
+
 def get_mech_dict(spcs, rxns, solvent='solvent', solvent_data=None):
     names = [x.label for x in spcs]
-    for i,name in enumerate(names): #fix duplicate names
-        if names.count(name) > 1:
-            names[i] += "-"+str(names.count(name))
+    if any(spc.molecule[0].has_resolved_state() for spc in spcs):
+        reserved = set(names)
+        used = set()
+        for i, name in enumerate(names):
+            candidate = name
+            if candidate in used:
+                suffix = 2
+                candidate = '{0}-{1}'.format(name, suffix)
+                while candidate in used or candidate in reserved:
+                    suffix += 1
+                    candidate = '{0}-{1}'.format(name, suffix)
+            names[i] = candidate
+            used.add(candidate)
+    else:
+        for i,name in enumerate(names): #fix duplicate names
+            if names.count(name) > 1:
+                names[i] += "-"+str(names.count(name))
 
     is_surface = False
     for spc in spcs:
@@ -116,9 +160,11 @@ def obj_to_dict(obj, spcs, names=None, label="solvent"):
     if isinstance(obj, Species):
         result_dict["name"] = names[spcs.index(obj)]
         result_dict["type"] = "Species"
-        if obj.contains_surface_site():
+        resolved = obj.molecule[0].has_resolved_state()
+        if obj.contains_surface_site() or resolved:
             result_dict["adjlist"] = obj.molecule[0].to_adjacency_list()
-        result_dict["smiles"] = obj.molecule[0].to_smiles()
+        if not resolved:
+            result_dict["smiles"] = obj.molecule[0].to_smiles()
         result_dict["thermo"] = obj_to_dict(obj.thermo, spcs)
         result_dict["radicalelectrons"] = get_radicals(obj)
         if obj.liquid_volumetric_mass_transfer_coefficient_data:
@@ -199,20 +245,26 @@ def obj_to_dict(obj, spcs, names=None, label="solvent"):
     elif isinstance(obj, ThirdBody):
         result_dict["type"] = "ThirdBody"
         result_dict["arr"] = obj_to_dict(obj.arrheniusLow, spcs)
-        result_dict["efficiencies"] = {spcs[i].label: float(val)
-                                       for i, val in enumerate(obj.get_effective_collider_efficiencies(spcs)) if val != 1}
+        result_dict["efficiencies"] = {
+            (names[i] if names is not None else spcs[i].label): float(val)
+            for i, val in enumerate(obj.get_effective_collider_efficiencies(spcs)) if val != 1
+        }
     elif isinstance(obj, Lindemann):
         result_dict["type"] = "Lindemann"
         result_dict["arrhigh"] = obj_to_dict(obj.arrheniusHigh, spcs)
         result_dict["arrlow"] = obj_to_dict(obj.arrheniusLow, spcs)
-        result_dict["efficiencies"] = {spcs[i].label: float(val)
-                                       for i, val in enumerate(obj.get_effective_collider_efficiencies(spcs)) if val != 1}
+        result_dict["efficiencies"] = {
+            (names[i] if names is not None else spcs[i].label): float(val)
+            for i, val in enumerate(obj.get_effective_collider_efficiencies(spcs)) if val != 1
+        }
     elif isinstance(obj, Troe):
         result_dict["type"] = "Troe"
         result_dict["arrhigh"] = obj_to_dict(obj.arrheniusHigh, spcs)
         result_dict["arrlow"] = obj_to_dict(obj.arrheniusLow, spcs)
-        result_dict["efficiencies"] = {spcs[i].label: float(val)
-                                       for i, val in enumerate(obj.get_effective_collider_efficiencies(spcs)) if val != 1}
+        result_dict["efficiencies"] = {
+            (names[i] if names is not None else spcs[i].label): float(val)
+            for i, val in enumerate(obj.get_effective_collider_efficiencies(spcs)) if val != 1
+        }
         result_dict["a"] = obj.alpha
         result_dict["T1"] = obj.T1.value_si
         if obj.T2:

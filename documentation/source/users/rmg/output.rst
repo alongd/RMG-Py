@@ -31,6 +31,48 @@ The ``/chemkin`` folder will likely have a large number of chemkin formatted fil
 
 If you check the last box, chemkin strings, you can then search for strings corresponding to seemingly nonsensical named species (e.g. S(1234)) that may show up in any analyses/simulations you perform (e.g., with Cantera or Chemkin). Further, under `Reaction Families`, you can selectively view the reactions that been generated based on a particular RMG reaction family or library. 
 
+Resolved species identifiers
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Chemkin identifiers for resolved electronic or vibrational states use the formula
+followed by state tags: ``N2(v1)``, ``N2(eA3Su_p)``, or ``N2(eA3Su_p,v1)``.
+An assigned RMG index is appended as a final ``(index)``, for example
+``N2(v1)(2)``. Only that final numeric parenthesis is an index on reload;
+``v0`` denotes an explicitly resolved level zero. The dictionary carries the
+original state headers and is required to reconstruct the state.
+
+Electronic tags start with ``e``. Tokens are encoded without losing information:
+``_`` becomes ``__``, ``+`` becomes ``_p``, ``-`` becomes ``_m``, ``,`` becomes
+``_c``, ``(`` becomes ``_l``, and ``)`` becomes ``_r``. Letters, digits and
+periods are unchanged. These names use Chemkin's legal character set. If the
+complete identifier, including the index, exceeds 16 characters, export raises
+``ChemkinError`` rather than dropping or truncating the state. Unresolved species
+retain their existing identifiers. Before writing Chemkin gas, surface, transport,
+or dictionary files, ``validate_species_identifiers`` rejects distinct species
+that share one identifier with ``ChemkinIdentifierCollisionError``. The error
+names both species; existing output files remain intact.
+
+Resolved species in YAML and libraries
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Both direct Cantera YAML writers include the resolved adjacency list in each
+resolved species' note. Unresolved notes retain their previous contents.
+
+RMS YAML uses ``adjlist`` for resolved species, omitting the state-blind ``smiles``
+field for those records. Unresolved records keep their existing format. Species
+names and collider efficiency references use the same allocated names.
+``rmgpy.yaml_rms.load_rms_species(path)`` reads molecular identities from all
+phases, preferring ``adjlist`` to ``smiles``; it loads structures and names, not
+thermo or reaction kinetics.
+
+Collider efficiency keys held as Molecules remain state-aware in memory and in
+Chemkin and RMS exports. Kinetics-library serialization that reduces those keys
+to SMILES refuses resolved colliders with ``SpeciesIdentityError``. Library
+dictionaries likewise refuse distinct identities sharing a label when either
+is resolved. Default Species and reaction-model names append the molecular
+state suffix (for example ``N#N|v:1``), so an omitted label cannot hide a state.
+Explicit labels and unresolved default names retain their previous behavior.
+
 ------------------
 The Species Folder
 ------------------ 

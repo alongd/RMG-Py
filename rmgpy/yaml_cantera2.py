@@ -478,6 +478,8 @@ def species_to_dict(species, species_list):
 
     # Composition
     mol = species.molecule[0]
+    if mol.has_resolved_state():
+        notes.append(mol.to_adjacency_list().rstrip())
     atom_dict = {}
     for atom in mol.atoms:
         symbol = atom.element.chemkin_name

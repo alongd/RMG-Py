@@ -40,7 +40,8 @@ import re
 from collections import OrderedDict
 
 from rmgpy.data.reference import Reference, Article, Book, Thesis
-from rmgpy.exceptions import AtomTypeError, DatabaseError, InvalidAdjacencyListError, SaturatedStructureError
+from rmgpy.exceptions import (AtomTypeError, DatabaseError, InvalidAdjacencyListError,
+                              SaturatedStructureError, SpeciesIdentityError)
 from rmgpy.kinetics.uncertainties import RateUncertainty
 from rmgpy.kinetics.arrhenius import ArrheniusChargeTransfer, ArrheniusChargeTransferBM
 from rmgpy.molecule import Molecule, Group
@@ -346,13 +347,17 @@ class Database(object):
         species_dict = {}
         entries = self.entries.values()
         for entry in entries:
-            for reactant in entry.item.reactants:
-                if reactant.label not in species_dict:
-                    species_dict[reactant.label] = reactant
-
-            for product in entry.item.products:
-                if product.label not in species_dict:
-                    species_dict[product.label] = product
+            for spc in entry.item.reactants + entry.item.products:
+                previous = species_dict.get(spc.label)
+                if (previous is not None
+                        and any(mol.has_resolved_state() for mol in previous.molecule + spc.molecule)
+                        and not previous.is_isomorphic(spc)):
+                    raise SpeciesIdentityError(
+                        'Cannot save distinct species under shared label "{0}": '
+                        'states {1!r} and {2!r}.'.format(
+                            spc.label, previous.molecule[0].state_suffix(), spc.molecule[0].state_suffix()))
+                if previous is None:
+                    species_dict[spc.label] = spc
 
         with open(path, 'w') as f:
             for label in species_dict.keys():

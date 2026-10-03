@@ -899,6 +899,11 @@ class KineticsLibrary(Database):
         limit reactions and kinetics, and pressure-dependent reactions and
         kinetics, respectively.
         """
+        from rmgpy.data.kinetics.common import check_smiles_keyed_efficiencies
+        for entry in self.entries.values():
+            if hasattr(entry.data, 'efficiencies'):
+                check_smiles_keyed_efficiencies(entry.data.efficiencies)
+
         try:
             os.makedirs(path)
         except OSError:

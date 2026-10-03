@@ -613,6 +613,10 @@ def species_to_dict(species, all_species=None):
             species_data["note"] = smiles
     except Exception:
         pass
+    if species.molecule[0].has_resolved_state():
+        state_note = species.molecule[0].to_adjacency_list().rstrip()
+        existing_note = species_data.get('note', '')
+        species_data['note'] = existing_note + '\n' + state_note if existing_note else state_note
     if species.thermo and species.thermo.comment:
         clean_comment = species.thermo.comment.replace('\n', '; ').strip()
         if clean_comment:

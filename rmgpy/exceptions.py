@@ -67,6 +67,11 @@ class ChemkinError(Exception):
     pass
 
 
+class ChemkinIdentifierCollisionError(ChemkinError):
+    """Two species would share one identifier in a Chemkin export."""
+    pass
+
+
 class CollisionError(Exception):
     """
     An exception class for when RMG is unable to calculate collision efficiencies
@@ -462,3 +467,8 @@ class UndeterminableKineticsError(ReactionError):
     def __init__(self, reaction, message=''):
         new_message = 'Kinetics could not be determined. ' + message
         ReactionError.__init__(self, reaction, new_message)
+
+
+class SpeciesIdentityError(ValueError):
+    """A species identity cannot be represented safely by the requested format."""
+    pass

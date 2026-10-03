@@ -37,7 +37,7 @@ import json
 import os
 
 from rmgpy.data.base import LogicNode
-from rmgpy.exceptions import DatabaseError
+from rmgpy.exceptions import DatabaseError, SpeciesIdentityError
 from rmgpy.molecule import Group, Molecule
 from rmgpy.molecule.fragment import Fragment
 from rmgpy.reaction import Reaction
@@ -91,6 +91,16 @@ def parse_external_library_provenance(description):
     return provenance
 
 
+def check_smiles_keyed_efficiencies(efficiencies):
+    """Refuse resolved colliders before a library writer reduces keys to SMILES."""
+    for collider in efficiencies:
+        if isinstance(collider, Molecule) and collider.has_resolved_state():
+            raise SpeciesIdentityError(
+                'Cannot serialize resolved collider as a SMILES-keyed kinetics-library '
+                'efficiency. Use a state-aware Chemkin or RMS export instead:\n{0}'.format(
+                    collider.to_adjacency_list()))
+
+
 def save_entry(f, entry):
     """
     Save an `entry` in the kinetics database by writing a string to
@@ -110,6 +120,9 @@ def save_entry(f, entry):
         keys = list(efficiencies.keys())
         keys.sort()
         return [(key, efficiencies[key]) for key in keys]
+
+    if hasattr(entry.data, 'efficiencies'):
+        check_smiles_keyed_efficiencies(entry.data.efficiencies)
 
     f.write('entry(\n')
     f.write('    index = {0:d},\n'.format(entry.index))

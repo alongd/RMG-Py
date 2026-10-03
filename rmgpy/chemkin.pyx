@@ -50,7 +50,7 @@ from rmgpy.data.kinetics.library import LibraryReaction
 from rmgpy.electron_balance import (check_electron_balance, check_electron_reactant_order,
                                     expand_electrons, get_electron_placement_counts,
                                     get_electron_species, potential_dependence_is_inert)
-from rmgpy.exceptions import ChemkinError, MechanismWriterError
+from rmgpy.exceptions import ChemkinError, ChemkinIdentifierCollisionError, MechanismWriterError
 from rmgpy.molecule.element import get_element
 from rmgpy.quantity import Quantity, QuantityError
 from rmgpy.reaction import Reaction
@@ -1617,13 +1617,55 @@ def read_reactions_block(f, species_dict, read_comments=True):
     return reaction_list
 
 
+def validate_species_identifiers(species):
+    """Refuse a Chemkin export if distinct Species objects share an identifier.
+
+    Call before rendering any file so a collision cannot replace existing output.
+    The error names both species, including their indices and resolved states.
+    """
+    identifiers = {}
+    for spec in species:
+        identifier = get_species_identifier(spec)
+        previous = identifiers.get(identifier)
+        if previous is not None and previous is not spec:
+            def describe(item):
+                state = item.molecule[0].state_suffix() if item.molecule else ''
+                return '"{0}" (index={1}, state={2!r})'.format(item.label, item.index, state)
+            raise ChemkinIdentifierCollisionError(
+                'Chemkin identifier "{0}" collides between species {1} and {2}. '
+                'Assign distinct labels or indices before exporting.'.format(
+                    identifier, describe(previous), describe(spec)))
+        identifiers[identifier] = spec
+
+
 def get_species_identifier(species):
     """
     Return a string identifier for the provided `species` that can be used in a
     Chemkin file. Although the Chemkin format allows up to 16 characters for a
-    species identifier, this function uses a maximum of 10 to ensure that all
-    reaction equations fit in the maximum limit of 52 characters.
+    species identifier, unresolved identifiers retain the legacy 10-character
+    convention. Resolved species use explicit state tags and the full 16-character
+    limit; the final numeric parenthesis, if present, remains the RMG index.
     """
+    # Resolved states must never fall back to a state-blind label or formula.
+    if species.molecule and species.molecule[0].has_resolved_state():
+        mol = species.molecule[0]
+        tags = []
+        if mol.electronic_state:
+            escapes = {'_': '__', '+': '_p', '-': '_m', ',': '_c', '(': '_l', ')': '_r'}
+            token = ''.join(escapes.get(char, char) for char in mol.electronic_state)
+            tags.append('e' + token)
+        if mol.vibrational_level >= 0:
+            tags.append('v{0:d}'.format(mol.vibrational_level))
+        name = '{0}({1})'.format(mol.get_formula(), ','.join(tags))
+        if species.index >= 0:
+            name += '({0:d})'.format(species.index)
+        if len(name) <= 16:
+            return name
+        raise ChemkinError(
+            'Resolved species "{0}" with state {1} needs Chemkin identifier "{2}" '
+            '({3} characters), exceeding the 16-character limit. The state cannot '
+            'be dropped or truncated.'.format(species.label, mol.state_suffix(), name, len(name)))
+
     label = species.label
     # Special case for inert colliders - just use the label if possible
     if not species.reactive and 0 < len(label) <= 10:
@@ -2784,6 +2826,8 @@ def render_species_dictionary(species, old_style=False):
     Return the text of a species dictionary for the given list of `species`.
     See :func:`render_chemkin_file`.
     """
+    species = list(species)
+    validate_species_identifiers(species)
     f = io.StringIO()
     for spec in species:
         if old_style:
@@ -2841,6 +2885,8 @@ def render_transport_file(species):
     Return the text of a Chemkin transport properties file for the given list of
     `species`. See :func:`render_chemkin_file`.
     """
+    species = list(species)
+    validate_species_identifiers(species)
     f = io.StringIO()
     f.write("! {0:15} {1:8} {2:9} {3:9} {4:9} {5:9} {6:9} {7:9}\n".format(
         'Species', 'Shape', 'LJ-depth', 'LJ-diam', 'DiplMom', 'Polzblty', 'RotRelaxNum', 'Data'))
@@ -2956,6 +3002,8 @@ def render_chemkin_file(species, reactions, verbose=True, check_for_duplicates=T
     `reactions` is materialized on entry, so a generator may be passed: it is read twice
     here, once to key the groups and once to write them.
     """
+    species = list(species)
+    validate_species_identifiers(species)
     reactions = list(reactions)
     # Check for duplicate
     if check_for_duplicates:
@@ -3040,6 +3088,8 @@ def render_chemkin_surface_file(species, reactions, verbose=True, check_for_dupl
     `reactions`. See :func:`render_chemkin_file`, including for why the duplicate answer is
     computed per list and passed to the writer rather than stored on the reactions.
     """
+    species = list(species)
+    validate_species_identifiers(species)
     reactions = list(reactions)
     # Check for duplicate
     if check_for_duplicates:
@@ -3128,6 +3178,8 @@ def save_chemkin(reaction_model, path, verbose_path, dictionary_path=None, trans
     # core+edge save were still sitting there when the Cantera writer came to serialize
     # the core alone, which is how a lone `duplicate: true` reached a core-only file.
     # Without the flag as a channel there is nothing to leak, so nothing to restore.
+
+    validate_species_identifiers(species_list)
 
     # Same elements list for all files (core and edge)
     elements_in_use = ReactionModel(species=species_list).get_elements()
