@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "declared_at_utc": "2026-10-04 09:17:16 UTC",
+  "starting_commit": "586db906519928e1c1c5936b0abf560aff4b696b",
+  "model_tolerance": {
+    "relative_fraction": 0.0,
+    "symmetric_log": 0.0,
+    "factor": 1.0,
+    "status": "PROPOSED; owner approval required after manager review",
+    "rationale": "No independently established closure-error bound relates the analytic coil-capture kernel to microscopic first contact of these finite Gaussian chains. Contact/coil separation is absent and the bond mapping varies with length. An extra positive allowance would be an unsubstantiated engineering choice, not a physics-derived error bound. Propose zero extra model tolerance for this finite-model benchmark; report any residual discrepancy rather than hiding it in numerical uncertainty. The owner may explicitly approve a different policy later, as a new decision."
+  },
+  "numerical_uncertainty": {
+    "method": "joint_normal_linear_contrast_upper_envelope",
+    "marginal_sigmas": 4.0,
+    "signed_linear_forms": 64,
+    "rule": "Numerical band = 4 primary relative SE + simultaneous upper envelope of the sum of absolute step, contact, adaptive and primary-plateau contrasts plus the maximum adjacent-box contrast. Represent that convex sum as the maximum of 64 signed linear forms. For each form, use its joint covariance and a one-sided Bonferroni normal quantile with total tail allowance 2*normal.sf(4). Distinct ensembles are independent; primary whole/half-window hazards retain their delta-method covariance. Individual qualification ceilings remain separately enforced. Do not sum separate sampling margins for every reuse of the same rate estimate.",
+    "limits": "Delta-method normal sampling approximation, empirical diagnostics at finitely many settings. Neither common continuum bias nor an infinite-volume/time remainder is bounded. No simultaneous confidence claim across all case/pair rows. More replicas reduce sampling uncertainty but cannot establish those missing physical limits.",
+    "allocation": "Keep A02 physical inputs, replicas, seed stages and individual qualification ceilings. Correct the guard and add dedicated report-only transient ensembles. Reassess the 84-percent audit-sampling contribution by separating observed contrasts and a joint sampling margin; do not alter allocation or thresholds in response to candidate results."
+  },
+  "comparison_rule": "abs(log(candidate/reference)) <= numerical_log_band + proposed_model_log_band; report numerical consumption, residual model demand, allowed model portion and excess per row. Scientific qualification and proposed-policy comparison are separate from owner adoption.",
+  "chronology_limit": "A02 comparisons, including the 44.94-percent N16 mid/mid excess, are already known. This is not a blinded choice. This committed declaration precedes all corrected A03 simulations and candidate comparisons; it does not claim ignorance of prior results."
+}

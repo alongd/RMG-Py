@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "events": [
+    {
+      "event": "declare_model_and_numerical_policy",
+      "at_utc": "2026-10-04 09:17:16 UTC",
+      "starting_commit": "586db906519928e1c1c5936b0abf560aff4b696b",
+      "proposed_model_relative_fraction": 0.0,
+      "new_measurements_started": false,
+      "new_candidate_comparison_started": false,
+      "prior_A02_comparisons_known": true
+    }
+  ]
+}
