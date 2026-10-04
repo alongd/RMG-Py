@@ -1,0 +1,51 @@
+{
+  "schema": 1,
+  "declared_at_utc": "2026-10-04 09:17:16 UTC",
+  "starting_commit": "586db906519928e1c1c5936b0abf560aff4b696b",
+  "model_tolerance": {
+    "relative_fraction": 0.0,
+    "symmetric_log": 0.0,
+    "factor": 1.0,
+    "status": "APPROVED by owner on 2026-10-04",
+    "rationale": "No independently established closure-error bound relates the analytic coil-capture kernel to microscopic first contact of these finite Gaussian chains. Contact/coil separation is absent and the bond mapping varies with length. An extra positive allowance would be an unsubstantiated engineering choice, not a physics-derived error bound. Propose zero extra model tolerance for this finite-model benchmark; report any residual discrepancy rather than hiding it in numerical uncertainty. The owner may explicitly approve a different policy later, as a new decision.",
+    "owner_approved_on": "2026-10-04"
+  },
+  "numerical_uncertainty": {
+    "method": "joint_normal_linear_contrast_upper_envelope",
+    "marginal_sigmas": 4.0,
+    "signed_linear_forms": 64,
+    "rule": "Numerical band = 4 primary relative SE + simultaneous upper envelope of the sum of absolute step, contact, adaptive and primary-plateau contrasts plus the maximum adjacent-box contrast. Represent that convex sum as the maximum of 64 signed linear forms. For each form, use its joint covariance and a one-sided Bonferroni normal quantile with total tail allowance 2*normal.sf(4). Distinct ensembles are independent; primary whole/half-window hazards retain their delta-method covariance. Individual qualification ceilings remain separately enforced. Do not sum separate sampling margins for every reuse of the same rate estimate.",
+    "limits": "Delta-method normal sampling approximation, empirical diagnostics at finitely many settings. Neither common continuum bias nor an infinite-volume/time remainder is bounded. No simultaneous confidence claim across all case/pair rows. More replicas reduce sampling uncertainty but cannot establish those missing physical limits.",
+    "allocation": "Keep A02 physical inputs, replicas, seed stages and individual qualification ceilings. Correct the guard and add dedicated report-only transient ensembles. Reassess the 84-percent audit-sampling contribution by separating observed contrasts and a joint sampling margin; do not alter allocation or thresholds in response to candidate results."
+  },
+  "comparison_rule": "abs(log(candidate/reference)) <= numerical_log_band + proposed_model_log_band; report numerical consumption, residual model demand, allowed model portion and excess per row. Scientific qualification and proposed-policy comparison are separate from owner adoption.",
+  "chronology_limit": "A02 comparisons, including the 44.94-percent N16 mid/mid excess, are already known. This is not a blinded choice. This committed declaration precedes all corrected A03 simulations and candidate comparisons; it does not claim ignorance of prior results.",
+  "original_declaration_sha256": "5d80df88f1269c233c074d15d30128915d61e1a6796896761e22b9d37e173f73",
+  "owner_ruling": {
+    "approved_on": "2026-10-04",
+    "passing_row_count": 16,
+    "known_deviations": [
+      {
+        "case": "N4_N16",
+        "pair_class": "end/end",
+        "measured_candidate_over_reference": 0.7684941164680252,
+        "record_relative_tolerance": 2e-12,
+        "owner_approved_on": "2026-10-04",
+        "reason": "documented known deviation of the min-chain capture rule"
+      },
+      {
+        "case": "N16_N4",
+        "pair_class": "end/end",
+        "measured_candidate_over_reference": 0.7682664950598593,
+        "record_relative_tolerance": 2e-12,
+        "owner_approved_on": "2026-10-04",
+        "reason": "documented known deviation of the min-chain capture rule"
+      }
+    ],
+    "binding_rule": "Every other row must pass the zero-model-tolerance scientific comparison. Exactly these two named rows must remain documented failures and match their measured ratio records within floating point comparison precision. Emit and retain the known-deviation report; reject extra failures, incomplete coverage or changed records.",
+    "production_sensitivity": {
+      "termination_channel": "unequal-length end/end min-chain capture",
+      "rate_multiplier": 0.77
+    }
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "model": "discrete Gaussian Rouse chain; exact stationary reactive-site projection",
+  "temperature_K": 700.0,
+  "rouse_arm": "A1_H_ROUSE",
+  "beads_per_chain": 16,
+  "spin_factor": 1.0,
+  "pair_classes": ["end/end", "end/mid", "mid/mid"],
+  "time_edges_reduced": [0.0, 0.02, 0.05, 0.1, 0.2, 0.4, 0.8, 1.6, 3.2, 4.0, 6.0, 8.0],
+  "long_window_reduced": [4.0, 8.0],
+  "runs": [
+    {"name": "base", "box_over_Rg": 10.0, "dt_reduced": 0.0001, "replicas": 4096, "seed": 103001},
+    {"name": "step", "box_over_Rg": 10.0, "dt_reduced": 0.000025, "replicas": 2048, "seed": 103101},
+    {"name": "box", "box_over_Rg": 14.0, "dt_reduced": 0.0001, "replicas": 4096, "seed": 103201}
+  ],
+  "boundary_shift_constant": 0.5825971579390107,
+  "finite_box_green_constant": 2.837297479,
+  "long_model_factor": 2.0,
+  "statistical_sigmas": 4.0,
+  "step_relative_allowance": 0.10,
+  "box_relative_allowance": 0.15,
+  "plateau_relative_allowance": 0.10,
+  "transient_policy": "report-only; diagnostic agreement band 20 percent plus four standard errors",
+  "transient_relative_allowance": 0.20,
+  "entangled_arm": "A0_REF_H_CROSS_NEc",
+  "entangled_units": 2048,
+  "entangled_prefactors": "unidentified; asymptotic exponents only, never a numeric first-passage oracle"
+}
