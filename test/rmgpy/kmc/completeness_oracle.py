@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 import subprocess
 from collections import defaultdict
 from pathlib import Path
@@ -30,6 +31,8 @@ def full_molecule_inputs(radius):
         ),
         "doubly_featured": "C[C](c1ccccc1)" * 2 + "CC(c1ccccc1)" * (units - 2),
         "end_radical": "[CH2]C(c1ccccc1)" + "CC(c1ccccc1)" * (units - 1),
+        "benzylic_end_radical": "CC(c1ccccc1)" * (units - 1) + "C[CH](c1ccccc1)",
+        "benzylic_end_radical_short": "CC(c1ccccc1)" * (units - 2) + "C[CH](c1ccccc1)",
         "junction_radical": "CC(c1cc[c]cc1)" + "CC(c1ccccc1)" * (units - 1),
         "styrene": "C=Cc1ccccc1",
     }
@@ -37,12 +40,17 @@ def full_molecule_inputs(radius):
         name: Species(molecule=[Molecule(smiles=smiles)])
         for name, smiles in structures.items()
     }
-    declarations = [(name, (name,)) for name in structures if name != "styrene"]
+    declarations = [(name, (name,)) for name in structures
+                    if name not in ("styrene", "benzylic_end_radical_short")]
     declarations.extend(
         [
             ("end_radical+end_radical", ("end_radical", "end_radical")),
             ("junction_radical+end_radical", ("junction_radical", "end_radical")),
             ("end_radical+styrene", ("end_radical", "styrene")),
+            ("benzylic_end_radical+styrene", ("benzylic_end_radical_short", "styrene")),
+            ("benzylic_end_radical+end_radical", ("benzylic_end_radical", "end_radical")),
+            ("benzylic_end_radical+benzylic_end_radical", ("benzylic_end_radical", "benzylic_end_radical")),
+            ("junction_radical+benzylic_end_radical", ("junction_radical", "benzylic_end_radical")),
         ]
     )
     declarations.extend(
@@ -50,6 +58,7 @@ def full_molecule_inputs(radius):
         for radical in (
             "interior_radical",
             "end_radical",
+            "benzylic_end_radical",
             "junction_radical",
         )
     )
@@ -60,12 +69,12 @@ def full_molecule_inputs(radius):
 
 
 def oracle_cache_key(repository, database, radius):
-    commits = [
-        subprocess.check_output(
-            ["git", "-C", str(path), "rev-parse", "HEAD"], text=True
-        ).strip()
-        for path in (repository, database)
-    ]
+    commits = [subprocess.check_output(
+        ["git", "-C", str(repository), "rev-parse", "HEAD"], text=True
+    ).strip()]
+    commits.append(os.environ.get("RMG_DATABASE_SHA") or subprocess.check_output(
+        ["git", "-C", str(database), "rev-parse", "HEAD"], text=True
+    ).strip())
     files = [
         Path(__file__),
         Path(repository) / "rmgpy/kmc/compiler.py",

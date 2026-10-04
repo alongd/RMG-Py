@@ -197,11 +197,11 @@ def compile_pair(database, units):
     artifact = EventSetCompiler(database.kinetics, proxies, active, excluded_families=excluded,
                                thermo_database=database.thermo, reaction_cache=cache,
                                rmg_database_sha=prior.DATABASE_SHA).compile()
-    pair = artifact["ps_ceiling_pairs"][0]
+    pair = artifact.get("ps_primary_end_ceiling_pairs", artifact["ps_ceiling_pairs"])[0]
     prop = next(r for r in artifact["records"] if r["event_id"] == pair["propagation_event_id"])
     dep = next(r for r in artifact["records"] if r["event_id"] == pair["depropagation_event_id"])
     return prior.reaction_from_record(prop), {
-        "ceiling_tabulated_K": artifact["ps_ceiling_temperature_K"],
+        "ceiling_tabulated_K": pair["temperature_K"],
         "propagation_grid": prop["k_table"], "depropagation_grid": dep["k_table"]}
 
 

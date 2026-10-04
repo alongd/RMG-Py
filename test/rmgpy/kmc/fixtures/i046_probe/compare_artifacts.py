@@ -30,9 +30,11 @@ def digest(path):
 def structural_key(record):
     from rmgpy.kmc.event_record import _canonical_link_handles
 
-    # Provenance and rates change event IDs, not the chemical rewrite identity.
+    # Provenance, rates and corrected site classifications change event IDs,
+    # while the mapped chemical rewrite remains the same.
     omitted = {"event_id", "canonical_index", "provenance", "rate_source", "k_table",
-               "reverse_of", "thermo_provenance", "status", "status_reason"}
+               "reverse_of", "thermo_provenance", "status", "status_reason",
+               "site_type", "participant_site_types", "reactant_multiplicities"}
     payload = json.dumps(_canonical_link_handles(
         {k: v for k, v in record.items() if k not in omitted}), sort_keys=True)
     return hashlib.sha256(payload.encode()).hexdigest()
@@ -77,7 +79,7 @@ def has_default_or_root(source, root_label):
 
 def representative(old, new, family):
     if family == "R_Addition_MultipleBond":
-        selected = old["ps_ceiling_pairs"][0]["propagation_event_id"]
+        selected = old.get("ps_primary_end_ceiling_pairs", old["ps_ceiling_pairs"])[0]["propagation_event_id"]
         record = next(record for record in old["records"] if record["event_id"] == selected)
         return index(new)[structural_key(record)]
     # Freeze the representative against the old artifact, before seeing new rates.
@@ -92,7 +94,7 @@ def verify_tree_invariance(old, new):
     for family in TREE_FAMILIES:
         old_keys = {key for key, record in before.items() if record["family"] == family}
         new_keys = {key for key, record in after.items() if record["family"] == family}
-        assert old_keys == new_keys, family
+        assert old_keys <= new_keys, (family, "missing baseline channels")
         for key in old_keys:
             for field in ("k_table", "rate_source"):
                 assert json.dumps(before[key][field], sort_keys=True) == json.dumps(after[key][field], sort_keys=True), (family, field)
@@ -180,7 +182,7 @@ def run(new_path, database_path):
                                          "max": max(differences), "count": len(differences)}
         summary.append(row)
     pairs = []
-    for pair in old["ps_ceiling_pairs"]:
+    for pair in old.get("ps_primary_end_ceiling_pairs", old["ps_ceiling_pairs"]):
         old_prop = next(record for record in old["records"] if record["event_id"] == pair["propagation_event_id"])
         old_dep = next(record for record in old["records"] if record["event_id"] == pair["depropagation_event_id"])
         prop, dep = after[structural_key(old_prop)], after[structural_key(old_dep)]
