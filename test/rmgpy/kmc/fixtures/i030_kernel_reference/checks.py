@@ -1,0 +1,146 @@
+"""Target-only checks. Kept outside reference: the oracle never imports met."""
+import ast
+import hashlib
+import importlib.util
+import json
+import math
+from pathlib import Path
+import sys
+
+ROOT = Path(__file__).resolve().parent
+REFERENCE = ROOT / 'reference'
+TARGET = next(p/'rmgpy/kmc/met.py' for p in ROOT.parents if (p/'rmgpy/kmc/met.py').is_file())
+
+
+def assert_generation_inputs_equivalent(old, current, old_source, current_source):
+    """Authoring may add independent cohorts, never change their generator."""
+    def physical(cfg):
+        snapshot={key:value for key,value in cfg.items() if key!='allocation'}
+        snapshot['cases']=[{key:value for key,value in case.items() if key!='precision_stages'}
+                           for case in cfg['cases']]
+        return snapshot
+    assert physical(old)==physical(current),'physical inputs or per-run allocation changed'
+    functions={'mapped_parameters','mode_coefficients','advance_modes','projected_site',
+               'minimum_image','hazard','simulate','mean_se','sampler_checks',
+               'independent_bead_contact','mode_grid_contact','contact_checks',
+               'ewald_constant','log_upper_difference','qualify','pooled_hazard'}
+    def definitions(source):
+        tree=ast.parse(source)
+        result={node.name:ast.dump(node,include_attributes=False) for node in tree.body
+                if isinstance(node,ast.FunctionDef) and node.name in functions}
+        assert set(result)==functions,'incomplete generator identity check'
+        return result
+    assert definitions(old_source)==definitions(current_source),'physical generator or numerical checks changed'
+
+
+def assert_generation_history(cfg, reference, versions):
+    """Check actual authoring history separately from a fresh rerun's history."""
+    source=(REFERENCE/'run.py').read_bytes()
+    inputs=(REFERENCE/'parameters.json').read_bytes()
+    snapshot=REFERENCE/'provenance'
+    old_source=(snapshot/'measurement_04.py').read_bytes()
+    old_inputs=(snapshot/'parameters_04.json').read_bytes()
+    old=json.loads(old_inputs)
+    assert_generation_inputs_equivalent(old,cfg,old_source,source)
+    sha=lambda data:hashlib.sha256(data).hexdigest()
+    assert reference['parameters_sha256']==sha(inputs)
+    assert reference['program_sha256']==sha(source)
+    assert reference['versions']==versions
+    old_pair=(sha(old_inputs),sha(old_source))
+    current_pair=(sha(inputs),sha(source))
+    driver=sha((ROOT/'extend_floor.py').read_bytes())
+    count=max(case.get('precision_stages',cfg['precision_stages']) for case in cfg['cases'])
+    assert len(reference['generation_provenance'])==count
+    for stage,record in enumerate(reference['generation_provenance']):
+        assert record['precision_stage']==stage
+        eligible=[case['name'] for case in cfg['cases']
+                  if stage < case.get('precision_stages',cfg['precision_stages'])]
+        assert record['cases']==eligible
+        pair=(record['parameters_sha256'],record['program_sha256'])
+        if pair==old_pair:
+            assert stage < old['precision_stages']
+            assert record['driver_program_sha256']==old_pair[1]
+        else:
+            assert pair==current_pair
+            assert record['driver_program_sha256'] in (current_pair[1],driver)
+            if record['driver_program_sha256']==driver:
+                assert stage>=old['precision_stages'] and eligible==['floor']
+
+
+def load_target(transform=None):
+    raw = TARGET.read_bytes()
+    source = raw.decode()
+    if transform:
+        source = transform(source)
+    spec = importlib.util.spec_from_file_location('met_reference_target', TARGET)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    exec(compile(source, str(TARGET), 'exec'), module.__dict__)
+    assert TARGET.read_bytes() == raw, 'target changed during import'
+    module._source_sha256 = hashlib.sha256(raw).hexdigest()
+    return module
+
+
+def target_checks(module, cfg, reference):
+    arm = module.TRANSPORT_ARMS[cfg['rouse_arm']]
+    anchors = []
+    def anchor(name, actual, expected):
+        anchors.append({'name':name, 'actual':actual, 'literal':expected,
+                        'pass':math.isclose(actual, expected, rel_tol=2e-12, abs_tol=0.)})
+    anchor('D0', arm.d0(cfg['temperature_K']), cfg['D0_m2_s'])
+    anchor('sigma0', module.SIGMA_CONTACT, cfg['sigma0_m'])
+    anchor('boltzmann', module.K_B, cfg['boltzmann_J_K'])
+    anchor('avogadro', module.N_A, cfg['avogadro_mol_inverse'])
+    anchor('Rg_squared_per_unit', module.PS_C_R2*module.PS_M0/6, cfg['Rg_squared_per_unit_m2'])
+    for label, chain in cfg['chains'].items():
+        anchor('D_CM_N'+label, arm.chain_diffusivity(cfg['temperature_K'], chain['units']), chain['D_CM_m2_s'])
+        anchor('kernel_Rg_N'+label, math.sqrt(module.PS_C_R2*module.PS_M0*chain['units']/6), chain['kernel_Rg_m'])
+    comparison, branches = [], []
+    indexed = {(r['case'],r['pair_class']):r for r in reference['qualification']}
+    for case in cfg['cases']:
+        left = cfg['chains'][str(case['units_i'])]
+        right = cfg['chains'][str(case['units_j'])]
+        radius = max(cfg['sigma0_m'], 2*min(left['kernel_Rg_m'], right['kernel_Rg_m']))
+        literal_rate = (4*math.pi*cfg['avogadro_mol_inverse']*cfg['spin_factor']
+                        *(left['D_CM_m2_s']+right['D_CM_m2_s'])*radius)
+        for pair in cfg['pair_classes']:
+            actual = module.diffusion_rate(arm, cfg['temperature_K'], left['units'], right['units'], pair,
+                                           spin_factor=cfg['spin_factor'])
+            ref = indexed[(case['name'],pair)]
+            ratio = actual/(ref['reference_reduced']*ref['rate_unit_m3_mol_s'])
+            branches.append({'case':case['name'], 'pair_class':pair, 'actual':actual,
+                             'literal_rule':literal_rate,
+                             'pass':math.isclose(actual,literal_rate,rel_tol=2e-12)})
+            within = abs(math.log(ratio)) <= ref['total_log_tolerance']
+            comparison.append({'case':case['name'], 'pair_class':pair,
+                               'candidate_m3_mol_s':actual, 'candidate_over_reference':ratio,
+                               'within_error_budget':within, 'reference_qualified':ref['qualified'],
+                               'accepted':within and ref['qualified']})
+    return {'met_source_sha256':module._source_sha256, 'anchors':anchors,
+            'literal_kernel_branches':branches, 'comparison':comparison,
+            'transport_pass':all(row['pass'] for row in anchors),
+            'branch_pass':all(row['pass'] for row in branches),
+            'adoption_pass':all(row['accepted'] for row in comparison)}
+
+
+def assert_transport_and_branches(report):
+    assert report['transport_pass'], 'target transport or Rg differs from literal inputs'
+    assert report['branch_pass'], 'target min/floor/two-chain radius rule differs from literal contract'
+
+
+def assert_scientific_acceptance(report):
+    assert_transport_and_branches(report)
+    assert all(row['reference_qualified'] for row in report['comparison']), 'Rouse oracle is not numerically qualified'
+    assert all(row['within_error_budget'] for row in report['comparison']), 'kernel exceeds independent Rouse error budget'
+
+
+def render_candidate(report):
+    lines = ['<!-- BEGIN CANDIDATE NUMBERS -->', '',
+             '| Case | Pair | Candidate (m3 mol-1 s-1) | Candidate / reference | Within numerical budget | Reference qualified | Accepted |',
+             '|---|---|---:|---:|---|---|---|']
+    for row in report['comparison']:
+        lines.append(f"| {row['case']} | {row['pair_class']} | {row['candidate_m3_mol_s']:.9g} | {row['candidate_over_reference']:.8g} | {row['within_error_budget']} | {row['reference_qualified']} | {row['accepted']} |")
+    lines += ['', f"Literal transport anchors: {sum(r['pass'] for r in report['anchors'])}/{len(report['anchors'])}.",
+              f"Literal min/floor/two-chain branches: {sum(r['pass'] for r in report['literal_kernel_branches'])}/{len(report['literal_kernel_branches'])}.",
+              f"Proposed scientific test passed: {report['adoption_pass']}.", '', '<!-- END CANDIDATE NUMBERS -->']
+    return '\n'.join(lines)+'\n'

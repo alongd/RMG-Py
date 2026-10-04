@@ -374,8 +374,7 @@ def aggregate_stages(rows, cfg, mapped):
                 continue
             for run in cfg['runs']:
                 parts = [r for r in rows if r['case']==case['case'] and r['pair_class']==pair and r['name']==run['name']]
-                expected = next(item.get('precision_stages',cfg['precision_stages']) for item in cfg['cases'] if item['name']==case['case'])
-                assert len(parts)==expected
+                assert len(parts)==cfg['precision_stages']
                 parts.sort(key=lambda r:r['precision_stage'])
                 row = dict(parts[0])
                 row.pop('precision_stage')
@@ -397,12 +396,11 @@ def aggregate_stages(rows, cfg, mapped):
 
 def run_all(cfg, workers, pilot=False, checkpoint=None):
     mapped = [mapped_parameters(cfg, case) for case in cfg['cases']]
-    precision = {case['name']:case.get('precision_stages',cfg['precision_stages']) for case in cfg['cases']}
-    stages = range(max(precision.values()))
+    stages = range(cfg['precision_stages'])
     jobs = [(stage,run,cfg,m,pair,run['seed']+100*ci+pi+100000*stage)
             for stage in stages for ci,m in enumerate(mapped)
             for pi,pair in enumerate(cfg['pair_classes']) for run in cfg['runs']
-            if stage < precision[m['case']] and (m['case']!='floor' or pair=='end/end')]
+            if m['case']!='floor' or pair=='end/end']
     if pilot:
         job = next(j for j in jobs if j[3]['case']=='N16' and j[4]=='end/end' and j[1]['name']=='base')
         return run_one(dict(job[1],replicas=128),*job[2:])
@@ -416,11 +414,6 @@ def run_all(cfg, workers, pilot=False, checkpoint=None):
                 temporary = checkpoint / f'{index:03d}.pending'
                 temporary.write_text(json.dumps(row,indent=2,allow_nan=False)+'\n')
                 temporary.rename(checkpoint / f'{index:03d}.json')
-    return result_from_stages(rows,cfg)
-
-
-def result_from_stages(rows,cfg):
-    mapped = [mapped_parameters(cfg,case) for case in cfg['cases']]
     pooled = aggregate_stages(rows,cfg,mapped)
     print('SAMPLER: actual OU trajectory covariances at the declared lags',flush=True)
     covariance = sampler_checks(cfg)
@@ -437,7 +430,7 @@ def result_from_stages(rows,cfg):
         row['late_halves'] = [pooled_hazard([dict(h,_side=row['box_over_scale'])],case,cfg) for h in row['late_halves']]
         stages_out.append(row)
     return {'schema':2,'mapped':mapped,'simulation':pooled,'stage_simulation':stages_out,
-            'precision_stages':cfg['precision_stages'],'case_precision_stages':{case['name']:case.get('precision_stages',cfg['precision_stages']) for case in cfg['cases']},'sampler_covariance':covariance,
+            'precision_stages':cfg['precision_stages'],'sampler_covariance':covariance,
             'bead_contact_crosscheck':contacts,'ewald_constant':green,
             'qualification':qualify(pooled,cfg,mapped)}
 
@@ -491,7 +484,7 @@ def main():
     assert fingerprint(Path(__file__).read_bytes()) == source_before, 'oracle changed during run'
     result['parameters_sha256'] = parameter_hash
     result['program_sha256'] = source_before
-    result['generation_provenance'] = [{'precision_stage':stage, 'parameters_sha256':parameter_hash, 'program_sha256':source_before, 'driver_program_sha256':source_before, 'cases':[case['name'] for case in cfg['cases'] if stage < case.get('precision_stages',cfg['precision_stages'])]} for stage in range(max(case.get('precision_stages',cfg['precision_stages']) for case in cfg['cases']))]
+    result['generation_provenance'] = [{'precision_stage':stage, 'parameters_sha256':parameter_hash, 'program_sha256':source_before} for stage in range(cfg['precision_stages'])]
     result['versions'] = {'python':platform.python_version(), 'numpy':np.__version__, 'scipy':scipy.__version__,
                           'rng':'numpy.PCG64', 'platform':platform.system(), 'machine':platform.machine()}
     (args.output/'results.json').write_text(json.dumps(result, indent=2, allow_nan=False)+'\n')

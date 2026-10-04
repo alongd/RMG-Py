@@ -1,0 +1,378 @@
+{
+  "met_source_sha256": "1a8176c2e49c3fcfb5909c73bf01ad8d7230f2e5ad724e7461984a7b8388a7c1",
+  "anchors": [
+    {
+      "name": "D0",
+      "actual": 2.755363626147875e-08,
+      "literal": 2.755363626147875e-08,
+      "pass": true
+    },
+    {
+      "name": "sigma0",
+      "actual": 6.766081442101e-10,
+      "literal": 6.766081442101e-10,
+      "pass": true
+    },
+    {
+      "name": "boltzmann",
+      "actual": 1.380649e-23,
+      "literal": 1.380649e-23,
+      "pass": true
+    },
+    {
+      "name": "avogadro",
+      "actual": 6.02214076e+23,
+      "literal": 6.02214076e+23,
+      "pass": true
+    },
+    {
+      "name": "Rg_squared_per_unit",
+      "actual": 7.533516666666667e-20,
+      "literal": 7.533516666666667e-20,
+      "pass": true
+    },
+    {
+      "name": "D_CM_N1",
+      "actual": 2.755363626147875e-08,
+      "literal": 2.755363626147875e-08,
+      "pass": true
+    },
+    {
+      "name": "kernel_Rg_N1",
+      "actual": 2.7447252442943476e-10,
+      "literal": 2.7447252442943476e-10,
+      "pass": true
+    },
+    {
+      "name": "D_CM_N4",
+      "actual": 6.888409065369687e-09,
+      "literal": 6.888409065369687e-09,
+      "pass": true
+    },
+    {
+      "name": "kernel_Rg_N4",
+      "actual": 5.489450488588695e-10,
+      "literal": 5.489450488588695e-10,
+      "pass": true
+    },
+    {
+      "name": "D_CM_N8",
+      "actual": 3.4442045326848437e-09,
+      "literal": 3.4442045326848437e-09,
+      "pass": true
+    },
+    {
+      "name": "kernel_Rg_N8",
+      "actual": 7.763255330937746e-10,
+      "literal": 7.763255330937746e-10,
+      "pass": true
+    },
+    {
+      "name": "D_CM_N16",
+      "actual": 1.7221022663424218e-09,
+      "literal": 1.7221022663424218e-09,
+      "pass": true
+    },
+    {
+      "name": "kernel_Rg_N16",
+      "actual": 1.097890097717739e-09,
+      "literal": 1.097890097717739e-09,
+      "pass": true
+    }
+  ],
+  "literal_kernel_branches": [
+    {
+      "case": "N4",
+      "pair_class": "end/end",
+      "actual": 114463905.44654195,
+      "literal_rule": 114463905.44654195,
+      "pass": true
+    },
+    {
+      "case": "N4",
+      "pair_class": "end/mid",
+      "actual": 114463905.44654195,
+      "literal_rule": 114463905.44654195,
+      "pass": true
+    },
+    {
+      "case": "N4",
+      "pair_class": "mid/mid",
+      "actual": 114463905.44654195,
+      "literal_rule": 114463905.44654195,
+      "pass": true
+    },
+    {
+      "case": "N8",
+      "pair_class": "end/end",
+      "actual": 80938203.7423456,
+      "literal_rule": 80938203.7423456,
+      "pass": true
+    },
+    {
+      "case": "N8",
+      "pair_class": "end/mid",
+      "actual": 80938203.7423456,
+      "literal_rule": 80938203.7423456,
+      "pass": true
+    },
+    {
+      "case": "N8",
+      "pair_class": "mid/mid",
+      "actual": 80938203.7423456,
+      "literal_rule": 80938203.7423456,
+      "pass": true
+    },
+    {
+      "case": "N16",
+      "pair_class": "end/end",
+      "actual": 57231952.723270975,
+      "literal_rule": 57231952.723270975,
+      "pass": true
+    },
+    {
+      "case": "N16",
+      "pair_class": "end/mid",
+      "actual": 57231952.723270975,
+      "literal_rule": 57231952.723270975,
+      "pass": true
+    },
+    {
+      "case": "N16",
+      "pair_class": "mid/mid",
+      "actual": 57231952.723270975,
+      "literal_rule": 57231952.723270975,
+      "pass": true
+    },
+    {
+      "case": "N4_N16",
+      "pair_class": "end/end",
+      "actual": 71539940.90408872,
+      "literal_rule": 71539940.90408872,
+      "pass": true
+    },
+    {
+      "case": "N4_N16",
+      "pair_class": "end/mid",
+      "actual": 71539940.90408872,
+      "literal_rule": 71539940.90408872,
+      "pass": true
+    },
+    {
+      "case": "N4_N16",
+      "pair_class": "mid/mid",
+      "actual": 71539940.90408872,
+      "literal_rule": 71539940.90408872,
+      "pass": true
+    },
+    {
+      "case": "N16_N4",
+      "pair_class": "end/end",
+      "actual": 71539940.90408872,
+      "literal_rule": 71539940.90408872,
+      "pass": true
+    },
+    {
+      "case": "N16_N4",
+      "pair_class": "end/mid",
+      "actual": 71539940.90408872,
+      "literal_rule": 71539940.90408872,
+      "pass": true
+    },
+    {
+      "case": "N16_N4",
+      "pair_class": "mid/mid",
+      "actual": 71539940.90408872,
+      "literal_rule": 71539940.90408872,
+      "pass": true
+    },
+    {
+      "case": "floor",
+      "pair_class": "end/end",
+      "actual": 282167443.91527,
+      "literal_rule": 282167443.91527,
+      "pass": true
+    },
+    {
+      "case": "floor",
+      "pair_class": "end/mid",
+      "actual": 282167443.91527,
+      "literal_rule": 282167443.91527,
+      "pass": true
+    },
+    {
+      "case": "floor",
+      "pair_class": "mid/mid",
+      "actual": 282167443.91527,
+      "literal_rule": 282167443.91527,
+      "pass": true
+    }
+  ],
+  "comparison": [
+    {
+      "case": "N4",
+      "pair_class": "end/end",
+      "candidate_m3_mol_s": 114463905.44654195,
+      "candidate_over_reference": 0.9706269979044977,
+      "within_error_budget": true,
+      "reference_qualified": true,
+      "accepted": true
+    },
+    {
+      "case": "N4",
+      "pair_class": "end/mid",
+      "candidate_m3_mol_s": 114463905.44654195,
+      "candidate_over_reference": 1.0228047451177573,
+      "within_error_budget": true,
+      "reference_qualified": true,
+      "accepted": true
+    },
+    {
+      "case": "N4",
+      "pair_class": "mid/mid",
+      "candidate_m3_mol_s": 114463905.44654195,
+      "candidate_over_reference": 1.0950007559649757,
+      "within_error_budget": true,
+      "reference_qualified": true,
+      "accepted": true
+    },
+    {
+      "case": "N8",
+      "pair_class": "end/end",
+      "candidate_m3_mol_s": 80938203.7423456,
+      "candidate_over_reference": 1.0022630588263879,
+      "within_error_budget": true,
+      "reference_qualified": true,
+      "accepted": true
+    },
+    {
+      "case": "N8",
+      "pair_class": "end/mid",
+      "candidate_m3_mol_s": 80938203.7423456,
+      "candidate_over_reference": 1.1109637126571656,
+      "within_error_budget": true,
+      "reference_qualified": true,
+      "accepted": true
+    },
+    {
+      "case": "N8",
+      "pair_class": "mid/mid",
+      "candidate_m3_mol_s": 80938203.7423456,
+      "candidate_over_reference": 1.2661087995691553,
+      "within_error_budget": true,
+      "reference_qualified": true,
+      "accepted": true
+    },
+    {
+      "case": "N16",
+      "pair_class": "end/end",
+      "candidate_m3_mol_s": 57231952.723270975,
+      "candidate_over_reference": 1.0586210621764358,
+      "within_error_budget": true,
+      "reference_qualified": true,
+      "accepted": true
+    },
+    {
+      "case": "N16",
+      "pair_class": "end/mid",
+      "candidate_m3_mol_s": 57231952.723270975,
+      "candidate_over_reference": 1.1995540844750954,
+      "within_error_budget": true,
+      "reference_qualified": true,
+      "accepted": true
+    },
+    {
+      "case": "N16",
+      "pair_class": "mid/mid",
+      "candidate_m3_mol_s": 57231952.723270975,
+      "candidate_over_reference": 1.449371400351445,
+      "within_error_budget": true,
+      "reference_qualified": true,
+      "accepted": true
+    },
+    {
+      "case": "N4_N16",
+      "pair_class": "end/end",
+      "candidate_m3_mol_s": 71539940.90408872,
+      "candidate_over_reference": 0.7755677548655223,
+      "within_error_budget": true,
+      "reference_qualified": true,
+      "accepted": true
+    },
+    {
+      "case": "N4_N16",
+      "pair_class": "end/mid",
+      "candidate_m3_mol_s": 71539940.90408872,
+      "candidate_over_reference": 0.8566972090668012,
+      "within_error_budget": true,
+      "reference_qualified": true,
+      "accepted": true
+    },
+    {
+      "case": "N4_N16",
+      "pair_class": "mid/mid",
+      "candidate_m3_mol_s": 71539940.90408872,
+      "candidate_over_reference": 0.9373668572557665,
+      "within_error_budget": true,
+      "reference_qualified": true,
+      "accepted": true
+    },
+    {
+      "case": "N16_N4",
+      "pair_class": "end/end",
+      "candidate_m3_mol_s": 71539940.90408872,
+      "candidate_over_reference": 0.7650591614374319,
+      "within_error_budget": true,
+      "reference_qualified": true,
+      "accepted": true
+    },
+    {
+      "case": "N16_N4",
+      "pair_class": "end/mid",
+      "candidate_m3_mol_s": 71539940.90408872,
+      "candidate_over_reference": 0.8156508157000274,
+      "within_error_budget": true,
+      "reference_qualified": true,
+      "accepted": true
+    },
+    {
+      "case": "N16_N4",
+      "pair_class": "mid/mid",
+      "candidate_m3_mol_s": 71539940.90408872,
+      "candidate_over_reference": 0.9185116986182912,
+      "within_error_budget": true,
+      "reference_qualified": true,
+      "accepted": true
+    },
+    {
+      "case": "floor",
+      "pair_class": "end/end",
+      "candidate_m3_mol_s": 282167443.91527,
+      "candidate_over_reference": 0.9964288209945453,
+      "within_error_budget": true,
+      "reference_qualified": true,
+      "accepted": true
+    },
+    {
+      "case": "floor",
+      "pair_class": "end/mid",
+      "candidate_m3_mol_s": 282167443.91527,
+      "candidate_over_reference": 0.9964288209945453,
+      "within_error_budget": true,
+      "reference_qualified": true,
+      "accepted": true
+    },
+    {
+      "case": "floor",
+      "pair_class": "mid/mid",
+      "candidate_m3_mol_s": 282167443.91527,
+      "candidate_over_reference": 0.9964288209945453,
+      "within_error_budget": true,
+      "reference_qualified": true,
+      "accepted": true
+    }
+  ],
+  "transport_pass": true,
+  "branch_pass": true,
+  "adoption_pass": true
+}

@@ -1,430 +1,647 @@
-# MET-KERNEL-REFERENCE: executable Rouse first-contact reference
+# MET-KERNEL-REFERENCE: independent Rouse reference, rework round 1
 
-Pack: `test/rmgpy/kmc/fixtures/i030_kernel_reference/pack.md`.
-Read-only target: `rmgpy/kmc/met.py` in the enclosing repository checkout.
-The skipped target is `test_met_kernel_reference` in the explicitly named `test/rmgpy/kmc/metTest.py`.
-Source HEAD at original inspection: `d027e21d0bb48bb0e624835815acfdd8ee96c3b4`.
-The fixture was copied to `/home/alon/Code/RMG-Py-kmc-i030-kernel-reference`
-on branch `i030-met-kernel-reference`, based on `2798f5ce4e34e651943d8c7a78e30bfe7aa3a227`.
-Its target module is byte-for-byte identical to the originally verified module.
-This pack does not change either file. It accesses no prohibited data or validation outcomes.
+This pack is a research fixture in `test/rmgpy/kmc/fixtures/i030_kernel_reference/`.
+It changes no product code or repository tests. The target is the enclosing
+checkout's `rmgpy/kmc/met.py`; the work branch is `i030-met-kernel-reference`,
+starting at `52aa9addb488e08cf309560e5dbd3413d3a9a818`. Scratch, logs and fresh
+verifier outputs are under `/home/alon/runs/i030-met-kernel-reference/rework/`.
+No prohibited dataset, catalog, or pyrolysis literature is used.
 
-## What this test means
+## Meaning and adoption status
 
-The executable quantitative oracle is a pair of independent, equilibrium Gaussian Rouse chains, each with 16 beads, one reactive site on each chain, and irreversible first microscopic contact. Ends are bead 0; the central site is bead 7 (indices start at zero). Three separate ensembles measure end/end, end/mid and mid/mid. Exact Gaussian mode dynamics are projected onto the reactive-site separation and sampled using positive circulant embedding; this has the same finite-dimensional distribution as evolving every bead. The only trajectory discretization is contact detection. A boundary correction and separate timestep and box audits qualify the measured long-time oracle. An entangled extension supplies ideal-tube asymptotic exponents and normalized rate ratios; it does not invent site-specific numerical prefactors.
+The independent observable is irreversible first microscopic contact of two
+stationary, free-draining Gaussian Rouse chains in a periodic cube. The three
+reactive-site classes are end/end, end/mid and mid/mid. Chains start at equilibrium,
+with uniform initial site separation conditioned outside the physical contact
+sphere. This is an unlike-labelled pair coefficient, including for end/end.
+It measures neither a nascent-chain conformation nor a validation outcome.
 
-This is a build test of a deliberately weak long-time scaling approximation. It is not a demonstration that the present kernel resolves first contact accurately at all times or predicts nascent-chain conformations. The transient diagnostic remains visible even when the long-time assertion passes.
+Reproduction, numerical qualification, and candidate acceptance are distinct.
+A reproduced report can contain a failed qualification or a rejected candidate.
+The proposed scientific test below asserts all three; its real pytest outcome
+is retained by the verifier. **Reproduction success is not adoption success.**
+The internal `adoption_pass` flag records that proposed test's numerical
+criteria. Owner approval and the second adversarial review are still required
+before adoption.
+The current target has one identical prefactor for all three classes. Consequently,
+a swap of its end/end and mid/mid labels is observationally identical to the
+unmodified target. No sound test can kill that no-op after passing the baseline.
+The pack reports that separate label-only diagnostic as an expected survivor.
+The review's required perturbation instead reverses the **reference-derived**
+site prefactors in the candidate: multiply end/end by `C_mid/C_end` and mid/mid
+by `C_end/C_mid`. This substantive in-memory source mutation is included in the
+required set, with a passing unmodified literal-rule control. An independent
+oracle-backed ordering witness is also reported, separately from rate-budget
+discrimination and its numerical qualification.
 
-## Literal parameters and mapping to the actual API
+## Frozen physical inputs and independence
 
-The physical model, nine long-time/audit ensembles and acceptance policy were written before the first simulation or candidate comparison; their unchanged snapshot is `reference/parameters_initial.json`. The active `reference/parameters.json` adds one short-time precision allocation, declared after the base long-time rates but before any transient comparison. No physical parameter or tolerance changed. No parameter is fitted to an encounter result or experiment. The geometry comes only from constants in the named source, and the friction comes only from its selected transport arm.
+`reference/parameters.json` is the sole physical-input source. `reference/run.py`
+never imports, loads, evaluates, hashes or reads `met.py`. Target loading and
+comparison live in `checks.py`, outside `reference/`. Parameter bytes are read
+once, SHA-256 hashed, and parsed before any simulation. The fingerprint travels
+with that in-memory snapshot. The oracle program hash and Python/NumPy/SciPy,
+RNG, platform and machine versions are recorded; the verifier also fingerprints
+all checking programs and records pytest's version. A program edit during a
+run is detected. Exact reproduction is conditional on the recorded software
+versions and numerical platform; it is not a portable bitwise guarantee.
 
-| Parameter | Literal specification and source mapping |
-|---|---|
-| Temperature | 700 K; passed as `temperature` to `TransportArm.chain_diffusivity` and `diffusion_rate` |
-| Rouse transport | `TRANSPORT_ARMS["A1_H_ROUSE"]`; H package, Rouse scaling, no entanglement cutoff in this arm |
-| Polymer lengths | `units_i = units_j = 16`; 16 Gaussian beads are a coarse-grained realization of these 16 transport units, not an atomistic chain |
-| Static size | `Rg² = PS_C_R2 * PS_M0 * 16 / 6`; source constants `PS_C_R2 = 0.434e-20`, `PS_M0 = 104.15` |
-| RMS bond | `b² = 6*N*Rg²/(N²-1)`; this makes the exact discrete-chain `Rg` equal the kernel's `Rg` |
-| Bond energy | `U = (3*k_B*T/(2*b²))*sum(|r[n+1]-r[n]|²)`; zero preferred bond vector, harmonic spring constant `3*k_B*T/b²` |
-| Bead friction | `zeta = k_B*T/(N*D_CM)`; bead diffusivity `k_B*T/zeta = N*D_CM = arm.d0(T)` |
-| Long-time COM diffusion | `D_CM = arm.chain_diffusivity(700,16)`; relative COM diffusion is `2*D_CM` |
-| **Physical site contact** | `a = SIGMA_CONTACT = 6.766081442101e-10 m` (the dispatch's σ₀); first `|r_site_i-r_site_j| ≤ a` kills the pair |
-| Candidate effective radius | `sigma_ij = max(SIGMA_CONTACT,2*Rg)`; this is the candidate's effective coil capture radius, not the microscopic reference sink |
-| Chemistry and spin | Perfect absorption, no activation barrier, no cage, `spin_factor=1`; compare `diffusion_rate`, not activation-limited `bulk_rate` |
-| Spatial initial condition | Reactive-site separation uniformly distributed in a periodic cube, conditioned outside the physical sphere `a`; equilibrium independent internal chain coordinates |
-| Conformational initial condition | Equilibrium Gaussian chains. Time zero activates one reactive site on each existing chain. It does not create collapsed, stretched or scission-correlated chains |
-| Box/concentration | One unlike pair per cube; base/refinement `L=10*Rg`, size audit `L=14*Rg`; each replica is independent, not an interacting many-chain melt; site density for each species is `1/L³`, molar concentration `1/(N_A*L³)` |
-| Reduced units | Length `Rg`, time `t0=Rg²/D_CM`, rate `D_CM*Rg`; molar rate unit `N_A*D_CM*Rg` |
-| Time grid | End time `8*t0`; bin edges `0, .02, .05, .1, .2, .4, .8, 1.6, 3.2, 4, 6, 8` times `t0` |
-| Base ensemble | 4096 replicas/class, step `0.0001*t0`, seeds 103001, 103002, 103003 in class order end/end, end/mid, mid/mid |
-| Step refinement | 2048 replicas/class, step `0.000025*t0`, seeds 103101, 103102, 103103; this run is the final oracle regardless of measured agreement |
-| Box refinement | 4096 replicas/class, `L=14*Rg`, step `0.0001*t0`, seeds 103201, 103202, 103203 |
-| Dedicated transient ensemble | 32768 replicas/class, `L=6*Rg`, step `0.000025*t0`, stop at `0.2*t0`, seeds 103301, 103302, 103303; independent pairs at number density `1/(216*Rg³)`; all four transient bins are reported |
-| Random stream | NumPy `Generator(PCG64(seed))`; independent seeds across both classes and audit runs |
-| Compute | Three worker processes at most, one FFT/BLAS thread each; `--workers 1` gives identical serial results; actual peak memory and elapsed times are recorded in the logs |
+The physical literals are benchmark conventions frozen from the named target
+snapshot, **not newly established experimental polymer parameters**. Their
+provenance and the independently evaluated H/WLF expression are cited in the
+parameter JSON. Changing the current target cannot change these literals. The
+transport comparison separately requires `D0`, every `D_CM`, the microscopic
+radius, the static `Rg` coefficient, every length's kernel `Rg`, and SI constants
+to match their literals to relative tolerance `2e-12`. This addresses numerical
+independence, not epistemic independence of the original material convention.
 
-The actual physical values, concentrations, all survival values, all rate estimates and errors are preserved in `reference/results/results.json`; the tables below give the parameter values and primary observables. API units are m³ mol⁻¹ s⁻¹: `diffusion_rate` includes `N_A`. This reference's per-pair volume coefficient has units m³ s⁻¹. There is no factor of two for identical-reactant consumption: this is an unlike-labelled A–B pair coefficient, including for end/end. An initial serial run was interrupted after a completed base end/end ensemble to switch to three workers for runtime. Its partial log remains in `stdout.log`; the subsequent completed long-time ensembles plus the declared transient supplement supply the pack numbers. The Verifier repeats all twelve ensembles together. No model parameter or tolerance changed.
-
-## Reference dynamics and first-passage numerics
-
-For a chain with free ends, use the orthonormal modes
-
-```
-B_np = sqrt(2/N)*cos(pi*p*(n+1/2)/N), p=1,...,N-1
-lambda_p = 4*sin²(pi*p/(2*N))
-omega_p = (3*D_bead/b²)*lambda_p
-Var(q_p,axis) = b²/(3*lambda_p)
-```
-
-Each `q_p` is an independent stationary Ornstein–Uhlenbeck process. For sites `n_i,n_j` on independent chains, the relative internal coordinate has per-axis covariance
-
-```
-C_ij(t) = sum_p [(B_n_i,p²+B_n_j,p²)*b²/(3*lambda_p)]*exp(-omega_p*|t|).
-```
-
-The separation path is `r(t)=r(0)+W_rel_CM(t)+q_rel(t)-q_rel(0)`. The three axes are independent. `W_rel_CM` has per-axis variance `4*D_CM*t`. The code samples the stationary Gaussian process with exactly this covariance on the observation grid using a circulant embedding of at least twice the trajectory length. It checks that the spectrum is nonnegative and that its inverse FFT recovers the specified covariance. An independently constructed bond Laplacian eigensystem checks the mode weights and exact discrete-chain `Rg`. Full paths are needed: neither MSD matching nor a memoryless site random walk is a first-passage reference.
-
-The Rouse relaxation time is the slowest mode time `tau_R=1/omega_1`. The transient reporting window ends at `0.2*t0`, approximately `tau_R`. Long-time extraction uses the predeclared `[4,8]*t0` window; the two halves `[4,6]` and `[6,8]` provide a plateau audit. This definition gives a finite-run approximation to the asymptote, with a stated numerical audit, not an exact infinite-time measurement.
-
-At arbitrarily short time the site-pair diffusion coefficient is `D_local=2*N*D_CM`, for all site classes. Discrete observations miss some between-step contacts. The stopping surface is therefore shifted outward, to
+The temperature is 700 K, `D0 = 2.755363626147875e-8 m2/s`, and microscopic
+contact radius `sigma0 = 6.766081442101e-10 m`. The frozen size coefficient is
+`Rg^2/N = 0.434e-20*104.15/6 m2`. `kB` and Avogadro's constant are SI defining
+constants ([BIPM SI Brochure](https://www.bipm.org/en/publications/si-brochure)).
+For each finite chain the JSON contains literal `D_CM`, `Rg`, and RMS bond
+lengths satisfying
 
 ```
-a_num = a + 0.5825971579390107*sqrt(2*D_local*dt).
+D_CM(N) = D0/N
+Rg^2(N) = b_N^2*(N^2-1)/(6*N)
+zeta = kB*T/D0
+U = 3*kB*T/(2*b_N^2) * sum(|r[n+1]-r[n]|^2)
 ```
 
-This is the inward-domain boundary correction for the allowed region outside the absorbing sphere. It approximates continuum first contact; it is not a second physical contact radius. The physical initial exclusion uses `a`, not `a_num`, and no contact is counted at time zero. The sign follows the killed-diffusion boundary-shift prescription of [Gobet and Menozzi](https://arxiv.org/abs/0706.4042): discrete killing requires a smaller allowed domain. Applying this prescription to exact OU sampling is an approximation whose timestep audit is required. The quoted correction constant and the observed step difference are not fitted to the kernel.
+The finite-chain bond mapping changes slightly with N to make the exact discrete
+size match the frozen kernel's static-size convention. It is not an atomistic
+chain model or a fixed-bond asymptotic sequence. The underlying dynamics are
+those of [Rouse, J. Chem. Phys. 21, 1272 (1953)](https://doi.org/10.1063/1.1699180).
+No independent first-contact amplitude follows just from
+[coil-scale reaction theory](https://arxiv.org/abs/cond-mat/9805331).
 
-Periodic minimum-image separation is used for contact only; the ideal Gaussian chain remains unwrapped. The long-time finite-cube hazard has an enhancement caused by periodic returns. Use the leading small-target periodic Green-function correction:
+Coverage includes equal N=4,8,16, both 4/16 and 16/4 orientations, and N=1/1.
+The swapped unequal orientations matter for end/mid. Together they distinguish
+`min(i,j)` from `max`, either argument or their mean. The N=1 limit is a point
+Brownian bead with physical Rg=0; its nonzero **kernel** static-size convention
+is recorded separately. `sigma0 > 2*kernel_Rg(1)`, so the candidate's floor is
+active. All three site labels coincide for a single bead; only one physical
+ensemble per setting is generated and explicitly reused for those three labels.
+N=4,8,16 are below the frozen transport cutoff 14800/104.15; only the Rouse arm
+is compared. No entangled first-contact amplitude is claimed.
 
-```
-k_inf = k_box / (1 + 2.837297479*k_box/(4*pi*D_rel*L)), D_rel=2*D_CM.
-dk_inf/dk_box = 1/(1 + 2.837297479*k_box/(4*pi*D_rel*L))².
-```
+## Dynamics, sampler, and contact detector
 
-This is a matched far-field correction, not an exact reduction of polymer first passage to an absorbing Brownian sphere. Its independent larger-box audit is essential. The dimensionless regular part of the cubic Laplace Green function can be calculated, without a polymer model, using an Ewald split with `alpha=2`:
-
-```
-sum_(n≠0) erfc(alpha*|n|)/|n|
-+ sum_(m≠0) exp(-pi²*|m|²/alpha²)/(pi*|m|²)
-- pi/alpha² - 2*alpha/sqrt(pi) = -2.837297479...
-```
-
-Remaining finite-volume, late-tail and contact-resolution errors are diagnosed, not absorbed into a calibrated capture radius.
-
-## Observable and extraction from both sides
-
-Save the first-contact time `T` of each replica, censoring at `8*t0`. Estimate `S(t)=P(T>t)` by the surviving fraction. The one-standard-error binomial error is `sqrt(S*(1-S)/M)`. For edges `u<v`, with survivor counts `n_u,n_v`, extract the finite-volume bin rate as
+For each chain, orthonormal free-end modes have
 
 ```
-k_bin = L³*log(n_u/n_v)/(v-u)
-SE(k_bin) = L³/(v-u)*sqrt((n_u-n_v)/(n_u*n_v)).
+B_np = sqrt(2/N)*cos(pi*p*(n+1/2)/N)
+lambda_p = 4*sin^2(pi*p/(2*N))
+omega_p = 3*D0*lambda_p/b_N^2
+Var(q_p,axis) = b_N^2/(3*lambda_p)
+q_p(t+dt) = exp(-omega_p*dt)*q_p(t)
+            + sqrt(Var(q_p)*[1-exp(-2*omega_p*dt)])*Z
 ```
 
-These formulas use conditional survival; nested survivor counts are correlated, and treating their errors as independent would overstate this error. The late-window error is propagated through the periodic correction with its derivative. In the dilute, infinite-volume limit the encounter-volume observable is `L³*(1-S(t))` and `k(t)` is its derivative. Finite-cell hazard and encounter-volume derivative differ after appreciable depletion; the transient table explicitly reports the former and does not call it an exact infinite-volume coefficient. Reaction is irreversible, so contacts after the first do not count. There is no competing partner and no replenishment.
+Both chains' independent modes are evolved explicitly; the relative COM has
+diffusivity `D_i+D_j`. End is bead 0 and mid is bead `N//2-1`. Their site
+separation is relative COM plus the two weighted internal coordinates. COM
+and modes remain unwrapped; minimum-image separation is used for contact only.
+Exact conditional OU transitions avoid spring-integration error. Full state
+is preserved: matching an MSD alone is not a first-passage oracle.
 
-For the present kMC transport law, call
-
-```python
-met_module.diffusion_rate(
-    met_module.TRANSPORT_ARMS["A1_H_ROUSE"], 700.0, 16.0, 16.0,
-    pair_class, spin_factor=1.0,
-)
-```
-
-Divide the returned rate by `N_A` to obtain a per-pair volume coefficient. A single well-mixed pair at this concentration has `S_kmc(t)=exp[-k_D*t/(N_A*L³)]`. The bin hazard is constant, exactly `k_D/N_A`. No stochastic kMC run is needed to estimate an analytically known exponential rate. If using an SSA engine instead, use one A–B pair, propensity `k_D/(N_A*L³)`, one irreversible encounter event, the same survival estimator, and additional SSA error bars. Do not insert the microscopic radius into the candidate API: it has no radius or age argument.
-
-## Acceptance policy declared before comparisons
-
-All policies below are encoded in `reference/parameters.json` and apply independently to all three classes.
-
-1. **Reference numerical qualification.** Step-refined versus base corrected long rates must agree within `4*sqrt(SE_step²+SE_base²)+0.10*k_base`. Larger versus base corrected long rates must agree within `4*sqrt(SE_box²+SE_base²)+0.15*k_base`. The base late-half rates must agree within `4*sqrt(SE_first²+SE_second²)+0.10*k_base`. Nonzero late events and survivors are required. Failure invalidates numerical acceptance; it does not justify loosening the kernel criterion. The allowances budget residual contact error, leading periodic-correction error and finite relaxation-window error, respectively. They are engineering accuracy targets checked against measurements, not rigorous bounds on unobserved systematic bias.
-2. **Long-time kernel comparison.** Use the step-refined, corrected rate `k_ref` and its statistical standard error `s_ref`. Require `abs(log(k_candidate/k_ref)) <= log(2)+4*s_ref/k_ref`, after numerical qualification. With vanishing sampling error this allows a factor two in either direction. Four standard errors guard against chance failures across the three comparisons; it is an approximate Monte Carlo confidence allowance. A factor two is a declared scale-level model tolerance: compact exploration gives `k~D_CM*Rg`, while replacing a fluctuating absorbing site by a spherical coil sink leaves an uncontrolled order-one, site-dependent prefactor. It is **not** a derived physical confidence interval or proof that all those prefactors lie within two. A tighter prefactor-accuracy claim would need a different owner-approved specification; passing this loose test establishes only scale consistency for this stated Rouse model.
-3. **Transient regime.** Report survival, every bin rate and uncertainty, and the ratio to the constant candidate. Use the dedicated short-time ensemble for this diagnostic; the large-box bins remain visible as well. A diagnostic is outside its band when `abs(k_candidate-k_bin)>0.20*k_bin+4*SE(k_bin)`. This creates no build failure, expected-failure decorator, or acceptance of a specific transient shape. It explicitly records mismatches. The 20% allowance recognizes finite concentration and boundary/discrete-chain approximations; the very short time bin includes local-bead diffusion and the boundary correction and is not a fit to a Rouse power law. No transient exponent is estimated from a handful of noisy bins. Increasing the short-time sample size was an allocation for precision, using a smaller volume and existing fine step, not a change to this policy.
-
-The numerical qualification and factor-two comparison are separable assertions. Statistical uncertainty alone cannot validate the kernel's effective-radius prefactor. None of these tolerances were adjusted after viewing comparisons.
-
-## Entangled extension: executable asymptotes and what they do not determine
-
-Use `TRANSPORT_ARMS["A0_REF_H_CROSS_NEc"]`, `T=700 K`, `units_i=units_j=2048`, with literal `Ne=14800/104.15`, `b²=PS_C_R2*PS_M0`, and `D0=arm.d0(T)`. This arm documents `D_CM=D0*Ne/N²` above `Ne`.
-
-The local bead friction is `zeta=k_B*T/D0=k_B*T*Ne/(N²*D_CM)`, equal to the H-package friction in the Rouse parameter table. The microscopic contact remains `SIGMA_CONTACT`, with perfect absorption and spin factor one. The continuum bond mapping is `b²=6*Rg²/N`; it differs from the finite-chain correction used in the Rouse simulation. These inputs establish the scaling conventions, not a determined first-contact amplitude.
+Observation intervals adapt to the current distance from the sink. With `g`
+the distance outside the physical sink, the interval is bounded by
+`[g/(safety*sqrt(2*D_local))]^2`, a maximum interval, and an exact conditional
+mean-displacement guard; `D_local=2*D0`. The guard reduces the proposed interval
+when its mean site displacement exceeds `g/safety`. It is then clipped below
+by the declared minimum contact step. A pair is absorbed at the first observed
+site separation below
 
 ```
-ta=b²/D0, te=Ne²*ta, tau_R=N²*ta, tau_d=N³*ta/Ne,
-r_e=b*sqrt(Ne), r_b=r_e*(N/Ne)^(1/4), R=b*sqrt(N).
-x(t)~b*(t/ta)^(1/4)                 [ta << t << te]
-x(t)~r_e*(t/te)^(1/8)               [te << t << tau_R]
-x(t)~r_b*(t/tau_R)^(1/4)            [tau_R << t << tau_d]
-x(t)~R*(t/tau_d)^(1/2)              [tau_d << t]
+a_numerical = sigma0 + 0.5825971579390107*sqrt(2*D_local*dt_min).
 ```
 
-`R=sqrt(6)*Rg` in this convention; `R` must not silently be substituted for `Rg`. The times above are scaling time conventions, not exact Rouse eigenmode times or experimentally known entanglement times. They depend only on the named source inputs. No box, seed or integration step applies to this analytic extension. For high reactivity and dilute reactive sites, compact exploration gives the asymptotic rate exponents
+The physical initial exclusion uses `sigma0`, not this numerical surface. The
+shift's sign follows the reduced allowed-domain prescription of
+[Gobet–Menozzi](https://arxiv.org/abs/0706.4042). Their Euler theorem does not prove
+an error bound for this exact-OU/adaptive implementation. The independent contact
+checks and the separately refined minimum and far-step intervals therefore
+matter. The **adaptive** audit halves the final maximum interval and increases
+safety from 8 to 10 with the same minimum contact step. The step and contact
+runs reduce the minimum interval by factors of four. These changes are not
+fits to candidate rates.
 
-| Pair | pre-tube | tube breathing | coherent reptation | relaxed long time |
-|---|---:|---:|---:|---|
-| end/end | −1/4 | −5/8 | −1/4 | constant ∝ `D_CM*Rg` |
-| end/mid | −1/4 | −5/8 | −1/4 | constant ∝ `D_CM*Rg` |
-| mid/mid | −1/4 | −5/8 | −1/4 | constant ∝ `D_CM*Rg` |
+The actual `advance_modes()` used by the trajectories is used to sample measured
+stationary variances and covariances at several lags in all nontrivial cases and classes, with independent
+replicas and Monte Carlo SE. An independently assembled bead bond Laplacian
+checks the mode covariance, local diffusivity and exact finite-chain Rg.
+A separate Euler implementation evolves every bead's force and noise at small
+N=4, starting from independent Gaussian bonds. Its first-contact probability
+is compared both with exact mode evolution on a fixed observation grid and
+with the **actual adaptive `simulate()` trajectory sampler**,
+using independent seeds, 5 combined SE and a separately stated Euler weak-error
+scale. The detector's continuum behavior is additionally checked in the N=1
+limit against the exact absorbing Brownian-sphere hitting probability integrated
+over initial positions. Its omitted cube-exterior contribution is bounded by
+the spherical `r>=L/2` tail. Real mutations doubling the trajectory sampler's
+OU noise or projected internal coordinates must fail measured variance or
+covariance after their unmodified controls pass.
+The bead cross-check checks small-N fixed-grid and adaptive contact distributions; it
+does not itself prove all adaptive large-N continuum errors are bounded.
 
-The end-functionalized-chain result is supported by [O'Shaughnessy and Vavylonis, equations (2), (23) and (26)](https://arxiv.org/pdf/cond-mat/9805331). The extension to mixed and central sites is an explicitly stated representative-monomer ideal-tube assumption about exponents, **not** a sourced calculation of their distinct prefactors. This also omits free-end tube effects. The source's approximate closure determines scaling, not precise encounter amplitudes.
+## Rate extraction and empirical error budget
 
-This extension is executable in `tube_asymptotes()` in `reference/run.py`. It prints the source-mapped times and exponent windows for each class into JSON. Within a regime, ratios such as `k(t2)/k(t1)=(t2/t1)^q` eliminate the unknown amplitude. The candidate has ratio one at all times. For entangled lengths the long-time length ratio is `(N2/N1)^(-3/2)`; the candidate gives this ratio exactly. Its putative dimensionless amplitude is `16*pi` for equal chains and spin one. The literature does not make that amplitude an exact reference value. Therefore this branch validates only asymptotic length scaling and reports the missing time dependence; it has no numerical absolute-rate error bar and no independent entangled amplitude assertion.
+For late window `[u,v]`, surviving counts `n_u,n_v` give
 
-For a literal analytic survival observable in a single regime, write `k(t)=k_star*(t/t_star)^q`, where each pair's `k_star` is unidentified. A dilute well-mixed pair then has `log[S(t2)/S(t1)] = -k_star*t_star*((t2/t_star)^(q+1)-(t1/t_star)^(q+1))/(V*(q+1))`. This symbolic expression and normalized rate ratios are the available asymptotic observables. They cannot supply absolute survival values until the independent amplitude is known.
+```
+k_box = L^3/(v-u)*log(n_u/n_v)
+SE(k_box) = L^3/(v-u)*sqrt((n_u-n_v)/(n_u*n_v))
+k_inf = k_box/(1 + 2.837297479*k_box/(4*pi*D_relative*L))
+SE(k_inf) = SE(k_box)/(1 + 2.837297479*k_box/(4*pi*D_relative*L))^2
+```
 
-An exact, class-resolved entangled first-passage oracle would require a specified tube/repton model with free ends, tube renewal and contour-length fluctuations, its own converged simulation and uncertainties. That is an adoption limitation, not evidence supplied by this Rouse simulation. The pack must not label the tube scaling table as a measured reptation simulation or claim an exact prefactor reference.
+The conditional survival formula accounts for nested counts. The periodic
+Green-function correction is a leading far-field approximation, not an exact
+polymer reduction. Its cubic Ewald constant is recomputed independently. Three
+boxes (20,28,36 times the case's length unit) and later windows scaled by relative
+COM diffusion test its remaining bias. Every late window begins after at least
+four relative-COM spatial mixing times; the corresponding values are tabulated.
+The actual correction fractions are shown; the final largest-box correction is
+capped at 25% during qualification,
+against the rejected report's 38–52%. Statistical overlap does not establish
+that this approximation is exact.
 
-## Actual measurements
+The **largest-box, contact-refined** run (`box2`) is the primary oracle. Its own
+two late halves provide the plateau audit. All three boxes' halves are reported.
+With `k,s` the
+corrected rate and one SE, define the upper observed log contrast between two
+runs as
+
+```
+U(A,B) = abs(log(k_A/k_B)) + 4*hypot(s_A/k_A, s_B/k_B)
+```
+
+The additive log error budget is
+
+```
+statistics = 4*s_box2/k_box2
+step       = U(base,step)
+contact    = U(step,contact)
+adaptive   = U(contact,adaptive)
+box        = max(U(contact,box),U(box,box2))
+plateau    = U(box2_half1,box2_half2)
+B_total    = statistics+step+contact+adaptive+box+plateau
+```
+
+A candidate falls within the numerical budget iff
+`abs(log(k_candidate/k_reference)) <= B_total`. **There is no factor-two model
+allowance.** The measured budgets include sampling uncertainty of the audits;
+this is conservative and double-counts some statistical uncertainty. They are
+empirical envelopes at sampled settings, not rigorous bounds on the unobserved
+continuum/infinite-volume/infinite-time remainder or simultaneous confidence
+intervals over every reported row. Passing the error-budget comparison alone
+cannot justify a stronger mathematical statement.
+
+Qualification also requires nonzero events and survivors, <=25% final correction,
+>=4 mixing times, and individual log ceilings in the parameter JSON: stat .16,
+step/contact/adaptive .12 each, box .16, plateau .20, total .55. The total cap
+is a factor `exp(.55)=1.73325`, strictly below two: any qualified oracle-backed
+rate control multiplied by 0.5,2 or4 must fail. A row exceeding any ceiling is
+**unqualified**, not accepted with a looser tolerance. These ceilings are accuracy
+targets; the comparison tolerance is the measured budget, not the ceiling.
+The preliminary allocation was stopped before candidate comparison to increase
+counts and batch size; its exact source, inputs and partial logs remain outside
+the fixture. That preliminary allocation supplies no final measurements.
+The final allocation uses three independent seed stages for each Rouse case
+and eight for the point-bead floor, pooling integer survivors before rate
+estimation. The three-stage floor exceeded the fixed step and total ceilings;
+five additional floor stages reduce sampling uncertainty at little cost. The
+ceilings and all physical/per-run settings stay fixed. `extend_floor.py` is an
+authoring driver: it checks the completed three-stage input/program hashes,
+dependency versions, unchanged physical inputs, and identical ASTs for every
+generator and numerical-check function before adding the five independent
+floor cohorts. The original whole program and parsed JSON bytes are archived
+in `reference/provenance/`. Non-floor reference means, errors and budgets must
+remain exactly equal to the completed three-stage report.
+
+The normal reference CLI and the full Verifier generate all 318 physical
+ensembles from scratch; neither reads authoring checkpoints. Each stage retains
+its actual input, reference-program and driver hashes in `generation_provenance`.
+The root hashes identify the final analysis allocation and reference program.
+Authoring and fresh verification have genuinely different generation histories;
+their histories are separately checked, retained and hashed. Every scientific
+JSON value, event count, trajectory hash and table must reproduce exactly.
+Only actual generation-history metadata is exempt from equality; it is never
+rewritten to pretend that old cohorts ran under later input/program bytes.
+Per-ensemble JSON records and the parsed-input snapshot are written to the
+unique run directory as it progresses. Those records preserve work after an
+interruption; they are never read as simulation inputs by the Verifier.
+An earlier complete trajectory allocation failed at final JSON serialization
+of a NumPy boolean; its rounded logs supply no final reference measurements.
+
+## Reproduced reference measurements
 
 <!-- BEGIN REPRODUCED NUMBERS -->
 
-All ± entries below are one Monte Carlo standard error; systematic/model errors are separate.
+All +/- values are one Monte Carlo standard error. Log budgets are conservative empirical diagnostics, not rigorous continuum-error bounds.
 
-| Quantity | Value |
-|---|---:|
-| `N` | 16 |
-| `temperature_K` | 700 |
-| `Rg_m` | 1.09789009772e-09 |
-| `bond_rms_m` | 6.73634613241e-10 |
-| `sigma0_m` | 6.7660814421e-10 |
-| `sigma_effective_m` | 2.19578019544e-09 |
-| `D0_m2_s` | 2.75536362615e-08 |
-| `D_CM_m2_s` | 1.72210226634e-09 |
-| `bead_friction_kg_s` | 3.50753813699e-13 |
-| `spring_constant_N_m` | 0.0638930748073 |
-| `time_unit_s` | 6.99936751855e-10 |
-| `tau_R_reduced` | 0.204091899843 |
-| `tau_R_s` | 1.42851421456e-10 |
-| `capture_reduced` | 0.616280396022 |
-| `rate_unit_m3_s` | 1.89067902547e-18 |
-| `rate_unit_m3_mol_s` | 1138593.52234 |
-| `bond_squared_reduced` | 0.376470588235 |
-| `entanglement_threshold_units` | 142.102736438 |
-| `mid_bead_index_zero_based` | 7 |
+| Case | Pair | Reference / (D_unit length_unit) | Reference (m3 mol-1 s-1) | stat | step | contact | adaptive | box | plateau | Total log | Factor | Qualified |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| N4 | end/end | 51.7866107 +/- 0.4787583 | 117927799 +/- 1090222 | 0.03698 | 0.05302 | 0.04462 | 0.04258 | 0.05839 | 0.09622 | 0.33182 | 1.39350 | YES |
+| N4 | end/mid | 49.144749 +/- 0.4713032 | 111911786 +/- 1073246 | 0.03836 | 0.05713 | 0.04752 | 0.05221 | 0.05943 | 0.09533 | 0.34997 | 1.41903 | YES |
+| N4 | mid/mid | 45.9045185 +/- 0.461476 | 104533175 +/- 1050867 | 0.04021 | 0.05706 | 0.04491 | 0.05090 | 0.07245 | 0.08357 | 0.34910 | 1.41779 | YES |
+| N8 | end/end | 50.1519856 +/- 0.4735122 | 80755449.4 +/- 762456.2 | 0.03777 | 0.07012 | 0.04463 | 0.04359 | 0.06863 | 0.07792 | 0.34266 | 1.40868 | YES |
+| N8 | end/mid | 45.2449363 +/- 0.4588953 | 72854048.1 +/- 738919.8 | 0.04057 | 0.06470 | 0.06424 | 0.06038 | 0.07111 | 0.08744 | 0.38844 | 1.47468 | YES |
+| N8 | mid/mid | 39.7007607 +/- 0.4399938 | 63926736.6 +/- 708484.3 | 0.04433 | 0.07467 | 0.05151 | 0.05279 | 0.07893 | 0.09946 | 0.40169 | 1.49435 | YES |
+| N16 | end/end | 47.4820351 +/- 0.4665417 | 54062737.6 +/- 531201.4 | 0.03930 | 0.07020 | 0.04330 | 0.04853 | 0.05470 | 0.10909 | 0.36512 | 1.44069 | YES |
+| N16 | end/mid | 41.9034732 +/- 0.4479025 | 47711023.2 +/- 509978.9 | 0.04276 | 0.06528 | 0.05192 | 0.05130 | 0.06731 | 0.08903 | 0.36759 | 1.44426 | YES |
+| N16 | mid/mid | 34.6808847 +/- 0.4195076 | 39487430.7 +/- 477648.6 | 0.04838 | 0.08557 | 0.06040 | 0.06366 | 0.08296 | 0.11687 | 0.45785 | 1.58067 | YES |
+| N4_N16 | end/end | 40.5070045 +/- 0.3174643 | 92242025.9 +/- 722925.5 | 0.03135 | 0.04345 | 0.03469 | 0.04785 | 0.06380 | 0.08923 | 0.31037 | 1.36393 | YES |
+| N4_N16 | end/mid | 36.6709804 +/- 0.3092471 | 83506681.4 +/- 704213.6 | 0.03373 | 0.04522 | 0.04066 | 0.03847 | 0.06225 | 0.07486 | 0.29519 | 1.34338 | YES |
+| N4_N16 | mid/mid | 33.5150814 +/- 0.3025236 | 76320109.2 +/- 688902.9 | 0.03611 | 0.06501 | 0.05192 | 0.04830 | 0.05491 | 0.10902 | 0.36527 | 1.44091 | YES |
+| N16_N4 | end/end | 41.063395 +/- 0.3181848 | 93509031.1 +/- 724566.3 | 0.03099 | 0.04401 | 0.04100 | 0.03276 | 0.06033 | 0.07242 | 0.28152 | 1.32514 | YES |
+| N16_N4 | end/mid | 38.516392 +/- 0.3135843 | 87709028.8 +/- 714090.1 | 0.03257 | 0.04120 | 0.03891 | 0.04337 | 0.06229 | 0.08150 | 0.29984 | 1.34964 | YES |
+| N16_N4 | mid/mid | 34.2030772 +/- 0.3035654 | 77886804.3 +/- 691275.2 | 0.03550 | 0.05009 | 0.04990 | 0.03790 | 0.05884 | 0.07399 | 0.30622 | 1.35828 | YES |
+| floor | end/end | 25.2228164 +/- 0.2271163 | 283178726 +/- 2549854 | 0.03602 | 0.06040 | 0.04209 | 0.04919 | 0.06587 | 0.09298 | 0.34654 | 1.41417 | YES |
+| floor | end/mid | 25.2228164 +/- 0.2271163 | 283178726 +/- 2549854 | 0.03602 | 0.06040 | 0.04209 | 0.04919 | 0.06587 | 0.09298 | 0.34654 | 1.41417 | YES |
+| floor | mid/mid | 25.2228164 +/- 0.2271163 | 283178726 +/- 2549854 | 0.03602 | 0.06040 | 0.04209 | 0.04919 | 0.06587 | 0.09298 | 0.34654 | 1.41417 | YES |
 
-| Run | Pair | seed | microscopic numerical radius / Rg | L / Rg | replicas | dt / t0 | late events | raw k_box / (D_CM Rg) | corrected k∞ / (D_CM Rg) |
-|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| base | end/end | 103001 | 0.66288817 | 10 | 4096 | 0.0001 | 786 | 85.03684 ± 3.0478072 | 43.386099 ± 0.79336762 |
-| base | end/mid | 103002 | 0.66288817 | 10 | 4096 | 0.0001 | 746 | 72.568661 ± 2.6662653 | 39.889425 ± 0.80560227 |
-| base | mid/mid | 103003 | 0.66288817 | 10 | 4096 | 0.0001 | 672 | 58.172124 ± 2.2491044 | 35.112838 ± 0.81942956 |
-| step | end/end | 103101 | 0.63958428 | 10 | 2048 | 2.5e-05 | 430 | 95.269524 ± 4.6221544 | 45.901492 ± 1.0729761 |
-| step | end/mid | 103102 | 0.63958428 | 10 | 2048 | 2.5e-05 | 370 | 72.77522 ± 3.7967762 | 39.951756 ± 1.1442468 |
-| step | mid/mid | 103103 | 0.63958428 | 10 | 2048 | 2.5e-05 | 312 | 53.629374 ± 3.0419903 | 33.40488 ± 1.1802451 |
-| box | end/end | 103201 | 0.66288817 | 14 | 4096 | 0.0001 | 375 | 76.041149 ± 3.9287587 | 47.13752 ± 1.5097028 |
-| box | end/mid | 103202 | 0.66288817 | 14 | 4096 | 0.0001 | 332 | 65.10223 ± 3.57429 | 42.690882 ± 1.5369804 |
-| box | mid/mid | 103203 | 0.66288817 | 14 | 4096 | 0.0001 | 269 | 50.936343 ± 3.1063571 | 36.106171 ± 1.5608413 |
+| Case | Pair | Run | Events | k_box +/- SE | k_infinite +/- SE | Correction removed | Late half 1 | Late half 2 | Mixing times at start |
+|---|---|---|---:|---:|---:|---:|---:|---:|---:|
+| N4 | end/end | base | 5192 | 71.5603 +/- 0.993975 | 50.97138 +/- 0.504294 | 0.28771 | 49.93027 +/- 0.70136 | 51.99559 +/- 0.72381 | 4.73741 |
+| N4 | end/end | step | 10366 | 71.108915 +/- 0.699012 | 50.741953 +/- 0.355935 | 0.28642 | 51.23528 +/- 0.49396 | 50.24475 +/- 0.51285 | 4.73741 |
+| N4 | end/end | contact | 10415 | 71.612023 +/- 0.702308 | 50.997617 +/- 0.356168 | 0.28786 | 51.14488 +/- 0.49449 | 50.85001 +/- 0.51283 | 4.73741 |
+| N4 | end/end | box | 8678 | 64.785271 +/- 0.695596 | 51.367713 +/- 0.437306 | 0.20711 | 51.53823 +/- 0.61319 | 51.1969 +/- 0.62369 | 4.83409 |
+| N4 | end/end | box2 | 8210 | 61.82721 +/- 0.682403 | 51.786611 +/- 0.478758 | 0.16240 | 52.36121 +/- 0.67506 | 51.20953 +/- 0.67909 | 4.87388 |
+| N4 | end/end | adaptive | 10393 | 71.307987 +/- 0.700061 | 50.843239 +/- 0.355898 | 0.28699 | 50.63559 +/- 0.49442 | 51.05021 +/- 0.51194 | 4.73741 |
+| N4 | end/mid | base | 5001 | 67.28025 +/- 0.952109 | 48.761871 +/- 0.500118 | 0.27524 | 48.04287 +/- 0.6957 | 49.47291 +/- 0.71804 | 4.73741 |
+| N4 | end/mid | step | 9918 | 66.655151 +/- 0.669797 | 48.432681 +/- 0.353633 | 0.27338 | 48.60144 +/- 0.49164 | 48.26348 +/- 0.50853 | 4.73741 |
+| N4 | end/mid | contact | 10005 | 67.241149 +/- 0.67275 | 48.741329 +/- 0.353491 | 0.27513 | 49.29321 +/- 0.49116 | 48.18467 +/- 0.50875 | 4.73741 |
+| N4 | end/mid | box | 8235 | 60.739818 +/- 0.669455 | 48.791105 +/- 0.431972 | 0.19672 | 49.03977 +/- 0.60625 | 48.54182 +/- 0.61556 | 4.83409 |
+| N4 | end/mid | box2 | 7781 | 58.098489 +/- 0.658682 | 49.144749 +/- 0.471303 | 0.15411 | 49.60079 +/- 0.66461 | 48.68716 +/- 0.66844 | 4.87388 |
+| N4 | end/mid | adaptive | 9836 | 66.237969 +/- 0.668367 | 48.212044 +/- 0.354089 | 0.27214 | 48.36313 +/- 0.49234 | 48.0606 +/- 0.50911 | 4.73741 |
+| N4 | mid/mid | base | 4610 | 60.697227 +/- 0.89451 | 45.208281 +/- 0.49623 | 0.25518 | 44.87233 +/- 0.691 | 45.54253 +/- 0.71215 | 4.73741 |
+| N4 | mid/mid | step | 9293 | 60.97282 +/- 0.632889 | 45.36099 +/- 0.350284 | 0.25605 | 45.01783 +/- 0.48774 | 45.70237 +/- 0.50272 | 4.73741 |
+| N4 | mid/mid | contact | 9285 | 61.073462 +/- 0.634208 | 45.416669 +/- 0.350717 | 0.25636 | 44.95502 +/- 0.48832 | 45.8751 +/- 0.50329 | 4.73741 |
+| N4 | mid/mid | box | 7587 | 55.141475 +/- 0.633154 | 45.112015 +/- 0.423776 | 0.18189 | 45.55222 +/- 0.59578 | 44.66989 +/- 0.60286 | 4.83409 |
+| N4 | mid/mid | box2 | 7252 | 53.623772 +/- 0.629728 | 45.904518 +/- 0.461476 | 0.14395 | 45.97669 +/- 0.64988 | 45.83231 +/- 0.65537 | 4.87388 |
+| N4 | mid/mid | adaptive | 9211 | 60.495482 +/- 0.630717 | 45.096268 +/- 0.350485 | 0.25455 | 45.48409 +/- 0.48813 | 44.70616 +/- 0.50323 | 4.73741 |
+| N8 | end/end | base | 4905 | 65.97605 +/- 0.942718 | 48.073134 +/- 0.500512 | 0.27135 | 47.7957 +/- 0.6962 | 48.34938 +/- 0.71906 | 4.73741 |
+| N8 | end/end | step | 10044 | 67.766335 +/- 0.676695 | 49.016691 +/- 0.354041 | 0.27668 | 49.4668 +/- 0.4919 | 48.5634 +/- 0.50954 | 4.73741 |
+| N8 | end/end | contact | 9975 | 67.423758 +/- 0.675594 | 48.837207 +/- 0.354455 | 0.27567 | 48.57714 +/- 0.49288 | 49.09622 +/- 0.50939 | 4.73741 |
+| N8 | end/end | box | 8338 | 61.535589 +/- 0.674027 | 49.303264 +/- 0.432689 | 0.19878 | 49.0935 +/- 0.60639 | 49.51259 +/- 0.61734 | 4.83409 |
+| N8 | end/end | box2 | 7968 | 59.511455 +/- 0.666739 | 50.151986 +/- 0.473512 | 0.15727 | 50.092 +/- 0.66604 | 50.21194 +/- 0.67323 | 4.87388 |
+| N8 | end/end | adaptive | 9951 | 67.192816 +/- 0.674087 | 48.715928 +/- 0.354334 | 0.27498 | 48.6335 +/- 0.49265 | 48.79825 +/- 0.50937 | 4.73741 |
+| N8 | end/mid | base | 4517 | 59.041025 +/- 0.878984 | 44.283059 +/- 0.49448 | 0.24996 | 44.73561 +/- 0.68902 | 43.82741 +/- 0.70966 | 4.73741 |
+| N8 | end/mid | step | 8944 | 58.272298 +/- 0.616513 | 43.849193 +/- 0.349093 | 0.24751 | 44.31096 +/- 0.48657 | 43.38421 +/- 0.50088 | 4.73741 |
+| N8 | end/mid | contact | 9154 | 59.815394 +/- 0.625556 | 44.717263 +/- 0.349616 | 0.25241 | 44.65989 +/- 0.48697 | 44.77458 +/- 0.50175 | 4.73741 |
+| N8 | end/mid | box | 7494 | 54.297065 +/- 0.627312 | 44.545263 +/- 0.422215 | 0.17960 | 44.42225 +/- 0.59236 | 44.66813 +/- 0.60178 | 4.83409 |
+| N8 | end/mid | box2 | 7159 | 52.725879 +/- 0.623191 | 45.244936 +/- 0.458895 | 0.14188 | 45.38739 +/- 0.64656 | 45.10233 +/- 0.65139 | 4.87388 |
+| N8 | end/mid | adaptive | 8981 | 58.566247 +/- 0.618348 | 44.01543 +/- 0.34926 | 0.24845 | 43.96412 +/- 0.48663 | 44.0667 +/- 0.5011 | 4.73741 |
+| N8 | mid/mid | base | 3997 | 50.312183 +/- 0.79614 | 39.184146 +/- 0.482907 | 0.22118 | 39.34036 +/- 0.67453 | 39.02757 +/- 0.69131 | 4.73741 |
+| N8 | mid/mid | step | 8150 | 51.264066 +/- 0.5681 | 39.759115 +/- 0.341721 | 0.22443 | 39.21648 +/- 0.47647 | 40.2975 +/- 0.48972 | 4.73741 |
+| N8 | mid/mid | contact | 8123 | 51.077538 +/- 0.566971 | 39.646824 +/- 0.3416 | 0.22379 | 39.28056 +/- 0.4765 | 40.01114 +/- 0.48944 | 4.73741 |
+| N8 | mid/mid | box | 6515 | 46.265209 +/- 0.573249 | 38.991846 +/- 0.407176 | 0.15721 | 38.88394 +/- 0.57182 | 39.09964 +/- 0.5798 | 4.83409 |
+| N8 | mid/mid | box2 | 6241 | 45.346267 +/- 0.574027 | 39.700761 +/- 0.439994 | 0.12450 | 39.91489 +/- 0.62079 | 39.4863 +/- 0.6237 | 4.87388 |
+| N8 | mid/mid | adaptive | 8151 | 51.34957 +/- 0.569013 | 39.810528 +/- 0.342014 | 0.22472 | 40.17248 +/- 0.47778 | 39.44665 +/- 0.48962 | 4.73741 |
+| N16 | end/end | base | 4745 | 63.215217 +/- 0.918317 | 46.590507 +/- 0.498821 | 0.26299 | 47.46209 +/- 0.69395 | 45.70712 +/- 0.71717 | 4.73741 |
+| N16 | end/end | step | 9708 | 64.788069 +/- 0.658012 | 47.43931 +/- 0.352794 | 0.26778 | 47.72388 +/- 0.4907 | 47.15349 +/- 0.50715 | 4.73741 |
+| N16 | end/end | contact | 9696 | 64.680961 +/- 0.657329 | 47.381858 +/- 0.35274 | 0.26745 | 47.45539 +/- 0.4907 | 47.30825 +/- 0.5069 | 4.73741 |
+| N16 | end/end | box | 8005 | 58.819186 +/- 0.657526 | 47.544042 +/- 0.429603 | 0.19169 | 47.65115 +/- 0.60286 | 47.43682 +/- 0.61223 | 4.83409 |
+| N16 | end/end | box2 | 7504 | 55.788956 +/- 0.644063 | 47.482035 +/- 0.466542 | 0.14890 | 48.2031 +/- 0.65902 | 46.75711 +/- 0.66055 | 4.87388 |
+| N16 | end/end | adaptive | 9778 | 65.262655 +/- 0.660462 | 47.693261 +/- 0.352722 | 0.26921 | 47.37527 +/- 0.49071 | 48.0097 +/- 0.50664 | 4.73741 |
+| N16 | end/mid | base | 4290 | 54.936994 +/- 0.839179 | 41.933478 +/- 0.48893 | 0.23670 | 42.29236 +/- 0.68218 | 41.57268 +/- 0.70076 | 4.73741 |
+| N16 | end/mid | step | 8503 | 54.363203 +/- 0.589838 | 41.598342 +/- 0.345362 | 0.23481 | 41.1021 +/- 0.48138 | 42.09097 +/- 0.49511 | 4.73741 |
+| N16 | end/mid | contact | 8432 | 54.022127 +/- 0.588596 | 41.398341 +/- 0.345653 | 0.23368 | 41.5123 +/- 0.48226 | 41.28419 +/- 0.49535 | 4.73741 |
+| N16 | end/mid | box | 6977 | 49.888911 +/- 0.597343 | 41.534434 +/- 0.41403 | 0.16746 | 41.47429 +/- 0.58135 | 41.59455 +/- 0.58967 | 4.83409 |
+| N16 | end/mid | box2 | 6604 | 48.242832 +/- 0.593675 | 41.903473 +/- 0.447903 | 0.13141 | 41.97716 +/- 0.63111 | 41.82975 +/- 0.63574 | 4.87388 |
+| N16 | end/mid | adaptive | 8520 | 54.320882 +/- 0.58879 | 41.573558 +/- 0.344875 | 0.23467 | 41.54609 +/- 0.48104 | 41.60101 +/- 0.49431 | 4.73741 |
+| N16 | mid/mid | base | 3529 | 43.171247 +/- 0.726949 | 34.712352 +/- 0.469983 | 0.19594 | 34.41779 +/- 0.65661 | 35.0057 +/- 0.67246 | 4.73741 |
+| N16 | mid/mid | step | 7246 | 44.240883 +/- 0.519896 | 35.400547 +/- 0.332881 | 0.19982 | 35.48552 +/- 0.46568 | 35.31547 +/- 0.47581 | 4.73741 |
+| N16 | mid/mid | contact | 7303 | 44.650194 +/- 0.522657 | 35.662138 +/- 0.333415 | 0.20130 | 35.56058 +/- 0.46605 | 35.76355 +/- 0.4769 | 4.73741 |
+| N16 | mid/mid | box | 5902 | 41.129792 +/- 0.535419 | 35.279403 +/- 0.393934 | 0.14224 | 35.06206 +/- 0.55308 | 35.4963 +/- 0.56107 | 4.83409 |
+| N16 | mid/mid | box2 | 5429 | 38.91289 +/- 0.528137 | 34.680885 +/- 0.419508 | 0.10876 | 34.33191 +/- 0.58937 | 35.02901 +/- 0.59711 | 4.87388 |
+| N16 | mid/mid | adaptive | 7201 | 44.066736 +/- 0.519463 | 35.288956 +/- 0.333128 | 0.19919 | 35.32963 +/- 0.46597 | 35.24826 +/- 0.47621 | 4.73741 |
+| N4_N16 | end/end | base | 6369 | 62.088381 +/- 0.779272 | 39.781249 +/- 0.319908 | 0.35928 | 39.7207 +/- 0.44125 | 39.84169 +/- 0.46324 | 4.73741 |
+| N4_N16 | end/end | step | 12758 | 61.698922 +/- 0.547131 | 39.621006 +/- 0.225625 | 0.35783 | 39.82979 +/- 0.31062 | 39.41099 +/- 0.3275 | 4.73741 |
+| N4_N16 | end/end | contact | 12809 | 61.94285 +/- 0.548207 | 39.721455 +/- 0.22543 | 0.35874 | 39.4873 +/- 0.31136 | 39.95407 +/- 0.32588 | 4.73741 |
+| N4_N16 | end/end | box | 11085 | 55.44751 +/- 0.526847 | 40.83954 +/- 0.285813 | 0.26346 | 41.01916 +/- 0.39923 | 40.65935 +/- 0.40916 | 4.83409 |
+| N4_N16 | end/end | box2 | 10338 | 50.839759 +/- 0.500082 | 40.507004 +/- 0.317464 | 0.20324 | 41.04179 +/- 0.44654 | 39.96859 +/- 0.45141 | 4.87388 |
+| N4_N16 | end/end | adaptive | 13054 | 63.518872 +/- 0.556901 | 40.363675 +/- 0.224882 | 0.36454 | 40.4251 +/- 0.3097 | 40.30215 +/- 0.3262 | 4.73741 |
+| N4_N16 | end/mid | base | 5829 | 52.812004 +/- 0.692552 | 35.757083 +/- 0.317476 | 0.32294 | 35.83549 +/- 0.43922 | 35.67851 +/- 0.45861 | 4.73741 |
+| N4_N16 | end/mid | step | 11672 | 52.948052 +/- 0.490678 | 35.819397 +/- 0.22456 | 0.32350 | 36.0472 +/- 0.31041 | 35.5902 +/- 0.32474 | 4.73741 |
+| N4_N16 | end/mid | contact | 11749 | 53.364659 +/- 0.492925 | 36.009575 +/- 0.224445 | 0.32522 | 36.14131 +/- 0.31035 | 35.87737 +/- 0.32441 | 4.73741 |
+| N4_N16 | end/mid | box | 9753 | 47.017143 +/- 0.476222 | 36.075248 +/- 0.28036 | 0.23272 | 35.76363 +/- 0.39218 | 36.38524 +/- 0.40064 | 4.83409 |
+| N4_N16 | end/mid | box2 | 9365 | 44.939628 +/- 0.464429 | 36.67098 +/- 0.309247 | 0.18399 | 36.5352 +/- 0.43436 | 36.80653 +/- 0.44028 | 4.87388 |
+| N4_N16 | end/mid | adaptive | 11727 | 53.114893 +/- 0.491072 | 35.895675 +/- 0.224283 | 0.32419 | 36.05485 +/- 0.31012 | 35.73582 +/- 0.32421 | 4.73741 |
+| N4_N16 | mid/mid | base | 5412 | 47.327918 +/- 0.643952 | 33.155865 +/- 0.316038 | 0.29944 | 33.12659 +/- 0.43845 | 33.18512 +/- 0.45526 | 4.73741 |
+| N4_N16 | mid/mid | step | 11003 | 48.603982 +/- 0.463825 | 33.777115 +/- 0.224004 | 0.30505 | 33.57031 +/- 0.31082 | 33.98282 +/- 0.32252 | 4.73741 |
+| N4_N16 | mid/mid | contact | 10840 | 47.627163 +/- 0.457889 | 33.302451 +/- 0.223874 | 0.30077 | 33.48094 +/- 0.31032 | 33.12313 +/- 0.32287 | 4.73741 |
+| N4_N16 | mid/mid | box | 9117 | 43.096499 +/- 0.45146 | 33.721422 +/- 0.276405 | 0.21754 | 33.8001 +/- 0.38728 | 33.64265 +/- 0.3945 | 4.83409 |
+| N4_N16 | mid/mid | box2 | 8494 | 40.290299 +/- 0.4372 | 33.515081 +/- 0.302524 | 0.16816 | 32.8962 +/- 0.42383 | 34.12938 +/- 0.43165 | 4.87388 |
+| N4_N16 | mid/mid | adaptive | 11017 | 48.350367 +/- 0.461106 | 33.654436 +/- 0.223402 | 0.30395 | 33.47758 +/- 0.30997 | 33.83049 +/- 0.32168 | 4.73741 |
+| N16_N4 | end/end | base | 6431 | 62.479748 +/- 0.780411 | 39.94155 +/- 0.318929 | 0.36073 | 40.26567 +/- 0.43852 | 39.61443 +/- 0.4636 | 4.73741 |
+| N16_N4 | end/end | step | 13000 | 62.970976 +/- 0.553227 | 40.141732 +/- 0.224809 | 0.36254 | 40.45141 +/- 0.30907 | 39.82931 +/- 0.32682 | 4.73741 |
+| N16_N4 | end/end | contact | 12828 | 62.077261 +/- 0.548993 | 39.776683 +/- 0.225403 | 0.35924 | 39.63207 +/- 0.3111 | 39.92071 +/- 0.32613 | 4.73741 |
+| N16_N4 | end/end | box | 11062 | 55.28992 +/- 0.525894 | 40.753984 +/- 0.285724 | 0.26290 | 40.65225 +/- 0.39918 | 40.85554 +/- 0.40888 | 4.83409 |
+| N16_N4 | end/end | box2 | 10502 | 51.719289 +/- 0.504748 | 41.063395 +/- 0.318185 | 0.20603 | 40.84888 +/- 0.44649 | 41.27733 +/- 0.4534 | 4.87388 |
+| N16_N4 | end/end | adaptive | 12791 | 62.012165 +/- 0.549208 | 39.749946 +/- 0.225661 | 0.35900 | 39.28233 +/- 0.31221 | 40.21148 +/- 0.32549 | 4.73741 |
+| N16_N4 | end/mid | base | 6186 | 58.327079 +/- 0.742669 | 38.202797 +/- 0.3186 | 0.34502 | 38.1686 +/- 0.44004 | 38.23697 +/- 0.46082 | 4.73741 |
+| N16_N4 | end/mid | step | 12374 | 58.296871 +/- 0.524831 | 38.189836 +/- 0.225229 | 0.34491 | 37.96108 +/- 0.31148 | 38.41716 +/- 0.32523 | 4.73741 |
+| N16_N4 | end/mid | contact | 12291 | 57.81487 +/- 0.522234 | 37.982396 +/- 0.225398 | 0.34303 | 38.04928 +/- 0.31117 | 37.91539 +/- 0.32623 | 4.73741 |
+| N16_N4 | end/mid | box | 10581 | 51.990548 +/- 0.505604 | 38.932829 +/- 0.283527 | 0.25116 | 38.77958 +/- 0.39636 | 39.08567 +/- 0.40547 | 4.83409 |
+| N16_N4 | end/mid | box2 | 9821 | 47.742887 +/- 0.481815 | 38.516392 +/- 0.313584 | 0.19325 | 38.20056 +/- 0.44002 | 38.83099 +/- 0.44684 | 4.87388 |
+| N16_N4 | end/mid | adaptive | 12478 | 58.705392 +/- 0.526313 | 38.364728 +/- 0.224777 | 0.34649 | 37.96523 +/- 0.31116 | 38.75986 +/- 0.32413 | 4.73741 |
+| N16_N4 | mid/mid | base | 5378 | 47.216112 +/- 0.644455 | 33.100954 +/- 0.316733 | 0.29895 | 33.16549 +/- 0.43929 | 33.03631 +/- 0.45645 | 4.73741 |
+| N16_N4 | mid/mid | step | 10821 | 47.438112 +/- 0.456468 | 33.209908 +/- 0.223713 | 0.29993 | 33.54101 +/- 0.30995 | 32.87595 +/- 0.32286 | 4.73741 |
+| N16_N4 | mid/mid | contact | 10957 | 48.261209 +/- 0.461513 | 33.611216 +/- 0.223849 | 0.30356 | 33.74823 +/- 0.31024 | 33.47371 +/- 0.32286 | 4.73741 |
+| N16_N4 | mid/mid | box | 9273 | 43.855316 +/- 0.455532 | 34.184234 +/- 0.276774 | 0.22052 | 34.15312 +/- 0.38762 | 34.21533 +/- 0.39518 | 4.83409 |
+| N16_N4 | mid/mid | box2 | 8713 | 41.288717 +/- 0.442369 | 34.203077 +/- 0.303565 | 0.17161 | 34.15203 +/- 0.42674 | 34.25409 +/- 0.43185 | 4.87388 |
+| N16_N4 | mid/mid | adaptive | 10953 | 48.246246 +/- 0.461454 | 33.603958 +/- 0.223863 | 0.30349 | 33.45066 +/- 0.3106 | 33.75665 +/- 0.32237 | 4.73741 |
+| floor | end/end | base | 6670 | 28.716808 +/- 0.351668 | 24.711227 +/- 0.260405 | 0.13949 | 24.50128 +/- 0.36478 | 24.9206 +/- 0.37168 | 4.73741 |
+| floor | end/end | step | 13487 | 29.015373 +/- 0.24988 | 24.93199 +/- 0.184497 | 0.14073 | 24.80377 +/- 0.25867 | 25.06 +/- 0.26313 | 4.73741 |
+| floor | end/end | contact | 13494 | 29.007407 +/- 0.249747 | 24.926108 +/- 0.184413 | 0.14070 | 25.00592 +/- 0.25912 | 24.84621 +/- 0.26248 | 4.73741 |
+| floor | end/end | box | 10969 | 27.58056 +/- 0.263352 | 24.820488 +/- 0.21328 | 0.10007 | 24.47444 +/- 0.29906 | 25.16547 +/- 0.30413 | 4.83409 |
+| floor | end/end | box2 | 10460 | 27.3892 +/- 0.267806 | 25.222816 +/- 0.227116 | 0.07910 | 25.48658 +/- 0.32168 | 24.95858 +/- 0.32069 | 4.87388 |
+| floor | end/end | adaptive | 13585 | 29.259446 +/- 0.251072 | 25.111986 +/- 0.184939 | 0.14175 | 24.82632 +/- 0.25884 | 25.39658 +/- 0.26417 | 4.73741 |
+| floor | end/mid | base | 6670 | 28.716808 +/- 0.351668 | 24.711227 +/- 0.260405 | 0.13949 | 24.50128 +/- 0.36478 | 24.9206 +/- 0.37168 | 4.73741 |
+| floor | end/mid | step | 13487 | 29.015373 +/- 0.24988 | 24.93199 +/- 0.184497 | 0.14073 | 24.80377 +/- 0.25867 | 25.06 +/- 0.26313 | 4.73741 |
+| floor | end/mid | contact | 13494 | 29.007407 +/- 0.249747 | 24.926108 +/- 0.184413 | 0.14070 | 25.00592 +/- 0.25912 | 24.84621 +/- 0.26248 | 4.73741 |
+| floor | end/mid | box | 10969 | 27.58056 +/- 0.263352 | 24.820488 +/- 0.21328 | 0.10007 | 24.47444 +/- 0.29906 | 25.16547 +/- 0.30413 | 4.83409 |
+| floor | end/mid | box2 | 10460 | 27.3892 +/- 0.267806 | 25.222816 +/- 0.227116 | 0.07910 | 25.48658 +/- 0.32168 | 24.95858 +/- 0.32069 | 4.87388 |
+| floor | end/mid | adaptive | 13585 | 29.259446 +/- 0.251072 | 25.111986 +/- 0.184939 | 0.14175 | 24.82632 +/- 0.25884 | 25.39658 +/- 0.26417 | 4.73741 |
+| floor | mid/mid | base | 6670 | 28.716808 +/- 0.351668 | 24.711227 +/- 0.260405 | 0.13949 | 24.50128 +/- 0.36478 | 24.9206 +/- 0.37168 | 4.73741 |
+| floor | mid/mid | step | 13487 | 29.015373 +/- 0.24988 | 24.93199 +/- 0.184497 | 0.14073 | 24.80377 +/- 0.25867 | 25.06 +/- 0.26313 | 4.73741 |
+| floor | mid/mid | contact | 13494 | 29.007407 +/- 0.249747 | 24.926108 +/- 0.184413 | 0.14070 | 25.00592 +/- 0.25912 | 24.84621 +/- 0.26248 | 4.73741 |
+| floor | mid/mid | box | 10969 | 27.58056 +/- 0.263352 | 24.820488 +/- 0.21328 | 0.10007 | 24.47444 +/- 0.29906 | 25.16547 +/- 0.30413 | 4.83409 |
+| floor | mid/mid | box2 | 10460 | 27.3892 +/- 0.267806 | 25.222816 +/- 0.227116 | 0.07910 | 25.48658 +/- 0.32168 | 24.95858 +/- 0.32069 | 4.87388 |
+| floor | mid/mid | adaptive | 13585 | 29.259446 +/- 0.251072 | 25.111986 +/- 0.184939 | 0.14175 | 24.82632 +/- 0.25884 | 25.39658 +/- 0.26417 | 4.73741 |
 
-Final long-time oracle uses the step-refined run, as declared before simulation.
+| Pair | Bead contacts | Mode contacts | Replicas | Combined SE of probabilities | Allowed difference | Pass |
+|---|---:|---:|---:|---:|---:|---|
+| end/end | 4173 | 4093 | 32768 | 0.002593692 | 0.01373256 | True |
+| end/mid | 4072 | 4035 | 32768 | 0.002572203 | 0.01360662 | True |
+| mid/mid | 3932 | 3878 | 32768 | 0.002531162 | 0.01337578 | True |
 
-| Pair | Reference k∞ (m³ mol⁻¹ s⁻¹) | Candidate k (m³ mol⁻¹ s⁻¹) | Candidate / reference | numerical audits | factor-two scale comparison |
-|---|---:|---:|---:|---|---|
-| end/end | 52263142 ± 1221683.7 | 57231953 | 1.095073 | PASS | PASS |
-| end/mid | 45488811 ± 1302831.9 | 57231953 | 1.2581545 | PASS | PASS |
-| mid/mid | 38034580 ± 1343819.5 | 57231953 | 1.5047347 | PASS | PASS |
-
-Step-refined end/end; L/Rg=10, replicas=2048, seed=103101, dt/t0=2.5e-05. Time is in t0; bin k is a finite-box hazard coefficient.
-
-| t1 | t2 | S(t2) ± SE | k_bin / (D_CM Rg) ± SE | k_bin (m³ mol⁻¹ s⁻¹) ± SE |
-|---:|---:|---:|---:|---:|
-| 0 | 0.02 | 0.98925781 ± 0.0022779078 | 540.01507 ± 115.13216 | 6.1485766e+08 ± 1.3108873e+08 |
-| 0.02 | 0.05 | 0.98388672 ± 0.0027822719 | 181.47368 ± 54.716441 | 2.0662476e+08 ± 62299785 |
-| 0.05 | 0.1 | 0.97753906 ± 0.0032742816 | 129.45029 ± 35.903113 | 1.4739126e+08 ± 40879052 |
-| 0.1 | 0.2 | 0.96191406 ± 0.0042294655 | 161.13138 ± 28.484581 | 1.8346315e+08 ± 32432360 |
-| 0.2 | 0.4 | 0.93945312 ± 0.005270095 | 118.13595 ± 17.418601 | 1.3450883e+08 ± 19832706 |
-| 0.4 | 0.8 | 0.89550781 ± 0.0067594541 | 119.76745 ± 12.625805 | 1.3636644e+08 ± 14375659 |
-| 0.8 | 1.6 | 0.82519531 ± 0.0083924727 | 102.21356 ± 8.5201696 | 1.1637969e+08 ± 9701009.9 |
-| 1.6 | 3.2 | 0.71630859 ± 0.0099611205 | 88.443144 ± 5.9275338 | 1.0070079e+08 ± 6749051.6 |
-| 3.2 | 4 | 0.66259766 ± 0.010448021 | 97.428898 ± 9.2918326 | 1.1093191e+08 ± 10579620 |
-| 4 | 6 | 0.54882812 ± 0.010995734 | 94.191315 ± 6.1798066 | 1.0724562e+08 ± 7036287.8 |
-| 6 | 8 | 0.45263672 ± 0.010998862 | 96.347732 ± 6.875117 | 1.097009e+08 ± 7827963.7 |
-
-Step-refined end/mid; L/Rg=10, replicas=2048, seed=103102, dt/t0=2.5e-05. Time is in t0; bin k is a finite-box hazard coefficient.
-
-| t1 | t2 | S(t2) ± SE | k_bin / (D_CM Rg) ± SE | k_bin (m³ mol⁻¹ s⁻¹) ± SE |
-|---:|---:|---:|---:|---:|
-| 0 | 0.02 | 0.98828125 ± 0.0023780224 | 589.39779 ± 120.31102 | 6.710845e+08 ± 1.3698534e+08 |
-| 0.02 | 0.05 | 0.98291016 ± 0.0028639207 | 181.65349 ± 54.770656 | 2.0682949e+08 ± 62361515 |
-| 0.05 | 0.1 | 0.97363281 ± 0.0035404994 | 189.6695 ± 43.513331 | 2.1595647e+08 ± 49543997 |
-| 0.1 | 0.2 | 0.96142578 ± 0.0042554106 | 126.16872 ± 25.233911 | 1.4365489e+08 ± 28731168 |
-| 0.2 | 0.4 | 0.94287109 ± 0.0051284856 | 97.438981 ± 15.80694 | 1.1094339e+08 ± 17997680 |
-| 0.4 | 0.8 | 0.91308594 ± 0.0062249501 | 80.248931 ± 10.275264 | 91370914 ± 11699349 |
-| 0.8 | 1.6 | 0.85986328 ± 0.0076705357 | 75.070752 ± 7.1915546 | 85475072 ± 8188257.5 |
-| 1.6 | 3.2 | 0.75732422 ± 0.0094730355 | 79.363716 ± 5.4802969 | 90363013 ± 6239830.6 |
-| 3.2 | 4 | 0.71533203 ± 0.0099714464 | 71.305802 ± 7.690145 | 81188324 ± 8755949.3 |
-| 4 | 6 | 0.61865234 ± 0.010732945 | 72.601671 ± 5.1641099 | 82663792 ± 5879822.1 |
-| 6 | 8 | 0.53466797 ± 0.011021954 | 72.948769 ± 5.5672261 | 83058996 ± 6338807.6 |
-
-Step-refined mid/mid; L/Rg=10, replicas=2048, seed=103103, dt/t0=2.5e-05. Time is in t0; bin k is a finite-box hazard coefficient.
-
-| t1 | t2 | S(t2) ± SE | k_bin / (D_CM Rg) ± SE | k_bin (m³ mol⁻¹ s⁻¹) ± SE |
-|---:|---:|---:|---:|---:|
-| 0 | 0.02 | 0.98876953 ± 0.0023285282 | 564.70033 ± 117.74878 | 6.4296414e+08 ± 1.34068e+08 |
-| 0.02 | 0.05 | 0.98535156 ± 0.0026547662 | 115.42595 ± 43.626932 | 1.3142324e+08 ± 49673342 |
-| 0.05 | 0.1 | 0.97509766 ± 0.0034433343 | 209.21735 ± 45.655177 | 2.3821352e+08 ± 51982689 |
-| 0.1 | 0.2 | 0.96533203 ± 0.0040423841 | 100.6551 ± 22.50726 | 1.1460525e+08 ± 25626621 |
-| 0.2 | 0.4 | 0.953125 ± 0.0046706852 | 63.630281 ± 12.726142 | 72449026 ± 14489903 |
-| 0.4 | 0.8 | 0.93164062 ± 0.0055764559 | 56.997287 ± 8.5928505 | 64896742 ± 9783763.9 |
-| 0.8 | 1.6 | 0.89160156 ± 0.0068696078 | 54.909739 ± 6.0642538 | 62519873 ± 6904720.1 |
-| 1.6 | 3.2 | 0.82226562 ± 0.0084474729 | 50.597416 ± 4.2472005 | 57609891 ± 4835834.9 |
-| 3.2 | 4 | 0.7890625 ± 0.0090150393 | 51.522445 ± 6.2484565 | 58663122 ± 7114452 |
-| 4 | 6 | 0.70117188 ± 0.010114816 | 59.046245 ± 4.403605 | 67229672 ± 5013916.2 |
-| 6 | 8 | 0.63671875 ± 0.010627481 | 48.212504 ± 4.1979857 | 54894444 ± 4779799.3 |
-
-Dedicated transient end/end; L/Rg=6, replicas=32768, seed=103301, dt/t0=2.5e-05. Time is in t0; bin k is a finite-box hazard coefficient.
-
-| t1 | t2 | S(t2) ± SE | k_bin / (D_CM Rg) ± SE | k_bin (m³ mol⁻¹ s⁻¹) ± SE |
-|---:|---:|---:|---:|---:|
-| 0 | 0.02 | 0.96325684 ± 0.0010392843 | 404.30015 ± 11.652417 | 4.6033353e+08 ± 13267366 |
-| 0.02 | 0.05 | 0.93295288 ± 0.0013816402 | 230.15076 ± 7.3039246 | 2.6204817e+08 ± 8316201.2 |
-| 0.05 | 0.1 | 0.8888855 ± 0.0017361343 | 209.02868 ± 5.5012913 | 2.379987e+08 ± 6263734.7 |
-| 0.1 | 0.2 | 0.81985474 ± 0.002123024 | 174.61711 ± 3.6724742 | 1.9881791e+08 ± 4181455.3 |
-
-Dedicated transient end/mid; L/Rg=6, replicas=32768, seed=103302, dt/t0=2.5e-05. Time is in t0; bin k is a finite-box hazard coefficient.
-
-| t1 | t2 | S(t2) ± SE | k_bin / (D_CM Rg) ± SE | k_bin (m³ mol⁻¹ s⁻¹) ± SE |
-|---:|---:|---:|---:|---:|
-| 0 | 0.02 | 0.96447754 ± 0.0010225219 | 390.62233 ± 11.449967 | 4.4476006e+08 ± 13036859 |
-| 0.02 | 0.05 | 0.93676758 ± 0.0013445002 | 209.88966 ± 6.9656797 | 2.3897901e+08 ± 7931077.8 |
-| 0.05 | 0.1 | 0.89883423 ± 0.0016658337 | 178.57403 ± 5.0653989 | 2.0332323e+08 ± 5767430.3 |
-| 0.1 | 0.2 | 0.84124756 ± 0.0020188179 | 143.01931 ± 3.2929721 | 1.6284086e+08 ± 3749356.7 |
-
-Dedicated transient mid/mid; L/Rg=6, replicas=32768, seed=103303, dt/t0=2.5e-05. Time is in t0; bin k is a finite-box hazard coefficient.
-
-| t1 | t2 | S(t2) ± SE | k_bin / (D_CM Rg) ± SE | k_bin (m³ mol⁻¹ s⁻¹) ± SE |
-|---:|---:|---:|---:|---:|
-| 0 | 0.02 | 0.96569824 ± 0.0010054349 | 376.96182 ± 11.244399 | 4.2920629e+08 ± 12802800 |
-| 0.02 | 0.05 | 0.94158936 ± 0.0012955429 | 182.03152 ± 6.4765633 | 2.0725991e+08 ± 7374173.1 |
-| 0.05 | 0.1 | 0.90960693 ± 0.0015840521 | 149.28488 ± 4.6116549 | 1.699748e+08 ± 5250800.4 |
-| 0.1 | 0.2 | 0.86398315 ± 0.001893756 | 111.15207 ± 2.8750466 | 1.2655703e+08 ± 3273509.5 |
-
-| Pair | Transient t1 | t2 | Candidate / finite-box reference | 20% + 4 SE diagnostic |
-|---|---:|---:|---:|---|
-| end/end | 0 | 0.02 | 0.12432714 | outside band (report-only) |
-| end/end | 0.02 | 0.05 | 0.21840242 | outside band (report-only) |
-| end/end | 0.05 | 0.1 | 0.2404717 | outside band (report-only) |
-| end/end | 0.1 | 0.2 | 0.28786115 | outside band (report-only) |
-| end/mid | 0 | 0.02 | 0.12868051 | outside band (report-only) |
-| end/mid | 0.02 | 0.05 | 0.23948527 | outside band (report-only) |
-| end/mid | 0.05 | 0.1 | 0.2814826 | outside band (report-only) |
-| end/mid | 0.1 | 0.2 | 0.35145941 | outside band (report-only) |
-| mid/mid | 0 | 0.02 | 0.1333437 | outside band (report-only) |
-| mid/mid | 0.02 | 0.05 | 0.27613615 | outside band (report-only) |
-| mid/mid | 0.05 | 0.1 | 0.33670845 | outside band (report-only) |
-| mid/mid | 0.1 | 0.2 | 0.45222262 | outside band (report-only) |
-
-| Entangled theory parameter | Value |
-|---|---:|
-| `units` | 2048 |
-| `Ne_units` | 142.102736438 |
-| `D_CM_m2_s` | 9.33515336888e-13 |
-| `Rg_m` | 1.24212085295e-08 |
-| `bond_rms_m` | 6.72317633266e-10 |
-| `ta_s` | 1.64047676216e-11 |
-| `te_s` | 3.31264551809e-07 |
-| `tau_R_s` | 6.88065824544e-05 |
-| `tau_d_s` | 0.000991647904882 |
-
-Entangled entries are scaling predictions with unidentified prefactors, not measured rates or error bars.
+Sampled covariance: 75 checks; maximum absolute discrepancy / SE = 3.0215409 (limit 6).
+Independent Ewald constant: 2.83729747948.
 
 <!-- END REPRODUCED NUMBERS -->
 
-## Replacement pytest body (text only)
+## Actual candidate comparison
 
-This replaces the skip and empty body after adoption. It keeps the real transport API and arms; it does not copy the candidate formula into a mock. The external reference is intentionally slow and is regenerated before assertions. The fixture path defaults to the sibling `fixtures/i030_kernel_reference` directory when adopted into `metTest.py`; the wrapper provisions `MET_KERNEL_REFERENCE_PACK` for its isolated temporary test. The scaffold imports `os` along with the other standard-library imports used below. A reference audit failure must fail the test. The entangled assertions test ratios and never claim amplitude agreement.
+Target rates include Avogadro's constant and have units m3 mol-1 s-1. The
+reference volume rate is multiplied by the literal constant once. There is no
+identical-reactant consumption factor. The candidate's analytically exponential
+single-pair survival makes a separate kMC sampling run unnecessary.
+
+<!-- BEGIN CANDIDATE NUMBERS -->
+
+| Case | Pair | Candidate (m3 mol-1 s-1) | Candidate / reference | Within numerical budget | Reference qualified | Accepted |
+|---|---|---:|---:|---|---|---|
+| N4 | end/end | 114463905 | 0.970627 | True | True | True |
+| N4 | end/mid | 114463905 | 1.0228047 | True | True | True |
+| N4 | mid/mid | 114463905 | 1.0950008 | True | True | True |
+| N8 | end/end | 80938203.7 | 1.0022631 | True | True | True |
+| N8 | end/mid | 80938203.7 | 1.1109637 | True | True | True |
+| N8 | mid/mid | 80938203.7 | 1.2661088 | True | True | True |
+| N16 | end/end | 57231952.7 | 1.0586211 | True | True | True |
+| N16 | end/mid | 57231952.7 | 1.1995541 | True | True | True |
+| N16 | mid/mid | 57231952.7 | 1.4493714 | True | True | True |
+| N4_N16 | end/end | 71539940.9 | 0.77556775 | True | True | True |
+| N4_N16 | end/mid | 71539940.9 | 0.85669721 | True | True | True |
+| N4_N16 | mid/mid | 71539940.9 | 0.93736686 | True | True | True |
+| N16_N4 | end/end | 71539940.9 | 0.76505916 | True | True | True |
+| N16_N4 | end/mid | 71539940.9 | 0.81565082 | True | True | True |
+| N16_N4 | mid/mid | 71539940.9 | 0.9185117 | True | True | True |
+| floor | end/end | 282167444 | 0.99642882 | True | True | True |
+| floor | end/mid | 282167444 | 0.99642882 | True | True | True |
+| floor | mid/mid | 282167444 | 0.99642882 | True | True | True |
+
+Literal transport anchors: 13/13.
+Literal min/floor/two-chain branches: 18/18.
+Proposed scientific test passed: True.
+
+<!-- END CANDIDATE NUMBERS -->
+
+## Mutation results and their controls
+
+Actual mutations compile modified target source **in memory** and leave the
+product file untouched. The unmodified target must first pass literal transport
+and `min`/floor/two-chain rule assertions. Failure of already-rejected scientific
+adoption is never counted as a mutation kill. Mutation tables state the lane
+that rejects a mutant. Exact rule assertions alone do not validate the Rouse
+physical approximation. Separately, qualified oracle-backed positive controls
+measure rate-budget discrimination without relying on a rejected target.
+The six requested rate mutations must each reject at least one qualified row
+whose unmodified target rate passed; the strict mutation flag enforces this
+in addition to the literal-rule controls.
+
+<!-- BEGIN MUTATION NUMBERS -->
+
+Target baseline passes literal-input and kernel-rule controls before each mutation. Scientific adoption failure is never counted as a mutation kill.
+
+| Actual target mutation | Changes observable | Rejected | Failed anchors | Failed literal branches | Failed qualified rate checks | New rate rejections from passing baseline rows |
+|---|---|---|---:|---:|---:|---:|---:|
+| capture_radius_x0.5 | True | True | 0 | 18 | 17 | 17 |
+| capture_radius_x2 | True | True | 0 | 18 | 18 | 18 |
+| candidate_diffusion_x4 | True | True | 0 | 18 | 18 | 18 |
+| shared_chain_diffusivity_x4 | True | True | 4 | 18 | 18 | 18 |
+| drop_one_chain_diffusion | True | True | 0 | 18 | 16 | 16 |
+| length_min_to_max | True | True | 0 | 6 | 6 | 6 |
+| length_min_to_i | True | True | 0 | 3 | 3 | 3 |
+| length_min_to_j | True | True | 0 | 3 | 3 | 3 |
+| length_min_to_mean | True | True | 0 | 6 | 3 | 3 |
+| drop_sigma0_floor | True | True | 0 | 3 | 0 | 0 |
+| swap_reference_prefactors_in_candidate | True | True | 0 | 10 | 4 | 4 |
+
+| Rate control against qualified oracle | Positive controls | Rejected by rate budget |
+|---|---:|---|
+| radius_x0.5 | 18 | True |
+| radius_x2 | 18 | True |
+| diffusion_x4 | 18 | True |
+| drop_one_equal_chain | 12 | True |
+
+| Oracle prefactor swap witness | Original end > mid by 4 SE | Swap rejected |
+|---|---|---|
+| N4 | True | True |
+| N8 | True | True |
+| N16 | True | True |
+| N4_N16 | True | True |
+| N16_N4 | True | True |
+| floor | False | False |
+
+Actual sampler noise/coordinates x2 rejected: True.
+
+The required prefactor mutation rescales candidate end/end by C_mid/C_end and mid/mid by C_end/C_mid, using the independent reference. A bare target label swap is a separate observational no-op; it is reported as an expected survivor, never substituted for the requested prefactor perturbation.
+
+<!-- END MUTATION NUMBERS -->
+
+## Executable proposed scientific test and Verifier
+
+This is a proposed fixture-consuming test; no repository test file is changed.
+The verifier extracts and executes this exact body. A failed oracle or candidate
+causes a real assertion failure, preserved in JUnit and the terminal log.
 
 ```python
 def test_met_kernel_reference(tmp_path):
-    pack_root = Path(os.environ.get(
-        "MET_KERNEL_REFERENCE_PACK",
-        Path(__file__).resolve().parent / "fixtures/i030_kernel_reference",
-    ))
-    reference_output = tmp_path / "reference"
-    # Build a fresh oracle for these inputs; do not assert the old candidate's fingerprint.
-    subprocess.run(
-        [sys.executable, str(pack_root / "reference/run.py"), "--output", str(reference_output)],
-        cwd=pack_root, check=True,
-    )
-    cfg = json.loads((pack_root / "reference/parameters.json").read_text())
-    data = json.loads((reference_output / "results.json").read_text())
-    assert data["parameters_sha256"] == hashlib.sha256(
-        (pack_root / "reference/parameters.json").read_bytes()
-    ).hexdigest()
-    assert data["met_source_sha256"] == hashlib.sha256(
-        Path(met_module.__file__).read_bytes()
-    ).hexdigest()
-    assert data["independent_checks"]["FFT_covariance_check"] == "PASS"
-    arm = met_module.TRANSPORT_ARMS[cfg["rouse_arm"]]
-    mapped = data["mapped"]
-    comparisons = {row["pair_class"]: row for row in data["comparison"]}
-    assert set(comparisons) == {"end/end", "end/mid", "mid/mid"}
-    for pair_class, row in comparisons.items():
-        assert all(check["pass"] for check in row["numerical_checks"].values()), row
-        k = met_module.diffusion_rate(
-            arm, cfg["temperature_K"], mapped["N"], mapped["N"],
-            pair_class, spin_factor=1.0,
-        ) / mapped["rate_unit_m3_mol_s"]
-        kref = row["reference_reduced"]
-        se = row["reference_se_reduced"]
-        assert abs(math.log(k/kref)) <= math.log(cfg["long_model_factor"]) + 4*se/kref
-        # Report every transient diagnostic, including disagreement; no xfail or assertion.
-        print(pair_class, "transient/report-only", row["transient_reporting_only"])
-    tube_arm = met_module.TRANSPORT_ARMS[cfg["entangled_arm"]]
-    n1, n2 = 2048.0, 4096.0
-    assert n1 > tube_arm.n_e
-    for pair_class in comparisons:
-        k1 = met_module.diffusion_rate(tube_arm, 700.0, n1, n1, pair_class, spin_factor=1.0)
-        k2 = met_module.diffusion_rate(tube_arm, 700.0, n2, n2, pair_class, spin_factor=1.0)
-        assert math.isclose(k2/k1, (n2/n1)**(-1.5), rel_tol=1e-12)
-        theory = next(row for row in data["tube"]["rows"] if row["pair_class"] == pair_class)
-        for regime in theory["transient_regimes"]:
-            # Normalized observable: two times separated by a factor four in one regime.
-            # Amplitudes cancel. This is a scaling prediction, with no Monte Carlo error.
-            ratio_reference = 4.0**regime["k_exponent"]
-            print(pair_class, regime["name"], "k(4t)/k(t): theory", ratio_reference,
-                  "candidate", 1.0, "report-only")
+    root = Path(os.environ["MET_KERNEL_REFERENCE_PACK"])
+    sys.path.insert(0, str(root))
+    import checks
+    output = tmp_path / "fresh-reference"
+    subprocess.run([
+        sys.executable, "-B", "-u", str(root / "reference/run.py"),
+        "--workers", os.environ.get("MET_KERNEL_REFERENCE_WORKERS", "8"),
+        "--output", str(output),
+    ], check=True)
+    reference = json.loads((output / "results.json").read_text())
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("test_rouse_inputs", root / "reference/run.py")
+    oracle = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(oracle)
+    cfg, digest = oracle.read_parameters()
+    assert reference["parameters_sha256"] == digest
+    report = checks.target_checks(checks.load_target(), cfg, reference)
+    checks.assert_scientific_acceptance(report)
 ```
 
-## Commands, reproducibility and verification evidence
-
-Python is `/home/alon/anaconda3/envs/rmg_env/bin/python`. The observed environment has NumPy 1.26.4 and SciPy 1.13.1. No additional dependencies, RMG compiled extensions, mechanism generation or database loading are required. `reference/` contains one runnable script, `run.py`, plus its frozen JSON configuration and output artifacts. There is no hidden build step. To run:
+From the named worktree run:
 
 ```bash
-cd /home/alon/Code/RMG-Py-kmc-i030-kernel-reference/test/rmgpy/kmc/fixtures/i030_kernel_reference
-/home/alon/anaconda3/envs/rmg_env/bin/python -u reference/run.py > >(tee -a /home/alon/runs/i030-met-kernel-reference/fixture-reference-stdout.log) 2> >(tee -a /home/alon/runs/i030-met-kernel-reference/fixture-reference-stderr.log >&2)
-/home/alon/anaconda3/envs/rmg_env/bin/python -u reference/run.py --verify-again > >(tee -a /home/alon/runs/i030-met-kernel-reference/fixture-reference-verifier-stdout.log) 2> >(tee -a /home/alon/runs/i030-met-kernel-reference/fixture-reference-verifier-stderr.log >&2)
+taskset -c 6,16,17,19,21,23,24,26 /home/alon/anaconda3/envs/rmg_env/bin/python -B -u test/rmgpy/kmc/fixtures/i030_kernel_reference/verify_pack.py --workers 8 --require-all-mutations --require-acceptance --output /home/alon/runs/i030-met-kernel-reference/rework/verifications > >(tee -a /home/alon/runs/i030-met-kernel-reference/rework/verifier-final-stdout.log) 2> >(tee -a /home/alon/runs/i030-met-kernel-reference/rework/verifier-final-stderr.log >&2)
 ```
 
-The first measured set was assembled from nine completed long-time/audit ensembles, then the predeclared precision extension using `reference/run.py --supplement-transient` (with the same two-stream log redirection). That option checks the original policy and model snapshot, adds only the three short-time ensembles and recomputes the diagnostic tables. A default run or `--verify-again` always generates all twelve; neither depends on partial results or this assembly shortcut.
+The default exit status checks **report reproduction**: it reruns every physical
+ensemble, sample covariance, bead contacts, sampler audits and mutation controls,
+checks every deterministic scientific JSON value/contact hash and exact rendered table,
+validates and retains both actual generation histories,
+and classifies the real adoption pytest outcome. It is not an adoption pass.
+`--require-acceptance` additionally exits nonzero for a failed adoption test.
+`--mutations-only --require-all-mutations` exits nonzero if any requested target
+substantive mutation survives. The extra label-only no-op is not a required
+perturbation; the substantive reference-prefactor swap is.
+`mutation_tests.py --require-all` exposes the same strict mutation requirement.
+There is no expected-failure decorator or cached simulation in full verification.
 
-The fixture includes only the small frozen baseline `reference/results/results.json` and `results.md` (65,814 bytes total), the script, both parameter files, this pack and its verifier. Original logs and redundant reproduced outputs remain in the run directory. Both scripts resolve `rmgpy/kmc/met.py` from their enclosing checkout. `reference/run.py` defaults to writing fresh results under `/home/alon/runs/i030-met-kernel-reference/fixture-verification/reference`; `--output` can select another output directory. `--verify-again` compares every trajectory against the fixture's frozen baseline and writes a separate `reproduced/` directory under its output directory. It requires exact JSON agreement (including first-contact-index hashes), and requires the freshly rendered numeric table to occur verbatim in this pack. Wall times and memory measurements live in logs, not in the deterministic comparison. Different NumPy/SciPy builds may change the random-to-FFT path at contact boundaries; an exact-reproduction failure then needs investigation rather than silently accepting changed numbers.
+Every verification has a UUID-bearing private staging directory. Its complete
+results, runtime, candidate, mutations, audits, version/hash manifest and pytest
+output are published together by one same-filesystem atomic directory rename.
+No shared `reproduced/` files or mutable latest pointer exists. A failed run's
+pending staging directory remains distinguishable from a completed publication.
+`COMPLETE.json` hashes every file in the publication. Concurrent runs cannot
+mix their JSON and Markdown artifacts. Verifier outputs never write into the
+fixture. `--assemble` is an explicit pack-authoring helper.
 
-`verify_pack.py --assemble` embeds the generated numeric table into this document. `verify_pack.py` extracts the quoted pytest body, adds only imports of the real `met.py`, and executes it under an isolated pytest configuration in a temporary directory. It then requires exact agreement of the new results with the saved report and requires the new numeric table to occur verbatim in this pack. The pytest body itself compares the current candidate against a fresh reference, so an adopted build test need not reproduce an old candidate's fingerprint or comparison results. The wrapper's additional equality check verifies this frozen research report. Both checks execute without editing the worktree. The worker's final verification command is:
+## Finding-by-finding response to round 1
+
+1. **P1-1, shared physical inputs:** replaced runtime target mapping with cited
+   literal JSON inputs and a pre-simulation hash. The oracle has no target access.
+   Separate literal transport/Rg assertions kill the shared diffusivity x4 bug.
+   Original benchmark constants have snapshot provenance; their experimental
+   material accuracy is not independently established by this pack.
+2. **P1-2, discrimination:** removed the factor-two model allowance; the numerical
+   envelope sums measured statistical, step, contact, adaptive, box and plateau
+   bounds. Qualified rate controls must reject 0.5/2/4 mutations under the fixed
+   total cap. Actual source mutations have passing literal-rule controls; the
+   requested reference-prefactor perturbation is implemented in the candidate.
+   A bare label-only swap is separately reported as a no-op, consistent with the
+   target docstring. The independent oracle-prefactor ordering witness and
+   qualified rate-budget controls have distinct, explicitly reported roles.
+3. **P2-3, numerical qualification:** enlarged to three boxes and later spatially
+   mixed windows; show correction fractions, counts and measured budgets rather
+   than approving overlap alone. Qualify the largest-box contact-refined oracle's
+   own plateau. Refine adaptive observations independently.
+   Any failed cap remains visible and blocks scientific adoption. All 18 final
+   rows pass the fixed caps; the bounds remain empirical, as discussed below.
+4. **P2-4, missing kernel branches:** include 4/16 and 16/4, plus the N=1 floor;
+   actual `min->max`, `min->i`, `min->j`, `min->mean`, and floor-removal mutations
+   must fail passing literal-rule controls. Unequal orientations are separately
+   simulated because their end/mid observables need not coincide.
+5. **P2-5, finite-N prefactors:** add N=4 and8 to N=16. State explicitly that this
+   short-chain series does not establish universal asymptotic site amplitudes.
+   No theory-derived factor-two allowance or claimed general prefactor accuracy
+   remains. Entangled amplitude acceptance is outside the pack's demonstrated
+   coverage; the old report-only tube calculation was removed.
+6. **P2-6, sampler/contact validation:** measure sampled covariances from the actual
+   trajectory transition, compare to an independently constructed bond Laplacian,
+   compare contact distributions to a separate bead integrator, and check the
+   absorbing-sphere continuum limit. A live sampler-noise mutation tests that
+   covariance qualification actually discriminates a faulty trajectory sampler.
+7. **P3-7, provenance race:** hash the exact bytes before parsing/simulation,
+   fingerprint the program, record dependency versions, and preserve that snapshot
+   hash. The old post-simulation parameter fingerprint is gone.
+8. **P3-8, concurrent publication:** UUID-specific staging plus one atomic complete
+   directory publication replaces separate writes to a shared output directory.
+
+## Limitations, evidence, compute and remaining work
+
+The strict full Verifier command above exited **0** on 2026-10-04. Its exact
+proposed scientific pytest reported `1 passed in 10369.43s (2:52:49)`, with zero
+failures, errors or skips in the retained JUnit. The final output was:
+
+```text
+REPRODUCTION PASS: all 108 reported ensembles, contact hashes, covariance samples, audits and tables reproduced exactly.
+PROPOSED SCIENTIFIC TEST: PASS; all required target mutations killed: True
+ATOMIC PUBLICATION: /home/alon/runs/i030-met-kernel-reference/rework/verifications/verified-20261004T023214-94dde23c1cca4886820d0af07213cfb9
+```
+
+That publication contains all **318 newly simulated physical ensembles** and
+12,591,104 trajectories, pooled into 108 reported rows including the floor's
+explicit site-label aliases. Every scientific JSON value and rendered table
+matched the frozen fixture. The two actual generation histories were separately
+validated and retained rather than required to have fictitiously identical
+input/program hashes. An independent post-run check of `COMPLETE.json` verified
+all 331 published file hashes, with zero mismatches. The Python/NumPy/SciPy/pytest
+versions were 3.9.23 / 1.26.4 / 1.13.1 / 8.4.1 on Linux x86_64, using PCG64.
+`verification.json` records the exact parsed-input, program and target hashes.
+
+The standalone command below also exited **0**, and its complete JSON exactly
+matched the frozen mutation report and the full Verifier's mutation report:
 
 ```bash
-/home/alon/anaconda3/envs/rmg_env/bin/python -u verify_pack.py --output /home/alon/runs/i030-met-kernel-reference/fixture-verification > >(tee -a /home/alon/runs/i030-met-kernel-reference/fixture-verifier-stdout.log) 2> >(tee -a /home/alon/runs/i030-met-kernel-reference/fixture-verifier-stderr.log >&2)
+taskset -c 6,16,17,19,21,23,24,26 /home/alon/anaconda3/envs/rmg_env/bin/python -B -u test/rmgpy/kmc/fixtures/i030_kernel_reference/mutation_tests.py --require-all --output /home/alon/runs/i030-met-kernel-reference/rework/mutations-final.json > >(tee -a /home/alon/runs/i030-met-kernel-reference/rework/mutations-final-stdout.log) 2> >(tee -a /home/alon/runs/i030-met-kernel-reference/rework/mutations-final-stderr.log >&2)
 ```
 
-The wrapper defaults to the same external output directory. Its pytest temporary directory,
-fresh simulation results and retained `reproduced/results.json` and `results.md` all live
-there; a verification run writes no files into the fixture or repository.
+All 11 substantive target mutations were rejected after passing baseline
+controls. The six requested rate mutations produced respectively 17,18,18,18,16
+and4 new qualified rate rejections; neither a baseline failure nor a literal
+anchor failure was substituted for this rate discrimination. Both actual
+sampler mutations were rejected. The separate bare label swap survived, as
+expected for the current common target multiplier. Covariance samples (75),
+stationary-variance samples (75), independent Laplacian checks (18), fixed-grid
+bead contacts (3), adaptive bead contacts (3), and the Brownian-sphere continuum
+limit all passed their declared checks and reproduced exactly.
 
-For pytest execution of the quoted body, use an isolated configuration (`-c /dev/null`, `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`) from the pack directory. The shared repository's pytest defaults try to erase its coverage file; that operation was refused by the read-only filesystem during an initial `pytest --version` check. No repository pytest suite or shared coverage artifact is changed by the verification reported here.
+All 18 final reference rows qualified and all 18 candidate comparisons fell
+within their measured budgets; the 13 physical-input anchors and 18 literal
+kernel branches passed. The measured total log budgets are
+**0.2815176766–0.4578509059**, permitting factors **1.32513942–1.58067332**.
+The final largest-box correction removes about **7.9–20.6%**, below the fixed
+25% cap. These results support the explicitly proposed finite-model numerical
+test. They do not establish a universal site prefactor, an experimental melt
+parameterization, or a rigorous error bound for unobserved limiting regimes.
+In particular, N=16 mid/mid is **44.94% above** the independent reference yet
+passes its empirical factor-1.5807 band. No stronger accuracy claim is justified.
 
-The original worker executed the quoted pytest body through `verify_pack.py`, with both streams persisted in `/home/alon/runs/i030-met-kernel-reference/verifier-stdout.log` and `verifier-stderr.log`. The complete run exited 0. Actual terminal output before fixture relocation:
+The retained runtime records give the following measured compute. CPU hours
+are child plus parent CPU for the reference/authoring process, and wall hours
+are measured separately for each run; they exclude preliminary discarded work
+and the additional Verifier-controller/audit/standalone-mutation overhead.
 
-```text
-1 passed in 1448.50s (0:24:08)
-VERIFIER PASS: all 12 first-passage runs reproduced exactly; every generated pack number matches.
-PACK VERIFIER PASS: reproduced table and proposed pytest assertions passed.
-```
+| Run | Physical ensembles generated | Wall hours | CPU hours | Max child RSS MiB | Max parent RSS MiB |
+|---|---:|---:|---:|---:|---:|
+| `measurement-04` (three seed stages) | 288 | 3.53633 | 20.03041 | 59.82422 | 88.90234 |
+| `measurement-05` (five extra floor stages) | 30 | 0.03975 | 0.15208 | 52.00391 | 88.25391 |
+| Strict fresh Verifier reference | 318 | 2.88028 | 19.57490 | 60.03125 | 90.36719 |
 
-The three step audits, three box audits and three plateau audits passed. All three long-time scale assertions passed. All twelve dedicated transient bins were outside the predeclared diagnostic band; those differences were reported and did not fail the build. The candidate/reference transient ratios range from 0.12432714 to 0.45222262, as tabulated above. This confirms the stated limitation for the declared initial condition and finite-volume observable; it does not validate a nascent-chain conformation model.
+These successful reference runs used **39.75738 measured CPU hours** in total.
+Each used eight workers, one numerical-library thread per worker, and the same
+eight allowed CPUs listed in the command and runtime records. Per-process RSS
+peaks are measured; an instantaneous aggregate RSS was not recorded. The
+discarded preliminary run and serialization-failed allocation remain documented
+in their logs, and their unmetered CPU is not included in this total. No other
+session's jobs were stopped or altered.
 
-The simulation used three workers with one FFT/BLAS thread each. Actual recorded memory was `PARENT_PEAK_RSS_MiB=56.0` and `CHILD_MAX_RSS_MiB=115.1`. Both simulation stderr logs are empty. The reference result and reproduced result JSON objects match exactly, including every contact-index hash. The numerical table remains an exact copy of the freshly reproduced table.
-
-The reproduced target-source SHA-256 is `1a8176c2e49c3fcfb5909c73bf01ad8d7230f2e5ad724e7461984a7b8388a7c1`. The frozen active parameter-file SHA-256 is `0e99129828cd966e7acb3db73f2c202466941caa618ef9eae7874a2a0e1262fe`. The source-mapped values and all uncertainties are in the saved JSON. The proposed body was executed with the actual source module, not a mock. No repository test suite or product edit was performed.
-
-The relocated fixture verifier was run from the fixture directory using the command above. Both streams were saved outside the repository in `fixture-verifier-stdout.log` and `fixture-verifier-stderr.log` under `/home/alon/runs/i030-met-kernel-reference/`. The complete run exited 0; stderr was empty. Actual output:
-
-```text
-1 passed in 1800.87s (0:30:00)
-VERIFIER PASS: all 12 first-passage runs reproduced exactly; every generated pack number matches.
-PACK VERIFIER PASS: reproduced table and proposed pytest assertions passed.
-```
-
-All twelve results, including contact-index hashes, were identical to the frozen baseline. Fresh retained outputs are in `/home/alon/runs/i030-met-kernel-reference/fixture-verification/reproduced/`. The rerun recorded `PARENT_PEAK_RSS_MiB=56.1`, `CHILD_MAX_RSS_MiB=114.4`, three workers and one FFT/BLAS thread per worker.
-
-## Limitations and contract issues supported by evidence
-
-- **Excluded volume and hydrodynamics.** This is a screened, phantom, free-draining Gaussian-chain model for an unentangled melt. It has no incompressibility field, hard cores, hydrodynamic interaction, chemistry-dependent bead friction or polydispersity. Bonds can cross. Its validity does not extend to unscreened dilute good-solvent chains. The bead-spring model is the standard [Rouse model, J. Chem. Phys. 21, 1272–1280 (1953)](https://doi.org/10.1063/1.1699180), applied here to screened melt chains.
-- **Finite chain length.** Sixteen beads and the finite `a/Rg` give limited scale separation. The transient window includes crossover from local bead diffusion to Rouse motion. It cannot establish a universal power-law exponent. Exact finite-chain `Rg` mapping prevents an additional continuum-size error; it does not make a short coarse-grained chain atomistic.
-- **Finite time and volume.** The primary long-time observable is a corrected late-window hazard, not a direct infinite-domain asymptote. Periodic absorption, depletion and finite-window effects are approximated and audited with the frozen budgets. These audits can be statistically weak when contact counts are small; four-error overlap is not evidence of zero systematic bias. Full raw counts and errors are available for adversarial review.
-- **Chain birth.** The input lacks a birth conformation or initial separation correlation. Equilibrium activation is a literal chosen initial condition. Scission daughters, a stretched new chain, or a geminate pair could have different transient survival. This test cannot specify those from `sigma0`, `Rg` and `D_CM` alone.
-- **Entanglement.** The cutoff `Ne` is the transport arm's documented input, not an empirically inferred onset. The Rouse simulation is below it. The ideal-tube branch supplies exact asymptotic exponents within its scaling assumptions and unknown class amplitudes; it is not an independent entangled first-contact simulation. Constraint release and contour-length fluctuations are omitted.
-- **The contract overstates what is established at long time.** In `met.py:429–455`, the implementation chooses `max(sigma0,2*Rg)` and applies the same formula to all pair classes. Compact-exploration theory supplies an order-one coil-scale radius, not proof that the prefactor is exactly `2*Rg` or class independent. A statistical tolerance cannot convert that uncontrolled approximation into an exact theorem. The factor-two tolerance is an explicit, weak engineering definition for this build test.
-- **The kernel cannot express the proposed transient dependence.** Its `diffusion_rate` signature has arm, temperature, two lengths, class and spin only, and its docstring explicitly says no class-specific multiplier is defined. It has no age/history input. This pack measures and reports that limitation; no product change is implied.
-- **Microscopic versus effective capture must be specified.** Using `sigma_ij=2*Rg` as a site-contact distance inside a flexible-chain simulation would include coil-scale internal exploration as well as an already coarse-grained sink. This pack chooses the literal microscopic `sigma0` and compares its emergent long-time capture to the candidate's effective sphere. The dispatch did not settle that distinction. Both radii and the choice are explicit here; the choice was made before results.
-- **Exact entangled amplitude data are absent.** The allowed scaling theory cannot by itself supply an absolute entangled rate with a statistical error for all three classes. A future adoption must either accept the explicitly limited asymptotic branch or commission that additional simulation. The current outputs do not certify an entangled amplitude test.
-
-Adversarial review and project-owner adoption approval remain outstanding. No gate was needed to produce this pack, and no report-back pane was named.
+No product tuning, product-code/test edits, push, or owner adoption is performed.
+Owner approval and the second adversarial review remain. There is no outstanding
+failure of the stated numerical criteria. The contract's required substantive
+reference-prefactor swap is testable and rejected; only the separately labelled
+bare target-label swap is a no-op. No unsatisfied or demonstrably incorrect
+requirement in the dispatch is claimed.

@@ -84,8 +84,7 @@
     {
       "name": "floor",
       "units_i": 1,
-      "units_j": 1,
-      "precision_stages": 8
+      "units_j": 1
     }
   ],
   "boundary_shift_constant": 0.5825971579390107,
@@ -205,6 +204,6 @@
     "seed": 207001,
     "z": 5.0
   },
-  "allocation": "Fixed rework allocation before any fresh candidate comparison. Exact OU mode transitions with state-dependent observation intervals; minimum contact step, maximum step and safety factor independently refined. Statistical/numerical uncertainties never fitted to candidate. Preliminary run stopped before candidate comparison: batches increased from 256 to 2048; counts increased to shrink sampling uncertainty. Engineering qualification ceilings revised to retain a total log cap of 0.55, strictly below log(2). The budget itself remains measured contrasts plus 4 SE, with no additive model allowance. Final precision extension, independent of candidate comparison: three independent stages at seeds offset by 100000; pool integer survivors. Final oracle is the largest box at the finest contact step; its own plateau is qualified. The largest-box correction is capped at 25 percent. Authoring and full verification both rerun every stage from scratch; there is no reuse option. The three-stage point-bead result exceeded the fixed step and total ceilings. Five additional independent floor stages were allocated solely to reduce those numerical uncertainties; all ceilings and physical inputs remain fixed. Other cases retain three stages.",
+  "allocation": "Fixed rework allocation before any fresh candidate comparison. Exact OU mode transitions with state-dependent observation intervals; minimum contact step, maximum step and safety factor independently refined. Statistical/numerical uncertainties never fitted to candidate. Preliminary run stopped before candidate comparison: batches increased from 256 to 2048; counts increased to shrink sampling uncertainty. Engineering qualification ceilings revised to retain a total log cap of 0.55, strictly below log(2). The budget itself remains measured contrasts plus 4 SE, with no additive model allowance. Final precision extension, independent of candidate comparison: three independent stages at seeds offset by 100000; pool integer survivors. Final oracle is the largest box at the finest contact step; its own plateau is qualified. The largest-box correction is capped at 25 percent. Authoring and full verification both rerun every stage from scratch; there is no reuse option.",
   "precision_stages": 3
 }

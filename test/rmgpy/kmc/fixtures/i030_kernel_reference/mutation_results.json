@@ -1,0 +1,657 @@
+{
+  "baseline_transport_and_rule_pass": true,
+  "target_mutations": [
+    {
+      "mutation": "capture_radius_x0.5",
+      "baseline_control_pass": true,
+      "killed": true,
+      "changed_observable": true,
+      "failed_anchors": [],
+      "failed_literal_branches": [
+        "N4:end/end",
+        "N4:end/mid",
+        "N4:mid/mid",
+        "N8:end/end",
+        "N8:end/mid",
+        "N8:mid/mid",
+        "N16:end/end",
+        "N16:end/mid",
+        "N16:mid/mid",
+        "N4_N16:end/end",
+        "N4_N16:end/mid",
+        "N4_N16:mid/mid",
+        "N16_N4:end/end",
+        "N16_N4:end/mid",
+        "N16_N4:mid/mid",
+        "floor:end/end",
+        "floor:end/mid",
+        "floor:mid/mid"
+      ],
+      "new_qualified_rate_rejections": [
+        "N4:end/end",
+        "N4:end/mid",
+        "N4:mid/mid",
+        "N8:end/end",
+        "N8:end/mid",
+        "N8:mid/mid",
+        "N16:end/end",
+        "N16:end/mid",
+        "N4_N16:end/end",
+        "N4_N16:end/mid",
+        "N4_N16:mid/mid",
+        "N16_N4:end/end",
+        "N16_N4:end/mid",
+        "N16_N4:mid/mid",
+        "floor:end/end",
+        "floor:end/mid",
+        "floor:mid/mid"
+      ],
+      "within_rouse_budget_count": 1,
+      "failed_qualified_rate_comparisons": [
+        "N4:end/end",
+        "N4:end/mid",
+        "N4:mid/mid",
+        "N8:end/end",
+        "N8:end/mid",
+        "N8:mid/mid",
+        "N16:end/end",
+        "N16:end/mid",
+        "N4_N16:end/end",
+        "N4_N16:end/mid",
+        "N4_N16:mid/mid",
+        "N16_N4:end/end",
+        "N16_N4:end/mid",
+        "N16_N4:mid/mid",
+        "floor:end/end",
+        "floor:end/mid",
+        "floor:mid/mid"
+      ]
+    },
+    {
+      "mutation": "capture_radius_x2",
+      "baseline_control_pass": true,
+      "killed": true,
+      "changed_observable": true,
+      "failed_anchors": [],
+      "failed_literal_branches": [
+        "N4:end/end",
+        "N4:end/mid",
+        "N4:mid/mid",
+        "N8:end/end",
+        "N8:end/mid",
+        "N8:mid/mid",
+        "N16:end/end",
+        "N16:end/mid",
+        "N16:mid/mid",
+        "N4_N16:end/end",
+        "N4_N16:end/mid",
+        "N4_N16:mid/mid",
+        "N16_N4:end/end",
+        "N16_N4:end/mid",
+        "N16_N4:mid/mid",
+        "floor:end/end",
+        "floor:end/mid",
+        "floor:mid/mid"
+      ],
+      "new_qualified_rate_rejections": [
+        "N4:end/end",
+        "N4:end/mid",
+        "N4:mid/mid",
+        "N8:end/end",
+        "N8:end/mid",
+        "N8:mid/mid",
+        "N16:end/end",
+        "N16:end/mid",
+        "N16:mid/mid",
+        "N4_N16:end/end",
+        "N4_N16:end/mid",
+        "N4_N16:mid/mid",
+        "N16_N4:end/end",
+        "N16_N4:end/mid",
+        "N16_N4:mid/mid",
+        "floor:end/end",
+        "floor:end/mid",
+        "floor:mid/mid"
+      ],
+      "within_rouse_budget_count": 0,
+      "failed_qualified_rate_comparisons": [
+        "N4:end/end",
+        "N4:end/mid",
+        "N4:mid/mid",
+        "N8:end/end",
+        "N8:end/mid",
+        "N8:mid/mid",
+        "N16:end/end",
+        "N16:end/mid",
+        "N16:mid/mid",
+        "N4_N16:end/end",
+        "N4_N16:end/mid",
+        "N4_N16:mid/mid",
+        "N16_N4:end/end",
+        "N16_N4:end/mid",
+        "N16_N4:mid/mid",
+        "floor:end/end",
+        "floor:end/mid",
+        "floor:mid/mid"
+      ]
+    },
+    {
+      "mutation": "candidate_diffusion_x4",
+      "baseline_control_pass": true,
+      "killed": true,
+      "changed_observable": true,
+      "failed_anchors": [],
+      "failed_literal_branches": [
+        "N4:end/end",
+        "N4:end/mid",
+        "N4:mid/mid",
+        "N8:end/end",
+        "N8:end/mid",
+        "N8:mid/mid",
+        "N16:end/end",
+        "N16:end/mid",
+        "N16:mid/mid",
+        "N4_N16:end/end",
+        "N4_N16:end/mid",
+        "N4_N16:mid/mid",
+        "N16_N4:end/end",
+        "N16_N4:end/mid",
+        "N16_N4:mid/mid",
+        "floor:end/end",
+        "floor:end/mid",
+        "floor:mid/mid"
+      ],
+      "new_qualified_rate_rejections": [
+        "N4:end/end",
+        "N4:end/mid",
+        "N4:mid/mid",
+        "N8:end/end",
+        "N8:end/mid",
+        "N8:mid/mid",
+        "N16:end/end",
+        "N16:end/mid",
+        "N16:mid/mid",
+        "N4_N16:end/end",
+        "N4_N16:end/mid",
+        "N4_N16:mid/mid",
+        "N16_N4:end/end",
+        "N16_N4:end/mid",
+        "N16_N4:mid/mid",
+        "floor:end/end",
+        "floor:end/mid",
+        "floor:mid/mid"
+      ],
+      "within_rouse_budget_count": 0,
+      "failed_qualified_rate_comparisons": [
+        "N4:end/end",
+        "N4:end/mid",
+        "N4:mid/mid",
+        "N8:end/end",
+        "N8:end/mid",
+        "N8:mid/mid",
+        "N16:end/end",
+        "N16:end/mid",
+        "N16:mid/mid",
+        "N4_N16:end/end",
+        "N4_N16:end/mid",
+        "N4_N16:mid/mid",
+        "N16_N4:end/end",
+        "N16_N4:end/mid",
+        "N16_N4:mid/mid",
+        "floor:end/end",
+        "floor:end/mid",
+        "floor:mid/mid"
+      ]
+    },
+    {
+      "mutation": "shared_chain_diffusivity_x4",
+      "baseline_control_pass": true,
+      "killed": true,
+      "changed_observable": true,
+      "failed_anchors": [
+        "D_CM_N1",
+        "D_CM_N4",
+        "D_CM_N8",
+        "D_CM_N16"
+      ],
+      "failed_literal_branches": [
+        "N4:end/end",
+        "N4:end/mid",
+        "N4:mid/mid",
+        "N8:end/end",
+        "N8:end/mid",
+        "N8:mid/mid",
+        "N16:end/end",
+        "N16:end/mid",
+        "N16:mid/mid",
+        "N4_N16:end/end",
+        "N4_N16:end/mid",
+        "N4_N16:mid/mid",
+        "N16_N4:end/end",
+        "N16_N4:end/mid",
+        "N16_N4:mid/mid",
+        "floor:end/end",
+        "floor:end/mid",
+        "floor:mid/mid"
+      ],
+      "new_qualified_rate_rejections": [
+        "N4:end/end",
+        "N4:end/mid",
+        "N4:mid/mid",
+        "N8:end/end",
+        "N8:end/mid",
+        "N8:mid/mid",
+        "N16:end/end",
+        "N16:end/mid",
+        "N16:mid/mid",
+        "N4_N16:end/end",
+        "N4_N16:end/mid",
+        "N4_N16:mid/mid",
+        "N16_N4:end/end",
+        "N16_N4:end/mid",
+        "N16_N4:mid/mid",
+        "floor:end/end",
+        "floor:end/mid",
+        "floor:mid/mid"
+      ],
+      "within_rouse_budget_count": 0,
+      "failed_qualified_rate_comparisons": [
+        "N4:end/end",
+        "N4:end/mid",
+        "N4:mid/mid",
+        "N8:end/end",
+        "N8:end/mid",
+        "N8:mid/mid",
+        "N16:end/end",
+        "N16:end/mid",
+        "N16:mid/mid",
+        "N4_N16:end/end",
+        "N4_N16:end/mid",
+        "N4_N16:mid/mid",
+        "N16_N4:end/end",
+        "N16_N4:end/mid",
+        "N16_N4:mid/mid",
+        "floor:end/end",
+        "floor:end/mid",
+        "floor:mid/mid"
+      ]
+    },
+    {
+      "mutation": "drop_one_chain_diffusion",
+      "baseline_control_pass": true,
+      "killed": true,
+      "changed_observable": true,
+      "failed_anchors": [],
+      "failed_literal_branches": [
+        "N4:end/end",
+        "N4:end/mid",
+        "N4:mid/mid",
+        "N8:end/end",
+        "N8:end/mid",
+        "N8:mid/mid",
+        "N16:end/end",
+        "N16:end/mid",
+        "N16:mid/mid",
+        "N4_N16:end/end",
+        "N4_N16:end/mid",
+        "N4_N16:mid/mid",
+        "N16_N4:end/end",
+        "N16_N4:end/mid",
+        "N16_N4:mid/mid",
+        "floor:end/end",
+        "floor:end/mid",
+        "floor:mid/mid"
+      ],
+      "new_qualified_rate_rejections": [
+        "N4:end/end",
+        "N4:end/mid",
+        "N4:mid/mid",
+        "N8:end/end",
+        "N8:end/mid",
+        "N8:mid/mid",
+        "N16:end/end",
+        "N16:end/mid",
+        "N4_N16:end/end",
+        "N4_N16:end/mid",
+        "N16_N4:end/end",
+        "N16_N4:end/mid",
+        "N16_N4:mid/mid",
+        "floor:end/end",
+        "floor:end/mid",
+        "floor:mid/mid"
+      ],
+      "within_rouse_budget_count": 2,
+      "failed_qualified_rate_comparisons": [
+        "N4:end/end",
+        "N4:end/mid",
+        "N4:mid/mid",
+        "N8:end/end",
+        "N8:end/mid",
+        "N8:mid/mid",
+        "N16:end/end",
+        "N16:end/mid",
+        "N4_N16:end/end",
+        "N4_N16:end/mid",
+        "N16_N4:end/end",
+        "N16_N4:end/mid",
+        "N16_N4:mid/mid",
+        "floor:end/end",
+        "floor:end/mid",
+        "floor:mid/mid"
+      ]
+    },
+    {
+      "mutation": "length_min_to_max",
+      "baseline_control_pass": true,
+      "killed": true,
+      "changed_observable": true,
+      "failed_anchors": [],
+      "failed_literal_branches": [
+        "N4_N16:end/end",
+        "N4_N16:end/mid",
+        "N4_N16:mid/mid",
+        "N16_N4:end/end",
+        "N16_N4:end/mid",
+        "N16_N4:mid/mid"
+      ],
+      "new_qualified_rate_rejections": [
+        "N4_N16:end/end",
+        "N4_N16:end/mid",
+        "N4_N16:mid/mid",
+        "N16_N4:end/end",
+        "N16_N4:end/mid",
+        "N16_N4:mid/mid"
+      ],
+      "within_rouse_budget_count": 12,
+      "failed_qualified_rate_comparisons": [
+        "N4_N16:end/end",
+        "N4_N16:end/mid",
+        "N4_N16:mid/mid",
+        "N16_N4:end/end",
+        "N16_N4:end/mid",
+        "N16_N4:mid/mid"
+      ]
+    },
+    {
+      "mutation": "length_min_to_i",
+      "baseline_control_pass": true,
+      "killed": true,
+      "changed_observable": true,
+      "failed_anchors": [],
+      "failed_literal_branches": [
+        "N16_N4:end/end",
+        "N16_N4:end/mid",
+        "N16_N4:mid/mid"
+      ],
+      "new_qualified_rate_rejections": [
+        "N16_N4:end/end",
+        "N16_N4:end/mid",
+        "N16_N4:mid/mid"
+      ],
+      "within_rouse_budget_count": 15,
+      "failed_qualified_rate_comparisons": [
+        "N16_N4:end/end",
+        "N16_N4:end/mid",
+        "N16_N4:mid/mid"
+      ]
+    },
+    {
+      "mutation": "length_min_to_j",
+      "baseline_control_pass": true,
+      "killed": true,
+      "changed_observable": true,
+      "failed_anchors": [],
+      "failed_literal_branches": [
+        "N4_N16:end/end",
+        "N4_N16:end/mid",
+        "N4_N16:mid/mid"
+      ],
+      "new_qualified_rate_rejections": [
+        "N4_N16:end/end",
+        "N4_N16:end/mid",
+        "N4_N16:mid/mid"
+      ],
+      "within_rouse_budget_count": 15,
+      "failed_qualified_rate_comparisons": [
+        "N4_N16:end/end",
+        "N4_N16:end/mid",
+        "N4_N16:mid/mid"
+      ]
+    },
+    {
+      "mutation": "length_min_to_mean",
+      "baseline_control_pass": true,
+      "killed": true,
+      "changed_observable": true,
+      "failed_anchors": [],
+      "failed_literal_branches": [
+        "N4_N16:end/end",
+        "N4_N16:end/mid",
+        "N4_N16:mid/mid",
+        "N16_N4:end/end",
+        "N16_N4:end/mid",
+        "N16_N4:mid/mid"
+      ],
+      "new_qualified_rate_rejections": [
+        "N4_N16:end/mid",
+        "N4_N16:mid/mid",
+        "N16_N4:mid/mid"
+      ],
+      "within_rouse_budget_count": 15,
+      "failed_qualified_rate_comparisons": [
+        "N4_N16:end/mid",
+        "N4_N16:mid/mid",
+        "N16_N4:mid/mid"
+      ]
+    },
+    {
+      "mutation": "drop_sigma0_floor",
+      "baseline_control_pass": true,
+      "killed": true,
+      "changed_observable": true,
+      "failed_anchors": [],
+      "failed_literal_branches": [
+        "floor:end/end",
+        "floor:end/mid",
+        "floor:mid/mid"
+      ],
+      "new_qualified_rate_rejections": [],
+      "within_rouse_budget_count": 18,
+      "failed_qualified_rate_comparisons": []
+    },
+    {
+      "mutation": "swap_reference_prefactors_in_candidate",
+      "baseline_control_pass": true,
+      "killed": true,
+      "changed_observable": true,
+      "failed_anchors": [],
+      "failed_literal_branches": [
+        "N4:end/end",
+        "N4:mid/mid",
+        "N8:end/end",
+        "N8:mid/mid",
+        "N16:end/end",
+        "N16:mid/mid",
+        "N4_N16:end/end",
+        "N4_N16:mid/mid",
+        "N16_N4:end/end",
+        "N16_N4:mid/mid"
+      ],
+      "new_qualified_rate_rejections": [
+        "N8:mid/mid",
+        "N16:mid/mid",
+        "N4_N16:end/end",
+        "N16_N4:end/end"
+      ],
+      "within_rouse_budget_count": 14,
+      "failed_qualified_rate_comparisons": [
+        "N8:mid/mid",
+        "N16:mid/mid",
+        "N4_N16:end/end",
+        "N16_N4:end/end"
+      ]
+    }
+  ],
+  "qualified_rate_positive_controls": [
+    {
+      "mutation": "radius_x0.5",
+      "positive_control_count": 18,
+      "killed_by_qualified_rate_budget": true,
+      "failures": [
+        "N4:end/end",
+        "N4:end/mid",
+        "N4:mid/mid",
+        "N8:end/end",
+        "N8:end/mid",
+        "N8:mid/mid",
+        "N16:end/end",
+        "N16:end/mid",
+        "N16:mid/mid",
+        "N4_N16:end/end",
+        "N4_N16:end/mid",
+        "N4_N16:mid/mid",
+        "N16_N4:end/end",
+        "N16_N4:end/mid",
+        "N16_N4:mid/mid",
+        "floor:end/end",
+        "floor:end/mid",
+        "floor:mid/mid"
+      ]
+    },
+    {
+      "mutation": "radius_x2",
+      "positive_control_count": 18,
+      "killed_by_qualified_rate_budget": true,
+      "failures": [
+        "N4:end/end",
+        "N4:end/mid",
+        "N4:mid/mid",
+        "N8:end/end",
+        "N8:end/mid",
+        "N8:mid/mid",
+        "N16:end/end",
+        "N16:end/mid",
+        "N16:mid/mid",
+        "N4_N16:end/end",
+        "N4_N16:end/mid",
+        "N4_N16:mid/mid",
+        "N16_N4:end/end",
+        "N16_N4:end/mid",
+        "N16_N4:mid/mid",
+        "floor:end/end",
+        "floor:end/mid",
+        "floor:mid/mid"
+      ]
+    },
+    {
+      "mutation": "diffusion_x4",
+      "positive_control_count": 18,
+      "killed_by_qualified_rate_budget": true,
+      "failures": [
+        "N4:end/end",
+        "N4:end/mid",
+        "N4:mid/mid",
+        "N8:end/end",
+        "N8:end/mid",
+        "N8:mid/mid",
+        "N16:end/end",
+        "N16:end/mid",
+        "N16:mid/mid",
+        "N4_N16:end/end",
+        "N4_N16:end/mid",
+        "N4_N16:mid/mid",
+        "N16_N4:end/end",
+        "N16_N4:end/mid",
+        "N16_N4:mid/mid",
+        "floor:end/end",
+        "floor:end/mid",
+        "floor:mid/mid"
+      ]
+    },
+    {
+      "mutation": "drop_one_equal_chain",
+      "positive_control_count": 12,
+      "killed_by_qualified_rate_budget": true,
+      "failures": [
+        "N4:end/end",
+        "N4:end/mid",
+        "N4:mid/mid",
+        "N8:end/end",
+        "N8:end/mid",
+        "N8:mid/mid",
+        "N16:end/end",
+        "N16:end/mid",
+        "N16:mid/mid",
+        "floor:end/end",
+        "floor:end/mid",
+        "floor:mid/mid"
+      ]
+    }
+  ],
+  "oracle_prefactor_swap_witnesses": [
+    {
+      "case": "N4",
+      "unmodified_ordering_control_pass": true,
+      "end_minus_mid": 5.882092183577903,
+      "statistical_ordering_bound": 2.6598332263655777,
+      "swapped_oracle_prefactors_rejected": true
+    },
+    {
+      "case": "N8",
+      "unmodified_ordering_control_pass": true,
+      "end_minus_mid": 10.45122487523684,
+      "statistical_ordering_bound": 2.5855238075497464,
+      "swapped_oracle_prefactors_rejected": true
+    },
+    {
+      "case": "N16",
+      "unmodified_ordering_control_pass": true,
+      "end_minus_mid": 12.801150400445422,
+      "statistical_ordering_bound": 2.5096543371974955,
+      "swapped_oracle_prefactors_rejected": true
+    },
+    {
+      "case": "N4_N16",
+      "unmodified_ordering_control_pass": true,
+      "end_minus_mid": 6.991923085164174,
+      "statistical_ordering_bound": 1.7540996724203317,
+      "swapped_oracle_prefactors_rejected": true
+    },
+    {
+      "case": "N16_N4",
+      "unmodified_ordering_control_pass": true,
+      "end_minus_mid": 6.860317789929745,
+      "statistical_ordering_bound": 1.759061222508963,
+      "swapped_oracle_prefactors_rejected": true
+    },
+    {
+      "case": "floor",
+      "unmodified_ordering_control_pass": false,
+      "end_minus_mid": 0.0,
+      "statistical_ordering_bound": 1.2847639330268068,
+      "swapped_oracle_prefactors_rejected": false
+    }
+  ],
+  "sampler_mutations": [
+    {
+      "mutation": "double_actual_OU_noise",
+      "baseline_control_pass": true,
+      "killed": true,
+      "reason": "actual sampled stationary variance failed"
+    },
+    {
+      "mutation": "double_sampled_internal_coordinates",
+      "baseline_control_pass": true,
+      "killed": true,
+      "reason": "sampled covariance failed"
+    }
+  ],
+  "label_only_noop": {
+    "mutation": "swap_target_class_labels_only",
+    "changed_observable": false,
+    "expected_survivor": true
+  },
+  "required_rate_mutations_all_rejected": true,
+  "required_target_mutations_all_killed": true,
+  "limitation": "The required prefactor mutation rescales candidate end/end by C_mid/C_end and mid/mid by C_end/C_mid, using the independent reference. A bare target label swap is a separate observational no-op; it is reported as an expected survivor, never substituted for the requested prefactor perturbation."
+}
