@@ -232,7 +232,7 @@ def run_mutations(cfg, reference, sampler=True, artifact_dir=None):
 def render_mutations(result):
     lines=['<!-- BEGIN MUTATION NUMBERS -->','',
            'Target baseline passes literal-input and kernel-rule controls before each mutation. Scientific adoption failure is never counted as a mutation kill.',
-           f"Unmodified proposed-policy comparison passed: {result['baseline_proposed_policy_comparison_pass']}; qualified baseline rate rows passing: {result['baseline_qualified_rate_pass_count']}/18.",'',
+           f"Unmodified strict scientific comparison passed: {result['baseline_proposed_policy_comparison_pass']}; qualified baseline rate rows passing: {result['baseline_qualified_rate_pass_count']}/18.",'',
            '| Actual target mutation | Changes observable | Rejected | Failed anchors | Failed literal branches | Failed qualified rate checks | New rate rejections from passing baseline rows |',
            '|---|---|---|---:|---:|---:|---:|---:|']
     for row in result['target_mutations']:

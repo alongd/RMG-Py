@@ -666,7 +666,7 @@
       "mutation": "double_OU_noise_N16_only_in_exact_adoption_test",
       "baseline_complete_audit_phase_pass": true,
       "baseline_audits_sha256": "a2fd1929c868f5aebf32a728990cd9c79f5bc7dab0c3b882d2e4b8a3d8fc2b5e",
-      "adoption_test_source_sha256": "0ac09a4427dbc8ee8dc2dbf48e7b523b0cec03af721497a9cec06411e49c64ed",
+      "adoption_test_source_sha256": "8394d12d69f1a7ded005f580e759468dac68c340209795108a5d7a304707b029",
       "mutation_fixture_sha256": "1d299da0775b58a3290e542a92aeddc9d3a30ab29e46849502e74e8eab49e43c",
       "pytest_returncode": 1,
       "pytest_failure_count": 1,

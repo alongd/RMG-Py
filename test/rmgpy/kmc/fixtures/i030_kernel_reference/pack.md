@@ -16,28 +16,46 @@ end/mid and mid/mid sites. Initial separation is uniform conditional on lying
 outside the physical sink. This is an unlike-labelled pair coefficient even
 for end/end. It is a finite-model benchmark, not a validation outcome.
 
-Reproduction, numerical qualification, proposed-policy comparison, and owner
-adoption are separate. The Verifier can successfully reproduce a scientific
-rejection, retaining its real pytest assertion failure and JUnit. No expected
-failure or cached simulation is substituted for that outcome.
+Reproduction, numerical qualification, strict zero-model-tolerance comparison,
+and binding adoption are separate. The strict comparison retains its two
+unequal-length end/end failures. The owner approved **0% model tolerance on
+2026-10-04** and explicitly recorded these two known deviations of the min-chain
+capture rule. The binding build test requires all sixteen other rows to pass
+and both named deviations to match their reported records. It emits both records
+through stdout and warnings and retains `owner_adoption.json`; an additional
+failure, incomplete coverage or changed deviation record fails the build.
 
 `acceptance_policy.json` was committed in
 `d86a38844f58c614c076c3cceca11bb433cdc9e3`. The self-recorded chronology places
 the declaration before corrected A-03 measurements and candidate comparisons;
 Git establishes the declaration's bytes in that commit, not the actual start
-times of those executions. It proposes **0% additional model
-tolerance**, equivalently log allowance0 and factor1. **The owner must approve
-this policy after manager review.** There is no independently established
+times of those executions. That original proposal declared **0% additional model
+tolerance**, equivalently log allowance0 and factor1. The later owner ruling
+approves that same value and adds the explicit known-deviation records.
+There is no independently established
 closure-error bound relating the analytic coil-capture radius to microscopic
 first contact in these short chains. A positive allowance would be an
 engineering choice, not a physics-derived bound. Zero avoids inventing one;
 the owner can explicitly adopt a different policy in a later decision.
 The declaration also fixes the source-only numerical method and allocation.
 
+| Owner-approved known deviation | Measured candidate/reference | Approval date |
+|---|---:|---|
+| N4_N16 end/end | 0.7684941164680252 | 2026-10-04 |
+| N16_N4 end/end | 0.7682664950598593 | 2026-10-04 |
+
+Record comparisons use relative tolerance2e-12 for floating point rounding.
+Neither the numerical band nor the zero model allowance is enlarged. These rows
+must still be reported as scientific failures. The production run will carry
+a **0.77x sensitivity case on the unequal-length end/end termination channel**
+of the min-chain capture rule, covering both named orientations. This sensitivity
+scenario is an owner-directed production check, not an asymptotic prefactor claim.
+
 `decision_order.json` records UTC timestamps, the declaration commit, exact
 policy/input/program hashes, campaign start, and comparison start. The Verifier
-checks their order and checks the declared policy's bytes against that actual
-earlier Git commit. This is **not a blinded choice**: A-02's results, including
+checks their order against the original declaration's Git bytes and verifies
+that its numerical policy and model allowance remain unchanged by the later
+approval metadata. This is **not a blinded choice**: A-02's results, including
 the 44.94% N16 mid/mid excess, were already known and are explicitly recorded
 as such. These checks establish agreement with the committed policy and internal
 consistency of the recorded timestamps. They do not independently establish
@@ -171,9 +189,9 @@ rate/SE0 and an undefined candidate ratio, reported honestly.
 
 Every candidate diagnostic is marked REPORT-ONLY. Its original agreement
 criterion is20% of the reference plus4SE; it does not change qualification,
-the long-time comparison, any mutation kill, or the proposed model tolerance.
+the long-time comparison, any mutation kill, or the approved model tolerance.
 
-## Numerical uncertainty and proposed model tolerance
+## Numerical uncertainty and owner-approved model tolerance
 
 The long-time observable is the largest-box contact-refined setting`box2`.
 Conditional late counts give
@@ -197,7 +215,7 @@ Each individual audit keeps the A-02 qualification ceiling and upper contrast
 step/contact/adaptive.12 each, box.16, plateau.20, combined numerical.55,
 at least4 mixing times, and at most25% primary correction. These are accuracy
 targets, not fitted model allowances. Failed qualification stays visible and
-blocks the proposed scientific test. The point-bead primary also checks the
+blocks the binding adoption test. The point-bead primary also checks the
 analytic Smoluchowski sphere coefficient.
 
 The **acceptance envelope no longer sums marginal sampling margins repeatedly**.
@@ -236,7 +254,7 @@ that historical numerical envelope by0.0543223 with proposed model allowance0.
 These counterfactual old-data values are separate from the fresh tables below.
 
 For every fresh row, the second band is the single, explicit policy value
-`B_model=0` (proposed). The criterion is
+`B_model=0` (owner-approved on 2026-10-04). The strict scientific criterion is
 `abs(ln(k_candidate/k_reference))<=B_numerical+B_model`.
 Reports show both allowances, numerical consumption, residual model allowance
 required, and remaining excess. Consumption means deterministic bookkeeping,
@@ -494,7 +512,7 @@ Independent Ewald constant: 2.83729747948.
 
 <!-- BEGIN CANDIDATE NUMBERS -->
 
-| Case | Pair | Candidate (m3 mol-1 s-1) | Candidate / reference | Absolute log deviation | Numerical band | Model band (proposed) | Numerical consumed | Model consumed | Residual model required | Excess | Qualified | Within proposed band |
+| Case | Pair | Candidate (m3 mol-1 s-1) | Candidate / reference | Absolute log deviation | Numerical band | Model band (owner-approved) | Numerical consumed | Model consumed | Residual model required | Excess | Qualified | Within zero-model band |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---|
 | N4 | end/end | 114463905 | 0.97200771 | 0.028392 | 0.234701 | 0.000000 | 0.028392 | 0.000000 | 0.000000 | 0.000000 | True | True |
 | N4 | end/mid | 114463905 | 1.0307146 | 0.030252 | 0.239261 | 0.000000 | 0.030252 | 0.000000 | 0.000000 | 0.000000 | True | True |
@@ -515,7 +533,7 @@ Independent Ewald constant: 2.83729747948.
 | floor | end/mid | 282167444 | 0.99642882 | 0.003578 | 0.245929 | 0.000000 | 0.003578 | 0.000000 | 0.000000 | 0.000000 | True | True |
 | floor | mid/mid | 282167444 | 0.99642882 | 0.003578 | 0.245929 | 0.000000 | 0.003578 | 0.000000 | 0.000000 | 0.000000 | True | True |
 
-Consumption is bookkeeping: numerical allowance is used first, then proposed model allowance. It does not estimate a physical model-error component.
+Consumption is bookkeeping: numerical allowance is used first, then model allowance. It does not estimate a physical model-error component.
 
 | Case | Pair | t1 | t2 | Candidate / finite-box reference | 20% + 4 SE diagnostic (REPORT-ONLY) |
 |---|---|---:|---:|---:|---|
@@ -594,8 +612,8 @@ Consumption is bookkeeping: numerical allowance is used first, then proposed mod
 
 Literal transport anchors: 13/13.
 Literal min/floor/two-chain branches: 18/18.
-Proposed-policy scientific comparison passed: False.
-Model tolerance status: PROPOSED; owner approval required after manager review.
+Strict zero-model scientific comparison passed: False.
+Model tolerance status: APPROVED by owner on 2026-10-04.
 
 <!-- END CANDIDATE NUMBERS -->
 
@@ -604,7 +622,7 @@ Model tolerance status: PROPOSED; owner approval required after manager review.
 <!-- BEGIN MUTATION NUMBERS -->
 
 Target baseline passes literal-input and kernel-rule controls before each mutation. Scientific adoption failure is never counted as a mutation kill.
-Unmodified proposed-policy comparison passed: False; qualified baseline rate rows passing: 16/18.
+Unmodified strict scientific comparison passed: False; qualified baseline rate rows passing: 16/18.
 
 | Actual target mutation | Changes observable | Rejected | Failed anchors | Failed literal branches | Failed qualified rate checks | New rate rejections from passing baseline rows |
 |---|---|---|---:|---:|---:|---:|---:|
@@ -668,7 +686,8 @@ FileNotFoundError if a required fixture file is missing. The multi-hour test
 is marked slow and runs with `RMG_KMC_SLOW=1`; otherwise only that expensive
 execution is explicitly skipped after fixture validation. The entry forces
 the fixed fixture path when delegating to `proposed_adoption_test.py`.
-Owner approval of the proposed policy remains pending.
+The owner-approved gate asserts the sixteen ordinary rows and reports exactly
+the two named known deviations, including their measured ratios and approval date.
 
 The standalone `proposed_adoption_test.py` is still runnable by explicit file
 path. Its root defaults to its own directory; an explicit unprovisioned override
@@ -689,6 +708,7 @@ def test_met_kernel_reference(tmp_path):
     from pathlib import Path
     import subprocess
     import sys
+    import warnings
     sys.dont_write_bytecode = True
     root = Path(os.environ.get("MET_KERNEL_REFERENCE_PACK", str(Path(__file__).resolve().parent)))
     if not (root / "reference/run.py").is_file():
@@ -714,7 +734,12 @@ def test_met_kernel_reference(tmp_path):
     assert reference["parameters_sha256"] == digest
     report = checks.target_checks(checks.load_target(), cfg, reference)
     (tmp_path / "candidate_results.json").write_text(json.dumps(report, indent=2) + "\n")
-    checks.assert_scientific_acceptance(report)
+    adoption = checks.assert_owner_approved_adoption(report, cfg)
+    (tmp_path / "owner_adoption.json").write_text(json.dumps(adoption, indent=2) + "\n")
+    for deviation in adoption["known_deviations"]:
+        message = "OWNER-APPROVED KNOWN DEVIATION: " + json.dumps(deviation, sort_keys=True)
+        print(message, flush=True)
+        warnings.warn(message, RuntimeWarning)
 ```
 
 Commands use `/home/alon/anaconda3/envs/rmg_env/bin/python`; long runs tee both
@@ -724,10 +749,10 @@ streams and pin all descendants to eight CPUs. The full reproduction command is:
 taskset -c 6,16,17,19,21,23,24,26 /home/alon/anaconda3/envs/rmg_env/bin/python -B -u test/rmgpy/kmc/fixtures/i030_kernel_reference/verify_pack.py --workers 8 --require-all-mutations --output /home/alon/runs/i030-met-kernel-reference/rework2/verifications > >(tee -a /home/alon/runs/i030-met-kernel-reference/rework2/verifier-stdout.log) 2> >(tee -a /home/alon/runs/i030-met-kernel-reference/rework2/verifier-stderr.log >&2)
 ```
 
-The default exit checks exact reproduction and classification, including an
-honestly rejected proposed-policy test. `--require-acceptance` additionally
-requires that numerical/model comparison to pass; it does not confer owner
-approval. `mutation_tests.py --require-all` requires substantive target controls,
+The default exit checks exact numerical reproduction and the owner-approved
+binding test: sixteen passing rows and two explicitly reported deviations.
+`--require-acceptance` requires this binding outcome. The strict zero-model
+scientific comparison still reports its two failures. `mutation_tests.py --require-all` requires substantive target controls,
 their independent rate controls and every sampler mutation. Baseline science
 failure is never counted as a kill. `--mutations-only --require-all-mutations`
 is a separate fast Verifier mode after the report is frozen.
@@ -756,7 +781,7 @@ No shared latest pointer or fixture output mutation exists.
    rejected by that actual pytest before any campaign, with a passing audit
    positive control; other sampler controls remain separate.
 4. **Two-part tolerance:** joint numerical sampling envelope plus explicit
-   proposed model allowance0; the declaration's committed bytes and self-recorded
+   owner-approved model allowance0; the declaration's committed bytes and self-recorded
    measurement/comparison order are checked, with every row's consumption reported.
 5. **Adoptability:** default discovery collects a build entry with a fixed fixture
    path and fatal missing fixtures. Its full campaign is explicitly opt-in;
@@ -849,7 +874,8 @@ any trajectory output. Its unmodified complete audit phase passes. Model-band
 consumption and every transient diagnostic remain in the tables and full JSON.
 
 Measured numerical log bands range **0.1919354733–0.4022475628**;
-proposed model allowance is **0** for every row, requiring owner approval.
+the historical proposed model allowance was **0** for every row; that value
+is now owner-approved with the two explicit deviation records.
 Largest-box corrections remove **7.9096–20.5173%**.
 Numerical uncertainty is the declared joint finite-setting normal/delta
 envelope; no continuum/common-bias remainder or universal prefactor is certified.
@@ -866,9 +892,11 @@ overhead and prior attempts. Per-process RSS peaks are recorded; instantaneous
 aggregate RSS was not measured. Python/NumPy/SciPy/pytest versions were
 3.9.23/1.26.4/1.13.1/8.4.1 on Linux x86_64.
 
-**Remaining:** the manager's third adversarial review and owner approval of the
-explicit proposed model tolerance. Any candidate rejection shown above remains
-a rejection under that proposal; there is no product tuning, experimental
-validation claim or push. No demonstrated defect in the dispatch is claimed;
-an independently justified positive model allowance is not available from
-this finite benchmark, which is why the proposed extra allowance is zero.
+**Owner ruling and remaining work:** approval of zero model tolerance and the
+two named deviations is recorded for 2026-10-04. The strict scientific table
+continues to show those two failures; binding adoption requires sixteen passing
+rows and the exact reported deviation records. The production run will carry
+the documented 0.77x termination-channel sensitivity case. This follow-up uses
+fast tests and the frozen reference; it does not claim a newly rerun full campaign.
+Production execution remains with the manager. No additional owner approval
+is pending for this ruling.

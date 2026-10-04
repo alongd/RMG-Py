@@ -134,7 +134,8 @@ def main():
     checks.assert_generation_history(cfg,frozen,versions)
     policy_commit=checks.assert_decision_order()
     policy_in_git=subprocess.check_output(['git','show',policy_commit+':test/rmgpy/kmc/fixtures/i030_kernel_reference/acceptance_policy.json'],cwd=ROOT)
-    assert policy_in_git==(ROOT/'acceptance_policy.json').read_bytes(),'policy changed after its pre-measurement commit'
+    policy=checks.read_policy(cfg)[0]
+    assert sha(policy_in_git)==policy['original_declaration_sha256'],'original declaration differs from its pre-measurement commit'
     subprocess.run(['git','merge-base','--is-ancestor',policy_commit,'HEAD'],cwd=ROOT,check=True)
     verify_historical_uncertainty_probe(oracle,cfg)
     args.output=args.output.resolve()
@@ -191,16 +192,10 @@ def main():
     checks.assert_transport_and_branches(candidate)
     assert candidate==json.loads((ROOT/'candidate_results.json').read_text()),'candidate report changed'
     assert checks.render_candidate(candidate).rstrip() in pack
-    # Distinguish a scientific rejection from a broken test or interrupted run.
-    if candidate['adoption_pass']:
-        assert completed.returncode==0,'accepted candidate failed adoption test'
-    else:
-        failures=ET.parse(junit).findall('.//testcase/failure')
-        assert completed.returncode==1 and len(failures)==1
-        text=(failures[0].text or '')+failures[0].get('message','')
-        expected=('Rouse oracle is not numerically qualified' if not all(r['reference_qualified'] for r in candidate['comparison'])
-                  else 'kernel exceeds numerical plus proposed model band')
-        assert expected in text,'adoption sketch failed for an unexpected reason'
+    binding=checks.assert_owner_approved_adoption(candidate,cfg)
+    assert completed.returncode==0,'owner-approved binding adoption test failed'
+    adoption_records=list((stage/'pytest-work').rglob('owner_adoption.json'))
+    assert len(adoption_records)==1 and json.loads(adoption_records[0].read_text())==binding, 'adoption test did not report its exact known deviations'
     mutation=mutation_tests.run_mutations(cfg,fresh,artifact_dir=stage/'mutation-artifacts')
     assert mutation==json.loads((ROOT/'mutation_results.json').read_text()),'mutation results changed'
     assert mutation_tests.render_mutations(mutation).rstrip() in pack
@@ -222,21 +217,25 @@ def main():
                                          'complete_sampler_audits_inside_adoption_test':True,
                                          'model_tolerance_proposal':checks.read_policy(cfg)[0]['model_tolerance'],
                                          'policy_commit':policy_commit,
-                                         'policy_commit_bytes_equal':True,
-                                         'declared_before_corrected_measurement_and_comparison':True,
+                                         'original_policy_declaration_commit_bytes_equal':True,
+                                         'recorded_declaration_precedes_measurement_and_comparison':True,
                                          'historical_uncertainty_probe_reproduced':True,
-                                         'adoption_pass':candidate['adoption_pass'],
+                                         'strict_scientific_comparison_pass':candidate['adoption_pass'],
+                                         'owner_adoption':binding,
+                                         'adoption_pass':binding['binding_adoption_pass'],
                                          'required_target_mutations_all_killed':mutation['required_target_mutations_all_killed']})
     for name,value in [('candidate_results.json',candidate),('mutation_results.json',mutation),('sampler_audits.json',audits)]:
         write_json(stage/name,value)
+    write_json(stage/'owner_adoption.json',binding)
     shutil.copyfile(output,stage/'results.json')
     (stage/'results.md').write_text(rendered)
     shutil.copyfile(output.with_name('runtime.json'),stage/'runtime.json')
     destination=publish(stage,args.output,identity)
     print(f'REPRODUCTION PASS: all {len(fresh["simulation"])} reported ensembles, contact hashes, covariance samples, audits and tables reproduced exactly.',flush=True)
-    print(f'PROPOSED SCIENTIFIC TEST: {"PASS" if candidate["adoption_pass"] else "FAIL"}; all required target mutations killed: {mutation["required_target_mutations_all_killed"]}',flush=True)
+    print(f'STRICT ZERO-MODEL SCIENTIFIC COMPARISON: {"PASS" if candidate["adoption_pass"] else "FAIL"}; all required target mutations killed: {mutation["required_target_mutations_all_killed"]}',flush=True)
+    print('OWNER-APPROVED BINDING ADOPTION: PASS; sixteen passing rows and two reported known deviations.',flush=True)
     print(f'ATOMIC PUBLICATION: {destination}',flush=True)
-    if args.require_acceptance and not candidate['adoption_pass']:
+    if args.require_acceptance and not binding['binding_adoption_pass']:
         raise SystemExit(1)
     if args.require_all_mutations and not mutation['required_target_mutations_all_killed']:
         raise SystemExit(1)

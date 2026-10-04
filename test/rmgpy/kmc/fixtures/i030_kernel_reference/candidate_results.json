@@ -80,8 +80,8 @@
       "pass": true
     }
   ],
-  "acceptance_policy_sha256": "5d80df88f1269c233c074d15d30128915d61e1a6796896761e22b9d37e173f73",
-  "model_tolerance_status": "PROPOSED; owner approval required after manager review",
+  "acceptance_policy_sha256": "46e6abe900b24c2fdc5ab3f72f1086705c10222bf2748522348aaa2a99960bda",
+  "model_tolerance_status": "APPROVED by owner on 2026-10-04",
   "literal_kernel_branches": [
     {
       "case": "N4",

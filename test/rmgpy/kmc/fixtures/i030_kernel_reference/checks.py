@@ -6,6 +6,7 @@ import importlib.util
 import json
 import math
 from pathlib import Path
+import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parent
@@ -92,7 +93,23 @@ def assert_decision_order():
         raise AssertionError('recorded decision timestamps are out of order')
     if not (instant(indexed['declare_model_and_numerical_policy']['at_utc']) < instant(indexed['start_corrected_reference_measurement']['at_utc']) < instant(indexed['start_corrected_candidate_comparison']['at_utc'])):
         raise AssertionError('recorded policy declaration does not precede measurement and comparison')
-    digest=hashlib.sha256((ROOT/'acceptance_policy.json').read_bytes()).hexdigest()
+    policy=json.loads((ROOT/'acceptance_policy.json').read_bytes())
+    declaration_commit=indexed['start_corrected_reference_measurement']['policy_commit']
+    original=subprocess.check_output(['git','show',declaration_commit+':test/rmgpy/kmc/fixtures/i030_kernel_reference/acceptance_policy.json'],cwd=ROOT)
+    digest=hashlib.sha256(original).hexdigest()
+    if policy.get('original_declaration_sha256',digest)!=digest:
+        raise AssertionError('original policy declaration fingerprint differs')
+    declared=json.loads(original)
+    # Owner approval is later metadata; the pre-measurement numerical policy
+    # and model allowance must still equal the original committed declaration.
+    unchanged=dict(policy)
+    unchanged.pop('original_declaration_sha256',None)
+    unchanged.pop('owner_ruling',None)
+    unchanged['model_tolerance']=dict(unchanged['model_tolerance'])
+    unchanged['model_tolerance'].pop('owner_approved_on',None)
+    unchanged['model_tolerance']['status']=declared['model_tolerance']['status']
+    if unchanged!=declared:
+        raise AssertionError('original numerical or model policy changed')
     if not (indexed['start_corrected_reference_measurement']['policy_sha256']==digest):
         raise AssertionError('measurement record has a different policy fingerprint')
     if not (indexed['start_corrected_candidate_comparison']['policy_sha256']==digest):
@@ -204,13 +221,62 @@ def assert_scientific_acceptance(report):
         raise AssertionError('kernel exceeds numerical plus proposed model band')
 
 
+def assert_owner_approved_adoption(report,cfg):
+    """Bind the approved passing rows and report the two recorded deviations."""
+    assert_transport_and_branches(report)
+    policy,policy_hash=read_policy(cfg)
+    model=policy['model_tolerance']
+    ruling=policy.get('owner_ruling',{})
+    if (model.get('owner_approved_on')!='2026-10-04'
+            or model['status']!='APPROVED by owner on 2026-10-04'
+            or ruling.get('approved_on')!='2026-10-04'
+            or model['relative_fraction']!=0 or model['symmetric_log']!=0):
+        raise AssertionError('zero model tolerance requires the recorded owner approval')
+    records=ruling.get('known_deviations',[])
+    approved_keys={('N4_N16','end/end'),('N16_N4','end/end')}
+    known={(row['case'],row['pair_class']):row for row in records}
+    if len(records)!=2 or set(known)!=approved_keys:
+        raise AssertionError('known-deviation list differs from the owner ruling')
+    expected={(case['name'],pair) for case in cfg['cases'] for pair in cfg['pair_classes']}
+    rows={(row['case'],row['pair_class']):row for row in report['comparison']}
+    if len(rows)!=len(report['comparison']) or set(rows)!=expected:
+        raise AssertionError('binding adoption requires complete, unique case/pair coverage')
+    passing=[]
+    deviations=[]
+    for key,row in rows.items():
+        if not row['reference_qualified']:
+            raise AssertionError('Rouse oracle is not numerically qualified')
+        if key not in known:
+            if not row['within_error_budget'] or not row['accepted']:
+                raise AssertionError('unexpected failing row: '+':'.join(key))
+            passing.append(':'.join(key))
+            continue
+        record=known[key]
+        measured=record['measured_candidate_over_reference']
+        tolerance=record['record_relative_tolerance']
+        if (record.get('owner_approved_on')!='2026-10-04'
+                or tolerance!=2e-12 or not math.isfinite(measured) or measured<=0):
+            raise AssertionError('invalid owner-approved known-deviation record')
+        if not math.isclose(row['candidate_over_reference'],measured,rel_tol=tolerance,abs_tol=0.):
+            raise AssertionError('known deviation moved outside its reported record: '+':'.join(key))
+        if row['within_error_budget'] or row['accepted']:
+            raise AssertionError('known deviation no longer matches its recorded failure: '+':'.join(key))
+        deviations.append(dict(record,observed_candidate_over_reference=row['candidate_over_reference'],
+                               status='reported known deviation; scientific comparison fails'))
+    if len(passing)!=16 or ruling.get('passing_row_count')!=16:
+        raise AssertionError('binding adoption requires all sixteen ordinary rows to pass')
+    return {'owner_approved_on':'2026-10-04','policy_sha256':policy_hash,
+            'model_tolerance_relative_fraction':0.,'passing_rows':passing,
+            'known_deviations':deviations,'binding_adoption_pass':True}
+
+
 def render_candidate(report):
     lines = ['<!-- BEGIN CANDIDATE NUMBERS -->', '',
-             '| Case | Pair | Candidate (m3 mol-1 s-1) | Candidate / reference | Absolute log deviation | Numerical band | Model band (proposed) | Numerical consumed | Model consumed | Residual model required | Excess | Qualified | Within proposed band |',
+             '| Case | Pair | Candidate (m3 mol-1 s-1) | Candidate / reference | Absolute log deviation | Numerical band | Model band (owner-approved) | Numerical consumed | Model consumed | Residual model required | Excess | Qualified | Within zero-model band |',
              '|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---|']
     for row in report['comparison']:
         lines.append(f"| {row['case']} | {row['pair_class']} | {row['candidate_m3_mol_s']:.9g} | {row['candidate_over_reference']:.8g} | {row['absolute_log_deviation']:.6f} | {row['numerical_log_band']:.6f} | {row['proposed_model_log_band']:.6f} | {row['numerical_log_consumed']:.6f} | {row['proposed_model_log_consumed']:.6f} | {row['residual_model_log_required']:.6f} | {row['log_excess_beyond_both']:.6f} | {row['reference_qualified']} | {row['within_error_budget']} |")
-    lines += ['', 'Consumption is bookkeeping: numerical allowance is used first, then proposed model allowance. It does not estimate a physical model-error component.', '',
+    lines += ['', 'Consumption is bookkeeping: numerical allowance is used first, then model allowance. It does not estimate a physical model-error component.', '',
               '| Case | Pair | t1 | t2 | Candidate / finite-box reference | 20% + 4 SE diagnostic (REPORT-ONLY) |',
               '|---|---|---:|---:|---:|---|']
     for row in report['transient_reporting_only']:
@@ -219,6 +285,6 @@ def render_candidate(report):
         lines.append(f"| {row['case']} | {row['pair_class']} | {row['t1']:g} | {row['t2']:g} | {ratio_text} | {row['diagnostic_agreement']} (report-only) |")
     lines += ['', f"Literal transport anchors: {sum(r['pass'] for r in report['anchors'])}/{len(report['anchors'])}.",
               f"Literal min/floor/two-chain branches: {sum(r['pass'] for r in report['literal_kernel_branches'])}/{len(report['literal_kernel_branches'])}.",
-              f"Proposed-policy scientific comparison passed: {report['adoption_pass']}.",
+              f"Strict zero-model scientific comparison passed: {report['adoption_pass']}.",
               f"Model tolerance status: {report['model_tolerance_status']}.", '', '<!-- END CANDIDATE NUMBERS -->']
     return '\n'.join(lines)+'\n'

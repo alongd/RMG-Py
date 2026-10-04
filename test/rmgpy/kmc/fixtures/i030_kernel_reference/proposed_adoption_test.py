@@ -1,6 +1,5 @@
-"""Proposed scientific test, directly runnable from the repository.
+"""Owner-approved binding test, directly runnable from the repository.
 
-Owner approval of acceptance_policy.json is still required for adoption.
 This file is the exact test embedded in pack.md and executed by the Verifier.
 """
 
@@ -12,6 +11,7 @@ def test_met_kernel_reference(tmp_path):
     from pathlib import Path
     import subprocess
     import sys
+    import warnings
     sys.dont_write_bytecode = True
     root = Path(os.environ.get("MET_KERNEL_REFERENCE_PACK", str(Path(__file__).resolve().parent)))
     if not (root / "reference/run.py").is_file():
@@ -37,4 +37,9 @@ def test_met_kernel_reference(tmp_path):
     assert reference["parameters_sha256"] == digest
     report = checks.target_checks(checks.load_target(), cfg, reference)
     (tmp_path / "candidate_results.json").write_text(json.dumps(report, indent=2) + "\n")
-    checks.assert_scientific_acceptance(report)
+    adoption = checks.assert_owner_approved_adoption(report, cfg)
+    (tmp_path / "owner_adoption.json").write_text(json.dumps(adoption, indent=2) + "\n")
+    for deviation in adoption["known_deviations"]:
+        message = "OWNER-APPROVED KNOWN DEVIATION: " + json.dumps(deviation, sort_keys=True)
+        print(message, flush=True)
+        warnings.warn(message, RuntimeWarning)
