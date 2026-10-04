@@ -22,8 +22,10 @@ rejection, retaining its real pytest assertion failure and JUnit. No expected
 failure or cached simulation is substituted for that outcome.
 
 `acceptance_policy.json` was committed in
-`d86a38844f58c614c076c3cceca11bb433cdc9e3` before any corrected A-03 campaign
-measurement or candidate comparison. It proposes **0% additional model
+`d86a38844f58c614c076c3cceca11bb433cdc9e3`. The self-recorded chronology places
+the declaration before corrected A-03 measurements and candidate comparisons;
+Git establishes the declaration's bytes in that commit, not the actual start
+times of those executions. It proposes **0% additional model
 tolerance**, equivalently log allowance0 and factor1. **The owner must approve
 this policy after manager review.** There is no independently established
 closure-error bound relating the analytic coil-capture radius to microscopic
@@ -37,8 +39,9 @@ policy/input/program hashes, campaign start, and comparison start. The Verifier
 checks their order and checks the declared policy's bytes against that actual
 earlier Git commit. This is **not a blinded choice**: A-02's results, including
 the 44.94% N16 mid/mid excess, were already known and are explicitly recorded
-as such. The chronology proves the order of the new policy and new work; it
-does not prove ignorance of earlier results.
+as such. These checks establish agreement with the committed policy and internal
+consistency of the recorded timestamps. They do not independently establish
+when measurements or comparisons actually began, or ignorance of earlier results.
 
 ## Literal physical inputs and independence
 
@@ -647,19 +650,33 @@ The required prefactor mutation rescales candidate end/end by C_mid/C_end and mi
 <!-- END MUTATION NUMBERS -->
 
 Formula/anchor conformance and independent qualified rate discrimination are
-reported separately. Floor removal may be rejected solely by its literal rule;
-that is not a demonstrated physical rate rejection. The N4-only prefactor
-reversal is an additional diagnostic, not silently required to be physically
-discriminated. A bare target-class label swap is an expected survivor because
+reported separately. Global reference-prefactor reversal creates only two new
+scientific failures, N8 and N16 mid/mid; its other failures already existed in
+the baseline. N4-only reversal and floor removal create no new scientific
+failures. Their rejection by exact formula checks establishes conformance,
+not independent physical discrimination. The N4-only reversal remains an
+additional diagnostic. A bare target-class label swap is an expected survivor because
 the target has a common multiplier. The required reference-derived prefactor
 swap is substantive and rescaling the candidate, not relabelling it.
 
 ## Directly runnable proposed test and full Verifier
 
-The fixture's `proposed_adoption_test.py` is directly runnable by explicit file path
-from a repository pytest invocation. Its name is outside the repository's default
-`*Test.py` collection pattern; owner approval still controls default-suite adoption. Its root defaults to its own directory. An explicit unprovisioned
-override skips with a reason; no missing environment variable produces KeyError.
+The default `*Test.py` discovery collects the build entry at
+`test/rmgpy/kmc/kernelReferenceBuildTest.py`. It validates its fixed sibling
+`fixtures/i030_kernel_reference` path during collection and fails with
+FileNotFoundError if a required fixture file is missing. The multi-hour test
+is marked slow and runs with `RMG_KMC_SLOW=1`; otherwise only that expensive
+execution is explicitly skipped after fixture validation. The entry forces
+the fixed fixture path when delegating to `proposed_adoption_test.py`.
+Owner approval of the proposed policy remains pending.
+
+The standalone `proposed_adoption_test.py` is still runnable by explicit file
+path. Its root defaults to its own directory; an explicit unprovisioned override
+skips with a reason. The collected build entry cannot use that provisioning skip.
+Acceptance and audit helpers now use explicit failures rather than removable
+assert statements. Complete sampler qualification refuses optimized execution,
+so adoption under `python -O` or `PYTHONOPTIMIZE` stops before a campaign and
+cannot bypass the unchanged reference's removable assertions.
 The Verifier compares this actual file's function byte-for-byte with the body
 below, then executes the repository file with `MET_KERNEL_REFERENCE_PACK`
 **unset**. It retains complete sampler-audit results written inside that test.
@@ -739,10 +756,11 @@ No shared latest pointer or fixture output mutation exists.
    rejected by that actual pytest before any campaign, with a passing audit
    positive control; other sampler controls remain separate.
 4. **Two-part tolerance:** joint numerical sampling envelope plus explicit
-   proposed model allowance0; a committed declaration precedes corrected
-   measurement/comparison, with every row's consumption separately reported.
-5. **Adoptability:** a real fixture test defaults root to its own path, supports
-   an explicit provisioning skip, and is exercised without the root variable.
+   proposed model allowance0; the declaration's committed bytes and self-recorded
+   measurement/comparison order are checked, with every row's consumption reported.
+5. **Adoptability:** default discovery collects a build entry with a fixed fixture
+   path and fatal missing fixtures. Its full campaign is explicitly opt-in;
+   acceptance gates remain binding under optimization, which full adoption refuses.
 6. **Interpretation:** finite N<=16 only, no asymptotic/material validation claim;
    shared continuum bias, volume/time remainders, source-convention dependence,
    weak contact/coil separation and conformance-only mutation limits are explicit.
@@ -762,7 +780,14 @@ not remove these interpretation limits. Computational repeatability is not
 physical correctness. Exact numerical equality is conditional on the recorded
 software/platform, not promised across architectures or versions.
 
-**Actual evidence (A-03).** The full fresh Verifier command above exited0.
+**Retained execution evidence (A-03, before round-3 gate changes).** The retained
+external logs report that the full fresh Verifier command above exited0 at
+`d94913cefb528544c5da6c0a6001ecb2c8c50bdb`.
+The scientific tables and JSON reports are committed. Full-run JUnit, runtime
+totals and publication fingerprints are external evidence at the paths below,
+not independently established by those committed tables or self-recorded timestamps.
+The round-3 follow-up runs fast regressions only; it does not rerun the campaign
+or certify a fresh full run of the changed gate code.
 It reproduced every scientific JSON value, trajectory/contact hash and rendered
 table from371 freshly generated physical ensembles (14,327,808 trajectories),
 pooled into126 reported ensembles including the declared floor-label aliases.
