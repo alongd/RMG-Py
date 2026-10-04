@@ -5,12 +5,16 @@ A surviving no-op is reported as a survivor, even if scientific adoption was
 already rejected. Never count failure of an unmodified baseline as a kill.
 """
 import argparse
+import hashlib
 import importlib.util
 import json
 import math
 import os
 from pathlib import Path
 import sys
+import subprocess
+import tempfile
+import xml.etree.ElementTree as ET
 
 for key in ('OPENBLAS_NUM_THREADS','OMP_NUM_THREADS','MKL_NUM_THREADS','NUMEXPR_NUM_THREADS'):
     os.environ[key]='1'
@@ -27,7 +31,70 @@ def replace_once(old,new):
     return transform
 
 
-def run_mutations(cfg, reference, sampler=True):
+def adoption_sampler_mutation(cfg, artifact_dir=None):
+    """Execute the exact adoption test; N16-only excess OU noise fails preflight.
+
+    A passing complete audit phase is the positive control. The unmodified full
+    scientific comparison may fail, and is never used as a sampler-mutation kill.
+    """
+    spec=importlib.util.spec_from_file_location('adoption_audit_control',ROOT/'audit_sampler.py')
+    audit=importlib.util.module_from_spec(spec);spec.loader.exec_module(audit)
+    baseline=audit.run_audits(cfg)
+    source=(ROOT/'proposed_adoption_test.py').read_text()
+    fixture='''import pytest
+import sys
+sys.path.insert(0, PACK_PATH)
+@pytest.fixture(autouse=True)
+def n16_ou_noise_mutation(monkeypatch):
+    import audit_sampler
+    import numpy as np
+    original = audit_sampler.oracle.advance_modes
+    coefficients = audit_sampler.oracle.mode_coefficients
+    masks = {}
+    def marked_coefficients(cfg, mapped, pair):
+        rates, weights, variances = coefficients(cfg, mapped, pair)
+        masks[id(rates)] = np.asarray([n == 16 for n in
+            (mapped['units_i'], mapped['units_j']) for _ in range(n-1)])
+        return rates, weights, variances
+    def mutated(q, dt, rates, variances, rng):
+        result = original(q, dt, rates, variances, rng)
+        mask = masks[id(rates)]
+        if mask.any():
+            mean = q*np.exp(-dt[:,None]*rates)[:,:,None]
+            result[:,mask,:] = mean[:,mask,:] + 2*(result[:,mask,:]-mean[:,mask,:])
+        return result
+    monkeypatch.setattr(audit_sampler.oracle, 'mode_coefficients', marked_coefficients)
+    monkeypatch.setattr(audit_sampler.oracle, 'advance_modes', mutated)
+'''.replace('PACK_PATH',repr(str(ROOT)))
+    with tempfile.TemporaryDirectory(prefix='i030-adoption-mutant-') as temporary:
+        directory=Path(temporary) if artifact_dir is None else Path(artifact_dir)
+        directory.mkdir(parents=True,exist_ok=True)
+        test=directory/'test_adoption_n16_noise.py'
+        test.write_text(fixture+'\n'+source)
+        junit=directory/'n16-noise-junit.xml'
+        env=dict(os.environ,PYTEST_DISABLE_PLUGIN_AUTOLOAD='1',PYTHONDONTWRITEBYTECODE='1',
+                 MET_KERNEL_REFERENCE_PACK=str(ROOT))
+        result=subprocess.run([sys.executable,'-B','-m','pytest','-c','/dev/null',
+            '--rootdir',str(directory),'-p','no:cacheprovider','--basetemp',str(directory/'pytest-work'),
+            '--junitxml',str(junit),'-q',str(test)],env=env,capture_output=True,text=True)
+        (directory/'pytest.log').write_text(result.stdout+result.stderr)
+        failures=ET.parse(junit).findall('.//testcase/failure')
+        messages=[(row.text or '')+row.get('message','') for row in failures]
+        killed=(result.returncode==1 and len(failures)==1
+                and 'actual sampled stationary variance failed' in messages[0]
+                and not list((directory/'pytest-work').rglob('results.json')))
+    return {'mutation':'double_OU_noise_N16_only_in_exact_adoption_test',
+            'baseline_complete_audit_phase_pass':True,
+            'baseline_audits_sha256':hashlib.sha256(json.dumps(baseline,sort_keys=True).encode()).hexdigest(),
+            'adoption_test_source_sha256':hashlib.sha256(source.encode()).hexdigest(),
+            'mutation_fixture_sha256':hashlib.sha256(fixture.encode()).hexdigest(),
+            'pytest_returncode':result.returncode,'pytest_failure_count':len(failures),
+            'killed':killed,'failure_stage':'stationary_variance' if killed else 'unexpected',
+            'predicate':'only modes belonging to length16 chains, including either unequal orientation; length4/8 modes unchanged',
+            'baseline_control_scope':'complete preflight; full unmodified scientific outcome reported separately'}
+
+
+def run_mutations(cfg, reference, sampler=True, artifact_dir=None):
     baseline=checks.target_checks(checks.load_target(),cfg,reference)
     checks.assert_transport_and_branches(baseline)
     old='capture_radius = max(SIGMA_CONTACT, 2.0 * radius_gyration)'
@@ -53,6 +120,9 @@ def run_mutations(cfg, reference, sampler=True):
     line='return 4.0 * math.pi * N_A * spin_factor * diffusivity * capture_radius'
     definitions.append(('swap_reference_prefactors_in_candidate',replace_once(line,
         line+' * '+repr(prefactors)+'.get((units_i, units_j, pair_class), 1.0)')))
+    n4_only={key:value for key,value in prefactors.items() if key[:2]==(4,4)}
+    definitions.append(('swap_reference_prefactors_N4_only_diagnostic',replace_once(line,
+        line+' * '+repr(n4_only)+'.get((units_i, units_j, pair_class), 1.0)')))
     noop_transform=replace_once('if pair_class not in PAIR_CLASSES:\n',
             'pair_class = {"end/end": "mid/mid", "mid/mid": "end/end"}.get(pair_class, pair_class)\n    if pair_class not in PAIR_CLASSES:\n')
     outcomes=[]
@@ -78,12 +148,13 @@ def run_mutations(cfg, reference, sampler=True):
     # An oracle-backed positive control tests tolerance discrimination separately
     # from the implementation's already-failing science and exact rule checks.
     budgets=reference['qualification']
+    model_log=checks.read_policy(cfg)[0]['model_tolerance']['symmetric_log']
     control=[]
     for name,factor in [('radius_x0.5',.5),('radius_x2',2.),('diffusion_x4',4.),('drop_one_equal_chain',.5)]:
         equal_cases={case['name'] for case in cfg['cases'] if case['units_i']==case['units_j']}
         eligible=[row for row in budgets if name!='drop_one_equal_chain' or row['case'] in equal_cases]
         failures=[f"{row['case']}:{row['pair_class']}" for row in eligible
-                  if row['qualified'] and abs(math.log(factor)) > row['total_log_tolerance']]
+                  if row['qualified'] and abs(math.log(factor)) > row['total_log_tolerance']+model_log]
         control.append({'mutation':name,'positive_control_count':sum(row['qualified'] for row in eligible),
                         'killed_by_qualified_rate_budget':bool(failures),'failures':failures})
     # The reference prefactors are reversed in the candidate above, as the
@@ -136,24 +207,32 @@ def run_mutations(cfg, reference, sampler=True):
             killed=False;reason='mutated internal coordinate sampler passed'
         sampler_controls.append({'mutation':'double_sampled_internal_coordinates','baseline_control_pass':True,
                                  'killed':killed,'reason':reason})
+        sampler_controls.append(adoption_sampler_mutation(cfg,artifact_dir))
     required_rates={'capture_radius_x0.5','capture_radius_x2','candidate_diffusion_x4',
                     'shared_chain_diffusivity_x4','drop_one_chain_diffusion',
                     'swap_reference_prefactors_in_candidate'}
     rate_mutations_rejected=all(row['new_qualified_rate_rejections'] for row in outcomes
                                if row['mutation'] in required_rates)
-    return {'baseline_transport_and_rule_pass':True,'target_mutations':outcomes,
+    return {'baseline_transport_and_rule_pass':True,
+            'baseline_proposed_policy_comparison_pass':baseline['adoption_pass'],
+            'baseline_qualified_rate_pass_count':sum(row['reference_qualified'] and row['within_error_budget'] for row in baseline['comparison']),
+            'baseline_qualified_rate_failures':[f"{row['case']}:{row['pair_class']}" for row in baseline['comparison'] if row['reference_qualified'] and not row['within_error_budget']],
+            'target_mutations':outcomes,
             'qualified_rate_positive_controls':control,'oracle_prefactor_swap_witnesses':oracle_swaps,
             'sampler_mutations':sampler_controls,'label_only_noop':noop,
             'required_rate_mutations_all_rejected':rate_mutations_rejected,
-            'required_target_mutations_all_killed':all(row['killed'] for row in outcomes)
+            'required_target_mutations_all_killed':all(row['killed'] for row in outcomes
+                                                    if not row['mutation'].endswith('_diagnostic'))
                                                 and rate_mutations_rejected
-                                                and all(row['killed_by_qualified_rate_budget'] for row in control),
+                                                and all(row['killed_by_qualified_rate_budget'] for row in control)
+                                                and all(row['killed'] for row in sampler_controls),
             'limitation':'The required prefactor mutation rescales candidate end/end by C_mid/C_end and mid/mid by C_end/C_mid, using the independent reference. A bare target label swap is a separate observational no-op; it is reported as an expected survivor, never substituted for the requested prefactor perturbation.'}
 
 
 def render_mutations(result):
     lines=['<!-- BEGIN MUTATION NUMBERS -->','',
-           'Target baseline passes literal-input and kernel-rule controls before each mutation. Scientific adoption failure is never counted as a mutation kill.','',
+           'Target baseline passes literal-input and kernel-rule controls before each mutation. Scientific adoption failure is never counted as a mutation kill.',
+           f"Unmodified proposed-policy comparison passed: {result['baseline_proposed_policy_comparison_pass']}; qualified baseline rate rows passing: {result['baseline_qualified_rate_pass_count']}/18.",'',
            '| Actual target mutation | Changes observable | Rejected | Failed anchors | Failed literal branches | Failed qualified rate checks | New rate rejections from passing baseline rows |',
            '|---|---|---|---:|---:|---:|---:|---:|']
     for row in result['target_mutations']:
@@ -164,7 +243,10 @@ def render_mutations(result):
     lines+=['','| Oracle prefactor swap witness | Original end > mid by 4 SE | Swap rejected |','|---|---|---|']
     for row in result['oracle_prefactor_swap_witnesses']:
         lines.append(f"| {row['case']} | {row['unmodified_ordering_control_pass']} | {row['swapped_oracle_prefactors_rejected']} |")
-    lines+=['',f"Actual sampler noise/coordinates x2 rejected: {all(row['killed'] for row in result['sampler_mutations'])}.",'',result['limitation'],'','<!-- END MUTATION NUMBERS -->']
+    lines+=['','| Sampler mutation | Rejected | Failure stage |','|---|---|---|']
+    for row in result['sampler_mutations']:
+        lines.append(f"| {row['mutation']} | {row['killed']} | {row.get('failure_stage',row.get('reason',''))} |")
+    lines+=['','The N16-only noise mutant executes the exact adoption-test body and must fail its stationary-variance audit before any trajectory generation. Its positive control is the complete unmodified audit phase, not an already-failing scientific comparison.','',result['limitation'],'','<!-- END MUTATION NUMBERS -->']
     return '\n'.join(lines)+'\n'
 
 
@@ -179,7 +261,8 @@ def main():
     cfg,digest=oracle.read_parameters()
     reference=json.loads(args.reference.read_text())
     assert reference['parameters_sha256']==digest
-    result=run_mutations(cfg,reference)
+    artifact_dir=args.output.parent/(args.output.stem+'-artifacts') if args.output else None
+    result=run_mutations(cfg,reference,artifact_dir=artifact_dir)
     if args.output:
         args.output.write_text(json.dumps(result,indent=2)+'\n')
     print(render_mutations(result),flush=True)

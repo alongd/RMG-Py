@@ -121,6 +121,7 @@ def adaptive_bead_contact_checks(cfg):
 
 
 def run_audits(cfg):
-    return {'laplacian':direct_laplacian_checks(cfg),'continuum_sphere':continuum_sphere_check(cfg),
-            'stationary_variance':stationary_variance_checks(cfg),
+    # Validate innovation noise before spending time on contact simulations.
+    return {'stationary_variance':stationary_variance_checks(cfg),
+            'laplacian':direct_laplacian_checks(cfg),'continuum_sphere':continuum_sphere_check(cfg),
             'adaptive_bead_contact':adaptive_bead_contact_checks(cfg)}

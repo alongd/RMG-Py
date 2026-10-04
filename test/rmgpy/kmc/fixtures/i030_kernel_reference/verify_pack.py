@@ -26,7 +26,7 @@ sys.path.insert(0,str(ROOT))
 import checks
 import mutation_tests
 
-DEFAULT_OUTPUT=Path('/home/alon/runs/i030-met-kernel-reference/rework/verifications')
+DEFAULT_OUTPUT=Path('/home/alon/runs/i030-met-kernel-reference/rework2/verifications')
 
 
 def sha(data):
@@ -37,6 +37,38 @@ def load_oracle():
     spec=importlib.util.spec_from_file_location('verified_rouse_oracle',ROOT/'reference/run.py')
     oracle=importlib.util.module_from_spec(spec);spec.loader.exec_module(oracle)
     return oracle
+
+
+def verify_historical_uncertainty_probe(oracle,cfg):
+    """Reproduce the separately labelled A02 reanalysis from its actual commit."""
+    probe=json.loads((ROOT/'uncertainty_probe.json').read_text())
+    prefix=probe['source_commit']+':test/rmgpy/kmc/fixtures/i030_kernel_reference/'
+    raw=subprocess.check_output(['git','show',prefix+'reference/results/results.json'],cwd=ROOT)
+    candidate_raw=subprocess.check_output(['git','show',prefix+'candidate_results.json'],cwd=ROOT)
+    assert sha(raw)==probe['A02_results_sha256']
+    assert sha(candidate_raw)==probe['A02_candidate_report_sha256']
+    old=json.loads(raw)
+    old_rows={(row['case'],row['pair_class']):row for row in old['qualification']}
+    new=oracle.qualify(old['simulation'],cfg,old['mapped'])
+    candidates=json.loads(candidate_raw)['comparison']
+    import math
+    expected=[]
+    for row,candidate in zip(new,candidates):
+        previous=old_rows[row['case'],row['pair_class']]
+        n=row['numerical_uncertainty']
+        deviation=abs(math.log(candidate['candidate_over_reference']))
+        expected.append({'case':row['case'],'pair_class':row['pair_class'],
+            'A02_sum_marginal_log':previous['total_log_tolerance'],
+            'A02_means_joint_method_log':n['numerical_log_band'],
+            'observed_audit_contrasts_log':n['observed_audit_contrasts_log'],
+            'joint_audit_sampling_log':n['joint_audit_sampling_log'],
+            'primary_statistics_log':n['statistics_log'],
+            'A02_candidate_over_reference':candidate['candidate_over_reference'],
+            'A02_absolute_log_deviation':deviation,
+            'A02_joint_numerical_consumed':min(deviation,n['numerical_log_band']),
+            'A02_residual_model_log_required':max(0.,deviation-n['numerical_log_band']),
+            'proposed_model_log':0.})
+    assert expected==probe['rows'],'historical uncertainty probe changed'
 
 
 def write_json(path,value):
@@ -83,14 +115,15 @@ def main():
         allowed=sorted(os.sched_getaffinity(0))
         os.sched_setaffinity(0,set(allowed[:8]))
     env=dict(os.environ,PYTEST_DISABLE_PLUGIN_AUTOLOAD='1',PYTHONDONTWRITEBYTECODE='1',
-             MET_KERNEL_REFERENCE_PACK=str(ROOT),MET_KERNEL_REFERENCE_WORKERS=str(args.workers))
+             MET_KERNEL_REFERENCE_WORKERS=str(args.workers))
+    env.pop('MET_KERNEL_REFERENCE_PACK',None)  # Prove the ordinary fixture default.
     for key in ('OPENBLAS_NUM_THREADS','OMP_NUM_THREADS','MKL_NUM_THREADS','NUMEXPR_NUM_THREADS'):
         env[key]='1'
     oracle=load_oracle()
     cfg,digest=oracle.read_parameters()
     program_paths=['reference/run.py','checks.py','audit_sampler.py','mutation_tests.py','verify_pack.py',
-                   'extend_floor.py','reference/provenance/measurement_04.py',
-                   'reference/provenance/parameters_04.json']
+                   'proposed_adoption_test.py','guardTest.py','acceptance_policy.json','decision_order.json',
+                   'uncertainty_probe.json']
     program_hashes={name:sha((ROOT/name).read_bytes()) for name in program_paths}
     pack=(ROOT/'pack.md').read_text()
     frozen=json.loads((ROOT/'reference/results/results.json').read_text())
@@ -99,12 +132,17 @@ def main():
               'scipy':oracle.scipy.__version__,'rng':'numpy.PCG64',
               'platform':oracle.platform.system(),'machine':oracle.platform.machine()}
     checks.assert_generation_history(cfg,frozen,versions)
+    policy_commit=checks.assert_decision_order()
+    policy_in_git=subprocess.check_output(['git','show',policy_commit+':test/rmgpy/kmc/fixtures/i030_kernel_reference/acceptance_policy.json'],cwd=ROOT)
+    assert policy_in_git==(ROOT/'acceptance_policy.json').read_bytes(),'policy changed after its pre-measurement commit'
+    subprocess.run(['git','merge-base','--is-ancestor',policy_commit,'HEAD'],cwd=ROOT,check=True)
+    verify_historical_uncertainty_probe(oracle,cfg)
     args.output=args.output.resolve()
     args.output.mkdir(parents=True,exist_ok=True)
     identity=datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')+'-'+uuid.uuid4().hex
     stage=Path(tempfile.mkdtemp(prefix='.pending-'+identity+'-',dir=args.output))
     if args.mutations_only:
-        mutation=mutation_tests.run_mutations(cfg,frozen)
+        mutation=mutation_tests.run_mutations(cfg,frozen,artifact_dir=stage/'mutation-artifacts')
         write_json(stage/'verification.json',{'parameters_sha256':digest,'program_sha256':program_hashes,
                                                'versions':frozen['versions'],'pytest_version':__import__('pytest').__version__})
         write_json(stage/'mutation_results.json',mutation)
@@ -119,13 +157,18 @@ def main():
     match=re.search(r'```python\n(def test_met_kernel_reference\(tmp_path\):.*?)(?:\n```)',pack,re.S)
     assert match,'no executable adoption sketch in pack'
     test_path=stage/'test_met_kernel_reference.py'
-    prelude='import json\nimport os\nfrom pathlib import Path\nimport subprocess\nimport sys\nsys.dont_write_bytecode=True\n'
-    test_path.write_text(prelude+'\n'+match.group(1)+'\n')
+    adoption_source=(ROOT/'proposed_adoption_test.py').read_text()
+    assert adoption_source[adoption_source.index('def test_met_kernel_reference'):].strip()==match.group(1).strip(), 'pack differs from directly runnable proposed test'
+    test_path.write_text(adoption_source)
     junit=stage/'adoption-junit.xml'
+    subprocess.run([sys.executable,'-B','-m','pytest','-c','/dev/null','--rootdir',str(ROOT),
+                    '--basetemp',str(stage/'guard-work'),'-p','no:cacheprovider',
+                    '--junitxml',str(stage/'guard-junit.xml'),'-q',str(ROOT/'guardTest.py')],
+                   cwd=ROOT,env=env,check=True)
     print('SKETCH VERIFIER: executing the exact proposed adoption test with fresh trajectories.',flush=True)
-    completed=subprocess.run([sys.executable,'-B','-m','pytest','-c','/dev/null','--rootdir',str(stage),
+    completed=subprocess.run([sys.executable,'-B','-m','pytest','-c','/dev/null','--rootdir',str(ROOT),
                               '--basetemp',str(stage/'pytest-work'),'-p','no:cacheprovider',
-                              '--junitxml',str(junit),'-q','-s',str(test_path)],cwd=ROOT,env=env)
+                              '--junitxml',str(junit),'-q','-s',str(ROOT/'proposed_adoption_test.py')],cwd=ROOT,env=env)
     outputs=list((stage/'pytest-work').rglob('results.json'))
     assert len(outputs)==1,'expected one complete fresh oracle output'
     output=outputs[0]
@@ -156,15 +199,17 @@ def main():
         assert completed.returncode==1 and len(failures)==1
         text=(failures[0].text or '')+failures[0].get('message','')
         expected=('Rouse oracle is not numerically qualified' if not all(r['reference_qualified'] for r in candidate['comparison'])
-                  else 'kernel exceeds independent Rouse error budget')
+                  else 'kernel exceeds numerical plus proposed model band')
         assert expected in text,'adoption sketch failed for an unexpected reason'
-    mutation=mutation_tests.run_mutations(cfg,fresh)
+    mutation=mutation_tests.run_mutations(cfg,fresh,artifact_dir=stage/'mutation-artifacts')
     assert mutation==json.loads((ROOT/'mutation_results.json').read_text()),'mutation results changed'
     assert mutation_tests.render_mutations(mutation).rstrip() in pack
     spec=importlib.util.spec_from_file_location('live_sampler_audit',ROOT/'audit_sampler.py')
     audit=importlib.util.module_from_spec(spec);spec.loader.exec_module(audit)
     audits=audit.run_audits(cfg)
     assert audits==json.loads((ROOT/'sampler_audits.json').read_text()),'independent sampler audits changed'
+    adoption_audits=list((stage/'pytest-work').rglob('sampler_audits.json'))
+    assert len(adoption_audits)==1 and json.loads(adoption_audits[0].read_text())==audits, 'adoption test did not execute every complete sampler audit'
     assert {name:sha((ROOT/name).read_bytes()) for name in program_paths}==program_hashes,'program changed during verification'
     # Parsed snapshot remains the fingerprint source; no post-simulation parameter rehash.
     write_json(stage/'verification.json',{'parameters_sha256':digest,'program_sha256':program_hashes,
@@ -173,6 +218,13 @@ def main():
                                          'fresh_scientific_reference_equal':True,
                                          'authoring_generation_provenance':frozen['generation_provenance'],
                                          'fresh_generation_provenance':fresh['generation_provenance'],
+                                         'pack_root_environment_unset':True,
+                                         'complete_sampler_audits_inside_adoption_test':True,
+                                         'model_tolerance_proposal':checks.read_policy(cfg)[0]['model_tolerance'],
+                                         'policy_commit':policy_commit,
+                                         'policy_commit_bytes_equal':True,
+                                         'declared_before_corrected_measurement_and_comparison':True,
+                                         'historical_uncertainty_probe_reproduced':True,
                                          'adoption_pass':candidate['adoption_pass'],
                                          'required_target_mutations_all_killed':mutation['required_target_mutations_all_killed']})
     for name,value in [('candidate_results.json',candidate),('mutation_results.json',mutation),('sampler_audits.json',audits)]:

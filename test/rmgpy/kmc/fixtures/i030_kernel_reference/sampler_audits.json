@@ -1,143 +1,4 @@
 {
-  "laplacian": [
-    {
-      "case": "N4",
-      "pair_class": "end/end",
-      "independent_covariance": 0.933333333333333,
-      "local_diffusion_reduced": 8.0,
-      "pass": true
-    },
-    {
-      "case": "N4",
-      "pair_class": "end/mid",
-      "independent_covariance": 0.6666666666666665,
-      "local_diffusion_reduced": 8.0,
-      "pass": true
-    },
-    {
-      "case": "N4",
-      "pair_class": "mid/mid",
-      "independent_covariance": 0.3999999999999999,
-      "local_diffusion_reduced": 8.0,
-      "pass": true
-    },
-    {
-      "case": "N8",
-      "pair_class": "end/end",
-      "independent_covariance": 1.1111111111111114,
-      "local_diffusion_reduced": 16.0,
-      "pass": true
-    },
-    {
-      "case": "N8",
-      "pair_class": "end/mid",
-      "independent_covariance": 0.73015873015873,
-      "local_diffusion_reduced": 15.999999999999998,
-      "pass": true
-    },
-    {
-      "case": "N8",
-      "pair_class": "mid/mid",
-      "independent_covariance": 0.34920634920634863,
-      "local_diffusion_reduced": 15.999999999999996,
-      "pass": true
-    },
-    {
-      "case": "N16",
-      "pair_class": "end/end",
-      "independent_covariance": 1.2156862745097965,
-      "local_diffusion_reduced": 31.999999999999957,
-      "pass": true
-    },
-    {
-      "case": "N16",
-      "pair_class": "end/mid",
-      "independent_covariance": 0.7764705882352902,
-      "local_diffusion_reduced": 31.999999999999964,
-      "pass": true
-    },
-    {
-      "case": "N16",
-      "pair_class": "mid/mid",
-      "independent_covariance": 0.337254901960784,
-      "local_diffusion_reduced": 31.99999999999997,
-      "pass": true
-    },
-    {
-      "case": "N4_N16",
-      "pair_class": "end/end",
-      "independent_covariance": 2.8980392156862593,
-      "local_diffusion_reduced": 7.999999999999995,
-      "pass": true
-    },
-    {
-      "case": "N4_N16",
-      "pair_class": "end/mid",
-      "independent_covariance": 1.1411764705882346,
-      "local_diffusion_reduced": 7.9999999999999964,
-      "pass": true
-    },
-    {
-      "case": "N4_N16",
-      "pair_class": "mid/mid",
-      "independent_covariance": 0.874509803921568,
-      "local_diffusion_reduced": 7.9999999999999964,
-      "pass": true
-    },
-    {
-      "case": "N16_N4",
-      "pair_class": "end/end",
-      "independent_covariance": 2.8980392156862593,
-      "local_diffusion_reduced": 7.999999999999995,
-      "pass": true
-    },
-    {
-      "case": "N16_N4",
-      "pair_class": "end/mid",
-      "independent_covariance": 2.631372549019593,
-      "local_diffusion_reduced": 7.999999999999995,
-      "pass": true
-    },
-    {
-      "case": "N16_N4",
-      "pair_class": "mid/mid",
-      "independent_covariance": 0.874509803921568,
-      "local_diffusion_reduced": 7.9999999999999964,
-      "pass": true
-    },
-    {
-      "case": "floor",
-      "pair_class": "end/end",
-      "independent_covariance": 0.0,
-      "local_diffusion_reduced": 2.0,
-      "pass": true
-    },
-    {
-      "case": "floor",
-      "pair_class": "end/mid",
-      "independent_covariance": 0.0,
-      "local_diffusion_reduced": 2.0,
-      "pass": true
-    },
-    {
-      "case": "floor",
-      "pair_class": "mid/mid",
-      "independent_covariance": 0.0,
-      "local_diffusion_reduced": 2.0,
-      "pass": true
-    }
-  ],
-  "continuum_sphere": {
-    "replicas": 65536,
-    "contacts": 2387,
-    "probability": 0.0364227294921875,
-    "se": 0.0007317951930266018,
-    "analytic_infinite_probability": 0.036270373171574805,
-    "cube_tail_upper_bound": 1.0675014045125326e-05,
-    "dt_reduced": 0.0001,
-    "elapsed_reduced": 0.08,
-    "pass": true
-  },
   "stationary_variance": [
     {
       "case": "N4",
@@ -815,6 +676,145 @@
       "pass": true
     }
   ],
+  "laplacian": [
+    {
+      "case": "N4",
+      "pair_class": "end/end",
+      "independent_covariance": 0.933333333333333,
+      "local_diffusion_reduced": 8.0,
+      "pass": true
+    },
+    {
+      "case": "N4",
+      "pair_class": "end/mid",
+      "independent_covariance": 0.6666666666666665,
+      "local_diffusion_reduced": 8.0,
+      "pass": true
+    },
+    {
+      "case": "N4",
+      "pair_class": "mid/mid",
+      "independent_covariance": 0.3999999999999999,
+      "local_diffusion_reduced": 8.0,
+      "pass": true
+    },
+    {
+      "case": "N8",
+      "pair_class": "end/end",
+      "independent_covariance": 1.1111111111111114,
+      "local_diffusion_reduced": 16.0,
+      "pass": true
+    },
+    {
+      "case": "N8",
+      "pair_class": "end/mid",
+      "independent_covariance": 0.73015873015873,
+      "local_diffusion_reduced": 15.999999999999998,
+      "pass": true
+    },
+    {
+      "case": "N8",
+      "pair_class": "mid/mid",
+      "independent_covariance": 0.34920634920634863,
+      "local_diffusion_reduced": 15.999999999999996,
+      "pass": true
+    },
+    {
+      "case": "N16",
+      "pair_class": "end/end",
+      "independent_covariance": 1.2156862745097965,
+      "local_diffusion_reduced": 31.999999999999957,
+      "pass": true
+    },
+    {
+      "case": "N16",
+      "pair_class": "end/mid",
+      "independent_covariance": 0.7764705882352902,
+      "local_diffusion_reduced": 31.999999999999964,
+      "pass": true
+    },
+    {
+      "case": "N16",
+      "pair_class": "mid/mid",
+      "independent_covariance": 0.337254901960784,
+      "local_diffusion_reduced": 31.99999999999997,
+      "pass": true
+    },
+    {
+      "case": "N4_N16",
+      "pair_class": "end/end",
+      "independent_covariance": 2.8980392156862593,
+      "local_diffusion_reduced": 7.999999999999995,
+      "pass": true
+    },
+    {
+      "case": "N4_N16",
+      "pair_class": "end/mid",
+      "independent_covariance": 1.1411764705882346,
+      "local_diffusion_reduced": 7.9999999999999964,
+      "pass": true
+    },
+    {
+      "case": "N4_N16",
+      "pair_class": "mid/mid",
+      "independent_covariance": 0.874509803921568,
+      "local_diffusion_reduced": 7.9999999999999964,
+      "pass": true
+    },
+    {
+      "case": "N16_N4",
+      "pair_class": "end/end",
+      "independent_covariance": 2.8980392156862593,
+      "local_diffusion_reduced": 7.999999999999995,
+      "pass": true
+    },
+    {
+      "case": "N16_N4",
+      "pair_class": "end/mid",
+      "independent_covariance": 2.631372549019593,
+      "local_diffusion_reduced": 7.999999999999995,
+      "pass": true
+    },
+    {
+      "case": "N16_N4",
+      "pair_class": "mid/mid",
+      "independent_covariance": 0.874509803921568,
+      "local_diffusion_reduced": 7.9999999999999964,
+      "pass": true
+    },
+    {
+      "case": "floor",
+      "pair_class": "end/end",
+      "independent_covariance": 0.0,
+      "local_diffusion_reduced": 2.0,
+      "pass": true
+    },
+    {
+      "case": "floor",
+      "pair_class": "end/mid",
+      "independent_covariance": 0.0,
+      "local_diffusion_reduced": 2.0,
+      "pass": true
+    },
+    {
+      "case": "floor",
+      "pair_class": "mid/mid",
+      "independent_covariance": 0.0,
+      "local_diffusion_reduced": 2.0,
+      "pass": true
+    }
+  ],
+  "continuum_sphere": {
+    "replicas": 65536,
+    "contacts": 2387,
+    "probability": 0.0364227294921875,
+    "se": 0.0007317951930266018,
+    "analytic_infinite_probability": 0.036270373171574805,
+    "cube_tail_upper_bound": 1.0675014045125326e-05,
+    "dt_reduced": 0.0001,
+    "elapsed_reduced": 0.08,
+    "pass": true
+  },
   "adaptive_bead_contact": [
     {
       "pair_class": "end/end",

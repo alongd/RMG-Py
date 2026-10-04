@@ -1,5 +1,5 @@
 {
-  "schema": 2,
+  "schema": 3,
   "model": "free-draining discrete Gaussian Rouse chains; equilibrium activation; microscopic site absorption",
   "temperature_K": 700.0,
   "D0_m2_s": 2.755363626147875e-08,
@@ -180,6 +180,19 @@
         40.0
       ],
       "seed": 208001
+    },
+    {
+      "name": "transient",
+      "box_over_scale": 6.0,
+      "dt_reduced": 2.5e-05,
+      "max_dt_reduced": 0.005,
+      "safety": 10.0,
+      "replicas": 32768,
+      "window": [
+        0.1,
+        0.2
+      ],
+      "seed": 209001
     }
   ],
   "sampler": {
@@ -205,6 +218,16 @@
     "seed": 207001,
     "z": 5.0
   },
-  "allocation": "Fixed rework allocation before any fresh candidate comparison. Exact OU mode transitions with state-dependent observation intervals; minimum contact step, maximum step and safety factor independently refined. Statistical/numerical uncertainties never fitted to candidate. Preliminary run stopped before candidate comparison: batches increased from 256 to 2048; counts increased to shrink sampling uncertainty. Engineering qualification ceilings revised to retain a total log cap of 0.55, strictly below log(2). The budget itself remains measured contrasts plus 4 SE, with no additive model allowance. Final precision extension, independent of candidate comparison: three independent stages at seeds offset by 100000; pool integer survivors. Final oracle is the largest box at the finest contact step; its own plateau is qualified. The largest-box correction is capped at 25 percent. Authoring and full verification both rerun every stage from scratch; there is no reuse option. The three-stage point-bead result exceeded the fixed step and total ceilings. Five additional independent floor stages were allocated solely to reduce those numerical uncertainties; all ceilings and physical inputs remain fixed. Other cases retain three stages.",
-  "precision_stages": 3
+  "allocation": "A03 retains A02 physical inputs, long-run replicas, seed stages and all individual qualification ceilings. Corrected exact mean-displacement guard with repeated re-evaluation. New dedicated report-only transient ensembles. Numerical band uses a 64-form joint normal Bonferroni envelope with whole/half-window covariance, plus four primary relative SE; model tolerance is outside the oracle, in acceptance_policy.json, committed before these simulations. Every authoring and Verifier stage is freshly generated; no checkpoint reuse or retrospective generator equivalence. No allocation or ceiling is adjusted using candidate values.",
+  "precision_stages": 3,
+  "transient_edges_reduced": [
+    0.0,
+    0.02,
+    0.05,
+    0.1,
+    0.2
+  ],
+  "transient_relative_allowance": 0.2,
+  "transient_policy": "report-only; 20 percent plus four standard errors, never acceptance",
+  "uncertainty_method": "joint_normal_linear_contrast_upper_envelope"
 }

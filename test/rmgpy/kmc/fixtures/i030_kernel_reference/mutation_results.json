@@ -1,5 +1,11 @@
 {
   "baseline_transport_and_rule_pass": true,
+  "baseline_proposed_policy_comparison_pass": false,
+  "baseline_qualified_rate_pass_count": 16,
+  "baseline_qualified_rate_failures": [
+    "N4_N16:end/end",
+    "N16_N4:end/end"
+  ],
   "target_mutations": [
     {
       "mutation": "capture_radius_x0.5",
@@ -36,10 +42,8 @@
         "N8:mid/mid",
         "N16:end/end",
         "N16:end/mid",
-        "N4_N16:end/end",
         "N4_N16:end/mid",
         "N4_N16:mid/mid",
-        "N16_N4:end/end",
         "N16_N4:end/mid",
         "N16_N4:mid/mid",
         "floor:end/end",
@@ -103,10 +107,8 @@
         "N16:end/end",
         "N16:end/mid",
         "N16:mid/mid",
-        "N4_N16:end/end",
         "N4_N16:end/mid",
         "N4_N16:mid/mid",
-        "N16_N4:end/end",
         "N16_N4:end/mid",
         "N16_N4:mid/mid",
         "floor:end/end",
@@ -171,10 +173,8 @@
         "N16:end/end",
         "N16:end/mid",
         "N16:mid/mid",
-        "N4_N16:end/end",
         "N4_N16:end/mid",
         "N4_N16:mid/mid",
-        "N16_N4:end/end",
         "N16_N4:end/mid",
         "N16_N4:mid/mid",
         "floor:end/end",
@@ -244,10 +244,8 @@
         "N16:end/end",
         "N16:end/mid",
         "N16:mid/mid",
-        "N4_N16:end/end",
         "N4_N16:end/mid",
         "N4_N16:mid/mid",
-        "N16_N4:end/end",
         "N16_N4:end/mid",
         "N16_N4:mid/mid",
         "floor:end/end",
@@ -311,16 +309,15 @@
         "N8:mid/mid",
         "N16:end/end",
         "N16:end/mid",
-        "N4_N16:end/end",
         "N4_N16:end/mid",
-        "N16_N4:end/end",
+        "N4_N16:mid/mid",
         "N16_N4:end/mid",
         "N16_N4:mid/mid",
         "floor:end/end",
         "floor:end/mid",
         "floor:mid/mid"
       ],
-      "within_rouse_budget_count": 2,
+      "within_rouse_budget_count": 1,
       "failed_qualified_rate_comparisons": [
         "N4:end/end",
         "N4:end/mid",
@@ -332,6 +329,7 @@
         "N16:end/mid",
         "N4_N16:end/end",
         "N4_N16:end/mid",
+        "N4_N16:mid/mid",
         "N16_N4:end/end",
         "N16_N4:end/mid",
         "N16_N4:mid/mid",
@@ -355,10 +353,8 @@
         "N16_N4:mid/mid"
       ],
       "new_qualified_rate_rejections": [
-        "N4_N16:end/end",
         "N4_N16:end/mid",
         "N4_N16:mid/mid",
-        "N16_N4:end/end",
         "N16_N4:end/mid",
         "N16_N4:mid/mid"
       ],
@@ -384,12 +380,12 @@
         "N16_N4:mid/mid"
       ],
       "new_qualified_rate_rejections": [
-        "N16_N4:end/end",
         "N16_N4:end/mid",
         "N16_N4:mid/mid"
       ],
-      "within_rouse_budget_count": 15,
+      "within_rouse_budget_count": 14,
       "failed_qualified_rate_comparisons": [
+        "N4_N16:end/end",
         "N16_N4:end/end",
         "N16_N4:end/mid",
         "N16_N4:mid/mid"
@@ -407,15 +403,15 @@
         "N4_N16:mid/mid"
       ],
       "new_qualified_rate_rejections": [
-        "N4_N16:end/end",
         "N4_N16:end/mid",
         "N4_N16:mid/mid"
       ],
-      "within_rouse_budget_count": 15,
+      "within_rouse_budget_count": 14,
       "failed_qualified_rate_comparisons": [
         "N4_N16:end/end",
         "N4_N16:end/mid",
-        "N4_N16:mid/mid"
+        "N4_N16:mid/mid",
+        "N16_N4:end/end"
       ]
     },
     {
@@ -435,12 +431,15 @@
       "new_qualified_rate_rejections": [
         "N4_N16:end/mid",
         "N4_N16:mid/mid",
+        "N16_N4:end/mid",
         "N16_N4:mid/mid"
       ],
-      "within_rouse_budget_count": 15,
+      "within_rouse_budget_count": 13,
       "failed_qualified_rate_comparisons": [
+        "N4_N16:end/end",
         "N4_N16:end/mid",
         "N4_N16:mid/mid",
+        "N16_N4:end/mid",
         "N16_N4:mid/mid"
       ]
     },
@@ -456,8 +455,11 @@
         "floor:mid/mid"
       ],
       "new_qualified_rate_rejections": [],
-      "within_rouse_budget_count": 18,
-      "failed_qualified_rate_comparisons": []
+      "within_rouse_budget_count": 16,
+      "failed_qualified_rate_comparisons": [
+        "N4_N16:end/end",
+        "N16_N4:end/end"
+      ]
     },
     {
       "mutation": "swap_reference_prefactors_in_candidate",
@@ -479,14 +481,29 @@
       ],
       "new_qualified_rate_rejections": [
         "N8:mid/mid",
-        "N16:mid/mid",
-        "N4_N16:end/end",
-        "N16_N4:end/end"
+        "N16:mid/mid"
       ],
       "within_rouse_budget_count": 14,
       "failed_qualified_rate_comparisons": [
         "N8:mid/mid",
         "N16:mid/mid",
+        "N4_N16:end/end",
+        "N16_N4:end/end"
+      ]
+    },
+    {
+      "mutation": "swap_reference_prefactors_N4_only_diagnostic",
+      "baseline_control_pass": true,
+      "killed": true,
+      "changed_observable": true,
+      "failed_anchors": [],
+      "failed_literal_branches": [
+        "N4:end/end",
+        "N4:mid/mid"
+      ],
+      "new_qualified_rate_rejections": [],
+      "within_rouse_budget_count": 16,
+      "failed_qualified_rate_comparisons": [
         "N4_N16:end/end",
         "N16_N4:end/end"
       ]
@@ -592,36 +609,36 @@
     {
       "case": "N4",
       "unmodified_ordering_control_pass": true,
-      "end_minus_mid": 5.882092183577903,
-      "statistical_ordering_bound": 2.6598332263655777,
+      "end_minus_mid": 5.789237750823922,
+      "statistical_ordering_bound": 2.6585870517831602,
       "swapped_oracle_prefactors_rejected": true
     },
     {
       "case": "N8",
       "unmodified_ordering_control_pass": true,
-      "end_minus_mid": 10.45122487523684,
-      "statistical_ordering_bound": 2.5855238075497464,
+      "end_minus_mid": 8.911543954637267,
+      "statistical_ordering_bound": 2.5778704043504117,
       "swapped_oracle_prefactors_rejected": true
     },
     {
       "case": "N16",
       "unmodified_ordering_control_pass": true,
-      "end_minus_mid": 12.801150400445422,
-      "statistical_ordering_bound": 2.5096543371974955,
+      "end_minus_mid": 12.574633261390176,
+      "statistical_ordering_bound": 2.52520566057414,
       "swapped_oracle_prefactors_rejected": true
     },
     {
       "case": "N4_N16",
       "unmodified_ordering_control_pass": true,
-      "end_minus_mid": 6.991923085164174,
-      "statistical_ordering_bound": 1.7540996724203317,
+      "end_minus_mid": 7.1706267304660045,
+      "statistical_ordering_bound": 1.7568534084422645,
       "swapped_oracle_prefactors_rejected": true
     },
     {
       "case": "N16_N4",
       "unmodified_ordering_control_pass": true,
-      "end_minus_mid": 6.860317789929745,
-      "statistical_ordering_bound": 1.759061222508963,
+      "end_minus_mid": 6.958624167193818,
+      "statistical_ordering_bound": 1.7572160831521568,
       "swapped_oracle_prefactors_rejected": true
     },
     {
@@ -644,6 +661,19 @@
       "baseline_control_pass": true,
       "killed": true,
       "reason": "sampled covariance failed"
+    },
+    {
+      "mutation": "double_OU_noise_N16_only_in_exact_adoption_test",
+      "baseline_complete_audit_phase_pass": true,
+      "baseline_audits_sha256": "a2fd1929c868f5aebf32a728990cd9c79f5bc7dab0c3b882d2e4b8a3d8fc2b5e",
+      "adoption_test_source_sha256": "0ac09a4427dbc8ee8dc2dbf48e7b523b0cec03af721497a9cec06411e49c64ed",
+      "mutation_fixture_sha256": "1d299da0775b58a3290e542a92aeddc9d3a30ab29e46849502e74e8eab49e43c",
+      "pytest_returncode": 1,
+      "pytest_failure_count": 1,
+      "killed": true,
+      "failure_stage": "stationary_variance",
+      "predicate": "only modes belonging to length16 chains, including either unequal orientation; length4/8 modes unchanged",
+      "baseline_control_scope": "complete preflight; full unmodified scientific outcome reported separately"
     }
   ],
   "label_only_noop": {

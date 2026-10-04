@@ -9,6 +9,39 @@
       "new_measurements_started": false,
       "new_candidate_comparison_started": false,
       "prior_A02_comparisons_known": true
+    },
+    {
+      "event": "start_corrected_reference_measurement",
+      "at_utc": "2026-10-04T09:23:32.471237+00:00",
+      "policy_commit": "d86a38844f58c614c076c3cceca11bb433cdc9e3",
+      "policy_sha256": "5d80df88f1269c233c074d15d30128915d61e1a6796896761e22b9d37e173f73",
+      "reference_program_sha256": "f04270deb5d6403ba484517af8a42de2b2e3577f584bf832f8f923ee218f3361",
+      "parameters_sha256": "964bb6b7434dcc1990683f94c04f7a2c638df4125ccf068b9074d3de5dc3f122",
+      "new_candidate_comparison_started": false,
+      "guard_regression_tests_passed": 21,
+      "complete_sampler_preflight_passed": true,
+      "N16_noise_adoption_mutation_failed_at_stationary_variance": true
+    },
+    {
+      "event": "complete_corrected_reference_measurement",
+      "at_utc": "2026-10-04T13:08:34.419038+00:00",
+      "reference_results_sha256": "a173aec8ac301584ef5a5b97c686d137ccf473b737a73cd5176d18d3ffedf32f",
+      "physical_ensembles": 371,
+      "trajectories": 14327808,
+      "qualified_rows": 18
+    },
+    {
+      "event": "start_corrected_candidate_comparison",
+      "at_utc": "2026-10-04T13:08:34.420039+00:00",
+      "policy_sha256": "5d80df88f1269c233c074d15d30128915d61e1a6796896761e22b9d37e173f73",
+      "reference_results_sha256": "a173aec8ac301584ef5a5b97c686d137ccf473b737a73cd5176d18d3ffedf32f"
+    },
+    {
+      "event": "freeze_corrected_reports_before_full_verifier",
+      "at_utc": "2026-10-04T13:11:06.453708+00:00",
+      "candidate_sha256": "b484cdbb8265f27de2b3875dac3ab3f6a4be1b22acd875b57f1f1c64d76c62ed",
+      "mutation_sha256": "488e6f166f8a1c23914aea817b7ed3b71a7a458a29dd7ba4c30631f0b7e95fb7",
+      "sampler_audits_sha256": "5dcfab04a2e774254b4ff787b225ab435c61e7197786c7d701076cb2df5ca878"
     }
   ]
 }
