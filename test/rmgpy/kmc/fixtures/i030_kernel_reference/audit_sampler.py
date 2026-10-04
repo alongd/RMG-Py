@@ -35,10 +35,13 @@ def direct_laplacian_checks(cfg):
                 site = 0 if kind == 'end' else n//2-1
                 covariance += float(np.sum(vec[site,1:]**2*b2/(3*eigen[1:])))
                 local_d += cfg['D0_m2_s']/mapped['diffusion_unit_m2_s']*float(np.sum(vec[site,1:]**2))
-                assert math.isclose(float(np.sum(b2/eigen[1:])/n), (cfg['chains'][str(n)]['Rg_m']/mapped['scale_m'])**2,rel_tol=1e-12)
+                if not (math.isclose(float(np.sum(b2/eigen[1:])/n), (cfg['chains'][str(n)]['Rg_m']/mapped['scale_m'])**2,rel_tol=1e-12)):
+                    raise AssertionError('independent Laplacian chain size differs from the literal radius')
             rates, weights, var = oracle.mode_coefficients(cfg,mapped,pair)
-            assert math.isclose(covariance, float(np.sum(weights**2*var)), abs_tol=1e-12, rel_tol=1e-12)
-            assert math.isclose(local_d,mapped['D_local_reduced'],rel_tol=1e-12)
+            if not (math.isclose(covariance, float(np.sum(weights**2*var)), abs_tol=1e-12, rel_tol=1e-12)):
+                raise AssertionError('independent Laplacian covariance differs from the mode covariance')
+            if not (math.isclose(local_d,mapped['D_local_reduced'],rel_tol=1e-12)):
+                raise AssertionError('independent Laplacian diffusion differs from the mapped local diffusion')
             output.append({'case':case['name'],'pair_class':pair,'independent_covariance':covariance,
                            'local_diffusion_reduced':local_d,'pass':True})
     return output
@@ -63,7 +66,8 @@ def continuum_sphere_check(cfg):
     se = math.sqrt(probability*(1-probability)/settings['replicas'])
     # This is a continuum diagnostic, with statistics and cube-tail only.
     passed = infinite-tail-5*se <= probability <= infinite+5*se
-    assert passed, 'exact Brownian continuum contact cross-check failed'
+    if not (passed):
+        raise AssertionError('exact Brownian continuum contact cross-check failed')
     return {'replicas':settings['replicas'],'contacts':contacts,'probability':probability,'se':se,
             'analytic_infinite_probability':infinite,'cube_tail_upper_bound':tail,
             'dt_reduced':settings['dt_reduced'],'elapsed_reduced':elapsed,'pass':passed}
@@ -90,7 +94,8 @@ def stationary_variance_checks(cfg):
                                    'observed_variance':observed,'se':se,'theory':theory,'pass':passed})
                 if step < 200:
                     q = oracle.advance_modes(q,dt,rates,variances,rng)
-    assert all(row['pass'] for row in output), 'actual sampled stationary variance failed'
+    if not (all(row['pass'] for row in output)):
+        raise AssertionError('actual sampled stationary variance failed')
     return output
 
 
@@ -116,11 +121,16 @@ def adaptive_bead_contact_checks(cfg):
                        'replicas':setup['replicas'],'bead_probability':pb,'actual_adaptive_probability':pa,
                        'combined_se':se,'euler_relative_scale':euler_scale,'bound':bound,'pass':passed,
                        'actual_hit_times_sha256':sampled['hit_times_sha256']})
-    assert all(row['pass'] for row in output), 'actual adaptive trajectory / bead contacts failed'
+    if not (all(row['pass'] for row in output)):
+        raise AssertionError('actual adaptive trajectory / bead contacts failed')
     return output
 
 
 def run_audits(cfg):
+    # The unchanged reference CLI also contains asserts; never invoke it with
+    # optimization inherited through PYTHONOPTIMIZE during full adoption.
+    if not __debug__:
+        raise RuntimeError("MET kernel sampler qualification requires Python without optimization")
     # Validate innovation noise before spending time on contact simulations.
     return {'stationary_variance':stationary_variance_checks(cfg),
             'laplacian':direct_laplacian_checks(cfg),'continuum_sphere':continuum_sphere_check(cfg),

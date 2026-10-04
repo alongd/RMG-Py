@@ -20,7 +20,8 @@ def assert_generation_inputs_equivalent(old, current, old_source, current_source
         snapshot['cases']=[{key:value for key,value in case.items() if key!='precision_stages'}
                            for case in cfg['cases']]
         return snapshot
-    assert physical(old)==physical(current),'physical inputs or per-run allocation changed'
+    if not (physical(old)==physical(current)):
+        raise AssertionError('physical inputs or per-run allocation changed')
     functions={'mapped_parameters','mode_coefficients','advance_modes','projected_site',
                'minimum_image','hazard','simulate','mean_se','sampler_checks',
                'independent_bead_contact','mode_grid_contact','contact_checks',
@@ -29,9 +30,11 @@ def assert_generation_inputs_equivalent(old, current, old_source, current_source
         tree=ast.parse(source)
         result={node.name:ast.dump(node,include_attributes=False) for node in tree.body
                 if isinstance(node,ast.FunctionDef) and node.name in functions}
-        assert set(result)==functions,'incomplete generator identity check'
+        if not (set(result)==functions):
+            raise AssertionError('incomplete generator identity check')
         return result
-    assert definitions(old_source)==definitions(current_source),'physical generator or numerical checks changed'
+    if not (definitions(old_source)==definitions(current_source)):
+        raise AssertionError('physical generator or numerical checks changed')
 
 
 def assert_generation_history(cfg, reference, versions):
@@ -39,31 +42,44 @@ def assert_generation_history(cfg, reference, versions):
     source=(REFERENCE/'run.py').read_bytes()
     inputs=(REFERENCE/'parameters.json').read_bytes()
     sha=lambda data:hashlib.sha256(data).hexdigest()
-    assert reference['parameters_sha256']==sha(inputs)
-    assert reference['program_sha256']==sha(source)
-    assert reference['versions']==versions
+    if not (reference['parameters_sha256']==sha(inputs)):
+        raise AssertionError('reference input fingerprint differs')
+    if not (reference['program_sha256']==sha(source)):
+        raise AssertionError('reference program fingerprint differs')
+    if not (reference['versions']==versions):
+        raise AssertionError('reference software versions differ')
     current_pair=(sha(inputs),sha(source))
     count=max(case.get('precision_stages',cfg['precision_stages']) for case in cfg['cases'])
-    assert len(reference['generation_provenance'])==count
+    if not (len(reference['generation_provenance'])==count):
+        raise AssertionError('reference generation stage count differs')
     for stage,record in enumerate(reference['generation_provenance']):
-        assert record['precision_stage']==stage
+        if not (record['precision_stage']==stage):
+            raise AssertionError('reference generation stage order differs')
         eligible=[case['name'] for case in cfg['cases']
                   if stage < case.get('precision_stages',cfg['precision_stages'])]
-        assert record['cases']==eligible
+        if not (record['cases']==eligible):
+            raise AssertionError('reference generation cases differ')
         pair=(record['parameters_sha256'],record['program_sha256'])
-        assert pair==current_pair
-        assert record['driver_program_sha256']==current_pair[1]
+        if not (pair==current_pair):
+            raise AssertionError('reference generation fingerprints differ')
+        if not (record['driver_program_sha256']==current_pair[1]):
+            raise AssertionError('reference generation driver differs')
 
 
 def read_policy(cfg):
     raw=(ROOT/'acceptance_policy.json').read_bytes()
     policy=json.loads(raw)
-    assert policy['numerical_uncertainty']['method']==cfg['uncertainty_method']
-    assert policy['numerical_uncertainty']['marginal_sigmas']==cfg['statistical_sigmas']
+    if not (policy['numerical_uncertainty']['method']==cfg['uncertainty_method']):
+        raise AssertionError('numerical uncertainty method differs from policy')
+    if not (policy['numerical_uncertainty']['marginal_sigmas']==cfg['statistical_sigmas']):
+        raise AssertionError('sampling allowance differs from policy')
     model=policy['model_tolerance']
-    assert model['relative_fraction']>=0
-    assert math.isclose(model['symmetric_log'],math.log1p(model['relative_fraction']),abs_tol=1e-15)
-    assert math.isclose(model['factor'],math.exp(model['symmetric_log']),rel_tol=1e-15)
+    if not (model['relative_fraction']>=0):
+        raise AssertionError('model tolerance must be nonnegative')
+    if not (math.isclose(model['symmetric_log'],math.log1p(model['relative_fraction']),abs_tol=1e-15)):
+        raise AssertionError('model log tolerance differs from its relative allowance')
+    if not (math.isclose(model['factor'],math.exp(model['symmetric_log']),rel_tol=1e-15)):
+        raise AssertionError('model tolerance factor differs from its log allowance')
     return policy,hashlib.sha256(raw).hexdigest()
 
 
@@ -72,14 +88,21 @@ def assert_decision_order():
     indexed={row['event']:row for row in events}
     def instant(value):
         return datetime.fromisoformat(value.replace(' UTC','+00:00').replace(' ','T',1))
-    assert [instant(row['at_utc']) for row in events]==sorted(instant(row['at_utc']) for row in events)
-    assert instant(indexed['declare_model_and_numerical_policy']['at_utc']) < instant(indexed['start_corrected_reference_measurement']['at_utc']) < instant(indexed['start_corrected_candidate_comparison']['at_utc'])
+    if not ([instant(row['at_utc']) for row in events]==sorted(instant(row['at_utc']) for row in events)):
+        raise AssertionError('recorded decision timestamps are out of order')
+    if not (instant(indexed['declare_model_and_numerical_policy']['at_utc']) < instant(indexed['start_corrected_reference_measurement']['at_utc']) < instant(indexed['start_corrected_candidate_comparison']['at_utc'])):
+        raise AssertionError('recorded policy declaration does not precede measurement and comparison')
     digest=hashlib.sha256((ROOT/'acceptance_policy.json').read_bytes()).hexdigest()
-    assert indexed['start_corrected_reference_measurement']['policy_sha256']==digest
-    assert indexed['start_corrected_candidate_comparison']['policy_sha256']==digest
-    assert indexed['start_corrected_reference_measurement']['reference_program_sha256']==hashlib.sha256((REFERENCE/'run.py').read_bytes()).hexdigest()
-    assert indexed['start_corrected_reference_measurement']['parameters_sha256']==hashlib.sha256((REFERENCE/'parameters.json').read_bytes()).hexdigest()
-    assert indexed['start_corrected_candidate_comparison']['reference_results_sha256']==hashlib.sha256((REFERENCE/'results/results.json').read_bytes()).hexdigest()
+    if not (indexed['start_corrected_reference_measurement']['policy_sha256']==digest):
+        raise AssertionError('measurement record has a different policy fingerprint')
+    if not (indexed['start_corrected_candidate_comparison']['policy_sha256']==digest):
+        raise AssertionError('comparison record has a different policy fingerprint')
+    if not (indexed['start_corrected_reference_measurement']['reference_program_sha256']==hashlib.sha256((REFERENCE/'run.py').read_bytes()).hexdigest()):
+        raise AssertionError('measurement record has a different reference program fingerprint')
+    if not (indexed['start_corrected_reference_measurement']['parameters_sha256']==hashlib.sha256((REFERENCE/'parameters.json').read_bytes()).hexdigest()):
+        raise AssertionError('measurement record has a different parameter fingerprint')
+    if not (indexed['start_corrected_candidate_comparison']['reference_results_sha256']==hashlib.sha256((REFERENCE/'results/results.json').read_bytes()).hexdigest()):
+        raise AssertionError('comparison record has a different reference result fingerprint')
     return indexed['start_corrected_reference_measurement']['policy_commit']
 
 
@@ -92,7 +115,8 @@ def load_target(transform=None):
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     exec(compile(source, str(TARGET), 'exec'), module.__dict__)
-    assert TARGET.read_bytes() == raw, 'target changed during import'
+    if not (TARGET.read_bytes() == raw):
+        raise AssertionError('target changed during import')
     module._source_sha256 = hashlib.sha256(raw).hexdigest()
     return module
 
@@ -166,14 +190,18 @@ def target_checks(module, cfg, reference):
 
 
 def assert_transport_and_branches(report):
-    assert report['transport_pass'], 'target transport or Rg differs from literal inputs'
-    assert report['branch_pass'], 'target min/floor/two-chain radius rule differs from literal contract'
+    if not (report['transport_pass']):
+        raise AssertionError('target transport or Rg differs from literal inputs')
+    if not (report['branch_pass']):
+        raise AssertionError('target min/floor/two-chain radius rule differs from literal contract')
 
 
 def assert_scientific_acceptance(report):
     assert_transport_and_branches(report)
-    assert all(row['reference_qualified'] for row in report['comparison']), 'Rouse oracle is not numerically qualified'
-    assert all(row['within_error_budget'] for row in report['comparison']), 'kernel exceeds numerical plus proposed model band'
+    if not (all(row['reference_qualified'] for row in report['comparison'])):
+        raise AssertionError('Rouse oracle is not numerically qualified')
+    if not (all(row['within_error_budget'] for row in report['comparison'])):
+        raise AssertionError('kernel exceeds numerical plus proposed model band')
 
 
 def render_candidate(report):
