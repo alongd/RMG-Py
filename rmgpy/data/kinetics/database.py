@@ -50,7 +50,7 @@ from rmgpy.kinetics import Arrhenius, ArrheniusEP, ThirdBody, Lindemann, Troe, \
                            ArrheniusBM, SurfaceChargeTransfer, SurfaceChargeTransferBEP, \
                            KineticsModel, Marcus, \
                            ArrheniusChargeTransfer, ArrheniusChargeTransferBM, \
-                           TwoTemperaturePlasma, ElectronCollisionPlasma, \
+                           TwoTemperaturePlasma, ElectronCollisionPlasma, EEDFChannel, \
                            BadnellRRArrhenius, VoronovEIArrhenius
 from rmgpy.kinetics.uncertainties import RateUncertainty
 from rmgpy.molecule import Molecule, Group
@@ -102,6 +102,7 @@ class KineticsDatabase(object):
             'RateUncertainty': RateUncertainty,
             'TwoTemperaturePlasma': TwoTemperaturePlasma,
             'ElectronCollisionPlasma': ElectronCollisionPlasma,
+            'EEDFChannel': EEDFChannel,
             'BadnellRRArrhenius': BadnellRRArrhenius,
             'VoronovEIArrhenius': VoronovEIArrhenius,
         }

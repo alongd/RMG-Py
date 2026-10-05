@@ -27,16 +27,29 @@
 #                                                                             #
 ###############################################################################
 
-from rmgpy.kinetics.model import KineticsModel, PDepKineticsModel, TunnelingModel, \
-                   get_rate_coefficient_units_from_reaction_order, get_reaction_order_from_rate_coefficient_units
-from rmgpy.kinetics.arrhenius import Arrhenius, ArrheniusEP, PDepArrhenius, MultiArrhenius, MultiPDepArrhenius, \
-                   ArrheniusBM, ArrheniusChargeTransfer, ArrheniusChargeTransferBM, Marcus, \
-                   TwoTemperaturePlasma, ElectronCollisionPlasma, BadnellRRArrhenius, VoronovEIArrhenius
-from rmgpy.kinetics.chebyshev import Chebyshev
-from rmgpy.kinetics.eedf import EEDFChannel
-from rmgpy.kinetics.falloff import ThirdBody, Lindemann, Troe
-from rmgpy.kinetics.kineticsdata import KineticsData, PDepKineticsData
-from rmgpy.kinetics.tunneling import Wigner, Eckart
-from rmgpy.kinetics.surface import SurfaceArrhenius, SurfaceArrheniusBEP, \
-                    StickingCoefficient, StickingCoefficientBEP, \
-                    SurfaceChargeTransfer, SurfaceChargeTransferBEP
+import pytest
+
+from rmgpy.exceptions import NonEquilibriumReverseRateError
+from rmgpy.kinetics import EEDFChannel
+from rmgpy.reaction import Reaction
+from rmgpy.species import Species
+
+
+def test_reversible_eedf_channel_refuses_reverse_from_equilibrium():
+    ar = Species(label="Ar").from_adjacency_list("1 Ar u0 p4 c0")
+    ar_excited = Species(label="Ar*").from_adjacency_list(
+        "electronicstate Ar(4s)\n1 Ar u0 p4 c0"
+    )
+    reaction = Reaction(
+        reactants=[ar],
+        products=[ar_excited],
+        reversible=True,
+        kinetics=EEDFChannel("Ar -> Ar*", "argon-v1", "ine"),
+    )
+
+    reason = reaction.get_reverse_from_equilibrium_refusal()
+
+    assert "EEDF provider" in reason
+    assert "qualified reverse EEDF channel" in reason
+    with pytest.raises(NonEquilibriumReverseRateError, match="EEDF provider"):
+        reaction.check_reverse_from_equilibrium_supported()

@@ -294,7 +294,8 @@ def test_gate_static_census():
     assert '_check_accepted_plasma_domain(' in blocks['_prepare_public_wall_state']
     assert 'self.compute_anion_transport_data(' in blocks['compute_anion_transport_frequencies']
     assert 'ReactionSystem.advance(' not in blocks['advance']
-    assert 'ReactionSystem.step(' in blocks['advance']
+    assert 'ReactionSystem.step(' not in blocks['advance']
+    assert 'self._native_solver_step(' in blocks['advance']
     assert 'self.step(' in blocks['advance']
     print('GATE_CENSUS',len(direct)+len(prepared)+1,'acceptance/publication/public paths')
 

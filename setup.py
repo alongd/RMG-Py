@@ -80,6 +80,7 @@ ext_modules = [
     # Kinetics
     'rmgpy/kinetics/arrhenius.pyx',
     'rmgpy/kinetics/chebyshev.pyx',
+    'rmgpy/kinetics/eedf.pyx',
     'rmgpy/kinetics/kineticsdata.pyx',
     'rmgpy/kinetics/falloff.pyx',
     'rmgpy/kinetics/model.pyx',

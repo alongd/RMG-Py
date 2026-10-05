@@ -54,10 +54,15 @@ a named error (:class:`rmgpy.exceptions.PlasmaStateError` or
 initialization instead of degrading to a one-temperature reactor.
 """
 
+import ast
 import itertools
 import copy
+import json
 import logging
 import math
+from pathlib import Path
+import sys
+import time
 
 import quantities as pq
 
@@ -75,6 +80,7 @@ from rmgpy.quantity import Quantity
 from rmgpy.quantity cimport ScalarQuantity
 from rmgpy.kinetics.arrhenius cimport Arrhenius, TwoTemperaturePlasma
 from rmgpy.solver.base cimport ReactionSystem
+from rmgpy.solver.eedf_provider import DevelopmentWallBudgetExceeded
 from rmgpy.thermo import NASA, ThermoData, Wilhoit
 from rmgpy.thermo.thermoengine import process_thermo_data
 from rmgpy.thermo.state import thermo_library_species
@@ -992,6 +998,38 @@ cdef class PlasmaReactor(ReactionSystem):
     cdef public double absorbed_power_total       # W, the declared P_abs of the chamber
     cdef public double absorbed_power_reactor     # W, P_abs on the reactor inventory (constant)
     cdef public double energy_v_ref               # m^3, the reactor's reference volume at t0
+    # --- reactor-owned EEDF execution -----------------------------------------
+    cdef public object electron_kinetics          # normalized input declaration
+    cdef public bint eedf_mode
+    cdef public object eedf_provider
+    cdef public object eedf_row
+    cdef public dict eedf_reaction_map
+    cdef public dict eedf_empirical_laws
+    cdef public dict eedf_axis_species
+    cdef public dict eedf_envelope_species
+    # Runtime-only monitoring configured by the private unqualified-table harness.
+    # None of these fields is a constructor argument or part of __reduce__, so an
+    # input deck, restart, or saved reactor cannot select this route.
+    cdef bint _development_progress_enabled
+    cdef double _development_progress_interval
+    cdef double _development_wall_budget
+    cdef double _development_wall_started
+    cdef double _development_last_progress_wall
+    cdef double _development_last_solver_t
+    cdef double _development_last_dt
+    cdef long _development_residual_evaluations
+    cdef long _development_jacobian_evaluations
+    cdef long _development_reported_residual_evaluations
+    cdef long _development_reported_jacobian_evaluations
+    cdef long _development_observed_steps
+    cdef object _development_last_residual
+    cdef public dict development_last_progress
+    cdef public bint development_wall_budget_hit
+    # Native DASPK callbacks cannot propagate Python exceptions through their C
+    # adapters. Preserve the first failure until the enclosing native call
+    # returns, then re-raise that exact exception before accepting any state.
+    cdef bint _native_callback_active
+    cdef object _native_callback_failure
 
     def __init__(self, T, P, initial_mole_fractions, Te, n_sims=1, termination=None, sensitive_species=None,
                  sensitivity_threshold=1e-3, sens_conditions=None, const_spc_names=None,
@@ -1017,8 +1055,27 @@ cdef class PlasmaReactor(ReactionSystem):
                  anion_reduced_mobilities=None,
                  wall_diffusion_components=None,
                  electronegative_wall_qualification=None,
-                 wall_chamber_geometry=None):
+                 wall_chamber_geometry=None,
+                 electron_kinetics=None):
         ReactionSystem.__init__(self, termination, sensitive_species, sensitivity_threshold)
+
+        self._development_progress_enabled = False
+        self._development_progress_interval = float('nan')
+        self._development_wall_budget = float('nan')
+        self._development_wall_started = float('nan')
+        self._development_last_progress_wall = float('nan')
+        self._development_last_solver_t = float('nan')
+        self._development_last_dt = 0.0
+        self._development_residual_evaluations = 0
+        self._development_jacobian_evaluations = 0
+        self._development_reported_residual_evaluations = 0
+        self._development_reported_jacobian_evaluations = 0
+        self._development_observed_steps = 0
+        self._development_last_residual = None
+        self.development_last_progress = None
+        self.development_wall_budget_hit = False
+        self._native_callback_active = False
+        self._native_callback_failure = None
 
         if isinstance(T, list) or isinstance(P, list) or isinstance(Te, list):
             raise PlasmaStateError(
@@ -1088,6 +1145,10 @@ cdef class PlasmaReactor(ReactionSystem):
 
         # Select parameter validation before deriving any transport products.
         self.electronegative_wall_model = electronegative_wall_model
+        # The wall configuration must know whether its transport coordinate is
+        # legacy Te or table-driven epsilon_k.  Table loading still waits for
+        # model reaction indices in initialize_model().
+        self._configure_eedf(electron_kinetics)
         self._configure_wall(diffusion_length, ion_reduced_mobility,
                              mobility_reference_density, wall_recycling,
                              wall_neutralization_products,
@@ -1106,6 +1167,39 @@ cdef class PlasmaReactor(ReactionSystem):
             anion_reduced_mobilities, wall_diffusion_components,
             electronegative_wall_qualification, wall_chamber_geometry)
         self._configure_energy_balance(electron_energy_balance)
+
+    def _configure_eedf(self, electron_kinetics):
+        """Store the normalized declaration; table loading waits for reaction indices."""
+        self.electron_kinetics = None
+        self.eedf_mode = False
+        self.eedf_provider = None
+        self.eedf_row = None
+        self.eedf_reaction_map = {}
+        self.eedf_empirical_laws = {}
+        self.eedf_axis_species = {}
+        self.eedf_envelope_species = {}
+        if electron_kinetics is None:
+            return
+        if not isinstance(electron_kinetics, dict):
+            raise PlasmaStateError('electron_kinetics must be a normalized mapping')
+        required = {'provider', 'table', 'branch', 'initial_reduced_field', 'empirical_laws'}
+        if set(electron_kinetics) != required:
+            raise PlasmaStateError(
+                'electron_kinetics fields differ from the normalized contract: {0!r}'.format(
+                    sorted(set(electron_kinetics).symmetric_difference(required))))
+        if electron_kinetics['provider'] != 'loki-table':
+            raise PlasmaStateError("electron_kinetics provider must be 'loki-table'")
+        table = electron_kinetics['table']
+        field = electron_kinetics['initial_reduced_field']
+        if (not isinstance(table, (tuple, list)) or len(table) != 2
+                or not isinstance(field, (tuple, list)) or len(field) != 2
+                or field[1] != 'Td' or not np.isfinite(field[0]) or field[0] <= 0.):
+            raise PlasmaStateError('invalid normalized EEDF table or initial_reduced_field')
+        self.electron_kinetics = copy.deepcopy(electron_kinetics)
+        self.electron_kinetics['table'] = tuple(table)
+        self.electron_kinetics['initial_reduced_field'] = (float(field[0]), 'Td')
+        self.eedf_empirical_laws = copy.deepcopy(electron_kinetics['empirical_laws'])
+        self.eedf_mode = True
 
     @property
     def electronegative_wall_qualification(self):
@@ -1132,9 +1226,159 @@ cdef class PlasmaReactor(ReactionSystem):
         record = copy.deepcopy(self.electronegative_wall_diagnostics)
         record.update(closure=self.electronegative_wall_model,
                       geometry_arm=self.electronegative_wall_geometry)
-        record.update(closure_scientific_metadata(self.electronegative_wall_model))
+        closure_metadata = closure_scientific_metadata(
+            self.electronegative_wall_model)
+        record.update(closure_metadata)
+        if (self.eedf_mode and self.eedf_provider is not None and
+                self.eedf_provider.development_notice is not None):
+            record['closure_scientific_status'] = closure_metadata['scientific_status']
+            self.eedf_provider.annotate_development_diagnostic(record)
         from rmgpy.solver.electronegative import manifest_values
         return manifest_values(record)
+
+    def eedf_run_manifest(self):
+        """Return the serializable table, empirical-law, and wall-basis record."""
+        if not self.eedf_mode:
+            return None
+        checked = self.eedf_provider.runtime_metadata if self.eedf_provider is not None else {}
+        record = {
+            'provider': self.electron_kinetics['provider'],
+            'artifact_sha256': self.electron_kinetics['table'][1],
+            'fingerprint': checked.get('fingerprint'),
+            'branch': self.electron_kinetics['branch'],
+            'empirical_laws': copy.deepcopy(self.eedf_empirical_laws),
+            'wall_sheath_basis': 'Maxwellian form at epsilon_k',
+            'energy_budget': copy.deepcopy(self.energy_budget),
+        }
+        self.eedf_provider.annotate_development_diagnostic(record)
+        from rmgpy.solver.electronegative import manifest_values
+        return manifest_values(record)
+
+    def configure_development_run(self, progress_interval_seconds=30., wall_budget_seconds=None):
+        """Enable bounded stderr progress for the private development route only.
+
+        The call is deliberately absent from the reactor constructor, input DSL,
+        restart state, and environment.  The harness may configure it before the
+        provider is built; once a provider exists, a qualified production provider
+        is refused and the callback path remains inactive.
+        """
+        interval = float(progress_interval_seconds)
+        budget = float(wall_budget_seconds) if wall_budget_seconds is not None else float('inf')
+        if not np.isfinite(interval) or interval <= 0.:
+            raise ValueError('progress_interval_seconds must be finite and positive')
+        if wall_budget_seconds is not None and (not np.isfinite(budget) or budget <= 0.):
+            raise ValueError('wall_budget_seconds must be finite and positive')
+        if not self.eedf_mode:
+            raise PlasmaStateError(
+                'configure_development_run is development-only and requires EEDF mode')
+        if (self.eedf_provider is not None and
+                self.eedf_provider.development_notice is None):
+            raise PlasmaStateError(
+                'configure_development_run is development-only and refuses a qualified production provider')
+        self._development_progress_enabled = True
+        self._development_progress_interval = interval
+        self._development_wall_budget = budget
+        self._development_wall_started = float('nan')
+        self._development_last_progress_wall = float('nan')
+        self._development_last_solver_t = float('nan')
+        self._development_last_dt = 0.0
+        self._development_residual_evaluations = 0
+        self._development_jacobian_evaluations = 0
+        self._development_reported_residual_evaluations = 0
+        self._development_reported_jacobian_evaluations = 0
+        self._development_observed_steps = 0
+        self._development_last_residual = None
+        self.development_last_progress = None
+        self.development_wall_budget_hit = False
+
+    cdef bint _development_run_active(self):
+        return bool(
+            self._development_progress_enabled and
+            self.eedf_provider is not None and
+            self.eedf_provider.development_notice is not None)
+
+    cdef _development_begin_evaluation(self, double t, object y, bint jacobian):
+        """Count one callback and enforce the wall budget inside native solve calls."""
+        if not self._development_run_active():
+            return
+        now = time.monotonic()
+        if not np.isfinite(self._development_wall_started):
+            self._development_wall_started = now
+            self._development_last_progress_wall = now
+        if jacobian:
+            self._development_jacobian_evaluations += 1
+        else:
+            self._development_residual_evaluations += 1
+        if np.isfinite(self._development_last_solver_t) and t != self._development_last_solver_t:
+            self._development_last_dt = t - self._development_last_solver_t
+            self._development_observed_steps += 1
+        self._development_last_solver_t = t
+        if now - self._development_wall_started >= self._development_wall_budget:
+            self.development_wall_budget_hit = True
+            self._emit_development_progress(t, y, now)
+            raise DevelopmentWallBudgetExceeded(
+                'development EEDF wall-clock budget of {0:g} s exhausted'.format(
+                    self._development_wall_budget))
+
+    cdef _development_finish_residual(self, double t, object y, object delta):
+        if not self._development_run_active():
+            return
+        self._development_last_residual = np.asarray(delta, dtype=float).copy()
+        now = time.monotonic()
+        if now - self._development_last_progress_wall >= self._development_progress_interval:
+            self._emit_development_progress(t, y, now)
+
+    cdef _emit_development_progress(self, double t, object y, double now):
+        cdef Py_ssize_t row_index = -1
+        cdef long step_count = self._development_observed_steps
+        cdef double dt = self._development_last_dt
+        residual = self._development_last_residual
+        residual_value = None
+        residual_row = 'unavailable'
+        if residual is not None and len(residual):
+            row_index = int(np.argmax(np.abs(residual)))
+            residual_value = float(residual[row_index])
+            if row_index == self.te_index:
+                residual_row = 'electron_energy_u'
+            elif 0 <= row_index < len(self._en_core_species):
+                residual_row = self._en_core_species[row_index].label
+            else:
+                residual_row = 'row[{0}]'.format(row_index)
+        if self.iwork is not None and len(self.iwork) > 10:
+            step_count = int(self.iwork[10])
+        if self.rwork is not None and len(self.rwork) > 6:
+            solver_dt = float(self.rwork[6])
+            if np.isfinite(solver_dt) and solver_dt != 0.:
+                dt = solver_dt
+        state = np.asarray(y, dtype=float)
+        coordinates = self._eedf_coordinates(state)
+        volume = self.compute_volume(state)
+        progress = {
+            'wall_seconds': float(now - self._development_wall_started),
+            't_s': float(t),
+            'dt_s': float(dt),
+            'step_count': step_count,
+            'residual_evaluations': int(
+                self._development_residual_evaluations -
+                self._development_reported_residual_evaluations),
+            'jacobian_evaluations': int(
+                self._development_jacobian_evaluations -
+                self._development_reported_jacobian_evaluations),
+            'u': float(state[self.te_index]),
+            'EN_Td': float(self.eedf_row.EN_Td),
+            'electron_density_m^-3': float(
+                state[self.electron_index] * constants.Na / volume),
+            'Ar4s_total': float(coordinates.get('Ar4s_total', 0.)),
+            'max_residual': residual_value,
+            'max_residual_row': residual_row,
+        }
+        self.eedf_provider.annotate_development_diagnostic(progress)
+        self.development_last_progress = progress
+        self._development_reported_residual_evaluations = self._development_residual_evaluations
+        self._development_reported_jacobian_evaluations = self._development_jacobian_evaluations
+        self._development_last_progress_wall = now
+        print('EEDF_DEVELOPMENT_PROGRESS ' + json.dumps(
+            progress, sort_keys=True, separators=(',', ':')), file=sys.stderr, flush=True)
 
     def _record_electronegative_wall_output(self, double t):
         """Keep output records aligned with accepted simulation profile samples."""
@@ -1215,7 +1459,8 @@ cdef class PlasmaReactor(ReactionSystem):
         self.anion_reduced_mobilities = copy.deepcopy(mobilities)
         self.wall_diffusion_components = components
         self._en_wall_qualification = copy.deepcopy(qualification)
-        self.electronegative_wall_diagnostics = closure_scientific_metadata(model)
+        closure_metadata = closure_scientific_metadata(model)
+        self.electronegative_wall_diagnostics = closure_metadata
         self.electronegative_wall_last_valid_state = None
         self.electronegative_wall_history = {}
         self._en_anions = []
@@ -1584,7 +1829,7 @@ cdef class PlasmaReactor(ReactionSystem):
         # for every real state, yet the reference-density proxy reads finite and admits it.
         # Refuse now by evaluating the exact run-time expression at its worst case (the
         # neutral-density floor, a fixed multiple of the Loschmidt number).
-        if self.has_wall:
+        if self.has_wall and not self.eedf_mode:
             worst_n_neutral = PLASMA_NEUTRAL_DENSITY_FLOOR_FRACTION * PLASMA_LOSCHMIDT
             # In map mode, self.ion_reduced_mobility/self.mobility_T_factor are only a
             # scalar-compatibility echo of the map's first entry: mobility_reference_temperature
@@ -2230,13 +2475,18 @@ cdef class PlasmaReactor(ReactionSystem):
         self.absorbed_power_reactor = 0.0
         self.energy_v_ref = float('nan')
         if electron_energy_balance is None:
+            if self.eedf_mode:
+                raise PlasmaStateError(
+                    'electron_energy_balance is required with electron_kinetics: '
+                    'u=ln(E/N) is closed only by the electron-energy row')
             return
         if not isinstance(electron_energy_balance, dict):
             raise PlasmaStateError(
                 "electron_energy_balance must be a dict; got {0!r}. ({1})".format(
                     electron_energy_balance, self._identity()))
-        allowed = ('absorbed_power', 'chamber_volume', 'sheath', 'elastic_collisions',
-                   'electron_energies')
+        allowed = (('absorbed_power', 'chamber_volume', 'sheath', 'electron_energies') if self.eedf_mode else
+                   ('absorbed_power', 'chamber_volume', 'sheath', 'elastic_collisions',
+                    'electron_energies'))
         unknown = sorted(set(electron_energy_balance) - set(allowed))
         if unknown:
             raise PlasmaStateError(
@@ -2244,7 +2494,9 @@ cdef class PlasmaReactor(ReactionSystem):
                 "The only discharge closure implemented is a specified absorbed power; a "
                 "discharge-current or circuit closure is not built. ({2})".format(
                     unknown, list(allowed), self._identity()))
-        missing = [k for k in allowed if k not in electron_energy_balance]
+        required = (('absorbed_power', 'chamber_volume', 'sheath') if self.eedf_mode
+                    else allowed)
+        missing = [k for k in required if k not in electron_energy_balance]
         if missing:
             raise PlasmaStateError(
                 "electron_energy_balance is missing {0!r}. ({1})".format(missing, self._identity()))
@@ -2282,7 +2534,10 @@ cdef class PlasmaReactor(ReactionSystem):
             raise PlasmaStateError(
                 "electron_energy_balance['sheath'] = {0!r}; the only sheath model is "
                 "'floating_wall'. ({1})".format(sheath, self._identity()))
-        elastic = electron_energy_balance['elastic_collisions']
+        elastic = electron_energy_balance.get('elastic_collisions', {})
+        if self.eedf_mode and elastic:
+            raise PlasmaStateError(
+                'elastic_collisions is forbidden in EEDF mode; transport comes from the table row')
         if not isinstance(elastic, dict):
             raise PlasmaStateError(
                 "electron_energy_balance['elastic_collisions'] must be a dict of label -> "
@@ -2317,7 +2572,7 @@ cdef class PlasmaReactor(ReactionSystem):
                         "finite; got {2!r}. ({3})".format(label, key, v, self._identity()))
                 rest.append(v)
             params[label] = [a] + rest
-        energies = electron_energy_balance['electron_energies']
+        energies = electron_energy_balance.get('electron_energies', {})
         if not isinstance(energies, dict):
             raise PlasmaStateError(
                 "electron_energy_balance['electron_energies'] must be a dict of "
@@ -2363,9 +2618,14 @@ cdef class PlasmaReactor(ReactionSystem):
             'absorbed_power': electron_energy_balance['absorbed_power'],
             'chamber_volume': electron_energy_balance['chamber_volume'],
             'sheath': sheath,
-            'elastic_collisions': {label: dict(fit) for label, fit in elastic.items()},
-            'electron_energies': dict(energies),
         }
+        if self.eedf_mode:
+            if 'electron_energies' in electron_energy_balance:
+                self.electron_energy_balance['electron_energies'] = dict(energies)
+        else:
+            self.electron_energy_balance.update(
+                elastic_collisions={label: dict(fit) for label, fit in elastic.items()},
+                electron_energies=dict(energies))
         self.energy_balance = True
         self.absorbed_power_total = power
         self.absorbed_power_density = power / volume
@@ -2542,14 +2802,377 @@ cdef class PlasmaReactor(ReactionSystem):
                                                   / (2.0 * constants.pi * constants.m_e)))
         self.energy_ion_sheath_factor = sheath
 
+    def _initialize_eedf_provider(self, core_species, core_reactions, edge_reactions):
+        """Load the checked table and bind marker reactions to its columns."""
+        from rmgpy.solver.eedf_provider import EEDFProvider
+        table_path, artifact_sha256 = self.electron_kinetics['table']
+        manifest_path = Path(table_path)
+        if manifest_path.is_file():
+            manifest_path = manifest_path.parent
+        try:
+            with (manifest_path / 'manifest.json').open() as stream:
+                manifest = json.load(stream)
+        except (OSError, ValueError) as exc:
+            raise PlasmaStateError('cannot read EEDF manifest: {0}'.format(exc)) from exc
+        channels = manifest.get('channel_map', [])
+        table_owned_sources = {
+            '{0}:{1}'.format(identity.get('library'), identity.get('index'))
+            for identity in (channel.get('reaction') for channel in channels)
+            if isinstance(identity, dict)
+            and identity.get('library') is not None
+            and identity.get('index') is not None
+        }
+        for rxn in itertools.chain(core_reactions, edge_reactions):
+            kin = rxn.kinetics
+            if (getattr(kin, 'uses_electron_temperature', False)
+                    and not getattr(kin, 'uses_eedf', False)):
+                entry = getattr(rxn, 'entry', None)
+                source = '{0}:{1}'.format(
+                    getattr(rxn, 'library', None), getattr(entry, 'index', None))
+                if source in table_owned_sources:
+                    raise PlasmaStateError(
+                        'table-owned EEDF channel source {0} also declares an '
+                        'electron-temperature law; one collision source cannot run through '
+                        'both the table and an empirical Te law'.format(source))
+        reaction_map = {}
+        mapped_identities = []
+        mapped_sides = set()
+        for rxn in itertools.chain(core_reactions, edge_reactions):
+            kin = rxn.kinetics
+            if not getattr(kin, 'uses_eedf', False):
+                continue
+            matches = [column for column, channel in enumerate(channels)
+                       if channel.get('description') == kin.process]
+            if len(matches) != 1:
+                raise PlasmaStateError(
+                    'EEDFChannel process {0!r} resolves to {1} table columns'.format(
+                        kin.process, len(matches)))
+            column = matches[0]
+            location = (column, kin.side)
+            if location in mapped_sides:
+                raise PlasmaStateError(
+                    'more than one EEDF reaction maps table channel {0} side {1!r}; '
+                    'that would double-count one tabulated rate'.format(*location))
+            mapped_sides.add(location)
+            identity = channels[column].get('reaction')
+            if identity is None:
+                raise PlasmaStateError(
+                    'EEDFChannel process {0!r} maps an energy-only table channel'.format(
+                        kin.process))
+            try:
+                marker_call = ast.parse(identity['repr'], mode='eval').body
+                marker_fields = {item.arg: ast.literal_eval(item.value)
+                                 for item in marker_call.keywords}
+            except (KeyError, SyntaxError, ValueError, AttributeError) as exc:
+                raise PlasmaStateError(
+                    'EEDF channel reaction identity has no readable marker metadata: '
+                    '{0!r}'.format(identity)) from exc
+            if (marker_fields.get('process') != kin.process
+                    or marker_fields.get('collision_set') != kin.collision_set):
+                raise PlasmaStateError(
+                    'EEDF marker process/collision_set differs from the table identity: '
+                    'table {0!r}, model {1!r}'.format(
+                        (marker_fields.get('process'), marker_fields.get('collision_set')),
+                        (kin.process, kin.collision_set)))
+            # The channel-map identity owns the inelastic entry.  A separate
+            # irreversible superelastic library entry legitimately selects the
+            # same collision's ``sup`` column, so its source entry cannot equal
+            # the one channel-map identity and is instead identified by the
+            # marker's process/collision-set/side tuple.
+            if kin.side == 'ine':
+                entry = getattr(rxn, 'entry', None)
+                if entry is None:
+                    raise PlasmaStateError(
+                        'EEDF reaction {0} has no source-library entry identity; model reaction '
+                        'indices are renumbered and cannot identify a table channel'.format(rxn))
+                actual = {'library': getattr(rxn, 'library', None),
+                          'index': getattr(entry, 'index', None), 'repr': repr(kin)}
+                if actual != identity:
+                    raise PlasmaStateError(
+                        'EEDF reaction identity mismatch for {0}: table {1!r}, model {2!r}'.format(
+                            rxn, identity, actual))
+                mapped_identities.append(identity)
+            reaction_map[self.reaction_index[rxn]] = location
+        expected = manifest.get('row_inputs', {}).get('reactions', [])
+        if sorted(mapped_identities, key=repr) != sorted(expected, key=repr):
+            raise PlasmaStateError(
+                'EEDF reaction set differs from the table fingerprint: expected {0!r}, got {1!r}'.format(
+                    expected, mapped_identities))
+        current_model = copy.deepcopy(manifest['row_inputs'])
+        current_model['Tg_K'] = self.T.value_si
+        current_model['P_Pa'] = self.P.value_si
+        current_model['reactions'] = copy.deepcopy(expected)
+        arm = manifest.get('row_inputs', {}).get('arm', {})
+        declared_gases = set(arm.get('gases', []))
+        if declared_gases:
+            actual_gases = set()
+            for spc, fraction in self.initial_mole_fractions.items():
+                if fraction <= 0. or spc.is_electron() or spc.get_net_charge() != 0:
+                    continue
+                if not spc.molecule:
+                    raise PlasmaStateError(
+                        'EEDF additive identity cannot be resolved for species {0!r}'.format(spc.label))
+                actual_gases.add(spc.molecule[0].get_formula())
+            unexpected = sorted(actual_gases - declared_gases)
+            if unexpected:
+                raise PlasmaStateError(
+                    'EEDF additive identity differs from the table arm: unexpected neutral '
+                    'gas formulae {0!r}, declared {1!r}'.format(unexpected, sorted(declared_gases)))
+        try:
+            self.eedf_provider = EEDFProvider(
+                table_path, current_model, artifact_sha256=artifact_sha256,
+                reaction_map=reaction_map, branch=self.electron_kinetics['branch'],
+                empirical_laws=self.eedf_empirical_laws)
+        except Exception as exc:
+            raise PlasmaStateError('EEDF provider construction failed: {0}'.format(exc)) from exc
+        self.eedf_reaction_map = reaction_map
+        labels = {spc.label: self.species_index[spc] for spc in core_species}
+        for name in self.eedf_provider.axis_names[1:]:
+            if name == 'n_e/N':
+                self.eedf_axis_species[name] = None
+                continue
+            label = self._eedf_coordinate_label(name, labels)
+            if label is None:
+                raise PlasmaStateError(
+                    'EEDF composition axis {0!r} cannot be resolved from core species {1!r}'.format(
+                        name, sorted(labels)))
+            self.eedf_axis_species[name] = labels[label]
+        if 'Ar4s_total' in self.eedf_provider.runtime_metadata.get('envelopes', {}):
+            indices = []
+            for spc in core_species:
+                index = self.species_index[spc]
+                if self.species_charges[index] != 0 or not spc.molecule:
+                    continue
+                molecule = spc.molecule[0]
+                if molecule.get_formula() != 'Ar':
+                    continue
+                # Electronic-state identity is carried by the molecule, never by
+                # the mutable species label.  The current database's Ar(3P2)
+                # predates the explicit state layer and is represented by its
+                # two unpaired electrons; explicitly keyed 4s states use the
+                # electronic_state field instead.
+                state = molecule.electronic_state.lower()
+                legacy_4s = any(atom.radical_electrons for atom in molecule.atoms)
+                keyed_4s = ('4s' in state or state in {'1s2', '1s3', '1s4', '1s5'})
+                if legacy_4s or keyed_4s:
+                    indices.append(index)
+            if not indices:
+                raise PlasmaStateError(
+                    "EEDF envelope quantity 'Ar4s_total' cannot resolve any neutral "
+                    'argon 4s electronic-state species from molecular identity')
+            self.eedf_envelope_species['Ar4s_total'] = tuple(indices)
+
+    def _check_eedf_wall_worst_case(self):
+        """Check the wall's worst neutral-density expression at row epsilon_k."""
+        if not self.has_wall:
+            return
+        transport = self.eedf_provider.transport(self.eedf_row)
+        epsilon_k = float(transport['diffusion_N']) / float(transport['mobility_N'])
+        thermal = (constants.R / constants.Na) * self.T.value_si / constants.e
+        ambipolar_voltage = epsilon_k * (1.0 + thermal / epsilon_k)
+        worst_n_neutral = PLASMA_NEUTRAL_DENSITY_FLOOR_FRACTION * PLASMA_LOSCHMIDT
+        lam2 = self.diffusion_length.value_si * self.diffusion_length.value_si
+        if self._ion_mobility_derived is None:
+            pairs = [('ion_reduced_mobility',
+                      self.ion_reduced_mobility.value_si * self.mobility_T_factor)]
+        else:
+            pairs = []
+            for label, derived in self._ion_mobility_derived.items():
+                if isinstance(derived, dict):
+                    pairs.extend(("{0!r} in bath {1!r}".format(label, bath),
+                                  value[0].value_si * value[1])
+                                 for bath, value in derived.items())
+                else:
+                    pairs.append((repr(label), derived[0].value_si * derived[1]))
+        for name, reduced_mobility in pairs:
+            worst_mu = reduced_mobility * self.mobility_reference_density / worst_n_neutral
+            worst_nu = worst_mu * ambipolar_voltage / lam2
+            if not _is_finite_normal_positive(worst_nu):
+                raise PlasmaStateError(
+                    'EEDF wall transport {0} forms a non-finite or subnormal worst-case '
+                    'frequency {1!r} s^-1 at epsilon_k={2!r} eV'.format(
+                        name, worst_nu, epsilon_k))
+
+    def _eedf_coordinate_label(self, name, labels):
+        """Resolve the supported named fraction-coordinate spellings."""
+        if name in labels:
+            return name
+        if name.startswith('x(') and name.endswith(')') and name[2:-1] in labels:
+            return name[2:-1]
+        if name.startswith('x_') and name[2:] in labels:
+            return name[2:]
+        return None
+
+    def _eedf_coordinates(self, np.ndarray y, bint clamp=False):
+        """Resolve table composition/envelope coordinates from one reactor state."""
+        coordinates = {}
+        neutral = sum(max(float(y[j]), 0.) for j in range(self.num_core_species)
+                      if self.neutral_heavy_mask[j])
+        if not clamp:
+            declared_gases = set(self.eedf_provider.runtime_metadata.get(
+                'row_inputs', {}).get('arm', {}).get('gases', []))
+            if declared_gases:
+                for j, spc in enumerate(self._en_core_species):
+                    if (j >= self.num_core_species or not self.neutral_heavy_mask[j]
+                            or not float(y[j]) > 0.0):
+                        continue
+                    formula = spc.molecule[0].get_formula() if spc.molecule else None
+                    if formula not in declared_gases:
+                        raise PlasmaStateError(
+                            'EEDF additive identity differs at an accepted state: neutral '
+                            'species {0!r} has formula {1!r}, table gases are {2!r}'.format(
+                                spc.label, formula, sorted(declared_gases)))
+        labels = {spc.label: self.species_index[spc]
+                  for spc in self._en_core_species}
+
+        def resolve(name):
+            if name == 'Tg_K':
+                return self.T.value_si
+            if name == 'P_Pa':
+                return self.P.value_si
+            if name == 'n_e/N':
+                return (float(y[self.electron_index]) / neutral
+                        if neutral > 0. else float('nan'))
+            if name == 'electron_density':
+                n_total = sum(float(y[j]) for j in range(self.num_core_species))
+                n_e = float(y[self.electron_index])
+                volume = (constants.R * ((n_total - n_e) * self.T.value_si +
+                                          n_e * self.Te.value_si) / self.P.value_si)
+                return n_e * constants.Na / volume if volume > 0. else float('nan')
+            if name == 'Ar4s_total':
+                indices = self.eedf_envelope_species.get(name)
+                if not indices:
+                    raise PlasmaStateError(
+                        'EEDF envelope quantity {0!r} has no resolved electronic-state '
+                        'species'.format(name))
+                return (sum(float(y[index]) for index in indices) / neutral
+                        if neutral > 0. else float('nan'))
+            label = self._eedf_coordinate_label(name, labels)
+            if label is not None:
+                return (float(y[labels[label]]) / neutral
+                        if neutral > 0. else float('nan'))
+            raise PlasmaStateError(
+                'EEDF envelope quantity {0!r} cannot be resolved from the reactor state'.format(name))
+
+        for name in self.eedf_axis_species:
+            coordinates[name] = resolve(name)
+        envelopes = self.eedf_provider.runtime_metadata['envelopes']
+        for name in envelopes:
+            if name not in coordinates:
+                coordinates[name] = resolve(name)
+        if clamp:
+            for name in self.eedf_provider.axis_names[1:]:
+                axis = self.eedf_provider.axis(name)
+                coordinates[name] = float(np.clip(coordinates[name], axis[0], axis[-1]))
+            for name, bounds in envelopes.items():
+                if name in coordinates:
+                    coordinates[name] = float(np.clip(
+                        coordinates[name], bounds['min'], bounds['max']))
+        return coordinates
+
+    def _eedf_empirical_key(self, rxn):
+        entry = getattr(rxn, 'entry', None)
+        source_index = getattr(entry, 'index', None)
+        if source_index is None:
+            return None
+        key = '{0}:{1}'.format(getattr(rxn, 'library', None), source_index)
+        return key if key in self.eedf_empirical_laws else None
+
+    def _resolve_eedf_energy_balance(self, core_species, core_reactions, edge_reactions):
+        """Initialize bookkeeping arrays consumed by shared diagnostics."""
+        n = self.num_core_reactions + self.num_edge_reactions
+        self.energy_threshold = np.zeros(n)
+        self.energy_threshold_thermo = np.full(n, np.nan)
+        self.energy_electrons_consumed = np.zeros(n, int)
+        self.energy_participates = np.zeros(n, np.uint8)
+        self.energy_electron_net = np.zeros(n, int)
+        self.energy_reaction_keys = [None] * self.num_core_reactions
+        self.energy_elastic_index = np.zeros(0, int)
+        self.energy_elastic_params = np.empty((0, 4))
+        self.energy_elastic_mass_ratio = np.zeros(0)
+        self.energy_te_rate_refresh = []
+        used_declared = set()
+        for rxn in itertools.chain(core_reactions, edge_reactions):
+            j = self.reaction_index[rxn]
+            self.energy_electron_net[j] = (
+                sum(1 for spc in rxn.products if spc.is_electron()) -
+                sum(1 for spc in rxn.reactants if spc.is_electron()))
+            if getattr(rxn.kinetics, 'uses_electron_temperature', False):
+                self.energy_te_rate_refresh.append((j, rxn.kinetics))
+            entry = getattr(rxn, 'entry', None)
+            source_index = getattr(entry, 'index', None)
+            source = (getattr(rxn, 'library', None), source_index)
+            if source not in self.energy_declared:
+                continue
+            if not any(spc.is_electron()
+                       for spc in itertools.chain(rxn.reactants, rxn.products)):
+                raise PlasmaStateError(
+                    'electron_energies declares {0}:{1}, but that reaction contains no '
+                    'electron and cannot carry a heavy-particle electron energy'.format(*source))
+            if j in self.eedf_reaction_map:
+                side = self.eedf_reaction_map[j][1]
+                if side == 'sup':
+                    raise PlasmaStateError(
+                        'electron_energies declares {0}:{1} on a superelastic EEDF entry; '
+                        'its energy return already comes from the table row'.format(*source))
+                raise PlasmaStateError(
+                    'electron_energies declares {0}:{1} on a table-owned EEDF reaction; '
+                    'its energy already comes from the table row'.format(*source))
+            used_declared.add(source)
+            self.energy_threshold[j] = self.energy_declared[source]
+            self.energy_participates[j] = 1
+            if j < self.num_core_reactions:
+                self.energy_reaction_keys[j] = '{0}:{1}'.format(*source)
+        unused = sorted(set(self.energy_declared) - used_declared)
+        if unused:
+            raise PlasmaStateError(
+                'electron_energies declaration(s) do not identify a loaded non-table '
+                'electron reaction: {0!r}'.format(
+                    ['{0}:{1}'.format(*key) for key in unused]))
+        sheath = np.zeros(self.num_core_species)
+        for spc in core_species:
+            j = self.species_index[spc]
+            if j != self.electron_index and self.species_charges[j] > 0:
+                sheath[j] = self.species_charges[j] * (
+                    0.5 + 0.5 * log(spc.molecular_weight.value_si /
+                                    (2.0 * constants.pi * constants.m_e)))
+        self.energy_ion_sheath_factor = sheath
+
+    def _sync_electron_state(self, np.ndarray y):
+        """Synchronize the complete ``(u, composition)`` EEDF evaluation."""
+        if not self.eedf_mode or self.eedf_provider is None:
+            self._sync_electron_temperature(y)
+            return
+        u = float(y[self.te_index])
+        u_axis = self.eedf_provider.axis('u')
+        if not np.isfinite(u):
+            u = float(u_axis[0])
+        u = float(np.clip(u, u_axis[0], u_axis[-1]))
+        coordinates = self._eedf_coordinates(y, clamp=True)
+        self.eedf_row = self.eedf_provider.row(u, coordinates, y=y,
+                                               context={'accepted': False})
+        mean = self.eedf_provider.mean_energy_eV(self.eedf_row)
+        self.Te.value_si = 2.0 * mean * constants.e * constants.Na / (3.0 * constants.R)
+        for reaction_index in self.eedf_reaction_map:
+            self.kf[reaction_index] = (constants.Na *
+                                       self.eedf_provider.reaction_rate(
+                                           reaction_index, self.eedf_row))
+            self.kb[reaction_index] = 0.0
+            self.Keq[reaction_index] = np.inf
+        self._refresh_electron_temperature_rates()
+
     def _sync_electron_temperature(self, np.ndarray y):
         """Make the reactor's Te, and every Te-dependent rate coefficient, those of the
         state ``y``. Te below half the gas temperature (or non-finite) occurs only at
         Newton trial states; it is evaluated at that floor so the trial stays finite and
         is rejected on its own terms, and an ACCEPTED state there is refused by
         :meth:`_check_energy_state`."""
-        cdef double te = y[self.te_index]
-        cdef double floor = 0.5 * self.T.value_si
+        cdef double te, floor
+        if self.eedf_mode:
+            self._sync_electron_state(y)
+            return
+        te = y[self.te_index]
+        floor = 0.5 * self.T.value_si
         if not isfinite(te) or te < floor:
             te = floor
         self.Te.value_si = te
@@ -2602,7 +3225,17 @@ cdef class PlasmaReactor(ReactionSystem):
             self._te_rate_cache[j] = (kin, key)
 
     def _check_energy_state(self, np.ndarray y):
-        cdef double te = y[self.te_index]
+        cdef double te
+        if self.eedf_mode:
+            try:
+                self._sync_electron_state(y)
+                self.eedf_provider.domain_check(
+                    float(y[self.te_index]), self._eedf_coordinates(y), y=y,
+                    context={'accepted': True})
+            except Exception as exc:
+                raise PlasmaStateError('accepted EEDF state is outside the table domain: {0}'.format(exc)) from exc
+            return
+        te = y[self.te_index]
         if not isfinite(te) or te < 0.5 * self.T.value_si:
             raise PlasmaStateError(
                 "the solved electron temperature reached {0!r} K at an accepted state, below "
@@ -2616,6 +3249,8 @@ cdef class PlasmaReactor(ReactionSystem):
         cdef double R = constants.R, tg = self.T.value_si, te = self.Te.value_si
         cdef double ne, p_abs, q_inel = 0.0, q_el = 0.0, q_we, q_wi = 0.0, dne, te_ev, lt, k, phi = 0.0, gamma_sum, mass_sum, density_sum
         cdef Py_ssize_t j, p, i, ie = self.electron_index
+        if self.eedf_mode:
+            return self._eedf_energy_row(y, V, res)
         ne = y[ie]
         # A CONSTANT total power on the reactor inventory (see _configure_energy_balance);
         # the electrons' pdV work under the constant-pressure EOS is neglected.
@@ -2717,6 +3352,208 @@ cdef class PlasmaReactor(ReactionSystem):
             wall = -te*(1.+phi)*(-self.wall_loss_rates[ie])/(1.5*ne)
             return p_abs/(1.5*R*ne)+chemical-q_el/(1.5*R*ne)-te*(source/ne)+wall
         return (p_abs - q_inel - q_el - q_we - q_wi - 1.5 * R * te * dne) / (1.5 * R * ne)
+
+    def _eedf_composition_energy_derivative(self, np.ndarray y, np.ndarray rates):
+        """Return the non-u mean-energy chain-rule term for ``rates`` (W)."""
+        ne = float(y[self.electron_index])
+        neutral_mol = sum(float(y[j]) for j in range(self.num_core_species)
+                          if self.neutral_heavy_mask[j])
+        neutral_rate = sum(float(rates[j]) for j in range(self.num_core_species)
+                           if self.neutral_heavy_mask[j])
+        coordinates = self._eedf_coordinates(y, clamp=True)
+        u_axis = self.eedf_provider.axis('u')
+        u = float(np.clip(y[self.te_index], u_axis[0], u_axis[-1]))
+        result = 0.0
+        for name, species_index in self.eedf_axis_species.items():
+            axis = self.eedf_provider.axis(name)
+            value = coordinates[name]
+            step = 1.e-6 * max(abs(value), axis[-1] - axis[0], 1.e-12)
+            low, high = max(axis[0], value - step), min(axis[-1], value + step)
+            if high <= low:
+                continue
+            c_low, c_high = dict(coordinates), dict(coordinates)
+            c_low[name], c_high[name] = low, high
+            e_low = self.eedf_provider.mean_energy_eV(self.eedf_provider.row(u, c_low))
+            e_high = self.eedf_provider.mean_energy_eV(self.eedf_provider.row(u, c_high))
+            dedc = (e_high - e_low) / (high - low)
+            if species_index is None and name == 'n_e/N':
+                dc = ((float(rates[self.electron_index]) * neutral_mol -
+                       ne * neutral_rate) / (neutral_mol * neutral_mol)
+                      if neutral_mol > 0. else 0.0)
+            elif species_index is not None:
+                dc = ((float(rates[species_index]) * neutral_mol -
+                       float(y[species_index]) * neutral_rate) /
+                      (neutral_mol * neutral_mol)) if neutral_mol > 0. else 0.0
+            else:
+                raise PlasmaStateError(
+                    'EEDF axis {0!r} has no implemented chain-rule derivative'.format(name))
+            result += ne * constants.Na * constants.e * dedc * dc
+        return result
+
+    def _eedf_energy_row(self, np.ndarray y, double V, np.ndarray res):
+        """du/dt from the one-row EEDF energy balance and its exact u derivative."""
+        row = self.eedf_row
+        ne = float(y[self.electron_index])
+        if row is None or not ne > 0.:
+            raise PlasmaStateError('EEDF energy row requires a synchronized row and positive electrons')
+        neutral_mol = sum(float(y[j]) for j in range(self.num_core_species)
+                          if self.neutral_heavy_mask[j])
+        neutral_density = neutral_mol * constants.Na / V
+        power_factor = ne * constants.Na * neutral_density * constants.e
+        by_channel = power_factor * np.asarray(row.channel_power)
+        channels = self.eedf_provider.runtime_metadata['channel_map']
+        kinds = [entry.get('kind') for entry in channels]
+        # LoKI group values are signed (losses are negative), whereas the
+        # qualified per-channel values are positive electron losses.  Reading
+        # the latter also preserves a table's multi-elastic partition.
+        q_el = float(sum(by_channel[j] for j, kind in enumerate(kinds)
+                         if kind == 'elastic'))
+        attachment = np.asarray(row.target_fractions) * np.asarray(row.k_ine) * np.asarray(row.attachment_energy_eV)
+        channel_losses = np.array(by_channel, copy=True)
+        for j, kind in enumerate(kinds):
+            if kind == 'attachment':
+                channel_losses[j] = power_factor * attachment[j]
+            elif kind == 'elastic':
+                channel_losses[j] = 0.0
+        q_inelastic_channels = np.zeros(len(channel_losses))
+        q_superelastic_channels = np.zeros(len(channel_losses))
+        for j, kind in enumerate(kinds):
+            if kind == 'elastic':
+                continue
+            if kind == 'attachment':
+                q_inelastic_channels[j] = channel_losses[j]
+                continue
+            denominator_power = (float(row.target_fractions[j]) * float(row.k_ine[j]) -
+                                 float(row.product_fractions[j]) * float(row.k_sup[j]))
+            threshold = (float(row.channel_power[j]) / denominator_power
+                         if denominator_power != 0.0
+                         else float(channels[j].get('threshold_eV', 0.0)))
+            q_inelastic_channels[j] = (power_factor * float(threshold) *
+                                       float(row.target_fractions[j]) * float(row.k_ine[j]))
+            q_superelastic_channels[j] = (power_factor * float(threshold) *
+                                          float(row.product_fractions[j]) * float(row.k_sup[j]))
+        # The table's net channel power is canonical.  The gross split above is
+        # diagnostic and uses that same net to recover the effective transfer
+        # energy, including grid-face thresholds that can differ from metadata.
+        q_inel = float(np.sum(channel_losses))
+        heavy_by_reaction = np.zeros(self.num_core_reactions)
+        for reaction_index in range(self.num_core_reactions):
+            if self.energy_participates[reaction_index]:
+                heavy_by_reaction[reaction_index] = (
+                    self.core_reaction_rates[reaction_index] * V *
+                    self.energy_threshold[reaction_index])
+                q_inel += heavy_by_reaction[reaction_index]
+        transport = self.eedf_provider.transport(row)
+        mobility = float(transport['mobility_N'])
+        diffusion = float(transport['diffusion_N'])
+        if not mobility > 0. or not diffusion > 0.:
+            raise PlasmaStateError('EEDF row has non-positive reduced transport')
+        epsilon_k = diffusion / mobility
+        wall_scale = constants.Na * constants.e * epsilon_k
+        q_we = 2.0 * wall_scale * (-self.wall_loss_rates[self.electron_index])
+        q_wi = 0.0
+        if self._ion_mobility_derived is None:
+            for j in range(self.num_core_species):
+                if self.energy_ion_sheath_factor[j] != 0.0:
+                    q_wi += (self.energy_ion_sheath_factor[j] * wall_scale *
+                             (-self.wall_loss_rates[j]))
+        else:
+            # Preserve the existing multi-ion floating-potential and
+            # electronegative closure exactly; only replace k_B Te/e by the
+            # row's epsilon_k as required by the phase-1 approximation.
+            gamma_sum = 0.0
+            mass_sum = 0.0
+            for j in range(self.num_core_species):
+                if j != self.electron_index and self.species_charges[j] > 0:
+                    loss = -self.wall_loss_rates[j]
+                    if np.isfinite(loss) and loss > 0.0:
+                        gamma_sum += loss
+                        mass_sum += loss * np.exp(self.energy_ion_sheath_factor[j] - 0.5)
+            if not (gamma_sum > 0.0 and np.isfinite(gamma_sum)
+                    and mass_sum > 0.0 and np.isfinite(mass_sum)):
+                gamma_sum = 0.0
+                mass_sum = 0.0
+                for j in range(self.num_core_species):
+                    if (j != self.electron_index and self.species_charges[j] > 0
+                            and np.isfinite(y[j]) and y[j] > 0.0):
+                        gamma_sum += y[j]
+                        mass_sum += y[j] * np.exp(self.energy_ion_sheath_factor[j] - 0.5)
+                if not (gamma_sum > 0.0 and np.isfinite(gamma_sum)
+                        and mass_sum > 0.0 and np.isfinite(mass_sum)):
+                    gamma_sum = 0.0
+                    mass_sum = 0.0
+                    for j in range(self.num_core_species):
+                        if j != self.electron_index and self.species_charges[j] > 0:
+                            gamma_sum += 1.0
+                            mass_sum += np.exp(self.energy_ion_sheath_factor[j] - 0.5)
+            if gamma_sum > 0.0 and mass_sum > 0.0:
+                phi = log(mass_sum / gamma_sum)
+                if self.electronegative_wall_model is not None and self._finite_en_state(y):
+                    phi += self._en_floating_shift(y)
+                for j in range(self.num_core_species):
+                    if j != self.electron_index and self.species_charges[j] > 0:
+                        loss = -self.wall_loss_rates[j]
+                        if np.isfinite(loss) and loss > 0.0:
+                            q_wi += (0.5 + phi) * wall_scale * loss
+        mean = self.eedf_provider.mean_energy_eV(row)
+        dne = float(res[self.electron_index])
+        composition_term = self._eedf_composition_energy_derivative(y, res)
+        losses = q_inel + q_el + q_we + q_wi
+        p_abs = self.absorbed_power_reactor
+        denominator = ne * constants.Na * constants.e * row.denergy_du
+        minimum_derivative = self.eedf_provider.runtime_metadata['tolerances']['u_condition'][
+            'min_abs_denergy_du']
+        if (not np.isfinite(denominator) or not np.isfinite(row.denergy_du)
+                or row.denergy_du < minimum_derivative):
+            raise PlasmaStateError('EEDF d<epsilon>/du is non-positive or insufficiently conditioned')
+        joule = power_factor * float(row.power_groups.get('field', 0.0))
+        transport_field = (power_factor * mobility *
+                           (float(row.EN_Td) * 1.e-21) ** 2)
+        a6b_scale = max(abs(joule), abs(transport_field), np.finfo(float).tiny)
+        a6b_relative = abs(joule - transport_field) / a6b_scale
+        generation_tolerance = self.eedf_provider.runtime_metadata['tolerances']['G1']
+        a6b_tolerance = (generation_tolerance['rtol'] +
+                         power_factor * generation_tolerance['atol'] / a6b_scale)
+        by_reaction = np.array(heavy_by_reaction, copy=True)
+        inelastic_by_reaction = np.zeros(self.num_core_reactions)
+        superelastic_by_reaction = np.zeros(self.num_core_reactions)
+        for reaction_index, (column, side) in self.eedf_reaction_map.items():
+            if reaction_index < self.num_core_reactions:
+                if side == 'ine':
+                    inelastic_by_reaction[reaction_index] = q_inelastic_channels[column]
+                    by_reaction[reaction_index] = q_inelastic_channels[column]
+                else:
+                    superelastic_by_reaction[reaction_index] = q_superelastic_channels[column]
+                    by_reaction[reaction_index] = -q_superelastic_channels[column]
+        energy_only = {}
+        for j in range(len(channel_losses)):
+            if channels[j].get('classification') != 'B':
+                continue
+            group = channels[j].get('flux_group', channels[j].get('description', str(j)))
+            energy_only[group] = energy_only.get(group, 0.0) + float(channel_losses[j])
+        self.electron_energy_terms = {
+            'P_abs': p_abs, 'Q_inelastic': q_inel,
+            'Q_elastic': q_el, 'Q_wall_electron': q_we, 'Q_wall_ion': q_wi,
+            'Q_flow': 0.0, 'Q_inelastic_by_reaction': by_reaction,
+            'Q_inelastic_channels': q_inelastic_channels,
+            'Q_superelastic_channels': q_superelastic_channels,
+            'Q_inelastic_by_reaction_gross': inelastic_by_reaction,
+            'Q_superelastic_by_reaction': superelastic_by_reaction,
+            'Q_heavy_particle_electron_by_reaction': heavy_by_reaction,
+            'Q_energy_only': energy_only, 'dNe_dt': dne,
+            'composition_energy_derivative': composition_term,
+            'mean_energy_eV': mean, 'epsilon_k_eV': epsilon_k,
+            'joule_power': joule,
+            'power_mismatch_fraction': ((p_abs - joule) / p_abs if p_abs else 0.0),
+            'A6b_relative': a6b_relative,
+            'A6b_tolerance': a6b_tolerance,
+            'A6b_passed': a6b_relative <= a6b_tolerance,
+            'wall_sheath_basis': 'Maxwellian form at epsilon_k',
+        }
+        self.eedf_provider.annotate_development_diagnostic(
+            self.electron_energy_terms)
+        return (p_abs - losses - mean * constants.Na * constants.e * dne -
+                composition_term) / denominator
 
     def _finite_en_state(self, np.ndarray y):
         return self.electronegative_wall_model is not None and any(y[j] > 0. for j in self._en_anions)
@@ -2949,7 +3786,7 @@ cdef class PlasmaReactor(ReactionSystem):
         return self._compute_reference_reaction_data(y)
 
     def compute_electronegative_wall_jacobian(self, np.ndarray y):
-        """Analytic charged-wall Jacobian at a checked state."""
+        """Wall Jacobian at a checked state; numerical for EEDF states."""
         self._check_accepted_plasma_domain(y)
         return self._compute_electronegative_wall_jacobian(y)
 
@@ -2977,7 +3814,14 @@ cdef class PlasmaReactor(ReactionSystem):
         # ReactionSystem's steady-state hooks supply a species-only view.
         # Their transport uses the current accepted Te, just as before.
         if self.energy_balance and len(y) == self.num_core_species:
-            y = np.concatenate((y, [self.Te.value_si]))
+            # The generic steady-state hooks expose only the species vector.
+            # Reattach the current accepted energy coordinate: Te on the legacy
+            # path, but u=ln(E/N) in EEDF mode.  Appending Te_eff in EEDF mode
+            # would reinterpret kelvin as u and immediately leave the table.
+            electron_state = (self.y[self.te_index]
+                              if self.eedf_mode and len(self.y) > self.te_index
+                              else self.Te.value_si)
+            y = np.concatenate((y, [electron_state]))
         if self.energy_balance:
             self._check_energy_state(y)
             self._sync_electron_temperature(y)
@@ -3057,10 +3901,16 @@ cdef class PlasmaReactor(ReactionSystem):
         if self.electronegative_wall_model is not None:
             if volume is None:
                 volume = self.compute_volume(y)
-            te = y[self.te_index] if self.energy_balance else self.Te.value_si
+            if self.eedf_mode:
+                self._sync_electron_state(y)
+                transport = self.eedf_provider.transport(self.eedf_row)
+                energy_eV = float(transport['diffusion_N']) / float(transport['mobility_N'])
+            else:
+                te = y[self.te_index] if self.energy_balance else self.Te.value_si
+                energy_eV = te * constants.R / (constants.Na * constants.e)
             check_wall_domain(y[:self.num_core_species], volume,
                 self.species_charges, [sp.label for sp in self._en_core_species],
-                te*constants.R/(constants.Na*constants.e), self.wall_diffusion_components)
+                energy_eV, self.wall_diffusion_components)
             if self._finite_en_state(y):
                 ep = np.zeros(self.num_core_species)
                 self._compute_nu_wall_per_ion(y, volume, ep, True)
@@ -3068,11 +3918,89 @@ cdef class PlasmaReactor(ReactionSystem):
                     [sp.label for sp in self._en_core_species])
 
     def _compute_electronegative_wall_jacobian(self, np.ndarray y):
-        """Analytic charged-wall Jacobian, including floating-potential/Te coupling."""
+        """Charged-wall Jacobian, including the active electron-energy coordinate."""
+        if self.eedf_mode:
+            # The table row makes epsilon_k, mobility and diffusion functions of
+            # u and composition.  The legacy analytic wall linearisation treats
+            # y[te_index] as a Kelvin temperature and cannot represent those
+            # derivatives. Differentiate the wall contribution isolated from the
+            # same full residual that the solver integrates, refreshing the
+            # provider row and energy equation at every point.
+            n = len(y)
+            pd = np.zeros((n, n), float)
+            base = None
+            wall_enabled = self.has_wall
+            try:
+                for column in range(n):
+                    scale = max(abs(float(y[column])), self.atol_array[column])
+                    if column == self.te_index:
+                        u_axis = self.eedf_provider.axis('u')
+                        scale = max(scale, float(u_axis[-1] - u_axis[0]))
+                    step = 6.0e-6 * scale
+                    yp = np.array(y, copy=True)
+                    yp[column] += step
+                    ym = np.array(y, copy=True)
+                    ym[column] -= step
+                    rp = rm = None
+                    try:
+                        self._check_accepted_plasma_domain(yp)
+                    except PlasmaStateError:
+                        pass
+                    else:
+                        rp = self._eedf_wall_residual(yp)
+                    try:
+                        self._check_accepted_plasma_domain(ym)
+                    except PlasmaStateError:
+                        pass
+                    else:
+                        rm = self._eedf_wall_residual(ym)
+                    if rp is not None and rm is not None:
+                        pd[:, column] = (rp - rm) / (2.0 * step)
+                        continue
+                    if base is None:
+                        self._check_accepted_plasma_domain(y)
+                        base = self._eedf_wall_residual(y)
+                    if rp is not None:
+                        pd[:, column] = (rp - base) / step
+                    elif rm is not None:
+                        pd[:, column] = (base - rm) / step
+                    else:
+                        raise PlasmaStateError(
+                            'EEDF wall Jacobian has no admissible perturbation for state column {0}'.format(column))
+            finally:
+                self.has_wall = wall_enabled
+                if not wall_enabled:
+                    self.wall_loss_rates.fill(0.)
+                self.residual(0., y, np.zeros_like(y))
+            return pd
         if self.energy_balance:
             self._sync_electron_temperature(y)
         self._check_en_wall_domain(y)
         return self._en_wall_linearization(y,self.compute_volume(y))[1]
+
+    def _eedf_wall_residual(self, np.ndarray y):
+        """Return the wall contribution to the exact EEDF solver residual."""
+        derivative = np.zeros_like(y)
+        wall_enabled = self.has_wall
+        try:
+            self.has_wall = True
+            self.residual(0., y, derivative)
+            wall = np.asarray(self.wall_loss_rates).copy()
+            result = np.zeros_like(y)
+            result[:self.num_core_species] = wall
+            if self.quasineutral_electron:
+                result[self.electron_index] = 0.
+            terms = self.electron_energy_terms
+            composition = self._eedf_composition_energy_derivative(y, wall)
+            denominator = (y[self.electron_index] * constants.Na * constants.e *
+                           self.eedf_row.denergy_du)
+            result[self.te_index] = (
+                -(terms['Q_wall_electron'] + terms['Q_wall_ion']) -
+                terms['mean_energy_eV'] * constants.Na * constants.e *
+                wall[self.electron_index] - composition) / denominator
+            return result
+        finally:
+            self.has_wall = wall_enabled
 
     def _prepare_public_wall_state(self, np.ndarray y, double V):
         """Validate the supplied volume and refresh the EOS after Te sync."""
@@ -3400,7 +4328,7 @@ cdef class PlasmaReactor(ReactionSystem):
         column and assumes constant kf, so it is not used in this mode."""
         cdef Py_ssize_t n = self.neq, k, i
         cdef double h
-        if self._finite_en_state(y):
+        if self._finite_en_state(y) and not self.eedf_mode:
             return self._en_energy_jacobian(t,y,cj)
         legacy_trial = self._en_legacy_energy_trial
         self._en_legacy_energy_trial = True
@@ -3451,12 +4379,37 @@ cdef class PlasmaReactor(ReactionSystem):
         dy = getattr(self, 'dydt', None)
         if dy is None or len(dy) != self.neq:
             dy = self.dydt0
-        b['dU_dt'] = 1.5 * R * (te * dy[ie] + ne_mol * dy[self.te_index])
+        if self.eedf_mode:
+            composition_storage = self._eedf_composition_energy_derivative(y, dy)
+            b['dU_dt'] = (constants.Na * constants.e *
+                           (self.eedf_provider.mean_energy_eV(self.eedf_row) * dy[ie] +
+                            ne_mol * self.eedf_row.denergy_du * dy[self.te_index]) +
+                           composition_storage)
+            b['composition_energy_derivative'] = composition_storage
+        else:
+            b['dU_dt'] = 1.5 * R * (te * dy[ie] + ne_mol * dy[self.te_index])
         losses = (b['Q_inelastic'] + b['Q_elastic'] + b['Q_wall_electron'] + b['Q_wall_ion']
                   + b['Q_flow'])
         b['closure'] = b['P_abs'] - losses - b['dU_dt']
         b['t'] = t
-        b['Te'] = te
+        b['Te'] = self.Te.value_si if self.eedf_mode else te
+        if self.eedf_mode:
+            u = float(y[self.te_index])
+            b['u'] = u
+            b['EN_Td'] = float(np.exp(u))
+            b['mean_energy_eV'] = self.eedf_provider.mean_energy_eV(self.eedf_row)
+            b['Te_eff'] = self.Te.value_si
+            b['Te_eff_basis'] = 'effective temperature derived from mean energy'
+            floors = self.eedf_provider.runtime_metadata['floors']
+            p_scale = max(abs(b['joule_power']) * floors['absolute_power_share'],
+                          np.finfo(float).tiny)
+            a6a_scale = max(abs(b['P_abs']), p_scale)
+            b['A6a_power_scale'] = p_scale
+            b['A6a_relative'] = abs(b['closure']) / a6a_scale
+            b['A6a_passed'] = b['A6a_relative'] <= 0.01
+            b['A6a_steady_relative'] = abs(b['P_abs'] - losses) / a6a_scale
+            b['A6a_steady_passed'] = b['A6a_steady_relative'] <= 0.01
+            self.eedf_provider.annotate_development_diagnostic(b)
         b['n_e'] = ne_mol * constants.Na / V
         b['V'] = V
         # Sustainment (see PLASMA_SELF_SUSTAINED_RTOL and classify_discharge): the
@@ -3511,15 +4464,30 @@ cdef class PlasmaReactor(ReactionSystem):
         rate makes its time infinite; a non-finite rate is refused (``max`` would silently
         drop a nan)."""
         cdef double V = self.compute_volume(y), te_ev, lt, nu_e = 0.0, k, t_loss, t_e
+        cdef double neutral_density
         cdef Py_ssize_t p
-        te_ev = y[self.te_index] * (constants.R / constants.Na) / constants.e
-        lt = log(te_ev)
-        for p in range(self.energy_elastic_index.shape[0]):
-            k = (self.energy_elastic_params[p, 0] * te_ev ** self.energy_elastic_params[p, 1]
-                 * np.exp(self.energy_elastic_params[p, 2] * lt * lt
-                          + self.energy_elastic_params[p, 3] * lt * lt * lt))
-            nu_e += (2.0 * self.energy_elastic_mass_ratio[p] * k
-                     * y[self.energy_elastic_index[p]] * constants.Na / V)
+        if self.eedf_mode:
+            # The collision frequency and mass ratio are properties of the same EEDF
+            # row as the accepted state. target_fractions already select the elastic
+            # partner population within the total neutral density.
+            self._sync_electron_state(y)
+            neutral_density = (sum(float(y[j]) for j in range(self.num_core_species)
+                                   if self.neutral_heavy_mask[j]) * constants.Na / V)
+            channels = self.eedf_provider.runtime_metadata['channel_map']
+            for p, channel in enumerate(channels):
+                if channel.get('kind') == 'elastic':
+                    nu_e += (2.0 * float(channel['mass_ratio']) *
+                             float(self.eedf_row.target_fractions[p]) *
+                             float(self.eedf_row.k_ine[p]) * neutral_density)
+        else:
+            te_ev = y[self.te_index] * (constants.R / constants.Na) / constants.e
+            lt = log(te_ev)
+            for p in range(self.energy_elastic_index.shape[0]):
+                k = (self.energy_elastic_params[p, 0] * te_ev ** self.energy_elastic_params[p, 1]
+                     * np.exp(self.energy_elastic_params[p, 2] * lt * lt
+                              + self.energy_elastic_params[p, 3] * lt * lt * lt))
+                nu_e += (2.0 * self.energy_elastic_mass_ratio[p] * k
+                         * y[self.energy_elastic_index[p]] * constants.Na / V)
         nu_loss = self.energy_budget.get('nu_loss', 0.0)
         if not (np.isfinite(nu_e) and np.isfinite(nu_loss)):
             raise PlasmaStateError(
@@ -3554,7 +4522,9 @@ cdef class PlasmaReactor(ReactionSystem):
         state = b['discharge_state']
         if state == 'self-sustained':
             self.energy_was_self_sustained = True
-        te = y[self.te_index]
+        # In EEDF mode y[te_index] is u=ln(E/N), not a temperature. The accepted
+        # domain check above synchronized self.Te to the row-derived Te_eff.
+        te = self.Te.value_si if self.eedf_mode else y[self.te_index]
         eligible = self.absorbed_power_total == 0.0 or self.energy_was_self_sustained
         if not (eligible and state == 'extinct' and b['nu_loss'] > 0.0
                 and b['nu_ionisation'] < PLASMA_EXTINCT_RATIO * b['nu_loss']
@@ -3569,6 +4539,7 @@ cdef class PlasmaReactor(ReactionSystem):
                                            self.extinction_persistence_time(y))
         tau = self.energy_extinct_required
         if t - self.energy_extinct_since >= tau:
+            self._check_eedf_power_gates()
             self.energy_terminal = {
                 'termination': 'extinct', 't': t, 'since': self.energy_extinct_since,
                 'duration': t - self.energy_extinct_since, 'persistence_time': tau,
@@ -3581,6 +4552,32 @@ cdef class PlasmaReactor(ReactionSystem):
                          'extinct. (%s)', self.energy_extinct_since, t, tau,
                          PLASMA_EXTINCT_PERSIST_MULTIPLE, te, self.T.value_si,
                          b['nu_ionisation'] / b['nu_loss'], self._identity())
+
+    def _check_eedf_power_gates(self, steady=False):
+        """Enforce frozen A6a/A6b thresholds at an accepted terminal state."""
+        if not self.eedf_mode:
+            return
+        a6a_key = 'A6a_steady_relative' if steady else 'A6a_relative'
+        for gate, description, tolerance in (
+                ('A6a', 'global electron-energy closure', 0.01),
+                ('A6b', 'LoKI-B/table field-power consistency',
+                 self.energy_budget.get('A6b_tolerance'))):
+            relative = self.energy_budget.get(
+                a6a_key if gate == 'A6a' else gate + '_relative')
+            if (relative is None or tolerance is None or not np.isfinite(relative)
+                    or not np.isfinite(tolerance) or relative > tolerance):
+                raise PlasmaStateError(
+                    '{0} {1} gate failed at accepted terminal state: relative error '
+                    '{2!r} exceeds tolerance {3!r}'.format(
+                        gate, description, relative, tolerance))
+
+    def validate_steady_state(self):
+        """Apply EEDF power gates before generic steady-state termination."""
+        self._check_eedf_power_gates(steady=True)
+
+    def validate_terminal_state(self):
+        """Apply EEDF power gates before any accepted termination path."""
+        self._check_eedf_power_gates(steady=self.steady_state_reached)
 
     cpdef object terminal_state(self):
         """'extinct' once the extinction criterion has held (energy balance only), else None."""
@@ -3686,7 +4683,8 @@ cdef class PlasmaReactor(ReactionSystem):
                  self.anion_reduced_mobilities,
                  self.wall_diffusion_components,
                  self.electronegative_wall_qualification,
-                 self.wall_chamber_geometry))
+                 self.wall_chamber_geometry,
+                 copy.deepcopy(self.electron_kinetics)))
 
     cpdef initialize_model(self, list core_species, list core_reactions, list edge_species, list edge_reactions,
                           list surface_species=None, list surface_reactions=None, list pdep_networks=None,
@@ -3800,7 +4798,8 @@ cdef class PlasmaReactor(ReactionSystem):
         if self.energy_balance:
             self.te_index = self.num_core_species
             self.neq = self.num_core_species + 1
-            self.atol_array = np.append(self.atol_array, 1.0e-6)     # K
+            self.atol_array = np.append(
+                self.atol_array, 1.0e-8 if self.eedf_mode else 1.0e-6)
             self.rtol_array = np.append(self.rtol_array, rtol)
 
         # Resolve the electron's position in the packed solver state.
@@ -3817,6 +4816,9 @@ cdef class PlasmaReactor(ReactionSystem):
         # by diagnostics either way) but only RAISES when a wall or the algebraic
         # electron is actually configured.
         self._resolve_wall_state(core_species)
+
+        if self.eedf_mode:
+            self._initialize_eedf_provider(core_species, core_reactions, edge_reactions)
 
         # The Te row is an energy PER ELECTRON: it divides by N_e, so it is only defined
         # while the solver resolves N_e. A species atol sized for the neutral inventory
@@ -3837,9 +4839,15 @@ cdef class PlasmaReactor(ReactionSystem):
         # Generate forward and reverse rate coefficients using the accepted
         # reaction set and the two-temperature evaluation policy.
         self.generate_rate_coefficients(core_reactions, edge_reactions)
+        if self.eedf_mode:
+            self._sync_electron_state(self.y0)
+            self._check_eedf_wall_worst_case()
         if self.energy_balance:
-            self._resolve_energy_balance(core_species, core_reactions, edge_reactions,
-                                         core_reactions_model)
+            if self.eedf_mode:
+                self._resolve_eedf_energy_balance(core_species, core_reactions, edge_reactions)
+            else:
+                self._resolve_energy_balance(core_species, core_reactions, edge_reactions,
+                                             core_reactions_model)
 
         # Make the algebraic charge row commensurate with the differential rows,
         # now that the rate coefficients exist and the Jacobian can be evaluated.
@@ -4407,6 +5415,16 @@ cdef class PlasmaReactor(ReactionSystem):
             n_electron_reactants = sum(1 for spc in rxn.reactants if spc.is_electron())
             n_electron_products = sum(1 for spc in rxn.products if spc.is_electron())
 
+            if getattr(kin, 'uses_eedf', False):
+                if n_electron_reactants != 1 or len(rxn.reactants) != 2:
+                    raise PlasmaStateError(
+                        'EEDFChannel reaction {0!s} must be a binary collision with exactly '
+                        'one explicit incident electron and one target reactant'.format(rxn))
+                if rxn.reversible:
+                    raise NonEquilibriumReverseRateError(
+                        'EEDFChannel reaction {0!s} must be irreversible; represent a '
+                        'superelastic direction as a separate side="sup" entry'.format(rxn))
+
             # A rate law that declares itself electron-density-driven requires
             # an explicit incident electron among the reactants; without one the
             # rate would silently lose its dependence on the electron
@@ -4525,7 +5543,18 @@ cdef class PlasmaReactor(ReactionSystem):
             j = self.reaction_index[rxn]
             kin = rxn.kinetics
 
-            if getattr(kin, 'uses_electron_temperature', False):
+            if getattr(kin, 'uses_eedf', False):
+                if not self.eedf_mode or j not in self.eedf_reaction_map:
+                    raise PlasmaStateError(
+                        'EEDFChannel reaction {0} has no active provider mapping'.format(rxn))
+                self.kf[j] = 0.0
+                self.kb[j] = 0.0
+                self.Keq[j] = np.inf
+            elif getattr(kin, 'uses_electron_temperature', False):
+                if self.eedf_mode and self._eedf_empirical_key(rxn) is None:
+                    raise PlasmaStateError(
+                        'unowned electron-temperature law {0} is not declared under '
+                        'electron_kinetics empirical_laws'.format(rxn))
                 self.energy_te_rate_refresh.append((j, kin))
                 self._te_rate_reactions[j] = (rxn, kin)
                 if rxn.reversible:
@@ -5589,7 +6618,7 @@ cdef class PlasmaReactor(ReactionSystem):
         check belongs where Python owns the stack and the state is one the solver has
         actually accepted.
         """
-        cdef double y_neutral = 0.0, n_neutral, mu_i, d_a, lam
+        cdef double y_neutral = 0.0, n_neutral, mu_i, d_a, lam, epsilon_k
         cdef Py_ssize_t j
         if self._ion_mobility_derived is not None:
             raise PlasmaStateError(
@@ -5615,8 +6644,13 @@ cdef class PlasmaReactor(ReactionSystem):
             mu_i *= self.mobility_T_factor
         # k_B*T_e/e in volts. constants.R / constants.Na is the same Boltzmann
         # constant compute_volume's EOS is built from, so the two never disagree.
-        d_a = mu_i * (constants.R / constants.Na) * self.Te.value_si / constants.e
-        if self.ambipolar_ion_temperature is not None:
+        if self.eedf_mode:
+            epsilon_k = self.eedf_row.swarm['diffusion_N'] / self.eedf_row.swarm['mobility_N']
+            d_a = mu_i * epsilon_k * (1.0 + (constants.R / constants.Na) *
+                                      self.T.value_si / (constants.e * epsilon_k))
+        else:
+            d_a = mu_i * (constants.R / constants.Na) * self.Te.value_si / constants.e
+        if not self.eedf_mode and self.ambipolar_ion_temperature is not None:
             # Te is re-read here, not cached: under the energy balance it is solved.
             d_a *= 1.0 + self.T.value_si / self.Te.value_si
         lam = self.diffusion_length.value_si
@@ -5627,7 +6661,7 @@ cdef class PlasmaReactor(ReactionSystem):
         With per-bath values the cation's reduced mobility is the Blanc's-law combination
         over the state's composition (:meth:`_blanc_combine`); N is still the total
         neutral density, floored exactly as before."""
-        cdef double y_neutral = 0.0, n_neutral, mu_i, d_a, lam, k0, yd
+        cdef double y_neutral = 0.0, n_neutral, mu_i, d_a, lam, k0, yd, epsilon_k
         cdef int nw
         cdef Py_ssize_t i
         for i in range(self.num_core_species):
@@ -5647,8 +6681,13 @@ cdef class PlasmaReactor(ReactionSystem):
             else:
                 k0 = self.wall_ion_mobility_si[i]
             mu_i = k0 * self.mobility_reference_density / n_neutral
-            d_a = mu_i * (constants.R / constants.Na) * self.Te.value_si / constants.e
-            if self.ambipolar_ion_temperature is not None:
+            if self.eedf_mode:
+                epsilon_k = self.eedf_row.swarm['diffusion_N'] / self.eedf_row.swarm['mobility_N']
+                d_a = mu_i * epsilon_k * (1.0 + (constants.R / constants.Na) *
+                                          self.T.value_si / (constants.e * epsilon_k))
+            else:
+                d_a = mu_i * (constants.R / constants.Na) * self.Te.value_si / constants.e
+            if not self.eedf_mode and self.ambipolar_ion_temperature is not None:
                 d_a *= 1.0 + self.T.value_si / self.Te.value_si
             out[i] = d_a / (lam * lam)
         if not electropositive and self.electronegative_wall_model is not None:
@@ -5962,8 +7001,13 @@ cdef class PlasmaReactor(ReactionSystem):
             else:
                 k0 = entry[0].value_si * entry[1]
             mobility = k0 * self.mobility_reference_density / density
-            da = mobility * constants.R / constants.Na * self.Te.value_si / constants.e
-            if self.ambipolar_ion_temperature is not None:
+            if self.eedf_mode:
+                epsilon_k = self.eedf_row.swarm['diffusion_N'] / self.eedf_row.swarm['mobility_N']
+                da = mobility * epsilon_k * (1.0 + (constants.R / constants.Na) *
+                                              self.T.value_si / (constants.e * epsilon_k))
+            else:
+                da = mobility * constants.R / constants.Na * self.Te.value_si / constants.e
+            if not self.eedf_mode and self.ambipolar_ion_temperature is not None:
                 da *= 1. + self.T.value_si / self.Te.value_si
             out[j] = dict(reduced_mobility=k0, mobility=mobility,
                           thermal_diffusivity=mobility * constants.R / constants.Na * self.T.value_si / constants.e,
@@ -6217,7 +7261,14 @@ cdef class PlasmaReactor(ReactionSystem):
             raise ElectronegativeWallRegimeError('C-radial: synthetic no-radial model is not source-qualified')
         radius = 2.405 / np.sqrt(kr)
         radial = components['radial_ep'][cations]
-        source = np.array([radial_source_frequency(radial[k] / kr, self.Te.value_si,
+        wall_electron_temperature = self.Te.value_si
+        if self.eedf_mode:
+            transport = self.eedf_provider.transport(self.eedf_row)
+            epsilon_k_eV = (float(transport['diffusion_N']) /
+                             float(transport['mobility_N']))
+            wall_electron_temperature = (epsilon_k_eV * constants.Na * constants.e /
+                                         constants.R)
+        source = np.array([radial_source_frequency(radial[k] / kr, wall_electron_temperature,
             self._en_core_species[j].molecular_weight.value_si, radius, h)
             for k, j in enumerate(cations)])
         charges = self.species_charges[cations]
@@ -6230,7 +7281,7 @@ cdef class PlasmaReactor(ReactionSystem):
                                 for j in cations), cation_charges=charges.copy(),
             simple_cation_flux=simple.copy(), radial_ep=components['radial_ep'].copy(),
             axial_ep=components['axial_ep'].copy(), volume=V, alpha=minus/ne, h=h,
-            electron_temperature=self.Te.value_si, gas_temperature=self.T.value_si,
+            electron_temperature=wall_electron_temperature, gas_temperature=self.T.value_si,
             geometry_arm=self.electronegative_wall_geometry,
             geometry_components=self.wall_diffusion_components,
             reduced_mobilities=self._compute_mixture_reduced_mobilities(y),
@@ -6393,8 +7444,15 @@ cdef class PlasmaReactor(ReactionSystem):
                 total_cation_wall_loss=float(electron_loss),
                 electron_wall_loss=float(e_loss_rate),
                 wall_charge_flux=float(np.dot(self.species_charges,flux)))
-            self.electronegative_wall_diagnostics.update(
-                closure_scientific_metadata(self.electronegative_wall_model))
+            closure_metadata = closure_scientific_metadata(
+                self.electronegative_wall_model)
+            self.electronegative_wall_diagnostics.update(closure_metadata)
+            if (self.eedf_mode and self.eedf_provider is not None and
+                    self.eedf_provider.development_notice is not None):
+                self.electronegative_wall_diagnostics['closure_scientific_status'] = \
+                    closure_metadata['scientific_status']
+                self.eedf_provider.annotate_development_diagnostic(
+                    self.electronegative_wall_diagnostics)
             components = self.compute_ion_wall_components(y,V)
             if components['radial_ep'] is not None:
                 self.electronegative_wall_diagnostics.update(
@@ -6433,10 +7491,14 @@ cdef class PlasmaReactor(ReactionSystem):
             self.electronegative_wall_diagnostics['floating_potential_e_over_kTe'] = potential
         self.nu_wall_latched = nu
         self.wall_diagnostics_time = t
-        # 2 k_B T_e per lost electron; 2 R T_e * (mol/s) = W. Available from T_e, but
-        # still checked finite before it is marked so -- a field is 'available' only
-        # when it carries a usable number, never on a NaN/Inf that slipped through.
-        self.wall_electron_energy_flux = 2.0 * constants.R * self.Te.value_si * e_loss_rate
+        # Publish the exact energy scale used by the residual: legacy 2*kB*Te,
+        # or the phase-1 EEDF form 2*epsilon_k from this same row.
+        if self.eedf_mode:
+            transport = self.eedf_provider.transport(self.eedf_row)
+            epsilon_k = float(transport['diffusion_N']) / float(transport['mobility_N'])
+            self.wall_electron_energy_flux = 2.0 * constants.Na * constants.e * epsilon_k * e_loss_rate
+        else:
+            self.wall_electron_energy_flux = 2.0 * constants.R * self.Te.value_si * e_loss_rate
         # 'available' is a promise the number is usable, so it is checked at least as hard
         # as the number it vouches for: a wall_flux with any non-finite component (an
         # infinite nu_wall from an extreme mobility, say) is marked 'unavailable', never
@@ -6695,6 +7757,48 @@ cdef class PlasmaReactor(ReactionSystem):
         return any(any(sp in rxn.products or (rxn.reversible and sp in rxn.reactants)
                        for sp in anions) for rxn in self._en_core_reactions)
 
+    cdef _capture_native_callback_failure(self):
+        """Preserve the first Python exception raised inside a native callback."""
+        if self._native_callback_failure is None:
+            error_type, error, traceback = sys.exc_info()
+            self._native_callback_failure = (error, traceback)
+
+    cdef _raise_native_callback_failure(self):
+        error, traceback = self._native_callback_failure
+        raise error.with_traceback(traceback)
+
+    cdef _restore_native_step(self, object snapshot):
+        """Restore the last accepted solver state after a callback failure."""
+        self.t = snapshot[0]
+        self.y[:] = snapshot[1]
+        self.dydt[:] = snapshot[2]
+        self.info[:] = snapshot[3]
+        self.rwork[:] = snapshot[4]
+        self.iwork[:] = snapshot[5]
+        self.idid = snapshot[6]
+
+    cdef _native_solver_step(self, double tout):
+        """Run one DASPK step and surface an exact callback failure immediately."""
+        if self._native_callback_failure is not None:
+            self._raise_native_callback_failure()
+        snapshot = (self.t, self.y.copy(), self.dydt.copy(), self.info.copy(),
+                    self.rwork.copy(), self.iwork.copy(), self.idid)
+        self._native_callback_active = True
+        try:
+            result = ReactionSystem.step(self, tout)
+        except BaseException:
+            self._native_callback_active = False
+            if self._native_callback_failure is not None:
+                self._restore_native_step(snapshot)
+                self._raise_native_callback_failure()
+            raise
+        finally:
+            self._native_callback_active = False
+        if self._native_callback_failure is not None:
+            self._restore_native_step(snapshot)
+            self._raise_native_callback_failure()
+        return result
+
     cpdef advance(self, double tout):
         """Advance, then refuse the accepted state if it left the wall model's domain.
 
@@ -6710,7 +7814,7 @@ cdef class PlasmaReactor(ReactionSystem):
             result = None
             while self.t < tout:
                 previous_t = self.t
-                result = ReactionSystem.step(self, tout)
+                result = self._native_solver_step(tout)
                 self._check_accepted_plasma_domain(self.y)
                 if self.t <= previous_t:
                     raise PlasmaStateError('PlasmaReactor.advance made no progress')
@@ -6767,7 +7871,7 @@ cdef class PlasmaReactor(ReactionSystem):
         looks like one. Latched AFTER ``check_wall_support``, at the accepted step, the
         same accepted-state gate ``advance`` uses -- never from inside the residual.
         """
-        result = ReactionSystem.step(self, tout)
+        result = self._native_solver_step(tout)
         self._check_accepted_plasma_domain(self.y)
         if self.energy_balance:
             self._check_energy_state(self.y)
@@ -6785,17 +7889,20 @@ cdef class PlasmaReactor(ReactionSystem):
         """
         The single equation-of-state implementation:
 
-        .. math:: V = R \\left( N_{heavy} T_{gas} + N_e T_e \\right) / P
+        .. math:: V = R \\left( N_{heavy} T_{gas} + N_e T_{pressure} \\right) / P
 
-        with ``N_e = y[electron_index]`` and ``N_heavy`` the sum of all other
-        core species moles, both read from the supplied state vector. Used at
-        initialization and by every residual and Jacobian evaluation.
+        Here ``T_pressure`` is the prescribed/solved Te on the legacy path and
+        ``2 <epsilon> / (3 k_B)`` from the synchronized table row in EEDF mode.
+        ``N_e = y[electron_index]`` and ``N_heavy`` is the sum of all other core
+        species moles, both read from the supplied state vector.
         """
         cdef double n_total, n_e, volume
         if self.electron_index < 0:
             raise PlasmaStateError(
                 "compute_volume called before the electron state was resolved. "
                 "({0})".format(self._identity()))
+        if self.eedf_mode and self.eedf_provider is not None and len(y) > self.te_index:
+            self._sync_electron_state(y)
         n_total = np.sum(y[:self.num_core_species])
         n_e = y[self.electron_index]
         volume = constants.R * ((n_total - n_e) * self.T.value_si
@@ -6823,7 +7930,9 @@ cdef class PlasmaReactor(ReactionSystem):
             i = self.get_species_index(spec)
             self.y0[i] = mole_frac
         if self.energy_balance:
-            self.y0[self.te_index] = self.te_initial
+            self.y0[self.te_index] = (
+                log(self.electron_kinetics['initial_reduced_field'][0])
+                if self.eedf_mode else self.te_initial)
             # The reactor is a fixed-inventory image of the chamber: its reference volume
             # at t0 (heavy species at Tg; the electrons' share is excluded so the heating
             # does not depend on Te0) scales the chamber's total P_abs onto it, once, before
@@ -6936,10 +8045,29 @@ cdef class PlasmaReactor(ReactionSystem):
     @cython.boundscheck(False)
     def residual(self, double t, np.ndarray[np.float64_t, ndim=1] y, np.ndarray[np.float64_t, ndim=1] dydt,
                  np.ndarray[np.float64_t, ndim=1] senpar = np.zeros(1, float)):
+        """Contain Python failures while DASPK owns the callback boundary."""
+        if not self._native_callback_active:
+            return self._residual(t, y, dydt, senpar)
+        if self._native_callback_failure is not None:
+            result = np.empty(y.shape[0], dtype=float)
+            result.fill(0.0)
+            return result, -2
+        try:
+            return self._residual(t, y, dydt, senpar)
+        except BaseException:
+            self._capture_native_callback_failure()
+            result = np.empty(y.shape[0], dtype=float)
+            result.fill(0.0)
+            return result, -2
+
+    @cython.boundscheck(False)
+    def _residual(self, double t, np.ndarray[np.float64_t, ndim=1] y, np.ndarray[np.float64_t, ndim=1] dydt,
+                  np.ndarray[np.float64_t, ndim=1] senpar = np.zeros(1, float)):
         """
         Return the residual function for the governing DAE system for the
         plasma reaction system.
         """
+        self._development_begin_evaluation(t, y, False)
         cdef np.ndarray[np.int_t, ndim=2] ir, ip, inet
         cdef np.ndarray[np.float64_t, ndim=1] res, kf, kr, knet, delta
         cdef Py_ssize_t num_core_species, num_core_reactions, num_edge_species, num_edge_reactions
@@ -7163,6 +8291,7 @@ cdef class PlasmaReactor(ReactionSystem):
             delta[self.te_index] = self._electron_energy_row(y, V, res) - dydt[self.te_index]
 
         # Return DELTA, IRES.  IRES is set to 1 in order to tell DASPK to evaluate the sensitivity residuals
+        self._development_finish_residual(t, y, delta)
         return delta, 1
 
     def _set_charge_row_scale(self):
@@ -7352,6 +8481,24 @@ cdef class PlasmaReactor(ReactionSystem):
     @cython.boundscheck(False)
     def jacobian(self, double t, np.ndarray[np.float64_t, ndim=1] y, np.ndarray[np.float64_t, ndim=1] dydt,
                  double cj, np.ndarray[np.float64_t, ndim=1] senpar = np.zeros(1, float)):
+        """Contain Python failures while DASPK owns the callback boundary."""
+        if not self._native_callback_active:
+            return self._jacobian(t, y, dydt, cj, senpar)
+        if self._native_callback_failure is not None:
+            result = np.empty((y.shape[0], y.shape[0]), dtype=float)
+            result.fill(0.0)
+            return result
+        try:
+            return self._jacobian(t, y, dydt, cj, senpar)
+        except BaseException:
+            self._capture_native_callback_failure()
+            result = np.empty((y.shape[0], y.shape[0]), dtype=float)
+            result.fill(0.0)
+            return result
+
+    @cython.boundscheck(False)
+    def _jacobian(self, double t, np.ndarray[np.float64_t, ndim=1] y, np.ndarray[np.float64_t, ndim=1] dydt,
+                  double cj, np.ndarray[np.float64_t, ndim=1] senpar = np.zeros(1, float)):
         """
         Return the analytical Jacobian for the reaction system.
 
@@ -7364,6 +8511,7 @@ cdef class PlasmaReactor(ReactionSystem):
         With the electron energy balance on, Te is a state and every kf depends on it,
         so this fixed-Te analytic form does not apply; :meth:`_energy_jacobian` is used.
         """
+        self._development_begin_evaluation(t, y, True)
         if self.energy_balance:
             return self._energy_jacobian(t, y, dydt, cj)
         cdef np.ndarray[np.int_t, ndim=2] ir, ip, rrow, prow

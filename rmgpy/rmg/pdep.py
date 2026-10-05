@@ -87,6 +87,7 @@ _KINETICS_TYPES = frozenset((
     kinetics.Arrhenius, kinetics.ArrheniusEP, kinetics.ArrheniusBM,
     kinetics.ArrheniusChargeTransfer, kinetics.ArrheniusChargeTransferBM,
     kinetics.Marcus, kinetics.TwoTemperaturePlasma, kinetics.ElectronCollisionPlasma,
+    kinetics.EEDFChannel,
     kinetics.BadnellRRArrhenius, kinetics.VoronovEIArrhenius,
     kinetics.PDepArrhenius, kinetics.MultiArrhenius, kinetics.MultiPDepArrhenius,
     kinetics.Chebyshev, kinetics.ThirdBody, kinetics.Lindemann, kinetics.Troe,
@@ -185,7 +186,10 @@ _NUMERIC_RECORD_FIELDS = {
     ScalarQuantity: ('units', 'uncertainty_type'),
     ArrayQuantity: ('units', 'uncertainty_type', 'value_si', 'uncertainty_si'),
 }
-_NUMERIC_SLOT_ALIASES = {'_uncertainty_type': 'uncertainty_type'}
+_NUMERIC_SLOT_ALIASES = {
+    '_uncertainty_type': 'uncertainty_type',
+    '_side': 'side',
+}
 _SIMPLE_RECORD_FIELDS = dict(_NATIVE_RECORD_FIELDS)
 _SIMPLE_RECORD_FIELDS.update(_PYTHON_RECORD_FIELDS)
 _SIMPLE_RECORD_FIELDS.update({
@@ -295,11 +299,54 @@ def _reaction_species_references(reaction, seen=None, atomtype_seen=None):
         reaction, seen, atomtype_seen)
 
 
+def _native_graph_uses_eedf_channel(reaction):
+    """Find an EEDF marker in exact native reaction/kinetics containers."""
+    pending = [reaction]
+    seen = set()
+    reaction_types = _reaction_types()
+    while pending:
+        value = pending.pop()
+        cls = type(value)
+        # The general native walker below owns refusal of unknown schemas.  Do
+        # not compare or hash a class with a custom metaclass in this EEDF
+        # marker pre-scan: either operation can execute user callbacks before
+        # that existing callback-free refusal path sees the object.
+        if type(cls) is not type:
+            continue
+        if cls is kinetics.EEDFChannel:
+            return True
+        if id(value) in seen:
+            continue
+        seen.add(id(value))
+        if cls in reaction_types:
+            fields = {} if cls is rmgpy.reaction.Reaction else vars(value)
+            for name in _REACTION_RATE_FIELDS:
+                child = fields.get(name) if name == 'reverse' else getattr(value, name)
+                if child is not None:
+                    pending.append(child)
+        elif cls in _KINETICS_REFERENCE_FIELDS:
+            for name in (_KINETICS_DATA_FIELDS[cls] + _KINETICS_REFERENCE_FIELDS[cls]):
+                child = getattr(value, name)
+                if not _is_numeric_data(child):
+                    pending.append(child)
+        elif cls is dict:
+            pending.extend(value.keys())
+            pending.extend(value.values())
+        elif cls in (list, tuple, set, frozenset):
+            pending.extend(value)
+    return False
+
+
 def _has_electron_participant(reaction, seen=None, atomtype_seen=None):
     """Recognize known material/metadata electrons; unknown schemas refuse."""
     if type(type(reaction)) is not type or type(reaction) not in _reaction_types():
         return True
     if reaction.electrons:
+        return True
+    # EEDFChannel is itself an electron-channel marker. Persisted libraries
+    # intentionally omit the electron from Ar => Ar* stoichiometry, and exact
+    # native wrappers can carry it at arbitrary depth.
+    if _native_graph_uses_eedf_channel(reaction):
         return True
     if type(reaction) is rmgpy.reaction.Reaction:
         simple = rmgpy.reaction._simple_native_channel_verdict(

@@ -5302,6 +5302,13 @@
       "test/rmgpy/data/kinetics/superelasticCensusTest.py::test_structural_identity_has_no_reaction_direction"
     ]
   },
+  "rmgpy/yaml_cantera1.py::write_cantera::reaction-io": {
+    "verdict": "guarded",
+    "reason": "The writer delegates every supplied reaction to reaction_to_dicts, whose original kinetics and declared direction are checked before Cantera conversion or bytes are written.",
+    "tests": [
+      "test/rmgpy/data/kinetics/superelasticRework3Test.py::test_exporter_checks_original_declaration"
+    ]
+  },
   "rmgpy/yaml_cantera2.py::_collect_reaction_entries::chemkin_duplicate_flags#1": {
     "verdict": "guarded",
     "reason": "Reaction serializer checks original kinetics before converting; RMS refuses resolved Te fitting and explicitly retains reversible=False.",

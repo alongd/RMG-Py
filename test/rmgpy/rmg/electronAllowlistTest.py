@@ -124,6 +124,12 @@ def test_shipped_rate_ordinary_network_control(cls):
     reaction = helpers.cell_reaction(helpers.CENSUS_CELLS[0], False)
     reaction.kinetics = helpers.make_rate(cls)
     network = pdep.PDepNetwork(source=reaction.reactants[:])
+    if cls is kinetics.EEDFChannel:
+        with pytest.raises(NetworkError, match='Electron reactions cannot enter pressure-dependent networks'):
+            network.add_path_reaction(reaction)
+        assert network.path_reactions == []
+        assert pdep._has_electron_participant(reaction)
+        return
     network.add_path_reaction(reaction)
     assert network.path_reactions == [reaction]
     assert not pdep._has_electron_participant(reaction)
@@ -400,6 +406,39 @@ def test_unknown_record_metaclass_does_not_execute_hash_or_equality(cls):
     reaction.rank = Foreign()
     with pytest.raises(NetworkError, match='pressure-dependent networks'):
         pdep.PDepNetwork().add_path_reaction(reaction)
+
+
+@pytest.mark.parametrize('location', ('arrhenius_solute', 'multi_arrhenius_child'))
+def test_eedf_prescan_refuses_unknown_kinetics_child_without_metaclass_callbacks(location):
+    from rmgpy.reaction import Reaction
+
+    calls = []
+
+    class Metadata(type):
+        def __hash__(self):
+            calls.append('hash')
+            return type.__hash__(self)
+
+        def __eq__(self, other):
+            calls.append('eq')
+            return type.__eq__(self, other)
+
+    class Foreign(metaclass=Metadata):
+        pass
+
+    rate = kinetics.Arrhenius(A=(1, 's^-1'))
+    if location == 'arrhenius_solute':
+        rate.solute = Foreign()
+    else:
+        rate = kinetics.MultiArrhenius(arrhenius=[rate])
+        rate.arrhenius.append(Foreign())
+    reaction = Reaction(
+        reactants=[Species().from_smiles('C')],
+        products=[Species().from_smiles('[CH3]')], kinetics=rate)
+
+    with pytest.raises(NetworkError, match='pressure-dependent networks'):
+        pdep.PDepNetwork().add_path_reaction(reaction)
+    assert calls == []
 
 
 

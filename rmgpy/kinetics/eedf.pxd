@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 ###############################################################################
 #                                                                             #
 # RMG - Reaction Mechanism Generator                                          #
@@ -27,16 +25,14 @@
 #                                                                             #
 ###############################################################################
 
-from rmgpy.kinetics.model import KineticsModel, PDepKineticsModel, TunnelingModel, \
-                   get_rate_coefficient_units_from_reaction_order, get_reaction_order_from_rate_coefficient_units
-from rmgpy.kinetics.arrhenius import Arrhenius, ArrheniusEP, PDepArrhenius, MultiArrhenius, MultiPDepArrhenius, \
-                   ArrheniusBM, ArrheniusChargeTransfer, ArrheniusChargeTransferBM, Marcus, \
-                   TwoTemperaturePlasma, ElectronCollisionPlasma, BadnellRRArrhenius, VoronovEIArrhenius
-from rmgpy.kinetics.chebyshev import Chebyshev
-from rmgpy.kinetics.eedf import EEDFChannel
-from rmgpy.kinetics.falloff import ThirdBody, Lindemann, Troe
-from rmgpy.kinetics.kineticsdata import KineticsData, PDepKineticsData
-from rmgpy.kinetics.tunneling import Wigner, Eckart
-from rmgpy.kinetics.surface import SurfaceArrhenius, SurfaceArrheniusBEP, \
-                    StickingCoefficient, StickingCoefficientBEP, \
-                    SurfaceChargeTransfer, SurfaceChargeTransferBEP
+from rmgpy.kinetics.model cimport KineticsModel
+
+
+cdef class EEDFChannel(KineticsModel):
+
+    cdef public object process
+    cdef public object collision_set
+    cdef str _side
+
+    cpdef double get_rate_coefficient(self, double T, double P=*) except -1
+    cpdef bint is_identical_to(self, KineticsModel other_kinetics) except -2

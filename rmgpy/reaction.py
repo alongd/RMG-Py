@@ -747,9 +747,10 @@ class Reaction:
 
         1. **The forward rate is not a function of Tgas alone.** Kinetics that declare a
            dependence on a second state variable -- the electron temperature or the
-           electron density -- are evaluated at a closure ``Keq(Tgas)`` does not carry, so
-           ``kf(Tgas, Te) / Keq(Tgas)`` mixes two thermal closures and satisfies detailed
-           balance at neither.
+           electron density -- are evaluated at a closure ``Keq(Tgas)`` does not carry.
+           An EEDF-owned marker does not carry a standalone forward rate at all; its
+           provider selects the rate from the EEDF state. In both cases dividing by
+           ``Keq(Tgas)`` would mix incompatible closures rather than reconstruct a reverse.
 
         2. **The reaction transfers charge whose reference Keq(Tgas) does not carry.**
            ``get_equilibrium_constant`` sums free energies over the explicit reactant and
@@ -778,6 +779,12 @@ class Reaction:
 
         kinetics = self.kinetics
         kinetics_name = 'None' if kinetics is None else kinetics.__class__.__name__
+
+        if getattr(kinetics, 'uses_eedf', False):
+            return ('its kinetics {0} is supplied by an EEDF provider rather than a '
+                    'standalone gas-temperature rate law, so kf(Tgas)/Keq(Tgas) '
+                    'cannot reconstruct its reverse without a qualified reverse EEDF '
+                    'channel'.format(kinetics_name))
 
         resolved = self.get_resolved_species()
         # Recursive leaf inspection extends the resolved-state policy. Without a

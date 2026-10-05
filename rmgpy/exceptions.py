@@ -246,6 +246,15 @@ class MechanismWriterError(OutputError):
     pass
 
 
+class EEDFExportError(MechanismWriterError):
+    """
+    Raised when a mechanism writer encounters EEDF-owned kinetics that have
+    not been qualified into a rate representation supported by the target
+    format.
+    """
+    pass
+
+
 class CanteraThermoWriteError(OutputError):
     """
     Raised when the Cantera writer cannot represent a species's thermo, e.g. a

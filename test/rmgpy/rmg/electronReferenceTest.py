@@ -42,7 +42,11 @@ import rmgpy.kinetics as kinetics_module
 from rmgpy.data.base import Entry
 from rmgpy.data.kinetics.library import KineticsLibrary, LibraryReaction
 from rmgpy.exceptions import DatabaseError, NetworkError
-from rmgpy.kinetics import Arrhenius, Lindemann, Troe, ThirdBody
+from rmgpy.kinetics import (
+    Arrhenius, EEDFChannel, Lindemann, MultiArrhenius, MultiPDepArrhenius,
+    PDepArrhenius, Troe, ThirdBody,
+)
+from rmgpy.reaction import Reaction
 from rmgpy.kinetics.model import KineticsModel
 from rmgpy.rmg.model import CoreEdgeReactionModel
 from rmgpy.rmg.pdep import PDepNetwork
@@ -214,6 +218,37 @@ def ordinary_cell_snapshot(cell):
     return {'cell': cell_id(cell), 'registries': registry_contents(model)}
 
 
+@pytest.mark.parametrize('wrapper', ('direct', 'multi', 'pdep', 'multi_pdep'))
+def test_implicit_electron_eedf_channel_refuses_before_network_mutation(wrapper):
+    """The persisted Ar => Ar* marker has no explicit electron participant."""
+    source = Species(label='Ar').from_smiles('[Ar]')
+    excited = Species(label='Ar*').from_smiles('[Ar]')
+    channel = EEDFChannel('Ar -> Ar*', 'argon-lxcat-v1', 'ine')
+    if wrapper == 'multi':
+        rate = MultiArrhenius(arrhenius=[channel])
+    elif wrapper == 'pdep':
+        rate = PDepArrhenius(pressures=([1.0], 'bar'), arrhenius=[channel])
+    elif wrapper == 'multi_pdep':
+        rate = MultiPDepArrhenius(arrhenius=[
+            PDepArrhenius(pressures=([1.0], 'bar'), arrhenius=[channel])])
+    else:
+        rate = channel
+    reaction = Reaction(
+        reactants=[source],
+        products=[excited],
+        kinetics=rate,
+        electrons=0,
+        reversible=False,
+    )
+    network = PDepNetwork(source=[source])
+    before = dict(network.__dict__)
+
+    with pytest.raises(NetworkError, match='Electron reactions cannot enter pressure-dependent networks'):
+        network.add_path_reaction(reaction)
+
+    assert network.__dict__ == before
+
+
 @pytest.mark.parametrize('order', [LIBRARIES])
 @pytest.mark.parametrize('cell', CENSUS_CELLS, ids=cell_id)
 @pytest.mark.parametrize('electron', (True, False), ids=('electron', 'ordinary'))
@@ -221,7 +256,7 @@ def test_species_reference_census_cell(database, order, cell, electron):
     model = CoreEdgeReactionModel()
     model.pressure_dependence = SimpleNamespace(maximum_atoms=None)
     reaction = cell_reaction(cell, electron)
-    if electron:
+    if electron or cell.holder is EEDFChannel:
         before, candidate = admission_state(model), pickle.dumps(reaction)
         with pytest.raises(NetworkError, match='Electron reactions cannot enter pressure-dependent networks') as error:
             admit_cell(model, reaction, cell)
@@ -664,7 +699,7 @@ def test_circular_pickle_census_first_use(cell, slot, root_kind, electron):
                     if root_kind == 'reaction_model' else restored.core.reactions[0])
         return reaction.network
 
-    if electron:
+    if electron or cell.holder is EEDFChannel:
         with pytest.raises(NetworkError, match='Electron reactions cannot enter pressure-dependent networks') as error:
             network = restored_network()
             # The complete graph is available here, including reactions whose

@@ -115,6 +115,12 @@ class SimulationProfileWriter(object):
                 json.dump(manifest, stream, indent=2, allow_nan=False)
                 stream.write('\n')
 
+        if getattr(reaction_system, 'eedf_mode', False):
+            with open(filename[:-4] + '.eedf.json', 'w') as stream:
+                json.dump(reaction_system.eedf_run_manifest(), stream, indent=2,
+                          sort_keys=True, allow_nan=False)
+                stream.write('\n')
+
         with open(filename, 'w') as csvfile:
             worksheet = csv.writer(csvfile)
 

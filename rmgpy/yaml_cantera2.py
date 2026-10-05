@@ -68,7 +68,7 @@ from rmgpy.data.kinetics.library import LibraryReaction
 from rmgpy.electron_balance import (check_electron_balance, check_electron_reactant_order,
                                     expand_electrons, get_electron_species,
                                     is_isomorphic_same_charge, potential_dependence_is_inert)
-from rmgpy.exceptions import CanteraThermoWriteError, MechanismWriterError
+from rmgpy.exceptions import CanteraThermoWriteError, EEDFExportError, MechanismWriterError
 from rmgpy.kinetics import (
     Arrhenius, PDepArrhenius, MultiArrhenius, MultiPDepArrhenius,
     Chebyshev, Troe, Lindemann, ThirdBody,
@@ -121,6 +121,8 @@ class CanteraWriter2(object):
         if self.config is not None and not self.config.should_write(
                 rmg.reaction_model.iteration_num, rmg.is_final_save):
             return
+        from rmgpy.eedf_export import require_non_eedf_reactor_mode
+        require_non_eedf_reactor_mode(rmg, 'Cantera')
         save_cantera_files(rmg, config=self.config)
 
 
@@ -291,6 +293,11 @@ def generate_cantera_data(species_list,
     from rmgpy.thermo.state import checked_thermo
     for species in species_list:
         checked_thermo(species)
+    reaction_list = list(reaction_list)
+    if any(getattr(reaction.kinetics, 'uses_eedf', False) for reaction in reaction_list):
+        raise EEDFExportError(
+            'EEDF export to Cantera requires qualification into a supported non-EEDF rate.'
+        )
 
     # --- 1. Header & Units ---
     # We output everything in SI units.

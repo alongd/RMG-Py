@@ -1533,12 +1533,77 @@ budget, or generate an implicit reduced envelope.
 	``-single-bath-approximation`` suffix.  A non-finite sheath term is instead ``None`` with an
 	``unavailable`` label, so direct serialization with ``allow_nan=False`` remains valid.
 
+.. _plasmaeedfkinetics:
+
+Table-driven electron kinetics
+------------------------------
+
+``electronKinetics`` selects a fingerprinted LoKI-B table as the single source of the electron
+energy distribution, rate coefficients, transport, and electron-energy terms.  In this mode the
+initial coordinate is the reduced field, not an electron temperature::
+
+	plasmaReactor(
+	    ...
+	    electronKinetics={
+	        'provider': 'loki-table',
+	        'table': ('tables/argon-o2.h5',
+	                  '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'),
+	        'branch': 'B1',
+	        'initialReducedField': (16.0, 'Td'),
+	        'empiricalLaws': {
+	            'PlasmaArgon:90': {
+	                'evaluate_at': 'Te_eff',
+	                'class': 'C',
+	                'basis': 'I-318 row 7',
+	                'sensitivity': True,
+	            },
+	        },
+	    },
+	    electronEnergyBalance={
+	        'absorbedPower': (0.5, 'W'),
+	        'sheath': 'floatingWall',
+	    },
+	)
+
+The provider is currently ``'loki-table'``.  ``table`` is a non-empty path paired with the
+table's 64-character hexadecimal SHA-256 fingerprint; a relative path is resolved beside the
+input deck, not against the process's working directory. ``branch`` is the non-empty table branch
+identifier.  ``initialReducedField`` is required, must be finite and positive, and is written in
+Townsend (``'Td'``).  ``electronTemperature`` must be omitted (or ``None``): the table row selected
+by the reduced field supplies the effective electron temperature, so declaring both would create
+two coordinate authorities.
+
+``electronEnergyBalance`` is required in table-driven mode.  ``electronDensity`` is temporarily
+refused: converting a requested number density to the initial mole fraction requires the mean
+energy of the initial EEDF row in the two-temperature pressure inversion.  Until that inversion is
+available, state the initial electron mole fraction explicitly in ``initialMoleFractions``.
+
+``empiricalLaws`` is a mapping, which may be empty.  Every declared law states that it is evaluated
+at ``'Te_eff'``, gives its ``'class'`` as ``'A'``, ``'B'``, or ``'C'``, supplies a non-empty
+provenance ``'basis'``, and sets ``'sensitivity'`` to a Boolean.  The declaration is explicit
+because these are electron-temperature laws not owned by the EEDF table. Entry keys are stable,
+non-empty strings without leading or trailing whitespace.
+
+In table-driven mode ``electronEnergyBalance`` requires ``absorbedPower`` and ``sheath``, accepts
+the optional ``chamberVolume``, and refuses ``elasticCollisions`` because that term comes from the
+selected table row.  ``electronEnergies`` is optional and reserved for non-table reactions that
+contain an electron; table-owned and superelastic declarations are refused to prevent double
+counting.  The usual chamber-volume rule is unchanged: a cylinder or sphere supplies its volume,
+while a geometry without a finite volume requires ``chamberVolume``; declaring both is refused.  A
+charged-particle wall is still required.
+
+Saving an EEDF input preserves ``electronKinetics`` and the energy declaration.  The saved block
+omits ``electronTemperature`` and never reconstructs ``elasticCollisions``; it round-trips any
+non-table ``electronEnergies`` declarations, so re-reading retains the same reduced-field
+coordinate authority and heavy-particle electron-energy accounting.
+
 .. _plasmaenergybalance:
 
 Solving the Electron Temperature: Electron Energy Balance
 ---------------------------------------------------------
 
-With a prescribed ``electronTemperature`` the particle balance fixes Te and leaves the electron
+On the legacy path (without ``electronKinetics``), a prescribed ``electronTemperature`` fixes Te
+and leaves the electron
 density free.  ``electronEnergyBalance`` closes the discharge instead: Te becomes a solved state
 (``electronTemperature`` is its initial value) from
 

@@ -21,6 +21,7 @@ Class                   Description
 :class:`KineticsData`   A kinetics model based on a set of discrete rate coefficient points in temperature
 :class:`Arrhenius`      A kinetics model based on the (modified) Arrhenius expression
 :class:`MultiArrhenius` A kinetics model based on a sum of :class:`Arrhenius` expressions
+:class:`EEDFChannel`    A marker mapping an electron-collision reaction to a qualified EEDF table channel
 ======================= ========================================================
 
 
@@ -87,3 +88,4 @@ Class                        Description
     eckart
     surfacearrhenius
     stickingcoefficient
+    eedf

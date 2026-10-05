@@ -51,7 +51,8 @@ from rmgpy.data.kinetics.library import LibraryReaction
 from rmgpy.electron_balance import (check_electron_balance, check_electron_reactant_order,
                                     expand_electrons, get_electron_placement_counts,
                                     get_electron_species, potential_dependence_is_inert)
-from rmgpy.exceptions import ChemkinError, ChemkinIdentifierCollisionError, MechanismWriterError
+from rmgpy.exceptions import (ChemkinError, ChemkinIdentifierCollisionError,
+                              EEDFExportError, MechanismWriterError)
 from rmgpy.molecule.element import get_element
 from rmgpy.quantity import Quantity, QuantityError
 from rmgpy.reaction import Reaction
@@ -2228,6 +2229,10 @@ def write_kinetics_entry(reaction, species_list, verbose=True, java_library=Fals
     """
     # Check the original declaration before expanding Multi* or converting TDEP.
     reaction.check_resolved_species_reversibility()
+    if getattr(reaction.kinetics, 'uses_eedf', False):
+        raise EEDFExportError(
+            'EEDF export to Chemkin requires qualification into a supported non-EEDF rate.'
+        )
 
     from rmgpy.export import SpeciesReferences, resolve_species_reference, validate_reaction_references
     use_species_list = bool(species_list)
@@ -3460,4 +3465,6 @@ class ChemkinWriter(object):
         if self.config is not None and not self.config.should_write(
                 rmg.reaction_model.iteration_num, rmg.is_final_save):
             return
+        from rmgpy.eedf_export import require_non_eedf_reactor_mode
+        require_non_eedf_reactor_mode(rmg, 'Chemkin')
         save_chemkin_files(rmg, config=self.config)

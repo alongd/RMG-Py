@@ -1,0 +1,6 @@
+Ar
+1 Ar u0 p4 c0
+
+Ar*
+electronicstate Ar(4s)
+1 Ar u0 p4 c0

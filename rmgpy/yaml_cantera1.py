@@ -60,7 +60,7 @@ def _multiline_str_representer(dumper, data):
 
 Dumper.add_representer(str, _multiline_str_representer)
 
-from rmgpy.exceptions import MechanismWriterError
+from rmgpy.exceptions import EEDFExportError, MechanismWriterError
 from rmgpy.species import Species
 from rmgpy.kinetics.arrhenius import (
     MultiArrhenius,
@@ -132,6 +132,11 @@ def write_cantera(
     from rmgpy.thermo.state import checked_thermo
     for species in spcs:
         checked_thermo(species)
+    rxns = list(rxns)
+    if any(getattr(rxn.kinetics, 'uses_eedf', False) for rxn in rxns):
+        raise EEDFExportError(
+            'EEDF export to Cantera requires qualification into a supported non-EEDF rate.'
+        )
 
     # CanteraWriter1 has no electron-aware equation path: reaction_to_dicts overwrites Cantera's
     # equation with _build_equation_string, built from raw obj.reactants/products, which omits any
@@ -706,6 +711,8 @@ class CanteraWriter1(object):
         if self.config is not None and not self.config.should_write(
                 rmg.reaction_model.iteration_num, rmg.is_final_save):
             return
+        from rmgpy.eedf_export import require_non_eedf_reactor_mode
+        require_non_eedf_reactor_mode(rmg, 'Cantera')
         save_edge = self.config.save_edge if (self.config and self.config.save_edge is not None) else rmg.save_edge_species
 
         num_species = len(rmg.reaction_model.core.species)

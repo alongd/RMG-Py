@@ -29,6 +29,7 @@
 
 import logging
 import os
+from collections.abc import Mapping
 from copy import deepcopy
 
 import numpy as np
@@ -75,6 +76,7 @@ from rmgpy.util import as_list
 
 rmg = None
 species_dict = {}
+_input_file_directory = None
 
 
 def database(
@@ -942,7 +944,122 @@ def _plasma_wall_kwargs(chamberGeometry, ionReducedMobility, mobilityReferenceDe
 
 _PLASMA_ENERGY_BALANCE_KEYS = ('absorbedPower', 'sheath', 'elasticCollisions', 'electronEnergies',
                                'chamberVolume')
+_PLASMA_EEDF_ENERGY_BALANCE_KEYS = ('absorbedPower', 'sheath', 'chamberVolume',
+                                    'electronEnergies')
 _PLASMA_SHEATH_MODELS = {'floatingWall': 'floating_wall'}
+_PLASMA_ELECTRON_TEMPERATURE_UNSET = object()
+
+
+def _plasma_electron_kinetics(electronKinetics):
+    """Validate and normalize the public EEDF kinetics declaration."""
+    if electronKinetics is None:
+        return None
+    if not isinstance(electronKinetics, Mapping):
+        raise InputError("electronKinetics must be a mapping; got {0!r}.".format(electronKinetics))
+
+    keys = ('provider', 'table', 'branch', 'initialReducedField', 'empiricalLaws')
+    unknown = sorted(set(electronKinetics) - set(keys))
+    if unknown:
+        raise InputError(
+            "electronKinetics has unsupported key(s) {0}; the keys are {1}.".format(
+                unknown, list(keys)))
+    missing = [key for key in keys if key not in electronKinetics]
+    if missing:
+        raise InputError("electronKinetics is missing required key(s) {0}.".format(missing))
+
+    provider = electronKinetics['provider']
+    if provider != 'loki-table':
+        raise InputError(
+            "electronKinetics provider must be 'loki-table'; got {0!r}.".format(provider))
+
+    table = electronKinetics['table']
+    if not isinstance(table, (tuple, list)) or len(table) != 2:
+        raise InputError(
+            "electronKinetics table must be a (path, sha256) pair; got {0!r}.".format(table))
+    path, fingerprint = table
+    if not isinstance(path, str) or not path.strip():
+        raise InputError(
+            "electronKinetics table path must be a non-empty string; got {0!r}.".format(path))
+    if (not isinstance(fingerprint, str) or len(fingerprint) != 64
+            or any(char not in '0123456789abcdefABCDEF' for char in fingerprint)):
+        raise InputError(
+            "electronKinetics table sha256 must be exactly 64 hexadecimal characters; "
+            "got {0!r}.".format(fingerprint))
+    path = os.path.expandvars(path)
+    if not os.path.isabs(path) and _input_file_directory is not None:
+        path = os.path.abspath(os.path.join(_input_file_directory, path))
+
+    branch = electronKinetics['branch']
+    if not isinstance(branch, str) or not branch.strip():
+        raise InputError(
+            "electronKinetics branch must be a non-empty string; got {0!r}.".format(branch))
+
+    initial_field = electronKinetics['initialReducedField']
+    if not isinstance(initial_field, (tuple, list)) or len(initial_field) != 2:
+        raise InputError(
+            "electronKinetics initialReducedField must be a (value, 'Td') pair; got "
+            "{0!r}.".format(initial_field))
+    try:
+        field_value = float(initial_field[0])
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise InputError(
+            "electronKinetics initialReducedField must be a finite positive value in Td; "
+            "got {0!r} ({1!s}).".format(initial_field, exc))
+    # Townsend is the conventional reduced-field unit (1 Td = 1e-21 V m^2), but
+    # it is deliberately not a general RMG Quantity unit: the coordinate belongs
+    # to the EEDF provider. Keep the DSL strict and validate its literal unit here.
+    if (isinstance(initial_field[0], bool) or initial_field[1] != 'Td'
+            or not np.isfinite(field_value) or field_value <= 0.0):
+        raise InputError(
+            "electronKinetics initialReducedField must be a finite positive value in Td; "
+            "got {0!r}.".format(initial_field))
+
+    empirical_laws = electronKinetics['empiricalLaws']
+    if not isinstance(empirical_laws, Mapping):
+        raise InputError(
+            "electronKinetics empiricalLaws must be a mapping; got {0!r}.".format(empirical_laws))
+    normalized_laws = {}
+    law_keys = ('evaluate_at', 'class', 'basis', 'sensitivity')
+    for entry, declaration in empirical_laws.items():
+        if not isinstance(entry, str) or not entry or entry != entry.strip():
+            raise InputError(
+                "electronKinetics empiricalLaws keys must be non-empty stable strings "
+                "without leading or trailing whitespace; got {0!r}.".format(entry))
+        if not isinstance(declaration, Mapping):
+            raise InputError(
+                "electronKinetics empiricalLaws entry {0!r} must be a mapping; got "
+                "{1!r}.".format(entry, declaration))
+        unknown = sorted(set(declaration) - set(law_keys))
+        missing = [key for key in law_keys if key not in declaration]
+        if unknown or missing:
+            raise InputError(
+                "electronKinetics empiricalLaws entry {0!r} must declare exactly {1}; "
+                "missing {2}, unsupported {3}.".format(entry, list(law_keys), missing, unknown))
+        if declaration['evaluate_at'] != 'Te_eff':
+            raise InputError(
+                "electronKinetics empiricalLaws entry {0!r} evaluate_at must be "
+                "'Te_eff'; got {1!r}.".format(entry, declaration['evaluate_at']))
+        if declaration['class'] not in ('A', 'B', 'C'):
+            raise InputError(
+                "electronKinetics empiricalLaws entry {0!r} class must be A, B, or C; "
+                "got {1!r}.".format(entry, declaration['class']))
+        if not isinstance(declaration['basis'], str) or not declaration['basis'].strip():
+            raise InputError(
+                "electronKinetics empiricalLaws entry {0!r} basis must be a non-empty "
+                "string; got {1!r}.".format(entry, declaration['basis']))
+        if not isinstance(declaration['sensitivity'], bool):
+            raise InputError(
+                "electronKinetics empiricalLaws entry {0!r} sensitivity must be bool; "
+                "got {1!r}.".format(entry, declaration['sensitivity']))
+        normalized_laws[entry] = dict(declaration)
+
+    return {
+        'provider': provider,
+        'table': (path, fingerprint.lower()),
+        'branch': branch,
+        'initial_reduced_field': (field_value, 'Td'),
+        'empirical_laws': normalized_laws,
+    }
 
 
 def _plasma_chamber_volume(chamberGeometry):
@@ -960,7 +1077,8 @@ def _plasma_chamber_volume(chamberGeometry):
     return None
 
 
-def _plasma_energy_balance_kwargs(electronEnergyBalance, chamberGeometry, wall_kwargs):
+def _plasma_energy_balance_kwargs(electronEnergyBalance, chamberGeometry, wall_kwargs,
+                                  eedf_mode=False):
     """
     Turn the ``electronEnergyBalance`` block into the reactor's
     ``electron_energy_balance`` declaration. Shape, key names and the chamber volume are
@@ -975,16 +1093,28 @@ def _plasma_energy_balance_kwargs(electronEnergyBalance, chamberGeometry, wall_k
             "wall is where electrons and ions carry their energy out; a wall needs BOTH "
             "chamberGeometry and ionReducedMobility.")
     if not isinstance(electronEnergyBalance, dict):
+        keys = (_PLASMA_EEDF_ENERGY_BALANCE_KEYS if eedf_mode
+                else _PLASMA_ENERGY_BALANCE_KEYS)
         raise InputError(
             "electronEnergyBalance must be a dict with the keys {0}; got {1!r}.".format(
-                list(_PLASMA_ENERGY_BALANCE_KEYS), electronEnergyBalance))
-    unknown = sorted(set(electronEnergyBalance) - set(_PLASMA_ENERGY_BALANCE_KEYS))
+                list(keys), electronEnergyBalance))
+    keys = (_PLASMA_EEDF_ENERGY_BALANCE_KEYS if eedf_mode
+            else _PLASMA_ENERGY_BALANCE_KEYS)
+    unknown = sorted(set(electronEnergyBalance) - set(keys))
     if unknown:
+        if eedf_mode:
+            raise InputError(
+                "electronEnergyBalance has unsupported key(s) {0} in electronKinetics "
+                "mode; only {1} are accepted. elasticCollisions comes from the EEDF "
+                "table row; electronEnergies, when present, is only for non-table "
+                "heavy-particle electron reactions.".format(unknown, list(keys)))
         raise InputError(
             "electronEnergyBalance has unsupported key(s) {0}; the keys are {1}. The only "
             "discharge closure implemented is a specified absorbedPower (a current + "
             "sheath circuit closure is not built).".format(unknown, list(_PLASMA_ENERGY_BALANCE_KEYS)))
-    for key in ('absorbedPower', 'sheath', 'elasticCollisions', 'electronEnergies'):
+    required = (('absorbedPower', 'sheath') if eedf_mode
+                else ('absorbedPower', 'sheath', 'elasticCollisions', 'electronEnergies'))
+    for key in required:
         if key not in electronEnergyBalance:
             raise InputError("electronEnergyBalance is missing {0!r}.".format(key))
     sheath = electronEnergyBalance['sheath']
@@ -1005,18 +1135,28 @@ def _plasma_energy_balance_kwargs(electronEnergyBalance, chamberGeometry, wall_k
             "chamberGeometry ({0!r}) does not give one; state it as chamberVolume=(V, "
             "'m^3').".format(chamberGeometry))
     volume = (from_geometry, 'm^3') if stated is None else stated
+    result = {'electron_energy_balance': {
+        'absorbed_power': electronEnergyBalance['absorbedPower'],
+        'chamber_volume': volume,
+        'sheath': _PLASMA_SHEATH_MODELS[sheath],
+    }}
+    if eedf_mode:
+        energies = electronEnergyBalance.get('electronEnergies', {})
+        if not isinstance(energies, dict):
+            raise InputError("electronEnergyBalance 'electronEnergies' must be a dict; got {0!r}.".format(energies))
+        if 'electronEnergies' in electronEnergyBalance:
+            result['electron_energy_balance']['electron_energies'] = dict(energies)
+        return result
     energies = electronEnergyBalance['electronEnergies']
     elastic = electronEnergyBalance['elasticCollisions']
     for name, value in (('electronEnergies', energies), ('elasticCollisions', elastic)):
         if not isinstance(value, dict):
             raise InputError("electronEnergyBalance {0!r} must be a dict; got {1!r}.".format(name, value))
-    return {'electron_energy_balance': {
-        'absorbed_power': electronEnergyBalance['absorbedPower'],
-        'chamber_volume': volume,
-        'sheath': _PLASMA_SHEATH_MODELS[sheath],
+    result['electron_energy_balance'].update({
         'elastic_collisions': {label: dict(fit) for label, fit in elastic.items()},
         'electron_energies': dict(energies),
-    }}
+    })
+    return result
 
 
 def _plasma_species_charge(label, species_dict, why):
@@ -1047,7 +1187,7 @@ def _plasma_species_charge(label, species_dict, why):
 def plasma_reactor(temperature,
                    pressure,
                    initialMoleFractions,
-                   electronTemperature,
+                   electronTemperature=_PLASMA_ELECTRON_TEMPERATURE_UNSET,
                    electronDensity=None,
                    chargeBalanceSpecies=None,
                    chamberGeometry=None,
@@ -1076,7 +1216,8 @@ def plasma_reactor(temperature,
                    electronegativeWallGeometry='fullFrequency',
                    anionReducedMobilities=None,
                    wallDiffusionComponents=None,
-                   electronegativeWallQualification=None):
+                   electronegativeWallQualification=None,
+                   electronKinetics=None):
     """
     Define a two-temperature plasma batch reactor (:class:`PlasmaReactor`) from an
     input file.
@@ -1279,6 +1420,32 @@ def plasma_reactor(temperature,
         electron density come out right would work, and would mean nothing.
     """
     logging.debug('Found PlasmaReactor reaction system')
+
+    electron_kinetics = _plasma_electron_kinetics(electronKinetics)
+    if electron_kinetics is not None:
+        if (electronTemperature is not _PLASMA_ELECTRON_TEMPERATURE_UNSET
+                and electronTemperature is not None):
+            raise InputError(
+                "electronTemperature must be absent or None when electronKinetics is "
+                "declared; initialReducedField is the EEDF coordinate authority.")
+        if electronDensity is not None:
+            raise InputError(
+                "electronDensity cannot be combined with electronKinetics until the "
+                "initial EEDF table row supplies the pressure-inversion mean energy; "
+                "state an explicit initial electron mole fraction instead.")
+        if electronEnergyBalance is None:
+            raise InputError(
+                "electronEnergyBalance is required when electronKinetics is declared; "
+                "the solved reduced field needs absorbedPower and sheath closure.")
+        # PlasmaReactor historically requires a Te-shaped fourth constructor argument.
+        # In EEDF mode this gas-temperature value is only a construction placeholder;
+        # the table row selected by initialReducedField supplies Te_eff.
+        electronTemperature = temperature
+    elif electronTemperature is _PLASMA_ELECTRON_TEMPERATURE_UNSET:
+        # Preserve the pre-electronKinetics public failure mode for legacy calls
+        # that omit this historically required argument.
+        raise TypeError(
+            "plasma_reactor() missing 1 required positional argument: 'electronTemperature'")
 
     if thermoSourceAssertions is None:
         thermoSourceAssertions = []
@@ -1760,8 +1927,11 @@ def plasma_reactor(temperature,
                         "{2}.".format(role, name, sorted(species_dict.keys())))
         wall_kwargs['wall_neutral_diffusion'] = dict(wallNeutralDiffusion)
 
-    wall_kwargs.update(_plasma_energy_balance_kwargs(electronEnergyBalance, chamberGeometry,
-                                                     wall_kwargs))
+    wall_kwargs.update(_plasma_energy_balance_kwargs(
+        electronEnergyBalance, chamberGeometry, wall_kwargs,
+        eedf_mode=electron_kinetics is not None))
+    if electron_kinetics is not None:
+        wall_kwargs['electron_kinetics'] = electron_kinetics
 
     # Every argument passed by keyword: PlasmaReactor's fourth positional argument is
     # Te, not n_sims as in simple_reactor -- do not copy that call shape.
@@ -2947,7 +3117,7 @@ def read_input_file(path, rmg0):
     Read an RMG input file at `path` on disk into the :class:`RMG` object 
     `rmg`.
     """
-    global rmg, species_dict, mol_to_frag
+    global rmg, species_dict, mol_to_frag, _input_file_directory
 
     full_path = os.path.abspath(os.path.expandvars(path))
     try:
@@ -3015,6 +3185,8 @@ def read_input_file(path, rmg0):
     thermo_libraries = rmg0.thermo_libraries if isinstance(rmg0.thermo_libraries, list) else None
     reaction_libraries = rmg0.reaction_libraries if isinstance(rmg0.reaction_libraries, list) else None
 
+    previous_input_directory = _input_file_directory
+    _input_file_directory = os.path.dirname(full_path)
     try:
         exec(f.read(), global_context, local_context)
     except (NameError, TypeError, SyntaxError) as e:
@@ -3022,6 +3194,7 @@ def read_input_file(path, rmg0):
         logging.exception(e)
         raise
     finally:
+        _input_file_directory = previous_input_directory
         f.close()
 
     rmg.reaction_model.defer_vibrational_validation = False
@@ -3189,18 +3362,33 @@ def _format_plasma_wall(system):
             lines.append('    wallBathThreshold = {0!r},\n'.format(system.wall_bath_threshold))
         if system.wall_bath_lumping:
             lines.append('    wallBathLumping = {0!r},\n'.format(dict(system.wall_bath_lumping)))
+    if getattr(system, 'electron_kinetics', None) is not None:
+        declaration = system.electron_kinetics
+        lines.append('    electronKinetics = {0!r},\n'.format({
+            'provider': declaration['provider'],
+            'table': tuple(declaration['table']),
+            'branch': declaration['branch'],
+            'initialReducedField': tuple(declaration['initial_reduced_field']),
+            'empiricalLaws': deepcopy(declaration['empirical_laws']),
+        }))
     if system.energy_balance:
         # The saved geometry is a bare diffusion length, so the chamber volume the power
         # is deposited in is written explicitly.
         decl = system.electron_energy_balance
         sheath = {v: k for k, v in _PLASMA_SHEATH_MODELS.items()}[decl['sheath']]
-        lines.append('    electronEnergyBalance = {0!r},\n'.format({
+        energy = {
             'absorbedPower': decl['absorbed_power'],
             'chamberVolume': decl['chamber_volume'],
             'sheath': sheath,
-            'elasticCollisions': decl['elastic_collisions'],
-            'electronEnergies': decl['electron_energies'],
-        }))
+        }
+        if getattr(system, 'electron_kinetics', None) is None:
+            energy.update({
+                'elasticCollisions': decl['elastic_collisions'],
+                'electronEnergies': decl['electron_energies'],
+            })
+        elif decl.get('electron_energies'):
+            energy['electronEnergies'] = decl['electron_energies']
+        lines.append('    electronEnergyBalance = {0!r},\n'.format(energy))
     return ''.join(lines)
 
 
@@ -3303,10 +3491,12 @@ def save_input_file(path, rmg):
             f.write('plasmaReactor(\n')
             f.write('    temperature = ' + format_temperature(system) + ',\n')
             f.write('    pressure = ' + format_pressure(system) + ',\n')
-            # With the energy balance on, Te is solved and has moved; the deck's value is
-            # the declared initial one.
-            te_value = system.te_initial if system.energy_balance else system.Te.value
-            f.write('    electronTemperature = ({0:g},"{1!s}"),\n'.format(te_value, system.Te.units))
+            if getattr(system, 'electron_kinetics', None) is None:
+                # With the legacy energy balance on, Te is solved and has moved;
+                # the deck's value is the declared initial one. EEDF decks omit Te:
+                # initialReducedField remains their sole coordinate authority.
+                te_value = system.te_initial if system.energy_balance else system.Te.value
+                f.write('    electronTemperature = ({0:g},"{1!s}"),\n'.format(te_value, system.Te.units))
             # Write the explicit mole fractions the reactor holds, electron included.
             # electronDensity is deliberately not reconstructed: it was an input-time
             # convenience, not reactor state, and the mole fractions are the ground truth.

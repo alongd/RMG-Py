@@ -1553,6 +1553,9 @@ cdef class ReactionSystem(DASx):
                                      '{1}'.format(self.t,char_rate/max_char_rate))
                         self.log_conversions(species_index, y0)
 
+            if terminated:
+                self.validate_terminal_state()
+
             # Increment destination step time if necessary
             if self.t >= 0.9999 * step_time:
                 step_time *= 10.0
@@ -1734,6 +1737,14 @@ cdef class ReactionSystem(DASx):
         None (default: never). :meth:`simulate` stops normally when it names one; a
         :class:`PlasmaReactor` with an electron energy balance reports ``'extinct'``.
         """
+        return None
+
+    def validate_steady_state(self):
+        """Validate reactor-specific gates before accepting a steady state (default: no-op)."""
+        return None
+
+    def validate_terminal_state(self):
+        """Validate reactor-specific gates before any accepted termination (default: no-op)."""
         return None
 
     cpdef double steady_state_relaxation_time(self, double t_now, np.ndarray y_now):
