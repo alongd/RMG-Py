@@ -589,9 +589,13 @@ SOLVER_TGAS = 298.15
 def evaluate_as_the_solver_does(kinetics, Te, Tgas=SOLVER_TGAS):
     """``k`` as the reactor that runs these kinetics would compute it, at (Tgas, Te).
 
-    This calls ``PlasmaReactor.evaluate_two_temperature_rate_coefficient``
-    itself. It is not a restatement of production's dispatch rule, it IS
-    production's dispatch rule, reached through a reactor built here for the
+    This calls the private ``PlasmaReactor._evaluate_two_temperature_rate_coefficient``
+    constitutive evaluator itself. These offline identity tests deliberately
+    evaluate mutated laws with coefficients above the reactor publication cap
+    (including 1e117 SI); they do not accept or publish a reactor state. The
+    public evaluator applies that cap and has its own refusal regressions in
+    ``plasmaElectronegativeRework8Test.py``. This is production's dispatch rule,
+    reached through a reactor built here for the
     purpose; a second copy of a dispatch table is a second thing to drift.
 
     WHAT WAS WRONG BEFORE, MEASURED
@@ -655,7 +659,7 @@ def evaluate_as_the_solver_does(kinetics, Te, Tgas=SOLVER_TGAS):
             'temperature axis.'.format(type(kinetics).__name__))
     reactor = PlasmaReactor(T=(Tgas, 'K'), P=(5.0, 'torr'), Te=(Te, 'K'),
                             initial_mole_fractions={})
-    return reactor.evaluate_two_temperature_rate_coefficient(kinetics)
+    return reactor._evaluate_two_temperature_rate_coefficient(kinetics)
 
 
 def electron_temperature_response(kinetics):

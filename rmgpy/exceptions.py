@@ -401,6 +401,19 @@ class PlasmaStateError(Exception):
     pass
 
 
+class ElectronegativeWallRegimeError(PlasmaStateError):
+    """An accepted state fails the explicitly qualified electronegative wall regime.
+
+    No alternate closure is selected. The last valid state remains available
+    on the reactor for diagnostics and restart outside the failed regime.
+    """
+    def __init__(self, message):
+        super().__init__(message)
+        self.gate = message.split(':',1)[0]
+        self.state = None
+        self.time = None
+
+
 class ElectronPlacementError(Exception):
     """
     An exception raised when an electron-placement view of a reaction cannot

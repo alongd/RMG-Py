@@ -51,4 +51,5 @@ Class                           Description
     mbsampledreactor
     termination
     eedf
+    electronegative
 
