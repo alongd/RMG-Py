@@ -23967,12 +23967,21 @@
     },
     "rmgpy/solver/electronegative.py:closure_factor_gradient": {
       "verdict": "carried",
-      "reason": "Computes the declared closure factor and its gradient from the supplied electron/anion amounts and geometry arm. It keeps the supplied indices and never obtains thermo or transport from a ground-state record.",
+      "reason": "Computes the explicitly selected closure factor and gradient from supplied electron/anion amounts and geometry; the new O2 unity branch returns the declared constant one. It preserves supplied indices and never acquires thermo, transport, or another state's record.",
       "evidence": [
         "rmgpy/solver/electronegative.py",
-        "test/rmgpy/solver/plasmaElectronegativeRework3Test.py"
+        "test/rmgpy/solver/plasmaO2ReferenceQualifiedUnityTest.py"
       ],
-      "source_sha256": "f8c614cec0e6ff57dc1ff128a0394da168f857fa7aca70b9c17383ecbb05aa29"
+      "source_sha256": "b91a029adedd0e2d0e9452df02e67d637236a81818566d333ac284f821254a0d"
+    },
+    "rmgpy/solver/electronegative.py:closure_scientific_metadata": {
+      "verdict": "carried",
+      "reason": "Returns fixed scientific-status and qualification metadata for the caller's explicit closure name. The mapping reports the declared model and frozen reference envelope; it does not inspect a species, resolve an electronic state, or acquire scientific data.",
+      "evidence": [
+        "rmgpy/solver/electronegative.py",
+        "test/rmgpy/solver/plasmaO2ReferenceQualifiedUnityTest.py"
+      ],
+      "source_sha256": "47628d90d504e74969667aa8bcf4e40f26e837bcd8bc1412d27ff7be62220125"
     },
     "rmgpy/solver/electronegative.py:electron_rate_derivative": {
       "verdict": "carried",
@@ -24012,12 +24021,12 @@
     },
     "rmgpy/solver/electronegative.py:qualify_envelope": {
       "verdict": "carried",
-      "reason": "Probes explicitly supplied reactor states/times with the accepted-state monitor and records the returned gate extrema and sample locations. Qualification never constructs a ground-state species or supplies missing scientific data.",
+      "reason": "Qualifies the explicitly selected named closure by probing caller-supplied reactor states and times, then records returned extrema and sample locations. Acceptance of the O2 unity mode adds no species construction, state resolution, or missing-data supplier.",
       "evidence": [
         "rmgpy/solver/electronegative.py",
-        "test/rmgpy/solver/plasmaElectronegativeWallTest.py"
+        "test/rmgpy/solver/plasmaO2ReferenceQualifiedUnityTest.py"
       ],
-      "source_sha256": "c8fdcdbca30052689030ed86f534379bbac092b1ff7ce66618d70ea7209224b2"
+      "source_sha256": "81d31cd3540deaf09f454848812ac2bf1663b7cd6913874cd54d5725e4bcdbe4"
     },
     "rmgpy/solver/electronegative.py:radial_source_frequency": {
       "verdict": "carried",
@@ -24412,12 +24421,12 @@
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._configure_electronegative_wall": {
       "verdict": "carried",
-      "reason": "Accepts only an explicit named closure, map transport, declared geometry, anion mobilities and copied qualification. It validates declarations and does not infer an EN model or retrieve missing species data.",
+      "reason": "Validates the explicit named closure, declared geometry, mobilities and copied qualification, rejecting the retired bracket name and arbitrary selectors. Adding the O2 unity name and its metadata does not infer a model from species state or retrieve missing scientific data.",
       "evidence": [
         "rmgpy/solver/plasma.pyx",
-        "test/rmgpy/solver/plasmaElectronegativeWallTest.py"
+        "test/rmgpy/rmg/electronegativeWallInputTest.py"
       ],
-      "source_sha256": "b735a9218e032a00693c21d173ea9d824f2130a5d4aeefb921bee0bec55f150a"
+      "source_sha256": "36e4b827a53399d9272232371d7fd179b81dbb28e215a96c6923b9266cf8f228"
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._configure_energy_balance": {
       "verdict": "carried",
@@ -24553,12 +24562,12 @@
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._en_wall_linearization": {
       "verdict": "carried",
-      "reason": "Builds the wall residual and derivatives from current indexed populations, declared transport/geometry, original core masses and resolved recycling targets. Product transfer is a physical population change, not substitution of one species' scientific record.",
+      "reason": "Builds the wall residual and derivatives from current indexed populations, explicit closure factor, declared transport/geometry, original masses and resolved recycling targets. The unity factor changes no data route; each species keeps its assigned mobility and scientific record.",
       "evidence": [
         "rmgpy/solver/plasma.pyx",
-        "test/rmgpy/solver/plasmaElectronegativeRework3Test.py"
+        "test/rmgpy/solver/plasmaO2ReferenceQualifiedUnityTest.py"
       ],
-      "source_sha256": "7b466ba9601805ab4230b3f90a9eed8decd35dcefca6cb3c8e4e3bf918f747b9"
+      "source_sha256": "362174a118cfec67c9b171017a7a59ee4c587a40f7f19e19852f65232e51141a"
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._energy_jacobian": {
       "verdict": "carried",
@@ -24571,12 +24580,13 @@
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._evaluate_electronegative_wall_regime": {
       "verdict": "carried",
-      "reason": "Checks anion destruction, attachment and radial/reference gates using original reaction indices, assigned rates, masses and declared transport. Explicit external references see a copied context and qualify the operator without replacing production data.",
+      "reason": "Checks the selected closure's anion destruction, attachment and reference gates using original rates, masses and declared transport, while full-identity declarations preserve state-qualified labels and equations. The unity mode's frozen qualification changes no species record and bypasses no resolved-state refusal.",
       "evidence": [
         "rmgpy/solver/plasma.pyx",
-        "test/rmgpy/solver/plasmaElectronegativeWallTest.py"
+        "test/rmgpy/solver/plasmaO2ReferenceQualifiedUnityTest.py",
+        "test/rmgpy/yaml_writer/excitedExportRework10Test.py"
       ],
-      "source_sha256": "555b78c646ac64c4b16e690eab806bcfd00c808a5f5c5fef998469b9f2d504a2"
+      "source_sha256": "05005bae75f53cb8b0f2f90cf213bdbd0cf3b255844d005bc4ec310865aa95a5"
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._evaluate_electronegative_wall_regime.<lambda1>": {
       "verdict": "carried",
@@ -24642,12 +24652,12 @@
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._latch_wall_diagnostics": {
       "verdict": "carried",
-      "reason": "Recomputes accepted-state fluxes from declared transport and existing indexed products/enthalpy drops, then records availability and EN metadata. Unusable values become unavailable; no ground-state data is substituted to complete a diagnostic.",
+      "reason": "Recomputes accepted-state fluxes from declared transport and existing indexed products/enthalpy drops, then records closure status, qualification and flux diagnostics. The added O2 scientific metadata is reported only; no ground-state data is substituted to complete a value.",
       "evidence": [
         "rmgpy/solver/plasma.pyx",
-        "test/rmgpy/solver/plasmaElectronegativeWallTest.py"
+        "test/rmgpy/solver/plasmaO2ReferenceQualifiedUnityTest.py"
       ],
-      "source_sha256": "0df81ae48541fd6c0f33d470d59f6124c62ddeb7e1264ecbb7f4075de67a6b8f"
+      "source_sha256": "0d552b0cf3d8ea00f87f7e4162164b33fb7055d6b9c2c3900888dde5ba48f7bf"
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._needs_electron_placement": {
       "verdict": "carried",
@@ -25001,12 +25011,13 @@
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.electronegative_wall_manifest": {
       "verdict": "carried",
-      "reason": "Checks the accepted reactor state and copies its wall diagnostics plus explicit geometry/model declarations into a serializable manifest. It reports existing model values without selecting database entries.",
+      "reason": "Validates the accepted reactor's full-identity species declarations, then serializes state-qualified diagnostic names together with explicit geometry, closure status, provenance, claim scope and frozen qualification metadata. It selects no substitute species data or database entry.",
       "evidence": [
         "rmgpy/solver/plasma.pyx",
-        "test/rmgpy/solver/plasmaElectronegativeWallTest.py"
+        "test/rmgpy/solver/plasmaO2ReferenceQualifiedUnityTest.py",
+        "test/rmgpy/yaml_writer/excitedExportRework10Test.py"
       ],
-      "source_sha256": "fe3592836dc295531914da51356bde13f9c6ffc6b2f1b42eb52134e2eeddf208"
+      "source_sha256": "57632e6a0926ff68169a42bc182316f3e6972ba2b06e644a98d741276bd834df"
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.electronegative_wall_qualification": {
       "verdict": "carried",

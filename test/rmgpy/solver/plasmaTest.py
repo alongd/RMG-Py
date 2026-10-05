@@ -36,6 +36,7 @@ It proves reactor state handling; it does not claim that a neutral mechanism
 can generate its own first cation.
 """
 
+import hashlib
 import logging
 import pickle
 
@@ -171,6 +172,29 @@ def _full_system():
 
 def _two_temp_volume(n_heavy, n_e, T=T_GAS, Te=T_E, P=P0):
     return constants.R * (n_heavy * T + n_e * Te) / P
+
+
+def test_non_plasma_reactor_retains_the_frozen_base_fingerprint():
+    """Freeze ordinary SimpleReactor state, rates, residual and Jacobian bytes."""
+    *_, species_a, species_b = _species()
+    reaction = _thermal(species_a, species_b)
+    reactor = SimpleReactor(
+        T_GAS, P0, {species_a: Y_A0, species_b: Y_B0},
+        n_sims=1, termination=[])
+    reactor.initialize_model([species_a, species_b], [reaction], [], [])
+    state = np.asarray(reactor.y, dtype=float)
+    zeros = np.zeros_like(state)
+    arrays = (
+        state,
+        np.asarray(reactor.kf, dtype=float),
+        np.asarray(reactor.kb, dtype=float),
+        np.asarray(reactor.residual(0., state, zeros)[0], dtype=float),
+        np.asarray(reactor.jacobian(0., state, zeros, 0.), dtype=float).ravel(),
+    )
+    digest = hashlib.sha256(
+        b''.join(array.tobytes() for array in arrays)).hexdigest()
+    assert digest == (
+        '24a5f7aa4307760c0b2c288435295970b0de79cb1e11761424448f01ba9cd07b')
 
 
 class PlasmaReactorStateTest:

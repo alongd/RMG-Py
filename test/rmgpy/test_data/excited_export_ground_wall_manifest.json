@@ -1,4 +1,5 @@
 {
+  "scientific_status": "FALSIFIED SIMPLIFIED CLOSURE",
   "gates": {
     "A": {
       "Cl-": {
@@ -93,7 +94,6 @@
   "geometry_endpoint_wall_difference": 0.0223737738814294,
   "closure": "confinedAnion",
   "geometry_arm": "fullFrequency",
-  "scientific_status": "FINITE-CYLINDER GEOMETRIC EXTENSION",
   "alpha": 0.5,
   "h": 0.6666666666666666,
   "geometry_factor": 0.6666666666666666,

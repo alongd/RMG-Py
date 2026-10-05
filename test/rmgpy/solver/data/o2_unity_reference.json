@@ -1,0 +1,2021 @@
+{
+  "cation_charges": [
+    1,
+    1,
+    1
+  ],
+  "cation_order": [
+    "Ar+",
+    "O+",
+    "O2+"
+  ],
+  "legacy_source_arm": "electropositiveBracket",
+  "points": [
+    {
+      "budgets": {
+        "B1": 0.0361287134264315,
+        "B2": 0.0720102278947254,
+        "B3": 0.28618173620356074
+      },
+      "closure_state": [
+        3784865904551.0537,
+        86345947923438.16
+      ],
+      "condition": {
+        "absorbed_power_w": 0.25,
+        "pressure_o2_torr": 0.05
+      },
+      "engine_cation_number_densities_m_3": [
+        1413067402194.6099,
+        3010114319.190113,
+        88714736311475.4
+      ],
+      "engine_unity_cation_wall_vector": [
+        501782505869346.8,
+        2231610923216.206,
+        5.273891391479639e+16
+      ],
+      "falsified_comparator": {
+        "B3_budget": 0.16910419198480214,
+        "actual_error": 1.7583886241498687,
+        "local_checks": {
+          "attachment_metric": 133.84887089469592,
+          "minimum_confinement_ratio": 6.25157003554313
+        }
+      },
+      "reference_geometry_engine_frequencies_s_1": [
+        355.10160738973764,
+        741.3708206991396,
+        594.4774916495414
+      ],
+      "reference_status": "reference-qualified",
+      "reference_variants": {
+        "c50v05": {
+          "error": 0.25393544226359466,
+          "reference_cation_wall_vector": [
+            129777101008072.39,
+            695806990995.6782,
+            4.111542430931592e+16
+          ]
+        },
+        "c50v2": {
+          "error": 0.2508262662911365,
+          "reference_cation_wall_vector": [
+            127308007944379.7,
+            685672957144.8889,
+            4.124842555382966e+16
+          ]
+        },
+        "mob200": {
+          "error": 0.23574413776461792,
+          "reference_cation_wall_vector": [
+            149856028462365.9,
+            797319576676.5912,
+            4.1864059478727576e+16
+          ]
+        },
+        "mob50": {
+          "error": 0.25191874328428987,
+          "reference_cation_wall_vector": [
+            128173200578804.06,
+            689225560224.7236,
+            4.120165397115457e+16
+          ]
+        },
+        "nominal": {
+          "error": 0.23003425305568553,
+          "reference_cation_wall_vector": [
+            158526446311304.47,
+            840099072045.4697,
+            4.2099248430509816e+16
+          ]
+        },
+        "vth05": {
+          "error": 0.23209666371103613,
+          "reference_cation_wall_vector": [
+            160169070111915.34,
+            846602212994.6935,
+            4.200935787428643e+16
+          ]
+        },
+        "vth2": {
+          "error": 0.22892054075027005,
+          "reference_cation_wall_vector": [
+            157642332149503.3,
+            836597217614.7219,
+            4.21478547703159e+16
+          ]
+        }
+      },
+      "source_rows": {
+        "confined_materiality_rw.csv": 2,
+        "confined_sweep_sc.csv": 2,
+        "materiality_rw.csv": 3,
+        "sweep_sc.csv": 3
+      },
+      "state": {
+        "alpha": 22.813476118034405,
+        "electron_density_m_3": 3784865904551.0537,
+        "electron_temperature_effective_eV": 3.202477818072141,
+        "mean_electron_energy_eV": 4.8037167271082115,
+        "neutral_density_m_3": 1.6356317580889558e+23,
+        "transport_energy_eV": 6.062247359532518
+      }
+    },
+    {
+      "budgets": {
+        "B1": 0.033034661116376984,
+        "B2": 0.06581706698288352,
+        "B3": 0.2580634046673167
+      },
+      "closure_state": [
+        8476512437150.002,
+        120914533829245.75
+      ],
+      "condition": {
+        "absorbed_power_w": 0.5,
+        "pressure_o2_torr": 0.05
+      },
+      "engine_cation_number_densities_m_3": [
+        1690277791853.4307,
+        10151920481.278145,
+        127690616554061.03
+      ],
+      "engine_unity_cation_wall_vector": [
+        590083385735325.6,
+        7399227140928.424,
+        7.462718553942525e+16
+      ],
+      "falsified_comparator": {
+        "B3_budget": 0.1326713419216509,
+        "actual_error": 1.6795840232785368,
+        "local_checks": {
+          "attachment_metric": 134.36684082900132,
+          "minimum_confinement_ratio": 10.005027805729448
+        }
+      },
+      "reference_geometry_engine_frequencies_s_1": [
+        349.1043830661023,
+        728.849989967302,
+        584.4375064774626
+      ],
+      "reference_status": "reference-qualified",
+      "reference_variants": {
+        "c50v05": {
+          "error": 0.1322191344478131,
+          "reference_cation_wall_vector": [
+            215874123366767.84,
+            3204336788705.882,
+            6.567621040693756e+16
+          ]
+        },
+        "c50v2": {
+          "error": 0.12900291641400943,
+          "reference_cation_wall_vector": [
+            212834975604540.38,
+            3170785617719.543,
+            6.589246860561629e+16
+          ]
+        },
+        "mob200": {
+          "error": 0.1105508532748625,
+          "reference_cation_wall_vector": [
+            252455290231660.66,
+            3707187131838.303,
+            6.708795521234058e+16
+          ]
+        },
+        "mob50": {
+          "error": 0.1301472356586463,
+          "reference_cation_wall_vector": [
+            213912208583028.06,
+            3182681508625.7925,
+            6.581545503726107e+16
+          ]
+        },
+        "nominal": {
+          "error": 0.10357922122000597,
+          "reference_cation_wall_vector": [
+            268082776721300.12,
+            3917349476509.3354,
+            6.754461563126226e+16
+          ]
+        },
+        "vth05": {
+          "error": 0.10570377667276401,
+          "reference_cation_wall_vector": [
+            269993321909782.38,
+            3937273244842.973,
+            6.739836327664107e+16
+          ]
+        },
+        "vth2": {
+          "error": 0.10241109060821864,
+          "reference_cation_wall_vector": [
+            267037715707695.3,
+            3906450763316.7056,
+            6.762514743813939e+16
+          ]
+        }
+      },
+      "source_rows": {
+        "confined_materiality_rw.csv": 4,
+        "confined_sweep_sc.csv": 4,
+        "materiality_rw.csv": 5,
+        "sweep_sc.csv": 5
+      },
+      "state": {
+        "alpha": 14.264655980366848,
+        "electron_density_m_3": 8476512437150.002,
+        "electron_temperature_effective_eV": 3.1420534070986044,
+        "mean_electron_energy_eV": 4.7130801106479066,
+        "neutral_density_m_3": 1.635667266904471e+23,
+        "transport_energy_eV": 5.959559562975421
+      }
+    },
+    {
+      "budgets": {
+        "B1": 0.03869546556803495,
+        "B2": 0.07709474233016302,
+        "B3": 0.27486904103819526
+      },
+      "closure_state": [
+        19590142722752.816,
+        156927904351010.56
+      ],
+      "condition": {
+        "absorbed_power_w": 1.0,
+        "pressure_o2_torr": 0.05
+      },
+      "engine_cation_number_densities_m_3": [
+        1758414650577.2336,
+        32759799965.99482,
+        174726872623220.16
+      ],
+      "engine_unity_cation_wall_vector": [
+        601164499248656.8,
+        23382778976461.78,
+        1.0000334202731307e+17
+      ],
+      "falsified_comparator": {
+        "B3_budget": 0.08586251337152204,
+        "actual_error": 1.5570327924085214,
+        "local_checks": {
+          "attachment_metric": 135.42275629288406,
+          "minimum_confinement_ratio": 17.359620498299233
+        }
+      },
+      "reference_geometry_engine_frequencies_s_1": [
+        341.8786911558732,
+        713.7644002934533,
+        572.3409371777609
+      ],
+      "reference_status": "reference-unqualified (ion-heating validity), B3-pass numerically",
+      "reference_variants": {
+        "c50v05": {
+          "error": 0.0066183959906615936,
+          "reference_cation_wall_vector": [
+            279982894547039.16,
+            12659527703018.05,
+            1.0033743964675499e+17
+          ]
+        },
+        "c50v2": {
+          "error": 0.01005135107778805,
+          "reference_cation_wall_vector": [
+            277120567877479.56,
+            12567592095987.98,
+            1.0068165524153704e+17
+          ]
+        },
+        "mob200": {
+          "error": 0.031231180010403394,
+          "reference_cation_wall_vector": [
+            330001396769528.8,
+            14734423188486.213,
+            1.02907234873102e+17
+          ]
+        },
+        "mob50": {
+          "error": 0.008812906409476748,
+          "reference_cation_wall_vector": [
+            278148302633404.06,
+            12600600388824.34,
+            1.00557338113653e+17
+          ]
+        },
+        "nominal": {
+          "error": 0.03920889273442067,
+          "reference_cation_wall_vector": [
+            351246963460011.44,
+            15597839744191.482,
+            1.037597376115797e+17
+          ]
+        },
+        "vth05": {
+          "error": 0.036956474941309915,
+          "reference_cation_wall_vector": [
+            352883619852878.0,
+            15645336149408.162,
+            1.0352654763716926e+17
+          ]
+        },
+        "vth2": {
+          "error": 0.0404724713610485,
+          "reference_cation_wall_vector": [
+            350335978357957.8,
+            15571437662943.662,
+            1.0389079505153723e+17
+          ]
+        }
+      },
+      "source_rows": {
+        "confined_materiality_rw.csv": 6,
+        "confined_sweep_sc.csv": 6,
+        "materiality_rw.csv": 7,
+        "sweep_sc.csv": 7
+      },
+      "state": {
+        "alpha": 8.01055441871528,
+        "electron_density_m_3": 19590142722752.816,
+        "electron_temperature_effective_eV": 3.0693716045253807,
+        "mean_electron_energy_eV": 4.604057406788071,
+        "neutral_density_m_3": 1.635739386554204e+23,
+        "transport_energy_eV": 5.8359364635928355
+      }
+    },
+    {
+      "budgets": {
+        "B1": 0.02834594187328883,
+        "B2": 0.05649489036793684,
+        "B3": 0.24783614558662878
+      },
+      "closure_state": [
+        4220310259640.297,
+        95911940018247.98
+      ],
+      "condition": {
+        "absorbed_power_w": 0.25,
+        "pressure_o2_torr": 0.1
+      },
+      "engine_cation_number_densities_m_3": [
+        407646881120.2958,
+        2377464830.2325006,
+        99722225931937.75
+      ],
+      "engine_unity_cation_wall_vector": [
+        140776479456088.9,
+        1714126732773.1091,
+        5.7652841619847944e+16
+      ],
+      "falsified_comparator": {
+        "B3_budget": 0.220097772949484,
+        "actual_error": 1.7810180881995794,
+        "local_checks": {
+          "attachment_metric": 265.96782858040035,
+          "minimum_confinement_ratio": 12.909636585482156
+        }
+      },
+      "reference_geometry_engine_frequencies_s_1": [
+        345.3392776346204,
+        720.9893122185445,
+        578.1343234275282
+      ],
+      "reference_status": "reference-qualified",
+      "reference_variants": {
+        "c50v05": {
+          "error": 0.1404190854557679,
+          "reference_cation_wall_vector": [
+            19420167797835.31,
+            291233387358.41394,
+            5.0192463162001416e+16
+          ]
+        },
+        "c50v2": {
+          "error": 0.13690943891737878,
+          "reference_cation_wall_vector": [
+            18545936866527.11,
+            280629422183.73914,
+            5.0370738842489784e+16
+          ]
+        },
+        "mob200": {
+          "error": 0.12144530205042509,
+          "reference_cation_wall_vector": [
+            22616758526202.95,
+            338722762733.8757,
+            5.115521666759508e+16
+          ]
+        },
+        "mob50": {
+          "error": 0.13814680561193154,
+          "reference_cation_wall_vector": [
+            18852798308985.953,
+            284353709590.4903,
+            5.030782058696121e+16
+          ]
+        },
+        "nominal": {
+          "error": 0.11558712328768549,
+          "reference_cation_wall_vector": [
+            24166830165425.04,
+            360913716305.3809,
+            5.1455398117720296e+16
+          ]
+        },
+        "vth05": {
+          "error": 0.11790624034728531,
+          "reference_cation_wall_vector": [
+            24793752743498.293,
+            368372163368.1636,
+            5.133510682724592e+16
+          ]
+        },
+        "vth2": {
+          "error": 0.11432862239110761,
+          "reference_cation_wall_vector": [
+            23828386781273.062,
+            356884083957.63354,
+            5.152078393774571e+16
+          ]
+        }
+      },
+      "source_rows": {
+        "confined_materiality_rw.csv": 8,
+        "confined_sweep_sc.csv": 8,
+        "materiality_rw.csv": 9,
+        "sweep_sc.csv": 9
+      },
+      "state": {
+        "alpha": 22.726277007516195,
+        "electron_density_m_3": 4220310259640.297,
+        "electron_temperature_effective_eV": 3.1385231640165343,
+        "mean_electron_energy_eV": 4.707784746024801,
+        "neutral_density_m_3": 1.651857853618463e+23,
+        "transport_energy_eV": 5.953614187682451
+      }
+    },
+    {
+      "budgets": {
+        "B1": 0.03337735594584995,
+        "B2": 0.06654033797359711,
+        "B3": 0.2711600606740091
+      },
+      "closure_state": [
+        9716031077186.176,
+        136655439724134.16
+      ],
+      "condition": {
+        "absorbed_power_w": 0.5,
+        "pressure_o2_torr": 0.1
+      },
+      "engine_cation_number_densities_m_3": [
+        427850125358.72894,
+        7708590667.232211,
+        145935912085294.38
+      ],
+      "engine_unity_cation_wall_vector": [
+        144771101089846.44,
+        5445628988823.82,
+        8.26675693502844e+16
+      ],
+      "falsified_comparator": {
+        "B3_budget": 0.18567888930415405,
+        "actual_error": 1.7022956143436019,
+        "local_checks": {
+          "attachment_metric": 267.05586122078614,
+          "minimum_confinement_ratio": 20.5700193559551
+        }
+      },
+      "reference_geometry_engine_frequencies_s_1": [
+        338.36872425469966,
+        706.436393356853,
+        566.4648828998864
+      ],
+      "reference_status": "reference-qualified",
+      "reference_variants": {
+        "c50v05": {
+          "error": 0.03593737756390547,
+          "reference_cation_wall_vector": [
+            27011841544285.24,
+            1256466420534.3262,
+            7.986579911565058e+16
+          ]
+        },
+        "c50v2": {
+          "error": 0.03237746577464556,
+          "reference_cation_wall_vector": [
+            26050136252554.31,
+            1220799553259.8264,
+            8.015180252398917e+16
+          ]
+        },
+        "mob200": {
+          "error": 0.013217256683311742,
+          "reference_cation_wall_vector": [
+            32404453176796.516,
+            1497562619496.1592,
+            8.169644659805995e+16
+          ]
+        },
+        "mob50": {
+          "error": 0.03364981122480907,
+          "reference_cation_wall_vector": [
+            26391896995663.43,
+            1233483431590.0625,
+            8.004946969966726e+16
+          ]
+        },
+        "nominal": {
+          "error": 0.0059928942520189,
+          "reference_cation_wall_vector": [
+            34940817592966.887,
+            1607607200771.577,
+            8.228640216977266e+16
+          ]
+        },
+        "vth05": {
+          "error": 0.008335339386257436,
+          "reference_cation_wall_vector": [
+            35621177156022.35,
+            1632107594896.7703,
+            8.209308350299626e+16
+          ]
+        },
+        "vth2": {
+          "error": 0.004696261168238284,
+          "reference_cation_wall_vector": [
+            34566921977968.973,
+            1594131463234.2288,
+            8.239360220237485e+16
+          ]
+        }
+      },
+      "source_rows": {
+        "confined_materiality_rw.csv": 10,
+        "confined_sweep_sc.csv": 10,
+        "materiality_rw.csv": 11,
+        "sweep_sc.csv": 11
+      },
+      "state": {
+        "alpha": 14.064944691769186,
+        "electron_density_m_3": 9716031077186.176,
+        "electron_temperature_effective_eV": 3.0678029587277504,
+        "mean_electron_energy_eV": 4.601704438091626,
+        "neutral_density_m_3": 1.6519270828982193e+23,
+        "transport_energy_eV": 5.833169491581351
+      }
+    },
+    {
+      "budgets": {
+        "B1": 0.030349540922059447,
+        "B2": 0.06053363854924971,
+        "B3": 0.24335887674593834
+      },
+      "closure_state": [
+        22551696906720.57,
+        178884812330126.84
+      ],
+      "condition": {
+        "absorbed_power_w": 1.0,
+        "pressure_o2_torr": 0.1
+      },
+      "engine_cation_number_densities_m_3": [
+        377703424853.5618,
+        22774277024.936512,
+        201036031534968.94
+      ],
+      "engine_unity_cation_wall_vector": [
+        124872791484258.47,
+        15719703389355.46,
+        1.1126884444204034e+17
+      ],
+      "falsified_comparator": {
+        "B3_budget": 0.1378379530310995,
+        "actual_error": 1.5771370387453856,
+        "local_checks": {
+          "attachment_metric": 269.3280773866433,
+          "minimum_confinement_ratio": 35.38243857974433
+        }
+      },
+      "reference_geometry_engine_frequencies_s_1": [
+        330.61069417803793,
+        690.239403522812,
+        553.477123441356
+      ],
+      "reference_status": "reference-qualified",
+      "reference_variants": {
+        "c50v05": {
+          "error": 0.06494629018095771,
+          "reference_cation_wall_vector": [
+            28278713161223.297,
+            4397277051713.2646,
+            1.186321632905843e+17
+          ]
+        },
+        "c50v2": {
+          "error": 0.06858930456869584,
+          "reference_cation_wall_vector": [
+            27471914593232.723,
+            4298676566726.281,
+            1.1906515820031035e+17
+          ]
+        },
+        "mob200": {
+          "error": 0.09151348968498016,
+          "reference_cation_wall_vector": [
+            34647541963753.777,
+            5329158005958.093,
+            1.2184292673944338e+17
+          ]
+        },
+        "mob50": {
+          "error": 0.06726812860315964,
+          "reference_cation_wall_vector": [
+            27762557774593.934,
+            4334222375854.4214,
+            1.1890793765942907e+17
+          ]
+        },
+        "nominal": {
+          "error": 0.10013897225630515,
+          "reference_cation_wall_vector": [
+            37603409612286.71,
+            5750079845913.33,
+            1.2290582066360778e+17
+          ]
+        },
+        "vth05": {
+          "error": 0.09775174620451564,
+          "reference_cation_wall_vector": [
+            38158646819734.78,
+            5815211436639.684,
+            1.2261239650037784e+17
+          ]
+        },
+        "vth2": {
+          "error": 0.10148851036831297,
+          "reference_cation_wall_vector": [
+            37292256647727.38,
+            5713553742469.792,
+            1.2307202731323814e+17
+          ]
+        }
+      },
+      "source_rows": {
+        "confined_materiality_rw.csv": 12,
+        "confined_sweep_sc.csv": 12,
+        "materiality_rw.csv": 13,
+        "sweep_sc.csv": 13
+      },
+      "state": {
+        "alpha": 7.932210736515258,
+        "electron_density_m_3": 22551696906720.57,
+        "electron_temperature_effective_eV": 2.9910123727306153,
+        "mean_electron_energy_eV": 4.486518559095923,
+        "neutral_density_m_3": 1.6520626138748118e+23,
+        "transport_energy_eV": 5.69930869072869
+      }
+    },
+    {
+      "budgets": {
+        "B1": 0.02931553303289319,
+        "B2": 0.05850844437708671,
+        "B3": 0.2732053926886353
+      },
+      "closure_state": [
+        5000784648294.451,
+        112431600652345.12
+      ],
+      "condition": {
+        "absorbed_power_w": 0.25,
+        "pressure_o2_torr": 0.2
+      },
+      "engine_cation_number_densities_m_3": [
+        78016822681.9512,
+        1545451532.0373166,
+        117352823026425.58
+      ],
+      "engine_unity_cation_wall_vector": [
+        25680333979338.78,
+        1062063902768.4874,
+        6.466789542996518e+16
+      ],
+      "falsified_comparator": {
+        "B3_budget": 0.20184518297492884,
+        "actual_error": 1.7928620270538937,
+        "local_checks": {
+          "attachment_metric": 531.5870554180914,
+          "minimum_confinement_ratio": 26.6733377179917
+        }
+      },
+      "reference_geometry_engine_frequencies_s_1": [
+        329.16405842402753,
+        687.219159418351,
+        551.0553028230368
+      ],
+      "reference_status": "reference-qualified",
+      "reference_variants": {
+        "c50v05": {
+          "error": 0.07563657777612638,
+          "reference_cation_wall_vector": [
+            1791995958886.368,
+            89789783874.21246,
+            5.99777870941136e+16
+          ]
+        },
+        "c50v2": {
+          "error": 0.07184380309944638,
+          "reference_cation_wall_vector": [
+            1624785883563.565,
+            82755056528.59636,
+            6.020619357949648e+16
+          ]
+        },
+        "mob200": {
+          "error": 0.05611324122549512,
+          "reference_cation_wall_vector": [
+            2039263524833.8386,
+            102992676451.5878,
+            6.116134198959298e+16
+          ]
+        },
+        "mob50": {
+          "error": 0.07318630333095466,
+          "reference_cation_wall_vector": [
+            1683592373705.773,
+            85230406103.95708,
+            6.012525115003166e+16
+          ]
+        },
+        "nominal": {
+          "error": 0.05016026936801428,
+          "reference_cation_wall_vector": [
+            2188348704887.746,
+            110399609004.38629,
+            6.152663490645303e+16
+          ]
+        },
+        "vth05": {
+          "error": 0.052659458180514825,
+          "reference_cation_wall_vector": [
+            2312746171037.395,
+            115585037510.00171,
+            6.137282345661936e+16
+          ]
+        },
+        "vth2": {
+          "error": 0.04879592773285415,
+          "reference_cation_wall_vector": [
+            2120981891593.518,
+            107589343836.04263,
+            6.161076034329712e+16
+          ]
+        }
+      },
+      "source_rows": {
+        "confined_materiality_rw.csv": 14,
+        "confined_sweep_sc.csv": 14,
+        "materiality_rw.csv": 15,
+        "sweep_sc.csv": 15
+      },
+      "state": {
+        "alpha": 22.482791913603123,
+        "electron_density_m_3": 5000784648294.451,
+        "electron_temperature_effective_eV": 3.040658541693599,
+        "mean_electron_energy_eV": 4.560987812540398,
+        "neutral_density_m_3": 1.6843035993322255e+23,
+        "transport_energy_eV": 5.785496036065793
+      }
+    },
+    {
+      "budgets": {
+        "B1": 0.027336315212577195,
+        "B2": 0.05456558100657011,
+        "B3": 0.25079905248056583
+      },
+      "closure_state": [
+        11593317924118.3,
+        161513278306225.0
+      ],
+      "condition": {
+        "absorbed_power_w": 0.5,
+        "pressure_o2_torr": 0.2
+      },
+      "engine_cation_number_densities_m_3": [
+        72463381471.58228,
+        4718213850.448385,
+        173029414635021.25
+      ],
+      "engine_unity_cation_wall_vector": [
+        23336720551447.137,
+        3172354418811.568,
+        9.328760546331398e+16
+      ],
+      "falsified_comparator": {
+        "B3_budget": 0.15929501808096058,
+        "actual_error": 1.7134109851829966,
+        "local_checks": {
+          "attachment_metric": 534.5377058922235,
+          "minimum_confinement_ratio": 42.39600576863652
+        }
+      },
+      "reference_geometry_engine_frequencies_s_1": [
+        322.0484619614256,
+        672.3634238219385,
+        539.1430448984049
+      ],
+      "reference_status": "reference-qualified",
+      "reference_variants": {
+        "c50v05": {
+          "error": 0.014277295620067148,
+          "reference_cation_wall_vector": [
+            1997554794863.3843,
+            335886271702.2178,
+            9.460493439414936e+16
+          ]
+        },
+        "c50v2": {
+          "error": 0.01805501821092479,
+          "reference_cation_wall_vector": [
+            1843199692340.2017,
+            314324172294.0058,
+            9.496294627007182e+16
+          ]
+        },
+        "mob200": {
+          "error": 0.03759054818473232,
+          "reference_cation_wall_vector": [
+            2381730902691.1357,
+            401871754342.27686,
+            9.683789138002349e+16
+          ]
+        },
+        "mob50": {
+          "error": 0.016698180504007,
+          "reference_cation_wall_vector": [
+            1898161974131.4553,
+            322007816321.05725,
+            9.483420237318858e+16
+          ]
+        },
+        "nominal": {
+          "error": 0.044938584715938514,
+          "reference_cation_wall_vector": [
+            2591984810610.433,
+            436295550404.2874,
+            9.755283807168968e+16
+          ]
+        },
+        "vth05": {
+          "error": 0.04245901449851588,
+          "reference_cation_wall_vector": [
+            2708282566302.8467,
+            452293669278.22534,
+            9.731120567951122e+16
+          ]
+        },
+        "vth2": {
+          "error": 0.04632109598045532,
+          "reference_cation_wall_vector": [
+            2527848768446.5493,
+            427463513993.4028,
+            9.7687829846427e+16
+          ]
+        }
+      },
+      "source_rows": {
+        "confined_materiality_rw.csv": 16,
+        "confined_sweep_sc.csv": 16,
+        "materiality_rw.csv": 17,
+        "sweep_sc.csv": 17
+      },
+      "state": {
+        "alpha": 13.931583638383527,
+        "electron_density_m_3": 11593317924118.3,
+        "electron_temperature_effective_eV": 2.96829697339099,
+        "mean_electron_energy_eV": 4.452445460086485,
+        "neutral_density_m_3": 1.684430612933547e+23,
+        "transport_energy_eV": 5.660303314785052
+      }
+    },
+    {
+      "budgets": {
+        "B1": 0.03517699370538304,
+        "B2": 0.07029243994267176,
+        "B3": 0.2816448934243343
+      },
+      "closure_state": [
+        26826070628381.918,
+        212179391543561.53
+      ],
+      "condition": {
+        "absorbed_power_w": 1.0,
+        "pressure_o2_torr": 0.2
+      },
+      "engine_cation_number_densities_m_3": [
+        57436696571.09362,
+        13115378265.542917,
+        238934910097106.84
+      ],
+      "engine_unity_cation_wall_vector": [
+        18075902077923.46,
+        8617359227798.806,
+        1.2588468912029714e+17
+      ],
+      "falsified_comparator": {
+        "B3_budget": 0.16590171275047577,
+        "actual_error": 1.5872269004679869,
+        "local_checks": {
+          "attachment_metric": 539.7413969767982,
+          "minimum_confinement_ratio": 72.22267451344196
+        }
+      },
+      "reference_geometry_engine_frequencies_s_1": [
+        314.70998781327177,
+        657.042370667918,
+        526.8576662536908
+      ],
+      "reference_status": "reference-qualified",
+      "reference_variants": {
+        "c50v05": {
+          "error": 0.09219127097564728,
+          "reference_cation_wall_vector": [
+            1719959336532.4868,
+            1033783010435.2859,
+            1.3802729772622978e+17
+          ]
+        },
+        "c50v2": {
+          "error": 0.09595250104220575,
+          "reference_cation_wall_vector": [
+            1608350315652.9766,
+            978593105992.6821,
+            1.3854850050857966e+17
+          ]
+        },
+        "mob200": {
+          "error": 0.11930396184926574,
+          "reference_cation_wall_vector": [
+            2132477698816.0352,
+            1279577107269.887,
+            1.4183310021835403e+17
+          ]
+        },
+        "mob50": {
+          "error": 0.09458092241563566,
+          "reference_cation_wall_vector": [
+            1648630983157.6707,
+            998531585356.679,
+            1.383581985736703e+17
+          ]
+        },
+        "nominal": {
+          "error": 0.12807462758561697,
+          "reference_cation_wall_vector": [
+            2349271557471.4326,
+            1403947462593.9128,
+            1.4308798641368699e+17
+          ]
+        },
+        "vth05": {
+          "error": 0.12561576784205347,
+          "reference_cation_wall_vector": [
+            2433820603342.5767,
+            1444808479137.5854,
+            1.4273524423699541e+17
+          ]
+        },
+        "vth2": {
+          "error": 0.12947613888745393,
+          "reference_cation_wall_vector": [
+            2301716935818.961,
+            1380934872577.8237,
+            1.4328945972946437e+17
+          ]
+        }
+      },
+      "source_rows": {
+        "confined_materiality_rw.csv": 18,
+        "confined_sweep_sc.csv": 18,
+        "materiality_rw.csv": 19,
+        "sweep_sc.csv": 19
+      },
+      "state": {
+        "alpha": 7.90944728666584,
+        "electron_density_m_3": 26826070628381.918,
+        "electron_temperature_effective_eV": 2.8957339111834295,
+        "mean_electron_energy_eV": 4.3436008667751445,
+        "neutral_density_m_3": 1.684675876650432e+23,
+        "transport_energy_eV": 5.531546357153232
+      }
+    },
+    {
+      "budgets": {
+        "B1": 0.02789316204728294,
+        "B2": 0.05569057129842494,
+        "B3": 0.25952411428118294
+      },
+      "closure_state": [
+        5303443459705.299,
+        119215933150240.14
+      ],
+      "condition": {
+        "absorbed_power_w": 0.25,
+        "pressure_o2_torr": 0.25
+      },
+      "engine_cation_number_densities_m_3": [
+        42400302169.68518,
+        1277958414.632191,
+        124475698349361.12
+      ],
+      "engine_unity_cation_wall_vector": [
+        13678140572312.387,
+        860711654607.7759,
+        6.72241717699078e+16
+      ],
+      "falsified_comparator": {
+        "B3_budget": 0.2699963043133942,
+        "actual_error": 1.7958651362005957,
+        "local_checks": {
+          "attachment_metric": 665.6693814737969,
+          "minimum_confinement_ratio": 33.556907525756955
+        }
+      },
+      "reference_geometry_engine_frequencies_s_1": [
+        322.5953559852648,
+        673.505213278397,
+        540.0586030956205
+      ],
+      "reference_status": "reference-qualified",
+      "reference_variants": {
+        "c50v05": {
+          "error": 0.06328509064389377,
+          "reference_cation_wall_vector": [
+            773117258162.9879,
+            58332317916.15254,
+            6.3113187033991976e+16
+          ]
+        },
+        "c50v2": {
+          "error": 0.05943615646177254,
+          "reference_cation_wall_vector": [
+            684081279402.2671,
+            52631839295.829155,
+            6.335690140061537e+16
+          ]
+        },
+        "mob200": {
+          "error": 0.04371189920174785,
+          "reference_cation_wall_vector": [
+            866155585633.4584,
+            66075264104.36229,
+            6.436151022225564e+16
+          ]
+        },
+        "mob50": {
+          "error": 0.060800207456732445,
+          "reference_cation_wall_vector": [
+            715413443571.9857,
+            54638801641.22846,
+            6.3270425873261816e+16
+          ]
+        },
+        "nominal": {
+          "error": 0.037763540460304106,
+          "reference_cation_wall_vector": [
+            929483779590.749,
+            70861064288.72156,
+            6.4745594073755176e+16
+          ]
+        },
+        "vth05": {
+          "error": 0.04029804156808768,
+          "reference_cation_wall_vector": [
+            996113607188.8224,
+            75097393831.59914,
+            6.458156828776691e+16
+          ]
+        },
+        "vth2": {
+          "error": 0.03637745535291426,
+          "reference_cation_wall_vector": [
+            893366541525.0734,
+            68563134505.53793,
+            6.483546989368822e+16
+          ]
+        }
+      },
+      "source_rows": {
+        "confined_materiality_rw.csv": 20,
+        "confined_sweep_sc.csv": 20,
+        "materiality_rw.csv": 21,
+        "sweep_sc.csv": 21
+      },
+      "state": {
+        "alpha": 22.478967496499852,
+        "electron_density_m_3": 5303443459705.299,
+        "electron_temperature_effective_eV": 3.005526474092957,
+        "mean_electron_energy_eV": 4.508289711139436,
+        "neutral_density_m_3": 1.7005226542355152e+23,
+        "transport_energy_eV": 5.724371965174531
+      }
+    },
+    {
+      "budgets": {
+        "B1": 0.035165736076865274,
+        "B2": 0.0702613750001234,
+        "B3": 0.25750787678972625
+      },
+      "closure_state": [
+        12304185477163.35,
+        171625994615108.97
+      ],
+      "condition": {
+        "absorbed_power_w": 0.5,
+        "pressure_o2_torr": 0.25
+      },
+      "engine_cation_number_densities_m_3": [
+        38576255982.09464,
+        3865536783.8755383,
+        183887738299506.3
+      ],
+      "engine_unity_cation_wall_vector": [
+        12177855014672.178,
+        2547671244508.4497,
+        9.718209860646998e+16
+      ],
+      "falsified_comparator": {
+        "B3_budget": 0.24367366354676834,
+        "actual_error": 1.7177804224324464,
+        "local_checks": {
+          "attachment_metric": 669.1013177144054,
+          "minimum_confinement_ratio": 52.90703056588204
+        }
+      },
+      "reference_geometry_engine_frequencies_s_1": [
+        315.68265775518984,
+        659.0730827179419,
+        528.4860181823819
+      ],
+      "reference_status": "reference-qualified",
+      "reference_variants": {
+        "c50v05": {
+          "error": 0.02284857218724017,
+          "reference_cation_wall_vector": [
+            817295274110.4749,
+            209714809643.91968,
+            9.94145564845854e+16
+          ]
+        },
+        "c50v2": {
+          "error": 0.026661946671974513,
+          "reference_cation_wall_vector": [
+            738460613512.2537,
+            192720161184.2139,
+            9.979440145020107e+16
+          ]
+        },
+        "mob200": {
+          "error": 0.04620298942182064,
+          "reference_cation_wall_vector": [
+            963559095624.9717,
+            249015762922.28436,
+            1.0176492752085987e+17
+          ]
+        },
+        "mob50": {
+          "error": 0.025290302537603893,
+          "reference_cation_wall_vector": [
+            766546671081.8845,
+            198779087708.42926,
+            9.965760464245565e+16
+          ]
+        },
+        "nominal": {
+          "error": 0.05354838361987947,
+          "reference_cation_wall_vector": [
+            1049701576814.7113,
+            270827998618.63412,
+            1.0251587508154208e+17
+          ]
+        },
+        "vth05": {
+          "error": 0.05104717703783637,
+          "reference_cation_wall_vector": [
+            1109760509478.3975,
+            283623780927.6716,
+            1.0225964692333909e+17
+          ]
+        },
+        "vth2": {
+          "error": 0.05494604182984612,
+          "reference_cation_wall_vector": [
+            1016551406152.6477,
+            263758003726.99475,
+            1.0265934117300874e+17
+          ]
+        }
+      },
+      "source_rows": {
+        "confined_materiality_rw.csv": 22,
+        "confined_sweep_sc.csv": 22,
+        "materiality_rw.csv": 23,
+        "sweep_sc.csv": 23
+      },
+      "state": {
+        "alpha": 13.948586432937635,
+        "electron_density_m_3": 12304185477163.35,
+        "electron_temperature_effective_eV": 2.9347935286374844,
+        "mean_electron_energy_eV": 4.402190292956226,
+        "neutral_density_m_3": 1.7006750633710937e+23,
+        "transport_energy_eV": 5.6016616608437655
+      }
+    },
+    {
+      "budgets": {
+        "B1": 0.03425990534926473,
+        "B2": 0.06848058378016476,
+        "B3": 0.26778759561432797
+      },
+      "closure_state": [
+        28287449082222.324,
+        225350545951085.94
+      ],
+      "condition": {
+        "absorbed_power_w": 1.0,
+        "pressure_o2_torr": 0.25
+      },
+      "engine_cation_number_densities_m_3": [
+        30209776548.422836,
+        10601104775.324165,
+        253597184151984.5
+      ],
+      "engine_unity_cation_wall_vector": [
+        9325473311371.62,
+        6832149297306.054,
+        1.3105408880777032e+17
+      ],
+      "falsified_comparator": {
+        "B3_budget": 0.1868961081178285,
+        "actual_error": 1.5930028802453193,
+        "local_checks": {
+          "attachment_metric": 675.899802440019,
+          "minimum_confinement_ratio": 89.68911448081839
+        }
+      },
+      "reference_geometry_engine_frequencies_s_1": [
+        308.6905755964115,
+        644.4752166971331,
+        516.7805362114261
+      ],
+      "reference_status": "reference-qualified",
+      "reference_variants": {
+        "c50v05": {
+          "error": 0.09609599002344799,
+          "reference_cation_wall_vector": [
+            673119178151.1809,
+            618781903947.0535,
+            1.4426877299120157e+17
+          ]
+        },
+        "c50v2": {
+          "error": 0.09987160795015615,
+          "reference_cation_wall_vector": [
+            617951797217.8297,
+            576564221552.7985,
+            1.4481577566933347e+17
+          ]
+        },
+        "mob200": {
+          "error": 0.12314737714096322,
+          "reference_cation_wall_vector": [
+            829309077607.8799,
+            764300703959.5916,
+            1.4823763971624752e+17
+          ]
+        },
+        "mob50": {
+          "error": 0.09849258143495741,
+          "reference_cation_wall_vector": [
+            637867381300.276,
+            591819886417.667,
+            1.446157333362883e+17
+          ]
+        },
+        "nominal": {
+          "error": 0.1318853108695038,
+          "reference_cation_wall_vector": [
+            915917856507.8441,
+            841506957080.438,
+            1.4954427092734368e+17
+          ]
+        },
+        "vth05": {
+          "error": 0.12941863739525977,
+          "reference_cation_wall_vector": [
+            958482479689.147,
+            873498074398.9518,
+            1.491743164442624e+17
+          ]
+        },
+        "vth2": {
+          "error": 0.13329463469975664,
+          "reference_cation_wall_vector": [
+            891964189119.6919,
+            823479346647.7328,
+            1.497560824173211e+17
+          ]
+        }
+      },
+      "source_rows": {
+        "confined_materiality_rw.csv": 24,
+        "confined_sweep_sc.csv": 24,
+        "materiality_rw.csv": 25,
+        "sweep_sc.csv": 25
+      },
+      "state": {
+        "alpha": 7.966449901370248,
+        "electron_density_m_3": 28287449082222.324,
+        "electron_temperature_effective_eV": 2.86554922868231,
+        "mean_electron_energy_eV": 4.298323843023465,
+        "neutral_density_m_3": 1.700966549810831e+23,
+        "transport_energy_eV": 5.477964046088177
+      }
+    },
+    {
+      "budgets": {
+        "B1": 0.03351409158518291,
+        "B2": 0.06699699425028148,
+        "B3": 0.2906035483104281
+      },
+      "closure_state": [
+        6285528167776.729,
+        144284806898948.56
+      ],
+      "condition": {
+        "absorbed_power_w": 0.25,
+        "pressure_o2_torr": 0.5
+      },
+      "engine_cation_number_densities_m_3": [
+        5588239371.04159,
+        611048391.7523975,
+        150564135778962.5
+      ],
+      "engine_unity_cation_wall_vector": [
+        1664655538616.6335,
+        380021209086.1288,
+        7.508508775693853e+16
+      ],
+      "falsified_comparator": {
+        "B3_budget": 0.35040336282517587,
+        "actual_error": 1.8059607960335937,
+        "local_checks": {
+          "attachment_metric": 1357.6230071636737,
+          "minimum_confinement_ratio": 67.58528997754777
+        }
+      },
+      "reference_geometry_engine_frequencies_s_1": [
+        297.8855106391692,
+        621.9167159515525,
+        498.69171943555074
+      ],
+      "reference_status": "reference-qualified",
+      "reference_variants": {
+        "c50v05": {
+          "error": 0.04408039346764865,
+          "reference_cation_wall_vector": [
+            52206993892.61243,
+            13742450009.469069,
+            7.184857317193248e+16
+          ]
+        },
+        "c50v2": {
+          "error": 0.04017632920669258,
+          "reference_cation_wall_vector": [
+            41496503310.29724,
+            11272449730.557842,
+            7.212976140880054e+16
+          ]
+        },
+        "mob200": {
+          "error": 0.024966798556993117,
+          "reference_cation_wall_vector": [
+            54203108944.87996,
+            14558816093.862665,
+            7.323549226720283e+16
+          ]
+        },
+        "mob50": {
+          "error": 0.04156361630019925,
+          "reference_cation_wall_vector": [
+            45269783854.69818,
+            12142889006.633612,
+            7.202971963258635e+16
+          ]
+        },
+        "nominal": {
+          "error": 0.01921752203797277,
+          "reference_cation_wall_vector": [
+            57940737897.407135,
+            15568729564.338053,
+            7.365780367404032e+16
+          ]
+        },
+        "vth05": {
+          "error": 0.021783901442626215,
+          "reference_cation_wall_vector": [
+            65999566972.18942,
+            17422329846.26312,
+            7.346898222297216e+16
+          ]
+        },
+        "vth2": {
+          "error": 0.01780828093891426,
+          "reference_cation_wall_vector": [
+            53564802178.897964,
+            14561754666.020485,
+            7.376169285146826e+16
+          ]
+        }
+      },
+      "source_rows": {
+        "confined_materiality_rw.csv": 26,
+        "confined_sweep_sc.csv": 26,
+        "materiality_rw.csv": 27,
+        "sweep_sc.csv": 27
+      },
+      "state": {
+        "alpha": 22.955080789970264,
+        "electron_density_m_3": 6285528167776.729,
+        "electron_temperature_effective_eV": 2.8988154814698404,
+        "mean_electron_energy_eV": 4.34822322220476,
+        "neutral_density_m_3": 1.78158720484731e+23,
+        "transport_energy_eV": 5.537046002541311
+      }
+    },
+    {
+      "budgets": {
+        "B1": 0.032897989942101025,
+        "B2": 0.0657706711573811,
+        "B3": 0.27498256188884357
+      },
+      "closure_state": [
+        14258555975056.756,
+        208086522760541.44
+      ],
+      "condition": {
+        "absorbed_power_w": 0.5,
+        "pressure_o2_torr": 0.5
+      },
+      "engine_cation_number_densities_m_3": [
+        5081545215.617069,
+        1804775559.7749717,
+        222338192414822.78
+      ],
+      "engine_unity_cation_wall_vector": [
+        1485318291880.284,
+        1101361236465.5852,
+        1.087979177027142e+17
+      ],
+      "falsified_comparator": {
+        "B3_budget": 0.312254542176897,
+        "actual_error": 1.7329326902802942,
+        "local_checks": {
+          "attachment_metric": 1366.8993567378614,
+          "minimum_confinement_ratio": 104.63656674776516
+        }
+      },
+      "reference_geometry_engine_frequencies_s_1": [
+        292.2965808344021,
+        610.2483106558183,
+        489.3352622914501
+      ],
+      "reference_status": "reference-qualified",
+      "reference_variants": {
+        "c50v05": {
+          "error": 0.032154151903983276,
+          "reference_cation_wall_vector": [
+            50930276267.11331,
+            44479381300.834724,
+            1.1235089582476917e+17
+          ]
+        },
+        "c50v2": {
+          "error": 0.035976777008848514,
+          "reference_cation_wall_vector": [
+            41881907472.901085,
+            37619008982.39328,
+            1.127813117482672e+17
+          ]
+        },
+        "mob200": {
+          "error": 0.054799040702993664,
+          "reference_cation_wall_vector": [
+            56147485810.81713,
+            49918305525.17172,
+            1.1492542309828934e+17
+          ]
+        },
+        "mob50": {
+          "error": 0.03459802264207742,
+          "reference_cation_wall_vector": [
+            45107108342.12941,
+            40065449600.808395,
+            1.1262587511484152e+17
+          ]
+        },
+        "nominal": {
+          "error": 0.061863364347239075,
+          "reference_cation_wall_vector": [
+            60980335872.69785,
+            54221769772.76543,
+            1.1574089292501494e+17
+          ]
+        },
+        "vth05": {
+          "error": 0.05935996245921609,
+          "reference_cation_wall_vector": [
+            67961872697.17195,
+            59492753949.99008,
+            1.154512501251495e+17
+          ]
+        },
+        "vth2": {
+          "error": 0.06326801989704654,
+          "reference_cation_wall_vector": [
+            57123644537.06162,
+            51307931877.393234,
+            1.1590373916059744e+17
+          ]
+        }
+      },
+      "source_rows": {
+        "confined_materiality_rw.csv": 28,
+        "confined_sweep_sc.csv": 28,
+        "materiality_rw.csv": 29,
+        "sweep_sc.csv": 29
+      },
+      "state": {
+        "alpha": 14.593800601165936,
+        "electron_density_m_3": 14258555975056.756,
+        "electron_temperature_effective_eV": 2.8402303252373904,
+        "mean_electron_energy_eV": 4.260345487856085,
+        "neutral_density_m_3": 1.7818293367333354e+23,
+        "transport_energy_eV": 5.433419702650304
+      }
+    },
+    {
+      "budgets": {
+        "B1": 0.04375258855179156,
+        "B2": 0.08737081340585658,
+        "B3": 0.3159625860828451
+      },
+      "closure_state": [
+        32425880088360.562,
+        275080201710410.7
+      ],
+      "condition": {
+        "absorbed_power_w": 1.0,
+        "pressure_o2_torr": 0.5
+      },
+      "engine_cation_number_densities_m_3": [
+        4007928163.4403863,
+        4938842498.963618,
+        307497135028108.9
+      ],
+      "engine_unity_cation_wall_vector": [
+        1148213518531.2483,
+        2954001790427.657,
+        1.4747777554606336e+17
+      ],
+      "falsified_comparator": {
+        "B3_budget": 0.2454956763847616,
+        "actual_error": 1.6154231824141112,
+        "local_checks": {
+          "attachment_metric": 1383.4451067840096,
+          "minimum_confinement_ratio": 174.53279151295624
+        }
+      },
+      "reference_geometry_engine_frequencies_s_1": [
+        286.4855535598291,
+        598.1162167142471,
+        479.6069905906022
+      ],
+      "reference_status": "reference-qualified",
+      "reference_variants": {
+        "c50v05": {
+          "error": 0.09761138702805448,
+          "reference_cation_wall_vector": [
+            38839553005.23673,
+            120526053525.4557,
+            1.6260799160017427e+17
+          ]
+        },
+        "c50v2": {
+          "error": 0.10134838853442718,
+          "reference_cation_wall_vector": [
+            32810651125.424114,
+            104416819298.34862,
+            1.6321829860833226e+17
+          ]
+        },
+        "mob200": {
+          "error": 0.12366977252512214,
+          "reference_cation_wall_vector": [
+            45257683926.08962,
+            142615505227.5725,
+            1.6691453952534147e+17
+          ]
+        },
+        "mob50": {
+          "error": 0.0999793111861011,
+          "reference_cation_wall_vector": [
+            34986702052.99346,
+            110235200940.04245,
+            1.6299442948110384e+17
+          ]
+        },
+        "nominal": {
+          "error": 0.13203585954774658,
+          "reference_cation_wall_vector": [
+            49952664059.24772,
+            157355950625.27728,
+            1.6832265584751712e+17
+          ]
+        },
+        "vth05": {
+          "error": 0.12959786772115464,
+          "reference_cation_wall_vector": [
+            54721023437.6034,
+            170014642516.15665,
+            1.679110372702828e+17
+          ]
+        },
+        "vth2": {
+          "error": 0.13343526585659332,
+          "reference_cation_wall_vector": [
+            47269594847.373146,
+            150225689205.80728,
+            1.6855941067450726e+17
+          ]
+        }
+      },
+      "source_rows": {
+        "confined_materiality_rw.csv": 30,
+        "confined_sweep_sc.csv": 30,
+        "materiality_rw.csv": 31,
+        "sweep_sc.csv": 31
+      },
+      "state": {
+        "alpha": 8.483353449800493,
+        "electron_density_m_3": 32425880088360.562,
+        "electron_temperature_effective_eV": 2.780623702695518,
+        "mean_electron_energy_eV": 4.170935554043277,
+        "neutral_density_m_3": 1.782297921239825e+23,
+        "transport_energy_eV": 5.326296445278605
+      }
+    },
+    {
+      "budgets": {
+        "B1": 0.0422660644838473,
+        "B2": 0.08442182413398759,
+        "B3": 0.2744375255071815
+      },
+      "closure_state": [
+        7094697820613.813,
+        174118669113338.34
+      ],
+      "condition": {
+        "absorbed_power_w": 0.25,
+        "pressure_o2_torr": 1.0
+      },
+      "engine_cation_number_densities_m_3": [
+        662111180.7528889,
+        226548048.41585845,
+        181212478274723.0
+      ],
+      "engine_unity_cation_wall_vector": [
+        175235678514.40002,
+        125179954343.50467,
+        8.029019087152398e+16
+      ],
+      "falsified_comparator": {
+        "B3_budget": 0.4288077485555369,
+        "actual_error": 1.8180113268281262,
+        "local_checks": {
+          "attachment_metric": 2886.470999921245,
+          "minimum_confinement_ratio": 137.7104109336725
+        }
+      },
+      "reference_geometry_engine_frequencies_s_1": [
+        264.66201388585364,
+        552.5536645264785,
+        443.07208662419976
+      ],
+      "reference_status": "reference-qualified",
+      "reference_variants": {
+        "c50v05": {
+          "error": 0.04558715912622469,
+          "reference_cation_wall_vector": [
+            3469553033.537498,
+            2735729516.875994,
+            7.671183981486563e+16
+          ]
+        },
+        "c50v2": {
+          "error": 0.04182329178817816,
+          "reference_cation_wall_vector": [
+            2348330917.3675275,
+            1934876432.1853096,
+            7.70012575604181e+16
+          ]
+        },
+        "mob200": {
+          "error": 0.02812467092585754,
+          "reference_cation_wall_vector": [
+            3203829163.934735,
+            2596115606.4861946,
+            7.806365626088462e+16
+          ]
+        },
+        "mob50": {
+          "error": 0.043160130400165794,
+          "reference_cation_wall_vector": [
+            2742830952.0822015,
+            2216715084.3323536,
+            7.68983409717122e+16
+          ]
+        },
+        "nominal": {
+          "error": 0.022944471057679158,
+          "reference_cation_wall_vector": [
+            3392674451.61345,
+            2751677910.3617797,
+            7.846915699474926e+16
+          ]
+        },
+        "vth05": {
+          "error": 0.025416055853584495,
+          "reference_cation_wall_vector": [
+            4228716163.955929,
+            3348356205.650413,
+            7.827542353993478e+16
+          ]
+        },
+        "vth2": {
+          "error": 0.021587989139743673,
+          "reference_cation_wall_vector": [
+            2939542537.580958,
+            2428173396.810935,
+            7.857568521500122e+16
+          ]
+        }
+      },
+      "source_rows": {
+        "confined_materiality_rw.csv": 32,
+        "confined_sweep_sc.csv": 32,
+        "materiality_rw.csv": 33,
+        "sweep_sc.csv": 33
+      },
+      "state": {
+        "alpha": 24.542083893613114,
+        "electron_density_m_3": 7094697820613.813,
+        "electron_temperature_effective_eV": 2.8023698215760002,
+        "mean_electron_energy_eV": 4.203554732364,
+        "neutral_density_m_3": 1.9436159903399544e+23,
+        "transport_energy_eV": 5.366113485378909
+      }
+    },
+    {
+      "budgets": {
+        "B1": 0.04265343570157902,
+        "B2": 0.08516342041540816,
+        "B3": 0.33029299363057324
+      },
+      "closure_state": [
+        15485235453981.3,
+        252850921822554.22
+      ],
+      "condition": {
+        "absorbed_power_w": 0.5,
+        "pressure_o2_torr": 1.0
+      },
+      "engine_cation_number_densities_m_3": [
+        642976689.8803558,
+        666443947.3106406,
+        268334847855898.34
+      ],
+      "engine_unity_cation_wall_vector": [
+        167743070708.21277,
+        362990984805.29755,
+        1.1719503551142742e+17
+      ],
+      "falsified_comparator": {
+        "B3_budget": 0.39710414322751064,
+        "actual_error": 1.7545387825680865,
+        "local_checks": {
+          "attachment_metric": 2910.6253117480423,
+          "minimum_confinement_ratio": 206.38614522237808
+        }
+      },
+      "reference_geometry_engine_frequencies_s_1": [
+        260.8851508122731,
+        544.6684395140908,
+        436.74922004302516
+      ],
+      "reference_status": "reference-qualified",
+      "reference_variants": {
+        "c50v05": {
+          "error": 0.023745518366607984,
+          "reference_cation_wall_vector": [
+            3480975817.4134326,
+            8463107751.147279,
+            1.200108110577297e+17
+          ]
+        },
+        "c50v2": {
+          "error": 0.027408947799278837,
+          "reference_cation_wall_vector": [
+            2473642942.6729794,
+            6265245542.159816,
+            1.204513394524902e+17
+          ]
+        },
+        "mob200": {
+          "error": 0.04427713163397643,
+          "reference_cation_wall_vector": [
+            3427205745.240409,
+            8552926988.319083,
+            1.2250105648106917e+17
+          ]
+        },
+        "mob50": {
+          "error": 0.02608910968710515,
+          "reference_cation_wall_vector": [
+            2831919492.2798567,
+            7047168809.507012,
+            1.2029244010890429e+17
+          ]
+        },
+        "nominal": {
+          "error": 0.05060008844651818,
+          "reference_cation_wall_vector": [
+            3682137259.2177086,
+            9198130946.18813,
+            1.2327852307794208e+17
+          ]
+        },
+        "vth05": {
+          "error": 0.04820282977919637,
+          "reference_cation_wall_vector": [
+            4452189300.924588,
+            10876192667.301172,
+            1.2298316779188258e+17
+          ]
+        },
+        "vth2": {
+          "error": 0.05194312559016215,
+          "reference_cation_wall_vector": [
+            3258110617.4085965,
+            8273714650.8380575,
+            1.2344431027268896e+17
+          ]
+        }
+      },
+      "source_rows": {
+        "confined_materiality_rw.csv": 34,
+        "confined_sweep_sc.csv": 34,
+        "materiality_rw.csv": 35,
+        "sweep_sc.csv": 35
+      },
+      "state": {
+        "alpha": 16.328516448714733,
+        "electron_density_m_3": 15485235453981.3,
+        "electron_temperature_effective_eV": 2.7606821793931613,
+        "mean_electron_energy_eV": 4.141023269089742,
+        "neutral_density_m_3": 1.9439355020622198e+23,
+        "transport_energy_eV": 5.290043351516036
+      }
+    },
+    {
+      "budgets": {
+        "B1": 0.04319403725966249,
+        "B2": 0.08619091075013689,
+        "B3": 0.3103834998388656
+      },
+      "closure_state": [
+        34824358100206.17,
+        341319873490341.94
+      ],
+      "condition": {
+        "absorbed_power_w": 1.0,
+        "pressure_o2_torr": 1.0
+      },
+      "engine_cation_number_densities_m_3": [
+        539261522.0023735,
+        1873298861.1059515,
+        376141819030165.0
+      ],
+      "engine_unity_cation_wall_vector": [
+        138219934053.37708,
+        1002446417313.3586,
+        1.6140078641030237e+17
+      ],
+      "falsified_comparator": {
+        "B3_budget": 0.3984164029374748,
+        "actual_error": 1.6526267061815865,
+        "local_checks": {
+          "attachment_metric": 2947.483799637802,
+          "minimum_confinement_ratio": 332.9526891259951
+        }
+      },
+      "reference_geometry_engine_frequencies_s_1": [
+        256.31336265221,
+        535.1235929976159,
+        429.0955651420367
+      ],
+      "reference_status": "reference-qualified",
+      "reference_variants": {
+        "c50v05": {
+          "error": 0.08791142023452497,
+          "reference_cation_wall_vector": [
+            2713655941.4792843,
+            22537365373.557796,
+            1.762410070400758e+17
+          ]
+        },
+        "c50v2": {
+          "error": 0.0914684269125135,
+          "reference_cation_wall_vector": [
+            2010115095.798177,
+            17337815068.101364,
+            1.7687027926803024e+17
+          ]
+        },
+        "mob200": {
+          "error": 0.11153619552501436,
+          "reference_cation_wall_vector": [
+            2843174795.2458305,
+            24206273635.071735,
+            1.8046493911757757e+17
+          ]
+        },
+        "mob50": {
+          "error": 0.09016670845929359,
+          "reference_cation_wall_vector": [
+            2263382412.0860677,
+            19210294924.547897,
+            1.7663971948190637e+17
+          ]
+        },
+        "nominal": {
+          "error": 0.11903907323543625,
+          "reference_cation_wall_vector": [
+            3103182228.9066696,
+            26446875326.115223,
+            1.8182859891275984e+17
+          ]
+        },
+        "vth05": {
+          "error": 0.11672042041941334,
+          "reference_cation_wall_vector": [
+            3655422176.4121604,
+            30521339007.873657,
+            1.8140602612572528e+17
+          ]
+        },
+        "vth2": {
+          "error": 0.12036802580346498,
+          "reference_cation_wall_vector": [
+            2793675466.4435887,
+            24161952768.07216,
+            1.820712696234771e+17
+          ]
+        }
+      },
+      "source_rows": {
+        "confined_materiality_rw.csv": 36,
+        "confined_sweep_sc.csv": 36,
+        "materiality_rw.csv": 37,
+        "sweep_sc.csv": 37
+      },
+      "state": {
+        "alpha": 9.80118204930592,
+        "electron_density_m_3": 34824358100206.17,
+        "electron_temperature_effective_eV": 2.7097642588477644,
+        "mean_electron_energy_eV": 4.064646388271647,
+        "neutral_density_m_3": 1.944568982012723e+23,
+        "transport_energy_eV": 5.198591554601791
+      }
+    }
+  ],
+  "provenance": "I-314 rework 3; rw_core.py frozen actual-vector error definition; sweep_sc.csv and materiality_rw.csv source rows recorded per point",
+  "robust_valid_point_tallies": {
+    "B1": 0,
+    "B2": 7,
+    "B3": 17
+  },
+  "schema_version": 2,
+  "selected_closure": "o2ReferenceQualifiedUnity"
+}

@@ -157,12 +157,11 @@ def test_envelope_invalid_time_preserves_last_valid(time):
     assert r.electronegative_wall_manifest() == manifest
 
 
-def test_envelope_bracket_named_refusal_preserves_last_valid():
-    r, _, _ = model(closure='electropositiveBracket')
-    manifest = r.electronegative_wall_manifest()
-    with pytest.raises(ElectronegativeWallRegimeError, match='electropositiveBracket'):
-        qualify_envelope([(r, r.y.copy(), 7.)])
-    assert r.electronegative_wall_manifest() == manifest
+def test_named_unity_closure_can_qualify_an_explicit_envelope():
+    r, _, _ = model(closure='o2ReferenceQualifiedUnity')
+    result = qualify_envelope([(r, r.y.copy(), 7.)])
+    assert result['samples'] == 1
+    assert r.electronegative_wall_manifest()['time'] == 7.
 
 
 class CountDenseFixedTeReactor(PlasmaReactor):

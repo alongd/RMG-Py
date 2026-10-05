@@ -1115,21 +1115,31 @@ Electronegative wall closures
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 ``electronegativeWallModel`` explicitly selects ``'confinedAnion'`` or
-``'electropositiveBracket'`` on a map wall (``ionReducedMobilities``).
+``'o2ReferenceQualifiedUnity'`` on a map wall (``ionReducedMobilities``).
 Undeclared, the existing refusal of core anions remains. Scalar walls,
 undeclared anion mobilities and multiply charged anions are refused.
 No model is inferred from the presence of anions, and no arbitrary wall
 multiplier is an input.
 
-For the qualified oxygen regime, negative ions are treated as confined from
-the wall. Positive-ion wall fluxes use the electronegative profile
-normalisation ``h = 1/(1+alpha)``, with ``alpha = n_minus/n_e`` evaluated from
-the instantaneous state. The bounded implementation is ``n_e/(n_e+n_minus)``.
-This is the collisional confined-anion asymptote qualified by I-311, not a
-universal wall law for every electronegative plasma. The electropositive
-value ``h = 1`` is retained as the named model-form sensitivity
-``electropositiveBracket``. Negative ions have zero wall flux in both modes,
-and electron wall loss is set by the total positive-ion charge flux.
+For the I-314-qualified oxygen envelope, ``o2ReferenceQualifiedUnity`` treats
+negative ions as confined from the wall and applies exactly ``h = 1`` to every
+positive ion through the existing species-specific wall operator. Electron
+wall loss is the total positive-ion charge flux. The mode is
+``B3-QUALIFIED / MODEL-CONDITIONAL`` at the 17 reference-qualified points; the
+0.05 torr / 1 W point is reference-unqualified by the ion-heating validity
+rule, though it passes B3 numerically. This is an effective zero-dimensional
+closure for that envelope, not a claim that the plasma is electropositive or
+that electronegativity has no physical effect. The manifest records this as
+closure-level provenance; selecting the mode does not make the engine infer
+that a different mixture or operating point belongs to the qualified envelope.
+Alpha remains a dynamic output.
+
+``confinedAnion`` retains ``h = 1/(1+alpha)`` as a
+``FALSIFIED SIMPLIFIED CLOSURE`` methodology comparator. Its bounded
+implementation is ``n_e/(n_e+n_minus)``. It remains explicitly selectable,
+and its qualification failures still refuse the run without switching to the
+unity mode. The retired name ``electropositiveBracket`` is not an alias and is
+refused with a message naming ``o2ReferenceQualifiedUnity``.
 
 The sourced electronegative edge-to-centre correction is radial and was
 derived with axial loss neglected. The production finite-cylinder reactor
@@ -1305,10 +1315,10 @@ residual representability at every finite-anion acceptance in both temperature
 modes, before publishing last-valid. All physical gates still apply, together
 with the stated numerical publication bounds.
 
-``electropositiveBracket`` retains the confinement and attachment/Bohm
-physical gates because it also assumes zero negative-ion wall flux. Its unit
-factor is a declared model-form sensitivity and makes no central
-simplified-vs-reference validity claim.
+Both named closures retain the confinement and attachment/Bohm physical gates
+because both assume zero negative-ion wall flux. Full-profile and geometry
+reference failures refuse explicitly; no gate result, alpha value,
+confinement ratio, or anion presence selects a different closure.
 
 The reference callable receives a versioned SI context (``schema_version=1``).
 Map-mode cylinder inputs retain their declared ``chamber_radius`` and

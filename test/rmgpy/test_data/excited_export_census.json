@@ -1653,19 +1653,19 @@
     "rmgpy/solver/plasma.pyx:PlasmaReactor._evaluate_electronegative_wall_regime": {
       "file": "rmgpy/solver/plasma.pyx",
       "function": "PlasmaReactor._evaluate_electronegative_wall_regime",
-      "line": 6074,
-      "signature": "1665fcfb004cfbd1b3bd43660c0e66f01b47bc125b4fbe7a67a09d3430510e54",
+      "line": 6081,
+      "signature": "89188081ead518fd8b49013344e65d3694310b7f6318943ace3f66dee3990ee0",
       "verdict": "R",
-      "reason": "Gate keys, extrema, context labels, and destruction equations resolve every molecular reference through the wall declaration map.",
+      "reason": "Gate keys, extrema, context labels, and destruction equations resolve every molecular reference through the full-identity wall declaration map while the explicitly selected unity closure changes only wall physics and qualification metadata.",
       "test": "excitedExportRework10Test.test_resolved_wall_manifest_uses_state_qualified_species_names"
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.electronegative_wall_manifest": {
       "file": "rmgpy/solver/plasma.pyx",
       "function": "PlasmaReactor.electronegative_wall_manifest",
-      "line": 1100,
-      "signature": "8f249f1026afd738c09333f480da0659e7785c5e6aba54e6c2297d7f4186393e",
+      "line": 1102,
+      "signature": "9ef64c5fd85c3b455dc15e6ff04fa11880113401a6c071d8574eeee97405fed4",
       "verdict": "R",
-      "reason": "The serializable wall API validates the complete species declaration and returns diagnostics whose molecular names were state-qualified at evaluation time.",
+      "reason": "The serializable wall API validates the complete species declaration, preserves state-qualified diagnostic names, and overlays closure scientific-status and claim metadata without rewriting any molecular identifier.",
       "test": "excitedExportRework10Test.test_resolved_wall_manifest_uses_state_qualified_species_names"
     }
   },

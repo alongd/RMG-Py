@@ -53,6 +53,34 @@ REGIME_REQUIREMENTS = ('collisional', 'unmagnetised', 'confined_anions',
                        'homogeneous_profile', 'no_boundary_ionisation',
                        'isotropic_diffusion', 'compatible_boundaries')
 
+O2_REFERENCE_QUALIFIED_UNITY = 'o2ReferenceQualifiedUnity'
+O2_QUALIFYING_REFERENCE = (
+    'plasma-pm3/reports/i314-en-wall-reference/rework3/report.md; '
+    'I-314 rework 3, amended 2026-10-04')
+O2_QUALIFICATION_ENVELOPE = tuple(
+    dict(pressure_o2_torr=pressure, absorbed_power_w=power,
+         reference_status=(
+             'reference-unqualified (ion-heating validity), B3-pass numerically'
+             if pressure == 0.05 and power == 1.0 else 'reference-qualified'))
+    for pressure in (0.05, 0.1, 0.2, 0.25, 0.5, 1.0)
+    for power in (0.25, 0.5, 1.0))
+
+
+def closure_scientific_metadata(model):
+    """Static owner-ruling metadata carried by diagnostics and manifests."""
+    if model == 'confinedAnion':
+        return dict(scientific_status='FALSIFIED SIMPLIFIED CLOSURE')
+    if model == O2_REFERENCE_QUALIFIED_UNITY:
+        return dict(
+            scientific_status='REFERENCE-QUALIFIED UNITY CATION-WALL CLOSURE',
+            claim_level='B3-QUALIFIED / MODEL-CONDITIONAL',
+            claim_scope=(
+                'closure qualification over the recorded I-314 O2 envelope only; '
+                'the engine does not infer current-run envelope membership'),
+            qualifying_reference=O2_QUALIFYING_REFERENCE,
+            qualification_envelope=copy.deepcopy(O2_QUALIFICATION_ENVELOPE))
+    return dict(scientific_status='FINITE-CYLINDER GEOMETRIC EXTENSION')
+
 
 def wall_discrepancy(simple, reference, charges):
     """Non-cancelling charge-weighted symmetric wall-source discrepancy."""
@@ -255,7 +283,7 @@ def closure_factor_gradient(y, electron, anions, model, geometry, components):
     y = np.asarray(y)
     gradient = np.zeros(len(y))
     minus = sum(max(float(y[j]), 0.) for j in anions)
-    if model is None or minus == 0. or model == 'electropositiveBracket':
+    if model is None or minus == 0. or model == O2_REFERENCE_QUALIFIED_UNITY:
         return 1., 1., gradient
     ne = max(float(y[electron]), 0.)
     total = ne + minus
@@ -355,10 +383,6 @@ def qualify_envelope(samples):
         # Validate metadata before the monitor can replace the last valid state.
         if not np.isfinite(time) or time < 0.:
             raise ElectronegativeWallRegimeError('envelope: time must be finite and nonnegative')
-        if reactor.electronegative_wall_model == 'electropositiveBracket':
-            raise ElectronegativeWallRegimeError(
-                'C-full-profile: electropositiveBracket is model-form sensitivity; '
-                'it cannot qualify a validity envelope')
         reactor.monitor_electronegative_wall(np.asarray(state),time)
         gates = reactor.electronegative_wall_diagnostics.get('gates')
         if not isinstance(gates,dict):

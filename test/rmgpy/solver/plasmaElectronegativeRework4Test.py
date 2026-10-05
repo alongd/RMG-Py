@@ -150,7 +150,7 @@ def decimal_wall(r, state):
         mass={j:D(np.exp(r.energy_ion_sheath_factor[j]-.5) if r.energy_balance else
             np.sqrt(species[j].molecular_weight.value_si/(2*np.pi*constants.m_e))) for j in ions}
         h=y[ie]/(y[ie]+sum(y[j] for j in anions))
-        factor=Dual(1) if r.electronegative_wall_model=='electropositiveBracket' else (
+        factor=Dual(1) if r.electronegative_wall_model=='o2ReferenceQualifiedUnity' else (
             h if r.electronegative_wall_geometry=='fullFrequency' else wr*h+wz)
         currents={j:pref[j]*k[j]*(te+iontemp)/density*y[j] for j in ions}
         gamma=sum(D(r.species_charges[j])*currents[j] for j in ions)
@@ -307,7 +307,7 @@ def test_outside_domain_refuses_without_publishing(variable,edge):
 @pytest.mark.parametrize('energy',[False,True])
 @pytest.mark.parametrize('mixture',[False,True])
 @pytest.mark.parametrize('arm',['fullFrequency','radialOnly'])
-@pytest.mark.parametrize('closure',['confinedAnion','electropositiveBracket'])
+@pytest.mark.parametrize('closure',['confinedAnion','o2ReferenceQualifiedUnity'])
 @pytest.mark.parametrize('ion_temperature',[None,'gas'])
 def test_domain_grid_every_wall_column(energy,mixture,arm,closure,ion_temperature,blanc):
     overrides=blanc_overrides(mixture) if blanc else {}
@@ -377,7 +377,7 @@ def test_analytic_electron_rate_slopes(te_ev):
 
 
 @pytest.mark.parametrize('arm',['fullFrequency','radialOnly'])
-@pytest.mark.parametrize('closure',['confinedAnion','electropositiveBracket'])
+@pytest.mark.parametrize('closure',['confinedAnion','o2ReferenceQualifiedUnity'])
 @pytest.mark.parametrize('quasineutral',[False,True])
 def test_full_energy_operator_with_power_elastic_source_and_te_chemistry(arm,closure,quasineutral):
     from rmgpy.kinetics import TwoTemperaturePlasma

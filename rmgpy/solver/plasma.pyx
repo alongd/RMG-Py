@@ -107,6 +107,8 @@ from rmgpy.exceptions import ElectronegativeWallRegimeError
 from rmgpy.solver.electronegative import (REGIME_REQUIREMENTS, RADIAL_MAPPING_TOLERANCE,
     check_reference, closure_factor_gradient, radial_source_frequency, wall_discrepancy,
     EN_WALL_DOMAIN, check_wall_domain, check_wall_temperature, check_wall_volume, check_wall_frequencies, check_wall_parameter, electron_rate_derivative, electron_rate_temperature_factor)
+from rmgpy.solver.electronegative import (
+    O2_REFERENCE_QUALIFIED_UNITY, closure_scientific_metadata)
 
 # --- charged-particle wall transport ---------------------------------------
 #
@@ -1116,8 +1118,8 @@ cdef class PlasmaReactor(ReactionSystem):
                           allow_ground_collisions=True)
         record = copy.deepcopy(self.electronegative_wall_diagnostics)
         record.update(closure=self.electronegative_wall_model,
-                      geometry_arm=self.electronegative_wall_geometry,
-                      scientific_status='FINITE-CYLINDER GEOMETRIC EXTENSION')
+                      geometry_arm=self.electronegative_wall_geometry)
+        record.update(closure_scientific_metadata(self.electronegative_wall_model))
         from rmgpy.solver.electronegative import manifest_values
         return manifest_values(record)
 
@@ -1135,8 +1137,15 @@ cdef class PlasmaReactor(ReactionSystem):
 
     def _configure_electronegative_wall(self, model, geometry, mobilities, components, qualification, chamber):
         """Store an explicit closure; anion presence never selects a model."""
-        if model not in (None, 'confinedAnion', 'electropositiveBracket'):
-            raise PlasmaStateError('electronegative_wall_model must be confinedAnion or electropositiveBracket')
+        if model == 'electropositiveBracket':
+            raise PlasmaStateError(
+                'electropositiveBracket is retired: FALSIFIED pairing with the '
+                'confinedAnion simplified closure; explicitly select '
+                'o2ReferenceQualifiedUnity for the I-314 O2 envelope')
+        if model not in (None, 'confinedAnion', O2_REFERENCE_QUALIFIED_UNITY):
+            raise PlasmaStateError(
+                'electronegative_wall_model must be confinedAnion or '
+                'o2ReferenceQualifiedUnity')
         if geometry not in ('fullFrequency', 'radialOnly'):
             raise PlasmaStateError('electronegative_wall_geometry must be fullFrequency or radialOnly')
         if model is None and (mobilities is not None or qualification is not None or geometry != 'fullFrequency'):
@@ -1193,7 +1202,7 @@ cdef class PlasmaReactor(ReactionSystem):
         self.anion_reduced_mobilities = copy.deepcopy(mobilities)
         self.wall_diffusion_components = components
         self._en_wall_qualification = copy.deepcopy(qualification)
-        self.electronegative_wall_diagnostics = {}
+        self.electronegative_wall_diagnostics = closure_scientific_metadata(model)
         self.electronegative_wall_last_valid_state = None
         self.electronegative_wall_history = {}
         self._en_anions = []
@@ -2843,12 +2852,10 @@ cdef class PlasmaReactor(ReactionSystem):
                             dtotal[k] = 1.
                     radial_weight = (1. if self.electronegative_wall_geometry == 'fullFrequency'
                                      else self.wall_diffusion_components[0]/sum(self.wall_diffusion_components))
-                    if self.electronegative_wall_model == 'electropositiveBracket':
-                        radial_weight = 0.
                     axial_weight = (0. if self.electronegative_wall_geometry == 'fullFrequency'
                                     else self.wall_diffusion_components[1]/sum(self.wall_diffusion_components))
-                    if self.electronegative_wall_model == 'electropositiveBracket':
-                        axial_weight = 1.
+                    if self.electronegative_wall_model == O2_REFERENCE_QUALIFIED_UNITY:
+                        radial_weight, axial_weight = 0., 1.
                     # factor/ne = radial_weight/(ne+minus)+axial_weight/ne.
                     # Full-frequency has no 1/ne term anywhere in this block.
                     rr = radial_weight/total
@@ -6235,21 +6242,6 @@ cdef class PlasmaReactor(ReactionSystem):
                 density_floored=neutral_density <= self.wall_neutral_density_floor),
             ambipolar_ion_temperature=self.ambipolar_ion_temperature)
 
-        if self.electronegative_wall_model == 'electropositiveBracket':
-            # Its zero-anion-flux physics still requires confinement and the
-            # attachment/Bohm branch. The EP endpoint itself is a sensitivity,
-            # so it makes no simplified-vs-reference validity claim.
-            self._check_en_complete_operator(y,t,result)
-            self.electronegative_wall_diagnostics.update(
-                gates=dict(A=confinement,B=dict(nu_attachment=nu_att,metrics=metrics.tolist(),
-                           diffusion_frequencies=ep.tolist()),
-                           C_radial=dict(error=radial_error,threshold=RADIAL_MAPPING_TOLERANCE),
-                           C_geometry=dict(status='unit-factor-comparator'),
-                           C_full_profile=dict(status='model-form-sensitivity-not-validity')),
-                geometry_endpoint_wall_difference=wall_discrepancy(
-                    context['full_frequency_flux'], context['radial_only_flux'], charges))
-            self.electronegative_wall_last_valid_state = (t,np.array(y,copy=True))
-            return
         geometry = check_reference('C-geometry', q.get('geometry_reference'), q.get('geometry_threshold'), copy.deepcopy(context))
         full = check_reference('C-full-profile', q.get('full_profile_reference'), q.get('wall_threshold'), copy.deepcopy(context), transition=True)
         self._check_en_complete_operator(y,t,result)
@@ -6361,7 +6353,6 @@ cdef class PlasmaReactor(ReactionSystem):
             self.electronegative_wall_diagnostics.update(
                 closure=self.electronegative_wall_model,
                 geometry_arm=self.electronegative_wall_geometry,
-                scientific_status='FINITE-CYLINDER GEOMETRIC EXTENSION',
                 alpha=(minus / y[self.electron_index] if y[self.electron_index] > 0.0 else float('inf')),
                 h=h, geometry_factor=factor,
                 f_z=(self.wall_diffusion_components[1] / sum(self.wall_diffusion_components)
@@ -6374,6 +6365,8 @@ cdef class PlasmaReactor(ReactionSystem):
                 total_cation_wall_loss=float(electron_loss),
                 electron_wall_loss=float(e_loss_rate),
                 wall_charge_flux=float(np.dot(self.species_charges,flux)))
+            self.electronegative_wall_diagnostics.update(
+                closure_scientific_metadata(self.electronegative_wall_model))
             components = self.compute_ion_wall_components(y,V)
             if components['radial_ep'] is not None:
                 self.electronegative_wall_diagnostics.update(

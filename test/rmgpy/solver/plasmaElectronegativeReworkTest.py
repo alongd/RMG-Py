@@ -172,7 +172,8 @@ def test_manifest_all_fields_follow_one_monitored_snapshot(arm, energy):
 
 
 @pytest.mark.parametrize('arm', ['fullFrequency', 'radialOnly'])
-def test_real_deck_simulation_writes_wall_identity_gates_and_potential(tmp_path, arm):
+@pytest.mark.parametrize('closure', ['confinedAnion', 'o2ReferenceQualifiedUnity'])
+def test_real_deck_simulation_writes_wall_identity_gates_and_potential(tmp_path, arm, closure):
     from rmgpy.rmg.main import RMG
     from rmgpy.rmg.input import read_input_file
     from rmgpy.rmg.listener import SimulationProfileWriter, SimulationProfilePlotter
@@ -197,12 +198,12 @@ plasmaReactor(temperature=(298.15,'K'), pressure=(5,'torr'), electronTemperature
  chamberGeometry={'shape':'cylinder','radius':(5.,'cm'),'length':(30.,'cm')},
  ionReducedMobilities={'Arp':(1.535e-4,'m^2/(V*s)')},
  anionReducedMobilities={'Cl-':(1.5e-4,'m^2/(V*s)')},
- electronegativeWallModel='confinedAnion', electronegativeWallGeometry=%r,
+ electronegativeWallModel=%r, electronegativeWallGeometry=%r,
  electronegativeWallQualification=%r, wallSingleBathApproximation=True,
  thermoSourceAssertions={'Arp': 'ion', 'Cl-': 'ion'}, terminationTime=(1.e-9,'s'))
 simulator(atol=1.e-16, rtol=1.e-8)
 model(toleranceMoveToCore=.1, toleranceInterruptSimulation=.1)
-""" % (arm, q))
+""" % (closure, arm, q))
     job = RMG(); read_input_file(str(deck), job)
     r = job.reaction_systems[0]
     core = list(r.initial_mole_fractions)
@@ -224,9 +225,23 @@ model(toleranceMoveToCore=.1, toleranceInterruptSimulation=.1)
         model_settings=ModelSettings(tol_keep_in_edge=0.,tol_move_to_core=1.e5,tol_interrupt_simulation=1.e8),
         simulator_settings=SimulatorSettings())
     assert result[0]
+    charges = np.array([species.get_net_charge() for species in core], float)
+    charge_history = np.array([
+        np.dot(charges, snapshot[2:2 + len(core)]) for snapshot in r.snapshots])
+    charged_inventory = np.array([
+        np.dot(np.abs(charges), np.abs(snapshot[2:2 + len(core)]))
+        for snapshot in r.snapshots])
+    assert np.max(np.abs(charge_history)) <= 1.e-10 * np.max(charged_inventory)
+    current_history = np.array([
+        record['wall_charge_flux']
+        for record in r.electronegative_wall_history.values()])
+    current_scale = max(
+        record['total_cation_wall_loss']
+        for record in r.electronegative_wall_history.values())
+    assert np.max(np.abs(current_history)) <= 1.e-14 * current_scale
     stem = tmp_path/'solver'/('simulation_1_%d' % len(core))
     manifest = json.loads(stem.with_suffix('.electronegative-wall.json').read_text())
-    assert manifest['closure'] == 'confinedAnion'
+    assert manifest['closure'] == closure
     assert manifest['geometry_arm'] == arm
     assert set(manifest['gates']) == {'A','B','C_radial','C_geometry','C_full_profile'}
     assert np.isfinite(manifest['floating_potential_e_over_kTe'])
@@ -234,8 +249,11 @@ model(toleranceMoveToCore=.1, toleranceInterruptSimulation=.1)
         rows = list(csv.DictReader(f))
     assert len(rows) == len(r.snapshots)
     header = next(key for key in rows[-1] if key.startswith('Wall h'))
-    assert 'confinedAnion' in header and arm in header
-    assert float(rows[0][header]) != float(rows[-1][header])
+    assert closure in header and arm in header
+    if closure == 'confinedAnion':
+        assert float(rows[0][header]) != float(rows[-1][header])
+    else:
+        assert all(float(row[header]) == 1. for row in rows)
     for row in rows:
         record = r.electronegative_wall_history[float(row['Time (s)'])]
         assert float(row[header]) == record['h']
@@ -248,7 +266,7 @@ model(toleranceMoveToCore=.1, toleranceInterruptSimulation=.1)
     from PIL import Image
     with Image.open(stem.with_suffix('.png')) as im:
         title = im.info['Title']
-    assert 'confinedAnion' in title and arm in title and 'C_full_profile' in title
+    assert closure in title and arm in title and 'C_full_profile' in title
     assert 'phi=' in title
 
 

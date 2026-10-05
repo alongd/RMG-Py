@@ -123,7 +123,7 @@ def main():
     parser=argparse.ArgumentParser();parser.add_argument('--output',required=True)
     args=parser.parse_args();output=Path(args.output)
     dump_case(output/'map_no_anions')
-    for closure in ('confinedAnion','electropositiveBracket'):
+    for closure in ('confinedAnion','o2ReferenceQualifiedUnity'):
         for arm in ('fullFrequency','radialOnly'):
             dump_case(output/(closure+'_'+arm),closure,arm,True)
 

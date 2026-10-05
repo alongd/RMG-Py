@@ -99,7 +99,7 @@ def decimal_wall_energy_derivatives(reactor, state, columns):
             mean_mass = sum(currents[j]*mass[j] for j in cations)/gamma
             plus = sum(values[j]*dec(reactor.species_charges[j]) for j in cations)
             minus = sum(values[j] for j in anions)
-            factor = (Decimal(1) if reactor.electronegative_wall_model == 'electropositiveBracket'
+            factor = (Decimal(1) if reactor.electronegative_wall_model == 'o2ReferenceQualifiedUnity'
                       else weight*ne/(ne+minus) + (Decimal(1)-weight))
             phi = mean_mass.ln() + (ne/plus).ln() - factor.ln()
             return -te*(Decimal(1)+phi)*(factor*gamma/ne)/Decimal('1.5')
@@ -120,7 +120,7 @@ def decimal_wall_energy_derivatives(reactor, state, columns):
 
 @pytest.mark.parametrize('alpha', [0.5, 1.e3, 1.e12, 1.e23, 5.e23, 1.e30])
 @pytest.mark.parametrize('arm', ['fullFrequency', 'radialOnly'])
-@pytest.mark.parametrize('closure', ['confinedAnion', 'electropositiveBracket'])
+@pytest.mark.parametrize('closure', ['confinedAnion', 'o2ReferenceQualifiedUnity'])
 @pytest.mark.parametrize('ion_temperature', [None, 'gas'])
 def test_extreme_alpha_wall_energy_columns_match_high_precision(alpha, arm, closure, ion_temperature):
     r, _, _ = model(arm=arm, energy=True, closure=closure,

@@ -211,7 +211,7 @@ def test_unqualified_finite_anions_refuse_instead_of_receiving_a_default():
 def test_analytic_jacobian_at_half_electronegativity(arm):
     # No chemistry: isolates the actual wall Jacobian without cancellation by
     # a much larger chemical destruction derivative.
-    r,_,_ = model(arm=arm,closure='electropositiveBracket')
+    r,_,_ = model(arm=arm,closure='o2ReferenceQualifiedUnity')
     r.kf[:] = 0.
     r.electronegative_wall_model = 'confinedAnion'
     y = r.y.copy(); dydt = np.zeros_like(y)
@@ -256,8 +256,8 @@ def test_input_writer_preserves_named_arm_decomposition_and_monitor(arm):
 
 
 @pytest.mark.parametrize('arm',['fullFrequency','radialOnly'])
-def test_bracket_has_unit_factor_and_zero_anion_flux(arm):
-    r,_,_ = model(arm=arm,closure='electropositiveBracket')
+def test_reference_qualified_unity_has_unit_factor_and_zero_anion_flux(arm):
+    r,_,_ = model(arm=arm,closure='o2ReferenceQualifiedUnity')
     assert r.electronegative_wall_factor(r.y) == (1.,1.)
     assert r.wall_flux[4] == 0.
     assert r.wall_flux[0] == r.wall_flux[2]
@@ -387,7 +387,7 @@ def test_thresholds_are_frozen_and_diagnostics_have_every_gate():
     manifest = r.electronegative_wall_manifest()
     assert manifest['closure'] == 'confinedAnion'
     assert manifest['geometry_arm'] == 'fullFrequency'
-    assert manifest['scientific_status'] == 'FINITE-CYLINDER GEOMETRIC EXTENSION'
+    assert manifest['scientific_status'] == 'FALSIFIED SIMPLIFIED CLOSURE'
     assert set(manifest['gates']) == {'A','B','C_radial','C_geometry','C_full_profile'}
     assert manifest['gates']['A']['Cl-']['destruction_channels']
     assert manifest['f_z'] == pytest.approx(0.04525379687210524)
@@ -413,7 +413,7 @@ def test_no_implicit_closure_and_no_scalar_or_missing_mobility():
 @pytest.mark.parametrize('gas_temperature',[None,'gas'])
 def test_energy_mode_analytic_wall_and_full_jacobian_at_half_alpha(arm,gas_temperature):
     r,_,_ = model(arm=arm,energy=True,ambipolar_ion_temperature=gas_temperature,
-                    closure='electropositiveBracket')
+                    closure='o2ReferenceQualifiedUnity')
     r.kf[:] = 0.
     r.electronegative_wall_model = 'confinedAnion'
     # Disable the synthetic chemistry after valid initialization to isolate
@@ -511,8 +511,9 @@ def test_actual_input_reference_restart_and_manifest_json():
 
 
 @pytest.mark.parametrize('arm',['fullFrequency','radialOnly'])
-def test_floating_potential_rebalances_reduced_total_flux(arm):
-    r,species,_=model(arm=arm,energy=True)
+@pytest.mark.parametrize('closure',['confinedAnion','o2ReferenceQualifiedUnity'])
+def test_floating_potential_rebalances_reduced_total_flux(arm,closure):
+    r,species,_=model(arm=arm,closure=closure,energy=True)
     y=r.y.copy();ne=y[0];plus=y[2]
     phi=r.electronegative_wall_manifest()['floating_potential_e_over_kTe']
     # Independent Maxwellian/Bohm current normalisation, with the explicit
@@ -528,13 +529,13 @@ def test_floating_potential_rebalances_reduced_total_flux(arm):
 
 @pytest.mark.parametrize('which,gate',[(0,'A:'),(1,'B:')])
 def test_comparator_keeps_confined_anion_physical_gates(which,gate):
-    r,_,_=model(closure='electropositiveBracket')
+    r,_,_=model(closure='o2ReferenceQualifiedUnity')
     r.kf[which]=0.
     with pytest.raises(ElectronegativeWallRegimeError,match=gate):
         r.monitor_electronegative_wall(r.y,0.)
 
 
-@pytest.mark.parametrize('closure', ['confinedAnion', 'electropositiveBracket'])
+@pytest.mark.parametrize('closure', ['confinedAnion', 'o2ReferenceQualifiedUnity'])
 @pytest.mark.parametrize('arm', ['fullFrequency', 'radialOnly'])
 def test_both_models_refuse_at_first_accepted_violation(closure, arm):
     class AcceptedMonitorReactor(PlasmaReactor):

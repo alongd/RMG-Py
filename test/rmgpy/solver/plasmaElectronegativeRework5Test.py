@@ -120,7 +120,7 @@ def decimal_operator(r, state, full=False, values=False):
         mass={j:D(np.exp(r.energy_ion_sheath_factor[j]-.5) if r.energy_balance else
             np.sqrt(species[j].molecular_weight.value_si/(2*np.pi*constants.m_e))) for j in ions}
         h=y[ie]/(y[ie]+sum(y[j] for j in anions))
-        factor=Dual(1) if r.electronegative_wall_model=='electropositiveBracket' else (
+        factor=Dual(1) if r.electronegative_wall_model=='o2ReferenceQualifiedUnity' else (
             h if r.electronegative_wall_geometry=='fullFrequency' else wr*h+wz)
         currents={j:pref[j]*k[j]*(te+iontemp)/density*y[j] for j in ions}
         gamma=sum(D(r.species_charges[j])*currents[j] for j in ions)
@@ -301,7 +301,7 @@ def test_public_te_edges_validate_the_current_eos(api, te_ev, held_ev):
 @pytest.mark.parametrize('energy', [False, True])
 @pytest.mark.parametrize('mixture', [False, True])
 @pytest.mark.parametrize('arm', ['fullFrequency', 'radialOnly'])
-@pytest.mark.parametrize('closure', ['confinedAnion', 'electropositiveBracket'])
+@pytest.mark.parametrize('closure', ['confinedAnion', 'o2ReferenceQualifiedUnity'])
 @pytest.mark.parametrize('ion_temperature', [None, 'gas'])
 def test_independent_volume_unequal_cations_full_energy_grid(
         blanc, energy, mixture, arm, closure, ion_temperature):

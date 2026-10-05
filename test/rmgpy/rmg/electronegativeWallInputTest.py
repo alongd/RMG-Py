@@ -66,7 +66,7 @@ model(toleranceMoveToCore=0.1,toleranceInterruptSimulation=0.1)
 """ % (model,arm,extra)
 
 
-@pytest.mark.parametrize('model',['confinedAnion','electropositiveBracket'])
+@pytest.mark.parametrize('model',['confinedAnion','o2ReferenceQualifiedUnity'])
 @pytest.mark.parametrize('arm',['fullFrequency','radialOnly'])
 def test_parse_save_and_reread_preserve_explicit_closure_and_geometry(tmp_path,model,arm):
     original=tmp_path/'input.py';original.write_text(input_text(model,arm))
@@ -98,6 +98,15 @@ def test_no_inferred_closure_or_arbitrary_selector(tmp_path,model,arm):
     path=tmp_path/'input.py';path.write_text(input_text(model,arm))
     with pytest.raises(PlasmaStateError):
         read_input_file(str(path),RMG())
+
+
+def test_retired_bracket_input_names_the_replacement_and_falsified_status(tmp_path):
+    path = tmp_path/'input.py'
+    path.write_text(input_text('electropositiveBracket'))
+    with pytest.raises(
+            PlasmaStateError,
+            match=r'electropositiveBracket.*FALSIFIED.*o2ReferenceQualifiedUnity'):
+        read_input_file(str(path), RMG())
 
 
 def test_wrong_units_for_explicit_components_refuse(tmp_path):

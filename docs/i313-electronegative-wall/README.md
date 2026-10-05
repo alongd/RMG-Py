@@ -1,10 +1,11 @@
-# Qualified confined-anion wall interfaces and declared axial extension
+# Qualified electronegative wall interfaces and declared axial extension
 
-The implementation supplies explicit `confinedAnion` and
-`electropositiveBracket` closures, with `fullFrequency` production and
-`radialOnly` sensitivity. The full-frequency multiplier is a **FINITE-CYLINDER
-GEOMETRIC EXTENSION**. Kemaneci et al., arXiv:1612.07268, derive the factor
-radially with axial loss neglected. They do not derive the axial multiplier.
+The implementation supplies the explicitly selected `confinedAnion` comparator
+and `o2ReferenceQualifiedUnity` closure, with `fullFrequency` production and
+`radialOnly` sensitivity. `confinedAnion` is retained with the scientific status
+**FALSIFIED SIMPLIFIED CLOSURE**. The O2-qualified closure uses exactly unity for
+the cation multiplier. The historical Kemaneci-derived confined-anion expression
+remains a radial derivation with a finite-cylinder axial extension.
 
 The radial normalization integral and complete radial expression are retained
 in `verify_mapping.py`. Profile normalization cancels in the relative factor.
@@ -36,10 +37,11 @@ under the tested tree before any run. The regressions are
 
 `verify_bit_identity.py --output <dir>` dumps complete binary wall flux,
 latched frequency, energy budget and trajectory for argon map mode and both
-closures in each geometry arm with a zero-population anion. The old API
-refuses even a zero core anion; its reference uses an inert zero neutral row
-to hold the packed solver dimension fixed. No base guard is disabled. Both
-inactive rows are checked to stay exactly zero; use `cmp` on every artifact.
+explicitly selectable closures in each geometry arm with a zero-population
+anion. The old API refuses even a zero core anion; its reference uses an inert
+zero neutral row to hold the packed solver dimension fixed. No base guard is
+disabled. Both inactive rows are checked to stay exactly zero; use `cmp` on
+every artifact.
 
 The continuation report and actual logs are in
 `/home/alon/runs/i313-en-wall/continuation/`. Real envelope qualification,
