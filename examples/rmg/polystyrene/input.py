@@ -36,7 +36,8 @@ polymer(
     cutoff=3,
     Mn=5000.0,
     Mw=6000.0,
-    initial_mass=1.0,
+    # The example charge is 50 g; at Mn=5000 g mol^-1 this is 0.01 mol of chains.
+    initial_mass=0.05,
 )
 
 # 4. Polymer Phase Definition
@@ -53,7 +54,9 @@ hybridPolymerReactor(
     pressure=(1.0, 'bar'),
     initialMoles={
         'N2': 0.99,
-        'PS': 0.01,
+        # Match the polymer declaration: 0.05 kg / 5000 g mol^-1 = 0.01 mol of chains.
+        # Keeping this pool equal to initial_mass/Mn prevents the pool-consistency warning.
+        'PS': 0.2,
         'Ar': 1e-10,  # inert bath-gas reference for pressure dependence; ~0 mol = no effect on composition
     },
     polymerPhase=pp,
@@ -108,7 +111,9 @@ generatedSpeciesConstraints(
     maximumNitrogenAtoms=0,
     maximumSiliconAtoms=0,
     maximumSulfurAtoms=0,
-    maximumHeavyAtoms=5,
+    # Styrene (the intended PS monomer product) has eight heavy atoms; five would
+    # reject it as a generated species even though maximumCarbonAtoms already allows C8.
+    maximumHeavyAtoms=8,
     maximumRadicalElectrons=2,
     maximumSingletCarbenes=1,
     maximumCarbeneRadicals=0,
