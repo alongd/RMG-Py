@@ -246,6 +246,8 @@ __all__ = [
 #: electrons`` before being added. The two families are carried on an unmerged
 #: RMG-database branch, so these entries must land before or with it; alone they
 #: declare placement for owners the database does not yet contain.
+#: The pairing family has the same attachment-shaped placement: Ar+ + e- -> Ar
+#: consumes one incident electron and produces none.
 FAMILY_ELECTRON_PLACEMENT = {
     'Plasma_Electron_Attachment': (1, 0),
     'Cation_R_Recombination': (1, 0),
@@ -256,6 +258,7 @@ FAMILY_ELECTRON_PLACEMENT = {
     'Plasma_Associative_Ionization_Alkaline_Alkaline': (0, 1),
     'Plasma_Electron_Impact_Ionization': (1, 2),
     'Plasma_Radiative_Recombination': (1, 0),
+    'Plasma_Radiative_Recombination_Pairing': (1, 0),
 }
 
 #: Outcomes of the rate-order cross-check (step 11). Disagreement is not one of
