@@ -10,7 +10,7 @@ import pickle
 import subprocess
 from pathlib import Path
 
-from cache_provenance import generator_code_unchanged
+from portable_cache import artifact_identity, identity, identity_name, migrate
 
 from rmgpy.data.rmg import RMGDatabase
 from rmgpy.kmc.compiler import (
@@ -83,27 +83,27 @@ def main() -> None:
     )
     print("preparing non-auto-generated rate rules from training", flush=True)
     prepare_rate_rules(database.kinetics, database.thermo, verbose=True)
-    repository_commit = subprocess.check_output(
-        ["git", "rev-parse", "HEAD"], text=True
-    ).strip()
     database_commit = args.database_sha or subprocess.check_output(
         ["git", "-C", str(database_path), "rev-parse", "HEAD"], text=True
     ).strip()
-    commits = repository_commit + "-" + database_commit
-    generated_cache = (
-        Path(os.environ.get("RMG_KMC_CACHE_ROOT", str(Path.cwd() / ".kmc-cache")))
-        / "generated-reactions"
-        / commits
-        / os.environ.get("PYTHONHASHSEED", "default")
-    )
+    cache_root = Path(os.environ.get("RMG_KMC_CACHE_ROOT", str(Path.cwd() / ".kmc-cache")))
+    cache_identity = identity(Path.cwd(), database_path)
+    portable_root = cache_root / "portable" / identity_name(cache_identity)
+    if not (portable_root / "manifest.json").exists():
+        migrate(cache_root, Path.cwd(), database_path)
+    generated_cache = portable_root / "generated-reactions"
     generated_cache.mkdir(parents=True, exist_ok=True)
-    repository_commit, database_commit = commits.split("-")
-    reusable_caches = []
-    for candidate in generated_cache.parent.parent.iterdir():
-        if candidate.name.endswith("-" + database_commit) and candidate.name != commits:
-            origin = candidate.name.split("-")[0]
-            if generator_code_unchanged(Path.cwd(), origin, repository_commit):
-                reusable_caches.append(candidate / generated_cache.name)
+    artifact_cache = cache_root / "portable-artifacts" / identity_name(
+        artifact_identity(Path.cwd(), database_path)
+    )
+    cached_artifacts = sorted(artifact_cache.glob("*.json"))
+    if cached_artifacts:
+        output = Path(args.output)
+        output.mkdir(parents=True, exist_ok=True)
+        destination = output / cached_artifacts[0].name
+        destination.write_bytes(cached_artifacts[0].read_bytes())
+        print(destination)
+        return
     generate = database.kinetics.generate_reactions_from_families
     generation_source = hashlib.sha256(inspect.getsource(generate).encode()).hexdigest()
 
@@ -128,17 +128,6 @@ def main() -> None:
             json.dumps(parameters, sort_keys=True).encode()
         ).hexdigest()
         path = generated_cache / (key + ".pickle")
-        if not path.is_file():
-            for origin in reusable_caches:
-                previous = origin / path.name
-                if previous.is_file():
-                    temporary = path.with_suffix(f".{os.getpid()}.tmp")
-                    temporary.write_bytes(previous.read_bytes())
-                    temporary.replace(path)
-                    print(
-                        f"reused unchanged public RMG generator: {previous}", flush=True
-                    )
-                    break
         if path.is_file():
             print(f"cached public RMG generation: {only_families}", flush=True)
             return load_generated_reactions(path.read_bytes())
@@ -171,7 +160,14 @@ def main() -> None:
         f"compiling {sum(len(value) for value in reactions.values())} generated reactions",
         flush=True,
     )
-    path, _ = compiler.write_artifact(args.output)
+    artifact_cache.mkdir(parents=True, exist_ok=True)
+    path, _ = compiler.write_artifact(artifact_cache)
+    output = Path(args.output)
+    output.mkdir(parents=True, exist_ok=True)
+    destination = output / path.name
+    if destination != path:
+        destination.write_bytes(path.read_bytes())
+    path = destination
     print(path)
 
 
