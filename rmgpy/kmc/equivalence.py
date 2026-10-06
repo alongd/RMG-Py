@@ -120,6 +120,8 @@ def _compact_graph(
 
 
 def _isomorphic(first: _CompactGraph, second: _CompactGraph) -> bool:
+    if first == second:
+        return True
     if first.fingerprint != second.fingerprint:
         return False
     if len(first.nodes) != len(second.nodes) or len(first.edges) != len(second.edges):
@@ -298,7 +300,7 @@ class _Channel:
     event_ids: list[str] = field(default_factory=list)
     reverse_ids: list[str] = field(default_factory=list)
     reverse_channels: set[int] = field(default_factory=set)
-    unresolved_reverse: bool = False
+    unresolved_reverse_ids: set[str] = field(default_factory=set)
     nonreciprocal_reverse: bool = False
     statuses: set[str] = field(default_factory=set)
     rate_orders: set[int] = field(default_factory=set)
@@ -360,7 +362,28 @@ class _ArtifactSummary:
     by_fingerprint: dict[str, list[int]]
 
 
-def _summarize(artifact: dict[str, Any]) -> _ArtifactSummary:
+def _graph_cache_key(record: dict[str, Any]) -> tuple[Any, ...]:
+    """Return an exact-representation key for graph and fate construction."""
+    return (
+        tuple(record.get("reactant_graphs", [])),
+        tuple(record.get("product_graphs", [])),
+        tuple(
+            sorted(
+                (int(key), int(value))
+                for key, value in record.get("atom_map", {}).items()
+            )
+        ),
+        _canonical_label(record.get("bond_ops", [])),
+        _canonical_label(record.get("coproducts", [])),
+    )
+
+
+def _summarize(
+    artifact: dict[str, Any],
+    graph_cache: (
+        dict[tuple[Any, ...], tuple[_CompactGraph, _CompactGraph]] | None
+    ) = None,
+) -> _ArtifactSummary:
     if artifact.get("schema_version") != "kmc_event_set/0.1":
         raise EquivalenceError("unknown event-set schema")
     grid = tuple(
@@ -374,7 +397,14 @@ def _summarize(artifact: dict[str, Any]) -> _ArtifactSummary:
         raise EquivalenceError("artifact records must be a list")
 
     for record in records:
-        chemistry, fate = _reaction_graphs(record)
+        cache_key = _graph_cache_key(record)
+        cached = graph_cache.get(cache_key) if graph_cache is not None else None
+        if cached is None:
+            chemistry, fate = _reaction_graphs(record)
+            if graph_cache is not None:
+                graph_cache[cache_key] = chemistry, fate
+        else:
+            chemistry, fate = cached
         channel = None
         for candidate_index in by_fingerprint[chemistry.fingerprint]:
             candidate = channels[candidate_index]
@@ -394,7 +424,7 @@ def _summarize(artifact: dict[str, Any]) -> _ArtifactSummary:
         for reverse_id in channel.reverse_ids:
             target = event_to_channel.get(reverse_id)
             if target is None:
-                channel.unresolved_reverse = True
+                channel.unresolved_reverse_ids.add(reverse_id)
             else:
                 channel.reverse_channels.add(target)
     for channel in channels:
@@ -529,12 +559,25 @@ def _compare_channel_data(
         mismatch(
             "reverse linkage", sorted(mapped_reverse), sorted(right.reverse_channels)
         )
+    left_missing_targets = {
+        target for target in left.reverse_channels if target not in channel_mapping
+    }
+    mapped_right_channels = set(channel_mapping.values())
+    right_added_targets = {
+        target
+        for target in right.reverse_channels
+        if target not in mapped_right_channels
+    }
     left_link_errors = {
-        "unresolved": left.unresolved_reverse,
+        "unresolved": max(
+            0, len(left.unresolved_reverse_ids) - len(right_added_targets)
+        ),
         "nonreciprocal": left.nonreciprocal_reverse,
     }
     right_link_errors = {
-        "unresolved": right.unresolved_reverse,
+        "unresolved": max(
+            0, len(right.unresolved_reverse_ids) - len(left_missing_targets)
+        ),
         "nonreciprocal": right.nonreciprocal_reverse,
     }
     if left_link_errors != right_link_errors:
@@ -555,8 +598,11 @@ def compare_artifacts(
     same_input = left is right
     if not same_input and not isinstance(left, dict) and not isinstance(right, dict):
         same_input = Path(left).resolve() == Path(right).resolve()
-    left_summary = _summarize(_load_artifact(left))
-    right_summary = left_summary if same_input else _summarize(_load_artifact(right))
+    graph_cache: dict[tuple[Any, ...], tuple[_CompactGraph, _CompactGraph]] = {}
+    left_summary = _summarize(_load_artifact(left), graph_cache)
+    right_summary = (
+        left_summary if same_input else _summarize(_load_artifact(right), graph_cache)
+    )
 
     mapping: dict[int, int] = {}
     used_right: set[int] = set()

@@ -1,9 +1,12 @@
 import copy
+import hashlib
 import json
 from pathlib import Path
+import random
 
 import pytest
 
+import rmgpy.kmc.equivalence as equivalence
 from rmgpy.kmc.equivalence import compare_artifacts
 from rmgpy.molecule.molecule import Molecule
 
@@ -78,23 +81,40 @@ def reversible_artifact():
 
 
 @pytest.fixture(scope="module")
-def real_pair():
+def real_sample():
     if not REAL_ARTIFACT.is_file():
         pytest.skip(f"external compiled-event fixture is absent: {REAL_ARTIFACT}")
     with REAL_ARTIFACT.open(encoding="utf-8") as handle:
         source = json.load(handle)
     by_id = {item["event_id"]: item for item in source["records"]}
-    forward = next(
-        item for item in source["records"] if item.get("reverse_of") in by_id
+    changed = next(
+        item
+        for item in source["records"]
+        if item["status"] == "enabled" and item["family"] == "intra_H_migration"
     )
-    reverse = by_id[forward["reverse_of"]]
+    deleted = next(
+        item
+        for item in source["records"]
+        if item["status"] == "enabled" and item["family"] == "Disproportionation"
+    )
+    selected = [changed, deleted]
+    selected.extend(
+        by_id[item["reverse_of"]]
+        for item in (changed, deleted)
+        if item.get("reverse_of") in by_id
+    )
+    selected_ids = {item["event_id"] for item in selected}
+    selected.extend(
+        item for item in source["records"] if item["event_id"] not in selected_ids
+    )
+    selected = selected[:64]
     result = {
         "schema_version": source["schema_version"],
         "inputs": {"temperature_grid": source["inputs"]["temperature_grid"]},
-        "records": copy.deepcopy([forward, reverse]),
+        "records": copy.deepcopy(selected),
     }
     del source
-    return result
+    return result, changed["event_id"], deleted["event_id"]
 
 
 def test_artifact_equals_itself():
@@ -104,17 +124,69 @@ def test_artifact_equals_itself():
     assert report["left"]["channels"] == 2
 
 
-def test_real_records_with_rehashed_ids_and_shuffled_order_compare_equal(real_pair):
-    mutated = copy.deepcopy(real_pair)
+def test_reduced_real_equal_mutant_uses_exact_representation_fast_path(
+    real_sample, monkeypatch
+):
+    original, _, _ = real_sample
+    mutated = copy.deepcopy(original)
     replacements = {
-        item["event_id"]: f"replacement-{index}"
-        for index, item in enumerate(mutated["records"])
+        item["event_id"]: "evt_"
+        + hashlib.sha256(("manager" + item["event_id"]).encode()).hexdigest()
+        for item in mutated["records"]
     }
     for item in mutated["records"]:
         item["event_id"] = replacements[item["event_id"]]
-        item["reverse_of"] = replacements[item["reverse_of"]]
-    mutated["records"].reverse()
-    assert compare_artifacts(real_pair, mutated)["equal"]
+        if item.get("reverse_of") in replacements:
+            item["reverse_of"] = replacements[item["reverse_of"]]
+        item["site_type"] = "X_" + item["site_type"].replace("@", "#")
+    random.Random(7).shuffle(mutated["records"])
+
+    graph_calls = 0
+    build_graphs = equivalence._reaction_graphs
+
+    def counted_build(record):
+        nonlocal graph_calls
+        graph_calls += 1
+        return build_graphs(record)
+
+    monkeypatch.setattr(equivalence, "_reaction_graphs", counted_build)
+    monkeypatch.setattr(
+        equivalence.nx,
+        "is_isomorphic",
+        lambda *args, **kwargs: pytest.fail(
+            "ordered-identical graphs used GraphMatcher"
+        ),
+    )
+    report = compare_artifacts(original, mutated)
+    assert report["equal"]
+    assert graph_calls == len(
+        {equivalence._graph_cache_key(item) for item in original["records"]}
+    )
+
+
+def test_reduced_real_diff_mutant_reports_one_changed_and_one_missing(
+    real_sample, monkeypatch
+):
+    original, changed_id, deleted_id = real_sample
+    mutated = copy.deepcopy(original)
+    changed = next(
+        item for item in mutated["records"] if item["event_id"] == changed_id
+    )
+    changed["k_table"]["k"] = [value * (1 + 1e-6) for value in changed["k_table"]["k"]]
+    mutated["records"] = [
+        item for item in mutated["records"] if item["event_id"] != deleted_id
+    ]
+    monkeypatch.setattr(
+        equivalence.nx,
+        "is_isomorphic",
+        lambda *args, **kwargs: pytest.fail(
+            "ordered-identical graphs used GraphMatcher"
+        ),
+    )
+    report = compare_artifacts(original, mutated)
+    assert len(report["changed"]) == 1
+    assert len(report["missing"]) == 1
+    assert report["added"] == []
 
 
 def test_permuted_participants_compare_equal():
