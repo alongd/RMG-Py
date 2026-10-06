@@ -13441,14 +13441,11 @@ class TestSubatolExportClamp:
 
 
 class TestRtolNearFloorConviction:
-    """Round-35 K2 conviction of deck rtol=1e-4 for pool moments near the
-    r81 floors (pre-regen P1 of record; format doc section 4b). Post
-    round-37 policy: rtol=1e-6 fixes THIS minimal fixture but is NOT
-    full-system safe (IDID=-7 at t = 24.639 on the exact-crash replay;
-    grind + sub-floor drag on the from-deck window) -- NO regen deck
-    tolerance is currently certified; regen attempts before the
-    solver-conditioning fix are forensic-only at rtol=1e-4 with an
-    abort-on-H1/IDID protocol.
+    """Near-floor tolerance canaries after I-061 (74df5e84df) floored the
+    DASPK error weight on structural moment slots.  Both rtol=1e-6 and
+    rtol=1e-4 must follow this minimal fixture's RHS faithfully through
+    exhaustion.  This local canary does not certify either tolerance for
+    every full-system replay.
 
     Minimal two-pool fixture: pool C (1e-8 mol, 100 floors at atol=1e-12)
     drained by a single irreversible end-group VE conduit
@@ -13456,20 +13453,11 @@ class TestRtolNearFloorConviction:
     transferring to gas G2 chain-by-chain. Ground truth: the RHS drains C
     at ~1e-7 mol/s -- C empties within ~0.5 s of integrated flux.
 
-    Measured (round-35, no-F-gate law): at rtol=1e-6 DASPK follows the
-    RHS faithfully (C fully drained by t = 50, final |C| ~ 3.6e-14 mol,
-    sub-atol; G2 receives the exact initial inventory; dn -> 0). At
-    rtol=1e-4 the ACCEPTED trajectory decouples from the RHS by ~4
-    decades: C retains ~90% of its inventory at t = 100 while its own
-    RHS says -9.6e-8 mol/s throughout (books between C and G2 stay
-    consistent -- the corruption is trajectory-vs-RHS, not
-    book-vs-book on this fixture; the gated rounds-33/34 laws showed
-    the harder signature, sign-violating climbs with G2 driven
-    negative). NOTE (spec conflict pinned, round-35): the adjudication
-    described the clean 1e-6 endpoint as "parks ~1.18 floors with
-    dn -> 0" -- that park was an artifact of the (reverted) sub-floor
-    F-gate; under the reverted law the correct 1e-6 behavior is a FULL
-    drain through the floor to ~0, which is what this pin asserts."""
+    Before 74df5e84df, rtol=1e-4 accepted a trajectory that decoupled from
+    the RHS by about four decades and retained about 90% of C at t=100.
+    With the structural-slot error-weight floor, both tolerances drain C
+    to a sub-atol remnant, transfer the complete inventory to G2, and end
+    with a quiescent RHS."""
 
     def _fixture(self, rtol):
         sp = {
@@ -13538,22 +13526,19 @@ class TestRtolNearFloorConviction:
         assert abs(dn[2]) <= 1.0e-12
 
     def test_rtol_1e4_near_floor_conviction_canary(self):
-        """DOCUMENTED CANARY (loose by design; round-35 K2 conviction):
-        at rtol=1e-4 the accepted trajectory decouples from the RHS by
-        decades -- C retains most of its inventory at t = 100 while the
-        RHS at every accepted state drains it ~1e4x faster than the
-        realized rate. If DASPK behavior changes and this starts
-        tracking the RHS, the canary fails LOUDLY: re-measure, update
-        the format doc section 4b conviction, and report."""
+        """I-061 conviction: the moment error-weight floor keeps the loose
+        rtol=1e-4 trajectory faithful through exhaustion.  C drains to a
+        sub-atol remnant, G2 receives its inventory, and the terminal RHS is
+        quiescent, just as in the tighter-tolerance sibling above."""
         rs = self._fixture(rtol=1e-4)
         rs.advance(100.0)
         y = np.asarray(rs.y)
         dn = np.asarray(rs.residual(100.0, y.copy(),
                                     np.zeros_like(y))[0])
-        # C should be EMPTY by now per its own RHS; it is not even close.
-        assert y[2] > 0.3 * 1.0e-8            # observed ~0.90e-8
-        realized = (1.0e-8 - y[2]) / 100.0    # average realized drain
-        assert abs(dn[2]) > 100.0 * realized  # observed ~1.2e4x
+        assert abs(y[1]) <= 1.0e-12 and abs(y[2]) <= 1.0e-12
+        assert y[1] + y[9] == pytest.approx(1.0e-8, rel=2e-5)
+        assert y[9] == pytest.approx(1.0e-8, rel=2e-5, abs=0.0)
+        assert abs(dn[2]) <= 1.0e-12
 
 
 class TestSpawnGateDefectAwareMass:
