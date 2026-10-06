@@ -1,8 +1,8 @@
 # 1. Database
 database(
-    thermoLibraries=['primaryThermoLibrary', 'BurkeH2O2', 'thermo_DFT_CCSDTF12_BAC', 'DFT_QCI_thermo', 'CBS_QB3_1dHR'],
-    reactionLibraries=['primaryH2O2', 'NOx2018'],
-    transportLibraries=['OneDMinN2', 'PrimaryTransportLibrary', 'NOx2018', 'GRI-Mech'],
+    thermoLibraries=['primaryThermoLibrary', 'thermo_DFT_CCSDTF12_BAC', 'DFT_QCI_thermo', 'CBS_QB3_1dHR'],
+    reactionLibraries=[],
+    transportLibraries=['OneDMinN2', 'PrimaryTransportLibrary'],
     seedMechanisms=[],
     kineticsDepositories='default',
     kineticsFamilies='default',
@@ -10,22 +10,12 @@ database(
 )
 
 # 2. Species Definitions
-# N2 must be reactive so it gets thermo from primaryThermoLibrary: it is a third-body
-# collider in the NOx2018 library reactions and the polymer-phase solvent, and barrier
-# fixing / pressure dependence need its thermo. maximumNitrogenAtoms=0 keeps it inert.
+# N2 is the sole inert bath-gas collider and polymer-phase solvent. Keeping it
+# nonreactive prevents an oxygen/nitrogen reaction library from entering the model.
 species(
     label='N2',
-    reactive=True,
-    structure=SMILES("N#N")
-)
-
-# Inert bath gas: pressure dependence requires at least one nonreacting species.
-# Held at ~0 mol in the reactor so it supplies the bath-gas reference without
-# changing the composition.
-species(
-    label='Ar',
     reactive=False,
-    structure=SMILES("[Ar]")
+    structure=SMILES("N#N")
 )
 
 # 3. Polymer Definition
@@ -57,7 +47,6 @@ hybridPolymerReactor(
         # Match the polymer declaration: 0.05 kg / 5000 g mol^-1 = 0.01 mol of chains.
         # Keeping this pool equal to initial_mass/Mn prevents the pool-consistency warning.
         'PS': 0.01,
-        'Ar': 1e-10,  # inert bath-gas reference for pressure dependence; ~0 mol = no effect on composition
     },
     polymerPhase=pp,
     terminationTime=(0.1, 's'),
