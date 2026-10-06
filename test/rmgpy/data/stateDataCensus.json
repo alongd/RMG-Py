@@ -24643,7 +24643,7 @@
         "rmgpy/solver/electronegative.py",
         "test/rmgpy/solver/plasmaElectronegativeWallTest.py"
       ],
-      "source_sha256": "8485f8cf66fe402b87b24926d0f6a47dbe5330cd72243dd4e37f4d3fc838f044"
+      "source_sha256": "753e4b8a6c50a7c2c6728c5c298151823aa36770c261d83d7e02dbf3bff7468c"
     },
     "rmgpy/solver/electronegative.py:qualify_envelope": {
       "verdict": "carried",
@@ -24827,12 +24827,12 @@
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.__init__": {
       "verdict": "carried",
-      "reason": "Stores the explicitly supplied temperatures, composition and reactor options, then configures the declared wall and energy models. It accepts existing species identities and performs no independent thermo or ground-state lookup.",
+      "reason": "Stores the explicitly supplied temperatures, composition and reactor options, then configures the declared wall and energy models. The added empty development-diagnostic state records no scientific data and performs no independent thermo or ground-state lookup.",
       "evidence": [
         "rmgpy/solver/plasma.pyx",
         "test/rmgpy/solver/plasmaElectronegativeWallTest.py"
       ],
-      "source_sha256": "0c0574434e7c7e276ce3ca12e653ce7e3eb9f7143e2698dde65d41a29a8fe1bc"
+      "source_sha256": "35b39d32f28f3d19bc051e244671fac742bee9998b554378f2bc5c43ad194ae9"
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.__reduce__": {
       "verdict": "carried",
@@ -25271,12 +25271,12 @@
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._latch_energy_budget": {
       "verdict": "carried",
-      "reason": "Latches accepted-state power terms and the solver's own stored-energy derivative, checking availability before publishing fluxes. It measures the assigned model and never supplies missing species thermo or energies.",
+      "reason": "Latches accepted-state power terms and the solver's own stored-energy derivative, and on the private failed-table route copies those accepted values into bounded stamped trajectory samples plus exact running extrema. It measures the assigned model and never supplies missing species thermo or energies.",
       "evidence": [
         "rmgpy/solver/plasma.pyx",
         "test/rmgpy/solver/plasmaElectronegativeRework7Test.py"
       ],
-      "source_sha256": "b1fa0d1741772c4c46a2d5667e3afb50bb1d49928c374531d808d371a0b9049f"
+      "source_sha256": "4e14ca2ff6a1f986e13d296103be9c83d0cf4f8eb7bf2c91eec8d8da17d73123"
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._latch_wall_diagnostics": {
       "verdict": "carried",
@@ -32795,11 +32795,11 @@
     },
     "rmgpy/solver/eedf_provider.py:EEDFProvider.domain_check": {
       "verdict": "carried",
-      "reason": "EEDFProvider.domain_check: operates only on immutable, explicitly supplied, artifact-fingerprinted metadata or the exact full-coordinate qualified row.",
+      "reason": "Checks the exact supplied coordinates against immutable, artifact-fingerprinted axes and carries any refusal with the offending coordinate and frozen bounds; it does not infer or substitute data.",
       "evidence": [
         "test/rmgpy/solver/eedfProviderTest.py"
       ],
-      "source_sha256": "1b57b027ad14ff9a02a39e8f58f9b7390c65f438eb821e56ffdc8b8417966952"
+      "source_sha256": "7b7c2239653bbc52f2c50685fc1469b4cbb54dd45f3b66b3bc959a23edf4cd66"
     },
     "rmgpy/solver/eedf_provider.py:EEDFProvider.empirical_laws": {
       "verdict": "carried",
@@ -32875,13 +32875,13 @@
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._check_eedf_power_gates": {
       "verdict": "carried",
-      "reason": "PlasmaReactor._check_eedf_power_gates: uses the declared EEDF configuration and exact provider-owned qualified row for coordinates, rates, energy, transport, provenance, or acceptance; no molecular data are inferred.",
+      "reason": "Uses the declared EEDF configuration and exact provider-owned row. Production still refuses any failed A6 gate; only the already-private failed-table route records a finite, measured A6b tolerance failure as FAIL and retains the candidate state for diagnostics. Missing, non-finite or physically invalid diagnostics are refused without inferring molecular data.",
       "evidence": [
         "test/rmgpy/solver/plasmaEEDFCoreTest.py",
         "test/rmgpy/solver/plasmaEEDFStateIsolationTest.py",
         "test/rmgpy/solver/plasmaEEDFStructuralContractTest.py"
       ],
-      "source_sha256": "7b01b1e1fe6f983a53c8d72c1145423389df42b84d6dbd5612a6366a3263aa39"
+      "source_sha256": "47d50e0d1848cef2ff3da782b3690b14226315d3725e5cca9c2c01a5d086fd46"
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._check_eedf_wall_worst_case": {
       "verdict": "carried",
@@ -32955,13 +32955,13 @@
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._eedf_energy_row": {
       "verdict": "carried",
-      "reason": "Uses one provider-owned fingerprinted row for rates, energy, and transport; any development row is propagated with its explicit unqualified warning and blockers.",
+      "reason": "Uses one provider-owned fingerprinted row for rates, energy, and transport; the added A6b numerator and denominator report the existing row/transport comparison, and any development row retains its failed-qualification warning and blockers.",
       "evidence": [
         "test/rmgpy/solver/plasmaEEDFCoreTest.py",
         "test/rmgpy/solver/plasmaEEDFStateIsolationTest.py",
         "test/rmgpy/solver/plasmaEEDFStructuralContractTest.py"
       ],
-      "source_sha256": "b0ce13ae6db5dab01aa8a137669f7b7a20ca5ecba58584cf2eaa240e4c2f4289"
+      "source_sha256": "0c8e28fafb20788c3c80280c6f87166324daea60fec0f7f13152310b48baba59"
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._initialize_eedf_provider": {
       "verdict": "carried",
@@ -33079,11 +33079,11 @@
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor.configure_development_run": {
       "verdict": "excluded",
-      "reason": "Configures private runtime-only progress and wall-clock controls; it neither acquires nor substitutes scientific species data.",
+      "reason": "Configures and resets private runtime-only progress, failed-A6b, bounded accepted-trajectory, and transient-extrema diagnostics; it neither acquires nor substitutes scientific species data.",
       "evidence": [
         "test/rmgpy/solver/plasmaEEDFCoreTest.py"
       ],
-      "source_sha256": "91dd7ed0528f4f0e3b1e68ae97c18bc4218703f110ef159373b425a0677a18b6"
+      "source_sha256": "62523137550c7bf74103923e978bba535a20c18d009532d1db563a6cc3854df3"
     },
     "rmgpy/solver/plasma.pyx:PlasmaReactor._development_run_active": {
       "verdict": "excluded",

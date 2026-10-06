@@ -49,7 +49,8 @@ from rmgpy.solver.eedf import (
 )
 
 
-DEVELOPMENT_UNQUALIFIED_STATUS = 'DEVELOPMENT \u2014 UNQUALIFIED TABLE'
+DEVELOPMENT_UNQUALIFIED_STATUS = (
+    'DEVELOPMENT ONLY \u2014 TABLE QUALIFICATION FAILED')
 _development_unqualified_route = ContextVar(
     'eedf_development_unqualified_route', default=False)
 
@@ -258,7 +259,20 @@ class EEDFProvider:
 
     def domain_check(self, u, composition, y=None, context=None):
         """Validate an accepted state; y/context are reactor-hook context."""
-        return self._table.domain_check(u, composition)
+        try:
+            return self._table.domain_check(u, composition)
+        except OutOfDomain:
+            values = [u]
+            if isinstance(composition, dict):
+                values.extend(composition.get(name) for name in self.axis_names[1:])
+            if len(values) == len(self.axis_names):
+                for name, axis, value in zip(self.axis_names, self._table.axes, values):
+                    if (value is not None and
+                            (not np.isfinite(value) or not axis[0] <= value <= axis[-1])):
+                        raise OutOfDomain(
+                            '{}={!r} outside [{!r}, {!r}]'.format(
+                                name, value, axis[0], axis[-1]))
+            raise
 
     def row(self, u, composition, y=None, context=None):
         """Return this provider's immutable row handle for one full identity."""

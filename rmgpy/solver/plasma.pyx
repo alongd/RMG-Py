@@ -108,6 +108,7 @@ from rmgpy.thermo.state import thermo_library_species
 # test passes. RTOL is not a physical statement: it separates "the arithmetic did not
 # quite close" from "the composition is not neutral", nothing more.
 PLASMA_NET_CHARGE_RTOL = 1.0e-6
+DEVELOPMENT_TRAJECTORY_RECORD_LIMIT = 4096
 
 
 from rmgpy.exceptions import ElectronegativeWallRegimeError
@@ -1024,6 +1025,9 @@ cdef class PlasmaReactor(ReactionSystem):
     cdef long _development_observed_steps
     cdef object _development_last_residual
     cdef public dict development_last_progress
+    cdef public dict development_a6b_failure
+    cdef public dict development_transient_extrema
+    cdef public list development_trajectory
     cdef public bint development_wall_budget_hit
     # Native DASPK callbacks cannot propagate Python exceptions through their C
     # adapters. Preserve the first failure until the enclosing native call
@@ -1073,6 +1077,9 @@ cdef class PlasmaReactor(ReactionSystem):
         self._development_observed_steps = 0
         self._development_last_residual = None
         self.development_last_progress = None
+        self.development_a6b_failure = None
+        self.development_transient_extrema = {}
+        self.development_trajectory = []
         self.development_wall_budget_hit = False
         self._native_callback_active = False
         self._native_callback_failure = None
@@ -1289,6 +1296,9 @@ cdef class PlasmaReactor(ReactionSystem):
         self._development_observed_steps = 0
         self._development_last_residual = None
         self.development_last_progress = None
+        self.development_a6b_failure = None
+        self.development_transient_extrema = {}
+        self.development_trajectory = []
         self.development_wall_budget_hit = False
 
     cdef bint _development_run_active(self):
@@ -3546,6 +3556,8 @@ cdef class PlasmaReactor(ReactionSystem):
             'joule_power': joule,
             'power_mismatch_fraction': ((p_abs - joule) / p_abs if p_abs else 0.0),
             'A6b_relative': a6b_relative,
+            'A6b_numerator': abs(joule - transport_field),
+            'A6b_denominator': a6b_scale,
             'A6b_tolerance': a6b_tolerance,
             'A6b_passed': a6b_relative <= a6b_tolerance,
             'wall_sheath_basis': 'Maxwellian form at epsilon_k',
@@ -4429,6 +4441,76 @@ cdef class PlasmaReactor(ReactionSystem):
         b['discharge_state'] = classify_discharge(b['nu_ionisation'], b['nu_source'], b['nu_loss'])
         self.energy_budget = b
         self.energy_history.append((t, te, b['n_e']))
+        if self._development_run_active():
+            species_amounts = {
+                self._en_core_species[j].label: float(y[j])
+                for j in range(self.num_core_species)
+            }
+            total_amount = sum(species_amounts.values())
+            development_record = {
+                'time_s': float(t),
+                'u': float(y[self.te_index]),
+                'EN_Td': float(b['EN_Td']),
+                'mean_energy_eV': float(b['mean_energy_eV']),
+                'electron_density_m^-3': float(b['n_e']),
+                'volume_m3': float(V),
+                'species_amounts_mol': species_amounts,
+                'composition': {
+                    label: (amount / total_amount if total_amount else float('nan'))
+                    for label, amount in species_amounts.items()
+                },
+                'wall_flux_mol_s': {
+                    self._en_core_species[j].label: float(-self.wall_loss_rates[j])
+                    for j in range(self.num_core_species)
+                },
+                'electron_power_partition_W': {
+                    name: float(b[name]) for name in (
+                        'Q_inelastic', 'Q_elastic', 'Q_wall_electron',
+                        'Q_wall_ion', 'Q_flow')
+                },
+                'A6a_relative': float(b['A6a_relative']),
+                'A6a_passed': bool(b['A6a_passed']),
+                'A6b_numerator': float(b['A6b_numerator']),
+                'A6b_denominator': float(b['A6b_denominator']),
+                'A6b_relative': float(b['A6b_relative']),
+                'A6b_tolerance': float(b['A6b_tolerance']),
+                'A6b_passed': bool(b['A6b_passed']),
+            }
+            self.eedf_provider.annotate_development_diagnostic(
+                development_record)
+            transient_values = {
+                'electron_density_m^-3': development_record['electron_density_m^-3'],
+                'EN_Td': development_record['EN_Td'],
+                'mean_energy_eV': development_record['mean_energy_eV'],
+                'composition.Ar': development_record['composition'].get('Ar', 0.0),
+                'composition.Arp': development_record['composition'].get('Arp', 0.0),
+                'wall_flux_mol_s.e-': development_record['wall_flux_mol_s'].get('e-', 0.0),
+                'wall_flux_mol_s.Arp': development_record['wall_flux_mol_s'].get('Arp', 0.0),
+                'electron_power_partition_W.Q_inelastic': (
+                    development_record['electron_power_partition_W']['Q_inelastic']),
+                'electron_power_partition_W.Q_elastic': (
+                    development_record['electron_power_partition_W']['Q_elastic']),
+                'electron_power_partition_W.Q_wall_electron': (
+                    development_record['electron_power_partition_W']['Q_wall_electron']),
+                'electron_power_partition_W.Q_wall_ion': (
+                    development_record['electron_power_partition_W']['Q_wall_ion']),
+                'A6a_relative': development_record['A6a_relative'],
+                'A6b_relative': development_record['A6b_relative'],
+            }
+            for name, value in transient_values.items():
+                extrema = self.development_transient_extrema.get(name)
+                if extrema is None:
+                    self.development_transient_extrema[name] = {
+                        'min': float(value), 'max': float(value)}
+                else:
+                    extrema['min'] = min(extrema['min'], float(value))
+                    extrema['max'] = max(extrema['max'], float(value))
+            self.development_trajectory.append(development_record)
+            if len(self.development_trajectory) > DEVELOPMENT_TRAJECTORY_RECORD_LIMIT:
+                latest = self.development_trajectory[-1]
+                self.development_trajectory = self.development_trajectory[::2]
+                if self.development_trajectory[-1] is not latest:
+                    self.development_trajectory.append(latest)
         # Energy balance supplies the ion sheath energy. The M8-A
         # interface leaves it declared absent. Keep the charged-wall
         # transport provenance latched on the electron term: a missing
@@ -4565,7 +4647,42 @@ cdef class PlasmaReactor(ReactionSystem):
             relative = self.energy_budget.get(
                 a6a_key if gate == 'A6a' else gate + '_relative')
             if (relative is None or tolerance is None or not np.isfinite(relative)
-                    or not np.isfinite(tolerance) or relative > tolerance):
+                    or not np.isfinite(tolerance) or relative < 0.
+                    or tolerance <= 0. or relative > tolerance):
+                numerator = self.energy_budget.get('A6b_numerator')
+                denominator = self.energy_budget.get('A6b_denominator')
+                measured_a6b_failure = (
+                    gate == 'A6b' and relative is not None and
+                    tolerance is not None and numerator is not None and
+                    denominator is not None and np.isfinite(relative) and
+                    np.isfinite(tolerance) and np.isfinite(numerator) and
+                    np.isfinite(denominator) and relative >= 0. and
+                    tolerance > 0. and numerator >= 0. and denominator > 0. and
+                    relative > tolerance)
+                if (measured_a6b_failure and
+                        self._development_run_active()):
+                    self.development_a6b_failure = {
+                        'check': 'A6b LoKI-B/table field-power consistency',
+                        'outcome': 'FAIL',
+                        'value': relative,
+                        'tolerance': tolerance,
+                        'numerator': numerator,
+                        'denominator': denominator,
+                        'artifact_sha256': self.electron_kinetics['table'][1],
+                        'terminal_state': ('candidate numerical steady state'
+                                           if steady else 'candidate terminal state'),
+                    }
+                    self.eedf_provider.annotate_development_diagnostic(
+                        self.development_a6b_failure)
+                    logging.error(
+                        '%s: A6b remains FAIL (numerator=%r, denominator=%r, '
+                        'relative=%r, tolerance=%r); retaining candidate state '
+                        'for development diagnostics only',
+                        self.development_a6b_failure['scientific_status'],
+                        self.development_a6b_failure['numerator'],
+                        self.development_a6b_failure['denominator'],
+                        relative, tolerance)
+                    continue
                 raise PlasmaStateError(
                     '{0} {1} gate failed at accepted terminal state: relative error '
                     '{2!r} exceeds tolerance {3!r}'.format(

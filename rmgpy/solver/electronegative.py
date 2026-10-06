@@ -37,6 +37,7 @@ thresholds must be explicitly supplied by an external qualification study.
 import math
 import copy
 import importlib
+from collections.abc import Mapping
 
 import numpy as np
 from scipy.special import j1, jn_zeros
@@ -352,7 +353,7 @@ def serializable_qualification(qualification):
 
 def manifest_values(value):
     """Convert arrays/scalars and mathematically infinite confinement to JSON values."""
-    if isinstance(value,dict):
+    if isinstance(value, Mapping):
         return {key:manifest_values(item) for key,item in value.items()}
     if isinstance(value,(list,tuple,np.ndarray)):
         return [manifest_values(item) for item in value]

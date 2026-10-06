@@ -309,9 +309,9 @@ def test_fingerprint_branch_and_named_domain_errors_are_preserved(tmp_path):
         make_provider(path, model, branch='missing')
 
     provider = make_provider(path, model)
-    with pytest.raises(OutOfDomain, match='u'):
+    with pytest.raises(OutOfDomain, match=r'u=-0.1 outside \[0.0, 3.0\]'):
         provider.domain_check(-.1, {'x': .5}, y=np.zeros(1), context={'accepted': True})
-    with pytest.raises(OutOfDomain, match='x'):
+    with pytest.raises(OutOfDomain, match=r'x=2.0 outside \[0.0, 1.0\]'):
         provider.domain_check(1., {'x': 2.})
     with pytest.raises(EnvelopeBreach, match='metastable'):
         provider.domain_check(1., {'x': .5, 'metastable': 2e-5})

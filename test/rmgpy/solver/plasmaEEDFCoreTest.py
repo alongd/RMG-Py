@@ -219,7 +219,8 @@ def test_development_progress_is_timed_and_production_is_untouched(
     }
     assert progress['t_s'] == pytest.approx(1.e-9)
     assert progress['residual_evaluations'] == 2
-    assert progress['scientific_status'] == 'DEVELOPMENT — UNQUALIFIED TABLE'
+    assert progress['scientific_status'] == (
+        'DEVELOPMENT ONLY — TABLE QUALIFICATION FAILED')
     assert progress['artifact_blockers']
     assert progress['export_allowed'] is False
     assert progress['qualification_allowed'] is False
@@ -256,7 +257,8 @@ def test_development_wall_budget_forces_a_last_progress_line(
     assert line.startswith('EEDF_DEVELOPMENT_PROGRESS ')
     progress = json.loads(line.split(' ', 1)[1])
     assert progress['wall_seconds'] >= 45.
-    assert progress['scientific_status'] == 'DEVELOPMENT — UNQUALIFIED TABLE'
+    assert progress['scientific_status'] == (
+        'DEVELOPMENT ONLY — TABLE QUALIFICATION FAILED')
     assert progress['artifact_blockers']
     assert reactor.development_wall_budget_hit is True
     assert reactor.development_last_progress == progress
@@ -360,6 +362,30 @@ def test_residual_and_progress_hot_paths_do_not_copy_the_manifest(
         development.t, development.y.copy(), np.zeros_like(development.y))
     assert capsys.readouterr().err.startswith('EEDF_DEVELOPMENT_PROGRESS ')
     assert copies == []
+
+
+def test_development_trajectory_compacts_without_losing_endpoint_or_extrema(
+        tmp_path, monkeypatch):
+    import rmgpy.solver.plasma as plasma_module
+
+    reactor, _, _ = build_reactor(
+        tmp_path, accepted=False, development=True)
+    reactor.configure_development_run(progress_interval_seconds=30.)
+    monkeypatch.setattr(plasma_module, 'DEVELOPMENT_TRAJECTORY_RECORD_LIMIT', 4)
+    reduced_fields = [1.0, 1.01, 1.02, 1.03, 1.04, 1.2, 1.05]
+
+    for step, u in enumerate(reduced_fields):
+        state = reactor.y0.copy()
+        state[reactor.te_index] = u
+        reactor._latch_energy_budget(state, float(step))
+
+    assert [row['time_s'] for row in reactor.development_trajectory] == [0., 4., 6.]
+    assert reactor.development_trajectory[0]['u'] == reduced_fields[0]
+    assert reactor.development_trajectory[-1]['u'] == reduced_fields[-1]
+    assert reactor.development_transient_extrema['EN_Td'] == pytest.approx({
+        'min': np.exp(min(reduced_fields)),
+        'max': np.exp(max(reduced_fields)),
+    })
 
 
 def test_table_owned_source_cannot_also_run_declared_temperature_law(tmp_path):
@@ -873,6 +899,82 @@ def test_terminal_a6_gates_pass_and_fail_by_name(tmp_path):
     reactor.energy_budget['A6b_relative'] = 1.0001e-6
     with pytest.raises(PlasmaStateError, match='A6b.*tolerance'):
         reactor._check_eedf_power_gates()
+
+
+def test_only_development_route_continues_past_recorded_a6b_failure(tmp_path):
+    production, _, _ = build_reactor(tmp_path / 'production')
+    development, _, _ = build_reactor(
+        tmp_path / 'development', accepted=False, development=True)
+    failed = {
+        'A6a_relative': 0.0,
+        'A6a_steady_relative': 0.0,
+        'A6b_relative': 3.1240246954502026e-6,
+        'A6b_tolerance': 1.0294419182226285e-6,
+        'A6b_numerator': 0.002454087231,
+        'A6b_denominator': 785.288329393846,
+    }
+    production.energy_budget.update(failed)
+    development.energy_budget.update(failed)
+
+    with pytest.raises(PlasmaStateError, match='A6b.*tolerance'):
+        production._check_eedf_power_gates(steady=True)
+
+    development.configure_development_run(progress_interval_seconds=30.)
+    development._check_eedf_power_gates(steady=True)
+
+    record = development.development_a6b_failure
+    assert record['outcome'] == 'FAIL'
+    assert record['value'] == failed['A6b_relative']
+    assert record['tolerance'] == failed['A6b_tolerance']
+    assert record['numerator'] == failed['A6b_numerator']
+    assert record['denominator'] == failed['A6b_denominator']
+    assert record['artifact_sha256'] == development.electron_kinetics['table'][1]
+    assert record['scientific_status'] == (
+        'DEVELOPMENT ONLY \u2014 TABLE QUALIFICATION FAILED')
+    assert record['export_allowed'] is False
+    assert record['qualification_allowed'] is False
+
+
+@pytest.mark.parametrize('field,value', [
+    ('A6b_relative', 'missing'),
+    ('A6b_relative', np.nan),
+    ('A6b_relative', np.inf),
+    ('A6b_relative', -1.e-6),
+    ('A6b_tolerance', 'missing'),
+    ('A6b_tolerance', np.nan),
+    ('A6b_tolerance', np.inf),
+    ('A6b_tolerance', 0.0),
+    ('A6b_tolerance', -1.e-6),
+    ('A6b_numerator', 'missing'),
+    ('A6b_numerator', np.nan),
+    ('A6b_numerator', np.inf),
+    ('A6b_numerator', -1.0),
+    ('A6b_denominator', 'missing'),
+    ('A6b_denominator', np.nan),
+    ('A6b_denominator', np.inf),
+    ('A6b_denominator', 0.0),
+    ('A6b_denominator', -1.0),
+])
+def test_development_route_refuses_invalid_a6b_diagnostics(tmp_path, field, value):
+    reactor, _, _ = build_reactor(tmp_path, accepted=False, development=True)
+    diagnostics = {
+        'A6a_relative': 0.0,
+        'A6a_steady_relative': 0.0,
+        'A6b_relative': 3.e-6,
+        'A6b_tolerance': 1.e-6,
+        'A6b_numerator': 0.002,
+        'A6b_denominator': 700.0,
+    }
+    if value != 'missing':
+        diagnostics[field] = value
+    reactor.energy_budget.update(diagnostics)
+    if value == 'missing':
+        reactor.energy_budget.pop(field, None)
+    reactor.configure_development_run(progress_interval_seconds=30.)
+
+    with pytest.raises(PlasmaStateError, match='A6b.*tolerance'):
+        reactor._check_eedf_power_gates(steady=True)
+    assert reactor.development_a6b_failure is None
 
 
 def test_extinction_uses_row_effective_temperature_and_elastic_frequency(tmp_path):
