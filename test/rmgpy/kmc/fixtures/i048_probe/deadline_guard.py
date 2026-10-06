@@ -4,8 +4,9 @@ Command: rmg_env python .../i048_probe/deadline_guard.py (start BEFORE the cap)
 No debugger, privileged operation, or signal to unrelated processes is used.
 """
 import json,os,pathlib,signal,time,psutil
+from common import production_deadline
 root=pathlib.Path('/home/alon/runs/i048-oligomer-series')
-deadline=json.loads((root/'started.json').read_text())['unix_s']+48*3600
+deadline=production_deadline()
 scripts={'run_series.py','pipeline.py','supplemental.py','early_rotors.py','hold_timeout.py','lane1_recovery.py','verify_results.py'}
 tracked={};events=[]
 def collect():

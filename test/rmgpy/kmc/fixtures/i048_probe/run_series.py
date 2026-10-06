@@ -27,7 +27,7 @@ import sys
 import time
 
 from common import (SCRATCH, PRIOR, HERE, LEGACY, RMG_PYTHON, DFT_PYTHON,
-                    CPUS, PLAN, bootstrap, numerical_environment, save, load, digest)
+                    CPUS, PLAN, bootstrap, numerical_environment, save, load, digest, production_deadline)
 
 SPECIES, SEQUENCES = bootstrap()
 
@@ -100,9 +100,9 @@ def run_job(command, directory, cpus, label, timeout_s=None):
     if os.environ.get('I048_REPLAY_DEADLINE_UNIX'):
         remaining=float(os.environ['I048_REPLAY_DEADLINE_UNIX'])-time.time()
     else:
-        remaining=48*3600-(time.time()-load(SCRATCH/'started.json')['unix_s'])
+        remaining=production_deadline()-time.time()
     if remaining<=31:
-        raise TimeoutError('48 hour total wall budget exhausted')
+        raise TimeoutError('authorized global wall deadline exhausted')
     # Reserve the wrapper's termination grace inside the original allocation.
     timeout_s=min(timeout_s or int(remaining),int(remaining)-31)
     run_id=str(int(time.time()*1e6))
@@ -164,13 +164,20 @@ def finalize_search(name,record):
                  'ensemble_sha256':digest(directory/'crest_conformers.xyz')})
 
 
-def search(name,cpus):
+def search(name,cpus,resume=False):
     from run_ensembles import CREST
     directory=SCRATCH/'ensembles'/name
     if (directory/'completed.json').exists():
         return
     env_path=Path(CREST).parent
     command=[str(env_path/'crest'),'input.xyz','--gfn2','--quick','--ewin','6','--T',str(len(cpus))]
+    if resume:
+        checkpoint=directory/'crest.restart'
+        save(directory/('resume_'+str(int(time.time()*1e6))+'.json'),{
+            'checkpoint_sha256':digest(checkpoint) if checkpoint.exists() else None,'input_sha256':digest(directory/'input.xyz'),
+            'previous_job':load(directory/'job.json'),'command':command,
+            'deadline_unix_s':production_deadline(),'science_changes':False,
+            'restart_mode':'fresh search from identical frozen input; checkpoint recovery not claimed'})
     previous=os.environ.get('PATH','')
     os.environ['PATH']=str(env_path)+':'+previous if not previous.startswith(str(env_path)+':') else previous
     # The dispatch limits total wall time, rather than eight hours per search.
@@ -390,8 +397,14 @@ def main():
     parser.add_argument('--stage',choices=('search','minima','electronic','rotors'))
     parser.add_argument('--species',nargs='+',choices=tuple(name for name in SPECIES if name.startswith('ps')))
     parser.add_argument('--search-lane',type=int,choices=(0,1),help='existing four-core lane for one search')
+    parser.add_argument('--restart-search','--resume-search',dest='resume_search',action='store_true',help='restart frozen search settings and preserve the prior failed-job receipt')
+    parser.add_argument('--bulk-selected',action='store_true',help='use the existing independent-point/basin lanes for selected cases')
     parser.add_argument('--if-idle',action='store_true',help='one preparation case: return 75 if owned by another producer')
     args=parser.parse_args()
+    if args.resume_search and (args.stage!='search' or not args.species or len(args.species)!=1):
+        parser.error('--resume-search requires exactly one search case')
+    if args.bulk_selected and (args.stage not in ('electronic','rotors') or not args.species):
+        parser.error('--bulk-selected requires electronic/rotor cases')
     if args.if_idle and (args.stage not in ('minima','electronic') or not args.species or len(args.species)!=1):
         parser.error('--if-idle requires one minimum/electronic preparation case')
     if args.search_lane is not None and (args.stage!='search' or not args.species or len(args.species)!=1):
@@ -406,6 +419,9 @@ def main():
     if args.stage=='search':
         workers=2
         fn=search
+        if args.resume_search:
+            from functools import partial
+            fn=partial(search,resume=True)
         slots=[CPUS[:4],CPUS[4:]]
         if args.search_lane is not None:
             slots=[slots[args.search_lane]]
@@ -441,14 +457,14 @@ def main():
             fn(name,slots[index])
     (SCRATCH/'pipeline').mkdir(parents=True,exist_ok=True)
     with (SCRATCH/'pipeline/supplemental.lock').open('a') as extra_lock:
-        if args.stage=='electronic' and not args.species:
+        if args.stage=='electronic' and (not args.species or args.bulk_selected):
             print('I048 bulk electronic stage waits for supplemental producer',flush=True)
             fcntl.flock(extra_lock,fcntl.LOCK_SH)
             points=bulk_electronic(names,slots)
             print('I048 stage complete: electronic (%d independent single points)'%points,flush=True)
             return
         with (SCRATCH/'pipeline/early_rotors.lock').open('a') as rotor_lock:
-            if args.stage=='rotors' and not args.species:
+            if args.stage=='rotors' and (not args.species or args.bulk_selected):
                 print('I048 bulk rotor stage waits for early rotor producer',flush=True)
                 fcntl.flock(rotor_lock,fcntl.LOCK_SH)
                 points=bulk_rotors(names,CPUS)

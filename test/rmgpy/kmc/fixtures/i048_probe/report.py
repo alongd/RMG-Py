@@ -11,7 +11,7 @@ from pathlib import Path
 import re
 import time
 
-from common import SCRATCH,HERE,PLAN,CPUS as PLAN_CPUS,bootstrap,load,save,digest
+from common import SCRATCH,HERE,PLAN,CPUS as PLAN_CPUS,bootstrap,load,save,digest,production_deadline
 
 SPECIES,SEQUENCES=bootstrap()
 REPORT=HERE.parent/'I048_oligomer_series.md'
@@ -48,12 +48,18 @@ def cost_snapshot():
             if any(not set(mask)<=set(PLAN_CPUS) for mask in process['thread_affinities']):
                 raise AssertionError('observed affinity cap exceeded')
     cutoff=time.time()
+    extension_path=SCRATCH/'extension_authorization.json'
+    extension=load(extension_path) if extension_path.exists() else None
     return {'cutoff_unix_s':cutoff,'elapsed_wall_s':cutoff-start,
             'recorded_jobs':jobs,'CPU_s':sum(j['user_CPU_s']+j['system_CPU_s'] for j in leaf),
             'max_single_job_RSS_kB':max([j['max_RSS_kB'] for j in jobs] or [0.]),
             'resource_observations':len(observations),
             'last_resource_observation_unix_s':observations[-1]['unix_s'] if observations else None,
             'max_observed_aggregate_RSS_kB':max([o['RSS_kB'] for o in observations] or [0.]),
+            'owner_extension':extension,
+            'owner_extension_sha256':digest(extension_path) if extension else None,
+            'extension_CPU_s':sum(j['user_CPU_s']+j['system_CPU_s'] for j in leaf
+                                 if extension and load(Path(j['path']))['started_unix_s']>=extension['recorded_unix_s']),
             'successful_snapshot_masks_within_declared_cores':True,
             'development_execution_exception':load(SCRATCH/'development_thread_cap_exception.json'),
             'development_execution_exception_sha256':digest(SCRATCH/'development_thread_cap_exception.json'),
@@ -251,7 +257,7 @@ def render(data,base,baseline):
                 sparse_after['S_J_mol_K']-sparse_before['S_J_mol_K']))
         out('At 298.15 K, comparing (3→4) with (2→3): '+ '; '.join(changes)+'. The enthalpy trend changes sign under the already-declared energy-treatment diagnostic. The length trend therefore cannot be interpreted independently of that approximation boundary; neither diagnostic replaces the production result.')
     out('The internal chain increment is the candidate for transfer because whole-chain translation and external rotation do not accompany local growth of a macroscopic chain. Removing these factors before basin reweighting differs from subtracting gas-weighted component totals. The reported correction also contains intrarepeat QM-versus-GAV differences; it is not an isolated adjacent-phenyl pair interaction.')
-    out('No n=6 calculation was allocated: required n≤5 searches, both frozen quadratures, composite energies and verification had priority within the original 48-hour cap. This budget decision uses measured computational cost and outstanding required work, without inspecting a ceiling temperature.')
+    out('No n=6 calculation was allocated: required n≤5 searches, both frozen quadratures, composite energies and verification had priority within the original 48-hour cap. The owner-authorized extension explicitly prohibits n=6. This budget decision uses measured computational cost and outstanding required work, without inspecting a ceiling temperature.' if (SCRATCH/'extension_authorization.json').exists() else 'No n=6 calculation was allocated: required n≤5 searches, both frozen quadratures, composite energies and verification had priority within the original 48-hour cap. This budget decision uses measured computational cost and outstanding required work, without inspecting a ceiling temperature.')
     out()
     out('### Electronic approximation sensitivity')
     out()
@@ -314,6 +320,9 @@ def render(data,base,baseline):
     deadline=load(SCRATCH/'started.json')['unix_s']+48*3600
     out('The original scientific deadline is 2026-10-05 12:16:40 UTC. The cost cutoff is %.3f h %s that deadline. Report rendering and cached numerical audits after the cap do not allocate additional quantum time.'%(
         abs(cost['cutoff_unix_s']-deadline)/3600,'before' if cost['cutoff_unix_s']<deadline else 'after'))
+    if cost.get('owner_extension'):
+        extension=cost['owner_extension']
+        out('The owner subsequently authorized a hard 16-hour extension from ruling time, with absolute deadline %s (epoch %d), to finish n=5 from local baseline `%s` (22/25 cases). This authorization supersedes the original production cutoff for the resumed jobs; the original start and scientific method declaration are unchanged. The two interrupted searches restarted with the installed CREST 3.0.2 GFN2/quick/6 kcal/mol/four-thread settings. A requested native restart did not recover their checkpoint stages: actual streams show new metadynamics, so these are fresh same-settings restarts. Prior trees and launch receipts are preserved. No per-case eight-hour timer or n=6 allocation is used. Extension leaf scientific CPU recorded since its initialization: %.3f h. Cached rendering/audits after the new cap allocate no quantum time.'%(extension['deadline_UTC'],extension['deadline_unix_s'],extension['baseline_SHA'],cost['extension_CPU_s']/3600))
     out()
     out('%d successful resource snapshots observed an aggregate calculation RSS peak of %.3f GiB with threads confined to the eight declared physical cores. Monitoring exceptions and a gap are described below; these periodic observations are not a continuous peak-memory or affinity proof. Production DFT uses three lanes on 3/3/2 distinct physical cores, native OpenMP bounded by each lane, and one thread in each BLAS pool. The workspace setting is 5000 MB per job; observed RSS is measured separately.'%(
         cost['resource_observations'],cost['max_observed_aggregate_RSS_kB']/1024**2))

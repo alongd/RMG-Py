@@ -1,5 +1,52 @@
 # I048 reproduction
 
+Owner ruling of 2026-10-05 authorizes a 16-hour pentamer completion extension
+from baseline `0cda64e8817941902deda3585ef2b8f7c51dd4f7`, with hard absolute
+deadline **1791267436 = 2026-10-06 06:17:16 UTC**. The original 48-hour start,
+method plan and partial closeout evidence are retained. Operational authorization
+is saved separately as `extension_authorization.json`; no scientific settings,
+selections, seeds or weights change, and n=6 is prohibited. Before launch,
+ordinary UID/cmdline/cwd inspection verified there was no duplicate calculation.
+The stopped search trees and original partial report/closeout are preserved in
+`extension_baseline/`; tree snapshots are tar files so cost scanning does not
+double-count copied timing receipts.
+
+The extension commands use the same pinned/logged `i048_run` function below:
+
+```bash
+export I048_REPLAY_DEADLINE_UNIX=1791267436
+i048_run extension-search-ps5_01010 "$I048_PYTHON" "$I048_PROBE/run_series.py" --stage search --species ps5_01010 --search-lane 0 --restart-search
+i048_run extension-search-ps5_01110 "$I048_PYTHON" "$I048_PROBE/run_series.py" --stage search --species ps5_01110 --search-lane 1 --restart-search
+i048_run extension-electronic-ps5_01001 "$I048_PYTHON" "$I048_PROBE/run_series.py" --stage electronic --species ps5_01001 --bulk-selected
+i048_run extension-producers "$I048_PYTHON" "$I048_PROBE/extension_producers.py"
+i048_run extension-resources "$I048_PYTHON" "$I048_PROBE/monitor.py"
+i048_run extension-deadline-guard "$I048_PYTHON" "$I048_PROBE/deadline_guard.py"
+i048_run extension-finalizer "$I048_PYTHON" "$I048_PROBE/finish_series.py" --extension
+```
+
+The initial extension launch tried `--resume-search`, appending `--restart` to
+the frozen CREST command. Its dry probe confirmed the same scientific settings
+but did not prove checkpoint recovery. Actual CREST 3.0.2 streams show new
+metadynamics, so these jobs are reported as fresh same-settings restarts. No
+checkpoint work is claimed as retained; the launch commands and archived old
+trees remain evidence. The current `--restart-search` command records prior
+input/checkpoint hashes and failed-job receipts, then uses exactly the original
+CREST flags, without the unsubstantiated native-resume option. The old parent
+selector is retained as an alias; it also performs this documented fresh restart.
+`--bulk-selected` exposes the already-tested three-lane DFT
+and eight-lane frozen-basin schedulers for specific cases. The extension producer
+waits for the initial electronic batch, then queues two-core minimum checks,
+one electronic batch and one rotor batch at a time, all sharing the same eight
+physical cores. It records every transition and no unfinished class is averaged.
+Only the global owner deadline bounds new scientific jobs, with termination
+grace reserved inside it. Original held-wrapper evidence remains bound to its
+original deadline. The extension finalizer writes separate
+`verification/extension-final_commands.json` and `extension-final_summary.json`,
+runs the full Verifier, requires matching cached arithmetic/report checks,
+commits explicitly named probe/report files locally, and never pushes. The
+author's fresh replay shares this new global cap; later manager replays retain
+their separately bounded verification invocation.
+
 Run in the dispatched worktree. The commands use only the allowed scientific
 fixtures and named scratch; never inspect an excluded dataset. `common.py`
 contains the declarations. `legacy_cli.py` and `select_pool.py` adapt the

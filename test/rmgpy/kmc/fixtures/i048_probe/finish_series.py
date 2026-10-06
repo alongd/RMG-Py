@@ -1,4 +1,4 @@
-"""Close the authorized probe when producers finish or the original cap ends.
+"""Close the authorized probe when producers finish or the global cap ends.
 
 Command: PYTHONPATH=$PWD rmg_env python .../i048_probe/finish_series.py
 Persists each command's streams, runs the full Verifier, and commits locally.
@@ -6,22 +6,28 @@ Available-only numerical audits never stand in for the full Verifier.
 """
 from __future__ import annotations
 import fcntl
+import argparse
 import os
 from pathlib import Path
 import shlex
 import subprocess
 import time
-from common import SCRATCH,HERE,CPUS,RMG_PYTHON,load,save
+from common import SCRATCH,HERE,CPUS,RMG_PYTHON,load,save,production_deadline
 
 
 def main():
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--extension',action='store_true')
+    args=parser.parse_args()
     os.sched_setaffinity(0,CPUS)
-    deadline=load(SCRATCH/'started.json')['unix_s']+48*3600
+    deadline=production_deadline()
     os.environ['I048_REPLAY_DEADLINE_UNIX']=str(deadline)
     (SCRATCH/'logs').mkdir(exist_ok=True)
     records=[]
     affinity=','.join(map(str,CPUS))
+    prefix='extension-' if args.extension else ''
     def run(arguments,stem,quantum=False):
+        stem=prefix+stem
         command=[RMG_PYTHON,str(HERE/arguments[0]),*arguments[1:]]
         if quantum and time.time()<deadline-31:
             command=['timeout','--kill-after=30',str(int(deadline-time.time())-31),*command]
@@ -31,7 +37,7 @@ def main():
         print('I048 FINALIZER '+stem,flush=True)
         status=subprocess.run(['bash','-o','pipefail','-c',shell]).returncode
         records.append({'command':command,'exit_code':status,'stdout':str(stdout),'stderr':str(stderr),'finished_unix_s':time.time()})
-        save(SCRATCH/'verification/final_commands.json',records)
+        save(SCRATCH/'verification'/(prefix+'final_commands.json'),records)
         return status
     def required(arguments,stem):
         status=run(arguments,stem)
@@ -40,7 +46,7 @@ def main():
         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
         while time.time()<deadline:
             path=SCRATCH/'logs/pipeline-budgeted.stdout.log'
-            ready=path.exists() and 'I048 declared molecular producers complete; thermochemistry and full Verifier remain' in path.read_text()[-1500:]
+            ready=(SCRATCH/'pipeline/extension/completed.json').exists() if args.extension else (path.exists() and 'I048 declared molecular producers complete; thermochemistry and full Verifier remain' in path.read_text()[-1500:])
             if ready: break
             time.sleep(min(30,max(.1,deadline-time.time())))
         if time.time()>=deadline:
@@ -69,7 +75,7 @@ def main():
         elif audit_status:
             raise RuntimeError('final numerical audit failed; exit '+str(audit_status))
         required(report,'final-report-check')
-        save(SCRATCH/'monitor_stop.json',{'unix_s':time.time(),'reason':'scientific work and author verification ended'})
+        save(SCRATCH/('monitor_stop_extension.json' if args.extension else 'monitor_stop.json'),{'unix_s':time.time(),'reason':'scientific work and author verification ended'})
         branch=subprocess.check_output(['git','branch','--show-current'],text=True).strip()
         if branch!='i048-oligomer-series': raise RuntimeError('unexpected branch: '+branch)
         paths=[HERE.parent/'I048_oligomer_series.md',HERE/'README.md',*sorted(HERE.glob('*.py'))]
@@ -78,14 +84,16 @@ def main():
         if set(staged)-set(relative): raise RuntimeError('unrelated staged changes prevent the local commit')
         subprocess.run(['git','add',*relative],check=True)
         subprocess.run(['git','diff','--cached','--check'],check=True)
-        subprocess.run(['git','commit','-m','kmc: probe oligomer thermochemistry increments'],check=True)
+        subject='kmc: extend pentamer thermochemistry probe' if args.extension else 'kmc: probe oligomer thermochemistry increments'
+        subprocess.run(['git','commit','-m',subject],check=True)
         sha=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
         summary={'SHA':sha,'complete':complete,'available_species':data['available_species'],
                  'full_verifier_exit_code':full_status,'numerical_audit_exit_code':0,
                  'deadline_unix_s':deadline,'finished_unix_s':time.time(),'commands':records}
-        save(SCRATCH/'verification/final_summary.json',summary)
+        save(SCRATCH/'verification'/(prefix+'final_summary.json'),summary)
         with Path('/tmp/i048-live-worker-state.md').open('a') as state:
-            state.write('\nFINALIZER DONE: SHA '+sha+'; coverage '+str(len(data['available_species']))+'/25; full --replay exit '+str(full_status)+'; final numerical audit/report check exit0. Proof verification/final_summary.json and logs/final-*. No push. Root must inspect actual summary/logs/gitstatus and report exact three sections.\n')
+            proof='verification/'+prefix+'final_summary.json and logs/'+prefix+'final-*'
+            state.write('\nFINALIZER DONE: SHA '+sha+'; coverage '+str(len(data['available_species']))+'/25; full --replay exit '+str(full_status)+'; final numerical audit/report check exit0. Proof '+proof+'. No push. Root must inspect actual summary/logs/gitstatus and report exact three sections.\n')
         print('I048 FINALIZER DONE '+sha+' coverage '+str(len(data['available_species']))+'/25 full_verifier_exit='+str(full_status),flush=True)
 
 

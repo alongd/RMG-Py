@@ -62,6 +62,18 @@ def load(path):
     return json.loads(path.read_text())
 
 
+def production_deadline():
+    """Owner-authorized operational cap; never changes the frozen method."""
+    original=load(SCRATCH/'started.json')['unix_s']+48*3600
+    path=SCRATCH/'extension_authorization.json'
+    if not path.exists():
+        return original
+    record=load(path)
+    if record['baseline_SHA']!='0cda64e8817941902deda3585ef2b8f7c51dd4f7' or record['deadline_unix_s']!=1791267436:
+        raise ValueError('unknown production extension authorization')
+    return record['deadline_unix_s']
+
+
 def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 

@@ -7,7 +7,7 @@ import argparse
 import os
 from pathlib import Path
 import time
-from common import SCRATCH,CPUS,save,load
+from common import SCRATCH,CPUS,save,load,production_deadline
 
 
 def snapshot():
@@ -73,6 +73,7 @@ if __name__=='__main__':
             handle.write(json.dumps(result)+'\n')
         print('I048 resource snapshot: %.3f GiB, %d calculation processes; all observed threads confined to declared cores'%(
             result['RSS_kB']/1024**2,len(result['processes'])),flush=True)
-        if args.once or (SCRATCH/'monitor_stop.json').exists() or time.time()-load(SCRATCH/'started.json')['unix_s']>=48*3600:
+        stop='monitor_stop_extension.json' if (SCRATCH/'extension_authorization.json').exists() else 'monitor_stop.json'
+        if args.once or (SCRATCH/stop).exists() or time.time()>=production_deadline():
             break
         time.sleep(30)

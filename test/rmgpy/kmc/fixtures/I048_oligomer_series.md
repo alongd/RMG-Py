@@ -110,9 +110,9 @@ Pinned baseline Tc: **710.020462 K** at 1 mol/L. Database commit `4a12d36fcdc193
 
 ### Sequence and molecular coverage
 
-Thermochemical coverage: **22/25 species**. Missing completed thermochemistry: ps5_01001, ps5_01010, ps5_01110.
+Thermochemical coverage: **25/25 species**. Missing completed thermochemistry: none.
 An increment is calculated only when every frozen class at both lengths and every reference is complete. Missing classes are never omitted and the remaining weights are never renormalized.
-New-case source coverage: 14/16 completed searches and 14/16 selected minimum pools. The table retains available search and minimum evidence even when a case lacks completed thermochemistry.
+New-case source coverage: 16/16 completed searches and 16/16 selected minimum pools. The table retains available search and minimum evidence even when a case lacks completed thermochemistry.
 
 | n | Class | Frozen atactic weight | Oriented assignments | CREST candidates | Within 12 kJ/mol | Checked candidates | Rotor wells | Minimum ESS at 298 K | Largest-population basin ESS: PBE / BLYP |
 | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
@@ -134,11 +134,11 @@ New-case source coverage: 14/16 completed searches and 14/16 selected minimum po
 | 5 | ps5_00100 | 0.062500 | 2 | 554 | 129 | 32 | 29 | 2.08 | 6.61 / 6.61 |
 | 5 | ps5_00101 | 0.125000 | 4 | 525 | 185 | 32 | 17 | 1.78 | 12.85 / 12.85 |
 | 5 | ps5_00110 | 0.125000 | 4 | 398 | 134 | 32 | 19 | 1.16 | 1.16 / 1.16 |
-| 5 | ps5_01001 | 0.125000 | 4 | 377 | 113 | 32 | 22 | unavailable | unavailable |
-| 5 | ps5_01010 | 0.062500 | 2 | unavailable | unavailable | unavailable | unavailable | unavailable | unavailable |
-| 5 | ps5_01110 | 0.062500 | 2 | unavailable | unavailable | unavailable | unavailable | unavailable | unavailable |
+| 5 | ps5_01001 | 0.125000 | 4 | 377 | 113 | 32 | 22 | 2.93 | 49.60 / 49.60 |
+| 5 | ps5_01010 | 0.062500 | 2 | 824 | 266 | 32 | 19 | 3.37 | 38.64 / 38.64 |
+| 5 | ps5_01110 | 0.062500 | 2 | 407 | 122 | 32 | 34 | 1.19 | 32.03 / 40.55 |
 
-The declared full n=5 series is incomplete; the 4→5 atactic increment is unavailable. Complete lengths are averaged with their frozen assignment weights, without equilibrium diastereomer mixing entropy. The population spread below measures variation among oriented addition channels; it is not a standard error on these exact weighted means.
+All stereochemical classes are covered through n=5. Complete lengths are averaged with their frozen assignment weights, without equilibrium diastereomer mixing entropy. The population spread below measures variation among oriented addition channels; it is not a standard error on these exact weighted means.
 
 Monte Carlo standard errors condition on the retained wells and declared partition model. They do not quantify omitted conformers, candidate truncation, rigidity of the coupled-rotor potential, or the electronic fallback. Sequence population spread is reported separately. These quantities alone therefore do not provide a total uncertainty or prove physical convergence; low effective sample sizes also limit the linearized Monte Carlo error estimate.
 The minimum effective sample size can belong to a basin of small probability. The largest-population basin column and the per-basin internal probabilities saved in JSON provide the population context; none of these diagnostics changes the declared quadrature.
@@ -153,6 +153,8 @@ H increments use the one-ring formation-enthalpy anchor at 298 K described above
 | 2→3 | blyp | 67.381 | 191.908 | 51.758 | 158.507 | 51.750 | 144.958 | -15.623 | -33.401 | -15.630 | -46.950 | 0.183 / 0.545 | 4.511 / 5.401 |
 | 3→4 | pbe | 67.381 | 191.908 | 65.492 | 159.010 | 65.638 | 149.460 | -1.889 | -32.899 | -1.743 | -42.448 | 0.380 / 1.429 | 8.869 / 6.386 |
 | 3→4 | blyp | 67.381 | 191.908 | 57.843 | 160.556 | 57.929 | 150.606 | -9.537 | -31.352 | -9.452 | -41.302 | 0.377 / 1.418 | 6.513 / 7.175 |
+| 4→5 | pbe | 67.381 | 191.908 | 56.426 | 156.932 | 56.429 | 148.631 | -10.955 | -34.976 | -10.951 | -43.278 | 0.617 / 2.559 | 11.797 / 9.303 |
+| 4→5 | blyp | 67.381 | 191.908 | 51.454 | 158.408 | 51.441 | 150.023 | -15.926 | -33.500 | -15.939 | -41.885 | 0.616 / 2.557 | 9.048 / 7.181 |
 
 ### Temperature-dependent raw and local corrections
 
@@ -188,6 +190,20 @@ Only new n=4 and 5 quadratures change in the 1024/2048 comparison; the reused sh
 | 3→4 | blyp | 600.00 | 120.986 / 311.871 | 114.192 / 114.520 | -6.794 | -23.786 | -6.465 | -33.149 | 1.000 / 2.527 / 0.764 | 7.413 / 4.486 | -0.763 / -3.133 |
 | 3→4 | blyp | 700.00 | 144.490 / 348.063 | 136.977 / 137.297 | -7.514 | -24.896 | -7.194 | -34.271 | 0.997 / 2.176 / 0.951 | 7.327 / 4.499 | -0.166 / -2.210 |
 | 3→4 | blyp | 800.00 | 170.026 / 382.131 | 161.865 / 162.132 | -8.162 | -25.762 | -7.894 | -35.207 | 1.133 / 1.902 / 1.098 | 7.468 / 4.986 | 0.340 / -1.534 |
+| 4→5 | pbe | 298.15 | 67.381 / 191.908 | 56.426 / 56.429 | -10.955 | -34.976 | -10.951 | -43.278 | 0.617 / 2.559 / 0.281 | 11.797 / 9.303 | 1.047 / 5.088 |
+| 4→5 | pbe | 300.00 | 67.606 / 192.663 | 56.644 / 56.646 | -10.963 | -35.001 | -10.960 | -43.307 | 0.629 / 2.585 / 0.285 | 11.810 / 9.201 | 1.085 / 5.213 |
+| 4→5 | pbe | 400.00 | 81.874 / 233.428 | 71.405 / 71.345 | -10.469 | -33.723 | -10.529 | -42.210 | 1.283 / 3.929 / 0.500 | 12.410 / 7.076 | 2.390 / 9.099 |
+| 4→5 | pbe | 500.00 | 99.882 / 273.470 | 90.798 / 90.783 | -9.084 | -30.606 | -9.099 | -38.998 | 1.467 / 3.875 / 0.786 | 12.242 / 10.325 | 2.983 / 10.433 |
+| 4→5 | pbe | 600.00 | 120.986 / 311.871 | 112.663 / 112.745 | -8.323 | -29.217 | -8.241 | -37.433 | 1.603 / 3.482 / 1.043 | 11.347 / 10.491 | 2.615 / 9.793 |
+| 4→5 | pbe | 700.00 | 144.490 / 348.063 | 137.830 / 137.981 | -6.661 | -26.688 | -6.510 | -34.796 | 2.078 / 3.578 / 1.256 | 10.376 / 8.839 | 1.653 / 8.312 |
+| 4→5 | pbe | 800.00 | 170.026 / 382.131 | 166.194 / 166.360 | -3.832 | -22.916 | -3.666 | -31.004 | 2.705 / 3.976 / 1.459 | 11.114 / 9.452 | 0.707 / 7.050 |
+| 4→5 | blyp | 298.15 | 67.381 / 191.908 | 51.454 / 51.441 | -15.926 | -33.500 | -15.939 | -41.885 | 0.616 / 2.557 / 0.281 | 9.048 / 7.181 | 1.081 / 5.114 |
+| 4→5 | blyp | 300.00 | 67.606 / 192.663 | 51.678 / 51.663 | -15.929 | -33.508 | -15.943 | -41.897 | 0.628 / 2.583 / 0.284 | 9.057 / 7.048 | 1.121 / 5.248 |
+| 4→5 | blyp | 400.00 | 81.874 / 233.428 | 66.429 / 66.383 | -15.445 | -32.213 | -15.491 | -40.699 | 1.289 / 3.948 / 0.500 | 9.835 / 5.823 | 2.533 / 9.456 |
+| 4→5 | blyp | 500.00 | 99.882 / 273.470 | 85.446 / 85.464 | -14.435 | -29.935 | -14.418 | -38.281 | 1.462 / 3.868 / 0.788 | 10.004 / 10.033 | 3.038 / 10.596 |
+| 4→5 | blyp | 600.00 | 120.986 / 311.871 | 107.098 / 107.206 | -13.888 | -28.941 | -13.780 | -37.122 | 1.607 / 3.482 / 1.044 | 9.230 / 10.368 | 2.622 / 9.868 |
+| 4→5 | blyp | 700.00 | 144.490 / 348.063 | 132.192 / 132.363 | -12.299 | -26.525 | -12.128 | -34.609 | 2.096 / 3.599 / 1.255 | 8.219 / 8.882 | 1.634 / 8.346 |
+| 4→5 | blyp | 800.00 | 170.026 / 382.131 | 160.513 / 160.693 | -9.513 | -22.811 | -9.334 | -30.883 | 2.709 / 3.985 / 1.460 | 9.155 / 9.641 | 0.640 / 7.021 |
 
 ### Entropy component increments of the chains
 
@@ -251,6 +267,34 @@ These are chain increments before the balanced-reference subtraction. Local part
 | 3→4 | blyp | 700.00 | local | 0.000 | 0.000 | 210.264 | 110.263 | -6.735 | 313.792 |
 | 3→4 | blyp | 800.00 | raw | 3.435 | 4.843 | 241.699 | 112.151 | -7.199 | 354.928 |
 | 3→4 | blyp | 800.00 | local | 0.000 | 0.000 | 241.879 | 112.618 | -7.573 | 346.924 |
+| 4→5 | pbe | 298.15 | raw | 2.690 | 7.068 | 74.239 | 76.444 | -2.068 | 158.373 |
+| 4→5 | pbe | 298.15 | local | 0.000 | 0.000 | 74.234 | 76.434 | -2.037 | 148.631 |
+| 4→5 | pbe | 300.00 | raw | 2.690 | 7.068 | 74.845 | 76.570 | -2.070 | 159.103 |
+| 4→5 | pbe | 300.00 | local | 0.000 | 0.000 | 74.839 | 76.558 | -2.040 | 149.356 |
+| 4→5 | pbe | 400.00 | raw | 2.690 | 7.092 | 108.920 | 84.051 | -1.607 | 201.146 |
+| 4→5 | pbe | 400.00 | local | 0.000 | 0.000 | 108.908 | 83.903 | -1.593 | 191.218 |
+| 4→5 | pbe | 500.00 | raw | 2.690 | 7.117 | 144.036 | 92.048 | -1.586 | 244.305 |
+| 4→5 | pbe | 500.00 | local | 0.000 | 0.000 | 144.024 | 91.978 | -1.530 | 234.472 |
+| 4→5 | pbe | 600.00 | raw | 2.690 | 7.108 | 178.562 | 97.248 | -1.514 | 284.094 |
+| 4→5 | pbe | 600.00 | local | 0.000 | 0.000 | 178.550 | 97.347 | -1.460 | 274.438 |
+| 4→5 | pbe | 700.00 | raw | 2.690 | 7.080 | 211.758 | 102.480 | -1.192 | 322.816 |
+| 4→5 | pbe | 700.00 | local | 0.000 | 0.000 | 211.743 | 102.688 | -1.164 | 313.268 |
+| 4→5 | pbe | 800.00 | raw | 2.690 | 7.052 | 243.355 | 108.814 | -1.255 | 360.656 |
+| 4→5 | pbe | 800.00 | local | 0.000 | 0.000 | 243.338 | 109.037 | -1.247 | 351.128 |
+| 4→5 | blyp | 298.15 | raw | 2.690 | 7.095 | 74.293 | 76.736 | -0.965 | 159.849 |
+| 4→5 | blyp | 298.15 | local | 0.000 | 0.000 | 74.285 | 76.697 | -0.958 | 150.023 |
+| 4→5 | blyp | 300.00 | raw | 2.690 | 7.095 | 74.899 | 76.876 | -0.965 | 160.596 |
+| 4→5 | blyp | 300.00 | local | 0.000 | 0.000 | 74.891 | 76.833 | -0.957 | 150.766 |
+| 4→5 | blyp | 400.00 | raw | 2.690 | 7.125 | 108.982 | 84.800 | -0.941 | 202.656 |
+| 4→5 | blyp | 400.00 | local | 0.000 | 0.000 | 108.970 | 84.633 | -0.874 | 192.730 |
+| 4→5 | blyp | 500.00 | raw | 2.690 | 7.137 | 144.073 | 92.500 | -1.423 | 244.976 |
+| 4→5 | blyp | 500.00 | local | 0.000 | 0.000 | 144.063 | 92.452 | -1.326 | 235.189 |
+| 4→5 | blyp | 600.00 | raw | 2.690 | 7.117 | 178.582 | 97.487 | -1.506 | 284.370 |
+| 4→5 | blyp | 600.00 | local | 0.000 | 0.000 | 178.571 | 97.611 | -1.434 | 274.748 |
+| 4→5 | blyp | 700.00 | raw | 2.690 | 7.084 | 211.768 | 102.665 | -1.228 | 322.979 |
+| 4→5 | blyp | 700.00 | local | 0.000 | 0.000 | 211.754 | 102.894 | -1.195 | 313.454 |
+| 4→5 | blyp | 800.00 | raw | 2.690 | 7.053 | 243.359 | 108.965 | -1.306 | 360.761 |
+| 4→5 | blyp | 800.00 | local | 0.000 | 0.000 | 243.343 | 109.205 | -1.299 | 351.249 |
 
 ### Enthalpy component increments of the chains
 
@@ -314,6 +358,34 @@ The electronic column includes the constant formation-enthalpy reference determi
 | 3→4 | blyp | 700.00 | local | -319.300 | 0.000 | 0.000 | 433.849 | 22.748 | 0.000 | 137.297 |
 | 3→4 | blyp | 800.00 | raw | -320.234 | 0.000 | 0.000 | 457.564 | 24.535 | 0.000 | 161.865 |
 | 3→4 | blyp | 800.00 | local | -319.899 | 0.000 | 0.000 | 457.562 | 24.470 | 0.000 | 162.132 |
+| 4→5 | pbe | 298.15 | raw | -317.045 | 0.000 | 0.000 | 365.571 | 7.900 | 0.000 | 56.426 |
+| 4→5 | pbe | 298.15 | local | -317.031 | 0.000 | 0.000 | 365.575 | 7.885 | 0.000 | 56.429 |
+| 4→5 | pbe | 300.00 | raw | -317.042 | -0.000 | -0.000 | 365.751 | 7.934 | 0.000 | 56.644 |
+| 4→5 | pbe | 300.00 | local | -317.028 | 0.000 | 0.000 | 365.756 | 7.919 | 0.000 | 56.646 |
+| 4→5 | pbe | 400.00 | raw | -316.513 | 0.000 | 0.000 | 377.642 | 10.276 | 0.000 | 71.405 |
+| 4→5 | pbe | 400.00 | local | -316.536 | 0.000 | 0.000 | 377.646 | 10.235 | 0.000 | 71.345 |
+| 4→5 | pbe | 500.00 | raw | -315.950 | 0.000 | -0.000 | 393.398 | 13.350 | 0.000 | 90.798 |
+| 4→5 | pbe | 500.00 | local | -315.970 | 0.000 | 0.000 | 393.402 | 13.351 | 0.000 | 90.783 |
+| 4→5 | pbe | 600.00 | raw | -315.748 | -0.000 | -0.000 | 412.372 | 16.039 | 0.000 | 112.663 |
+| 4→5 | pbe | 600.00 | local | -315.753 | 0.000 | 0.000 | 412.376 | 16.122 | 0.000 | 112.745 |
+| 4→5 | pbe | 700.00 | raw | -315.727 | 0.000 | 0.000 | 433.956 | 19.600 | 0.000 | 137.830 |
+| 4→5 | pbe | 700.00 | local | -315.722 | 0.000 | 0.000 | 433.960 | 19.743 | 0.000 | 137.981 |
+| 4→5 | pbe | 800.00 | raw | -315.778 | 0.000 | 0.000 | 457.669 | 24.303 | 0.000 | 166.194 |
+| 4→5 | pbe | 800.00 | local | -315.767 | 0.000 | 0.000 | 457.673 | 24.454 | 0.000 | 166.360 |
+| 4→5 | blyp | 298.15 | raw | -322.065 | 0.000 | 0.000 | 365.566 | 7.954 | 0.000 | 51.454 |
+| 4→5 | blyp | 298.15 | local | -322.063 | 0.000 | 0.000 | 365.571 | 7.934 | 0.000 | 51.441 |
+| 4→5 | blyp | 300.00 | raw | -322.061 | -0.000 | -0.000 | 365.746 | 7.992 | 0.000 | 51.678 |
+| 4→5 | blyp | 300.00 | local | -322.059 | 0.000 | 0.000 | 365.751 | 7.971 | 0.000 | 51.663 |
+| 4→5 | blyp | 400.00 | raw | -321.649 | 0.000 | 0.000 | 377.637 | 10.440 | 0.000 | 66.429 |
+| 4→5 | blyp | 400.00 | local | -321.656 | 0.000 | 0.000 | 377.641 | 10.397 | 0.000 | 66.383 |
+| 4→5 | blyp | 500.00 | raw | -321.374 | 0.000 | -0.000 | 393.396 | 13.425 | 0.000 | 85.446 |
+| 4→5 | blyp | 500.00 | local | -321.369 | 0.000 | 0.000 | 393.400 | 13.433 | 0.000 | 85.464 |
+| 4→5 | blyp | 600.00 | raw | -321.342 | -0.000 | -0.000 | 412.372 | 16.068 | 0.000 | 107.098 |
+| 4→5 | blyp | 600.00 | local | -321.329 | 0.000 | 0.000 | 412.375 | 16.159 | 0.000 | 107.206 |
+| 4→5 | blyp | 700.00 | raw | -321.415 | 0.000 | 0.000 | 433.957 | 19.650 | 0.000 | 132.192 |
+| 4→5 | blyp | 700.00 | local | -321.400 | 0.000 | 0.000 | 433.961 | 19.801 | 0.000 | 132.363 |
+| 4→5 | blyp | 800.00 | raw | -321.527 | 0.000 | 0.000 | 457.670 | 24.370 | 0.000 | 160.513 |
+| 4→5 | blyp | 800.00 | local | -321.510 | 0.000 | 0.000 | 457.674 | 24.529 | 0.000 | 160.693 |
 
 ### Balanced-reference diagnostics and finite-fragment conditional ceilings
 
@@ -323,6 +395,8 @@ The electronic column includes the constant formation-enthalpy reference determi
 | 2→3 | blyp | 4.756 | 11.594 | -18.828 | -56.628 | -31.307 | -44.856 | -44.775 | 30.658 | 663.244 ± 1.684 (MC) | 599.615 ± 1.331 (MC); channel SD 16.420 K (linearized) |
 | 3→4 | pbe | 3.435 | 5.138 | -18.828 | -56.650 | -30.902 | -40.451 | -40.915 | 35.064 | 564.858 ± 5.382 (MC) | 525.383 ± 4.337 (MC); channel SD 64.383 K (linearized) |
 | 3→4 | blyp | 3.435 | 5.348 | -18.828 | -56.628 | -29.259 | -39.208 | -39.482 | 36.306 | 630.171 ± 6.484 (MC) | 584.853 ± 5.311 (MC); channel SD 44.930 K (linearized) |
+| 4→5 | pbe | 2.690 | 7.068 | -18.828 | -56.650 | -32.979 | -41.281 | -41.297 | 34.234 | 615.992 ± 8.160 (MC) | 579.754 ± 6.974 (MC); channel SD 77.275 K (linearized) |
+| 4→5 | blyp | 2.690 | 7.095 | -18.828 | -56.628 | -31.406 | -39.791 | -39.751 | 35.723 | 659.521 ± 9.024 (MC) | 620.165 ± 7.748 (MC); channel SD 63.528 K (linearized) |
 
 ### Functional spread and length dependence
 
@@ -342,16 +416,58 @@ The electronic column includes the constant formation-enthalpy reference determi
 | 3→4 | 600.00 | 8.202 | -0.066 |
 | 3→4 | 700.00 | 8.409 | 0.254 |
 | 3→4 | 800.00 | 8.582 | 0.486 |
+| 4→5 | 298.15 | 4.988 | -1.392 |
+| 4→5 | 300.00 | 4.983 | -1.410 |
+| 4→5 | 400.00 | 4.962 | -1.512 |
+| 4→5 | 500.00 | 5.319 | -0.717 |
+| 4→5 | 600.00 | 5.539 | -0.311 |
+| 4→5 | 700.00 | 5.618 | -0.187 |
+| 4→5 | 800.00 | 5.667 | -0.121 |
 
 | Level | T (K) | Terminal change: (4→5)−(3→4), local δH (kJ/mol) | Terminal local δS change (J/mol/K) | Covariance-aware MC SE H/S | Paired sequence population SD H/S |
 | --- | ---: | ---: | ---: | --- | --- |
+| pbe | 298.15 | -9.209 | -0.829 | 0.865 / 3.494 | 16.573 / 12.697 |
+| pbe | 300.00 | -9.244 | -0.947 | 0.886 / 3.546 | 16.603 / 12.568 |
+| pbe | 400.00 | -10.960 | -5.983 | 2.051 / 6.309 | 18.577 / 10.653 |
+| pbe | 500.00 | -10.851 | -5.784 | 2.232 / 6.174 | 18.847 / 12.610 |
+| pbe | 600.00 | -9.977 | -4.218 | 2.326 / 5.547 | 17.770 / 11.180 |
+| pbe | 700.00 | -7.725 | -0.779 | 2.659 / 5.141 | 17.032 / 9.227 |
+| pbe | 800.00 | -4.355 | 3.717 | 3.294 / 5.096 | 17.822 / 10.385 |
+| blyp | 298.15 | -6.488 | -0.583 | 0.858 / 3.474 | 12.889 / 11.406 |
+| blyp | 300.00 | -6.516 | -0.679 | 0.879 / 3.525 | 12.915 / 11.256 |
+| blyp | 400.00 | -8.099 | -5.293 | 2.059 / 6.316 | 14.769 / 9.821 |
+| blyp | 500.00 | -8.179 | -5.518 | 2.235 / 6.176 | 14.990 / 12.287 |
+| blyp | 600.00 | -7.315 | -3.973 | 2.329 / 5.545 | 13.795 / 11.012 |
+| blyp | 700.00 | -4.934 | -0.338 | 2.673 / 5.152 | 12.926 / 9.196 |
+| blyp | 800.00 | -1.440 | 4.325 | 3.296 / 5.100 | 13.847 / 10.397 |
+| gfn2 | 298.15 | 0.192 | 2.826 | 0.868 / 3.501 | 1.837 / 6.450 |
+| gfn2 | 300.00 | 0.176 | 2.772 | 0.891 / 3.555 | 1.838 / 6.368 |
+| gfn2 | 400.00 | -1.200 | -1.192 | 2.057 / 6.325 | 4.720 / 10.946 |
+| gfn2 | 500.00 | -1.532 | -1.972 | 2.222 / 6.157 | 5.936 / 13.239 |
+| gfn2 | 600.00 | -0.968 | -0.975 | 2.330 / 5.558 | 5.356 / 11.505 |
+| gfn2 | 700.00 | 1.136 | 2.233 | 2.680 / 5.182 | 4.844 / 9.562 |
+| gfn2 | 800.00 | 4.364 | 6.540 | 3.290 / 5.118 | 7.156 / 10.589 |
+| pbe_sparse | 298.15 | -2.539 | -0.075 | 0.861 / 3.483 | 16.167 / 9.741 |
+| pbe_sparse | 300.00 | -2.559 | -0.143 | 0.882 / 3.535 | 16.197 / 9.631 |
+| pbe_sparse | 400.00 | -3.629 | -3.299 | 2.049 / 6.303 | 18.089 / 10.661 |
+| pbe_sparse | 500.00 | -3.220 | -2.416 | 2.231 / 6.172 | 18.436 / 13.468 |
+| pbe_sparse | 600.00 | -2.315 | -0.787 | 2.325 / 5.547 | 17.426 / 12.130 |
+| pbe_sparse | 700.00 | -0.170 | 2.488 | 2.659 / 5.143 | 16.528 / 10.048 |
+| pbe_sparse | 800.00 | 3.021 | 6.746 | 3.294 / 5.100 | 17.026 / 10.722 |
+| blyp_sparse | 298.15 | -2.120 | 1.366 | 0.853 / 3.461 | 12.252 / 7.666 |
+| blyp_sparse | 300.00 | -2.134 | 1.317 | 0.874 / 3.511 | 12.282 / 7.532 |
+| blyp_sparse | 400.00 | -3.173 | -1.702 | 2.057 / 6.310 | 14.382 / 10.054 |
+| blyp_sparse | 500.00 | -3.154 | -1.689 | 2.235 / 6.177 | 14.841 / 13.314 |
+| blyp_sparse | 600.00 | -2.494 | -0.512 | 2.329 / 5.548 | 13.759 / 12.028 |
+| blyp_sparse | 700.00 | -0.441 | 2.621 | 2.673 / 5.157 | 12.759 / 10.061 |
+| blyp_sparse | 800.00 | 2.701 | 6.812 | 3.297 / 5.107 | 13.410 / 10.847 |
 
 ### Convergence verdict and transfer
 
-The completed classes support only the fully covered increments listed above. Missing n=5 classes prevent the terminal length comparison. No converged long-chain correction or corresponding long-chain Tc is established. Finite-fragment conditional roots, when computed, are comparisons under an assumed transfer and cannot replace the missing convergence evidence.
+The terminal length changes are listed with covariance-aware Monte Carlo errors and paired sequence spread. Three finite increments, sparse electronic re-ranking, candidate truncation and one doubled quadrature do not establish an asymptotic plateau with a bounded total error. No validated long-chain correction or Tc is adopted; the terminal 4→5 result and its conditional roots remain finite-fragment estimates.
 At 298.15 K, comparing (3→4) with (2→3): PBE: production length change 8.346 kJ/mol and 3.645 J/mol/K; uniform sparse diagnostic -4.347 kJ/mol and -0.560 J/mol/K; BLYP: production length change 6.179 kJ/mol and 5.648 J/mol/K; uniform sparse diagnostic -2.450 kJ/mol and 0.017 J/mol/K. The enthalpy trend changes sign under the already-declared energy-treatment diagnostic. The length trend therefore cannot be interpreted independently of that approximation boundary; neither diagnostic replaces the production result.
 The internal chain increment is the candidate for transfer because whole-chain translation and external rotation do not accompany local growth of a macroscopic chain. Removing these factors before basin reweighting differs from subtracting gas-weighted component totals. The reported correction also contains intrarepeat QM-versus-GAV differences; it is not an isolated adjacent-phenyl pair interaction.
-No n=6 calculation was allocated: required n≤5 searches, both frozen quadratures, composite energies and verification had priority within the original 48-hour cap. This budget decision uses measured computational cost and outstanding required work, without inspecting a ceiling temperature.
+No n=6 calculation was allocated: required n≤5 searches, both frozen quadratures, composite energies and verification had priority within the original 48-hour cap. The owner-authorized extension explicitly prohibits n=6. This budget decision uses measured computational cost and outstanding required work, without inspecting a ceiling temperature.
 
 ### Electronic approximation sensitivity
 
@@ -372,6 +488,9 @@ The pure-GFN2 comparison changes electronic energies only, retaining the same ge
 | ps5_00100 | 0.312 / 0.483 | 0.851144 / 0.850797 | 0.967512 / 0.967482 |
 | ps5_00101 | 1.699 / 1.765 | 0.695863 / 0.693138 | 0.990673 / 0.990625 |
 | ps5_00110 | 2.527 / 2.919 | 0.835443 / 0.839860 | 0.978955 / 0.979221 |
+| ps5_01001 | 16.556 / 13.380 | 0.094320 / 0.327201 | 0.805892 / 0.831499 |
+| ps5_01010 | 0.259 / 0.253 | 0.932967 / 0.933318 | 0.995736 / 0.995749 |
+| ps5_01110 | 16.356 / 13.271 | 0.819221 / 0.821571 | 0.986725 / 0.985312 |
 
 | Step | T (K) | Pure-GFN2 local δH / δS (kJ/mol, J/mol/K) | PBE−GFN2 local δH / δS | BLYP−GFN2 local δH / δS |
 | --- | ---: | --- | --- | --- |
@@ -389,6 +508,13 @@ The pure-GFN2 comparison changes electronic energies only, retaining the same ge
 | 3→4 | 600.00 | -8.869 / -36.254 | 10.606 / 3.039 | 2.404 / 3.105 |
 | 3→4 | 700.00 | -9.318 / -36.945 | 10.533 / 2.929 | 2.124 / 2.674 |
 | 3→4 | 800.00 | -9.740 / -37.510 | 10.429 / 2.789 | 1.846 / 2.303 |
+| 4→5 | 298.15 | -11.195 / -40.040 | 0.244 / -3.237 | -4.745 / -1.845 |
+| 4→5 | 300.00 | -11.200 / -40.058 | 0.240 / -3.249 | -4.743 / -1.839 |
+| 4→5 | 400.00 | -11.081 / -39.791 | 0.552 / -2.420 | -4.410 / -0.908 |
+| 4→5 | 500.00 | -10.368 / -38.188 | 1.269 / -0.811 | -4.050 / -0.093 |
+| 4→5 | 600.00 | -9.837 / -37.229 | 1.596 / -0.204 | -3.943 / 0.107 |
+| 4→5 | 700.00 | -8.182 / -34.712 | 1.672 / -0.083 | -3.946 / 0.103 |
+| 4→5 | 800.00 | -5.376 / -30.970 | 1.710 / -0.034 | -3.958 / 0.088 |
 
 The following diagnostic applies the same lowest-three-plus-offset rule to the complete n=2 and 3 electronic evidence, keeping the production one-ring reference fixed. The larger-chain energies already obey that rule. Production minus this uniform sparse diagnostic therefore measures sensitivity to the energy-treatment boundary; it does not change the reported production increments or select another method.
 
@@ -422,6 +548,20 @@ The following diagnostic applies the same lowest-three-plus-offset rule to the c
 | 3→4 | blyp | 600.00 | 4.820 | 3.461 |
 | 3→4 | blyp | 700.00 | 4.493 | 2.959 |
 | 3→4 | blyp | 800.00 | 4.141 | 2.488 |
+| 4→5 | pbe | 298.15 | 0.000 | 0.000 |
+| 4→5 | pbe | 300.00 | 0.000 | 0.000 |
+| 4→5 | pbe | 400.00 | 0.000 | 0.000 |
+| 4→5 | pbe | 500.00 | 0.000 | 0.000 |
+| 4→5 | pbe | 600.00 | 0.000 | 0.000 |
+| 4→5 | pbe | 700.00 | 0.000 | 0.000 |
+| 4→5 | pbe | 800.00 | 0.000 | 0.000 |
+| 4→5 | blyp | 298.15 | 0.000 | 0.000 |
+| 4→5 | blyp | 300.00 | 0.000 | 0.000 |
+| 4→5 | blyp | 400.00 | 0.000 | 0.000 |
+| 4→5 | blyp | 500.00 | 0.000 | 0.000 |
+| 4→5 | blyp | 600.00 | 0.000 | 0.000 |
+| 4→5 | blyp | 700.00 | 0.000 | 0.000 |
+| 4→5 | blyp | 800.00 | 0.000 | 0.000 |
 
 ### Literature cross-check
 
@@ -439,10 +579,11 @@ Khare and Paulaitis explicitly study coupled phenyl/backbone motions in polystyr
 
 An eight-hour per-search timeout was an execution limit added by this worker, rather than the dispatched total-wall limit. Only each recorded GNU timeout wrapper was held while its unchanged CREST child continued. Original-deadline guardians preserve the actual wrapper status and scientific-child evidence separately. Guard outcomes: ps5_00110: scientific completed=True, wrapper exit=124; ps5_01001: scientific completed=True, wrapper exit=124. Successful acceptance requires time-v exit 0, normal CREST termination and source hashes; an unfinished child at the original cap is not accepted. A controlled sleep process reproduced a successful child with wrapper status 124. Preparation-supervisor reload evidence and prior logs remain in scratch. Neither a wrapper hold nor a lane recovery extends the original 48-hour deadline.
 
-Through the recorded cutoff: 48.094 h wall since preparation; 237.308 CPU h in 230 recorded jobs; maximum single-job RSS 2.791 GiB. recorded leaf scientific jobs through this cutoff; enclosing supervisors excluded to avoid double counting CPU; build and small authoring/audit processes excluded; copied prior results incurred no new quantum cost.
-The original scientific deadline is 2026-10-05 12:16:40 UTC. The cost cutoff is 0.094 h after that deadline. Report rendering and cached numerical audits after the cap do not allocate additional quantum time.
+Through the recorded cutoff: 63.611 h wall since preparation; 300.416 CPU h in 462 recorded jobs; maximum single-job RSS 2.791 GiB. recorded leaf scientific jobs through this cutoff; enclosing supervisors excluded to avoid double counting CPU; build and small authoring/audit processes excluded; copied prior results incurred no new quantum cost.
+The original scientific deadline is 2026-10-05 12:16:40 UTC. The cost cutoff is 15.611 h after that deadline. Report rendering and cached numerical audits after the cap do not allocate additional quantum time.
+The owner subsequently authorized a hard 16-hour extension from ruling time, with absolute deadline 2026-10-06T06:17:16+00:00 (epoch 1791267436), to finish n=5 from local baseline `0cda64e8817941902deda3585ef2b8f7c51dd4f7` (22/25 cases). This authorization supersedes the original production cutoff for the resumed jobs; the original start and scientific method declaration are unchanged. The two interrupted searches restarted with the installed CREST 3.0.2 GFN2/quick/6 kcal/mol/four-thread settings. A requested native restart did not recover their checkpoint stages: actual streams show new metadynamics, so these are fresh same-settings restarts. Prior trees and launch receipts are preserved. No per-case eight-hour timer or n=6 allocation is used. Extension leaf scientific CPU recorded since its initialization: 62.596 h. Cached rendering/audits after the new cap allocate no quantum time.
 
-5650 successful resource snapshots observed an aggregate calculation RSS peak of 6.160 GiB with threads confined to the eight declared physical cores. Monitoring exceptions and a gap are described below; these periodic observations are not a continuous peak-memory or affinity proof. Production DFT uses three lanes on 3/3/2 distinct physical cores, native OpenMP bounded by each lane, and one thread in each BLAS pool. The workspace setting is 5000 MB per job; observed RSS is measured separately.
+7239 successful resource snapshots observed an aggregate calculation RSS peak of 8.673 GiB with threads confined to the eight declared physical cores. Monitoring exceptions and a gap are described below; these periodic observations are not a continuous peak-memory or affinity proof. Production DFT uses three lanes on 3/3/2 distinct physical cores, native OpenMP bounded by each lane, and one thread in each BLAS pool. The workspace setting is 5000 MB per job; observed RSS is measured separately.
 
 Completed cases received minima checks and electronic calculations while remaining searches continued on the same eight pinned physical cores. The primary pipeline prepared one case at a time. A supplemental producer later used a second preparation lane, with minimum checks on core 10 and DFT on cores 6, 8 and 10. Per-case process locks serialize minimum and electronic writes. The supplemental producer finishes its active case when all searches complete; the bulk electronic stage waits on its process lock before launching the declared three lanes. The already-active ps4_0000 was excluded from supplemental scheduling because it began before the case locks were installed. This scheduling overlap did not change candidate selection, energy levels, sequence weights or sampling counts.
 The final bulk electronic stage distributes independent conformer/functional single points across those same three lanes, including when only one case remains. It holds the case locks, retains the frozen lowest-three selection, and applies the existing offset and symmetry-image rules only after all direct points complete. The saved task-to-lane matrix and producing jobs are audited; a development check also compares cached energy-file hashes before and after this scheduling refactor.
@@ -453,7 +594,7 @@ The first prepared tetramer also received its declared rotor integrations on cor
 
 A later early-rotor producer integrated prepared cases on core 12 during the searches. It finishes its active case when all searches complete, then releases a process lock required by the bulk eight-lane rotor stage. Both declared sampling counts are retained.
 
-Later primary minimum preparation divided independent candidates between two single-core lanes; bulk preparation assigned the same eight cores among cases still missing their pools. The original supplemental process retained its single check lane. Recorded stage layouts: 6 case(s) with 2 lane(s). Each candidate batch and its core is recorded in `checks/execution.json`; the Verifier checks the complete unchanged candidate set and single-thread execution metadata. Cached candidates retain their original computation metadata. No selection, threshold, Hessian treatment or energy level changes.
+Later primary minimum preparation divided independent candidates between two single-core lanes; bulk preparation assigned the same eight cores among cases still missing their pools. The original supplemental process retained its single check lane. Recorded stage layouts: 8 case(s) with 2 lane(s). Each candidate batch and its core is recorded in `checks/execution.json`; the Verifier checks the complete unchanged candidate set and single-thread execution metadata. Cached candidates retain their original computation metadata. No selection, threshold, Hessian treatment or energy level changes.
 
 One development partial-thermochemistry replay omitted explicit thread environment settings; its actual BLAS use was not measured. The monitor stopped during that replay on an affinity escape whose argv/mask were not captured. Its first restart identified an unpinned tee logger, which was corrected. Quantum-job environments inspected during this period had the caps set. The partial analysis was repeated with caps, and analysis entry points now set them before scientific imports. `development_thread_cap_exception.json` records the exceptions and monitoring gap; the final report uses capped reproductions.
 <!-- END I048:measured -->

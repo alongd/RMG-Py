@@ -524,6 +524,18 @@ def audit_cost():
         if not job['label'].startswith(('production stage ','replay ')):
             total+=user+system
     close(total,cost['CPU_s']); close(max(peaks or [0.]),cost['max_single_job_RSS_kB'])
+    if cost.get('owner_extension'):
+        path=SCRATCH/'extension_authorization.json'
+        if digest(path)!=cost['owner_extension_sha256']:
+            raise AssertionError('owner extension authorization changed')
+        compare(load(path),cost['owner_extension'])
+        extension=cost['owner_extension']
+        if extension['deadline_unix_s']!=1791267436 or extension['baseline_SHA']!='0cda64e8817941902deda3585ef2b8f7c51dd4f7' or not extension['no_n6'] or extension['science_changes']:
+            raise AssertionError('extension differs from the owner ruling')
+        extension_CPU=sum(j['user_CPU_s']+j['system_CPU_s'] for j in cost['recorded_jobs']
+                          if not j['label'].startswith(('production stage ','replay '))
+                          and load(Path(j['path']))['started_unix_s']>=extension['recorded_unix_s'])
+        close(extension_CPU,cost['extension_CPU_s'])
     observations=[__import__('json').loads(line) for line in (SCRATCH/'resource_snapshots.jsonl').read_text().splitlines()]
     observations=[o for o in observations if o['unix_s']<=cost['last_resource_observation_unix_s']]
     if len(observations)!=cost['resource_observations']:
@@ -576,14 +588,16 @@ def main():
         raise AssertionError('saved thermal coverage differs from available sources')
     if args.replay:
         # Completed replay must remain runnable after the production deadline.
-        # The author's own replay stays within its original wall allocation;
+        # The author's own replay shares the authorized global deadline;
         # a later manager replay gets a new, bounded verification invocation.
-        production_end=load(SCRATCH/'started.json')['unix_s']+48*3600
-        deadline=invoked_at+2*3600
-        if invoked_at<production_end:
-            deadline=min(deadline,production_end)
+        from common import production_deadline
+        production_end=production_deadline()
         if os.environ.get('I048_REPLAY_DEADLINE_UNIX'):
-            deadline=min(deadline,float(os.environ['I048_REPLAY_DEADLINE_UNIX']))
+            deadline=float(os.environ['I048_REPLAY_DEADLINE_UNIX'])
+            if invoked_at<production_end:
+                deadline=min(deadline,production_end)
+        else:
+            deadline=production_end if invoked_at<production_end else invoked_at+2*3600
         os.environ['I048_REPLAY_DEADLINE_UNIX']=str(deadline)
         from run_series import run_job
         for stage in ('search','minima','electronic','rotors'):
