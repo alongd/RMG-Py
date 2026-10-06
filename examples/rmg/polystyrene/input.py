@@ -56,7 +56,7 @@ hybridPolymerReactor(
         'N2': 0.99,
         # Match the polymer declaration: 0.05 kg / 5000 g mol^-1 = 0.01 mol of chains.
         # Keeping this pool equal to initial_mass/Mn prevents the pool-consistency warning.
-        'PS': 0.2,
+        'PS': 0.01,
         'Ar': 1e-10,  # inert bath-gas reference for pressure dependence; ~0 mol = no effect on composition
     },
     polymerPhase=pp,
