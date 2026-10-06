@@ -35,8 +35,8 @@ import pytest
 
 from rmgpy import settings
 from rmgpy.data.kinetics.database import KineticsDatabase
-from rmgpy.data.kinetics.family import UntypeableStructureError
 from rmgpy.molecule import Molecule
+from rmgpy.species import Species
 
 N2 = '1 N u0 p1 c0 {2,T}\n2 N u0 p1 c0 {1,T}'
 GROUP = '1 *1 N u0 p1 c0 {2,T}\n2 *2 N u0 p1 c0 {1,T}'
@@ -159,30 +159,37 @@ def test_all_database_families_exclude_resolved_nitrogen_and_argon():
     cases += list(itertools.combinations_with_replacement(sorted(molecules), 2))
     resolved_names = {'N2v1', 'N2A', 'Ar1s5'}
     negative_queries, ground_reactions = 0, 0
-    ground_refusals = []
     for label, family in database.families.items():
         for names in cases:
             reactants = [molecules[name].copy(deep=True) for name in names]
-            try:
-                reactions = family.generate_reactions(reactants, prod_resonance=False)
-            except UntypeableStructureError:
-                # Reproduced at 0640eee62: the ground templates attempt untypeable Ar- and N2-.
-                # Record only that measured refusal; resolved cases and other errors fail.
-                if label != 'Plasma_Radiative_Recombination' or names not in [('Ar',), ('N2',)]:
-                    raise
-                ground_refusals.append((label, names))
-                continue
+            reactions = family.generate_reactions(reactants, prod_resonance=False)
             if any(name in resolved_names for name in names):
                 negative_queries += 1
                 assert reactions == [], (label, names, reactions)
             else:
                 ground_reactions += len(reactions)
-    assert ground_refusals == [('Plasma_Radiative_Recombination', ('Ar',)),
-                               ('Plasma_Radiative_Recombination', ('N2',))]
-    print('CENSUS GROUND REFUSALS:', ground_refusals)
     print('CENSUS: {} families; {} cases/family (6 unary, 21 pairwise); '
           '{} resolved queries; 0 resolved reactions; {} ground reactions'.format(
               len(database.families), len(cases), negative_queries, ground_reactions))
+
+
+@pytest.mark.database
+def test_pairing_argon_reaction_resolves_electron_placement():
+    family_root = Path(settings['database.directory']) / 'kinetics/families'
+    database = KineticsDatabase()
+    database.load_families(str(family_root), families=['Plasma_Radiative_Recombination_Pairing'],
+                           depositories=['training'])
+    argon = Molecule().from_adjacency_list('multiplicity 2\n1 Ar u1 p3 c+1')
+    family = database.families['Plasma_Radiative_Recombination_Pairing']
+    reaction = family.generate_reactions([argon])[0]
+    reaction.kinetics = family.get_kinetics(
+        reaction, template_labels=reaction.template, degeneracy=reaction.degeneracy)[0][0]
+    reaction.ensure_species()
+    electron = Species(label='e').from_adjacency_list('1 e u1 p0 c-1')
+    from rmgpy.electron_placement import resolve_electron_placement
+    view = resolve_electron_placement(reaction, [electron] + reaction.reactants + reaction.products)
+    assert view.electrons == 0
+    assert sum(species.is_electron() for species in view.reactants) == 1
 
 
 @pytest.mark.parametrize('state', [('A/B', -1), ('A', True), ('A', -2), ('A', 2147483648)])

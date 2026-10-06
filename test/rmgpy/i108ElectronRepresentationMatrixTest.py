@@ -865,6 +865,7 @@ def test_family_electron_placement_is_still_the_exact_declared_table():
         'Plasma_Associative_Ionization_Alkaline_Alkaline': (0, 1),
         'Plasma_Electron_Impact_Ionization': (1, 2),
         'Plasma_Radiative_Recombination': (1, 0),
+        'Plasma_Radiative_Recombination_Pairing': (1, 0),
     }
 
 

@@ -3033,7 +3033,7 @@
   {
     "site": "rmgpy/electron_placement.py::resolve_electron_placement::Reaction#1",
     "kind": "builder",
-    "line": 730,
+    "line": 733,
     "source": "view = Reaction(",
     "verdict": "guarded",
     "reason": "The canonical/execution views preserve kinetics and reversible metadata; downstream reactor preflight checks the original declaration.",
@@ -3044,7 +3044,7 @@
   {
     "site": "rmgpy/electron_placement.py::resolve_electron_placement::reaction-io",
     "kind": "reader-exporter",
-    "line": 375,
+    "line": 378,
     "source": "def resolve_electron_placement(reaction, species_list):",
     "verdict": "guarded",
     "reason": "The canonical/execution views preserve kinetics and reversible metadata; downstream reactor preflight checks the original declaration.",

@@ -423,6 +423,7 @@ class TestDeclarationSchema:
             'Plasma_Associative_Ionization_Alkaline_Alkaline': (0, 1),
             'Plasma_Electron_Impact_Ionization': (1, 2),
             'Plasma_Radiative_Recombination': (1, 0),
+            'Plasma_Radiative_Recombination_Pairing': (1, 0),
         }
 
     def test_electron_impact_ionisation_family_is_now_shipped(self):
