@@ -10,6 +10,7 @@ import pytest
 
 from portable_cache import (
     artifact_cache_key,
+    compile_environment_options,
     database_identity,
     export_cache,
     identity,
@@ -171,3 +172,19 @@ def test_artifact_key_includes_compile_options(tmp_path):
     base = {"temperature_grid": [300, 325], "use_plpsec_library": "1"}
     disabled = {**base, "use_plpsec_library": "0"}
     assert artifact_cache_key(repo, db, base) != artifact_cache_key(repo, db, disabled)
+
+
+def test_new_rmg_kmc_environment_setting_changes_artifact_key(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    (repo / "rmgpy").mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    (repo / "rmgpy/x.py").write_text("x")
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(repo), "-c", "user.email=a@b", "-c", "user.name=a", "commit", "-qm", "x"], check=True)
+    db = tmp_path / "db"
+    (db / "input").mkdir(parents=True)
+    options = {"environment": compile_environment_options()}
+    before = artifact_cache_key(repo, db, options)
+    monkeypatch.setenv("RMG_KMC_NEW_COMPILER_SWITCH", "enabled")
+    after = artifact_cache_key(repo, db, {"environment": compile_environment_options()})
+    assert after != before

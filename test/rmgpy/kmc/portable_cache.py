@@ -14,6 +14,10 @@ import tarfile
 import tempfile
 
 SCHEMA = 1
+ARTIFACT_ENV_EXCLUSIONS = frozenset({
+    "RMG_KMC_CACHE_ROOT",
+    "RMG_KMC_ARTIFACT",
+})
 
 
 def _run(*args: str, cwd: Path | None = None) -> str:
@@ -103,6 +107,15 @@ def artifact_cache_key(repository: Path, database: Path, compile_options: dict) 
         **artifact_identity(repository, database),
         "compile_options": compile_options,
     })
+
+
+def compile_environment_options() -> dict[str, str]:
+    """Return every content-affecting RMG_KMC_ setting in stable order."""
+    return {
+        name: value
+        for name, value in sorted(os.environ.items())
+        if name.startswith("RMG_KMC_") and name not in ARTIFACT_ENV_EXCLUSIONS
+    }
 
 
 def _git_database_identity(database: Path) -> str | None:

@@ -11,7 +11,16 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from portable_cache import atomic_copy, atomic_write, artifact_cache_key, database_identity, identity, identity_name, migrate
+from portable_cache import (
+    atomic_copy,
+    atomic_write,
+    artifact_cache_key,
+    compile_environment_options,
+    database_identity,
+    identity,
+    identity_name,
+    migrate,
+)
 
 from rmgpy.data.rmg import RMGDatabase
 from rmgpy.kmc.compiler import (
@@ -104,7 +113,7 @@ def main() -> None:
         "database_sha": database_commit,
         "family_universe": family_universe,
         "temperature_grid": list(__import__("rmgpy.kmc.compiler", fromlist=["DEFAULT_T_GRID"]).DEFAULT_T_GRID),
-        "use_plpsec_library": os.environ.get("RMG_KMC_PLPSEC_LIBRARY", "1"),
+        "environment": compile_environment_options(),
     }
     artifact_key = artifact_cache_key(Path.cwd(), database_path, compile_options)
     artifact_cache = cache_root / "portable-artifacts" / artifact_key

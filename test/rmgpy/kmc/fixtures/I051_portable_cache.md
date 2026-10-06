@@ -37,5 +37,8 @@ Compiled artifacts use a sibling identity that adds the tracked
 `rmgpy/kmc/` tree hash to the generation identity. Compiler changes therefore
 invalidate artifacts without invalidating generated-reaction entries.
 The artifact key also contains the effective database SHA, family universe,
-temperature grid, and PLP-SEC selection; lookup uses the manifest's exact
-artifact filename rather than an arbitrary JSON file.
+temperature grid, and sorted `name=value` pairs for every `RMG_KMC_`
+environment variable. The explicit exclusions are `RMG_KMC_CACHE_ROOT` and
+`RMG_KMC_ARTIFACT`, which are path selectors only and do not change compiled
+content. Lookup uses the manifest's exact artifact filename rather than an
+arbitrary JSON file.
