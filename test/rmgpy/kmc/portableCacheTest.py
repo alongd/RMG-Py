@@ -1,7 +1,10 @@
 import json
 import os
+from pathlib import Path
 import shutil
 import subprocess
+import tarfile
+import tempfile
 
 import pytest
 
@@ -13,6 +16,19 @@ from portable_cache import (
     import_cache,
     migrate,
 )
+
+
+def _rewrite_archive(archive, mutate):
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary) / "kmc-cache"
+        with tarfile.open(archive, "r:gz") as tar:
+            tar.extractall(temporary, filter="data")
+        root = Path(temporary) / "kmc-cache"
+        mutate(root)
+        replacement = Path(temporary) / "replacement.tgz"
+        with tarfile.open(replacement, "w:gz") as tar:
+            tar.add(root, arcname="kmc-cache")
+        shutil.copy2(replacement, archive)
 
 
 def test_identity_excludes_kmc_and_changes_for_other_rmgpy(tmp_path, monkeypatch):
@@ -52,6 +68,44 @@ def test_export_import_and_manifest_mismatch(tmp_path):
     assert (destination / "generated-reactions/entry.pickle").read_bytes() == b"entry"
     (repo / "rmgpy/x.py").write_text("changed")
     with pytest.raises(ValueError, match="manifest"):
+        import_cache(archive, tmp_path / "refused", repo, db)
+
+
+def test_import_rejects_tampered_file(tmp_path):
+    repo = tmp_path / "repo"
+    (repo / "rmgpy").mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    (repo / "rmgpy/x.py").write_text("x")
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(repo), "-c", "user.email=a@b", "-c", "user.name=a", "commit", "-qm", "x"], check=True)
+    db = tmp_path / "db"
+    (db / "input").mkdir(parents=True)
+    source = tmp_path / "cache/generated-reactions"
+    source.mkdir(parents=True)
+    (source / "entry.pickle").write_bytes(b"entry")
+    archive = tmp_path / "cache.tgz"
+    export_cache(source.parent, archive, repo, db)
+    _rewrite_archive(archive, lambda root: (root / "generated-reactions/entry.pickle").write_bytes(b"tampered"))
+    with pytest.raises(ValueError, match="hash"):
+        import_cache(archive, tmp_path / "refused", repo, db)
+
+
+def test_import_rejects_stray_file(tmp_path):
+    repo = tmp_path / "repo"
+    (repo / "rmgpy").mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    (repo / "rmgpy/x.py").write_text("x")
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(repo), "-c", "user.email=a@b", "-c", "user.name=a", "commit", "-qm", "x"], check=True)
+    db = tmp_path / "db"
+    (db / "input").mkdir(parents=True)
+    source = tmp_path / "cache/generated-reactions"
+    source.mkdir(parents=True)
+    (source / "entry.pickle").write_bytes(b"entry")
+    archive = tmp_path / "cache.tgz"
+    export_cache(source.parent, archive, repo, db)
+    _rewrite_archive(archive, lambda root: (root / "stray.txt").write_bytes(b"stray"))
+    with pytest.raises(ValueError, match="unknown"):
         import_cache(archive, tmp_path / "refused", repo, db)
 
 

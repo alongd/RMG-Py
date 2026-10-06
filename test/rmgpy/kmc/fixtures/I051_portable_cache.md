@@ -28,7 +28,10 @@ and hash seed all match. It reports and skips the rest, and never removes or
 moves anything. Export writes one gzip tar archive
 containing generated reactions, compiled artifacts, and `manifest.json`.
 Import refuses the archive unless its manifest exactly matches the current
-identity.
+identity, contains exactly the manifest-listed files, and every listed
+SHA-256 matches. Cache archives must only be imported from a trusted source:
+the generated-reaction payloads are Python pickle files and should not be
+treated as a safe format for untrusted input.
 
 Compiled artifacts use a sibling identity that adds the tracked
 `rmgpy/kmc/` tree hash to the generation identity. Compiler changes therefore

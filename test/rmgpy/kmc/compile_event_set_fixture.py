@@ -8,9 +8,10 @@ import logging
 import os
 import pickle
 import subprocess
+import tempfile
 from pathlib import Path
 
-from portable_cache import artifact_cache_key, database_identity, identity, identity_name, migrate
+from portable_cache import atomic_copy, atomic_write, artifact_cache_key, database_identity, identity, identity_name, migrate
 
 from rmgpy.data.rmg import RMGDatabase
 from rmgpy.kmc.compiler import (
@@ -116,7 +117,7 @@ def main() -> None:
         output = Path(args.output)
         output.mkdir(parents=True, exist_ok=True)
         destination = output / cached_artifact.name
-        destination.write_bytes(cached_artifact.read_bytes())
+        atomic_copy(cached_artifact, destination)
         print(destination)
         return
     generate = database.kinetics.generate_reactions_from_families
@@ -176,16 +177,20 @@ def main() -> None:
         flush=True,
     )
     artifact_cache.mkdir(parents=True, exist_ok=True)
-    path, _ = compiler.write_artifact(artifact_cache)
-    (artifact_cache / "manifest.json").write_text(json.dumps({
+    with tempfile.TemporaryDirectory(dir=artifact_cache.parent) as temporary:
+        path, _ = compiler.write_artifact(temporary)
+        final_path = artifact_cache / path.name
+        os.replace(path, final_path)
+    path = final_path
+    atomic_write(artifact_cache / "manifest.json", json.dumps({
         "identity": artifact_cache_key(Path.cwd(), database_path, compile_options),
         "artifact": path.name,
-    }, sort_keys=True, indent=2) + "\n")
+    }, sort_keys=True, indent=2).encode() + b"\n")
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
     destination = output / path.name
     if destination != path:
-        destination.write_bytes(path.read_bytes())
+        atomic_copy(path, destination)
     path = destination
     print(path)
 

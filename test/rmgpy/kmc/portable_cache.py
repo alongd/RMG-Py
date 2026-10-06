@@ -59,6 +59,34 @@ def identity_name(value: dict) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
 
 
+def atomic_copy(source: Path, destination: Path) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(f".{destination.name}.{os.getpid()}.tmp")
+    try:
+        shutil.copy2(source, temporary)
+        os.replace(temporary, destination)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def atomic_write(path: Path, payload: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        temporary.write_bytes(payload)
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _file_hashes(root: Path) -> dict[str, str]:
+    return {
+        path.relative_to(root).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted(root.rglob("*"))
+        if path.is_file() and not path.is_symlink() and path != root / "manifest.json"
+    }
+
+
 def artifact_identity(repository: Path, database: Path) -> dict:
     """Artifact identity additionally includes the kMC compiler implementation."""
     value = identity(repository, database)
@@ -111,7 +139,7 @@ def migrate(
     generation_identity = identity(repository, database)
     target = cache_root / "portable" / identity_name(generation_identity)
     target.mkdir(parents=True, exist_ok=True)
-    (target / "manifest.json").write_text(json.dumps(generation_identity, sort_keys=True, indent=2) + "\n")
+    atomic_write(target / "manifest.json", (json.dumps(generation_identity, sort_keys=True, indent=2) + "\n").encode())
     old = cache_root / "generated-reactions"
     out = target / "generated-reactions"
     out.mkdir(exist_ok=True)
@@ -149,7 +177,7 @@ def migrate(
                     if entry.is_file() and entry.suffix == ".pickle":
                         destination = out / entry.name
                         if not destination.exists():
-                            shutil.copy2(entry, destination)
+                            atomic_copy(entry, destination)
     return target
 
 
@@ -158,9 +186,17 @@ def export_cache(cache: Path, archive: Path, repository: Path, database: Path) -
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary) / "kmc-cache"
         shutil.copytree(cache, root)
+        manifest["files"] = _file_hashes(root)
         (root / "manifest.json").write_text(json.dumps(manifest, sort_keys=True, indent=2) + "\n")
-        with tarfile.open(archive, "w:gz") as tar:
-            tar.add(root, arcname="kmc-cache")
+        archive.parent.mkdir(parents=True, exist_ok=True)
+        fd, temporary_archive = tempfile.mkstemp(prefix=f".{archive.name}.", dir=archive.parent)
+        os.close(fd)
+        try:
+            with tarfile.open(temporary_archive, "w:gz") as tar:
+                tar.add(root, arcname="kmc-cache")
+            os.replace(temporary_archive, archive)
+        finally:
+            Path(temporary_archive).unlink(missing_ok=True)
 
 
 def import_cache(archive: Path, destination: Path, repository: Path, database: Path) -> None:
@@ -170,13 +206,24 @@ def import_cache(archive: Path, destination: Path, repository: Path, database: P
             tar.extractall(temporary, filter="data")
         root = Path(temporary) / "kmc-cache"
         actual = json.loads((root / "manifest.json").read_text())
-        if actual != expected:
+        if {key: value for key, value in actual.items() if key != "files"} != expected:
             raise ValueError("cache manifest identity does not match this checkout")
+        files = actual.get("files")
+        observed = _file_hashes(root)
+        if not isinstance(files, dict) or set(files) != set(observed):
+            raise ValueError("cache archive contains unknown or missing files")
+        if any(observed[path] != digest for path, digest in files.items()):
+            raise ValueError("cache archive file hash mismatch")
         destination.mkdir(parents=True, exist_ok=True)
         for item in root.iterdir():
             if item.name != "manifest.json":
                 target = destination / item.name
-                shutil.copytree(item, target, dirs_exist_ok=True) if item.is_dir() else shutil.copy2(item, target)
+                if item.is_dir():
+                    for source in item.rglob("*"):
+                        if source.is_file():
+                            atomic_copy(source, destination / source.relative_to(root))
+                else:
+                    atomic_copy(item, target)
 
 
 def main() -> None:
