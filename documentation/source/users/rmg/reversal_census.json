@@ -1196,7 +1196,7 @@
   {
     "site": "rmgpy/data/base.py::Database.save_old_library::reaction-io",
     "kind": "reader-exporter",
-    "line": 974,
+    "line": 989,
     "source": "def save_old_library(self, path):",
     "verdict": "refused",
     "reason": "The legacy library writer checks entry data and refuses resolved species and reaction references before opening its output, so no resolved reaction rate reaches the state-blind format.",
@@ -1207,7 +1207,7 @@
   {
     "site": "rmgpy/data/base.py::ForbiddenStructures.is_molecule_forbidden::is_isomorphic#1",
     "kind": "direction",
-    "line": 1655,
+    "line": 1670,
     "source": "if entry.item.is_isomorphic(molecule):",
     "verdict": "not-reachable-for-resolved",
     "reason": "The receiver is a species, molecule, group or graph (including species Cantera conversion), not a Reaction; it cannot match opposite channels or compute an equilibrium reverse rate.",

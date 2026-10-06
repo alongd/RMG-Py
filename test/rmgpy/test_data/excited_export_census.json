@@ -1165,7 +1165,7 @@
       "file": "rmgpy/data/base.py",
       "function": "Database.get_species",
       "line": 355,
-      "signature": "938a9b2bc6adb1c9c7edc5b20b656b83524974cd55f9a8f23d32532d1d01da86",
+      "signature": "0764e46be10554d8746a22cdd62583c87ca19c7b3dfe4d135e59fabc0e025f9c",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/base.py:Database.get_species]",
       "manifold": {
@@ -1182,7 +1182,7 @@
     "rmgpy/data/base.py:Database.save_dictionary": {
       "file": "rmgpy/data/base.py",
       "function": "Database.save_dictionary",
-      "line": 396,
+      "line": 411,
       "signature": "c32faadb87ec81675fedd36036f6faaecea89e045cc54014ef6e0c85e6a4280c",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/base.py:Database.save_dictionary]",
@@ -1200,7 +1200,7 @@
     "rmgpy/data/base.py:Database.dictionary_references": {
       "file": "rmgpy/data/base.py",
       "function": "Database.dictionary_references",
-      "line": 406,
+      "line": 421,
       "signature": "b38abf7b166b3ad3476300a3d4e86742f658e976bd7f55207013f79a94ec9b45",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/base.py:Database.dictionary_references]",
@@ -1219,7 +1219,7 @@
     "rmgpy/data/base.py:Database.render_dictionary": {
       "file": "rmgpy/data/base.py",
       "function": "Database.render_dictionary",
-      "line": 424,
+      "line": 439,
       "signature": "494367284cfb4c1dc21ee1611bc7bac5b5d86efada4f6ce1b6815157afbbf2c3",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/base.py:Database.render_dictionary]",
@@ -1241,7 +1241,7 @@
     "rmgpy/data/base.py:Database.load_old_dictionary": {
       "file": "rmgpy/data/base.py",
       "function": "Database.load_old_dictionary",
-      "line": 561,
+      "line": 576,
       "signature": "51ed0c326444d8ac474f5dae972bcf7e811bf9a9be09ca49e8fafb3423e546c7",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/base.py:Database.load_old_dictionary]",
@@ -1260,7 +1260,7 @@
     "rmgpy/data/base.py:Database.save_old_dictionary": {
       "file": "rmgpy/data/base.py",
       "function": "Database.save_old_dictionary",
-      "line": 831,
+      "line": 846,
       "signature": "8a14c9277e777541285dbe44b01ea5fdc66984db88169c283dfa6dd6397b0eb5",
       "verdict": "N",
       "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/data/base.py:Database.save_old_dictionary]",
@@ -1278,7 +1278,7 @@
     "rmgpy/data/base.py:Database.save_old_library": {
       "file": "rmgpy/data/base.py",
       "function": "Database.save_old_library",
-      "line": 974,
+      "line": 989,
       "signature": "fc154444bb89dc2e48d6c7e7a842585940978b41d00b98710a4d2186f032a41b",
       "verdict": "N",
       "test": "TestExcitedExportSiteCensus.test_named_refusal[rmgpy/data/base.py:Database.save_old_library]",
@@ -1296,7 +1296,7 @@
     "rmgpy/data/base.py:ForbiddenStructures.load_entry": {
       "file": "rmgpy/data/base.py",
       "function": "ForbiddenStructures.load_entry",
-      "line": 1689,
+      "line": 1704,
       "signature": "453fe2948ef79f5430560f42515e219c10ec05b3ccc21693dd7fc12dd3877cf7",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/base.py:ForbiddenStructures.load_entry]",
@@ -1314,7 +1314,7 @@
     "rmgpy/data/base.py:ForbiddenStructures.save_entry": {
       "file": "rmgpy/data/base.py",
       "function": "ForbiddenStructures.save_entry",
-      "line": 1724,
+      "line": 1739,
       "signature": "35ece0235227c04c9f6f49dac9230c2d094221890b611bc8df9a24733edf8b04",
       "verdict": "R",
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/base.py:ForbiddenStructures.save_entry]",
@@ -3559,7 +3559,7 @@
       "reason": "Renders through per-type save_entry before writing; actual ThermoDepository save/reload witness retains adjacency state.",
       "file": "rmgpy/data/base.py",
       "function": "Database.save",
-      "line": 444,
+      "line": 459,
       "signature": "40a87c10327103cd0b872add407b27cfe1057d8a748f2b2ec1795f76738f0364",
       "manifold": {
         "verdict": "carried",
@@ -3578,7 +3578,7 @@
       "reason": "Dispatches each item to its audited serializer; actual ThermoDepository render and reload retain state.",
       "file": "rmgpy/data/base.py",
       "function": "Database.render_save",
-      "line": 451,
+      "line": 466,
       "signature": "a196927c4908b1df5cab3ad0b2eb10d2322d00e525333f5604d15219adb9da14",
       "manifold": {
         "verdict": "carried",
@@ -3910,7 +3910,7 @@
       "test": "TestExcitedExportSiteCensus.test_resolved_route[rmgpy/data/base.py:Database._store_entry]",
       "file": "rmgpy/data/base.py",
       "function": "Database._store_entry",
-      "line": 518,
+      "line": 533,
       "signature": "8796ccfc4ec521f16d593fb77e3b4b00a3be36519a5c3b5ca6ba57ea6db02ea5",
       "reason": "Central entry store preserves full resolved identities or refuses collisions; raw patterns refuse state headers before insertion, and molecular raw collisions parse only when state-bearing. Ground-only overwrite behavior is unchanged.",
       "manifold": {
@@ -4017,7 +4017,7 @@
     "rmgpy/solver/plasma.pyx:PlasmaReactor._compute_reference_reaction_data": {
       "file": "rmgpy/solver/plasma.pyx",
       "function": "PlasmaReactor._compute_reference_reaction_data",
-      "line": 7016,
+      "line": 7023,
       "signature": "4e16933925d7bb2f387b5e73d5b0e0e565eb8f80fa92124ccdeb788c3df50785",
       "verdict": "R",
       "reason": "Charged-reaction diagnostic equations use shared declarations when any participant is resolved and retain historical str(reaction) bytes for ground-only reactions. Thermo rebase classification: Reference-reaction names and equations include canonical v0 identity for declared participants; the reference energy calculation still uses its previously checked source.",
@@ -4039,7 +4039,7 @@
     "rmgpy/solver/plasma.pyx:PlasmaReactor._evaluate_electronegative_wall_regime": {
       "file": "rmgpy/solver/plasma.pyx",
       "function": "PlasmaReactor._evaluate_electronegative_wall_regime",
-      "line": 7146,
+      "line": 7153,
       "signature": "c0534dbafe3fd70cd2debb87c2f8284fbe156429631e29d4634048c0656d014e",
       "verdict": "R",
       "reason": "Wall destruction-channel equations and anion labels include declared v0 identifiers while gate computation and ground labels retain the existing code.",
@@ -4061,7 +4061,7 @@
     "rmgpy/solver/plasma.pyx:PlasmaReactor.electronegative_wall_manifest": {
       "file": "rmgpy/solver/plasma.pyx",
       "function": "PlasmaReactor.electronegative_wall_manifest",
-      "line": 1202,
+      "line": 1209,
       "signature": "661ea95545b49d6f63bee51997f098a0ff15dc59fcc830dc80eeaa6f0b54cf0d",
       "verdict": "R",
       "reason": "Published wall species identifiers include declared v0 names through has_export_state and the shared Chemkin allocator; ordinary wall identifiers and calculations retain their existing paths.",

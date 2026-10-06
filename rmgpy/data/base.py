@@ -363,6 +363,7 @@ class Database(object):
         stream = io.StringIO(strip_generation_marker(content)) if content is not None else open(path, 'r')
         with stream as f:
             adjlist = ''
+            label_line = None
             for line in f:
                 if line.startswith('// RMG-PAIR-GENERATION '):
                     continue
@@ -372,12 +373,23 @@ class Database(object):
                     if resonance:
                         species.generate_resonance_structures()
                     label = species.label
+                    if label == '':
+                        raise DatabaseError('Empty species label in {0}: offending line {1!r}'.format(
+                            str(path), label_line))
                     if label in species_dict:
                         raise DatabaseError('Species label "{0}" used for multiple species in {1}.'.format(label,
                                                                                                            str(self)))
                     species_dict[label] = species
                     adjlist = ''
+                    label_line = None
                 else:
+                    if adjlist.strip() == '' and line.strip() == '':
+                        label_line = None
+                    elif adjlist.strip() == '' and label_line is None:
+                        label_line = line.rstrip('\n')
+                    if '//' in line:
+                        index = line.index('//')
+                        line = line[0:index]
                     adjlist += line
             else:  # reached end of file
                 if adjlist.strip() != '':
@@ -386,6 +398,9 @@ class Database(object):
                     if resonance:
                         species.generate_resonance_structures()
                     label = species.label
+                    if label == '':
+                        raise DatabaseError('Empty species label in {0}: offending line {1!r}'.format(
+                            str(path), label_line))
                     if label in species_dict:
                         raise DatabaseError('Species label "{0}" used for multiple species in {1}.'.format(label,
                                                                                                            str(self)))
