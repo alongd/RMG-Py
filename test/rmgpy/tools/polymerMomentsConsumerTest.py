@@ -157,9 +157,11 @@ class TestChannelSufficiency:
     def test_pure_unzip_matches_oracle(self):
         oracle, mine = self._run(k_s=0.0, k_u=0.5)
         np.testing.assert_allclose(mine, oracle, rtol=1e-9, atol=1e-12)
-        # analytic: mu0 const, mu1(t) = mu1_0 - k*mu0*t
-        t_end = DT * N_STEPS
-        assert mine[-1, 2] == pytest.approx(5.0 - 0.5 * 1.0 * t_end, rel=1e-6)
+        # I-055 (fddb9f7084): DP=1 chain termination makes mu0 decrease;
+        # repeat units released from mu1 are booked one-for-one into the
+        # routed monomer.
+        assert mine[-1, 1] < mine[0, 1]
+        assert mine[-1, 2] + mine[-1, 4] == pytest.approx(5.0, rel=1e-12)
 
 
 class TestUnknownChannelRejection:

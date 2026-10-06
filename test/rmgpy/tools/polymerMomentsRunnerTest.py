@@ -2047,7 +2047,8 @@ class TestExplicitDpArtifactLoader:
         system with an active k_unzip arm and an explicit-DP target must,
         at the RHS level, deposit F*V_poly into the explicit species and
         drain the moments by exactly (F, xs*F, xs^2*F) on top of the unzip
-        channel's own (0, r, k_u*(2*mu1-mu0)) drain."""
+        channel's own (r*p1, r, k_u*(2*mu1-mu0)) drain, where p1 is the
+        I-055 DP=1 chain fraction (fddb9f7084)."""
         n2 = _spc("N#N", "N2", index=1)
         dp3 = _spc("CCC", "poly_dp3", index=2)
         mono = _spc("C=C", "C2H4", index=3)
@@ -2082,8 +2083,12 @@ class TestExplicitDpArtifactLoader:
         # V_poly = 1, mu(conc) = (1, 5, 30), xs = 3, k_u = 0.1:
         F = float(dn_dt[dp_idx])
         assert F > 0.0  # boundary flux is live
-        # only the handshake touches mu0 (k_scission = 0)
-        assert -float(dn_dt[p.mu_indices[0]]) == pytest.approx(F)
+        # I-055 chain termination also touches mu0.  Independently evaluate
+        # the gamma-bin DP=1 fraction for mean=5, PDI=1.2 (shape=5, scale=1).
+        from scipy.special import gammainc
+        p1 = ((float(gammainc(5.0, 1.5)) - float(gammainc(5.0, 0.5)))
+              / (1.0 - float(gammainc(5.0, 0.5))))
+        assert -float(dn_dt[p.mu_indices[0]]) == pytest.approx(F + 0.1 * p1)
         # unzip drain r = k_u*mu0 = 0.1 stacks on the handshake's xs*F
         assert -float(dn_dt[p.mu_indices[1]]) == pytest.approx(3.0 * F + 0.1)
         # unzip mu2 drain k_u*(2*mu1 - mu0) = 0.9 stacks on xs^2*F
