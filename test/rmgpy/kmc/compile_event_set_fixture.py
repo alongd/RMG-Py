@@ -10,7 +10,7 @@ import pickle
 import subprocess
 from pathlib import Path
 
-from portable_cache import artifact_identity, identity, identity_name, migrate
+from portable_cache import artifact_cache_key, database_identity, identity, identity_name, migrate
 
 from rmgpy.data.rmg import RMGDatabase
 from rmgpy.kmc.compiler import (
@@ -83,25 +83,40 @@ def main() -> None:
     )
     print("preparing non-auto-generated rate rules from training", flush=True)
     prepare_rate_rules(database.kinetics, database.thermo, verbose=True)
-    database_commit = args.database_sha or subprocess.check_output(
-        ["git", "-C", str(database_path), "rev-parse", "HEAD"], text=True
-    ).strip()
+    if args.database_sha:
+        database_commit = args.database_sha
+    else:
+        try:
+            database_commit = subprocess.check_output(
+                ["git", "-C", str(database_path), "rev-parse", "HEAD"], text=True
+            ).strip()
+        except subprocess.CalledProcessError:
+            database_commit = database_identity(database_path)
     cache_root = Path(os.environ.get("RMG_KMC_CACHE_ROOT", str(Path.cwd() / ".kmc-cache")))
     cache_identity = identity(Path.cwd(), database_path)
     portable_root = cache_root / "portable" / identity_name(cache_identity)
     if not (portable_root / "manifest.json").exists():
-        migrate(cache_root, Path.cwd(), database_path)
+        migrate(cache_root, Path.cwd(), database_path, database_commit)
     generated_cache = portable_root / "generated-reactions"
     generated_cache.mkdir(parents=True, exist_ok=True)
-    artifact_cache = cache_root / "portable-artifacts" / identity_name(
-        artifact_identity(Path.cwd(), database_path)
-    )
-    cached_artifacts = sorted(artifact_cache.glob("*.json"))
-    if cached_artifacts:
+    compile_options = {
+        "database_sha": database_commit,
+        "family_universe": family_universe,
+        "temperature_grid": list(__import__("rmgpy.kmc.compiler", fromlist=["DEFAULT_T_GRID"]).DEFAULT_T_GRID),
+        "use_plpsec_library": os.environ.get("RMG_KMC_PLPSEC_LIBRARY", "1"),
+    }
+    artifact_key = artifact_cache_key(Path.cwd(), database_path, compile_options)
+    artifact_cache = cache_root / "portable-artifacts" / artifact_key
+    artifact_manifest = artifact_cache / "manifest.json"
+    if artifact_manifest.is_file():
+        artifact_name = json.loads(artifact_manifest.read_text())["artifact"]
+        cached_artifact = artifact_cache / artifact_name
+        if not cached_artifact.is_file():
+            raise RuntimeError(f"artifact manifest names missing file: {cached_artifact}")
         output = Path(args.output)
         output.mkdir(parents=True, exist_ok=True)
-        destination = output / cached_artifacts[0].name
-        destination.write_bytes(cached_artifacts[0].read_bytes())
+        destination = output / cached_artifact.name
+        destination.write_bytes(cached_artifact.read_bytes())
         print(destination)
         return
     generate = database.kinetics.generate_reactions_from_families
@@ -162,6 +177,10 @@ def main() -> None:
     )
     artifact_cache.mkdir(parents=True, exist_ok=True)
     path, _ = compiler.write_artifact(artifact_cache)
+    (artifact_cache / "manifest.json").write_text(json.dumps({
+        "identity": artifact_cache_key(Path.cwd(), database_path, compile_options),
+        "artifact": path.name,
+    }, sort_keys=True, indent=2) + "\n")
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
     destination = output / path.name

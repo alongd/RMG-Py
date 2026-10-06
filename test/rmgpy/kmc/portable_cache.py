@@ -33,15 +33,14 @@ def tree_identity(repository: Path) -> str:
 
 
 def database_identity(database: Path) -> str:
-    try:
-        return _run("git", "-C", str(database), "rev-parse", "HEAD")
-    except subprocess.CalledProcessError:
-        digest = hashlib.sha256()
-        for path in sorted((database / "input").rglob("*")):
-            if path.is_file():
-                digest.update(path.relative_to(database).as_posix().encode() + b"\0")
-                digest.update(path.read_bytes())
-        return "sha256:" + digest.hexdigest()
+    entries = []
+    for path in sorted((database / "input").rglob("*")):
+        if path.is_file():
+            entries.append((
+                path.relative_to(database).as_posix(),
+                hashlib.sha256(path.read_bytes()).hexdigest(),
+            ))
+    return "sha256:" + hashlib.sha256(json.dumps(entries, sort_keys=True).encode()).hexdigest()
 
 
 def identity(repository: Path, database: Path) -> dict:
@@ -71,7 +70,44 @@ def artifact_identity(repository: Path, database: Path) -> dict:
     return value
 
 
-def migrate(cache_root: Path, repository: Path, database: Path) -> Path:
+def artifact_cache_key(repository: Path, database: Path, compile_options: dict) -> str:
+    return identity_name({
+        **artifact_identity(repository, database),
+        "compile_options": compile_options,
+    })
+
+
+def _git_database_identity(database: Path) -> str | None:
+    try:
+        return _run("git", "-C", str(database), "rev-parse", "HEAD")
+    except subprocess.CalledProcessError:
+        return None
+
+
+def tree_identity_at_commit(repository: Path, commit: str) -> str:
+    """Hash the committed rmgpy blobs, excluding rmgpy/kmc, via Git objects."""
+    entries = []
+    listing = _run("git", "-C", str(repository), "ls-tree", "-r", "-z", commit, "--", "rmgpy")
+    for item in listing.split("\0"):
+        if not item:
+            continue
+        metadata, relative = item.split("\t", 1)
+        if relative.startswith("rmgpy/kmc/"):
+            continue
+        blob = metadata.split()[2]
+        content = subprocess.check_output(
+            ["git", "-C", str(repository), "cat-file", "blob", blob]
+        )
+        entries.append((relative, hashlib.sha256(content).hexdigest()))
+    return hashlib.sha256(json.dumps(entries, sort_keys=True).encode()).hexdigest()
+
+
+def migrate(
+    cache_root: Path,
+    repository: Path,
+    database: Path,
+    database_sha: str | None = None,
+) -> Path:
     generation_identity = identity(repository, database)
     target = cache_root / "portable" / identity_name(generation_identity)
     target.mkdir(parents=True, exist_ok=True)
@@ -79,22 +115,41 @@ def migrate(cache_root: Path, repository: Path, database: Path) -> Path:
     old = cache_root / "generated-reactions"
     out = target / "generated-reactions"
     out.mkdir(exist_ok=True)
+    accepted_database_names = {generation_identity["database"]}
+    if database_sha:
+        accepted_database_names.add(database_sha)
+    git_database_sha = _git_database_identity(database)
+    if git_database_sha:
+        accepted_database_names.add(git_database_sha)
+    current_tree = generation_identity["rmgpy_tree_sha256"]
     for directory in old.iterdir() if old.is_dir() else ():
         if not directory.is_dir():
             continue
+        try:
+            origin_commit, old_database = directory.name.rsplit("-", 1)
+        except ValueError:
+            print(f"skipping unrecognized cache directory: {directory}")
+            continue
+        if old_database not in accepted_database_names:
+            print(f"skipping cache with mismatched database: {directory}")
+            continue
+        try:
+            if tree_identity_at_commit(repository, origin_commit) != current_tree:
+                print(f"skipping cache with mismatched rmgpy tree: {directory}")
+                continue
+        except subprocess.CalledProcessError:
+            print(f"skipping cache with missing origin commit: {directory}")
+            continue
         for seed in directory.iterdir():
+            if seed.name != os.environ.get("PYTHONHASHSEED", "default"):
+                print(f"skipping cache with mismatched hash seed: {directory}/{seed.name}")
+                continue
             if seed.is_dir():
                 for entry in seed.iterdir():
                     if entry.is_file() and entry.suffix == ".pickle":
                         destination = out / entry.name
                         if not destination.exists():
                             shutil.copy2(entry, destination)
-    artifact = cache_root / "artifact"
-    if artifact.is_dir():
-        artifact_target = cache_root / "portable-artifacts" / identity_name(
-            artifact_identity(repository, database)
-        )
-        shutil.copytree(artifact, artifact_target, dirs_exist_ok=True)
     return target
 
 
