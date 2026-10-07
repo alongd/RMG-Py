@@ -1821,12 +1821,17 @@ def apply_record(
     )
 
 
+def _molecules_from_graphs(graphs: Sequence[str]) -> list[Any]:
+    """Deserialize graphs without importing Molecule during compiler import."""
+    from rmgpy.molecule.molecule import Molecule
+
+    return [Molecule().from_adjacency_list(graph) for graph in graphs]
+
+
 def _record_structure_error(
     data: dict[str, Any], reactants
 ) -> tuple[str | None, bool]:
     """Return a demonstrated structural inconsistency and rewrite status."""
-    from rmgpy.molecule.molecule import Molecule
-
     try:
         rewritten = apply_record(data, reactants)
     except ValueError as error:
@@ -1844,9 +1849,7 @@ def _record_structure_error(
         for atom in molecule.atoms
         if atom.element.number != 1
     ]
-    product_molecules = [
-        Molecule().from_adjacency_list(graph) for graph in expected_products
-    ]
+    product_molecules = _molecules_from_graphs(expected_products)
     heavy_after = [
         atom
         for molecule in product_molecules
@@ -1874,14 +1877,9 @@ def _record_structure_error(
 
 def _record_mapping_root(record, mapped_root: dict[str, Any]) -> dict[str, Any]:
     """Bind an applicability root to the stored rewrite and its resonance set."""
-    from rmgpy.molecule.molecule import Molecule
-
     attribution_unresolved = mapped_root.get("mapping_verified") is False
     data = record.to_dict() if isinstance(record, EventRecord) else record
-    reactants = [
-        Molecule().from_adjacency_list(graph)
-        for graph in data.get("reactant_graphs", [])
-    ]
+    reactants = _molecules_from_graphs(data.get("reactant_graphs", []))
     structure_error, rewrite_verified = _record_structure_error(data, reactants)
     if structure_error is not None:
         return {
@@ -2005,9 +2003,7 @@ def _record_mapping_root(record, mapped_root: dict[str, Any]) -> dict[str, Any]:
         int(key): int(value) for key, value in data.get("atom_map", {}).items()
     }
     product_heavy_index = atom_map.get(reactant_heavy_index)
-    product_molecules = [
-        Molecule().from_adjacency_list(graph) for graph in expected_products
-    ]
+    product_molecules = _molecules_from_graphs(expected_products)
     heavy_after = [
         atom
         for molecule in product_molecules
@@ -2084,13 +2080,8 @@ def _reciprocal_mapping_root(
     record, mapped_root: dict[str, Any]
 ) -> dict[str, Any] | None:
     """Carry a mapped reactant root into the reciprocal reactant ordering."""
-    from rmgpy.molecule.molecule import Molecule
-
     data = record.to_dict() if isinstance(record, EventRecord) else record
-    reactants = [
-        Molecule().from_adjacency_list(graph)
-        for graph in data.get("reactant_graphs", [])
-    ]
+    reactants = _molecules_from_graphs(data.get("reactant_graphs", []))
     reactant_atoms = [atom for molecule in reactants for atom in molecule.atoms]
     root_index = int(mapped_root["reactant_atom_index"])
     if root_index < 0 or root_index >= len(reactant_atoms):
@@ -2105,10 +2096,7 @@ def _reciprocal_mapping_root(
         int(key): int(value) for key, value in data.get("atom_map", {}).items()
     }
     product_heavy_index = atom_map.get(heavy_before.index(root_before))
-    product_molecules = [
-        Molecule().from_adjacency_list(graph)
-        for graph in data.get("product_graphs", [])
-    ]
+    product_molecules = _molecules_from_graphs(data.get("product_graphs", []))
     product_atoms = [
         atom for molecule in product_molecules for atom in molecule.atoms
     ]
@@ -2232,13 +2220,8 @@ def apply_persistent_carbene_policy(
     )
     if len(by_id) != 2 or not (prepublication or linked):
         raise ValueError("applicability policy requires reciprocal reverse links")
-    from rmgpy.molecule.molecule import Molecule
-
     for record in records:
-        reactants = [
-            Molecule().from_adjacency_list(graph)
-            for graph in record.get("reactant_graphs", [])
-        ]
+        reactants = _molecules_from_graphs(record.get("reactant_graphs", []))
         structure_error, rewrite_verified = _record_structure_error(
             record, reactants
         )
