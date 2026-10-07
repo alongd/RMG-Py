@@ -287,6 +287,22 @@ def _touched_atom_indices(operations) -> set[int]:
     }
 
 
+def _select_family_root_candidate(
+    family_candidates: set[int], preferred: set[int], label: str
+) -> tuple[int, str | None]:
+    """Select one jointly bound root, or retain a deterministic unresolved witness."""
+    candidates = family_candidates & preferred if preferred else family_candidates
+    if len(candidates) == 1:
+        return next(iter(candidates)), None
+    witness_pool = candidates or family_candidates or preferred
+    witness = min(witness_pool) if witness_pool else -1
+    if family_candidates and preferred and not candidates:
+        reason = "stored rewrite does not touch the family-derived recipe root"
+    else:
+        reason = f"mapped recipe root {label} is ambiguous in the stored reaction"
+    return witness, reason
+
+
 def _mapped_reaction_u2_roots(
     family, reaction, record: EventRecord | dict[str, Any] | None = None
 ) -> list[dict[str, Any]]:
@@ -376,24 +392,14 @@ def _mapped_reaction_u2_roots(
             if item[1].element.number == 6 and item[1].radical_electrons == 2:
                 selected.append((side, persistent, resonance_count))
         for side, persistent, resonance_count in selected:
-            family_candidates = reactant_root_candidates[label]
-            candidates = family_candidates
+            family_candidates = reactant_root_candidates.get(label, set())
             preferred = preferred_by_side[side]
-            if preferred:
-                candidates = candidates & preferred
-            mapping_error = None
-            if not candidates and len(family_candidates) == 1:
-                candidates = family_candidates
-                mapping_error = (
-                    "stored rewrite does not touch the family-derived recipe root"
-                )
-            if len(candidates) != 1:
-                raise ValueError(
-                    f"mapped recipe root {label} is ambiguous in the stored reaction"
-                )
+            root_index, mapping_error = _select_family_root_candidate(
+                family_candidates, preferred, label
+            )
             roots.append(
                 {
-                    "reactant_atom_index": next(iter(candidates)),
+                    "reactant_atom_index": root_index,
                     "recipe_label": label,
                     "record_role": side,
                     "family_forward_role": side,

@@ -435,6 +435,35 @@ def test_wrong_recipe_root_is_retained_only_as_unresolved():
 
 
 @pytest.mark.parametrize(
+    "family_candidates, preferred, reason",
+    [
+        ({1, 2}, {1, 2}, "ambiguous"),
+        ({1}, {2}, "does not touch"),
+        (set(), set(), "ambiguous"),
+    ],
+)
+def test_ambiguous_or_unbound_family_root_becomes_unresolved_evidence(
+    family_candidates, preferred, reason
+):
+    index, mapping_error = compiler_module._select_family_root_candidate(
+        family_candidates, preferred, "*1"
+    )
+    assert index == min(family_candidates or preferred or {-1})
+    assert reason in mapping_error
+    decision = classify_persistent_carbene(
+        _pair()[0],
+        {
+            **_root(),
+            "reactant_atom_index": index,
+            "mapping_verified": False,
+            "mapping_error": mapping_error,
+        },
+        _source(),
+    )
+    assert decision["disposition"] == "retained-unresolved-applicability"
+
+
+@pytest.mark.parametrize(
     "root_index, label, role",
     [(0, "*1", "product"), (4, "*2", "reactant")],
 )
