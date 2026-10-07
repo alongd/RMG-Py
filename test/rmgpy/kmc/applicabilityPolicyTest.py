@@ -2,6 +2,7 @@
 
 import copy
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -25,6 +26,10 @@ from rmgpy.species import Species
 
 
 FIXTURES = Path(__file__).with_name("fixtures")
+REPO_ROOT = Path(__file__).resolve().parents[3]
+DB_PATH = Path(
+    os.environ.get("RMG_DATABASE_PATH", str(REPO_ROOT.parent / "RMG-database"))
+)
 
 
 def _h_abstraction_record(event_id="evt_forward", reverse_of="evt_reverse"):
@@ -239,7 +244,7 @@ def test_reverse_stored_training_source_flips_to_family_forward_role(monkeypatch
 def test_real_training_629_forward_and_reverse_bind_the_same_supported_source():
     database = KineticsDatabase()
     database.load_families(
-        "/home/alon/runs/phase2b/database/input/kinetics/families",
+        str(DB_PATH / "input/kinetics/families"),
         families=["H_Abstraction"],
     )
     family = database.families["H_Abstraction"]
