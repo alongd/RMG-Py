@@ -28,8 +28,10 @@ from rmgpy.kmc.kinetics_library import (
     load_plpsec_entry, matches_head_to_tail, plpsec_rate_table,
 )
 from rmgpy.kmc.reference_thermo import (
+    FROZEN_THERMO_PROPERTY,
     GasPhaseRMGReferenceThermo,
     ReferenceThermoProvider,
+    SharedThermoAssignment,
     ThermoUnavailable,
 )
 from rmgpy.kinetics.arrhenius import ArrheniusBM, ArrheniusEP
@@ -627,9 +629,17 @@ def _same_participants(first: Sequence[Any], second: Sequence[Any]) -> bool:
             left, right = _molecule(item), _molecule(candidate)
             same = item is candidate or left is right
             if not same and hasattr(item, "is_isomorphic"):
-                same = item.is_isomorphic(candidate)
+                same = (
+                    item.is_isomorphic(candidate, save_order=True)
+                    if item.__class__.__module__.startswith("rmgpy.")
+                    else item.is_isomorphic(candidate)
+                )
             if not same and hasattr(left, "is_isomorphic"):
-                same = left.is_isomorphic(right)
+                same = (
+                    left.is_isomorphic(right, save_order=True)
+                    if left.__class__.__module__.startswith("rmgpy.")
+                    else left.is_isomorphic(right)
+                )
             if (
                 not same
                 and hasattr(left, "to_adjacency_list")
@@ -1016,6 +1026,8 @@ def _archived_junction_reaction(
     )
     product_species = Species(molecule=[product])
     product_species.thermo = nasa(product_join, product_low, product_high)
+    for species in [*proxy.reactants, product_species]:
+        species.props[FROZEN_THERMO_PROPERTY] = True
     return TemplateReaction(
         reactants=list(proxy.reactants),
         products=[product_species],
@@ -1553,7 +1565,7 @@ class EventSetCompiler:
             use_plpsec_library = selection == "1"
         self.use_plpsec_library = bool(use_plpsec_library)
         self.kinetics_database = kinetics_database
-        self.proxies = tuple(proxies)
+        self.proxies = tuple(copy.deepcopy(tuple(proxies)))
         self.families = tuple(sorted(set(families)))
         self.rmgpy_path = (
             Path(rmgpy_path) if rmgpy_path else Path(__file__).resolve().parents[2]
@@ -1569,10 +1581,15 @@ class EventSetCompiler:
             kinetics_database, thermo_database,
             kinetics_depositories=tuple(kinetics_depositories), verbose=True,
         )
-        self.reference_thermo_provider = (
-            reference_thermo_provider
-            or GasPhaseRMGReferenceThermo(
-                thermo_database, rmg_database_sha or _git_sha(self.database_path)
+        database_commit = rmg_database_sha or _git_sha(self.database_path)
+        self.thermo_assignment = getattr(
+            reference_thermo_provider, "assignment", None
+        ) or SharedThermoAssignment(thermo_database, database_commit)
+        self.reference_thermo_provider = reference_thermo_provider or (
+            GasPhaseRMGReferenceThermo(
+                thermo_database,
+                database_commit,
+                assignment=self.thermo_assignment,
             )
         )
         self.ceiling_monomer_concentration_mol_m3 = float(
@@ -1580,17 +1597,16 @@ class EventSetCompiler:
         )
         self.reaction_cache = dict(reaction_cache or {})
         self.family_candidates = tuple(sorted(set(family_candidates)))
-        self._thermo_cache: dict[str, Any] = {}
         self._compiled_artifact: dict[str, Any] | None = None
 
     def _generate(self, proxy: SiteProxy):
         """Use RMG's public merged-path pipeline (the C2 degeneracy oracle)."""
         if proxy.site_type in self.reaction_cache:
-            return [
+            return (
                 reaction
                 for reaction in self.reaction_cache[proxy.site_type]
                 if reaction.family in self.families
-            ]
+            )
         reactions = []
         for family in self.families:
             reactions.extend(
@@ -1601,19 +1617,6 @@ class EventSetCompiler:
                 )
             )
         return reactions
-
-    def _assign_gas_phase_thermo(self, reaction) -> None:
-        if self.thermo_database is None:
-            raise ThermoUnavailable("gas-phase thermochemistry is unavailable")
-        for species in list(reaction.reactants) + list(reaction.products):
-            if getattr(species, "thermo", None) is not None:
-                continue
-            key = _molecule(species).to_adjacency_list(remove_h=False)
-            if key not in self._thermo_cache:
-                self._thermo_cache[key] = self.thermo_database.get_thermo_data(species)
-            species.thermo = self._thermo_cache[key]
-            if species.thermo is None:
-                raise ThermoUnavailable("RMG returned no gas-phase thermochemistry")
 
     def _rate_table(self, reaction) -> tuple[dict[str, Any] | None, dict[str, Any]]:
         source_reaction = getattr(reaction, "source_reaction", reaction)
@@ -1643,7 +1646,9 @@ class EventSetCompiler:
         kinetics_conversion = None
         if isinstance(kinetics, (ArrheniusBM, ArrheniusEP)):
             try:
-                self._assign_gas_phase_thermo(source_reaction)
+                species_thermo_assignments = (
+                    self.thermo_assignment.assign_reaction(source_reaction)
+                )
                 reaction_enthalpy = float(
                     source_reaction.get_enthalpy_of_reaction(298)
                 )
@@ -1657,6 +1662,7 @@ class EventSetCompiler:
                     "post_conversion": "reaction.fix_barrier_height()",
                     "output_model": type(evaluated_kinetics).__name__,
                     "reaction_enthalpy_J_per_mol": reaction_enthalpy,
+                    "species_thermo_assignments": species_thermo_assignments,
                     "activation_energy_J_per_mol": float(
                         evaluated_kinetics.Ea.value_si
                     ),
@@ -1681,7 +1687,7 @@ class EventSetCompiler:
                     "error": "reverse rate requires gas-phase thermochemistry",
                 }
             try:
-                self._assign_gas_phase_thermo(source_reaction)
+                self.thermo_assignment.assign_reaction(source_reaction)
                 equilibrium_constants = [
                     float(
                         source_reaction.get_equilibrium_constant(temperature, type="Kc")
@@ -1905,7 +1911,9 @@ class EventSetCompiler:
         """Reuse immutable structural representatives only within this pair."""
         token = _PAIR_MOLECULE_CACHE.set({})
         try:
-            return self._build_linked_family_pair(proxy, reaction, provenance)
+            return self._build_linked_family_pair(
+                proxy, copy.deepcopy(reaction), provenance
+            )
         finally:
             _PAIR_MOLECULE_CACHE.reset(token)
 
@@ -2002,10 +2010,17 @@ class EventSetCompiler:
                 event_id="",
             )
             return [irreversible], irreversible
+        reference_result = None
         try:
-            constants = self.reference_thermo_provider.equilibrium_constants(
-                estimate, self.temperature_grid
-            )
+            if hasattr(self.reference_thermo_provider, "evaluate"):
+                reference_result = self.reference_thermo_provider.evaluate(
+                    estimate, self.temperature_grid
+                )
+                constants = list(reference_result.equilibrium_constants)
+            else:
+                constants = self.reference_thermo_provider.equilibrium_constants(
+                    estimate, self.temperature_grid
+                )
         except (ThermoUnavailable, AttributeError) as error:
             irreversible = replace(
                 forward,
@@ -2063,6 +2078,18 @@ class EventSetCompiler:
             )
         thermo = {
             **self.reference_thermo_provider.provenance,
+            **(
+                {
+                    "reaction_enthalpy_298_J_per_mol": (
+                        reference_result.reaction_enthalpy_298_J_per_mol
+                    ),
+                    "species_thermo_assignments": (
+                        list(reference_result.species_thermo_assignments)
+                    ),
+                }
+                if reference_result is not None
+                else {}
+            ),
             "equilibrium_constant_table": {
                 "T": list(self.temperature_grid),
                 "Kc": constants,

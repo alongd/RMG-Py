@@ -14,6 +14,7 @@ from rmgpy import settings
 from rmgpy.data.rmg import RMGDatabase
 import rmgpy.kmc.compiler as compiler_module
 from rmgpy.kmc.compiler import (
+    DEFAULT_T_GRID,
     EventSetCompiler,
     PS_FAMILY_FILTER_REASON,
     SiteProxy,
@@ -244,7 +245,12 @@ def test_compiled_enthalpy_dependent_tree_rate_uses_reaction_enthalpy(
         assert record["k_table"]["k"] == pytest.approx(
             [1.0e6, 1.0e6, 1.0e6], rel=1e-12
         )
-    assert record["rate_source"]["kinetics_conversion"] == {
+    conversion = record["rate_source"]["kinetics_conversion"]
+    assert {
+        key: value
+        for key, value in conversion.items()
+        if key != "species_thermo_assignments"
+    } == {
         "input_model": kinetics_type,
         "method": "to_arrhenius(reaction.get_enthalpy_of_reaction(298))",
         "post_conversion": "reaction.fix_barrier_height()",
@@ -254,6 +260,7 @@ def test_compiled_enthalpy_dependent_tree_rate_uses_reaction_enthalpy(
             model_generation_reaction.kinetics.Ea.value_si
         ),
     }
+    assert len(conversion["species_thermo_assignments"]) == 2
     reverse = next(
         record
         for record in artifact["records"]
@@ -262,6 +269,182 @@ def test_compiled_enthalpy_dependent_tree_rate_uses_reaction_enthalpy(
     assert (
         reverse["rate_source"]["forward_kinetics_conversion"]
         == record["rate_source"]["kinetics_conversion"]
+    )
+
+
+def test_shared_featured_assignment_is_call_order_independent_and_closes_kc():
+    from rmgpy.data.kinetics.family import TemplateReaction
+    from rmgpy.kinetics.arrhenius import ArrheniusBM
+    from rmgpy.molecule.molecule import Molecule
+    from rmgpy.species import Species
+    from rmgpy.thermo import ThermoData
+
+    class ThermoDatabase:
+        library_order = ["primaryThermoLibrary"]
+
+        def get_thermo_data(self, species):
+            molecule = species.molecule[0]
+            is_h_atom = len(molecule.atoms) == 1 and molecule.atoms[0].is_hydrogen()
+            is_radical = molecule.get_radical_count() > 0
+            if is_h_atom:
+                enthalpy = 218.0
+            elif is_radical:
+                enthalpy = -80.0 if len(species.molecule) > 1 else 120.0
+            else:
+                enthalpy = -40.0
+            return ThermoData(
+                Tdata=([300, 400, 600, 800, 1000], "K"),
+                Cpdata=([30, 30, 30, 30, 30], "J/(mol*K)"),
+                H298=(enthalpy, "kJ/mol"),
+                S298=(100, "J/(mol*K)"),
+                E0=(enthalpy, "kJ/mol"),
+                comment=(
+                    "Thermo library: primaryThermoLibrary"
+                    if is_h_atom
+                    else "Thermo group additivity estimation: pinned test"
+                ),
+            )
+
+    def make_reaction(preassigned=False):
+        from rmgpy.molecule.molecule import Bond
+
+        toluene = Molecule(smiles="Cc1ccccc1")
+        for identifier, atom in enumerate(toluene.atoms, start=1):
+            atom.id = identifier
+        hydrogen_atom = Molecule(smiles="[H]")
+        hydrogen_atom.atoms[0].id = len(toluene.atoms) + 1
+        benzyl = toluene.copy(deep=True)
+        benzylic_atom = next(
+            atom
+            for atom in benzyl.atoms
+            if atom.element.symbol == "C"
+            and not benzyl.is_atom_in_cycle(atom)
+        )
+        hydrogen = next(
+            atom for atom in benzylic_atom.edges if atom.is_hydrogen()
+        )
+        benzyl.remove_bond(benzyl.get_bond(benzylic_atom, hydrogen))
+        benzyl.remove_atom(hydrogen)
+        benzylic_atom.radical_electrons = 1
+        benzyl.update(sort_atoms=False)
+        h2_atoms = [hydrogen_atom.atoms[0].copy(), hydrogen.copy()]
+        h2_atoms[0].radical_electrons = 0
+        h2_atoms[0].charge = 0
+        h2 = Molecule(atoms=h2_atoms, multiplicity=1)
+        h2.add_bond(Bond(h2_atoms[0], h2_atoms[1], order=1))
+        h2.update(sort_atoms=False)
+        reaction = TemplateReaction(
+            reactants=[
+                Species(label="H", molecule=[hydrogen_atom]),
+                Species(label="toluene", molecule=[toluene]),
+            ],
+            products=[
+                Species(label="H2", molecule=[h2]),
+                Species(label="benzyl", molecule=[benzyl]),
+            ],
+            kinetics=ArrheniusBM(
+                A=(1.0e6, "m^3/(mol*s)"),
+                n=0.0,
+                w0=(500.0, "kJ/mol"),
+                E0=(20.0, "kJ/mol"),
+            ),
+            reversible=True,
+            degeneracy=1.0,
+            family="H_Abstraction",
+            template=["featured-root"],
+            is_forward=True,
+        )
+        if preassigned:
+            reaction.products[1].thermo = ThermoData(
+                Tdata=([300, 400, 600, 800, 1000], "K"),
+                Cpdata=([30, 30, 30, 30, 30], "J/(mol*K)"),
+                H298=(999.0, "kJ/mol"),
+                S298=(100, "J/(mol*K)"),
+                comment="stale call-order thermo",
+            )
+        return reaction
+
+    def compile_reaction(reaction, *, kc_first=False):
+        original_graphs = [
+            species.molecule[0].to_adjacency_list(remove_h=False)
+            for species in reaction.reactants + reaction.products
+        ]
+        kinetics_database = SimpleNamespace(
+            families={"H_Abstraction": SimpleNamespace(auto_generated=True)}
+        )
+        compiler = EventSetCompiler(
+            kinetics_database,
+            [SiteProxy("featured", reaction.reactants)],
+            ["H_Abstraction"],
+            thermo_database=ThermoDatabase(),
+            rmg_database_sha="test-only-database-commit",
+            reaction_cache={"featured": [reaction]},
+        )
+        if kc_first:
+            compiler.reference_thermo_provider.evaluate(
+                copy.deepcopy(reaction), DEFAULT_T_GRID
+            )
+        artifact = compiler.compile()
+        assert original_graphs == [
+            species.molecule[0].to_adjacency_list(remove_h=False)
+            for species in reaction.reactants + reaction.products
+        ]
+        forward = next(
+            item
+            for item in artifact["records"]
+            if item["rate_source"]["kind"] == "RMG family estimate"
+        )
+        reverse_records = [
+            item
+            for item in artifact["records"]
+            if item["rate_source"]["kind"] == "reference-thermo reverse"
+        ]
+        assert reverse_records, [
+            (item["status"], item["status_reason"], item["rate_source"])
+            for item in artifact["records"]
+        ]
+        reverse = reverse_records[0]
+        return forward, reverse
+
+    clean_forward, clean_reverse = compile_reaction(make_reaction())
+    kc_first_forward, kc_first_reverse = compile_reaction(
+        make_reaction(), kc_first=True
+    )
+    stale_forward, stale_reverse = compile_reaction(make_reaction(preassigned=True))
+    assert kc_first_forward["k_table"] == clean_forward["k_table"]
+    assert kc_first_reverse["k_table"] == clean_reverse["k_table"]
+    assert stale_forward["k_table"] == clean_forward["k_table"]
+    assert stale_reverse["k_table"] == clean_reverse["k_table"]
+    assert clean_forward["k_table"]["T"] == list(DEFAULT_T_GRID)
+
+    conversion = clean_forward["rate_source"]["kinetics_conversion"]
+    thermo = clean_forward["thermo_provenance"]
+    assert conversion["reaction_enthalpy_J_per_mol"] == pytest.approx(
+        thermo["reaction_enthalpy_298_J_per_mol"]
+    )
+    for forward_rate, reverse_rate, equilibrium_constant in zip(
+        clean_forward["k_table"]["k"],
+        clean_reverse["k_table"]["k"],
+        thermo["equilibrium_constant_table"]["Kc"],
+    ):
+        assert forward_rate / reverse_rate == pytest.approx(
+            equilibrium_constant, rel=1e-12
+        )
+
+    old_direct = make_reaction()
+    old_database = ThermoDatabase()
+    for species in old_direct.reactants + old_direct.products:
+        species.thermo = old_database.get_thermo_data(species)
+    assert abs(
+        conversion["reaction_enthalpy_J_per_mol"]
+        - old_direct.get_enthalpy_of_reaction(298)
+    ) > 40000.0
+    assert any(
+        item["thermo_source"] == {
+            "kind": "library",
+            "library": "primaryThermoLibrary",
+        }
+        for item in conversion["species_thermo_assignments"]
     )
 
 
