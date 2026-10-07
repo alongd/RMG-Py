@@ -62,6 +62,13 @@ Ea in the units above):
 | Termination | 3.615275991e6, 0.14991913, 0.000 | unchanged |
 | Transfer | 1.312764315e-3, 4.11498243, 33194.258 | 5.573253174e-9, 5.74859437, 26820.365 |
 
+The transfer change is not a concentration effect: the corrected initial
+concentration differs by only 1.8e-7 relative. Production selection finalizes
+one of the six own-reverse `intra_H_migration` rows in the reverse orientation
+(final degeneracy 3 rather than the requested-direction degeneracy 2); the
+helper uses `Kc` to evaluate that row back in the requested 1-octyl direction.
+The remaining production barrier processing is then applied before fitting.
+
 The initiation fit first derives a per-backbone-bond coefficient from the
 n-hexane central bond. The solver multiplies initiation by `mu1 - mu0`, which
 counts repeat-to-repeat links, while a capped PE chain of degree `d` has
@@ -95,8 +102,8 @@ The PS deck was not changed here. Its analogous corrected premultiplier would
 be `10081.7203363 mol/m3`.
 
 RMG evaluates fitted Arrhenius rows with `R = 8.314472 J mol-1 K-1`, while the
-QSSA law is pinned to `8.314`. The checked-in CSV therefore reports both fits;
-the maximum solver-law errors are 2.365%, 1.190%, 0.070%, and 3.010% for
+QSSA law is pinned to `8.314`. The fitting script reports both errors; the
+maximum solver-law errors are 2.365%, 1.190%, 0.070%, and 3.010% for
 initiation, depropagation, termination, and transfer, respectively.
 
 The full [rate-point table](rate_estimation/rate_points.csv) and
@@ -137,7 +144,7 @@ snapshot declared as RMG-database `cd86d4e1c`.
   equivalent, accounting for 8.38272957447481e-5 g. The remaining integration
   error is 4.56178064073276e-16 g.
 
-The prescribed polymer regression selection completed with 1519 passes and 1
+The prescribed polymer regression selection completed with 1523 passes and 1
 expected failure.
 
 ## What the solver does not express

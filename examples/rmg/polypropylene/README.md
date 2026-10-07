@@ -93,8 +93,8 @@ The PS deck was not changed here. The analogous corrected PS premultiplier
 would be `10081.7203363 mol/m3`.
 
 RMG evaluates fitted Arrhenius rows with `R = 8.314472 J mol-1 K-1`, while the
-QSSA law is pinned to `8.314`. The checked-in CSV therefore reports both fits;
-the maximum solver-law errors are 2.756%, 0.836%, 0.511%, and 7.829% for
+QSSA law is pinned to `8.314`. The fitting script reports both errors; the
+maximum solver-law errors are 2.756%, 0.836%, 0.511%, and 7.829% for
 initiation, depropagation, termination, and transfer, respectively.
 
 The full [rate-point table](rate_estimation/rate_points.csv) and
@@ -142,7 +142,7 @@ in its validation messages at `rmgpy/rmg/input.py:421-422` and
 declaration probe and completed deck found no PE-, PS-, or PP-specific solver
 branch, so no generic code change was needed.
 
-The prescribed polymer regression selection completed with 1519 passes and 1
+The prescribed polymer regression selection completed with 1523 passes and 1
 expected failure.
 
 ## What the solver does not express

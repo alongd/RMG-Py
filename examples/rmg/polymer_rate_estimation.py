@@ -56,26 +56,33 @@ def _template_labels(reaction, requested_forward):
     return [getattr(item, "label", str(item)) for item in template]
 
 
-def _requested_view(reaction, requested_reactants):
+def _requested_orientation(reaction, requested_reactants):
+    """Return whether the requested direction is forward and its products."""
     if _side_matches_molecules(reaction.reactants, requested_reactants):
+        return True, reaction.products
+    if _side_matches_molecules(reaction.products, requested_reactants):
+        return False, reaction.reactants
+    raise ValueError(
+        "Reaction cannot be related to the requested physical reactants: " f"{reaction}"
+    )
+
+
+def _requested_view(reaction, requested_reactants):
+    requested_forward, products = _requested_orientation(reaction, requested_reactants)
+    if requested_forward:
         return RequestedReactionView(
             reactants=reaction.reactants,
-            products=reaction.products,
+            products=products,
             degeneracy=float(reaction.degeneracy),
             template_labels=_template_labels(reaction, True),
         )
-    if _side_matches_molecules(reaction.products, requested_reactants):
-        reverse = getattr(reaction, "reverse", None)
-        degeneracy = reverse.degeneracy if reverse else reaction.degeneracy
-        return RequestedReactionView(
-            reactants=reaction.products,
-            products=reaction.reactants,
-            degeneracy=float(degeneracy),
-            template_labels=_template_labels(reaction, False),
-        )
-    raise ValueError(
-        "Generated reaction cannot be related to the requested physical "
-        f"reactants: {reaction}"
+    reverse = getattr(reaction, "reverse", None)
+    degeneracy = reverse.degeneracy if reverse else reaction.degeneracy
+    return RequestedReactionView(
+        reactants=reaction.products,
+        products=products,
+        degeneracy=float(degeneracy),
+        template_labels=_template_labels(reaction, False),
     )
 
 
@@ -116,8 +123,6 @@ class ProductionReaction:
     """A production-selected reaction plus its immutable physical direction."""
 
     reaction: object
-    requested_reactant_smiles: list
-    requested_product_smiles: list
     requested_forward_in_final: bool
     selected_kinetics: dict
 
@@ -229,17 +234,15 @@ class ProductionRateEstimator:
             if reaction is None or not is_new:
                 raise RuntimeError(f"Production rejected surrogate: {raw_reaction}")
 
-            if _side_matches_molecules(reaction.reactants, requested_reactants):
-                requested_forward = True
-                physical_products = reaction.products
-            elif _side_matches_molecules(reaction.products, requested_reactants):
-                requested_forward = False
-                physical_products = reaction.reactants
-            else:
+            try:
+                requested_forward, physical_products = _requested_orientation(
+                    reaction, requested_reactants
+                )
+            except ValueError as error:
                 raise RuntimeError(
                     "Production reaction lost the requested physical direction: "
                     f"{reaction}"
-                )
+                ) from error
 
             if requested_products is not None and not _side_matches_molecules(
                 physical_products, requested_products
@@ -266,10 +269,6 @@ class ProductionRateEstimator:
             selected.append(
                 ProductionReaction(
                     reaction=reaction,
-                    requested_reactant_smiles=list(reactant_smiles),
-                    requested_product_smiles=[
-                        species.molecule[0].to_smiles() for species in physical_products
-                    ],
                     requested_forward_in_final=requested_forward,
                     selected_kinetics=selection,
                 )
@@ -358,23 +357,10 @@ def write_artifacts(output_directory, database_path, channels):
 
     with (output_directory / "rate_points.csv").open("w", newline="") as handle:
         writer = csv.writer(handle, lineterminator="\n")
-        writer.writerow(
-            [
-                "channel",
-                "T_K",
-                "k_RMG",
-                "k_fit",
-                "relative_error",
-                "k_QSSA",
-                "relative_QSSA_error",
-            ]
-        )
+        writer.writerow(["channel", "T_K", "k_RMG", "k_fit", "relative_error"])
         for channel in channels:
-            for temperature, observed, fitted, qssa_fitted in zip(
-                TEMPERATURES,
-                channel["rates"],
-                channel["fit_rates"],
-                channel["qssa_fit_rates"],
+            for temperature, observed, fitted in zip(
+                TEMPERATURES, channel["rates"], channel["fit_rates"]
             ):
                 writer.writerow(
                     [
@@ -383,8 +369,6 @@ def write_artifacts(output_directory, database_path, channels):
                         f"{observed:.12e}",
                         f"{fitted:.12e}",
                         f"{fitted / observed - 1.0:.12e}",
-                        f"{qssa_fitted:.12e}",
-                        f"{qssa_fitted / observed - 1.0:.12e}",
                     ]
                 )
 

@@ -1,6 +1,11 @@
 # 1. Database
 database(
-    thermoLibraries=['primaryThermoLibrary', 'thermo_DFT_CCSDTF12_BAC', 'DFT_QCI_thermo', 'CBS_QB3_1dHR'],
+    thermoLibraries=[
+        'primaryThermoLibrary',
+        'thermo_DFT_CCSDTF12_BAC',
+        'DFT_QCI_thermo',
+        'CBS_QB3_1dHR',
+    ],
     reactionLibraries=[],
     transportLibraries=['OneDMinN2', 'PrimaryTransportLibrary'],
     seedMechanisms=[],
@@ -50,12 +55,20 @@ polymer(
         # node selected and converted by the production path,
         # Root_N-1R->H_N-1CNOS->N_N-1COS->O_1CS->C_N-1C-inRing_Ext-2R-R_
         # Ext-3R!H-R_N-Sp-3R!H=2R plus production thermo. Max fit error 1.640%.
-        'initiation': {'A': 9.231130302962257e26, 'n': -2.955777268894243, 'Ea': 373487.4794598093},
+        'initiation': {
+            'A': 9.231130302962257e26,
+            'n': -2.955777268894243,
+            'Ea': 373487.4794598093,
+        },
         # Chain-end beta-scission: 1-hexyl -> ethylene + 1-butyl, the
         # thermodynamic reverse of family R_Addition_MultipleBond. Source:
         # training reaction 2905, exact rule [Cds-HH_Cds-HH;CsJ-CsHH], plus
         # production thermo. One ethylene is released per event. Max fit error 0.909%.
-        'depropagation': {'A': 2.611138149150429e9, 'n': 1.1159009347437787, 'Ea': 124806.10852008159},
+        'depropagation': {
+            'A': 2.611138149150429e9,
+            'n': 1.1159009347437787,
+            'Ea': 124806.10852008159,
+        },
         # Primary chain-end termination is the sum of (1) R_Recombination,
         # 2 1-hexyl -> n-dodecane, from exact training reaction 156,
         # and (2) Disproportionation, 2 1-hexyl -> n-hexane + 1-hexene, from
@@ -77,7 +90,11 @@ polymer(
         # 28.0531649478 g/mol set the concentration conversion. The resulting
         # pseudo-first-order coefficient is fixed at this initial
         # concentration as mu1 falls. Max combined-fit error 3.073%.
-        'transfer': {'A': 5.573253173648898e-9, 'n': 5.748594368061862, 'Ea': 26820.365227948805},
+        'transfer': {
+            'A': 5.573253173648898e-9,
+            'n': 5.748594368061862,
+            'Ea': 26820.365227948805,
+        },
         'efficiency': 1.0,
         'monomer_yield': 1.0,
         'basis': 'backbone_bonds_mu1_minus_mu0',

@@ -44,7 +44,10 @@ def parse_arguments():
         "--output-dir",
         type=Path,
         default=Path(__file__).resolve().parent,
-        help="directory for generated CSV, JSON, and Markdown (default: script directory)",
+        help=(
+            "directory for generated CSV, JSON, and Markdown "
+            "(default: script directory)"
+        ),
     )
     return parser.parse_args()
 
