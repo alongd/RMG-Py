@@ -229,9 +229,9 @@ MOMENT_EWT_FLOOR_K = 100.0
 #          C = u*softmin_p(S_free, S_cone), where S_cone =
 #          Q10/(V_poly*(b1 - b0)) is the event-site density that would
 #          spend the whole margin and u is I-090's reverse smoothstep on
-#          the unresolved b1 neighbourhood (zero outside it). M <= M_LO
-#          returns C; the band above blends C into S_free with the same
-#          3m^2 - 2m^3 smoothstep, continuously carrying u across M_LO.
+#          the unresolved b1 neighbourhood (zero outside it). M <= M_INNER
+#          returns C; a one-floor smoothstep reaches the original soft-min
+#          cap at M_LO, above which the original band blends it into S_free.
 #      The gate throttles the EVENT RATE only (per-event moment ratios
 #      and mass bookkeeping untouched -- the bundle pick stays
 #      length-biased) and is direction-aware exactly like the exhaustion
@@ -267,6 +267,7 @@ BUNDLE_LIMITER_E_HI = 1.0e4
 # bands may diverge under future adjudication. (Mirrored in the numpy
 # oracle consumer -- keep in sync.)
 CONE_MARGIN_M_LO = 1.0e2
+CONE_MARGIN_M_INNER = 9.9e1
 CONE_MARGIN_M_HI = 1.0e4
 # Soft-min sharpness p (round-29 N2), moderate by design. Chosen by the
 # Lipschitz slope-jump sweeps (the 3001-point C1 band sweep, the regen-#3
@@ -5907,11 +5908,13 @@ class HybridPolymerSystem(ReactionSystem):
             M      = Q10 / max(f0, f1)    (margin distance, floor units)
             M >= M_hi           -> S_eff = S_free EXACTLY (early return)
             S_cone = Q10 / (V_poly*(b1 - b0))
-            M <= M_lo           -> narrowed completion: 0 EXACTLY for a
+            M <= M_inner        -> narrowed completion: 0 EXACTLY for a
                                  resolved b1-1, u*softmin_p(S_free, S_cone)
                                  inside I-090's unresolved b1 neighbourhood
-            between             -> v-smoothstep blend of S_free and the
-                                 same narrowed completion used below M_lo
+            M_inner < M < M_lo  -> C1 blend from the narrowed completion
+                                 to softmin_p(S_free, S_cone)
+            M_lo <= M < M_hi    -> original v-smoothstep blend of that
+                                 soft-min cap into S_free
         Non-cone-shrinking debits (b1 <= b0) pass S_free through
         untouched, as do empty pools (stage 1 already throttled those).
         EXCEPTION, end-group rows (round-62 N5b adjudicated fix): the
@@ -5941,22 +5944,23 @@ class HybridPolymerSystem(ReactionSystem):
         back bitwise, so byte-pins and bulk reversible-row detailed
         balance (C_G* = Keq*S_base(A)/S_base(B)) are untouched. N5b
         (round-62 DASSL-hang root cause) floors resolved b1 shapes in the
-        M <= M_lo branch to exact zero rather than trusting S_cone's
+        M <= M_inner branch to exact zero rather than trusting S_cone's
         noise-scale magnitude down there: below M_lo, Q10 is sub-floor-scale
         cancellation noise (~1e-17 mol/s-scale rows, ~15 orders below any
         deck observable -- inside the model's own error budget, the same
-        adjudicated logic as the r81 floors). The narrowed completion is
-        carried into the M blend instead of being dropped at M_lo, so the
-        handoff is C1: both sides meet at the completed cap and the blend
-        weight has zero endpoint slope. s_base is
+        adjudicated logic as the r81 floors). A one-floor inner ramp from the
+        narrowed completion reaches the original band cap at M_lo with zero
+        endpoint slopes. The law for M >= M_lo is bit-for-bit unchanged.
+        s_base is
         the direction's adjudicated site law (mu1/V_poly or mu0/V_poly
         per row scaling, including the pre-existing a>0/a<0 VE
         min(mu0, mu1/|a|) throttle), computed by the caller from the pool
         this direction DEBITS (forward debits src, reverse debits dst).
         (mirrored in get_reaction_rates and in the numpy oracle consumer --
         keep in sync)"""
-        cdef double e_dist, e_n, w, cap, m, acc, p, s_free
+        cdef double e_dist, e_n, w, cap, narrowed, m, acc, p, s_free
         cdef double y0c, y1c, y2c, b1c, q10, m_dist, v_n, v, s_cone, f_c
+        cdef double z_n, z
         # ---- stage 1: near-exhaustion tail limiter --------------------
         e_dist = self._pool_floor_distance(pool_idx, y)
         if e_dist >= BUNDLE_LIMITER_E_HI:
@@ -6057,11 +6061,11 @@ class HybridPolymerSystem(ReactionSystem):
         #     s_free continuously and with matching slope.
         #   * b1c - 1 -> b1_band : u -> 0 with u' = 0, so the law meets the
         #     N5b hard zero continuously, and BIT-FOR-BIT 0.0 beyond it --
-        #     not merely small. Everything at O(1) b1c - 1 (all bulk
-        #     cone-shrinking debits) is unchanged from round-62.
-        # The same completed cap is carried through the M blend.  This removes
-        # the pre-existing (1-u)*cap jump at M_LO; the v-smoothstep has zero
-        # slope there, so value and first derivative both match (C1).
+        #     not merely small. At O(1) b1c - 1 the round-62 hard zero remains
+        #     bit-for-bit unchanged through M_INNER; only the one-floor
+        #     interval immediately below M_LO ramps to the original band cap.
+        # That inner smoothstep has zero slope at both ends, removing the
+        # pre-existing M_LO jump without changing any value at or above M_LO.
         # The neighbourhood half-width is derived, not fitted.  I-090 used
         # only the propagated error weight of the two moments b1c is built
         # from.  Its absolute floor terms divided by y1c, however, diverge as
@@ -6101,20 +6105,25 @@ class HybridPolymerSystem(ReactionSystem):
         if b1_band < CONE_B1_NOISE_REL_FLOOR:
             b1_band = CONE_B1_NOISE_REL_FLOOR
         b1_n = (b1c - 1.0) / b1_band
+        s_cone = q10 / (V_poly * (b1c - 1.0))
+        if s_free <= 0.0:
+            return s_free
+        m = s_cone if s_cone < s_free else s_free
+        p = BUNDLE_LIMITER_SOFTMIN_P
+        acc = (m / s_free) ** p + (m / s_cone) ** p
+        cap = m * acc ** (-1.0 / p)
         if b1_n >= 1.0:
-            cap = 0.0
+            narrowed = 0.0
         else:
-            s_cone = q10 / (V_poly * (b1c - 1.0))
-            if s_free <= 0.0:
-                return s_free
-            m = s_cone if s_cone < s_free else s_free
-            p = BUNDLE_LIMITER_SOFTMIN_P
-            acc = (m / s_free) ** p + (m / s_cone) ** p
-            cap = m * acc ** (-1.0 / p)
             u = 1.0 - b1_n * b1_n * (3.0 - 2.0 * b1_n)
-            cap = u * cap
-        if m_dist <= CONE_MARGIN_M_LO:
-            return cap
+            narrowed = u * cap
+        if m_dist <= CONE_MARGIN_M_INNER:
+            return narrowed
+        if m_dist < CONE_MARGIN_M_LO:
+            z_n = ((m_dist - CONE_MARGIN_M_INNER)
+                   / (CONE_MARGIN_M_LO - CONE_MARGIN_M_INNER))
+            z = z_n * z_n * (3.0 - 2.0 * z_n)
+            return z * cap + (1.0 - z) * narrowed
         v_n = ((m_dist - CONE_MARGIN_M_LO)
                / (CONE_MARGIN_M_HI - CONE_MARGIN_M_LO))
         v = v_n * v_n * (3.0 - 2.0 * v_n)
@@ -6705,9 +6714,9 @@ class HybridPolymerSystem(ReactionSystem):
                     #   then the round-30 cone-margin drain gate on the
                     #   margin Q10 = mu1 - mu0 (only for b1 > b0 debits;
                     #   INDEPENDENT of E): Q10 <= 0 -> 0 regardless of E;
-                    #   otherwise its own M = Q10/max(f0,f1) band blends
-                    #   from I-090's narrowed completion
-                    #   u*softmin_p(S_free, S_cone) into S_free,
+                    #   otherwise its own M = Q10/max(f0,f1) gate ramps from
+                    #   I-090's narrowed completion to the original soft-min
+                    #   cap immediately below M_LO, then blends into S_free,
                     #   S_cone = Q10/(V_poly*(b1 - b0)),
                     #   w = smoothstep of the debited pool's accepted-state
                     #       floor distance E (see _bundle_limited_site) --
