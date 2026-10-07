@@ -148,7 +148,7 @@ def artifact(tmp_path, marker, composition=True, cold_mean=False, accepted=True,
 def build_reactor(tmp_path, composition=True, extra_reaction=None, empirical_laws=None,
                   reaction_index=1, entry_index=1, power_w=.5, cold_mean=False,
                   extra_species=None, electron_energies=None, accepted=True,
-                  development=False, excited_label=None):
+                  development=False, excited_label=None, operating_branch=None):
     core, reaction = species_and_reaction()
     if excited_label is not None:
         core[3].label = excited_label
@@ -161,6 +161,8 @@ def build_reactor(tmp_path, composition=True, extra_reaction=None, empirical_law
         'branch': 'branch_0', 'initial_reduced_field': (np.e, 'Td'),
         'empirical_laws': dict(empirical_laws or {}),
     }
+    if operating_branch is not None:
+        config['operating_branch'] = operating_branch
     initial = {core[0]: 1.e-6, core[2]: 1.e-6, core[3]: .1 if composition else 0.,
                core[1]: .899998 if composition else .999998}
     if extra_species is not None:
@@ -689,6 +691,125 @@ def test_u_state_atol_restart_and_mapped_rate(tmp_path):
     manifest = reactor.eedf_run_manifest()
     assert manifest['wall_sheath_basis'] == 'Maxwellian form at epsilon_k'
     assert manifest['branch'] == 'branch_0'
+
+
+def test_operating_branch_terminal_hook_passes_right_and_refuses_wrong_branch(tmp_path):
+    branches = tmp_path / 'branches.json'
+    payload = {'reference_power': .5, 'u_tolerance': 1.e-6,
+               'log_ne_tolerance': 1.e-6, 'branches': [
+        {'id': 'reactor-000', 'seed': {'u': 1., 'n_e': 1.e16},
+         'u': 1.25, 'n_e': 2.e16},
+        {'id': 'reactor-001', 'seed': {'u': 2., 'n_e': 3.e16},
+         'u': 1.25005, 'n_e': 2.e16},
+    ]}
+    branches.write_text(json.dumps(payload))
+    declaration = {'id': 'reactor-000', 'path': str(branches)}
+    reactor, _, _ = build_reactor(
+        tmp_path / 'reactor', operating_branch=declaration)
+    reactor.energy_budget.update(
+        A6a_relative=0., A6b_relative=0., A6b_tolerance=1.e-6,
+        u=1.25, n_e=2.e16)
+
+    assert reactor.operating_branch_seed == {'u': 1., 'n_e': 1.e16}
+    assert reactor.operating_branch_target == {'u': 1.25, 'n_e': 2.e16}
+    reactor.validate_terminal_state()
+
+    reactor.energy_budget.update(u=1.25005, n_e=2.e16)
+    with pytest.raises(
+            PlasmaStateError,
+            match="declared operating branch 'reactor-000'.*'reactor-001'"):
+        reactor.validate_terminal_state()
+
+    reactor.energy_budget.update(u=2.25, n_e=4.e16)
+    with pytest.raises(PlasmaStateError, match='no recorded branch'):
+        reactor.validate_terminal_state()
+
+    payload['u_tolerance'] = 1.e-4
+    branches.write_text(json.dumps(payload))
+    reactor.energy_budget.update(u=1.250025, n_e=2.e16)
+    with pytest.raises(PlasmaStateError, match='more than one recorded branch'):
+        reactor.validate_terminal_state()
+
+
+def test_operating_branch_terminal_hook_matches_certified_state_at_run_power(tmp_path):
+    branches = tmp_path / 'branches.json'
+    branches.write_text(json.dumps({
+        'reference_power': .5,
+        'u_tolerance': 1.e-6,
+        'log_ne_tolerance': 1.e-6,
+        'branches': [{
+            'id': 'reactor-000',
+            'seed': {'u': 1., 'n_e': 1.e16},
+            'u': 1.25,
+            'n_e': 2.e16,
+            'continuation_path': [
+                {'power': .25, 'u': 1.5, 'n_e': 3.e16, 'converged': True,
+                 'segment_certified': True},
+                {'power': .5, 'u': 1.25, 'n_e': 2.e16, 'converged': True,
+                 'segment_certified': True},
+            ],
+        }],
+    }))
+    reactor, _, _ = build_reactor(
+        tmp_path / 'reactor', power_w=.25,
+        operating_branch={'id': 'reactor-000', 'path': str(branches)})
+    reactor.energy_budget.update(
+        A6a_relative=0., A6b_relative=0., A6b_tolerance=1.e-6,
+        u=1.5, n_e=3.e16)
+
+    reactor.validate_terminal_state()
+
+
+def test_operating_branch_terminal_hook_refuses_off_grid_power_as_not_certified(tmp_path):
+    branches = tmp_path / 'branches.json'
+    branches.write_text(json.dumps({
+        'reference_power': .5,
+        'u_tolerance': 1.e-6,
+        'log_ne_tolerance': 1.e-6,
+        'branches': [{
+            'id': 'reactor-000',
+            'seed': {'u': 1., 'n_e': 1.e16},
+            'u': 1.25,
+            'n_e': 2.e16,
+            'continuation_path': [
+                {'power': .5, 'u': 1.25, 'n_e': 2.e16, 'converged': True,
+                 'segment_certified': True},
+                {'power': .25, 'u': 1.5, 'n_e': 3.e16, 'converged': True,
+                 'segment_certified': True},
+            ],
+        }],
+    }))
+    reactor, _, _ = build_reactor(
+        tmp_path / 'reactor', power_w=.3123,
+        operating_branch={'id': 'reactor-000', 'path': str(branches)})
+    reactor.energy_budget.update(
+        A6a_relative=0., A6b_relative=0., A6b_tolerance=1.e-6,
+        u=1.4, n_e=2.6e16)
+
+    with pytest.raises(PlasmaStateError) as refused:
+        reactor.validate_terminal_state()
+    message = str(refused.value)
+    assert 'power not certified for branch reactor-000 at 0.3123 W' in message
+    assert "certified powers: ['0.25', '0.5']" in message
+    assert 'no recorded branch' not in message
+
+
+def test_operating_branch_restart_round_trips_declaration_seed_and_target(tmp_path):
+    branches = tmp_path / 'branches.json'
+    branches.write_text(json.dumps({'branches': [{
+        'id': 'reactor-000', 'seed': {'u': 1., 'n_e': 1.e16},
+        'u': 1.25, 'n_e': 2.e16,
+    }]}))
+    reactor, _, _ = build_reactor(
+        tmp_path / 'reactor',
+        operating_branch={'id': 'reactor-000', 'path': str(branches)})
+
+    restarted = copy.deepcopy(reactor)
+
+    assert restarted.electron_kinetics == reactor.electron_kinetics
+    assert restarted.operating_branch == reactor.operating_branch
+    assert restarted.operating_branch_seed == reactor.operating_branch_seed
+    assert restarted.operating_branch_target == reactor.operating_branch_target
 
 
 def test_eedf_requires_the_energy_balance_at_construction():

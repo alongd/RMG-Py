@@ -2271,7 +2271,7 @@
     "rmgpy/rmg/input.py:save_input_file": {
       "file": "rmgpy/rmg/input.py",
       "function": "save_input_file",
-      "line": 3417,
+      "line": 3433,
       "signature": "ddac5878a7666ab29c224b824134a84045fb8278ff8a141e7e37f749a9fc872b",
       "verdict": "N",
       "reason": "The existing supported header-free declaration keeps its original graph and vibrationalManifold DSL line by stripping the marker only from the serialization copy; explicit resolved input remains refused.",
@@ -4017,7 +4017,7 @@
     "rmgpy/solver/plasma.pyx:PlasmaReactor._compute_reference_reaction_data": {
       "file": "rmgpy/solver/plasma.pyx",
       "function": "PlasmaReactor._compute_reference_reaction_data",
-      "line": 7276,
+      "line": 7326,
       "signature": "4e16933925d7bb2f387b5e73d5b0e0e565eb8f80fa92124ccdeb788c3df50785",
       "verdict": "R",
       "reason": "Charged-reaction diagnostic equations use shared declarations when any participant is resolved and retain historical str(reaction) bytes for ground-only reactions. Thermo rebase classification: Reference-reaction names and equations include canonical v0 identity for declared participants; the reference energy calculation still uses its previously checked source.",
@@ -4039,7 +4039,7 @@
     "rmgpy/solver/plasma.pyx:PlasmaReactor._evaluate_electronegative_wall_regime": {
       "file": "rmgpy/solver/plasma.pyx",
       "function": "PlasmaReactor._evaluate_electronegative_wall_regime",
-      "line": 7406,
+      "line": 7456,
       "signature": "c0534dbafe3fd70cd2debb87c2f8284fbe156429631e29d4634048c0656d014e",
       "verdict": "R",
       "reason": "Wall destruction-channel equations and anion labels include declared v0 identifiers while gate computation and ground labels retain the existing code.",
@@ -4061,7 +4061,7 @@
     "rmgpy/solver/plasma.pyx:PlasmaReactor.electronegative_wall_manifest": {
       "file": "rmgpy/solver/plasma.pyx",
       "function": "PlasmaReactor.electronegative_wall_manifest",
-      "line": 1218,
+      "line": 1249,
       "signature": "661ea95545b49d6f63bee51997f098a0ff15dc59fcc830dc80eeaa6f0b54cf0d",
       "verdict": "R",
       "reason": "Published wall species identifiers include declared v0 names through has_export_state and the shared Chemkin allocator; ordinary wall identifiers and calculations retain their existing paths.",
@@ -5508,7 +5508,7 @@
     "rmgpy/solver/plasma.pyx:PlasmaReactor._emit_development_progress": {
       "file": "rmgpy/solver/plasma.pyx",
       "function": "PlasmaReactor._emit_development_progress",
-      "line": 1343,
+      "line": 1374,
       "signature": "5747f0e9ecd18b23f53f5c383c181b5a751645fe29aac281308e141e02a16559",
       "verdict": "E",
       "reason": "Development-only JSON telemetry written to stderr; it reports numerical solver state and emits no molecular identity or saved mechanism."
@@ -5630,6 +5630,18 @@
       "signature": "7a47c69597946e0126478bc862df1866b41a85742e97518308132623389af51a",
       "reason": "Writes an already rendered byte payload into its validated destination; no molecular identity is selected or transformed.",
       "verdict": "E"
+    },
+    "rmgpy/tools/eedf/branches.py:scan": {
+      "file": "rmgpy/tools/eedf/branches.py",
+      "function": "scan",
+      "line": 678,
+      "signature": "571b3f1c4102a2a78d20ec9dd9e5ac3984b6c0a3ee938b0405a8883bb938f496",
+      "verdict": "E",
+      "reason": "Reactor-branch scan output contains numerical seed, solver-state, stability, discharge, timeout-recheck and continuation-certificate records only; it emits no molecular identity or saved mechanism.",
+      "evidence": [
+        "rmgpy/tools/eedf/branches.py",
+        "test/rmgpy/tools/eedf/branchesTest.py"
+      ]
     }
   }
 }
