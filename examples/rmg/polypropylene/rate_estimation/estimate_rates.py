@@ -1,7 +1,7 @@
 """Reproduce the polypropylene method-of-moments channel fits.
 
-All chemistry is evaluated from an RMG-database input directory supplied by
-``--database`` or configured as ``database.directory`` in ``rmgrc``.
+Chemistry comes from an RMG-database input directory supplied by
+``--database`` or ``database.directory`` in ``rmgrc``.
 """
 
 import argparse
@@ -203,7 +203,7 @@ for family in db.kinetics.families.values():
 
 # One secondary--tertiary backbone C--C bond in 2,4-dimethylpentane:
 # isobutyl + isopropyl -> 2,4-dimethylpentane. Reverse the
-# R_Recombination estimate with RMG thermo to obtain a per-bond homolysis
+# Use the R_Recombination estimate and thermo for per-bond homolysis
 # frequency. The solver's moment convention contributes two PP backbone
 # bonds per propylene repeat.
 initiation_rxn, = generate_with_model_kinetics(
@@ -237,8 +237,8 @@ initiation = fit(
     },
 )
 
-# Chain-end beta-scission: reverse isopropyl addition to propylene at the
-# terminal CH2. This is the head-to-tail route that produces a secondary PP
+# Chain-end beta-scission: reverse isopropyl addition to propylene at
+# terminal CH2. This head-to-tail route produces a secondary PP
 # chain-end radical and releases propylene in reverse.
 deprop_rxn, = generate_with_model_kinetics(
     ["C[CH]C", "C=CC"],
@@ -266,7 +266,7 @@ depropagation = fit(
 )
 
 # Chain-end termination: parallel recombination and both distinct
-# disproportionation products of two secondary 4-methyl-2-pentyl radicals.
+# disproportionation products of two 4-methyl-2-pentyl radicals.
 # The QSSA solver accepts their summed kt.
 recomb_rxn, = generate_with_model_kinetics(
     ["C[CH]CC(C)C", "C[CH]CC(C)C"], "R_Recombination"
@@ -301,26 +301,39 @@ termination = fit(
     require_nonnegative_ea=True,
 )
 
-# Intermolecular transfer: retain only tertiary C--H abstraction from the
-# three PP-like tertiary sites in 2,4,6-trimethylheptane. Convert the summed
+# Intermolecular transfer: retain tertiary C--H abstraction from the
+# three PP-like sites in 2,4,6-trimethylheptane. Convert the sum
 # bimolecular coefficient to the solver's pseudo-first-order convention.
 inter_rxns_all = generate_with_model_kinetics(
     ["C[CH]CC(C)C", "CC(C)CC(C)CC(C)C"], "H_Abstraction"
 )
 
 
-def is_tertiary_c10_radical(reaction):
+def has_tertiary_radical(molecule):
+    return any(
+        atom.radical_electrons == 1
+        and sum(
+            neighbor.element.symbol == "C" for neighbor in atom.edges
+        ) == 3
+        for atom in molecule.atoms
+    )
+
+
+def has_tertiary_radical_product(reaction, carbon_count=None):
     for species in reaction.products:
         molecule = species.molecule[0]
-        if sum(atom.element.symbol == "C" for atom in molecule.atoms) != 10:
+        molecule_carbon_count = sum(
+            atom.element.symbol == "C" for atom in molecule.atoms
+        )
+        if carbon_count is not None and molecule_carbon_count != carbon_count:
             continue
-        for atom in molecule.atoms:
-            carbon_neighbors = sum(
-                neighbor.element.symbol == "C" for neighbor in atom.edges
-            )
-            if atom.radical_electrons == 1 and carbon_neighbors == 3:
-                return True
+        if has_tertiary_radical(molecule):
+            return True
     return False
+
+
+def is_tertiary_c10_radical(reaction):
+    return has_tertiary_radical_product(reaction, carbon_count=10)
 
 
 inter_rxns = list(filter(is_tertiary_c10_radical, inter_rxns_all))
@@ -329,21 +342,20 @@ assert sum(reaction.degeneracy for reaction in inter_rxns) == 3.0
 inter_bimolecular = sum((forward_rates(reaction) for reaction in inter_rxns))
 inter_pseudo_first = inter_bimolecular / 3.0 * REPEAT_CONCENTRATION_MOL_M3
 
-# Intramolecular transfer: retain the tertiary-C--H 1,5-shift (backbiting)
+# Intramolecular transfer: retain the tertiary-C--H 1,5-shift
 # from a PP-trimer-length secondary chain-end radical.
 intra_rxns_all = generate_with_model_kinetics(
     ["C[CH]CC(C)CC(C)C"], "intra_H_migration"
 )
+
+
 def is_tertiary_r5h_migration(reaction):
     template = reaction.template[0]
     template_label = getattr(template, "label", str(template))
-    has_tertiary_product = any(
-        atom.radical_electrons == 1
-        and sum(neighbor.element.symbol == "C" for neighbor in atom.edges) == 3
-        for species in reaction.products
-        for atom in species.molecule[0].atoms
+    return (
+        template_label.startswith("R5H")
+        and has_tertiary_radical_product(reaction)
     )
-    return template_label.startswith("R5H") and has_tertiary_product
 
 
 intra_rxns = list(filter(is_tertiary_r5h_migration, intra_rxns_all))

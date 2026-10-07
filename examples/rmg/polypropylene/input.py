@@ -15,8 +15,8 @@ database(
 )
 
 # 2. Species Definitions
-# N2 is the sole inert bath-gas collider and polymer-phase solvent. Keeping it
-# nonreactive prevents nitrogen chemistry from entering the model.
+# N2 is the sole inert bath-gas collider and polymer-phase solvent.
+# Keeping it nonreactive prevents nitrogen chemistry from entering.
 species(
     label='N2',
     reactive=False,
@@ -33,58 +33,58 @@ polymer(
     Mw=6000.0,
     # At Mn=5000 g mol^-1, the 50 g charge is 0.01 mol of chains.
     initial_mass=0.05,
-    # Release real gas-phase propylene for each chain-end depropagation event.
+    # Release real gas-phase propylene for each chain-end event.
     monomer_product='C=CC',
-    # Modified-Arrhenius fits use 15 RMG-computed points at 50 K intervals
+    # Modified-Arrhenius fits use 15 RMG points at 50 K intervals
     # over 300--1000 K from RMG-database polymer commit cd86d4e1c. A is
     # [s^-1] except termination [m^3 mol^-1 s^-1], and Ea is [J/mol]. No
     # product, mass-loss, MWD, or other pyrolysis data enter these fits.
     radical_qssa_unzip={
-        # Backbone secondary--tertiary C--C homolysis: thermodynamic reverse
+        # Backbone secondary--tertiary C--C homolysis: reverse
         # of family R_Recombination for isobutyl + isopropyl ->
-        # 2,4-dimethylpentane. The single-bond rate is multiplied by two: a PP
-        # propylene repeat contributes two backbone C--C bonds, whereas the
-        # solver applies initiation to mu1-mu0 repeat-bond units. Source:
-        # ArrheniusBM rate-rule entry 111, converted with this reaction's
+        # 2,4-dimethylpentane. The single-bond rate is doubled: a PP
+        # repeat contributes two backbone C--C bonds, while the solver
+        # applies initiation to mu1-mu0 repeat-bond units. Source:
+        # ArrheniusBM rate-rule entry 111, converted with its
         # dH(298), degeneracy 1, plus RMG thermo. Max fit error 2.027%.
         'initiation': {
             'A': 8.720264977906e26,
             'n': -2.629974419565,
             'Ea': 367563.716473498,
         },
-        # Chain-end beta-scission: 4-methyl-2-pentyl -> propylene + isopropyl,
-        # the thermodynamic reverse of family R_Addition_MultipleBond. Source:
+        # Chain-end beta-scission: 4-methyl-2-pentyl -> propylene +
+        # isopropyl, the reverse of R_Addition_MultipleBond. Source:
         # exact training reaction 239, propene_1 + C3H7-2 <=> C6H13-2,
-        # degeneracy 1, plus RMG thermo. One propylene is released per event.
+        # degeneracy 1, plus RMG thermo. One propylene per event.
         # Max fit error 1.015%.
         'depropagation': {
             'A': 1.143987264396e12,
             'n': 0.438230078566,
             'Ea': 105795.437661892,
         },
-        # Secondary chain-end termination is the sum of (1) R_Recombination
-        # for two 4-methyl-2-pentyl radicals, ArrheniusBM rate-rule entry 160
-        # (degeneracy 0.5), and (2) both Disproportionation products from
-        # ArrheniusBM rate-rule entries 226 and 20 (degeneracies 2 and 3).
-        # Every BM term is converted with its own reaction dH(298). The solver
-        # requires Ea >= 0, so the -174.3 J/mol unconstrained fit is refitted
+        # Secondary chain-end termination sums (1) R_Recombination
+        # for two 4-methyl-2-pentyl radicals, ArrheniusBM entry 160
+        # (degeneracy 0.5), and (2) both Disproportionation products,
+        # entries 226 and 20 (degeneracies 2 and 3). Every BM term uses
+        # its own reaction dH(298). The solver requires Ea >= 0, so the
+        # -174.3 J/mol unconstrained fit is refitted
         # at the Ea=0 boundary. The summed fit has max error 0.511%.
         'termination': {
             'A': 1.201553178958e8,
             'n': -0.350299014152,
             'Ea': 0.0,
         },
-        # The solver has one pseudo-first-order transfer sink, so this fit
+        # The solver has one pseudo-first-order transfer sink. This fit
         # sums PP's tertiary-C--H routes: (a) family H_Abstraction for a
-        # 4-methyl-2-pentyl radical + 2,4,6-trimethylheptane, retaining the two
-        # tertiary products (reaction-path degeneracies 1 and 2), divided by
+        # 4-methyl-2-pentyl + 2,4,6-trimethylheptane, retaining two
+        # tertiary products (path degeneracies 1 and 2), divided by
         # three propylene-repeat equivalents and multiplied by
         # 21387.9648496 mol/m^3 repeat units; and (b) the family
-        # intra_H_migration R5H_CCC tertiary 1,5-shift from a PP-trimer-length
+        # intra_H_migration R5H_CCC tertiary 1,5-shift from a trimer
         # secondary end radical (degeneracy 1). Sources are the model-
-        # generation averaged rate rules; every ArrheniusEP term uses its
+        # generation averaged rate rules; each ArrheniusEP term uses its
         # reaction dH(298). Nominal density 900 kg/m^3 and repeat MW
-        # 42.07974 g/mol set the conversion. Max combined-fit error 7.756%.
+        # 42.07974 g/mol set conversion. Max combined-fit error 7.756%.
         'transfer': {
             'A': 5.095722545255e-3,
             'n': 3.798567739453,
@@ -101,7 +101,7 @@ pp = polymer_phase(
     label='Polypropylene_Melt',
     species=['PP', 'N2'],
     solvent='N2',
-    # Nominal example density; it also sets the repeat concentration used in
+    # Nominal density; it also sets the repeat concentration used in
     # the pseudo-first-order transfer conversion documented above.
     density=(900.0, 'kg/m^3'),
 )
@@ -112,7 +112,7 @@ hybridPolymerReactor(
     pressure=(1.0, 'bar'),
     initialMoles={
         'N2': 0.99,
-        # Match initial_mass/Mn: 0.05 kg / (5 kg mol^-1) = 0.01 mol chains.
+        # Match initial_mass/Mn: 0.05 kg / 5 kg mol^-1 = 0.01 mol.
         'PP': 0.01,
     },
     polymerPhase=pp,
