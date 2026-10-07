@@ -2271,8 +2271,8 @@
     "rmgpy/rmg/input.py:save_input_file": {
       "file": "rmgpy/rmg/input.py",
       "function": "save_input_file",
-      "line": 3395,
-      "signature": "42512ad92ac90bdc823cb5c035f3b125d6712a09a4a8506665e1ae48064c9f9d",
+      "line": 3397,
+      "signature": "97db92e67466d66e4e022afeb5b72ffa4276d9b274de398a6cc77b7e02350ba6",
       "verdict": "N",
       "reason": "The existing supported header-free declaration keeps its original graph and vibrationalManifold DSL line by stripping the marker only from the serialization copy; explicit resolved input remains refused.",
       "evidence": [
@@ -3930,7 +3930,7 @@
       "file": "rmgpy/data/kinetics/depository.py",
       "function": "KineticsDepository.load_entry",
       "line": 287,
-      "signature": "2d8f2e299a62a8975f49c2d3341848211449c2667fd56f19e6172bc4e12c016a",
+      "signature": "9a485c5308e3bbae67d07d1fb7fbf35b08f2aac51ca339438589bd260dd568ee",
       "manifold": {
         "verdict": "carried",
         "reason": "KineticsDepository.load_entry uses the modern kinetics/dictionary identity family: graph dictionaries carry v0, canonical references distinguish ensemble owners, and SMILES-only efficiency keys refuse declared colliders.",
@@ -5313,8 +5313,8 @@
       "reason": "Family schema, group-pattern and rate-rule loading delegates molecular training records to the separately guarded KineticsDepository.load boundary.",
       "file": "rmgpy/data/kinetics/family.py",
       "function": "KineticsFamily.load",
-      "line": 1468,
-      "signature": "51bdb148ae4a5e5057e6879a11a275131150f44b030e3d4efea4b7b9d4aeaef9"
+      "line": 1619,
+      "signature": "502f7a3906be1b4434b12eda0e7d8c9c698bc982f401e213a17dae8cb73e0fec"
     },
     "rmgpy/data/kinetics/family.py:KineticsFamily.generate_product_template": {
       "verdict": "E",

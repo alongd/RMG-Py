@@ -1057,7 +1057,7 @@
       "test/rmgpy/data/kinetics/superelasticRework3Test.py::test_serialized_irreversible_declaration_survives_admission"
     ]
   },
-  "rmgpy/data/kinetics/depository.py::KineticsDepository.load_entry::Reaction#1": {
+  "rmgpy/data/kinetics/depository.py::KineticsDepository.load_entry::TemplateReaction#1": {
     "verdict": "guarded",
     "reason": "Template/depository construction retains declaration or kinetics-free Group template; executable entry rates validate at library/family admission before any reverse generation.",
     "tests": [

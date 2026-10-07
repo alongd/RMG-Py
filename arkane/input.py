@@ -92,7 +92,7 @@ def database(thermoLibraries=None, transportLibraries=None, reactionLibraries=No
     if kineticsDepositories == 'default':
         kinetics_depositories = ['training']
     elif kineticsDepositories == 'all':
-        kinetics_depositories = None
+        kinetics_depositories = 'all'
     else:
         if not isinstance(kineticsDepositories, list):
             raise InputError(
